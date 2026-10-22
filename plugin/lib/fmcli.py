@@ -4461,7 +4461,10 @@ def cmd_audit(args):
         # T-0718: a builder's work is on its branch: from where it left main, not main's own commits since
         base, tree, upto = c._git(p.root, "merge-base", "HEAD", branch).strip() or base, branch, f"branch {branch}"
     pairs = [(base, tree)]
-    if tree == branch:  # T-1296: edits not yet committed in this checkout belong to the task as well
+    # T-1296: edits not yet committed in this checkout belong to the task as well, but only while it is this
+    # checkout's own task (T-1579: a lane task's review shouldn't carry whatever the main checkout is working on)
+    mine = getattr(c.active_brief_fast(p), "id", None) == b.id
+    if tree == branch and mine:
         now = c.worktree_tree(p.root)
         if now:
             pairs.append(("HEAD", now))
