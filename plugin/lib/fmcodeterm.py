@@ -4,6 +4,7 @@ only the cells that changed. session() owns the terminal while the screen runs: 
 and parsed to the names the App binds, and every mode put back however it ends. Stdlib only."""
 import functools
 import os
+import re
 import select
 import signal
 import sys
@@ -80,6 +81,35 @@ def split_tail(data):
     if rest and (rest in ("\x1b", "\x1bO") or rest.startswith("\x1b[") and all(0x20 <= ord(c) <= 0x3F for c in rest[2:])):
         return data[:i], rest
     return data, ""
+
+
+_CPR = re.compile(r"\x1b\[\d+;(\d+)R")  # the terminal's answer to CSI 6n: where the cursor is
+
+
+def probe(fd_in, fd_out, glyphs, timeout=0.25):
+    """T-1512: the columns this terminal draws each glyph in: each written at the top-left corner, then the cursor's
+    column asked for. ({glyph: columns}, the rest of what was read: keys typed meanwhile). Writes nothing unless both
+    ends are a terminal (never into a pipe, a file or a test's capture); `timeout` bounds the whole probe, and a
+    terminal that doesn't answer in it leaves the rest unmeasured. ponytail: Shift-F3 typed in that window reads as
+    an answer (it is the same sequence); a wrong width there only picks the flat track."""
+    if not (os.isatty(fd_in) and os.isatty(fd_out)):
+        return {}, ""
+    got, buf, end = {}, "", time.monotonic() + timeout
+    try:
+        for g in glyphs:
+            os.write(fd_out, f"\x1b[1;1H{g}\x1b[6n".encode("utf-8"))
+            while not (m := _CPR.search(buf)):
+                left = end - time.monotonic()
+                if left <= 0 or not select.select([fd_in], [], [], left)[0]:
+                    return got, buf
+                chunk = os.read(fd_in, 1024)
+                if not chunk:
+                    return got, buf
+                buf += chunk.decode("utf-8", "replace")
+            got[g], buf = int(m.group(1)) - 1, buf[:m.start()] + buf[m.end():]
+    except OSError:  # the terminal went away mid-probe
+        pass
+    return got, buf
 
 
 def _rgb(c):
@@ -220,6 +250,11 @@ def session(fn, fd_in=None, fd_out=None):
         def resized(self):
             was, flags["resized"] = flags["resized"], False
             return was
+
+        def widths(self, glyphs):  # T-1512: before the first frame, which clears what the probe drew
+            got, typed = probe(fd_in, fd_out, glyphs)
+            flags["pending"] += typed  # read with the next keys
+            return got
 
     io = IO()
 

@@ -18,8 +18,9 @@ SHARED = {
     "motion": {"choices": ("full", "reduced", "off"), "aliases": {"calm": "reduced"},
                "help": "full: everything moves; reduced: less (the app: nothing moves; the pane: the 8 fps clock); "
                        "off: still"},
-    "palette": {"choices": ("default", "cb"), "aliases": {},
-                "help": "default: green and red for pass and fail; cb: blue and orange, safe with colour blindness"},
+    "palette": {"choices": ("default", "cb", "riso"), "aliases": {},
+                "help": "default: green and red for pass and fail; cb: blue and orange, safe with colour blindness; "
+                        "riso: risograph inks, green and fluorescent pink"},
 }
 PLUGIN = "foreman-ui"
 _MOD_JSON = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "mods", PLUGIN,
@@ -55,7 +56,8 @@ def app_schema():
     import fmcodetui as T
     D = T.DEFAULTS
     app = lambda *a, **k: _entry("app", *a, effect="next run", **k)
-    out = [app("theme", "choice", D["preset"], "the app's colours (signal: night with palette cb)", "look",
+    out = [app("theme", "choice", D["preset"], "the app's colours (signal: night with palette cb; riso: risograph "
+                                               "inks on paper stock)", "look",
                choices=T.PRESETS),
            app("motion", "choice", D["motion"], SHARED["motion"]["help"], "look", choices=SHARED["motion"]["choices"],
                aliases=SHARED["motion"]["aliases"]),

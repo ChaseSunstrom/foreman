@@ -47,10 +47,11 @@
     "palette": {
       "type": "string",
       "title": "Palette",
-      "description": "default: green and red for ok and error. cb: a colourblind-safe blue and orange pair (errors also carry a glyph).",
+      "description": "default: green and red for ok and error. cb: a colourblind-safe blue and orange pair (errors also carry a glyph). riso: risograph inks, green, fluorescent pink and cornflower; the same words as fm code's palette setting.",
       "options": [
         "default",
-        "cb"
+        "cb",
+        "riso"
       ],
       "default": "default"
     },

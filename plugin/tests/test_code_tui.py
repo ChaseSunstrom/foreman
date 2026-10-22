@@ -784,6 +784,16 @@ class Config(unittest.TestCase):
         self.assertNotEqual(cfg["theme"]["dim"].get("fg"), "#18202C", "the theme's own dim stays")
         self.assertEqual(cfg["theme"]["ok"]["fg"], "#7CFC8A", "a readable one applies")
 
+    def test_a_hostile_name_in_the_file_never_reaches_the_screen_as_a_terminal_escape(self):
+        # a shared tui.toml naming a style field, a table, a key or a layout setting with a title-setting OSC
+        osc = r'"\u001b]0;x\u0007"'
+        cfg, errors = tui().load_config(self.write(f'{osc} = 1\n[colors]\nok = {{ {osc} = true }}\n{osc} = "#000000"\n'
+                                                   f'[layout]\n{osc} = 1\n[keys]\n{osc} = "stop"\n'))
+        self.assertEqual(len(errors), 5, "\n".join(errors))
+        for e in errors:
+            self.assertFalse({"\x1b", "\x07"} & set(e), repr(e))
+            self.assertIn("\\x1b]0;x\\x07", e, "named, escaped")
+
     def test_mono_has_no_colours(self):
         cfg, _ = tui().load_config(self.write('theme = "mono"\n'))
         self.assertFalse([n for n, spec in cfg["theme"].items() if n != "screen" and ("fg" in spec or "bg" in spec)])
@@ -2180,6 +2190,157 @@ class SettingsPreview(unittest.TestCase):
         app.cfg, app.no_colour = dict(app.cfg, theme=tui()._mono(), preset="mono"), True
         self.set(app, "set motion off")
         self.assertEqual((app.cfg["preset"], app.cfg["motion"]), ("mono", "off"))
+
+
+class MotionVisuals(unittest.TestCase):
+    """T-1512: the hush key cycles motion full → reduced → off through fm settings' writer (tui.toml, and the pane's
+    option of the same name, which the pane takes on its next poll); the spinner's tempo says what the agent is doing;
+    the riso theme in the app and the pane; a glyph-width probe that talks only to a terminal; the half-block track."""
+    setUp, text = SettingsScreen.setUp, SettingsScreen.text
+
+    def app(self, events=(), **kw):
+        app = tui().App(kw.pop("cfg", None) or tui().load_config()[0], spawn=lambda *a, **k: None, **kw)
+        for e in events:
+            app.feed(e)
+        return app
+
+    def options(self):
+        path = os.path.join(self.uhome, ".claude", "settings.json")
+        if not os.path.exists(path):
+            return {}
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)["pluginConfigs"]["foreman-ui@foreman"]["options"]
+
+    def test_the_hush_key_cycles_motion_on_the_screen_in_tui_toml_and_for_the_pane(self):
+        import fmsettings
+        pane = fmsettings.mod_manifest()["userConfig"]["motion"]["options"]
+        app = self.app(projects=lambda: [])
+        for want in ("reduced", "off", "full"):
+            app.key("z")
+            self.assertEqual(app.cfg["motion"], want)
+            self.assertEqual(tui().load_config()[0]["motion"], want, "in tui.toml: the next run starts hushed too")
+            self.assertEqual(self.options(), {"motion": want}, "the pane's own option: it takes it on its next poll")
+            self.assertIn(want, pane, "a value the pane's options list (Claude Code drops one they don't)")
+            self.assertIn(f"motion: {want}", self.text(app))
+        app.key("p")
+        self.assertEqual(app.mode, "home")
+        app.key("z")
+        self.assertEqual(app.cfg["motion"], "reduced", "from the app's home too")
+        app.mode = "prompt"
+        app.key("z")
+        self.assertEqual((app.input, app.cfg["motion"]), ("z", "reduced"), "typed into a request, never a hush")
+
+    def test_a_hush_the_guard_refuses_still_hushes_this_screen_and_says_why(self):
+        os.environ["CLAUDECODE"] = "1"
+        app = self.app()
+        app.key("z")
+        self.assertEqual(app.cfg["motion"], "reduced")
+        self.assertIn("this screen only", app.message)
+        self.assertIn("guard", app.message)
+        self.assertFalse(os.path.exists(self.toml))
+        self.assertEqual(self.options(), {})
+
+    def test_the_spinner_turns_fastest_running_slower_thinking_and_slowest_waiting(self):
+        cfg = dict(tui().DEFAULTS, motion="full")
+
+        def turns(events):
+            app = self.app(events, cfg=cfg)
+            glyphs = [tui().render(app.state, 100, 30, cfg, app, t=100 + i / 50).text().splitlines()[-1].split()[0]
+                      for i in range(50)]  # one second of the status chip's spinner
+            return sum(a != b for a, b in zip(glyphs, glyphs[1:]))
+        thinking, running = turns(RUN[:1]), turns(RUNNING)
+        waiting = turns(RUNNING + [{"event": "working", "text": "claude is working", "silent": 20}])
+        self.assertGreater(running, thinking)
+        self.assertGreater(thinking, waiting)
+        self.assertGreater(waiting, 0, "a quiet turn still turns: the run is alive")
+
+    def test_the_riso_theme_loads_in_the_app_and_every_word_on_it_reads(self):
+        T = tui()
+        for text, preset in (('theme = "riso"\n', "riso"), ('theme = "riso"\npalette = "cb"\n', "riso"),
+                             ('palette = "riso"\n', "night"), ('theme = "paper"\npalette = "riso"\n', "paper")):
+            with self.subTest(text=text):
+                with open(self.toml, "w", encoding="utf-8") as f:
+                    f.write(text)
+                cfg, errors = T.load_config()
+                self.assertEqual((errors, cfg["preset"]), ([], preset))
+                th = cfg["theme"]
+                for name, spec in th.items():  # the app's own floor for a [colors] style, on the screen and a panel
+                    if name not in ("screen", "panel", "border", "track", "shade", "glow"):
+                        self.assertIsNone(T._faint(spec, th), name)
+                        self.assertIsNone(T._faint(dict(spec, bg=spec.get("bg") or th["panel"]["bg"]), th), name)
+                T.render(T.State(), 100, 30, cfg)
+        self.assertEqual(T.load_config()[0]["theme"]["bad"]["fg"], T.RISO["paper"]["bad"], "riso's pink on paper")
+        self.assertTrue(T.PRESETS["riso"]()["screen"].get("paint"), "a paper stock: it paints a dark terminal")
+
+    def test_the_riso_palette_is_the_panes_too_in_the_same_inks(self):
+        import re
+        import fmsettings
+        self.assertIn("riso", fmsettings.mod_manifest()["userConfig"]["palette"]["options"])
+        self.assertEqual(fmsettings.set_plugin("palette", "riso"), "riso")
+        self.assertEqual(self.options(), {"palette": "riso"})
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(os.path.join(root, "mods", "foreman-ui", "hooks", "kit.ts"), encoding="utf-8") as f:
+            riso = re.search(r"\briso: \{([^}]*)\}", f.read())
+        night = tui().RISO["night"]  # the pane sits on the terminal's own (dark) background
+        self.assertEqual(dict(re.findall(r"(\w+): 0x([0-9a-f]{6})", riso.group(1))),
+                         {"ok": night["ok"][1:].lower(), "err": night["bad"][1:].lower(),
+                          "accent": night["accent"][1:].lower()})
+
+    def test_the_glyph_probe_writes_nothing_into_a_pipe(self):
+        import fmcodeterm
+        r, w = os.pipe()
+        try:
+            self.assertEqual(fmcodeterm.probe(r, w, "▀"), ({}, ""))
+            os.set_blocking(r, False)
+            with self.assertRaises(BlockingIOError):
+                os.read(r, 100)
+        finally:
+            os.close(r)
+            os.close(w)
+
+    def test_the_glyph_probe_measures_where_the_cursor_lands_and_keeps_keys_typed_meanwhile(self):
+        import pty
+        import tty
+        import fmcodeterm
+        master, slave = pty.openpty()
+        try:
+            tty.setcbreak(slave)
+            os.write(master, b"\x1b[1;2Rq\x1b[1;3R")  # the terminal's answers, and a key typed between them
+            self.assertEqual(fmcodeterm.probe(slave, slave, "▀◉", timeout=1), ({"▀": 1, "◉": 2}, "q"))
+            self.assertIn("\x1b[6n", os.read(master, 4096).decode())
+            t0 = time.monotonic()
+            self.assertEqual(fmcodeterm.probe(slave, slave, "▀◉", timeout=0.2), ({}, ""), "no answer: no width")
+            self.assertLess(time.monotonic() - t0, 1, "a terminal that never answers costs the timeout, once")
+        finally:
+            os.close(master)
+            os.close(slave)
+
+    def test_the_track_is_drawn_in_half_blocks_once_the_probe_says_they_fit(self):
+        T = tui()
+        cfg = dict(T.DEFAULTS, motion="off")
+        app = self.app(RUNNING, cfg=cfg)
+        row = lambda: T.render(app.state, 110, 32, cfg, app, t=100.0)
+        flat = row().text().splitlines()[2]
+        self.assertIn("━", flat)
+        self.assertNotIn("▀", flat)
+        for widths in ({"▀": 2}, {}):  # drawn two columns wide, or no answer: the flat track
+            app.glyphs = widths
+            self.assertEqual(row().text().splitlines()[2], flat)
+        app.glyphs = {"▀": 1}
+        cv = row()
+        rail = cv.text().splitlines()[2]
+        self.assertIn("▀", rail)
+        self.assertNotIn("━", rail)
+        x = rail.index("▀")
+        spec = T.resolve(cv.cells[2][x][1], cfg, cv.bg[2][x])
+        self.assertNotEqual(spec["fg"], spec["bg"], "a lit top and a shaded side: the rail stands up")
+
+    def test_the_keys_poster_groups_every_command_as_keycaps_with_the_hush_key(self):
+        app = self.app()
+        app.key("?")
+        text = self.text(app)
+        for words in ("RUN", "SEE", "MOVE", " z ", "motion: full, reduced, off", " q ", "quit"):
+            self.assertIn(words, text)
 
 
 if __name__ == "__main__":

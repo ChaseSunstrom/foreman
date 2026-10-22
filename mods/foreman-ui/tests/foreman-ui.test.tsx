@@ -1549,6 +1549,23 @@ test("palette 'cb' swaps the ok/err colours and the error still carries a glyph 
   await ui.unmount()
 })
 
+test("palette 'riso' paints ok and errors in fm code's risograph inks, and default puts them back (T-1512)", async ($, on) => {
+  const { clock } = world(on, [{ ...CALM, history: HIST }])
+  const opts: Record<string, string> = { palette: 'riso' }
+  configRows(on, opts)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const color = async (text: string) => (await ui.find({ type: 'Text', text }))?.props.color
+  await clock.advance(2000)
+  expect(await color('step 1 failed')).toBe(hex(0xff48b0))
+  expect(await color('step 1 passed')).toBe(hex(0x00a95c))
+  opts.palette = 'default'
+  await clock.advance(2000)
+  expect(await color('step 1 failed')).toBe(hex(0xff6b6b))
+  expect(C.accent).toBe(0x5fd7d7)
+  await ui.unmount()
+})
+
 // T-1574: the engine's /config rows for the mod's options, read live from `opts` (what /config or fm settings set holds)
 const configRows = (on: On, opts: Record<string, string>) =>
   on('config.list', async () => ({

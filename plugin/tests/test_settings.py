@@ -126,13 +126,13 @@ class Command(ForemanTestCase):
 
     def test_list_shows_user_bindings_and_what_the_app_cant_read(self):
         with open(os.path.join(self.home, "tui.toml"), "w") as f:
-            f.write('theme = ["x"]\n[keys]\nz = "stop"\n')
+            f.write('theme = ["x"]\n[keys]\nx = "stop"\n')  # x: a key the defaults leave unbound
         by = {(r["surface"], r["key"]): r for r in json.loads(self.fm("settings", "list", "--json", env=self.env).stdout)}
-        self.assertEqual((by["app", "keys.z"]["value"], by["app", "keys.z"]["default"]), ("stop", "none"))
+        self.assertEqual((by["app", "keys.x"]["value"], by["app", "keys.x"]["default"]), ("stop", "none"))
         text = self.fm("settings", "list", env=self.env).stdout
-        self.assertIn("keys.z", text)
+        self.assertIn("keys.x", text)
         self.assertIn("theme = ['x']", text, "the bad setting is named, not hidden behind the default")
-        self.assertIn("stop", self.fm("settings", "get", "keys.z", env=self.env).stdout)
+        self.assertIn("stop", self.fm("settings", "get", "keys.x", env=self.env).stdout)
         self.term("settings", "set", "theme", "paper")  # repairs a file the app chokes on
         self.assertIn('theme = "paper"', read_text(os.path.join(self.home, "tui.toml")))
 
