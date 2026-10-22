@@ -9,13 +9,20 @@ would allow that write, and otherwise printed as the change to make. Stdlib only
 
 T-1510: fm settings diff (the keys the files change from the defaults; a key nothing reads is flagged dead), export
 and import (a share code: those keys as one pasteable word, every key and value checked before any is written) and
-undo (each set or import is one entry of a history in Foreman's state; undo puts the last one back)."""
+undo (each set or import is one entry of a history in Foreman's state; undo puts the last one back).
+
+T-1543: settings safety. Each start the app draws with keeps tui.toml as the last good copy (in Foreman's state); one it
+can't draw with starts that copy instead and says so, the file left as written. An edit made to tui.toml while the app
+runs is read back into it (applied when it can draw with it); a write from the app names the text it last saw, and a
+key changed there since is refused, never overwritten unseen. fm settings bisect names the setting that breaks the
+screen: the changes from the last good copy tried in halves, each on a temporary file."""
 import base64
 import contextlib
 import json
 import math
 import os
 import re
+import stat
 import sys
 import tempfile
 import tomllib
@@ -304,15 +311,16 @@ def _load(text, where):
     return cfg, [e.replace(tmp, where) for e in errors]
 
 
-def set_app(key, value, path=None, p=None):
+def set_app(key, value, path=None, p=None, base=None):
     """Set one tui.toml setting in place: (the value written, [other settings it made bad, which the app skips]).
     SettingError (the file untouched) when the name or value is wrong, the guard refuses the write (inside Claude
-    Code), the file doesn't parse, load_config rejects the value or the app can't draw with it."""
+    Code), the file doesn't parse, load_config rejects the value or the app can't draw with it. T-1543: `base`, the
+    text the caller last read (the fm code app's view): refused too when another program changed this key since."""
     import fmcore
     path, value, table, name = _app_change(key, value, path, p)
     real = os.path.realpath(path)  # a tui.toml linked from a dotfiles repo stays linked
     with fmcore.lock(os.path.dirname(real)):  # another fm settings set between our read and our write
-        return _set_app(key, value, path, real, table, name)
+        return _set_app(key, value, path, real, table, name, base)
 
 
 def preview_app(key, value, path=None, p=None):
@@ -349,26 +357,57 @@ def _utf8(value, key):
         raise SettingError(f"{key}: not text UTF-8 can hold (a lone surrogate)") from None
 
 
-def _set_app(key, value, path, real, table, name):
+def _set_app(key, value, path, real, table, name, base=None):
     import fmcore
-    new, _, errors = _plan_app(key, value, path, table, name)
+    text = _read_app(path)
+    _conflict([key], text, base, path)
+    new, _, errors = _plan_app(key, value, path, table, name, text=text)
     fmcore.write_atomic(real, new)
     return value, errors
+
+
+APP_MAX = 1_000_000  # bytes of tui.toml read: a settings file, not a data file
+
+
+def _read_raw(path):
+    """tui.toml's bytes and its stat ((b"", None) when there is none). SettingError, its message starting with the
+    path, when it can't be read, isn't a regular file (a FIFO would block the reader, /dev/zero never ends) or is over
+    APP_MAX: nothing of it is read past that."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)  # a FIFO opens at once rather than wait for a writer
+    except FileNotFoundError:
+        return b"", None
+    except OSError as e:
+        raise SettingError(f"{path}: can't read it ({e.strerror or e})") from None
+    try:
+        with os.fdopen(fd, "rb") as f:
+            st = os.fstat(fd)  # the file opened, not whatever the name points at by now
+            if not stat.S_ISREG(st.st_mode):
+                raise SettingError(f"{path}: not a regular file, not read")
+            data = f.read(APP_MAX + 1)
+    except OSError as e:
+        raise SettingError(f"{path}: can't read it ({e.strerror or e})") from None
+    if len(data) > APP_MAX:
+        raise SettingError(f"{path}: over {APP_MAX // 1_000_000} MB, not read (edit it by hand)")
+    return data, st
+
+
+def _read_app(path):
+    """tui.toml's text ("" when there is none), line breaks read as open() reads them; SettingError (_read_raw) when
+    it can't be read."""
+    try:
+        return _read_raw(path)[0].decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    except UnicodeDecodeError as e:
+        raise SettingError(f"{path}: can't read it ({e})") from None
 
 
 def _plan_app(key, value, path, table, name, text=None):
     """The file (or `text`, as it would be at `path`) with the change made, checked: (its text, the config the app
     loads from it, [other settings it made bad]); SettingError for a file or value set_app refuses."""
     import fmcodetui as T
-    try:
-        if text is None:
-            with open(path, encoding="utf-8") as f:
-                text = f.read()
-    except FileNotFoundError:
-        text = ""
-    except (OSError, UnicodeDecodeError) as e:
-        raise SettingError(f"can't read {path}: {e}") from None
-    if len(text) > 1_000_000:  # the line scan parses each value as it goes: a settings file, not a data file
+    if text is None:
+        text = _read_app(path)
+    if len(text) > APP_MAX:  # the line scan parses each value as it goes: a settings file, not a data file
         raise SettingError(f"{path} is over 1 MB: edit it by hand")
     if _parses(text) is None:
         raise SettingError(f"{path} isn't valid TOML: fix it first (fm code tui names the line)")
@@ -397,12 +436,21 @@ def _plan_app(key, value, path, table, name, text=None):
     if own:
         raise SettingError("; ".join(own))
     errors = [e for e in errors if e not in old]
+    why = render_error(cfg)
+    if why:
+        raise SettingError(f"{key} = {T._toml(value)}: the app can't draw with it ({why})")
+    return new, cfg, errors
+
+
+def render_error(cfg):
+    """Why the fm code app can't draw with `cfg` (wide and narrow: both layouts), or None."""
+    import fmcodetui as T
     try:
-        for w, h in ((100, 30), (60, 20)):  # wide and narrow: both layouts
+        for w, h in ((100, 30), (60, 20)):
             T.render(T.State(), w, h, cfg)
     except Exception as e:
-        raise SettingError(f"{key} = {T._toml(value)}: the app can't draw with it ({type(e).__name__}: {e})") from None
-    return new, cfg, errors
+        return f"{type(e).__name__}: {e}"
+    return None
 
 
 # ---------------------------------------------------------------- the plugin: Claude Code's settings.json
@@ -519,15 +567,15 @@ def _write_plugin(data, pid, key, value, real, how):
     fmcore.write_atomic(real, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
-def set_key(key, value, surface=None, p=None):
+def set_key(key, value, surface=None, p=None, base=None):
     """`fm settings set` and the fm code app's :set line (T-1572): `key` set on every surface that has it (or on
     `surface`): ([(surface, value written, warnings)], [why each refused one wasn't written]). T-1510: what it changed
-    is one entry of the settings history (fm settings undo)."""
+    is one entry of the settings history (fm settings undo). T-1543: `base` as set_app takes it."""
     with _recorded("set") as changes:
-        return _set_key(key, value, surface, p, changes, written())
+        return _set_key(key, value, surface, p, changes, written(), base)
 
 
-def set_apps(pairs, path=None, p=None):
+def set_apps(pairs, path=None, p=None, base=None):
     """T-1511: several tui.toml settings [(key, value)] in one write: each checked as set_app checks one (the guard
     too) and placed on the text the one before left, the file written once under its lock, all one entry of the
     history (one undo puts them all back). SettingError, or whatever failed, and nothing written: a panel the fm code
@@ -539,7 +587,8 @@ def set_apps(pairs, path=None, p=None):
         planned = [(key, *_app_change(key, value, path, p)[1:]) for key, value in pairs]
         real = os.path.realpath(path)
         with fmcore.lock(os.path.dirname(real)):
-            text, done = None, []
+            text, done = _read_app(path), []
+            _conflict([key for key, *_ in planned], text, base, path)
             for key, value, table, name in planned:
                 text, _, warn = _plan_app(key, value, path, table, name, text=text)
                 done.append((key, value, warn))
@@ -560,14 +609,14 @@ def _change(changes, now, s, key, new):
                         **({"skipped": old} if (s, k) in now and not ok else {})})
 
 
-def _set_key(key, value, surface, p, changes, now):
+def _set_key(key, value, surface, p, changes, now, base=None):
     """set_key's writes; each that changed a value is added to `changes` (_change)."""
     done, refused = [], []
     for e in find(key, surface):
         s = e["surface"]
         try:
             if s == "app":
-                done.append(("app", *set_app(key, value, p=p)))
+                done.append(("app", *set_app(key, value, p=p, base=base)))
             else:
                 done.append(("plugin", set_plugin(key, value, p), []))
         except SettingError as x:
@@ -599,11 +648,11 @@ def written(problems=None):
     problems = [] if problems is None else problems
     found, path = [], app_path()
     try:
-        with open(path, "rb") as f:
-            raw = tomllib.load(f)
-    except FileNotFoundError:
+        raw = tomllib.loads(_read_raw(path)[0].decode("utf-8"))  # T-1543: never a FIFO, a device or past 1 MB
+    except SettingError as e:
+        problems.append(("app", str(e)))
         raw = {}
-    except (OSError, ValueError, RecursionError) as e:  # TOMLDecodeError and UnicodeDecodeError are ValueErrors
+    except (ValueError, RecursionError) as e:  # TOMLDecodeError and UnicodeDecodeError are ValueErrors
         problems.append(("app", f"can't read {path}: {e}"))
         raw = {}
     for k, v in raw.items():
@@ -807,6 +856,219 @@ def _shown(v, surface):
     return "unset" if v is None else T._toml(v) if surface == "app" else json.dumps(v, ensure_ascii=False)
 
 
+# ---------------------------------------------------------------- T-1543: last good copy, outside edits, bisect
+
+def good_path():
+    """The last tui.toml the fm code app started and drew with, kept in Foreman's state."""
+    import fmcore
+    return os.path.join(fmcore.state_dir(), "settings", "tui.good.toml")
+
+
+def _good_text():
+    try:
+        with open(good_path(), encoding="utf-8") as f:
+            return f.read()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _try(text, where):
+    """What the app runs with tui.toml as `text` (loaded and drawn from a temporary file): (config, [settings it
+    skips], None), or (None, [], why it can't)."""
+    try:
+        cfg, errors = _load(text, where)
+    except Exception as e:  # load_config itself choked
+        return None, [], f"can't read it ({type(e).__name__}: {e})"
+    why = render_error(cfg)
+    return (None, [], f"can't draw with it ({why})") if why else (cfg, errors, None)
+
+
+def boot(path=None):
+    """The config the fm code app starts with: (config, [settings it skips], a note or None, what it read: {path,
+    text} for its watch on outside edits). tui.toml when the app can draw with it, kept as the last good copy; else
+    that copy, or the defaults when there is none, said in the note; tui.toml is never written."""
+    import copy
+    import fmcodetui as T
+    path = path or app_path()
+    try:
+        text = _read_app(path)
+    except SettingError:
+        text = None
+    seen = {"path": path, "text": text}
+    if text is None:  # unreadable: load_config says why, the defaults show
+        return (*T.load_config(path), None, seen)
+    cfg, errors, why = _try(text, path)
+    if not why:
+        _keep_good(text)
+        return cfg, errors, None, seen
+    good = _good_text()
+    cfg, errors, _ = _try(good, good_path()) if good is not None and _parses(good) is not None else (None, [], None)
+    how = "the last good settings" if cfg else "the defaults"
+    note = _safe(f"started with {how}: {path}: the app {why}; the file is as you left it (fm settings bisect names "
+                 "the setting)" + (f"; the last good copy: {good_path()}" if cfg else ""))
+    return (cfg, errors, note, seen) if cfg else (copy.deepcopy(T.DEFAULTS), [], note, seen)
+
+
+def _keep_good(text):
+    """tui.toml as the app drew it, kept when it parses and differs from the copy; trouble saving it never stops a
+    start."""
+    import fmcore
+    if _parses(text) is None or _good_text() == text:
+        return
+    try:
+        with fmcore.lock(os.path.dirname(good_path())):
+            fmcore.write_atomic(good_path(), text)
+    except Exception as e:  # a read-only state folder, a lock held too long
+        print(f"fm code: the last good settings weren't kept ({_safe(e)})", file=sys.stderr)
+
+
+def reread(seen):
+    """tui.toml read again for the running app (`seen`: what it last read and the file's stat then; updated): None
+    when it is as it was, else (the config to run now, or None to keep the running one, a note saying what changed).
+    Read only when its stat changed, so a file it can't read (a FIFO, one past 1 MB, bad UTF-8) is said once."""
+    try:
+        st = os.stat(seen["path"])  # never blocks, a FIFO's included
+        sig = (st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+    except OSError:
+        sig = None  # gone, or its folder unreadable: _read_app says which
+    # ponytail: an edit of the same size within the clock tick of the last read is missed until the file changes again
+    if "sig" in seen and sig == seen["sig"]:
+        return None
+    seen["sig"] = sig
+    try:
+        text = _read_app(seen["path"])
+    except SettingError as e:
+        return None, _safe(f"{e}: the running look kept")
+    if text == seen["text"]:
+        return None
+    before, seen["text"] = seen.pop("valid", seen["text"]), text  # the last that parsed: a half-saved file between
+    what = f"{seen['path']} changed outside the app"
+    if _parses(text) is None:
+        seen["valid"] = before
+        return None, _safe(f"{what}, but isn't valid TOML: the running look kept (fm code tui names the line)")
+    keys = changed(before, text)
+    what += f" ({', '.join(keys[:6]) + (', …' if len(keys) > 6 else '') or 'comments only'})"
+    cfg, errors, why = _try(text, seen["path"])
+    if why:
+        return None, _safe(f"{what}, but the app {why}: the running look kept; fm settings bisect names the setting")
+    return cfg, _safe(f"{what}: applied" + (f"; skipped: {errors[0]}" if errors else ""))
+
+
+def _flat(text):
+    """{setting: value} of a tui.toml text: a table's keys as table.key, keys.X by the key it means; {} for none."""
+    out = {}
+    for k, v in (_parses(text or "") or {}).items():
+        if isinstance(v, dict):
+            out.update({_norm(f"{k}.{n}"): x for n, x in v.items()})
+        else:
+            out[k] = v
+    return out
+
+
+def changed(before, after):
+    """The settings two tui.toml texts set differently (added, removed or changed), in the order `after` names them
+    (removed ones last)."""
+    a, b = _flat(before), _flat(after)
+    same = lambda x, y: json.dumps(x, sort_keys=True, default=str) == json.dumps(y, sort_keys=True, default=str)
+    return [k for k in dict.fromkeys([*b, *a]) if (k in a) != (k in b) or not same(a[k], b[k])]
+
+
+def _conflict(keys, text, base, path):
+    """SettingError when another program changed one of `keys` in tui.toml (now `text`) since the caller read it as
+    `base`: never overwritten unseen. Its other changes stay, as the write is made in place."""
+    if base is None or text == base:
+        return
+    if _parses(text) is None:  # every key would count as changed ("now unset"): the file is what's wrong
+        raise SettingError(f"{path} isn't valid TOML (changed since the app read it): fix it first (fm code tui names "
+                           "the line)")
+    theirs, now = set(changed(base, text)), _flat(text)
+    hit = [k for k in keys if _norm(k) in theirs]
+    if hit:
+        raise SettingError("; ".join(f"{k}: changed in {path} since the app read it (now {_shown(now.get(_norm(k)), 'app')}"
+                                     "): not overwritten; set it again to replace it" for k in hit))
+
+
+def _build(good, bad, keys):
+    """tui.toml text: the settings `good` holds ({setting: value}) with `keys` as `bad` has them (removed when it
+    hasn't)."""
+    # rebuilt from the flattened values, not the file's own text: comments, order and spelling (keys.ENTER is enter, a
+    # [colors.ok] table an inline one) go; what load_config reads stays, and bisect checks the full rebuild fails too
+    import fmcodetui as T
+    flat = dict(good)
+    for k in keys:
+        if k in bad:
+            flat[k] = bad[k]
+        else:
+            flat.pop(k, None)
+    nest = {}
+    for k, v in flat.items():
+        table, name = _split(k)
+        if table is None:
+            nest[name] = v
+        else:
+            if not isinstance(nest.get(table), dict):
+                nest[table] = {}
+            nest[table][name] = v
+    lines = [f"{T._toml_key(k)} = {T._toml(v)}" for k, v in nest.items() if not isinstance(v, dict)]
+    for k, v in nest.items():
+        if isinstance(v, dict):
+            lines += [f"[{T._toml_key(k)}]"] + [f"{T._toml_key(n)} = {T._toml(x)}" for n, x in v.items()]
+    return "\n".join(lines) + "\n"
+
+
+def bisect(path=None):
+    """The setting that keeps the fm code app from drawing: tui.toml's changes from the last good copy (the defaults
+    when there is none or it doesn't draw either) applied in halves, each try loaded and drawn from a temporary file;
+    tui.toml is never written. {key (None: tui.toml draws), value, removed, alone (it breaks the good settings by
+    itself), why, base, changed, tries}; SettingError when it can't narrow it to one setting."""
+    path = path or app_path()
+    text, tries = _read_app(path), [0]
+    if _parses(text) is None:
+        raise SettingError(f"{path} isn't valid TOML: fix it first (fm code tui names the line)")
+
+    def fails(t):
+        tries[0] += 1
+        return _try(t, path)[2]
+    why = fails(text)
+    if not why:
+        return {"key": None, "tries": tries[0]}
+    good, base = _good_text(), "the last good copy"
+    if good is None or _parses(good) is None or fails(good):
+        good, base = "", "the defaults"
+        if fails(good):
+            raise SettingError("the app can't draw with its defaults either: not a setting (an extension?)")
+    a, b = _flat(good), _flat(text)
+    keys = changed(good, text)
+    if not keys or not fails(_build(a, b, keys)):
+        raise SettingError(f"{path}: the app {why}, but its settings rebuilt from {base} draw: no one setting to name")
+    lo, hi = 0, len(keys)  # the first lo keys draw, the first hi don't
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if fails(_build(a, b, keys[:mid])):
+            hi = mid
+        else:
+            lo = mid
+    key = keys[hi - 1]
+    alone = hi == 1 or bool(fails(_build(a, b, [key])))
+    return {"key": key, "value": b.get(key), "removed": key not in b, "alone": alone, "why": why, "base": base,
+            "changed": len(keys), "tries": tries[0]}
+
+
+def _cmd_bisect(args):
+    import fmcli
+    if args.key or args.surface:
+        raise fmcli.UsageError("fm settings bisect: names the tui.toml setting the fm code app can't draw with")
+    got, path = bisect(), app_path()
+    k = got["key"]
+    if not k:
+        return fmcli.out(args, got, f"{path} draws: nothing to bisect")
+    what = f"removing {k}" if got["removed"] else f"{k} = {_shown(got['value'], 'app')}"
+    return fmcli.out(args, got, _safe(
+        f"{what}: the app {got['why']}" + ("" if got["alone"] else " (with the changes before it)")
+        + f"\nfound in {got['tries']} tries over the {got['changed']} settings {path} changes from {got['base']}; "
+          f"nothing written (fm settings set {k} VALUE, or edit the file)"))
+
+
 # ---------------------------------------------------------------- reading both, and the command
 
 def rows(entries=None, problems=None):
@@ -871,9 +1133,9 @@ def cmd_settings(args):
                 lines += [f"{title}: {where}"] + [f"  ! {x} (skipped: the default shows)" for s, x in problems
                                                   if s == surface] + ["  " + _text(r) for r in mine]
         return fmcli.out(args, got, "\n".join(lines) or "no settings found")
-    if args.action in ("diff", "export", "import", "undo"):
+    if args.action in ("diff", "export", "import", "undo", "bisect"):
         try:
-            return _cmd_history(args)
+            return _cmd_bisect(args) if args.action == "bisect" else _cmd_history(args)
         except SettingError as e:
             import fmcore
             raise fmcore.PolicyError(str(e)) from None
