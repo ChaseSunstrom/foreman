@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- UI playbook: interaction, forms, microcopy and mobile (ui/interaction.md): three feedback deadlines, one press one action, the unplugged keyboard walk, form validation timing and fix-it errors, a verb ledger with before/after copy, 360 px touch and thumb rules, an interaction probe and a double-press probe (T-1491).
 - Game feel playbook (ui/game-feel.md): anticipation, squash and stretch, hit-stop, trauma shake, camera kick, particles, easing, flashes and sound, each with a hard cap and a reduced-motion fallback, plus a self-testing juice.py whose asserts check the caps table (T-1493).
 - Settings in one place: fm settings list|get|set shows the fm code app's tui.toml and the Claude Code plugin's foreman-ui pane options together, each with its value, default and where it is stored, and names any setting the app can't read. A tui.toml change is made in place (comments, other keys and line endings kept) and refused if the app rejects it or can't draw with it. Inside Claude Code both files are written only when the guard allows, otherwise the exact change is printed. motion (full, reduced, off; calm still accepted) and palette (default, cb) now mean the same on both surfaces, and the app gains palette = "cb" (T-1496).
 - The playbooks skill stays under its 10,000-character budget as playbooks grow: a stage can keep its own references/<stage>/INDEX.md (UI does now), named once in SKILL.md, and the index test accepts a file named there (T-1569).
