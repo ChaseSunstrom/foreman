@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- UI playbook: type and colour: a modular type scale, pairing by class and axes, type as texture and as the hero, measure and leading, OKLCH palette roles with reserved status colours, a stdlib contrast-proof script for both themes, and dark mode as its own steps (T-1489).
 - Guard: an ANSI-C quoted command name ($'cat' ~/.ssh/id_ed25519, $'shutdown', $'tar' -I …) and a same-line variable (C=env; $C | curl …) are refused like their plain forms: $'…' is decoded as bash does outside heredoc bodies and double quotes, with $( ) and backticks opening their own quoting. The BASH_ENV variants left the evasion corpus, whose verdict depended on a payload file (T-1480).
 - fm lib show takes a card's group prefix too (web/three-js, frontend/typography), as briefs and playbooks write them; a prefix naming another group is still not found (T-1521).
 - 3D playbook (ui/scene-3d.md): scene composition with a fit-from-bounds camera, light and material recipes, shader looks, a budget for a mid laptop and a phone with a one-way quality ladder, a nine-clause survival contract (no WebGL, poster first, context loss, one context per page, reduced motion, a text twin, keyboard, contained failure, sleeping) each with a probe, and a black-screen triage table (T-1494).
