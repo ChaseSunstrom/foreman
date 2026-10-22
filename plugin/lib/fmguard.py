@@ -4294,6 +4294,17 @@ def write_targets(cmd):
     return [t for t in out if isinstance(t, str) and t and t != "/dev/null"]
 
 
+def _new_branch_only(sub, rest):
+    """T-1598: whether git checkout/switch only makes a branch at HEAD (checkout -b NAME, switch -c NAME): no start
+    point, no pathspec, so no file changes. Quiet and tracking flags aside, anything else is read as a tree write."""
+    # -B and -C reset a branch that may exist: kept as tree writes
+    flags = {"checkout": ("-b",), "switch": ("-c", "--create")}[sub]
+    words = [a for a in rest if a not in ("-q", "--quiet", "--track", "--no-track")]
+    if len(words) == 1 and sub == "switch":
+        return bool(re.fullmatch(r"--create=[^-\s][^\s]*", words[0]))
+    return len(words) == 2 and words[0] in flags and not words[1].startswith("-")
+
+
 def _checkout_files(base, rest):
     """The files `git checkout` restores when it names only files (after `--`, or every word an existing path and
     no commit), else [] (a branch, -b/-B/--orphan, `.`, a pathspec magic word or a word that is also a commit: the
@@ -4372,6 +4383,8 @@ def _write_targets(name, args):
         read_only = sub == "stash" and rest[:1] in (["list"], ["show"])  # T-0265: listing a stash writes nothing
         # T-0935: reset moves HEAD and the index; only --hard/--merge/--keep (or a unique prefix of one, git takes
         # those; or --recurse-submodules) rewrite files
+        if sub in ("checkout", "switch") and _new_branch_only(sub, rest):  # T-1598: a branch at HEAD, no files
+            read_only = True
         if sub == "reset" and not any(a.startswith("--") and len(a) > 2 and a != "--" and (
                 any(w.startswith(a) for w in ("--hard", "--merge", "--keep", "--recurse-submodules")))
                 for a in rest):
