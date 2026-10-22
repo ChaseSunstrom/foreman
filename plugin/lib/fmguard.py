@@ -979,25 +979,46 @@ def _drop_data_heredocs(cmd, only=None):
 
 def _strip_comments(text):
     """T-0161 review: a # starts a comment only at the start of a word outside quotes; shlex's own commenters also cut
-    at the # in `echo a#b; rm …` and hid the rest of the line. Under $'…' quoting nothing is cut (fails closed)."""
+    at the # in `echo a#b; rm …` and hid the rest of the line. Under $'…' quoting nothing is cut (fails closed).
+    T-1561 re-review: quoting as _inner_quote reads it, each $( … ) and `…` a fresh context: a flat scan read the inner
+    " of "$(echo "a #" )">~/.bashrc as closing the string and cut the redirect away as a comment."""
     if "$'" in text:
         return text
-    out, q, i = [], None, 0
+    st, esc, out, i = [["", None, 0]], False, [], 0  # [kind, quote, paren depth]
     while i < len(text):
-        ch = text[i]
-        if ch == "\\" and q != "'":
-            out.append(text[i:i + 2])
+        ch, top = text[i], st[-1]
+        if esc:
+            esc = False
+        elif ch == "\\" and top[1] != "'":
+            esc = True
+        elif top[1] == "'":
+            top[1] = None if ch == "'" else "'"
+        elif ch == "`":
+            if top[0] == "`" and top[1] is None:
+                st.pop()
+            else:
+                st.append(["`", None, 0])
+        elif ch == "$" and text[i + 1:i + 2] == "(":
+            st.append(["$(", None, 0])
+            out.append("$(")
             i += 2
             continue
-        if q:
-            q = None if ch == q else q
+        elif top[1] == '"':
+            top[1] = None if ch == '"' else '"'
         elif ch in "'\"":
-            q = ch
+            top[1] = ch
         elif ch == "#" and (i == 0 or text[i - 1] in " \t\n;&|(<>"):  # after ) it may end a $(…) word (T-0163)
             i = text.find("\n", i)
             if i < 0:
                 break
             continue
+        elif ch == "(" and top[0] == "$(":
+            top[2] += 1
+        elif ch == ")" and top[0] == "$(":
+            if top[2]:
+                top[2] -= 1
+            else:
+                st.pop()
         out.append(ch)
         i += 1
     return "".join(out)
@@ -1239,10 +1260,12 @@ def _mask_nested_dq(text):
 def _pieces(piece):
     """One space-split piece of an unparseable line as the words the first reading takes from it: split at ; & | ( ),
     and a redirect from its target too (>~/.bashrc is no plain word: re-review). In a piece holding a quote only a
-    leading redirect: a < or > after its quote is text as often as not (awk '$1>4000', the debris rule, T-0982)."""
+    leading redirect and one right after a quote or ) ("$(…)">~/.bashrc: re-review): a < or > inside its quoted text is
+    text as often as not (awk '$1>4000', the debris rule, T-0982)."""
     if not re.search(r"['\"\\]", piece):
         return re.sub(r"(&?[<>]+[&|(]?|[;&|()])", r" \1 ", piece).split()
-    return re.sub(r"([;&|()])", r" \1 ", re.sub(r"^(&?[<>]+)(?=.)", r"\1 ", piece)).split()
+    piece = re.sub(r"(?<=[\"')])(\d*)(&?[<>]+)", r" \1 \2 ", re.sub(r"^(&?[<>]+)(?=.)", r"\1 ", piece))
+    return re.sub(r"([;&|()])", r" \1 ", piece).split()
 
 
 def _bash_word(word):
