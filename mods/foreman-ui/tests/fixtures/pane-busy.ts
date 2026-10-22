@@ -1,5 +1,5 @@
 // T-1534: a synthetic `fm ui --json` view (no real project's data), the pane's whole input. Plain JSON after the
-// export, so tools/replay.py reads it as data too; keep it that way (no code, no comments below this line).
+// export, so tools/pane_replay.py reads it as data too; keep it that way (no code, no comments below this line).
 export default {
   "v": 1,
   "project": "demo-1a2b3c",
