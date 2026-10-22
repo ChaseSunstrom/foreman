@@ -282,6 +282,9 @@ COMPONENT_HEAD = """// Built by fm scene compile --to component (T-1634) from a 
 //   import("./scene.js").catch(err => console.error("scene: showing the poster", err));
 // Until then, or with no WebGL, the poster and the twin show. The element's data-state (poster | live | lost |
 // failed) is the first-frame flag; taking it out of the page frees all mount() made, the WebGL context included.
+// No layout shift: the page's CSS gives it its box before it is defined (once defined, fm-scene::part(stage) sets the
+// ratio):  fm-scene:not(:defined){display:block;position:relative;aspect-ratio:16/10}
+//          fm-scene:not(:defined)>[slot=poster]{width:100%;height:100%;object-fit:cover}
 import * as THREE from "three";
 
 """
@@ -413,6 +416,7 @@ const SHADOW = `<style>
   .stage { position: relative; aspect-ratio: 16 / 10; }
   @media (max-aspect-ratio: 3/4) { .stage { aspect-ratio: 4 / 5; } }
   ::slotted([slot="poster"]), canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  ::slotted([slot="poster"]) { object-fit: cover; }
   canvas { opacity: 0; touch-action: pan-y; pointer-events: none; }
   :host([data-state="live"]) canvas { opacity: 1; pointer-events: auto; transition: opacity 400ms ease-out; }
   @media (prefers-reduced-motion: reduce) { :host([data-state="live"]) canvas { transition: none; } }
@@ -421,9 +425,11 @@ const SHADOW = `<style>
 export class FmScene extends HTMLElement {
   #dispose = null;
   connectedCallback() {
-    if (!this.shadowRoot) this.attachShadow({ mode: "open" }).innerHTML = SHADOW;
+    // A root the page declared (<template shadowrootmode>) is kept, filled in if it has no canvas.
+    const root = this.shadowRoot ?? this.attachShadow({ mode: "open" });
+    if (!root.querySelector("canvas")) root.innerHTML = SHADOW;
     // label="..." names the canvas (an id reference can't cross the shadow boundary); with none, the twin speaks.
-    const canvas = this.shadowRoot.querySelector("canvas"), label = this.getAttribute("label");
+    const canvas = root.querySelector("canvas"), label = this.getAttribute("label");
     if (label) { canvas.setAttribute("aria-label", label); canvas.removeAttribute("aria-hidden"); }
     else canvas.setAttribute("aria-hidden", "true");
     this.dataset.state = "poster";
@@ -432,7 +438,7 @@ export class FmScene extends HTMLElement {
   // Out of the page: all mount() made is freed and the context released; put back, it mounts on a fresh canvas.
   disconnectedCallback() { this.#dispose?.(); this.#dispose = null; }
 }
-// Two scenes on one page: the second finds fm-scene taken and needs a name of its own.
+// Two scenes on one page: the second finds fm-scene taken and needs a name of its own, in its markup too.
 if (!customElements.get("fm-scene")) customElements.define("fm-scene", FmScene);
 else console.warn('scene: <fm-scene> is taken; name this one: customElements.define("fm-scene-2", FmScene)');
 """
