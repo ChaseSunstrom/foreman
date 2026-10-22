@@ -6057,9 +6057,13 @@ def _build_parser():
     s.add_argument("--out", metavar="PATH", help="diff: write a PNG of A faded with each changed pixel in red")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
-            "form, with DESIGN.md's tokens resolved (exit 1 on problems)")
-    s.add_argument("action", choices=["check"])
+            "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
+            "score as CSS custom properties and @keyframes, WAAPI options or three.js tween parameters, the same "
+            "durations and easings in each, reduced forms included (T-1625)")
+    s.add_argument("action", choices=["check", "compile"])
     s.add_argument("path", nargs="?", help="the score (default: motion.toml at the repo root)")
+    s.add_argument("--to", choices=["css", "waapi", "three"], help="compile: the target (default css)")
+    s.add_argument("--out", metavar="FILE", help="compile: write here, replacing the file whole, not print it")
     import fmscene  # T-1633: stdlib only and small; its schema is the help's epilog
     s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 95), epilog=fmscene.SCHEMA,
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
