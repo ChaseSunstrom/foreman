@@ -74,7 +74,7 @@ class Skills(unittest.TestCase):
         for name in os.listdir(os.path.join(PLUGIN, "workflows")):
             text = read_text(os.path.join(PLUGIN, "workflows", name))
             total += sum(len(m) for m in re.findall(r"(?m)^\s*(?:description|whenToUse): '([^']*)'", text))
-        self.assertLessEqual(total, 2000, "Foreman's part of the skill listing")
+        self.assertLessEqual(total, 2200, "Foreman's part of the skill listing")  # T-1700/T-1701: four job skills
 
     def test_the_rules_carry_the_reply_format_and_stay_small(self):
         # T-1279: the rules ride once a session; the output style's reminder rode every turn
@@ -89,6 +89,36 @@ class Skills(unittest.TestCase):
             for ref in re.findall(r"`((?:\.\./[\w-]+/)?references/[\w./-]+\.md)`", body):  # ../playbooks/…: a sibling's
                 with self.subTest(skill=name, ref=ref):
                     self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)))
+
+    def test_the_job_skills_are_short_and_name_only_real_playbooks_and_verbs(self):
+        # T-1701: debug-test, release and research wrap playbooks and fm verbs that exist, and fire on task words
+        import argparse
+        import fmcli
+        import fmdoctor
+        verbs = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction)).choices
+        jobs, chars = ("debug-test", "release", "research"), 0
+        for name in jobs:
+            with self.subTest(skill=name):
+                meta, body = frontmatter(os.path.join(PLUGIN, "skills", name, "SKILL.md"))
+                self.assertEqual(meta.get("name"), name)
+                self.assertTrue(meta.get("description", "").startswith("Use whenever "), "task words, not Foreman's")
+                self.assertNotEqual(meta.get("disable-model-invocation"), "true")
+                chars += len(meta["description"])
+                self.assertLess(len(body.splitlines()), 60)
+                refs = re.findall(r"`((?:\.\./[\w-]+/)?references/[\w./-]+\.md)`", body)
+                self.assertTrue(refs, "wraps at least one playbook")
+                for ref in refs:
+                    self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)), ref)
+                named = re.findall(r"`fm ([\w-]+)((?: [a-z][\w-]*)?)", body)
+                self.assertTrue(named, "wraps at least one fm verb")
+                for verb, word in named:
+                    self.assertIn(verb, verbs, f"fm {verb}")
+                    inner = [a for a in verbs[verb]._actions if isinstance(a, argparse._SubParsersAction)]
+                    if inner and word:
+                        self.assertIn(word.strip(), inner[0].choices, f"fm {verb}{word}")
+        self.assertLessEqual(chars, 360, "three of the 2,200-character listing's job-skill room")
+        self.assertEqual([p for p in fmdoctor._description_problems(os.path.join(PLUGIN, "skills"))
+                          if any(j in p for j in jobs)], [])
 
     def test_the_directions_skill_offers_six_measured_cards_and_saves_the_pick(self):
         # T-1508: one sentence in, six distinct one-screen directions out, the pick saved as DESIGN.md with an
