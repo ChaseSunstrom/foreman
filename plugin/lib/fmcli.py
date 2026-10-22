@@ -5863,6 +5863,10 @@ def _build_parser():
     s.add_argument("--expect", help="set cmd: a regex its output must match")
     s.add_argument("--status", type=int, default=200, help="set http: the status it must return")
     s.add_argument("--json-key", dest="json_key", help="set http: a key its JSON body must have")
+    import fmsmoke  # T-1509: stdlib only and small; its profiles are the choices
+    s.add_argument("--profile", action="append", choices=[*fmsmoke.PROFILES, "all"], metavar="NAME",
+                   help="run: crawl under a hostile profile instead (repeatable; all for every one): "
+                        + "; ".join(f"{k}: {v}" for k, v in fmsmoke.PROFILES.items()))
     import fmdesign  # T-1506: stdlib only and small; its rule list is the help's epilog
     s = add("design", lazy("fmdesign", "cmd_design"), tier=("Every task", 92), epilog=fmdesign.rules_help(),
             formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
