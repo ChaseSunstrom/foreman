@@ -5986,10 +5986,11 @@ def _build_parser():
     s = add("settings", lazy("fmsettings", "cmd_settings"), tier=("Project and settings", 775),
             help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
-                                                                 "bisect"])  # T-1543: the setting the app can't draw
+                                                                 "bisect", "profile"])  # T-1543 bisect, T-1656 profile
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
-                                          "share code fm settings export printed (T-1510); list: a group alone (look, "
-                                          "colors, layout, keys, pane; T-1511)")
+                                          "share code fm settings export printed (T-1510; tui.toml's [profile] tables "
+                                          "aren't in it); list: a group alone (look, colors, layout, keys, pane; "
+                                          "T-1511)")
     s.add_argument("value", nargs="?", help="set: the new value")
     s.add_argument("--surface", choices=["app", "plugin"], help="only the app's tui.toml, or only the pane's options")
 
