@@ -528,25 +528,51 @@ def real_model(model):
     return ask
 
 
-def preflight_real(briefs):
+def preflight_real(briefs, passes_each=2):
     """The whole run's estimate against today's budget before the first child: ValueError when it can't cover it."""
     import fmbudget
     try:
-        fmbudget.check("playbook-eval", fmbudget.estimate("playbook-eval", 2 * len(briefs), 0.03), "fewer briefs")
+        fmbudget.check("playbook-eval", fmbudget.estimate("playbook-eval", passes_each * len(briefs), 0.03),
+                       "fewer briefs, or no --ablate")
     except fmbudget.BudgetError as e:
         raise ValueError(str(e))
 
 
-def evaluate(book, briefs, model):
-    """{n, with, without, lift} for briefs answered by model(task, book or None)."""
+def evaluate(book, briefs, model, without=None):
+    """{n, with, without, lift} for briefs answered by model(task, book or None); without: a count already known."""
     def ok(i, b, loaded):
         try:
             return bool(passes(model(b["task"], loaded), b["checks"]))
         except ValueError as e:  # a --real child failed: say which brief (its cost is already recorded)
             raise ValueError(f"brief {i} ({'with' if loaded else 'without'} the playbook): {e}")
     w = sum(ok(i, b, book) for i, b in enumerate(briefs, 1))
-    wo = sum(ok(i, b, None) for i, b in enumerate(briefs, 1))
+    wo = without if without is not None else sum(ok(i, b, None) for i, b in enumerate(briefs, 1))
     return {"n": len(briefs), "with": w, "without": wo, "lift": round((w - wo) / len(briefs), 4)}
+
+
+def sections(book):
+    """[(title, start, end)] of the playbook's top-level ## sections, outside code fences; the text above the first
+    stays in every ablation (T-1619)."""
+    fenced, marks = False, []
+    for m in re.finditer(r"(?m)^(```|~~~)|^## +(.+?)\s*$", book):
+        if m.group(1):
+            fenced = not fenced
+        elif not fenced:
+            marks.append(m)
+    return [(m.group(2), m.start(), marks[i + 1].start() if i + 1 < len(marks) else len(book))
+            for i, m in enumerate(marks)]
+
+
+def ablate(book, briefs, model, base=None):
+    """Each section's share of the lift: the full lift minus the lift with that section dropped. A share of zero or
+    less flags the section as a cut candidate (the ratchet keeps playbooks small). base: evaluate()'s result, reused."""
+    base = base or evaluate(book, briefs, model)
+    n, rows = len(briefs), []
+    for title, a, b in sections(book):
+        w = evaluate(book[:a] + book[b:], briefs, model, without=base["without"])["with"]
+        share = round(base["lift"] - (w - base["without"]) / n, 4)
+        rows.append({"section": title, "share": share, "cut": share <= 0})
+    return rows
 
 
 def cmd_eval(args):
@@ -570,12 +596,14 @@ def cmd_eval(args):
     try:
         briefs = load_briefs(path)
         if args.real:
-            preflight_real(briefs)
+            preflight_real(briefs, 2 + (len(sections(book)) if args.ablate else 0))
         model = real_model(args.model) if args.real else literal
         r = evaluate(book, briefs, model)
+        cuts = ablate(book, briefs, model, r) if args.ablate else None
     except ValueError as e:
         raise fmcli.UsageError(str(e))
-    row = {"ts": c.now(), "playbook": name, "briefs": os.path.abspath(path), "model": model.name, **r}
+    row = {"ts": c.now(), "playbook": name, "briefs": os.path.abspath(path), "model": model.name, **r,
+           **({"ablate": cuts} if cuts is not None else {})}
     os.makedirs(c.state_dir(), exist_ok=True)
     with open(os.path.join(c.state_dir(), "playbook-evals.jsonl"), "a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
@@ -583,5 +611,8 @@ def cmd_eval(args):
     fmcli.out(args, row, f"{name}: lift {r['lift']:+.2f} (with {r['with']}/{n}, without {r['without']}/{n}) on {n} "
               f"held-out brief(s), {model.name} model"
               + ("\n  literal: a text-presence check (does the shipped playbook say what each brief checks for?); "
-                 "--real measures what a model does (budgeted)" if not args.real else ""))
+                 "--real measures what a model does (budgeted)" if not args.real else "")
+              + ("".join(f"\n  {x['section'][:40]:<40} {x['share']:+.2f}" + ("  ← cut candidate: no share alone (or another section repeats it)"
+                                                                            if x["cut"] else "") for x in cuts)
+                 if cuts else "\n  no ## sections to ablate" if cuts == [] else ""))
     return 0
