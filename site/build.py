@@ -263,24 +263,27 @@ POSTER_MARK = "<!-- poster: build.py draws it from data/stats.json (T-1609) -->"
 STATIONS = [("tasks_done", "tasks done"), ("evidence", "evidence runs"), ("proofs", "proofs"), ("commits", "commits")]
 
 
-def poster(totals, asof=""):
-    """T-1609: the hero's proof chain, one station per total along one red-to-green track, each sized by its total
-    (area over a floor) with the real number as text. Inline, so it is the first paint and loads nothing; a fixed
-    960x290 frame, so T-1610's scene can sit over it at the same aspect."""
+def poster(totals, asof="", cols=4):
+    """T-1609: the hero's proof chain, one station per total along a track, each the site's 45° diamond (.points)
+    with its area set by its total over a floor and the real number as text; one hue, since the counts aren't states.
+    Inline, so it is the first paint and loads nothing. cols=4 is the fixed 960x270 frame T-1610's scene sits over;
+    cols=2 is the 2x2 that phones get, without the dated kicker (the aria-label keeps the date)."""
     vals = [(label, totals.get(k) or 0) for k, label in STATIONS]
     top = max([v for _, v in vals] + [1])
     head = "Foreman's proof chain from its own record" + (f", to {asof}" if asof else "")
     said = f"{head}: " + ", ".join(f"{fmt(v)} {label}" for label, v in vals)
-    out = [f'<svg class="poster" viewBox="0 0 960 290" role="img" aria-label="{esc(said)}">'
-           '<defs><linearGradient id="poster-track" gradientUnits="userSpaceOnUse" x1="8" y1="0" x2="952" y2="0">'
-           '<stop class="g0" offset="0"/><stop class="g1" offset=".5"/><stop class="g2" offset="1"/></linearGradient>'
-           f'</defs><text class="kick" x="0" y="30">{esc(head)}</text>'
-           '<line class="track" x1="8" y1="170" x2="952" y2="170" stroke="url(#poster-track)"/>']
+    lead, rows = (40 if cols == 4 else 0), -(-len(vals) // cols)
+    w, h = 240 * cols, lead + 230 * rows
+    out = [f'<svg class="poster{"" if cols == 4 else " compact"}" viewBox="0 0 {w} {h}" role="img" '
+           f'aria-label="{esc(said)}">' + (f'<text class="kick" x="0" y="24">{esc(head)}</text>' if cols == 4 else "")]
+    out += [f'<line class="track" x1="8" y1="{lead + 230 * r + 130}" x2="{w - 8}" y2="{lead + 230 * r + 130}"/>'
+            for r in range(rows)]
     for i, (label, v) in enumerate(vals):
-        x, r = 120 + 240 * i, 10 + 40 * (max(v, 0) / top) ** .5
-        out.append(f'<circle class="st" cx="{x}" cy="170" r="{r:.1f}" fill="url(#poster-track)" stroke="url(#poster-track)"/>'
-                   f'<text class="num" x="{x}" y="100" text-anchor="middle">{fmt(v)}</text>'
-                   f'<text class="lab" x="{x}" y="262" text-anchor="middle">{esc(label)}</text>')
+        x, y, s = 120 + 240 * (i % cols), lead + 230 * (i // cols), 12 + 46 * (max(v, 0) / top) ** .5
+        out.append(f'<rect class="st" x="{x - s / 2:.1f}" y="{y + 130 - s / 2:.1f}" width="{s:.1f}" height="{s:.1f}" '
+                   f'transform="rotate(45 {x} {y + 130})"/>'
+                   f'<text class="num" x="{x}" y="{y + 60}" text-anchor="middle">{esc(fmt(v))}</text>'
+                   f'<text class="lab" x="{x}" y="{y + 212}" text-anchor="middle">{esc(label)}</text>')
     return "".join(out) + "</svg>"
 
 
@@ -454,8 +457,11 @@ def build(out):
     shutil.copytree(HERE, out, ignore=lambda d, names: [n for n in names if n in SOURCE_ONLY])
     with open(os.path.join(out, "index.html"), encoding="utf-8") as f:  # T-1609: the hero's poster
         page = f.read()
+    if POSTER_MARK not in page:  # review: a lost mark shipped a hero with no poster
+        raise SystemExit("build.py: site/index.html lost the poster mark: " + POSTER_MARK)
+    totals, asof = stats.get("totals") or {}, str(stats.get("generated") or "")
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
-        f.write(page.replace(POSTER_MARK, poster(stats.get("totals") or {}, str(stats.get("generated") or "")), 1))
+        f.write(page.replace(POSTER_MARK, poster(totals, asof) + poster(totals, asof, 2), 1))
     os.makedirs(os.path.join(out, "demo"), exist_ok=True)
     for f in ("live.mp4", "demo.svg", "code-tui.mp4"):  # code-tui.mp4: fm code tui --record demo/code-tui.jsonl
         shutil.copy2(os.path.join(ROOT, "demo", f), os.path.join(out, "demo", f))
