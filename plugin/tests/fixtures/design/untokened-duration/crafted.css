@@ -1,0 +1,4 @@
+:root { --dur-fast: 120ms; --dur-slow: 400ms; }
+.btn { transition: transform var(--dur-fast) ease, opacity var(--dur-fast) 0s; }
+.sheet { transition: transform var(--dur-slow) ease; }
+@media (prefers-reduced-motion: reduce) { .btn, .sheet { transition: none; } }

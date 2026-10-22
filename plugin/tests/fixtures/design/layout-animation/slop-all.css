@@ -1,0 +1,5 @@
+.button { transition: all .3s ease; } /* expect */
+.title { transition: font-size .2s; } /* expect */
+.card { transition: box-shadow .2s, transform .2s; } /* expect */
+.chip { transition: .3s ease; } /* expect */
+@media (prefers-reduced-motion: reduce) { .button, .title, .card, .chip { transition: none; } }

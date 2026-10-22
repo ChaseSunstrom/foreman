@@ -1,0 +1,9 @@
+.card { border-radius: 8px; } /* expect */
+.button { border-radius: 8px; }
+.input { border-radius: .5rem; }
+.modal { border-radius: 8px; }
+.badge { border-radius: 8px; }
+.reset { border-radius: 0; }
+.avatar { border-radius: 50%; }
+.pill { border-radius: 999px; }
+.hairline { border-radius: 2px; }

@@ -1,0 +1,8 @@
+@keyframes pulse { 50% { opacity: .6; } }
+.dot { animation: pulse .25s ease-in-out infinite; }
+.live {
+  animation-name: pulse;
+  animation-duration: 200ms;
+  animation-iteration-count: infinite;
+}
+@media (prefers-reduced-motion: reduce) { .dot, .live { animation: none; } }
