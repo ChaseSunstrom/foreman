@@ -362,6 +362,9 @@ def _read_targets(name, args):
     it; tar's relative ones are under its -C folder), the lists tar and rsync read names from, and dd's if=."""
     if name == "dd":
         return [a[3:] for a in args if a.startswith("if=")]
+    if re.fullmatch(_INTERP_NAMES, name):  # T-1585 review: perl -pe 1 FILE, python3 -c CODE FILE read their operands
+        return [a for a in args if not a.startswith("-")] + [a.split("=", 1)[1] for a in args
+                                                             if a.startswith("-") and "=" in a]  # --key=FILE
     if name not in _READERS:
         return []
     takes = _VALUE_OPTS.get(name, ())  # review: scp -i KEY uses the key; tar --exclude .ssh names what it skips
@@ -571,6 +574,21 @@ def classify_unlink(path, ctx):
     return classify_write(path, ctx, real=not os.path.islink(path))
 
 
+# T-1575: the machine's own folders; a write there changes the system for every user and session
+_SYSTEM_DIRS = ("/etc", "/usr", "/boot", "/sys", "/proc", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/opt",
+                "/root", "/var", "/srv", "/snap")
+_SYSTEM_OK = ("/var/tmp", "/var/folders", "/proc/self/fd", "/proc/thread-self/fd")
+
+
+def _system_path(p, ctx):
+    return (any(_under(p, d) for d in _SYSTEM_DIRS) and not any(_under(p, d) for d in _SYSTEM_OK)
+            and not re.match(r"/proc/(?:self|thread-self|\d+)/fd(?:/|$)", p)  # /dev/stderr's real path
+            and not _under(p, ctx.home)
+            and not (ctx.project_root and os.path.isdir(os.path.join(ctx.project_root, ".git"))  # cd /etc isn't a
+                     and _under(p, ctx.project_root))  # project: only a real checkout under /opt or /srv is exempt
+            and not any(_under(p, s) for s in getattr(ctx, "scratch", ()) or ()))
+
+
 def classify_write(path, ctx, real=True):
     cats = []
     # a link (real=False) is judged where it is, and where its folder really is (a link inside a linked folder)
@@ -583,8 +601,8 @@ def classify_write(path, ctx, real=True):
             cats.append("core")
         if _is_credential(p, ctx):
             cats.append("credentials")
-        if (p.startswith("/dev/") and not _SAFE_DEV.match(p)) or _runs_later(p, ctx):
-            cats.append("system")  # device files; persistence that outlives the session
+        if (p.startswith("/dev/") and not _SAFE_DEV.match(p)) or _runs_later(p, ctx) or _system_path(p, ctx):
+            cats.append("system")  # device files; persistence that outlives the session; the system's folders
         if _under(p, os.path.join(ctx.home, ".claude", "plugins")) or _new_context_file(p, ctx):
             cats.append("plugin")  # installed plugins, or a new skill/agent/command: what runs in every session
         lane, main = getattr(ctx, "confine", None) or (None, None)
@@ -1429,7 +1447,8 @@ _PRINTED_SUBST = re.compile(r"(\$\(|`)\s*((?:(?:command\s+|builtin\s+)?(?:\S*/)?
 _DOWNLOAD_SUBST = re.compile(r"(\$\(|`)\s*(curl|wget|fetch)\b")
 
 
-_INTERP_NAMES = r"(?:python|perl|ruby|php)[0-9.]*|py|jruby|truffleruby|irb|node|nodejs|deno|bun"
+_INTERP_NAMES = (r"(?:python|perl|ruby|php|pypy|ipython|lua)[0-9.]*|py|jruby|truffleruby|irb|node|nodejs|deno|bun"
+                 r"|luajit|Rscript|julia|tclsh")  # T-1585 review: pypy, ipython, lua, R, julia, tcl
 _INTERP = re.compile(rf"(?:^|[\s;&|(/`])({_INTERP_NAMES})(?=\s|$|[;&|)`])")
 _TEXT_TICKS = re.compile(r"(?:python[0-9.]*|py|node|nodejs|deno|bun)$")  # a backtick is only text in these
 _WRITE_API = re.compile(
@@ -2041,6 +2060,257 @@ def _interpreter_writes(cmd, ctx):
                                                    for m in _QUOTED.finditer(cmd)]:
         found += [(cat, f"{path} (written from interpreter code)") for cat in classify_write(path, ctx)
                   if cat in _GUARDED_BY_PATH]
+    return found
+
+
+# T-1460: the home folder's credential names, as code joins them (os.path.join(HOME, ".ssh", "id_rsa"))
+_CRED_PART = re.compile(r"(?:^|/)(?:\.ssh|\.aws|\.gnupg|\.kube|\.config/gcloud|\.config/gh|\.netrc|\.npmrc|\.pypirc"
+                        r"|\.git-credentials|\.docker|\.credentials\.json|id_(?:rsa|dsa|ecdsa|ed25519)(?!\.pub))(?:/|$)")
+_HOME_IN_CODE = re.compile(r"~|\bHOME\b|expanduser|homedir|Path\.home|Dir\.home|getpwuid")
+# credential files by name, wherever they sit in the code (quotes can be paired wrongly on purpose)
+_CRED_FILE_NAMES = re.compile(r"id_(?:rsa|dsa|ecdsa|ed25519)(?![\w.]*\.pub)(?!\w)|\.netrc\b|\.git-credentials\b"
+                              r"|\.credentials\.json\b|\.aws/credentials\b|\.docker/config\.json\b|\.pypirc\b|\.npmrc\b")
+_PATHY = re.compile(r"^[^\s()'\"`;,{}]+$")  # a literal that is one path, not a program
+_CC_NAME = re.compile(r"CLAUDE(?:CODE|_CODE_ENTRYPOINT)(?!\w)")  # no left edge: env -uCLAUDECODE
+
+
+
+def _glob_reaches(pattern, target):
+    """Whether a glob pattern matches target or a folder holding it, by glob's own rule: a wildcard never matches a
+    leading dot (~/* isn't ~/.ssh; ~/.s* is)."""
+    import fnmatch
+    ps, ts = pattern.split("/"), target.split("/")
+    return len(ps) <= len(ts) and all(fnmatch.fnmatchcase(t, p) and (p.startswith(".") or not t.startswith("."))
+                                      for p, t in zip(ps, ts))
+
+
+def _interpreter_reads(cmd, ctx):
+    """T-1460: interpreter code that names a credential file in the home folder reads it as surely as cat does: a
+    quoted path that resolves to one (classify_read: public parts aside), or a credential name beside the home folder
+    (a path joined at run time). T-1570: code that changes CLAUDECODE or CLAUDE_CODE_ENTRYPOINT hides Claude from fm."""
+    dry = _drop_data_heredocs(cmd)  # a heredoc fed to fm edit or cat is data, not code an interpreter here reads
+    if not _INTERP.search(_mask_fm(dry, ctx)):
+        return []
+    code = _interp_code(dry)
+    found, home = [], _HOME_IN_CODE.search(code) or ctx.home in code
+    # a relative name opens in whichever folder the line may be in: where it started, or any folder it cds to
+    bases = [ctx.cwd] + [_resolve(_expand(d, ctx), ctx.cwd) for d in re.findall(r"(?:^|[;&|(\n{])\s*cd\s+([^\s;&|)]+)",
+                                                                              dry) if not _unresolvable(d)]
+    lits = [m.group(1) for q in "'\"`" for m in re.finditer(f"{q}([^{q}\\n]*){q}", code)]
+    for lit in lits:
+        if not _PATHY.match(lit):
+            continue
+        explicit = os.path.isabs(lit) or lit.startswith(("~", "$HOME", "${HOME}"))
+        for path in dict.fromkeys(os.path.normpath(_resolve(_expand(lit, ctx), b)) for b in bases):
+            hits = classify_read(path, ctx)  # judged as cat's operand is: where it is and where it really is
+            if not hits and re.search(r"[*?\[]", path):  # a glob that can reach a credential file
+                hits = ["credentials"] * any(_glob_reaches(path, os.path.join(ctx.home, d, leaf))
+                                             for d in _CRED_DIRS + _CRED_FILES for leaf in ("id_rsa", "credentials"))
+            # an explicit home path is judged exactly; a bare ".aws" may be joined to the home folder at run time
+            if not hits and not (explicit and _under(path, ctx.home)) and _CRED_PART.search(lit) and (
+                    home or re.search(r"[*?\[]", lit) or re.match(r"/(?:home|Users|root|var/home)(?:/|$)", path)):
+                hits = ["credentials"]  # ponytail: a joined known_hosts is refused too; name the whole path
+            found += [(cat, f"{lit!r} in interpreter code reads a credential file") for cat in hits]
+    # credential file names in the code's strings and heredoc bodies (quotes can be paired wrongly on purpose), not in
+    # the shell words around it (ssh -i ~/.ssh/id_ed25519 uses a key)
+    named = next((m for t in lits + [_heredocs(dry)[1]] for m in [_CRED_FILE_NAMES.search(t)] if m), None)
+    if home and named:
+        found.append(("credentials", f"interpreter code names {named.group(0)!r} beside the home folder"))
+    # ponytail: interpreter code that changes CLAUDECODE before starting fm isn't read: edit scripts carry the same
+    # words as text (env={"CLAUDE_CODE_ENTRYPOINT": …} in a test they write), and fm's verbs that matter fail closed
+    # off a terminal (T-1572); the shell forms are refused in _hides_claude
+    return list(dict.fromkeys(found))
+
+
+_CC_SET = re.compile(r"^(?:CLAUDECODE|CLAUDE_CODE_ENTRYPOINT)\+?=")
+_CC_VARS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
+
+
+def _hides_claude(words):
+    """T-1570: whether one simple command names CLAUDECODE or CLAUDE_CODE_ENTRYPOINT to unset, empty or override it,
+    or unsets a name it computes: fm reads them to know Claude, not the user, runs it. ponytail: a whole fresh
+    environment (env -i, exec -c, sudo) isn't refused: clean-env test runs need it, and the fm verbs that matter fail
+    closed off a terminal (T-1572)."""
+    argv, _ = _strip_wrappers(words)
+    lead = words[:len(words) - len(argv)]
+    name = os.path.basename(argv[0]) if argv else ""
+    ops = argv[1:]
+    named = [a for a in ops if a in _CC_VARS or _CC_SET.match(a)]
+    if any(_CC_SET.match(w) for w in lead + (argv if not argv or name in ("export", "readonly") else [])):
+        return True
+    if name == "unset" and (named or any(re.search(r"[$`]", a) for a in ops)):  # unset $v: a name it computes
+        return True
+    if name in ("local", "read", "mapfile", "readarray", "getopts") and named:
+        return True
+    if name in ("declare", "typeset", "local") and any(_CC_NAME.search(a) for a in ops) and not any(
+            a.startswith("-") and "p" in a for a in ops):  # declare -n r=CLAUDECODE makes r the variable
+        return True
+    if name == "let" and any(_CC_NAME.search(a) and "=" in a for a in ops):
+        return True
+    if any("{" in w and "CLAUDE" in w for w in words) and (  # unset CLAUDE{,CODE}: a brace expands to the name
+            name in ("unset", "export", "declare", "typeset", "local", "let", "read")
+            or any(os.path.basename(w) == "env" for w in lead)):
+        return True
+    if name == "printf" and any(a == "-v" and b in _CC_VARS for a, b in zip(ops, ops[1:])):
+        return True
+    if name == "export" and named and any(a == "-n" or a.startswith("+") for a in ops):
+        return True
+    for i, w in enumerate(lead):
+        if os.path.basename(w) == "env":  # env's own words: options, their values, assignments
+            vals = lead[i + 1:]
+            if any(_CC_NAME.search(o) for o in vals) or any(
+                    a in ("-u", "--unset") and re.search(r"[$`]", b) for a, b in zip(vals, vals[1:])):
+                return True
+    return False
+
+
+# T-1575: awk runs commands from its program: system(…), print … | "cmd", "cmd" | getline; and writes print > "file"
+_AWKS = {"awk", "gawk", "mawk", "nawk", "original-awk"}
+_AWK_STR = r'"(?:[^"\\\n]|\\.)*"'
+_AWK_TERM = rf'(?:{_AWK_STR}|\$\d+\b|\$?[A-Za-z_]\w*\b(?:\[[^\]\n]*\])?)'  # \b: a word is one term (no 2^n splits)
+_AWK_EXPR = rf'{_AWK_TERM}(?:[ \t]*{_AWK_TERM})*'
+_AWK_TAKES = {"-F", "-v", "-f", "-E", "-e", "-i", "-W", "-l", "--file", "--exec", "--source", "--include", "--assign",
+              "--field-separator", "--load"}
+_AWK_LONG = ("--file", "--exec", "--source", "--include", "--assign", "--field-separator", "--load")
+
+
+def _awk_sources(args, cwd):
+    """T-1575: (program texts, -v assignments, data operands, whether a -f program couldn't be read, whether gawk
+    edits the data files in place) of an awk command line; a -f file is read when it is there and small."""
+    progs, assigns, i, from_file, unread, inplace = [], {}, 0, False, False, False
+    while i < len(args) and args[i].startswith("-") and args[i] != "-":
+        a = args[i]
+        if a == "--":
+            i += 1
+            break
+        opt, val = (a.split("=", 1) + [""])[:2] if a.startswith("--") else (a[:2], a[2:])
+        if opt.startswith("--") and len(opt) > 3:  # gawk takes a unique prefix: --sou is --source
+            opt = next((o for o in _AWK_LONG if o.startswith(opt)), opt)
+        if opt in _AWK_TAKES and not val and i + 1 < len(args):
+            i += 1
+            val = args[i]
+        if opt == "-W":  # -W source=…, -W file=…, mawk's -W exec FILE: the long option by another name
+            w, eq, wv = val.partition("=")
+            opt = next((o for o in _AWK_LONG if len(w) > 1 and o.startswith("--" + w)), "-W")
+            if opt == "--exec" and not eq and i + 1 < len(args):
+                i += 1
+                wv = args[i]
+            val = wv
+        if opt in ("-i", "--include") and re.sub(r"\.awk$", "", os.path.basename(val)) == "inplace":
+            inplace = True
+        if opt in ("-f", "--file", "-E", "--exec"):
+            from_file, path, unread = True, _resolve(val, cwd), True
+            try:
+                if os.path.isfile(path) and os.path.getsize(path) <= 65536:
+                    with open(path, encoding="utf-8", errors="replace") as f:
+                        progs.append(f.read())
+                    unread = False
+            except OSError:
+                pass
+        elif opt in ("-e", "--source"):
+            progs.append(val)
+        elif opt in ("-v", "--assign") and "=" in val:
+            k, v = val.split("=", 1)
+            assigns[k] = ['"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"']
+        i += 1
+    rest = args[i:]
+    if not from_file and not progs and rest:  # -f and -e stand in for the program operand
+        progs, rest = [rest[0]], rest[1:]
+    return progs, assigns, rest, unread, inplace
+
+
+def _awk_value(expr, assigns, seen=()):
+    """The text an awk expression builds: its strings as they are, a variable set once to an expression of them by
+    that expression, anything else (fields, input, a variable set more than once) as $AWKVAR, a value the guard
+    reads as computed."""
+    out = []
+    for t in re.findall(_AWK_TERM, expr):
+        if t.startswith('"'):  # \n \t, octal \162 and hex \x72 escapes, any other \c as c
+            out.append(re.sub(r"\\([0-7]{1,3}|x[0-9a-fA-F]{1,2}|.)", lambda m: chr(int(m.group(1), 8)) if m.group(1)[0]
+                              in "01234567" else chr(int(m.group(1)[1:], 16)) if m.group(1)[0] == "x" and len(
+                              m.group(1)) > 1 else {"n": "\n", "t": "\t"}.get(m.group(1), m.group(1)), t[1:-1]))
+        elif len(assigns.get(t, ())) == 1 and t not in seen:
+            out.append(_awk_value(assigns[t][0], assigns, seen + (t,)))
+        else:
+            out.append("$AWKVAR")
+    return "".join(out)
+
+
+def _balanced(text, start):
+    """The text from start up to the parenthesis that closes the one just before it (strings skipped)."""
+    depth, i = 1, start
+    while i < len(text) and depth:
+        if text[i] == '"':
+            m = re.match(_AWK_STR, text[i:])
+            i += len(m.group(0)) if m else 1
+            continue
+        depth += {"(": 1, ")": -1}.get(text[i], 0)
+        i += 1
+    return text[start:i - 1 if not depth else i]
+
+
+def _check_awk(args, ctx, depth, cwd, cmd):
+    """T-1575: what an awk program runs or writes, read as the commands and paths they are. A -f program the guard
+    can't read (/dev/stdin, a file this line writes first, one gawk loads) is looked for in the whole line, heredocs
+    and here-strings included."""
+    progs, assigns, data, unread, inplace = _awk_sources(args, cwd)
+    if unread:  # its heredocs, here-strings and quoted programs; not every word of the line (grep 'system(' x)
+        progs += [_heredocs(cmd)[1]] + [a or b for a, b in re.findall(
+            r"'([^']*\{[^']*)'|\"((?:[^\"\\]|\\.)*\{(?:[^\"\\]|\\.)*)\"", cmd)]
+    inplace = inplace or any(re.search(r'@include\s+"inplace(?:\.awk)?"', p) for p in progs)
+    for prog in list(progs):  # @include "file" loads another program; read it like -f
+        for inc in re.findall(r'@include\s+"([^"\n]+)"', prog):
+            path = _resolve(_expand(inc, ctx), cwd)
+            try:
+                if os.path.isfile(path) and os.path.getsize(path) <= 65536:
+                    with open(path, encoding="utf-8", errors="replace") as f:
+                        progs.append(f.read())
+            except OSError:
+                pass
+    found = []
+    for d in data if inplace else ():  # gawk -i inplace rewrites each data file
+        p = _resolve(_expand(d, ctx), cwd)
+        found += [(cat, f"{p} (edited in place by gawk)") for cat in classify_write(p, ctx)
+                  if cat in _GUARDED_BY_PATH + ("system",)]
+    for prog in progs:
+        for m in re.finditer(rf"(?<![=!<>])\b([A-Za-z_]\w*)[ \t]*=(?!=)[ \t]*({_AWK_EXPR})", prog):
+            assigns.setdefault(m.group(1), []).append(m.group(2))
+        runs = [_awk_value(_balanced(prog, m.end()), assigns) for m in re.finditer(r"\bsystem[ \t]*\(", prog)]
+        for v in list(runs):  # a command built from its input (system($0)) runs the input as a script
+            first = (v.split() or [""])[0]
+            if first == "$AWKVAR" or (_SHELLS.match(os.path.basename(first)) and "$AWKVAR" in v):
+                runs.append(f"cat {' '.join(shlex.quote(d) for d in data) or '-'} | sh")
+        for _ in range(3):  # ("sh"), ("rm -rf ~"), (path): a parenthesised operand is the operand
+            prog = re.sub(rf"(?<![\w\]])\(\s*({_AWK_STR}|[A-Za-z_]\w*\b)\s*\)", r"\1", prog)
+        runs += [_awk_value(m.group(1), assigns) for m in re.finditer(rf"({_AWK_EXPR})[ \t]*\|&?[ \t]*getline", prog)]
+        for m in re.finditer(rf"\b(?:print|printf)\b([^;{{}}\n|]*?)(?<![|&])\|&?(?!\|)[ \t]*(?!getline\b)({_AWK_EXPR})",
+                             prog):
+            target = _awk_value(m.group(2), assigns)
+            first = (target.split() or [""])[0]
+            if _SHELLS.match(os.path.basename(first)) or first == "$AWKVAR":  # what it prints is the script
+                text = _awk_value(m.group(1), assigns) if m.group(1).strip() else "$AWKVAR"
+                runs.append(text if "$AWKVAR" not in text else
+                            f"cat {' '.join(shlex.quote(d) for d in data) or '-'} | {target}")
+                runs += [_awk_value(s, assigns) for s in re.findall(_AWK_STR, m.group(1))]  # printf("%s", "…")
+            runs.append(target)
+        for run in runs:
+            found += check_bash(run, ctx, depth + 1)
+        for m in re.finditer(r"\breadfile[ \t]*\(", prog):  # gawk -l readfile: readfile("path") reads it whole
+            path = _awk_value(_balanced(prog, m.end()), assigns)
+            if "$AWKVAR" not in path and path:
+                found += [(cat, f"{path} (read by awk)") for cat in classify_read(_resolve(_expand(path, ctx), cwd),
+                                                                                 ctx)]
+        for m in re.finditer(rf"\b(?:print|printf)\b[^;{{}}\n>|]*?>>?[ \t]*({_AWK_EXPR})", prog):
+            path = _awk_value(m.group(1), assigns)
+            if "$AWKVAR" not in path and path:  # ponytail: a computed file name (print > $1) isn't read
+                p = _resolve(_expand(path, ctx), cwd)
+                found += [(cat, f"{p} (written by awk)") for cat in classify_write(p, ctx)
+                          if cat in _GUARDED_BY_PATH + ("system",)]
+        for m in re.finditer(rf"\bgetline\b[ \t]*(?:[A-Za-z_]\w*[ \t]*)?<[ \t]*({_AWK_EXPR})", prog):
+            path = _awk_value(m.group(1), assigns)
+            if "$AWKVAR" not in path and path:
+                found += [(cat, f"{path} (read by awk)") for cat in classify_read(_resolve(_expand(path, ctx), cwd),
+                                                                                 ctx)]
     return found
 
 
@@ -2800,7 +3070,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     unreadable = _ifs_unreadable(cmd)  # added last, never instead: a granted system mustn't let the rest through
     cmd = _ifs_spaces(cmd)  # T-0576: rm${IFS}-rf ~ is "rm -rf ~" to bash (IFS splits the expansion into words)
     cmd = _expand_literal_loops(cmd)  # T-0411: a loop over literal words, as the commands it runs
-    found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
+    found = _interpreter_writes(cmd, ctx) + _interpreter_reads(cmd, ctx)  # every depth: an fm --run command is read
+    # on its own (T-0128 review)
     # T-0345: what python code starts; a script only written with cat isn't run by writing it, unless the same
     # command also runs an interpreter (cat > t.py <<EOF … EOF; python3 t.py)
     dry = _drop_data_heredocs(cmd)
@@ -3030,6 +3301,28 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
                 found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))
+        if name in _AWKS:
+            found += _check_awk(args, ctx, depth, cwd, cmd)
+        if name in ("touch", "mkdir", "mv") or (name == "install" and any(a in ("-d", "--directory") for a in args)):
+            # T-1585 review: what these make or take away in a system folder (mv's sources too); elsewhere they stay
+            # ordinary, so a mkdir -p build needs no task
+            valued = {"touch": ("-r", "--reference", "-d", "--date", "-t"), "mkdir": ("-m", "--mode"),
+                      "install": ("-m", "--mode", "-o", "--owner", "-g", "--group"), "mv": ("-S", "--suffix")}[name]
+            ops = [a for i, a in enumerate(args) if not a.startswith("-") and not (i and args[i - 1] in valued)]
+            for t in ops:
+                p = _resolve(_expand(_with_vars(t, known), ctx), cwd)
+                if _unresolvable(t):  # ponytail: D=$(echo /etc); touch $D/x isn't read
+                    continue
+                if re.search(r"[*?\[]", p):  # touch /et[c]/x: the folders the pattern names
+                    import glob
+                    cands = glob.glob(os.path.dirname(p)) or [p]
+                else:
+                    cands = [p]
+                if any(_system_path(v, ctx) for q in cands for v in _variants(q)):  # a link into /etc counts
+                    found.append(("system", f"{p} ({name} in a system folder)"))
+        if _hides_claude(c.argv):
+            found.append(("self-authorize", "it unsets or overrides CLAUDECODE or CLAUDE_CODE_ENTRYPOINT, which fm "
+                                            "reads to know Claude, not the user, runs it"))
         rm_vars = env or fixed  # T-0190: a literal set once before a branch holds for rm as for a write
         names, val = [name], None
         if re.search(r"[$`]", name):  # T-0587: a name bash computes, read every way it may run
@@ -4024,6 +4317,19 @@ def _checkout_files(base, rest):
     return files
 
 
+def _inplace_switch(a):
+    """T-1585 re-review: whether a perl or ruby switch cluster holds -i; the rest of a cluster after a switch that
+    takes a value (-M, -I, -e, -r…) is that value (-MFile::Basename has no -i)."""
+    if not a.startswith("-") or a.startswith("--"):
+        return False
+    for ch in a[1:]:
+        if ch == "i":
+            return True
+        if ch in "0CdDeEFIlmMxrKWT":
+            return False
+    return False
+
+
 def _write_targets(name, args):
     """Paths a command writes (a directory means anything under it). Archives, clones and -t target dirs included:
     the guard can't see an archive's members, so the destination itself is what's checked."""
@@ -4080,6 +4386,16 @@ def _write_targets(name, args):
         return outs
     if name == "sed" and any(a == "--in-place" or a.startswith("-i") for a in args):
         return pos if any(a in ("-e", "-f") for a in args) else pos[1:]
+    if re.fullmatch(r"(?:perl|ruby)[0-9.]*", name) and any(_inplace_switch(a) for a in args):  # perl -pi -e … FILE
+        files, skip = [], False
+        for a in args:
+            if skip:
+                skip = False
+            elif a in ("-e", "-E") or (a.startswith("-") and not a.startswith("--") and a.endswith(("e", "E"))):
+                skip = True  # its code
+            elif not a.startswith("-"):
+                files.append(a)
+        return files if any(a.startswith("-") and a.endswith(("e", "E")) for a in args) else files[1:]
     if name == "dd":
         return [a[3:] for a in args if a.startswith("of=")]
     if name in ("truncate", "rm"):
