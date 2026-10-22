@@ -45,6 +45,32 @@ class PathsAndProjects(ForemanTestCase):
         self.assertTrue(any(e["event"] == "note" for e in c.ledger_tail(c.find_project(self.repo))),
                         "existing state was copied across")
 
+    def test_a_link_someone_else_planted_is_refused(self):
+        # T-1317: _private stat'ed through links, so another user's /tmp/foreman-state-<uid> link to one of our 0700
+        # dirs (~/.ssh) passed, and the fallback copied state into it
+        from unittest import mock
+        victim, link = os.path.join(self.tmp, "ssh"), os.path.join(self.tmp, "fallback")
+        os.makedirs(victim, mode=0o700)
+        os.symlink(victim, link)
+        real = os.lstat
+
+        def lstat(path, *a, **k):
+            st = real(path, *a, **k)
+            return os.stat_result(tuple(st)[:4] + (os.getuid() + 1,) + tuple(st)[5:]) if str(path) == link else st
+        default = os.path.join(self.home, "state")
+        os.makedirs(default, exist_ok=True)
+        os.chmod(self.home, 0o500)
+        os.chmod(default, 0o500)
+        try:
+            with mock.patch.object(c, "state_fallbacks", lambda: [link]):
+                with mock.patch.object(c.os, "lstat", lstat):
+                    self.assertEqual(c.state_dir(), default, "someone else's link is never a fallback")
+                self.assertEqual(os.listdir(victim), [])
+                self.assertEqual(c.state_dir(), link, "a link of our own still is")
+        finally:
+            os.chmod(self.home, 0o700)
+            os.chmod(default, 0o700)
+
     def test_a_marker_others_could_have_planted_is_ignored(self):
         # /tmp is shared: a marker in a dir other users can write would redirect all of this user's state.
         alt = os.path.join(self.tmp, "xdg", "foreman")

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Foreman's state fallback refuses a `/tmp/foreman-state-<uid>` link another local user planted, even one pointing at a private folder of yours such as `~/.ssh`; before, state would be copied into it when the usual state folder wasn't writable. A link you made yourself still works (T-1317).
 - `fm doctor`'s supply check holds a plugin with an unreadable file or folder instead of keeping its old baseline: one planted unreadable file (or a folder it can't list, or an exec-only script swapped for another) used to hide every later change to that plugin. `fmplugins.profile()` also lists custom `plugin.json` component paths and nested commands (T-1444).
 - The Stop hook still holds a turn that claims unproven work when another fm command has the project lock; before, the busy lock made it give up silently (T-1453).
 - fm code refuses an unacknowledged runner or `--worker` template with GitHub Copilot CLI's `--allow-all-tools`/`--allow-all`, Factory droid's `--skip-permissions-unsafe`, or any `--…dangerously…` flag such as Claude's `--allow-dangerously-skip-permissions`; Copilot's scoped `--allow-tool` still runs (T-1443).
