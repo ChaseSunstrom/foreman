@@ -2024,16 +2024,20 @@ def is_sweep(text):
     return bool(_SWEEP.search(text or ""))
 
 
-# T-1697: a request about how a screen looks or behaves in the hand: the design skill and ui playbooks fit first.
-# "design" alone isn't one ("design the schema"), nor a redesign of something with no screen ("the cache layer").
-_DESIGN = re.compile(r"(?i)\b(ui|ux|front-?end|user interface|web interface|landing page|restyl\w*|"
-                     r"re-?design\w* (\w+ ){0,2}(page|screen|site|layout|dashboard|look|header|footer|menu|form|modal|app)|"
-                     r"(ui|visual|web|page|screen) design|design (direction|system|language|tokens)|look and feel|"
-                     r"colou?r (scheme|palette)|typography|dark mode)\b")
+# T-1697: a request for a new look (the directions skill, which writes DESIGN.md, fits first) or a smaller change to a
+# screen (the ui playbooks). "design" alone isn't one ("design the schema"), nor a redesign of something with no
+# screen ("the cache layer", "how the app handles retries"), nor Foreman's own fm ui, foreman-ui or a ui test.
+_DESIGN = re.compile(r"(?i)\b(landing page|re-?design\w* (the |a |an |our |my |this |its )?(\w+ )?(page|screen|site|"
+                     r"layout|dashboard|header|footer|menu|form|modal|look)|(visual|web|page|screen|ui) design|"
+                     r"design (direction|system|language)|look and feel)\b")
+_UI = re.compile(r"(?i)(?<![\w-])(?<!fm )(ui|ux)(?![\w-]| tests?\b| --)|\b(front-?end|user interface|web interface|"
+                 r"restyl\w*|colou?r (scheme|palette)|typography|dark mode|design tokens)\b")
 
 
-def is_design(text):
-    return bool(_DESIGN.search(text or ""))
+def ui_request(text):
+    """T-1697: "design" for a request for a new look, "ui" for a smaller change to a screen, else "" (SKILL_FOR keys)."""
+    t = text or ""
+    return "design" if _DESIGN.search(t) else "ui" if _UI.search(t) else ""
 
 
 def is_broad(text):
@@ -2185,15 +2189,18 @@ def brief_detail(b):
 
 # ---------------------------------------------------------------- stages (derived, never stored)
 
-# T-1697: the Foreman skill or playbook each moment fits: a task type while executing, else the stage (or "design", a
-# UI request). The hooks name it once a session per hint (SessionStart re-arms); the body loads only when invoked.
+# T-1697: the Foreman skill or playbook each moment fits: a task type while executing, else the stage (or ui_request's
+# "design"/"ui"). Worded as the call to make. The hooks name each once a session (SessionStart re-arms); the body
+# loads only when invoked.
 SKILL_FOR = {
-    "FIX": "skill foreman:intake debugging.md; playbook: fm playbooks show tdd-workflow",
-    "FEATURE": "skill foreman:intake execute.md; playbook: fm playbooks show tdd-workflow",
-    "CLEAN": "skill foreman:playbooks (clean)", "PERFORMANCE": "skill foreman:playbooks (perf: baseline first)",
-    "SECURITY": "skill foreman:playbooks (security)", "RESEARCH": "skill foreman:intake delegate.md; fm research add",
-    "verifying": "playbook: fm playbooks show verification-loop", "auditing": "workflow /foreman:review",
-    "design": "skill foreman:directions; playbooks: fm playbooks show ui/INDEX",  # T-1700's ui-design skill, once it exists
+    "FIX": "load: Skill foreman:intake, then its references/debugging.md; fm playbooks show tdd-workflow",
+    "FEATURE": "load: Skill foreman:intake, then its references/execute.md; fm playbooks show tdd-workflow",
+    "CLEAN": "load: Skill foreman:playbooks (clean)", "PERFORMANCE": "load: Skill foreman:playbooks (perf: baseline first)",
+    "SECURITY": "load: Skill foreman:playbooks (security)",
+    "RESEARCH": "load: Skill foreman:intake, then its references/delegate.md; fm research add",
+    "verifying": "run: fm playbooks show verification-loop", "auditing": "run: the /foreman:review workflow",
+    "design": "load: Skill foreman:directions, then fm playbooks show ui/INDEX",  # T-1700's ui-design skill, once it exists
+    "ui": "run: fm playbooks show ui/INDEX",
 }
 
 
