@@ -1003,6 +1003,77 @@ def _strip_comments(text):
     return "".join(out)
 
 
+_ANSI_C = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v",
+           "\\": "\\", "'": "'", '"': '"', "?": "?"}
+
+
+def _ansi_c_body(text, i):
+    """(value, index past its closing quote) of the $'…' body starting at text[i], decoded as bash does; None unclosed."""
+    out = []
+    while i < len(text):
+        ch, e = text[i], text[i + 1:i + 2]
+        if ch == "'":
+            return "".join(out).split("\0")[0], i + 1  # bash's value ends at a NUL
+        if ch != "\\" or not e:
+            out.append(ch)
+            i += 1
+        elif e in _ANSI_C:
+            out.append(_ANSI_C[e])
+            i += 2
+        elif e in "01234567":
+            m = re.match(r"[0-7]{1,3}", text[i + 1:i + 4])  # bounded slices: a long run of escapes stays linear
+            out.append(chr(int(m.group(), 8) & 0xff))
+            i += 1 + len(m.group())
+        elif e in "xuU" and re.match(r"[0-9a-fA-F]", text[i + 2:i + 3]):
+            m = re.match(r"[0-9a-fA-F]{1,%d}" % {"x": 2, "u": 4, "U": 8}[e], text[i + 2:i + 10])
+            n = int(m.group(), 16)
+            out.append(chr(n) if n <= 0x10FFFF and not 0xD800 <= n <= 0xDFFF else "�")
+            i += 2 + len(m.group())
+        elif e == "c" and text[i + 2:i + 3] not in ("", "'"):
+            out.append(chr(ord(text[i + 2]) & 0x1f))
+            i += 3
+        else:  # an escape bash doesn't know keeps its backslash
+            out.append(text[i:i + 2])
+            i += 2
+    return None
+
+
+def _decode_ansi_c(text):
+    """T-1480: every $'…' outside quotes as the '…' literal bash makes of it ($'c\\x61t' is 'cat'; shlex read $'cat' as
+    the computed name $cat). Quotes, escapes and comments as _strip_comments reads them; unchanged under a heredoc
+    (its body's quoting isn't the line's) and from an unclosed $'… on."""
+    if "$'" not in text or re.search(r"(?<!<)<<(?!<)", text):
+        return text
+    out, q, i = [], None, 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and q != "'" or not q and text.startswith("$$", i):  # $$'x' is the pid, then 'x'
+            out.append(text[i:i + 2])
+            i += 2
+            continue
+        if q:
+            q = None if ch == q else q
+        elif text.startswith("$'", i):
+            body = _ansi_c_body(text, i + 2)
+            if body is None:
+                out.append(text[i:])
+                break
+            val, i = body
+            out.append("'" + val.replace("'", "'\\''") + "'")
+            continue
+        elif ch in "'\"":
+            q = ch
+        elif ch == "#" and (i == 0 or text[i - 1] in " \t\n;&|(<>"):
+            end = text.find("\n", i)
+            end = len(text) if end < 0 else end
+            out.append(text[i:end])
+            i = end
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _tokens(cmd):
     try:
         lex = shlex.shlex(_strip_comments(cmd), posix=True, punctuation_chars=";&|()<>")
@@ -2516,6 +2587,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         return [("rm-outside", "command nesting too deep to analyse")]
     # the whole command only: a nested shell's text alone would miss what its caller set (BASH_ENV=… bash -c '…')
     cmd = _mktemp_literal(_join_continued(cmd)) if depth == 0 else _join_continued(cmd)
+    cmd = _decode_ansi_c(cmd)  # T-1480: $'cat' is cat
     unreadable = _ifs_unreadable(cmd)  # added last, never instead: a granted system mustn't let the rest through
     cmd = _ifs_spaces(cmd)  # T-0576: rm${IFS}-rf ~ is "rm -rf ~" to bash (IFS splits the expansion into words)
     cmd = _expand_literal_loops(cmd)  # T-0411: a loop over literal words, as the commands it runs
@@ -2750,7 +2822,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))
         rm_vars = env or fixed  # T-0190: a literal set once before a branch holds for rm as for a write
-        names = [name]
+        names, val = [name], None
         if re.search(r"[$`]", name):  # T-0587: a name bash computes, read every way it may run
             m = re.fullmatch(r"\$(?:\{(\w+)\}|(\w+))", argv[0])
             val = ({**lits, **known}.get(m.group(1) or m.group(2)) if m else None)
@@ -2771,7 +2843,10 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             found += _check_system(nm, args)
             found += _check_claude_config(nm, args, cmd if c.piped or "<<" in cmd else "")
             found += _check_publish(nm, args)
-        chain.append(Cmd(c.argv, c.redirs, c.piped))
+        # T-1480: a pipe's later commands see the name's value on this line (C=env; $C | curl pipes env); the checks
+        # above still read it as computed too, as the value may not be the one it has when it runs
+        chain.append(Cmd(c.argv if val is None else c.argv[:len(c.argv) - len(argv)] + val.split() + args, c.redirs,
+                         c.piped))
     return found + [("system", unreadable)] if unreadable else found
 
 
