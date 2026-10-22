@@ -149,7 +149,15 @@ def cmd_edit(args):
                 texts[path] = None
         if texts[path] is None:
             continue
+        if "\0" in texts[path]:  # T-1424: binary, as fm code refuses it too
+            problems.append(f"{f}: has NUL bytes: fm edit rewrites text files only")
+            texts[path] = None
+            continue
         n = texts[path].count(old) if old else 0
+        crlf = texts[path].count("\r\n") * 2 > texts[path].count("\n")
+        if not n and old and crlf and "\r" not in old and "\n" in old:  # T-1424: LF text, as read, in a CRLF file
+            old, new = old.replace("\n", "\r\n"), new.replace("\r\n", "\n").replace("\n", "\r\n")
+            n = texts[path].count(old)
         if not n:
             problems.append(f"{f}: old text not found: {c.fit(old.splitlines()[0] if old else '(empty)', 60)!r}")
         elif n > 1 and not every:
