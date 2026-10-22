@@ -5258,7 +5258,7 @@ def _build_parser():
     s.add_argument("--dry", action="store_true", help="source defaults: list them with depth and licence class; add none")
     s = add("playbooks", lazy("fmplaybooks", "cmd_show"), tier=("Finding your way", 382), help="show NAME: a playbook "
             "as the skill loads it, {{fact}}s (test, language, entry…) filled in from fm map and this project's "
-            ".foreman/playbooks/<stage>/<name>.md appended (T-1621)")
+            ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
     s.add_argument("action", choices=["show"])
     s.add_argument("name", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that name")
     s = add("scout", lazy("fmscout", "cmd_scout"), tier=("Running elsewhere", 1210), help="find work nobody asked for yet: a newer Claude Code, stack cards "
@@ -6329,6 +6329,7 @@ def _task_shape(parser, argv):
 WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show", "glance"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
                    "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
+                   "playbooks": ("action", {"show"}),  # T-1621: prints; at most refreshes fm map's own cache
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
                    "design": ("action", {"lint", "palette", "contrast"})}  # T-1506, T-1507: these only read
 
