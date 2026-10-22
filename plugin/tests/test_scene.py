@@ -86,16 +86,29 @@ const tick = now => { const fs = [...queued.values()]; queued.clear(); fs.forEac
 let ro, io;
 globalThis.ResizeObserver = class { constructor(cb) { ro = this; this.cb = cb; } observe() {} disconnect() { this.off = true; } };
 globalThis.IntersectionObserver = class { constructor(cb) { io = this; this.cb = cb; } observe() {} disconnect() { this.off = true; } };
+// <fm-scene>'s platform, stubbed: an element whose open shadow root's markup makes the one canvas.
+const defined = new Map();
+globalThis.customElements = { get: n => defined.get(n), define: (n, c) => defined.set(n, c) };
+globalThis.HTMLElement = class { dataset = {}; attrs = {}; getAttribute(k) { return this.attrs[k] ?? null; }
+  attachShadow(o) { return this.shadowRoot = { mode: o.mode, querySelector: () => fig.canvas,
+                                                set innerHTML(h) { fig.canvas = makeCanvas(); } }; } };
 // A canvas keeps its one context for life, as a browser's does: once lost for good, only a new canvas draws again.
-const fig = { dataset: { state: "poster" }, querySelector: () => fig.canvas };
-const makeCanvas = () => { const cv = Object.assign(events(), { clientWidth: 800, clientHeight: 500, lost: false,
+let fig = { dataset: { state: "poster" }, querySelector: () => fig.canvas };
+const makeCanvas = (attrs = {}) => { const cv = Object.assign(events(), { clientWidth: 800, clientHeight: 500, lost: false,
+  attrs, setAttribute(k, v) { cv.attrs[k] = v; }, removeAttribute(k) { delete cv.attrs[k]; },
   getContext(kind, attrs) { cv.asked = [kind, attrs]; return mode === "nogl" ? null : cv.gl ??= {
     canvas: cv, isContextLost: () => cv.lost, getProgramInfoLog: () => "ERROR: 0:1: oops",
     getExtension: () => ({ loseContext() { cv.lost = true; } }) }; },
-  cloneNode: () => makeCanvas(), replaceWith(n) { fig.canvas = n; } }); return cv; };
+  cloneNode: () => makeCanvas({ ...cv.attrs }), replaceWith(n) { fig.canvas = n; } }); return cv; };
 fig.canvas = makeCanvas();
 const { mount } = await import("./scene.mjs");
-const dispose = mount(fig), canvas = fig.canvas, find = name => made.find(o => o.constructor.name === name);
+let start = () => mount(fig);
+if (mode === "component") {  // the element mounts on connect and frees on disconnect; the rest of the run is the same
+  const el = fig = new (customElements.get("fm-scene"))();
+  el.attrs.label = "A clay pebble";
+  start = () => { el.connectedCallback(); return () => el.disconnectedCallback(); };
+}
+const dispose = start(), canvas = fig.canvas, find = name => made.find(o => o.constructor.name === name);
 const r = find("WebGLRenderer"), cam = find("PerspectiveCamera"), pebble = find("Mesh");
 const out = { asked: canvas.asked, renderer: !!r };
 await 0;  // what fail() queued runs now
@@ -118,10 +131,11 @@ io?.cb([{ isIntersecting: false }, { isIntersecting: true }]); out.onscreen = qu
 dispose();
 out.after = { state: fig.dataset.state, released: r ? r.released : canvas.lost, freed: made.filter(o => o.disposed).length,
               listeners: canvas.live() + document.live() + reduce.live(), observers: !ro || (ro.off && io.off) };
-if (mode === "live") {  // a second mount on the same figure, after dispose() lost the first canvas's context for good
-  const again = mount(fig); ro.cb([]);
+if (mode === "live" || mode === "component") {  // a second mount, after dispose() lost the first canvas's context for good
+  const again = start(); ro.cb([]);
   out.remount = [fig.dataset.state, fig.canvas !== canvas, fig.canvas.lost]; again();
 }
+if (fig.shadowRoot) out.element = [fig.shadowRoot.mode, canvas.attrs["aria-label"], fig.canvas.attrs["aria-label"]];
 out.errors = errors;
 console.log(JSON.stringify(out));
 """
@@ -154,7 +168,8 @@ class Three(ForemanTestCase):
     def run_module(self, mode):
         d = os.path.join(self.tmp, mode)
         os.makedirs(os.path.join(d, "node_modules", "three"))
-        files = {"scene.mjs": fmscene.compile_three(fmscene.validate(copy.deepcopy(SCENE))), "drive.mjs": DRIVER,
+        emit = fmscene.compile_component if mode == "component" else fmscene.compile_three
+        files = {"scene.mjs": emit(fmscene.validate(copy.deepcopy(SCENE))), "drive.mjs": DRIVER,
                  "node_modules/three/package.json": '{"name": "three", "type": "module", "main": "index.js"}',
                  "node_modules/three/index.js": THREE_STUB}
         for name, text in files.items():
@@ -225,6 +240,36 @@ class Three(ForemanTestCase):
         p = self.fm("scene", "compile", fifo, check=False)  # open() alone would wait for a writer forever
         self.assertEqual(p.returncode, 2)
         self.assertIn("not a regular file", p.stderr)
+
+
+class Component(ForemanTestCase):
+    """T-1634: --to component wraps the same module in <fm-scene>, a custom element mounting it in its shadow DOM."""
+    def test_the_component_holds_the_same_camera_and_materials(self):
+        scene = fmscene.validate(copy.deepcopy(SCENE))
+        three, component = fmscene.compile_three(scene), fmscene.compile_component(scene)
+        self.assertEqual(embedded(component), embedded(three), "one SCENE: camera, materials and all")
+        self.assertIn(fmscene.RUNTIME, component, "mount() and its survival code whole, not a fork")
+        for part in ('attachShadow({ mode: "open" })', '<slot name="poster">', "<canvas role=\"img\">",
+                     ":host([data-state=\"live\"]) canvas", "prefers-reduced-motion: reduce",
+                     'customElements.define("fm-scene", FmScene)'):
+            self.assertIn(part, component)
+        self.assertEqual(component, fmscene.compile_component(fmscene.validate(copy.deepcopy(SCENE))), "same bytes")
+        self.assertNotIn("</", component, "pasted into a <script>, nothing in it closes the tag")
+        self.assertTrue(component.isascii())
+        src = os.path.join(self.tmp, "scene.json")
+        with open(src, "w") as f:
+            json.dump(SCENE, f)
+        self.assertEqual(self.fm("scene", "compile", src, "--to", "component").stdout.rstrip("\n"),
+                         component.rstrip("\n"))
+
+    run_module = Three.run_module
+
+    @unittest.skipUnless(shutil.which("node"), "no node here to run the element against a stubbed three.js")
+    def test_the_element_survives_as_the_module_does(self):
+        live, o = self.run_module("live"), self.run_module("component")
+        self.assertEqual(o.pop("element"), ["open", "A clay pebble", "A clay pebble"],
+                         "a shadow root; the label reaches the canvas, and the fresh one a remount makes")
+        self.assertEqual(o, live, "the same camera, frames, survival and freeing, the state on the element itself")
 
 
 class Schema(ForemanTestCase):
