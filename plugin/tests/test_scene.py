@@ -61,7 +61,8 @@ export const ACESFilmicToneMapping = 4;
 export class WebGLRenderer extends O {
   debug = {}; frames = 0;
   setPixelRatio(d) { this.dpr = d; } setSize(w, h, css) { this.size = [w, h, css]; }
-  setClearColor(c, a) { this.clear = [c, a]; } render() { this.frames++; } forceContextLoss() { this.released = true; }
+  setClearColor(c, a) { this.clear = [c, a]; } render() { this.frames++; }
+  forceContextLoss() { this.released = true; this.args[0].canvas.lost = true; }
   compile() { if (globalThis.shaderFails) this.debug.onShaderError?.(this.args[0].context, "program"); }
 }
 """
@@ -82,18 +83,23 @@ const queued = new Map(); let ids = 0;
 globalThis.requestAnimationFrame = f => { queued.set(++ids, f); return ids; };
 globalThis.cancelAnimationFrame = id => queued.delete(id);
 const tick = now => { const fs = [...queued.values()]; queued.clear(); fs.forEach(f => f(now)); };
-let ro, io, lost = false;
+let ro, io;
 globalThis.ResizeObserver = class { constructor(cb) { ro = this; this.cb = cb; } observe() {} disconnect() { this.off = true; } };
 globalThis.IntersectionObserver = class { constructor(cb) { io = this; this.cb = cb; } observe() {} disconnect() { this.off = true; } };
-const gl = { isContextLost: () => lost, getProgramInfoLog: () => "ERROR: 0:1: oops",
-             getExtension: () => ({ loseContext() { lost = true; } }) };
-const canvas = Object.assign(events(), { clientWidth: 800, clientHeight: 500,
-  getContext(kind, attrs) { canvas.asked = [kind, attrs]; return mode === "nogl" ? null : gl; } });
-const fig = { dataset: { state: "poster" }, querySelector: () => canvas };
+// A canvas keeps its one context for life, as a browser's does: once lost for good, only a new canvas draws again.
+const fig = { dataset: { state: "poster" }, querySelector: () => fig.canvas };
+const makeCanvas = () => { const cv = Object.assign(events(), { clientWidth: 800, clientHeight: 500, lost: false,
+  getContext(kind, attrs) { cv.asked = [kind, attrs]; return mode === "nogl" ? null : cv.gl ??= {
+    canvas: cv, isContextLost: () => cv.lost, getProgramInfoLog: () => "ERROR: 0:1: oops",
+    getExtension: () => ({ loseContext() { cv.lost = true; } }) }; },
+  cloneNode: () => makeCanvas(), replaceWith(n) { fig.canvas = n; } }); return cv; };
+fig.canvas = makeCanvas();
 const { mount } = await import("./scene.mjs");
-const dispose = mount(fig), find = name => made.find(o => o.constructor.name === name);
+const dispose = mount(fig), canvas = fig.canvas, find = name => made.find(o => o.constructor.name === name);
 const r = find("WebGLRenderer"), cam = find("PerspectiveCamera"), pebble = find("Mesh");
 const out = { asked: canvas.asked, renderer: !!r };
+await 0;  // what fail() queued runs now
+out.early = { freed: made.filter(o => o.disposed).length, released: !!r?.released };
 ro?.cb([]);
 out.first = fig.dataset.state;
 if (r) Object.assign(out, { dpr: r.dpr, size: r.size, clear: r.clear, camera: cam.args, aspect: cam.aspect,
@@ -101,16 +107,21 @@ if (r) Object.assign(out, { dpr: r.dpr, size: r.size, clear: r.clear, camera: ca
 tick(1000); tick(2000); tick(2500);
 out.yaw = pebble?.rotation.v[1]; out.queued = queued.size;
 let prevented = false;
-lost = true; canvas.fire("webglcontextlost", { preventDefault() { prevented = true; } });
+canvas.lost = true; canvas.fire("webglcontextlost", { preventDefault() { prevented = true; } });
 out.lost = [fig.dataset.state, prevented, queued.size];
-lost = false; canvas.fire("webglcontextrestored");
+canvas.lost = false; canvas.fire("webglcontextrestored");
 out.restored = fig.dataset.state;
 document.hidden = true; document.fire("visibilitychange"); out.hidden = queued.size;
 document.hidden = false; document.fire("visibilitychange"); out.shown = queued.size;
-io?.cb([{ isIntersecting: false }]); out.offscreen = queued.size;
+io?.cb([{ isIntersecting: true }, { isIntersecting: false }]); out.offscreen = queued.size;  // a batch: the last counts
+io?.cb([{ isIntersecting: false }, { isIntersecting: true }]); out.onscreen = queued.size;
 dispose();
-out.after = { state: fig.dataset.state, released: r ? r.released : lost, freed: made.filter(o => o.disposed).length,
+out.after = { state: fig.dataset.state, released: r ? r.released : canvas.lost, freed: made.filter(o => o.disposed).length,
               listeners: canvas.live() + document.live() + reduce.live(), observers: !ro || (ro.off && io.off) };
+if (mode === "live") {  // a second mount on the same figure, after dispose() lost the first canvas's context for good
+  const again = mount(fig); ro.cb([]);
+  out.remount = [fig.dataset.state, fig.canvas !== canvas, fig.canvas.lost]; again();
+}
 out.errors = errors;
 console.log(JSON.stringify(out));
 """
@@ -129,6 +140,16 @@ class Three(ForemanTestCase):
                        "IntersectionObserver", "visibilitychange", "forceContextLoss", "? 1.5 : 2"):
             self.assertIn(clause, module)
         self.assertEqual(module, fmscene.compile_three(fmscene.validate(copy.deepcopy(SCENE))), "the same bytes twice")
+        self.assertNotIn("</", module, "pasted into a <script>, nothing in it closes the tag")
+        self.assertTrue(module.isascii(), "no character an encoding mix-up could mangle")
+
+    def test_the_latest_intersection_entry_counts(self):
+        """A batch of entries comes oldest first: reading the first one leaves the loop running offscreen."""
+        template = os.path.join(os.path.dirname(fmscene.__file__), "..", "skills", "playbooks", "references", "ui",
+                                "templates", "scene.html")
+        with open(template) as f:
+            for name, text in (("scene.html", f.read()), ("the module", fmscene.RUNTIME)):
+                self.assertIn("IntersectionObserver(entries => { onscreen = entries.at(-1).isIntersecting;", text, name)
 
     def run_module(self, mode):
         d = os.path.join(self.tmp, mode)
@@ -154,9 +175,12 @@ class Three(ForemanTestCase):
         self.assertAlmostEqual(o["yaw"], 0.2 / 4 * 360 * 3.141592653589793 / 180, 6, "dt capped at 0.1 s a frame")
         self.assertEqual(o["queued"], 1, "an animated scene keeps its loop")
         self.assertEqual((o["lost"], o["restored"]), (["lost", True, 0], "live"))
-        self.assertEqual((o["hidden"], o["shown"], o["offscreen"]), (0, 1, 0), "no frames hidden or offscreen")
+        self.assertEqual((o["hidden"], o["shown"]), (0, 1), "no frames in a hidden tab")
+        self.assertEqual((o["offscreen"], o["onscreen"]), (0, 1), "the latest entry of a batch decides")
+        self.assertEqual(o["early"], {"freed": 0, "released": False})
         self.assertEqual(o["after"], {"state": "poster", "released": True, "freed": 6, "listeners": 0, "observers": True},
                          "3 geometries, 2 materials and the renderer freed, the context released")
+        self.assertEqual(o["remount"], ["live", True, False], "a second mount draws on a fresh canvas")
         self.assertEqual(o["errors"], [])
 
     @unittest.skipUnless(shutil.which("node"), "no node here to run the module against a stubbed three.js")
@@ -167,6 +191,7 @@ class Three(ForemanTestCase):
         self.assertEqual((o["renderer"], o["first"], o["errors"]), (False, "poster", []), "the poster stays, no throw")
         o = self.run_module("shader")
         self.assertEqual((o["first"], o["restored"], o["queued"]), ("failed", "failed", 0))
+        self.assertEqual(o["early"], {"freed": 6, "released": True}, "a failed scene frees all it made at once")
         self.assertEqual(len(o["errors"]), 1, "logged once")
         self.assertIn("oops", o["errors"][0])
 
@@ -182,6 +207,12 @@ class Three(ForemanTestCase):
         p = self.fm("scene", "compile", src, "--out", src, check=False)
         self.assertEqual(p.returncode, 2)
         self.assertIn("is the scene it compiles", p.stderr)
+        link = os.path.join(self.tmp, "link.js")
+        os.symlink(src, link)
+        p = self.fm("scene", "compile", src, "--out", link, check=False)  # a link to the source is the source
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("is the scene it compiles", p.stderr)
+        self.assertTrue(os.path.islink(link))
         with open(src) as f:
             self.assertEqual(json.load(f), SCENE, "the source is never overwritten")
         with open(src, "w") as f:
@@ -197,6 +228,11 @@ class Three(ForemanTestCase):
 
 
 class Schema(ForemanTestCase):
+    def test_the_schema_states_what_a_second_renderer_must_not_guess(self):
+        for fact in ("Rx * Ry * Rz", "T * R * S", "up is +Y", "looks down -Z", "negates view-space z",
+                     "max(2, segments >> 1)", "decay 2", "smooth normals in three.js, flat"):
+            self.assertIn(fact, " ".join(fmscene.SCHEMA.split()))
+
     def test_defaults_are_filled_in(self):
         s = fmscene.validate({"camera": {"fov": 30, "position": [0, 0, 5]}, "materials": {"m": {}},
                               "meshes": [{"geometry": {"type": "box"}, "material": "m"}]})
@@ -232,6 +268,8 @@ class Schema(ForemanTestCase):
             (bad(["camera", "position"], [0, 0]), "camera.position: wants a list of 3 numbers"),
             (bad(["camera", "near"], 0.001), "camera.far: wants a number above near and at most 10,000 x near"),
             (bad(["camera", "target"], [0, 1.2, 6]), "camera.target"),
+            (bad(["camera", "position"], [0, 6, 0]), "camera.target: straight below"),
+            (bad(["camera", "target"], [0, 9, 6]), "camera.target: straight above"),
             (bad(["camera", "zoom"], 2), "camera: unknown key 'zoom'"),
             (bad(["background"], "red"), "background: wants a colour"),
             (bad(["lights", 0, "type"], ["spot"]), "lights[0]: wants a type"),
