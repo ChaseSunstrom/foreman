@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- The guard's refusal of a CHANGELOG.md edit with no active task says the line belongs to its task: add it before `fm task finish`, or `fm focus` that task again (T-1452).
+- The builder rules (and every lane brief) say that reads or writes outside the worktree, such as another session's task output files or the main thread's scratchpad, are refused by Claude Code too, so builders stop retrying them (T-1454).
 - Foreman's state fallback refuses a `/tmp/foreman-state-<uid>` link another local user planted, even one pointing at a private folder of yours such as `~/.ssh`; before, state would be copied into it when the usual state folder wasn't writable. A link you made yourself still works (T-1317).
 - `fm doctor`'s supply check holds a plugin with an unreadable file or folder instead of keeping its old baseline: one planted unreadable file (or a folder it can't list, or an exec-only script swapped for another) used to hide every later change to that plugin. `fmplugins.profile()` also lists custom `plugin.json` component paths and nested commands (T-1444).
 - The Stop hook still holds a turn that claims unproven work when another fm command has the project lock; before, the busy lock made it give up silently (T-1453).

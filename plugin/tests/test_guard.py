@@ -919,6 +919,21 @@ class DataPythonAfter(GuardCase):
                     self.assertBlocked(g.check("Bash", {"command": cmd}, ctx), "pipe-shell")
 
 
+class BriefChangelog(GuardCase):
+    def test_a_changelog_edit_with_no_task_says_where_the_line_goes(self):
+        # T-1452: three CHANGELOG.md edits after a close got only the generic "start a task" text
+        ctx = g.Ctx(cwd=self.repo, project_root=self.repo, home=self.home, foreman_home=self.fhome, scratch=["/tmp"],
+                    allow=set(), task_id=None, unbriefed=self.repo)
+        edit = lambda name: g.check("Edit", {"file_path": os.path.join(self.repo, name), "old_string": "a",
+                                             "new_string": "b"}, ctx)
+        block = edit("CHANGELOG.md")
+        self.assertBlocked(block, "brief")
+        msg = g.message(block, ctx)
+        self.assertIn("before fm task finish", msg)
+        self.assertIn("fm focus", msg)
+        self.assertNotIn("changelog line", g.message(edit("notes.md"), ctx))
+
+
 class FocusHint(GuardCase):
     def test_brief_refusal_with_focus_in_the_line(self):
         # T-0404 (JARVIS): `fm focus T-0278 2>&1|tail -1; sed -i … docs/testing.md` was refused twice: the guard reads
