@@ -76,6 +76,15 @@ h3 { font-size: 1.45rem; font-weight: 600; line-height: 1.1; }
 .hero { padding: clamp(40px, 8vw, 96px) 0 40px; }
 .hero h1 { max-width: 17ch; }
 .hero .lede { font-size: clamp(1.12rem, 1.7vw, 1.3rem); color: var(--ink-2); max-width: 58ch; margin: 22px 0 30px; }
+/* T-1609: the proof-chain poster build.py draws from data/stats.json; its gradient's stops follow the theme */
+.poster { width: 100%; max-width: 900px; height: auto; margin-top: clamp(28px, 5vw, 48px); }
+.poster .g0 { stop-color: var(--stop); } .poster .g1 { stop-color: var(--signal); } .poster .g2 { stop-color: var(--ok); }
+.poster .track { stroke-width: 6; stroke-linecap: round; }
+.poster .st { fill-opacity: .22; stroke-width: 4; }
+.poster .kick { font: 600 20px var(--sans); fill: var(--ink-2); letter-spacing: .04em; }
+.poster .num { font: condensed 700 46px var(--display); fill: var(--ink); font-variant-numeric: tabular-nums; }
+.poster .lab { font: 500 24px var(--sans); fill: var(--ink-2); }
+@media (max-width: 560px) { .poster .num { font-size: 56px; } .poster .lab { font-size: 32px; } .poster .kick { font-size: 28px; } }
 .install { display: flex; align-items: stretch; max-width: 760px; background: var(--term); color: var(--term-ink); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
 .install code { flex: 1; padding: 15px 18px; overflow-x: auto; white-space: nowrap; font-size: .86rem; line-height: 1.5; }
 .install code::before { content: "$ "; color: var(--term-dim); }
