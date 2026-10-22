@@ -564,6 +564,9 @@ def _license(repo):
     return c.fit(c.plain(next((l.strip() for l in head.splitlines() if l.strip()), names[0])), 80)
 
 
+_SWAP_LOCK = lambda: os.path.join(c.state_dir(), "locks", "lib-sources")  # T-1428: beside, not in, the sources
+
+
 def source_add(url, name=None, replace=False):
     """Clone url into a temp dir, index it, then move it into place: a failed add leaves nothing behind."""
     import shutil
@@ -595,15 +598,16 @@ def source_add(url, name=None, replace=False):
             with open(os.path.join(tmp, fname), "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=1)
         old = None
-        if os.path.exists(final):
-            old = f"{final}.old-{os.getpid()}"
-            os.replace(final, old)
-        try:
-            os.replace(tmp, final)
-        except OSError:
-            if old:
-                os.replace(old, final)
-            raise
+        with c.lock(_SWAP_LOCK()):  # T-1428: one swap at a time, so two updates of one source can't interleave renames
+            if os.path.exists(final):
+                old = f"{final}.old-{os.getpid()}"
+                os.replace(final, old)
+            try:
+                os.replace(tmp, final)
+            except OSError:
+                if old:
+                    os.replace(old, final)
+                raise
         if old:
             shutil.rmtree(old, ignore_errors=True)
         return meta, index
@@ -732,7 +736,10 @@ def cmd_source(args):
                                                      + "".join(f"\n  - {x}" for x in sorted(before - after)) or " (no change)"))
         return
     if sub == "rm":
-        if not rest or not re.fullmatch(r"[a-z0-9-]+", rest[0]) or not os.path.isdir(os.path.join(_sources_dir(), rest[0])):
+        # T-1428: a crash's NAME.old-PID or .tmp-NAME-PID too; only a folder directly in the sources folder
+        if not rest or not re.fullmatch(r"[a-z0-9.-]+", rest[0]) or rest[0] in (".", "..") \
+                or not os.path.isdir(os.path.join(_sources_dir(), rest[0])) \
+                or os.path.islink(os.path.join(_sources_dir(), rest[0])):
             raise fmcli.UsageError("fm lib source rm <name from fm lib source list>")
         shutil.rmtree(os.path.join(_sources_dir(), rest[0]))
         return print(f"Removed source {rest[0]}.")

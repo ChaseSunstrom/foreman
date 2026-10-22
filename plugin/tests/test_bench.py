@@ -213,18 +213,38 @@ class Bench(ForemanTestCase):
 
     def test_the_gate_calls_a_drop_inside_the_noise_band_noise(self):
         # T-1260: with --runs 3 a lost attempt and a dearer one are inside the spread the attempts show
+        # T-1464: T-3 flips on both sides, so the lost attempt is under 1 SE (over it reads inconclusive)
         self.write_attempts("live", [("T-1", [(True, 1.0), (True, 1.0), (True, 1.0)]),
-                                     ("T-2", [(True, 1.0), (True, 1.0), (True, 1.0)])])
+                                     ("T-2", [(True, 1.0), (True, 1.0), (True, 1.0)]),
+                                     ("T-3", [(True, 1.0), (False, 1.0), (True, 1.0)])])
         self.write_attempts("noisy", [("T-1", [(True, 1.0), (False, 1.6), (True, 1.0)]),
-                                      ("T-2", [(True, 1.0), (True, 1.6), (True, 1.0)])])
+                                      ("T-2", [(True, 1.0), (True, 1.6), (True, 1.0)]),
+                                      ("T-3", [(True, 1.0), (False, 1.6), (True, 1.0)])])
         r = self.fm("bench", "gate", "live", "noisy", env=self.env, check=False)
         self.assertEqual(r.returncode, 0, r.stdout)
         head = r.stdout.splitlines()[0]
-        self.assertRegex(head, r"passes 2 → 1\.67 \(-0\.33 ± [\d.]+\)")
+        self.assertRegex(head, r"passes 2\.67 → 2\.33 \(-0\.33 ± [\d.]+\)")
         self.assertRegex(head, r"cost/case \$1\.00 → \$1\.20 \(\+\$0\.20 ± \$[\d.]+\)")
         self.assertIn("fewer passes within noise", r.stdout)
         self.assertIn("cost per case up 20% within noise", r.stdout)
         self.assertNotIn("may be noise", r.stdout)
+
+    def test_a_loss_between_one_and_two_se_is_inconclusive(self):
+        # T-1464: 3 clean cases at 3 runs, one drops to 2/3: 0.33 is over 1 SE (0.27), inside 2 SE (0.54)
+        self.write_attempts("live", [("T-1", [(True, 1.0)] * 3), ("T-2", [(True, 1.0)] * 3)])
+        self.write_attempts("cand", [("T-1", [(True, 1.0), (False, 1.0), (True, 1.0)]), ("T-2", [(True, 1.0)] * 3)])
+        r = self.fm("bench", "gate", "live", "cand", env=self.env, check=False)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("rerun T-1 with --runs 10", r.stdout)
+        self.assertIn("few runs (3): a real loss of about 2 passes is caught about half the time", r.stdout)
+        self.assertIn("✗ not proposed", r.stdout)
+        # over 2 SE still fails outright; 5+ runs drop the power line
+        flip = [(True, 1.0)] * 3 + [(False, 1.0)] * 2
+        self.write_attempts("big", [("T-1", [(True, 1.0)] * 5), ("T-2", flip)])
+        self.write_attempts("bigworse", [("T-1", [(False, 1.0)] * 5), ("T-2", flip)])
+        w = self.fm("bench", "gate", "big", "bigworse", env=self.env, check=False)
+        self.assertIn("outside noise", w.stdout)
+        self.assertNotIn("few runs", w.stdout)
 
     def test_the_gate_fails_a_drop_outside_the_noise_band(self):
         self.write_attempts("live", [("T-1", [(True, 1.0)] * 3), ("T-2", [(True, 1.0)] * 3),
@@ -248,7 +268,7 @@ class Bench(ForemanTestCase):
         self.write_result("cand", [("T-1", 2 / 3, 1.3)], runs=3)
         r = self.fm("bench", "gate", "live", "cand", env=self.env, check=False)
         self.assertEqual(r.returncode, 1, r.stdout)
-        self.assertIn("fewer passes within noise", r.stdout)
+        self.assertIn("likely a loss: rerun T-1", r.stdout)  # T-1464: 0.33 is over 1 SE of 0.54/2
         self.assertIn("✗ cost per case up 30% (over 15%)", r.stdout)
 
     def test_grading_restores_the_reference_tests_an_arm_edited(self):

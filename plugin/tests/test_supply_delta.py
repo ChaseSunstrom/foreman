@@ -2,8 +2,12 @@
 delta until fm doctor --accept-supply; a content-only change keeps the hash note (WARN); fm plugins find shows what a
 local entry needs."""
 import glob
+import hashlib
 import json
 import os
+import shutil
+import time
+import unittest
 from unittest import mock
 
 from helpers import ForemanTestCase
@@ -19,6 +23,7 @@ def write(path, text):
         f.write(text if isinstance(text, str) else json.dumps(text))
 
 
+PINNED = "1f536b0041e5c192944bbce64a84f64e7b0d528b52813f0375ff581477a67260"  # test_a_utf8_trees_sha_is_unchanged
 STOP = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop.sh"}]}]}}
 
 
@@ -309,6 +314,7 @@ class SupplyDelta(ForemanTestCase):
         for v in seen.values():
             if isinstance(v, dict):
                 v.pop("skipped", None)
+                v.pop("deps", None)
                 for k in drop:
                     v["caps"].pop(k, None)
         write(path, seen)
@@ -397,16 +403,292 @@ class SupplyDelta(ForemanTestCase):
         self.held("adds hook Stop (agent a)", "adds hook PreToolUse (command x)", "adds hook SessionStart (command y)",
                   "adds hook ? (skill")
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads everything")
+    def test_an_unreadable_file_is_held_not_skipped(self):
+        tool, skill = (os.path.join(self.plugin, *p) for p in (("bin", "tool"), ("skills", "s", "SKILL.md")))
+        self.hooks({"hooks": dict(STOP["hooks"], PreToolUse=[])})
+        os.chmod(tool, 0)
+        try:  # an unreadable script no longer hides the plugin: a change elsewhere still shows
+            r = self.held("p@m adds hook PreToolUse")
+            self.assertNotIn("not checked", r.detail)
+            os.chmod(skill, 0)  # a component file that may hold hooks and can't be read holds the plugin
+            self.held("? (skill skills/s/SKILL.md)")
+        finally:
+            os.chmod(tool, 0o600)
+            os.chmod(skill, 0o600)
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads everything")
+    def test_an_unlistable_folder_and_an_exec_only_file_still_show_a_replacement(self):
+        bindir, tool = os.path.join(self.plugin, "bin"), os.path.join(self.plugin, "bin", "tool")
+        try:
+            os.chmod(tool, 0o111)
+            fmdoctor.check_supply(self.claude, accept=True)
+            write_over = lambda text: (os.chmod(tool, 0o600), write(tool, text), os.chmod(tool, 0o111))
+            write_over("#!/bin/sh\nevil\n")  # an exec-only file: unreadable, its replacement must still show
+            self.assertNotEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+            fmdoctor.check_supply(self.claude, accept=True)
+            os.chmod(tool, 0o600)
+            os.chmod(bindir, 0o111)  # a folder it can't list: its files were never hashed
+            fmdoctor.check_supply(self.claude, accept=True)
+            os.chmod(bindir, 0o711)
+            write(tool, "#!/bin/sh\nworse\n")
+            os.chmod(bindir, 0o111)
+            self.assertNotEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        finally:
+            os.chmod(bindir, 0o700)
+            os.chmod(tool, 0o600)
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads everything")
+    def test_a_marker_cant_be_forged_by_readable_content(self):
+        tool = os.path.join(self.plugin, "bin", "tool")
+        os.chmod(tool, 0)
+        try:
+            locked = fmdoctor.check_supply(self.claude)  # unreadable marker recorded in the sha
+        finally:
+            os.chmod(tool, 0o600)
+        self.assertIn(locked.status, ("WARN", "FAIL"))
+        fmdoctor.check_supply(self.claude, accept=True)
+        write(tool, "!unreadable")
+        self.assertNotEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+
+    def test_skipped_folders_still_show_changes(self):
+        """T-1459: node_modules, .venv and the like aren't hashed by content, but a file added or edited there still
+        shows; a script a hook names inside one is hashed by content (an edit that keeps size and mtime shows); .git
+        stays out; a FIFO there never blocks."""
+        dep = os.path.join(self.plugin, "hooks", "node_modules", "dep", "index.js")
+        run = os.path.join(self.plugin, "node_modules", ".bin", "run")
+        write(dep, "module.exports = 1\n")
+        write(run, "#!/bin/sh\necho a\n")
+        write(os.path.join(self.plugin, ".venv", "lib", "x.py"), "x = 1\n")
+        os.mkfifo(os.path.join(self.plugin, "node_modules", "pipe"))
+        self.hooks({"hooks": dict(STOP["hooks"], SessionStart=[{"hooks": [
+            {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/node_modules/.bin/run"}]}])})
+        fmdoctor.check_supply(self.claude, accept=True)
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        accept = lambda: fmdoctor.check_supply(self.claude, accept=True)
+        write(dep, "module.exports = 2\n")  # same size, new mtime
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "an edit under node_modules shows")
+        accept()
+        write(os.path.join(self.plugin, ".venv", "lib", "y.py"), "")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "a file added under .venv shows")
+        accept()
+        st = os.stat(run)
+        write(run, "#!/bin/sh\necho b\n")
+        os.utime(run, ns=(st.st_atime_ns, st.st_mtime_ns))  # same size and mtime: only its content tells
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "a named script is hashed by content")
+        accept()
+        write(os.path.join(self.plugin, ".git", "HEAD"), "ref: refs/heads/x\n")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS", ".git isn't code a session runs")
+
+    def lstats(self):
+        seen, real = [], os.lstat
+        def lstat(p, *a, **k):
+            seen.append(p)
+            return real(p, *a, **k)
+        with mock.patch("os.lstat", lstat):
+            fmdoctor._supply(self.claude)
+        return sum(f"{os.sep}node_modules{os.sep}" in p for p in seen)
+
+    def test_a_skipped_folder_is_walked_only_so_far(self):
+        nm = os.path.join(self.plugin, "node_modules")
+        for i in range(30):
+            write(os.path.join(nm, "a", f"f{i:02}"), "")
+        write(os.path.join(nm, "zz", "pkg", "index.js"), "")
+        accept = lambda: fmdoctor.check_supply(self.claude, accept=True)
+        with mock.patch.object(fmdoctor, "_SKIP_CAP", 10):
+            accept()
+            write(os.path.join(nm, "a", "f05"), "x")
+            self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "within the cap")
+            accept()
+            self.assertLess(self.lstats(), 20, "files past the cap aren't stat'ed one by one")
+            write(os.path.join(nm, "zz", "pkg", "evil.js"), "")  # review: past the cap, its folder's mtime shows it
+            self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "a file added past the cap")
+            accept()
+            write(os.path.join(nm, "zzz-evil", "x.js"), "")
+            self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "a package added past the cap")
+            with mock.patch.object(fmdoctor, "_SKIP_DIRS", 1):
+                self.assertLess(self.lstats(), 20, "folders past the cap have their own budget")
+        for i in range(30):  # review: a per-plugin budget across every skipped folder
+            write(os.path.join(self.plugin, "x", str(i), "node_modules", "f"), "")
+        with mock.patch.object(fmdoctor, "_SKIP_TOTAL", 10):
+            self.assertLess(self.lstats(), 20)
+
+    def test_a_rewrite_with_its_mtime_put_back_still_shows(self):
+        dep = os.path.join(self.plugin, "node_modules", "dep", "index.js")
+        write(dep, "module.exports = 1\n")
+        fmdoctor.check_supply(self.claude, accept=True)
+        st = os.stat(dep)
+        time.sleep(0.05)
+        write(dep, "module.exports = 2\n")
+        os.utime(dep, ns=(st.st_atime_ns, st.st_mtime_ns))
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "review: ctime tells")
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads everything")
+    def test_an_unlistable_folder_in_node_modules_still_shows_a_change(self):
+        sub = os.path.join(self.plugin, "node_modules", "locked")
+        write(os.path.join(sub, "a.js"), "")
+        try:
+            os.chmod(sub, 0o111)
+            fmdoctor.check_supply(self.claude, accept=True)
+            os.chmod(sub, 0o711)
+            write(os.path.join(sub, "b.js"), "")
+            os.chmod(sub, 0o111)
+            self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN")
+        finally:
+            os.chmod(sub, 0o700)
+
+    def test_a_scoped_package_a_hook_names_is_hashed_by_content(self):
+        rel = os.path.join("node_modules", "@scope", "pkg+x", "dist", "index.js")
+        write(os.path.join(self.plugin, rel), "a\n")
+        self.hooks({"hooks": dict(STOP["hooks"], SessionStart=[{"hooks": [
+            {"type": "command", "command": f"node \"${{CLAUDE_PLUGIN_ROOT}}/{rel}\" --x"}]}])})
+        self.assertIn(rel, fmplugins.capabilities(self.plugin)["scripts"], "review: @ and + don't cut the path")
+        got = []
+        fmdoctor._stand_named(self.plugin, [rel], got.append, fmdoctor._budget())
+        self.assertIn(hashlib.sha256(b"a\n").hexdigest().encode(), b"".join(got))
+
+    def test_named_scripts_are_bounded(self):
+        bin_ = os.path.join(self.plugin, "node_modules", ".bin")
+        write(os.path.join(self.plugin, "node_modules", "pkg", "run"), "x" * 100)
+        os.makedirs(bin_)
+        for i in range(50):  # review: many links to one file are read once
+            os.symlink("../pkg/run", os.path.join(bin_, f"l{i}"))
+        rels = [os.path.join("node_modules", ".bin", f"l{i}") for i in range(50)]
+        got, opened, real = [], [], os.open
+        with mock.patch("os.open", lambda p, *a: opened.append(p) or real(p, *a)):
+            fmdoctor._stand_named(self.plugin, rels, got.append, fmdoctor._budget())
+        self.assertEqual(len(opened), 1)
+        for i in range(20):
+            write(os.path.join(bin_, f"f{i}"), "y" * 100)
+        rels = [os.path.join("node_modules", ".bin", f"f{i}") for i in range(20)]
+        for cap, size in ((5, 1 << 20), (500, 350)):
+            got = []
+            with mock.patch.object(fmdoctor, "_NAMED_CAP", cap), mock.patch.object(fmdoctor, "_NAMED_BYTES", size):
+                fmdoctor._stand_named(self.plugin, rels, got.append, fmdoctor._budget())
+            self.assertLessEqual(len([g for g in got if b"\0=" in g and b"!" not in g]), 5)
+            self.assertTrue(any(b"!too-many-named" in g for g in got))
+
+    def test_a_named_script_too_big_to_read_shows_its_rewrite(self):
+        big = os.path.join(self.plugin, "node_modules", "big.js")
+        write(big, " " * 4_000_001)
+        def stands():
+            got = []
+            fmdoctor._stand_named(self.plugin, [os.path.relpath(big, self.plugin)], got.append, fmdoctor._budget())
+            return got
+        before = stands()
+        st = os.stat(big)
+        time.sleep(0.05)
+        write(big, "x" * 4_000_001)
+        os.utime(big, ns=(st.st_atime_ns, st.st_mtime_ns))
+        self.assertNotEqual(stands(), before)
+
+    def test_a_pyc_matching_its_source_is_not_a_change(self):
+        import py_compile
+        src = os.path.join(self.plugin, "hooks", "m.py")
+        write(src, "x = 1\n")
+        fmdoctor.check_supply(self.claude, accept=True)
+        deps = lambda: fmdoctor._supply(self.claude)[0]["p@m"]["deps"]
+        before = deps()
+        pyc = py_compile.compile(src)  # what Python writes on first import
+        self.assertEqual(deps(), before, "a pyc py_compile wrote adds nothing")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        with open(pyc, "rb") as f:
+            raw = f.read()
+        for bad in (raw[:-2] + bytes([raw[-2] ^ 1]) + raw[-1:],  # body differs under a matching header
+                    b"\0\0\0\0" + raw[4:],  # another Python's magic
+                    raw[:4] + b"\1\0\0\0" + raw[8:]):  # hash-based flags
+            with open(pyc, "wb") as f:
+                f.write(bad)
+            self.assertNotEqual(deps(), before)
+        with open(pyc, "wb") as f:
+            f.write(raw)
+        self.assertEqual(deps(), before)
+        orphan = os.path.join(self.plugin, "hooks", "__pycache__", "gone" + os.path.basename(pyc)[1:])
+        shutil.copy(pyc, orphan)
+        self.assertNotEqual(deps(), before, "an orphan pyc shows")
+
+    def test_an_older_baseline_with_node_modules_reads_unchanged_and_gains_deps(self):
+        write(os.path.join(self.plugin, "node_modules", "dep", "index.js"), "")
+        write(os.path.join(self.plugin, "hooks", "__pycache__", "x.pyc"), "")
+        fmdoctor.check_supply(self.claude, accept=True)
+        path = os.path.join(c.state_dir(), "supply.json")
+        seen = json.load(open(path))
+        seen["p@m"].pop("deps")
+        write(path, seen)
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS", "review: no one-time change for deps")
+        self.assertIn("deps", json.load(open(path))["p@m"], "the matching run records it")
+        write(os.path.join(self.plugin, "node_modules", "dep", "new.js"), "")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN")
+
+    def test_a_file_name_that_isnt_utf8_is_named_and_the_plugin_still_compared(self):
+        before = fmdoctor._supply(self.claude)[0]["p@m"]
+        for sub in (b"hooks", b"bin", b"node_modules"):  # T-1459 review: an odd name raised, keeping the old baseline
+            os.makedirs(os.path.join(os.fsencode(self.plugin), sub), exist_ok=True)
+            with open(os.path.join(os.fsencode(self.plugin), sub, b"bad\xff.js"), "wb") as f:
+                f.write(b"x")
+        now, errors = fmdoctor._supply(self.claude)
+        self.assertEqual(errors, {})
+        self.assertNotEqual(now["p@m"]["sha"], before["sha"], "the odd file itself is named")
+        self.assertNotEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        fmdoctor.check_supply(self.claude, accept=True)
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        write(os.path.join(self.plugin, "skills", "s", "SKILL.md"), "---\nname: s\ndescription: d\n---\nedit\n")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "a later change still shows")
+
+    def test_a_utf8_trees_sha_is_unchanged(self):
+        """The sha of an all-UTF-8 tree, pinned from the code before T-1459's fsencode: old baselines still match."""
+        tree = os.path.join(self.tmp, "tree")
+        write(os.path.join(tree, "hooks", "é.sh"), "x")
+        write(os.path.join(tree, "a", "b.txt"), "y")
+        write(os.path.join(tree, "big"), " " * 4_000_001)
+        os.symlink("a", os.path.join(tree, "link"))
+        h = hashlib.sha256()
+        fmdoctor._tree_hash(tree, h)
+        self.assertEqual(h.hexdigest(), PINNED)
+
+    def test_a_file_vanishing_mid_walk_doesnt_end_the_check(self):
+        gone = os.path.join(self.plugin, "bin", "tool")
+        real = os.path.getsize
+        def vanish(p):
+            if p == gone:
+                raise FileNotFoundError(p)
+            return real(p)
+        with mock.patch("os.path.getsize", vanish):
+            _, errors = fmdoctor._supply(self.claude)
+        self.assertEqual(errors, {})
+
+    def test_profile_ignores_a_component_linked_from_outside_the_plugin(self):
+        outside = os.path.join(self.tmp, "outside")
+        write(os.path.join(outside, "z.md"), "---\nname: zz\n---\n")
+        write(os.path.join(self.plugin, ".claude-plugin", "plugin.json"), {"name": "p", "commands": ["./ln/z.md"]})
+        os.symlink(outside, os.path.join(self.plugin, "ln"))
+        self.assertEqual(fmplugins.profile(self.plugin)["commands"], [])
+
+    def test_profile_reads_custom_component_paths(self):
+        write(os.path.join(self.plugin, ".claude-plugin", "plugin.json"),
+              {"name": "p", "agents": "./extras/", "commands": ["./more/x.md", "../../"], "skills": ["./sk"]})
+        write(os.path.join(self.plugin, "extras", "a.md"), "---\nname: aa\ndescription: dd\n---\n")
+        write(os.path.join(self.plugin, "more", "x.md"), "---\n---\n")
+        write(os.path.join(self.plugin, "commands", "sub", "y.md"), "---\n---\n")
+        write(os.path.join(self.plugin, "sk", "t", "SKILL.md"), "---\n---\n")
+        prof = fmplugins.profile(self.plugin)
+        names = lambda k: sorted(n for n, _ in prof[k])
+        self.assertEqual(names("agents"), ["aa"])
+        self.assertEqual(names("commands"), ["x", "y"])
+        self.assertEqual(names("skills"), ["s", "t"])
+        self.assertGreater(prof["tokens"], 0)
+
     def test_a_manifest_path_outside_the_plugin_is_unknown(self):
         write(os.path.join(self.plugin, ".claude-plugin", "plugin.json"), {"name": "p", "agents": "../../"})
         self.held("adds hook ? (agent ../../")
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads everything")
     def test_a_component_folder_or_file_it_cant_read_is_unknown(self):
         os.makedirs(os.path.join(self.plugin, "commands", "locked"))
         write(os.path.join(self.plugin, "agents", "a.md"), "---\nname: a\n---\n")
         os.chmod(os.path.join(self.plugin, "commands", "locked"), 0)
         os.chmod(os.path.join(self.plugin, "agents", "a.md"), 0)
-        try:  # check_supply stops earlier (the tree hash can't read it: "not checked"); the reader alone says "?"
+        try:  # the reader alone (the tree hash names what it can't read, T-1444) says "?"
             fm = fmplugins.capabilities(self.plugin)["fm_hooks"]
             self.assertIn("? (command commands)", fm)
             self.assertIn("? (agent agents/a.md)", fm)

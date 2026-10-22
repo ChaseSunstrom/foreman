@@ -920,11 +920,14 @@ def task_finish(p, args):
             raise UsageError(f"--lens takes '<lens>: <result>' with a lens of {', '.join(c.AUDIT_LENSES)}; got {spec!r}")
         lenses.append((lens.strip(), result.strip()))
     runs = {}
+    args.timings, t_close = [], time.monotonic()  # T-1462: (cmd, seconds) of every run, to name the slowest
 
     def run(cmd):
         if cmd not in runs:
             guard_stored(p, b, cmd)  # T-0901
+            t0 = time.monotonic()
             runs[cmd] = c.run_command(p.root, cmd, args.timeout)
+            args.timings.append((cmd, time.monotonic() - t0))
         return runs[cmd]
     # T-0142: an open step whose evidence is already recorded (fm task evidence --step) just closes; --run is only for
     # what has neither a verify command nor evidence, and the error names it
@@ -1021,6 +1024,11 @@ def task_finish(p, args):
             print(fmledger.receipt(p))
         except OSError as e:  # the close has landed; an unreadable archive must not make it look failed
             print(f"Ledger: unreadable ({e.strerror or e})")
+    total = time.monotonic() - t_close
+    if not rc and not getattr(args, "json", False) and args.timings and total > float(
+            os.environ.get("FOREMAN_SLOW_CLOSE_S") or 60):  # T-1462: which run made the close slow
+        cmd, secs = max(args.timings, key=lambda t: t[1])
+        print(f"Slowest: {c.fit(c.plain(cmd), 80)} {secs:.0f} s (of {total:.0f} s)")
     started = None
     if not rc:
         try:
@@ -1064,12 +1072,16 @@ def _close_affected(p, b, runs, args):
         return
     guard_stored(p, b, cmd)
     env, timeout = _skip_env(red_first_tests(p, b, [cmd])), (args.timeout if args.timeout > 0 else None)
+    t0 = time.monotonic()
     code, output = c.run_command(p.root, cmd, timeout, env=env)
     if code and code != 124:
         code, output = c.run_command(p.root, cmd, timeout, env=env)  # a flake passes the second time
+    secs = time.monotonic() - t0
+    if hasattr(args, "timings"):
+        args.timings.append((cmd, secs))
     names = c.failing_tests(output) if code else []
-    c.log_event(p, "close_affected", task=b.id, data={"cmd": c.fit(cmd, 200), "exit": code, "failing": names[:20]},
-                session=session())
+    c.log_event(p, "close_affected", task=b.id, data={"cmd": c.fit(cmd, 200), "exit": code, "failing": names[:20],
+                                                      "s": round(secs, 1)}, session=session())
     say = (lambda m: None) if getattr(args, "json", False) else print
     if not code:
         return
@@ -1132,7 +1144,9 @@ def _sentinel(p):
         finally:
             _unlink(pidf)
         return "ran"
-    pr = subprocess.Popen(["sh", "-c", 'echo $$ > "$1"; "$2" check; rm -f "$1"', "sentinel", pidf, argv[0]],
+    import shutil
+    low = ["nice", "-n", "10"] if shutil.which("nice") else []  # T-1463: never ahead of the next task's own runs
+    pr = subprocess.Popen(low + ["sh", "-c", 'echo $$ > "$1"; "$2" check; rm -f "$1"', "sentinel", pidf, argv[0]],
                           cwd=p.root, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                           stderr=subprocess.DEVNULL, start_new_session=True)
     return "started" if pr.pid else None
@@ -3694,19 +3708,24 @@ _SIDE_EFFECTS = re.compile(r"\b(push|deploy|publish|release|install|uninstall|me
                            r"perl|bash|sh) -[ce]\b")
 
 
+_POINT_IN_TIME = re.compile(r"\borigin/|@\{u(?:pstream)?\}|\bls-remote\b")  # T-1380: a remote's state, then
+
+
 def cmd_sentinel(args):
     """Re-run the checks that passed for the last N finished tasks (their [ran] evidence) and report any that fail
     now: a later change broke what an earlier task proved. Commands with side effects are skipped."""
     p = resolve(args)
     done = sorted((b for b in c.load_briefs(p, include_archive=True) if b.status == "done"),
                   key=lambda b: str(b.meta.get("updated", "")), reverse=True)[:args.last]
-    cmds, skipped = {}, 0
+    cmds, skipped, dated = {}, 0, 0
     for b in done:
         for line in b.evidence():  # criteria checks only: steps record work (pushes, migrations) as well as checks
             if line.startswith("- (ac ") and c._RAN_MARK in line and "` → exit 0" in line:
                 cmd = line.split("`", 2)[1]
                 if _SIDE_EFFECTS.search(cmd):
                     skipped += 1
+                elif _POINT_IN_TIME.search(cmd):  # T-1380: where a remote was then (a release's "main is 1.2.47")
+                    dated += 1
                 elif cmd not in cmds:
                     cmds[cmd] = b.id
     checks = {}  # T-0489: assumptions a finished task rested on, with a command that stays true while they hold
@@ -3729,7 +3748,11 @@ def cmd_sentinel(args):
               + "; ".join(c.fit(x, 60) for x in refused[:3]), file=sys.stderr)
     for cmd, tid in list(cmds.items())[:args.max]:
         code, output = c.run_command(p.root, cmd, args.timeout)
-        results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output)})
+        flaky = bool(code and code != 124)
+        if flaky:  # T-1380: a failure that passes on a second run is a flake (canaries ran side by side, loaded)
+            code, output = c.run_command(p.root, cmd, args.timeout)
+        results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output),
+                        "flaky": flaky and not code})
     for cmd, (tid, fact) in list(checks.items())[:args.max]:
         code, output = c.run_command(p.root, cmd, args.timeout)
         results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output), "assumption": fact})
@@ -3748,7 +3771,10 @@ def cmd_sentinel(args):
         getattr(args, "bisect", False) else []  # T-0458
     out(args, {"results": results, "failed": len(failed), "skipped": skipped, "culprits": [x for x in culprits if x]},
         f"Sentinel: {len(results)} past check(s) from {len(done)} finished task(s); {len(failed)} failing now"
-        + (f"; {skipped} with side effects skipped" if skipped else "") + "".join(
+        + (f"; {skipped} with side effects skipped" if skipped else "")
+        + (f"; {dated} point-in-time skipped" if dated else "")
+        + (f"; {sum(1 for r in results if r.get('flaky'))} flaky (failed, then passed)"
+           if any(r.get("flaky") for r in results) else "") + "".join(
             f"\n  ✗ {r['task']}: " + (f"assumption \"{r['assumption']}\": " if r.get("assumption") else "")
             + f"{r['cmd']} → {r['result']}" for r in failed)
         + "".join(f"\n  ↳ broke at {x['sha'][:10]} {x['subject']}" + (f" ({x['task']})" if x["task"] else "")
@@ -4114,6 +4140,9 @@ def _runnable(template, tests):
     return tests
 
 
+HUB_PAIRS = 10  # T-1467: more co-changed tests than this and a file's pairs are noise
+
+
 def affected(p, b=None):
     """(command, tests, changed files) for the tests linked (fm map) to files changed since the task started, with the
     project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705)."""
@@ -4130,8 +4159,13 @@ def affected(p, b=None):
     # hooks.json has no test named after it, but the wiring tests change with it
     istest = lambda f: c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f)  # noqa: E731
     pairs = m.get("pairs") or {}
-    paired = {t for f in changed for t in pairs.get(f, []) if istest(t)} | {
-        a for a, bs in pairs.items() if istest(a) and any(b in changed for b in bs)}
+    # T-1467: a file that co-changes with many tests (CHANGELOG.md, edited by every task) carries no signal; its
+    # pairs ran ~28 test files on every close. Its direct map links (tests_for) still count.
+    fan = collections.Counter(b for a, bs in pairs.items() if istest(a) for b in bs)
+    fan.update({f: sum(1 for t in ts if istest(t)) for f, ts in pairs.items()})
+    narrow = {f for f in changed if fan[f] <= HUB_PAIRS}
+    paired = {t for f in narrow for t in pairs.get(f, []) if istest(t)} | {
+        a for a, bs in pairs.items() if istest(a) and any(b in narrow for b in bs)}
     meta = c.read_meta(p)
     template = meta.get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
     by = meta.get("affected_by") or {}  # T-1135: extension -> its own runner's template
