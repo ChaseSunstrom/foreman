@@ -25,8 +25,9 @@ def build_module():
     return mod
 
 
-def built_index(tmp, totals=None):
-    """Build a copy of site/ (its stats.json totals updated with `totals`) the way the workflow does; the index."""
+def build_copy(tmp, totals=None, edit_index=None):
+    """Build a copy of site/ the way the workflow does, its stats.json totals updated with `totals` and its
+    index.html passed through `edit_index`; the finished process."""
     shutil.copytree(os.path.join(ROOT, "site"), os.path.join(tmp, "site"), ignore=shutil.ignore_patterns("__pycache__"))
     for d in ("demo", "plugin"):
         os.symlink(os.path.join(ROOT, d), os.path.join(tmp, d))
@@ -36,19 +37,34 @@ def built_index(tmp, totals=None):
         stats["totals"].update(totals)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(stats, f)
-    r = subprocess.run([sys.executable, os.path.join(tmp, "site", "build.py"), os.path.join(tmp, "out")],
-                       capture_output=True, text=True, timeout=120)
+    if edit_index:
+        path = os.path.join(tmp, "site", "index.html")
+        page = edit_index(read_text(path))
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(page)
+    return subprocess.run([sys.executable, os.path.join(tmp, "site", "build.py"), os.path.join(tmp, "out")],
+                          capture_output=True, text=True, timeout=120)
+
+
+def built_index(tmp, totals=None):
+    r = build_copy(tmp, totals)
     if r.returncode:
         raise AssertionError(r.stdout + r.stderr)
     return read_text(os.path.join(tmp, "out", "index.html"))
 
 
-def hero_poster(page):
-    """The poster SVG inside the hero (between the hero's opening tag and the first section), or ''."""
+def hero_poster(page, cls="poster"):
+    """The SVG of this class inside the hero (between the hero's opening tag and the first section), or ''."""
     start = page.index('class="wrap hero"')
     hero = page[start:page.index("<section", start)]
-    m = re.search(r'<svg class="poster"[^>]*>.*?</svg>', hero, re.S)
+    m = re.search(rf'<svg class="{cls}"[^>]*>.*?</svg>', hero, re.S)
     return m.group(0) if m else ""
+
+
+def sides(svg):
+    """Each station's side, in order: a square turned 45°, the site's diamond."""
+    found = re.findall(r'<rect class="st"[^>]* width="([\d.]+)"[^>]* transform="rotate\(45 [^"]*\)"', svg)
+    return [float(s) for s in found]
 
 
 def label(svg):
@@ -77,16 +93,38 @@ class Hero(unittest.TestCase):
             self.assertIn(f"{v:,}", label(after), k)
             self.assertIn(f">{v:,}<", after, k)
 
-    def test_each_station_is_sized_by_its_total(self):
+    def test_each_station_is_a_diamond_sized_by_its_total_in_one_hue(self):
         build = build_module()
         totals = {"tasks_done": 734, "evidence": 2684, "proofs": 250, "commits": 570}
-        radii = [float(r) for r in re.findall(r'<circle class="st"[^>]* r="([\d.]+)"', build.poster(totals))]
-        self.assertEqual(len(radii), 4)
-        self.assertEqual(sorted(range(4), key=lambda i: radii[i]), sorted(range(4), key=lambda i: totals[KEYS[i]]))
+        svg = build.poster(totals)
+        side = sides(svg)
+        self.assertEqual(len(side), 4)
+        self.assertEqual(sorted(range(4), key=lambda i: side[i]), sorted(range(4), key=lambda i: totals[KEYS[i]]))
+        self.assertNotIn("Gradient", svg, "the counts aren't states: no red-to-green traffic light")
         # nothing yet (all zeros, or a stats.json from before a key existed) draws zeros instead of dividing by zero
         for odd in ({}, {k: 0 for k in KEYS}):
             with self.subTest(odd=odd):
                 self.assertIn("0 tasks done", label(build.poster(odd)))
+
+    def test_phones_get_a_two_by_two_poster_without_the_date(self):
+        build = build_module()
+        compact = build.poster({"tasks_done": 734, "evidence": 2684, "proofs": 250, "commits": 570}, "2026-10-20", 2)
+        self.assertEqual(len(sides(compact)), 4)
+        centres = [m.split() for m in re.findall(r'rotate\(45 ([^)]*)\)', compact)]
+        self.assertEqual(len({x for x, _ in centres}), 2, "two columns")
+        self.assertEqual(len({y for _, y in centres}), 2, "two rows")
+        self.assertNotIn('class="kick"', compact)
+        self.assertIn("2026-10-20", label(compact), "the date stays in what a screen reader hears")
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(hero_poster(built_index(tmp), "poster compact"), "the built hero carries both")
+
+    def test_an_index_without_the_poster_mark_fails_the_build(self):
+        # review: a lost mark built a hero with no poster and exit 0
+        build = build_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            r = build_copy(tmp, edit_index=lambda page: page.replace(build.POSTER_MARK, ""))
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertIn("site/index.html lost the poster mark", r.stderr)
 
 
 if __name__ == "__main__":
