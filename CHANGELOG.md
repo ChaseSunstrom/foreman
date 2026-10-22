@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm doctor`'s supply check no longer reports every installed plugin as changed whenever a new Claude Code session starts: it leaves out the `.in_use/<pid>` marker Claude Code writes into each plugin's folder, in that exact shape only; any other file there still counts (T-1455).
 - `fm doctor` no longer warns that foreman-ui is out of date when Claude Code reads it in place from this checkout (a directory marketplace); the old cache record it compared against is never loaded (T-1451).
 - Hooks: one note that fails to build (a full disk) no longer drops every other note of that tool call, and unread mail shows again next call instead of being lost (T-1449).
 
