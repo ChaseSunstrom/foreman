@@ -2199,7 +2199,7 @@ SKILL_FOR = {
     "SECURITY": "load: Skill foreman:playbooks (security)",
     "RESEARCH": "load: Skill foreman:intake, then its references/delegate.md; fm research add",
     "verifying": "run: fm playbooks show verification-loop", "auditing": "run: the /foreman:review workflow",
-    "design": "load: Skill foreman:directions, then fm playbooks show ui/INDEX",  # T-1700's ui-design skill, once it exists
+    "design": "load: Skill foreman:ui-design",  # T-1700: it routes to the directions skill and the ui playbooks
     "ui": "run: fm playbooks show ui/INDEX",
 }
 
