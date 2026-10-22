@@ -1,8 +1,9 @@
 // fm smoke's crawl (T-0417): node smoke_web.cjs <playwright package dir> <url> <screenshot dir> [profile]
 // Opens the page at desktop and phone width, visits every visible tab (or, with none, the nav links), and prints one
 // JSON line: {"views": [...], "defects": [{"where", "what"}], "notes": [...]}: what a user would see go wrong.
-// T-1509: with no profile it first shoots the start page's frame matrix (ui/visual-qa.md) into <dir>/frames; a profile
-// (PROFILES) crawls under one hostile condition instead. Every screenshot is named after its view, not a counter, so a
+// T-1509: with no profile it first shoots the start page's frame matrix (ui/visual-qa.md) into <dir>/frames, whose
+// findings come apart as "frame_findings" (fm smoke fails on them only when strict); a profile (PROFILES) crawls under
+// one hostile condition instead. Every screenshot is named after its view, not a counter, so a
 // receipt can point at it. A Playwright whose browser isn't installed prints {"skipped": why}: nothing is installed.
 const path = require("path");
 const fs = require("fs");
@@ -17,17 +18,23 @@ const FRAMES_MS = 60000;  // the frame matrix's share of the deadline
 const HUNG = new Error("hung");
 const SIZES = [[360, 800], [768, 1024], [1440, 900]];  // visual-qa.md's frame matrix: × THEMES, + reduced motion at 360
 const THEMES = ["light", "dark"];
-const NOW = new Date("2026-01-15T10:00:00Z");  // the seeded fixture's "now" (visual-qa.md)
+const NOW = new Date("2026-01-15T10:00:00Z");  // the frozen profile's "now" (visual-qa.md's fixture)
+const FRAME_MAX_H = 8000;  // a frame's cap in px each way: an endless feed is not an endless PNG
 const JUNK = /\bundefined\b|\bNaN\b|\bnull\b|Invalid Date|\[object Object\]|lorem ipsum/i;
 const MOTION_FRAMES = 5;  // motion: frames 250 ms apart per view
 
 const run = { url: "", out: "", profile: "" };
-const views = [], defects = [], notes = [], seen = new Set(), taken = new Set();
+const views = [], defects = [], notes = [], framed = [], seen = new Set(), taken = new Set();
 const add = (where, what) => {
   const key = where.split(" ")[0] + "|" + what;  // one report per viewport, at the first view it shows in
   if (!seen.has(key)) { seen.add(key); defects.push({ where, what: what.slice(0, 300) }); }
 };
-const slug = s => s.replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "home";
+const frameFinding = (where, what) => { if (!framed.some(f => f.what === what)) framed.push({ where, what }); };
+const slug = s => {  // letters in any script stay (a tab named 设置 is not "desktop-tab"), cut by whole characters
+  const cs = [...s.replace(/[^\p{L}\p{M}\p{N}_]+/gu, "-").replace(/^-+|-+$/g, "")].slice(0, 60);
+  while (Buffer.byteLength(cs.join("")) > 180) cs.pop();  // a file name's 255 bytes, with room for -2-motion-4.png
+  return cs.join("").replace(/-+$/, "") || "home";
+};
 const shotStem = where => {  // the view's own name, numbered only when two views share one
   let stem = path.join(run.out, slug(where)), i = 1;
   while (taken.has(stem)) stem = path.join(run.out, `${slug(where)}-${++i}`);
@@ -41,11 +48,15 @@ const snap = (page, opts = {}) => page.screenshot(opts).catch(async e => {  // h
   await page.waitForTimeout(500);
   return page.screenshot(opts);
 });
+const outOfTime = (p, where) => p.patient  // offline and slow 3G spend their budget by design: say so, it's no hang
+  ? notes.push(`${where}: ran out of time on ${p.name}; the views after it weren't checked`)
+  : add(where, `the page stopped responding (no answer for ${VIEW_MS / 1000} s)`);
 
 // Hostile profiles. Hooks: setup(ctx, page) before the first load, loaded(ctx, page, label, ms) after it, view(page,
 // where, stem) per view once it settles (before its checks and screenshot), end() before the report; quiet: failed
 // requests, console errors and pages that don't load are expected, and an alert saying so is right (a note, not a
-// defect; an uncaught page error still is one); loadMs and settleMs stretch the waits.
+// defect; an uncaught page error still is one); loadMs and settleMs stretch the waits; patient: running out of time
+// is a note (outOfTime), not a hang.
 const LONG = "Pneumonoultramicroscopicsilicovolcanoconiosis".repeat(2);  // 90 letters and nowhere to break
 const RTL = "مرحبا بالعالم، هذا سطر طويل يُقرأ من اليمين إلى اليسار";
 const HUGE = "12345678901234567890";
@@ -136,7 +147,7 @@ const PROFILES = {
                                           "come with the HTML need an empty fixture)"); },
   },
   offline: {  // after the first load: the app is open, then the network goes; each view gets 3 s to notice
-    loaded: ctx => ctx.setOffline(true), view: page => page.waitForTimeout(3000), quiet: true,
+    loaded: ctx => ctx.setOffline(true), view: page => page.waitForTimeout(3000), quiet: true, patient: true,
   },
   slow3g: {
     setup: async (ctx, page) => {  // DevTools' Slow 3G: 2 s latency, 50 KB/s each way
@@ -146,7 +157,7 @@ const PROFILES = {
                                                             uploadThroughput: 51200 });
     },
     loaded: (ctx, page, label, ms) => { notes.push(`${label}: the start page loaded in ${(ms / 1000).toFixed(1)} s on slow 3G`); },
-    loadMs: 90000, settleMs: 15000,
+    loadMs: 90000, settleMs: 15000, patient: true,
   },
   deuteranopia: cvd("deuteranopia"), protanopia: cvd("protanopia"), tritanopia: cvd("tritanopia"),
   achromatopsia: cvd("achromatopsia"),
@@ -178,45 +189,47 @@ const PROFILES = {
     },
   },
 };
+for (const [name, p] of Object.entries(PROFILES)) p.name = name;
 let stopFrames = false;
 
 async function frames(browser) {  // the start page at each width × theme, then once under reduced motion
   const dir = path.join(run.out, "frames"), view = slug(new URL(run.url).pathname), junk = new Set();
   fs.mkdirSync(dir, { recursive: true });
+  // review: the app's own clock (no frozen time here: that's the frozen profile), and the whole page up to FRAME_MAX_H
+  // each way, overflow included, so a sideways spill shows in the frame
   const shoot = async ([width, height], colorScheme, reducedMotion, fn) => {
     const ctx = await browser.newContext({ viewport: { width, height }, colorScheme, reducedMotion, ignoreHTTPSErrors: true });
     try {
       const page = await ctx.newPage();
-      if (page.clock) await page.clock.setFixedTime(NOW);
       await page.goto(run.url, { waitUntil: "load", timeout: 30000 });
       await page.evaluate(() => document.fonts.ready.then(() => 0));
-      await fn(page);
+      const [wide = 0, tall = 0, text = ""] = await page.evaluate(() => [document.documentElement.scrollWidth,
+        document.documentElement.scrollHeight, document.body ? document.body.innerText : ""]);
+      const m = String(text).match(JUNK);
+      if (m) junk.add(m[0]);
+      await fn(page, wide, { fullPage: true, caret: "hide", clip: { x: 0, y: 0,
+        width: Math.min(Math.max(width, wide), FRAME_MAX_H), height: Math.min(Math.max(height, tall), FRAME_MAX_H) } });
     } finally { ctx.close().catch(() => {}); }  // not awaited: a frozen renderer may never answer
   };
   try {
     for (const size of SIZES) for (const theme of THEMES) {
       if (stopFrames) return;
-      await shoot(size, theme, "no-preference", async page => {
-        await snap(page, { path: path.join(dir, `${view}-${size[0]}-${theme}.png`), fullPage: true,
-                           animations: "disabled", caret: "hide" });
-        const [wide = 0, text = ""] = await page.evaluate(() =>
-          [document.documentElement.scrollWidth, document.body ? document.body.innerText : ""]);
-        if (wide > size[0] + 1) add(`frame ${size[0]} ${theme}`, `page wider than the screen (${wide} px > ${size[0]} px)`);
-        const m = String(text).match(JUNK);
-        if (m) junk.add(m[0]);
+      await shoot(size, theme, "no-preference", async (page, wide, full) => {
+        await snap(page, { ...full, path: path.join(dir, `${view}-${size[0]}-${theme}.png`), animations: "disabled" });
+        if (wide > size[0] + 1) frameFinding(`frame ${size[0]} ${theme}`, `page wider than the screen (${wide} px > ${size[0]} px)`);
       });
     }
     // reduced motion: once loaded, two frames a second apart are the same picture (no animations: "disabled" here:
     // the point is motion the app itself fails to stop). The pair is the first screen, taken after the full-page
     // frame and a second more, so lazy images the tall capture woke have landed
-    await shoot(SIZES[0], "light", "reduce", async page => {
+    await shoot(SIZES[0], "light", "reduce", async (page, wide, full) => {
       await page.waitForTimeout(1000);
-      await snap(page, { path: path.join(dir, `${view}-${SIZES[0][0]}-reduce.png`), fullPage: true, caret: "hide" });
+      await snap(page, { ...full, path: path.join(dir, `${view}-${SIZES[0][0]}-reduce.png`) });
       await page.waitForTimeout(1000);
       const a = await snap(page, { caret: "hide" });
       await page.waitForTimeout(1000);
       if (!a.equals(await snap(page, { caret: "hide" })))
-        add(`frame ${SIZES[0][0]} reduce`, "still moving under reduced motion (two frames a second apart differ)");
+        frameFinding(`frame ${SIZES[0][0]} reduce`, "still moving under reduced motion (two frames a second apart differ)");
     });
   } catch (e) {
     notes.push(`frame matrix stopped: ${e.message.split("\n")[0]}`);
@@ -232,7 +245,7 @@ async function main() {
   const p = prof || {};
   const finish = () => {
     if (p.end) p.end();
-    console.log(JSON.stringify({ views, defects, notes }));
+    console.log(JSON.stringify({ views, defects, notes, frame_findings: framed }));
     process.exit(0);
   };
   // T-0420: a frozen page leaves Playwright calls that never return; whatever happens, print what was found
@@ -358,7 +371,8 @@ async function main() {
       }
     }
     })(), Math.max(VIEW_MS, (DEADLINE - Date.now()) / (label === "desktop" ? 2 : 1))); } catch (e) {
-      add(where, e === HUNG ? `the page stopped responding (no answer for ${VIEW_MS / 1000} s)` : `crawl error: ${e.message}`);
+      if (e === HUNG) outOfTime(p, where);
+      else add(where, `crawl error: ${e.message}`);
     }
     if (ctx) ctx.close().catch(() => {});  // not awaited: a frozen renderer may never answer
     if (Date.now() > DEADLINE) { notes.push(`stopped at the time limit after ${views.length} views`); break; }
@@ -367,11 +381,12 @@ async function main() {
   finish();
 }
 
-module.exports = { PROFILES, SIZES, THEMES, frames, run, state: { views, defects, notes } };
+module.exports = { PROFILES, SIZES, THEMES, FRAME_MAX_H, frames, outOfTime, slug, run,
+                   state: { views, defects, notes, frame_findings: framed } };
 if (require.main === module) {
   main().catch(e => {
     add("smoke", `crawl crashed: ${e.message}`);
-    console.log(JSON.stringify({ views, defects, notes }));
+    console.log(JSON.stringify({ views, defects, notes, frame_findings: framed }));
     process.exit(0);
   });
 }
