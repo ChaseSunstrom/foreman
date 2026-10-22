@@ -343,6 +343,16 @@ def session_start(pl):
                 fmcontract.clear_ended(p, meta)
             except Exception:
                 log_error("SessionStart", _tb())
+        repo_note = None
+        try:  # T-1472: the repo's own hooks, MCP servers and allow rules, once per content hash
+            import fmplugins
+            digest, repo_note = fmplugins.repo_config(p.root)
+            if digest == meta.get("repo_config"):
+                repo_note = None
+            else:  # None once the files are gone, so the same files back are named again
+                meta["repo_config"] = digest
+        except Exception:
+            log_error("SessionStart", _tb())
         meta.update(session={"id": sid, "seen": c.now()}, last_active=c.now(), sensitive=c.detect_sensitive(p.root),
                     foreman=fmeco.stamp())
         c.write_meta(p, meta)
@@ -388,6 +398,8 @@ def session_start(pl):
         out["additionalContext"] += ("\nUnattended run: end with one short line per check you ran and its result "
                                      "(✓/✗), and one for anything the request asked that you left undone; nothing "
                                      "else.")
+    if repo_note:  # after the budgeted context, so the queue never pushes it out
+        out["additionalContext"] += "\n\n" + repo_note
     if pl.get("source") == "compact":
         try:
             note = _requests_note(p, sid, cap=min(REQUEST_TEXT_CAP, 9000 - len(out["additionalContext"])))
