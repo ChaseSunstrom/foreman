@@ -33,7 +33,9 @@ The contract — break none of it:
 - Don't edit CHANGELOG.md: give the task's changelog line, in the style of the existing entries, in your final report;
   the main thread adds it at finish (T-0428).
 - Claude Code may refuse a command because "this agent is isolated in the worktree" (make, gradle, expo, a long
-  pipeline, `fm task evidence`/`fm task log` in a lane): that's the harness, not a bug. Don't retry or rephrase it;
+  pipeline, `fm task evidence`/`fm task log` in a lane, and any read or write outside the worktree: another session's
+  task output files under /tmp/claude-*/…/tasks, the main thread's scratchpad): that's the harness, not a bug. Don't
+  retry or rephrase it;
   run what it allows, commit, and list each refused check in your report as one for the main thread to run after the
   merge.
 - Before you report, review your own change as an adversary (T-1147): what input breaks it, what outside text it trusts,
