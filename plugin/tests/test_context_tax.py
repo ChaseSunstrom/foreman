@@ -9,7 +9,8 @@ from test_edit_cards import _CardCase, card
 import fmcore as c
 
 # bytes each hook event may inject over the whole replay: measured, then about a quarter of headroom
-# (2026-10-20: SessionStart 814, UserPromptSubmit 397 under its own 400 cap, PreToolUse 1538, PostToolUse 0)
+# (2026-10-20: SessionStart 814, UserPromptSubmit 397 under its own 400 cap, PreToolUse 1538, PostToolUse 0;
+# 2026-10-22, T-1697's skill hint once a stage instead of the procedure on every step: SessionStart 818, UserPromptSubmit 321)
 BUDGET = {"SessionStart": 1000, "UserPromptSubmit": 400, "PreToolUse": 1900, "PostToolUse": 200}
 POINTER = "its notes were shown earlier this session"
 

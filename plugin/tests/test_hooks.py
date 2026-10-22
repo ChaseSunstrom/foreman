@@ -323,6 +323,41 @@ class UserPromptSubmit(HookCase):
         self.hook("SessionStart", {"source": "compact"}, env={"CLAUDE_ENV_FILE": self.env_file})
         self.assertIn("Next:", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "carry on"})))
 
+    def test_the_skill_that_fits_is_named_once_per_stage(self):
+        # T-1697: the hooks handed over the exact fm command every turn, so the skill describing the step was never
+        # loaded (1 of 13 used in 30 days). The Next line names it once per stage; its body loads only when invoked.
+        self.fm("init")
+        ups = lambda prompt, sid="sess-1": self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt, "session_id": sid}))
+        fix = self.task(tier="M")
+        ctx = ups("fix the login timeout when wifi is slow")  # a work request's note too: the fullest first turn
+        hint = "(skill foreman:intake debugging.md; playbook: fm playbooks show tdd-workflow)"
+        self.assertIn(hint, ctx, "named whole, never cut by the budget")
+        self.assertGreater(ctx.index(hint), ctx.index("Next: "), "on the Next line")
+        self.assertLessEqual(len(ctx), 400)
+        self.fm("task", "step", fix, "add", "another step")
+        ctx = ups("carry on")
+        self.assertIn("Next: ", ctx, "a new step restates the state")
+        self.assertNotIn("foreman:intake", ctx, "the same stage: named once")
+        feat = self.task("Add export", type_="FEATURE", tier="M")
+        self.assertIn("(skill foreman:intake execute.md", ups("go on"))
+        for n in ("1", "2"):
+            self.fm("task", "step", feat, "done", n, "--evidence", "true", "ok")
+        self.assertIn("fm playbooks show verification-loop", ups("go on"))
+        start = self.ctx_of(self.hook("SessionStart", {"source": "compact"}, env={"CLAUDE_ENV_FILE": self.env_file}))
+        self.assertIn("verification-loop", start, "a compaction drops it from the context: named again")
+        self.assertNotIn("verification-loop", ups("go on"), "SessionStart named it")
+        self.fm("task", "ac", feat, "check", "1", "--evidence", "true", "ok")
+        self.fm("task", "set", feat, "--section", "Docs impact", "--text", "none: a test")
+        self.assertIn("/foreman:review", ups("go on"), "the audit stage names the review workflow")
+        # a design request names the design skill and the ui playbooks, once a session
+        ctx = ups("redesign the settings page", "sess-2")
+        self.assertIn("skill foreman:directions", ctx)
+        self.assertIn("fm playbooks show ui/INDEX", ctx)
+        self.assertNotIn("foreman:directions", ups("give the UI a dark mode", "sess-2"), "said once a session")
+        self.assertIn("foreman:directions", ups("give the UI a dark mode", "sess-4"))
+        for prompt in ("design the database schema", "redesign the cache layer", "fix the build", "what does guide mean?"):
+            self.assertNotIn("foreman:directions", ups(prompt, "sess-3"), prompt)
+
     def test_untagged_work_request_names_classification(self):
         self.fm("init")
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "add a --verbose flag to the CLI"}))

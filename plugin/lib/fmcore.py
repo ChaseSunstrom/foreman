@@ -2024,6 +2024,18 @@ def is_sweep(text):
     return bool(_SWEEP.search(text or ""))
 
 
+# T-1697: a request about how a screen looks or behaves in the hand: the design skill and ui playbooks fit first.
+# "design" alone isn't one ("design the schema"), nor a redesign of something with no screen ("the cache layer").
+_DESIGN = re.compile(r"(?i)\b(ui|ux|front-?end|user interface|web interface|landing page|restyl\w*|"
+                     r"re-?design\w* (\w+ ){0,2}(page|screen|site|layout|dashboard|look|header|footer|menu|form|modal|app)|"
+                     r"(ui|visual|web|page|screen) design|design (direction|system|language|tokens)|look and feel|"
+                     r"colou?r (scheme|palette)|typography|dark mode)\b")
+
+
+def is_design(text):
+    return bool(_DESIGN.search(text or ""))
+
+
 def is_broad(text):
     """A concrete request asked for in bulk: the plan enumerates the whole space first, not the first few items."""
     return bool(_BROAD.search(text or "")) and not is_exhaustive(text)
@@ -2173,12 +2185,21 @@ def brief_detail(b):
 
 # ---------------------------------------------------------------- stages (derived, never stored)
 
-STAGE_REFERENCE = {
-    "FIX": "skills/intake/references/debugging.md, then regression-test.md",
-    "CLEAN": "/foreman:playbooks (clean)", "PERFORMANCE": "/foreman:playbooks (perf: baseline first)",
-    "SECURITY": "/foreman:playbooks (security)", "FEATURE": "skills/intake/references/execute.md (TDD)",
-    "RESEARCH": "skills/intake/references/delegate.md (recon) and fm research add",
+# T-1697: the Foreman skill or playbook each moment fits: a task type while executing, else the stage (or "design", a
+# UI request). The hooks name it once a session per hint (SessionStart re-arms); the body loads only when invoked.
+SKILL_FOR = {
+    "FIX": "skill foreman:intake debugging.md; playbook: fm playbooks show tdd-workflow",
+    "FEATURE": "skill foreman:intake execute.md; playbook: fm playbooks show tdd-workflow",
+    "CLEAN": "skill foreman:playbooks (clean)", "PERFORMANCE": "skill foreman:playbooks (perf: baseline first)",
+    "SECURITY": "skill foreman:playbooks (security)", "RESEARCH": "skill foreman:intake delegate.md; fm research add",
+    "verifying": "playbook: fm playbooks show verification-loop", "auditing": "workflow /foreman:review",
+    "design": "skill foreman:directions; playbooks: fm playbooks show ui/INDEX",  # T-1700's ui-design skill, once it exists
 }
+
+
+def skill_for(b, st):
+    """The SKILL_FOR hint for a brief at a stage (next_for's), or ""."""
+    return SKILL_FOR.get(b.type if st == "executing" else st, "") if b is not None else ""
 
 
 def needs_approval(b, autonomy="standard"):
@@ -2315,7 +2336,7 @@ def next_action(b, autonomy="standard", since=None):
             return (f"{tid} step {cur.n}/{len(steps)}: its last check was inconclusive — design a sharper check (one "
                     f"that fails if the step is wrong), then fm task evidence {tid} --step {cur.n} --run \"<cmd>\"")
         return (f"{tid} step {cur.n}/{len(steps)}: {cur.text[:100]} — do it, then fm task evidence {tid} --step {cur.n} "
-                f"--run \"<verify cmd>\" (procedure: {STAGE_REFERENCE.get(b.type, 'execute.md')})")
+                f"--run \"<verify cmd>\"")  # T-1697: the procedure is skill_for's, named once a stage, not every step
     if st == "verifying":
         a = next(a for a in b.acceptance() if not a.checked)
         cmd = dict(b.verify_cmds(unchecked=True)).get(a.n)
