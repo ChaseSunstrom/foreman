@@ -5,6 +5,7 @@ import glob
 import hashlib
 import json
 import os
+import shutil
 import time
 import unittest
 from unittest import mock
@@ -580,6 +581,31 @@ class SupplyDelta(ForemanTestCase):
         write(big, "x" * 4_000_001)
         os.utime(big, ns=(st.st_atime_ns, st.st_mtime_ns))
         self.assertNotEqual(stands(), before)
+
+    def test_a_pyc_matching_its_source_is_not_a_change(self):
+        import py_compile
+        src = os.path.join(self.plugin, "hooks", "m.py")
+        write(src, "x = 1\n")
+        fmdoctor.check_supply(self.claude, accept=True)
+        deps = lambda: fmdoctor._supply(self.claude)[0]["p@m"]["deps"]
+        before = deps()
+        pyc = py_compile.compile(src)  # what Python writes on first import
+        self.assertEqual(deps(), before, "a pyc py_compile wrote adds nothing")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        with open(pyc, "rb") as f:
+            raw = f.read()
+        for bad in (raw[:-2] + bytes([raw[-2] ^ 1]) + raw[-1:],  # body differs under a matching header
+                    b"\0\0\0\0" + raw[4:],  # another Python's magic
+                    raw[:4] + b"\1\0\0\0" + raw[8:]):  # hash-based flags
+            with open(pyc, "wb") as f:
+                f.write(bad)
+            self.assertNotEqual(deps(), before)
+        with open(pyc, "wb") as f:
+            f.write(raw)
+        self.assertEqual(deps(), before)
+        orphan = os.path.join(self.plugin, "hooks", "__pycache__", "gone" + os.path.basename(pyc)[1:])
+        shutil.copy(pyc, orphan)
+        self.assertNotEqual(deps(), before, "an orphan pyc shows")
 
     def test_an_older_baseline_with_node_modules_reads_unchanged_and_gains_deps(self):
         write(os.path.join(self.plugin, "node_modules", "dep", "index.js"), "")
