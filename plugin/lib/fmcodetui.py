@@ -344,32 +344,43 @@ class Canvas:
             for c in range(max(0, x), min(self.w, x + w)):
                 self.bg[r][c] = colour
 
+    def _clear(self, y, x, n):
+        """T-1516: before n cells from x are written over: a wide character cut at either edge loses its other half."""
+        row = self.cells[y]
+        if row[x][0] == "" and x:
+            row[x - 1] = (" ", row[x - 1][1])
+        if x + n < self.w and row[x + n][0] == "":
+            row[x + n] = (" ", row[x + n][1])
+
     def put(self, y, x, s, style="text", right=None):
         """s at (y, x), clipped at `right` (exclusive) or the edge; the column after it."""
         if not 0 <= y < self.h:
             return x
-        end, last = min(self.w, right if right is not None else self.w), None
+        end, last, row = min(self.w, right if right is not None else self.w), None, self.cells[y]
         for ch in str(s):
             if _mark(ch):  # an accent joins the letter before it, in the same cell
-                if last is not None:
-                    self.cells[y][last] = (self.cells[y][last][0] + ch, style)
+                if last is None:
+                    continue
+                row[last] = (row[last][0] + ch, style)
+                if x == last + 1 and _vs16(row[last][0][0], row[last][0]):  # a narrow pictograph turned two columns wide
+                    if x >= end:
+                        row[last] = (" ", style)  # the second column doesn't fit: a space
+                        break
+                    self._clear(y, x, 1)
+                    row[x] = ("", style)
+                    x += 1
                 continue
-            wide = unicodedata.east_asian_width(ch) in "WF"
+            wide = _wide(ch)
             if x + wide >= end:
-                if x < end and x >= 0:
-                    self.cells[y][x] = (" ", style)  # half a wide character doesn't fit: a space
+                if 0 <= x < end:
+                    self._clear(y, x, 1)
+                    row[x] = (" ", style)  # half a wide character doesn't fit: a space
                 break
             if x >= 0:
-                row = self.cells[y]  # T-1516: writing over half of a wide character blanks its other half
-                if row[x][0] == "" and x:
-                    row[x - 1] = (" ", row[x - 1][1])
-                if x + 1 < self.w and row[x + 1][0] == "" and not wide:
-                    row[x + 1] = (" ", row[x + 1][1])
-                if wide and x + 2 < self.w and row[x + 2][0] == "":
-                    row[x + 2] = (" ", row[x + 2][1])
-                self.cells[y][x], last = (ch if ch.isprintable() else " ", style), x
+                self._clear(y, x, 1 + wide)
+                row[x], last = (ch if ch.isprintable() else " ", style), x
                 if wide:  # it fills two columns: the second is an empty cell, so the row stays w columns
-                    self.cells[y][x + 1] = ("", style)
+                    row[x + 1] = ("", style)
             x += 1 + wide
         return x
 
@@ -397,29 +408,67 @@ class Canvas:
 
 
 def _mark(ch):
-    """T-1516: a character that fills no column of its own: an accent, a variation selector (U+FE0F), an enclosing mark."""
-    return bool(unicodedata.combining(ch)) or unicodedata.category(ch) in ("Mn", "Me")
+    """T-1516: a character that fills no column of its own: an accent, a variation selector (U+FE0F), an enclosing
+    mark, a skin-tone modifier."""
+    return bool(unicodedata.combining(ch)) or unicodedata.category(ch) in ("Mn", "Me") or "\U0001f3fb" <= ch <= "\U0001f3ff"
 
 
-def _cells(ch):
-    """The columns ch fills, by the rule put draws by: an accent none, a wide (CJK, emoji) character two.
-    ponytail: an emoji ZWJ sequence counts by its parts; wcwidth-style tables if that ever matters."""
-    return 0 if _mark(ch) else 2 if unicodedata.east_asian_width(ch) in "WF" else 1
+def _vs16(base, cluster):
+    """A pictograph (a heart, a check) followed by U+FE0F: kitty, WezTerm, iTerm2 and Windows Terminal draw it in two
+    columns. A digit or letter keycap base stays one. ponytail: category So stands for 'has an emoji presentation';
+    an emoji table if a symbol that has none turns up."""
+    return "\ufe0f" in cluster and unicodedata.category(base) == "So"
+
+
+def _wide(ch):
+    return unicodedata.east_asian_width(ch) in "WF"
+
+
+def _cells(cluster):
+    """The columns a base character with its marks fills, by the rule put draws by: marks none, a wide (CJK, emoji)
+    character two, a pictograph with U+FE0F two. ponytail: an emoji ZWJ sequence counts by its parts."""
+    base = cluster[0]
+    return 0 if _mark(base) else 2 if _wide(base) or _vs16(base, cluster) else 1
+
+
+def _clusters(s):
+    """s as clusters: each base character with the marks after it (lazily: a huge log line costs no more than a short one)."""
+    cur = ""
+    for ch in s:
+        if cur and not _mark(ch):
+            yield cur
+            cur = ""
+        cur += ch
+    if cur:
+        yield cur
+
+
+def _rclusters(s):
+    """The clusters of s from its end."""
+    marks = ""
+    for ch in reversed(s):
+        if _mark(ch):
+            marks = ch + marks
+        else:
+            yield ch + marks
+            marks = ""
+    if marks:
+        yield marks
 
 
 def width(s):
     """The columns s fills on a terminal."""
-    return sum(map(_cells, str(s)))
+    return sum(map(_cells, _clusters(str(s))))
 
 
-def _take(chars, n):
-    """The longest run from the front of chars that fills at most n columns."""
+def _take(clusters, n):
+    """The longest run from the front of clusters that fills at most n columns."""
     out, used = [], 0
-    for ch in chars:
-        used += _cells(ch)
+    for c in clusters:
+        used += _cells(c)
         if used > n:
             break
-        out.append(ch)
+        out.append(c)
     return out
 
 
@@ -431,16 +480,17 @@ def pad(s, n):
 
 def fit(s, n, strip=True):
     s = " ".join(str(s).split()) if strip else str(s).replace("\n", " ")
-    if len(_take(s, n)) == len(s):  # _take stops at n columns, so a huge log line costs no more than a short one
+    got = _take(_clusters(s), n)  # stops at n columns, so a huge log line costs no more than a short one
+    if sum(map(len, got)) == len(s):
         return s
-    return "".join(_take(s, n - 1)) + "…" if n > 0 else ""
+    return "".join(_take(_clusters(s), n - 1)) + "…" if n > 0 else ""
 
 
 def tail(s, n):
     """A path in n columns, keeping its end (the file name)."""
-    if len(_take(reversed(s), n)) == len(s):
+    if sum(map(len, _take(_rclusters(s), n))) == len(s):
         return s
-    end = "".join(reversed(_take(reversed(s), n - 1 if n > 1 else max(n, 0))))
+    end = "".join(reversed(_take(_rclusters(s), n - 1 if n > 1 else max(n, 0))))
     end = end.lstrip("".join(c for c in end if _mark(c)))  # an accent whose letter was cut
     return "…" + end if n > 1 else end
 
