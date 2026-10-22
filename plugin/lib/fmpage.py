@@ -2,7 +2,8 @@
 --catalogue NAME, a research catalogue's clusters with a Build/Veto pick each, as one self-contained HTML file for a
 claude.ai Artifact (private, phone-reachable; picks live in its db collection "picks"). Only ids, titles, tiers, marks
 and counts go in; every string is redacted and the write is refused while any still holds an absolute path. fm page
-never publishes: it prints the Artifact line for the main thread."""
+never publishes: it prints the Artifact line for the main thread. T-1649: fm page looks writes the looks gallery
+instead, one living specimen per look card (looks.html)."""
 import html
 import json
 import os
@@ -12,6 +13,27 @@ import time
 import fmcore as c
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
+LOOKS_TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "looks.html")
+# T-1649: a look card's type class → faces already on the device (the gallery loads no web font); longest name first
+FACES = {
+    "condensed grotesk": '"Barlow Condensed", "Roboto Condensed", "Avenir Next Condensed", "Arial Narrow", '
+                         '"Nimbus Sans Narrow", "Liberation Sans Narrow", sans-serif',
+    "transitional serif": 'Charter, "Bitstream Charter", "Sitka Text", Cambria, "Source Serif 4", "Noto Serif", '
+                          'Georgia, serif',
+    "old-style serif": '"Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", P052, "EB Garamond", '
+                       'Garamond, serif',
+    "geometric sans": 'Futura, "Century Gothic", Avenir, "URW Gothic", Jost, Montserrat, Corbel, sans-serif',
+    "humanist sans": 'Seravek, "Gill Sans Nova", "Source Sans 3", "Fira Sans", Ubuntu, Calibri, "Noto Sans", '
+                     'sans-serif',
+    "neo-grotesk": 'Inter, "Adwaita Sans", Roboto, "Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif',
+    "grotesk": 'Archivo, "Schibsted Grotesk", "Libre Franklin", "Franklin Gothic Medium", "Helvetica Neue", Arial, '
+               'sans-serif',
+    "slab": 'Rockwell, "Rockwell Nova", "Roboto Slab", "Zilla Slab", "Sitka Small", "DejaVu Serif", serif',
+    "mono": 'ui-monospace, "SF Mono", "Cascadia Code", "Source Code Pro", Menlo, Consolas, "Adwaita Mono", monospace',
+}
+FACE = re.compile(r"(?i)(?<![\w-])(" + "|".join(map(re.escape, FACES)) + r")(?![\w-])")
+ROLE = re.compile(r"(?m)^\|\s*`(--[a-z][a-z-]*)`\s*\|\s*(#[0-9A-Fa-f]{6})\s*\|")
+PLATE = re.compile(r"<!--look (look-[a-z0-9-]+)-->\n?(.*?)<!--/look-->\n?", re.S)
 ABSOLUTE = re.compile(r"(?<![\w.-])(?:/home/|/Users/|/root/)")  # a bare ~/ names no user (review of T-0786)
 CLUSTER = ("id", "capability", "mark", "why", "grounding", "value", "effort", "risk")
 IDEA = ("n", "title", "type", "value", "effort", "lens")
@@ -130,9 +152,94 @@ def save_picks(p, args, catalogue):
                      f"{len(by['veto'])} veto ({', '.join(by['veto']) or '-'}); saved to {path}")
 
 
+def look_cards(folder=None):
+    """T-1649: [{name, title, line, roles {--role: #HEX}, faces [type class…], motion, texture}] for each look card,
+    the set fmtaste.looks finds (the one rule for what a look card is)."""
+    import fmtaste
+    folder = folder or fmtaste.LOOKS
+    out = []
+    for name, look in fmtaste.looks(folder).items():
+        part = lambda h: fmtaste.section(look["body"], h)
+        faces = list(dict.fromkeys(m.group(1).lower() for m in FACE.finditer(part("Type"))))
+        out.append({"name": re.sub(r"[^a-z0-9-]", "-", name.lower()), "title": look["title"], "line": look["line"],
+                    "roles": dict(ROLE.findall(part("Palette"))), "faces": faces or ["neo-grotesk"],
+                    "motion": part("Motion"), "texture": part("Texture")})
+    return out
+
+
+def _prose(text):
+    """A card's first sentence as HTML: escaped, `code` spans kept."""
+    first = re.split(r"(?<=\.)\s", " ".join(text.split()), 1)[0]
+    return re.sub(r"`([^`<]+)`", r"<code>\1</code>", html.escape(first))
+
+
+def looks_html(cards):
+    """T-1649: the gallery, one section per card: its own plate from looks.html's <!--look NAME--> block (a plain
+    palette-and-type plate when it has none), wearing the card's palette roles and type pair."""
+    with open(LOOKS_TEMPLATE, encoding="utf-8") as f:
+        page = f.read()
+    plates = dict(PLATE.findall(page))
+    styles, index, sections = [], [], []
+    for i, x in enumerate(cards, 1):
+        n, esc, faces = x["name"], html.escape(x["title"]), x["faces"] + x["faces"][:1]
+        styles.append(f"#{n} {{ " + "; ".join([f"{k}: {v}" for k, v in x["roles"].items()]
+                                              + [f"--f1: {FACES[faces[0]]}", f"--f2: {FACES[faces[1]]}"]) + " }")
+        dots = f'--s: {x["roles"].get("--surface", "Canvas")}; --a: {x["roles"].get("--accent", "CanvasText")}'
+        index.append(f'<li><a href="#{n}"><span class="dots" style="{dots}" aria-hidden="true"></span>{esc}</a></li>')
+        type_ = " + ".join(f'<span class="face" style="font-family: var(--f{j})">{html.escape(f)}</span>'
+                           for j, f in enumerate([faces[0].capitalize()] + x["faces"][1:2], 1))
+        swatches = "".join(f'<li><span class="chip" style="background: {v}"></span><code>{k[2:]}</code> '
+                           f'<code>{v}</code></li>' for k, v in x["roles"].items())
+        plate = (f'<div class="plate" data-plate="own">{plates[n]}</div>' if n in plates else
+                 f'<div class="plate" data-plate="fallback"><p class="plain-a">Aa</p>'
+                 f'<p class="plain-b">{html.escape(x["line"])}</p></div>')
+        sections.append(
+            f'<section class="specimen" id="{n}" aria-labelledby="{n}-h">\n<div class="caption">'
+            f'<p class="no">{i:02d}</p><h2 id="{n}-h">{esc}</h2><p class="line">{html.escape(x["line"])}</p>'
+            f'<dl><dt>Type</dt><dd>{type_}</dd>'
+            f'<dt>Motion</dt><dd>{_prose(x["motion"])}</dd><dt>Texture</dt><dd>{_prose(x["texture"])}</dd></dl>'
+            f'<button type="button" class="replay" data-replay>Replay motion</button></div>\n'
+            f'{plate}\n<ul class="swatches" aria-label="{esc} palette">{swatches}</ul>\n</section>')
+    fill = {"STYLES": "\n".join(styles), "INDEX": "\n".join(index), "SPECIMENS": "\n".join(sections),
+            "COUNT": str(len(cards))}
+    return re.sub(r"__([A-Z]+)__", lambda m: fill.get(m.group(1), m.group(0)), PLATE.sub("", page))
+
+
+def _out(args, default, mark):
+    """Where the page goes. Review of T-1649: an --out that already exists is replaced only when it holds mark, the
+    template's own opening comment, so the user's own page is never overwritten (the default path is Foreman's)."""
+    import fmcli
+    path = os.path.abspath(args.out) if args.out else default
+    if not path.endswith(".html") or os.path.islink(path):  # review: --out never overwrites another kind of file
+        raise fmcli.UsageError(f"--out must be a .html file that isn't a link: {path}")
+    if args.out and os.path.lexists(path):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                ours = mark in f.read(4096)
+        except OSError:
+            ours = False
+        if not ours:
+            raise fmcli.UsageError(f"--out {path} already exists and isn't one fm page wrote; pick a new file or "
+                                   "move that one")
+    return path
+
+
+def looks_page(p, args):
+    import fmcli
+    if args.catalogue or args.picks or args.url:
+        raise fmcli.UsageError("fm page looks takes only --out: the gallery shows the look cards, not a catalogue")
+    cards = look_cards()
+    path = _out(args, os.path.join(p.dir, "looks.html"), "/* fm page looks (T-1649):")
+    c.write_atomic(path, looks_html(cards))
+    return fmcli.out(args, {"path": path, "looks": len(cards)},
+                     f"Wrote {path}: {len(cards)} looks, one living specimen each; it loads nothing from another host")
+
+
 def cmd_page(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "what", None) == "looks":
+        return looks_page(p, args)
     meta = c.read_meta(p)
     if args.url:
         if not re.fullmatch(r"https://claude\.ai/(?:code/)?artifact/[\w-]{6,80}", args.url):
@@ -153,9 +260,7 @@ def cmd_page(args):
     with open(TEMPLATE, encoding="utf-8") as f:
         page = f.read()
     page = page.replace("__TITLE__", html.escape(data["title"])).replace("__DATA__", embed(data))
-    path = os.path.abspath(args.out) if args.out else os.path.join(p.dir, "page.html")
-    if not path.endswith(".html") or os.path.islink(path):  # review: --out never overwrites another kind of file
-        raise fmcli.UsageError(f"--out must be a .html file that isn't a link: {path}")
+    path = _out(args, os.path.join(p.dir, "page.html"), "/* fm page (T-0786):")
     c.write_atomic(path, page)
     url = meta.get("page_url")
     publish = ("Publish: refused here, this repo is marked sensitive (the Artifact tool is denied); fm sensitive off "

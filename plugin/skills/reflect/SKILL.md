@@ -1,6 +1,6 @@
 ---
 name: reflect
-description: Use after a Foreman task, phase or block, or for a retro: records decisions, lessons and self-improvement ideas.
+description: Use whenever a task, phase or block ends, or for a retro: records decisions, lessons and self-improvement ideas.
 ---
 
 # Foreman: reflect

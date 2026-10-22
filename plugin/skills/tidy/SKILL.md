@@ -1,6 +1,7 @@
 ---
 name: tidy
-description: Use when asked to clean up Foreman or memory, or STATE says tidy is overdue: archives, flags stale items, lints; dry-run first.
+description: Use whenever the user asks to clean up Foreman or memory, or tidying is overdue: archives, flags stale items, lints; dry-run first.
+disable-model-invocation: true
 ---
 
 # Foreman: tidy
