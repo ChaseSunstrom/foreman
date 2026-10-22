@@ -13,6 +13,21 @@ import fmcore as c
 import fmcli
 
 
+class OutJson(unittest.TestCase):
+    """T-1589: --json output takes any value a TOML file can hold, and puts no raw control character on screen."""
+    def test_a_datetime_prints_as_text_and_controls_are_escaped(self):
+        import argparse, contextlib, datetime, io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            fmcli.out(argparse.Namespace(json=True),
+                      {"when": datetime.datetime(2026, 10, 22, 12, 0), "name": "a\x7fb\x9bc"}, None)
+        text = buf.getvalue()
+        self.assertIn("2026-10-22 12:00:00", text)
+        self.assertNotIn("\x7f", text)
+        self.assertNotIn("\x9b", text)
+        self.assertEqual(json.loads(text)["name"], "a\x7fb\x9bc")
+
+
 class Init(ForemanTestCase):
     def test_init_prints_slug_and_state_is_empty(self):
         slug = self.fm("init").stdout.strip()

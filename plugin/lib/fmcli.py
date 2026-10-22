@@ -40,8 +40,9 @@ def _session_model():
 
 
 def out(args, data, text):
-    if getattr(args, "json", False):
-        print(json.dumps(data, indent=2, ensure_ascii=False))
+    if getattr(args, "json", False):  # T-1589: any value (a TOML datetime) as text; DEL and C1 controls escaped
+        print(re.sub(r"[\x7f-\x9f]", lambda m: f"\\u{ord(m.group()):04x}",
+                     json.dumps(data, indent=2, ensure_ascii=False, default=str)))
     elif text is not None:
         print(text)
 
