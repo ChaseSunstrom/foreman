@@ -344,9 +344,9 @@ def session_start(pl):
             except Exception:
                 log_error("SessionStart", _tb())
         repo_note = None
-        try:  # T-1472: the repo's own hooks, MCP servers and allow rules, once per content hash
-            import fmplugins
-            digest, repo_note = fmplugins.repo_config(p.root)
+        try:  # T-1472: the repo's own hooks, MCP servers and allow rules, once per content hash; an unattended
+            import fmplugins  # run has nobody to read it, so it waits for the user's next session
+            digest, repo_note = (meta.get("repo_config"), None) if _headless() else fmplugins.repo_config(p.root)
             if digest == meta.get("repo_config"):
                 repo_note = None
             else:  # None once the files are gone, so the same files back are named again
@@ -414,7 +414,7 @@ def session_start(pl):
         out["initialUserMessage"] = first
     res = {"hookSpecificOutput": out, "terminalSequence": _title_seq(sd)}
     try:
-        news = _whats_new_note(headless=_headless())
+        news = "\n\n".join(filter(None, [_whats_new_note(headless=_headless()), repo_note]))  # T-1472: the user too
         if news:
             res["systemMessage"] = news
     except Exception:
