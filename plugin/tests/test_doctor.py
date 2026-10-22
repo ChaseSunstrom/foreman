@@ -130,6 +130,27 @@ class Checks(unittest.TestCase):
             {"foreman": {"source": {"source": "github", "repo": "x/foreman"}}}))
         self.assertEqual(d.check_mod_release(repo, listing).status, "WARN")
 
+    def test_low_disk_warns(self):
+        # T-1450: the disk filled on 2026-10-22 and hooks failed writing state (ENOSPC) with no warning first
+        import collections
+        import fmcore
+        Usage = collections.namedtuple("Usage", "total used free")
+        for n in range(3):
+            self.write(f"volt/.claude/worktrees/agent-{n}/f", "x")
+        self.write("gitter/.claude/worktrees/agent-0/f", "x")
+        os.makedirs(os.path.join(self.t, "quiet"))
+        projects = [(fmcore.Project(name, os.path.join(self.t, name), ""), {}) for name in ("volt", "gitter", "quiet")]
+        low = d.check_disk(self.t, lambda _: Usage(900e9, 893e9, 7e9), projects)
+        self.assertEqual(low.status, "WARN")
+        self.assertIn("7 GB free", low.detail)
+        self.assertIn("volt 3", low.detail)
+        self.assertIn("gitter 1", low.detail)
+        self.assertNotIn("quiet", low.detail)
+        self.assertEqual(d.check_disk(self.t, lambda _: Usage(900e9, 600e9, 300e9), projects).status, "PASS")
+        self.assertEqual(d.check_disk(self.t, lambda _: Usage(100e9, 88e9, 12e9), projects).status, "PASS")
+        self.assertEqual(d.check_disk(self.t, lambda _: Usage(2000e9, 1985e9, 15e9), projects).status, "WARN",
+                         "under 5% free is low even with 15 GB left")
+
     def test_a_busy_machine_skips_hook_timing(self):
         # T-0367: at load 35 JARVIS spent 21 s on 136 timed hook runs, and slow numbers there say nothing of the hooks
         bench = {"Stop": {"p95": 900, "budget": 150, "ok": False, "exit_codes": [0]}}

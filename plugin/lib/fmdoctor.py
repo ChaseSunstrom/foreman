@@ -941,6 +941,33 @@ def check_plugins():
     return Result("plugins", "PASS", "no conflicts among enabled plugins")
 
 
+LOW_DISK_BYTES = 10e9  # T-1450: below this, or below LOW_DISK_SHARE of the disk, doctor warns
+LOW_DISK_SHARE = 0.05
+
+
+def check_disk(path=None, usage=None, projects=None):
+    """T-1450: the disk filled on 2026-10-22 and every hook that wrote state failed (ENOSPC) with no warning first.
+    Builder worktrees pile up unseen, so their counts are named (a listdir each; sizing them would be slow)."""
+    try:
+        u = (usage or shutil.disk_usage)(path or c.state_dir())
+    except OSError:
+        return Result("disk", "PASS", "not measured")
+    free = f"{u.free / 1e9:.0f} GB free ({100 * u.free / u.total:.0f}%)"
+    if u.free >= LOW_DISK_BYTES and u.free >= LOW_DISK_SHARE * u.total:
+        return Result("disk", "PASS", free)
+    lanes = []
+    for p, _ in (c.all_projects() if projects is None else projects):
+        try:
+            n = len(os.listdir(os.path.join(p.root, ".claude", "worktrees")))
+        except OSError:
+            continue
+        if n:
+            lanes.append((n, os.path.basename(p.root.rstrip(os.sep))))
+    where = ", ".join(f"{name} {n}" for n, name in sorted(lanes, reverse=True)[:5])
+    return Result("disk", "WARN", f"{free} on the disk holding Foreman's state: hooks fail when it fills"
+                  + (f"; builder worktrees: {where} (git worktree list; fm lane rm the merged ones)" if where else ""))
+
+
 def check_mod_release(home=None, listing=None):
     """T-0191: every other session draws the installed foreman-ui, which lags this repo until it is released (0.4.0
     stayed installed while the repo reached 0.5.0). Its hooks are compared, so code changed without a version bump
@@ -1357,7 +1384,7 @@ def run_all(full=False, accept_supply=False):
                                     os.path.join(home, ".claude-plugin", "marketplace.json"),
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
-               check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
+               check_hook_scripts(), check_state_dir(home, c.state_dir()), check_disk(), check_env(settings, manifest),
                check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
                check_supply(claude, accept_supply), check_worktree_base(settings), check_fm_link(),
                check_invisible_text(instruction_files())]
