@@ -30,7 +30,8 @@ float height(vec2 p, float t) {  // three octaves drifting apart: the land breat
 void main() {
   vec2 p = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0) * 2.2;
   float h = height(p, uTime * 0.01) * uCount;            // height in contour steps
-  float px = abs(fract(h - 0.5) - 0.5) / fwidth(h);      // distance to the nearest line, in px
+  float slope = max(length(vec2(dFdx(h), dFdy(h))), 1e-4);  // true gradient: diagonals as thin as the rest
+  float px = abs(fract(h - 0.5) - 0.5) / slope;          // distance to the nearest line, in px
   float index = 1.0 - step(0.5, mod(floor(h + 0.5), 5.0)); // every fifth step
   float line = clamp(mix(0.6, 1.1, index) + 0.5 - px, 0.0, 1.0);  // 1.2 px and 2.2 px lines
   float ink = line * mix(0.55, 1.0, index) * uIntensity;
@@ -48,7 +49,7 @@ void main() {
 | `uLine`, `uGround` | vec3 | sRGB 0-1 from the `--border` (or `--accent`) and `--surface` tokens |
 
 ## Cost
-Class: low. Three value-noise lookups and one `fwidth` a pixel, no loop. Render at full device resolution: the lines are 1-2 px and blur when scaled.
+Class: low. Three value-noise lookups and two screen-space derivatives a pixel, no loop. Render at full device resolution: the lines are 1-2 px and blur when scaled.
 
 ## Reduced motion
 Still: `uTime = 0.0`: one fixed map, redrawn on resize only.

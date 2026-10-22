@@ -17,7 +17,12 @@ in vec2 vUv;
 uniform float uIntensity, uScale;
 uniform vec3 uPaper, uFibre;
 out vec4 outColor;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+uint pcg(uint v) { uint s = v * 747796405u + 2891336453u; uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+  return (w >> 22u) ^ w; }
+float hash(vec2 p) {  // integer PCG hash: exact at any pixel coordinate, where a sin() hash streaks on some GPUs
+  uvec2 q = uvec2(ivec2(floor(p)) & 0xffff);
+  return float(pcg(q.x + pcg(q.y))) / 4294967295.0;
+}
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);

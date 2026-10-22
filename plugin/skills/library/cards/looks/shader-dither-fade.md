@@ -44,7 +44,7 @@ void main() {
 |---|---|---|
 | `uRes` | vec2 | canvas size in device px |
 | `uProgress` | float | 0 = all `uFrom`, 1 = all `uTo`; driven by the transition, not by a clock |
-| `uIntensity` | float | 0 = a plain smooth crossfade, 1 = pure two-colour dither |
+| `uIntensity` | float | 0 = a smooth crossfade with no dither (plain `uFrom` at `uProgress` 0), 1 = pure two-colour dither |
 | `uPixel` | float | dither cell size in device px: 2-4 times `devicePixelRatio`, rounded to an integer |
 | `uFrom`, `uTo` | vec3 | sRGB 0-1: the outgoing and incoming surface tokens |
 
