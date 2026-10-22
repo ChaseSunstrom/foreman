@@ -1,0 +1,4 @@
+@font-face { font-family: "Brand Sans"; src: url(brand.woff2) format("woff2"); font-display: swap; }
+:root { --brand: "Brand Sans"; }
+body { font-family: var(--brand); }
+.ui { font-family: system-ui, sans-serif; }

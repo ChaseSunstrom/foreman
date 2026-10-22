@@ -5830,6 +5830,12 @@ def _build_parser():
     s.add_argument("--expect", help="set cmd: a regex its output must match")
     s.add_argument("--status", type=int, default=200, help="set http: the status it must return")
     s.add_argument("--json-key", dest="json_key", help="set http: a key its JSON body must have")
+    import fmdesign  # T-1506: stdlib only and small; its rule list is the help's epilog
+    s = add("design", lazy("fmdesign", "cmd_design"), tier=("Every task", 92), epilog=fmdesign.rules_help(),
+            formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
+            "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings)")
+    s.add_argument("action", choices=["lint"])
+    s.add_argument("paths", nargs="+", metavar="PATH", help="files or directories (one run: the UI's root)")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), tier=("Finding your way", 460), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
@@ -6123,7 +6129,8 @@ def _task_shape(parser, argv):
 # T-1388 review: log appends ledger events (a forged check_run passes a gate); recall and map write with some flags.
 WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
-                   "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"})}
+                   "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
+                   "design": ("action", {"lint"})}  # T-1506: lint only reads the files it's given
 
 
 def _worker_may(args):

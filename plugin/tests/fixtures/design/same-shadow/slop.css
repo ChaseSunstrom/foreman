@@ -1,0 +1,4 @@
+.card { box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); } /* expect */
+.panel { box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+.tile { box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+.menu { box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
