@@ -146,10 +146,13 @@ def _limits():
     return [(r, min(x for x in (v, *resource.getrlimit(r)) if x != resource.RLIM_INFINITY)) for r, v in want]
 
 
-def _run(code, timeout, limits=()):
-    """Why the block failed, or None: python3 -I in an empty temporary folder, stdin closed, PATH the only variable
-    passed on (HOME is the folder, so ~ doesn't reach the real one), under `limits`; then its process group is killed,
-    so a hung block, or a server it started and forgot, stops with it (one that setsid()s escapes: see the module)."""
+def _run(code, timeout, limits=(), argv=(sys.executable, "-I", "-c"), env=None, what="python block",
+         stdout=subprocess.DEVNULL):
+    """Why the block failed, or None: argv + [code] (python3 -I) in a new temporary folder, stdin closed, stdout to
+    `stdout`, PATH the only variable passed on (HOME is the folder, so ~ doesn't reach the real one) plus env(folder)
+    when given, under `limits`; then its process group is killed, so a hung block, or a server it started and forgot,
+    stops with it (one that setsid()s escapes: see the module). T-1519: fm release-check runs the docs' runnable fences
+    through it, fm new check a panel."""
     def limit():
         for r, v in limits:
             try:
@@ -158,12 +161,12 @@ def _run(code, timeout, limits=()):
                 pass  # a platform without that limit
     with tempfile.TemporaryDirectory(prefix="fm-playbook-", ignore_cleanup_errors=True) as d, \
             tempfile.TemporaryFile() as err:
-        env = {"PATH": os.environ.get("PATH") or os.defpath, "HOME": d}
+        env = dict({"PATH": os.environ.get("PATH") or os.defpath, "HOME": d}, **(env(d) if env else {}))
         try:
-            proc = subprocess.Popen([sys.executable, "-I", "-c", code], cwd=d, env=env, stdin=subprocess.DEVNULL,
-                                    stdout=subprocess.DEVNULL, stderr=err, start_new_session=True, preexec_fn=limit)
+            proc = subprocess.Popen([*argv, code], cwd=d, env=env, stdin=subprocess.DEVNULL,
+                                    stdout=stdout, stderr=err, start_new_session=True, preexec_fn=limit)
         except (OSError, ValueError) as e:  # a NUL byte, an argument list too long
-            return f"python block can't run: {e.__class__.__name__}"
+            return f"{what} can't run: {e.__class__.__name__}"
         try:
             rc = proc.wait(timeout)
         except subprocess.TimeoutExpired:
@@ -179,7 +182,7 @@ def _run(code, timeout, limits=()):
             return None
         err.seek(max(0, err.seek(0, 2) - 4096))
         last = next((x for x in reversed(err.read().decode("utf-8", "replace").splitlines()) if x.strip()), "")
-        return (f"python block exited {rc}" if rc > 0 else f"python block killed by signal {-rc}") \
+        return (f"{what} exited {rc}" if rc > 0 else f"{what} killed by signal {-rc}") \
             + (f": {c.fit(last.strip(), 160)}" if last.strip() else "")
 
 

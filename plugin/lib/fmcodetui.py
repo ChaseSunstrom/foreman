@@ -1581,6 +1581,7 @@ class App:
         # T-1511: the layout editor's picked panel (column, row); the runner test going and whether one just ended
         self.lay_at, self.runner_test, self.runner_done, self.set_back = (0, 0), None, False, None
         self.runner_proc = None  # the CLI a runner test started: stop() ends its process group with the app
+        self.tui = None  # T-1543: tui.toml as the app last read it ({path, text}, fmsettings.boot): watched for edits
         self.home_items, self.home_index = None, 0  # the home list a view over it goes back to
         self.commands = {"quit": self.quit, "new": self.new, "stop": self.stop, "resume": self.resume,
                          "help": self.help, "focus": self.next_focus, "up": lambda: self.move(-1),
@@ -1723,9 +1724,11 @@ class App:
         now = self.cfg.get("motion", "full")
         nxt = MOTIONS[(MOTIONS.index(now) + 1) % len(MOTIONS)] if now in MOTIONS else "full"
         try:
-            done, refused = fmsettings.set_key("motion", nxt)
+            done, refused = fmsettings.set_key("motion", nxt, base=self._base())
         except Exception as e:  # a lock or a write that failed
             done, refused = [], [f"not written ({type(e).__name__}: {e})"]
+        if any(s == "app" for s, _, _ in done):  # T-1543: as every write: what an outside edit merged in shows too
+            self._settings_reload()
         self.cfg = dict(self.cfg, motion=nxt)
         if self.mode == "help":  # any key closes the poster, z too
             self.mode = "main"
@@ -2074,14 +2077,14 @@ class App:
             return None
         # time.monotonic doesn't count a suspend: a sleep holds the preview longer (safe: nothing is written)
         self.set_pending = {"key": key, "value": value, "surface": surface, "cfg": self.cfg,
-                            "until": self.clock() + PREVIEW_SECONDS}
+                            "until": self.clock() + PREVIEW_SECONDS, "base": self._base()}  # T-1543: what it showed
         self.cfg, self.set_note = dict(cfg, theme=_mono(), preset="mono") if self.no_colour else cfg, None
         return None
 
     def _settings_keep(self):
         p, self.set_pending = self.set_pending, None
         self.cfg = p["cfg"]  # the look before it, unless the write takes (a guard's refusal leaves the file as it was)
-        return self._settings_write(p["key"], p["value"], p["surface"])
+        return self._settings_write(p["key"], p["value"], p["surface"], p["base"])
 
     def _settings_expire(self):
         """A preview not kept in time: the look before it (nothing was written); whether one went back."""
@@ -2093,14 +2096,18 @@ class App:
                          "nothing written", "warn")
         return True
 
-    def _settings_write(self, key, value, surface):
+    def _settings_write(self, key, value, surface, base=None):
+        """T-1543: `base`, the tui.toml text the change was made on (a preview's), else the one the app last read: a
+        key another program changed since is refused, and the screen takes the file as it is now."""
         import fmsettings
         try:
-            done, refused = fmsettings.set_key(key, value, surface)
+            done, refused = fmsettings.set_key(key, value, surface, base=self._base() if base is None else base)
         except Exception as e:  # a lock or a write that failed: said, the screen stays
             done, refused = [], [f"{key}: not written ({type(e).__name__}: {e})"]
         if any(s == "app" for s, _, _ in done):
             self._settings_reload()
+        elif refused:
+            self._watch_tui(now=True)
         said = [f"{s}: {key} = {_shown(v, s)} ({'now' if s == 'app' else 'the pane reads it within seconds'})"
                 + "".join(f"; now skipped: {w}" for w in warn) for s, v, warn in done]
         self.set_note = ("; ".join(said + refused), "bad" if refused else "ok")
@@ -2108,8 +2115,51 @@ class App:
         return None
 
     def _settings_reload(self):
+        import fmsettings
         cfg, _ = load_config()
-        self.cfg = dict(cfg, theme=_mono(), preset="mono") if self.no_colour else cfg
+        why = fmsettings.render_error(cfg)  # T-1543: an outside edit the write merged in may not draw
+        if why:
+            self.message = fmsettings._safe(f"the app can't draw with tui.toml ({why}): the running look kept")
+        else:
+            self.cfg = dict(cfg, theme=_mono(), preset="mono") if self.no_colour else cfg
+        self._own_write()
+
+    def _own_write(self):
+        """T-1543: tui.toml after the app's own write is what it has seen: not an outside edit for the watch."""
+        import fmsettings
+        if self.tui:
+            try:
+                self.tui["text"] = fmsettings._read_app(self.tui["path"])
+            except fmsettings.SettingError:
+                pass
+
+    def _base(self):
+        """T-1543: the tui.toml text the app last read and parsed (None: not watched)."""
+        return self.tui.get("valid", self.tui["text"]) if self.tui else None
+
+    def _watch_tui(self, now=False):
+        """T-1543: tui.toml written by another program while the app runs (an editor, fm settings in a shell), read
+        again once a second: applied when the app can draw with it, the running look kept when it can't; said either
+        way, never written back. A previewed look stays up: the look it goes back to is the file's. Whether it
+        changed."""
+        import fmsettings
+        if not self.tui or (not now and self.clock() < self.tui.get("next", 0)):
+            return False
+        self.tui["next"] = self.clock() + 1
+        got = fmsettings.reread(self.tui)
+        if not got:
+            return False
+        cfg, self.message = got
+        if cfg is not None:
+            cfg = dict(cfg, theme=_mono(), preset="mono") if self.no_colour else cfg
+            if self.set_pending:
+                self.set_pending["cfg"] = cfg
+            else:
+                self.cfg = cfg
+        if self.mode == "settings":
+            self.set_note = (self.message, "ok" if cfg is not None else "bad")
+            self._settings_load()
+        return True
 
     # -- T-1511: the settings screen's editors: a key captured, panels moved by keys, a runner tested
     def _settings_bind(self, k):
@@ -2184,7 +2234,7 @@ class App:
         cols[to].insert(at, name)
         hts[to].insert(at, hts[c].pop(i))
         try:  # one write: both or neither
-            done = fmsettings.set_apps([("layout.columns", cols), ("layout.heights", hts)])
+            done = fmsettings.set_apps([("layout.columns", cols), ("layout.heights", hts)], base=self._base())
             self.lay_at = (to, at)
             self.set_note = (f"{name} moved: column {to + 1}, row {at + 1}" + "".join(
                 f"; now skipped: {w}" for _, _, warn in done for w in warn), "ok")
@@ -2348,6 +2398,7 @@ class App:
         """Take the events that arrived, and put back a previewed look not kept in time; whether any did (so the
         driver redraws)."""
         got = self._settings_expire()
+        got = self._watch_tui() or got
         if self.runner_done:  # T-1511: a runner test's result came in
             got, self.runner_done = True, False
         while True:
@@ -2569,11 +2620,13 @@ def load_config(path=None):
     cfg = copy.deepcopy(DEFAULTS)
     path = path or config_path()
     try:
-        with open(path, "rb") as f:
-            user = tomllib.load(f)
-    except FileNotFoundError:
-        return cfg, []
-    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError, RecursionError) as e:
+        data, st = fmsettings._read_raw(path)  # T-1543: never a FIFO (it would block), a device or a file past 1 MB
+        if st is None:
+            return cfg, []
+        user = tomllib.loads(data.decode("utf-8"))
+    except fmsettings.SettingError as e:  # its message starts with the path
+        return cfg, [_escaped(str(e))]
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError, RecursionError) as e:
         return cfg, [f"{path}: {_escaped((str(e).splitlines() or [type(e).__name__])[0])}"]
     errors = []
     bad = lambda msg: errors.append(f"{path}: {_escaped(msg)}")  # a name from the file, said, never run by a terminal
@@ -2793,9 +2846,13 @@ def snapshot(events, path, size=(120, 34), cfg=None, mode="main"):
 def main(args, words, home=False):
     """fm code tui [REQUEST…] [--plain] [--model M | --worker CLI] [--verify CMD] [--resume [ID]] [--print-config]
     [--snapshot FILE --events FILE]. A bad setting or extension is said once and skipped; --print-config exits 2."""
+    import fmsettings
     ext_errors = load_extensions()
-    cfg, errors = load_config()
-    problems = [f"extension {e}" for e in ext_errors] + errors
+    if getattr(args, "print_config", False):  # what tui.toml says, whether the app can draw with it or not
+        (cfg, errors), booted, seen = load_config(), None, None
+    else:  # T-1543: one the app can't draw with starts the last good settings, and says so
+        cfg, errors, booted, seen = fmsettings.boot()
+    problems = [f"extension {e}" for e in ext_errors] + ([booted] if booted else []) + errors
     if getattr(args, "print_config", False):
         print(print_config(cfg, config_path()), end="")
     for e in problems:
@@ -2835,13 +2892,14 @@ def main(args, words, home=False):
                                                  "worker_timeout", "dry_plan")}
     root = os.path.realpath(p.root) if p else os.getcwd()
     app = App(cfg, root=root, opts=opts, history=p and os.path.join(p.dir, "code"))
+    app.tui = seen  # T-1543: an edit to tui.toml while it runs is read back in
     if home:  # T-1330: inside a project, its view; elsewhere every project
         app.show_home()
         here = next((x for x in app.items if p and x.get("project") == p.slug), None)  # a worktree too
         if here:
             app.open_project(here)
         if problems:
-            app.message = f"{len(problems)} setting(s) skipped: {problems[0]}"
+            app.message = booted or f"{len(problems)} setting(s) skipped: {problems[0]}"
         run_screen(app)
         return 0
     resume = getattr(args, "resume", None)
@@ -2854,7 +2912,7 @@ def main(args, words, home=False):
         first()
         return run_plain(app)
     if problems:
-        app.message = f"{len(problems)} setting(s) skipped: {problems[0]}"
+        app.message = booted or f"{len(problems)} setting(s) skipped: {problems[0]}"
     if first:
         first()
     run_screen(app)
