@@ -29,7 +29,7 @@ A frame is evidence only if the next run on the same commit draws the same pixel
 
 1. **Data comes from a seed, not from whatever the dev database holds.** One command or variable puts the app on it (`QA_FIXTURE=full npm run dev`, a seed script, a mock server). Two fixtures at least: `full` and `empty`.
 2. **`full` holds the hard cases on purpose:** the longest real name you'd accept (60 characters or more, no spaces in one of them), a 7-digit amount, a missing avatar, a negative number, a right-to-left word if the product takes user text, and enough rows to scroll (finite: about 50, not an infinite feed).
-3. **`empty` is a brand-new account:** every list, table and chart with nothing in it.
+3. **`empty` is a brand-new account:** every list, table and chart with nothing in it. What each empty, loading, error and overflow state should look like is `composition.md`'s state atlas; this pass checks the built screens against it.
 4. **Time is frozen** at the fixture's "now" (`page.clock.setFixedTime` in the script); relative dates ("3 days ago") are seeded relative to it.
 5. **No randomness and no third parties:** seeded IDs and colours, no live ads, maps, embeds or analytics in the QA build, fonts served locally.
 6. **Fonts load before capture** (`document.fonts.ready`); a frame in the fallback font is a different screen.
