@@ -523,8 +523,19 @@ def set_key(key, value, surface=None, p=None):
     """`fm settings set` and the fm code app's :set line (T-1572): `key` set on every surface that has it (or on
     `surface`): ([(surface, value written, warnings)], [why each refused one wasn't written]). T-1510: what it changed
     is one entry of the settings history (fm settings undo)."""
+    return set_keys([(key, value)], surface, p)
+
+
+def set_keys(pairs, surface=None, p=None):
+    """T-1511: [(key, value)] set in order as set_key sets one, all one entry of the history (one undo puts them all
+    back): a panel the fm code app moves changes layout.columns and layout.heights together."""
+    done, refused = [], []
     with _recorded("set") as changes:
-        return _set_key(key, value, surface, p, changes, written())
+        now = written()
+        for key, value in pairs:
+            d, r = _set_key(key, value, surface, p, changes, now)
+            done, refused = done + d, refused + r
+    return done, refused
 
 
 def _set_key(key, value, surface, p, changes, now):
@@ -827,9 +838,11 @@ def _text(r, width=22):
 def cmd_settings(args):
     import fmcli
     import fmcodetui as T
-    if args.action == "list":
-        problems = []
-        got = rows(problems=problems)
+    if args.action == "list":  # T-1511: fm settings list keys (or layout, …): that group alone
+        problems, groups = [], list(dict.fromkeys(e["group"] for e in schema()))
+        if args.key and args.key not in groups:
+            raise fmcli.UsageError(f"fm settings list [{' | '.join(groups)}]: {_safe(args.key)!r} isn't one")
+        got = [r for r in rows(problems=problems) if args.key in (None, r["group"])]
         if args.json:
             return fmcli.out(args, got, None)
         lines = []

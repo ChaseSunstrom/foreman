@@ -168,6 +168,23 @@ class Command(ForemanTestCase):
         self.assertIn("plugin", text)
         self.assertIn("heavy", text)
 
+    def test_list_keys_or_layout_shows_that_group_alone(self):
+        """T-1511: /foreman:settings keys and layout show the bindings and the panel layout through fm settings list."""
+        keys = self.fm("settings", "list", "keys", env=self.env).stdout
+        self.assertIn('keys.d', keys)
+        self.assertIn('"diff"', keys)
+        self.assertNotIn("border", keys)
+        self.assertNotIn("layout.", keys)
+        rows = json.loads(self.fm("settings", "list", "layout", "--json", env=self.env).stdout)
+        self.assertEqual({r["group"] for r in rows}, {"layout"})
+        self.assertIn("layout.columns", {r["key"] for r in rows})
+        p = self.fm("settings", "list", "nope", env=self.env, check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("keys", p.stdout + p.stderr, "the groups it takes are named")
+        body = read_text(os.path.join(PluginSurface.ROOT, "plugin", "commands", "settings.md"))
+        for cmd in ("fm settings list keys", "fm settings list layout", "fm code runners --check"):
+            self.assertIn(f"`{cmd}", body, cmd)
+
     def test_get_shows_each_surface(self):
         out = self.fm("settings", "get", "motion", env=self.env).stdout
         self.assertIn("app", out)
