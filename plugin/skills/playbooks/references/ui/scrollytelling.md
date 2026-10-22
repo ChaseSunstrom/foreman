@@ -14,7 +14,8 @@ claim, colour and table view); their rules hold here unchanged.
 3. **Trigger on steps, not pixels.** An `IntersectionObserver` on the step elements marks a step active when it
    crosses a band across the middle of the viewport (snippet below); never a `scroll` listener doing per-pixel
    maths. The graphic's state is a lookup on the active step's index, never a sum of changes, so scrolling back
-   reverses it exactly and a deep link lands on the right state. Pass: opening `#step-7` cold shows state 7.
+   reverses it exactly; on load the step named in the URL's hash (or the first step) is drawn at once. Each step is
+   at least `60vh` tall. Pass: opening `#step-7` cold shows state 7.
 4. **Never take the scroll.** No `preventDefault` on `wheel`, `touchmove` or `keydown` scroll keys, no scroll
    snapping that drags the reader to a step, no scroll-speed changes. Page Down, Space, arrow keys and Tab through
    links in the steps all behave as on any page. Pass: `grep -rnE "addEventListener\(['\"](wheel|touchmove)" src`
@@ -39,20 +40,21 @@ claim, colour and table view); their rules hold here unchanged.
 // steps.js: render(i) must set the graphic to state i outright (a lookup, never "apply the next change")
 export function watchSteps(steps, render) {
   let active = -1;
+  const show = (i) => { if (i !== active) { active = i; render(i); } };
   const io = new IntersectionObserver((entries) => {
-    for (const e of entries) {
-      if (!e.isIntersecting) continue;
-      const i = steps.indexOf(e.target);
-      if (i !== active) { active = i; render(i); }
-    }
+    for (const e of entries) if (e.isIntersecting) show(steps.indexOf(e.target));
   }, { rootMargin: '-45% 0px -45% 0px' });  // a band across the middle tenth of the viewport
+  const hash = globalThis.location?.hash ?? '';
+  const linked = steps.findIndex((s) => s.id && `#${s.id}` === hash);
+  show(linked >= 0 ? linked : 0);           // a cold deep link draws its step; no hash draws the first
   steps.forEach((s) => io.observe(s));
   return () => io.disconnect();             // call on teardown so a second mount doesn't double-render
 }
 ```
 
 Use it as `watchSteps([...document.querySelectorAll('.step')], (i) => draw(STATES[i]))`, with `STATES` the
-storyboard's graphic column.
+storyboard's graphic column. Give every step an `id` and `min-height: 60vh`: a step shorter than that, scrolled to
+the top by a link, can sit above the middle band and never trigger.
 
 ## Checks
 

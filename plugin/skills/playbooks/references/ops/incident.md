@@ -21,6 +21,10 @@ because someone hunted the root cause while users were still failing.
 4. **Mitigate before you diagnose.** Reach for the reversible moves first: roll back the last deploy, turn the flag
    off, fail over, scale out, shed or block the bad traffic. Before each action write the effect you expect; after
    it, the effect you saw. Pass: every production change is a timeline row with both.
+   **A security event changes the order:** preserve the evidence first (snapshot the logs, disks and memory of
+   affected machines, copy access logs out of reach of the intruder), contain (isolate the host, rotate exposed
+   credentials and keys), and only then roll back, fail over or rebuild, which would destroy what you need to learn
+   how they got in. Pass: the snapshots are listed in the timeline before the first rebuild.
 5. **Prove recovery with the signal that showed the harm**: the same graph, query or error rate, back to its normal
    band, held for 15 minutes (or two of its usual cycles, whichever is longer). "Looks fine" is not a pass.
 6. **Communicate on a clock.** Updates every 30 minutes for SEV1, every 60 for SEV2, even when there is no news.
@@ -52,6 +56,7 @@ When unsure, pick the higher one; lowering it later is free.
 
 - [ ] The record has: UTC start, impact in user terms, severity with its number, the role holders.
 - [ ] Every production change in the incident is a timeline row with expected and seen effects.
+- [ ] For a security event, evidence snapshots and credential rotation precede any rollback or rebuild.
 - [ ] Recovery is shown by the same signal that showed the harm, held for the watch period.
 - [ ] The four moments (started, detected, mitigated, resolved) have times.
 - [ ] Each follow-up is a ticket with an owner and a due date; one of them is about detection.

@@ -19,8 +19,8 @@ reference page, CLI help. For keeping a whole repo's doc set owned and fresh ove
    without a result.
 5. **Examples run, in CI.** Every code block is copy-pasteable: no `$` prompts in copyable commands (show output in
    its own block), no `...` without saying what goes there, real values or clearly fake ones (`example.com`).
-   Python examples run through the script below (or `doctest`); shell examples through a test that executes them.
-   Pass: a CI job runs the examples and fails the build when one breaks.
+   Python and shell examples run through the script below (or `doctest` for Python). Pass: a CI job runs the
+   examples and fails the build when one breaks.
 6. **Reference comes from the source.** CLI flags from `--help`, endpoints from the OpenAPI file, functions from
    docstrings. Where generation is impossible, a test asserts the page names every flag or field.
 7. **Plain words.** Second person, present tense, short sentences. Define a term at first use and keep one name per
@@ -29,36 +29,43 @@ reference page, CLI help. For keeping a whole repo's doc set owned and fresh ove
 9. **Docs change with the code.** A change to behaviour updates its page in the same commit (Foreman records it
    with `fm task finish --docs`).
 
-## Running the Python examples
+## Running the examples
 
-Save as `run_examples.py` and point it at your Markdown. Each fenced Python block runs in a fresh, isolated
-interpreter inside a temporary folder; a block whose fence line reads `python no-run` is skipped. It exits 1 and
-names the file and line of each block that fails or runs longer than 60 seconds.
+Save as `run_examples.py` and point it at your Markdown. Each fenced `python` block runs in a fresh isolated
+interpreter, each `sh` or `bash` block under `bash -eu -o pipefail`, inside a temporary folder with only `PATH` in
+the environment and no input; a block whose fence line adds `no-run` (`python no-run`) is skipped. It exits 1 and
+names the file and line of each block that exits non-zero or runs longer than 60 seconds.
+
+It is not a sandbox: the blocks run with your permissions. Run it on trusted docs only, never on pull requests from
+forks.
 
 ```python
 #!/usr/bin/env python3
-import re, subprocess, sys, tempfile
+import os, re, subprocess, sys, tempfile
 
-FENCE = re.compile(r"^```python([^\n]*)\n(.*?)^```", re.M | re.S)
+FENCE = re.compile(r"^```(python|sh|bash)([^\n]*)\n(.*?)^```", re.M | re.S)
+RUNNERS = {"python": [sys.executable, "-I", "-c"], "sh": ["bash", "-eu", "-o", "pipefail", "-c"]}
 
 
 def run(path):
     text = open(path, encoding="utf-8").read()
     failed = 0
     for m in FENCE.finditer(text):
-        if "no-run" in m.group(1):
+        lang, info, code = m.groups()
+        if "no-run" in info:
             continue
         line = text.count("\n", 0, m.start()) + 1
         with tempfile.TemporaryDirectory() as tmp:
             try:
-                r = subprocess.run([sys.executable, "-I", "-c", m.group(2)], cwd=tmp, capture_output=True,
-                                   text=True, timeout=60)
-                err = r.stderr.strip() if r.returncode else ""
+                r = subprocess.run(RUNNERS.get(lang, RUNNERS["sh"]) + [code], cwd=tmp, capture_output=True,
+                                   text=True, timeout=60, stdin=subprocess.DEVNULL,
+                                   env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")})
+                err = (r.stderr.strip() or f"exit {r.returncode}") if r.returncode else ""
             except subprocess.TimeoutExpired:
                 err = "timed out after 60 s"
         if err:
             failed += 1
-            print(f"{path}:{line}: example failed\n{err}")
+            print(f"{path}:{line}: {lang} example failed\n{err}")
     return failed
 
 

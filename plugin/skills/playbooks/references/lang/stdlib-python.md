@@ -11,9 +11,12 @@ risk; the standard library ships with the interpreter and is already reviewed.
    what the project already depends on (`pyproject.toml`, the lock file). Pass: a new dependency's commit or brief
    says which job it does and why the standard-library row doesn't cover it.
 2. **Check the version floor.** The module must exist in the oldest Python the project supports (`requires-python`).
-   `sys.stdlib_module_names` (3.10+) answers it on the floor interpreter:
+   On a 3.10+ floor interpreter, `sys.stdlib_module_names` answers it:
    `python3 -c "import sys; print([m for m in ('tomllib', 'zoneinfo', 'requests') if m not in sys.stdlib_module_names])"`
-   prints the ones you would have to install (`['requests']` on 3.11+).
+   prints the ones you would have to install (`['requests']` on 3.11+). Below 3.10 that attribute doesn't exist:
+   run `python3 -I -S -c "import importlib.util as u; print([m for m in ('zoneinfo',) if not u.find_spec(m)])"`
+   with the floor interpreter; `-S` skips site-packages, so an installed backport can't answer for the standard
+   library.
 3. **Use the safe form** of each module (the last section). Pass: none of the unsafe forms appears in the diff.
 4. **When a dependency wins,** add one per task, pin it in the lock file, and record why
    (`../release/dependency-upgrade.md` covers bumping it later).
@@ -45,8 +48,9 @@ risk; the standard library ships with the interpreter and is already reviewed.
 - `secrets.token_urlsafe()` for tokens and ids people can't guess; never `random`.
 - `json.loads` for outside data; never `eval`, `pickle` or `marshal` on it.
 - `tempfile.mkstemp` or `TemporaryDirectory`; never a hand-built `/tmp/name`.
-- `tarfile.extractall(path, filter="data")`, so an archive can't write outside `path`; check the archive's names
-  before extracting from a `zipfile`.
+- `tarfile.extractall(path, filter="data")`, so an archive can't write outside `path` (3.12+, and the security
+  releases 3.8.17, 3.9.17, 3.10.12 and 3.11.4; older ones lack `filter`, so check each member's name and type
+  yourself); check the archive's names before extracting from a `zipfile`.
 - `urllib.request.urlopen(url, timeout=...)` always with a timeout, and only `https://` URLs you chose.
 
 ## Checks
