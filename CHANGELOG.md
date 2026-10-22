@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm doctor` warns when the disk holding Foreman's state is under 10 GB or 5% free, and names the projects whose builder worktrees are piling up (T-1450). The disk filled on 2026-10-22 and hooks failed to write state with no warning first.
 - `fm doctor`'s supply check no longer reports every installed plugin as changed whenever a new Claude Code session starts: it leaves out the `.in_use/<pid>` marker Claude Code writes into each plugin's folder, in that exact shape only; any other file there still counts (T-1455).
 - `fm doctor` no longer warns that foreman-ui is out of date when Claude Code reads it in place from this checkout (a directory marketplace); the old cache record it compared against is never loaded (T-1451).
 - Hooks: one note that fails to build (a full disk) no longer drops every other note of that tool call, and unread mail shows again next call instead of being lost (T-1449).
