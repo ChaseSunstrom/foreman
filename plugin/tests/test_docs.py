@@ -518,12 +518,12 @@ class Fences(unittest.TestCase):
         import fmdemo
         with tempfile.TemporaryDirectory() as tmp:
             self.fixture(tmp, "Prose.\n\n```bash\nexit 3\n```\n\n```bash runnable\n"
-                              "cat\necho \"in its folder: ${HOME#$PWD/} ${FOREMAN_HOME#$PWD/} ${FOREMAN_STATE#$PWD/}\" >&2\n"
-                              "exit 4\n```\n")
+                              "cat\necho \"in its folder: ${HOME#$PWD/} ${FOREMAN_HOME#$PWD/} ${FOREMAN_STATE#$PWD/}"
+                              " ${TMPDIR#$PWD/}\" >&2\ntest -d \"$TMPDIR\"\nexit 4\n```\n")
             fails = fmdemo.run_fences(tmp, timeout=20)
         self.assertEqual(len(fails), 1, "an unmarked fence never runs")
-        # cat met a closed stdin (no hang); HOME, Foreman's home and state all sit in the fence's own temporary folder
-        self.assertEqual(fails[0], "README.md:7: fence exited 4: in its folder: home foreman foreman/state")
+        # cat met a closed stdin (no hang); HOME, Foreman's home, state and TMPDIR all sit in the fence's own folder
+        self.assertEqual(fails[0], "README.md:7: fence exited 4: in its folder: home foreman foreman/state tmp")
 
     def test_a_hung_fence_is_stopped(self):
         import tempfile
@@ -539,7 +539,7 @@ class Fences(unittest.TestCase):
         for name in fmnew.TEMPLATES:
             path = fmnew.source(name)
             self.assertTrue(os.path.isfile(path), path)
-            self.assertEqual(fmnew.check(path), [], name)
+            self.assertEqual(fmnew.check(path, run=True), [], name)  # run: the shipped panel sits in Foreman's repo
             if path.endswith(".html"):  # and loads nothing from another host
                 self.assertEqual(build.outside_loads(read_text(path), ".html"), [], name)
 
@@ -566,12 +566,56 @@ class Fences(unittest.TestCase):
             with open(path, "w", encoding="utf-8") as f:
                 f.write("def setup(api):\n    raise RuntimeError('boom')\n")
             self.assertIn("boom", " ".join(fmnew.check(path)))
-            with open(path, "w", encoding="utf-8") as f:  # a panel that never returns, inside its own try
-                f.write("def setup(api):\n    api.panel('p', 'P', draw)\n\n\ndef draw(st, w, h, app):\n    try:\n"
-                        "        __import__('time').sleep(60)\n    except Exception:\n        return []\n")
-            with unittest.mock.patch.object(fmnew, "CHECK_SECONDS", 1):
-                self.assertIn("still running after 1 s", " ".join(fmnew.check(path)))
             self.assertFalse(os.path.exists(os.path.join(tmp, "__pycache__")), "a check writes nothing beside it")
+
+    def test_a_panel_that_quits_or_hangs_never_passes(self):
+        # the check runs in a child (limits, a timeout, a process-group kill): nothing the file does ends it early green
+        import tempfile
+        import unittest.mock
+        import fmnew
+        draw = "def setup(api):\n    api.panel('p', 'P', draw)\n\n\ndef draw(st, w, h, app):\n"
+        files = {"sys.exit(0)": "import sys\nsys.exit(0)\n",  # at import
+                 "sys.exit(0) ": draw + "    __import__('sys').exit(0)\n",  # while drawing
+                 "timed out": draw + "    while True:\n        try:\n            __import__('time').sleep(5)\n"
+                                     "        except:  # noqa: E722\n            pass\n",
+                 "timed out ": "import signal\nsignal.alarm(0)\n" + draw + "    while True:\n        pass\n",
+                 "ended before the check finished": draw + "    print('[]')\n    __import__('os')._exit(0)\n"}
+        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(fmnew, "CHECK_SECONDS", 2):
+            for want, body in files.items():
+                path = os.path.join(tmp, "p.py")
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(body)
+                found = fmnew.check(path)
+                self.assertEqual(len(found), 1, (want, found))
+                self.assertIn(want.strip(), found[0], want)
+
+    def test_a_panel_check_runs_only_what_fm_code_would(self):
+        import subprocess
+        import tempfile
+        import fmnew
+        good = "def setup(api):\n    api.panel('p', 'P', lambda st, w, h, app: [])\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            loose = os.path.join(tmp, "loose.py")
+            with open(loose, "w", encoding="utf-8") as f:
+                f.write(good)
+            os.chmod(loose, 0o664)
+            self.assertIn("another user can change it", " ".join(fmnew.check(loose, run=True)))
+            repo = os.path.join(tmp, "repo")
+            subprocess.run(["git", "init", "-q", repo], check=True)
+            mark, inside = os.path.join(tmp, "ran"), os.path.join(repo, "tools", "p.py")
+            os.makedirs(os.path.dirname(inside))
+            with open(inside, "w", encoding="utf-8") as f:
+                f.write(f"open({mark!r}, 'w').close()\n" + good)
+            found = fmnew.check(inside)
+            self.assertIn("--run", " ".join(found))
+            self.assertFalse(os.path.exists(mark), "a project's file never ran")
+            p = _fm_temp(tmp, "new", "check", inside)
+            self.assertEqual(p.returncode, 1, p.stdout)
+            self.assertFalse(os.path.exists(mark))
+            p = _fm_temp(tmp, "new", "check", inside, "--run")
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+            self.assertTrue(os.path.exists(mark), "with --run it does")
+            self.assertIn("runs the file", " ".join(_fm_temp(tmp, "new", "-h").stdout.split()))
 
     def test_fm_new_lists_copies_and_never_overwrites(self):
         import tempfile
@@ -596,6 +640,13 @@ class Fences(unittest.TestCase):
             p = _fm_temp(tmp, "new", "nope")
             self.assertEqual(p.returncode, 1)
             self.assertIn("web", p.stderr)
+            os.makedirs(os.path.join(tmp, "s2"))  # a link planted where the copy lands, pointing nowhere yet
+            link, target = os.path.join(tmp, "s2", "index.html"), os.path.join(tmp, "elsewhere.html")
+            os.symlink(target, link)
+            self.assertEqual(_fm_temp(tmp, "new", "web", "s2").returncode, 1, "a link there counts as a file")
+            p = _fm_temp(tmp, "new", "web", "s2", "--force")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertFalse(os.path.islink(link) or os.path.exists(target), "the link replaced, not written through")
 
 
 class HelpAnswers(unittest.TestCase):
@@ -617,6 +668,15 @@ class HelpAnswers(unittest.TestCase):
             p = _fm_temp(tmp, "help", "bake", "a", "cake")
             self.assertEqual(p.returncode, 1)
             self.assertIn("fm help --all", p.stdout)
+            p = _fm_temp(tmp, "help", "can", "foreman", "scaffold", "an", "mcp", "server")
+            self.assertTrue(all(len(ln) <= 100 for ln in p.stdout.splitlines()), p.stdout)
+            self.assertIn("scaffold", next(ln for ln in p.stdout.splitlines() if "fm mcp" in ln), "the matched words")
+            p = _fm_temp(tmp, "help", "--all", "scaffold")
+            self.assertEqual(p.returncode, 1, "--all lists everything; words ask a question: not both")
+            self.assertIn("--all", p.stderr)
+            p = _fm_temp(tmp, "help", "can", "it", "do", "that?")
+            self.assertEqual(p.returncode, 1)
+            self.assertIn("nothing to look up", p.stderr)
 
 
 class CardDates(unittest.TestCase):
@@ -630,7 +690,8 @@ class CardDates(unittest.TestCase):
         card = read_text(os.path.join(fmlib.CARDS, "tools", "jq.md"))
         today = datetime.date.today()
         cases = {"2026-13-01": "not a date", (today + datetime.timedelta(days=2)).isoformat(): "in the future",
-                 "2020-01-01": None, today.isoformat(): None}
+                 "2020-01-01": None, today.isoformat(): None,
+                 (today + datetime.timedelta(days=1)).isoformat(): None}  # a day ahead: another time zone's today
         for value, problem in cases.items():
             with tempfile.TemporaryDirectory() as tmp:
                 os.makedirs(os.path.join(tmp, "tools"))
