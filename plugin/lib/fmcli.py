@@ -6065,7 +6065,9 @@ def _build_parser():
             "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
     s.add_argument("action", choices=["compile"])
     s.add_argument("path", metavar="FILE", help="the scene.json")
-    s.add_argument("--to", choices=["three"], default="three", help="three: an ES module importing \"three\" (r155+)")
+    s.add_argument("--to", choices=["three", "component"], default="three", help="three: an ES module importing "
+                   "\"three\" (r155+); component: that module plus <fm-scene>, a custom element mounting it in a shadow "
+                   "DOM over its slot=\"poster\" child (T-1634)")
     s.add_argument("--out", metavar="PATH", help="write the module here, replacing the file whole, not print it")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), tier=("Finding your way", 460), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
