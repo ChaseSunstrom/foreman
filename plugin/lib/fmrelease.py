@@ -180,6 +180,12 @@ def _canary_worker(v, root):
         except (OSError, subprocess.TimeoutExpired) as e:
             return True, f"  ✗ {x['project']}: sentinel couldn't run ({type(e).__name__})"
 
+    def load():
+        try:
+            return f"load {os.getloadavg()[0]:.1f}"
+        except OSError:
+            return "load ?"
+
     from concurrent.futures import ThreadPoolExecutor
     failed = []
     todo = [x for x in listed if x.get("exists")]
@@ -187,7 +193,22 @@ def _canary_worker(v, root):
         for x, (bad, line) in zip(todo, pool.map(one, todo)):  # in project order, as each is ready
             print(line, flush=True)
             if bad:
-                failed.append((x, line.strip()))
+                failed.append((x, line.strip(), load()))
+    # T-1518: a failure beside the others gets one rerun alone, after the pool; passing there is a load flap, reported
+    # with both results and never counted green. ponytail: "alone" is the canary's own load gone, not an idle machine
+    # (other sessions' load stays); wait for the load average to fall first if flaps still read as failures.
+    still, flaps = [], []
+    for x, line, was in failed:
+        bad, again = one(x)
+        first, again = line.split(": ", 1)[-1], f"{again.strip().split(': ', 1)[-1]} ({load()})"
+        if bad:
+            still.append((x, line))
+            print(f"  ✗ {x['project']}: failed alone too: {again}", flush=True)
+        else:
+            flaps.append(x)
+            print(f"  ~ {x['project']}: load flap: failed beside the others ({first}) ({was}), passed alone ({again})",
+                  flush=True)
+    failed = still
     import fmeco
     for x, line in failed:  # a project's past check failing now: an item in that project's inbox
         try:
@@ -196,12 +217,14 @@ def _canary_worker(v, root):
                 fmeco.capture_once(q, f"Canary after Foreman {v}: {line[:200]}", "FIX", "discovered")
         except Exception as e:  # never fatal: the report above still names it
             print(f"  (couldn't capture for {x['project']}: {type(e).__name__})", flush=True)
-    print(f"canary done: {len(failed)} of {len(todo)} project(s) failing", flush=True)
-    if failed:
+    flapped = f", {len(flaps)} load flap(s): {', '.join(x['project'] for x in flaps)}" if flaps else ""
+    print(f"canary done: {len(failed)} of {len(todo)} project(s) failing{flapped}", flush=True)
+    if failed or flaps:
         try:
             import fmserve
             p = c.find_project(root)
-            fmserve._notify(p, f"Foreman {v} canary: {len(failed)} project(s) failing: " + ", ".join(x["project"] for x, _ in failed))
+            fmserve._notify(p, f"Foreman {v} canary: {len(failed)} project(s) failing: "
+                            + ", ".join(x["project"] for x, _ in failed) + flapped)
         except Exception:
             pass
 
