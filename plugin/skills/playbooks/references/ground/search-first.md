@@ -1,5 +1,5 @@
 <!-- Ported from ECC (https://github.com/affaan-m/ECC) `skills/search-first/SKILL.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Foreman: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
-> **Playbook** (source: ECC `skills/search-first/SKILL.md`). Research-before-coding workflow. Search for existing tools, libraries, and patterns before writing custom code. Invokes the researcher agent.
+> **Playbook** (source: ECC `skills/search-first/SKILL.md`). Research-before-coding workflow. Search for existing tools, libraries, and patterns before writing custom code. Invokes the researcher agent. Use before writing a utility, integration or abstraction that may already exist.
 > Foreman note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Foreman equivalents.
 
 # /search-first — Research Before You Code

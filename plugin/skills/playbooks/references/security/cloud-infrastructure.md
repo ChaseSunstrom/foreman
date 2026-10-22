@@ -1,5 +1,5 @@
 <!-- Ported from ECC (https://github.com/affaan-m/ECC) `skills/security-review/cloud-infrastructure-security.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Foreman: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
-> **Playbook** (source: ECC `skills/security-review/cloud-infrastructure-security.md`). 
+> **Playbook** (source: ECC `skills/security-review/cloud-infrastructure-security.md`). A cloud and CI/CD security checklist. Use when deploying to a cloud platform or configuring IAM, secrets, networks, logging, CI/CD pipelines, a CDN or backups.
 > Foreman note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Foreman equivalents.
 
 | name | description |
@@ -22,6 +22,10 @@ This skill ensures cloud infrastructure, CI/CD pipelines, and deployment configu
 - Implementing disaster recovery and backup strategies
 
 ## Cloud Security Checklist
+
+1. Pick the sections the change touches (IAM, secrets, network, logging, CI/CD, CDN, backups).
+2. Run each section's Verification Steps and note what fails.
+3. Before deploying, walk the pre-deployment checklist and the common misconfigurations at the end.
 
 ### 1. IAM & Access Control
 

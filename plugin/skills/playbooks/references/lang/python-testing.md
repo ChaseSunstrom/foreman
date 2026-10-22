@@ -50,7 +50,7 @@ pytest --cov=mypackage --cov-report=term-missing --cov-report=html
 
 ### Basic Test Structure
 
-```python
+```python no-run
 import pytest
 
 def test_addition():
@@ -72,7 +72,7 @@ def test_list_append():
 
 ### Assertions
 
-```python
+```python no-run
 # Equality
 assert result == expected
 
@@ -115,7 +115,7 @@ assert str(exc_info.value) == "error message"
 
 ### Basic Fixture Usage
 
-```python
+```python no-run
 import pytest
 
 @pytest.fixture
@@ -131,7 +131,7 @@ def test_sample_data(sample_data):
 
 ### Fixture with Setup/Teardown
 
-```python
+```python no-run
 @pytest.fixture
 def database():
     """Fixture with setup and teardown."""
@@ -153,7 +153,7 @@ def test_database_query(database):
 
 ### Fixture Scopes
 
-```python
+```python no-run
 # Function scope (default) - runs for each test
 @pytest.fixture
 def temp_file():
@@ -179,7 +179,7 @@ def shared_resource():
 
 ### Fixture with Parameters
 
-```python
+```python no-run
 @pytest.fixture(params=[1, 2, 3])
 def number(request):
     """Parameterized fixture."""
@@ -192,7 +192,7 @@ def test_numbers(number):
 
 ### Using Multiple Fixtures
 
-```python
+```python no-run
 @pytest.fixture
 def user():
     return User(id=1, name="Alice")
@@ -208,7 +208,7 @@ def test_user_admin_interaction(user, admin):
 
 ### Autouse Fixtures
 
-```python
+```python no-run
 @pytest.fixture(autouse=True)
 def reset_config():
     """Automatically runs before every test."""
@@ -223,7 +223,7 @@ def test_without_fixture_call():
 
 ### Conftest.py for Shared Fixtures
 
-```python
+```python no-run
 # tests/conftest.py
 import pytest
 
@@ -249,7 +249,7 @@ def auth_headers(client):
 
 ### Basic Parametrization
 
-```python
+```python no-run
 @pytest.mark.parametrize("input,expected", [
     ("hello", "HELLO"),
     ("world", "WORLD"),
@@ -262,7 +262,7 @@ def test_uppercase(input, expected):
 
 ### Multiple Parameters
 
-```python
+```python no-run
 @pytest.mark.parametrize("a,b,expected", [
     (2, 3, 5),
     (0, 0, 0),
@@ -276,7 +276,7 @@ def test_add(a, b, expected):
 
 ### Parametrize with IDs
 
-```python
+```python no-run
 @pytest.mark.parametrize("input,expected", [
     ("valid@email.com", True),
     ("invalid", False),
@@ -289,7 +289,7 @@ def test_email_validation(input, expected):
 
 ### Parametrized Fixtures
 
-```python
+```python no-run
 @pytest.fixture(params=["sqlite", "postgresql", "mysql"])
 def db(request):
     """Test against multiple database backends."""
@@ -310,7 +310,7 @@ def test_database_operations(db):
 
 ### Custom Markers
 
-```python
+```python no-run
 # Mark slow tests
 @pytest.mark.slow
 def test_slow_operation():
@@ -375,7 +375,7 @@ def test_with_mock(api_call_mock):
 
 ### Mocking Return Values
 
-```python
+```python no-run
 @patch("mypackage.Database.connect")
 def test_database_connection(connect_mock):
     """Test with mocked database connection."""
@@ -389,7 +389,7 @@ def test_database_connection(connect_mock):
 
 ### Mocking Exceptions
 
-```python
+```python no-run
 @patch("mypackage.api_call")
 def test_api_error_handling(api_call_mock):
     """Test error handling with mocked exception."""
@@ -403,7 +403,7 @@ def test_api_error_handling(api_call_mock):
 
 ### Mocking Context Managers
 
-```python
+```python no-run
 @patch("builtins.open", new_callable=mock_open)
 def test_file_reading(mock_file):
     """Test file reading with mocked open."""
@@ -417,7 +417,7 @@ def test_file_reading(mock_file):
 
 ### Using Autospec
 
-```python
+```python no-run
 @patch("mypackage.DBConnection", autospec=True)
 def test_autospec(db_mock):
     """Test with autospec to catch API misuse."""
@@ -430,7 +430,7 @@ def test_autospec(db_mock):
 
 ### Mock Class Instances
 
-```python
+```python no-run
 class TestUserService:
     @patch("mypackage.UserRepository")
     def test_create_user(self, repo_mock):
@@ -446,7 +446,7 @@ class TestUserService:
 
 ### Mock Property
 
-```python
+```python no-run
 @pytest.fixture
 def mock_config():
     """Create a mock with a property."""
@@ -465,7 +465,7 @@ def test_with_mock_config(mock_config):
 
 ### Async Tests with pytest-asyncio
 
-```python
+```python no-run
 import pytest
 
 @pytest.mark.asyncio
@@ -483,7 +483,7 @@ async def test_async_with_fixture(async_client):
 
 ### Async Fixture
 
-```python
+```python no-run
 @pytest.fixture
 async def async_client():
     """Async fixture providing async test client."""
@@ -500,7 +500,7 @@ async def test_api_endpoint(async_client):
 
 ### Mocking Async Functions
 
-```python
+```python no-run
 @pytest.mark.asyncio
 @patch("mypackage.async_api_call")
 async def test_async_mock(api_call_mock):
@@ -611,7 +611,7 @@ tests/
 
 ### Test Classes
 
-```python
+```python no-run
 class TestUserService:
     """Group related tests in a class."""
 
@@ -660,7 +660,7 @@ class TestUserService:
 
 ### Testing API Endpoints (FastAPI/Flask)
 
-```python
+```python no-run
 @pytest.fixture
 def client():
     app = create_app(testing=True)
@@ -682,7 +682,7 @@ def test_create_user(client):
 
 ### Testing Database Operations
 
-```python
+```python no-run
 @pytest.fixture
 def db_session():
     """Create a test database session."""
@@ -703,7 +703,7 @@ def test_create_user(db_session):
 
 ### Testing Class Methods
 
-```python
+```python no-run
 class TestCalculator:
     @pytest.fixture
     def calculator(self):
