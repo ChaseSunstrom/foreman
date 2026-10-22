@@ -997,7 +997,7 @@ test('/fm-trust works only when the person types it; it writes the trust record 
 test('the look: coloured words not highlighted blocks, quiet controls, the human next, a narrow band that never wraps', async ($, on) => {
   // T-0122, from the live render: chips were background blocks, buttons [ boxed ], the pane showed the agent's own
   // instruction, and beside a docked pane the band wrapped letter by letter
-  const next = 'T-0007 step 2/2: raise the timeout — do it, verify, then fm task step T-0007 done 2 --evidence "<cmd>" (procedure: x.md)'
+  const next = 'T-0007 step 2/2: raise the timeout — do it, verify, then fm task step T-0007 done 2 --evidence "<cmd>"'
   world(on, [{ ...VIEW, next }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const wide = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })

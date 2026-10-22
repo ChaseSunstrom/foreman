@@ -340,7 +340,7 @@ const SPIN = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢
 export const spin = (frame: number) => SPIN[frame % SPIN.length]!
 
 /** What comes next, for a person: fm's next line without the agent's own instructions after it. */
-export const humanNext = (next: string) => next.split(' — ')[0]!.replace(/\s*\(procedure:.*$/, '').trim()
+export const humanNext = (next: string) => next.split(' — ')[0]!.trim()
 
 export function elapsed(ms: number): string {
   const s = Math.max(0, ms) / 1000

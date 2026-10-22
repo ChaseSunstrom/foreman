@@ -1176,9 +1176,6 @@ def user_prompt_submit(pl):
     if not r.items and not r.overrides and c.is_work_request(text):  # T-0364: a one-liner brief skipped the thinking
         parts.append("Work request: classify it (type and tier) on your first line; S → fm task new … --focus; "
                      "M/L → plan before any edit (/foreman:intake §2: every capability and approach, then choose)")
-    design = _skill_once(sid, c.SKILL_FOR["design"]) if c.is_design(text) else ""  # T-1697
-    if design:
-        parts.append("Design request: " + design)
     try:  # T-0977: the stack cards the request names, once per session each; nothing loads until one is read
         import fmlib
         named = [x for x in fmlib.cards_named(text) if _first_time(sid, "card-" + x)]
@@ -1207,13 +1204,28 @@ def user_prompt_submit(pl):
         state.append("Drive paused")
     if sd.get("autonomy") == "full":
         state.append("Autonomy: full")
-    if not _same_note(pl.get("session_id"), " | ".join(state)):  # unchanged state isn't repeated every turn
+    note = " | ".join(state)
+    same = _same_note(sid, note, record=False)  # unchanged state isn't repeated every turn
+    if not same:
         parts += state
+    # T-1697: the skill that fits, once a session each, whole or not at all: the cap cuts the end, so a note that
+    # doesn't fit waits rather than cutting the Next line. A UI request's note first: it isn't asked for again.
+    room = lambda extra: len("Foreman: " + ". ".join(parts) + ".") + extra <= PROMPT_BUDGET
+    ui = c.ui_request(text)
+    ui_note = f"{'Design' if ui == 'design' else 'UI'} request: {c.SKILL_FOR[ui]}" if ui else ""
+    if ui_note and room(len(ui_note) + 2) and _skill_once(sid, c.SKILL_FOR[ui]):
+        parts.append(ui_note)
+    if not same:
         nxt = next((x[6:] for x in state if x.startswith("Next: ")), None)
-        # T-1697: the skill that fits rides on the Next line once a stage, whole or not at all (the cap cuts the end)
-        fits = len("Foreman: " + ". ".join(parts) + ".") + len(hint) + 3 <= PROMPT_BUDGET
-        if nxt and fits and _skill_once(sid, hint):
-            parts = [f"{x} ({hint})" if x.startswith("Next: ") else x for x in parts]
+        wait = False
+        if nxt and _skill_once(sid, hint, peek=True):
+            if room(len(hint) + 3):
+                _skill_once(sid, hint)
+                parts = [f"{x} ({hint})" if x.startswith("Next: ") else x for x in parts]
+            else:  # no room this turn: leave the state untold so the next turn says it again, if it fits there
+                wait = len(f"Foreman: {'. '.join(state)}.") + len(hint) + 3 <= PROMPT_BUDGET
+        if not wait:
+            _same_note(sid, note)
         if nxt:  # T-0051: fm usage compares it with what ran next
             _event({"kind": "next", "session_id": pl.get("session_id"), "project": p.slug, "action": nxt[:200]})
             try:
@@ -1243,9 +1255,15 @@ def _first_time(sid, key):
         return False
 
 
-def _skill_once(sid, hint):
-    """T-1697: a SKILL_FOR hint the first time this session (since its last start or compaction) is told it, else ""."""
-    return hint if hint and _first_time(sid, "skill-" + hashlib.sha1(hint.encode()).hexdigest()[:10]) else ""
+def _skill_once(sid, hint, peek=False):
+    """T-1697: a SKILL_FOR hint the first time this session (since its last start or compaction) is told it, else "";
+    peek: whether it would be, without marking it told."""
+    if not hint or not sid or not re.fullmatch(r"[\w-]{1,100}", sid):
+        return ""
+    key = "skill-" + hashlib.sha1(hint.encode()).hexdigest()[:10]
+    if peek:
+        return "" if os.path.exists(os.path.join(c.state_dir(), "sessions", f"{sid}.{key}")) else hint
+    return hint if _first_time(sid, key) else ""
 
 
 def _generated_note(pl, path):
@@ -1383,8 +1401,9 @@ def _big_read_note(pl, ti):
             f"line ranges; then Read only the range you need (offset/limit).")
 
 
-def _same_note(sid, text):
-    """Whether this session was last told exactly this state; records it when not (SessionStart clears it)."""
+def _same_note(sid, text, record=True):
+    """Whether this session was last told exactly this state; records it when not, unless record is False
+    (SessionStart clears it)."""
     if not sid or not re.fullmatch(r"[\w-]{1,100}", sid):
         return False
     path = os.path.join(c.state_dir(), "sessions", f"{sid}.note")
@@ -1394,6 +1413,8 @@ def _same_note(sid, text):
                 return True
     except OSError:
         pass
+    if not record:
+        return False
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         c.write_atomic(path, text)
