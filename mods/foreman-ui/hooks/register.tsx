@@ -288,26 +288,32 @@ async function refresh($: EngineInterface): Promise<boolean> {
 let startOptions: Record<string, unknown> = {}
 let seenOptions = ''
 
+// T-1574: /config or fm settings set (settings.json) changed an option: it applies on this poll, no restart. The first
+// poll applies the engine's values too, so a change made before it is never only recorded.
+async function pollOptions($: EngineInterface) {
+  const rows = await $.config.list()
+  if (!Array.isArray(rows)) return
+  const now: Record<string, unknown> = {}
+  for (const r of rows) {
+    const m = /^foreman-ui(?:@[^.]+)?\.(.+)$/.exec(r.key)
+    if (m) now[m[1]!] = r.value
+  }
+  const seen = JSON.stringify(now)
+  if (seen === seenOptions) return
+  seenOptions = seen
+  applyOptions({ ...startOptions, ...now })
+  if (cfg.motion === 'off') sleep() // T-0912: off means no clocks, even mid-work
+  else if (cfg.motion === 'reduced') { // the 8 fps frame clock only: the 30 fps blit stops now
+    motionClock?.cancel()
+    motionClock = null
+  }
+  await update($, frame, n => n + 1) // redrawn in the new palette and motion
+}
+
 // Cheap in-process checks every 2 s: the context meter, the options, and the paths fm names (fm runs only when one moved).
 async function tick($: EngineInterface) {
   await gauge($).catch(() => undefined)
-  // T-1574: /config or fm settings set (settings.json) changed an option: it applies now, no restart
-  const rows = await $.config.list().catch(() => null)
-  if (Array.isArray(rows)) {
-    const now: Record<string, unknown> = {}
-    for (const r of rows) {
-      const m = /^foreman-ui(?:@[^.]+)?\.(.+)$/.exec(r.key)
-      if (m) now[m[1]!] = r.value
-    }
-    const seen = JSON.stringify(now)
-    if (seen !== seenOptions) {
-      if (seenOptions) {
-        applyOptions({ ...startOptions, ...now })
-        await update($, frame, n => n + 1) // redrawn in the new palette and motion
-      }
-      seenOptions = seen
-    }
-  }
+  await pollOptions($).catch(() => undefined) // an engine without $.config: the rest of the poll still runs
   if ((await read($, shells)).length) await noteShells($, list => list) // ages out lost ones; a reload re-arms bgLive
   const running = (await read($, agents)).filter(a => !a.done)
   if (cfg.mascot !== 'off') await update($, beat, n => n + 1) // the mascot's idle blink, at the poll's pace
@@ -447,7 +453,7 @@ const SWEEP_MS = 900
 let painting = false
 async function repaint($: EngineInterface) {
   if (painting) return // a slow blit: skip a tick rather than pile them up
-  if ((!turns.size && !starts.size) || cfg.motion !== 'full') { // T-1574: or motion was turned down mid-work
+  if (!turns.size && !starts.size) {
     motionClock?.cancel() // live work ended: everything settles on the next redraw
     motionClock = null
     return

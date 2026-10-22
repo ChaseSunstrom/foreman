@@ -205,9 +205,12 @@ class PluginSurface(unittest.TestCase):
     def test_the_pane_applies_changed_options_on_its_poll(self):
         mod = os.path.join(self.ROOT, "mods", "foreman-ui")
         src = read_text(os.path.join(mod, "hooks", "register.tsx"))
+        # a wiring check only: the behaviour's proof is the mod's own test, run by claude plugin test mods/foreman-ui
+        poll = src[src.index("async function pollOptions("):src.index("async function tick(")]
         tick = src[src.index("async function tick("):src.index("async function gauge(")]
-        self.assertIn("$.config.list()", tick, "the 2 s poll reads the engine's current option values")
-        self.assertIn("applyOptions(", tick)
+        self.assertIn("$.config.list()", poll, "the engine's current option values")
+        self.assertIn("applyOptions(", poll)
+        self.assertIn("pollOptions($)", tick, "read on every 2 s poll")
         tests = read_text(os.path.join(mod, "tests", "foreman-ui.test.tsx"))
         self.assertIn("applies on the next poll, no restart (T-1574)", tests, "claude plugin test runs the behaviour")
 
