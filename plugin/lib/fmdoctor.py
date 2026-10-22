@@ -941,6 +941,33 @@ def check_plugins():
     return Result("plugins", "PASS", "no conflicts among enabled plugins")
 
 
+LOW_DISK_BYTES = 10e9  # T-1450: below this, or below LOW_DISK_SHARE of the disk, doctor warns
+LOW_DISK_SHARE = 0.05
+
+
+def check_disk(path=None, usage=None, projects=None):
+    """T-1450: the disk filled on 2026-10-22 and every hook that wrote state failed (ENOSPC) with no warning first.
+    Builder worktrees pile up unseen, so their counts are named (a listdir each; sizing them would be slow)."""
+    try:
+        u = (usage or shutil.disk_usage)(path or c.state_dir())
+    except OSError:
+        return Result("disk", "PASS", "not measured")
+    free = f"{u.free / 1e9:.0f} GB free ({100 * u.free / u.total:.0f}%)"
+    if u.free >= LOW_DISK_BYTES and u.free >= LOW_DISK_SHARE * u.total:
+        return Result("disk", "PASS", free)
+    lanes = []
+    for p, _ in (c.all_projects() if projects is None else projects):
+        try:
+            n = len(os.listdir(os.path.join(p.root, ".claude", "worktrees")))
+        except OSError:
+            continue
+        if n:
+            lanes.append((n, os.path.basename(p.root.rstrip(os.sep))))
+    where = ", ".join(f"{name} {n}" for n, name in sorted(lanes, reverse=True)[:5])
+    return Result("disk", "WARN", f"{free} on the disk holding Foreman's state: hooks fail when it fills"
+                  + (f"; builder worktrees: {where} (git worktree list; fm lane rm the merged ones)" if where else ""))
+
+
 def check_mod_release(home=None, listing=None):
     """T-0191: every other session draws the installed foreman-ui, which lags this repo until it is released (0.4.0
     stayed installed while the repo reached 0.5.0). Its hooks are compared, so code changed without a version bump
@@ -1108,6 +1135,24 @@ def repair(roots):
 _SUPPLY_SKIP = {".git", "node_modules", "__pycache__", ".venv", ".pytest_cache"}
 
 
+_IN_USE = re.compile(rb'\{"pid":(\d{1,10}),"procStart":"\d{1,24}"\}\n?')
+
+
+def _in_use_marker(root, d, f, full):
+    """T-1455: the .in_use/<pid> file Claude Code writes into every installed plugin for each running session (one
+    JSON line). Only that exact shape, in the install root's .in_use, named for its own pid, is left out of the hash."""
+    if d != os.path.join(root, ".in_use") or not f.isdigit() or os.path.islink(full):
+        return False
+    try:
+        if not os.path.isfile(full) or os.path.getsize(full) > 64:
+            return False
+        with open(full, "rb") as fh:
+            m = _IN_USE.fullmatch(fh.read(65))
+    except FileNotFoundError:
+        return True  # its session ended mid-walk
+    return bool(m) and m.group(1) == f.encode()
+
+
 def _tree_hash(root, h, cap=4000, skipped=None):
     """Every file under an install dir (its hooks, scripts and code, not just its manifest), path and bytes, in order.
     T-1434: what h only names goes into skipped by a cheap stand-in: a symlink's target path (a linked folder's too,
@@ -1122,6 +1167,8 @@ def _tree_hash(root, h, cap=4000, skipped=None):
         dirs[:] = sorted(x for x in dirs if x not in _SUPPLY_SKIP)
         for f in sorted(files):
             full = os.path.join(d, f)
+            if _in_use_marker(root, d, f, full):
+                continue
             n += 1
             rel = os.path.relpath(full, root).encode()
             # not a regular file (a FIFO would block the open forever): named, never read
@@ -1337,7 +1384,7 @@ def run_all(full=False, accept_supply=False):
                                     os.path.join(home, ".claude-plugin", "marketplace.json"),
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
-               check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
+               check_hook_scripts(), check_state_dir(home, c.state_dir()), check_disk(), check_env(settings, manifest),
                check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
                check_supply(claude, accept_supply), check_worktree_base(settings), check_fm_link(),
                check_invisible_text(instruction_files())]
