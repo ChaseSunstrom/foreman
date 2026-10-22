@@ -4745,9 +4745,10 @@ def cmd_next(args):
         beliefs = [f"A{n} {t.split(' — kill: ')[0]} (dead if {t.split(' — kill: ')[1]})"
                    for n, tag, _, t in b.assumptions() if tag in (None, "assumed") and " — kill: " in t]
         over += f" · open beliefs: {'; '.join(c.fit(x, 120) for x in beliefs[:3])}" if beliefs else ""
-    out(args, {"task": b.id if b else None, "stage": st, "action": action, "usual_minutes": usual},
-        f"Next: {action}" + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else "")
-        + over)
+    skill = c.skill_for(b, st)  # T-1697
+    out(args, {"task": b.id if b else None, "stage": st, "action": action, "usual_minutes": usual, "skill": skill or None},
+        f"Next: {action}" + (f" ({skill})" if skill else "")
+        + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else "") + over)
 
 
 def cmd_autonomy(args):
