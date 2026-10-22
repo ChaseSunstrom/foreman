@@ -2015,7 +2015,7 @@ def replay_file(path, cfg, plain, out=sys.stdout):
         run_screen(app)
         return 0
     for entry in app.state.log:
-        print(entry_text(entry), file=out, flush=True)
+        print(__import__("fmcore").redact(entry_text(entry)), file=out, flush=True)  # T-1302: piped lines get shared
     return 0 if app.state.status == "closed" else 1
 
 
@@ -2081,9 +2081,10 @@ def record(events, path, size=(120, 34), fps=20, seconds=None, cfg=None, hold=2.
     rsvg-convert and joined by ffmpeg. For the README, the site and a bug report."""
     if not (shutil.which("ffmpeg") and shutil.which("rsvg-convert")):
         raise RuntimeError("fm code tui --record needs ffmpeg and rsvg-convert on PATH")
+    import fmcore
     import tempfile
     cfg = cfg or DEFAULTS
-    events = [e for e in events if isinstance(e, dict)]
+    events = fmcore.redact_obj([e for e in events if isinstance(e, dict)])  # T-1302: frames never hold a token
     seconds = seconds or max(4.0, min(16.0, len(events) * 0.45))
     gap, app = seconds / max(len(events), 1), App(cfg, spawn=lambda *a, **k: None)
     with tempfile.TemporaryDirectory(prefix="fm-tui-") as tmp:
@@ -2106,8 +2107,9 @@ def record(events, path, size=(120, 34), fps=20, seconds=None, cfg=None, hold=2.
 def snapshot(events, path, size=(120, 34), cfg=None, mode="main"):
     """The screen after these events, as an SVG at path (README pictures, the site, a bug report)."""
     cfg = cfg or DEFAULTS
+    import fmcore
     app = App(cfg, spawn=lambda *a, **k: None)
-    for e in events:
+    for e in fmcore.redact_obj(list(events)):  # T-1302: a shared file never holds a token a worker printed
         app.feed(e)
     app.mode = mode
     with open(path, "w", encoding="utf-8") as f:

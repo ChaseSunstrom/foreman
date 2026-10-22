@@ -1002,6 +1002,50 @@ def golden_frame(at, size=(120, 34)):
     return "\n".join(out) + "\n"
 
 
+class Export(unittest.TestCase):
+    def test_snapshot_scrubs_secrets(self):
+        # T-1302: a token a worker printed must not land in the exported file
+        import tempfile
+        import fmcodetui
+        secret = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2"
+        events = [{"event": "start", "text": "", "request": f"deploy with {secret}", "ts": 1.0},
+                  {"event": "say", "text": f"found {secret} in output", "ts": 2.0}]
+        with tempfile.TemporaryDirectory() as d:
+            path = fmcodetui.snapshot(events, os.path.join(d, "s.svg"), (100, 20))
+            with open(path, encoding="utf-8") as f:
+                body = f.read()
+        self.assertTrue(body.startswith("<svg"))
+        self.assertIn("deploy with [REDACTED]", body)
+        self.assertNotIn(secret, body)
+        self.assertNotIn(secret[:12], body)
+
+    def test_record_and_plain_replay_scrub_secrets(self):
+        # T-1302: the video frames and the plain replay lines are built from scrubbed text too
+        import io
+        import tempfile
+        import fmcodetui
+        secret = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2"
+        events = [{"event": "start", "text": "", "request": f"deploy with {secret}", "ts": 1.0},
+                  {"event": "say", "text": f"found {secret} in output", "ts": 2.0}]
+        drawn = []
+        real = fmcodetui.to_svg
+        with unittest.mock.patch.object(fmcodetui.shutil, "which", return_value="/bin/x"), \
+                unittest.mock.patch.object(fmcodetui.subprocess, "run"), \
+                unittest.mock.patch.object(fmcodetui, "to_svg", lambda *a, **k: drawn.append(real(*a, **k)) or drawn[-1]):
+            fmcodetui.record(events, "out.gif", (100, 20), fps=2, seconds=1, hold=0)
+        self.assertTrue(drawn)
+        self.assertNotIn(secret[:12], "".join(drawn))
+        self.assertIn("[REDACTED]", "".join(drawn))
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "e.jsonl")
+            with open(src, "w", encoding="utf-8") as f:
+                f.write("".join(json.dumps(e) + "\n" for e in events))
+            out = io.StringIO()
+            fmcodetui.replay_file(src, fmcodetui.DEFAULTS, True, out)
+        self.assertNotIn(secret[:12], out.getvalue())
+        self.assertIn("[REDACTED]", out.getvalue())
+
+
 class Golden(unittest.TestCase):
     """T-1306: the demo run at fixed instants, compared with plugin/tests/fixtures/golden. A deliberate change to the
     screen rewrites them: FM_GOLDEN=regen python3 plugin/tests/run.py test_code_tui."""

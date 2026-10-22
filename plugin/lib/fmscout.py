@@ -136,6 +136,7 @@ def probe_sources(p, ctx):
     import fmlib
     if ctx.get("dry"):
         return []
+    out = []
     for meta, _ in fmlib.sources():
         added = meta.get("added") or ""
         try:
@@ -144,10 +145,16 @@ def probe_sources(p, ctx):
             age = SOURCES_STALE_S
         if age >= SOURCES_STALE_S:
             try:
-                fmlib.source_add(meta["url"], meta["name"], replace=True)
+                new = fmlib.source_add(meta["url"], meta["name"], replace=True)
             except Exception:  # offline, or the repo moved: next time
-                pass
-    return []
+                continue
+            moved = fmlib.class_change(meta, new[0]) if isinstance(new, tuple) else ""
+            if moved:  # T-1389: a licence class that moved is one finding, never silent
+                out.append(Finding(f"licence:{new[0].get('name')}:{new[0].get('class')}:"
+                                   f"{str(new[0].get('commit', ''))[:8]}", f"Source {moved}",
+                                   "RESEARCH", "S", f"fm lib source refreshed {c.plain(str(meta['name']))}; its licence "
+                                   "class moved. Read the new licence and decide whether the source stays a default."))
+    return out
 
 
 QUICK = [("claude-code", probe_claude_code), ("friction", probe_friction), ("brainstorm", probe_brainstorm)]

@@ -131,3 +131,26 @@ class ForemanTestCase(unittest.TestCase):
             os.makedirs(os.path.dirname(path), exist_ok=True)
             os.symlink(sys.executable, path)
         return path
+
+
+# T-1361: misbehaving fake runner CLIs. One small sh script per failure mode; each ends by itself in seconds even if
+# nothing stops it, so a test that goes wrong fails instead of hanging.
+FAKE_MODES = {
+    "ok": "echo done\n",
+    "hang": "exec sleep {secs}\n",  # no output at all
+    "silent": "echo starting\nexec sleep {secs}\n",  # talks, then goes quiet mid-stream
+    "tty-prompt": "printf 'Overwrite settings? (y/n) '\nexec sleep {secs}\n",  # asks and waits; no TTY is there to answer
+    "garbage-json": "echo '{{\"type\": \"result\", \"result\": '\necho 'not json at all {{{{'\nexit 0\n",
+    "usage-limit": "echo 'Claude usage limit reached. Your limit will reset at 5pm.'\nexec sleep {secs}\n",
+    "fork-exit": "sleep {secs} &\nexit 0\n",  # a child outlives the parent, still holding the pipe
+}
+
+
+def fake_cli(dir_, name, mode, secs=20):
+    """Write an executable fake `name` in dir_ that misbehaves as `mode` (FAKE_MODES); returns its path."""
+    os.makedirs(dir_, exist_ok=True)
+    path = os.path.join(dir_, name)
+    with open(path, "w") as f:
+        f.write("#!/bin/sh\n" + FAKE_MODES[mode].format(secs=secs))
+    os.chmod(path, 0o755)
+    return path

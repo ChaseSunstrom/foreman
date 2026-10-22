@@ -2049,6 +2049,9 @@ def _runners(args, fmcli):
             gone = m.retired(x["model"])
             if gone:
                 x.update(retired=True, retired_on=gone["date"], replacement=gone["replacement"], source=gone["source"])
+            elif m.retiring(x["model"]):  # T-1433: announced, within 60 days
+                soon = m.retiring(x["model"])
+                x.update(retiring_on=soon["date"], replacement=soon["replacement"], source=soon["source"])
     rows = []
     for n, r in rs.items():
         path = _installed(n, r)
@@ -2074,6 +2077,8 @@ def _runners(args, fmcli):
                                "none set up (fm code models says how)"))
     lines += [f"  {x['name']} ({x['model']}) was retired {x['retired_on']}: use {x['replacement']} "
               f"({x['source']}; table as of {m.RETIRED_AS_OF})" for x in models if x.get("retired")]
+    lines += [f"  {x['name']} ({x['model']}) is retiring on {x['retiring_on']} -> {x['replacement']} "
+              f"({x['source']}; table as of {m.RETIRED_AS_OF})" for x in models if x.get("retiring_on")]
     lines.append(problem or (f"(* used with no --worker or --model: {why})" if name else
                              "With no --worker, fm code uses the model" if models
                              else "No runner installed that can plan read-only, and no model: install claude, or set one up"))

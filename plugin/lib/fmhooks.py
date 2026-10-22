@@ -3298,10 +3298,18 @@ def _drive(p, sd, briefs, pl, g):
     # T-1083, T-1127: a task whose cap was hit (cap_hit on its brief) isn't pushed or offered until its cost_cap changes
     capped = {b.id for b in briefs if b.meta.get("cost_cap") and str(b.meta.get("cap_hit")) == str(b.meta["cost_cap"])}
     waiting += [x for x in capped if x not in waiting]
+    # T-1469: a task a builder lane holds is running work: fm focus refuses it ('held by lane')
+    held = sorted(b.id for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED)
     work = next((w for w in ([sd["active"]] if sd["active"] else []) + sd["queue"]
-                 if w["id"] not in waiting and (not scope or w["id"] == scope)), None)
+                 if w["id"] not in waiting and w["id"] not in held and (not scope or w["id"] == scope)), None)
     if not work and full and not scope:  # T-0097: in full autonomy the user's captured requests are work too
-        work = next((w for w in sd["inbox"] if w["id"] not in waiting), None)
+        work = next((w for w in sd["inbox"] if w["id"] not in waiting and w["id"] not in held), None)
+    if not work and held:  # said once per set of lanes; each builder's notification wakes the session
+        if d.get("lanes") == held:
+            return None
+        d["lanes"] = held
+        return (f"Foreman drive: builder lanes hold {', '.join(held[:4])}; nothing else is queued. Each builder's "
+                f"notification wakes you: then review its branch, fm lane merge, fm lane rm, and close it here.")
     if d.get("hold"):
         return None  # the user asked for planning only this turn
     import fmloop  # T-1057
