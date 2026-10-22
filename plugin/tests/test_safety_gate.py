@@ -62,6 +62,8 @@ class SafetyGate(CodeCase):
         r = self.fixed(env={"FOREMAN_CODE_ATTENDED": "1"})
         self.assertIn("return a + b", self.calc())
         self.assertIn("guard corpus replay", r.stdout + r.stderr)
+        led = read_text(os.path.join(c.find_project(self.repo).dir, "ledger.jsonl"))
+        self.assertIn('"safety_warned"', led, "an attended run past a red gate is on the ledger, never silent")
 
     def test_waiver_is_logged(self):
         stub_corpus_replay(self.repo, days=8)
@@ -80,8 +82,15 @@ class SafetyGate(CodeCase):
         p = c.find_project(self.repo, create=True)
         self.fm("replay", "--cases", env={"FOREMAN_GUARD_CASES": cases})
         [e] = c.ledger_events(p, kinds=["guard_corpus"])
-        self.assertEqual(e["data"], {"cases": 1, "drifted": 0, "broken": 0})
-        self.assertIsNone(fmreplay.safety_gate(p))
+        self.assertEqual(e["data"], {"cases": 1, "drifted": 0, "broken": 0, "substitute": True})
+        self.assertIn("no result on record", fmreplay.safety_gate(p),
+                      "review: a replay of a one-line case file of your own is no pass")
+        stub_corpus_replay(self.repo)
+        self.assertIsNone(fmreplay.safety_gate(p), "the committed corpus's green replay passes")
+
+    def test_a_future_dated_record_is_not_fresh(self):
+        p = stub_corpus_replay(self.repo, days=-3)
+        self.assertIn("guard corpus replay", fmreplay.safety_gate(p))
 
 
 class ReleaseGate(ReleaseCase):

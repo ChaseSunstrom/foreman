@@ -1673,7 +1673,8 @@ class App:
             if v not in (None, False, ""):
                 argv += [f"--{k.replace('_', '-')}"] + ([] if v is True else [str(v)])
         p = subprocess.Popen(argv, cwd=self.root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, text=True, start_new_session=True)
+                             stderr=subprocess.PIPE, text=True, start_new_session=True,
+                             env=dict(os.environ, FOREMAN_CODE_ATTENDED="1"))  # T-1401: watched, not unattended
         threading.Thread(target=self._read, args=(p,), daemon=True).start()
         return p
 

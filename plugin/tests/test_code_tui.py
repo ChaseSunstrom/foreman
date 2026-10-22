@@ -366,6 +366,15 @@ class Paste(unittest.TestCase):
                 self.assertEqual((app.mode, app.done), (mode, False), mode)
         self.assertEqual((spawned, killed), ([], []))
 
+    def test_the_apps_runs_are_attended(self):
+        """T-1401: the app's run has pipes, not a terminal; it says it is watched, so a stale safety gate warns."""
+        from unittest import mock
+        T = tui()
+        app = T.App(T.DEFAULTS)
+        with mock.patch.object(T.subprocess, "Popen") as popen, mock.patch.object(T.threading, "Thread"):
+            app._spawn(["fix", "add"], {})
+        self.assertEqual(popen.call_args.kwargs["env"].get("FOREMAN_CODE_ATTENDED"), "1")
+
     def test_a_paste_is_capped_and_one_split_across_reads_waits_for_its_end(self):
         cap = tui().PASTE_CAP
         self.assertEqual(tui().parse_keys("\x1b[200~" + "a" * (cap * 2) + "\x1b[201~q"), [("paste", "a" * cap), "q"])
