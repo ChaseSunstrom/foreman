@@ -300,6 +300,18 @@ def set_app(key, value, path=None, p=None):
         return _set_app(key, value, path, real, table, name)
 
 
+def preview_app(key, value, path=None):
+    """T-1573: (the value, the config the app would run with it): set_app's checks, nothing written and the guard not
+    asked (nothing to protect); the fm code app shows a look with it before set_app writes it."""
+    path = path or app_path()
+    entries = find(key, "app")
+    if not entries:
+        raise SettingError(f"{key}: not a setting of the app (fm settings list shows them)")
+    value = _check(entries[0], value)
+    _utf8(value, key)
+    return value, _set_app(key, value, path, None, *_split(key), write=False)
+
+
 def _utf8(value, key):
     try:
         json.dumps(value, ensure_ascii=False).encode("utf-8")
@@ -307,7 +319,7 @@ def _utf8(value, key):
         raise SettingError(f"{key}: not text UTF-8 can hold (a lone surrogate)") from None
 
 
-def _set_app(key, value, path, real, table, name):
+def _set_app(key, value, path, real, table, name, write=True):
     import fmcodetui as T
     import fmcore
     try:
@@ -349,6 +361,8 @@ def _set_app(key, value, path, real, table, name):
             T.render(T.State(), w, h, cfg)
     except Exception as e:
         raise SettingError(f"{key} = {T._toml(value)}: the app can't draw with it ({type(e).__name__}: {e})") from None
+    if not write:
+        return cfg
     fmcore.write_atomic(real, new)
     return value, errors
 

@@ -2044,6 +2044,133 @@ class SettingsScreen(unittest.TestCase):
         self.assertEqual((app.mode, app.item_index), ("project", 1))
 
 
+class SettingsPreview(unittest.TestCase):
+    """T-1573: a theme, palette or motion change on the settings screen shows at once on the live config (the screen
+    behind the overlay repaints) and writes nothing; any key within 10 s keeps it (written then), else it goes back."""
+    setUp, write, text = SettingsScreen.setUp, SettingsScreen.write, SettingsScreen.text
+    MINE = '# my look\ntheme = "night"  # keep\n'
+
+    def app(self):
+        self.write(self.MINE)
+        app, self.now = SettingsScreen.app(self), 100.0
+        app.clock = lambda: self.now
+        return app
+
+    def set(self, app, line):
+        for k in f":{line}\n":
+            app.key(k)
+
+    def file(self):
+        with open(self.toml, encoding="utf-8") as f:
+            return f.read()
+
+    def svg(self, app):
+        return tui().to_svg(tui().render(app.state, 120, 40, app.cfg, app), app.cfg)
+
+    def test_a_theme_change_repaints_behind_the_overlay_before_it_is_kept(self):
+        app = self.app()
+        self.assertNotIn('fill="#c9d1dd"', self.svg(app))
+        self.set(app, "set theme paper")
+        self.assertEqual(app.cfg["preset"], "paper")
+        self.assertIn('fill="#c9d1dd"', self.svg(app), "paper's shade: the screen behind repainted")
+        self.assertEqual(self.file(), self.MINE, "a preview writes nothing")
+        text = self.text(app)
+        self.assertIn(" any key  keeps it", text)
+        self.assertIn("reverts in 10 s", text)
+
+    def test_an_unkept_change_goes_back_after_10_seconds_on_screen_and_in_the_file(self):
+        app = self.app()
+        night = app.cfg
+        self.set(app, "set theme paper")
+        self.now += 9.5
+        app.poll()
+        self.assertEqual(app.cfg["preset"], "paper", "still a preview")
+        self.assertIn("1 s", self.text(app))
+        self.now += 0.5
+        app.poll()  # the screen's loop polls at least once a second
+        self.assertEqual(app.cfg, night, "the screen as it was")
+        self.assertIn('fill="#2a3650"', self.svg(app))
+        self.assertEqual(self.file(), self.MINE, "the file as it was")
+        self.assertIn("not kept", self.text(app))
+        app.key("j")
+        self.assertEqual(self.file(), self.MINE, "a key once it went back keeps nothing")
+
+    def test_a_key_after_the_10_seconds_keeps_nothing_even_before_the_poll(self):
+        app = self.app()
+        night = app.cfg
+        self.set(app, "set theme paper")
+        self.now += 10
+        app.key("j")
+        self.assertEqual((app.cfg, self.file()), (night, self.MINE))
+
+    def test_any_key_keeps_it_and_writes_it_then(self):
+        for key in ("j", "\x1b", "q", ("paste", "x")):
+            with self.subTest(key=key):
+                app = self.app()
+                self.set(app, "set theme paper")
+                at = app.item_index
+                self.now += 9
+                app.key(key)
+                self.assertEqual(self.file(), self.MINE.replace('"night"', '"paper"'), "written in place, kept")
+                self.assertEqual((app.mode, app.item_index, app.cfg["preset"]), ("settings", at, "paper"),
+                                 "the key keeps it and does nothing else")
+                self.now += 60
+                app.poll()
+                self.assertEqual(app.cfg["preset"], "paper", "kept: nothing goes back later")
+
+    def test_motion_and_palette_preview_too_and_a_shared_one_is_written_on_both_when_kept(self):
+        settings = os.path.join(self.uhome, ".claude", "settings.json")
+        app = self.app()
+        self.set(app, "set palette cb")
+        self.assertEqual((app.cfg["palette"], app.cfg["theme"]["ok"]["fg"]), ("cb", "#4DA3FF"))
+        self.now += 10
+        app.poll()
+        self.assertEqual(app.cfg["palette"], "default")
+        self.set(app, "set motion off")
+        self.assertEqual(app.cfg["motion"], "off")
+        self.assertEqual(self.file(), self.MINE)
+        self.assertFalse(os.path.exists(settings), "the pane's half waits for the keep too")
+        app.key("k")
+        self.assertIn('motion = "off"', self.file())
+        with open(settings, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["pluginConfigs"]["foreman-ui@foreman"]["options"], {"motion": "off"})
+
+    def test_what_isnt_a_look_of_the_app_is_written_at_once(self):
+        settings = os.path.join(self.uhome, ".claude", "settings.json")
+        app = self.app()
+        self.set(app, "set --surface plugin motion reduced")
+        self.assertIsNone(app.set_pending, "the pane's own value: nothing on this screen to preview")
+        with open(settings, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["pluginConfigs"]["foreman-ui@foreman"]["options"], {"motion": "reduced"})
+
+    def test_a_value_it_would_refuse_is_refused_at_once_not_previewed(self):
+        app = self.app()
+        night = app.cfg
+        self.set(app, "set theme nope")
+        self.assertEqual(app.set_note[1], "bad")
+        self.assertIn("one of", app.set_note[0])
+        self.assertIsNone(app.set_pending)
+        self.assertIs(app.cfg, night)
+
+    def test_a_keep_the_guard_refuses_goes_back_and_says_why(self):
+        os.environ["CLAUDECODE"] = "1"
+        app = self.app()
+        night = app.cfg
+        self.set(app, "set theme paper")
+        self.assertEqual(app.cfg["preset"], "paper", "a preview writes nothing, so it asks nothing")
+        app.key("j")
+        self.assertEqual(app.cfg, night)
+        self.assertEqual(app.set_note[1], "bad")
+        self.assertIn("guard", app.set_note[0])
+        self.assertEqual(self.file(), self.MINE)
+
+    def test_no_colour_keeps_the_mono_theme_through_a_preview(self):
+        app = self.app()
+        app.cfg, app.no_colour = dict(app.cfg, theme=tui()._mono(), preset="mono"), True
+        self.set(app, "set motion off")
+        self.assertEqual((app.cfg["preset"], app.cfg["motion"]), ("mono", "off"))
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
