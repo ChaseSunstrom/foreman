@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm lib show takes a card's group prefix too (web/three-js, frontend/typography), as briefs and playbooks write them; a prefix naming another group is still not found (T-1521).
 - 3D playbook (ui/scene-3d.md): scene composition with a fit-from-bounds camera, light and material recipes, shader looks, a budget for a mid laptop and a phone with a one-way quality ladder, a nine-clause survival contract (no WebGL, poster first, context loss, one context per page, reduced motion, a text twin, keyboard, contained failure, sleeping) each with a probe, and a black-screen triage table (T-1494).
 - Motion playbook (ui/motion.md): named timing tokens in CSS and JS that follow DESIGN.md's Motion knob, a state-to-motion table with a reduced form per row, storyboard before code with a worked example, compositor-only rules, loading that never blocks first paint, and reduced motion designed as its own path (T-1492).
 - UI playbook "design direction before pixels": a three-question interview, a taste-word table, a bank of twelve distinct directions, a safe/bold/wild dial, the generic defaults to avoid, and a DESIGN.md template, so UI work starts from a written point of view (T-1488).
