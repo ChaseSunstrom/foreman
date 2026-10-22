@@ -132,6 +132,15 @@ class Allow(ForemanTestCase):  # and the edges of what gets linted
         p = self.fm("design", "lint", self.tmp + "/a.css", path, "--json")
         self.assertEqual([x["file"] for x in json.loads(p.stdout)["skipped"]], [path])
 
+    def test_a_brace_inside_a_string_doesnt_end_the_block(self):
+        # T-1507 review: content: "}" closed @keyframes early, so its 50% frame fell outside and the flash went unseen
+        path = self.write("a.css", '@keyframes blink { 0% { content: "}"; } 50% { opacity: 0; } }\n'
+                                   ".alert { animation: blink .2s infinite; }\n"
+                                   "@media (prefers-reduced-motion: reduce) { .alert { animation: none; } }\n"
+                                   ".x { content: '{'; }\n@keyframes grow { to { width: 10px; } }\n")
+        self.assertEqual(sorted((f["rule"], f["line"]) for f in fmdesign.lint([path])),
+                         [("flash", 2), ("layout-animation", 5)])
+
     def test_the_same_file_twice_counts_once(self):
         path = self.write("a.css", "".join(f".c{i} {{ border-radius: 8px; }}\n" for i in range(3)))
         self.assertEqual(fmdesign.lint([path, path, os.path.join(self.tmp, ".", "a.css")]), [])
