@@ -19,7 +19,7 @@ import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "__pycache__"}
+SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "hero-scene.js", "__pycache__"}
 TYPES = ["FEATURE", "FIX", "CLEAN", "PERFORMANCE", "SECURITY", "RESEARCH"]
 esc = html.escape
 
@@ -287,6 +287,23 @@ def poster(totals, asof="", cols=4):
     return "".join(out) + "</svg>"
 
 
+SCENE_LABEL = ("The proof chain in motion: a pulse of light runs the track from red to green and lights each station "
+               "as it passes")
+
+
+def scene(totals, asof=""):
+    """T-1610: both posters in one box with a canvas over them, then hero-scene.js inline: a WebGL2 scene that reads
+    the visible poster's stations and makes them lit forms with a pulse on the track. The canvas is hidden from
+    screen readers until the scene is live; reduced motion, no WebGL2 or any failure keeps the poster."""
+    with open(os.path.join(HERE, "hero-scene.js"), encoding="utf-8") as f:
+        js = f.read()
+    if re.search(r"(?i)</script|<!--", js):  # either would end or derail the inline script early
+        raise SystemExit("build.py: site/hero-scene.js can't be inlined: it holds </script or <!--")
+    return (f'<div class="hero-scene" data-state="poster">{poster(totals, asof)}{poster(totals, asof, 2)}'
+            f'<canvas role="img" aria-hidden="true" aria-label="{esc(SCENE_LABEL)}"></canvas></div>'
+            f'<script type="module">\n{js}</script>')
+
+
 def layout(title, desc, body, pages, here, depth=1):
     up = "../" * depth
     current = ' aria-current="page"'
@@ -461,7 +478,7 @@ def build(out):
         raise SystemExit("build.py: site/index.html lost the poster mark: " + POSTER_MARK)
     totals, asof = stats.get("totals") or {}, str(stats.get("generated") or "")
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
-        f.write(page.replace(POSTER_MARK, poster(totals, asof) + poster(totals, asof, 2), 1))
+        f.write(page.replace(POSTER_MARK, scene(totals, asof), 1))
     os.makedirs(os.path.join(out, "demo"), exist_ok=True)
     for f in ("live.mp4", "demo.svg", "code-tui.mp4"):  # code-tui.mp4: fm code tui --record demo/code-tui.jsonl
         shutil.copy2(os.path.join(ROOT, "demo", f), os.path.join(out, "demo", f))

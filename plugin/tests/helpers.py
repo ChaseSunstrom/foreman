@@ -41,6 +41,15 @@ def read_json(path):
         return json.load(f)
 
 
+def headless_chrome():
+    """A headless Chromium (T-1499, T-1610): FOREMAN_CHROME, one on PATH, or Playwright's download; None if absent."""
+    import glob
+    found = [os.environ.get("FOREMAN_CHROME")] + [shutil.which(n) for n in (
+        "chrome-headless-shell", "chromium", "chromium-browser", "google-chrome")] + sorted(glob.glob(os.path.expanduser(
+            "~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell")))
+    return next((p for p in found if p and os.access(p, os.X_OK)), None)
+
+
 def stub_corpus_replay(repo, drifted=0, days=0, cases=3):
     """T-1401: the ledger record fm replay --cases leaves, without running the replay: red when drifted, days old."""
     import time
