@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- 3D template (ui/templates/scene.html): a single-file raw WebGL2 scene with no dependencies: a lit procedural form, a lens fitted from its bounds, a palette from CSS tokens, a dithered backdrop with a contact shadow, and every survival clause (poster first, text twin, context loss and restore, reduced motion, keyboard, contained failure, sleeping offscreen), checked in a headless browser (T-1495).
 - UI playbook: composition, depth and states (ui/composition.md): a spacing scale with rhythm tiers, grids picked by direction, alignment counted as axes, hierarchy by the cheapest lever, depth from one stated light with elevation and z-index from one table, a white-image test for scrims, a hero that opens with the subject's most characteristic thing, landing pages as an argument, three scored wireframes for one brief, a state atlas per screen with an overflow fixture, and a console probe that measures it (T-1490).
 - UI playbook: visual QA: fm smoke plus a seeded frame matrix (360, 768 and 1440 px, light and dark, reduced motion) from a small Playwright script that freezes the clock and fails on overflow, junk text and motion under reduced motion; an eyeball checklist; a receipt in the task's evidence. In Claude Code the frames are read with the Read tool (T-1500).
 - fm task new and fm capture split --scope on spaces and commas ('a.py b.py, c.py' is three paths, quotes keep a path with a space); it used to be stored as one path, so every file it named read as outside the task's scope (T-1564).
