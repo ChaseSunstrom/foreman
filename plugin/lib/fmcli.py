@@ -5867,6 +5867,8 @@ def _build_parser():
     s.add_argument("--profile", action="append", choices=[*fmsmoke.PROFILES, "all"], metavar="NAME",
                    help="run: crawl under a hostile profile instead (repeatable; all for every one): "
                         + "; ".join(f"{k}: {v}" for k, v in fmsmoke.PROFILES.items()))
+    s.add_argument("--strict", action="store_true", help="run: fail on the frame matrix's and the profiles' findings "
+                                                         "too (fm smoke set strict on makes it the default)")
     import fmdesign  # T-1506: stdlib only and small; its rule list is the help's epilog
     s = add("design", lazy("fmdesign", "cmd_design"), tier=("Every task", 92), epilog=fmdesign.rules_help(),
             formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
