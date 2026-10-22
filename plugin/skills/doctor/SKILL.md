@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: Use when the user asks whether Foreman is healthy, or a Foreman hook or fm command misbehaves: runs fm doctor and fixes each failure.
+description: Use when asked whether Foreman is healthy, or a hook or fm command misbehaves: runs fm doctor, fixes each failure.
 argument-hint: "[--full]"
 ---
 
