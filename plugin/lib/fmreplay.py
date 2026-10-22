@@ -357,6 +357,16 @@ def cases_path():
     return os.environ.get("FOREMAN_GUARD_CASES") or os.path.join(_plugin_here(), "tests", "fixtures", "guard_cases.jsonl")
 
 
+def allow_path():
+    """T-1517: the allow-corpus, everyday commands the guard must pass; replayed with the labelled cases."""
+    return os.path.join(_plugin_here(), "tests", "fixtures", "guard_allow.jsonl")
+
+
+def _corpus_paths():
+    """The files a replay holds the guard to: a caller's own case file alone, else the cases and the allow-corpus."""
+    return [cases_path()] if os.environ.get("FOREMAN_GUARD_CASES") else [cases_path(), allow_path()]
+
+
 def _plugin_here():
     """T-1175: the plugin/ of the checkout cwd is in (a builder's worktree), else PLUGIN_ROOT's."""
     return _checkout_plugin(os.getcwd()) or c.PLUGIN_ROOT
@@ -385,10 +395,21 @@ def _store_cwd(cwd):
 
 def load_cases(path=None):
     """T-1162: ([{id, cmd, cwd, should: allow|block, why}], broken): the labelled cases fm guard wrong stored, and how
-    many lines were not a case (a conflict marker, a torn line, a missing key). A missing file is no cases."""
+    many lines were not a case (a conflict marker, a torn line, a missing key). A missing file is no cases. No path:
+    every corpus file (_corpus_paths), a case both hold (the same id) once."""
+    if not path:
+        cases, broken, seen = [], 0, set()
+        for one in _corpus_paths():
+            got, bad = load_cases(one)
+            broken += bad
+            for k in got:
+                if k["id"] not in seen:
+                    seen.add(k["id"])
+                    cases.append(k)
+        return cases, broken
     cases, broken = [], 0
     try:
-        with open(path or cases_path(), encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             lines = [ln for ln in f if ln.strip()]
     except OSError:
         return [], 0
@@ -407,11 +428,13 @@ def load_cases(path=None):
 
 
 def drift(cases):
-    """The cases whose label the current guard (no grants) disagrees with, each with its 'got' verdict."""
+    """The cases whose label the current guard (no grants) disagrees with, each with its 'got' verdict: allow, block,
+    or unable (T-1517: the guard raised, so nothing was judged; never a pass, whatever the label)."""
     now = verdicts([(k["cmd"], resolve_cwd(k.get("cwd") or "")) for k in cases])
     out = []
     for k in cases:
-        got = "allow" if now[_key(k["cmd"], resolve_cwd(k.get("cwd") or ""))] == "allow" else "block"
+        v = now[_key(k["cmd"], resolve_cwd(k.get("cwd") or ""))]
+        got = "allow" if v == "allow" else "unable" if v.startswith("error:") else "block"
         if got != k["should"]:
             out.append({**k, "got": got})
     return out
@@ -428,11 +451,12 @@ def add_case(cmd, should, cwd="", why=""):
         raise fmcli.UsageError("that command holds a key-shaped literal: replace it with a placeholder before storing it")
     cwd = _store_cwd(cwd or os.getcwd())
     case = {"id": _key(cmd, cwd), "cmd": cmd, "cwd": cwd, "should": should, "why": why}
-    for k in load_cases()[0]:
-        if k["id"] == case["id"]:
-            if k["should"] != should:
-                raise fmcli.UsageError(f"already stored as should {k['should']}: edit {cases_path()} to change a label")
-            return k
+    for path in _corpus_paths():  # T-1517: a label the allow-corpus contradicts is refused too
+        for k in load_cases(path)[0]:
+            if k["id"] == case["id"]:
+                if k["should"] != should:
+                    raise fmcli.UsageError(f"already stored as should {k['should']}: edit {path} to change a label")
+                return k
     os.makedirs(os.path.dirname(cases_path()), exist_ok=True)
     with open(cases_path(), "a", encoding="utf-8") as f:
         f.write(json.dumps(case) + "\n")
@@ -516,18 +540,23 @@ def report_cases(args, fmcli):
                 shown = c.fit(" ".join(k["cmd"].split()), 100)
                 b = fmcli._create(p, f"Guard verdict drifted from its label: should {k['should']}: {shown}", "FIX", "S",
                                   "captured", raw=f"[guard-case {k['id']}] fm replay --cases (T-1162): the guard now "
-                                  f"{k['got']}s `{shown}` in {k.get('cwd') or '~'}; the label says {k['should']}"
+                                  + ("raises on" if k["got"] == "unable" else f"{k['got']}s")
+                                  + f" `{shown}` in {k.get('cwd') or '~'}; the label says {k['should']}"
                                   f" ({k.get('why') or 'no reason given'}). Fix fmguard.py, or correct the label."
                                   + (" The label is allow but the guard blocks: do not loosen the guard without the "
-                                     "user's yes." if k["should"] == "allow" else ""),
+                                     "user's yes." if k["should"] == "allow" and k["got"] == "block" else ""),
                                   source="discovered")
                 c.log_event(p, "capture", task=b.id, data={"source": "discovered", "type": "FIX"})
                 made.append(b.id)
         if made:
             c.regen_views(p)
-    lines = [f"Guard cases: {len(cases)} labelled, {len(bad)} drifted" + (f", {broken} broken line(s) skipped" if broken else "")] + [
+    unable = sum(k["got"] == "unable" for k in bad)
+    lines = [f"Guard cases: {len(cases)} labelled, {len(bad)} drifted"
+             + (f" ({unable} unable to judge)" if unable else "")
+             + (f", {broken} broken line(s) skipped" if broken else "")] + [
         f"  should {k['should']}, guard {k['got']}: {c.fit(c.redact(' '.join(k['cmd'].split())), 120)}" for k in bad[:SHOW]]
-    fmcli.out(args, {"cases": len(cases), "drifted": len(bad), "broken": broken, "captured": made}, "\n".join(lines))
+    fmcli.out(args, {"cases": len(cases), "drifted": len(bad), "unable": unable, "broken": broken, "captured": made},
+              "\n".join(lines))
     if broken or bad and not args.capture:
         raise SystemExit(1)
 
