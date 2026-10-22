@@ -1108,6 +1108,24 @@ def repair(roots):
 _SUPPLY_SKIP = {".git", "node_modules", "__pycache__", ".venv", ".pytest_cache"}
 
 
+_IN_USE = re.compile(rb'\{"pid":(\d{1,10}),"procStart":"\d{1,24}"\}\n?')
+
+
+def _in_use_marker(root, d, f, full):
+    """T-1455: the .in_use/<pid> file Claude Code writes into every installed plugin for each running session (one
+    JSON line). Only that exact shape, in the install root's .in_use, named for its own pid, is left out of the hash."""
+    if d != os.path.join(root, ".in_use") or not f.isdigit() or os.path.islink(full):
+        return False
+    try:
+        if not os.path.isfile(full) or os.path.getsize(full) > 64:
+            return False
+        with open(full, "rb") as fh:
+            m = _IN_USE.fullmatch(fh.read(65))
+    except FileNotFoundError:
+        return True  # its session ended mid-walk
+    return bool(m) and m.group(1) == f.encode()
+
+
 def _tree_hash(root, h, cap=4000, skipped=None):
     """Every file under an install dir (its hooks, scripts and code, not just its manifest), path and bytes, in order.
     T-1434: what h only names goes into skipped by a cheap stand-in: a symlink's target path (a linked folder's too,
@@ -1122,6 +1140,8 @@ def _tree_hash(root, h, cap=4000, skipped=None):
         dirs[:] = sorted(x for x in dirs if x not in _SUPPLY_SKIP)
         for f in sorted(files):
             full = os.path.join(d, f)
+            if _in_use_marker(root, d, f, full):
+                continue
             n += 1
             rel = os.path.relpath(full, root).encode()
             # not a regular file (a FIFO would block the open forever): named, never read

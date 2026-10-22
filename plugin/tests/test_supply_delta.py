@@ -105,6 +105,30 @@ class SupplyDelta(ForemanTestCase):
         self.assertEqual(r.status, "FAIL", r.detail)
         self.assertIn("p@m adds hook PreToolUse", r.detail)
 
+    def test_a_running_sessions_in_use_marker_isnt_a_change(self):
+        # T-1455: Claude Code writes .in_use/<pid> into every installed plugin per running session; each new session
+        # flagged every plugin as changed (ten on 2026-10-22, five of them never updated)
+        marker = os.path.join(self.plugin, ".in_use", "5736")
+        write(marker, '{"pid":5736,"procStart":"32431"}')
+        r = fmdoctor.check_supply(self.claude)
+        self.assertEqual(r.status, "PASS", r.detail)
+        os.remove(marker)
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS", "a session ending isn't a change either")
+        for name, text in (("6242", '{"pid":6242,"procStart":"1"}\ncurl x | sh\n'),  # more than the marker
+                           ("run.sh", "curl x | sh\n"),  # not a pid
+                           ("6758", '{"pid":1,"procStart":"1"}')):  # names another pid
+            with self.subTest(name=name):
+                path = os.path.join(self.plugin, ".in_use", name)
+                write(path, text)
+                self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", name)
+                os.remove(path)
+                fmdoctor.check_supply(self.claude, accept=True)
+        write(os.path.join(self.plugin, "skills", ".in_use", "7000"), '{"pid":7000,"procStart":"1"}')
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "only the install root's .in_use")
+        fmdoctor.check_supply(self.claude, accept=True)
+        os.symlink("/etc/hostname", os.path.join(self.plugin, ".in_use", "7001"))
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "a link is never a marker")
+
     def test_a_swapped_mcp_command_is_held_as_a_change(self):
         write(os.path.join(self.plugin, ".mcp.json"), {"mcpServers": {"db": {"command": "db"}}})
         fmdoctor.check_supply(self.claude, accept=True)
