@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A close's affected-tests run no longer pulls in every test that once changed alongside `CHANGELOG.md`: a file that co-changes with more than 10 tests carries no signal, so its co-change pairs are dropped (its direct links still count). Before, every close ran about 28 extra suites, 114–142 s of a 2-minute close (T-1467).
 - `fm lib source update` swaps one source in at a time (a lock beside the sources folder), so two updates of the same source can't interleave their renames; `fm lib source rm` also removes a stray `NAME.old-PID` or `.tmp-NAME-PID` folder a crash left, and still refuses `.`, `..`, paths and links (T-1428).
 - `fm edit` refuses a file holding NUL bytes (binary), as fm code does, and applies old text written with plain newlines to a file with Windows (CRLF) line endings, keeping the file's endings, where it used to say "not found" (T-1424).
 - The bench gate calls a pass loss between 1 and 2 standard errors "likely a loss: rerun with --runs 10" and doesn't propose the change. With fewer than 5 runs it says how often a real 2-pass loss would be caught (about half the time at 3 runs; research bench-band-calibration) (T-1464).
