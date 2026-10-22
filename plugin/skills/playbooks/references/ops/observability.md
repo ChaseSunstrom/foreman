@@ -25,7 +25,9 @@ question someone will ask during an incident (`incident.md`).
    `error` line that nobody would act on is a defect.
 6. **Traces follow the request across every hop.** Propagate W3C `traceparent` through HTTP calls, queue messages
    and scheduled jobs. One span per network hop or unit of work, not per function. Put `trace_id` on every log line.
-   Keep every error and every slow trace; sample the rest.
+   Keep every error and every slow trace and sample the rest: that needs *tail* sampling (decided after the trace
+   ends, for example the OpenTelemetry Collector's `tail_sampling` processor), because a head sampler decides at
+   the first span, before it knows the outcome.
 7. **Stamp the version** on metrics, logs and traces, so a deploy shows as a boundary on every graph.
 8. **Alert on symptoms, page on budget burn.** Page only for what users feel (error rate, latency, SLO burn); causes
    (CPU, disk at 70%) go to a ticket queue. Every page links its runbook. Pass: each paging rule names its runbook.
@@ -42,7 +44,7 @@ the self-check shows:
 import io, json, logging, time
 
 class JsonLines(logging.Formatter):
-    FIELDS = ("trace_id", "route", "status", "ms")  # the allowlist: nothing else is written
+    FIELDS = ("version", "trace_id", "route", "status", "ms")  # the allowlist: nothing else is written
 
     def format(self, r):
         out = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(r.created)) + f".{int(r.msecs):03d}Z",
@@ -52,21 +54,32 @@ class JsonLines(logging.Formatter):
             out["error"] = self.formatException(r.exc_info)
         return json.dumps(out, separators=(",", ":"), default=str)
 
+class Stamp(logging.Filter):  # puts the build's version on every record
+    def __init__(self, version):
+        super().__init__()
+        self.version = version
+
+    def filter(self, r):
+        r.version = self.version
+        return True
+
 buf = io.StringIO()
 handler = logging.StreamHandler(buf)
 handler.setFormatter(JsonLines())
-log = logging.getLogger("orders")
+handler.addFilter(Stamp("1.4.2+3f9c1e0"))
+log = logging.getLogger("orders")  # the logger's name is the service
 log.addHandler(handler)
 log.setLevel(logging.INFO)
 log.info("request_done", extra={"trace_id": "4bf92f35", "route": "/orders/{id}", "status": 200, "ms": 41,
                                 "password": "hunter2"})
 line = json.loads(buf.getvalue())
+assert {"ts", "level", "event", "service", "version", "trace_id"} <= line.keys(), line
 assert line["event"] == "request_done" and line["status"] == 200 and line["ts"].endswith("Z")
+assert line["service"] == "orders" and line["version"] == "1.4.2+3f9c1e0"
 assert "password" not in line, "the allowlist dropped it"
 ```
 
-Add `version` the same way (a `logging.Filter` that sets it on every record), and keep the `event` names in one
-place so a rename is a reviewed change.
+Keep the `event` names in one place so a rename is a reviewed change.
 
 ## Checks
 

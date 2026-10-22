@@ -20,8 +20,8 @@ every cue is opt-in and earns its place.
 3. **Design earcons as one family.** One timbre for the product; meaning carried by pitch contour: rising for
    arrival or success, falling for leaving or failure, a repeat for attention. Confirmations last 300 ms or less,
    alerts 1 s or less. Pass: every pair of cues differs in contour, not only in loudness.
-4. **Cap the volume.** Every file peaks at −6 dBFS or below, the loudest cue's peak is within 6 dB of the
-   quietest's, and in-app volume defaults to 50%, separate from the system's. Fade every cue in and out over at
+4. **Cap the volume.** Every file peaks at −6 dBFS or below, the cues' average levels (RMS, with leading and
+   trailing silence trimmed) sit within 6 dB of each other, and in-app volume defaults to 50%, separate from the system's. Fade every cue in and out over at
    least 5 ms so it doesn't click. Pass: `sound_check.py` below exits 0 on the cue folder.
 5. **Limit repeats** with game-feel's caps: one cue retriggers at most once per 50 ms, no more than 8 voices play at
    once, pitch jitter stays within ±5%. A burst of twenty notifications plays one cue. Pass: a unit test fires a
@@ -36,15 +36,20 @@ every cue is opt-in and earns its place.
 
 ## Checking the files
 
-`sound_check.py` reads 16-bit PCM WAV masters (export them before encoding) and fails on a cue that is too loud,
-too long, or out of step with the family's loudness:
+`sound_check.py` reads 16-bit PCM WAV masters (export them before encoding) and fails on a cue whose peak is
+too high, that runs too long, or whose average level (RMS) is out of step with the family's. RMS is a rough stand-in
+for loudness; when the cues differ a lot in pitch, confirm by ear in step 8.
 
 ```python
 #!/usr/bin/env python3
-"""sound_check.py CUE.wav... — peak, length and family spread for UI cues; exits 1 on any failure."""
+"""sound_check.py CUE.wav... — peak, length and RMS spread for UI cues; exits 1 on any failure."""
 import array, math, sys, wave
 
-MAX_PEAK_DBFS, MAX_SECONDS, MAX_SPREAD_DB = -6.0, 1.0, 6.0
+MAX_PEAK_DBFS, MAX_SECONDS, MAX_RMS_SPREAD_DB = -6.0, 1.0, 6.0
+
+
+def dbfs(x):
+    return 20 * math.log10(x / 32768) if x else -math.inf
 
 
 def measure(path):
@@ -56,26 +61,27 @@ def measure(path):
     if sys.byteorder == "big":
         samples.byteswap()
     peak = max((abs(s) for s in samples), default=0)
-    return seconds, 20 * math.log10(peak / 32768) if peak else -math.inf
+    rms = math.sqrt(sum(s * s for s in samples) / len(samples)) if samples else 0
+    return seconds, dbfs(peak), dbfs(rms)
 
 
 def main(paths):
-    fails, peaks = [], []
+    fails, levels = [], []
     for p in paths:
         try:
-            seconds, db = measure(p)
+            seconds, peak, rms = measure(p)
         except (OSError, EOFError, ValueError, wave.Error) as e:
             fails.append(f"{p}: unreadable ({e})")
             continue
-        print(f"{p}: {seconds * 1000:.0f} ms, peak {db:.1f} dBFS")
-        if db > MAX_PEAK_DBFS:
-            fails.append(f"{p}: peak {db:.1f} dBFS is over {MAX_PEAK_DBFS}")
+        print(f"{p}: {seconds * 1000:.0f} ms, peak {peak:.1f} dBFS, RMS {rms:.1f} dBFS")
+        if peak > MAX_PEAK_DBFS:
+            fails.append(f"{p}: peak {peak:.1f} dBFS is over {MAX_PEAK_DBFS}")
         if seconds > MAX_SECONDS:
             fails.append(f"{p}: {seconds:.2f} s is longer than {MAX_SECONDS} s")
-        if db > -math.inf:
-            peaks.append(db)
-    if len(peaks) > 1 and max(peaks) - min(peaks) > MAX_SPREAD_DB:
-        fails.append(f"peaks spread {max(peaks) - min(peaks):.1f} dB, over {MAX_SPREAD_DB}")
+        if rms > -math.inf:
+            levels.append(rms)
+    if len(levels) > 1 and max(levels) - min(levels) > MAX_RMS_SPREAD_DB:
+        fails.append(f"RMS levels spread {max(levels) - min(levels):.1f} dB, over {MAX_RMS_SPREAD_DB}")
     print("\n".join(fails) or "ok")
     return 1 if fails or not paths else 0
 
