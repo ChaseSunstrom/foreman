@@ -41,8 +41,11 @@ RULES = [
      "fix": "use a seeded generator (mulberry32(seed)) or compute the values once outside render"},
     {"id": "untokened-duration", "why": "a literal duration where the design defines duration tokens",
      "fix": "use the token (var(--dur-...)) so motion keeps one rhythm"},
+    {"id": "afterglow", "why": "a state change (:hover, :focus, :active, [aria-*], .is-*) of colour, background, "
+                               "transform or opacity with no transition: an instant jump reads as a glitch",
+     "fix": "add a transition (or animation) on the element for the property, with a duration token"},
 ]
-BY_ID = {r["id"]: r for r in RULES}
+BY_ID ={r["id"]: r for r in RULES}
 NOT_COVERED = ("not read: computed style and the cascade; .js/.ts files; tailwind.config theme values (but a fontFamily "
                "there keeps font-sans from counting as the system face); class names built in code other than "
                "class/className attributes, cn/clsx/twMerge/cva calls and @apply; side-specific rounded-t-* classes; an "
@@ -84,6 +87,8 @@ DECL = re.compile(r"(?<![\w$.-])(--[\w-]+|\$[\w-]+|[a-zA-Z][a-zA-Z-]*)\s*:\s*([^
 KEYFRAMES = re.compile(r"@(?:-webkit-)?keyframes\s+([\w-]+)\s*\{")
 ALLOW = re.compile(r"design-lint:\s*allow\s+([\w-]+)([^\n]*)")
 TAILWIND = re.compile(r"(?<![\w-])(?:from|via|to)-([a-z]+)-\d{2,3}(?![\w-])")
+STATE = re.compile(r":(?:hover|focus-visible|focus-within|focus|active)\b|\[aria-[^\]]*\]|\.is-[\w-]+")
+AFTERGLOW_PROPS = {"color", "background", "background-color", "transform", "opacity"}
 REDUCED = re.compile(r"prefers-reduced-motion|useReducedMotion|reducedMotion")
 # the {0,4000} bounds keep an unclosed quote or brace from rescanning the file at every match attempt
 CLASS_ATTR = re.compile(r"(?<![\w:-])(?:class|className)\s*=\s*(?:\"([^\"]{0,4000})\"|'([^']{0,4000})'|"
@@ -589,9 +594,33 @@ class Run:
                     self.flag("untokened-duration", d.src, d.line, f"{lit[0]} where tokens exist (e.g. "
                                                                    f"{self.dur_tokens[0].prop})")
 
+    def afterglow(self):
+        # ponytail: the element is its selector minus state parts, matched as text across all files; no cascade
+        base = lambda sel: re.sub(r"\s+", " ", STATE.sub("", sel)).strip()
+        sel_of = lambda d: [x for x in re.split(r",", re.split(r"[;{}]", d.src.css[:d.block])[-1]) if x.strip()] \
+            if d.block >= 0 else []
+        moves = set()  # elements that transition or animate something
+        for d in self.decls:
+            if d.prop.startswith(("transition", "animation")) and not d.in_frames and d.value.split(" ")[0] not in (
+                    "none", "0s", "0ms") and d.value:
+                moves.update(base(x) for x in sel_of(d))
+        quiet = {}  # source → spans of prefers-reduced-motion blocks
+        for d in self.decls:
+            if d.prop not in AFTERGLOW_PROPS or d.in_frames or d.src.js or d.dynamic:
+                continue
+            sels = [x for x in sel_of(d) if STATE.search(x)]
+            if not sels or any(base(x) in moves for x in sels):
+                continue
+            if d.src.path not in quiet:
+                ends = _closers(d.src.css)
+                quiet[d.src.path] = [(m.end(), ends.get(m.end() - 1, len(d.src.css)))
+                                     for m in re.finditer(r"@media[^{]*prefers-reduced-motion[^{]*\{", d.src.css)]
+            if not any(a <= d.offset < b for a, b in quiet[d.src.path]):
+                self.flag("afterglow", d.src, d.line, f"{d.prop} changes on {sels[0].strip()} with no transition")
+
     def check(self):
         for rule in (self.generic_font, self.gradient, self.one_radius, self.same_shadow, self.img_alt, self.motion,
-                     self.flash, self.unseeded_random, self.untokened_duration):
+                     self.flash, self.unseeded_random, self.untokened_duration, self.afterglow):
             rule()
         by_path = {s.path: s for s in self.sources}
         kept = [f for f in self.found if f["rule"] not in by_path[f["file"]].allowed.get(f["line"], ())]
