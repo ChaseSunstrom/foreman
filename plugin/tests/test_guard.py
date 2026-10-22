@@ -2159,6 +2159,23 @@ class TokenFallback(GuardCase):
                 self.assertBlocked(self.bash(cmd), "system", cmd)
         self.assertEqual(g._split(g._tokens("cat <~/.netrc 2>&1 'a"))[0].stdin, "~/.netrc")
 
+    def test_a_hash_inside_nested_quotes_is_no_comment(self):
+        # re-review: a flat quote scan read the inner " of "$(echo "a #" )" as closing the string and cut from # to the
+        # line's end, redirect and all; the first reading kept ">~/.bashrc as one word
+        for cmd in ("echo \"$(echo \"a #\" )\">~/.bashrc", "echo \"$(echo \"a #\" )\">~/.bashrc\necho 'x",
+                    "echo \"`echo \"$(echo \"a #\")\"`\">~/.bashrc", "echo \"$(echo \"a #\" )\"2>~/.bashrc"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.bash(cmd), "system", cmd)
+        self.assertBlocked(self.bash("printf \"%s\" \"$(echo \"x # y\")\" > ~/.ssh/authorized_keys"), "credentials")
+        for text, want in (("echo \"$(echo \"a #\" )\">x # c", "echo \"$(echo \"a #\" )\">x "),
+                           ("echo $(echo a # c\n) b", "echo $(echo a \n) b"), ("a # b\nc", "a \nc"),
+                           ("echo \"`echo \"#\"`\" # c", "echo \"`echo \"#\"`\" "), ("echo ${#x} a#b", "echo ${#x} a#b")):
+            with self.subTest(text=text):
+                self.assertEqual(g._strip_comments(text), want)
+        self.assertEqual(g._pieces(")\">~/x"), [")", '"', ">", "~/x"])
+        self.assertEqual(g._pieces("'a'2>&1"), ["'a'", "2", ">", "&", "1"])
+        self.assertEqual(g._pieces("'$1>4000"), ["'$1>4000"])  # a > after a quote's text is text (debris)
+
     def test_deep_nesting_is_masked_in_linear_time(self):
         line = "\"$(echo " * 20000 + "\"x\" " * 20000
         start = time.monotonic()
