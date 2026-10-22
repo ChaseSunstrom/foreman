@@ -1875,12 +1875,13 @@ class App:
         """T-1573: a look shown at once on the live config, so the screen behind the overlay repaints; written (on
         every surface the :set names) only when kept: any key within PREVIEW_SECONDS, else the screen goes back."""
         import fmsettings
-        try:  # the checks the write makes, so a value it would refuse is refused now, not after the keep
+        try:  # the write's checks, the guard's too: what it would refuse is refused now, not after the keep
             value, cfg = fmsettings.preview_app(key, value)
         except Exception as e:
             self.set_note = (f"app: {e}" if isinstance(e, fmsettings.SettingError) else
                              f"app: {key}: can't show it ({type(e).__name__}: {e})", "bad")
             return None
+        # time.monotonic doesn't count a suspend: a sleep holds the preview longer (safe: nothing is written)
         self.set_pending = {"key": key, "value": value, "surface": surface, "cfg": self.cfg,
                             "until": self.clock() + PREVIEW_SECONDS}
         self.cfg, self.set_note = dict(cfg, theme=_mono(), preset="mono") if self.no_colour else cfg, None

@@ -2108,12 +2108,13 @@ class SettingsPreview(unittest.TestCase):
             with self.subTest(key=key):
                 app = self.app()
                 self.set(app, "set theme paper")
-                at = app.item_index
+                at, shown = app.item_index, app.cfg
                 self.now += 9
                 app.key(key)
                 self.assertEqual(self.file(), self.MINE.replace('"night"', '"paper"'), "written in place, kept")
                 self.assertEqual((app.mode, app.item_index, app.cfg["preset"]), ("settings", at, "paper"),
                                  "the key keeps it and does nothing else")
+                self.assertEqual(app.cfg, shown, "what is kept is what was shown")
                 self.now += 60
                 app.poll()
                 self.assertEqual(app.cfg["preset"], "paper", "kept: nothing goes back later")
@@ -2152,12 +2153,22 @@ class SettingsPreview(unittest.TestCase):
         self.assertIsNone(app.set_pending)
         self.assertIs(app.cfg, night)
 
-    def test_a_keep_the_guard_refuses_goes_back_and_says_why(self):
+    def test_inside_claude_code_a_look_the_guard_refuses_is_refused_at_the_preview(self):
         os.environ["CLAUDECODE"] = "1"
         app = self.app()
         night = app.cfg
         self.set(app, "set theme paper")
-        self.assertEqual(app.cfg["preset"], "paper", "a preview writes nothing, so it asks nothing")
+        self.assertIsNone(app.set_pending, "nothing shown that couldn't be kept")
+        self.assertIs(app.cfg, night)
+        self.assertEqual(app.set_note[1], "bad")
+        self.assertIn("guard", app.set_note[0])
+        self.assertEqual(self.file(), self.MINE)
+
+    def test_a_keep_refused_after_the_preview_goes_back_and_says_why(self):
+        app = self.app()
+        night = app.cfg
+        self.set(app, "set theme paper")
+        os.environ["CLAUDECODE"] = "1"  # the guard decides by the time the key comes
         app.key("j")
         self.assertEqual(app.cfg, night)
         self.assertEqual(app.set_note[1], "bad")
