@@ -20,7 +20,8 @@ import fmcore as c
 CARDS = os.path.join(c.PLUGIN_ROOT, "skills", "library", "cards")
 SECTIONS = ("Verify", "Test first", "Do", "Avoid", "Review")
 SIZE = (1000, 4500)  # the spec asks 1,200-4,000; the lint allows a little slack
-KEYS = ("name", "title", "area", "tags", "detect", "related")
+KEYS = ("name", "title", "area", "tags", "detect", "related")  # required; `verified: YYYY-MM-DD` is optional (T-1519)
+VERIFIED_DAYS = 365  # a verified: date older than this is a note in fm lib check
 WEIGHT = {"dep": 3, "file": 2, "ext": 1}
 GENERIC = {".editorconfig", ".gitignore", ".gitattributes", "readme*", "license*", "*", "*.md", "*.txt", "*.json",
            "*.yml", "*.yaml", "*.toml", "*.lock", "*.xml", "*.cfg", "*.ini", "*.env", ".env*", "*.sh"}
@@ -147,10 +148,22 @@ def lint(root=CARDS):
             problems.append(f"{rel}: name {name!r} also used by {seen[name]}")
         seen[name] = rel
         problems += [f"{rel}: {why}" for why in _card_problems(path, x)]
-    names = set(seen)
+    names, stale = set(seen), datetime.date.today() - datetime.timedelta(days=VERIFIED_DAYS)
     for x in parsed.values():
         notes += [f"{x['name']}: related {r!r} has no card" for r in x.get("related") or [] if r not in names]
+        if (_verified(x) or stale) < stale:
+            notes.append(f"{x['name']}: verified {x['verified']}, over a year ago: run its Verify commands again")
     return problems, notes
+
+
+def _verified(x):
+    """T-1519: a card's `verified: YYYY-MM-DD`, the day someone ran its Verify commands and they held; None when it has
+    none or the value isn't such a date."""
+    v = str(x.get("verified") or "")
+    try:
+        return datetime.date.fromisoformat(v) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", v) else None
+    except ValueError:  # 2026-13-01
+        return None
 
 
 _DEP = re.compile(r"[a-z0-9@][\w@./:-]{2,60}")  # a manifest key is data: anything else never reaches a brief
@@ -273,6 +286,10 @@ def _card_problems(path, x):
         bad(f"size {x['size']} chars outside {SIZE[0]}-{SIZE[1]}")
     if _PLACEHOLDER.search(re.sub(r"```.*?```|`[^`\n]*`", "", text, flags=re.S)):  # commands may grep TODO
         bad("placeholder text (TODO, TBD, FIXME, lorem ipsum)")
+    if "verified" in x and not _verified(x):
+        bad(f"verified {x['verified']!r} is not a date: YYYY-MM-DD, the day its Verify commands last held")
+    elif "verified" in x and _verified(x) > datetime.date.today() + datetime.timedelta(days=1):  # a day of time zones
+        bad(f"verified {x['verified']} is in the future")
     return problems
 
 
@@ -1215,10 +1232,12 @@ def cmd_lib(args):
         return print(f"Admitted {os.path.relpath(dest, into)}.")
     if args.action == "check":
         problems, notes = lint()
-        n = len(cards())
-        fmcli.out(args, {"cards": n, "problems": problems, "notes": notes},
-                  "\n".join(problems) if problems else f"{n} cards, all well-formed"
-                  + (f" ({len(notes)} related names have no card yet)" if notes else "") + ".")
+        found = cards()
+        n, dated, related = len(found), sum(1 for x in found if _verified(x)), [x for x in notes if ": related " in x]
+        fmcli.out(args, {"cards": n, "verified": dated, "problems": problems, "notes": notes},
+                  "\n".join(problems) if problems else f"{n} cards, all well-formed, {dated} with a verified: date"
+                  + (f" ({len(related)} related names have no card yet)" if related else "") + "."
+                  + "".join(f"\n{x}" for x in notes if x not in related))
         if problems:
             raise SystemExit(1)
         return
@@ -1238,6 +1257,8 @@ def cmd_lib(args):
             if name in by_name:
                 with open(by_name[name]["path"], encoding="utf-8") as f:
                     out.append(sections(f.read(), args.section))
+                if _verified(by_name[name]):  # T-1519: how fresh it is, said where it is read
+                    out[-1] += f"\n\nVerified {by_name[name]['verified']}: its Verify commands held that day."
                 continue
             skills = skills if skills is not None else {s["name"]: s for s in plugin_skills() + source_skills()}
             if name in skills:

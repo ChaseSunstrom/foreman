@@ -144,3 +144,223 @@ class GuardCases(ForemanTestCase):
         self.wrong("pwd", "--should", "block")  # a second drifted case: one more, not two
         r = self.fm("replay", "--cases", "--capture", env=self.env)
         self.assertEqual(len(fixes()), 2, r.stdout + r.stderr)
+
+
+ALLOW = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "guard_allow.jsonl")
+
+
+class AllowCorpus(ForemanTestCase):
+    """T-1517: the safety ratchet. Everyday commands the guard must pass (a false block is a cost too), the guard's own
+    files locked against fm evolve, and a check that couldn't run is reported unable, never a pass."""
+
+    def test_every_everyday_command_passes(self):
+        cases, broken = fmreplay.load_cases(ALLOW)
+        self.assertEqual(broken, 0, "a line of guard_allow.jsonl is not a case")
+        self.assertGreaterEqual(len(cases), 40)
+        self.assertEqual({k["should"] for k in cases}, {"allow"}, "the allow corpus holds allow labels only")
+        self.assertEqual(len({k["id"] for k in cases}), len(cases), "an id twice")
+        # a temp Foreman home, then this checkout as Foreman's own (the main checkout is protected core): a case whose
+        # verdict depends on the tree would turn the real replay red there while passing in a lane
+        import fmguard
+        for home in (self.home, fmreplay._corpus_root()):
+            env = {"FOREMAN_HOME": home, "FOREMAN_STATE": os.path.join(self.tmp, "state")}
+            with self.subTest(home=home), mock.patch.dict(os.environ, env), \
+                    mock.patch.object(tempfile, "tempdir", "/var/tmp"):
+                for v in fmguard._PY_PATH_VARS:  # an inherited PYTHONPATH rightly makes every python3 -c suspect
+                    os.environ.pop(v, None)
+                self.assertEqual([(k["cmd"], k["got"]) for k in fmreplay.drift(cases)], [])
+
+    def test_an_inherited_pythonpath_doesnt_change_the_replay(self):  # T-1599
+        # a shell with PYTHONPATH set replays as the hook judges (T-1194's python -c cases refused there before)
+        import subprocess, sys
+        lib = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib")
+        code = ("import os, sys; sys.path.insert(0, sys.argv[1]); import fmreplay; cases, _ = fmreplay.load_cases(); "
+                "print([k['cmd'][:60] for k in fmreplay.drift(cases)]); print(os.environ['PYTHONPATH'])")
+        env = dict(os.environ, FOREMAN_HOME=fmreplay._corpus_root(), PYTHONPATH="/nonexistent",
+                   PYTHONSTARTUP="/nonexistent/s.py")
+        env.pop("FOREMAN_GUARD_CASES", None)
+        r = subprocess.run([sys.executable, "-c", code, lib], env=env, capture_output=True, text=True, timeout=300)
+        self.assertEqual(r.stdout.splitlines(), ["[]", "/nonexistent"], r.stderr[-2000:])
+
+    def test_the_replay_holds_both_corpora(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop("FOREMAN_GUARD_CASES", None)  # the committed files, as fm replay --cases reads them
+            cases, broken = fmreplay.load_cases()
+        self.assertEqual(broken, 0)
+        where = [fmreplay._where(k) for k in cases]
+        self.assertEqual(len(where), len(set(where)), "a command and folder both files hold is replayed once")
+        for path in (ALLOW, fmreplay.cases_path()):
+            self.assertLessEqual({fmreplay._where(k) for k in fmreplay.load_cases(path)[0]}, set(where), path)
+
+    def _default(self, cases_lines, allow_lines):
+        """load_cases() in its default mode over two temp files (None: that file is missing)."""
+        paths = []
+        for name, lines in (("cases.jsonl", cases_lines), ("allow.jsonl", allow_lines)):
+            paths.append(os.path.join(self.tmp, name))
+            if lines is None and os.path.exists(paths[-1]):
+                os.remove(paths[-1])
+            elif lines is not None:
+                with open(paths[-1], "w") as f:
+                    f.write("".join(json.dumps(x) + "\n" for x in lines))
+        with mock.patch.dict(os.environ), mock.patch.object(fmreplay, "cases_path", return_value=paths[0]), \
+                mock.patch.object(fmreplay, "allow_path", return_value=paths[1]):
+            os.environ.pop("FOREMAN_GUARD_CASES", None)
+            return fmreplay.load_cases()
+
+    def _allow(self, n, cwd="."):
+        return [{"id": f"a{i}", "cmd": f"echo {i}", "cwd": cwd, "should": "allow"} for i in range(n)]
+
+    def test_a_missing_or_cut_down_allow_corpus_is_broken_not_skipped(self):
+        floor = self._allow(fmreplay.ALLOW_MIN)
+        self.assertEqual(self._default([], floor)[1], 0)
+        self.assertEqual(self._default([], None)[1], 1, "a missing allow-corpus")
+        self.assertEqual(self._default([], [])[1], 1, "an emptied allow-corpus")
+        self.assertEqual(self._default([], floor[:-1])[1], 1, "one under the floor")
+
+    def test_both_files_meet_on_command_and_folder_not_id(self):
+        floor = self._allow(fmreplay.ALLOW_MIN)
+        same = {"id": "other-id", "cmd": "echo 0", "cwd": ".", "should": "allow"}
+        cases, broken = self._default([same], floor)
+        self.assertEqual((len(cases), broken), (fmreplay.ALLOW_MIN, 0), "one command and folder, one case")
+        cases, broken = self._default([dict(same, should="block")], floor)
+        self.assertEqual(broken, 1, "opposite labels for one command and folder are refused, not settled by order")
+        self.assertEqual(sorted(k["should"] for k in cases if k["cmd"] == "echo 0"), ["allow", "block"])
+
+    def test_a_label_contradicting_the_allow_corpus_is_refused_and_names_it(self):
+        import fmcli
+        mine, allow = os.path.join(self.tmp, "mine.jsonl"), os.path.join(self.tmp, "allow.jsonl")
+        with open(allow, "w") as f:  # an id that isn't _key's: the command and folder decide
+            f.write(json.dumps({"id": "hand-written", "cmd": "ls -la", "cwd": self.repo, "should": "allow"}) + "\n")
+        with mock.patch.dict(os.environ), mock.patch.object(fmreplay, "allow_path", return_value=allow), \
+                mock.patch.object(fmreplay, "cases_path", return_value=mine):
+            os.environ.pop("FOREMAN_GUARD_CASES", None)
+            with self.assertRaises(fmcli.UsageError) as e:
+                fmreplay.add_case("ls -la", "block", cwd=self.repo)
+            self.assertEqual(fmreplay.add_case("ls -la", "allow", cwd=self.repo)["id"], "hand-written")
+        self.assertIn(allow, str(e.exception))
+        self.assertFalse(os.path.exists(mine), "the refused label was stored")
+
+    def test_evolve_never_revises_the_guards_own_files(self):
+        import fmbudget
+        import fmevolve
+        targets = [("plugin/lib/fmguard.py", "plugin"), ("plugin/lib/fmhooks.py", "plugin"),
+                   ("plugin/lib/fmreplay.py", "plugin"), ("plugin/lib/fmevolve.py", "plugin"),  # its replay, this lock
+                   ("plugin/lib/fmmutate.py", "plugin"), ("plugin/lib/fmbench.py", "plugin"),  # mutants, the bench gate
+                   ("plugin/hooks/hook", "plugin"), ("plugin/hooks/hooks.json", "plugin"),
+                   ("plugin/tests/test_guard_cases.py", "plugin"), ("plugin/tests/test_guard.py", "plugin"),
+                   ("plugin/tests/fixtures/guard_allow.jsonl", "plugin"),
+                   ("plugin/tests/fixtures/gen_evasions.py", "plugin"),
+                   ("plugin/skills/../lib/fmguard.py", "plugin"),  # a dot-dot walk to it
+                   ("plugin/hooks/rules/x.md", "plugin/hooks")]  # an instruction-shaped name under the hooks
+        with mock.patch.object(fmevolve, "mutate", side_effect=AssertionError("the child ran")), \
+                mock.patch.object(fmbudget, "check"):
+            for target, plugin_dir in targets:
+                with self.subTest(target=target), self.assertRaises(ValueError) as e:
+                    fmevolve.generation(None, self.repo, target, plugin_dir, cases=[])
+                self.assertIn("the guard's own", str(e.exception))
+
+    def test_evolve_refuses_a_link_or_a_folder_in_place_of_an_instruction_file(self):
+        # written through in the candidate's worktree, a symlinked SKILL.md would put the child's text into the guard
+        import subprocess
+        import fmbench
+        import fmbudget
+        import fmevolve
+        plugin = os.path.join(self.repo, "plugin")
+        for d in ("lib", "skills/x", "skills/d.md"):
+            os.makedirs(os.path.join(plugin, d))
+        for name in ("lib/fmguard.py", "lib/notes.md", "skills/d.md/inner.md"):
+            with open(os.path.join(plugin, name), "w") as f:
+                f.write("GUARD = 1\n")
+        os.symlink("../../lib/fmguard.py", os.path.join(plugin, "skills", "x", "SKILL.md"))  # a linked file
+        os.symlink("../lib", os.path.join(plugin, "skills", "y"))  # a linked parent folder
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "links"], check=True)
+        calls, real = [], fmbench._safe_git
+
+        def spy(repo, *a, **k):
+            calls.append(a)
+            return real(repo, *a, **k)
+        with mock.patch.object(fmevolve, "mutate", side_effect=AssertionError("the child ran")), \
+                mock.patch.object(fmbudget, "check"), mock.patch.object(fmbench, "_safe_git", spy):
+            for target, why in (("plugin/skills/x/SKILL.md", "not a plain file"),
+                                ("plugin/skills/y/notes.md", "isn't committed"),  # git never walks a linked folder
+                                ("plugin/skills/d.md", "not a plain file")):
+                with self.subTest(target=target), self.assertRaises(ValueError) as e:
+                    fmevolve.generation(None, self.repo, target, cases=[])
+                self.assertIn(why, str(e.exception))
+        head = subprocess.run(["git", "-C", self.repo, "rev-parse", "HEAD"], capture_output=True, text=True).stdout
+        reads = [a for a in calls if a[0] in ("show", "ls-tree")]
+        self.assertTrue(reads)
+        self.assertTrue(all(head.strip() in " ".join(a) for a in reads), f"read at symbolic HEAD, not the pinned "
+                                                                         f"commit: {reads}")
+
+    def test_an_unrunnable_check_reports_unable(self):
+        # the guard crashing on a should-block case was counted a pass: a refusal is what the label wanted
+        import fmguard
+        cases = [{"id": "a", "cmd": "rm -rf ~", "cwd": "", "should": "block"},
+                 {"id": "b", "cmd": "ls", "cwd": "", "should": "allow"}]
+        with mock.patch.object(fmguard, "check", side_effect=RuntimeError("the parser broke")):
+            got = fmreplay.drift(cases)
+        self.assertEqual(sorted((k["id"], k["got"]) for k in got), [("a", "unable"), ("b", "unable")])
+
+    def test_the_replay_reports_unable_and_fails(self):
+        import types
+        import fmcli
+        import fmguard
+        path = os.path.join(self.tmp, "unable.jsonl")
+        with open(path, "w") as f:
+            f.write(json.dumps({"id": "a", "cmd": "rm -rf ~", "cwd": "", "should": "block"}) + "\n")
+        args = types.SimpleNamespace(json=True, capture=False)
+        with mock.patch.dict(os.environ, {"FOREMAN_GUARD_CASES": path}), \
+                mock.patch.object(fmguard, "check", side_effect=RuntimeError("the parser broke")), \
+                mock.patch("builtins.print") as out, self.assertRaises(SystemExit) as e:
+            fmreplay.report_cases(args, fmcli)
+        self.assertEqual(e.exception.code, 1)
+        res = json.loads("".join(str(x.args[0]) for x in out.call_args_list if x.args))
+        self.assertEqual((res["drifted"], res["unable"]), (1, 1))
+
+    def _run_json(self, fn, *a):
+        """(exit code, the JSON fn printed)."""
+        with mock.patch("builtins.print") as out:
+            try:
+                fn(*a)
+                code = 0
+            except SystemExit as e:
+                code = e.code
+        return code, json.loads("".join(str(x.args[0]) for x in out.call_args_list if x.args))
+
+    def test_a_candidate_that_cannot_judge_never_scores_clean(self):
+        # fm replay --candidate: a check() that always raises tightened every allow and recategorised every block
+        import types
+        import fmcli
+        import fmguard
+
+        def broken(*a, **k):
+            raise RuntimeError("the candidate broke")
+        cand = types.SimpleNamespace(Ctx=fmguard.Ctx, project_root_for=fmguard.project_root_for, check=broken)
+        cmds = [("ls", self.repo), ("rm -rf ~", "")]
+        with mock.patch.object(fmreplay, "candidate", return_value=cand), \
+                mock.patch.object(fmreplay, "corpus", return_value=cmds):
+            code, res = self._run_json(fmreplay.score, types.SimpleNamespace(candidate="x", days=7, json=True), fmcli)
+        self.assertEqual(code, 1)
+        self.assertEqual((res["unable"], res["loosened"], res["tightened"], res["recategorised"]), (2, 0, 0, 0))
+
+    def test_the_plain_replay_reports_unable_and_never_accepts_it(self):
+        import types
+        import fmcli
+        import fmguard
+        args = types.SimpleNamespace(cases=False, candidate=None, cwd=None, cmd=None, days=7, accept=True, json=True)
+        with mock.patch.object(fmreplay, "corpus", return_value=[("ls", self.repo)]), \
+                mock.patch.object(fmguard, "check", side_effect=RuntimeError("the parser broke")):
+            code, res = self._run_json(fmreplay.cmd_replay, args)
+        self.assertEqual((code, res["unable"], res["newly_blocked"]), (1, 1, 0))
+        with open(fmreplay._baseline_path()) as f:
+            self.assertEqual(json.load(f)["verdicts"], {}, "an error taken as the baseline would pass from then on")
+
+    def test_friction_says_unable_not_still_blocks(self):
+        import fmfriction
+        import fmguard
+        events = [{"tool": "Bash", "cmd": "ls", "session_id": "s1"}]
+        with mock.patch.object(fmfriction, "_transcript_commands", return_value={("s1", "ls"): ("ls", self.repo)}), \
+                mock.patch.object(fmguard, "check", side_effect=RuntimeError("the parser broke")):
+            self.assertIn("unable", fmfriction._recheck(events)[0])

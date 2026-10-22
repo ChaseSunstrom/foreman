@@ -149,9 +149,53 @@ def demo(work):
         raise Off("claude was called")
 
 
+DOCS = ("README.md", "MASTER.md")  # T-1519: the docs whose runnable fences (```bash runnable) fm release-check runs
+FENCE_TIMEOUT = 120  # seconds per fence
+_SHELLS = {"bash", "sh", "shell"}
+
+
+def fences(root=None):
+    """[(doc:line, body)] for each shell fence README.md and MASTER.md mark runnable: ```bash runnable."""
+    import fmplaybooks
+    out = []
+    for doc in DOCS:
+        try:
+            with open(os.path.join(root or os.path.dirname(PLUGIN), doc), encoding="utf-8", errors="replace") as f:
+                blocks, _ = fmplaybooks._blocks(f.read())
+        except OSError:
+            continue
+        out += [(f"{doc}:{n}", body) for n, info, body in blocks
+                if info and info[0].lower() in _SHELLS and "runnable" in info[1:]]
+    return out
+
+
+def _fence_env(d):
+    """A fence's variables: HOME, Foreman's home and state and TMPDIR in its own temporary folder, this checkout's fm
+    first on PATH, and a claude that only fails (a fence never calls a model)."""
+    env = _env(d)
+    keep = ("HOME", "FOREMAN_HOME", "XDG_STATE_HOME", "FOREMAN_NO_BACKGROUND", "PYTHONDONTWRITEBYTECODE",
+            "GIT_CONFIG_NOSYSTEM")
+    os.makedirs(os.path.join(d, "tmp"))
+    return dict({k: env[k] for k in keep}, PATH=os.path.join(PLUGIN, "bin") + os.pathsep + env["PATH"],
+                FOREMAN_STATE=os.path.join(env["FOREMAN_HOME"], "state"),  # never a fallback outside the folder
+                TMPDIR=os.path.join(d, "tmp"))
+
+
+def run_fences(root=None, timeout=FENCE_TIMEOUT):
+    """['doc:line: why'] for each runnable fence that failed. Each runs as bash -e through fm check playbooks' runner:
+    its own new temporary folder (the cwd, holding HOME, Foreman's home and state, TMPDIR and the claude stub), stdin
+    closed, its limits and timeout, then its process group killed. A fence is trusted like the repo's tests: that is
+    hygiene, not a sandbox, so it can still reach any path and the network."""
+    import fmplaybooks
+    limits, bash = fmplaybooks._limits(), ("bash", "--noprofile", "--norc", "-e", "-c")
+    return [f"{where}: {why}" for where, body in fences(root)
+            for why in [fmplaybooks._run(body, timeout, limits, argv=bash, env=_fence_env, what="fence")] if why]
+
+
 def cmd_release_check(args):
     """T-0960: what a newcomer runs first, the way they run it: fm doctor and fm demo on this checkout with a temporary
-    HOME and Foreman state (nothing of the user's), each passing. Exit 0 when both do. fm demo stubs claude itself."""
+    HOME and Foreman state (nothing of the user's), each passing, and (T-1519) the docs' runnable fences, which are
+    trusted like tests (run_fences). Exit 0 when all do. fm demo stubs claude itself."""
     work = tempfile.mkdtemp(prefix="fm-release-")
     try:
         env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDE", "GIT_"))}
@@ -167,6 +211,10 @@ def cmd_release_check(args):
             bad += not ok
             print(f"{'PASS' if ok else 'FAIL'}  fm {verb}" + ("" if ok else f" (exit {p.returncode}):\n"
                   + "\n".join("  " + ln for ln in (p.stdout + p.stderr).strip().splitlines()[-15:])))
+        fails = run_fences()
+        bad += bool(fails)
+        print(f"{'FAIL' if fails else 'PASS'}  {len(fences())} runnable fence(s) in {' and '.join(DOCS)} (trusted "
+              f"like tests: a throwaway home, not a sandbox)" + "".join(f"\n  {x}" for x in fails))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     print(f"fm release-check: {'OK' if not bad else 'FAILED'} (a temporary HOME, deleted)")

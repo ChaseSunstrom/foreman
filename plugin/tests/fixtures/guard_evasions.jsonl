@@ -264,6 +264,11 @@
 {"id": "fbd39dc59cb273ab834c", "cmd": "\\git add -A && git commit -m 'fix login'", "cwd": "", "should": "allow", "why": "backslash of \"git add -A && git commit -m 'fix login'\" stays allow"}
 {"id": "37299e246db9ffc6d12d", "cmd": "$'git' add -A && git commit -m 'fix login'", "cwd": "", "should": "allow", "why": "dollar_quote of \"git add -A && git commit -m 'fix login'\" stays allow"}
 {"id": "abbe56e7902df1b3686a", "cmd": "C=git; $C add -A && git commit -m 'fix login'", "cwd": "", "should": "allow", "why": "var_indirect of \"git add -A && git commit -m 'fix login'\" stays allow"}
+{"id": "03ba780fea964ce9a8cc", "cmd": "g''it checkout -b fix/login", "cwd": "", "should": "allow", "why": "quote_split of 'git checkout -b fix/login' stays allow"}
+{"id": "5425d11c6ae71379cf00", "cmd": "\\git checkout -b fix/login", "cwd": "", "should": "allow", "why": "backslash of 'git checkout -b fix/login' stays allow"}
+{"id": "380d7f6a759dec45a874", "cmd": "$'git' checkout -b fix/login", "cwd": "", "should": "allow", "why": "dollar_quote of 'git checkout -b fix/login' stays allow"}
+{"id": "367619c3cad33961ec4f", "cmd": "C=git; $C checkout -b fix/login", "cwd": "", "should": "allow", "why": "var_indirect of 'git checkout -b fix/login' stays allow"}
+{"id": "374d808ef85447b84747", "cmd": "a=(git checkout -b fix/login); \"${a[@]}\"", "cwd": "", "should": "allow", "why": "array_indirect of 'git checkout -b fix/login' stays allow"}
 {"id": "71ebbfc8a2965d6fa3e2", "cmd": "m''ake", "cwd": "", "should": "allow", "why": "quote_split of 'make' stays allow"}
 {"id": "61a0cf46aecde402b689", "cmd": "\\make", "cwd": "", "should": "allow", "why": "backslash of 'make' stays allow"}
 {"id": "5be4ce3e9d509d1db9d1", "cmd": "$'make'", "cwd": "", "should": "allow", "why": "dollar_quote of 'make' stays allow"}

@@ -484,17 +484,22 @@ def _who(v):
 
 def claim_overlaps(p, rel, sym, me, act=None, data=None):
     """T-1068: live leases of other sessions on the same file where either side is file-wide or the symbols match.
-    A lease under my own task (a lane brief's pre-claim) is mine."""
+    A lease under my own task (a lane brief's pre-claim) is mine. T-1588: builder lanes share their main session's
+    id, so a lease of my session under another task is that task's, not mine."""
+    task = act.id if act else None
     return [v for v in (_leases() if data is None else data).values()
-            if v["project"] == p.slug and v["file"] == rel and v["session"] != me
+            if v["project"] == p.slug and v["file"] == rel
+            and (v["session"] != me or (task and v.get("task") and v["task"] != task))
             and not (act and v["session"] == f"lane-{act.id}") and (v["symbol"] == sym or "*" in (sym, v["symbol"]))]
 
 
 def _claim(data, p, me, task, rel, sym, seconds, advisory=False):
-    """A claim is keyed per session, so claims on one file and symbol coexist instead of displacing each other.
-    An advisory one (fm lease take --warn over an overlap) is listed but denies nobody's edit."""
-    data[f"{p.slug}:{rel}::{sym}@{me}"] = {"session": me, "task": task, "project": p.slug, "file": rel,
-                                           "symbol": sym, "until": time.time() + seconds, "advisory": advisory}
+    """A claim is keyed per session and task (T-1588: lanes share a session), so claims on one file and symbol coexist
+    instead of displacing each other. An advisory one (fm lease take --warn over an overlap) is listed but denies
+    nobody's edit."""
+    data[f"{p.slug}:{rel}::{sym}@{me}" + (f"#{task}" if task else "")] = {
+        "session": me, "task": task, "project": p.slug, "file": rel, "symbol": sym, "until": time.time() + seconds,
+        "advisory": advisory}
 
 
 def preclaim(p, task_id, files, seconds=LEASE_S):
@@ -514,10 +519,11 @@ def preclaim(p, task_id, files, seconds=LEASE_S):
 
 
 def release(p, task_id):
-    """T-1068: drop a lane's pre-claims (its lane is merged, removed or being resumed)."""
+    """T-1068: drop a lane's pre-claims (its lane is merged, removed or being resumed), and (T-1588) the leases its
+    builder's edits and takes made under the task."""
     with c.lock(_dir()):
         data = _leases()
-        _write_leases({k: v for k, v in data.items() if v["session"] != f"lane-{task_id}"})
+        _write_leases({k: v for k, v in data.items() if v["session"] != f"lane-{task_id}" and v.get("task") != task_id})
 
 
 def conflict(pl, p, path):
@@ -553,7 +559,7 @@ def cmd_bus(args):
     me = fmcli.session()
     if args.action == "send":
         if len(args.words) < 2:
-            raise fmcli.UsageError("fm bus send <session|all> "<text>" [--type note|steer|stop] [--wake]")
+            raise fmcli.UsageError('fm bus send <session|all> "<text>" [--type note|steer|stop] [--wake]')
         msg = send(args.words[0], " ".join(args.words[1:]), args.type, me)
         woke = [s for s in ([x["session_id"] for x in live()] if msg["to"] == "all" else [msg["to"]])
                 if args.wake and wake(s)]
