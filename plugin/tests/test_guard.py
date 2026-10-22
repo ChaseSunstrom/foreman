@@ -1828,6 +1828,14 @@ class PluginChanges(GuardCase):
             (f"git -C {fh} checkout -- docs/a.md .", "core"),
             (f"git -C {fh} checkout -- .", "core"),
             (f"git -C {fh} checkout feature", "core"),
+            # T-1598: a new branch at HEAD changes no file; with a start point it moves the tree
+            (f"git -C {fh} checkout -b fix/login", None),
+            (f"git -C {fh} checkout -q -b fix/login", None),
+            (f"git -C {fh} switch -c fix/login", None),
+            (f"git -C {fh} switch --create=fix/login", None),
+            (f"git -C {fh} checkout -b fix/login origin/main", "core"),
+            (f"git -C {fh} switch -c fix/login main", "core"),
+            (f"git -C {fh} checkout -b fix/login -- plugin/lib/fmguard.py", "core"),
             (f"git -C {fh} checkout -B feature", "core"),
             (f"git -C {fh} checkout .", "core"),
             # round-5 audits: credential files and the project's own Claude Code settings are roots too
