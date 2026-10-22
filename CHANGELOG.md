@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- UI playbook "design direction before pixels": a three-question interview, a taste-word table, a bank of twelve distinct directions, a safe/bold/wild dial, the generic defaults to avoid, and a DESIGN.md template, so UI work starts from a written point of view (T-1488).
 - fm code bench no longer leaves a seed's check running: each seed run carries FM_BENCH_SEED=<its temp folder> in its environment, and before the folder is deleted every process of yours carrying that marker is stopped. A check fm code started in its own session, such as a test_calc.py spinning in an endless loop, used to outlive the run for hours (T-1485).
 - Unattended fm code runs and fm release --push refuse when the guard's own check (fm replay --cases, now logged on the ledger each run) is red, empty or more than 7 days old. The refusal names the check, its date and the command that refreshes it. Runs you watch, in a terminal or the fm code app, only warn, and the warning is logged too. --stale-ok REASON runs anyway and logs the waiver (T-1401).
 - Guard: an evasion corpus of 301 obfuscated variants (quote splits, backslashes, variable and array indirection, env -S, functions, eval, here-strings, base64) holds the guard to its verdicts. It runs from the home folder, so the verdicts are the same in any checkout. Its gap list names the 21 it still gets wrong: 12 dangerous commands let through by $'…' quoting, variable indirection and a BASH_ENV prefix (T-1480, T-1481), and 9 everyday rm/git commands refused once obfuscated outside a project (T-1263).

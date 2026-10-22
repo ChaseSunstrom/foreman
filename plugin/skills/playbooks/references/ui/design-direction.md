@@ -72,7 +72,7 @@ Twelve points of view that do not resemble each other. Pick by matching intervie
 |---|---|---|---|---|---|---|
 | Broadsheet | a weekend newspaper | serif display and serif text, ratio 1.414 | ink #141414 on paper #F6F2EA, one red #B3261E | 12-column grid, 1 px hairline rules, radius 0 | none past page load | column rules between sections; a drop cap on long reads |
 | Instrument | a mixing desk | grotesk with tabular figures, body 13–14 px | graphite surfaces; colour means state | 4 px unit, 28 px rows, radius 2 | ≤ 100 ms, state only | every number right-aligned on tabular figures; inline sparklines |
-| Gallery | a white-walled exhibition | large light display; wide-tracked labels | bone #F4F1EC, charcoal #222, one muted brass #9A8866 | one work per viewport, huge margins | slow 400–600 ms fades | captions set as small museum labels beside the work |
+| Gallery | a white-walled exhibition | large light display; wide-tracked labels | bone #F4F1EC, charcoal #222, one muted brass #9A8866 | one work per viewport, huge margins | slow 400–500 ms fades (motion.md's 500 ms ceiling holds) | captions set as small museum labels beside the work |
 | Toybox | a tub of building bricks | rounded display at 800+ | four primaries on cream, as solid fills | chunky; 3 px dark outlines; hard offset shadow 4 px 4 px 0 | spring overshoot | buttons that press in: shadow shrinks, face moves 2 px |
 | Raw | a printed spec sheet | system UI or mono at one size, bold for headings | black, white, link blue #0000EE | 2 px black borders, radius 0, no shadows | none | structure left visible: borders, underlined links, plain tables |
 | Blueprint | an engineering drawing | mono uppercase labels, condensed sans text | navy #0B2545 field, cyan and white lines | dotted grid background, dimension lines | lines draw in over 300 ms | annotations with leader lines pointing at parts of the UI |
@@ -98,6 +98,10 @@ One dial, three settings. It controls how far the knobs move from neutral, never
 
 Turn it to wild only when the surface is one of those or the user says so ("weird", "loud", "art", "nothing like
 the others"). When unsure, pick one step lower and offer the next step up in your report.
+
+When a taste word and the dial disagree (premium asks for a type ratio ≥ 1.333, safe caps it at 1.25), the
+user's word wins on the knob it names and the dial governs the rest. Motion values from either table are inputs to
+`motion.md`'s tokens: its 500 ms ceiling for interactive motion and its spring rule always hold.
 
 **Floors no setting moves:** body text contrast ≥ 4.5:1 and large text ≥ 3:1; a visible focus indicator on every
 interactive element; `prefers-reduced-motion` honoured (motion drops to opacity or none); targets ≥ 24×24 CSS px;
@@ -211,7 +215,10 @@ Every line is pass or fail; run them on the built screens, not on the plan.
 - [ ] `DESIGN.md` exists, names a direction, a runner-up with a reason, and an audacity setting.
 - [ ] Each interview answer is quoted from the user or marked assumed.
 - [ ] Every colour, size, radius and duration in the components comes from a token named in `DESIGN.md`
-      (`grep` the styles for raw hex and px, as `fm lib show design-systems` describes).
+      (`grep -nE '#[0-9a-fA-F]{3,8}\b|[0-9]+px' ` over the component styles finds only token definitions;
+      `fm lib show design-systems` has the stylelint rule for colours).
+- [ ] Each knob in `DESIGN.md` falls inside its direction's and taste word's row, or the deviation is listed
+      with its reason.
 - [ ] Each signature move is visible in at least one built screen.
 - [ ] No line from "Defaults to avoid" appears unless listed under Allowed exceptions.
 - [ ] The floors hold: contrast measured, focus visible, reduced motion tried, 200% zoom tried.
