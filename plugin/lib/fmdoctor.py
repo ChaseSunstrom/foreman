@@ -1180,8 +1180,11 @@ def _tree_hash(root, h, cap=4000, skipped=None):
                     st = os.stat(full)
                     stand(rel + f"\0{st.st_size} {st.st_mtime_ns}\0".encode())
                 continue
-            with open(full, "rb") as fh:
-                h.update(os.path.relpath(full, root).encode() + b"\0" + fh.read())
+            try:
+                with open(full, "rb") as fh:
+                    h.update(rel + b"\0" + fh.read())
+            except OSError:  # T-1444: named, never read; raising would keep the plugin's old baseline and hide later changes
+                h.update(rel + b"\0unreadable\0")
 
 
 def _supply(claude):

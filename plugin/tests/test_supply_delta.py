@@ -397,6 +397,33 @@ class SupplyDelta(ForemanTestCase):
         self.held("adds hook Stop (agent a)", "adds hook PreToolUse (command x)", "adds hook SessionStart (command y)",
                   "adds hook ? (skill")
 
+    def test_an_unreadable_file_is_held_not_skipped(self):
+        tool, skill = (os.path.join(self.plugin, *p) for p in (("bin", "tool"), ("skills", "s", "SKILL.md")))
+        self.hooks({"hooks": dict(STOP["hooks"], PreToolUse=[])})
+        os.chmod(tool, 0)
+        try:  # an unreadable script no longer hides the plugin: a change elsewhere still shows
+            r = self.held("p@m adds hook PreToolUse")
+            self.assertNotIn("not checked", r.detail)
+            os.chmod(skill, 0)  # a component file that may hold hooks and can't be read holds the plugin
+            self.held("? (skill skills/s/SKILL.md)")
+        finally:
+            os.chmod(tool, 0o600)
+            os.chmod(skill, 0o600)
+
+    def test_profile_reads_custom_component_paths(self):
+        write(os.path.join(self.plugin, ".claude-plugin", "plugin.json"),
+              {"name": "p", "agents": "./extras/", "commands": ["./more/x.md", "../../"], "skills": ["./sk"]})
+        write(os.path.join(self.plugin, "extras", "a.md"), "---\nname: aa\ndescription: dd\n---\n")
+        write(os.path.join(self.plugin, "more", "x.md"), "---\n---\n")
+        write(os.path.join(self.plugin, "commands", "sub", "y.md"), "---\n---\n")
+        write(os.path.join(self.plugin, "sk", "t", "SKILL.md"), "---\n---\n")
+        prof = fmplugins.profile(self.plugin)
+        names = lambda k: sorted(n for n, _ in prof[k])
+        self.assertEqual(names("agents"), ["aa"])
+        self.assertEqual(names("commands"), ["x", "y"])
+        self.assertEqual(names("skills"), ["s", "t"])
+        self.assertGreater(prof["tokens"], 0)
+
     def test_a_manifest_path_outside_the_plugin_is_unknown(self):
         write(os.path.join(self.plugin, ".claude-plugin", "plugin.json"), {"name": "p", "agents": "../../"})
         self.held("adds hook ? (agent ../../")
