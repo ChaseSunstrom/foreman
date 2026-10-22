@@ -5,7 +5,13 @@ foreman-ui mod's userConfig (Claude Code keeps its values in settings.json plugi
 A tui.toml change is made in place: one key's value replaced (or the key added to its table, the table to the file),
 comments, order and every other byte kept; it is refused unless load_config takes the new text and the app draws with
 it. settings.json is Claude Code's own file, which the guard protects: a plugin change is written only when the guard
-would allow that write, and otherwise printed as the change to make. Stdlib only."""
+would allow that write, and otherwise printed as the change to make. Stdlib only.
+
+T-1510: fm settings diff (the keys the files change from the defaults; a key nothing reads is flagged dead), export
+and import (a share code: those keys as one pasteable word, every key and value checked before any is written) and
+undo (each set or import is one entry of a history in Foreman's state; undo puts the last one back)."""
+import base64
+import contextlib
 import json
 import math
 import os
@@ -33,8 +39,23 @@ _LAYOUT_HELP = {"top": ("panels", "panels across the top"), "columns": ("columns
                 "narrow_below": ("int", "columns below which the narrow layout is used")}
 
 
+_CONTROL = re.compile(r"[\x00-\x09\x0b-\x1f\x7f-\x9f]")
+
+
+def _safe(text):
+    """`text` with each control character shown as \\xNN (line breaks kept): a message can quote a share code or a
+    hand-written file, and the terminal must not act on what they hold."""
+    return _CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}", str(text))
+
+
 class SettingError(ValueError):
-    """A change refused: the value, the file or the guard; nothing was written."""
+    """A change refused: the value, the file or the guard; nothing was written. Its message is printable (_safe)."""
+    def __init__(self, message=""):
+        super().__init__(_safe(message))
+
+
+class GuardRefused(SettingError):
+    """The guard's refusal: a grant can lift it (fm settings undo keeps such a change for the next one)."""
 
 
 def canon(name, value):
@@ -207,7 +228,8 @@ def _scan(lines):
 
 
 def edit_toml(text, table, key, value, same=None):
-    """`text` with table.key set to `value`, everything else as it was. `same(a, b)` says two key names are one."""
+    """`text` with table.key set to `value` (None: its line removed), everything else as it was. `same(a, b)` says two
+    key names are one."""
     import fmcodetui as T
     same = same or (lambda a, b: a == b)
     raw = text.split("\n")
@@ -219,7 +241,10 @@ def edit_toml(text, table, key, value, same=None):
         lines.insert(at, line)
         cr.insert(at, cr[at - 1] if at else cr[0])
     hit = [k for k in keys if k[0] == table and k[1] is not None and same(k[1], key)]
-    if hit:
+    if value is None:  # T-1510: undoing a key that wasn't set; not there, nothing to do
+        for _, _, i, end, _ in hit[-1:]:
+            del lines[i:end + 1], cr[i:end + 1]
+    elif hit:
         _, _, i, end, col = hit[-1]
         rest = "\n".join([lines[i][col:]] + lines[i + 1:end + 1])
         lead = rest[:len(rest) - len(rest.lstrip(" \t"))] or " "
@@ -302,14 +327,16 @@ def _app_change(key, value, path, p):
     entries = find(key, "app")
     if not entries:
         raise SettingError(f"{key}: not a setting of the app (fm settings list shows them)")
-    value = _check(entries[0], value)
+    value = None if value is None else _check(entries[0], value)  # None: unset (fm settings undo)
     table, name = _split(key)
     _utf8(value, key)
     block = _guard_block(path, p) if in_claude_code() else None
     if block:
-        raise SettingError(f"app {key}: not written, the guard protects {path} ({block}); to set it, edit {path}: "
+        raise GuardRefused(f"app {key}: not written, the guard protects {path} ({block}); to "
+                           + ("unset" if value is None else "set") + f" it, edit {path}: "
                            + (f"under [{table}], " if table else "at the top, ")
-                           + f"{T._toml_key(name)} = {T._toml(value)}")
+                           + (f"remove {T._toml_key(name)}" if value is None else
+                              f"{T._toml_key(name)} = {T._toml(value)}"))
     return path, value, table, name
 
 
@@ -327,13 +354,14 @@ def _set_app(key, value, path, real, table, name):
     return value, errors
 
 
-def _plan_app(key, value, path, table, name):
-    """The file with the change made, checked: (its text, the config the app loads from it, [other settings it made
-    bad]); SettingError for a file or value set_app refuses."""
+def _plan_app(key, value, path, table, name, text=None):
+    """The file (or `text`, as it would be at `path`) with the change made, checked: (its text, the config the app
+    loads from it, [other settings it made bad]); SettingError for a file or value set_app refuses."""
     import fmcodetui as T
     try:
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
+        if text is None:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
     except FileNotFoundError:
         text = ""
     except (OSError, UnicodeDecodeError) as e:
@@ -346,9 +374,11 @@ def _plan_app(key, value, path, table, name):
     new = edit_toml(text, table, name, value, same)
     got = _parses(new)
     placed = (got or {}).get(table, {}) if table else got
-    if not isinstance(placed, dict) or not any((same or (lambda a, b: a == b))(k, name) and v == value
-                                               for k, v in placed.items()):
-        raise SettingError(f"{key}: can't place it in {path} (a [{table}] written another way?); edit it by hand")
+    hits = [v for k, v in placed.items() if (same or (lambda a, b: a == b))(k, name)] \
+        if got is not None and isinstance(placed, dict) else None
+    if hits is None or (hits if value is None else value not in hits):
+        raise SettingError(f"{key}: can't {'remove' if value is None else 'place'} it in {path} (a [{table}] written "
+                           "another way?); edit it by hand")
     try:
         old = set(_load(text, path)[1])
     except Exception:  # a file the app itself chokes on: whatever the new text reports is new
@@ -456,15 +486,16 @@ def set_plugin(key, value, p=None):
     entries = find(key, "plugin")
     if not entries:
         raise SettingError(f"{key}: not a setting of the {PLUGIN} pane (fm settings list shows them)")
-    value = _check(entries[0], value)
+    value = None if value is None else _check(entries[0], value)  # None: unset (fm settings undo)
     _utf8(value, key)
     path, data = claude_settings()
     pid = plugin_id(data)
-    how = (f'to set it, edit {path}: pluginConfigs → "{pid}" → options → {json.dumps({key: value})[1:-1]} '
-           f"(or Claude Code's /plugin → {PLUGIN} → configure)")
+    how = (f'to {"unset" if value is None else "set"} it, edit {path}: pluginConfigs → "{pid}" → options → '
+           + (f"remove {json.dumps(key)}" if value is None else json.dumps({key: value})[1:-1])
+           + f" (or Claude Code's /plugin → {PLUGIN} → configure)")
     block = _guard_block(path, p) if in_claude_code() else None
     if block:
-        raise SettingError(f"plugin {key}: not written, the guard protects {path} ({block}); {how}")
+        raise GuardRefused(f"plugin {key}: not written, the guard protects {path} ({block}); {how}")
     real = os.path.realpath(path)  # a settings.json linked from a dotfiles repo stays linked
     with fmcore.lock(os.path.dirname(real)):  # Claude Code doesn't take it: this orders fm's own writers
         path, data = claude_settings()  # again, under the lock
@@ -479,23 +510,270 @@ def _write_plugin(data, pid, key, value, real, how):
     opts = cfg.setdefault("options", {}) if isinstance(cfg, dict) else None
     if not isinstance(opts, dict):
         raise SettingError(f"{real}: pluginConfigs isn't laid out as Claude Code writes it; {how}")
-    opts[key] = value
+    if value is None:
+        opts.pop(key, None)
+    else:
+        opts[key] = value
     fmcore.write_atomic(real, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
 def set_key(key, value, surface=None, p=None):
     """`fm settings set` and the fm code app's :set line (T-1572): `key` set on every surface that has it (or on
-    `surface`): ([(surface, value written, warnings)], [why each refused one wasn't written])."""
+    `surface`): ([(surface, value written, warnings)], [why each refused one wasn't written]). T-1510: what it changed
+    is one entry of the settings history (fm settings undo)."""
+    with _recorded("set") as changes:
+        return _set_key(key, value, surface, p, changes, written())
+
+
+def _set_key(key, value, surface, p, changes, now):
+    """set_key's writes; each that changed a value is added to `changes` with the value it replaced (None: unset, or
+    one the schema refuses, so an undo leaves the default rather than a value it can't write)."""
     done, refused = [], []
     for e in find(key, surface):
+        s, k = e["surface"], _norm(key)
         try:
-            if e["surface"] == "app":
+            if s == "app":
                 done.append(("app", *set_app(key, value, p=p)))
             else:
                 done.append(("plugin", set_plugin(key, value, p), []))
         except SettingError as x:
-            refused.append(f"{e['surface']}: {x}")
+            refused.append(f"{s}: {x}")
+            continue
+        old, _, ok = now.get((s, k), (None, None, False))
+        if done[-1][1] != old or not ok:  # a skipped one is kept as `skipped`, for undo to say it isn't put back
+            changes.append({"surface": s, "key": k, "old": old if ok else None, "new": done[-1][1],
+                            **({"skipped": old} if (s, k) in now and not ok else {})})
     return done, refused
+
+
+# ---------------------------------------------------------------- T-1510: diff, share codes, history and undo
+
+SHARE_MAX = 32_768  # characters of a share code: every setting changed at once is a few KB
+SHARE_KEYS = 300  # keys in one: each is checked against the file, render and all (the schema has ~80, keys bound too)
+HISTORY_MAX = 50  # changes fm settings undo can walk back
+
+
+def _norm(key):
+    """A keys.X name by the key it means (keys.Z, keys.shift+z: the one curses reports); any other name as it is."""
+    import fmcodetui as T
+    k = T.parse_key(key[5:]) if key.startswith("keys.") else None
+    return f"keys.{T.key_name(k[0])}" if k else key
+
+
+def written(problems=None):
+    """{(surface, setting): (value, its schema entry, whether it is read)} for each key tui.toml and the pane's
+    options hold, as written (in the schema's words when it takes them); the entry None for a key nothing reads. A file
+    that can't be read adds to `problems`, as do the pane's options when its plugin.json isn't found (nothing to
+    check them by)."""
+    problems = [] if problems is None else problems
+    found, path = [], app_path()
+    try:
+        with open(path, "rb") as f:
+            raw = tomllib.load(f)
+    except FileNotFoundError:
+        raw = {}
+    except (OSError, ValueError, RecursionError) as e:  # TOMLDecodeError and UnicodeDecodeError are ValueErrors
+        problems.append(("app", f"can't read {path}: {e}"))
+        raw = {}
+    for k, v in raw.items():
+        table = k in ("colors", "layout", "keys") and isinstance(v, dict)
+        found += [("app", _norm(f"{k}.{n}"), x) for n, x in v.items()] if table else [("app", k, v)]
+    import fmcodetui as T  # what load_config skips past the schema's own check (a colour too faint on the theme)
+    unread = False
+    try:
+        skips = [e[len(path) + 2:] for e in (T.load_config(path)[1] if raw else [])]
+    except Exception as e:  # a file the app itself chokes on: none of it is read (the set that repairs it still runs)
+        problems.append(("app", f"the app can't read {path} ({type(e).__name__}: {e})"))
+        skips, unread = [], True  # every key skipped: an undo removes what the app never read
+    try:
+        opts = plugin_values(claude_settings()[1])
+    except SettingError as e:
+        problems.append(("plugin", str(e)))
+        opts = {}
+    plugin = plugin_schema()
+    if opts and not plugin:  # a dead flag needs the list of what the pane reads
+        problems.append(("plugin", f"the {PLUGIN} mod's plugin.json isn't found: its options can't be checked"))
+    found += [("plugin", k, v) for k, v in opts.items()] if plugin else []
+    by = {(e["surface"], e["key"]): e for e in app_schema() + plugin}
+    out = {}
+    for s, k, v in found:
+        e = by.get((s, k)) or next(iter(find(k, s)), None)
+        skip = s == "app" and (unread or any(x.startswith((f"{k}:", f"{k} =")) for x in skips))
+        try:
+            out[s, k] = (_check(e, v), e, not skip) if e and v is not None else (v, e, False)
+        except SettingError:
+            out[s, k] = (v, e, False)  # as written: the app (or the pane) skips it
+    return out
+
+
+def diff(problems=None):
+    """The keys the files change from the defaults: [{surface, key, value, default}], `skipped` on a value the schema
+    refuses or the app skips; a key nothing reads as {surface, key, value, dead: True}."""
+    return [dict(surface=s, key=k, value=v, **({"default": e["default"]} if e else {"dead": True}),
+                 **({} if ok or not e else {"skipped": True}))
+            for (s, k), (v, e, ok) in written(problems).items() if not e or not ok or v != e["default"]]
+
+
+def share_code(rows=None):
+    """The changed settings (not the dead or skipped ones) as one pasteable word: base64url of {surface: {key: value}}
+    as JSON."""
+    got = {}
+    for r in diff() if rows is None else rows:
+        if not r.get("dead") and not r.get("skipped"):
+            got.setdefault(r["surface"], {})[r["key"]] = r["value"]
+    code = base64.urlsafe_b64encode(json.dumps(got, separators=(",", ":"), ensure_ascii=False, default=str)
+                                    .encode("utf-8")).decode("ascii").rstrip("=")
+    if len(code) > SHARE_MAX:
+        raise SettingError(f"the changed settings make a code of {len(code)} characters; import takes {SHARE_MAX}")
+    return code
+
+
+def _decode(code):
+    """A share code's {surface: {key: value}}: JSON only (nothing in it is run), its size capped; SettingError else."""
+    code = "".join(str(code).split())  # a pasted code may wrap
+    if len(code) > SHARE_MAX:
+        raise SettingError(f"a share code is at most {SHARE_MAX} characters; this one is {len(code)} long")
+
+    def constant(c):
+        raise ValueError(f"{c} isn't a value")
+    try:
+        raw = base64.b64decode(code + "=" * (-len(code) % 4), altchars=b"-_", validate=True)
+        got = json.loads(raw.decode("utf-8"), parse_constant=constant)
+    except (ValueError, RecursionError) as e:  # binascii.Error and UnicodeDecodeError are ValueErrors
+        raise SettingError(f"not a share code (fm settings export makes one): {type(e).__name__}") from None
+    if not isinstance(got, dict):
+        raise SettingError("not a share code (fm settings export makes one): not a table of settings")
+    if sum(len(v) if isinstance(v, dict) else 1 for v in got.values()) > SHARE_KEYS:
+        raise SettingError(f"a share code holds at most {SHARE_KEYS} settings")
+    return got
+
+
+def import_code(code, p=None, only=None):
+    """A share code's settings (or its `only` surface's), set: every key known and every value checked first (the
+    app's as each would land in tui.toml, render and all), else SettingError naming each bad one and nothing written.
+    Then each key whose value differs is set through set_key's path (the guard, the locks), all as one history entry:
+    ([(surface, key, value written, warnings)], [why each refused one wasn't written], [(surface, key) already so])."""
+    bad, plan, text, path = [], {}, None, app_path()
+    for surface, items in _decode(code).items():
+        if surface not in ("app", "plugin") or not isinstance(items, dict):
+            bad.append(f"{surface!r}: not a surface of the share code (app, plugin)")  # repr: no raw escapes printed
+            continue
+        for key, value in items.items() if only in (None, surface) else ():
+            try:
+                e = next(iter(find(key, surface)), None) if key.isprintable() else None
+                if not e:
+                    raise SettingError(f"{key!r}: not a setting of the {surface}")
+                if value is None or (e["type"] == "string" and not isinstance(value, str)):
+                    raise SettingError(f"{key} = {json.dumps(value)}: not a value it takes")
+                value = _check(e, value)
+                _utf8(value, key)
+                if surface == "app":
+                    text = _plan_app(key, value, path, *_split(key), text=text)[0]
+                plan[surface, _norm(key)] = value  # keys.enter and keys.ENTER are one key: the last one named wins
+            except Exception as x:  # whatever a value makes fail refuses the code: nothing is written yet
+                bad.append(f"{surface}: {x}" if isinstance(x, SettingError) else f"{surface}: {key!r}: {type(x).__name__}")
+    if bad:
+        raise SettingError("not imported, nothing written: " + "; ".join(bad))
+    done, refused, same = [], [], []
+    with _recorded("import") as changes:
+        now = written()
+        for (s, k), v in plan.items():
+            cur, _, ok = now.get((s, k), (None, None, False))
+            if ok and cur == v:  # only the keys that change are written
+                same.append((s, k))
+                continue
+            d, r = _set_key(k, v, s, p, changes, now)
+            done += [(s, k, x, w) for _, x, w in d]
+            refused += r
+    return done, refused, same
+
+
+def _history_path():
+    import fmcore
+    return os.path.join(fmcore.state_dir(), "settings", "history.json")
+
+
+def _history():
+    """The undo list: [] when there is none or it is corrupt (a fresh one replaces it); SettingError when it can't be
+    read, so the next write doesn't take an unreadable history for an empty one and replace it."""
+    path = _history_path()
+    try:
+        with open(path, encoding="utf-8") as f:
+            got = json.load(f)
+    except FileNotFoundError:
+        return []
+    except (ValueError, RecursionError):  # UnicodeDecodeError included
+        return []
+    except OSError as e:
+        raise SettingError(f"can't read the settings history {path}: {e}") from None
+    return [h for h in got if isinstance(h, dict) and isinstance(h.get("changes"), list)] if isinstance(got, list) else []
+
+
+def _keep(hist):
+    import fmcore
+    fmcore.write_atomic(_history_path(), json.dumps(hist[-HISTORY_MAX:], ensure_ascii=False, default=str) + "\n")
+
+
+@contextlib.contextmanager
+def _recorded(how):
+    """The history's lock held; the changes added to the list it yields are one entry (one undo) when it closes."""
+    import fmcore
+    with fmcore.lock(os.path.dirname(_history_path())):
+        changes = []
+        try:
+            yield changes
+        finally:  # what was written is kept, whatever stopped the rest
+            try:
+                if changes:
+                    _keep(_history() + [{"at": fmcore.now(), "how": how, "changes": changes}])
+            except (OSError, SettingError) as e:  # the change is written: said, never reported as failed
+                print(f"fm settings: written, but undo can't put it back: the history wasn't saved ({_safe(e)})",
+                      file=sys.stderr)
+
+
+def undo(p=None):
+    """The last set or import put back, backwards, each through set_app/set_plugin (the guard, the lock). A value
+    changed since by other hands is left as it is (dropped from the history); one the guard refuses stays for the next
+    undo. ([(surface, key, value now, the value it replaced, a note: a skipped value not put back)], [why each
+    wasn't]); SettingError: nothing to undo, or a history it can't read."""
+    import fmcore
+    with fmcore.lock(os.path.dirname(_history_path())):
+        hist = _history()
+        if not hist:
+            raise SettingError("nothing to undo (fm settings set and import keep the history)")
+        last, now = hist[-1], written()
+        done, refused, kept = [], [], []
+        for c in reversed(last["changes"]):
+            try:
+                s, k, old, new = c["surface"], c["key"], c.get("old"), c["new"]
+                if s not in ("app", "plugin") or not isinstance(k, str):
+                    raise KeyError(k)
+                cur = now.get((s, k), (None,))[0]
+            except (TypeError, KeyError, AttributeError):
+                refused.append(f"a history entry fm can't read ({str(c)[:80]}): dropped")
+                continue
+            if cur != new:
+                refused.append(f"{s}: {k} changed since (now {_shown(cur, s)}): left as it is")
+                continue
+            note = (f"the value before it, {_shown(c['skipped'], s)}, was skipped (not one it reads): unset, not put "
+                    "back" if "skipped" in c else "")
+            try:
+                done.append((s, k, set_app(k, old, p=p)[0] if s == "app" else set_plugin(k, old, p), new, note))
+            except GuardRefused as x:
+                refused.append(f"{s}: {x}")
+                kept.insert(0, c)
+            except SettingError as x:  # not a setting any more, or a file it can't place it in: by hand
+                refused.append(f"{s}: {x}; dropped from the history")
+        try:
+            _keep(hist[:-1] + ([dict(last, changes=kept)] if kept else []))
+        except OSError as e:  # put back, but still listed: the next undo finds them changed and leaves them
+            refused.append(f"undone, but the history wasn't saved ({e})")
+    return done, refused
+
+
+def _shown(v, surface):
+    import fmcodetui as T
+    return "unset" if v is None else T._toml(v) if surface == "app" else json.dumps(v, ensure_ascii=False)
 
 
 # ---------------------------------------------------------------- reading both, and the command
@@ -560,6 +838,12 @@ def cmd_settings(args):
                 lines += [f"{title}: {where}"] + [f"  ! {x} (skipped: the default shows)" for s, x in problems
                                                   if s == surface] + ["  " + _text(r) for r in mine]
         return fmcli.out(args, got, "\n".join(lines) or "no settings found")
+    if args.action in ("diff", "export", "import", "undo"):
+        try:
+            return _cmd_history(args)
+        except SettingError as e:
+            import fmcore
+            raise fmcore.PolicyError(str(e)) from None
     if not args.key:
         raise fmcli.UsageError(f"fm settings {args.action} KEY{' VALUE' if args.action == 'set' else ''}")
     if args.action == "get":
@@ -573,12 +857,7 @@ def cmd_settings(args):
     if not entries:
         raise fmcli.UsageError(f"{args.key}: no such setting{f' in the {args.surface}' if args.surface else ''} "
                                "(fm settings list shows them)")
-    p = None
-    try:
-        p = fmcli.resolve(args, create=False)
-    except fmcli.UsageError:
-        pass  # outside a project: no task grants, the guard decides as with none
-    got, refused = set_key(args.key, args.value, args.surface, p)
+    got, refused = set_key(args.key, args.value, args.surface, _project(args))
     done = []
     for surface, v, warn in got:
         if surface == "app":
@@ -588,8 +867,59 @@ def cmd_settings(args):
         else:
             done.append({"surface": "plugin", "key": args.key, "value": v,
                          "line": f"plugin: {args.key} = {json.dumps(v)} (the pane reads it within seconds)"})
-    fmcli.out(args, {"set": done, "refused": refused}, "\n".join([d["line"] for d in done] + refused))
+    fmcli.out(args, {"set": done, "refused": refused}, _safe("\n".join([d["line"] for d in done] + refused)))
     if refused:
         import fmcore
         raise fmcore.PolicyError(f"{len(refused)} of {len(entries)} not written (above)")
+    return 0
+
+
+def _project(args):
+    import fmcli
+    try:
+        return fmcli.resolve(args, create=False)
+    except fmcli.UsageError:
+        return None  # outside a project: no task grants, the guard decides as with none
+
+
+def _cmd_history(args):
+    """fm settings diff | export | import CODE | undo (T-1510)."""
+    import fmcli
+    import fmcore
+    if args.action in ("diff", "export"):
+        problems = []
+        rows = [r for r in diff(problems) if args.surface in (None, r["surface"])]
+        said = [{"surface": s, "problem": x} for s, x in problems if args.surface in (None, s)]
+        if args.action == "export":
+            for x in said:  # the code alone on stdout, so it can be piped
+                print(_safe(f"! {x['surface']}: {x['problem']} (not in the code)"), file=sys.stderr)
+            code = share_code(rows)
+            return fmcli.out(args, {"code": code, "settings": [r for r in rows if not (r.get("dead") or
+                                                                                     r.get("skipped"))],
+                                    "problems": said}, code)
+        why = lambda r: ("dead: nothing reads it" if r.get("dead") else ("skipped: not a value it takes; " if
+                         r.get("skipped") else "") + f"default {_shown(r['default'], r['surface'])}")
+        lines = [f"! {x['surface']}: {x['problem']}" for x in said] + [
+            f"{r['surface']}: {r['key']} = {_shown(r['value'], r['surface'])}  ({why(r)})" for r in rows]
+        return fmcli.out(args, {"changed": rows, "problems": said},
+                         _safe("\n".join(lines)) or "every setting at its default")
+    if args.action == "import":
+        if not args.key:
+            raise fmcli.UsageError("fm settings import CODE (fm settings export makes one)")
+        done, refused, same = import_code(args.key, _project(args), args.surface)
+        data = {"set": [{"surface": s, "key": k, "value": v, "warnings": w} for s, k, v, w in done],
+                "same": [{"surface": s, "key": k} for s, k in same], "refused": refused}
+        lines = [f"{s}: {k} = {_shown(v, s)}" + "".join(f"\n  now skipped: {x}" for x in w) for s, k, v, w in done]
+        lines += [f"already so: {', '.join(f'{s} {k}' for s, k in same)}"] if same else []
+    else:
+        if args.surface or args.key:
+            raise fmcli.UsageError("fm settings undo: puts back the last set or import, on each surface it changed")
+        done, refused = undo(_project(args))
+        data = {"undone": [{"surface": s, "key": k, "value": v, "was": new, "note": n} for s, k, v, new, n in done],
+                "refused": refused}
+        lines = [f"{s}: {k} back to {_shown(v, s)} (was {_shown(new, s)})" + (f"; {n}" if n else "")
+                 for s, k, v, new, n in done]
+    fmcli.out(args, data, _safe("\n".join(lines + refused)) or "nothing to change")
+    if refused:
+        raise fmcore.PolicyError(f"{len(refused)} not done (above)")
     return 0
