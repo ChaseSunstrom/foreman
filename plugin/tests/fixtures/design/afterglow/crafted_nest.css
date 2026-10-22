@@ -1,0 +1,5 @@
+.g, .h { transition: color .2s; }
+.g:hover, .h:hover { color: red; }
+.i { transition: opacity .2s; }
+.i { &:hover { opacity: .5; } }
+.j { transition: color .2s; &:focus { color: red; } }
