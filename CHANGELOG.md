@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm doctor`'s supply check holds a plugin with an unreadable file or folder instead of keeping its old baseline: one planted unreadable file (or a folder it can't list, or an exec-only script swapped for another) used to hide every later change to that plugin. `fmplugins.profile()` also lists custom `plugin.json` component paths and nested commands (T-1444).
 - The Stop hook still holds a turn that claims unproven work when another fm command has the project lock; before, the busy lock made it give up silently (T-1453).
 - fm code refuses an unacknowledged runner or `--worker` template with GitHub Copilot CLI's `--allow-all-tools`/`--allow-all`, Factory droid's `--skip-permissions-unsafe`, or any `--…dangerously…` flag such as Claude's `--allow-dangerously-skip-permissions`; Copilot's scoped `--allow-tool` still runs (T-1443).
 - `fm verify-ledger` names a line an unclean shutdown zeroed ("ends in N zero bytes") instead of calling the chain corrupt, and `fm verify-ledger --accept-damage` records it once you've checked. It never accepts an edit, a missing `--head`, or lines removed before the damage, because the first write after a crash pins the line before it. Every finish receipt said "chain broken" after the 2026-10-22 crash; it now names the accepted gap (T-1456).
