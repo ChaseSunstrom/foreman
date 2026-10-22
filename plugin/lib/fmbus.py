@@ -89,7 +89,10 @@ def unread(sid, mark=True):
     out = [m for m in msgs if m.get("t", 0) > seen and _for(m, sid)
            and not (first and m.get("to") == "all" and m.get("t", 0) < time.time() - FRESH_ALL_S)]
     if mark and msgs:
-        c.write_atomic(cur, str(max(m.get("t", 0) for m in msgs)))
+        try:
+            c.write_atomic(cur, str(max(m.get("t", 0) for m in msgs)))
+        except OSError:
+            pass  # T-1449: a full disk shows the mail again next call rather than losing it
     return out
 
 

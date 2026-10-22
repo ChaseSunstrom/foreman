@@ -952,6 +952,12 @@ def check_mod_release(home=None, listing=None):
     inst = entry[0].get("installPath") if isinstance(entry[0], dict) else None
     if not os.path.isdir(os.path.join(repo, "hooks")) or not inst or not os.path.isdir(inst):
         return Result("foreman-ui release", "PASS", "not installed from this repo")
+    # T-1451: Claude Code reads a directory marketplace in place, so the cache copy above is a record no session draws
+    known = os.path.join(os.path.dirname(listing or os.path.expanduser("~/.claude/plugins/x")), "known_marketplaces.json")
+    src = (((_load_json(known) or {}).get("foreman") or {}).get("source") or {})
+    if isinstance(src, dict) and src.get("source") == "directory" and isinstance(src.get("path"), str) and \
+            os.path.realpath(src["path"]) == os.path.realpath(home or c.foreman_home()):
+        return Result("foreman-ui release", "PASS", "read in place from this checkout (a directory marketplace)")
     have = entry[0].get("version") or "?"
     want = (_load_json(os.path.join(repo, ".claude-plugin", "plugin.json")) or {}).get("version") or "?"
     if fmplugins._tree_hash(os.path.join(repo, "hooks")) == fmplugins._tree_hash(os.path.join(inst, "hooks")):

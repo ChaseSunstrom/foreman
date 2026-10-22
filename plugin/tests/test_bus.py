@@ -298,3 +298,22 @@ class Conductor(Base):
         self.assertNotIn("sess-y", out, "not seen for years: not live")
         self.fm("conductor", "steer", "stop touching the guard")
         self.assertIn("stop touching the guard", self.note("sess-x")[1].get("additionalContext", ""))
+
+
+class FailingMark(HookCase):
+    """T-1449: one note builder raising (a full disk failed the bus's seen-mark write) dropped every PreToolUse note."""
+
+    def test_a_failing_mark_write_keeps_the_other_notes_and_the_mail(self):
+        self.fm("init")
+        tid = self.task(scope=["src/auth/**"])
+        self.fm("bus", "send", "sess-2", "use the new parser", env={"CLAUDE_CODE_SESSION_ID": "sess-1"})
+        bus = os.path.join(self.home, "state", "bus")
+        os.chmod(bus, 0o555)  # the mark can't be written, as on a full disk
+        try:
+            r = self.hook("PreToolUse", {"tool_name": "Edit", "session_id": "sess-2", "tool_input": {
+                "file_path": os.path.join(self.repo, "docs", "x.md"), "old_string": "a", "new_string": "b"}})
+        finally:
+            os.chmod(bus, 0o755)
+        ctx = ((parse(r) or {}).get("hookSpecificOutput") or {}).get("additionalContext", "")
+        self.assertIn(f"outside {tid} scope", ctx)
+        self.assertIn("use the new parser", ctx)
