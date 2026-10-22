@@ -228,6 +228,7 @@ class Compile(ForemanTestCase):
     score's durations and easings, and each motion's reduced form (none: rest state, never played; instant: the end
     state at once; fade: opacity only, same duration)."""
     score = Format.score
+    problems = Format.problems
 
     def targets(self, text=GOOD, **kw):
         path = self.score(text, **kw)
@@ -273,8 +274,27 @@ class Compile(ForemanTestCase):
         self.assertEqual((css["--motion-row-move-duration"], css["--motion-row-move-transition"]),
                          ("0ms", "transform 0ms cubic-bezier(0.45, 0, 0.2, 1)"))  # instant: the end state at once
         self.assertEqual((css["--motion-badge-pulse-duration"], css["--motion-badge-pulse-transition"],
-                          css["--motion-badge-pulse-animation"]), ("0ms", "none", "none"))  # none: never played
+                          css["--motion-badge-pulse-animation"]), ("0ms", "all 0s", "none"))  # none: never played
+        # `transition: var(--motion-row-move-transition), var(--motion-badge-pulse-transition)` stays a valid list:
+        # none is only valid alone there, so it would void the whole declaration
+        both = ", ".join(css[f"--motion-{n}-transition"] for n in ("row-move", "badge-pulse"))
+        self.assertEqual(both, "transform 0ms cubic-bezier(0.45, 0, 0.2, 1), all 0s")
         self.assertIn(':root[data-motion="reduce"]', got["css"])  # the app's setting wins, as the playbook says
+
+    def test_the_header_label_cant_end_its_comment(self):
+        for name in ("x*/a{}</*.toml", "a*", "</style>"):
+            with self.subTest(name=name):
+                label = fmmotion._label(name)
+                self.assertNotIn("*/", label)
+                self.assertNotIn("</", label)
+        css = self.targets(name="a*.toml")["css"]
+        self.assertEqual(css.count("*/"), 1, css[:400])  # the header's own end
+
+    def test_names_and_properties_are_ascii(self):
+        text = '[motion."café"]\nduration = 100\neasing = "linear"\nproperties = ["opacité"]\nreduced = "fade"\n'
+        got = "\n".join(self.problems(text))
+        self.assertIn("name 'café' must be letters", got)
+        self.assertIn("property 'opacité' is not a CSS property name", got)
 
     def test_three_maps_steps_and_linear_to_ease_functions(self):
         text = "".join(f'[motion.m{i}]\nduration = {100 * i}\neasing = "{e}"\nproperties = ["opacity"]\nreduced = "fade"\n'
@@ -320,8 +340,15 @@ const run = () => ["menu-enter", "row-move", "badge-pulse"].map((n) => play(el, 
 const full = run();
 globalThis.matchMedia = () => ({{ matches: true }});
 const reduce = run();
-globalThis.document = {{ documentElement: {{ dataset: {{ motion: "full" }} }} }};
-console.log(JSON.stringify({{ full, reduce, app: run() }}));
+const as = (system, set) => {{  // what reduced() says for this system setting and <html data-motion>
+  globalThis.matchMedia = () => ({{ matches: system }});
+  globalThis.document = {{ documentElement: {{ dataset: set === undefined ? {{}} : {{ motion: set }} }} }};
+  return reduced();
+}};
+const sets = [[true, "full"], [true, "other"], [true, ""], [false, "reduce"], [false, "other"], [true, undefined]];
+const table = sets.map(([s, v]) => as(s, v));
+as(true, "full");
+console.log(JSON.stringify({{ full, reduce, app: run(), table }}));
 """)
         p = subprocess.run([node, mod], capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -334,6 +361,8 @@ console.log(JSON.stringify({{ full, reduce, app: run() }}));
         self.assertEqual((instant["options"]["duration"], instant["frames"][1]), (0, {"transform": "none"}))
         self.assertIsNone(none)  # never played
         self.assertEqual(got["app"], got["full"])  # <html data-motion="full"> wins over the system
+        # as the CSS: reduced when the system asks unless data-motion="full", and always with data-motion="reduce"
+        self.assertEqual(got["table"], [False, True, True, True, False, True])
 
     def test_a_score_with_problems_compiles_nothing(self):
         text, problems = fmmotion.compile_score(self.score(GOOD.replace('reduced = "none"\n', "")), "css")
@@ -358,6 +387,14 @@ console.log(JSON.stringify({{ full, reduce, app: run() }}));
         self.assertIn("badge-pulse: no reduced form", p.stderr)
         with open(out) as f:
             self.assertIn("export const motion", f.read())  # not replaced
+        p = self.fm("motion", "compile", "--json", check=False)
+        self.assertEqual(p.returncode, 1)
+        self.assertEqual(json.loads(p.stdout)["problems"][0]["motion"], "badge-pulse")
+        for flag in (["--to", "css"], ["--out", out]):
+            with self.subTest(flag=flag):
+                p = self.fm("motion", "check", *flag, check=False)
+                self.assertEqual(p.returncode, 2)
+                self.assertIn(f"{flag[0]} is for compile", p.stderr)
 
 
 class Cli(ForemanTestCase):

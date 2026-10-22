@@ -6061,7 +6061,7 @@ def _build_parser():
             "durations and easings in each, reduced forms included (T-1625)")
     s.add_argument("action", choices=["check", "compile"])
     s.add_argument("path", nargs="?", help="the score (default: motion.toml at the repo root)")
-    s.add_argument("--to", choices=["css", "waapi", "three"], default="css", help="compile: the target (default css)")
+    s.add_argument("--to", choices=["css", "waapi", "three"], help="compile: the target (default css)")
     s.add_argument("--out", metavar="FILE", help="compile: write here, replacing the file whole, not print it")
     import fmscene  # T-1633: stdlib only and small; its schema is the help's epilog
     s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 95), epilog=fmscene.SCHEMA,
