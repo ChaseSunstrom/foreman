@@ -1091,7 +1091,9 @@ def _unmarked(text):
     """Typed text can't carry the marks fm appends ([tree …], [ran]): they would forge a worktree id or a run."""
     return re.sub(r"\[(tree|ran|inconclusive)\b", r"(\1", text)
 _TS_TAIL = re.compile(r"\((\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\)\s*$")
-AUDIT_LENSES = ("self", "intent", "adversary", "edge", "operator", "maintainer")
+DEFAULT_LENSES = ("intent", "adversary", "edge", "operator", "maintainer")  # what M/L reviews run by default
+# design (T-1501): advisory, never required; fm audit prep adds it only when the diff touches UI (ui_paths)
+AUDIT_LENSES = ("self",) + DEFAULT_LENSES + ("design",)
 # Per tier: each set is satisfied by one audit with any lens in it (skills/intake/references/audit.md).
 REQUIRED_AUDITS = {
     "S": [{"self"}],  # the five-lens checklist; a single other lens covers less
@@ -3315,6 +3317,28 @@ def sensitive(files, diff=""):
                       for b in blocks for line in b.splitlines() if line.startswith("+") and not line.startswith("+++"))
     why += sorted({m.group(1) for m in _SENSITIVE_CODE.finditer(added)})[:5]
     return why
+
+
+_UI_MORE = {".sass", ".less", ".astro", ".jinja", ".jinja2", ".hbs", ".njk", ".ejs", ".twig", ".liquid"}  # not linted
+_UI_TUI = re.compile(r"(?:^|[/_-])[a-z]*tui(?:[/_-].*)?\.(py|go|rs|[jt]s)$")  # fmcodetui.py, tui/x.py; not intuition
+_UI_OTHER = re.compile(r"^mods/[^/]+/hooks/.+\.ts$|(?:^|/)(?:subagent-)?statusline(?:\.\w+)?$")  # the pane, statuslines
+_NOT_UI = re.compile(r"(?:^|/)(?:tests?|__tests__|fixtures)/|(?:^|/)test_[^/]*$|\.(?:test|spec)\.\w+$")
+
+
+def ui_paths(files):
+    """The changed files that are UI (T-1501): markup, styles, components, the foreman-ui pane's hooks, statuslines,
+    TUI screens; tests, fixtures and what fm design lint skips (built, vendored, minified) aren't. fm audit prep adds
+    the design lens when there are any."""
+    import fmdesign  # one notion of UI source with fm design lint: its extensions and the dirs it skips
+    out = []
+    for f in files:
+        low = f.lower()
+        parts = low.split("/")
+        if _NOT_UI.search(low) or ".min." in parts[-1] or any(x in fmdesign.SKIP_DIRS for x in parts[:-1]):
+            continue
+        if os.path.splitext(low)[1] in fmdesign.EXTS | _UI_MORE or _UI_TUI.search(low) or _UI_OTHER.search(f):
+            out.append(f)
+    return out
 
 
 _BUILTINS = {"cd", "test", "[", "[[", "true", "false", "echo", "printf", "export", "set", "source", ".", "exit",

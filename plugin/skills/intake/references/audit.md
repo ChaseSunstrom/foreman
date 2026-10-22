@@ -10,6 +10,8 @@ what counts as correct. `fm task done` refuses until the tier's audits are recor
 | M | `intent` + one of `adversary` / `edge` / `operator` / `maintainer` (pick the riskiest), via `foreman:fm-reviewer` |
 | L | all five: `intent`, `adversary`, `edge`, `operator`, `maintainer`, in one `foreman:fm-reviewer` pass |
 
+`design` is advisory, never required: `fm audit prep` adds it at any tier when the diff touches UI (markup, styles, components, the foreman-ui pane's hooks, TUI screens; not tests), and `fm audit run` runs it only then, so a backend diff costs nothing extra. Record it like any lens: `fm task audit ID design …`.
+
 ## Protocol
 1. **Freeze the change.** All steps done with evidence, tests green (`fm check`). `fm audit prep ID` saves the diff since the task was focused (untracked files included) and prints step 2's briefs, each with this project's past findings for its lens (so save reviews as `<task>-<lens>`).
 2. **Build the review brief** from the templates below (`fm audit prep ID` does this): one section per lens, each with its prompt and context slice and nothing else. Leave out your plan, rationale and conversation; the point is a fresh view.
@@ -37,6 +39,9 @@ what counts as correct. `fm task done` refuses until the tier's audits are recor
 
 **maintainer** — context: the diff, the neighbouring code it should match, the tests it adds or changes.
 > You will own this code next year. Check: every behaviour change has a test that fails without it; tests assert behaviour, not mocks; no duplication of an existing helper; no dead code or speculative options; naming and error handling match the surroundings; the simplest adequate design was used.
+
+**design** — context: the diff's UI files, the screenshots the task names (listed in the brief; Read each image), the acceptance criteria. Added only for a UI diff.
+> Read the change as three people, findings under the one who saw them. The art director: does it have a point of view (a typeface, palette, spacing and motion chosen for this product), or the generic tells of generated design that `fm design lint` names: Inter or the system face everywhere, a purple-to-blue gradient, one radius and one grey shadow on every card, motion with no reduced-motion path? The accessibility reviewer: text contrast (4.5:1 body, 3:1 large text and controls), focus order and a visible focus ring on every control, keyboard reach, prefers-reduced-motion honoured and nothing flashing over 3 times a second, targets at least 24×24 px (44 on touch), alt text and labels. The first-time user, with no instructions: what can I do here, which control is the main one, and after I act, what happened (feedback, a changed state, an error with a way out)? Cite file:line or the screenshot for each finding; what only a screenshot would show, with none named, goes under Not checked.
 
 **self** (S tier, main thread) — answer each in one line before `fm task audit ID self …`:
 intent: does it do exactly what was asked? · adversary: what input or spelling gets around it? · edge: no TTY, resumed session, missing tool, corrupt state? · operator: branch, install/uninstall, docs, defaults? · maintainer: test that fails without the change, no duplication?
