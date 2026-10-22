@@ -1728,6 +1728,49 @@ class PreToolUse(HookCase):
         self.assertNotIn("scope", self.ctx_of(self.pre("Write", {"file_path": inside, "content": "x"})))
 
 
+class DesignNudge(HookCase):
+    """T-1514: a task's first UI edit in a repo with no DESIGN.md gets one note naming the design-direction playbook;
+    once per task, never a block."""
+    HEAD = "Foreman: design direction"
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+
+    def edit(self, rel, tool="Edit"):
+        ti = {"file_path": os.path.join(self.repo, rel), "old_string": "x", "new_string": "y"} if tool == "Edit" \
+            else {"file_path": os.path.join(self.repo, rel), "content": "y\n"}
+        proc = self.hook("PreToolUse", {"tool_name": tool, "tool_input": ti})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn('"deny"', proc.stdout)
+        ctx = self.ctx_of(proc)
+        return ctx[ctx.index(self.HEAD):].split("\n")[0] if self.HEAD in ctx else ""
+
+    def test_the_first_ui_edit_gets_one_note_naming_the_playbook(self):
+        tid = self.task()
+        self.assertEqual(self.edit("app.py"), "", "a non-UI edit gets none and doesn't use up the note")
+        note = self.edit("web/App.TSX")
+        self.assertIn("ui/design-direction.md", note)
+        self.assertIn(tid, note)
+        self.assertLessEqual(len(note), 300)
+        skill = os.path.isfile(os.path.join(c.PLUGIN_ROOT, "skills", "directions", "SKILL.md"))
+        self.assertEqual("/foreman:directions" in note, skill)
+        self.assertEqual(self.edit("web/site.css", tool="Write"), "", "a second UI edit in the task gets none")
+        self.task(title="Second")
+        self.assertIn("ui/design-direction.md", self.edit("web/index.html"), "a new task gets it again")
+
+    def test_a_repo_with_a_design_direction_gets_none(self):
+        for where in ("DESIGN.md", os.path.join("docs", "DESIGN.md")):
+            path = os.path.join(self.repo, where)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write("# DESIGN.md: app\n")
+            self.task(title=where)
+            self.assertEqual(self.edit("web/App.vue"), "", where)
+            os.remove(path)
+        self.assertIn("ui/design-direction.md", self.edit("web/App.vue"), "and the note once it's gone")
+
+
 class PostToolUse(HookCase):
     def test_compact_output(self):
         # T-0783 end to end: fm compact-output on registers the hook in the user's settings; that command, given a
