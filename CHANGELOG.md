@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- UI playbook: visual QA: fm smoke plus a seeded frame matrix (360, 768 and 1440 px, light and dark, reduced motion) from a small Playwright script that freezes the clock and fails on overflow, junk text and motion under reduced motion; an eyeball checklist; a receipt in the task's evidence. In Claude Code the frames are read with the Read tool (T-1500).
 - fm task new and fm capture split --scope on spaces and commas ('a.py b.py, c.py' is three paths, quotes keep a path with a space); it used to be stored as one path, so every file it named read as outside the task's scope (T-1564).
 - fm task evidence --step N --run CMD --expect-fail records a failing test's red run before the fix as "red as expected" and exits 0; a run that passes, or never reaches its check, is refused and nothing is recorded; a criterion still takes only a passing run (T-1486).
 - UI playbook: type and colour: a modular type scale, pairing by class and axes, type as texture and as the hero, measure and leading, OKLCH palette roles with reserved status colours, a stdlib contrast-proof script for both themes, and dark mode as its own steps (T-1489).
