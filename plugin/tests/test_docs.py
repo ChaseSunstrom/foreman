@@ -58,6 +58,40 @@ class Skills(unittest.TestCase):
         for name in re.findall(r"→ `/foreman:([\w-]+)`", rules):
             self.assertNotIn(name, USER_ONLY)
 
+    def test_plain_requests_rank_their_own_skill_first_by_description_overlap(self):
+        # T-1704: a static stand-in for "would Claude pick this skill": rank every model-invocable description by
+        # distinct shared words with the request. The intended skill must win outright, with no tie.
+        stop = set("a an and are as at be by do for from have i in is it its me my of on or the this that to up we "
+                   "what when whenever with you your use about into out not so than then them there these they".split())
+
+        def words(text):
+            return {w.rstrip("s") for w in re.findall(r"[a-z]{2,}", text.lower()) if w not in stop}
+
+        skills_dir = os.path.join(PLUGIN, "skills")
+        desc = {}
+        for name in sorted(os.listdir(skills_dir)):
+            path = os.path.join(skills_dir, name, "SKILL.md")
+            if os.path.isfile(path):
+                meta, _ = frontmatter(path)
+                if meta.get("disable-model-invocation") != "true":
+                    desc[name] = words(meta.get("description", ""))
+        corpus = json.loads(read_text(os.path.join(os.path.dirname(__file__), "fixtures", "skill_triggers.json")))
+        for name in desc:
+            with self.subTest(skill=name):
+                self.assertGreaterEqual(
+                    len(corpus.get(name, [])), 3,
+                    f'plugin/tests/fixtures/skill_triggers.json needs "{name}": [three or more plain requests a user '
+                    f"would type that this skill should answer] (T-1704)")
+        for name, requests in corpus.items():
+            if name not in desc:
+                continue  # user-only or removed skills may keep entries; they are not ranked
+            for req in requests:
+                with self.subTest(skill=name, request=req):
+                    w = words(req)
+                    scores = sorted(((len(w & d), n) for n, d in desc.items()), reverse=True)
+                    self.assertEqual(scores[0][1], name, f"{req!r} ranks {scores[:3]}")
+                    self.assertGreater(scores[0][0], scores[1][0], f"{req!r} ties {scores[:3]}")
+
     def test_the_listing_foreman_adds_stays_small(self):
         # T-1253: Claude Code 2.1.304 sends the skill listing again after every compaction, so Foreman's share of it
         # (model-visible skill and command descriptions, workflow descriptions) is paid once per compaction
