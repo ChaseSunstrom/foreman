@@ -170,6 +170,18 @@ class AllowCorpus(ForemanTestCase):
                     os.environ.pop(v, None)
                 self.assertEqual([(k["cmd"], k["got"]) for k in fmreplay.drift(cases)], [])
 
+    def test_an_inherited_pythonpath_doesnt_change_the_replay(self):  # T-1599
+        # a shell with PYTHONPATH set replays as the hook judges (T-1194's python -c cases refused there before)
+        import subprocess, sys
+        lib = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib")
+        code = ("import os, sys; sys.path.insert(0, sys.argv[1]); import fmreplay; cases, _ = fmreplay.load_cases(); "
+                "print([k['cmd'][:60] for k in fmreplay.drift(cases)]); print(os.environ['PYTHONPATH'])")
+        env = dict(os.environ, FOREMAN_HOME=fmreplay._corpus_root(), PYTHONPATH="/nonexistent",
+                   PYTHONSTARTUP="/nonexistent/s.py")
+        env.pop("FOREMAN_GUARD_CASES", None)
+        r = subprocess.run([sys.executable, "-c", code, lib], env=env, capture_output=True, text=True, timeout=300)
+        self.assertEqual(r.stdout.splitlines(), ["[]", "/nonexistent"], r.stderr[-2000:])
+
     def test_the_replay_holds_both_corpora(self):
         with mock.patch.dict(os.environ):
             os.environ.pop("FOREMAN_GUARD_CASES", None)  # the committed files, as fm replay --cases reads them

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm replay judges labelled and real commands with Python's own path variables (PYTHONPATH, PYTHONSTARTUP…) cleared and then put back, so a replay from a shell that sets them gives the verdicts a clean hook would (T-1599).
 - Safety ratchet: the guard is held to an allow-corpus of about 100 everyday commands, replayed with the labelled cases (a missing or thinned corpus fails the replay); fm evolve refuses the guard's own files, its replay and evolve code, and symlinked targets, reading the pinned commit; a guard that raises reports unable everywhere (replay, candidate scoring, the friction digest), never a pass (T-1517).
 - fm lease take keeps tasks apart within one session: builder lanes share their main session's id, so another task's lease now refuses the take (naming that task) instead of being handed over; --warn keeps both claims, a task retakes its own, and a removed lane releases its task's leases (T-1588).
 - fm --json output prints any value as text (fm settings list --json no longer crashes on a TOML datetime) and escapes DEL and C1 control characters (T-1589).
