@@ -140,7 +140,20 @@ def _raw_with_block(item, r):
     return "\n".join(lines)
 
 
+def _scope_paths(values):
+    """T-1564: --scope 'a.py b.py, c.py' names three paths (it was stored as one); quotes keep a path with a space."""
+    import shlex
+    out = []
+    for v in values or ():
+        try:
+            out += shlex.split(str(v).replace(",", " "))
+        except ValueError:
+            out += str(v).replace(",", " ").split()
+    return list(dict.fromkeys(out))
+
+
 def _create(p, title, type, tier, status, raw=None, scope=(), depends=(), source="user", priority="normal", explore=False):
+    scope = _scope_paths(scope)
     tid = c.next_id(p)
     b = c.Brief.new(tid, title, type, tier, raw=raw, scope=scope, depends=depends, source=source,
                     priority=priority, status=status, explore=explore)
@@ -2389,7 +2402,7 @@ def task_new(p, args):
                 raise UsageError(f"{b.id} is {b.status}, not captured")
             b.meta.update(type=type_, tier=args.tier, status="planned")
             if args.scope:
-                b.meta["scope"] = args.scope
+                b.meta["scope"] = _scope_paths(args.scope)
             if args.depends:
                 b.meta["depends_on"] = args.depends
             b.preamble = f"# {c.plain(args.title).strip() or 'untitled'}\n"

@@ -169,3 +169,18 @@ class ExpectFail(ForemanTestCase):
         r = self.fm("task", "evidence", tid, "--ac", "1", "--run", "false", "--expect-fail", check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertFalse(self.brief(tid).has_evidence(ac=1))
+
+
+class ScopeWords(ForemanTestCase):
+    """T-1564: --scope 'a b c' was stored as one path, so every file it named read as outside the task's scope."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+
+    def test_a_space_or_comma_separated_scope_is_several_paths(self):
+        tid = json.loads(self.fm("task", "new", "Two files", "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
+                                 "--step", "do", "--scope", "a.py b.py, c.py", "--scope", "d.py", "--json").stdout)["id"]
+        self.assertEqual(c.find_brief(c.find_project(self.repo), tid).meta["scope"], ["a.py", "b.py", "c.py", "d.py"])
+        cid = self.fm("capture", "fix e and f", "--scope", "e.py f.py").stdout.split()[2]
+        self.assertEqual(c.find_brief(c.find_project(self.repo), cid).meta["scope"], ["e.py", "f.py"])
