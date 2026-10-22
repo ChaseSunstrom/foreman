@@ -119,7 +119,7 @@ def find(key, surface=None):
     import fmcodetui as T
     got = [e for e in schema() if e["key"] == key and surface in (None, e["surface"])]
     if not got and surface in (None, "app") and key.startswith("keys.") and T.parse_key(key[5:]):
-        got = [_key_entry(key[5:], None)]
+        got = [_key_entry(key[5:], "none")]  # a key the defaults leave unbound
     return got
 
 
@@ -207,9 +207,14 @@ def edit_toml(text, table, key, value, same=None):
     """`text` with table.key set to `value`, everything else as it was. `same(a, b)` says two key names are one."""
     import fmcodetui as T
     same = same or (lambda a, b: a == b)
-    eol = "\r\n" if "\r\n" in text else "\n"
-    lines = text.replace("\r\n", "\n").split("\n")
+    raw = text.split("\n")
+    cr = [x.endswith("\r") for x in raw]  # each line keeps its own ending; a new line takes its neighbour's
+    lines = [x[:-1] if c else x for x, c in zip(raw, cr)]
     keys, heads = _scan(lines)
+
+    def insert(at, line):
+        lines.insert(at, line)
+        cr.insert(at, cr[at - 1] if at else cr[0])
     hit = [k for k in keys if k[0] == table and k[1] is not None and same(k[1], key)]
     if hit:
         _, _, i, end, col = hit[-1]
@@ -221,20 +226,30 @@ def edit_toml(text, table, key, value, same=None):
                 tail = rest[len(rest[:p].rstrip()):]
                 break
         lines[i:end + 1] = [lines[i][:col] + lead + T._toml(value) + tail]
+        cr[i:end + 1] = [cr[end]]
     else:
         line = f"{T._toml_key(key)} = {T._toml(value)}"
         mine = [k for k in keys if k[0] == table]
         if mine:
-            lines.insert(mine[-1][3] + 1, line)
+            insert(mine[-1][3] + 1, line)
         elif table in heads:
-            lines.insert(heads[table] + 1, line)
+            insert(heads[table] + 1, line)
         elif table is None and heads:
-            lines.insert(min(heads.values()), line)
-        else:
-            body = "\n".join(lines).rstrip("\n")
-            add = ([f"[{T._toml_key(table)}]"] if table else []) + [line]
-            lines = ([body, ""] if body and table else [body] if body else []) + add + [""]
-    return eol.join(lines)
+            insert(min(heads.values()), line)
+        else:  # at the end: after the last line that isn't blank, a blank line before a new table
+            eol = any(cr)
+            while len(lines) > 1 and not lines[-1] and not lines[-2]:
+                del lines[-1], cr[-1]
+            if lines == [""]:
+                lines, cr = [], []
+            elif lines[-1]:
+                lines, cr = lines + [""], cr[:-1] + [eol, cr[-1]]  # the last line had no line break
+            add = ([""] if table and lines else []) + ([f"[{T._toml_key(table)}]"] if table else []) + [line]
+            at = len(lines) - 1 if lines else 0
+            lines[at:at], cr[at:at] = add, [eol] * len(add)
+            if not lines or lines[-1]:
+                lines, cr = lines + [""], cr + [False]
+    return "\n".join(x + ("\r" if c else "") for x, c in zip(lines, cr))
 
 
 def _split(key):
@@ -259,10 +274,10 @@ def _load(text, where):
     return cfg, [e.replace(tmp, where) for e in errors]
 
 
-def set_app(key, value, path=None):
+def set_app(key, value, path=None, p=None):
     """Set one tui.toml setting in place: (the value written, [other settings it made bad, which the app skips]).
-    SettingError (the file untouched) when the name or value is wrong, the file doesn't parse, load_config rejects the
-    value or the app can't draw with it."""
+    SettingError (the file untouched) when the name or value is wrong, the guard refuses the write (inside Claude
+    Code), the file doesn't parse, load_config rejects the value or the app can't draw with it."""
     import fmcodetui as T
     import fmcore
     path = path or app_path()
@@ -270,6 +285,28 @@ def set_app(key, value, path=None):
     if not entries:
         raise SettingError(f"{key}: not a setting of the app (fm settings list shows them)")
     value = _check(entries[0], value)
+    table, name = _split(key)
+    _utf8(value, key)
+    block = _guard_block(path, p) if in_claude_code() else None
+    if block:
+        raise SettingError(f"app {key}: not written, the guard protects {path} ({block}); to set it, edit {path}: "
+                           + (f"under [{table}], " if table else "at the top, ")
+                           + f"{T._toml_key(name)} = {T._toml(value)}")
+    real = os.path.realpath(path)  # a tui.toml linked from a dotfiles repo stays linked
+    with fmcore.lock(os.path.dirname(real)):  # another fm settings set between our read and our write
+        return _set_app(key, value, path, real, table, name)
+
+
+def _utf8(value, key):
+    try:
+        json.dumps(value, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError:
+        raise SettingError(f"{key}: not text UTF-8 can hold (a lone surrogate)") from None
+
+
+def _set_app(key, value, path, real, table, name):
+    import fmcodetui as T
+    import fmcore
     try:
         with open(path, encoding="utf-8") as f:
             text = f.read()
@@ -281,16 +318,22 @@ def set_app(key, value, path=None):
         raise SettingError(f"{path} is over 1 MB: edit it by hand")
     if _parses(text) is None:
         raise SettingError(f"{path} isn't valid TOML: fix it first (fm code tui names the line)")
-    table, name = _split(key)
-    same = (lambda a, b: T.parse_key(a) == T.parse_key(b)) if table == "keys" else None
+    same =(lambda a, b: T.parse_key(a) == T.parse_key(b)) if table == "keys" else None
     new = edit_toml(text, table, name, value, same)
     got = _parses(new)
     placed = (got or {}).get(table, {}) if table else got
     if not isinstance(placed, dict) or not any((same or (lambda a, b: a == b))(k, name) and v == value
                                                for k, v in placed.items()):
         raise SettingError(f"{key}: can't place it in {path} (a [{table}] written another way?); edit it by hand")
-    old = set(_load(text, path)[1])
-    cfg, errors = _load(new, path)
+    try:
+        old = set(_load(text, path)[1])
+    except Exception:  # a file the app itself chokes on: whatever the new text reports is new
+        old = set()
+    try:
+        cfg, errors = _load(new, path)
+    except Exception as e:
+        raise SettingError(f"{key} = {T._toml(value)}: the app can't read the file with it ({type(e).__name__}: {e})") \
+            from None
     errors = [e for e in errors if e not in old]
     # the value itself rejected: refused. Another setting it makes bad (columns that leave widths one short, a theme
     # that leaves a [colors] entry too faint) is skipped by the app as any bad setting is: written, and said
@@ -302,14 +345,25 @@ def set_app(key, value, path=None):
             T.render(T.State(), w, h, cfg)
     except Exception as e:
         raise SettingError(f"{key} = {T._toml(value)}: the app can't draw with it ({type(e).__name__}: {e})") from None
-    fmcore.write_atomic(os.path.realpath(path), new)  # a tui.toml linked from a dotfiles repo stays linked
+    fmcore.write_atomic(real, new)
     return value, errors
 
 
 # ---------------------------------------------------------------- the plugin: Claude Code's settings.json
 
+def in_claude_code():
+    """Run from a Claude Code session (its shells set these): the guard decides writes to protected files. The user's
+    own terminal and the fm code app's settings screen write directly."""
+    return bool(os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_ENTRYPOINT"))
+
+
 def claude_dir():
-    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    """Claude Code's config folder: CLAUDE_CONFIG_DIR when it is inside the home folder, else ~/.claude."""
+    home = os.path.realpath(os.path.expanduser("~"))
+    d = os.environ.get("CLAUDE_CONFIG_DIR")
+    if d and not os.path.realpath(d).startswith(home.rstrip(os.sep) + os.sep):
+        raise SettingError(f"CLAUDE_CONFIG_DIR={d} is outside the home folder ({home}): not Claude Code's settings")
+    return d or os.path.join(home, ".claude")
 
 
 def claude_settings():
@@ -347,57 +401,77 @@ def _guard_block(path, p=None):
     """What the guard says about writing `path` here (the active task's grants, the standing yes, trust), or None."""
     import fmcore as c
     import fmguard
-    home, cwd, b, meta = os.path.expanduser("~"), os.getcwd(), None, {}
+    home, cwd, b, meta, lane = os.path.expanduser("~"), os.getcwd(), None, {}, getattr(p, "lane", None)
     if p:
         try:
-            b, meta = c.active_brief(c.load_briefs(p), getattr(p, "lane", None)), c.read_meta(p)
+            b, meta = c.active_brief(c.load_briefs(p), lane), c.read_meta(p)
         except Exception:
             b, meta = None, {}  # unreadable: no grants, the guard decides as with none
     ctx = fmguard.Ctx(cwd=cwd, project_root=fmguard.project_root_for(cwd, home), home=home,
                       foreman_home=c.foreman_home(), state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(),
                       allow=set(b.meta.get("allow") or []) if b else set(), task_id=b.id if b else None,
-                      standing=set(meta.get("standing") or {}), trusted=bool(c.trusted()))
+                      standing=set(meta.get("standing") or {}), trusted=bool(c.trusted()),
+                      # a builder's lane writes nothing outside its worktree (as the hook confines it)
+                      confine=(lane, c.main_worktree(lane)) if lane and b and b.meta.get("builder") else None)
     block = fmguard.check("Write", {"file_path": path}, ctx)
     return fmguard.message(block, ctx) if block else None
 
 
 def set_plugin(key, value, p=None):
-    """Set one of the mod's options in settings.json pluginConfigs when the guard allows that write; SettingError with
-    the exact change to make by hand when it doesn't (nothing written)."""
+    """Set one of the mod's options in settings.json pluginConfigs (inside Claude Code: when the guard allows that
+    write); SettingError with the exact change to make by hand when it doesn't (nothing written)."""
     import fmcore
     entries = find(key, "plugin")
     if not entries:
         raise SettingError(f"{key}: not a setting of the {PLUGIN} pane (fm settings list shows them)")
     value = _check(entries[0], value)
+    _utf8(value, key)
     path, data = claude_settings()
     pid = plugin_id(data)
     how = (f'to set it, edit {path}: pluginConfigs → "{pid}" → options → {json.dumps({key: value})[1:-1]} '
            f"(or Claude Code's /plugin → {PLUGIN} → configure)")
-    block = _guard_block(path, p)
+    block = _guard_block(path, p) if in_claude_code() else None
     if block:
         raise SettingError(f"plugin {key}: not written, the guard protects {path} ({block}); {how}")
+    real = os.path.realpath(path)  # a settings.json linked from a dotfiles repo stays linked
+    with fmcore.lock(os.path.dirname(real)):  # Claude Code doesn't take it: this orders fm's own writers
+        path, data = claude_settings()  # again, under the lock
+        _write_plugin(data, plugin_id(data), key, value, real, how)
+    return value
+
+
+def _write_plugin(data, pid, key, value, real, how):
+    import fmcore
     pc = data.setdefault("pluginConfigs", {})
     cfg = pc.setdefault(pid, {}) if isinstance(pc, dict) else None
     opts = cfg.setdefault("options", {}) if isinstance(cfg, dict) else None
     if not isinstance(opts, dict):
-        raise SettingError(f"{path}: pluginConfigs isn't laid out as Claude Code writes it; {how}")
+        raise SettingError(f"{real}: pluginConfigs isn't laid out as Claude Code writes it; {how}")
     opts[key] = value
-    fmcore.write_atomic(os.path.realpath(path), json.dumps(data, indent=2, ensure_ascii=False) + "\n")
-    return value
+    fmcore.write_atomic(real, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
 # ---------------------------------------------------------------- reading both, and the command
 
-def rows():
-    """Every setting with its value now, its default and where it is stored."""
+def rows(entries=None, problems=None):
+    """Every setting (or `entries`) with its value now, its default and where it is stored; the user's own key
+    bindings too. What can't be read is added to `problems` as (surface, line), never hidden behind the defaults."""
     import fmcodetui as T
+    problems = [] if problems is None else problems
     apath = app_path()
-    cfg, _ = T.load_config(apath)
+    cfg, errors = T.load_config(apath)
+    problems += [("app", e) for e in errors]
     try:
         spath, data = claude_settings()
-    except SettingError:
-        spath, data = os.path.join(claude_dir(), "settings.json"), {}
+    except SettingError as e:
+        problems.append(("plugin", str(e)))
+        spath, data = os.path.join(os.path.expanduser("~"), ".claude", "settings.json"), {}
     pid, opts = plugin_id(data), plugin_values(data)
+    if entries is None:
+        entries = schema()
+        known = {e["key"] for e in entries}
+        entries += [_key_entry(n, "none") for n in dict.fromkeys(T.key_name(k) for k in cfg["keys"])
+                    if f"keys.{n}" not in known]
 
     def now(e):
         table, name = _split(e["key"])
@@ -413,7 +487,7 @@ def rows():
         return cfg["preset"] if name == "theme" else cfg.get(name)
 
     return [dict(e, value=now(e), where=apath if e["surface"] == "app" else f"{spath} pluginConfigs.{pid}.options."
-                 f"{e['key']}") for e in schema()]
+                 f"{e['key']}") for e in entries]
 
 
 def _text(r, width=22):
@@ -427,7 +501,8 @@ def cmd_settings(args):
     import fmcli
     import fmcodetui as T
     if args.action == "list":
-        got = rows()
+        problems = []
+        got = rows(problems=problems)
         if args.json:
             return fmcli.out(args, got, None)
         lines = []
@@ -435,12 +510,13 @@ def cmd_settings(args):
             mine = [r for r in got if r["surface"] == surface and (args.surface in (None, surface))]
             if mine:
                 where = mine[0]["where"] if surface == "app" else mine[0]["where"].rsplit(".", 1)[0]
-                lines += [f"{title}: {where}"] + ["  " + _text(r) for r in mine]
+                lines += [f"{title}: {where}"] + [f"  ! {x} (skipped: the default shows)" for s, x in problems
+                                                  if s == surface] + ["  " + _text(r) for r in mine]
         return fmcli.out(args, got, "\n".join(lines) or "no settings found")
     if not args.key:
         raise fmcli.UsageError(f"fm settings {args.action} KEY{' VALUE' if args.action == 'set' else ''}")
     if args.action == "get":
-        got = [r for r in rows() if r["key"] == args.key and args.surface in (None, r["surface"])]
+        got = rows(find(args.key, args.surface))
         if not got:
             raise fmcli.UsageError(f"{args.key}: no such setting (fm settings list shows them)")
         return fmcli.out(args, got, "\n".join(f"{r['surface']}: {_text(r, 0)}  [{r['where']}]" for r in got))
@@ -459,7 +535,7 @@ def cmd_settings(args):
     for e in entries:
         try:
             if e["surface"] == "app":
-                v, warn = set_app(args.key, args.value)
+                v, warn = set_app(args.key, args.value, p=p)
                 done.append({"surface": "app", "key": args.key, "value": v, "where": app_path(), "warnings": warn,
                              "line": f"app: {args.key} = {T._toml(v)} in {app_path()} (the next fm code run reads it)"
                                      + "".join(f"\n  now skipped: {w}" for w in warn)})
