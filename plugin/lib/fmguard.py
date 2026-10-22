@@ -678,7 +678,9 @@ def _ends_body(text, delim, starter):
 # security review): only the plain forms; an operator form (${IFS:+word}) yields any word, and a line that may change
 # IFS (named with quotes and backslashes removed, a loop variable, a nameref; IFS=… read scopes to that read) and
 # splits anything on it can't be read that way
-_IFS_PLAIN = re.compile(r"\$IFS(?![A-Za-z0-9_])|\$\{IFS\}")
+# T-1473: group 1 is the expansion; an odd run of backslashes before the $ makes it literal text (\$IFS), so it never
+# expands, in or out of double quotes; an even run (\\$IFS) is escaped backslashes and then a real expansion
+_IFS_PLAIN = re.compile(r"(?<!\\)(?:\\\\)*(\$IFS(?![A-Za-z0-9_])|\$\{IFS\})")
 _IFS_OP = re.compile(r"\$\{[#!]?IFS(?![A-Za-z0-9_])")
 _IFS_NAME = re.compile(r"(?<![A-Za-z0-9_])IFS(?![A-Za-z0-9_])")
 _IFS_IN_VALUE = re.compile(r"(?<![\w$])[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=[^\s;&|()<>]*(?:\$IFS(?![A-Za-z0-9_])|\$\{IFS\})")
@@ -691,18 +693,23 @@ _NAME_COMPUTED = re.compile(  # a variable name built by an expansion: declare $
     r"|\(\(\s*(?:[^()]*,\s*)?\$\{?\w+\}?\s*(?:[-+*/%^|&]|<<|>>)?=(?!=)|\$\{![^}]*=")  # (( $n = 1 )), not (( a == b ))
 _UNQUOTED = re.compile(r"\$[\w{@*#?!$(-]|`")
 _RUNS_HERE = re.compile(  # T-0590: code this shell runs that the line doesn't show: eval text, a sourced file
-    r"(?:^|[;&|({`\n]|\$\(|\b(?:then|do|else|elif)\s)\s*(?:builtin\s+|command\s+)?(?:eval|source|\.)(?=\s)")
+    # T-1473 review: after any keyword, !, a case pattern's ) or prefix assignments too (if eval, a=b . f)
+    r"(?:^|[;&|({`\n)!]|\$\(|\b(?:then|do|else|elif|if|while|until|coproc|time(?:\s+-p)?)\s)\s*(?:\w+=\S*\s+)*"
+    r"(?:builtin\s+|command\s+)?(?:eval|source|\.)(?=\s)")
+# an unquoted word that runs a string again in this shell (eval, source, trap, mapfile -C, alias), anywhere on the line
+_EVAL_WORD = re.compile(r"(?<![\w.$/-])(?:eval|source|trap|mapfile|readarray|alias)(?![\w.=/-])")
 
 
 def _ifs_unreadable(cmd):
     """T-0585: why bash's word splitting on this line can't be read (IFS may not be the default), or None."""
-    rest = _IFS_PLAIN.sub(" ", cmd)
+    rest = _IFS_PLAIN.sub(lambda m: m.group(0)[:m.start(1) - m.start(0)] + " ", cmd)
     if _IFS_OP.search(rest):
         return "IFS is expanded with an operator: the guard can't read the word it yields"
     if _IFS_IN_VALUE.search(_mask_quotes(cmd)):  # T-0592: bash keeps it whole there; a space would end the value
         return "IFS in an assignment's value: the guard can't read where that value is split later"
     why = "IFS may be changed on a line that splits words on it: the guard can't read how bash splits them"
-    plain, hidden = rest != cmd, _RUNS_HERE.search(rest)
+    plain = rest != cmd
+    hidden = _RUNS_HERE.search(rest) or _EVAL_WORD.search(_mask_quotes(_strip_heredocs(rest)))
     data = _ifs_data(cmd) if plain else None
     if data is not None:  # T-0698: IFS only in data, unless eval or source beside it may run it here
         return why if _RUNS_HERE.search(data) or _NAME_COMPUTED.search(_mask_quotes(_strip_heredocs(data))) else None
@@ -714,7 +721,9 @@ def _ifs_unreadable(cmd):
     bare = _mask_quotes(_strip_heredocs(scoped))
     text = scoped if plain or hidden else bare
     if _IFS_NAME.search(re.sub(r"[\\'\"]", "", text)):  # I""FS and I\FS are IFS to bash
-        split = plain or "$" in text or "`" in text
+        # T-1473: \$ and \` are literal characters, except in text eval or source runs again (review: eval "…\$IFS…")
+        live = text if hidden else re.sub(r"\\.", "", text)
+        split = plain or "$" in live or "`" in live
     elif _NAME_COMPUTED.search(bare):  # ponytail: a computed name is refused only beside an expansion that splits
         split = plain or _UNQUOTED.search(bare)
     else:
@@ -747,7 +756,7 @@ def _ifs_data(cmd):
     fed = any(q for *_, q in bodies) and _stdin_scripts(cmd, _split(_tokens(_lines("\n".join(seen)))))
     mask, pieces = "" if "`" in code else _mask_quotes(code), set()  # same length; quoted text as underscores
     for m in _IFS_PLAIN.finditer(cmd):
-        p = m.start()
+        p = m.start(1)
         body = next((b for b in bodies if b[0] <= p < b[1]), None)
         if body:
             if not body[2] or fed:  # <<E bodies expand; a shell's are code (T-0589)
@@ -770,7 +779,7 @@ def _ifs_spaces(cmd):
     literal, not a comment; quoted text is left as it is for the nested check that reads it (bash -c '…')."""
     out, last = [], 0
     for m in _IFS_PLAIN.finditer(_mask_quotes(cmd)):  # same length as cmd, quoted text blanked
-        out += [cmd[last:m.start()], " \\" if cmd[m.end():m.end() + 1] == "#" else " "]
+        out += [cmd[last:m.start(1)], " \\" if cmd[m.end():m.end() + 1] == "#" else " "]
         last = m.end()
     return "".join(out) + cmd[last:]
 
@@ -2262,8 +2271,6 @@ def _mask_quotes(text):
     blanked to its line's end too (its review: a quote in a comment paired with one in a later comment hid a ||).
     Escapes and comments as _strip_comments reads them; unchanged (fails closed) under $'…', an unclosed quote or a
     substitution inside double quotes, whose own quotes don't pair with the outer ones."""
-    if "$'" in text:
-        return text
     out, q, i = [], None, 0
     while i < len(text):
         ch = text[i]
@@ -2271,6 +2278,8 @@ def _mask_quotes(text):
             out.append(text[i:i + 2] if q is None else "_" * len(text[i:i + 2]))
             i += 2
             continue
+        if q is None and text.startswith("$'", i):  # T-1473: only a real $'…' (unescaped, unquoted) fails closed
+            return text
         if q == '"' and (ch == "`" or text.startswith("$(", i) or (text.startswith("${", i)
                                                                     and not re.match(r"\$\{\w+\}", text[i:]))):
             return text

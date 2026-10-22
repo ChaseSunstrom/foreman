@@ -10,6 +10,7 @@ import json
 import math
 import os
 import re
+import sys
 import tempfile
 import tomllib
 
@@ -105,7 +106,7 @@ def plugin_schema():
         shared = SHARED.get(key, {})  # its options list the old words too (Claude Code drops a value not in them)
         typ = "choice" if spec.get("options") else spec.get("type", "string")
         out.append(_entry("plugin", key, typ, spec.get("default"), spec.get("description") or spec.get("title", key),
-                          "pane", "next session", choices=shared.get("choices") or spec.get("options"),
+                          "pane", "in seconds", choices=shared.get("choices") or spec.get("options"),
                           range=_PLUGIN_RANGES.get(key), aliases=shared.get("aliases")))
     return out
 
@@ -150,6 +151,8 @@ def _check(e, value):
             return tomllib.loads(f"v = {value}")["v"]
         except tomllib.TOMLDecodeError:
             return value
+        except RecursionError:  # nested past the parser's depth: no setting is
+            raise bad("nested too deep") from None
     return value
 
 
@@ -169,7 +172,7 @@ def _unquote(k):
 def _parses(text):
     try:
         return tomllib.loads(text)
-    except tomllib.TOMLDecodeError:
+    except (tomllib.TOMLDecodeError, RecursionError):
         return None
 
 
@@ -334,12 +337,13 @@ def _set_app(key, value, path, real, table, name):
     except Exception as e:
         raise SettingError(f"{key} = {T._toml(value)}: the app can't read the file with it ({type(e).__name__}: {e})") \
             from None
-    errors = [e for e in errors if e not in old]
-    # the value itself rejected: refused. Another setting it makes bad (columns that leave widths one short, a theme
-    # that leaves a [colors] entry too faint) is skipped by the app as any bad setting is: written, and said
+    # the value itself rejected: refused, even when the file already had that key wrong (an error that names no
+    # value reads the same before and after). Another setting it makes bad (columns that leave widths one short, a
+    # theme that leaves a [colors] entry too faint) is skipped by the app as any bad setting is: written, and said
     own = [e for e in errors if e[len(path) + 2:].startswith((f"{key}:", f"{key} ="))]
     if own:
         raise SettingError("; ".join(own))
+    errors = [e for e in errors if e not in old]
     try:
         for w, h in ((100, 30), (60, 20)):  # wide and narrow: both layouts
             T.render(T.State(), w, h, cfg)
@@ -351,10 +355,18 @@ def _set_app(key, value, path, real, table, name):
 
 # ---------------------------------------------------------------- the plugin: Claude Code's settings.json
 
+def _interactive():
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):  # no stdin, or a closed one
+        return False
+
+
 def in_claude_code():
-    """Run from a Claude Code session (its shells set these): the guard decides writes to protected files. The user's
-    own terminal and the fm code app's settings screen write directly."""
-    return bool(os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_ENTRYPOINT"))
+    """Whether the guard decides writes to protected files: in a Claude Code session (its shells set these), and
+    wherever stdin and stdout aren't both a terminal, since an agent's shell can blank the variables (fail closed).
+    The user's own terminal and the fm code app's settings screen write directly."""
+    return bool(os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_ENTRYPOINT")) or not _interactive()
 
 
 def claude_dir():
@@ -451,6 +463,21 @@ def _write_plugin(data, pid, key, value, real, how):
     fmcore.write_atomic(real, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
+def set_key(key, value, surface=None, p=None):
+    """`fm settings set` and the fm code app's :set line (T-1572): `key` set on every surface that has it (or on
+    `surface`): ([(surface, value written, warnings)], [why each refused one wasn't written])."""
+    done, refused = [], []
+    for e in find(key, surface):
+        try:
+            if e["surface"] == "app":
+                done.append(("app", *set_app(key, value, p=p)))
+            else:
+                done.append(("plugin", set_plugin(key, value, p), []))
+        except SettingError as x:
+            refused.append(f"{e['surface']}: {x}")
+    return done, refused
+
+
 # ---------------------------------------------------------------- reading both, and the command
 
 def rows(entries=None, problems=None):
@@ -506,7 +533,7 @@ def cmd_settings(args):
         if args.json:
             return fmcli.out(args, got, None)
         lines = []
-        for surface, title in (("app", "app (fm code; next run)"), ("plugin", f"plugin ({PLUGIN} pane; next session)")):
+        for surface, title in (("app", "app (fm code; next run)"), ("plugin", f"plugin ({PLUGIN} pane; in seconds)")):
             mine = [r for r in got if r["surface"] == surface and (args.surface in (None, surface))]
             if mine:
                 where = mine[0]["where"] if surface == "app" else mine[0]["where"].rsplit(".", 1)[0]
@@ -531,20 +558,16 @@ def cmd_settings(args):
         p = fmcli.resolve(args, create=False)
     except fmcli.UsageError:
         pass  # outside a project: no task grants, the guard decides as with none
-    done, refused = [], []
-    for e in entries:
-        try:
-            if e["surface"] == "app":
-                v, warn = set_app(args.key, args.value, p=p)
-                done.append({"surface": "app", "key": args.key, "value": v, "where": app_path(), "warnings": warn,
-                             "line": f"app: {args.key} = {T._toml(v)} in {app_path()} (the next fm code run reads it)"
-                                     + "".join(f"\n  now skipped: {w}" for w in warn)})
-            else:
-                v = set_plugin(args.key, args.value, p)
-                done.append({"surface": "plugin", "key": args.key, "value": v,
-                             "line": f"plugin: {args.key} = {json.dumps(v)} (the next Claude Code session reads it)"})
-        except SettingError as x:
-            refused.append(f"{e['surface']}: {x}")
+    got, refused = set_key(args.key, args.value, args.surface, p)
+    done = []
+    for surface, v, warn in got:
+        if surface == "app":
+            done.append({"surface": "app", "key": args.key, "value": v, "where": app_path(), "warnings": warn,
+                         "line": f"app: {args.key} = {T._toml(v)} in {app_path()} (the next fm code run reads it)"
+                                 + "".join(f"\n  now skipped: {w}" for w in warn)})
+        else:
+            done.append({"surface": "plugin", "key": args.key, "value": v,
+                         "line": f"plugin: {args.key} = {json.dumps(v)} (the pane reads it within seconds)"})
     fmcli.out(args, {"set": done, "refused": refused}, "\n".join([d["line"] for d in done] + refused))
     if refused:
         import fmcore

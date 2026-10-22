@@ -941,6 +941,45 @@ class InterpreterCd(GuardCase):
                                    "brief")  # a second python after a cd back into the project
 
 
+class SeparatorProse(GuardCase):
+    """T-1473: an escaped \\$IFS in quoted prose (a log line describing the T-0590 form) read as a real expansion,
+    and then the word IFS anywhere on the line refused it. A backslash before $ means bash never expands it."""
+
+    def ctx(self):
+        return g.Ctx(cwd=self.repo, project_root=self.repo, home=self.home, foreman_home=self.fhome, scratch=[],
+                     allow=set(), task_id=None, unbriefed=None)
+
+    def test_escaped_ifs_in_quoted_prose_passes(self):
+        for cmd in ('fm task log T-1 "a row was added showing eval \\$\'IFS=m\'; \\"r\\$IFS\\" -rf ~ still refuses"',
+                    'echo "the eval form: eval \'IFS=m\'; then \\$IFS splits"',
+                    'echo literal \\$IFS here'):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(g.check("Bash", {"command": cmd}, self.ctx()))
+
+    def test_real_expansions_and_quoted_command_words_still_refuse(self):
+        for cmd in ('eval \'IFS=m\'; "r$IFS" -rf ~', '"eval" \'IFS=m\'; "r$IFS" -rf ~',
+                    'builtin eval \'IFS=m\'; r$IFS -rf ~', 'eval \'IFS=m\'; r\\\\$IFS -rf ~',
+                    'x=1; eval "$y"; echo $IFS',
+                    # T-1473 review: eval and a sourced heredoc turn \$ back into a live $ when they run the text
+                    'eval \'IFS=n\'; eval "\\"shutdow\\$IFS\\" now"',
+                    'eval \'IFS=n\'; . /dev/stdin <<EOF\nshutdow\\$IFS now\nEOF'):
+            with self.subTest(cmd=cmd):
+                self.assertIsNotNone(g.check("Bash", {"command": cmd}, self.ctx()))
+
+    def test_eval_after_a_keyword_or_prefix_assignment_runs_its_text_too(self):  # T-1473 review
+        s = '"\\"shutdow\\$IFS\\" now"'
+        for cmd in (f"IFS=n; if eval {s}; then :; fi", f"time eval 'IFS=n'; time eval {s}", f"IFS=n; a=b eval {s}",
+                    f"IFS=n; ! eval {s}", "IFS=n; a=b . /dev/stdin <<EOF\nshutdow\\$IFS now\nEOF",
+                    f"IFS=n; case x in *) eval {s};; esac", f"IFS=n; while eval {s}; do :; done",
+                    f"IFS=n; coproc eval {s}", f"IFS=n; time -p eval {s}", f"IFS=n; until eval {s}; do :; done",
+                    "IFS=n; if . /dev/stdin <<EOF\nshutdow\\$IFS now\nEOF\nthen :; fi",
+                    # trap, mapfile -C and an alias run their string later in this same shell
+                    f"IFS=n; trap {s} EXIT", f"IFS=n; mapfile -c1 -C {s} a < /etc/hosts",
+                    f"IFS=n; readarray -C {s} a < /etc/hosts", f"shopt -s expand_aliases; IFS=n; alias x={s}\nx"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNotNone(g.check("Bash", {"command": cmd}, self.ctx()))
+
+
 class BriefChangelog(GuardCase):
     def test_a_changelog_edit_with_no_task_says_where_the_line_goes(self):
         # T-1452: three CHANGELOG.md edits after a close got only the generic "start a task" text
