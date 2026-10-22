@@ -605,17 +605,31 @@ class Run:
             if d.prop in ("transition", "transition-property", "transition-duration", "animation", "animation-name") \
                     and not d.in_frames and d.value and d.value.lower() != "none":
                 named = d.prop in ("transition-property", "animation-name")
-                if named or any(_seconds(m.group()) > 0 for m in TIME.finditer(d.value)):
+                # a var() duration is a token this run can't resolve; the lint asks for tokens, so it counts (T-1707)
+                if named or "var(" in d.value or any(_seconds(m.group()) > 0 for m in TIME.finditer(d.value)):
                     moves.update(base(x) for x in sel_of(d))
         if "*" in moves:  # a transition on * covers every element
             return
+
+        def covered(x):  # T-1707: .kiln .mark covers .kiln .tile:hover .mark; .tabs button covers .tabs [aria-pressed]
+            x = x.strip()
+            b, bare = base(x).split(), STATE.sub("", x) != STATE.sub("", x).rstrip()  # bare: a state on a descendant
+            for m in moves:
+                mp = m.split()
+                if bare and b and m.startswith(" ".join(b) + " "):
+                    return True
+                if b and mp and mp[-1] == b[-1]:
+                    rest = iter(b)
+                    if all(p in rest for p in mp):  # moving's compounds in order within the state's
+                        return True
+            return False
         quiet, seen = {}, set()  # source → spans of prefers-reduced-motion: reduce blocks; blocks already flagged
         for d in self.decls:
             if d.prop not in AFTERGLOW_PROPS or d.in_frames or d.src.js or d.dynamic or (d.src.path, d.block) in seen:
                 continue
             sels = [x for x in sel_of(d) if STATE.search(x)]
             # a nested &:hover is skipped: ponytail: resolving & against the parent block is not done
-            if not sels or any("&" in x or base(x) in moves for x in sels):
+            if not sels or any("&" in x or covered(x) for x in sels):
                 continue
             if d.src.path not in quiet:
                 ends = _closers(d.src.css)

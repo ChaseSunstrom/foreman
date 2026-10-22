@@ -10,7 +10,7 @@ SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "re
           "directions", "design-extract"]
 # everything else Claude may start itself when the user asks in plain words; design-extract: the 2,000-character
 # listing has no room for it, so Claude reaches its verbs through the directions skill and the UI playbooks (T-1507)
-USER_ONLY = {"capture", "design-extract"}
+USER_ONLY = {"capture", "design-extract", "tidy", "doctor"}  # T-1705: the rules map these plain words to the fm verbs, not the skills
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
 EDITING_AGENTS = {"fm-builder.md": {"Edit", "Write", "Bash"},  # T-0234: the exceptions, worktree-bound
                   "fm-reproducer.md": {"Edit", "Write", "Bash"}}  # T-0608
@@ -51,6 +51,12 @@ class Skills(unittest.TestCase):
                 self.assertTrue(20 < len(meta.get("description", "")) <= 1024)
                 self.assertLess(len(body.splitlines()), 500)
                 self.assertEqual(meta.get("disable-model-invocation") == "true", name in USER_ONLY)
+
+    def test_every_skill_the_rules_map_plain_words_to_is_model_invocable(self):
+        # T-1705: a user-only skill can't be loaded by the model, so the rules may not send it there
+        rules = read_text(os.path.join(PLUGIN, "rules", "foreman.md"))
+        for name in re.findall(r"→ `/foreman:([\w-]+)`", rules):
+            self.assertNotIn(name, USER_ONLY)
 
     def test_the_listing_foreman_adds_stays_small(self):
         # T-1253: Claude Code 2.1.304 sends the skill listing again after every compaction, so Foreman's share of it
