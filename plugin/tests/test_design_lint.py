@@ -108,6 +108,69 @@ class Allow(ForemanTestCase):  # and the edges of what gets linted
         self.assertEqual([f["file"] for f in fmdesign.lint([os.path.join(self.tmp, "ui")])], [b])
 
 
+    def test_same_line_allow_covers_only_its_line(self):
+        path = self.write("a.html", '<img src="a.png"> <!-- design-lint: allow img-alt decorative -->\n'
+                                    '<img src="b.png">\n')
+        self.assertEqual([(f["rule"], f["line"]) for f in fmdesign.lint([path])], [("img-alt", 2)])
+
+    def test_fifo_and_device_link_neither_hang_nor_count(self):
+        ui = os.path.join(self.tmp, "ui")
+        os.makedirs(ui)
+        os.mkfifo(os.path.join(ui, "pipe.css"))
+        os.symlink("/dev/zero", os.path.join(ui, "zero.css"))
+        self.write(os.path.join("ui", "a.css"), ".a { color: red; }\n")
+        p = self.fm("design", "lint", ui, "--json")
+        data = json.loads(p.stdout)
+        self.assertEqual((data["files"], data["findings"]), (1, []))
+        self.assertIn(os.path.join(ui, "zero.css"), [x["file"] for x in data["skipped"]])
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads everything")
+    def test_unreadable_file_is_skipped_not_a_crash(self):
+        path = self.write("b.css", ".b { color: red; }\n")
+        self.write("a.css", ".a { color: red; }\n")
+        os.chmod(path, 0)
+        p = self.fm("design", "lint", self.tmp + "/a.css", path, "--json")
+        self.assertEqual([x["file"] for x in json.loads(p.stdout)["skipped"]], [path])
+
+    def test_the_same_file_twice_counts_once(self):
+        path = self.write("a.css", "".join(f".c{i} {{ border-radius: 8px; }}\n" for i in range(3)))
+        self.assertEqual(fmdesign.lint([path, path, os.path.join(self.tmp, ".", "a.css")]), [])
+
+    def test_build_output_and_environments_are_skipped(self):
+        for d in ("build", "out", "target", "venv", ".venv", "bower_components"):
+            os.makedirs(os.path.join(self.tmp, d))
+            self.write(os.path.join(d, "x.html"), '<img src="a">\n')
+        self.write("ok.html", '<img src="a" alt="">\n')
+        self.assertEqual(fmdesign.lint([self.tmp]), [])
+
+    def test_file_count_is_capped(self):
+        for n in range(3):
+            self.write(f"{n}.html", '<img src="a">\n')
+        old, fmdesign.MAX_FILES = fmdesign.MAX_FILES, 2
+        try:
+            found, linted, skipped, _ = fmdesign.run([self.tmp])
+        finally:
+            fmdesign.MAX_FILES = old
+        self.assertEqual((len(found), len(linted)), (2, 2))
+        self.assertIn("over 2 files", skipped[0]["why"])
+
+    def test_a_path_with_no_ui_files_exits_2(self):
+        self.write("gen.py", "x = 1\n")
+        p = self.fm("design", "lint", self.tmp, check=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("no UI files under", p.stderr)
+
+    def test_tailwind_font_sans_counts_unless_the_config_sets_fonts(self):
+        self.write("a.html", '<body class="font-sans"></body>\n')
+        self.assertEqual([f["rule"] for f in fmdesign.lint([self.tmp])], ["generic-font"])
+        self.write("tailwind.config.js", "module.exports = { theme: { fontFamily: { sans: ['Brand'] } } };\n")
+        self.assertEqual(fmdesign.lint([self.tmp]), [])
+
+    def test_commented_reduced_motion_hook_does_not_count(self):
+        path = self.write("a.tsx", "/* useReducedMotion */\n// prefers-reduced-motion\n"
+                                   "const C = () => <div style={{ transition: 'transform .2s' }} />;\n")
+        self.assertEqual([f["rule"] for f in fmdesign.lint([path])], ["reduced-motion"])
+
     def test_each_img_on_a_line_is_judged(self):
         path = self.write("a.html", '<img src="a.png" alt=""><img src="b.png">\n<img src="c.png" alt="c">\n')
         self.assertEqual([(f["rule"], f["line"]) for f in fmdesign.lint([path])], [("img-alt", 1)])
@@ -116,7 +179,9 @@ class Allow(ForemanTestCase):  # and the edges of what gets linted
         import time
         paths = [self.write("a.html", "<img {" * 50000 + "<style>" * 50000 + "<!--" * 50000),
                  self.write("b.css", "x{font:" + "1" * 200000 + "px a}" + "/*" * 50000),
-                 self.write("c.css", "@keyframes k{" * 50000)]
+                 self.write("c.css", "@keyframes k{" * 50000),
+                 self.write("d.tsx", "className={`" * 40000 + "import {" * 40000 + "cn(" * 40000 +
+                            "const X = () => { Math.random(); " * 2000 + "{" * 100000)]
         t = time.monotonic()
         fmdesign.lint(paths)
         self.assertLess(time.monotonic() - t, 5)
