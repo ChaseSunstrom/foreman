@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Hooks: one note that fails to build (a full disk) no longer drops every other note of that tool call, and unread mail shows again next call instead of being lost (T-1449).
 
 ## 1.2.50 — 2026-10-21
 - A library source indexed before 1.2.49's quarantine is indexed again from its local clone the next time fm reads it (no network), so its hostile skills and agents leave `fm lib search` without a `fm lib source update` (T-1415).
