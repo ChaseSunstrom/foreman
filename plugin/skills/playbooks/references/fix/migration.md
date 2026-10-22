@@ -14,19 +14,27 @@ Built on library cards: `fm lib show zero-downtime-migrations` (expand, migrate,
 1. **Classify the change.** Additive (new nullable column, new table, new index) ships in one step.
    Anything that renames, retypes, drops or tightens (`NOT NULL`, unique, foreign key) is a multi-step change.
    Pass: the brief names the class and, if multi-step, lists the releases below.
-2. **Expand.** Add the new shape next to the old one: new column nullable or with a constant default, new table,
-   index built online (Postgres `CREATE INDEX CONCURRENTLY`, outside a transaction). Pass: the previous
-   release's test suite passes against the expanded schema.
-3. **Dual-write.** Ship code that writes both old and new shapes and still reads the old one.
-4. **Backfill in batches** (snippet below): keyset paging by primary key, a bounded batch, a commit per batch,
+2. **Set a lock budget before any DDL.** Every DDL statement runs with a short lock timeout, so a blocked
+   migration fails fast instead of queueing every query behind it: Postgres `SET LOCAL lock_timeout = '5s'`
+   inside the migration's transaction (plain `SET` for the statements that can't run in one, below), MySQL
+   `SET SESSION lock_wait_timeout = 5`. On timeout, retry a few times with a pause, then stop and report.
+   Pass: the timeout is in the migration file.
+3. **Expand.** Add the new shape next to the old one: new column nullable or with a constant default, new table,
+   index built online (Postgres `CREATE INDEX CONCURRENTLY`, outside a transaction). A failed concurrent build
+   leaves an `INVALID` index: drop it before retrying. Pass: the previous release's test suite passes against
+   the expanded schema.
+4. **Dual-write.** Ship code that writes both old and new shapes and still reads the old one.
+5. **Backfill in batches** (snippet below): keyset paging by primary key, a bounded batch, a commit per batch,
    idempotent (`WHERE new IS NULL`), resumable after a crash. Pass: a rerun changes zero rows, and a count
    query shows no unfilled rows.
-5. **Switch reads** to the new shape, behind a flag where the risk is high. Watch error rates for a full
+6. **Switch reads** to the new shape, behind a flag where the risk is high. Watch error rates for a full
    traffic cycle before going on.
-6. **Contract.** Stop writing the old shape in one release; drop it in a later one. Add `NOT NULL` or a
-   constraint the cheap way for your engine (Postgres: `ADD CONSTRAINT … NOT VALID`, then `VALIDATE CONSTRAINT`).
-7. **Set a lock budget.** Every DDL runs with a short lock timeout (Postgres `SET lock_timeout = '5s'`) so a
-   blocked migration fails fast instead of queueing every query behind it. Pass: the timeout is in the migration.
+7. **Contract.** Stop writing the old shape in one release; drop it in a later one. Tighten without a long
+   lock, per engine. Postgres check or foreign key: `ADD CONSTRAINT … NOT VALID`, then `VALIDATE CONSTRAINT`.
+   Postgres `NOT NULL` (17 and older): `ADD CONSTRAINT c CHECK (col IS NOT NULL) NOT VALID`, `VALIDATE
+   CONSTRAINT c`, then `ALTER COLUMN col SET NOT NULL` (it uses the valid check instead of scanning), then drop
+   `c`. Unique can't be `NOT VALID`: `CREATE UNIQUE INDEX CONCURRENTLY i …`, then `ADD CONSTRAINT u UNIQUE
+   USING INDEX i`.
 8. **Rollback is written, not assumed.** Each step has its down path, tested `down` then `up` on a copy. A step
    that destroys data (drop, narrowing type) has none: say so and take a backup first. Pass: the brief names
    the irreversible step and the backup.

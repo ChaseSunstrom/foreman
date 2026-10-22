@@ -1,5 +1,5 @@
 <!-- Foreman's own playbook (written for Foreman, not ported). -->
-# Text, time and money: encodings, time zones, amounts
+# Text, time, bytes and money: encodings, time zones, amounts
 
 Use when code reads or writes text from outside (files, HTTP, a database, a terminal), stores or compares
 timestamps, schedules anything by the calendar, or handles prices, totals, tax or currency. Bugs here pass every
@@ -15,13 +15,17 @@ zone rules), `fm lib show time-in-tests` (freezing the clock), `fm lib show mone
    Each crossing gets one explicit decision below; nothing relies on a platform default.
 2. **Bytes: decode once at the edge, with a named encoding.** `open(p, encoding="utf-8")`, not the locale
    default; HTTP bodies by their declared charset; invalid input fails or uses `errors="replace"` on purpose.
-   Pass: grep finds no `open(` on text without `encoding=` in the changed files.
+   Pass: in the changed files every text read or write names its encoding: `open(` in a text mode (binary
+   `"rb"`/`"wb"` are exempt), `Path.read_text()`/`write_text()`, and `subprocess` calls with `text=True` all
+   carry `encoding=`.
 3. **Text: normalise before comparing, hashing or using as a key** (NFC for storage, NFKC plus `casefold()`
    for identifiers and search). Length limits say what they count: bytes, code points or user-visible
    characters. Pass: a test feeds the composed and the decomposed spelling and gets one result.
 4. **Time: store and compute instants in UTC; keep the zone name (`Europe/London`), not an offset (`+01:00`),
    for anything a human scheduled.** Convert to local time only to display or to apply calendar rules.
-   Pass: no naive `datetime.now()` or `Date()` without a zone in the changed code.
+   Pass: no naive datetimes in the changed code: Python `datetime.now()` or `fromtimestamp()` without `tz=`,
+   and `datetime.utcnow()` (naive despite its name). A JavaScript `Date` is already an instant; on servers,
+   check its local-time getters (`getHours()`, `getDate()`) and `toLocaleString()` without a `timeZone` option.
 5. **Calendar maths knows about DST.** "Tomorrow at 9" and "in 24 hours" differ twice a year; local times that
    don't exist (spring forward) or happen twice (fall back) need a stated rule. Pass: a test crosses a DST
    change with a frozen clock.

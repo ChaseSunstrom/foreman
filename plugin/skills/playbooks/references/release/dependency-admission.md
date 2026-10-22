@@ -20,9 +20,11 @@ Built on library cards: `fm lib show dependency-audit` (known vulnerabilities), 
    custom or missing licence is a fail until someone with authority says yes. Pass: the licence is named.
 4. **Health.** Last release and last commit within about a year, more than one maintainer or a backing
    organisation, issues answered. A finished, tiny, stable library can pass on age alone: say so.
-5. **Security.** Run the ecosystem's audit (`pip-audit`, `npm audit`, `cargo audit`, `govulncheck`, or OSV) on a
-   branch with it added. No known unfixed high or critical advisory. No install scripts that fetch or run code
-   you haven't read.
+5. **Security, before installing.** Installing a package runs its install scripts, so read them first and audit
+   without executing anything: `npm view <pkg> scripts`, then `npm install --package-lock-only --ignore-scripts`
+   and `npm audit`; for Python, `pip download --no-deps --only-binary :all: <pkg>` and `pip-audit -r` on the
+   pinned requirement; `cargo audit` or `govulncheck` or OSV elsewhere. Pass: no known unfixed high or critical
+   advisory, and no install script that fetches or runs code you haven't read.
 6. **Weight.** Count what it pulls in: the lockfile diff's new packages, install size, bundle size for a
    frontend. Pass: the brief states the number of new transitive packages.
 7. **Pin it.** Exact version in the lockfile, with hashes where the tool supports them; CI actions pinned to a

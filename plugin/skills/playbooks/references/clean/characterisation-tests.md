@@ -15,7 +15,9 @@ Built on library cards: `fm lib show characterization-tests` (the technique), `f
    Pass: the brief names each entry point the pins must cover.
 2. **Pick inputs from reality,** not from imagination: production samples, logged requests, existing fixtures,
    plus the edges (empty, zero, negative, huge, non-ASCII, malformed). Include inputs that raise: an error is
-   behaviour too.
+   behaviour too. Pin files get committed: scrub production samples first (replace secrets, tokens, emails,
+   names, addresses and account numbers with synthetic values of the same shape), and grep the pin files for
+   them before the commit. Pass: you name the grep and it finds nothing.
 3. **Find a seam** where you can call the code and read the result without the network, the clock or random
    numbers. Freeze or inject those; if the code reads them directly, add the smallest seam first (a parameter
    with the old default) and commit that alone.
@@ -39,15 +41,17 @@ import json, os
 def pin(path, fn, cases):
     got = {}
     for args in cases:
+        key = repr(args)  # before the call: fn may mutate its arguments
         try:
-            got[repr(args)] = repr(fn(*args))
+            got[key] = repr(fn(*args))
         except Exception as e:  # errors are behaviour too
-            got[repr(args)] = f"raises {type(e).__name__}: {e}"
+            got[key] = f"raises {type(e).__name__}: {e}"
     if not os.path.exists(path):
-        with open(path, "w") as f:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(got, f, indent=1, sort_keys=True)
         raise AssertionError(f"pinned {len(got)} cases to {path}: review it, commit it, rerun")
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         assert got == json.load(f)
 ```
 

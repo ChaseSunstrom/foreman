@@ -47,7 +47,7 @@ Core debugging, regression-test and verification procedures live with intake: `.
 - `references/fix/flaky-tests.md` — A test that passes and fails without a code change: prove, classify, reproduce deterministically, fix…
 - `references/fix/sql.md` — Slow or new queries: real SQL, call count, plan on real data, query before index, before/after proof.
 - `references/fix/migration.md` — Live schema changes: expand, dual-write, batched backfill, switch reads, contract, lock timeout.
-- `references/fix/text-time-bytes.md` — Encodings, Unicode normalisation, UTC and DST, money in minor units or decimals.
+- `references/fix/text-time-bytes.md` — Text, time, bytes, money: encodings, Unicode normalisation, UTC and DST, minor units.
 
 ## REVIEW — checklists (also read by foreman:fm-reviewer)
 - `references/review/code-reviewer.md` — Expert code review specialist. Proactively reviews code for quality, security, and maintainability. Use…

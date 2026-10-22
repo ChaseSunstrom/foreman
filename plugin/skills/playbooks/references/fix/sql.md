@@ -15,11 +15,11 @@ Built on library cards: `fm lib show query-tuning` (reading plans), `fm lib show
 2. **Count the calls first.** One page that runs the same statement N times is an N+1, and no index fixes it.
    Pass: you state the number of statements per request, before and after.
 3. **Read the plan on production-shaped data.** Postgres `EXPLAIN (ANALYZE, BUFFERS)`, MySQL `EXPLAIN ANALYZE`,
-   SQLite `EXPLAIN QUERY PLAN`. A plan on a ten-row dev table says nothing. `ANALYZE` executes the statement:
-   run it on writes only inside a transaction you roll back. Pass: the plan is in the evidence, with row counts.
+   SQLite `EXPLAIN QUERY PLAN`. A plan on a ten-row dev table says nothing. `EXPLAIN ANALYZE` executes the
+   statement: run it on writes only inside a transaction you roll back. Pass: the plan is in the evidence, with row counts.
 4. **Find the expensive node**, the one with the most time or buffers, not the first line. Signs: a full scan
-   feeding a `LIMIT`, estimated rows off from actual rows by 10× or more (stale statistics: run `ANALYZE`
-   first), a sort spilling to disk, a nested loop over thousands of outer rows.
+   feeding a `LIMIT`, estimated rows off from actual rows by 10× or more (stale statistics: refresh them first
+   with `ANALYZE <table>` in Postgres or `ANALYZE TABLE <table>` in MySQL, which takes a brief lock), a sort spilling to disk, a nested loop over thousands of outer rows.
 5. **Fix the query before adding an index.** A function or cast on an indexed column (`lower(email) = …`,
    `created_at::date = …`), a leading-wildcard `LIKE '%x'`, `OR` across columns and `SELECT *` each defeat or
    bloat the plan. Pass: you name which of these you checked.
