@@ -1925,7 +1925,7 @@ def load_config(path=None):
     errors = []
     bad = lambda msg: errors.append(f"{path}: {msg}")
     if "theme" in user:
-        if user["theme"] in PRESETS:
+        if isinstance(user["theme"], str) and user["theme"] in PRESETS:  # a list or table is unhashable: a bad value
             cfg["preset"], cfg["theme"] = user["theme"], PRESETS[user["theme"]]()
         else:
             bad(f"theme = {user['theme']!r}: no such theme ({', '.join(PRESETS)})")
@@ -1946,7 +1946,7 @@ def load_config(path=None):
             else:
                 bad(f"motion = {val!r}: one of {', '.join(MOTIONS)}")
         elif key == "border":
-            if val in BORDERS:
+            if isinstance(val, str) and val in BORDERS:
                 cfg["border"] = val
             else:
                 bad(f"border = {val!r}: one of {', '.join(BORDERS)}")

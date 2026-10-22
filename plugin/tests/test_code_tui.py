@@ -872,6 +872,44 @@ class Settings(unittest.TestCase):
         self.assertTrue(os.path.islink(link), "a linked tui.toml stays linked")
         self.assertEqual(self.read(real), 'motion = "reduced"\n')
 
+    def test_each_line_keeps_its_own_ending(self):
+        import fmsettings
+        text = 'a = 1\r\nmotion = "full"\nb = 2\r\n[keys]\r\nx = "stop"\n'
+        self.assertEqual(fmsettings.edit_toml(text, None, "motion", "off"), text.replace('"full"', '"off"'))
+        self.assertEqual(fmsettings.edit_toml(text, "keys", "y", "quit"), text + 'y = "quit"\n')
+        self.assertEqual(fmsettings.edit_toml(text, None, "c", 3), text.replace('b = 2\r\n', 'b = 2\r\nc = 3\r\n'))
+
+    def test_a_word_where_the_app_wants_one_never_raises(self):
+        import fmsettings
+        path = self.path('theme = ["x"]\nborder = {}\nmotion = [1]\npalette = {}\n')
+        cfg, errors = tui().load_config(path)
+        self.assertEqual(len(errors), 4, errors)
+        fmsettings.set_app("theme", "paper", path)  # a file the app chokes on can be repaired
+        self.assertTrue(self.read(path).startswith('theme = "paper"\n'))
+
+    def test_a_value_utf8_cant_hold_is_refused(self):
+        import fmsettings
+        path = self.path(self.TEXT)
+        with self.assertRaises(fmsettings.SettingError):
+            fmsettings.set_app("colors.ok", '"\udcff"', path)
+        with self.assertRaises(fmsettings.SettingError):
+            fmsettings.set_app("colors.ok", {"fg": "\udcff"}, path)
+        self.assertEqual(self.read(path), self.TEXT)
+
+    def test_the_write_holds_the_folders_lock(self):
+        import contextlib
+        import fmcore
+        import fmsettings
+        path, held = self.path(self.TEXT), []
+
+        @contextlib.contextmanager
+        def lock(d, timeout=5.0):
+            held.append(d)
+            yield
+        with unittest.mock.patch.object(fmcore, "lock", lock):
+            fmsettings.set_app("border", "heavy", path)
+        self.assertEqual(held, [os.path.dirname(os.path.realpath(path))])
+
     def test_a_bad_value_leaves_the_file(self):
         import fmsettings
         path = self.path(self.TEXT)

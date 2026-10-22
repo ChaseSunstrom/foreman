@@ -58,6 +58,23 @@ class Schema(unittest.TestCase):
             self.assertGreaterEqual(fmcodetui.contrast(cfg["theme"][n]["fg"], cfg["theme"]["screen"]["bg"]), 3, n)
 
 
+class Guard(unittest.TestCase):
+    def test_a_builder_lane_writes_nothing_outside_its_worktree(self):
+        import tempfile
+        import types
+        import unittest.mock as mock
+        import fmcore
+        lane, out = tempfile.mkdtemp(), os.path.join(tempfile.mkdtemp(), "settings.json")
+        p, b = types.SimpleNamespace(lane=lane), types.SimpleNamespace(id="T-1", meta={"builder": True})
+        with mock.patch.object(fmcore, "load_briefs", return_value=[]), \
+                mock.patch.object(fmcore, "active_brief", return_value=b), \
+                mock.patch.object(fmcore, "read_meta", return_value={}), \
+                mock.patch.object(fmcore, "main_worktree", return_value="/nonexistent-main"):
+            self.assertIsNotNone(fmsettings._guard_block(out, p))
+            self.assertIsNone(fmsettings._guard_block(os.path.join(lane, "settings.json"), p))
+        self.assertIsNone(fmsettings._guard_block(out, None), "outside a lane the same write is ordinary")
+
+
 class Command(ForemanTestCase):
     def setUp(self):
         super().setUp()
@@ -70,7 +87,38 @@ class Command(ForemanTestCase):
             f.write(self.before)
         with open(os.path.join(self.home, "tui.toml"), "w") as f:
             f.write('# mine\nborder = "heavy"\n')
-        self.env = {"HOME": self.uhome}
+        self.env = {"HOME": self.uhome, "CLAUDECODE": "", "CLAUDE_CODE_ENTRYPOINT": ""}  # the user's own terminal
+        self.claude = dict(self.env, CLAUDECODE="1")  # inside a Claude Code session: the guard decides
+
+    def test_list_shows_user_bindings_and_what_the_app_cant_read(self):
+        with open(os.path.join(self.home, "tui.toml"), "w") as f:
+            f.write('theme = ["x"]\n[keys]\nz = "stop"\n')
+        by = {(r["surface"], r["key"]): r for r in json.loads(self.fm("settings", "list", "--json", env=self.env).stdout)}
+        self.assertEqual((by["app", "keys.z"]["value"], by["app", "keys.z"]["default"]), ("stop", "none"))
+        text = self.fm("settings", "list", env=self.env).stdout
+        self.assertIn("keys.z", text)
+        self.assertIn("theme = ['x']", text, "the bad setting is named, not hidden behind the default")
+        self.assertIn("stop", self.fm("settings", "get", "keys.z", env=self.env).stdout)
+        self.fm("settings", "set", "theme", "paper", env=self.env)  # repairs a file the app chokes on
+        self.assertIn('theme = "paper"', read_text(os.path.join(self.home, "tui.toml")))
+
+    def test_inside_claude_code_tui_toml_needs_the_guard(self):
+        path = os.path.join(self.home, "tui.toml")
+        p = self.fm("settings", "set", "theme", "paper", env=self.claude, check=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn(path, p.stdout + p.stderr)
+        self.assertIn('theme = "paper"', p.stdout + p.stderr, "the exact change to make")
+        self.assertEqual(read_text(path), '# mine\nborder = "heavy"\n')
+
+    def test_a_config_dir_outside_home_is_refused(self):
+        other = os.path.join(self.tmp, "cc")
+        os.makedirs(other)
+        with open(os.path.join(other, "settings.json"), "w") as f:
+            f.write(self.before)
+        p = self.fm("settings", "set", "palette", "cb", "--surface", "plugin", env=dict(self.env, CLAUDE_CONFIG_DIR=other),
+                    check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertEqual(read_text(os.path.join(other, "settings.json")), self.before)
 
     def test_list_shows_both_surfaces_with_value_default_and_where(self):
         rows = json.loads(self.fm("settings", "list", "--json", env=self.env).stdout)
@@ -98,29 +146,41 @@ class Command(ForemanTestCase):
         self.assertEqual(read_text(os.path.join(self.home, "tui.toml")), '# mine\nborder = "heavy"\ntheme = "paper"\n')
 
     def test_a_plugin_set_the_guard_protects_prints_the_change_and_writes_nothing(self):
-        p = self.fm("settings", "set", "mascot", "orange", env=self.env, check=False)
-        self.assertNotEqual(p.returncode, 0)
+        p = self.fm("settings", "set", "mascot", "orange", env=self.claude, check=False)
+        self.assertEqual(p.returncode, 2)
         said = p.stdout + p.stderr
         for words in (self.settings, "pluginConfigs", "foreman-ui@foreman", '"mascot": "orange"'):
             self.assertIn(words, said)
         self.assertEqual(read_text(self.settings), self.before)
 
+    def test_in_the_users_terminal_settings_json_is_written(self):
+        self.fm("settings", "set", "mascot", "orange", env=self.env)
+        got = read_json(self.settings)
+        self.assertEqual(got["pluginConfigs"]["foreman-ui@foreman"]["options"], {"motion": "calm", "mascot": "orange"})
+        self.assertEqual((got["model"], got["pluginConfigs"]["other@m"]), ("x", {"options": {"a": 1}}))
+
     def test_a_plugin_set_the_guard_allows_keeps_the_rest_of_settings(self):
-        other = os.path.join(self.tmp, "cc")
+        other = os.path.join(self.uhome, "cc")  # a config folder of the user's the guard doesn't protect
         os.makedirs(other)
         with open(os.path.join(other, "settings.json"), "w") as f:
             f.write(self.before)
-        self.fm("settings", "set", "palette", "cb", "--surface", "plugin", env=dict(self.env, CLAUDE_CONFIG_DIR=other))
+        self.fm("settings", "set", "palette", "cb", "--surface", "plugin", env=dict(self.claude, CLAUDE_CONFIG_DIR=other))
         got = read_json(os.path.join(other, "settings.json"))
         self.assertEqual(got["pluginConfigs"]["foreman-ui@foreman"]["options"], {"motion": "calm", "palette": "cb"})
         self.assertEqual((got["model"], got["pluginConfigs"]["other@m"]), ("x", {"options": {"a": 1}}))
 
-    def test_a_shared_set_writes_the_app_and_says_what_the_plugin_needs(self):
-        p = self.fm("settings", "set", "motion", "off", env=self.env, check=False)
-        self.assertNotEqual(p.returncode, 0, "the plugin half was refused")
+    def test_a_shared_set_writes_what_it_may_and_says_what_the_rest_needs(self):
+        other = os.path.join(self.uhome, "cc")
+        os.makedirs(other)
+        p = self.fm("settings", "set", "motion", "off", env=dict(self.claude, CLAUDE_CONFIG_DIR=other), check=False)
+        self.assertEqual(p.returncode, 2, "the app half was refused")
+        self.assertIn('motion = "off"', p.stdout + p.stderr)
+        self.assertEqual(read_text(os.path.join(self.home, "tui.toml")), '# mine\nborder = "heavy"\n')
+        self.assertEqual(read_json(os.path.join(other, "settings.json"))["pluginConfigs"]["foreman-ui@foreman"],
+                         {"options": {"motion": "off"}})
+        self.fm("settings", "set", "motion", "off", env=self.env)  # the terminal: both
         self.assertIn('motion = "off"', read_text(os.path.join(self.home, "tui.toml")))
-        self.assertIn('"motion": "off"', p.stdout + p.stderr)
-        self.assertEqual(read_text(self.settings), self.before)
+        self.assertEqual(read_json(self.settings)["pluginConfigs"]["foreman-ui@foreman"]["options"]["motion"], "off")
 
     def test_a_bad_plugin_value_is_refused(self):
         for key, value in (("freshAt", "500"), ("freshAt", "lots"), ("mascot", "pink"), ("motion", "wobbly")):
