@@ -152,5 +152,26 @@ class Replay(ForemanTestCase):
             fmmutate.run(os.path.join(d, "m.py"), "h/m.py", d, "h", ["sh", "-c", "echo boom; exit 1"], ["a"])
 
 
+    def test_mutation_copies_the_extra_files_the_tests_import(self):
+        # T-1605: the guard's evasion tests import site/bench_safety.py, outside the plugin tree a mutant copy holds
+        import fmmutate
+        import fmreplay
+        d = os.path.join(self.tmp, "extra")
+        os.makedirs(os.path.join(d, "x"))
+        with open(os.path.join(d, "x", "m.py"), "w") as f:
+            f.write("def f(found):\n    found.append(('a', 'x'))\n")
+        with open(os.path.join(d, "helper.py"), "w") as f:
+            f.write("OK = 1\n")
+        with open(os.path.join(d, "x", "t.py"), "w") as f:
+            f.write("import os, sys\nsys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'side'))\n"
+                    "import helper, m\nl = []\nm.f(l)\nassert l\n")
+        res = fmmutate.run(os.path.join(d, "x", "m.py"), "x/m.py", os.path.join(d, "x"), "x",
+                           [__import__("sys").executable, "x/t.py"], ["a"],
+                           extra=[(os.path.join(d, "helper.py"), "side/helper.py")])
+        self.assertEqual(res["killed"], 1)
+        here = os.path.dirname(os.path.abspath(__file__))
+        self.assertIn(os.path.join("site", "bench_safety.py"),
+                      [rel for _, rel in fmreplay.mutate_extras(os.path.join(here, ".."))])
+
 if __name__ == "__main__":
     unittest.main()
