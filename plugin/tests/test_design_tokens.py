@@ -65,6 +65,13 @@ class Palette(ForemanTestCase):
                         self.assertRegex(tok["hex"], r"^#[0-9A-F]{6}$")
                         self.assertTrue(fmdesign.in_gamut(*tok["oklch"]), (theme, role, tok))
 
+    def test_every_solved_pair_clears_its_floor_by_a_margin(self):
+        # one 8-bit channel step can move a ratio by a few hundredths: a pair landing at exactly 4.50 isn't safe
+        for seed in SEEDS:
+            for p in fmdesign.palette(seed)["proofs"]:
+                with self.subTest(seed=seed, pair=(p["fg"], p["bg"], p["theme"])):
+                    self.assertGreaterEqual(p["ratio"], p["need"] + 0.03)
+
     def test_the_accent_keeps_the_seeds_hue(self):
         pal = fmdesign.palette("oklch(0.55 0.15 30)")
         for theme in ("light", "dark"):
@@ -244,6 +251,74 @@ class Extract(ForemanTestCase):
             self.assertNotIn("Traceback", p.stderr)
             self.assertEqual(p.returncode, 2 if "e999" in seed else 0, (seed, p.stderr))
 
+    def tokens_of(self, css):
+        path = os.path.join(self.tmp, "t.css")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(css)
+        return fmdesign.read_tokens(path)
+
+    def test_which_blocks_hold_tokens(self):
+        base, dark = self.tokens_of(
+            ":root { --a: #fff !important; @media (prefers-color-scheme: dark) { --a: #000; } &.dark { --b: #111; } }\n"
+            "html body .btn { --pad: 1px; }\n[data-lang=html] { --q: 1; }\n.card :root { --r: 2; }\n"
+            "html.dark { --c: #222; }\n:root[data-theme='dark'] { --d: #333; }\n:host(.dark) { --e: #444; }\n"
+            "@layer base { :root { --f: #555; } }\n@media (min-width: 40em) { :root { --a: #abc; } }\n")
+        self.assertEqual(base, {"--a": "#fff", "--f": "#555"})
+        self.assertEqual(dark, {"--a": "#000", "--b": "#111", "--c": "#222", "--d": "#333", "--e": "#444"})
+
+    def test_deep_nesting_stays_linear(self):
+        import time
+        t = time.monotonic()
+        base, _ = self.tokens_of(":root{" * 80_000 + "--a:1;" * 80_000)
+        self.assertEqual(base, {"--a": "1"})
+        self.assertLess(time.monotonic() - t, 5)
+
+    def test_skipped_files_are_reported(self):
+        ui = os.path.join(self.tmp, "ui")
+        os.makedirs(ui)
+        with open(os.path.join(ui, "a.css"), "w") as f:
+            f.write(":root { --x: #fff; }\n")
+        with open(os.path.join(ui, "big.css"), "w") as f:
+            f.write(":root { --y: #000; }\n" + "/* pad */\n" * 120_000)
+        data = json.loads(self.fm("design", "extract", ui, "--out", "-", "--json").stdout)
+        self.assertEqual([x["file"] for x in data["skipped"]], [os.path.join(ui, "big.css")])
+        self.assertIn("skipped:", self.fm("design", "extract", ui, "--out", os.path.join(self.tmp, "D.md")).stdout)
+
+    def test_no_absolute_path_outside_the_design_md_folder(self):
+        out = os.path.join(self.repo, "DESIGN.md")
+        self.fm("design", "extract", UI, "--out", out)
+        text = read_text(out)
+        self.assertNotIn(HERE, text)
+        self.assertNotIn(os.path.expanduser("~"), text)
+        self.assertIn("ui/tokens.css:", self.row(self.section(out), "--text"))
+
+    def test_design_md_is_kept_as_written(self):
+        out = os.path.join(self.tmp, "DESIGN.md")
+        with open(out, "wb") as f:  # not UTF-8: refused, never rewritten as mojibake
+            f.write(b"# DESIGN.md: caf\xe9\n")
+        p = self.fm("design", "extract", UI, "--out", out, check=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("UTF-8", p.stderr)
+        with open(out, "rb") as f:
+            self.assertEqual(f.read(), b"# DESIGN.md: caf\xe9\n")
+        with open(out, "wb") as f:  # CRLF stays CRLF
+            f.write(b"# DESIGN.md: X\r\n\r\n## Knobs\r\n- Type: a serif.\r\n\r\n## Banned\r\n- gradients\r\n")
+        self.fm("design", "extract", UI, "--out", out)
+        with open(out, "rb") as f:
+            data = f.read()
+        self.assertIn(b"## Tokens\r\n", data)
+        self.assertNotIn(b"\n", data.replace(b"\r\n", b""))
+        self.assertTrue(data.endswith(b"## Banned\r\n- gradients\r\n"))
+        real = os.path.join(self.tmp, "docs", "design.md")  # a symlink is written through, not replaced
+        os.makedirs(os.path.dirname(real))
+        with open(real, "w") as f:
+            f.write("# DESIGN.md: X\n")
+        link = os.path.join(self.tmp, "LINKED.md")
+        os.symlink(real, link)
+        self.fm("design", "extract", UI, "--out", link)
+        self.assertTrue(os.path.islink(link))
+        self.assertIn("## Tokens", read_text(real))
+
     def test_long_hostile_lines_stay_linear(self):
         import time
         path = os.path.join(self.tmp, "big")
@@ -338,9 +413,15 @@ class Extract(ForemanTestCase):
         self.assertIn("fm design contrast", playbook)
         self.assertIn("fm design palette", playbook)
         self.assertNotIn("contrast_proof.py", playbook)
-        self.assertIn("fm design extract", read_text(os.path.join(PLUGIN, "skills", "directions", "SKILL.md")))
-        self.assertIn("## Tokens", read_text(os.path.join(PLUGIN, "skills", "playbooks", "references", "ui",
-                                                          "design-direction.md")))
+        self.assertIn("Python 3.11", playbook)  # the copied file's regexes are possessive
+        directions = read_text(os.path.join(PLUGIN, "skills", "directions", "SKILL.md"))
+        direction_md = read_text(os.path.join(PLUGIN, "skills", "playbooks", "references", "ui", "design-direction.md"))
+        for doc in (directions, direction_md):  # a Tokens-only DESIGN.md is a palette, not a direction
+            self.assertIn("fm design extract", doc)
+            self.assertIn("`## Direction` section", doc)
+        self.assertIn("## Tokens", direction_md)
+        self.assertTrue(fmdesign.has_direction("# D\n\n## Direction\nPoster, audacity wild.\n"))
+        self.assertFalse(fmdesign.has_direction("# D\n\n## Tokens\n\n```\n## Direction\n```\n"))
 
 
 if __name__ == "__main__":
