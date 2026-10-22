@@ -158,6 +158,16 @@ class ScoutProbes(ForemanTestCase):
         finally:
             fmlib.sources, fmlib.source_add = old
         self.assertEqual(calls, [("old", True)])
+        # T-1389: a licence class that moved with the refresh is one finding, never silent
+        fmlib.sources = lambda: [({"url": "https://x/old", "name": "old", "added": "2000-01-01T00:00:00Z",
+                                   "class": "ideas-only"}, None)]
+        fmlib.source_add = lambda url, name, replace=False: ({"name": name, "class": "open", "commit": "abcdef123"}, [])
+        try:
+            found = fmscout.probe_sources(p, {})
+        finally:
+            fmlib.sources, fmlib.source_add = old
+        self.assertEqual(len(found), 1)
+        self.assertIn("old: class ideas-only → open", found[0].title)
 
     def test_doctor_failures_are_findings(self):
         p = self._p()
