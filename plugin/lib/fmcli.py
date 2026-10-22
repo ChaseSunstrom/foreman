@@ -6056,6 +6056,15 @@ def _build_parser():
     s.add_argument("action", choices=["info", "diff"])
     s.add_argument("paths", nargs="+", metavar="PATH", help="info: one PNG; diff: two, A then B")
     s.add_argument("--out", metavar="PATH", help="diff: write a PNG of A faded with each changed pixel in red")
+    s = add("shot", lazy("fmshot", "cmd_shot"), tier=("Every task", 93), help="URL|FILE...: a viewport shot, frames "
+            "in real time and a poster frame (the most painted) per page that moves, from a headless Chromium already "
+            "here (none: exit 0 and why; nothing is installed) into the project's state shots/ (T-1636)")
+    s.add_argument("targets", nargs="+", metavar="URL|FILE")
+    s.add_argument("--frames", type=int, default=5, help="frames to take (0 to 60; default 5)")
+    s.add_argument("--every", type=int, default=250, metavar="MS", help="ms between frames (10 to 10000; default 250)")
+    s.add_argument("--frozen", action="store_true", help="fm smoke's frozen profile first: the clock fixed, CSS "
+                   "animations and transitions paused")
+    s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
