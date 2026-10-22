@@ -1,0 +1,8 @@
+.btn { color: #333; transition: color 120ms ease; }
+.btn:hover { color: #000; }
+.card { opacity: 1; animation: pulse 1s; }
+.card:focus-visible { opacity: .8; }
+.link:hover { text-decoration: underline; }
+.tab { transition: background-color 150ms; }
+.tab[aria-selected="true"] { background: #eee; }
+@media (prefers-reduced-motion: reduce) { .btn:hover { color: #000; } .menu.is-open { transform: none; } }

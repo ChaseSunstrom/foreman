@@ -65,7 +65,7 @@ h3 { font-size: 1.45rem; font-weight: 600; line-height: 1.1; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font: condensed 700 1.6rem/1 var(--display); }
 .brand img { width: 28px; height: 28px; image-rendering: pixelated; }
 .nav { margin-left: auto; display: flex; align-items: center; gap: 22px; }
-.nav a { color: var(--ink-2); text-decoration: none; font-weight: 500; }
+.nav a { color: var(--ink-2); text-decoration: none; font-weight: 500; transition: color .15s; }
 .nav a:hover { color: var(--ink); }
 .nav .hide-sm { display: none; }
 @media (min-width: 760px) { .nav .hide-sm { display: inline; } }
@@ -89,7 +89,7 @@ h3 { font-size: 1.45rem; font-weight: 600; line-height: 1.1; }
 .install { display: flex; align-items: stretch; max-width: 760px; background: var(--term); color: var(--term-ink); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
 .install code { flex: 1; padding: 15px 18px; overflow-x: auto; white-space: nowrap; font-size: .86rem; line-height: 1.5; }
 .install code::before { content: "$ "; color: var(--term-dim); }
-.copy { appearance: none; border: 0; border-left: 1px solid #263248; background: #182132; color: var(--term-ink); font: 600 .9rem var(--sans); padding: 0 18px; cursor: pointer; min-width: 82px; }
+.copy { appearance: none; border: 0; border-left: 1px solid #263248; background: #182132; color: var(--term-ink); font: 600 .9rem var(--sans); padding: 0 18px; cursor: pointer; min-width: 82px; transition: background .15s; }
 .copy:hover { background: #1F2A3E; }
 .copy[data-done] { color: #6FE0A6; }
 .alt { margin-top: 14px; color: var(--ink-2); font-size: .98rem; }
@@ -208,7 +208,7 @@ footer .fine { flex-basis: 100%; }
 .feature-shell { display: grid; gap: 28px; padding-top: 28px; }
 @media (min-width: 980px) { .feature-shell { grid-template-columns: 220px 1fr; gap: 56px; padding-top: 48px; } }
 .side { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
-.side a { flex: none; color: var(--ink-2); text-decoration: none; padding: 7px 12px; border-radius: 8px; font-weight: 500; white-space: nowrap; }
+.side a { flex: none; color: var(--ink-2); text-decoration: none; padding: 7px 12px; border-radius: 8px; font-weight: 500; white-space: nowrap; transition: color .15s, background-color .15s; }
 .side a:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
 .side a[aria-current="page"] { color: var(--ink); background: var(--panel); box-shadow: inset 3px 0 0 var(--signal); }
 @media (min-width: 980px) { .side { flex-direction: column; position: sticky; top: 84px; align-self: start; overflow: visible; } .side a { white-space: normal; } }
@@ -237,6 +237,7 @@ footer .fine { flex-basis: 100%; }
 .viz .grid { stroke: var(--grid); stroke-width: 1; }
 .viz .axis { stroke: var(--axis); stroke-width: 1; }
 .viz .budget { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 3 3; }
+.viz .m, .viz .dot { transition: opacity .15s; }
 .viz .m:hover, .viz .dot:hover { opacity: .8; }
 .viz .ln { stroke: var(--s1); stroke-width: 2; fill: none !important; } /* site review: .viz .s1's fill made a wedge */
 .viz .dot { fill: var(--s1); stroke: var(--panel); stroke-width: 2; }
