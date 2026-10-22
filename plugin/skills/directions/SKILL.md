@@ -1,6 +1,6 @@
 ---
 name: directions
-description: Use when a new UI needs a look: six style directions from one sentence, the pick saved as DESIGN.md.
+description: Use when a new UI needs a look: six style directions, the pick saved as DESIGN.md.
 ---
 
 # Foreman: style directions
