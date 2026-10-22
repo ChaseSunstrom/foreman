@@ -26,10 +26,11 @@ MAX_FILE = 40_000
 # Only instruction text: code an LLM rewrote (the guard, hooks, fm) would run unsandboxed in the bypass-mode replays
 TEXT = re.compile(r"^(skills/[\w./-]+\.md|skills/routing\.json|rules/[\w.-]+\.md|agents/[\w.-]+\.md|"
                   r"output-styles/[\w.-]+\.md)$")  # T-0252: the routing tables are data the bench can judge too
-# T-1517: the guard's own files (its code, the hooks that run it, its tests and corpora) are locked whatever TEXT or
-# --plugin-dir later allow: a revision there is the one change the bench can't judge safely
-GUARD = re.compile(r"(?:^|/)(?:lib/fm(?:guard|hooks)\.py$|hooks/|tests/(?:test_guard\w*\.py$|"
-                   r"fixtures/(?:guard_|gen_evasions\.py$)))", re.I)  # I: macOS folds case
+# T-1517: the guard's own files (its code, the hooks that run it, the replay that scores it, this lock, the mutants and
+# the bench gate, its tests and corpora) are locked whatever TEXT or --plugin-dir later allow: a revision there is the
+# one change the bench can't judge safely
+GUARD = re.compile(r"(?:^|/)(?:lib/fm(?:guard|hooks|replay|evolve|mutate|bench)\.py$|hooks/|"
+                   r"tests/(?:test_guard\w*\.py$|fixtures/(?:guard_|gen_evasions\.py$)))", re.I)  # I: macOS folds case
 IMPROVED = 0.05  # cost per case down this much (or more passes) counts as better, not a tie
 
 
@@ -104,10 +105,12 @@ def generation(p, repo, target, plugin_dir="plugin", drop=False, cases=None, liv
         raise ValueError(f"--target must be an instruction file in {plugin_dir}/ (skills/**/*.md, skills/routing.json, "
                          f"rules/*.md, agents/*.md, output-styles/*.md), got {target!r}")
     head = git(repo, "rev-parse", "HEAD").stdout.strip()
-    r = git(repo, "show", f"HEAD:{target}")  # both arms start from the last commit, never the working tree
+    # both arms start from the last commit, never the working tree; read at the pinned sha (a commit landing between
+    # here and the worktree can't swap the file)
+    r = git(repo, "show", f"{head}:{target}")
     if r.returncode or not head:
         raise ValueError(f"{target} isn't committed in {repo}")
-    mode = git(repo, "ls-tree", "HEAD", "--", target).stdout.split(" ", 1)[0]
+    mode = git(repo, "ls-tree", head, "--", target).stdout.split(" ", 1)[0]
     if mode not in ("100644", "100755"):  # T-1517: written through, a link would put the child's text in what it names
         raise ValueError(f"{target} is not a plain file in HEAD (git mode {mode or 'unknown'}): not evolved")
     old = r.stdout
