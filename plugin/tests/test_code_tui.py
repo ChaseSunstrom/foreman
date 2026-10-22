@@ -1379,6 +1379,128 @@ class Fuzz(unittest.TestCase):
         T.render(st, 80, 24, T.DEFAULTS, None, t=5.0)
 
 
+HOSTILE = {  # T-1516: what a terminal draws in an odd number of columns, or none
+    "cjk": "日本語テキスト漢字かな", "emoji": "🚀🔥 ok 👍🏽 ❤️ ✔️", "combining": "éé̂ ạ̈ ́lead",
+    "rtl": "שלום עולם مرحبا ‮abc‬", "zerowidth": "a​b‍c⁠d﻿e­f",
+    "control": "a\x00b\x07c\x1b[31md\x7fe\x85f\r\n\tg", "variation": "x️y︎ ❤️", "mix": "日́本🚀‍🔥 שׁ",
+    "long": "日本語🚀" * 60,
+}
+CRASHES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "crashes")
+
+
+def column_width(cell):
+    """Columns a terminal gives one canvas cell, by its own rule (not fmcodetui's): wide 2, marks and format 0."""
+    import unicodedata
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 0 if unicodedata.category(c) in ("Mn", "Me", "Cf", "Cc")
+               else 1 for c in cell)
+
+
+class HostileWidth(unittest.TestCase):
+    """T-1516: every panel and view, fed every hostile string, draws rows that fill exactly their width. A crash saves
+    the case under fixtures/crashes (and a file there replays: test_a_saved_crash_replays)."""
+    SIZES = ((20, 12), (40, 16), (80, 24), (121, 34))
+
+    def events(self, s):
+        e = [{"event": "start", "request": s, "model": s, "worker": s, "schema": 1, "ts": 1000},
+             {"event": "plan", "plan": {"type": "FIX", "tier": "S", "title": s, "steps": [s, s],
+                                        "criteria": [{"text": s, "verify": s}]}},
+             {"event": "task", "task": s}, {"event": "step", "step": 1, "text": s},
+             {"event": "say", "text": s}, {"event": "tokens", "total_in": 10, "total_out": 5, "call_in": 1, "call_out": 1},
+             {"event": "action", "action": s, "target": s, "result": s, "detail": s},
+             {"event": "verify", "criterion": 1, "label": s, "exit": 1, "cmd": s, "output": s},
+             {"event": "changed", "step": 1, "files": [s], "stat": {s: [1, 2]}},
+             {"event": "error", "text": s}, {"event": "blocked", "text": s, "reason": s}]
+        return e
+
+    def screens(self, s):
+        """(name, app) for the main screen with each panel on its own, and each view with s in its rows."""
+        T = tui()
+        out = []
+        for name in T.PANELS:
+            cfg = dict(T.DEFAULTS, layout={"columns": [[name]], "widths": [1], "heights": [[1]]})
+            out.append((f"panel {name}", cfg, "main", {}))
+        extra = {"history": dict(items=[{"status": "closed", "task": s, "request": s, "ts": 1760000000}]),
+                 "picker": dict(items=[("model", s), ("worker", s)]),
+                 "home": dict(items=[{"project": s, "root": s, "exists": False}, {"project": s, "error": s},
+                                     {"project": s, "exists": True, "active": {"id": s, "title": s}}]),
+                 "project": dict(items=[{"kind": "error", "text": s}, {"kind": "run", "status": "x", "task": s,
+                                                                     "request": s},
+                                        {"section": "queue", "task": {"id": s, "type": s, "tier": s, "title": s,
+                                                                      "reason": s}}]),
+                 "diff": dict(view_lines=["+" + s, "-" + s, "@@ " + s, s]),
+                 "looks": dict(look_answers=[], look_pairs=[(s, s)], items=[(s, s)]),
+                 "help": {}}
+        for mode, attrs in extra.items():
+            out.append((f"view {mode}", T.DEFAULTS, mode, attrs))
+        return out
+
+    def rows_of(self, cv):
+        bad = []
+        for y, row in enumerate(cv.cells):
+            cols = sum(column_width(c) if c else 0 for c, _ in row)
+            if cols != cv.w:
+                bad.append((y, cols))
+            for x, (c, _) in enumerate(row):  # a wide character is followed by its empty half, and only then
+                if c == "" and not (x and column_width(row[x - 1][0]) == 2):
+                    bad.append((y, f"orphan half at {x}"))
+        return bad
+
+    def sweep(self, label, s, size, cfg, mode, attrs):
+        T = tui()
+        app = T.App(cfg, spawn=lambda *a, **k: None)
+        try:
+            for e in self.events(s):
+                app.feed(e)
+            for k, v in attrs.items():
+                setattr(app, k, v)
+            app.mode = mode
+            cv = T.render(app.state, size[0], size[1], cfg, app, t=100.0)
+        except Exception as ex:
+            os.makedirs(CRASHES, exist_ok=True)  # the crash replays: test_a_saved_crash_replays
+            import hashlib
+            blob = {"label": label, "text": s, "size": list(size), "mode": mode, "error": f"{type(ex).__name__}: {ex}"}
+            name = hashlib.sha1(json.dumps(blob, sort_keys=True).encode()).hexdigest()[:10]
+            with open(os.path.join(CRASHES, f"{name}.json"), "w", encoding="utf-8") as f:
+                json.dump(blob, f, ensure_ascii=False, indent=1)
+            raise
+        return self.rows_of(cv)
+
+    def test_every_panel_and_view_fills_its_width_for_each_hostile_string(self):
+        for key, s in HOSTILE.items():
+            for label, cfg, mode, attrs in self.screens(s):
+                for size in self.SIZES:
+                    with self.subTest(string=key, screen=label, size=size):
+                        self.assertEqual(self.sweep(label, s, size, cfg, mode, attrs), [])
+
+    def test_a_saved_crash_replays(self):
+        saved = sorted(f for f in (os.listdir(CRASHES) if os.path.isdir(CRASHES) else []) if f.endswith(".json"))
+        for f in saved:  # each file is a bug not yet fixed: it fails here until it renders
+            with open(os.path.join(CRASHES, f), encoding="utf-8") as fh:
+                c = json.load(fh)
+            for label, cfg, mode, attrs in self.screens(c["text"]):
+                if label == c["label"]:
+                    with self.subTest(crash=f):
+                        self.assertEqual(self.sweep(label, c["text"], tuple(c["size"]), cfg, mode, attrs), [])
+
+    def test_a_crash_writes_a_fixture(self):
+        import shutil
+        import tempfile
+        T = tui()
+        global CRASHES
+        old, CRASHES = CRASHES, tempfile.mkdtemp()
+        try:
+            with unittest.mock.patch.object(T, "render", side_effect=RuntimeError("boom")):
+                with self.assertRaises(RuntimeError):
+                    label, cfg, mode, attrs = self.screens("x")[0]
+                    self.sweep(label, "x", (20, 12), cfg, mode, attrs)
+            self.assertEqual(len(os.listdir(CRASHES)), 1)
+            with open(os.path.join(CRASHES, os.listdir(CRASHES)[0]), encoding="utf-8") as f:
+                self.assertEqual(json.load(f)["error"], "RuntimeError: boom")
+        finally:
+            shutil.rmtree(CRASHES)
+            CRASHES = old
+
+
 class Home(unittest.TestCase):
     """T-1330: fm code opens the app: home lists every Foreman project, a project's view its work and past runs, and a
     run starts in that project's folder."""
