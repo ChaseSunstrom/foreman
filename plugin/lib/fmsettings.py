@@ -22,6 +22,7 @@ import json
 import math
 import os
 import re
+import stat
 import sys
 import tempfile
 import tomllib
@@ -365,15 +366,39 @@ def _set_app(key, value, path, real, table, name, base=None):
     return value, errors
 
 
-def _read_app(path):
-    """tui.toml's text ("" when there is none); SettingError when it can't be read."""
+APP_MAX = 1_000_000  # bytes of tui.toml read: a settings file, not a data file
+
+
+def _read_raw(path):
+    """tui.toml's bytes and its stat ((b"", None) when there is none). SettingError, its message starting with the
+    path, when it can't be read, isn't a regular file (a FIFO would block the reader, /dev/zero never ends) or is over
+    APP_MAX: nothing of it is read past that."""
     try:
-        with open(path, encoding="utf-8") as f:
-            return f.read()
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)  # a FIFO opens at once rather than wait for a writer
     except FileNotFoundError:
-        return ""
-    except (OSError, UnicodeDecodeError) as e:
-        raise SettingError(f"can't read {path}: {e}") from None
+        return b"", None
+    except OSError as e:
+        raise SettingError(f"{path}: can't read it ({e.strerror or e})") from None
+    try:
+        with os.fdopen(fd, "rb") as f:
+            st = os.fstat(fd)  # the file opened, not whatever the name points at by now
+            if not stat.S_ISREG(st.st_mode):
+                raise SettingError(f"{path}: not a regular file, not read")
+            data = f.read(APP_MAX + 1)
+    except OSError as e:
+        raise SettingError(f"{path}: can't read it ({e.strerror or e})") from None
+    if len(data) > APP_MAX:
+        raise SettingError(f"{path}: over {APP_MAX // 1_000_000} MB, not read (edit it by hand)")
+    return data, st
+
+
+def _read_app(path):
+    """tui.toml's text ("" when there is none), line breaks read as open() reads them; SettingError (_read_raw) when
+    it can't be read."""
+    try:
+        return _read_raw(path)[0].decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    except UnicodeDecodeError as e:
+        raise SettingError(f"{path}: can't read it ({e})") from None
 
 
 def _plan_app(key, value, path, table, name, text=None):
@@ -382,7 +407,7 @@ def _plan_app(key, value, path, table, name, text=None):
     import fmcodetui as T
     if text is None:
         text = _read_app(path)
-    if len(text) > 1_000_000:  # the line scan parses each value as it goes: a settings file, not a data file
+    if len(text) > APP_MAX:  # the line scan parses each value as it goes: a settings file, not a data file
         raise SettingError(f"{path} is over 1 MB: edit it by hand")
     if _parses(text) is None:
         raise SettingError(f"{path} isn't valid TOML: fix it first (fm code tui names the line)")
@@ -623,11 +648,11 @@ def written(problems=None):
     problems = [] if problems is None else problems
     found, path = [], app_path()
     try:
-        with open(path, "rb") as f:
-            raw = tomllib.load(f)
-    except FileNotFoundError:
+        raw = tomllib.loads(_read_raw(path)[0].decode("utf-8"))  # T-1543: never a FIFO, a device or past 1 MB
+    except SettingError as e:
+        problems.append(("app", str(e)))
         raw = {}
-    except (OSError, ValueError, RecursionError) as e:  # TOMLDecodeError and UnicodeDecodeError are ValueErrors
+    except (ValueError, RecursionError) as e:  # TOMLDecodeError and UnicodeDecodeError are ValueErrors
         problems.append(("app", f"can't read {path}: {e}"))
         raw = {}
     for k, v in raw.items():
@@ -898,12 +923,22 @@ def _keep_good(text):
 
 
 def reread(seen):
-    """tui.toml read again for the running app (`seen`: what it last read; updated): None when it is as it was, else
-    (the config to run now, or None to keep the running one, a note saying what changed)."""
+    """tui.toml read again for the running app (`seen`: what it last read and the file's stat then; updated): None
+    when it is as it was, else (the config to run now, or None to keep the running one, a note saying what changed).
+    Read only when its stat changed, so a file it can't read (a FIFO, one past 1 MB, bad UTF-8) is said once."""
+    try:
+        st = os.stat(seen["path"])  # never blocks, a FIFO's included
+        sig = (st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+    except OSError:
+        sig = None  # gone, or its folder unreadable: _read_app says which
+    # ponytail: an edit of the same size within the clock tick of the last read is missed until the file changes again
+    if "sig" in seen and sig == seen["sig"]:
+        return None
+    seen["sig"] = sig
     try:
         text = _read_app(seen["path"])
-    except SettingError:
-        return None  # unreadable for now (an editor mid-save): tried again on the next read
+    except SettingError as e:
+        return None, _safe(f"{e}: the running look kept")
     if text == seen["text"]:
         return None
     before, seen["text"] = seen.pop("valid", seen["text"]), text  # the last that parsed: a half-saved file between
@@ -943,6 +978,9 @@ def _conflict(keys, text, base, path):
     `base`: never overwritten unseen. Its other changes stay, as the write is made in place."""
     if base is None or text == base:
         return
+    if _parses(text) is None:  # every key would count as changed ("now unset"): the file is what's wrong
+        raise SettingError(f"{path} isn't valid TOML (changed since the app read it): fix it first (fm code tui names "
+                           "the line)")
     theirs, now = set(changed(base, text)), _flat(text)
     hit = [k for k in keys if _norm(k) in theirs]
     if hit:
@@ -953,6 +991,8 @@ def _conflict(keys, text, base, path):
 def _build(good, bad, keys):
     """tui.toml text: the settings `good` holds ({setting: value}) with `keys` as `bad` has them (removed when it
     hasn't)."""
+    # rebuilt from the flattened values, not the file's own text: comments, order and spelling (keys.ENTER is enter, a
+    # [colors.ok] table an inline one) go; what load_config reads stays, and bisect checks the full rebuild fails too
     import fmcodetui as T
     flat = dict(good)
     for k in keys:

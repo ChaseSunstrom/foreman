@@ -1722,8 +1722,8 @@ class App:
             done, refused = fmsettings.set_key("motion", nxt, base=self._base())
         except Exception as e:  # a lock or a write that failed
             done, refused = [], [f"not written ({type(e).__name__}: {e})"]
-        if any(s == "app" for s, _, _ in done):
-            self._own_write()
+        if any(s == "app" for s, _, _ in done):  # T-1543: as every write: what an outside edit merged in shows too
+            self._settings_reload()
         self.cfg = dict(self.cfg, motion=nxt)
         if self.mode == "help":  # any key closes the poster, z too
             self.mode = "main"
@@ -2091,8 +2091,8 @@ class App:
                 pass
 
     def _base(self):
-        """T-1543: the tui.toml text the app last read (None: not watched)."""
-        return self.tui["text"] if self.tui else None
+        """T-1543: the tui.toml text the app last read and parsed (None: not watched)."""
+        return self.tui.get("valid", self.tui["text"]) if self.tui else None
 
     def _watch_tui(self, now=False):
         """T-1543: tui.toml written by another program while the app runs (an editor, fm settings in a shell), read
@@ -2577,11 +2577,13 @@ def load_config(path=None):
     cfg = copy.deepcopy(DEFAULTS)
     path = path or config_path()
     try:
-        with open(path, "rb") as f:
-            user = tomllib.load(f)
-    except FileNotFoundError:
-        return cfg, []
-    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError, RecursionError) as e:
+        data, st = fmsettings._read_raw(path)  # T-1543: never a FIFO (it would block), a device or a file past 1 MB
+        if st is None:
+            return cfg, []
+        user = tomllib.loads(data.decode("utf-8"))
+    except fmsettings.SettingError as e:  # its message starts with the path
+        return cfg, [_escaped(str(e))]
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError, RecursionError) as e:
         return cfg, [f"{path}: {_escaped((str(e).splitlines() or [type(e).__name__])[0])}"]
     errors = []
     bad = lambda msg: errors.append(f"{path}: {_escaped(msg)}")  # a name from the file, said, never run by a terminal

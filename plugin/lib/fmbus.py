@@ -559,7 +559,7 @@ def cmd_bus(args):
     me = fmcli.session()
     if args.action == "send":
         if len(args.words) < 2:
-            raise fmcli.UsageError("fm bus send <session|all> "<text>" [--type note|steer|stop] [--wake]")
+            raise fmcli.UsageError('fm bus send <session|all> "<text>" [--type note|steer|stop] [--wake]')
         msg = send(args.words[0], " ".join(args.words[1:]), args.type, me)
         woke = [s for s in ([x["session_id"] for x in live()] if msg["to"] == "all" else [msg["to"]])
                 if args.wake and wake(s)]

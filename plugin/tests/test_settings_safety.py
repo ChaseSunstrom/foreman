@@ -62,6 +62,17 @@ class LastKnownGood(Case):
         self.assertEqual(read_text(self.toml), bad, "tui.toml as the user left it")
         self.assertEqual(read_text(fmsettings.good_path()), 'border = "heavy"\n', "a bad start keeps the good copy")
 
+    def test_the_good_copy_never_brings_back_a_value_the_app_refuses(self):
+        self.write('border = "nope"\n')
+        cfg, errors, note, _ = fmsettings.boot()
+        self.assertEqual((cfg["border"], note), (T.DEFAULTS["border"], None))
+        self.assertIn("border", errors[0])
+        self.write('[layout]\nnarrow_below = 7\n')
+        cfg, errors, note, _ = fmsettings.boot()
+        self.assertIn("last good", note)
+        self.assertEqual(cfg["border"], T.DEFAULTS["border"], "the copy is loaded as tui.toml is: skipped there too")
+        self.assertIn("border", errors[0])
+
     def test_with_no_good_copy_it_boots_the_defaults(self):
         self.write('[layout]\nnarrow_below = 7\n')
         cfg, _, note, _ = fmsettings.boot()
@@ -122,6 +133,61 @@ class ExternalEdit(Case):
         self.write('border = "double"\n[layout]\nnarrow_below = 7\nwidths = [50, 50]\n')
         self.tick(app)
         self.assertIn("(layout.widths)", app.message, "listed against the last file that parsed")
+
+    def tick_bounded(self, app):
+        """A tick that must come back: a read that blocks (a FIFO with no writer) fails the test, never hangs it."""
+        import threading
+        t = threading.Thread(target=self.tick, args=(app,), daemon=True)
+        t.start()
+        t.join(10)
+        self.assertFalse(t.is_alive(), "the watch blocked on tui.toml")
+
+    def test_a_fifo_a_device_or_a_huge_file_never_freezes_the_watch(self):
+        app = self.app()
+        app.show_settings()  # its list is read again on an outside edit: that read is bounded too
+        os.unlink(self.toml)
+        os.mkfifo(self.toml)
+        self.tick_bounded(app)
+        self.assertIn("not a regular file", app.message)
+        self.assertEqual(app.cfg["border"], "heavy", "the running look kept")
+        os.unlink(self.toml)
+        if os.path.exists("/dev/zero"):
+            os.symlink("/dev/zero", self.toml)
+            self.tick_bounded(app)
+            self.assertIn("not a regular file", app.message)
+            os.unlink(self.toml)
+        self.write('border = "double"\n' + "# padding\n" * 120_000)  # past the 1 MB a settings file gets
+        self.tick_bounded(app)
+        self.assertIn("over 1 MB", app.message)
+        self.assertEqual(app.cfg["border"], "heavy")
+        app.message = ""
+        self.tick_bounded(app)
+        self.assertEqual(app.message, "", "said once")
+
+    def test_an_unreadable_file_is_said_once(self):
+        app = self.app()
+        with open(self.toml, "wb") as f:
+            f.write(b'border = "\xff"\n')
+        self.tick(app)
+        self.assertIn("can't read", app.message)
+        app.message = ""
+        self.tick(app)
+        self.assertEqual(app.message, "", "said once")
+
+    def test_the_hush_key_takes_an_outside_edit_made_just_before(self):
+        app = self.app()
+        self.write('border = "double"\n')  # within the second before the watch reads it again
+        app.key("z")
+        self.assertEqual((app.cfg["border"], app.cfg["motion"]), ("double", "reduced"))
+        self.assertIn('border = "double"', read_text(self.toml))
+
+    def test_a_file_left_invalid_outside_says_so_not_unset(self):
+        base = 'border = "heavy"\n'
+        self.write('border = "double"\n[layout\n')
+        done, refused = fmsettings.set_key("border", "rounded", base=base)
+        self.assertEqual(done, [])
+        self.assertIn("isn't valid TOML", refused[0])
+        self.assertNotIn("unset", refused[0])
 
     def test_its_own_writes_are_not_outside_edits(self):
         app = self.app()
@@ -203,10 +269,13 @@ class Monkey(Case):
         rnd = random.Random(1543)
         # never r: the runners list's Enter starts a real coding CLI
         keys = list("/:mbql jkJKHL\n\x1b\x7f") + ["KEY_UP", "KEY_DOWN", "KEY_NPAGE", "\t", "1", "a", '"', "["]
-        for _ in range(400):
-            app.key(rnd.choice(keys))
-            if app.mode not in ("settings", "layout", "runners", "settings_loading"):
-                app.show_settings()
-            REAL(app.state, 100, 30, app.cfg, app)
+        real, sets = fmsettings.set_key, []
+        with mock.patch.object(fmsettings, "set_key", side_effect=lambda *a, **k: sets.append(a) or real(*a, **k)):
+            for k in [":", *"set border double", "\n"] + [rnd.choice(keys) for _ in range(400)]:
+                app.key(k)
+                if app.mode not in ("settings", "layout", "runners", "settings_loading"):
+                    app.show_settings()
+                REAL(app.state, 100, 30, app.cfg, app)
+        self.assertIn(("border", "double", None), sets, "the :set line was reached")
         self.assertIsNotNone(fmsettings._parses(read_text(self.toml)), "tui.toml still parses")
         self.assertIsNone(fmsettings.render_error(T.load_config()[0]), "and the app can draw with it")
