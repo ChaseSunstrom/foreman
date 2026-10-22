@@ -6104,6 +6104,16 @@ def _build_parser():
     s.add_argument("--block", action="store_true", help="compile N as a block rule, not a warn: the user's to type (T-1063)")
     s.add_argument("--overwrites", action="store_true", help="files the user's own commits reworked soon after an "
                                                             "agent's (T-0655)")
+    s = add("looks", lazy("fmtaste", "cmd_looks"), tier=("Reports", 1055),
+            help="your taste in looks (T-1537): the twelve ranked by what you kept; keep|revert|not LOOK; calibrate "
+                 "(12 A-or-B pairs: a keyboard picker on a terminal, --answers to record); learn PATH… (only files "
+                 "you name, read-only, never the network)")
+    s.add_argument("action", nargs="?", metavar="rank|keep|revert|not|calibrate|learn",
+                   help="checked by fm looks itself, so a look named here gets the fix (fm looks keep LOOK)")
+    s.add_argument("words", nargs="*", metavar="LOOK|PATH")
+    s.add_argument("--why", help="keep/revert/not: the user's words")
+    s.add_argument("--answers", help="calibrate: 12 answers, a, b or n (neither), comma-separated, in pair order")
+    s.add_argument("--round", type=int, help="calibrate: the round the pairs were printed for")
     s = add("lane", lazy("fmlanes", "cmd_lane"), tier=("Running elsewhere", 1120), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent; "
