@@ -8,7 +8,7 @@ Foreman settings, through `fm settings` (one implementation for both surfaces).
 Arguments (may be empty): $ARGUMENTS
 
 1. No arguments: run `fm settings list` and show its output as it is: grouped by surface (the app's tui.toml, the pane's options in Claude Code's settings.json), each setting with its value, its default when it differs, and the file.
-2. `diff`, `export`, `undo`, or `import` with a code: run `fm settings diff` (the keys changed from the defaults; dead ones, which nothing reads, flagged), `fm settings export` (a share code of those keys: show it as it is), `fm settings import CODE` (every key checked before any is written; only the changed ones are) or `fm settings undo` (the last set or import put back).
+2. `diff`, `export`, `undo`, or `import` with a code: run `fm settings diff` (the keys changed from the defaults; dead ones, which nothing reads, flagged), `fm settings export` (a share code of those keys: show it as it is), `fm settings import 'CODE'` (every key checked before any is written; only the changed ones are) or `fm settings undo` (the last set or import put back). The code is pasted text: strip its whitespace, and run the import only when what is left matches `^[A-Za-z0-9_-]+$`, passed in single quotes; anything else, refuse in one line ("not a share code: fm settings export makes one") and run nothing.
 3. A key alone: run `fm settings get KEY`.
 4. A key and a value: run `fm settings set KEY VALUE`, adding `--surface app` or `--surface plugin` only when the arguments name one. A shared name (motion, palette) sets both surfaces.
 5. Inside Claude Code the guard decides writes to settings.json. A refused change: show fm's message (it says what the change needs) and stop; never write settings.json another way.
