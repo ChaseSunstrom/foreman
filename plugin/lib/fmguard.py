@@ -1120,7 +1120,21 @@ def _tokens(cmd):
         lex.commenters = ""
         return list(lex)
     except ValueError:
-        return re.sub(r"([;&|()])", r" \1 ", cmd).split()  # unbalanced quotes: still split commands apart
+        # unbalanced to shlex (a quote inside "$( )" starts a fresh context to bash, or a later line's odd quote, after
+        # bash has run every complete line before it): still split commands apart, and read each word whose own quotes
+        # balance as bash does, so 'cat' is cat (T-1561). A word with an odd quote keeps it (the debris rule, T-0982);
+        # words are never joined across a space, so nothing hides inside a string a quote scan misplaced
+        return [_bash_word(w) for w in re.sub(r"([;&|()])", r" \1 ", cmd).split()]
+
+
+def _bash_word(word):
+    if not any(q in word for q in "'\"\\"):
+        return word
+    try:
+        parts = shlex.split(word)
+    except ValueError:
+        return word
+    return parts[0] if len(parts) == 1 else word
 
 
 def _split(tokens):

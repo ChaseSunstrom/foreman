@@ -2104,6 +2104,32 @@ class AnsiCQuoting(GuardCase):
                 self.assertIsNone(self.bash(cmd))
 
 
+class TokenFallback(GuardCase):
+    """T-1561: a quote inside a $( ) or `…` within "…" starts a fresh context to bash but ends the string to shlex, so
+    shlex failed and the quote-blind fallback split kept 'cat' as the name (its classifiers never ran)."""
+    def test_a_quoted_name_after_nested_quotes_is_read_as_bash_reads_it(self):
+        for plain, hidden in (
+                ("cat ~/.ssh/id_ed25519", "echo \"$(echo 'a\"b')\" ; 'cat' ~/.ssh/id_ed25519"),
+                ("cat ~/.ssh/id_ed25519", "echo \"$(echo 'a\"b')\" ; \"cat\" ~/.ssh/id_ed25519"),
+                ("cat ~/.ssh/id_ed25519", "echo \"`echo 'a\"b'`\" ; 'cat' ~/.ssh/id_ed25519"),
+                ("cat ~/.ssh/id_ed25519", "echo \"$(echo \"$(echo 'a\"b')\")\" ; c'a't ~/.ssh/id_ed25519"),
+                ("rm -rf ~", "echo \"$(echo 'a\"b')\" ; 'rm' -rf ~"),
+                # bash runs each complete line before a later line's odd quote stops it: the old split's words
+                ("cat ~/.ssh/id_ed25519", "'cat' ~/.ssh/id_ed25519\necho 'x"),
+                ("rm -rf ~", "\\r\"m\" -rf ~\necho 'x")):
+            with self.subTest(hidden=hidden):
+                want = self.bash(plain)
+                self.assertIsNotNone(want, plain)
+                self.assertBlocked(self.bash(hidden), want.category, hidden)
+
+    def test_the_words_are_bash_words(self):
+        # the split shlex falls back to: each word whose own quotes balance read as bash reads it; an odd one kept
+        self.assertEqual(g._tokens("echo \"$(echo 'a\"b')\" ; 'cat' x"),
+                         ["echo", '"$', "(", "echo", 'a"b', ")", '"', ";", "cat", "x"])
+        self.assertEqual(g._tokens("'cat' \"a\"'b' \\x; echo 'a"), ["cat", "ab", "x", ";", "echo", "'a"])
+        self.assertIsNone(self.bash("echo \"$(echo 'a\"b')\" ; 'cat' README.md"))
+
+
 class CredentialReadHook(ForemanTestCase):
     """T-1224: the Read tool's own hook entry denies a credential read (fail-closed on that check), and fm guard try
     --tool Read gives the same verdict."""
