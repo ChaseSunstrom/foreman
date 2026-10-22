@@ -1154,74 +1154,121 @@ def _in_use_marker(root, d, f, full):
     return bool(m) and m.group(1) == f.encode()
 
 
-_SKIP_CAP = 20_000
+_SKIP_CAP, _SKIP_DIRS, _SKIP_TOTAL = 20_000, 20_000, 100_000  # per skipped folder: entries, then folders; per plugin
+_NAMED_CAP, _NAMED_BYTES = 500, 64 << 20  # named scripts in skipped folders read per plugin, and their bytes
 
 
-def _stand_skipped(root, top, stand):
-    """T-1459: a folder _tree_hash skips (node_modules, .venv, …) by stat stand-ins: each entry's path, mode, size and
-    mtime_ns, a link's target, a folder it can't list. Never opened (a FIFO can't block), links never followed.
-    ponytail: past _SKIP_CAP entries the folder is named as too many and the rest is unseen; raise it if real trees
-    hit it."""
-    n, rel = 0, lambda p: os.path.relpath(p, root).encode()
-    for d, dirs, files in os.walk(top, onerror=lambda e: stand(rel(e.filename or top) + b"\0!unlisted\0")):
+def _budget():
+    """T-1459 review: what one plugin's skipped folders and named scripts may still cost, shared by all of them."""
+    return {"entries": _SKIP_TOTAL, "bytes": _NAMED_BYTES, "read": set()}
+
+
+def _unlisted_stand(root, e, stand):
+    """T-1444: a folder a walk can't list: its mode and times stand in for its files."""
+    try:
+        st = os.stat(e.filename)
+        stand(os.fsencode(os.path.relpath(e.filename or root, root))
+              + f"\0!unlisted {st.st_mode} {st.st_mtime_ns} {st.st_ctime_ns}\0".encode())
+    except (OSError, TypeError):
+        pass
+
+
+def _stand_skipped(root, top, stand, budget):
+    """T-1459: a folder _tree_hash skips (node_modules, .venv, …) by stat stand-ins: each entry's path, mode, size,
+    mtime and ctime, a link's target, a folder it can't list. Never opened (a FIFO can't block), links never followed.
+    Past _SKIP_CAP entries only folders, by their times (a file or package added or removed there still shows), up to
+    _SKIP_DIRS of them; the plugin's budget bounds all its skipped folders together.
+    ponytail: an edit in place past the cap is unseen; raise the cap if real trees hit it."""
+    n = folders = 0
+    rel = lambda p: os.fsencode(os.path.relpath(p, root))
+    def folder(d):
+        try:
+            st = os.lstat(d)
+            stand(rel(d) + f"\0dir {st.st_mtime_ns} {st.st_ctime_ns}\0".encode())
+        except OSError:
+            pass
+    for d, dirs, files in os.walk(top, onerror=lambda e: _unlisted_stand(root, e, stand)):
         dirs.sort()
-        for x in sorted(dirs + files):
-            n += 1
-            if n > _SKIP_CAP:
-                stand(rel(top) + b"\0!too-many\0")
+        if budget["entries"] <= 0:
+            stand(rel(top) + b"\0!too-many\0")
+            return
+        if n >= _SKIP_CAP:
+            folders += 1
+            budget["entries"] -= 1
+            if folders > _SKIP_DIRS:
+                stand(rel(top) + b"\0!too-many-dirs\0")
                 return
+            folder(d)
+            continue
+        for x in sorted(dirs + files):
+            if n >= _SKIP_CAP or budget["entries"] <= 0:
+                stand(rel(top) + b"\0!too-many\0")
+                folder(d)
+                break
+            n += 1
+            budget["entries"] -= 1
             p = os.path.join(d, x)
             try:
                 st = os.lstat(p)
                 if stat.S_ISLNK(st.st_mode):
                     stand(rel(p) + b"\0->" + os.fsencode(os.readlink(p)) + b"\0")
                 elif not stat.S_ISDIR(st.st_mode):
-                    stand(rel(p) + f"\0{st.st_mode} {st.st_size} {st.st_mtime_ns}\0".encode())
+                    stand(rel(p) + f"\0{st.st_mode} {st.st_size} {st.st_mtime_ns} {st.st_ctime_ns}\0".encode())
             except OSError:  # removed mid-walk
                 continue
 
 
-def _stand_named(root, rel, stand):
-    """T-1459: a script a plugin's hooks, MCP or LSP servers name inside a skipped folder, by content (a stat stand-in
-    misses an edit that keeps size and mtime). Inside the plugin only, a regular file up to 4 MB, opened non-blocking."""
+def _stand_named(root, rels, stand, budget):
+    """T-1459: the scripts a plugin's hooks, MCP or LSP servers name inside a skipped folder, by content. Only a file
+    inside the plugin (a link out is its target path in the stat stand-ins; a file outside is never read), regular, up
+    to 4 MB (past it, its size and times), opened non-blocking; each real file once, at most _NAMED_CAP files and
+    _NAMED_BYTES bytes per plugin, then named as too many."""
     import hashlib
     base = os.path.realpath(root)
-    real = os.path.realpath(os.path.join(root, rel))
-    if os.path.commonpath([real, base]) != base or not os.path.isfile(real):
-        return  # outside the plugin or not a file: capabilities names it
-    try:
-        fd = os.open(real, os.O_RDONLY | os.O_NONBLOCK)
-        with os.fdopen(fd, "rb") as fh:
-            st = os.fstat(fd)
-            ok = stat.S_ISREG(st.st_mode) and st.st_size <= 4_000_000
-            data = hashlib.sha256(fh.read(4_000_001)).hexdigest() if ok else f"!not-read {st.st_mode} {st.st_size}"
-    except OSError:
-        data = "!unreadable"
-    stand(rel.encode() + b"\0=" + data.encode() + b"\0")
+    for rel in rels:
+        real = os.path.realpath(os.path.join(root, rel))
+        if os.path.commonpath([real, base]) != base or real in budget["read"] or not os.path.isfile(real):
+            continue
+        if len(budget["read"]) >= _NAMED_CAP:
+            stand(b"\0!too-many-named\0")
+            return
+        budget["read"].add(real)
+        try:
+            fd = os.open(real, os.O_RDONLY | os.O_NONBLOCK)
+            with os.fdopen(fd, "rb") as fh:
+                st = os.fstat(fd)
+                if stat.S_ISREG(st.st_mode) and st.st_size <= 4_000_000:
+                    if st.st_size > budget["bytes"]:
+                        stand(b"\0!too-many-named\0")
+                        return
+                    body = fh.read(4_000_001)
+                    budget["bytes"] -= len(body)
+                    data = hashlib.sha256(body).hexdigest()
+                else:
+                    data = f"!not-read {st.st_mode} {st.st_size} {st.st_mtime_ns} {st.st_ctime_ns}"
+        except OSError:
+            data = "!unreadable"
+        stand(os.fsencode(rel) + b"\0=" + data.encode() + b"\0")
 
 
-def _tree_hash(root, h, cap=4000, skipped=None):
+def _tree_hash(root, h, cap=4000, skipped=None, deps=None, budget=None):
     """Every file under an install dir (its hooks, scripts and code, not just its manifest), path and bytes, in order.
     T-1434: what h only names goes into skipped by a cheap stand-in: a symlink's target path (a linked folder's too,
     which the walk never enters) and a large file's size and mtime. A separate hash, so a baseline recorded before it
-    still compares its sha as before."""
+    still compares its sha as before. T-1459: the folders h skips (but .git) go into deps by stat stand-ins, a third
+    hash for the same reason."""
     n, stand = 0, (skipped.update if skipped is not None else lambda b: None)
+    budget = _budget() if budget is None else budget
     def unlisted(e):  # T-1444: a folder the walk can't list is named, and its mode and times stand in for its files
-        rel = os.path.relpath(e.filename or root, root).encode()
-        h.update(rel + b"\0!unlisted\0")
-        try:
-            st = os.stat(e.filename)
-            stand(rel + f"\0!unlisted {st.st_mode} {st.st_mtime_ns} {st.st_ctime_ns}\0".encode())
-        except (OSError, TypeError):
-            pass
+        h.update(os.path.relpath(e.filename or root, root).encode() + b"\0!unlisted\0")
+        _unlisted_stand(root, e, stand)
     for d, dirs, files in os.walk(root, onerror=unlisted):
         for x in sorted(dirs):
             link = os.path.join(d, x)
             if os.path.islink(link):
                 stand(os.path.relpath(link, root).encode() + b"\0->" + os.fsencode(os.readlink(link)) + b"\0")
-        for x in sorted(dirs):  # T-1459: what the walk skips is still seen by stat, in skipped only (sha unchanged)
-            if x in _SUPPLY_SKIP and x != ".git" and not os.path.islink(os.path.join(d, x)):
-                _stand_skipped(root, os.path.join(d, x), stand)
+            elif deps is not None and x in _SUPPLY_SKIP and x != ".git":
+                _stand_skipped(root, link, deps.update, budget)
         dirs[:] = sorted(x for x in dirs if x not in _SUPPLY_SKIP)
         for f in sorted(files):
             full = os.path.join(d, f)
@@ -1260,23 +1307,24 @@ def _supply(claude):
     plugins = (_load_json(os.path.join(claude, "plugins", "installed_plugins.json")) or {})
     plugins = plugins.get("plugins") if isinstance(plugins, dict) else None
     for pid, installs in sorted((plugins if isinstance(plugins, dict) else {}).items()):
-        h, skipped, caps = hashlib.sha256(), hashlib.sha256(), {}
+        h, skipped, deps, caps, budget = hashlib.sha256(), hashlib.sha256(), hashlib.sha256(), {}, _budget()
         try:
             for inst in installs if isinstance(installs, list) else [installs]:
                 root = inst.get("installPath") if isinstance(inst, dict) else None
                 if isinstance(root, str) and root and os.path.isdir(root):  # review: never "" (the cwd)
-                    _tree_hash(root, h, skipped=skipped)
+                    _tree_hash(root, h, skipped=skipped, deps=deps, budget=budget)
                     got = fmplugins.capabilities(root)
-                    for s in got.get("scripts", []):  # T-1459: what runs from a skipped folder, by content
-                        if set(s.split(os.sep)) & _SUPPLY_SKIP:
-                            _stand_named(root, s, skipped.update)
+                    # T-1459: what runs from a skipped folder, by content
+                    _stand_named(root, [s for s in got.get("scripts", []) if set(s.split(os.sep)) & _SUPPLY_SKIP],
+                                 deps.update, budget)
                     for k, v in got.items():
                         caps[k] = sorted(set(caps.get(k, [])) | set(v))
         except Exception as e:
             errors[pid] = f"{type(e).__name__}: {e}"
             continue
         # T-1434: skipped, the stand-ins for what sha only names, beside it (an older entry lacks it, see _check_supply)
-        out[pid] = {"sha": h.hexdigest(), "skipped": skipped.hexdigest(), "caps": caps}
+        # T-1459: deps, the stand-ins for the folders sha skips (node_modules, .venv, …), likewise
+        out[pid] = {"sha": h.hexdigest(), "skipped": skipped.hexdigest(), "deps": deps.hexdigest(), "caps": caps}
     conf = _load_json(os.path.join(os.path.dirname(claude), ".claude.json"))
     conf = conf if isinstance(conf, dict) else {}
     scopes = [("", conf.get("mcpServers"))] + [(f"{k}:", v.get("mcpServers")) for k, v in
@@ -1313,10 +1361,11 @@ def _check_supply(claude, accept):
     sha = lambda v: v.get("sha") if isinstance(v, dict) else v  # a baseline before T-1392 holds bare hashes
     caps = lambda v: v.get("caps") if isinstance(v, dict) else None
     skip = lambda v: v.get("skipped") if isinstance(v, dict) else None  # T-1434: None in an entry recorded before it
+    dep = lambda v: v.get("deps") if isinstance(v, dict) else None  # T-1459: likewise
     changed, added, held, upgraded = [], [], [], False
     for k in sorted(set(now) - set(errors)):
         was, cur = seen.get(k), now[k]
-        if k in seen and sha(was) == sha(cur) and skip(was) in (None, skip(cur)):
+        if k in seen and sha(was) == sha(cur) and skip(was) in (None, skip(cur)) and dep(was) in (None, dep(cur)):
             if was == cur:
                 continue
             old, new = caps(was), caps(cur)

@@ -2,8 +2,10 @@
 delta until fm doctor --accept-supply; a content-only change keeps the hash note (WARN); fm plugins find shows what a
 local entry needs."""
 import glob
+import hashlib
 import json
 import os
+import time
 import unittest
 from unittest import mock
 
@@ -310,6 +312,7 @@ class SupplyDelta(ForemanTestCase):
         for v in seen.values():
             if isinstance(v, dict):
                 v.pop("skipped", None)
+                v.pop("deps", None)
                 for k in drop:
                     v["caps"].pop(k, None)
         write(path, seen)
@@ -475,21 +478,120 @@ class SupplyDelta(ForemanTestCase):
         write(os.path.join(self.plugin, ".git", "HEAD"), "ref: refs/heads/x\n")
         self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS", ".git isn't code a session runs")
 
-    def test_a_skipped_folder_is_walked_only_so_far(self):
-        for i in range(30):
-            write(os.path.join(self.plugin, "node_modules", f"f{i:02}"), "")
-        seen = []
-        real = os.lstat
+    def lstats(self):
+        seen, real = [], os.lstat
         def lstat(p, *a, **k):
             seen.append(p)
             return real(p, *a, **k)
+        with mock.patch("os.lstat", lstat):
+            fmdoctor._supply(self.claude)
+        return sum(f"{os.sep}node_modules{os.sep}" in p for p in seen)
+
+    def test_a_skipped_folder_is_walked_only_so_far(self):
+        nm = os.path.join(self.plugin, "node_modules")
+        for i in range(30):
+            write(os.path.join(nm, "a", f"f{i:02}"), "")
+        write(os.path.join(nm, "zz", "pkg", "index.js"), "")
+        accept = lambda: fmdoctor.check_supply(self.claude, accept=True)
         with mock.patch.object(fmdoctor, "_SKIP_CAP", 10):
-            fmdoctor.check_supply(self.claude, accept=True)
-            write(os.path.join(self.plugin, "node_modules", "f05"), "x")
+            accept()
+            write(os.path.join(nm, "a", "f05"), "x")
             self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "within the cap")
-            with mock.patch("os.lstat", lstat):
-                fmdoctor._supply(self.claude)
-        self.assertLess(sum("node_modules" in p for p in seen), 15, "the walk stops at the cap, not at 30")
+            accept()
+            self.assertLess(self.lstats(), 20, "files past the cap aren't stat'ed one by one")
+            write(os.path.join(nm, "zz", "pkg", "evil.js"), "")  # review: past the cap, its folder's mtime shows it
+            self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "a file added past the cap")
+            accept()
+            write(os.path.join(nm, "zzz-evil", "x.js"), "")
+            self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "a package added past the cap")
+            with mock.patch.object(fmdoctor, "_SKIP_DIRS", 1):
+                self.assertLess(self.lstats(), 20, "folders past the cap have their own budget")
+        for i in range(30):  # review: a per-plugin budget across every skipped folder
+            write(os.path.join(self.plugin, "x", str(i), "node_modules", "f"), "")
+        with mock.patch.object(fmdoctor, "_SKIP_TOTAL", 10):
+            self.assertLess(self.lstats(), 20)
+
+    def test_a_rewrite_with_its_mtime_put_back_still_shows(self):
+        dep = os.path.join(self.plugin, "node_modules", "dep", "index.js")
+        write(dep, "module.exports = 1\n")
+        fmdoctor.check_supply(self.claude, accept=True)
+        st = os.stat(dep)
+        time.sleep(0.05)
+        write(dep, "module.exports = 2\n")
+        os.utime(dep, ns=(st.st_atime_ns, st.st_mtime_ns))
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "review: ctime tells")
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads everything")
+    def test_an_unlistable_folder_in_node_modules_still_shows_a_change(self):
+        sub = os.path.join(self.plugin, "node_modules", "locked")
+        write(os.path.join(sub, "a.js"), "")
+        try:
+            os.chmod(sub, 0o111)
+            fmdoctor.check_supply(self.claude, accept=True)
+            os.chmod(sub, 0o711)
+            write(os.path.join(sub, "b.js"), "")
+            os.chmod(sub, 0o111)
+            self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN")
+        finally:
+            os.chmod(sub, 0o700)
+
+    def test_a_scoped_package_a_hook_names_is_hashed_by_content(self):
+        rel = os.path.join("node_modules", "@scope", "pkg+x", "dist", "index.js")
+        write(os.path.join(self.plugin, rel), "a\n")
+        self.hooks({"hooks": dict(STOP["hooks"], SessionStart=[{"hooks": [
+            {"type": "command", "command": f"node \"${{CLAUDE_PLUGIN_ROOT}}/{rel}\" --x"}]}])})
+        self.assertIn(rel, fmplugins.capabilities(self.plugin)["scripts"], "review: @ and + don't cut the path")
+        got = []
+        fmdoctor._stand_named(self.plugin, [rel], got.append, fmdoctor._budget())
+        self.assertIn(hashlib.sha256(b"a\n").hexdigest().encode(), b"".join(got))
+
+    def test_named_scripts_are_bounded(self):
+        bin_ = os.path.join(self.plugin, "node_modules", ".bin")
+        write(os.path.join(self.plugin, "node_modules", "pkg", "run"), "x" * 100)
+        os.makedirs(bin_)
+        for i in range(50):  # review: many links to one file are read once
+            os.symlink("../pkg/run", os.path.join(bin_, f"l{i}"))
+        rels = [os.path.join("node_modules", ".bin", f"l{i}") for i in range(50)]
+        got, opened, real = [], [], os.open
+        with mock.patch("os.open", lambda p, *a: opened.append(p) or real(p, *a)):
+            fmdoctor._stand_named(self.plugin, rels, got.append, fmdoctor._budget())
+        self.assertEqual(len(opened), 1)
+        for i in range(20):
+            write(os.path.join(bin_, f"f{i}"), "y" * 100)
+        rels = [os.path.join("node_modules", ".bin", f"f{i}") for i in range(20)]
+        for cap, size in ((5, 1 << 20), (500, 350)):
+            got = []
+            with mock.patch.object(fmdoctor, "_NAMED_CAP", cap), mock.patch.object(fmdoctor, "_NAMED_BYTES", size):
+                fmdoctor._stand_named(self.plugin, rels, got.append, fmdoctor._budget())
+            self.assertLessEqual(len([g for g in got if b"\0=" in g and b"!" not in g]), 5)
+            self.assertTrue(any(b"!too-many-named" in g for g in got))
+
+    def test_a_named_script_too_big_to_read_shows_its_rewrite(self):
+        big = os.path.join(self.plugin, "node_modules", "big.js")
+        write(big, " " * 4_000_001)
+        def stands():
+            got = []
+            fmdoctor._stand_named(self.plugin, [os.path.relpath(big, self.plugin)], got.append, fmdoctor._budget())
+            return got
+        before = stands()
+        st = os.stat(big)
+        time.sleep(0.05)
+        write(big, "x" * 4_000_001)
+        os.utime(big, ns=(st.st_atime_ns, st.st_mtime_ns))
+        self.assertNotEqual(stands(), before)
+
+    def test_an_older_baseline_with_node_modules_reads_unchanged_and_gains_deps(self):
+        write(os.path.join(self.plugin, "node_modules", "dep", "index.js"), "")
+        write(os.path.join(self.plugin, "hooks", "__pycache__", "x.pyc"), "")
+        fmdoctor.check_supply(self.claude, accept=True)
+        path = os.path.join(c.state_dir(), "supply.json")
+        seen = json.load(open(path))
+        seen["p@m"].pop("deps")
+        write(path, seen)
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS", "review: no one-time change for deps")
+        self.assertIn("deps", json.load(open(path))["p@m"], "the matching run records it")
+        write(os.path.join(self.plugin, "node_modules", "dep", "new.js"), "")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN")
 
     def test_a_file_vanishing_mid_walk_doesnt_end_the_check(self):
         gone = os.path.join(self.plugin, "bin", "tool")
