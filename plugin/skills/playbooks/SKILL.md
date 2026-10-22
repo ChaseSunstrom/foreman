@@ -1,6 +1,6 @@
 ---
 name: playbooks
-description: Use when a Foreman stage needs a proven procedure: refactors, perf, security review, build errors, TDD, review checklists, planning, ADRs, evals.
+description: Use whenever you are about to refactor, tune performance, review security, fix build errors, do TDD, plan, write an ADR or run evals.
 ---
 
 # Foreman playbooks
