@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Style shelf: eight original shader looks (ink diffusion, contour lines, halftone, soft caustics, grain gradient, aurora bands, dither fade, paper fibre) as GLSL ES 3.00 cards with uniforms, cost and a reduced-motion still, plus light-and-material recipes and an SVG icon system; a test compiles each shader in headless Chromium when one is installed and checks each is its plain colour at intensity 0 (T-1499).
 - Guard: a line shlex can't parse is read both word by word and quote-aware, a quoted operator ('>', \;) is data, and a # inside nested quotes in $( ) is no comment: 'cat' ~/.ssh/id_ed25519 after unbalanced quotes, echo "$(echo "a #")">~/.bashrc and a redirect after a closing quote, ) or backtick are refused (T-1561).
 - fm audit prep on a builder lane's task adds the main checkout's uncommitted edits only when that task is the main checkout's own focused task, so a lane review no longer carries another task's files (T-1579).
 - Nine playbooks: incidents (evidence before rollback for security events), observability, data-viz, task-first docs with a run_examples.py runner that fails on any nonzero exit, decks and reports, scrollytelling with cold deep links, demo production, UI sound design with peak and RMS checks, and Python's standard library first; stage indexes for ops, context, release and lang keep the playbooks skill under its 10,000-character budget (T-1504).
