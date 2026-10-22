@@ -355,6 +355,16 @@ def panicked():
     return os.path.exists(os.path.join(state_dir(), "PANIC"))
 
 
+def host_load():
+    """T-1518: (1-minute load average, CPU count), or None when unreadable; FOREMAN_HOST's load and cpus in tests."""
+    try:
+        fake = dict(kv.split("=", 1) for kv in os.environ.get("FOREMAN_HOST", "").split(",") if "=" in kv)
+        return (float(fake["load"]) if "load" in fake else os.getloadavg()[0],
+                int(fake["cpus"]) if "cpus" in fake else (os.cpu_count() or 1))
+    except (OSError, ValueError):
+        return None
+
+
 def host_strain():
     """T-0465: why this machine shouldn't take another lane (load over twice its CPUs, or under 512 MB available), or
     None. FOREMAN_HOST="load=…,cpus=…,mem_mb=…" stands in for /proc in tests; unreadable: None (never blocks)."""
@@ -3339,6 +3349,27 @@ def ui_paths(files):
         if os.path.splitext(low)[1] in fmdesign.EXTS | _UI_MORE or _UI_TUI.search(low) or _UI_OTHER.search(f):
             out.append(f)
     return out
+
+
+_ENTRY = re.compile(r"(?i)(?:^|/)(?:index|main|app|page|layout|routes?|router|server|cli|__main__|_app|_document)\.\w+$")
+_STYLE = (".css", ".scss", ".sass", ".less")
+
+
+def reading_order(files):
+    """T-1518: a reviewer's order for a task's changed files, `files`' own order (fm tour's: a file before the files
+    that name it) kept within each group: the code the UI builds on, styles, components and markup, entry points
+    (index, main, App, page, layout…), tests, then docs and data."""
+    ui = set(ui_paths(files))
+
+    def rank(f):
+        if TESTISH.search(f):
+            return 4
+        if _ENTRY.search(f) and (f in ui or CODE.search(f)) and not f.lower().endswith(_STYLE):  # layout.css: a style
+            return 3
+        if f in ui:
+            return 1 if f.lower().endswith(_STYLE) else 2
+        return 0 if CODE.search(f) else 5
+    return sorted(files, key=rank)
 
 
 _BUILTINS = {"cd", "test", "[", "[[", "true", "false", "echo", "printf", "export", "set", "source", ".", "exit",
