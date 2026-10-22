@@ -22,7 +22,7 @@ class Trace(ForemanTestCase):
         self.p = c.find_project(self.repo)
         self.tid = first(self.fm("task", "new", "Fix login", "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
                                  "--step", "red test", "--step", "fix", "--focus", "--json").stdout)["id"]
-        t0 = time.time() + 5
+        self.t0 = t0 = int(time.time()) + 5
 
         def at(k, event, task=self.tid, data=None, session="sess-a"):
             with mock.patch.object(c, "now", return_value=c.iso(t0 + k)):
@@ -34,11 +34,13 @@ class Trace(ForemanTestCase):
         at(21, "check_run", data={"results": [{"cmd": "make lint", "exit": 0, "s": 3.0}]})
         at(25, "capture", task="T-0099", data={"text": "someone else's"})
         at(30, "evidence", data={"step": 2, "cmd": "pytest"}, session="sess-b")
-        # an older Foreman's unredacted line: the export redacts it again
+        # an older Foreman's unredacted line (the export redacts it again; built here, so no tool redacts this file),
+        # with a C1 control; then a line that landed late, out of time order
+        secret = "curl -H 'Author" + "ization: Bearer " + "abc123" + "secretvalue' \x85"
         with open(os.path.join(self.p.dir, "ledger.jsonl"), "a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": c.iso(t0 + 40), "session_id": "sess-b", "project": self.p.slug, "task": self.tid,
-                                "event": "note", "data": {"cmd": "curl -H 'Authorization: Bearer abc123secretvalue'"}})
-                    + "\n")
+            for k, event, data in ((40, "note", {"cmd": secret}), (3, "late", {})):
+                f.write(json.dumps({"ts": c.iso(t0 + k), "session_id": "sess-b", "project": self.p.slug,
+                                    "task": self.tid, "event": event, "data": data}) + "\n")
 
     def test_a_run_exports_as_valid_perfetto_json(self):
         out = self.fm("timeline",self.tid)
@@ -60,6 +62,8 @@ class Trace(ForemanTestCase):
         spans = {e["name"]: e for e in evs if e["ph"] == "X"}
         task = next(e for n, e in spans.items() if n.startswith(self.tid))
         self.assertIn("Fix login", task["name"])
+        self.assertEqual(task["ts"] + task["dur"], (self.t0 + 40) * 1_000_000, "the latest event, not the last line")
+        self.assertTrue(out.stdout.isascii(), "no raw control character reaches the terminal")
         for n in ("step 1", "step 2"):
             self.assertIn(n, spans)
             self.assertGreaterEqual(spans[n]["ts"], task["ts"])
@@ -89,6 +93,11 @@ class Trace(ForemanTestCase):
         self.fm("timeline","--out", dest)
         with open(dest, encoding="utf-8") as f:
             self.assertTrue(any(e["name"].startswith(self.tid) for e in json.load(f)["traceEvents"]))
+        worker = self.fm("timeline", self.tid, env={"FOREMAN_WORKER_OF": "run-1"})  # it only reads
+        self.assertIn("traceEvents", json.loads(worker.stdout))
+        written = self.fm("timeline", "--out", dest + "2", env={"FOREMAN_WORKER_OF": "run-1"}, check=False)
+        self.assertEqual(written.returncode, 2, "a worker's file writes go through its own guard")
+        self.assertFalse(os.path.exists(dest + "2"))
 
     def test_otlp_json_nests_steps_and_checks_under_the_task_span(self):
         doc = json.loads(self.fm("timeline",self.tid, "--otlp").stdout)
@@ -129,7 +138,7 @@ class Trace(ForemanTestCase):
 class Glance(ForemanTestCase):
     def test_one_json_line_with_bar_fields(self):
         self.fm("init")
-        tid = first(self.fm("task", "new", "Fix the login", "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
+        tid = first(self.fm("task", "new", "Fix\u2028the login", "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
                             "--step", "a", "--focus", "--json").stdout)["id"]
         out = self.fm("glance").stdout
         self.assertEqual(len(out.splitlines()), 1, out)
@@ -143,15 +152,39 @@ class Glance(ForemanTestCase):
         self.assertIn("login", d["tooltip"])
         for k in ("queue", "inbox", "blocked"):
             self.assertIsInstance(d[k], int)
+        worker = self.fm("glance", env={"FOREMAN_WORKER_OF": "run-1"})  # it only reads, so a worker may
+        self.assertEqual(json.loads(worker.stdout)["task"], tid)
+
+    def test_a_sensitive_project_shows_ids_and_counts_without_words(self):
+        self.fm("init")
+        tid = first(self.fm("task", "new", "Fix the login", "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
+                            "--step", "a", "--focus", "--json").stdout)["id"]
+        self.fm("sensitive", "on")
+        out = self.fm("glance").stdout
+        d = json.loads(out)
+        self.assertNotIn("login", out)
+        self.assertIsNone(d["title"])
+        self.assertEqual((d["task"], d["step"], d["class"]), (tid, "1/1", "active"))
+        self.assertIn(tid, d["tooltip"])
+
+    def test_unreadable_state_is_one_error_line(self):
+        self.fm("init")
+        with open(os.path.join(c.find_project(self.repo).dir, "meta.json"), "w") as f:
+            f.write("{not json")
+        p = self.fm("glance")
+        self.assertEqual(len(p.stdout.splitlines()), 1, p.stdout)
+        self.assertEqual(json.loads(p.stdout)["class"], "error")
 
     def test_outside_a_project_one_line_and_nothing_created(self):
-        before = sorted(os.listdir(self.home))
+        tree = lambda: sorted((d, sorted(fs)) for d, _, fs in os.walk(self.tmp)  # noqa: E731
+                              if not d.startswith(self.repo))  # git's own background maintenance writes there
+        before = tree()
         p = self.fm("glance", cwd=self.tmp)
         self.assertEqual(len(p.stdout.splitlines()), 1)
         self.assertEqual(json.loads(p.stdout)["project"], None)
         self.assertEqual(json.loads(p.stdout)["class"], "none")
         self.assertIsNone(c.find_project(self.tmp))
-        self.assertEqual(sorted(os.listdir(self.home)), before)
+        self.assertEqual(tree(), before)
 
 
 def frame(msg):
@@ -191,12 +224,12 @@ title: x
 class Lsp(ForemanTestCase):
     URI = "file:///tmp/T-0001.md"
 
-    def lsp(self, *msgs, home=None):
+    def lsp(self, *msgs, home=None, timeout=30):
         env = dict(os.environ, FOREMAN_HOME=home or self.home)
         env.pop("CLAUDE_CODE_SESSION_ID", None)
         raw = b"".join(m if isinstance(m, bytes) else frame(m) for m in msgs)
         p = subprocess.run([sys.executable, FM, "lsp"], input=raw, env=env,
-                           capture_output=True, timeout=30, cwd=self.tmp)
+                           capture_output=True, timeout=timeout, cwd=self.tmp)
         return p, frames(p.stdout)
 
     def test_answers_initialize_and_publishes_proof_gaps(self):
@@ -225,16 +258,42 @@ class Lsp(ForemanTestCase):
     def test_bad_input_gets_errors_and_closing_clears(self):
         deep = b"[" * 100000 + b"]" * 100000
         p, out = self.lsp(b"Content-Length: %d\r\n\r\n" % len(deep) + deep, b"Content-Length: 3\r\n\r\n{x}",
-                          b"X-No-Length: 1\r\n\r\n",
+                          b"X-No-Length: 1\r\n\r\n", b"Content-Length: " + b"9" * 5000 + b"\r\n\r\n",
                           {"jsonrpc": "2.0", "id": 7, "method": "no/such"},
                           {"jsonrpc": "2.0", "method": "textDocument/didOpen",
                            "params": {"textDocument": {"uri": self.URI, "version": 1, "text": "not a brief"}}},
                           {"jsonrpc": "2.0", "method": "textDocument/didClose", "params": {"textDocument": {"uri": self.URI}}})
         self.assertEqual(p.returncode, 1, "the input ended without a shutdown")
-        self.assertEqual([m["error"]["code"] for m in out[:3]], [-32700] * 3, p.stderr[-300:])
+        self.assertEqual([m["error"]["code"] for m in out[:4]], [-32700] * 4, p.stderr[-300:])
         self.assertEqual(next(m for m in out if m.get("id") == 7)["error"]["code"], -32601)
         pubs = [m["params"]["diagnostics"] for m in out if m.get("method") == "textDocument/publishDiagnostics"]
         self.assertEqual(pubs, [[], []])
+
+    def test_a_lone_surrogate_doesnt_end_the_session(self):
+        odd = "file:///\ud800.md"
+        p, out = self.lsp({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                           "params": {"textDocument": {"uri": odd, "version": 1, "text": BRIEF.replace("T-0001", "\ud800")}}},
+                          {"jsonrpc": "2.0", "id": "\udfff", "method": "no/such"},
+                          {"jsonrpc": "2.0", "id": 9, "method": "shutdown"}, {"jsonrpc": "2.0", "method": "exit"})
+        self.assertEqual(p.returncode, 0, p.stderr[-500:])
+        self.assertTrue(p.stdout.isascii())
+        self.assertEqual(next(m for m in out if "method" in m)["params"]["uri"], odd)
+        self.assertEqual(next(m for m in out if m.get("id") == "\udfff")["error"]["code"], -32601)
+        self.assertIsNone(next(m for m in out if m.get("id") == 9)["result"])
+
+    def test_a_long_line_doesnt_stall_the_server(self):
+        pad = " " * 100000
+        text = BRIEF.replace("- [ ] no check here", "- [ ] x" + pad + "y").replace("1. [x] write tests", "1. [ ] x" + pad + "y")
+        t = time.monotonic()
+        p, out = self.lsp({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                           "params": {"textDocument": {"uri": self.URI, "version": 1, "text": text}}},
+                          {"jsonrpc": "2.0", "id": 2, "method": "shutdown"}, {"jsonrpc": "2.0", "method": "exit"},
+                          timeout=60)
+        self.assertLess(time.monotonic() - t, 10)
+        self.assertEqual(p.returncode, 0, p.stderr[-500:])
+        diags = next(m for m in out if "method" in m)["params"]["diagnostics"]
+        self.assertEqual(len(diags), 3, diags)
+        self.assertEqual(diags[0]["range"]["end"]["character"], len("- [ ] x" + pad + "y"), "the whole line")
 
     def test_reads_no_network_and_writes_no_state(self):
         home = os.path.join(self.tmp, "empty-home")

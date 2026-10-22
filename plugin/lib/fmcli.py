@@ -5425,7 +5425,7 @@ def _build_parser():
     add("lsp", lazy("fmintegrations", "cmd_lsp"), tier=("Running elsewhere", 1236),
         help="a Language Server over stdio (never a port) that publishes a brief's proof gaps: criteria with no "
              "verify command or evidence, steps with no test run; reads only the document (T-1551)")
-    add("wiring",lazy("fmdoctor", "cmd_wiring"), tier=("Project and settings", 840), help="one screen of what is wired: version, hooks, flags, standing "
+    add("wiring", lazy("fmdoctor", "cmd_wiring"), tier=("Project and settings", 840), help="one screen of what is wired: version, hooks, flags, standing "
                                                         "yeses, trust, pause, budget, plugins (T-0469)")
     s = add("orders", lazy("fmorders", "cmd_orders"), tier=("Running elsewhere", 1220), help="standing orders: requests that capture themselves on a "
                                                              "schedule or when a file changes (T-0452)")
@@ -6274,8 +6274,9 @@ def _task_shape(parser, argv):
 # gemini's shells don't pass Foreman's guard, so fm refuses the rest itself when FOREMAN_WORKER_OF names a run.
 # ponytail: a worker that unsets the variable gets past this; the judge and the CLI's own sandbox stay the outer walls.
 # T-1388 review: log appends ledger events (a forged check_run passes a gate); recall and map write with some flags.
-WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show"}
+WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show", "glance"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
+                   "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
                    "design": ("action", {"lint"})}  # T-1506: lint only reads the files it's given
 
