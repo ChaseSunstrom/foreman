@@ -21,7 +21,9 @@
     --scene-rim: #86b6ff;    /* fresnel rim: separates the silhouette by luminance */
     color-scheme: dark;
   }
-  body { margin: 0; background: var(--scene-bg); color: #e8e4dc; font: 1rem/1.5 system-ui, sans-serif; }
+  /* A face with a voice first, the system's last (fm design lint's generic-font): fm new scene copies this file */
+  body { margin: 0; background: var(--scene-bg); color: #e8e4dc;
+         font: 1rem/1.5 "Avenir Next", Avenir, "Nunito Sans", Seravek, system-ui, sans-serif; }
   main { max-width: 64rem; margin: 0 auto; padding: 2rem 1rem; }
   /* Poster first: the box has its size before any script, so the scene causes no layout shift. */
   .scene { position: relative; margin: 0; }

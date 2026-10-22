@@ -34,6 +34,7 @@ area: equal to the directory
 tags: [3-8 lowercase words]
 detect: [signals; [] for practice cards that apply anywhere]
 related: [other card names]
+verified: YYYY-MM-DD (optional: the day you ran its Verify commands and they held; never a guess)
 ---
 ```
 
