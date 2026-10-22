@@ -1356,6 +1356,25 @@ class Width(unittest.TestCase):
         T.box(cv, 0, 0, 3, 80, "Projects", T.DEFAULTS, note="n" * 90)
         self.assertIn("Pro…", cv.text().splitlines()[0])
 
+    def test_overlay_and_status_measure_columns(self):
+        """T-1468: the focus band and a selected log row were padded by len(), so a line holding wide glyphs ran
+        past its width and lost its tail to a stray ellipsis."""
+        T = tui()
+        text = "日本語のテキスト 🚀 wide"
+        band = T._focus_line([(text, "text")], 40, "#202020", T.DEFAULTS)
+        self.assertEqual(sum(T.width(t) for t, _ in band), 40)
+        app = T.App(T.DEFAULTS, spawn=lambda *a, **k: None)
+        for e in RUN[:6] + [{"event": "action", "text": "", "action": "read", "target": "日本語のテキスト🚀.py",
+                             "result": "ok"}]:
+            app.feed(e)
+        app.selected = len(app.state.log) - 1
+        rows = T._log(app.state, 60, 20, app)
+        row = next(r for r in rows if "日本語" in "".join(t for t, _ in r))
+        self.assertEqual(sum(T.width(t) for t, _ in row), 60, row)
+        cv = T.Canvas(60, 1)
+        cv.line(0, 0, row, 60)
+        self.assertNotIn("…", cv.text(), "the padded row fits, so nothing is cut")
+
     def test_plain_ascii_is_cut_as_before(self):
         T = tui()
         self.assertEqual((T.fit("hello world", 5), T.fit("hi", 5), T.fit("abc", 0)), ("hell…", "hi", ""))
