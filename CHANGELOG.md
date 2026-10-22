@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The Stop hook still holds a turn that claims unproven work when another fm command has the project lock; before, the busy lock made it give up silently (T-1453).
 - fm code refuses an unacknowledged runner or `--worker` template with GitHub Copilot CLI's `--allow-all-tools`/`--allow-all`, Factory droid's `--skip-permissions-unsafe`, or any `--…dangerously…` flag such as Claude's `--allow-dangerously-skip-permissions`; Copilot's scoped `--allow-tool` still runs (T-1443).
 - `fm verify-ledger` names a line an unclean shutdown zeroed ("ends in N zero bytes") instead of calling the chain corrupt, and `fm verify-ledger --accept-damage` records it once you've checked. It never accepts an edit, a missing `--head`, or lines removed before the damage, because the first write after a crash pins the line before it. Every finish receipt said "chain broken" after the 2026-10-22 crash; it now names the accepted gap (T-1456).
 - `fm doctor` warns when the disk holding Foreman's state is under 10 GB or 5% free, and names the projects whose builder worktrees are piling up (T-1450). The disk filled on 2026-10-22 and hooks failed to write state with no warning first.

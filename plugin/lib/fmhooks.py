@@ -5,6 +5,7 @@ The PreToolUse guard fails closed: any exception blocks the tool call (exit 2).
 Injected text is factual state, never instructions.
 """
 import collections
+import contextlib
 import fnmatch
 import hashlib
 import json
@@ -2968,7 +2969,12 @@ def stop(pl):
             log_error("Stop", _tb())
     sd = c.state_dict(p, briefs)
     seq = _title_seq(sd) + _progress_seq(sd)
-    with c.lock(p.dir, timeout=LOCK_QUICK):
+    with contextlib.ExitStack() as held:
+        try:
+            held.enter_context(c.lock(p.dir, timeout=LOCK_QUICK))
+            save = True
+        except c.LockTimeout:  # T-1453: busy, the turn is still judged; only its counters go unsaved
+            save = False
         g = _read_gate(p)
         _scan_notices(pl, g)
         d0 = g["drive"].get(sid) or {}
@@ -2983,7 +2989,8 @@ def stop(pl):
         d = g["drive"].setdefault(sid, {"count": 0})
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
         reloading, waiting_on = d.pop("reloading", None), d.pop("waiting_on", None)
-        _write_gate(p, g)
+        if save:
+            _write_gate(p, g)
     drained = bool(had_work and not d["had_work"])
     if not reason and not oneoff and not (sd["active"] or sd["queue"]):
         try:

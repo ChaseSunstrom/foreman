@@ -1915,6 +1915,14 @@ class Stop(HookCase):
         self.fm("drive", "off")
         self.assertEqual(self.decision(self.stop("Step 2 is done.")), "block", "step 2 isn't finished either")
 
+    def test_a_busy_project_lock_still_holds_a_claim_without_evidence(self):
+        # T-1453: Stop took the project lock for 1 s around its gates; contended, it raised and held nothing
+        self.fm("init")
+        self.task(steps=("a", "b"))
+        self.fm("drive", "off")
+        with c.lock(self.project().dir, timeout=5):
+            self.assertEqual(self.decision(self.stop("Step 2 is done.")), "block")
+
     def test_stop_hook_active_never_evidence_blocks(self):
         self.fm("init")
         self.task()
