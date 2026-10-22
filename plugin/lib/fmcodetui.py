@@ -38,9 +38,12 @@ PALETTES = {
               "edge": "#C3CCD9", "track": "#CDD5E1", "shade": "#C9D1DD", "barink": "#2B3442", "paint": True,
               "accent2": "#8B3FD1", "ok2": "#4E9F1D", "bad2": "#C2571A", "glow": "#FFFFFF", "panel": "#FFFFFF"},
 }
-# signal: night with pass blue and fail orange, told apart with red-green colour blindness (T-1300)
-PALETTES["signal"] = dict(PALETTES["night"], ok="#4DA3FF", ok2="#9AD4FF", bad="#FF8A1F", bad2="#FFC46B",
-                          warn="#F2D544", accent="#C4A8FF", accent2="#FF8FD8")
+# palette = "cb" (the foreman-ui mod's word too, T-1496): pass blue and fail orange over a theme's own colours, told
+# apart with red-green colour blindness; signal is night with them (T-1300)
+CB = {"night": dict(ok="#4DA3FF", ok2="#9AD4FF", bad="#FF8A1F", bad2="#FFC46B", warn="#F2D544", accent="#C4A8FF",
+                    accent2="#FF8FD8"),
+      "paper": dict(ok="#1D5FB8", ok2="#3B7DD8", bad="#B34D00", bad2="#C2571A", accent="#7B3FC9", accent2="#B0308F")}
+PALETTES["signal"] = dict(PALETTES["night"], **CB["night"])
 _BG, _INK = PALETTES["night"]["bg"], PALETTES["night"]["ink"]
 
 
@@ -76,6 +79,7 @@ BORDERS = {"rounded": "╭╮╰╯─│", "square": "┌┐└┘─│", "hea
 DEFAULTS = {
     "preset": "night",
     "motion": "full",
+    "palette": "default",
     "theme": THEME,
     "border": "rounded",
     "layout": {"top": ["track"], "columns": [["log"], ["checks", "files", "time", "tokens"]], "widths": [58, 42],
@@ -1908,6 +1912,7 @@ def load_config(path=None):
     rest apply."""
     import copy
     import tomllib
+    import fmsettings
     cfg = copy.deepcopy(DEFAULTS)
     path = path or config_path()
     try:
@@ -1924,12 +1929,20 @@ def load_config(path=None):
             cfg["preset"], cfg["theme"] = user["theme"], PRESETS[user["theme"]]()
         else:
             bad(f"theme = {user['theme']!r}: no such theme ({', '.join(PRESETS)})")
+    if "palette" in user:  # before [colors], which changes single styles over it
+        val = fmsettings.canon("palette", user["palette"])
+        if val:
+            cfg["palette"] = val
+            if val == "cb" and cfg["preset"] in CB:
+                cfg["theme"] = _theme(dict(PALETTES[cfg["preset"]], **CB[cfg["preset"]]))
+        else:
+            bad(f"palette = {user['palette']!r}: one of {', '.join(fmsettings.SHARED['palette']['choices'])}")
     for key, val in user.items():
-        if key == "theme":
+        if key in ("theme", "palette"):
             continue
         if key == "motion":
-            if val in MOTIONS:
-                cfg["motion"] = val
+            if fmsettings.canon("motion", val):  # T-1496: the mod's old "calm" is reduced
+                cfg["motion"] = fmsettings.canon("motion", val)
             else:
                 bad(f"motion = {val!r}: one of {', '.join(MOTIONS)}")
         elif key == "border":
@@ -1966,7 +1979,7 @@ def load_config(path=None):
                     for k in keys:
                         cfg["keys"].pop(k, None) if cmd == "none" else cfg["keys"].__setitem__(k, cmd)
         else:
-            bad(f"{key}: not a setting (theme, motion, border, colors, layout, keys)")
+            bad(f"{key}: not a setting (theme, motion, palette, border, colors, layout, keys)")
     return cfg, errors
 
 
@@ -1991,6 +2004,7 @@ def print_config(cfg, path=None):
     out = [f"# fm code tui's settings{f': {path}' if path else ''}. Delete what you don't change.",
            f"theme = {_toml(cfg.get('preset', 'night'))}  # {', '.join(PRESETS)}; [colors] changes single styles",
            f"motion = {_toml(cfg.get('motion', 'full'))}  # full; reduced: colours change, nothing moves; off",
+           f"palette = {_toml(cfg.get('palette', 'default'))}  # default; cb: pass blue, fail orange",
            f"border = {_toml(cfg['border'])}  # {', '.join(BORDERS)}", "",
            "[colors]  # a style: a colour (#rrggbb or 0-255), or { fg, bg, bold, italic, reverse }"]
     out += [f"{_toml_key(n)} = {_toml(spec)}" for n, spec in cfg["theme"].items()]
