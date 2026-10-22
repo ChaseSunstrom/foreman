@@ -1549,6 +1549,75 @@ test("palette 'cb' swaps the ok/err colours and the error still carries a glyph 
   await ui.unmount()
 })
 
+// T-1574: the engine's /config rows for the mod's options, read live from `opts` (what /config or fm settings set holds)
+const configRows = (on: On, opts: Record<string, string>) =>
+  on('config.list', async () => ({
+    value: Object.entries(opts).map(([k, value]) => ({ key: `foreman-ui.${k}`, label: k, kind: 'choice', value, provider: { plugin: 'foreman-ui', tier: 'user' }, isLocked: false })),
+  }))
+
+test('a motion or palette changed in the settings applies on the next poll, no restart (T-1574)', async ($, on) => {
+  const { clock, answer, blits } = world(on, [{ ...CALM, history: HIST }])
+  const opts: Record<string, string> = { palette: 'default', motion: 'full' }
+  configRows(on, opts)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const failedColor = async () => (await ui.find({ type: 'Text', text: 'step 1 failed' }))?.props.color
+  await clock.advance(2000)
+  expect(await failedColor()).toBe(hex(0xff6b6b))
+  opts.palette = 'cb'
+  opts.motion = 'off'
+  await clock.advance(2000) // one poll
+  expect(await failedColor()).toBe(hex(0xe69f00))
+  await ui.unmount()
+  answer.hold = 2000 // live work: with motion off nothing is blitted
+  void $.tool.call({ tool: 'Bash', command: 'make build', description: 'build' })
+  await clock.advance(50)
+  const live = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  for (let i = 0; i < 8; i++) {
+    await live.findAll({ type: 'Raster' })
+    await clock.advance(40)
+  }
+  expect(blits.length).toBe(0)
+  await clock.advance(3000)
+  await live.unmount()
+})
+
+test('a palette changed before the first poll applies on it, not only recorded (T-1574 review)', async ($, on) => {
+  const { clock } = world(on, [{ ...CALM, history: HIST }])
+  configRows(on, { palette: 'cb' }) // the mod started with the default; the setting moved before its first poll
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  await clock.advance(2000)
+  expect((await ui.find({ type: 'Text', text: 'step 1 failed' }))?.props.color).toBe(hex(0xe69f00))
+  await ui.unmount()
+})
+
+test('motion turned down mid-work stops the 30 fps blit on the next poll (T-1574 review)', async ($, on) => {
+  const { clock, answer, blits } = world(on, [VIEW])
+  const opts: Record<string, string> = { motion: 'full' }
+  configRows(on, opts)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  answer.hold = 10000 // one long call: live work across the poll
+  void $.tool.call({ tool: 'Bash', command: 'make build', description: 'build' })
+  await clock.advance(50)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const run = async () => {
+    for (let i = 0; i < 8; i++) {
+      await ui.findAll({ type: 'Raster' })
+      await clock.advance(40)
+    }
+  }
+  await run()
+  expect(blits.length).toBeGreaterThan(0)
+  opts.motion = 'reduced' // the 8 fps redraws only: no blit
+  await clock.advance(2000) // one poll
+  const before = blits.length
+  await run()
+  expect(blits.length).toBe(before)
+  await clock.advance(10000)
+  await ui.unmount()
+})
+
 test('the scrubber steps the pane back through history and live returns to now (T-1081)', async ($, on) => {
   world(on, [{ ...CALM, history: HIST }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
