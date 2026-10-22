@@ -208,7 +208,7 @@ def _handlers(hooks):
                     yield event, e.get("matcher") or "", h
 
 
-_ROOT_PATH = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\}?/([\w./-]+)")
+_ROOT_PATH = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\}?/([\w./@+~-]+)")  # T-1459 review: @scope/pkg+x paths whole
 _FM_CAP = 256_000  # a frontmatter not closed by here is the event "?" (ponytail: Claude Code reads the whole file)
 _FM_FILES, _FM_DIRS = 2000, 5000  # past these a component folder is the event "?" (a hostile tree stays bounded)
 # a top-level hooks key, quoted or spaced (review), and its block: indented lines, blank lines, column-0 comments
