@@ -6329,7 +6329,7 @@ def _task_shape(parser, argv):
 WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show", "glance"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
                    "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
-                   "playbooks": ("action", {"show"}),  # T-1621: prints; at most refreshes fm map's own cache
+                   "playbooks": ("action", {"show"}),  # T-1621: prints, but can rebuild fm map's map.json cache
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
                    "design": ("action", {"lint", "palette", "contrast"})}  # T-1506, T-1507: these only read
 
