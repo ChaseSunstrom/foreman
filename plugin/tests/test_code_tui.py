@@ -1002,6 +1002,24 @@ def golden_frame(at, size=(120, 34)):
     return "\n".join(out) + "\n"
 
 
+class Export(unittest.TestCase):
+    def test_snapshot_scrubs_secrets(self):
+        # T-1302: a token a worker printed must not land in the exported file
+        import tempfile
+        import fmcodetui
+        secret = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2"
+        events = [{"event": "start", "text": "", "request": f"deploy with {secret}", "ts": 1.0},
+                  {"event": "say", "text": f"found {secret} in output", "ts": 2.0}]
+        with tempfile.TemporaryDirectory() as d:
+            path = fmcodetui.snapshot(events, os.path.join(d, "s.svg"), (100, 20))
+            with open(path, encoding="utf-8") as f:
+                body = f.read()
+        self.assertTrue(body.startswith("<svg"))
+        self.assertIn("deploy with [REDACTED]", body)
+        self.assertNotIn(secret, body)
+        self.assertNotIn(secret[:12], body)
+
+
 class Golden(unittest.TestCase):
     """T-1306: the demo run at fixed instants, compared with plugin/tests/fixtures/golden. A deliberate change to the
     screen rewrites them: FM_GOLDEN=regen python3 plugin/tests/run.py test_code_tui."""

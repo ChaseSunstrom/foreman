@@ -2106,8 +2106,9 @@ def record(events, path, size=(120, 34), fps=20, seconds=None, cfg=None, hold=2.
 def snapshot(events, path, size=(120, 34), cfg=None, mode="main"):
     """The screen after these events, as an SVG at path (README pictures, the site, a bug report)."""
     cfg = cfg or DEFAULTS
+    import fmcore
     app = App(cfg, spawn=lambda *a, **k: None)
-    for e in events:
+    for e in fmcore.redact_obj(list(events)):  # T-1302: a shared file never holds a token a worker printed
         app.feed(e)
     app.mode = mode
     with open(path, "w", encoding="utf-8") as f:
