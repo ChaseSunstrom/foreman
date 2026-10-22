@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code app settings: b binds the next key pressed to a row's command (refusing quit, Esc, Ctrl-C, help, hush, settings wherever they are bound, and the last key that moves or opens a list), l moves panels between and within columns (one write and one undo per move), r tests a runner from the registry or code.toml by asking its CLI for --version with a timeout, stopped if the app quits; lists always move and open with the arrows, PgUp/PgDn and Enter; /foreman:settings keys | layout | runners shows the same (T-1511).
 - fm replay judges labelled and real commands with Python's own path variables (PYTHONPATH, PYTHONSTARTUP…) cleared and then put back, so a replay from a shell that sets them gives the verdicts a clean hook would (T-1599).
 - Safety ratchet: the guard is held to an allow-corpus of about 100 everyday commands, replayed with the labelled cases (a missing or thinned corpus fails the replay); fm evolve refuses the guard's own files, its replay and evolve code, and symlinked targets, reading the pinned commit; a guard that raises reports unable everywhere (replay, candidate scoring, the friction digest), never a pass (T-1517).
 - fm lease take keeps tasks apart within one session: builder lanes share their main session's id, so another task's lease now refuses the take (naming that task) instead of being handed over; --warn keeps both claims, a task retakes its own, and a removed lane releases its task's leases (T-1588).
