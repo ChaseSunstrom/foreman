@@ -1159,7 +1159,15 @@ def _tree_hash(root, h, cap=4000, skipped=None):
     which the walk never enters) and a large file's size and mtime. A separate hash, so a baseline recorded before it
     still compares its sha as before."""
     n, stand = 0, (skipped.update if skipped is not None else lambda b: None)
-    for d, dirs, files in os.walk(root):
+    def unlisted(e):  # T-1444: a folder the walk can't list is named, and its mode and times stand in for its files
+        rel = os.path.relpath(e.filename or root, root).encode()
+        h.update(rel + b"\0!unlisted\0")
+        try:
+            st = os.stat(e.filename)
+            stand(rel + f"\0!unlisted {st.st_mode} {st.st_mtime_ns} {st.st_ctime_ns}\0".encode())
+        except (OSError, TypeError):
+            pass
+    for d, dirs, files in os.walk(root, onerror=unlisted):
         for x in sorted(dirs):
             link = os.path.join(d, x)
             if os.path.islink(link):
@@ -1171,20 +1179,25 @@ def _tree_hash(root, h, cap=4000, skipped=None):
                 continue
             n += 1
             rel = os.path.relpath(full, root).encode()
-            # not a regular file (a FIFO would block the open forever): named, never read
-            if n > cap or os.path.islink(full) or not os.path.isfile(full) or os.path.getsize(full) > 4_000_000:
-                h.update(rel + b"\0skipped\0")
-                if n <= cap and os.path.islink(full):
-                    stand(rel + b"\0->" + os.fsencode(os.readlink(full)) + b"\0")
-                elif n <= cap and os.path.isfile(full):
-                    st = os.stat(full)
-                    stand(rel + f"\0{st.st_size} {st.st_mtime_ns}\0".encode())
-                continue
             try:
+                # not a regular file (a FIFO would block the open forever): named, never read
+                if n > cap or os.path.islink(full) or not os.path.isfile(full) or os.path.getsize(full) > 4_000_000:
+                    h.update(rel + b"\0skipped\0")
+                    if n <= cap and os.path.islink(full):
+                        stand(rel + b"\0->" + os.fsencode(os.readlink(full)) + b"\0")
+                    elif n <= cap and os.path.isfile(full):
+                        st = os.stat(full)
+                        stand(rel + f"\0{st.st_size} {st.st_mtime_ns}\0".encode())
+                    continue
                 with open(full, "rb") as fh:
                     h.update(rel + b"\0" + fh.read())
-            except OSError:  # T-1444: named, never read; raising would keep the plugin's old baseline and hide later changes
-                h.update(rel + b"\0unreadable\0")
+            except OSError:  # T-1444: named, never read; raising would keep the old baseline and hide later changes
+                h.update(rel + b"\0!unreadable\0")  # the stand-in below is what tells two such files apart
+                try:
+                    st = os.stat(full)
+                    stand(rel + f"\0!unreadable {st.st_size} {st.st_mtime_ns} {st.st_ctime_ns}\0".encode())
+                except OSError:
+                    pass
 
 
 def _supply(claude):

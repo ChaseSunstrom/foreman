@@ -129,9 +129,11 @@ def profile(path):
         return out
     seen = set()  # T-1444: the default folders and plugin.json's paths (nested commands too), confined to the plugin
     for kind, f, _ in _component_files(path):
-        if f is None or f in seen:
+        real = os.path.realpath(f) if f else None
+        # a default folder may link out (as before); a named path is already confined by _component_files
+        if real is None or real in seen:
             continue
-        seen.add(f)
+        seen.add(real)
         kind += "s"
         fm = _frontmatter(f)
         # unnamed: a skill is its folder's name, a command or agent its file's name without .md
