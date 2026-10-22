@@ -118,9 +118,11 @@ class Calibration(ForemanTestCase):
         self.assertEqual(cal["answers"], answers.replace(",", ""))
         self.assertEqual([list(x) for x in cal["pairs"]], [[a["look"], b["look"]] for a, b in pairs])
         rank = {r["look"]: r["score"] for r in self.fm_json("looks")["looks"]}
-        self.assertEqual(rank[pairs[0][0]["look"]] - rank[pairs[0][1]["look"]] != 0, True)
+        self.assertGreater(rank[pairs[0][0]["look"]], rank[pairs[0][1]["look"]], "a pick outranks its rival")
         again = self.fm_json("looks", "calibrate")
-        self.assertNotEqual(again["round"], shown["round"], "the next calibration pairs them differently")
+        self.assertNotEqual(again["round"], shown["round"])
+        self.assertTrue({frozenset((a["look"], b["look"])) for a, b in again["pairs"]}.isdisjoint(
+            {frozenset((a["look"], b["look"])) for a, b in pairs}), "the next calibration meets new rivals")
 
     def test_the_keyboard_picker_takes_one_key_a_pair_and_stops_on_q(self):
         pairs = fmtaste.pairs(fmtaste.looks())
@@ -231,6 +233,10 @@ class CodeApp(ForemanTestCase):
         self.assertEqual(app.mode, "main")
         self.assertEqual(fmtaste.load()["events"][-1]["answers"], "b" + "abn" * 3 + "an")
         self.assertIn("12 answers", app.message)
+        with mock.patch.object(fmtaste, "looks", return_value={}):  # no cards to pair: a note, the screen stays
+            app.key("L")
+        self.assertEqual(app.mode, "main")
+        self.assertIn("no calibration", app.message)
 
 
 class Surfaces(unittest.TestCase):
