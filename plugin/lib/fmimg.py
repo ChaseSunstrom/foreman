@@ -3,6 +3,9 @@
 decode() reads 8-bit grey, grey+alpha, RGB and RGBA, and 1/2/4/8-bit grey and palette, with all five filters, into
 RGBA bytes; encode() writes RGB or RGBA with filter 0. zlib and struct only: Pillow is never needed.
 ponytail: Adam7 interlacing and 16-bit samples are refused; add them when a real screenshot needs them.
+At the caps (MAX_PIXELS, MAX_FILE) the worst case is about 30 s (Paeth on every row, ~0.8 s a megapixel in pure
+Python) and under 1 GB at peak (the file, its joined IDAT, the inflated rows and the RGBA out); a screenshot's
+megapixel or two takes about a second and tens of MB.
 """
 import os
 import stat
@@ -15,7 +18,8 @@ SIGNATURE = b"\x89PNG\r\n\x1a\n"
 MAX_SIDE = 1 << 15
 MAX_PIXELS = 1 << 25  # 33.5 M: an 8K (7680x4320) frame fits; 134 MB of RGBA
 MAX_FILE = 256 << 20
-CHANGED = (255, 0, 0, 255)  # diff_image's colour for a changed pixel
+CHANGED = (255, 0, 0, 255)  # the diff image's colour for a changed pixel
+FADE = bytes(191 + v // 4 for v in range(256))  # the diff image's unchanged pixels: a's, lightened
 MODES = {0: "grey", 2: "rgb", 3: "palette", 4: "grey+alpha", 6: "rgba"}
 CHANNELS = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
 KNOWN = {b"IHDR", b"PLTE", b"IDAT", b"IEND"}
@@ -29,6 +33,11 @@ class Image(NamedTuple):
     rgba: bytes  # width * height * 4 bytes, rows top to bottom
 
 
+def _name(kind):
+    """A chunk type for a message: four letters as they are, anything else (ESC [ 2 J) as a repr, never raw."""
+    return kind.decode("ascii") if kind.isalpha() else repr(kind)
+
+
 def _chunks(data):
     if not data.startswith(SIGNATURE):
         raise ValueError("not a PNG (no PNG signature)")
@@ -39,9 +48,9 @@ def _chunks(data):
         n, kind = struct.unpack(">I4s", data[pos:pos + 8])
         body, end = data[pos + 8:pos + 8 + n], pos + 12 + n
         if end > len(data):
-            raise ValueError(f"truncated: the {kind.decode('latin-1')} chunk runs past the end of the file")
-        if struct.unpack(">I", data[end - 4:end])[0] != zlib.crc32(kind + body):
-            raise ValueError(f"bad CRC in the {kind.decode('latin-1')} chunk")
+            raise ValueError(f"truncated: the {_name(kind)} chunk runs past the end of the file")
+        if struct.unpack(">I", data[end - 4:end])[0] != zlib.crc32(body, zlib.crc32(kind)):
+            raise ValueError(f"bad CRC in the {_name(kind)} chunk")
         yield kind, body
         if kind == b"IEND":
             return
@@ -52,13 +61,16 @@ def _header(body):
     if len(body) != 13:
         raise ValueError("bad IHDR")
     w, h, depth, colour, comp, filt, interlace = struct.unpack(">IIBBBBB", body)
-    if colour not in MODES or depth not in ((1, 2, 4, 8, 16) if colour in (0, 3) else (8, 16)) or comp or filt:
+    depths = {0: (1, 2, 4, 8, 16), 3: (1, 2, 4, 8)}.get(colour, (8, 16))
+    if colour not in MODES or depth not in depths or comp or filt:
         raise ValueError(f"bad IHDR: colour type {colour}, depth {depth}")
     if depth == 16:
         raise ValueError("16-bit PNGs aren't read (8-bit and below only)")
     if interlace:
         raise ValueError("interlaced (Adam7) PNGs aren't read")
-    if not (0 < w <= MAX_SIDE and 0 < h <= MAX_SIDE) or w * h > MAX_PIXELS:
+    if not (w and h):
+        raise ValueError(f"bad IHDR: an empty image ({w}x{h})")
+    if w > MAX_SIDE or h > MAX_SIDE or w * h > MAX_PIXELS:
         raise ValueError(f"too large: {w}x{h} (at most {MAX_SIDE} a side and {MAX_PIXELS} pixels)")
     return w, h, depth, colour
 
@@ -116,7 +128,7 @@ def decode(data):
         elif kind == b"IDAT":
             idat.append(body)
         elif kind not in KNOWN and not kind[0] & 32:
-            raise ValueError(f"unknown critical chunk {kind.decode('latin-1')}")
+            raise ValueError(f"unknown critical chunk {_name(kind)}")
     if head is None:
         raise ValueError("no IHDR")
     w, h, depth, colour = head
@@ -135,10 +147,11 @@ def decode(data):
     if colour == 3:
         if not plte or len(plte) % 3:
             raise ValueError("palette image without a valid PLTE")
-        alpha = (trns or b"")[:len(plte) // 3]
-        table = [bytes(plte[i * 3:i * 3 + 3]) + bytes([alpha[i] if i < len(alpha) else 255])
-                 for i in range(len(plte) // 3)]
-        table += [b"\x00\x00\x00\xff"] * (256 - len(table))  # ponytail: an index past the palette reads black
+        entries, top = len(plte) // 3, max(px)
+        if top >= entries:  # the spec's error; a diff tool shouldn't paint over a corrupt file
+            raise ValueError(f"palette index past PLTE: {top} in a {entries}-colour palette")
+        alpha = (trns or b"")[:entries]
+        table = [bytes(plte[i * 3:i * 3 + 3]) + bytes([alpha[i] if i < len(alpha) else 255]) for i in range(entries)]
         return Image(w, h, MODES[colour], depth, b"".join(map(table.__getitem__, px)))
     n, out = w * h, bytearray(w * h * 4)
     if colour in (0, 4):
@@ -176,16 +189,18 @@ def encode(width, height, pixels, mode="rgba"):
     raw = b"".join(b"\x00" + pixels[y * stride:(y + 1) * stride] for y in range(height))
 
     def chunk(kind, body):
-        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(body, zlib.crc32(kind)))
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 2 if k == 3 else 6, 0, 0, 0)
     return SIGNATURE + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b"")
 
 
 def _read(path, head=0):
     """The file's bytes (its first head bytes if head); ValueError past MAX_FILE or for a FIFO or device."""
-    with open(path, "rb") as f:
-        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):  # a FIFO would block, a device never end
-            raise ValueError("not a regular file")
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)  # a plain open() of a FIFO waits for a writer
+    if not stat.S_ISREG(os.fstat(fd).st_mode):  # a FIFO would block on read, a device never end
+        os.close(fd)
+        raise ValueError("not a regular file")
+    with os.fdopen(fd, "rb") as f:
         data = f.read(head or MAX_FILE + 1)
     if len(data) > MAX_FILE:
         raise ValueError(f"too large a file (over {MAX_FILE >> 20} MB)")
@@ -214,49 +229,52 @@ def load(path):
 
 
 def save(path, width, height, pixels, mode="rgba"):
-    """Write a PNG through a temporary file and a rename: a symlink at path is replaced, never written through."""
+    """Write a PNG through a temporary file and a rename: a symlink at path is replaced, never written through, and
+    the file is mkstemp's 0600 (a diff of a screenshot may be as private as the screenshot)."""
     data = encode(width, height, pixels, mode)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)), prefix=".fmimg-", suffix=".png")
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
-        os.chmod(tmp, 0o644)
         os.replace(tmp, path)
     except BaseException:
         os.unlink(tmp)
         raise
 
 
-def _changes(a, b):
-    """(y, [x, ...]) for each row where a and b differ."""
+def _differ(p, q, tol):
+    """Two RGBA pixels differ unless equal, both fully transparent, or within tol on every channel."""
+    return p != q and (p[3] or q[3]) and (not tol or max(abs(x - y) for x, y in zip(p, q)) > tol)
+
+
+def diff(a, b, tol=0, image=False):
+    """{changed, total, bbox: [x0, y0, x1, y1) around the changes or None}; image=True adds "image", the RGBA bytes of
+    a faded copy of a with each changed pixel in CHANGED, from the same walk. tol: the largest per-channel difference
+    that still counts as equal; two pixels with alpha 0 are equal whatever their colour."""
     if (a.width, a.height) != (b.width, b.height):
         raise ValueError(f"sizes differ: {a.width}x{a.height} vs {b.width}x{b.height}")
-    row = a.width * 4
+    w, row, changed, box, out = a.width, a.width * 4, 0, None, None
+    if image:
+        out = bytearray(a.rgba.translate(FADE))
+        out[3::4] = b"\xff" * (w * a.height)
     for y in range(a.height):
         ra, rb = a.rgba[y * row:(y + 1) * row], b.rgba[y * row:(y + 1) * row]
-        if ra != rb:
-            yield y, [x for x in range(a.width) if ra[x * 4:x * 4 + 4] != rb[x * 4:x * 4 + 4]]
-
-
-def diff(a, b):
-    """{changed: pixels whose RGBA differs, total, bbox: [x0, y0, x1, y1) around them or None}."""
-    changed, box = 0, None
-    for y, xs in _changes(a, b):
+        if ra == rb:  # most rows of a near-identical pair: one C compare
+            continue
+        xs = [x for x in range(w) if _differ(ra[x * 4:x * 4 + 4], rb[x * 4:x * 4 + 4], tol)]
+        if not xs:
+            continue
         changed += len(xs)
         box = [xs[0], y, xs[-1] + 1, y + 1] if box is None else \
             [min(box[0], xs[0]), box[1], max(box[2], xs[-1] + 1), y + 1]
-    return {"changed": changed, "total": a.width * a.height, "bbox": box}
-
-
-def diff_image(a, b):
-    """RGBA bytes: a faded copy of a with each changed pixel in CHANGED."""
-    out = bytearray(a.rgba.translate(bytes(191 + v // 4 for v in range(256))))
-    out[3::4] = b"\xff" * (a.width * a.height)
-    for y, xs in _changes(a, b):
-        for x in xs:
-            i = (y * a.width + x) * 4
-            out[i:i + 4] = bytes(CHANGED)
-    return bytes(out)
+        if image:
+            for x in xs:
+                i = (y * w + x) * 4
+                out[i:i + 4] = bytes(CHANGED)
+    d = {"changed": changed, "total": w * a.height, "bbox": box}
+    if image:
+        d["image"] = bytes(out)
+    return d
 
 
 def cmd_img(args):
@@ -281,13 +299,14 @@ def cmd_img(args):
         print(f"fm: img: {e}", file=sys.stderr)
         return 2
     if (a.width, a.height) != (b.width, b.height):
-        fmcli.out(args, {"changed": None, "sizes": [[a.width, a.height], [b.width, b.height]]},
-                  f"sizes differ: {a.width}x{a.height} vs {b.width}x{b.height}")
+        fmcli.out(args, {"changed": None, "sizes": [[a.width, a.height], [b.width, b.height]], "out": None},
+                  f"sizes differ: {a.width}x{a.height} vs {b.width}x{b.height}"
+                  + ("; no diff image written" if args.out else ""))
         return 1
-    d = diff(a, b)
+    d = diff(a, b, image=bool(args.out))
     if args.out:
         try:
-            save(args.out, a.width, a.height, diff_image(a, b))
+            save(args.out, a.width, a.height, d.pop("image"))
         except OSError as e:
             print(f"fm: img: can't write {args.out}: {e}", file=sys.stderr)
             return 2
