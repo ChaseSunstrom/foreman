@@ -3051,6 +3051,10 @@ def _prompted(p, tid, cats):
                and time.time() - a.get("at", 0) < c.APPROVAL_TTL for a in seen)
 
 
+FATIGUE_ASKS = 3  # T-1606: from the third ask of one kind in a session, suggest batching
+ASK_TALLY_KEEP = 8  # sessions whose counts meta keeps
+
+
 def cmd_ask(args):
     """Record a request only. The grant happens in the UserPromptSubmit hook, on the user's own reply."""
     import fmguard
@@ -3088,15 +3092,25 @@ def cmd_ask(args):
         pend.append(dict({"task": b.id, "allow": cats, "why": why, "session": sid, "at": c.now(),
                           "claude": seen.get("claude")}, **({"pin": args.pin} if args.pin else {})))
         meta["pending_approvals"] = pend
+        tallies = meta.get("ask_tally") if isinstance(meta.get("ask_tally"), dict) else {}
+        tallies = {k: v for k, v in tallies.items() if isinstance(v, dict) and k != "session" and k != "counts"}
+        mine = tallies.pop(sid, {})  # T-1606: per session, side by side; the last few sessions kept
+        for x in cats:
+            mine[x] = int(mine.get(x) or 0) + 1
+        meta["ask_tally"] = dict(list(tallies.items())[-(ASK_TALLY_KEEP - 1):] + [(sid, mine)])
         c.write_meta(p, meta)
         c.log_event(p, "approval_requested", task=b.id, data={"allow": cats, "why": why}, session=sid)
         c.regen_views(p)  # the statusline shows what a yes would grant
     reload = (" The user approved Claude Code's permission dialog, but this session hasn't loaded Foreman's "
               "PermissionRequest hook, so the dialog can't grant it: they should run /reload-plugins.") \
         if seen.get("dialog") else ""
-    out(args, {"task": b.id, "allow": cats, "why": why},
+    n, cat = max((mine[x], x) for x in cats)
+    tired = (f" Approval fatigue: {cat} asked {n} times this session; batch the rest of the work already in the "
+             "plan into one ask" + (" (fm ask ID core --standing covers every task)" if cat == "core" else "")
+             + " rather than one per step.") if n >= FATIGUE_ASKS else ""
+    out(args, {"task": b.id, "allow": cats, "why": why, "asked_this_session": n},
         f"Pending: {b.id} {', '.join(cats)} ({why}).{reload} Ask the user one yes/no question for it now; their next "
-        f"message decides: a reply starting with yes grants it, anything else cancels it.")
+        f"message decides: a reply starting with yes grants it, anything else cancels it.{tired}")
 
 
 # ponytail: words, not meaning; a block whose reason names none of these isn't listed (fm task list shows all blocks)
@@ -5779,6 +5793,11 @@ def _build_parser():
                    "objects, fallback state); list the rest as left for a person")
     s.add_argument("--accept-supply", action="store_true",
                    help="take the current plugins and MCP servers as the supply-chain baseline (T-0672)")
+    s.add_argument("--wrong", metavar="CMD", help="file a guard false alarm (or, with --should block, a miss) as a "
+                   "labelled case and one FIX task for review; the guard itself is never changed (T-1606)")
+    s.add_argument("--should", choices=["allow", "block"], help="with --wrong: the verdict it should get (default allow)")
+    s.add_argument("--why", default="", help="with --wrong: what went wrong")
+    s.add_argument("--cwd", metavar="DIR", help="with --wrong: the folder it ran in (default: here)")
     s = add("fsck", lazy("fmdoctor", "cmd_fsck"), tier=("Project and settings", 872), help="a deeper read-only check "
             "of Foreman's state: open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, "
             "journals whose last line is torn; exit 1 on any (T-1667)")
