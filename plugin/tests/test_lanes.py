@@ -181,6 +181,26 @@ class Lanes(ForemanTestCase):
         self.assertNotIn("kept", out, "its branch is merged (no commits): it goes")
         self.fm("lane", "new", tid)  # and the lane can be made again
 
+    def test_rm_discards_a_folder_holding_only_the_guard_script_cache(self):
+        # T-1685: a Foreman lane's guard writes state/guard-scripts.json in its own worktree; that alone never blocks rm
+        tid = self.new("Cached", self.repo, focus=False)
+        path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
+        common = subprocess.run(["git", "-C", path, "rev-parse", "--git-common-dir"], capture_output=True,
+                                text=True).stdout.strip()
+        with open(os.path.join(path, common, "info", "exclude"), "a") as f:
+            f.write("state/\n")
+        os.makedirs(os.path.join(path, "state"))
+        with open(os.path.join(path, "state", "guard-scripts.json"), "w") as f:
+            f.write("{}\n")
+        with open(os.path.join(path, "state", "notes.json"), "w") as f:
+            f.write("{}\n")
+        p = self.fm("lane", "rm", tid, check=False)
+        self.assertNotEqual(p.returncode, 0, "another file in the ignored folder is still kept")
+        self.assertIn("state/", p.stderr)
+        os.remove(os.path.join(path, "state", "notes.json"))
+        self.fm("lane", "rm", tid)
+        self.assertFalse(os.path.exists(path))
+
     def test_a_criterions_command_run_in_a_lane_is_that_lanes_evidence(self):
         main = self.new("Main work", self.repo)
         lane = self.new("Lane work", self.lane)

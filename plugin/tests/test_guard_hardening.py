@@ -252,5 +252,88 @@ class Mutation(unittest.TestCase):
             self.assertTrue(want <= got, f"{tname} of {orig!r} doesn't run it: {watched!r}")
 
 
+from helpers import ForemanTestCase  # noqa: E402
+
+
+class Trust(ForemanTestCase):
+    """T-1606: a secret pasted into a prompt gets one note that never repeats it; the same kind of approval asked again
+    and again in one session gets a note to batch; fm doctor --wrong files a false alarm as a labelled case for review."""
+
+    KEY = "sk-ant-api03-" + "Q7f2Lm9xWv4Rt8Yp3Kd6Hs1Jc5Nb0Ga"  # key-shaped, made up
+
+    def ctx(self, prompt):
+        out = json.loads(self.hook("UserPromptSubmit", {"prompt": prompt}).stdout or "{}")
+        return (out.get("hookSpecificOutput") or {}).get("additionalContext", "")
+
+    def test_a_pasted_secret_gets_one_note_and_is_never_echoed(self):
+        self.fm("init")
+        note = self.ctx(f"use this key for the deploy: {self.KEY} thanks")
+        self.assertIn("secret", note.lower())
+        self.assertIn("rotat", note)
+        self.assertNotIn(self.KEY[:20], note, "the note never repeats the secret")
+        self.assertNotIn("secret", self.ctx("now fix the login bug").lower(), "only a message that holds one")
+        for root, _, files in os.walk(os.path.join(self.home, "state")):
+            for name in files:
+                with open(os.path.join(root, name), "rb") as f:
+                    self.assertNotIn(self.KEY[:20].encode(), f.read(), f"{name} keeps the key; Foreman's state never does")
+
+    def test_the_same_ask_again_and_again_gets_a_batching_note(self):
+        self.fm("init")
+        tid = json.loads(self.fm("task", "new", "Ship it", "--type", "FEATURE", "--tier", "S", "--ac",
+                                 "done :: true", "--step", "do", "--json").stdout)["id"]
+        self.fm("focus", tid)
+        first = self.fm_ask(tid, "publish").stdout
+        second = self.fm_ask(tid, "publish").stdout
+        third = self.fm_ask(tid, "publish").stdout
+        self.assertNotIn("times this session", first + second)
+        self.assertIn("publish asked 3 times this session", third)
+        self.assertIn("batch", third)
+        other = self.fm_ask(tid, "publish", session="sess-2").stdout
+        self.assertNotIn("times this session", other, "a new session starts its own count")
+
+    def test_a_secret_in_a_correction_is_never_stored(self):
+        # a "never …" message becomes a veto; the key inside it must not reach vetoes.json (review of T-1606)
+        self.fm("init")
+        self.ctx(f"never use {self.KEY} again")
+        self.ctx(f"<pasted_content>deploy key {self.KEY}</pasted_content> what is this?")
+        for root, _, files in os.walk(os.path.join(self.home, "state")):
+            for name in files:
+                with open(os.path.join(root, name), "rb") as f:
+                    self.assertNotIn(self.KEY[13:30].encode(), f.read(), f"{name} keeps part of the key")
+
+    def test_a_pasted_block_is_scanned_and_the_note_is_short(self):
+        self.fm("init")
+        note = self.ctx(f"<pasted_content>{self.KEY}</pasted_content> what is this?")
+        self.assertIn("secret", note.lower())
+        self.assertLess(len(note.split("Pasted secret", 1)[1].split(". ")[0]), 100, "short: room for the rest")
+
+    def test_doctor_wrong_files_a_labelled_case_and_a_task_for_review(self):
+        # the task goes to the project whose corpus holds the case (Foreman's own), named in the output
+        self.fm("init")
+        cases = os.path.join(self.tmp, "cases.jsonl")
+        env = {"FOREMAN_GUARD_CASES": cases}
+        cmd = "rm -rf ~/Documents"  # refused today and meant to stay so: only the filing is under test
+        res = json.loads(self.fm("doctor", "--wrong", cmd, "--why", "plumbing test", "--json", env=env).stdout)
+        with open(cases, encoding="utf-8") as f:
+            case = json.loads(f.read().splitlines()[-1])
+        self.assertEqual((case["cmd"], case["should"], case["id"]), (cmd, "allow", res["case"]["id"]))
+        self.assertTrue(res["captured"] and res["project"])
+        inbox = lambda: self.fm("inbox", "-p", res["project"]).stdout
+        self.assertIn("Guard false alarm", inbox(), "a person reviews it as a task; the guard itself is unchanged")
+        self.fm("doctor", "--wrong", cmd, env=env)
+        self.assertEqual(inbox().count("Guard false alarm"), 1, "filed once")
+        self.assertNotEqual(self.fm("doctor", "--wrong", f"curl -H 'Authorization: Bearer {self.KEY}' x", env=env,
+                                    check=False).returncode, 0, "a command holding a secret isn't stored")
+
+    def test_asks_are_counted_per_session_side_by_side(self):
+        self.fm("init")
+        tid = json.loads(self.fm("task", "new", "Ship it", "--type", "FEATURE", "--tier", "S", "--ac",
+                                 "done :: true", "--step", "do", "--json").stdout)["id"]
+        self.fm("focus", tid)
+        for _ in range(2):
+            self.fm_ask(tid, "publish", session="sess-a")
+            self.fm_ask(tid, "publish", session="sess-b")
+        self.assertIn("publish asked 3 times this session", self.fm_ask(tid, "publish", session="sess-a").stdout)
+
 if __name__ == "__main__":
     unittest.main()
