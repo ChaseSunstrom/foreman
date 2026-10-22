@@ -92,6 +92,32 @@ class SkillUsage(HookCase):
         self.assertEqual(got["playbooks"].get("review/code-reviewer"), 1, got["playbooks"])
         self.assertRegex(self.fm("usage").stdout, r"named, not loaded: .*\bbrainstorm ×1\b")  # the idle Next names next
 
+    def test_a_skill_hint_in_a_note_or_the_drives_stop_reason_is_named(self):
+        # T-1697's hints say "load: Skill foreman:intake", no slash; the drive gives its Next line as a Stop reason
+        self.fm("init")
+        self.task()
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "carry on", "session_id": "sa"}))
+        self.assertIn("Skill foreman:intake", ctx)
+        stop = lambda sid: json.loads(self.hook("Stop", {"stop_hook_active": False, "session_id": sid,
+                                                         "last_assistant_message": "Continuing next."}).stdout)
+        self.assertIn("Skill foreman:intake", stop("sb")["reason"])
+        self.assertIn("Skill foreman:intake", stop("sc")["reason"])
+        self.hook("PostToolUse", {"tool_name": "Skill", "tool_input": {"skill": "foreman:intake"}, "session_id": "sc"})
+        self.assertEqual(self.fm_json("usage")["named_not_loaded"].get("intake"), 2)
+
+    def test_only_real_skills_count_and_a_long_name_is_not_logged(self):
+        import fmhooks
+        self.fm("init")
+        fmhooks._log_inject("Stop", "auditing: run: the /foreman:review workflow", {"session_id": "s9", "cwd": self.repo})
+        self.hook("UserPromptSubmit", {"prompt": "/foreman:zzz please", "session_id": "s8"})
+        self.hook("UserPromptSubmit", {"prompt": "/foreman:" + "a" * 100000, "session_id": "s7"})
+        got = self.fm_json("usage")
+        self.assertNotIn("review", got["named_not_loaded"], "a workflow, not a skill")
+        self.assertNotIn("zzz", got["skills"])
+        import fmcore
+        with open(os.path.join(fmcore.state_dir(), "events.jsonl")) as f:
+            self.assertLess(max(map(len, f)), 2000)
+
 
 if __name__ == "__main__":
     import unittest

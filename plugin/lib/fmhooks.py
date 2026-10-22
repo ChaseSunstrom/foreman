@@ -123,6 +123,8 @@ def run(event, raw):
                 print(json.dumps(out, ensure_ascii=False))
                 _log_inject(event, ((out.get("hookSpecificOutput") or {}) if isinstance(out, dict) else {})
                             .get("additionalContext"), payload)
+                if event in ("Stop", "SubagentStop") and isinstance(out, dict):  # T-1702: the drive's Next line and
+                    _skill_named(payload, out.get("reason"))  # hint reach the model as the block's reason
             if state:
                 _breaker_set(event, None)
         except HookBlock as e:
@@ -184,18 +186,20 @@ def _log_inject(event, text, pl=None):
         _skill_named(pl, text)
 
 
-_TYPED = re.compile(r"\s*(?:<command-name>)?/foreman:([a-z][a-z-]*)")
+_SKILL_NAME = r"foreman:([a-z][a-z-]{0,39})(?![a-z-])"  # a longer name is no skill: never logged
+_TYPED = re.compile(r"\s*(?:<command-name>)?/" + _SKILL_NAME)
+_NAMED = re.compile(r"(?:/|\bSkill )" + _SKILL_NAME)  # /foreman:x, or a hint's "load: Skill foreman:x" (T-1697)
 
 
 def _skill_named(pl, text, typed=False):
-    """T-1702: the /foreman:x skills a hook's note names (skill_named), or the one the user typed (slash), as an event
+    """T-1702: the foreman:x skills a hook's note names (skill_named), or the one the user typed (slash), as an event
     fm usage holds against what the session loaded: named and never loaded is offered and ignored. Every note goes
     through here, so a hook naming a skill needs no call of its own; only text naming one pays for the lookup."""
     try:
-        if not isinstance(pl, dict) or "/foreman:" not in str(text or ""):
+        if not isinstance(pl, dict) or "foreman:" not in str(text or ""):
             return
         m = _TYPED.match(str(text)) if typed else None
-        names = ([m.group(1)] if m else []) if typed else sorted(set(re.findall(r"/foreman:([a-z][a-z-]*)", str(text))))
+        names = ([m.group(1)] if m else []) if typed else sorted(set(_NAMED.findall(str(text))))
         if names:
             p = c.find_project(_cwd(pl))
             _event({"kind": "slash" if typed else "skill_named", "session_id": pl.get("session_id"),
