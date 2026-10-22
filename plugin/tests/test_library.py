@@ -648,8 +648,6 @@ def _section(text, name):
     return m.group(1) if m else ""
 
 
-_browser = headless_chrome  # a headless Chromium for compiling shaders
-
 class ShaderLooks(ForemanTestCase):
     """T-1499: eight shader looks, a light-and-material recipe card and an SVG icon system, beside the looks."""
     RECIPES = {"light-and-material", "svg-icon-system"}
@@ -719,7 +717,7 @@ class ShaderLooks(ForemanTestCase):
         {name: {"compile": "ok" or the log, "plain": the largest channel gap, in 0-255, from its plain colour}}."""
         if ShaderLooks._page is not None:
             return ShaderLooks._page
-        browser = _browser()
+        browser = headless_chrome()  # one for compiling shaders
         if not browser:
             ShaderLooks._page = "no headless Chromium (FOREMAN_CHROME, chrome-headless-shell or Playwright's download)"
             return ShaderLooks._page

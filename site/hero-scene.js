@@ -98,9 +98,13 @@ function mountScene(box) {
   let res = null, raf = 0, last = 0, stopped = false, visible = !document.hidden, onscreen = true;
   let tau = 0, running = false, geo = null, palette = null;
 
-  // Survival 8: any failure ends at the poster, logged once.
-  const fail = err => { if (stopped) return; stopped = true; cancelAnimationFrame(raf); off.abort();
+  // Survival 8: any failure ends at the poster, logged once, its GPU resources and context given back.
+  const fail = err => { if (stopped) return; stopped = true; cancelAnimationFrame(raf); off.abort(); free();
     console.error("hero scene: showing the poster", err); setState("failed"); };
+  function free() {
+    if (res && !gl.isContextLost()) { gl.deleteProgram(res.track.p); gl.deleteProgram(res.form.p); gl.deleteVertexArray(res.vao); gl.deleteBuffer(res.vbo); }
+    res = null; gl.getExtension("WEBGL_lose_context")?.loseContext();  // after off.abort(): no "lost" state follows
+  }
   function program(vs, fs) {
     const p = gl.createProgram();
     for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
@@ -197,15 +201,16 @@ function mountScene(box) {
   // Survival 9: no frames offscreen, in a hidden tab, under reduced motion, or once the pass is over.
   function wake() { if (!raf && running && !stopped && visible && onscreen && res && !gl.isContextLost() && !reduce.matches) raf = requestAnimationFrame(frame); }
   function sleep() { cancelAnimationFrame(raf); raf = 0; last = 0; }
-  const pass = () => { if (!running) { running = true; tau = box.dataset.state === "live" ? 0 : -LEAD; } wake(); };
+  const pass = () => { if (!running) { running = true; tau = -LEAD; } wake(); };  // the pulse waits out the fade-in
 
   // Budget: DPR capped at 2 (1.5 on touch screens); resize redraws in the same callback, so no blank frame.
   const ro = new ResizeObserver(() => {
     const dpr = Math.min(window.devicePixelRatio || 1, matchMedia("(pointer: coarse)").matches ? 1.5 : 2);
     canvas.width = Math.max(1, Math.round(canvas.clientWidth * dpr)); canvas.height = Math.max(1, Math.round(canvas.clientHeight * dpr));
-    geo = readPoster(); render();
+    try { geo = readPoster(); } catch (err) { return fail(err); }
+    render();
   });
-  const io = new IntersectionObserver(([e]) => { onscreen = e.isIntersecting; onscreen ? pass() : sleep(); });
+  const io = new IntersectionObserver(entries => { onscreen = entries.at(-1).isIntersecting; onscreen ? pass() : sleep(); });  // oldest first
   on(document, "visibilitychange", () => { visible = !document.hidden; visible ? wake() : sleep(); });
   // Survival 5: reduced motion turned on mid-visit puts the poster back; turned off, the scene returns.
   on(reduce, "change", () => { if (reduce.matches) { sleep(); running = false; setState("still"); } else { render(); pass(); } });

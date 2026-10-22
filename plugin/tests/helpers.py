@@ -42,11 +42,16 @@ def read_json(path):
 
 
 def headless_chrome():
-    """A headless Chromium (T-1499, T-1610): FOREMAN_CHROME, one on PATH, or Playwright's download; None if absent."""
+    """A headless Chromium (T-1499, T-1610): FOREMAN_CHROME, one on PATH, or Playwright's newest download; None if
+    absent."""
     import glob
+    import re
+    builds = glob.glob(os.path.expanduser(
+        "~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell"))
+    build = lambda p: int((re.search(r"chromium_headless_shell-(\d+)/", p) or (0, -1))[1])  # 1243, not "1243" < "999"
+    newest = sorted(builds, key=build, reverse=True)
     found = [os.environ.get("FOREMAN_CHROME")] + [shutil.which(n) for n in (
-        "chrome-headless-shell", "chromium", "chromium-browser", "google-chrome")] + sorted(glob.glob(os.path.expanduser(
-            "~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell")))
+        "chrome-headless-shell", "chromium", "chromium-browser", "google-chrome")] + newest
     return next((p for p in found if p and os.access(p, os.X_OK)), None)
 
 
