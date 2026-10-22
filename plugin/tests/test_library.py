@@ -2,6 +2,7 @@
 installed plugins' skills."""
 import json
 import os
+import re
 import subprocess
 import time
 
@@ -548,3 +549,94 @@ class LibraryAdmit(ForemanTestCase):
         self.assertNotIn("react", fmlib.uncovered_deps([repo]))
         out = json.loads(self.fm("lib", "gaps", "--json", "--root", repo).stdout)
         self.assertIn("zz-obscure-lib", json.dumps(out))
+
+
+def _read(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def _lin(h):
+    return [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in
+            (int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))]
+
+
+def _ratio(a, b):
+    hi, lo = sorted((sum(w * v for w, v in zip((0.2126, 0.7152, 0.0722), _lin(x))) for x in (a, b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _oklch_ch(h):
+    """(chroma, hue) of a hex colour in OKLCH."""
+    import math
+    r, g, b = _lin(h)
+    l, m, s = (math.copysign(abs(x) ** (1 / 3), x) for x in (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b,
+                                                            0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b,
+                                                            0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b))
+    a, bb = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+    return math.hypot(a, bb), math.degrees(math.atan2(bb, a)) % 360
+
+
+class Looks(ForemanTestCase):
+    """T-1498: the style shelf, twelve named looks that extend design-direction.md's bank without repeating it."""
+    BANK = {"broadsheet", "instrument", "gallery", "toybox", "raw", "blueprint", "field-guide", "civic", "night-arcade",
+            "riso-zine", "soft-utility", "poster"}
+    CLASSES = ("grotesk", "neo-grotesk", "geometric sans", "humanist sans", "transitional serif", "old-style serif",
+               "Didone", "slab", "mono")
+    STATUS_HUES = (27, 65, 150)  # type-and-colour.md: error, warning, success; an accent sits 30 degrees or more away
+    FLOOR = {"text": 4.5, "text-muted": 4.5, "on-accent": 4.5, "on-strap": 4.5, "accent": 4.5, "border": 3}
+
+    def looks(self):
+        return [x for x in fmlib.cards() if x["area"] == "looks"]
+
+    def test_twelve_looks_each_with_every_field(self):
+        got = self.looks()
+        self.assertEqual(len(got), 12, [x["name"] for x in got])
+        problems, _ = fmlib.lint()
+        self.assertEqual([p for p in problems if p.startswith("looks/")], [])
+        for x in got:
+            self.assertTrue(x["name"].startswith("look-"), x["name"])  # a bare "lido" would fire on everyday prompts
+            self.assertNotIn(x["name"][5:], self.BANK, "the shelf extends the direction bank, it doesn't repeat it")
+            want = ["Palette", "Type", "Layout", "Motion", "Texture", "Suits", "Verify", "Test first", "Do", "Avoid",
+                    "Review"]
+            self.assertEqual(x["sections"], want, x["name"])
+            text = _read(x["path"])
+            sec = lambda n: re.search(rf"(?ms)^## {n}\n(.*?)(?=^## |\Z)", text).group(1)
+            self.assertTrue(any(k in sec("Type") for k in self.CLASSES), x["name"])
+            self.assertRegex(sec("Motion"), r"--dur-(tap|small|enter|exit|move|stage)", x["name"])
+            self.assertIn("Not for:", sec("Suits"), x["name"])
+            self.assertEqual(len(re.findall(r"(?m)^- ", sec("Do"))), 1, x["name"])
+            self.assertEqual(len(re.findall(r"(?m)^- ", sec("Avoid"))), 1, x["name"])
+            self.assertIn("test_look_contrast.py", sec("Verify"), x["name"])
+
+    def test_every_stated_contrast_is_measured_and_meets_its_floor(self):
+        for x in self.looks():
+            text = _read(x["path"])
+            rows = dict(re.findall(r"(?m)^\| `--([a-z-]+)` \| (#[0-9A-F]{6}) \|", text))
+            self.assertTrue({"surface", "text", "text-muted", "accent", "on-accent", "border"} <= set(rows), x["name"])
+            dark = _ratio(rows["surface"], "#000000") < _ratio(rows["surface"], "#FFFFFF")
+            stated = [(role, v, on) for role, line in re.findall(r"(?m)^\| `--([a-z-]+)` \|(.*)$", text)
+                      for v, on in re.findall(r"([\d.]+):1 on ([a-z-]+)", line)]
+            self.assertTrue({r for r, _, on in stated if on == "surface"} >= {"text", "text-muted", "border"}, x["name"])
+            for role, value, on in stated:
+                got = _ratio(rows[role], rows[on])
+                self.assertAlmostEqual(got, float(value), delta=0.05, msg=f"{x['name']}: {role} on {on}")
+                floor = 7 if dark and role == "text" else self.FLOOR.get(role, 4.5)
+                self.assertGreaterEqual(got, floor, f"{x['name']}: {role} on {on}")
+            chroma, hue = _oklch_ch(rows["accent"])
+            if chroma > 0.03:
+                near = min(min(abs(hue - s), 360 - abs(hue - s)) for s in self.STATUS_HUES)
+                self.assertGreaterEqual(near, 30, f"{x['name']}: accent hue {hue:.0f} sits on a status colour")
+                self.assertFalse(265 <= hue <= 300 and chroma > 0.1, f"{x['name']}: the indigo/violet default")
+            block = re.search(r"(?ms)^```python\n(.*?)^```", text).group(1)
+            scope = {}
+            exec(compile(block, x["name"], "exec"), scope)  # the card's own Test first runs and passes
+            scope["test_pairs"]()
+
+    def test_fm_lib_shows_lists_and_finds_them(self):
+        names = {x["name"] for x in self.looks()}
+        out = self.fm("lib", "list", "--area", "looks").stdout
+        self.assertTrue(all(n in out for n in names), out)
+        self.assertIn("## Palette", self.fm("lib", "show", "looks/look-lido").stdout)
+        found = {r["name"] for r in fmlib.search("look style palette", n=20)}
+        self.assertEqual(names - found, set())

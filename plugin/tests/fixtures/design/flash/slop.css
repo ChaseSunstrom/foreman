@@ -1,0 +1,4 @@
+@keyframes blink { 50% { opacity: 0; } }
+.alert { animation: blink .2s infinite; } /* expect */
+.siren { animation: 120ms linear 10 blink alternate; } /* expect */
+@media (prefers-reduced-motion: reduce) { .alert, .siren { animation: none; } }

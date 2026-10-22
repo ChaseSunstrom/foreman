@@ -35,11 +35,12 @@
     "motion": {
       "type": "string",
       "title": "Motion",
-      "description": "full: the pane's charts move at about 30 fps while work runs. calm: everything moves at the 8 fps frame clock. off: no animation; the pane redraws only when something changes.",
+      "description": "full: the pane's charts move at about 30 fps while work runs. reduced: everything moves at the 8 fps frame clock. off: no animation; the pane redraws only when something changes. The same words as fm code's motion setting; calm is the old word for reduced.",
       "options": [
         "full",
-        "calm",
-        "off"
+        "reduced",
+        "off",
+        "calm"
       ],
       "default": "full"
     },

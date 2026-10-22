@@ -1,0 +1,4 @@
+:root { --serif: "Source Serif 4", Georgia, serif; }
+body { font: 400 1.05rem/1.6 var(--serif); }
+h1 { font-family: "Space Grotesk", system-ui, sans-serif; }
+code { font-family: ui-monospace, Menlo, monospace; }

@@ -1,0 +1,6 @@
+@mixin card($r) { border-radius: #{$r}; }
+.card { border-radius: 8px; }
+.button { border-radius: 8px; }
+.input { border-radius: 8px; }
+.modal { border-radius: 8px; }
+.badge { border-radius: 8px; }
