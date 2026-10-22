@@ -919,6 +919,28 @@ class DataPythonAfter(GuardCase):
                     self.assertBlocked(g.check("Bash", {"command": cmd}, ctx), "pipe-shell")
 
 
+class InterpreterCd(GuardCase):
+    def test_a_quoted_name_after_a_provable_cd_resolves_there(self):
+        # T-1458: `cd <scratchpad> && python3 - <<'EOF'` opening p = 'x.edit' was refused as a write to the project
+        scratch = os.path.join(os.path.realpath(self._tmp.name), "scratch")
+        os.makedirs(scratch, exist_ok=True)
+        ctx = g.Ctx(cwd=self.repo, project_root=self.repo, home=self.home, foreman_home=self.fhome, scratch=[scratch],
+                    allow=set(), task_id=None, unbriefed=self.repo)
+        body = "python3 - <<'EOF'\np = 'notes.edit'\ns = open(p).read()\nopen(p, 'w').write(s)\nEOF"
+        literal = "python3 - <<'EOF'\nopen('notes.edit', 'w').write('x')\nEOF"
+        for b in (body, literal):
+            with self.subTest(body=b):
+                self.assertIsNone(g.check("Bash", {"command": f"cd {scratch} && {b}"}, ctx))
+                # lines after the heredoc run after python: they can't move where it wrote
+                self.assertIsNone(g.check("Bash", {"command": f"cd {scratch} && {b}\ngrep -n x notes.edit"}, ctx))
+                self.assertBlocked(g.check("Bash", {"command": b}, ctx), "brief")  # run in the project
+                self.assertBlocked(g.check("Bash", {"command": f"{b}\ncd {scratch}"}, ctx), "brief")  # cd after it
+                self.assertBlocked(g.check("Bash", {"command": f"cd {scratch}\ncd {self.repo}; true\n{b}"}, ctx),
+                                   "brief")  # a line before it moved the shell back
+                self.assertBlocked(g.check("Bash", {"command": f"cd {scratch} && {b}\ncd {self.repo}\n{b}"}, ctx),
+                                   "brief")  # a second python after a cd back into the project
+
+
 class BriefChangelog(GuardCase):
     def test_a_changelog_edit_with_no_task_says_where_the_line_goes(self):
         # T-1452: three CHANGELOG.md edits after a close got only the generic "start a task" text
