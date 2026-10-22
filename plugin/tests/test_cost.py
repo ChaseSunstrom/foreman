@@ -69,6 +69,30 @@ class ForemanShare(HookCase):
         self.assertEqual(share["fm_verbs"], {"task show": 100, "focus": 100, "task set": 100})
 
 
+class SkillUsage(HookCase):
+    """T-1702: fm usage tells a skill a hook named and the session never loaded from one never offered, and counts a
+    typed /foreman:x and a subagent's playbook Read (a lane's long path is cut in the tool event's target)."""
+    def test_named_not_loaded_typed_slash_and_subagent_reads(self):
+        self.fm("init")
+        self.hook("UserPromptSubmit", {"prompt": "super improve it"})  # names /foreman:brainstorm; never loaded
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "fm next"}})
+        self.hook("UserPromptSubmit", {"prompt": "super improve it", "session_id": "sess-3"})  # named, then loaded
+        self.hook("PostToolUse", {"tool_name": "Skill", "tool_input": {"skill": "foreman:brainstorm"},
+                                  "session_id": "sess-3"})
+        self.hook("UserPromptSubmit", {"prompt": "/foreman:status", "session_id": "sess-2"})  # typed by the user
+        book = os.path.join(self.repo, ".claude", "worktrees", "agent-" + "a" * 40, "plugin", "skills", "playbooks",
+                            "references", "review", "code-reviewer.md")
+        self.hook("PostToolUse", {"tool_name": "Read", "tool_input": {"file_path": book}, "session_id": "sess-2",
+                                  "agent_type": "foreman:fm-reviewer", "agent_id": "a1"})
+        got = self.fm_json("usage")
+        self.assertEqual(got["named_not_loaded"].get("brainstorm"), 1, got)
+        self.assertNotIn("status", got["named_not_loaded"])
+        self.assertEqual(got["skills"].get("status"), 1)
+        self.assertEqual(got["skills"].get("brainstorm"), 1)
+        self.assertEqual(got["playbooks"].get("review/code-reviewer"), 1, got["playbooks"])
+        self.assertRegex(self.fm("usage").stdout, r"named, not loaded: .*\bbrainstorm ×1\b")  # the idle Next names next
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
