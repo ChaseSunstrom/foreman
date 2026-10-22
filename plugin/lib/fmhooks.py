@@ -1709,16 +1709,26 @@ def _pre_tool_use(raw):
                         for n, r, _ in hits[:2])  # what's left after the blocks above: warns
         slow = " ".join(f"Foreman: the script {path} (or one it runs) was too long for the guard to parse in time; "
                         "a literal scan of it found nothing to refuse." for path, _ in unread[:2])
-        note = " ".join(_said_once(pl, list(filter(None, [
-            made, saved, slow, warn, _fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act),
-            _tripwire_note(pl, p, act), _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
-            _test_first_note(pl, p, act)]))))
+        builders = (lambda: _fix_note(pl, p), lambda: _dep_note(pl, p), lambda: _veto_note(pl, p),
+                    lambda: _scope_note(pl, p, act), lambda: _tripwire_note(pl, p, act), lambda: _step_note(pl, p, act),
+                    lambda: _ambient_note(p), lambda: _bus_note(pl), lambda: _card_note(pl, p, act),
+                    lambda: _test_first_note(pl, p, act))
+        note = " ".join(_said_once(pl, list(filter(None, [made, saved, slow, warn] + [_each(b) for b in builders]))))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
             _log_inject("PreToolUse", note)
     except Exception:
         log_error("PreToolUse", _tb())
     return 0
+
+
+def _each(build):
+    """T-1449: one note builder failing (a full disk) loses its own note, not every note of the call."""
+    try:
+        return build()
+    except Exception:
+        log_error("PreToolUse", _tb())
+        return None
 
 
 def _fix_note(pl, p):
