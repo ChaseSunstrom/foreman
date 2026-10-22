@@ -4815,6 +4815,21 @@ HELP_TIERS = []
 
 
 def cmd_help(args):
+    if getattr(args, "words", None):  # T-1519: "can Foreman do X?", answered from the help below
+        import fmrecall
+        q = " ".join(args.words)
+        if args.all:
+            raise UsageError("fm help --all lists every command and fm help WORDS answers a question: one or the other")
+        if not fmrecall.asked(q):
+            raise UsageError(f"nothing to look up in {q!r}, only words like can, do and it: name the thing, e.g. "
+                             "fm help scaffold an mcp server")
+        hits = fmrecall.can(q)
+        line = lambda n, h, w: f"  fm {n:<{w}}{fmrecall.gist(h, q, 95 - w)}"  # noqa: E731 ≤ 100 columns, match kept
+        out(args, {"question": q, "commands": [{"command": n, "help": h} for n, h in hits]},
+            "Closest by their help:\n" + "\n".join(line(n, h, max(15, len(n) + 1)) for n, h in hits)
+            + "\nfm <command> -h for its options." if hits else "No fm command's help says so; fm help --all lists "
+            "every command.\nWorth building? fm capture \"<what you need>\".")
+        return 0 if hits else 1
     sub = next(a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction))
     helps = {a.dest: _no_ids(" ".join((a.help or "").split())) for a in sub._choices_actions}
     lines = []
@@ -4916,8 +4931,19 @@ def _build_parser():
         s.add_argument("-p", "--project", default=argparse.SUPPRESS)
         return s
 
-    s = add("help", cmd_help, tier=("Finding your way", 200), help="every command, in tiers: the everyday ones first")
+    s = add("help", cmd_help, tier=("Finding your way", 200), help="every command, in tiers: the everyday ones first; "
+            "with words, can Foreman do X? answered from the commands' help")
     s.add_argument("--all", action="store_true", help="the same: every command (fm --help: the everyday ones)")
+    s.add_argument("words", nargs="*", help="a question in plain words: the commands whose help answers it")
+    s = add("new", lazy("fmnew", "cmd_new"), tier=("Finding your way", 385), help="strict-by-default templates: a web "
+            "page, a 3D scene, an fm code panel (list; NAME [DIR] copies one; check PATH holds a copy to its rules)")
+    s.add_argument("words", nargs="*", metavar="list|NAME [DIR]|check PATH", help="web, scene or panel; a panel lands "
+                   "in fm code's tui/ folder unless DIR is given. check runs the file for a panel (.py): one fm code "
+                   "would load, in a child with limits and a timeout")
+    s.add_argument("--force", action="store_true", help="replace the file the copy lands on (a symlink there is "
+                   "replaced itself, never written through)")
+    s.add_argument("--run", action="store_true", help="check: run a panel that sits inside a project (a .git above "
+                   "it); without it a project's files never run as you")
     s = add("init", cmd_init, tier=("Project and settings", 650), help="register a project")
     s.add_argument("path", nargs="?")
     s.add_argument("--sensitive", action="store_true")
@@ -5497,6 +5523,9 @@ def _build_parser():
     s.add_argument("--accept", action="store_true", help="take this run's verdicts as the baseline")
     s.add_argument("--cases", action="store_true", help="the labelled cases fm guard wrong stored, against the guard (T-1162)")
     s.add_argument("--capture", action="store_true", help="with --cases: one FIX per drifted case, once")
+    s.add_argument("--oracle", action="store_true", help="run each labelled case in a throwaway bwrap sandbox that records "
+                                                         "what the shell would start: a part the guard refuses alone "
+                                                         "is a line it misread; with --cmd, that one command (T-1553; needs bwrap)")
     s.add_argument("--cmd", metavar="TEXT", help="only this command: the guard's default verdict, never run it")
     s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
     s.add_argument("--candidate", metavar="REF|FILE", help="score another guard (a git ref of Foreman's repo, or a "
@@ -5914,7 +5943,8 @@ def _build_parser():
 
     s = add("settings", lazy("fmsettings", "cmd_settings"), tier=("Project and settings", 775),
             help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496)")
-    s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo"])
+    s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
+                                                                 "bisect"])  # T-1543: the setting the app can't draw
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
                                           "share code fm settings export printed (T-1510); list: a group alone (look, "
                                           "colors, layout, keys, pane; T-1511)")

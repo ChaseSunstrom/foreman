@@ -5,6 +5,7 @@ area: tools
 tags: [ripgrep, rg, search, grep, refactoring, code]
 detect: [file:.ripgreprc, file:.rgignore]
 related: [regex, sed-awk, refactoring, shell-scripting]
+verified: 2026-10-22
 ---
 ripgrep (`rg`): fast recursive search that respects ignore files; used for impact analysis before and after changes.
 

@@ -591,8 +591,40 @@ def report_cases(args, fmcli):
         raise SystemExit(1)
 
 
+def report_oracle(args, fmcli):
+    """T-1553: each labelled case (or --cmd in --cwd) the guard lets through, run in a throwaway sandbox that records
+    every program the shell would start instead of running it; a recorded command the guard refuses on its own is a
+    line it misread. A sandbox that didn't start or a guard that raised is unable, and fails the run like a misread."""
+    import fmoracle
+    if not fmoracle.sandbox():
+        return fmcli.out(args, {"oracle": None, "why": "no bwrap"}, "Guard oracle: not run, bwrap (bubblewrap) isn't "
+                         "installed; it runs commands only inside that sandbox and nothing else is used")
+    if args.cwd and not args.cmd:
+        raise fmcli.UsageError("--cwd goes with --cmd: the folder that one command would run in")
+    if args.cmd:
+        cases, broken = [{"cmd": args.cmd, "cwd": os.path.abspath(args.cwd or os.getcwd())}], 0
+    else:
+        cases, broken = load_cases()
+    found = fmoracle.disagreements([(k["cmd"], k.get("cwd") or "") for k in cases])
+    found = [{**d, "cmd": c.redact(d["cmd"]), "ran": d["ran"] and [c.redact(a) for a in d["ran"]]} for d in found]
+    unable = [d for d in found if d["verdict"].startswith("unable")]
+    bad = [d for d in found if d not in unable]
+    lines = [f"Guard oracle: {len(cases)} {'command' if args.cmd else 'labelled cases'} run with every program "
+             f"recorded, not run · {len(bad)} misread" + (f" · {len(unable)} unable" if unable else "")
+             + (f" · {broken} broken line(s) skipped" if broken else "")]
+    lines += [f"  {c.fit(' '.join(d['cmd'].split()), 70)} runs {c.fit(' '.join(d['ran']), 60)}"
+              f" → {d['verdict'].split(':')[0]}" for d in bad[:SHOW]]
+    lines += [f"  {c.fit(' '.join(d['cmd'].split()), 70)} → {d['verdict']}" for d in unable[:SHOW]]
+    fmcli.out(args, {"cases": len(cases), "broken": broken, "unable": len(unable), "disagreements": bad + unable},
+              "\n".join(lines))
+    if found or broken:
+        raise SystemExit(1)
+
+
 def cmd_replay(args):
     import fmcli
+    if getattr(args, "oracle", False):
+        return report_oracle(args, fmcli)
     if getattr(args, "cases", False):
         return report_cases(args, fmcli)
     if getattr(args, "candidate", None):
