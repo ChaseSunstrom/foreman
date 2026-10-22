@@ -39,8 +39,19 @@ _LAYOUT_HELP = {"top": ("panels", "panels across the top"), "columns": ("columns
                 "narrow_below": ("int", "columns below which the narrow layout is used")}
 
 
+_CONTROL = re.compile(r"[\x00-\x09\x0b-\x1f\x7f-\x9f]")
+
+
+def _safe(text):
+    """`text` with each control character shown as \\xNN (line breaks kept): a message can quote a share code or a
+    hand-written file, and the terminal must not act on what they hold."""
+    return _CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}", str(text))
+
+
 class SettingError(ValueError):
-    """A change refused: the value, the file or the guard; nothing was written."""
+    """A change refused: the value, the file or the guard; nothing was written. Its message is printable (_safe)."""
+    def __init__(self, message=""):
+        super().__init__(_safe(message))
 
 
 class GuardRefused(SettingError):
@@ -529,8 +540,9 @@ def _set_key(key, value, surface, p, changes, now):
             refused.append(f"{s}: {x}")
             continue
         old, _, ok = now.get((s, k), (None, None, False))
-        if done[-1][1] != old or not ok:
-            changes.append({"surface": s, "key": k, "old": old if ok else None, "new": done[-1][1]})
+        if done[-1][1] != old or not ok:  # a skipped one is kept as `skipped`, for undo to say it isn't put back
+            changes.append({"surface": s, "key": k, "old": old if ok else None, "new": done[-1][1],
+                            **({"skipped": old} if (s, k) in now and not ok else {})})
     return done, refused
 
 
@@ -567,7 +579,12 @@ def written(problems=None):
         table = k in ("colors", "layout", "keys") and isinstance(v, dict)
         found += [("app", _norm(f"{k}.{n}"), x) for n, x in v.items()] if table else [("app", k, v)]
     import fmcodetui as T  # what load_config skips past the schema's own check (a colour too faint on the theme)
-    skips = [e[len(path) + 2:] for e in (T.load_config(path)[1] if raw else [])]
+    unread = False
+    try:
+        skips = [e[len(path) + 2:] for e in (T.load_config(path)[1] if raw else [])]
+    except Exception as e:  # a file the app itself chokes on: none of it is read (the set that repairs it still runs)
+        problems.append(("app", f"the app can't read {path} ({type(e).__name__}: {e})"))
+        skips, unread = [], True  # every key skipped: an undo removes what the app never read
     try:
         opts = plugin_values(claude_settings()[1])
     except SettingError as e:
@@ -581,7 +598,7 @@ def written(problems=None):
     out = {}
     for s, k, v in found:
         e = by.get((s, k)) or next(iter(find(k, s)), None)
-        skip = s == "app" and any(x.startswith((f"{k}:", f"{k} =")) for x in skips)
+        skip = s == "app" and (unread or any(x.startswith((f"{k}:", f"{k} =")) for x in skips))
         try:
             out[s, k] = (_check(e, v), e, not skip) if e and v is not None else (v, e, False)
         except SettingError:
@@ -636,7 +653,7 @@ def import_code(code, p=None, only=None):
     app's as each would land in tui.toml, render and all), else SettingError naming each bad one and nothing written.
     Then each key whose value differs is set through set_key's path (the guard, the locks), all as one history entry:
     ([(surface, key, value written, warnings)], [why each refused one wasn't written], [(surface, key) already so])."""
-    bad, plan, text, path = [], [], None, app_path()
+    bad, plan, text, path = [], {}, None, app_path()
     for surface, items in _decode(code).items():
         if surface not in ("app", "plugin") or not isinstance(items, dict):
             bad.append(f"{surface!r}: not a surface of the share code (app, plugin)")  # repr: no raw escapes printed
@@ -652,7 +669,7 @@ def import_code(code, p=None, only=None):
                 _utf8(value, key)
                 if surface == "app":
                     text = _plan_app(key, value, path, *_split(key), text=text)[0]
-                plan.append((surface, key, value))
+                plan[surface, _norm(key)] = value  # keys.enter and keys.ENTER are one key: the last one named wins
             except Exception as x:  # whatever a value makes fail refuses the code: nothing is written yet
                 bad.append(f"{surface}: {x}" if isinstance(x, SettingError) else f"{surface}: {key!r}: {type(x).__name__}")
     if bad:
@@ -660,8 +677,8 @@ def import_code(code, p=None, only=None):
     done, refused, same = [], [], []
     with _recorded("import") as changes:
         now = written()
-        for s, k, v in plan:
-            cur, _, ok = now.get((s, _norm(k)), (None, None, False))
+        for (s, k), v in plan.items():
+            cur, _, ok = now.get((s, k), (None, None, False))
             if ok and cur == v:  # only the keys that change are written
                 same.append((s, k))
                 continue
@@ -677,11 +694,18 @@ def _history_path():
 
 
 def _history():
+    """The undo list: [] when there is none or it is corrupt (a fresh one replaces it); SettingError when it can't be
+    read, so the next write doesn't take an unreadable history for an empty one and replace it."""
+    path = _history_path()
     try:
-        with open(_history_path(), encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             got = json.load(f)
-    except (OSError, ValueError, RecursionError):
-        return []  # none yet, or unreadable: a fresh history (it is the undo list, not the settings)
+    except FileNotFoundError:
+        return []
+    except (ValueError, RecursionError):  # UnicodeDecodeError included
+        return []
+    except OSError as e:
+        raise SettingError(f"can't read the settings history {path}: {e}") from None
     return [h for h in got if isinstance(h, dict) and isinstance(h.get("changes"), list)] if isinstance(got, list) else []
 
 
@@ -699,14 +723,19 @@ def _recorded(how):
         try:
             yield changes
         finally:  # what was written is kept, whatever stopped the rest
-            if changes:
-                _keep(_history() + [{"at": fmcore.now(), "how": how, "changes": changes}])
+            try:
+                if changes:
+                    _keep(_history() + [{"at": fmcore.now(), "how": how, "changes": changes}])
+            except (OSError, SettingError) as e:  # the change is written: said, never reported as failed
+                print(f"fm settings: written, but undo can't put it back: the history wasn't saved ({_safe(e)})",
+                      file=sys.stderr)
 
 
 def undo(p=None):
     """The last set or import put back, backwards, each through set_app/set_plugin (the guard, the lock). A value
     changed since by other hands is left as it is (dropped from the history); one the guard refuses stays for the next
-    undo. ([(surface, key, value now, the value it replaced)], [why each wasn't]); SettingError: nothing to undo."""
+    undo. ([(surface, key, value now, the value it replaced, a note: a skipped value not put back)], [why each
+    wasn't]); SettingError: nothing to undo, or a history it can't read."""
     import fmcore
     with fmcore.lock(os.path.dirname(_history_path())):
         hist = _history()
@@ -726,14 +755,19 @@ def undo(p=None):
             if cur != new:
                 refused.append(f"{s}: {k} changed since (now {_shown(cur, s)}): left as it is")
                 continue
+            note = (f"the value before it, {_shown(c['skipped'], s)}, was skipped (not one it reads): unset, not put "
+                    "back" if "skipped" in c else "")
             try:
-                done.append((s, k, set_app(k, old, p=p)[0] if s == "app" else set_plugin(k, old, p), new))
+                done.append((s, k, set_app(k, old, p=p)[0] if s == "app" else set_plugin(k, old, p), new, note))
             except GuardRefused as x:
                 refused.append(f"{s}: {x}")
                 kept.insert(0, c)
             except SettingError as x:  # not a setting any more, or a file it can't place it in: by hand
                 refused.append(f"{s}: {x}; dropped from the history")
-        _keep(hist[:-1] + ([dict(last, changes=kept)] if kept else []))
+        try:
+            _keep(hist[:-1] + ([dict(last, changes=kept)] if kept else []))
+        except OSError as e:  # put back, but still listed: the next undo finds them changed and leaves them
+            refused.append(f"undone, but the history wasn't saved ({e})")
     return done, refused
 
 
@@ -833,7 +867,7 @@ def cmd_settings(args):
         else:
             done.append({"surface": "plugin", "key": args.key, "value": v,
                          "line": f"plugin: {args.key} = {json.dumps(v)} (the pane reads it within seconds)"})
-    fmcli.out(args, {"set": done, "refused": refused}, "\n".join([d["line"] for d in done] + refused))
+    fmcli.out(args, {"set": done, "refused": refused}, _safe("\n".join([d["line"] for d in done] + refused)))
     if refused:
         import fmcore
         raise fmcore.PolicyError(f"{len(refused)} of {len(entries)} not written (above)")
@@ -855,17 +889,20 @@ def _cmd_history(args):
     if args.action in ("diff", "export"):
         problems = []
         rows = [r for r in diff(problems) if args.surface in (None, r["surface"])]
+        said = [{"surface": s, "problem": x} for s, x in problems if args.surface in (None, s)]
         if args.action == "export":
-            for s, x in problems:  # the code alone on stdout, so it can be piped
-                print(f"! {s}: {x} (not in the code)", file=sys.stderr)
+            for x in said:  # the code alone on stdout, so it can be piped
+                print(_safe(f"! {x['surface']}: {x['problem']} (not in the code)"), file=sys.stderr)
             code = share_code(rows)
             return fmcli.out(args, {"code": code, "settings": [r for r in rows if not (r.get("dead") or
-                                                                                     r.get("skipped"))]}, code)
+                                                                                     r.get("skipped"))],
+                                    "problems": said}, code)
         why = lambda r: ("dead: nothing reads it" if r.get("dead") else ("skipped: not a value it takes; " if
                          r.get("skipped") else "") + f"default {_shown(r['default'], r['surface'])}")
-        lines = [f"! {s}: {x}" for s, x in problems] + [
+        lines = [f"! {x['surface']}: {x['problem']}" for x in said] + [
             f"{r['surface']}: {r['key']} = {_shown(r['value'], r['surface'])}  ({why(r)})" for r in rows]
-        return fmcli.out(args, rows, "\n".join(lines) or "every setting at its default")
+        return fmcli.out(args, {"changed": rows, "problems": said},
+                         _safe("\n".join(lines)) or "every setting at its default")
     if args.action == "import":
         if not args.key:
             raise fmcli.UsageError("fm settings import CODE (fm settings export makes one)")
@@ -878,10 +915,11 @@ def _cmd_history(args):
         if args.surface or args.key:
             raise fmcli.UsageError("fm settings undo: puts back the last set or import, on each surface it changed")
         done, refused = undo(_project(args))
-        data = {"undone": [{"surface": s, "key": k, "value": v, "was": new} for s, k, v, new in done],
+        data = {"undone": [{"surface": s, "key": k, "value": v, "was": new, "note": n} for s, k, v, new, n in done],
                 "refused": refused}
-        lines = [f"{s}: {k} back to {_shown(v, s)} (was {_shown(new, s)})" for s, k, v, new in done]
-    fmcli.out(args, data, "\n".join(lines + refused) or "nothing to change")
+        lines = [f"{s}: {k} back to {_shown(v, s)} (was {_shown(new, s)})" + (f"; {n}" if n else "")
+                 for s, k, v, new, n in done]
+    fmcli.out(args, data, _safe("\n".join(lines + refused)) or "nothing to change")
     if refused:
         raise fmcore.PolicyError(f"{len(refused)} not done (above)")
     return 0

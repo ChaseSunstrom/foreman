@@ -376,6 +376,101 @@ class History(ForemanTestCase):
         self.assertEqual(len(fmsettings.undo()[0]), 1)
         self.assertEqual(self.options(), {})
 
+    def test_no_message_prints_raw_escapes(self):
+        import base64
+        self.write("", {})
+        code = base64.urlsafe_b64encode(json.dumps({"app": {"colors.ok": {"\x1b]0;x\x07": True}}}).encode()).decode()
+        with self.assertRaises(fmsettings.SettingError) as e:
+            fmsettings.import_code(code)
+        done, refused = fmsettings.set_key("colors.ok", '{ "\\u001b[2J" = true }')
+        p = self.fm("settings", "import", code, env=self.env, check=False)
+        self.assertNotEqual(p.returncode, 0)
+        for said in (str(e.exception), refused[0], p.stdout + p.stderr):
+            self.assertIn("colors.ok", said)
+            self.assertFalse({"\x1b", "\x07"} & set(said), said)
+
+    def test_a_file_the_app_chokes_on_never_blocks_the_set_that_repairs_it(self):
+        import unittest.mock as mock
+        import fmcodetui
+        real = fmcodetui.load_config
+
+        def load(path=None):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    broken = 'heights = "BROKEN"' in f.read()
+            except (OSError, TypeError):
+                broken = False
+            if broken:
+                raise TypeError("a layout it chokes on")
+            return real(path)
+        self.write('[layout]\nheights = "BROKEN"\n', {})
+        with mock.patch.object(fmcodetui, "load_config", side_effect=load):
+            problems = []
+            fmsettings.diff(problems)
+            self.assertIn("a layout it chokes on", str(problems))
+            fmsettings.share_code()
+            done, refused = fmsettings.set_key("layout.heights", '[[1], ["auto", "auto", "auto", 1]]')
+            self.assertEqual((len(done), refused), (1, []))
+            done, refused = fmsettings.undo()
+            self.assertEqual((len(done), refused), (1, []))
+        self.assertNotIn("heights", read_text(self.toml), "unread by the app: undone, it goes rather than comes back")
+
+    def test_undo_says_a_skipped_value_is_removed(self):
+        self.write('theme = ["x"]  # mine\n', {})
+        fmsettings.set_key("theme", "paper")
+        done, refused = fmsettings.undo()
+        self.assertEqual(refused, [])
+        self.assertIn("skipped", done[0][4])
+        self.assertNotIn("theme", read_text(self.toml))
+
+    def test_history_trouble_never_fails_a_written_change(self):
+        import contextlib
+        import io
+        import unittest.mock as mock
+        self.write('border = "heavy"\n', {})
+        err = io.StringIO()
+        with mock.patch.object(fmsettings, "_keep", side_effect=OSError("disk full")), contextlib.redirect_stderr(err):
+            done, refused = fmsettings.set_key("border", "double")
+        self.assertEqual((len(done), refused, read_text(self.toml)), (1, [], 'border = "double"\n'))
+        self.assertIn("disk full", err.getvalue())
+        fmsettings.set_key("border", "ascii")
+        path = fmsettings._history_path()
+        kept = read_text(path)
+        os.chmod(path, 0)
+        try:
+            if os.access(path, os.R_OK):
+                self.skipTest("root reads any file")
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(len(fmsettings.set_key("border", "rounded")[0]), 1)
+            with self.assertRaises(fmsettings.SettingError):
+                fmsettings.undo()
+        finally:
+            os.chmod(path, 0o600)
+        self.assertEqual(read_text(path), kept, "an unreadable history is never taken for an empty one")
+
+    def test_a_key_named_twice_in_one_code_is_one_change(self):
+        import base64
+        self.write("", {})
+        code = base64.urlsafe_b64encode(json.dumps({"app": {"keys.enter": "quit", "keys.ENTER": "help"}}).encode())
+        done, refused, _ = fmsettings.import_code(code.decode())
+        self.assertEqual(([v for _, _, v, _ in done], refused), (["help"], []))
+        done, refused = fmsettings.undo()
+        self.assertEqual((len(done), refused), (1, []))
+        self.assertNotIn("enter", read_text(self.toml))
+
+    def test_diff_json_keeps_its_problems(self):
+        import argparse
+        import contextlib
+        import io
+        import unittest.mock as mock
+        self.write('border = "heavy"\n', {"motion": "calm"})
+        out = io.StringIO()
+        with mock.patch.object(fmsettings, "mod_manifest", return_value={}), contextlib.redirect_stdout(out):
+            fmsettings.cmd_settings(argparse.Namespace(action="diff", json=True, surface=None, key=None, value=None))
+        got = json.loads(out.getvalue())
+        self.assertEqual([r["key"] for r in got["changed"]], ["border"])
+        self.assertIn("plugin.json", json.dumps(got["problems"]))
+
     def test_the_verbs_from_fm_and_from_claude_code(self):
         self.term("settings", "set", "border", "double")
         self.assertIn("border", self.term("settings", "diff"))
@@ -386,8 +481,9 @@ class History(ForemanTestCase):
         self.term("settings", "undo")
         self.assertEqual(read_text(self.toml), "")
         body = read_text(os.path.join(PluginSurface.ROOT, "plugin", "commands", "settings.md"))
-        for cmd in ("fm settings diff", "fm settings export", "fm settings import", "fm settings undo"):
+        for cmd in ("fm settings diff", "fm settings export", "fm settings import 'CODE'", "fm settings undo"):
             self.assertIn(f"`{cmd}", body, cmd)
+        self.assertIn("`^[A-Za-z0-9_-]+$`", body, "a pasted code runs only when it is one share-code word")
 
 
 class PreviewApp(unittest.TestCase):
