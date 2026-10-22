@@ -4128,6 +4128,9 @@ def _runnable(template, tests):
     return tests
 
 
+HUB_PAIRS = 10  # T-1467: more co-changed tests than this and a file's pairs are noise
+
+
 def affected(p, b=None):
     """(command, tests, changed files) for the tests linked (fm map) to files changed since the task started, with the
     project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705)."""
@@ -4144,8 +4147,13 @@ def affected(p, b=None):
     # hooks.json has no test named after it, but the wiring tests change with it
     istest = lambda f: c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f)  # noqa: E731
     pairs = m.get("pairs") or {}
-    paired = {t for f in changed for t in pairs.get(f, []) if istest(t)} | {
-        a for a, bs in pairs.items() if istest(a) and any(b in changed for b in bs)}
+    # T-1467: a file that co-changes with many tests (CHANGELOG.md, edited by every task) carries no signal; its
+    # pairs ran ~28 test files on every close. Its direct map links (tests_for) still count.
+    fan = collections.Counter(b for a, bs in pairs.items() if istest(a) for b in bs)
+    fan.update({f: sum(1 for t in ts if istest(t)) for f, ts in pairs.items()})
+    narrow = {f for f in changed if fan[f] <= HUB_PAIRS}
+    paired = {t for f in narrow for t in pairs.get(f, []) if istest(t)} | {
+        a for a, bs in pairs.items() if istest(a) and any(b in narrow for b in bs)}
     meta = c.read_meta(p)
     template = meta.get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
     by = meta.get("affected_by") or {}  # T-1135: extension -> its own runner's template
