@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code app: the progress track's labels and every box title are measured in screen columns, so wide characters (CJK, emoji) fit, and a long note no longer makes a box title vanish at 80 columns; the title keeps at least a few letters (T-1431).
 - The supply check no longer flags a `__pycache__` file that is exactly what Python compiles from the source beside it (same interpreter, header, and code). A pyc whose body was changed under a copied header, an orphan, a hash-based pyc or another Python's pyc still shows, since Python would run it without checking it against the source (T-1466).
 - A close's affected-tests run no longer pulls in every test that once changed alongside `CHANGELOG.md`: a file that co-changes with more than 10 tests carries no signal, so its co-change pairs are dropped (its direct links still count). Before, every close ran about 28 extra suites, 114–142 s of a 2-minute close (T-1467).
 - `fm lib source update` swaps one source in at a time (a lock beside the sources folder), so two updates of the same source can't interleave their renames; `fm lib source rm` also removes a stray `NAME.old-PID` or `.tmp-NAME-PID` folder a crash left, and still refuses `.`, `..`, paths and links (T-1428).
