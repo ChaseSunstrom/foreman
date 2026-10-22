@@ -6,7 +6,8 @@ import unittest
 
 from helpers import PLUGIN, read_text, read_json
 
-SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks", "brainstorm"]
+SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks", "brainstorm",
+          "directions"]
 USER_ONLY = {"capture"}  # everything else Claude may start itself when the user asks in plain words
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
 EDITING_AGENTS = {"fm-builder.md": {"Edit", "Write", "Bash"},  # T-0234: the exceptions, worktree-bound
@@ -77,9 +78,34 @@ class Skills(unittest.TestCase):
     def test_skill_references_exist(self):
         for name in SKILLS:
             body = read_text(os.path.join(PLUGIN, "skills", name, "SKILL.md"))
-            for ref in re.findall(r"`(references/[\w./-]+\.md)`", body):
+            for ref in re.findall(r"`((?:\.\./[\w-]+/)?references/[\w./-]+\.md)`", body):  # ../playbooks/…: a sibling's
                 with self.subTest(skill=name, ref=ref):
                     self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)))
+
+    def test_the_directions_skill_offers_six_measured_cards_and_saves_the_pick(self):
+        # T-1508: one sentence in, six distinct one-screen directions out, the pick saved as DESIGN.md with an
+        # audacity level; the worked example is held to the card format and its stated contrasts are measured
+        import fmcodetui
+        body = read_text(os.path.join(PLUGIN, "skills", "directions", "SKILL.md"))
+        for word in ("six", "DESIGN.md", "audacity", "AskUserQuestion", "fm decide", "runner-up",
+                     "`../playbooks/references/ui/design-direction.md`", "references/cards.md"):
+            self.assertIn(word, body)
+        cards = read_text(os.path.join(PLUGIN, "skills", "directions", "references", "cards.md"))
+        for default in ("terracotta", "acid", "hairline", "card kit", "template chrome"):
+            self.assertIn(default, cards, "the generic defaults the six must avoid")
+        example = cards.split("\n## Example", 1)[1]
+        self.assertEqual(len(re.findall(r"(?m)^### [1-6]\. ", example)), 6)
+        for field in ("Feels like:", "Palette:", "Type:", "Layout:", "Motion:", "Signature move:", "Audacity:",
+                      "Fits because:"):
+            self.assertEqual(len(re.findall(rf"(?m)^- \*\*{field}\*\*", example)), 6, field)
+        self.assertEqual(len(set(re.findall(r"(?m)^- \*\*Audacity:\*\* (safe|bold|wild)", example))), 3)
+        stated = re.findall(r"(#[0-9A-F]{6}) on (#[0-9A-F]{6}) ([\d.]+):1", example)
+        self.assertGreaterEqual(len(stated), 6)
+        for fg, bg, ratio in stated:
+            with self.subTest(pair=(fg, bg)):
+                got = fmcodetui.contrast(fg, bg)
+                self.assertAlmostEqual(got, float(ratio), delta=0.05)
+                self.assertGreaterEqual(got, 4.5)
 
     def test_audit_reference_defines_every_lens_fm_requires(self):
         import fmcore as c
