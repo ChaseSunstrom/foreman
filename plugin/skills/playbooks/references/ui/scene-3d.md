@@ -95,7 +95,7 @@ Loading: the 3D code and assets load after the page's main content has painted (
 
 ## Survival contract
 
-The scene is an enhancement. Each clause below has a probe; a scene that fails one doesn't ship.
+The scene is an enhancement. Each clause below has a probe; a scene that fails one doesn't ship. A raw WebGL2 starting point that already passes all nine, in one file with no dependencies: `references/ui/templates/scene.html`.
 
 1. **No WebGL, no problem.** When `getContext("webgl2")` (and the WebGL1 fallback, if you have one) returns null, the poster and the text twin show and nothing throws. Check before constructing the renderer: three.js's `WebGLRenderer` and an R3F `Canvas` throw when there is no context, so test `getContext` first, or wrap the construction in try/catch (an error boundary for R3F). Decorative scenes also pass `failIfMajorPerformanceCaveat: true`, so a software renderer gets the poster instead of a 5 fps slideshow. Probe: an init script that replaces `HTMLCanvasElement.prototype.getContext` with one returning null; the page has no console errors and shows the poster.
 2. **The poster is there first.** A still image rendered from the same scene, same framing, same aspect ratio, sits where the canvas will be from the first paint; the canvas fades in over it only after its first frame has drawn. Pass: layout shift from the scene is 0, and with JavaScript disabled the poster shows.
