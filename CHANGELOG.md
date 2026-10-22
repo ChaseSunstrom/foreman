@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code app: a settings screen (`,`) on fm settings' one schema: every setting by group with value, default and a badge, / to search, m for changed-only, and a :set line that writes through fm settings. fm settings set refuses a value whenever the new file has an error for that key, and asks the guard whenever it isn't run from a terminal, so blanking CLAUDECODE no longer skips it (T-1572).
 - /foreman:settings lists, gets and sets the fm code app's and the foreman-ui pane's settings through fm settings; the pane applies a changed motion or palette on its next 2-second poll, no restart, and turning motion off mid-work stops its clocks (T-1574).
 - Seven engineering playbooks: SQL query review, live migrations (lock budget first, unique and NOT NULL recipes), text/time/bytes/money, dependency admission without running install scripts, characterisation tests, deprecation (warnings, Deprecation/Sunset/Link headers) and decision memos (T-1503).
 - Guard: an escaped \$IFS in prose (fm task log "… \$IFS …", echo literal \$IFS) is literal text, not an expansion, so it no longer refuses as "IFS may be changed"; an unescaped $IFS, \\$IFS and a real $'…' still refuse, and so does \$IFS in text that runs again in the same shell: eval or source after any keyword, !, a case ) or prefix assignments, trap, mapfile -C and alias (T-1473).
