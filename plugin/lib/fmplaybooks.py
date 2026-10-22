@@ -18,10 +18,11 @@ A lane checks its own tree with `python3 plugin/bin/fm check playbooks` from its
 runs (PLUGIN_ROOT), and the `fm` on PATH reads the main checkout's playbooks.
 
 T-1621: `fm playbooks show NAME` is how the skill loads one: each {{fact}} (FACTS) filled in from fm map for the project
-it runs in, an unknown or empty one left as {{fact?}}, and the project's .foreman/playbooks/<stage>/<name>.md after it
-under a 'This project' heading. The overlay is the repo's own markdown: read only as a plain file below the checkout
-(no link anywhere under it), cut at OVERLAY_MAX, control characters dropped, never run. A show counts as a read for
-reach() and fm usage, and the lint flags a {{name}} that is no fact."""
+it runs in, an unknown or empty one left as {{fact?}}, and the project's .claude/playbooks/<stage>/<name>.md after it
+under a 'This project' heading: beside the project's other Claude Code files, shared through git, and a place the guard
+lets a session write (.foreman/ is fm's alone). The overlay is the repo's own markdown: read only as a plain file below
+the checkout (no link anywhere under it), cut at OVERLAY_MAX, control characters dropped, never run. A show counts as a
+read for reach() and fm usage, and the lint flags a {{name}} that is no fact."""
 import json
 import os
 import re
@@ -56,7 +57,7 @@ _LIB = re.compile(r"\bfm lib show ([^\s`]+)")
 _PY = {"python", "python3", "py"}
 _MARK = "/skills/playbooks/references/"  # a Read event's target, as fm cost matches it
 FACTS = ("test", "gates", "language", "entry", "ci", "layout", "hot", "cards")  # what a {{fact}} can name
-OVERLAYS = os.path.join(".foreman", "playbooks")  # a project's additions, <stage>/<name>.md
+OVERLAYS = os.path.join(".claude", "playbooks")  # a project's additions, <stage>/<name>.md
 OVERLAY_MAX = 16_000  # bytes of an overlay shown
 FACT_MAX = 400
 # {{name}} only: Go's {{ .X }}, Actions' ${{ x }} and Handlebars' {{{x}}} are other templates' and stay as they are

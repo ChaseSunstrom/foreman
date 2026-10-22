@@ -1,6 +1,6 @@
 """T-1621: a playbook loaded with `fm playbooks show NAME` (how the playbooks skill reads one) has each {{fact}} filled
 in from fm map's facts for the project it runs in, an unknown or empty fact left visible as {{fact?}}, and the
-project's .foreman/playbooks/<stage>/<name>.md overlay after the shipped text under a 'This project' heading. An
+project's .claude/playbooks/<stage>/<name>.md overlay after the shipped text under a 'This project' heading. An
 overlay is plain markdown read from the repo itself: never through a link, and cut at a size."""
 import json
 import os
@@ -40,7 +40,7 @@ class Load(ForemanTestCase):
         return self.fm("playbooks", "show", *words, check=False, cwd=cwd, env={"FOREMAN_PLAYBOOKS": self.lib})
 
     def test_overlay_follows_the_shipped_text_and_facts_resolve(self):
-        put(self.repo, ".foreman/playbooks/fix/alpha.md", "Here {{test}} runs under xvfb.\n")
+        put(self.repo, ".claude/playbooks/fix/alpha.md", "Here {{test}} runs under xvfb.\n")
         r = self.show("fix/alpha")
         self.assertEqual(r.returncode, 0, r.stderr)
         shipped, heading, mine = r.stdout.partition("## This project")
@@ -48,7 +48,7 @@ class Load(ForemanTestCase):
         self.assertIn("1. Run python3 -m pytest -q first.", shipped)
         self.assertIn("Then {{nosuch?}}; CI: {{ci?}}.", shipped)  # unknown, and known but empty here: both visible
         self.assertIn("Leave {{ .GoFiles }}, {{.Name}}, ${{matrix}} and {{{raw}}} alone.", shipped)  # not a fact
-        self.assertIn(".foreman/playbooks/fix/alpha.md", mine.splitlines()[0])  # where to edit it
+        self.assertIn(".claude/playbooks/fix/alpha.md", mine.splitlines()[0])  # where to edit it
         self.assertIn("Here python3 -m pytest -q runs under xvfb.", mine)
 
     def test_no_overlay_no_heading(self):
@@ -83,26 +83,26 @@ class Load(ForemanTestCase):
 
     def test_a_linked_overlay_or_folder_is_not_read(self):
         secret = put(self.tmp, "secret/fix/alpha.md", "TOKEN=hunter2\n")
-        os.makedirs(os.path.join(self.repo, ".foreman/playbooks/fix"))
-        os.symlink(secret, os.path.join(self.repo, ".foreman/playbooks/fix/alpha.md"))
+        os.makedirs(os.path.join(self.repo, ".claude/playbooks/fix"))
+        os.symlink(secret, os.path.join(self.repo, ".claude/playbooks/fix/alpha.md"))
         out = self.show("fix/alpha").stdout
         self.assertNotIn("hunter2", out)
         self.assertIn("not read", out)  # said, not silently skipped
-        os.remove(os.path.join(self.repo, ".foreman/playbooks/fix/alpha.md"))
-        os.rmdir(os.path.join(self.repo, ".foreman/playbooks/fix"))
-        os.symlink(os.path.dirname(secret), os.path.join(self.repo, ".foreman/playbooks/fix"))
+        os.remove(os.path.join(self.repo, ".claude/playbooks/fix/alpha.md"))
+        os.rmdir(os.path.join(self.repo, ".claude/playbooks/fix"))
+        os.symlink(os.path.dirname(secret), os.path.join(self.repo, ".claude/playbooks/fix"))
         out = self.show("fix/alpha").stdout
         self.assertNotIn("hunter2", out)
         self.assertIn("not read", out)
 
     def test_a_long_overlay_is_cut_and_says_so(self):
-        put(self.repo, ".foreman/playbooks/fix/alpha.md", "x" * (pb.OVERLAY_MAX * 3))
+        put(self.repo, ".claude/playbooks/fix/alpha.md", "x" * (pb.OVERLAY_MAX * 3))
         out = self.show("fix/alpha").stdout
         self.assertLess(len(out), pb.OVERLAY_MAX + len(SHIPPED) + 500)
         self.assertIn("cut at", out)
 
     def test_an_overlay_cannot_drive_the_terminal(self):
-        put(self.repo, ".foreman/playbooks/fix/alpha.md", "a\x1b]0;owned\x07b\n")
+        put(self.repo, ".claude/playbooks/fix/alpha.md", "a\x1b]0;owned\x07b\n")
         out = self.show("fix/alpha").stdout
         self.assertNotIn("\x1b", out)
         self.assertIn("a]0;ownedb", out)
@@ -143,6 +143,28 @@ class Count(ForemanTestCase):
         got = self.fm_json("usage")
         self.assertEqual(got["playbooks"].get("verify/tdd-workflow"), 1)
         self.assertEqual(got["commands"].get("playbooks"), 1)
+
+
+class Writable(ForemanTestCase):
+    """The overlay is where a session can write it: a guard change that refuses it breaks overlays."""
+    def test_the_guard_lets_a_session_write_an_overlay(self):
+        import fmguard as g
+        ctx = g.Ctx(cwd=self.repo, project_root=self.repo, home=os.path.join(self.tmp, "user"), foreman_home=self.home,
+                    task_id="T-1", unbriefed=None)
+        new = {"file_path": os.path.join(self.repo, pb.OVERLAYS, "fix", "x.md"), "content": "Use {{test}}.\n"}
+        self.assertIsNone(g.check("Write", new, ctx))
+        mirror = {"file_path": os.path.join(self.repo, ".foreman", "playbooks", "fix", "x.md"), "content": "x\n"}
+        self.assertEqual(getattr(g.check("Write", mirror, ctx), "category", None), "state-direct")  # fm's alone
+
+    def test_a_worker_may_show_a_playbook(self):
+        import argparse
+        import fmcli
+        self.assertTrue(fmcli._worker_may(argparse.Namespace(verb="playbooks", action="show")))
+
+    def test_a_shipped_playbook_names_a_fact(self):
+        out = self.fm("playbooks", "show", "verify/verification-loop").stdout
+        self.assertIn("This project's tests (fm map): ", out)
+        self.assertNotIn("{{test}}", out)
 
 
 class Lint(ForemanTestCase):
