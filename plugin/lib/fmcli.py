@@ -1313,6 +1313,55 @@ def _rel(p, f):
     return os.path.normpath(os.path.relpath(os.path.join(p.root, f), p.root))
 
 
+def _live_gits(root):
+    """Pids of running git processes whose cwd is root or under it (Linux /proc). One whose cwd we may not read counts:
+    it might be in root; one gone meanwhile doesn't."""
+    root, pids = os.path.realpath(root), []
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        try:
+            with open(f"/proc/{d}/comm") as f:
+                if f.read().strip() != "git":
+                    continue
+            cwd = os.readlink(f"/proc/{d}/cwd")
+        except PermissionError:
+            cwd = root
+        except OSError:
+            continue  # exited meanwhile
+        if cwd == root or cwd.startswith(root.rstrip("/") + "/"):
+            pids.append(int(d))
+    return pids
+
+
+def _stale_index_lock(root, age=600):
+    """T-1405: a git that crashed leaves index.lock and every later commit fails. (removed?, what was done): removed only
+    when older than age seconds and no live git runs in the repo; off Linux (no /proc to look in) it's only named."""
+    import subprocess
+    try:
+        rel = subprocess.run(["git", "-C", root, "rev-parse", "--git-path", "index.lock"], capture_output=True,
+                             text=True, timeout=30).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return False, "couldn't find the repo's index.lock"
+    lock = os.path.join(root, rel) if rel else ""
+    try:
+        old = time.time() - os.path.getmtime(lock)
+    except OSError:
+        return False, f"{lock or 'index.lock'} is gone now"
+    if old < age:
+        return False, f"{lock} is {int(old)}s old, so a git may still be using it: kept (remove it once no git runs)"
+    if not os.path.isdir("/proc"):
+        return False, f"{lock} is {int(old // 60)} min old; no /proc here to check for a live git: kept (remove it by hand)"
+    live = _live_gits(root)
+    if live:
+        return False, f"{lock} kept: git is still running in the repo (pid {', '.join(map(str, live[:5]))})"
+    try:
+        os.remove(lock)
+    except OSError as e:
+        return False, f"{lock} is stale but couldn't be removed: {e.strerror}"
+    return True, f"removed a stale {lock} ({int(old // 60)} min old, no git running in the repo)"
+
+
 def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
     """T-0129: commit what this task changed (from its focus snapshot), only after it closed: a refused close commits
     nothing, and work from before the task stays out. A synced .foreman/ mirror goes with it. dry (T-0720): only the
@@ -1384,8 +1433,16 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
         return
     addable = [f for f in files if f in known or os.path.lexists(os.path.join(p.root, f))
                or any(k.startswith(f.rstrip("/") + "/") for k in known)]
-    add = subprocess.run([*git, "add", "-A", "--", *addable], capture_output=True, text=True) if addable else \
-        subprocess.CompletedProcess([], 0, "", "")
+    def run(*a):  # T-1405: once past a stale index.lock a crashed git left
+        r = subprocess.run([*git, *a], capture_output=True, text=True)
+        if r.returncode and "index.lock" in r.stderr:
+            removed, why = _stale_index_lock(p.root)
+            print(f"{b.id}: {why}")
+            if removed:
+                c.log_event(p, "index_lock_removed", b.id, {"why": why})
+                r = subprocess.run([*git, *a], capture_output=True, text=True)
+        return r
+    add = run("add", "-A", "--", *addable) if addable else subprocess.CompletedProcess([], 0, "", "")
     if add.returncode == 0:  # T-0132: nothing that looks like a credential goes into a commit Foreman makes
         import fmsecrets
         leaks = fmsecrets.staged_leaks(p.root, files)
@@ -1415,8 +1472,7 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
         return
     trailer =[] if "Foreman-Task:" in message else ["--trailer", f"Foreman-Task: {b.id}"]  # fm why reads it
     # only the task's files (and so only what was scanned), whatever else was staged before (T-0132 review)
-    done = add.returncode == 0 and subprocess.run([*git, "commit", "-q", "-m", message, *trailer, "--",
-                                                   *files], capture_output=True, text=True)
+    done = add.returncode == 0 and run("commit", "-q", "-m", message, *trailer, "--", *files)
     if not done or done.returncode:
         raise UsageError(f"{b.id} is done, but the commit failed: {((done and done.stderr) or add.stderr).strip()[:300]}")
     sha = c._git(p.root, "rev-parse", "--short", "HEAD").strip()
@@ -6051,6 +6107,40 @@ def _worker_may(args):
     return verb in WORKER_READS and not getattr(args, "replan", False)
 
 
+LONG_VERBS = {"check", "code", "release", "bench", "sentinel"}
+
+
+def _stack_dumps(verb):
+    """T-1405: a long verb that hangs leaves a clue: every thread's stack goes to state/logs/stacks/<verb>-<pid>.txt on
+    SIGUSR1 and once after FOREMAN_STACK_AFTER seconds (15 min). Returns what stops it (an empty file is removed)."""
+    import faulthandler
+    import signal
+    try:
+        after = float(os.environ.get("FOREMAN_STACK_AFTER") or 900)
+        if not 0 < after < 1e7:
+            raise ValueError(after)
+        d = os.path.join(c.state_dir(), "logs", "stacks")
+        os.makedirs(d, exist_ok=True)
+        f = open(os.path.join(d, f"{verb}-{os.getpid()}.txt"), "w")
+    except (OSError, ValueError):
+        return None  # no dump is better than a verb that won't start
+    if hasattr(signal, "SIGUSR1"):
+        faulthandler.register(signal.SIGUSR1, file=f, all_threads=True)
+    faulthandler.dump_traceback_later(after, file=f)
+
+    def done():
+        faulthandler.cancel_dump_traceback_later()
+        if hasattr(signal, "SIGUSR1"):
+            faulthandler.unregister(signal.SIGUSR1)
+        f.close()
+        try:
+            if not os.path.getsize(f.name):
+                os.remove(f.name)
+        except OSError:
+            pass
+    return done
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     argv, aliased = _alias(list(argv))
@@ -6072,6 +6162,7 @@ def main(argv=None):
         return 2
     if args.cmd != "complete":  # a TAB press reads the briefs, never syncs or locks (round-7 review)
         _sync_in(args)
+    stop = _stack_dumps(args.cmd) if args.cmd in LONG_VERBS else None
     try:
         rc = args.fn(args)
         return rc if isinstance(rc, int) else 0  # evidence --run / check pass on the command's exit code
@@ -6093,3 +6184,6 @@ def main(argv=None):
     except ValueError as e:
         print(f"fm: state looks corrupt: {e} (run fm doctor)", file=sys.stderr)
         return 4
+    finally:
+        if stop:
+            stop()
