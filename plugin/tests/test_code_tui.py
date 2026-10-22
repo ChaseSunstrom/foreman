@@ -1846,6 +1846,121 @@ class RunHistory(CodeCase):
         self.assertIn("plan", kinds)
 
 
+class SettingsScreen(unittest.TestCase):
+    """T-1572: the app's settings screen lists fmsettings' one schema (the app's tui.toml and the Claude Code pane's
+    options) and writes through fm settings' own writer."""
+    def setUp(self):
+        import tempfile
+        self.home, self.uhome = tempfile.mkdtemp(), tempfile.mkdtemp()
+        env = {"FOREMAN_HOME": self.home, "HOME": self.uhome, "CLAUDECODE": "", "CLAUDE_CODE_ENTRYPOINT": ""}
+        patch = unittest.mock.patch.dict(os.environ, env)
+        patch.start()
+        self.addCleanup(patch.stop)
+        os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        self.toml = os.path.join(self.home, "tui.toml")
+
+    def write(self, text):
+        with open(self.toml, "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def app(self):
+        app = tui().App(tui().load_config()[0], spawn=lambda *a, **k: None)
+        app.key(",")
+        self.assertEqual(app.mode, "settings")
+        return app
+
+    def text(self, app, w=120, h=40):
+        return tui().render(app.state, w, h, app.cfg, app).text()
+
+    def row(self, app, key, **kw):
+        return next(line for line in self.text(app, **kw).splitlines() if f" {key} " in line)
+
+    def keys(self, app):
+        return [(r["surface"], r["key"]) for r in app.items if "head" not in r]
+
+    def test_every_setting_is_listed_by_group_with_value_default_and_badge(self):
+        import fmsettings
+        app = self.app()
+        self.assertEqual(sorted(self.keys(app)), sorted((e["surface"], e["key"]) for e in fmsettings.schema()))
+        heads = [r["head"] for r in app.items if "head" in r]
+        self.assertEqual(heads, list(dict.fromkeys(e["group"] for e in fmsettings.schema())), "one header a group")
+        self.assertNotIn("head", app.items[app.item_index], "the selection starts on a setting")
+        text = self.text(app)
+        self.assertIn("Settings", text)
+        self.assertIn("LOOK", text)
+        line = self.row(app, "border")
+        for want in ("rounded", "NOW"):
+            self.assertIn(want, line)
+        self.assertEqual(line.count("rounded"), 2, "the value and the default")
+        for _ in range(len(app.items)):
+            app.key("j")
+        self.assertIn("NEXT SESSION", self.row(app, "mascot"), "the pane's options apply from the next session")
+
+    def test_search_narrows_and_modified_only_shows_changed_keys(self):
+        self.write('# mine\nmotion = "off"\n')
+        app = self.app()
+        for k in "/pal":
+            app.key(k)
+        self.assertEqual(sorted(self.keys(app)), [("app", "palette"), ("plugin", "palette")])
+        text = self.text(app)
+        self.assertIn("palette", text)
+        self.assertNotIn("border", text)
+        app.key("\x1b")  # Esc in the search clears it
+        self.assertGreater(len(self.keys(app)), 20)
+        app.key("m")
+        self.assertEqual(self.keys(app), [("app", "motion")])
+        line = self.row(app, "motion")
+        self.assertIn("●", line, "changed is marked, not only coloured")
+        self.assertLess(line.index("off"), line.index("full"), "the value, then the default")
+        app.key("m")
+        self.assertGreater(len(self.keys(app)), 20)
+
+    def test_set_line(self):
+        self.write("# my settings\nborder = \"rounded\"  # keep\n")
+        app = self.app()
+        for k in ":set border heavy":
+            app.key(k)
+        self.assertIn(":set border heavy", self.text(app))
+        app.key("\n")
+        with open(self.toml, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "# my settings\nborder = \"heavy\"  # keep\n", "fm settings' writer: in place")
+        self.assertEqual(app.cfg["border"], "heavy", "the app takes it now")
+        self.assertIn("heavy", self.row(app, "border"))
+        self.assertIn("┏", self.text(app), "the screen draws with it")
+        for k in ":set border wobbly\n":
+            app.key(k)
+        self.assertIn("one of", self.text(app))
+        with open(self.toml, encoding="utf-8") as f:
+            self.assertIn('"heavy"', f.read(), "a refused value writes nothing")
+        for k in ":set --surface plugin palette cb\n":
+            app.key(k)
+        with open(os.path.join(self.uhome, ".claude", "settings.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["pluginConfigs"]["foreman-ui@foreman"]["options"], {"palette": "cb"})
+        self.assertEqual(app.cfg["palette"], "default", "the pane's value only: the app's own is unchanged")
+
+    def test_enter_on_a_row_starts_a_set_line_for_it_and_esc_closes(self):
+        app = self.app()
+        app.key("\n")
+        self.assertIn(":set theme night", self.text(app))
+        app.key("\x1b")
+        app.key("\x1b")
+        self.assertEqual(app.mode, "main")
+        app.projects_source = lambda: [{"project": "demo", "root": self.home}]
+        app.show_home()
+        app.key(",")  # fm code app opens on its home: the settings are a key away there too
+        self.assertEqual(app.mode, "settings")
+        app.key("\x1b")
+        self.assertEqual(app.mode, "home")
+
+    def test_any_width_draws_and_rows_keep_their_columns(self):
+        self.write('[colors]\nok = "#4DA3FF"\n')
+        app = self.app()
+        for w in (60, 80, 140):
+            text = self.text(app, w, 30)
+            self.assertIn("Settings", text)
+            self.assertTrue(all(tui().width(line) <= w for line in text.splitlines()))
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
