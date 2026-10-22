@@ -12,3 +12,6 @@ Run `fm state` and `fm queue`, then report in ≤ 25 lines:
 - Pending approvals (`fm ask`) and autonomy (standard/full).
 - Hygiene: last tidy, cycles or dangling dependencies, sensitive flag, drive on/off/paused.
 No edits, no state changes.
+
+Elsewhere: a shell prompt or status bar polls `fm glance` (one JSON line); `fm timeline ID > run.json` exports a task's
+run for ui.perfetto.dev (`--otlp` for OpenTelemetry); an editor runs `fm lsp` (stdio) to see a brief's proof gaps.
