@@ -84,7 +84,8 @@ def run_seed(seed, model=None, worker=None, timeout=600, max_steps=40):
         git("init", "-q")
         git("add", ".")
         git("commit", "-qm", "the seed")
-        argv = [sys.executable, FM, "code", seed["request"], "--json", "--max-steps", str(max_steps)]
+        argv = [sys.executable, FM, "code", seed["request"], "--json", "--max-steps", str(max_steps),
+                "--stale-ok", "fm code bench: a throwaway seed repo in its own Foreman home (T-1401)"]
         argv += ["--model", model] if model else ["--worker", worker, "--verify", seed["verify"]]
         p = subprocess.Popen(argv, cwd=repo, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE, text=True, start_new_session=True)

@@ -439,10 +439,67 @@ def add_case(cmd, should, cwd="", why=""):
     return case
 
 
+STALE_DAYS = 7  # T-1401: an unattended fm code run or fm release --push refuses a corpus replay older than this
+GATE_WINDOW = 90  # days of ledger read for it: older counts as none on record
+REFRESH = "fm replay --cases"
+
+
+def record(cases, drifted, broken):
+    """T-1401: the corpus replay's result on the ledger of the project the corpus belongs to (Foreman's own), else
+    cwd's; safety_gate reads it."""
+    p = c.find_project(_corpus_root()) or c.find_project(os.getcwd())
+    if p:
+        c.log_event(p, "guard_corpus", data={"cases": cases, "drifted": drifted, "broken": broken})
+
+
+def safety_gate(p):
+    """T-1401: why the guard can't be trusted unattended, or None: the newest guard corpus replay on p's or Foreman's
+    own ledger is missing, red, empty or older than STALE_DAYS. Names the check, its date and the refresh."""
+    since = c.iso(time.time() - GATE_WINDOW * 86400)
+    seen, events = set(), []
+    for q in (p, c.find_project(repo_root())):
+        if q and q.dir not in seen:
+            seen.add(q.dir)
+            events += c.ledger_events(q, kinds=["guard_corpus"], since=since)
+    events = [e for e in events if isinstance(e.get("data"), dict) and c.parse_ts(e.get("ts"))]
+    head = "the guard corpus replay (fm replay --cases)"
+    if not events:
+        return f"{head} has no result on record in the last {GATE_WINDOW} days: run {REFRESH}"
+    e = max(reversed(events), key=lambda e: e["ts"])  # the same second: the one that landed last
+    d, on = e["data"], e["ts"][:10]
+    cases, drifted, broken = (d.get(k) if isinstance(d.get(k), int) else -1 for k in ("cases", "drifted", "broken"))
+    if drifted or broken or cases < 1:
+        return (f"{head} failed on {on}: {drifted} drifted, {broken} broken, {cases} cases: fix the guard or the "
+                f"labels, then run {REFRESH}")
+    age = c.age_days(e["ts"])
+    if age > STALE_DAYS:
+        return f"{head} last passed on {on}, {int(age)} days ago (older than {STALE_DAYS}): run {REFRESH}"
+    return None
+
+
+def enforce(p, by, waiver=None, attended=False):
+    """T-1401: the safety gate at a verb's door. A problem refuses (UsageError), unless attended (a warning to show) or
+    waived (--stale-ok REASON, logged on the ledger, never silent). Returns the note to show, or None."""
+    import fmcli
+    if waiver is not None and not waiver.strip():
+        raise fmcli.UsageError("--stale-ok needs a reason: --stale-ok \"why running on this replay is fine\"")
+    why = safety_gate(p)
+    if not why:
+        return None
+    if waiver:
+        c.log_event(p, "safety_waiver", data={"check": "guard corpus replay", "by": by, "reason": waiver[:500],
+                                               "problem": why})
+        return f"{why} (waived: {waiver[:200]}; logged)"
+    if attended:
+        return f"warning: {why}"
+    raise fmcli.UsageError(f"{by} refuses: {why}; or --stale-ok REASON runs anyway (logged)")
+
+
 def report_cases(args, fmcli):
     """fm replay --cases: the labelled cases against the current guard; --capture: one FIX per drifted case (night)."""
     cases, broken = load_cases()
     bad = drift(cases)
+    record(len(cases), len(bad), broken)
     made = []
     if args.capture and bad:
         p = fmcli.resolve(args)
@@ -515,6 +572,7 @@ def cmd_replay(args):
                  " · fm replay --accept takes these verdicts as the baseline" if blocked or allowed or not old else ""))
     cases, broken = load_cases()  # T-1182: the gate holds the labelled cases too (fm guard wrong)
     bad = drift(cases)
+    record(len(cases), len(bad), broken)
     res.update(cases=len(cases), drifted=len(bad), broken=broken)
     if cases or broken:
         lines.append(f"  guard cases: {len(cases)} labelled, {len(bad)} drifted"

@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 
-from helpers import ForemanTestCase, read_text
+from helpers import ForemanTestCase, read_text, stub_corpus_replay
 
 import fmcore as c
 from test_release import stub_env
@@ -52,6 +52,7 @@ class Base(ForemanTestCase):
         b = c.find_brief(p, t)
         b.meta["allow"] = ["publish"]
         c.save_brief(p, b)
+        stub_corpus_replay(self.fx)  # T-1401: --push needs a fresh green guard corpus replay
 
 
 class Release(Base):
