@@ -39,6 +39,11 @@ class Bus(Base):
         self.assertIn("freeze the API", self.note("sess-3")[1].get("additionalContext", ""))
         self.assertIn("freeze the API", self.note("sess-2")[1].get("additionalContext", ""))
 
+    def test_a_send_without_its_text_says_how_instead_of_crashing(self):
+        p = self.fm("bus", "send", "sess-2", check=False)
+        self.assertNotIn("Traceback", p.stderr)
+        self.assertIn('fm bus send <session|all> "<text>"', p.stderr)
+
     def test_unread_mail_keeps_a_session_from_stopping(self):
         self.fm("bus", "send", "sess-9", "one more thing: bump the version")
         r = parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done.", "session_id": "sess-9"}))
