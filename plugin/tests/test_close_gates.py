@@ -116,6 +116,15 @@ class CloseGates(ForemanTestCase):
         r = self.finish(tid)
         self.assertNotEqual(r.returncode, 0, r.stdout)
 
+    def test_a_slow_close_names_its_slowest_run(self):
+        tid = self.task()
+        self.write("calc.py", SRC + "# touch\n")
+        env = {"FOREMAN_SENTINEL": "off", "FOREMAN_SLOW_CLOSE_S": "0.5"}
+        r = self.fm("task", "finish", tid, "--audit", "self", "--run", "sleep 1", check=False, env=env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertRegex(r.stdout, r"Slowest: sleep 1 \d+ s \(of \d+ s\)")
+        self.assertIn("s", self.events("close_affected")[-1]["data"])
+
     def test_a_flaky_linked_test_gets_one_rerun(self):
         tid = self.task()
         flag = os.path.join(self.repo, "once")
