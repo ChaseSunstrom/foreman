@@ -5274,8 +5274,13 @@ def _build_parser():
     s = add("playbooks", lazy("fmplaybooks", "cmd_show"), tier=("Finding your way", 382), help="show NAME: a playbook "
             "as the skill loads it, {{fact}}s (test, language, entry…) filled in from fm map and this project's "
             ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
-    s.add_argument("action", choices=["show"])
+    s.add_argument("action", choices=["show", "eval"], help="eval NAME: held-out briefs with and without the playbook "
+                   "loaded, the lift recorded (T-1618)")
     s.add_argument("name", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that name")
+    s.add_argument("--briefs", help="eval: the brief set (default plugin/evals/playbooks/<stage>/<name>.json)")
+    s.add_argument("--real", action="store_true", help="eval: ask a model (claude -p, budgeted) instead of reading "
+                   "the playbook literally")
+    s.add_argument("--model", default="haiku", help="eval --real: the model")
     s = add("scout", lazy("fmscout", "cmd_scout"), tier=("Running elsewhere", 1210), help="find work nobody asked for yet: a newer Claude Code, stack cards "
             "your projects lack, doctor failures, stale skill sources, a brainstorm when the queue is dry (T-0950)")
     s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (fm night's)")
