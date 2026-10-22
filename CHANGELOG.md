@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code's exported snapshot, recording (GIF/MP4) and plain event replay redact secrets before anything is drawn or printed, so a token a worker printed doesn't end up in a shared file (T-1302).
 - The sentinel (and the release canary that runs it) skips a past check that reads a remote's state (`origin/…`, `@{u}`, `ls-remote`), such as a release task's "main is Foreman 1.2.47", since it was only true at the time. A check that fails and then passes on one rerun is reported as flaky, not failing. Both caused the false canary failures after 1.2.48 and 1.2.50 (T-1380, T-1448).
 - `fm tidy` lists, then with `--apply` deletes, fm code's private copies of reverted files once they are over 30 days old (plain files only; links and folders are skipped). The fm code tests keep every XDG folder inside their temporary home (T-1442).
 - fm code app: the progress track's labels and every box title are measured in screen columns, so wide characters (CJK, emoji) fit, and a long note no longer makes a box title vanish at 80 columns; the title keeps at least a few letters (T-1431).
