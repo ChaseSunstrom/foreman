@@ -5438,6 +5438,19 @@ def _build_parser():
     s.add_argument("--sub", metavar="a,b", help="new: the subcommands a caller may pick (an enum)")
     s.add_argument("--dir", help="new: the folder to write (default: ./NAME)")
     s.add_argument("--force", action="store_true", help="new: write into a folder that isn't empty")
+    add("glance", lazy("fmintegrations", "cmd_glance"), tier=("Running elsewhere", 1232),
+        help="the status as one JSON line for a shell prompt or status bar (waybar's text, tooltip and class); "
+             "never creates a project (T-1551)")
+    s = add("timeline", lazy("fmintegrations", "cmd_timeline"), tier=("Running elsewhere", 1234),
+            help="a task's run from the ledger as Perfetto / Chrome trace JSON (open at ui.perfetto.dev): the task, "
+                 "its steps and checks as spans, every event as a mark, redacted; words left out in a sensitive "
+                 "project (T-1551)")
+    s.add_argument("id", nargs="?", help="the task (default: the active one)")
+    s.add_argument("--otlp", action="store_true", help="OTLP JSON for an OpenTelemetry collector instead")
+    s.add_argument("--out", metavar="PATH", help="write it here instead of printing it")
+    add("lsp", lazy("fmintegrations", "cmd_lsp"), tier=("Running elsewhere", 1236),
+        help="a Language Server over stdio (never a port) that publishes a brief's proof gaps: criteria with no "
+             "verify command or evidence, steps with no test run; reads only the document (T-1551)")
     add("wiring", lazy("fmdoctor", "cmd_wiring"), tier=("Project and settings", 840), help="one screen of what is wired: version, hooks, flags, standing "
                                                         "yeses, trust, pause, budget, plugins (T-0469)")
     s = add("orders", lazy("fmorders", "cmd_orders"), tier=("Running elsewhere", 1220), help="standing orders: requests that capture themselves on a "
@@ -6298,8 +6311,9 @@ def _task_shape(parser, argv):
 # gemini's shells don't pass Foreman's guard, so fm refuses the rest itself when FOREMAN_WORKER_OF names a run.
 # ponytail: a worker that unsets the variable gets past this; the judge and the CLI's own sandbox stay the outer walls.
 # T-1388 review: log appends ledger events (a forged check_run passes a gate); recall and map write with some flags.
-WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show"}
+WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show", "glance"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
+                   "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
                    "design": ("action", {"lint", "palette", "contrast"})}  # T-1506, T-1507: these only read
 
