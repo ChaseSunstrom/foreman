@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The bench gate calls a pass loss between 1 and 2 standard errors "likely a loss: rerun with --runs 10" and doesn't propose the change. With fewer than 5 runs it says how often a real 2-pass loss would be caught (about half the time at 3 runs; research bench-band-calibration) (T-1464).
 - `fm task finish` names its slowest run when a close takes over 60 s ("Slowest: <cmd> N s (of M s)"), and the affected-tests event records its seconds, so a slow close says what to speed up (T-1462).
 - `fm doctor`'s supply check now sees code in a plugin's `node_modules`, `.venv`, `__pycache__` and `.pytest_cache`, which it used to skip entirely. Files there are tracked by path, size and times (bounded per folder and per plugin). Scripts a hook or server names there are hashed by content. `.git` stays out. These records go in a new field that existing baselines take on silently. Scoped (`@scope/…`) and `+` package paths are now read whole, so a baseline may say "adds script" once. A file name that isn't valid UTF-8 no longer leaves its plugin unchecked (T-1459).
 - The background gate run after a close starts under `nice -n 10`, so it no longer competes with the next task's foreground finish and tests (T-1463).
