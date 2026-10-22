@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code app: a multi-line paste lands in the prompt as one entry instead of submitting at the first newline and firing the rest as hotkeys. Bracketed paste is on while the screen runs and off however it ends; a paste is capped at 64 KB and its control characters are dropped (T-1316).
 - `fm next` (and the "Next:" line under every Foreman note) skips a task a builder lane holds, so it no longer says `fm focus` on a task `fm focus` would refuse (T-1478).
 - `fm code runners --check` also covers aliases that resolve to retired models (`o1-mini`, and `gpt-4` from 2026-10-23), and notes models retiring within 60 days ("retiring on <date> → <replacement>"); the tables were re-read from the three providers' deprecation pages on 2026-10-22 (T-1433).
 - Crash hygiene (T-1405). Long fm commands (check, code, release, bench, sentinel) write every thread's stack to `state/logs/stacks/` on SIGUSR1 and after 30 minutes; `fm tidy` prunes these after 14 days. A Foreman commit blocked by a stale `.git/index.lock` removes it only when it is over 10 minutes old, no process has it open, and no git runs in the repo; otherwise it names the lock and the holder. `fm doctor` probes whether file locks exclude between processes on the state filesystem.
