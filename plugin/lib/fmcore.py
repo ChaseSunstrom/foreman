@@ -2245,9 +2245,11 @@ STAGES = ("planning", "ready", "executing", "verifying", "documenting", "auditin
 
 def plain(s):
     """Text safe to print or show in a dialog: no control, format (bidi overrides, zero-width) or line/paragraph
-    separator characters that could move the cursor, retitle the terminal or disguise the text."""
+    separator characters that could move the cursor, retitle the terminal or disguise the text, nor variation selectors
+    (T-1621 review: invisible, so a run of them after a character can smuggle a payload)."""
     import unicodedata
-    return "".join(ch for ch in (s or "") if unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp"))
+    return "".join(ch for ch in (s or "") if unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp")
+                   and not ("︀" <= ch <= "️" or "\U000e0100" <= ch <= "\U000e01ef"))
 
 
 def plain_lines(text):
