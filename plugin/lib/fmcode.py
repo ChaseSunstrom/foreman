@@ -1055,7 +1055,8 @@ def dangerous_flags(tpl, depth=0):
     for i, w in enumerate(words):
         flag, eq, val = w.partition("=")
         val = val if eq else (words[i + 1] if i + 1 < len(words) else "")
-        if (flag in ("--yolo", "--yes-always", "--trust-all-tools", "-anever") or flag.startswith("--dangerously-")
+        if (flag in ("--yolo", "--yes-always", "--trust-all-tools", "-anever", "--allow-all-tools", "--allow-all",
+                     "--skip-permissions-unsafe") or (flag.startswith("--") and "dangerously" in flag)  # T-1443
                 or "danger-full-access" in w or "bypassPermissions" in w
                 or (flag == "--approval-mode" and val == "yolo") or (flag in ("-a", "--ask-for-approval") and val == "never")
                 or (flag.strip("'\" ") == "approval_policy" and val.strip("'\" ") == "never") or (gemini and w == "-y")
