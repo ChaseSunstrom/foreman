@@ -5774,6 +5774,11 @@ def _build_parser():
                    "objects, fallback state); list the rest as left for a person")
     s.add_argument("--accept-supply", action="store_true",
                    help="take the current plugins and MCP servers as the supply-chain baseline (T-0672)")
+    s = add("fsck", lazy("fmdoctor", "cmd_fsck"), tier=("Project and settings", 872), help="a deeper read-only check "
+            "of Foreman's state: open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, "
+            "journals whose last line is torn; exit 1 on any (T-1667)")
+    s.add_argument("--fix", action="store_true", help="remove only the stale locks; a broken lane or a torn journal "
+                   "is left for a person")
 
     s = add("sweep", lazy("fmeco", "cmd_sweep"), tier=("Running elsewhere", 1260), help="ask every other project about a fix: where a pattern is (or what "
                                                        "recall relates), a brief in its inbox; edits nothing there")
