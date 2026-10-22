@@ -4340,7 +4340,7 @@ def _past_findings(p, lens):
         except OSError:
             continue
         if lens not in n[:-3].split("-"):  # a combined review: only its section for this lens
-            m = re.search(rf"(?ms)^## {re.escape(lens)}\b.*?(?=^## |\Z)", report)
+            m = re.search(rf"(?ms)^## (?:lens:[ \t]*)?{re.escape(lens)}[ \t]*(?::[^\n]*)?$.*?(?=^## |\Z)", report)
             report = m.group(0) if m else ""
         for m in _FINDING.finditer(report):
             text = m.group(1).replace("**", "").replace("`", "").replace(p.root + os.sep, "")
@@ -4531,9 +4531,13 @@ def cmd_audit(args):
                      + "\n".join(f"- {a.text}" for a in b.acceptance()))
         if lens == "design":  # T-1501: the screenshots the task names that exist, so the reviewer can look at them
             shots = []
-            for m in re.findall(r"(?<![\w./~-])[\w./~-]{1,300}?\.(?:png|jpe?g|webp)\b", "\n".join(
+            for name in re.findall(r"(?<![\w./~-])[\w./~-]{1,300}?\.(?:png|jpe?g|webp)\b", "\n".join(
                     [b.preamble] + [body for _, body in b.sections]), re.I):
-                f = os.path.normpath(os.path.join(p.root, os.path.expanduser(m)))
+                f = os.path.normpath(os.path.join(p.root, os.path.expanduser(name)))
+                rel = os.path.relpath(f, p.root)  # under a dot-directory (~/.ssh, .config): never, wherever the root is
+                inside = rel != os.pardir and not rel.startswith(os.pardir + os.sep)
+                if any(x.startswith(".") for x in (rel if inside else f).split(os.sep)[:-1]):
+                    continue
                 if f not in shots and len(shots) < 8 and os.path.isfile(f):
                     shots.append(f)
             extra = (f"\nUI files in the diff: {', '.join(ui[:20]) or 'none (named with --lens)'}\n"

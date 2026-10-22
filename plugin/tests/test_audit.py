@@ -78,6 +78,38 @@ class DesignLens(HookCase):
                  "mods/foreman-ui/hooks/hooks.json", "roles/web/templates/nginx.conf.j2", "demo/code-tui.mp4"]
         self.assertEqual(c.ui_paths(ui + other), ui)
 
+    def test_ui_paths_skips_what_design_lint_skips(self):  # review: built, vendored and generated files aren't UI
+        self.assertEqual(c.ui_paths(["dist/app.css", "node_modules/x/a.html", "src/app.css"]), ["src/app.css"])
+        skipped = ["web/vendor/b.css", "build/i.html", "out/i.html", "target/site/i.html", "venv/lib/a.html",
+                   "static/app.min.css", "htmlcov/index.html", "coverage/lcov-report/index.html"]
+        self.assertEqual(c.ui_paths(skipped), [])
+        self.assertEqual(c.ui_paths(["plugin/hooks/statusline", "plugin/hooks/subagent-statusline", "bin/status"]),
+                         ["plugin/hooks/statusline", "plugin/hooks/subagent-statusline"], "Foreman's own UI")
+
+    def test_a_screenshot_under_a_dot_directory_is_never_listed(self):  # review: ~/.ssh, .config and the like
+        self.prep()
+        self.write("web/app.css")
+        self.write(".cache/shot.png", "png")
+        self.write("shots/ok.png", "png")
+        self.fm("task", "log", self.tid, "see .cache/shot.png and shots/ok.png")
+        design = self.brief()[1].split("## design")[1]
+        self.assertNotIn("shot.png", design)
+        self.assertIn("ok.png", design)
+
+    def test_only_a_lens_heading_switches_the_lens(self):  # review: "## Design notes" is not the design lens
+        import fmlanes
+        got = fmlanes.reviewer_findings("## maintainer\n- LOW — a.py:1 — x\n## Design notes\n- LOW — b.py:2 — y\n"
+                                        "## Edge cases\n- LOW — c.py:3 — z\n## lens: design\n- LOW — d.py:4 — w\n"
+                                        "## edge: changes needed\n- LOW — e.py:5 — v")
+        self.assertEqual([x[0] for x in got], ["maintainer"] * 3 + ["design", "edge"])
+        self.fm("init")
+        self.task()
+        self.fm("research", "add", "t0009-review", input="## design-system\n**HIGH — tokens drift**\n"
+                                                         "## design: changes needed\n**HIGH — no focus ring**\n")
+        out = self.fm("audit", "prep", "--print", "T-0001", "--lens", "design").stdout
+        self.assertIn("no focus ring", out)
+        self.assertNotIn("tokens drift", out)
+
     def test_the_reviewer_prompt_and_template_define_the_three_personas(self):
         for rel in (("agents", "fm-reviewer.md"), ("skills", "intake", "references", "audit.md")):
             with open(os.path.join(c.PLUGIN_ROOT, *rel)) as f:
