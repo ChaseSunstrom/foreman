@@ -175,6 +175,14 @@ class ReviewNits(ForemanTestCase):
             with self.subTest(tpl=tpl):
                 self.assertEqual(fmcode.dangerous_flags(tpl), [], tpl)
 
+    def test_allow_all_flags(self):
+        # T-1443: Copilot CLI's allow-all, Factory droid's skip-permissions-unsafe, Claude's allow-dangerously-…
+        for tpl in ("copilot -p {prompt} --allow-all-tools", "copilot --allow-all -p {prompt}",
+                    "droid exec --skip-permissions-unsafe {prompt}", "claude -p {prompt} --allow-dangerously-skip-permissions"):
+            with self.subTest(tpl=tpl):
+                self.assertTrue(fmcode.dangerous_flags(tpl), tpl)
+        self.assertEqual(fmcode.dangerous_flags("copilot -p {prompt} --allow-tool 'shell(git status)'"), [])
+
     def test_hooks_inside_a_worker_create_no_project(self):
         import fmcore
         folder = git_repo(self.tmp, "other")
