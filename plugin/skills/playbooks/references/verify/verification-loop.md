@@ -16,7 +16,7 @@ Invoke this skill:
 
 ## Verification Phases
 
-1. Build, then type check, then lint: stop at the first that fails and fix it.
+1. Build first and stop if it fails; then type check and lint, fixing what they report.
 2. Run the tests with coverage.
 3. Scan for secrets and debug output, then review the diff.
 4. Write the report in the output format below.
