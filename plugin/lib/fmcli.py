@@ -531,9 +531,16 @@ def cmd_task(args):
         if args.run is not None:  # run it: the real exit code and output, never a typed summary
             if args.cmd is not None:
                 raise UsageError("give the command either as --run CMD or as CMD RESULT, not both")
+            if getattr(args, "expect_fail", False) and args.step is None:
+                raise UsageError("--expect-fail is for a step's red run (--step N); a criterion only takes a passing run")
             pre = need_brief(p, args.id)
             code, output = c.run_command(p.root, args.run, args.timeout if args.timeout > 0 else None)
             cmd, result, shown = args.run, c.run_result(code, output, args.run), "\n".join(output.rstrip().splitlines()[-20:])
+            if getattr(args, "expect_fail", False):  # T-1486: the red run of red→green, recorded as such
+                if not code or c.never_ran(args.run, code, output):
+                    raise UsageError(f"--expect-fail expected a failing run, but it {'passed' if not code else 'never reached its check'}"
+                                     f" ({result}); nothing recorded")
+                result, code = f"red as expected (exit {code}) · " + result.split(" · ", 1)[-1], 0
             result, tried = _step_checks(pre, args.step, args.run, code, output, result)
         elif args.cmd is None or args.result is None:
             raise UsageError("fm task evidence needs --run CMD (preferred) or CMD RESULT")
@@ -4998,6 +5005,9 @@ def _build_parser():
     t.add_argument("--timeout", type=float, default=600, help="--run limit in seconds")
     t.add_argument("--inconclusive", action="store_true",
                    help="the check neither proves nor disproves: recorded, never counted as passing (exits with the run's code)")
+    t.add_argument("--expect-fail", action="store_true",
+                   help="with --step and --run: the run must fail (a failing test before the fix); recorded as the "
+                        "expected red, exits 0; a passing run is refused and nothing is recorded (T-1486)")
     g = t.add_mutually_exclusive_group()
     g.add_argument("--step", type=int)
     g.add_argument("--ac", type=int)
