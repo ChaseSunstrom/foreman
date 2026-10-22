@@ -1,6 +1,7 @@
 """T-1553 and its siblings: tools that test the guard against what the shell really does."""
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -334,6 +335,146 @@ class Trust(ForemanTestCase):
             self.fm_ask(tid, "publish", session="sess-a")
             self.fm_ask(tid, "publish", session="sess-b")
         self.assertIn("publish asked 3 times this session", self.fm_ask(tid, "publish", session="sess-a").stdout)
+
+import fmlandlock  # noqa: E402
+
+LANDLOCK = fmlandlock.available()[0]
+
+
+@unittest.skipUnless(LANDLOCK, "this kernel has no Landlock: confinement is optional and the run says so")
+class Landlock(unittest.TestCase):
+    """T-1607: an fm code worker's process tree can't write outside its tree, scratch and Claude's own folders."""
+
+    def test_a_confined_child_cannot_write_outside_its_set(self):
+        import fmcode
+        import tempfile
+        with tempfile.TemporaryDirectory() as inside, tempfile.TemporaryDirectory(dir=os.path.expanduser("~")) as out:
+            code, text = fmcode.run_bounded(f"echo a > in.txt; echo b > {out}/out.txt; cat /etc/hostname", inside, 30,
+                                            confine=[inside])
+            self.assertTrue(os.path.exists(os.path.join(inside, "in.txt")), text)
+            self.assertFalse(os.path.exists(os.path.join(out, "out.txt")), "outside the set: refused")
+            self.assertIn("Permission denied", text)
+            self.assertTrue(text.strip().splitlines()[-1], "reads still work")
+
+    def test_the_writable_set_covers_the_tree_its_git_and_claudes_folders(self):
+        import tempfile
+        home = os.path.expanduser("~")
+        with tempfile.TemporaryDirectory() as d:
+            repo = os.path.join(d, "repo")
+            subprocess.run(["git", "init", "-q", repo], check=True)
+            paths = fmlandlock.writable_for(repo)
+            real = [os.path.realpath(p) for p in paths]
+            for want in (repo, os.path.join(repo, ".git"), "/tmp", os.path.join(home, ".claude", "projects"),
+                         os.path.join(home, ".claude.json"), os.path.join(home, ".cache")):
+                if os.path.lexists(want):
+                    self.assertIn(os.path.realpath(want), real, want)
+            for never in (home, os.path.join(home, ".claude")):
+                self.assertNotIn(os.path.realpath(never), real, "never the whole home or all of ~/.claude")
+
+
+@unittest.skipUnless(LANDLOCK, "this kernel has no Landlock: confinement is optional and the run says so")
+class LandlockBounds(unittest.TestCase):
+    """T-1607 review: the set is narrow (never Claude Code's settings or Foreman's code), the ruleset is built in the
+    parent, and a confinement that can't be made stops the run."""
+
+    def test_claude_settings_hooks_and_foremans_code_stay_unwritable(self):
+        import tempfile
+        home = os.path.expanduser("~")
+        with tempfile.TemporaryDirectory() as d:
+            real = [os.path.realpath(p) for p in fmlandlock.writable_for(d)]
+        for never in (os.path.join(home, ".claude"), os.path.join(home, ".claude", "settings.json"),
+                      os.path.join(home, ".claude", "foreman"), os.path.join(home, ".claude", "foreman", "plugin"),
+                      os.path.join(home, ".claude", "hooks"), os.path.join(home, ".claude", "plugins"), "/dev"):
+            self.assertFalse(any(os.path.realpath(never) == p or os.path.realpath(never).startswith(p + "/")
+                                 for p in real), never)
+        projects = os.path.join(home, ".claude", "projects")
+        if os.path.isdir(projects):
+            self.assertIn(os.path.realpath(projects), real, "Claude Code's transcripts stay writable")
+
+    def test_a_worktree_gets_objects_refs_and_its_own_git_dir_never_hooks(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            main, wt = os.path.join(d, "main"), os.path.join(d, "wt")
+            for argv in (["git", "init", "-q", main], ["git", "-C", main, "commit", "-q", "--allow-empty", "-m", "x"],
+                         ["git", "-C", main, "worktree", "add", "-q", wt]):
+                subprocess.run(argv, check=True, capture_output=True,
+                               env=dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+                                        GIT_COMMITTER_EMAIL="t@t"))
+            real = [os.path.realpath(p) for p in fmlandlock.writable_for(wt)]
+            common = os.path.realpath(os.path.join(main, ".git"))
+            for want in ("objects", "refs", "logs"):
+                self.assertIn(os.path.join(common, want), real)
+            self.assertNotIn(common, real, "never the whole common dir: hooks and config live there")
+            self.assertTrue(any(p.startswith(os.path.join(common, "worktrees")) for p in real))
+
+    def test_renames_truncation_and_file_rules_behave(self):
+        import fmcode
+        import tempfile
+        with tempfile.TemporaryDirectory() as inside, tempfile.TemporaryDirectory(dir=os.path.expanduser("~")) as other:
+            one = os.path.join(other, "one.json")
+            open(one, "w").close()
+            code, text = fmcode.run_bounded(
+                f"mkdir a b && echo x > a/f && mv a/f b/f && : > b/f && echo ok-tree; echo y >> {one} && echo ok-file; "
+                f"echo z > {other}/sibling.json || echo refused-sibling", inside, 30, confine=[inside, one])
+            self.assertIn("ok-tree", text)
+            self.assertIn("ok-file", text)
+            self.assertIn("refused-sibling", text)
+            self.assertFalse(os.path.exists(os.path.join(other, "sibling.json")))
+
+    def test_a_confinement_that_cannot_be_made_stops_the_command(self):
+        import fmcode
+        import tempfile
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(fmlandlock, "prepare", side_effect=OSError("no ruleset")):
+            with self.assertRaises(fmcode.ConfineError):
+                fmcode.run_bounded("touch ran", d, 30, confine=[d])
+            self.assertFalse(os.path.exists(os.path.join(d, "ran")), "never run unconfined instead")
+
+    def test_verify_and_run_commands_are_confined_too(self):
+        import inspect
+        import fmcode
+        # the worker's turn, its run commands, the plan check and the criteria's verify (through fm task evidence)
+        for fn in (fmcode.Run.work, fmcode.Run.run_cmd, fmcode._plan_problem):
+            calls = re.findall(r"run_bounded\((?:[^()]|\([^()]*\))*\)", inspect.getsource(fn))
+            self.assertTrue(calls, fn.__name__)
+            self.assertEqual([c for c in calls if "confine=" not in c or "confine=None" in c], [], fn.__name__)
+        verify = inspect.getsource(fmcode.Run.verify)
+        self.assertRegex(verify, r'self\.fm\("task", "evidence"(?:[^()]|\([^()]*\))*confine=', "verify runs confined")
+
+
+class LandlockOptional(unittest.TestCase):
+    def test_the_guard_refuses_turning_confinement_off(self):
+        ctx = fmreplay._ctx(os.path.expanduser("~"))
+        for cmd in ("FOREMAN_CONFINE=0 fm code run T-1", "export FOREMAN_CONFINE=0; fm code run T-1",
+                    "env FOREMAN_CONFINE=0 fm code run T-1"):
+            b = fmguard.check("Bash", {"command": cmd}, ctx)
+            self.assertEqual(getattr(b, "category", None), "self-authorize", cmd)
+        self.assertIsNone(fmguard.check("Bash", {"command": "echo FOREMAN_CONFINE is documented"}, ctx))
+
+    def test_without_landlock_workers_run_unconfined_and_say_why(self):
+        import fmcode
+        with mock.patch.object(fmlandlock, "abi", return_value=0):
+            ok, why = fmlandlock.available()
+            paths, note = fmcode.worker_confinement("/tmp")
+        self.assertFalse(ok)
+        self.assertIsNone(paths)
+        self.assertIn("unconfined", note)
+        self.assertIn(why, note)
+
+    def test_fm_doctor_says_whether_workers_are_confined(self):
+        import fmdoctor
+        with mock.patch.object(fmlandlock, "abi", return_value=0):
+            r = fmdoctor.check_landlock()
+        self.assertEqual(r.status, "PASS", "optional: never a failure")
+        self.assertIn("unconfined", r.detail if hasattr(r, "detail") else str(r))
+
+    def test_it_can_be_turned_off(self):
+        import fmcode
+        with mock.patch.dict(os.environ, {"FOREMAN_CONFINE": "0"}):
+            paths, note = fmcode.worker_confinement("/tmp")
+        self.assertIsNone(paths)
+        self.assertIn("FOREMAN_CONFINE=0", note)
+
 
 if __name__ == "__main__":
     unittest.main()

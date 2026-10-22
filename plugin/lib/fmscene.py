@@ -4,6 +4,7 @@ validate() returns the scene with every default filled in: one shape for each re
 a rasteriser or a web component later reads the same dict). compile_three() emits an ES module modelled on
 references/ui/templates/scene.html: no WebGL keeps the poster, context loss is survived, the DPR is capped, reduced
 motion holds one still frame, nothing draws offscreen or hidden, a failure ends at the poster, dispose() frees it all.
+compile_component() (T-1634) is that module whole plus <fm-scene>, a custom element mounting it in its shadow DOM.
 """
 import json
 import math
@@ -274,6 +275,20 @@ import * as THREE from "three";
 
 """
 
+COMPONENT_HEAD = """// Built by fm scene compile --to component (T-1634) from a scene.json: edit that and compile again. Needs three.js
+// r155 or later, resolved as "three" by an import map or a bundler. This is the three.js module (SCENE, mount()) plus
+// <fm-scene>, a custom element mounting it in its own shadow DOM. The page holds <fm-scene label="what it shows">
+// with the poster inside as <img slot="poster" alt=""> and the text twin after it, and loads this after first paint:
+//   import("./scene.js").catch(err => console.error("scene: showing the poster", err));
+// Until then, or with no WebGL, the poster and the twin show. The element's data-state (poster | live | lost |
+// failed) is the first-frame flag; taking it out of the page frees all mount() made, the WebGL context included.
+// No layout shift: the page's CSS gives it its box before it is defined (once defined, fm-scene::part(stage) sets the
+// ratio):  fm-scene:not(:defined){display:block;position:relative;aspect-ratio:16/10}
+//          fm-scene:not(:defined)>[slot=poster]{width:100%;height:100%;object-fit:cover}
+import * as THREE from "three";
+
+"""
+
 RUNTIME = """
 const RAD = Math.PI / 180;
 
@@ -308,8 +323,9 @@ function sample(a, t) {
 }
 
 export function mount(fig) {
-  // A fresh canvas each mount: a context released by dispose() never comes back on its old canvas.
-  const old = fig.querySelector("canvas"), canvas = old.cloneNode(false), setState = s => { fig.dataset.state = s; };
+  // A fresh canvas each mount: a context released by dispose() never comes back on its old canvas. fig: the page's
+  // figure, or an <fm-scene> holding its canvas in its shadow root.
+  const old = (fig.shadowRoot ?? fig).querySelector("canvas"), canvas = old.cloneNode(false), setState = s => { fig.dataset.state = s; };
   old.replaceWith(canvas);
   const off = new AbortController(), on = (target, type, fn) => target.addEventListener(type, fn, { signal: off.signal });
   // Survival 1: no WebGL2 (or only a software renderer) -> the poster and the text twin stay, nothing throws.
@@ -391,11 +407,53 @@ export function mount(fig) {
 """
 
 
-def compile_three(scene):
+# <\/ in the markup: the module pasted into a <script> has nothing in it that closes the tag.
+ELEMENT = r"""
+// <fm-scene> (T-1634): mount() in a shadow DOM. The child with slot="poster" sits under the canvas; any other child
+// (the text twin) shows below. The element itself carries data-state, so the page's CSS and tests read it there.
+const SHADOW = `<style>
+  :host { display: block; }
+  .stage { position: relative; aspect-ratio: 16 / 10; }
+  @media (max-aspect-ratio: 3/4) { .stage { aspect-ratio: 4 / 5; } }
+  ::slotted([slot="poster"]), canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  ::slotted([slot="poster"]) { object-fit: cover; }
+  canvas { opacity: 0; touch-action: pan-y; pointer-events: none; }
+  :host([data-state="live"]) canvas { opacity: 1; pointer-events: auto; transition: opacity 400ms ease-out; }
+  @media (prefers-reduced-motion: reduce) { :host([data-state="live"]) canvas { transition: none; } }
+<\/style><div class="stage" part="stage"><slot name="poster"><\/slot><canvas role="img"><\/canvas><\/div><slot><\/slot>`;
+
+export class FmScene extends HTMLElement {
+  #dispose = null;
+  connectedCallback() {
+    // A root the page declared (<template shadowrootmode>) is kept, filled in if it has no canvas.
+    const root = this.shadowRoot ?? this.attachShadow({ mode: "open" });
+    if (!root.querySelector("canvas")) root.innerHTML = SHADOW;
+    // label="..." names the canvas (an id reference can't cross the shadow boundary); with none, the twin speaks.
+    const canvas = root.querySelector("canvas"), label = this.getAttribute("label");
+    if (label) { canvas.setAttribute("aria-label", label); canvas.removeAttribute("aria-hidden"); }
+    else canvas.setAttribute("aria-hidden", "true");
+    this.dataset.state = "poster";
+    this.#dispose = mount(this);
+  }
+  // Out of the page: all mount() made is freed and the context released; put back, it mounts on a fresh canvas.
+  disconnectedCallback() { this.#dispose?.(); this.#dispose = null; }
+}
+// Two scenes on one page: the second finds fm-scene taken and needs a name of its own, in its markup too.
+if (!customElements.get("fm-scene")) customElements.define("fm-scene", FmScene);
+else console.warn('scene: <fm-scene> is taken; name this one: customElements.define("fm-scene-2", FmScene)');
+"""
+
+
+def compile_three(scene, head=HEAD, tail=""):
     """A validated scene → the ES module's text: SCENE (one top-level key a line), then the runtime that builds it.
     The same scene gives the same bytes, so a second compile changes nothing."""
     body = ",\n".join(f"  {json.dumps(k)}: {json.dumps(v, separators=(',', ':'))}" for k, v in scene.items())
-    return HEAD + "export const SCENE = {\n" + body + "\n};\n" + RUNTIME
+    return head + "export const SCENE = {\n" + body + "\n};\n" + RUNTIME + tail
+
+
+def compile_component(scene):
+    """A validated scene → compile_three's module, the same SCENE and mount(), with <fm-scene> defined after it."""
+    return compile_three(scene, COMPONENT_HEAD, ELEMENT)
 
 
 def cmd_scene(args):
@@ -403,7 +461,7 @@ def cmd_scene(args):
     import fmcli
     import fmcore
     try:
-        text = compile_three(load(args.path))  # --to has one target, three, until T-1634 adds component
+        text = (compile_component if args.to == "component" else compile_three)(load(args.path))
         out = os.path.abspath(args.out) if args.out else None  # write_atomic makes dirname(path): "" for a bare name
         if out and os.path.exists(out) and os.path.samefile(out, args.path):
             raise ValueError(f"--out {args.out} is the scene it compiles")
