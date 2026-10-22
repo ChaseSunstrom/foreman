@@ -223,7 +223,23 @@ def _stalled(p, briefs, limit):
 def _ignored(path):
     """Ignored files in a worktree that removing it would delete (build caches excepted, as in remove())."""
     out = _git(path, "status", "--porcelain", "--ignored=matching").stdout.splitlines()
-    return [ln[3:] for ln in out if ln.startswith("!! ") and not _CACHE.search(ln[3:])]
+    return [ln[3:] for ln in out if ln.startswith("!! ") and not _is_cache(path, ln[3:])]
+
+
+def _is_cache(path, rel):
+    """T-1685: a cache removing the lane may delete: a known cache path, or an ignored folder git lists whole that
+    holds nothing else (a Foreman lane's state/ with only the guard's script cache in it)."""
+    if _CACHE.search(rel) or _LANE_CACHE.search(rel):
+        return True
+    full = os.path.join(path, rel)
+    if not rel.endswith("/") or os.path.islink(full.rstrip("/")) or not os.path.isdir(full):
+        return False
+    for root, _, files in os.walk(full):
+        for f in files:
+            r = os.path.relpath(os.path.join(root, f), path)
+            if not (_CACHE.search(r) or _LANE_CACHE.search(r)):
+                return False
+    return True
 
 
 def resume(p, b, main, args):
@@ -597,6 +613,7 @@ _CACHE = re.compile(r"(^|/)(__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache
                     # T-0833: build output; a lane starts with no ignored files, so these are its own builds
                     r"target|build|dist|zig-out|\.zig-cache|zig-cache|cmake-build-[\w-]+)(/|$)|\.py[co]$|"
                     r"(^|/)\.coverage(\.[\w.-]+)?$")
+_LANE_CACHE = re.compile(r"(^|/)state/guard-scripts\.json$")  # T-1685: the guard's script verdicts, rebuilt on use
 _BUILD = re.compile(r"(^|/)(target|build|dist|zig-out|\.zig-cache|zig-cache|cmake-build-[\w-]+)/?$")
 _SECRETISH = re.compile(r"(?i)\.(pem|key|p12|pfx|jks|keystore)$|^\.env($|\.)|\.env$|^id_(rsa|ed25519|ecdsa)|"
                         r"^credentials?(\.\w+)?$")  # narrow: target/ holds env_logger-*.d and libsecret-*.rlib
@@ -762,7 +779,7 @@ def remove(p, b, main):
                                 f"{b.id} first (the branch is kept either way)")
     if os.path.isdir(path):
         st = _git(path, "status", "--porcelain", "--ignored=matching")  # ignored files (.env, builds) go with it too
-        left = [ln for ln in st.stdout.splitlines() if not (ln.startswith("!! ") and _CACHE.search(ln[3:]))]
+        left = [ln for ln in st.stdout.splitlines() if not (ln.startswith("!! ") and _is_cache(path, ln[3:]))]
         left += [f"!! {x}" for ln in st.stdout.splitlines() if ln.startswith("!! ") and _BUILD.search(ln[3:])
                  for x in _secretish(path, ln[3:])]  # T-0839: build output is rebuilt; a key kept in it isn't
         if st.returncode or left:  # T-0377/T-0408: caches are rebuilt on the next run, never anyone's work
