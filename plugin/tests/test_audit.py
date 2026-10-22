@@ -1,8 +1,13 @@
 """T-0723: the diff a reviewer reads (fm audit prep) leaves out what it needn't read in full: a change repeated in
 synced copies, the far end of long context lines, fixtures and lockfiles. Changed lines always stay whole."""
+import json
+import os
+
 from helpers import ForemanTestCase
+from test_hooks import HookCase
 
 import fmcli
+import fmcore as c
 
 
 def block(path, body):
@@ -40,3 +45,75 @@ class CompactDiff(ForemanTestCase):
     def test_a_plain_diff_is_unchanged(self):
         diff = block("a.py", "@@ -1 +1 @@\n-x = 1\n+x = 2\n")
         self.assertEqual(fmcli._compact_diff(diff), diff)
+
+
+PERSONAS = ("art director", "accessibility reviewer", "first-time user")
+
+
+class DesignLens(HookCase):
+    """T-1501: a UI diff gets a design read by three personas; any other diff costs nothing extra."""
+
+    def write(self, rel, text="x\n"):
+        path = os.path.join(self.repo, rel)
+        os.makedirs(os.path.dirname(path) or self.repo, exist_ok=True)
+        with open(path, "w") as f:
+            f.write(text)
+
+    def prep(self, tier="M"):
+        self.fm("init")
+        self.tid = self.task(tier=tier)
+
+    def brief(self):
+        data = json.loads(self.fm("audit", "prep", self.tid, "--json").stdout)
+        with open(data["brief"]) as f:
+            return data["lenses"], f.read()
+
+    def test_ui_paths_finds_ui_files_and_leaves_the_rest(self):
+        ui =["web/app.css", "web/x.scss", "a/b.less", "src/App.tsx", "src/c.jsx", "v/a.vue", "s/a.svelte",
+              "p/index.astro", "site/index.html", "mods/foreman-ui/hooks/state.ts", "plugin/lib/fmcodetui.py",
+              "plugin/templates/tui/cost_meter.py", "app/templates/home.jinja"]
+        other = ["a.py", "plugin/templates/brief.md", "plugin/templates/mcp-server/server.py", "lib/intuition.py",
+                 "plugin/tests/test_code_tui.py", "mods/foreman-ui/tests/pane.test.tsx",
+                 "plugin/tests/fixtures/design/slop.css", "README.md", "mods/foreman-ui/tools/shot.py",
+                 "mods/foreman-ui/hooks/hooks.json", "roles/web/templates/nginx.conf.j2", "demo/code-tui.mp4"]
+        self.assertEqual(c.ui_paths(ui + other), ui)
+
+    def test_the_reviewer_prompt_and_template_define_the_three_personas(self):
+        for rel in (("agents", "fm-reviewer.md"), ("skills", "intake", "references", "audit.md")):
+            with open(os.path.join(c.PLUGIN_ROOT, *rel)) as f:
+                text = f.read().lower()
+            for who in PERSONAS:
+                with self.subTest(file=rel[-1], persona=who):
+                    self.assertIn(who, text)
+            self.assertIn("design", text)
+        self.assertIn("design", c.AUDIT_LENSES, "recordable with fm task audit ID design")
+        self.assertNotIn("design", c.DEFAULT_LENSES)
+        self.assertFalse(any("design" in g for t in c.REQUIRED_AUDITS.values() for g in t), "advisory, not required")
+
+    def test_prep_names_the_design_lens_for_a_ui_diff_with_its_screenshots(self):
+        self.prep()
+        self.write("web/app.css", "body { color: #333 }\n")
+        self.write("shots/home.png", "png")
+        self.fm("task", "log", self.tid, "screenshot shots/home.png and shots/gone.png")
+        lenses, text = self.brief()
+        self.assertEqual(lenses, list(c.DEFAULT_LENSES) + ["design"])
+        self.assertIn("## design", text)
+        for who in PERSONAS:
+            self.assertIn(who, text.lower())
+        self.assertIn("web/app.css", text.split("## design")[1])
+        self.assertIn(os.path.join(self.repo, "shots", "home.png"), text, "a screenshot the task names, to read")
+        self.assertNotIn("gone.png", text.split("## design")[1], "a named screenshot that isn't there is left out")
+
+    def test_an_s_task_with_a_ui_diff_gets_the_design_lens_too(self):
+        self.prep(tier="S")
+        self.write("src/App.tsx", "export const A = () => null\n")
+        lenses, text = self.brief()
+        self.assertEqual(lenses, ["self", "design"])
+        self.assertIn("No screenshots", text)
+
+    def test_a_backend_diff_gets_no_design_lens(self):
+        self.prep()
+        self.write("a.py", "x = 1\n")
+        lenses, text = self.brief()
+        self.assertEqual(lenses, list(c.DEFAULT_LENSES))
+        self.assertNotIn("## design", text)
