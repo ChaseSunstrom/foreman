@@ -5367,6 +5367,8 @@ def _build_parser():
     s.add_argument("--canary-status", action="store_true", help="print the last canary run's report (T-1362)")
     s.add_argument("--dry-run", action="store_true", help="print the plan, change nothing")
     s.add_argument("--no-check", action="store_true", help="skip fm check, fm release-check and the canary (recorded as skipped; such a release can't --push)")
+    s.add_argument("--stale-ok", metavar="REASON", help="--push even though the guard corpus replay (fm replay --cases) "
+                                                        "is red or over 7 days old; the waiver is logged (T-1401)")
     add("release-check", lazy("fmdemo", "cmd_release_check"), tier=("Project and settings", 910),
         help="fm doctor and fm demo in a temporary HOME: a clean checkout passes before a release (T-0960)")
     s = add("secrets", lazy("fmsecrets", "cmd_secrets"), tier=("Finding your way", 400), help="credentials in the working tree, Claude config and "
@@ -5870,6 +5872,8 @@ def _build_parser():
     s.add_argument("--resume", nargs="?", const="", metavar="ID", help="carry on a crashed or killed run from its "
                                                                      "journal (default: the newest unfinished one)")
     s.add_argument("--no-commit", action="store_true", help="close the task without committing")
+    s.add_argument("--stale-ok", metavar="REASON", help="run unattended even though the guard corpus replay is red "
+                                                        "or over 7 days old; the waiver is logged (T-1401)")
     s.add_argument("--task", metavar="ID", help="work this planned task: its criteria and open steps are the plan "
                                                 "(no planner call; T-1330)")
     s.add_argument("--worker", metavar="CLI", help="an installed CLI does each step and fix round instead of the "

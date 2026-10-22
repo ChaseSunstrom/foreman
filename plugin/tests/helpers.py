@@ -41,6 +41,17 @@ def read_json(path):
         return json.load(f)
 
 
+def stub_corpus_replay(repo, drifted=0, days=0, cases=3):
+    """T-1401: the ledger record fm replay --cases leaves, without running the replay: red when drifted, days old."""
+    import time
+    from unittest import mock
+    import fmcore as c
+    p = c.find_project(repo, create=True)
+    with mock.patch.object(c, "now", return_value=c.iso(time.time() - days * 86400)):
+        c.log_event(p, "guard_corpus", data={"cases": cases, "drifted": drifted, "broken": 0})
+    return p
+
+
 def git_repo(parent, name="app"):
     root = os.path.join(parent, name)
     os.makedirs(root)
