@@ -223,6 +223,173 @@ class Command(ForemanTestCase):
         self.assertEqual(read_text(self.settings), self.before)
 
 
+class History(ForemanTestCase):
+    """T-1510: fm settings diff (the keys the files change from the defaults, dead ones flagged), export/import through
+    a share code (the changed keys only, every one checked before any is written) and undo (the history, backwards)."""
+    term = Command.term
+
+    def setUp(self):
+        super().setUp()
+        import unittest.mock as mock
+        self.uhome = os.path.join(self.tmp, "uhome")
+        os.makedirs(os.path.join(self.uhome, ".claude"))
+        self.settings = os.path.join(self.uhome, ".claude", "settings.json")
+        self.env = {"HOME": self.uhome, "CLAUDECODE": "", "CLAUDE_CODE_ENTRYPOINT": ""}
+        self.toml = os.path.join(self.home, "tui.toml")
+        self.patches = [mock.patch.dict(os.environ, {"HOME": self.uhome}),
+                        mock.patch.object(fmsettings, "in_claude_code", return_value=False)]
+        for x in self.patches:
+            x.start()
+        os.environ.pop("CLAUDE_CONFIG_DIR", None)
+
+    def tearDown(self):
+        for x in reversed(self.patches):  # before the base restores the environment it set
+            x.stop()
+        super().tearDown()
+
+    def write(self, toml, options):
+        with open(self.toml, "w", encoding="utf-8") as f:
+            f.write(toml)
+        with open(self.settings, "w", encoding="utf-8") as f:
+            json.dump({"model": "x", "pluginConfigs": {"foreman-ui@foreman": {"options": options}}}, f)
+
+    def options(self):
+        return read_json(self.settings)["pluginConfigs"]["foreman-ui@foreman"]["options"]
+
+    def test_diff_shows_changed_keys_and_flags_dead_ones(self):
+        import base64
+        self.write('theme = "paper"\nmotion = "full"\nfoo = 1\n[colors]\nbogus = 3\nok = "#4DA3FF"\n[keys]\nz = "stop"\n',
+                   {"motion": "calm", "old": 1, "freshAt": 40})
+        got = {(r["surface"], r["key"]): r for r in fmsettings.diff()}
+        self.assertEqual({k: (r["value"], r.get("dead", False)) for k, r in got.items()},
+                         {("app", "theme"): ("paper", False), ("app", "keys.z"): ("stop", False),
+                          ("plugin", "motion"): ("reduced", False), ("app", "foo"): (1, True),
+                          ("app", "colors.bogus"): (3, True), ("plugin", "old"): (1, True),
+                          ("app", "colors.ok"): ("#4DA3FF", False)},
+                         "motion = full and freshAt = 40 are the defaults; the theme's colours aren't keys of the file")
+        self.assertEqual(got["app", "theme"]["default"], "night")
+        self.assertTrue(got["app", "colors.ok"].get("skipped"), "too faint on paper: the app skips it")
+        code = fmsettings.share_code()
+        shared = json.loads(base64.urlsafe_b64decode(code + "=" * (-len(code) % 4)))
+        self.assertEqual(shared, {"app": {"theme": "paper", "keys.z": "stop"}, "plugin": {"motion": "reduced"}},
+                         "neither dead nor skipped keys are shared")
+
+    def test_export_and_import_round_trip_through_a_share_code(self):
+        self.write('border = "heavy"\nnope = 1\n[colors]\nok = "#47C98C"\n[layout]\nwidths = [60, 40]\n',
+                   {"mascot": "orange", "palette": "cb"})
+        code = fmsettings.share_code()
+        self.assertRegex(code, r"^[A-Za-z0-9_-]+$", "one pasteable word")
+        want = [r for r in fmsettings.diff() if not r.get("dead")]
+        self.write("# theirs\n", {})
+        done, refused, same = fmsettings.import_code(code, only="plugin")
+        self.assertEqual(([k for _, k, _, _ in done], refused, read_text(self.toml)), (["mascot", "palette"], [], "# theirs\n"))
+        done, refused, same = fmsettings.import_code(code)
+        self.assertEqual((refused, len(same)), ([], 2), "the plugin's two are already so")
+        self.assertEqual(len(done), 3)
+        self.assertEqual(fmsettings.diff(), want, "the changed keys, and only those")
+        text = read_text(self.toml)
+        self.assertTrue(text.startswith("# theirs\n") and "nope" not in text, text)
+        self.assertEqual(read_json(self.settings)["model"], "x", "the rest of settings.json kept")
+        done, refused, same = fmsettings.import_code(code)
+        self.assertEqual((done, len(same)), ([], 5), "a second import writes nothing")
+        self.assertEqual(read_text(self.toml), text)
+
+    def test_a_bad_share_code_is_refused_whole_and_names_the_key(self):
+        import base64
+        self.write('# mine\nborder = "heavy"\n', {"motion": "calm"})
+        enc = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=")
+        for code, says in (("!!!", "share code"), (enc([1]), "share code"), ("x" * 40000, "long"),
+                           (base64.urlsafe_b64encode(b"\xff\xfe").decode(), "share code"),
+                           (enc({"app": {"border": "double", "nope": 1}}), "nope"),
+                           (enc({"app": {"border": "wavy"}}), "border"),
+                           (enc({"app": {"border": None}}), "border"),
+                           (enc({"app": {"colors.ok": [[[[[[[[1]]]]]]]]}}), "colors.ok"),
+                           (enc({"plugin": {"freshAt": 500}}), "freshAt"),
+                           (enc({"plugin": {"mascot": {"a": 1}}}), "mascot"),
+                           (enc({"elsewhere": {"x": 1}}), "elsewhere"),
+                           (enc({"app": {"keys.\x1b[2J": "quit"}, "\x1b]0;x\x07": {}}), "\\x1b"),
+                           ("W" * 30 + "[" * 4000, "share code"),
+                           (base64.urlsafe_b64encode(b"[" * 20000).decode(), "share code"),
+                           (base64.urlsafe_b64encode(b'{"plugin": {"freshAt": NaN}}').decode(), "share code")):
+            with self.subTest(code=code[:40]), self.assertRaises(fmsettings.SettingError) as e:
+                fmsettings.import_code(code)
+            self.assertIn(says, str(e.exception))
+            self.assertNotIn("\x1b", str(e.exception), "a code's text never reaches the terminal raw")
+        self.assertEqual(read_text(self.toml), '# mine\nborder = "heavy"\n', "the good key in a bad code isn't written")
+        self.assertEqual(self.options(), {"motion": "calm"})
+        with self.assertRaises(fmsettings.SettingError):
+            fmsettings.undo()  # nothing was recorded
+
+    def test_each_key_is_checked_as_it_would_land(self):
+        import base64
+        self.write("", {})
+        enc = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).decode()
+        with self.assertRaises(fmsettings.SettingError) as e:  # a dark grey on night: too faint, at its turn
+            fmsettings.import_code(enc({"app": {"colors.ok": "#2B3442", "theme": "paper"}}))
+        self.assertIn("colors.ok", str(e.exception))
+        self.assertEqual(read_text(self.toml), "")
+        done, refused, _ = fmsettings.import_code(enc({"app": {"theme": "paper", "colors.ok": "#2B3442"}}))
+        self.assertEqual((len(done), refused), (2, []))
+
+    def test_undo_restores_the_previous_value(self):
+        mine = '# mine\nborder = "heavy"\n'
+        self.write(mine, {"motion": "calm"})
+        fmsettings.set_key("border", "double")
+        fmsettings.set_key("theme", "paper")
+        fmsettings.set_key("mascot", "orange", "plugin")
+        fmsettings.set_key("motion", "off")  # both surfaces: one change, one undo
+        self.assertEqual(self.options(), {"motion": "off", "mascot": "orange"})
+        fmsettings.undo()
+        self.assertEqual(self.options(), {"motion": "reduced", "mascot": "orange"})
+        self.assertNotIn("motion", read_text(self.toml), "it wasn't set: undone, it is gone again")
+        fmsettings.undo()
+        self.assertEqual(self.options(), {"motion": "reduced"})
+        fmsettings.undo()
+        self.assertEqual(read_text(self.toml), '# mine\nborder = "double"\n')
+        fmsettings.undo()
+        self.assertEqual(read_text(self.toml), mine)
+        with self.assertRaises(fmsettings.SettingError):
+            fmsettings.undo()
+        code = fmsettings.share_code()
+        self.write("", {})
+        fmsettings.import_code(code)
+        fmsettings.undo()  # an import is one change
+        self.assertEqual((read_text(self.toml), self.options()), ("", {}))
+
+    def test_undo_leaves_a_hand_edit_and_a_guarded_file_alone(self):
+        import unittest.mock as mock
+        self.write('border = "heavy"\n', {})
+        fmsettings.set_key("border", "double")
+        self.write('border = "ascii"\n', {})  # by hand, after
+        done, refused = fmsettings.undo()
+        self.assertEqual(done, [])
+        self.assertIn("changed since", refused[0])
+        self.assertEqual(read_text(self.toml), 'border = "ascii"\n')
+        with self.assertRaises(fmsettings.SettingError):
+            fmsettings.undo()  # dropped: nothing left to undo
+        fmsettings.set_key("mascot", "orange", "plugin")
+        with mock.patch.object(fmsettings, "in_claude_code", return_value=True), \
+                mock.patch.object(fmsettings, "_guard_block", return_value="a protected file"):
+            done, refused = fmsettings.undo()
+            self.assertIn("guard", refused[0])
+        self.assertEqual(self.options(), {"mascot": "orange"}, "refused: kept for the next undo")
+        self.assertEqual(len(fmsettings.undo()[0]), 1)
+        self.assertEqual(self.options(), {})
+
+    def test_the_verbs_from_fm_and_from_claude_code(self):
+        self.term("settings", "set", "border", "double")
+        self.assertIn("border", self.term("settings", "diff"))
+        code = self.term("settings", "export").strip()
+        self.write("", {})
+        self.assertIn("border", self.term("settings", "import", code))
+        self.assertIn('border = "double"', read_text(self.toml))
+        self.term("settings", "undo")
+        self.assertEqual(read_text(self.toml), "")
+        body = read_text(os.path.join(PluginSurface.ROOT, "plugin", "commands", "settings.md"))
+        for cmd in ("fm settings diff", "fm settings export", "fm settings import", "fm settings undo"):
+            self.assertIn(f"`{cmd}", body, cmd)
+
+
 class PreviewApp(unittest.TestCase):
     """T-1573: the fm code app's preview refuses what set_app refuses, the guard's refusal too, and writes nothing."""
     def test_it_refuses_what_set_app_refuses_and_writes_nothing(self):
