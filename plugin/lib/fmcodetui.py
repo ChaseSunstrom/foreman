@@ -21,7 +21,7 @@ import threading
 import time
 import unicodedata
 
-from fmcodeterm import Term, colour_depth, parse_keys, session, split_tail  # noqa: E402 (T-1300: the terminal)
+from fmcodeterm import PASTE_CAP, Term, colour_depth, parse_keys, session, split_tail  # noqa: E402 (T-1300)
 
 SCHEMA = 1  # the fm code event stream this reader knows (fmcode.SCHEMA)
 FM = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "fm")
@@ -1084,7 +1084,7 @@ def render(st, w, h, cfg, app=None, t=None):
     _status(cv, st, app)
     if prompt:
         cv.fill(h - 2, "input")
-        cv.line(h - 2, 0, [(" request › ", "key"), (app.input, "input"), ("▏", "key")], w)
+        cv.line(h - 2, 0, [(" request › ", "key"), (app.input.replace("\n", " ↵ "), "input"), ("▏", "key")], w)
     if app is not None and app.mode in VIEWS:
         VIEWS[app.mode](cv, st, app, cfg)
     return cv
@@ -1379,6 +1379,11 @@ class App:
 
     # -- keys
     def key(self, k):
+        if isinstance(k, tuple):  # T-1316: a paste: the prompt takes it whole, newlines kept; anywhere else nothing
+            if self.mode == "prompt" and k[0] == "paste":
+                text = "".join(c for c in k[1].replace("\t", " ") if c == "\n" or c.isprintable())
+                self.input = (self.input + text)[:PASTE_CAP]
+            return None
         if self.mode == "prompt":
             return self._prompt_key(k)
         if self.mode == "help":
