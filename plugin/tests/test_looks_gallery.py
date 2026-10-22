@@ -17,6 +17,15 @@ def names(folder=fmtaste.LOOKS):
     return sorted(n[:-3] for n in os.listdir(folder) if n.startswith("look-") and n.endswith(".md"))
 
 
+def hidden_rules(html):
+    """Selectors outside @keyframes that set opacity 0 (an empty ::before/::after glow is decoration, not content)."""
+    css = "".join(re.findall(r"<style>(.*?)</style>", html, re.S))
+    css = re.sub(r"@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}", "", css)
+    return [sel.strip() for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+            if re.search(r"(?<![\w-])opacity\s*:\s*0(?![.\d])", body)
+            and not all(re.search(r"::?(?:before|after)$", s.strip()) for s in sel.split(","))]
+
+
 class Gallery(ForemanTestCase):
     def setUp(self):
         super().setUp()
@@ -36,9 +45,13 @@ class Gallery(ForemanTestCase):
         self.assertIsNone(re.search(r"<script\b[^>]*\bsrc\s*=", html))
         self.assertNotRegex(html, r"__[A-Z]+__", "every placeholder filled")
         self.assertNotRegex(html, r"<!--/?look\b", "no specimen block markers left")
-        # motion plays once and honours reduced motion
+        # motion plays once and honours reduced motion; nothing waits hidden for a script or an animation
         self.assertIn("prefers-reduced-motion: reduce", html)
         self.assertNotIn("infinite", html)
+        self.assertEqual(hidden_rules(html), [], "a rule outside @keyframes hides content with opacity 0")
+        reduce = "".join(re.findall(r"@media \(prefers-reduced-motion: reduce\) \{(.*?)\}\s*\}", html, re.S))
+        self.assertRegex(reduce, r"\.bc \.window \{[^}]*overflow-x: auto", "a still ticker scrolls by hand")
+        self.assertRegex(reduce, r"\.bc \.track span\[aria-hidden[^{]*\{[^}]*display: none", "no duplicate lap")
         # each specimen wears its own card's palette
         for card in fmpage.look_cards():
             block = re.search(r'#%s \{([^}]*)\}' % card["name"], html)
@@ -62,14 +75,32 @@ class Gallery(ForemanTestCase):
         os.makedirs(folder)
         shutil.copy(os.path.join(fmtaste.LOOKS, "look-lido.md"), folder)
         with open(os.path.join(fmtaste.LOOKS, "look-lido.md"), encoding="utf-8") as f:
-            text = f.read().replace('title: "Look: Lido"', 'title: "Look: Pier </style><script>x()</script>"')
+            text = (f.read().replace('title: "Look: Lido"', 'title: "Look: Pier </style><script>x()</script>"')
+                    .replace("An open-air public pool:", "A pier <img src=x onerror=y()> & </section>:")
+                    .replace("Clear and calm:", "Clear `</code><b>bold` and calm <script>z()</script>:"))
         with open(os.path.join(folder, "look-pier.md"), "w", encoding="utf-8") as f:
             f.write(text.replace("name: look-lido", "name: look-pier"))
         html = fmpage.looks_html(fmpage.look_cards(folder))
         self.assertEqual(re.findall(r'<section class="specimen" id="(look-[\w-]+)"', html), ["look-lido", "look-pier"])
         self.assertEqual(html.count('class="plate" data-plate="fallback"'), 1)
-        self.assertNotIn("<script>x()", html)
-        self.assertIn("Pier &lt;/style&gt;", html)
+        for raw in ("<script>x()", "<img src=x", "<script>z()", "<b>bold", "& </section>"):
+            self.assertNotIn(raw, html)
+        for shown in ("Pier &lt;/style&gt;", "A pier &lt;img src=x onerror=y()&gt; &amp; &lt;/section&gt;:",
+                      "<code>&lt;/code&gt;&lt;b&gt;bold</code> and calm &lt;script&gt;z()&lt;/script&gt;"):
+            self.assertIn(shown, html)
+
+    def test_out_refuses_a_file_foreman_did_not_write_and_replaces_its_own(self):
+        mine = os.path.join(self.tmp, "notes.html")
+        with open(mine, "w", encoding="utf-8") as f:
+            f.write("<p>my own notes</p>\n")
+        for verb in (("page", "looks"), ("page",)):
+            r = self.fm(*verb, "--out", mine, check=False)
+            self.assertNotEqual(r.returncode, 0, verb)
+            self.assertIn("isn't one fm page wrote", r.stderr)
+            self.assertEqual(read_text(mine), "<p>my own notes</p>\n", "the user's file is untouched")
+        for verb, out in ((("page", "looks"), self.out), (("page",), os.path.join(self.tmp, "board.html"))):
+            self.fm(*verb, "--out", out)
+            self.fm(*verb, "--out", out)  # a second run replaces the page it wrote
 
     def test_out_must_be_a_plain_html_file_and_looks_takes_no_catalogue(self):
         r = self.fm("page", "looks", "--out", os.path.join(self.tmp, "looks.txt"), check=False)

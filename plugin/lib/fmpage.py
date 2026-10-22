@@ -159,9 +159,7 @@ def look_cards(folder=None):
     folder = folder or fmtaste.LOOKS
     out = []
     for name, look in fmtaste.looks(folder).items():
-        with open(os.path.join(folder, name + ".md"), encoding="utf-8") as f:
-            body = f.read().partition("\n---\n")[2]
-        part = lambda h: (body.split(f"\n## {h}\n", 1) + [""])[1].split("\n## ", 1)[0].strip()
+        part = lambda h: fmtaste.section(look["body"], h)
         faces = list(dict.fromkeys(m.group(1).lower() for m in FACE.finditer(part("Type"))))
         out.append({"name": re.sub(r"[^a-z0-9-]", "-", name.lower()), "title": look["title"], "line": look["line"],
                     "roles": dict(ROLE.findall(part("Palette"))), "faces": faces or ["neo-grotesk"],
@@ -207,11 +205,22 @@ def looks_html(cards):
     return re.sub(r"__([A-Z]+)__", lambda m: fill.get(m.group(1), m.group(0)), PLATE.sub("", page))
 
 
-def _out(args, default):
+def _out(args, default, mark):
+    """Where the page goes. Review of T-1649: an --out that already exists is replaced only when it holds mark, the
+    template's own opening comment, so the user's own page is never overwritten (the default path is Foreman's)."""
     import fmcli
     path = os.path.abspath(args.out) if args.out else default
     if not path.endswith(".html") or os.path.islink(path):  # review: --out never overwrites another kind of file
         raise fmcli.UsageError(f"--out must be a .html file that isn't a link: {path}")
+    if args.out and os.path.lexists(path):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                ours = mark in f.read(4096)
+        except OSError:
+            ours = False
+        if not ours:
+            raise fmcli.UsageError(f"--out {path} already exists and isn't one fm page wrote; pick a new file or "
+                                   "move that one")
     return path
 
 
@@ -220,7 +229,7 @@ def looks_page(p, args):
     if args.catalogue or args.picks or args.url:
         raise fmcli.UsageError("fm page looks takes only --out: the gallery shows the look cards, not a catalogue")
     cards = look_cards()
-    path = _out(args, os.path.join(p.dir, "looks.html"))
+    path = _out(args, os.path.join(p.dir, "looks.html"), "/* fm page looks (T-1649):")
     c.write_atomic(path, looks_html(cards))
     return fmcli.out(args, {"path": path, "looks": len(cards)},
                      f"Wrote {path}: {len(cards)} looks, one living specimen each; it loads nothing from another host")
@@ -251,7 +260,7 @@ def cmd_page(args):
     with open(TEMPLATE, encoding="utf-8") as f:
         page = f.read()
     page = page.replace("__TITLE__", html.escape(data["title"])).replace("__DATA__", embed(data))
-    path = _out(args, os.path.join(p.dir, "page.html"))
+    path = _out(args, os.path.join(p.dir, "page.html"), "/* fm page (T-0786):")
     c.write_atomic(path, page)
     url = meta.get("page_url")
     publish = ("Publish: refused here, this repo is marked sensitive (the Artifact tool is denied); fm sensitive off "

@@ -41,7 +41,7 @@ h1 { margin: 0; font: 600 clamp(2.75rem, 8vw, 5rem)/.95 var(--g-sans); letter-sp
 .dots { flex: none; width: 1.75rem; height: .875rem; background: linear-gradient(90deg, var(--s) 50%, var(--a) 50%); outline: 1px solid var(--g-rule); }
 
 .specimen { display: grid; gap: 1.25rem; padding-block: 3rem 1rem; border-top: 1px solid var(--g-rule); scroll-margin-top: 1rem; }
-.index + .specimen { border-top: 0; }
+main > .specimen:first-child { border-top: 0; }
 .caption { display: grid; align-content: start; }
 .caption .no { margin: 0; font: .75rem/1 var(--g-mono); color: var(--g-muted); font-variant-numeric: tabular-nums; }
 .caption h2 { margin: .4rem 0 .4rem; font: 600 1.5rem/1.15 var(--g-sans); letter-spacing: -.015em; }
@@ -124,8 +124,12 @@ footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--g-r
 .bc .ticker:hover .track, .bc .ticker:focus-within .track, .bc .pause[aria-pressed="true"] + .window .track { animation-play-state: paused; }
 .bc .track span { padding-right: 2.5rem; line-height: 2.75rem; white-space: nowrap; font-size: .9375rem; }
 .bc .track span::before { content: ""; display: inline-block; width: .5rem; height: .5rem; margin-right: .7rem; background: var(--accent); vertical-align: .1em; }
-/* reduced motion: the ticker never moves (its lap rides --travel), so its pause button would have nothing to pause */
-@media (prefers-reduced-motion: reduce) { .bc .pause { display: none; } }
+/* reduced motion: the ticker never moves (its lap rides --travel), so it scrolls by hand instead: no pause button
+   with nothing to pause, and no second copy of the items (that copy only makes the lap seamless) */
+@media (prefers-reduced-motion: reduce) {
+  .bc .pause, .bc .track span[aria-hidden="true"] { display: none; }
+  .bc .window { overflow-x: auto; }
+}
 
 /* Card catalogue: index cards on a drawer, call number first, a teal top rule, "see also" onward */
 .cat { padding: 1.25rem clamp(1rem, 4cqi, 2rem) 2rem; background: var(--sunken); }
@@ -427,7 +431,7 @@ __SPECIMENS__
   </div>
   <div class="ticker">
     <button type="button" class="pause" aria-pressed="false">Pause</button>
-    <div class="window"><p class="track"><span>Eastgate 0–3 Millbrook, full time</span><span>Kick-off at Riverside moved to 19:45</span><span>Harbour change: Osei on for Lund</span><span>Draw for the final: Sunday at 12:00</span><span aria-hidden="true">Eastgate 0–3 Millbrook, full time</span><span aria-hidden="true">Kick-off at Riverside moved to 19:45</span><span aria-hidden="true">Harbour change: Osei on for Lund</span><span aria-hidden="true">Draw for the final: Sunday at 12:00</span></p></div>
+    <div class="window" tabindex="0" role="region" aria-label="Latest"><p class="track"><span>Eastgate 0–3 Millbrook, full time</span><span>Kick-off at Riverside moved to 19:45</span><span>Harbour change: Osei on for Lund</span><span>Draw for the final: Sunday at 12:00</span><span aria-hidden="true">Eastgate 0–3 Millbrook, full time</span><span aria-hidden="true">Kick-off at Riverside moved to 19:45</span><span aria-hidden="true">Harbour change: Osei on for Lund</span><span aria-hidden="true">Draw for the final: Sunday at 12:00</span></p></div>
   </div>
 </div>
 <!--/look-->
