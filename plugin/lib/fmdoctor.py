@@ -909,6 +909,72 @@ def check_state_dir(home, state):
                   f"every process there).{tmp} fm doctor --restore-state moves it back once {default} is writable")
 
 
+def _fs_type(path):
+    """The filesystem type path is on, from /proc/mounts (longest mount point that holds it); 'unknown' elsewhere."""
+    path, best = os.path.realpath(path), ("", "unknown")
+    try:
+        with open("/proc/mounts") as f:
+            for line in f:
+                parts = line.split()
+                mnt = parts[1].replace("\\040", " ") if len(parts) > 2 else ""
+                if (path == mnt or path.startswith(mnt.rstrip("/") + "/")) and len(mnt) >= len(best[0]):
+                    best = (mnt, parts[2])
+    except OSError:
+        pass
+    return best[1]
+
+
+def check_lock_probe(state):
+    """T-1405: every Foreman lock is an flock under state/; on a filesystem where flock doesn't exclude (NFS, some FUSE)
+    they all silently protect nothing. A child holds an flock on a probe file; this process's LOCK_NB must be refused.
+    That proves exclusion between processes on this host only, not across hosts sharing the filesystem."""
+    try:
+        import fcntl
+        import select
+    except ImportError:
+        return Result("lock probe", "WARN", "no flock on this platform: not probed")
+    probe = os.path.join(state, f".lock-probe-{os.getpid()}")
+    held = ("import fcntl, sys\nf = open(sys.argv[1], 'a')\nfcntl.flock(f, fcntl.LOCK_EX)\nprint('held', flush=True)\n"
+            "sys.stdin.read()\n")
+    try:
+        os.makedirs(state, exist_ok=True)
+    except OSError as e:
+        return Result("lock probe", "WARN", f"not probed: {e}")
+    try:
+        child = subprocess.Popen([sys.executable, "-c", held, probe], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL, text=True)
+    except OSError as e:
+        return Result("lock probe", "WARN", f"couldn't start the probe child: {e}; not probed")
+    try:
+        if not select.select([child.stdout], [], [], 10)[0]:
+            return Result("lock probe", "WARN", f"the probe child didn't take its lock in {state} within 10 s "
+                          "(flock may hang there); not probed")
+        if child.stdout.readline().strip() != "held":
+            return Result("lock probe", "WARN", f"couldn't start the probe child (it ended before taking its lock in "
+                          f"{state}); not probed")
+        fs = _fs_type(state)
+        with open(probe, "a") as f:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return Result("lock probe", "PASS", f"flock excludes between processes on this host in {state} ({fs})")
+            return Result("lock probe", "FAIL", f"a second process here took an flock the probe child held on {state} "
+                          f"({fs} filesystem): Foreman's locks may protect nothing there; move state to a local disk "
+                          "(FOREMAN_STATE)")
+    finally:
+        child.stdin.close()
+        try:
+            child.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait()
+        child.stdout.close()
+        try:
+            os.remove(probe)
+        except OSError:
+            pass
+
+
 def check_hook_events(registered=None):
     """Every event fmhooks handles is registered in hooks.json (a new hook needs /reload-plugins to take effect)."""
     import fmhooks
@@ -1547,7 +1613,7 @@ def run_all(full=False, accept_supply=False):
                                     os.path.join(home, ".claude-plugin", "marketplace.json"),
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
-               check_hook_scripts(), check_state_dir(home, c.state_dir()), check_disk(), check_env(settings, manifest),
+               check_hook_scripts(), check_state_dir(home, c.state_dir()), check_lock_probe(c.state_dir()), check_disk(), check_env(settings, manifest),
                check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
                check_supply(claude, accept_supply), check_worktree_base(settings), check_fm_link(),
                check_invisible_text(instruction_files())]
