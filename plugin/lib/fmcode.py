@@ -1179,6 +1179,32 @@ def worker_argv(spec, prompt, which=True):
     return argv
 
 
+RUNNER_TEST_SECONDS = 10
+
+
+def test_runner(name, timeout=RUNNER_TEST_SECONDS, cwd=None):
+    """T-1511: a runner tried where it stands (the fm code app's settings screen): its command built as a run builds it
+    (worker_argv: the dangerous-flag lint, the lean flags, on PATH), then its CLI asked for --version, bounded by
+    `timeout`, with a worker's environment. Only a runner of the registry or code.toml with a work command: any other
+    name is refused (CodeError), never run as a command, and nothing is written. {name, ok, said}. ponytail: --version
+    says the CLI starts, not that it is signed in; a real prompt would spend tokens and could change the folder."""
+    rs = all_runners()
+    if not isinstance(name, str) or not (rs.get(name) or {}).get("work"):
+        raise CodeError(f"{name!r} isn't a runner fm code can run: "
+                        f"{', '.join(n for n, r in rs.items() if r.get('work'))} (or define [runners.NAME] work = "
+                        "\"CMD {prompt}\" in code.toml)")
+    try:
+        argv = worker_argv(name, "")
+        code, out = run_bounded(shlex.join([argv[0], "--version"]), cwd or os.getcwd(), timeout, env=worker_env(),
+                                cap=4096)
+    except (CodeError, OSError) as e:  # not on PATH, a folder gone
+        return {"name": name, "ok": False, "said": str(e)}
+    first = (out.splitlines() or [""])[0][:120]
+    said = (f"didn't answer --version within {timeout} s" if code is None else
+            f"--version exit {code}: {first}" if code else first or "answered --version")
+    return {"name": name, "ok": code == 0, "said": said}
+
+
 def _git(root, *a):
     """The judge's own git: no fsmonitor or hook runs, whatever config a worker planted."""
     return subprocess.run(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "--literal-pathspecs",
