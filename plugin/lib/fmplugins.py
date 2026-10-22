@@ -127,14 +127,18 @@ def profile(path):
     out = {"skills": [], "commands": [], "agents": [], "hooks": set(), "mcp": {}, "tokens": 0, "sync_stop": False}
     if not path or not os.path.isdir(path):
         return out
-    for kind, pattern in (("skills", "skills/*/SKILL.md"), ("commands", "commands/*.md"), ("agents", "agents/*.md")):
-        for f in sorted(glob.glob(os.path.join(path, pattern))):
-            fm = _frontmatter(f)
-            # unnamed: a skill is its folder's name, a command or agent its file's name without .md
-            name = fm.get("name") or (os.path.basename(os.path.dirname(f)) if kind == "skills" else
-                                      os.path.basename(f)[:-3])
-            out[kind].append((name, fm.get("description", "")))
-            out["tokens"] += (len(name) + len(fm.get("description", ""))) // 4 + 5
+    seen = set()  # T-1444: the default folders and plugin.json's paths (nested commands too), confined to the plugin
+    for kind, f, _ in _component_files(path):
+        if f is None or f in seen:
+            continue
+        seen.add(f)
+        kind += "s"
+        fm = _frontmatter(f)
+        # unnamed: a skill is its folder's name, a command or agent its file's name without .md
+        name = fm.get("name") or (os.path.basename(os.path.dirname(f)) if kind == "skills" else
+                                  os.path.basename(f)[:-3])
+        out[kind].append((name, fm.get("description", "")))
+        out["tokens"] += (len(name) + len(fm.get("description", ""))) // 4 + 5
     hooks, out["mcp"] = _plugin_spec(path, "hooks"), _plugin_spec(path, "mcpServers")
     hooks.pop("modules", None)  # T-1434: a hooks module list, not an event
     out["hooks"] = set(hooks)
