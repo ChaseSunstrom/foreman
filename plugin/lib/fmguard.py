@@ -1131,11 +1131,11 @@ def _decode(token):
 
 
 def _hide_quoted_ops(text, encoded=False):
-    """(text with each operator character inside quotes or after a backslash encoded, the quote left open at its end):
-    shlex drops the quotes, so a quoted '>' came out as the bare redirect >. Quoting as shlex reads it. encoded: the
-    text's _ESC pairs are encoded already (_mask_nested_dq)."""
-    hide = lambda c: _ESC + str(_ENCODED.index(c)) if c in _OPS else c  # noqa: E731
-    out, q, i = [], None, 0
+    """(text with each operator character inside quotes or after a backslash encoded, what closes it: an unpaired
+    trailing \\ doubled, then the quote left open): shlex drops the quotes, so a quoted '>' came out as the bare redirect
+    >. Quoting as shlex reads it. encoded: the text's _ESC pairs are encoded already (_mask_nested_dq)."""
+    hide = lambda c: _ESC + str(_ENCODED.index(c)) if c and c in _OPS else c  # noqa: E731
+    out, q, i, tail = [], None, 0, ""
     while i < len(text):
         ch = text[i]
         if ch == _ESC:
@@ -1145,6 +1145,7 @@ def _hide_quoted_ops(text, encoded=False):
         if ch == "\\" and q != "'":
             nxt = text[i + 1:i + 2]
             out.append(ch + (hide(nxt) if nxt != _ESC else ""))
+            tail = "" if nxt else "\\"
             i += 2 if nxt and nxt != _ESC else 1
             continue
         if q:
@@ -1153,13 +1154,14 @@ def _hide_quoted_ops(text, encoded=False):
             q = ch
         out.append(hide(ch) if q else ch)
         i += 1
-    return "".join(out), q
+    return "".join(out), tail + (q or "")
 
 
 def _shlex_words(text, close=False, encoded=False):
-    """shlex's words, quoted operators as _Quoted; close: an odd quote runs to the end of the text."""
-    hidden, q = _hide_quoted_ops(text, encoded)
-    lex = shlex.shlex(hidden + (q or "") if close else hidden, posix=True, punctuation_chars=_OPS)
+    """shlex's words, quoted operators as _Quoted; close: an odd quote runs to the end of the text, a trailing \\ is
+    itself."""
+    hidden, closer = _hide_quoted_ops(text, encoded)
+    lex = shlex.shlex(hidden + closer if close else hidden, posix=True, punctuation_chars=_OPS)
     lex.whitespace_split = True
     lex.commenters = ""
     out = []
@@ -1180,7 +1182,7 @@ def _tokens(cmd):
     # each word whose own quotes balance read as bash does ('cat' is cat), an odd one kept (the debris rule, T-0982):
     # it never joins words across a space, so nothing hides inside a string a quote scan misplaced. Then shlex again,
     # each " inside a $( ) or `…` within "…" masked and an odd quote run to the end, so X='a b' cat stays cat's prefix
-    words = [_bash_word(w) for w in re.sub(r"([;&|()])", r" \1 ", cmd).split()]
+    words = [_bash_word(w) for piece in cmd.split() for w in _pieces(piece)]
     try:
         nested = _shlex_words(_mask_nested_dq(text), close=True, encoded=True)
     except ValueError:
@@ -1194,9 +1196,10 @@ def _mask_nested_dq(text):
     quoting context, while shlex ends the outer string there. Scanned as _inner_quote does; a misread only adds a
     reading."""
     st, esc, out, i = [["", None, 0]], False, [], 0  # [kind, quote, paren depth]
+    dq = 0  # the frames under the top one inside "…" (only the top frame's quote changes): no rescan per quote
     while i < len(text):
         ch, top = text[i], st[-1]
-        nested = ch == '"' and any(c[1] == '"' for c in st[:-1])
+        nested = ch == '"' and dq
         out.append(_ESC + "7" if nested else _ESC + _ESC if ch == _ESC else ch)
         if esc:
             esc = False
@@ -1207,9 +1210,12 @@ def _mask_nested_dq(text):
         elif ch == "`":
             if top[0] == "`" and top[1] is None:
                 st.pop()
+                dq -= st[-1][1] == '"'
             else:
+                dq += top[1] == '"'
                 st.append(["`", None, 0])
         elif ch == "$" and text[i + 1:i + 2] == "(":
+            dq += top[1] == '"'
             st.append(["$(", None, 0])
             out.append("(")
             i += 2
@@ -1225,8 +1231,18 @@ def _mask_nested_dq(text):
                 top[2] -= 1
             else:
                 st.pop()
+                dq -= st[-1][1] == '"'
         i += 1
     return "".join(out)
+
+
+def _pieces(piece):
+    """One space-split piece of an unparseable line as the words the first reading takes from it: split at ; & | ( ),
+    and a redirect from its target too (>~/.bashrc is no plain word: re-review). In a piece holding a quote only a
+    leading redirect: a < or > after its quote is text as often as not (awk '$1>4000', the debris rule, T-0982)."""
+    if not re.search(r"['\"\\]", piece):
+        return re.sub(r"(&?[<>]+[&|(]?|[;&|()])", r" \1 ", piece).split()
+    return re.sub(r"([;&|()])", r" \1 ", re.sub(r"^(&?[<>]+)(?=.)", r"\1 ", piece)).split()
 
 
 def _bash_word(word):
