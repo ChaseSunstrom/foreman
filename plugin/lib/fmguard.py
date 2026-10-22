@@ -988,25 +988,46 @@ def _drop_data_heredocs(cmd, only=None):
 
 def _strip_comments(text):
     """T-0161 review: a # starts a comment only at the start of a word outside quotes; shlex's own commenters also cut
-    at the # in `echo a#b; rm …` and hid the rest of the line. Under $'…' quoting nothing is cut (fails closed)."""
+    at the # in `echo a#b; rm …` and hid the rest of the line. Under $'…' quoting nothing is cut (fails closed).
+    T-1561 re-review: quoting as _inner_quote reads it, each $( … ) and `…` a fresh context: a flat scan read the inner
+    " of "$(echo "a #" )">~/.bashrc as closing the string and cut the redirect away as a comment."""
     if "$'" in text:
         return text
-    out, q, i = [], None, 0
+    st, esc, out, i = [["", None, 0]], False, [], 0  # [kind, quote, paren depth]
     while i < len(text):
-        ch = text[i]
-        if ch == "\\" and q != "'":
-            out.append(text[i:i + 2])
+        ch, top = text[i], st[-1]
+        if esc:
+            esc = False
+        elif ch == "\\" and top[1] != "'":
+            esc = True
+        elif top[1] == "'":
+            top[1] = None if ch == "'" else "'"
+        elif ch == "`":
+            if top[0] == "`" and top[1] is None:
+                st.pop()
+            else:
+                st.append(["`", None, 0])
+        elif ch == "$" and text[i + 1:i + 2] == "(":
+            st.append(["$(", None, 0])
+            out.append("$(")
             i += 2
             continue
-        if q:
-            q = None if ch == q else q
+        elif top[1] == '"':
+            top[1] = None if ch == '"' else '"'
         elif ch in "'\"":
-            q = ch
+            top[1] = ch
         elif ch == "#" and (i == 0 or text[i - 1] in " \t\n;&|(<>"):  # after ) it may end a $(…) word (T-0163)
             i = text.find("\n", i)
             if i < 0:
                 break
             continue
+        elif ch == "(" and top[0] == "$(":
+            top[2] += 1
+        elif ch == ")" and top[0] == "$(":
+            if top[2]:
+                top[2] -= 1
+            else:
+                st.pop()
         out.append(ch)
         i += 1
     return "".join(out)
@@ -1122,14 +1143,150 @@ def _decode_ansi_c(text):
     return "".join(res) + "".join(cur)
 
 
+class _Quoted(str):
+    """T-1561 review: a word of quoted or escaped operator characters ('>', \\;): data to bash, never a redirect or a
+    separator. _split reads it as a word; it still equals its text (find -exec … ';' ends at it)."""
+
+
+_OPS = ";&|()<>"
+_OP_WORD = re.compile(r"[;&|()<>]+")
+# what shlex mustn't see as itself, as plain word characters: _ESC and a digit is _ENCODED's character at that place,
+# _ESC _ESC is _ESC (so no character a line already holds can pass for one: self-review)
+_ESC, _ENCODED = "", _OPS + '"'
+_DECODE = re.compile(_ESC + "(.)", re.S)
+
+
+def _decode(token):
+    return _DECODE.sub(lambda m: _ESC if m.group(1) == _ESC else _ENCODED[int(m.group(1))], token)
+
+
+def _hide_quoted_ops(text, encoded=False):
+    """(text with each operator character inside quotes or after a backslash encoded, what closes it: an unpaired
+    trailing \\ doubled, then the quote left open): shlex drops the quotes, so a quoted '>' came out as the bare redirect
+    >. Quoting as shlex reads it. encoded: the text's _ESC pairs are encoded already (_mask_nested_dq)."""
+    hide = lambda c: _ESC + str(_ENCODED.index(c)) if c and c in _OPS else c  # noqa: E731
+    out, q, i, tail = [], None, 0, ""
+    while i < len(text):
+        ch = text[i]
+        if ch == _ESC:
+            out.append(text[i:i + 2] if encoded else _ESC + _ESC)
+            i += 2 if encoded else 1
+            continue
+        if ch == "\\" and q != "'":
+            nxt = text[i + 1:i + 2]
+            out.append(ch + (hide(nxt) if nxt != _ESC else ""))
+            tail = "" if nxt else "\\"
+            i += 2 if nxt and nxt != _ESC else 1
+            continue
+        if q:
+            q = None if ch == q else q
+        elif ch in "'\"":
+            q = ch
+        out.append(hide(ch) if q else ch)
+        i += 1
+    return "".join(out), tail + (q or "")
+
+
+def _shlex_words(text, close=False, encoded=False):
+    """shlex's words, quoted operators as _Quoted; close: an odd quote runs to the end of the text, a trailing \\ is
+    itself."""
+    hidden, closer = _hide_quoted_ops(text, encoded)
+    lex = shlex.shlex(hidden + closer if close else hidden, posix=True, punctuation_chars=_OPS)
+    lex.whitespace_split = True
+    lex.commenters = ""
+    out = []
+    for t in lex:
+        w = _decode(t) if _ESC in t else t
+        out.append(_Quoted(w) if w is not t and _OP_WORD.fullmatch(w) else w)
+    return out
+
+
 def _tokens(cmd):
+    text = _strip_comments(cmd)
     try:
-        lex = shlex.shlex(_strip_comments(cmd), posix=True, punctuation_chars=";&|()<>")
-        lex.whitespace_split = True
-        lex.commenters = ""
-        return list(lex)
+        return _shlex_words(text)
     except ValueError:
-        return re.sub(r"([;&|()])", r" \1 ", cmd).split()  # unbalanced quotes: still split commands apart
+        pass
+    # unbalanced to shlex (a quote inside "$( )" starts a fresh context to bash, or a later line's odd quote, after bash
+    # has run every complete line before it): two readings, each command of both checked (T-1561). First the old split,
+    # each word whose own quotes balance read as bash does ('cat' is cat), an odd one kept (the debris rule, T-0982):
+    # it never joins words across a space, so nothing hides inside a string a quote scan misplaced. Then shlex again,
+    # each " inside a $( ) or `…` within "…" masked and an odd quote run to the end, so X='a b' cat stays cat's prefix
+    words = [_bash_word(w) for piece in cmd.split() for w in _pieces(piece)]
+    try:
+        nested = _shlex_words(_mask_nested_dq(text), close=True, encoded=True)
+    except ValueError:
+        return words
+    d = sum(t.count("(") - t.count(")") for t in words if not isinstance(t, _Quoted) and _OP_WORD.fullmatch(t))
+    return words + [";"] + ([")" * d] if d > 0 else ["(" * -d] if d < 0 else []) + [";"] + nested  # depth 0 again
+
+
+def _mask_nested_dq(text):
+    """Each " inside a $( … ) or `…` that sits within "…" encoded (and each _ESC): bash reads that text in a fresh
+    quoting context, while shlex ends the outer string there. Scanned as _inner_quote does; a misread only adds a
+    reading."""
+    st, esc, out, i = [["", None, 0]], False, [], 0  # [kind, quote, paren depth]
+    dq = 0  # the frames under the top one inside "…" (only the top frame's quote changes): no rescan per quote
+    while i < len(text):
+        ch, top = text[i], st[-1]
+        nested = ch == '"' and dq
+        out.append(_ESC + "7" if nested else _ESC + _ESC if ch == _ESC else ch)
+        if esc:
+            esc = False
+        elif ch == "\\" and top[1] != "'":
+            esc = True
+        elif top[1] == "'":
+            top[1] = None if ch == "'" else "'"
+        elif ch == "`":
+            if top[0] == "`" and top[1] is None:
+                st.pop()
+                dq -= st[-1][1] == '"'
+            else:
+                dq += top[1] == '"'
+                st.append(["`", None, 0])
+        elif ch == "$" and text[i + 1:i + 2] == "(":
+            dq += top[1] == '"'
+            st.append(["$(", None, 0])
+            out.append("(")
+            i += 2
+            continue
+        elif top[1] == '"':
+            top[1] = None if ch == '"' else '"'
+        elif ch in "'\"":
+            top[1] = ch
+        elif ch == "(" and top[0] == "$(":
+            top[2] += 1
+        elif ch == ")" and top[0] == "$(":
+            if top[2]:
+                top[2] -= 1
+            else:
+                st.pop()
+                dq -= st[-1][1] == '"'
+        i += 1
+    return "".join(out)
+
+
+def _pieces(piece):
+    """One space-split piece of an unparseable line as the words the first reading takes from it: split at ; & | ( ),
+    and a redirect from its target too (>~/.bashrc is no plain word: re-review). In a piece holding a quote only a
+    leading redirect and one right after a quote, ) or ` ("$(…)">~/.bashrc: re-review): a < or > inside its quoted text is
+    text as often as not (awk '$1>4000', the debris rule, T-0982)."""
+    if not re.search(r"['\"\\]", piece):
+        return re.sub(r"(&?[<>]+[&|(]?|[;&|()])", r" \1 ", piece).split()
+    piece = re.sub(r"(?<=[\"')`])(\d*)(&?[<>]+)", r" \1 \2 ", re.sub(r"^(&?[<>]+)(?=.)", r"\1 ", piece))
+    return re.sub(r"([;&|()])", r" \1 ", piece).split()
+
+
+def _bash_word(word):
+    if not any(q in word for q in "'\"\\"):
+        return word
+    try:
+        parts = shlex.split(word)
+    except ValueError:
+        return word
+    if len(parts) != 1:
+        return word
+    return _Quoted(parts[0]) if _OP_WORD.fullmatch(parts[0]) else parts[0]
 
 
 def _split(tokens):
@@ -1137,6 +1294,10 @@ def _split(tokens):
     i = 0
     while i < len(tokens):
         t = tokens[i]
+        if isinstance(t, _Quoted):  # '>' or \; is data
+            cur.argv.append(t)
+            i += 1
+            continue
         if re.fullmatch(r"[;&|()<>]+", t):  # every punctuation run, even one read below as a word (<(( …)
             depth += t.count("(") - t.count(")")
         if t in ("<(", ">("):
