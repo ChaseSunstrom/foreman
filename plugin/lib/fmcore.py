@@ -863,6 +863,18 @@ _SECRET_RES = [
 ]
 
 
+_SECRET_KINDS = ["a private key", "a JWT", "an API key or token", "an authorization header", "a password or secret value",
+                 "a password in a URL"]  # T-1606: one name per pattern above, in the same order
+assert len(_SECRET_KINDS) == len(_SECRET_RES), "one kind name per secret pattern"
+
+
+def secret_kinds(text):
+    """T-1606: what kinds of secret the text holds (names only, never the values), in _SECRET_RES order."""
+    if not isinstance(text, str):
+        return []
+    return [name for (rx, _), name in zip(_SECRET_RES, _SECRET_KINDS) if rx.search(text)]
+
+
 def redact(text):
     if not isinstance(text, str):
         return text
@@ -2245,9 +2257,11 @@ STAGES = ("planning", "ready", "executing", "verifying", "documenting", "auditin
 
 def plain(s):
     """Text safe to print or show in a dialog: no control, format (bidi overrides, zero-width) or line/paragraph
-    separator characters that could move the cursor, retitle the terminal or disguise the text."""
+    separator characters that could move the cursor, retitle the terminal or disguise the text, nor variation selectors
+    (T-1621 review: invisible, so a run of them after a character can smuggle a payload)."""
     import unicodedata
-    return "".join(ch for ch in (s or "") if unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp"))
+    return "".join(ch for ch in (s or "") if unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp")
+                   and not ("︀" <= ch <= "️" or "\U000e0100" <= ch <= "\U000e01ef"))
 
 
 def plain_lines(text):
@@ -2390,7 +2404,8 @@ def add_veto(p, text, words=None):
     """Record the veto in a correction (the newest VETOES_KEEP, one per set of key words); None when it has none.
     words: the key words already known (T-0439: a proposal from repeated steers the user said yes to)."""
     words = list(words or [])
-    for m in [] if words else _VETO.finditer(text or ""):  # each clause alone: "I don't think so, never push" is pushing
+    text = redact(text or "")  # T-1606: a key inside "never use <key>" never reaches vetoes.json, nor its words
+    for m in [] if words else _VETO.finditer(text):  # each clause alone: "I don't think so, never push" is pushing
         if _GRANTS.match(m.group(1)):  # T-1323: "stop asking me if you can release" says go ahead, it isn't a no
             continue
         found = [w for w in re.findall(r"[a-z0-9]{3,}", m.group(1).lower()) if w not in _VETO_STOP]
