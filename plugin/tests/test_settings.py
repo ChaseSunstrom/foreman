@@ -189,5 +189,28 @@ class Command(ForemanTestCase):
         self.assertEqual(read_text(self.settings), self.before)
 
 
+class PluginSurface(unittest.TestCase):
+    """T-1574: /foreman:settings runs fm settings (one implementation); the pane re-reads its options on each poll."""
+    ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
+
+    def test_the_command_lists_and_sets_through_fm_settings(self):
+        text = read_text(os.path.join(self.ROOT, "plugin", "commands", "settings.md"))
+        head, _, body = text.partition("\n---\n")
+        self.assertTrue(head.startswith("---\n") and "\ndescription: " in head, "frontmatter with a description")
+        self.assertIn("disable-model-invocation: true", head, "the person's command: no share of the skill listing")
+        for cmd in ("fm settings list", "fm settings get", "fm settings set"):
+            self.assertIn(f"`{cmd}", body, cmd)
+        self.assertIn("$ARGUMENTS", body)
+
+    def test_the_pane_applies_changed_options_on_its_poll(self):
+        mod = os.path.join(self.ROOT, "mods", "foreman-ui")
+        src = read_text(os.path.join(mod, "hooks", "register.tsx"))
+        tick = src[src.index("async function tick("):src.index("async function gauge(")]
+        self.assertIn("$.config.list()", tick, "the 2 s poll reads the engine's current option values")
+        self.assertIn("applyOptions(", tick)
+        tests = read_text(os.path.join(mod, "tests", "foreman-ui.test.tsx"))
+        self.assertIn("applies on the next poll, no restart (T-1574)", tests, "claude plugin test runs the behaviour")
+
+
 if __name__ == "__main__":
     unittest.main()
