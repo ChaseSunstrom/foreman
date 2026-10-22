@@ -1464,8 +1464,9 @@ def _settings_foot(app, iw):
 
 
 def _settings_note(app):
-    n = sum("head" not in r for r in app.items)
-    return " · ".join([f"{n} of {len(app.set_rows)}"] + (["changed only"] if app.set_modified else [])
+    n, on = sum("head" not in r for r in app.items), (app.cfg.get("profile") or {}).get("name")
+    return " · ".join([f"{n} of {len(app.set_rows)}"] + ([f"profile {_escaped(on)}"] if on is not None else [])
+                      + (["changed only"] if app.set_modified else [])
                       + ([f"/{app.set_query}"] if app.set_query else []))
 
 
@@ -2680,9 +2681,10 @@ def _escaped(s):
     return "".join(c if c.isprintable() else repr(c)[1:-1] for c in s)
 
 
-def load_config(path=None):
+def load_config(path=None, env=None):
     """DEFAULTS with the user's tui.toml over them: (config, [one line per bad setting]). A bad setting is skipped, the
-    rest apply."""
+    rest apply. T-1656: then the first [profile.NAME] whose when clause the terminal meets (fmsettings.facts of `env`,
+    the environment by default), its settings through the same checks; cfg["profile"] = {name, sets: what it set}."""
     import copy
     import tomllib
     import fmsettings
@@ -2699,6 +2701,27 @@ def load_config(path=None):
         return cfg, [f"{path}: {_escaped((str(e).splitlines() or [type(e).__name__])[0])}"]
     errors = []
     bad = lambda msg: errors.append(f"{path}: {_escaped(msg)}")  # a name from the file, said, never run by a terminal
+    table = user.pop("profile", None)
+    _apply(cfg, user, bad)
+    found = fmsettings.profile_list(table, fmsettings.facts(env)) if table is not None else []
+    for p in found:
+        if p["problem"]:
+            bad(p["problem"])
+    on = next((p for p in found if p["matches"]), None)
+    if on:
+        at, own = f"profile.{on['name']}.", []
+        _apply(cfg, {k: v for k, v in table[on["name"]].items() if k != "when"}, lambda msg: own.append(at + msg))
+        for msg in own:
+            bad(msg)
+        cfg["profile"] = {"name": on["name"], "sets": [k for k in on["sets"] if not any(
+            m.startswith((f"{at}{k}:", f"{at}{k} =")) for m in own)]}  # a value it skipped isn't the profile's
+    return cfg, errors
+
+
+def _apply(cfg, user, bad):
+    """`user`'s settings (a parsed tui.toml, or a profile's) over `cfg`, each checked: a bad one said through bad(msg)
+    and skipped."""
+    import fmsettings
     if "theme" in user:
         if isinstance(user["theme"], str) and user["theme"] in PRESETS:  # a list or table is unhashable: a bad value
             cfg["preset"], cfg["theme"] = user["theme"], PRESETS[user["theme"]]()
@@ -2753,7 +2776,6 @@ def load_config(path=None):
                         cfg["keys"].pop(k, None) if cmd == "none" else cfg["keys"].__setitem__(k, cmd)
         else:
             bad(f"{key}: not a setting (theme, motion, palette, border, colors, layout, keys)")
-    return cfg, errors
 
 
 def _toml(v):
