@@ -6059,6 +6059,14 @@ def _build_parser():
             "form, with DESIGN.md's tokens resolved (exit 1 on problems)")
     s.add_argument("action", choices=["check"])
     s.add_argument("path", nargs="?", help="the score (default: motion.toml at the repo root)")
+    import fmscene  # T-1633: stdlib only and small; its schema is the help's epilog
+    s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 95), epilog=fmscene.SCHEMA,
+            formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
+            "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
+    s.add_argument("action", choices=["compile"])
+    s.add_argument("path", metavar="FILE", help="the scene.json")
+    s.add_argument("--to", choices=["three"], default="three", help="three: an ES module importing \"three\" (r155+)")
+    s.add_argument("--out", metavar="PATH", help="write the module here, replacing the file whole, not print it")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), tier=("Finding your way", 460), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
