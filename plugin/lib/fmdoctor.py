@@ -1160,7 +1160,51 @@ _NAMED_CAP, _NAMED_BYTES = 500, 64 << 20  # named scripts in skipped folders rea
 
 def _budget():
     """T-1459 review: what one plugin's skipped folders and named scripts may still cost, shared by all of them."""
-    return {"entries": _SKIP_TOTAL, "bytes": _NAMED_BYTES, "read": set()}
+    return {"entries": _SKIP_TOTAL, "bytes": _NAMED_BYTES, "read": set(), "pyc": _PYC_CAP}
+
+
+_PYC_CAP, _PYC_SRC_BYTES = 200, 1 << 20  # pycs compiled per plugin; the biggest source compiled
+
+
+def _pyc_of_source(p, st, budget):
+    """T-1466: True only when pyc p is byte-for-byte what py_compile writes under THIS Python for the NAME.py beside its
+    __pycache__: magic, flags 0, source mtime and size, and a body equal to marshal.dumps(compile(source, path)). A
+    pyc Python wrote at runtime adds nothing; any other (tampered body, orphan, another Python's, hash-based, over a
+    cap) keeps its stand-in. compile() never runs the source. Any doubt is False, the safe side."""
+    import importlib.util
+    import io
+    import marshal
+    import struct
+    if not p.endswith(".pyc") or not stat.S_ISREG(st.st_mode) or st.st_size > 8 * _PYC_SRC_BYTES:
+        return False
+    d = os.path.dirname(p)
+    name = os.path.basename(p).split(".", 1)[0]
+    src = os.path.join(os.path.dirname(d), name + ".py")
+    try:
+        if (os.path.basename(d) != "__pycache__" or not name or budget["pyc"] <= 0
+                or p != importlib.util.cache_from_source(src) or os.path.islink(src)):
+            return False
+        budget["pyc"] -= 1
+        with open(src, "rb") as fh:
+            ss = os.fstat(fh.fileno())
+            if not stat.S_ISREG(ss.st_mode) or ss.st_size > _PYC_SRC_BYTES:
+                return False
+            source = fh.read(_PYC_SRC_BYTES + 1)
+        with open(p, "rb") as fh:
+            got = fh.read(8 * _PYC_SRC_BYTES + 1)
+        # co_filename is the source path as py_compile and the importer are given it: absolute, as listed here
+        code = compile(source, os.path.abspath(src), "exec", dont_inherit=True)
+        head = importlib.util.MAGIC_NUMBER + struct.pack("<III", 0, int(ss.st_mtime) & 0xFFFFFFFF, ss.st_size & 0xFFFFFFFF)
+        if got[:16] != head or len(got) > 8 * _PYC_SRC_BYTES:
+            return False
+        # marshal's ref flags follow refcounts, which differ between processes, so both bodies go through loads then
+        # dumps in this process: equal means the same object graph (filename, names, consts, code), nothing trailing
+        # (marshal.load builds objects only, never runs code; a hostile pyc raises, is capped at 8 MB, and stays flagged)
+        body = io.BytesIO(got[16:])
+        mine = marshal.load(body)
+        return body.tell() == len(got) - 16 and marshal.dumps(mine) == marshal.dumps(marshal.loads(marshal.dumps(code)))
+    except (OSError, ValueError, EOFError, TypeError, SyntaxError, MemoryError, RecursionError):
+        return False
 
 
 def _unlisted_stand(root, e, stand):
@@ -1212,7 +1256,7 @@ def _stand_skipped(root, top, stand, budget):
                 st = os.lstat(p)
                 if stat.S_ISLNK(st.st_mode):
                     stand(rel(p) + b"\0->" + os.fsencode(os.readlink(p)) + b"\0")
-                elif not stat.S_ISDIR(st.st_mode):
+                elif not stat.S_ISDIR(st.st_mode) and not _pyc_of_source(p, st, budget):
                     stand(rel(p) + f"\0{st.st_mode} {st.st_size} {st.st_mtime_ns} {st.st_ctime_ns}\0".encode())
             except OSError:  # removed mid-walk
                 continue
