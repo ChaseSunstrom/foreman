@@ -18,6 +18,8 @@ Every animation is a short sentence: **cause** (what the person did, or what cha
 
 Name durations and easings by their job, not their size, and use only the names. A raw `ms` or `cubic-bezier(` outside the token file is a fail.
 
+The values below are defaults. When the project has a `DESIGN.md` (see `design-direction.md`), its Motion knob sets them: a technical direction tightens the steps, a gallery one slows them. Two rules hold whatever it says: interactive motion stays under 500 ms, and springs are for gestures.
+
 | Token | Value | Job |
 |---|---|---|
 | `--dur-tap` | 90 ms | press and toggle feedback |
@@ -157,7 +159,7 @@ The page must be readable with animation and JS absent. Loading motion decorates
 ## Check it
 
 - `grep -rnE "([1-9][0-9]*|0?\.[0-9]+)m?s\b|cubic-bezier\(" src --include=*.css --include=*.scss | grep -v tokens/motion` — returns nothing (raw timing outside the tokens).
-- `grep -rnE "transition:\s*all|transition(-property)?:[^;]*\b(width|height|top|left|right|bottom|margin|padding|box-shadow)\b" src` — returns nothing.
+- `grep -rnE "transition:\s*all|transition(-property)?:[^;]*\b(width|height|top|left|right|bottom|inset|margin|padding|font-size|box-shadow)\b" src` — returns nothing. It is a lower bound: it reads one line at a time, so also check multi-line `transition` lists and JS (`animate({ height … })`, Framer `animate={{ width … }}`) by eye or with `grep -rnE "animate\(?\{\{?[^}]*\b(width|height|top|left)\b" src`.
 - `grep -rnE "transitionend|animationend" src` — each hit has a timeout fallback or doesn't gate state.
 - `grep -rnE "infinite" src` — each hit is a wait indicator that stops when the wait ends, or has a pause control.
 - `grep -rn "prefers-reduced-motion" src` — the token file, plus commented exceptions only.
