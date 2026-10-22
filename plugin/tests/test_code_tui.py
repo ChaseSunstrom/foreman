@@ -2222,13 +2222,20 @@ class MotionVisuals(unittest.TestCase):
             self.assertEqual(self.options(), {"motion": want}, "the pane's own option: it takes it on its next poll")
             self.assertIn(want, pane, "a value the pane's options list (Claude Code drops one they don't)")
             self.assertIn(f"motion: {want}", self.text(app))
+        app.key("?")
+        app.key("z")
+        self.assertEqual((app.mode, app.cfg["motion"]), ("main", "reduced"), "from the keys poster: it hushes and closes")
         app.key("p")
         self.assertEqual(app.mode, "home")
         app.key("z")
-        self.assertEqual(app.cfg["motion"], "reduced", "from the app's home too")
+        self.assertEqual(app.cfg["motion"], "off", "from the app's home too")
+        app.key(",")
+        app.key("z")
+        self.assertEqual((app.mode, app.cfg["motion"]), ("settings", "off"), "the settings list keeps its own keys")
+        app.key("\x1b")
         app.mode = "prompt"
         app.key("z")
-        self.assertEqual((app.input, app.cfg["motion"]), ("z", "reduced"), "typed into a request, never a hush")
+        self.assertEqual((app.input, app.cfg["motion"]), ("z", "off"), "typed into a request, never a hush")
 
     def test_a_hush_the_guard_refuses_still_hushes_this_screen_and_says_why(self):
         os.environ["CLAUDECODE"] = "1"
@@ -2271,6 +2278,8 @@ class MotionVisuals(unittest.TestCase):
                 T.render(T.State(), 100, 30, cfg)
         self.assertEqual(T.load_config()[0]["theme"]["bad"]["fg"], T.RISO["paper"]["bad"], "riso's pink on paper")
         self.assertTrue(T.PRESETS["riso"]()["screen"].get("paint"), "a paper stock: it paints a dark terminal")
+        riso = T.PALETTES["riso"]
+        self.assertGreaterEqual(min(T.contrast(riso["dim"], riso[k]) for k in ("bar", "bg")), 4.5, "the hints read")
 
     def test_the_riso_palette_is_the_panes_too_in_the_same_inks(self):
         import re
@@ -2284,7 +2293,12 @@ class MotionVisuals(unittest.TestCase):
         night = tui().RISO["night"]  # the pane sits on the terminal's own (dark) background
         self.assertEqual(dict(re.findall(r"(\w+): 0x([0-9a-f]{6})", riso.group(1))),
                          {"ok": night["ok"][1:].lower(), "err": night["bad"][1:].lower(),
-                          "accent": night["accent"][1:].lower()})
+                          "accent": night["accent"][1:].lower(), "accent2": night["accent2"][1:].lower()})
+        apart = sum((a - b) ** 2 for a, b in zip(tui()._rgb(night["accent"]), tui()._rgb(night["accent2"]))) ** 0.5
+        self.assertGreater(apart, 150, "running and reading rows told apart (blue and sunflower, not two blues)")
+        with open(os.path.join(root, ".claude-plugin", "marketplace.json"), encoding="utf-8") as f:
+            listed = next(p["version"] for p in json.load(f)["plugins"] if p["name"] == "foreman-ui")
+        self.assertEqual(listed, fmsettings.mod_manifest()["version"], "a new option ships with a new version, both")
 
     def test_the_glyph_probe_writes_nothing_into_a_pipe(self):
         import fmcodeterm

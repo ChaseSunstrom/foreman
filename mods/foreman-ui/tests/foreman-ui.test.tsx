@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, diffRows, clean, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
+import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, diffRows, clean, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, setPalette, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace, typeColor } from '../hooks/kit'
 import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 import type { Part } from '../hooks/kit'
@@ -1562,8 +1562,14 @@ test("palette 'riso' paints ok and errors in fm code's risograph inks, and defau
   opts.palette = 'default'
   await clock.advance(2000)
   expect(await color('step 1 failed')).toBe(hex(0xff6b6b))
-  expect(C.accent).toBe(0x5fd7d7)
   await ui.unmount()
+})
+
+test('kit: a task type and a lane take the active palette, not the one at load (T-1512 review)', () => {
+  setPalette('riso')
+  expect([typeColor('CLEAN'), typeColor('FEATURE'), typeColor('FIX')]).toEqual([hex(0x62a8e5), hex(0xffb511), hex(0xff48b0)])
+  setPalette('default')
+  expect([C.accent, C.accent2, typeColor('FEATURE'), typeColor('FIX')]).toEqual([0x5fd7d7, 0x87afff, hex(0x87afff), hex(0xff6b6b)])
 })
 
 // T-1574: the engine's /config rows for the mod's options, read live from `opts` (what /config or fm settings set holds)
