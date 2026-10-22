@@ -175,18 +175,19 @@ def _plugin_spec(path, key, unread=None):
     return out
 
 
-def _spec_file(root, rel, unread):
-    """The JSON at rel under a plugin root, confined to it and capped in size (None when absent or malformed)."""
+def _spec_file(root, rel, unread, cap=_SPEC_CAP, malformed=None):
+    """The JSON at rel under a plugin root, confined to it and capped in size (None when absent or malformed; rel is
+    appended to malformed, when given, for JSON that doesn't parse)."""
     given = os.path.join(root, rel)
     if not os.path.lexists(given):
         return None
     full, base = os.path.realpath(given), os.path.realpath(root)
     try:
-        ok = full.startswith(base + os.sep) and os.path.isfile(full) and os.path.getsize(full) <= _SPEC_CAP
+        ok = full.startswith(base + os.sep) and os.path.isfile(full) and os.path.getsize(full) <= cap
         if ok:  # isfile first: a FIFO or device would block or never end
             with open(full, "rb") as f:
-                raw = f.read(_SPEC_CAP + 1)
-            ok = len(raw) <= _SPEC_CAP
+                raw = f.read(cap + 1)
+            ok = len(raw) <= cap
     except OSError:
         ok = False
     if not ok:
@@ -196,7 +197,79 @@ def _spec_file(root, rel, unread):
     try:
         return json.loads(raw)
     except (ValueError, RecursionError):
+        if malformed is not None:
+            malformed.append(rel)
         return None
+
+
+REPO_CONFIG = (".claude/settings.json", ".claude/settings.local.json", ".mcp.json")
+_REPO_CAP = 256_000
+_SETTING_COMMANDS = ("apiKeyHelper", "awsAuthRefresh", "awsCredentialExport", "otelHeadersHelper")  # each runs
+_NOTE_CAP = 1500
+
+
+def repo_config(root):
+    """T-1472: what a repo's own Claude config runs (hook commands, the status line, MCP servers, allow rules) as
+    (content hash, one note), or (None, None) when it has none of REPO_CONFIG. Reads go through _spec_file: a file
+    over 256 KB, not regular or resolving outside the repo is named, never read; malformed JSON is named."""
+    h, unread, bad, settings, hooks, mcp, allow = hashlib.sha256(), [], [], [], [], [], []
+    present = [rel for rel in REPO_CONFIG if os.path.lexists(os.path.join(root, rel))]
+    for rel in present:
+        n = len(unread) + len(bad)
+        data = _spec_file(root, rel, unread, cap=_REPO_CAP, malformed=bad)
+        if len(unread) + len(bad) > n:  # unread: its target, size and time stand in for its content
+            try:
+                st = os.stat(os.path.join(root, rel))
+                stamp = [os.path.realpath(os.path.join(root, rel)), st.st_size, st.st_mtime_ns]
+            except OSError:
+                stamp = ["gone"]
+        else:
+            stamp = data
+        h.update(json.dumps([rel, stamp], sort_keys=True, default=str).encode() + b"\0")
+        if not isinstance(data, dict):
+            continue
+        if rel == ".mcp.json":
+            servers = data.get("mcpServers")
+            for name, spec in (servers.items() if isinstance(servers, dict) else ()):
+                spec = spec if isinstance(spec, dict) else {}
+                run = spec.get("url") or " ".join(str(x) for x in [spec.get("command") or ""] + (
+                    spec.get("args")[:10] if isinstance(spec.get("args"), list) else []))
+                mcp.append(f"{name}: {run}")
+            continue
+        events = data.get("hooks")
+        hooks += [f"{e}{' ' + str(m) if m else ''}: {x.get('command') or x.get('url') or x.get('prompt') or '?'}"
+                  for e, m, x in _handlers(events if isinstance(events, dict) else {})]
+        for k in ("statusLine", "fileSuggestion"):
+            if isinstance(data.get(k), dict) and data[k].get("command"):
+                settings.append(f"{k}: {data[k]['command']}")
+        settings += [f"{k}: {data[k]}" for k in _SETTING_COMMANDS if isinstance(data.get(k), str) and data[k]]
+        if data.get("enableAllProjectMcpServers") is True:
+            settings.append("enableAllProjectMcpServers: every .mcp.json server starts unasked")
+        for k in ("env", "enabledPlugins", "extraKnownMarketplaces"):  # names only: an env value may be a secret
+            if isinstance(data.get(k), dict) and data[k]:
+                settings.append(f"{k}: " + ", ".join(map(str, data[k])))
+        perms = data.get("permissions")
+        rules = perms.get("allow") if isinstance(perms, dict) else None
+        allow += [str(r) for r in (rules if isinstance(rules, list) else ())]
+    if not present:
+        return None, None
+
+    def group(label, items, each=4):
+        shown = "; ".join(c.fit(c.redact(c.plain(str(x))), 90) for x in items[:each])
+        return f"{label} {len(items)} ({shown}{f'; and {len(items) - each} more' if len(items) > each else ''})"
+
+    parts = []  # what a hostile repo can't pad away comes first: the note is cut from the end
+    if unread:
+        parts.append("not read (a symlink out of the repo, over 256 KB or not a regular file): " + ", ".join(unread))
+    if bad:
+        parts.append("malformed JSON: " + ", ".join(bad))
+    parts += [group(label, items, each) for label, items, each in (
+        ("settings", settings, 6), ("hook commands", hooks, 4), ("MCP servers", mcp, 4), ("allow rules", allow, 8))
+        if items]
+    note = ("This repo's own Claude config (" + ", ".join(present) + "; Claude Code may already have started these "
+            "when the session opened, Foreman names them and can't stop them; review before trusting the repo): "
+            + "; ".join(parts or ["nothing"]) + ".")
+    return h.hexdigest()[:16], c.fit(c.defang(note), _NOTE_CAP)
 
 
 def _handlers(hooks):

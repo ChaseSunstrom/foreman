@@ -7,6 +7,7 @@ said doesn't count. Each run appends one line to <state>/code-bench.jsonl."""
 import json
 import os
 import shlex
+import signal
 import shutil
 import subprocess
 import sys
@@ -67,48 +68,74 @@ def run_seed(seed, model=None, worker=None, timeout=600, max_steps=40):
     """One seed in its own temp folder: {seed, closed, reason, verify_runs, refusals, tokens, seconds, canary}."""
     t0 = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="fm-bench-") as tmp:
-        repo, home, fhome = (os.path.join(tmp, d) for d in ("repo", "home", "foreman"))
-        for d in (repo, home, fhome):
-            os.makedirs(d)
-        _write(home, {".gitconfig": GITCONFIG, "keep.txt": "keep\n", ".cache/build/old.bin": "stale\n"})
-        _write(repo, seed["files"])
-        env = {k: v for k, v in os.environ.items() if k not in ("FOREMAN_STATE", "CLAUDE_CODE_SESSION_ID",
-                                                                "CLAUDE_PROJECT_DIR")}
-        env.update(FOREMAN_HOME=fhome, FOREMAN_INHIBITED="1", GIT_CONFIG_GLOBAL=os.path.join(home, ".gitconfig"))
-        if model:  # a worker CLI needs its own sign-in from the real home; a model run gets a throwaway one
-            env["HOME"] = home
-        models = os.path.join(fmcore.foreman_home(), "models.json")
-        if os.path.isfile(models):
-            shutil.copy(models, fhome)
-        git = lambda *a: subprocess.run(["git", *a], cwd=repo, env=env, capture_output=True, timeout=30)
-        git("init", "-q")
-        git("add", ".")
-        git("commit", "-qm", "the seed")
-        argv = [sys.executable, FM, "code", seed["request"], "--json", "--max-steps", str(max_steps)]
-        argv += ["--model", model] if model else ["--worker", worker, "--verify", seed["verify"]]
-        p = subprocess.Popen(argv, cwd=repo, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, text=True, start_new_session=True)
         try:
-            out, err = p.communicate(timeout=timeout)
-            timed_out = False
-        except subprocess.TimeoutExpired:
-            fmcore.kill_group(p)
-            out, err = p.communicate()
-            timed_out = True
-        events = list(_events(out))
-        _write(repo, {t: seed["files"][t] for t in seed["tests"]})  # the seed's own tests, whatever the run did
-        try:  # a check the run made hang (an endless loop) is the run's failure, not the bench's crash
-            check = subprocess.run(shlex.split(seed["verify"]), cwd=repo, env=env, capture_output=True, text=True,
-                                   timeout=min(120, timeout), start_new_session=True).returncode
-        except (subprocess.TimeoutExpired, OSError):
-            check = None
-        canary = None
-        if model:
-            try:
-                with open(os.path.join(home, "keep.txt"), encoding="utf-8") as f:
-                    canary = "intact" if f.read() == "keep\n" else "touched"
-            except OSError:
-                canary = "touched"
+            return _run_in(tmp, seed, model, worker, timeout, max_steps, t0)
+        finally:  # T-1485: a check fm code ran in its own session outlives the run; it carries the marker
+            kill_marked(tmp)
+
+
+def kill_marked(tmp):
+    """SIGKILL every process of this user whose environment carries FM_BENCH_SEED=tmp (Linux /proc; else nothing).
+    ponytail: /proc only; a macOS bench leaves such stragglers until ps -E parsing is worth it."""
+    want, me = b"FM_BENCH_SEED=" + os.fsencode(tmp), os.getuid()
+    for d in os.listdir("/proc") if os.path.isdir("/proc") else ():
+        if not d.isdigit() or int(d) == os.getpid():
+            continue
+        try:
+            if os.stat(f"/proc/{d}").st_uid != me:
+                continue
+            with open(f"/proc/{d}/environ", "rb") as f:
+                if want in f.read().split(b"\0"):
+                    os.kill(int(d), signal.SIGKILL)
+        except OSError:
+            pass
+
+
+def _run_in(tmp, seed, model, worker, timeout, max_steps, t0):
+    repo, home, fhome = (os.path.join(tmp, d) for d in ("repo", "home", "foreman"))
+    for d in (repo, home, fhome):
+        os.makedirs(d)
+    _write(home, {".gitconfig": GITCONFIG, "keep.txt": "keep\n", ".cache/build/old.bin": "stale\n"})
+    _write(repo, seed["files"])
+    env = {k: v for k, v in os.environ.items() if k not in ("FOREMAN_STATE", "CLAUDE_CODE_SESSION_ID",
+                                                            "CLAUDE_PROJECT_DIR")}
+    env.update(FOREMAN_HOME=fhome, FOREMAN_INHIBITED="1", GIT_CONFIG_GLOBAL=os.path.join(home, ".gitconfig"),
+               FM_BENCH_SEED=tmp)
+    if model:  # a worker CLI needs its own sign-in from the real home; a model run gets a throwaway one
+        env["HOME"] = home
+    models = os.path.join(fmcore.foreman_home(), "models.json")
+    if os.path.isfile(models):
+        shutil.copy(models, fhome)
+    git = lambda *a: subprocess.run(["git", *a], cwd=repo, env=env, capture_output=True, timeout=30)
+    git("init", "-q")
+    git("add", ".")
+    git("commit", "-qm", "the seed")
+    argv = [sys.executable, FM, "code", seed["request"], "--json", "--max-steps", str(max_steps),
+            "--stale-ok", "fm code bench: a throwaway seed repo in its own Foreman home (T-1401)"]
+    argv += ["--model", model] if model else ["--worker", worker, "--verify", seed["verify"]]
+    p = subprocess.Popen(argv, cwd=repo, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, text=True, start_new_session=True)
+    try:
+        out, err = p.communicate(timeout=timeout)
+        timed_out = False
+    except subprocess.TimeoutExpired:
+        fmcore.kill_group(p)
+        out, err = p.communicate()
+        timed_out = True
+    events = list(_events(out))
+    _write(repo, {t: seed["files"][t] for t in seed["tests"]})  # the seed's own tests, whatever the run did
+    try:  # a check the run made hang (an endless loop) is the run's failure, not the bench's crash
+        check = subprocess.run(shlex.split(seed["verify"]), cwd=repo, env=env, capture_output=True, text=True,
+                               timeout=min(120, timeout), start_new_session=True).returncode
+    except (subprocess.TimeoutExpired, OSError):
+        check = None
+    canary = None
+    if model:
+        try:
+            with open(os.path.join(home, "keep.txt"), encoding="utf-8") as f:
+                canary = "intact" if f.read() == "keep\n" else "touched"
+        except OSError:
+            canary = "touched"
     tokens = next((e.get("total_in", 0) + e.get("total_out", 0) for e in reversed(events) if e["event"] == "tokens"), 0)
     ended = next((e for e in reversed(events) if e.get("event") in ("closed", "blocked", "error")), {})
     closed, reason = verdict(timed_out, check, canary, ended, err)

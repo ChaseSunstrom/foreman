@@ -161,6 +161,13 @@ class LibrarySearch(ForemanTestCase):
         self.assertIn(os.path.join(plug, "skills", "fastapi-patterns", "SKILL.md"), shown)
         self.assertIn("## Verify", self.fm("lib", "show", "fastapi").stdout)
 
+    def test_show_takes_the_group_prefix(self):
+        # T-1521: briefs name cards as group/name (web/three-js); show resolved only the bare name
+        self.fm("init")
+        self.assertIn("## Verify", self.fm("lib", "show", "web/three-js").stdout)
+        miss = self.fm("lib", "show", "games/three-js", check=False)
+        self.assertNotEqual(miss.returncode, 0, "a prefix naming another group is still not found")
+
     def test_show_reads_only_the_sections_asked_for_from_several_cards(self):
         self.fm("init")
         out = self.fm("lib", "show", "fastapi", "pytest", "--section", "verify").stdout

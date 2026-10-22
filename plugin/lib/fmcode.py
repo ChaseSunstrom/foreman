@@ -1621,6 +1621,14 @@ def cmd_code(args):
                                    'fm code --resume, fm code --task ID; on a terminal, fm code alone opens the app)')
         else:
             run.request = " ".join(words)
+        gate = None
+        if not args.dry_plan:  # T-1401: unattended (no terminal; the app's runs set FOREMAN_CODE_ATTENDED) refuses a
+            import fmreplay      # red or stale guard corpus replay; attended only warns
+            try:
+                gate = fmreplay.enforce(p, "fm code", getattr(args, "stale_ok", None), attended=bool(
+                    os.environ.get("FOREMAN_CODE_ATTENDED") or sys.stdin.isatty() and sys.stdout.isatty()))
+            except fmcli.UsageError as e:  # an error event, so --json readers see why
+                raise CodeError(str(e).replace("fm code refuses: ", "refused: ", 1))
         picked = None
         if args.resume is None and not run.worker and not args.model:  # T-1328
             run.worker, picked = pick_runner(p)
@@ -1644,6 +1652,8 @@ def cmd_code(args):
             run.offsite_ok(p, run.escalate)
         run.emit("start", "", quiet=True, schema=SCHEMA, request=run.request, task=run.tid, worker=run.worker,
                  model=profile and profile["name"], verify=run.verify_cmd, resume=args.resume is not None)
+        if gate:
+            run.emit("note", gate)
         if picked:
             run.emit("note", f"runner: {run.worker} ({picked}; fm code runners lists them all)", worker=run.worker)
         if run.worker and lean_args(all_runners().get(run.worker, {}), "work"):

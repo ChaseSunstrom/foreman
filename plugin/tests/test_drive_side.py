@@ -27,6 +27,17 @@ class LaneHeld(HookCase):
         self.assertIn(tid, first)
         self.assertNotIn(tid, self.stop(), "said once, not on every Stop")
 
+    def test_fm_next_skips_a_task_a_lane_holds(self):
+        # T-1478: the Stop note's trailing "Next: T-x: fm focus T-x" (fm next) still named a lane's task
+        self.fm("init")
+        held = self.task("Lane work", focus=False)
+        free = self.task("Free work", focus=False)
+        import fmcli
+        fmcli.mutate(self.project(), held, lambda x: x.meta.__setitem__("builder", c.now()), "lane_builder", {})
+        out = self.fm("next").stdout
+        self.assertNotIn(f"fm focus {held}", out)
+        self.assertIn(free, out)
+
 
 class DriveSide(HookCase):
     def stop(self, msg):

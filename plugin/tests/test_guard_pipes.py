@@ -115,7 +115,8 @@ class IfsInData(GuardCase):
             ("bash -c 'IFS=/ source /dev/stdin' <<< 'rm -rf \"/tmp/x${IFS}\"'", "system"),  # two pieces
             ("echo 'a $IFS' 'IFS=m'", "system"),
             ("echo 'a $IFS' I\\FS=m", "system"),
-            ("echo $'\\'' 'IFS=m $IFS'", "system"),  # $'…' quoting isn't read: counted
+            ("echo $'\\'' 'IFS=m $IFS'", None),  # T-1480: $'…' is read now ($'\'' is a ' word): one piece of data
+            ("eval $'IFS=m'; \"r$IFS\" -rf ~", "system"),  # and the IFS it hands eval still counts
             ("bash -c 'IFS=m; \"r${IFS}\" -rf ~'", "system"),  # read on its own
         ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))
 

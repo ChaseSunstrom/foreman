@@ -1231,6 +1231,10 @@ def cmd_lib(args):
         by_name, out, missing = {x["name"]: x for x in cards()}, [], []
         skills = None
         for name in args.words:  # several in one call: fm lib show fastapi pytest --section verify
+            group, _, bare = name.rpartition("/")  # T-1521: web/three-js names the card three-js in cards/web/
+            if group and name not in by_name and bare in by_name and \
+                    os.path.basename(os.path.dirname(by_name[bare]["path"])) == group:
+                name = bare
             if name in by_name:
                 with open(by_name[name]["path"], encoding="utf-8") as f:
                     out.append(sections(f.read(), args.section))
