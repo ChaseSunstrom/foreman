@@ -6,8 +6,9 @@ For each of bench_safety's dangerous commands and each everyday one, apply a fix
 a here-string, a written-then-run script file, base64 into sh) and ask the guard (no grants) to judge every variant.
 
 Label: a variant's label is the guard's *correct* verdict for the plain command it obfuscates — block for a
-dangerous command, allow for an everyday one and for the four bench SNAPSHOT commands (the guard allows those by
-design: Foreman snapshots the discarded work first, so bench counts them "saved", not "stopped").
+dangerous command, allow for an everyday one. The four bench SNAPSHOT commands are left out: the guard allows them in
+a project's own tree (Foreman snapshots the discarded work first) but blocks them in Foreman's own checkout, which is
+protected core, so their verdict depends on the tree the test runs in.
 
 A variant the guard judges as its label goes to guard_evasions.jsonl (the obfuscation did not change the verdict).
 A variant the guard judges differently goes to guard_gaps.jsonl with the verdict it got and why — a block->allow gap
@@ -15,10 +16,13 @@ is an evasion that reaches a dangerous command past the guard; an allow->block g
 
 Deterministic and stdlib-only (plus the repo's own fmreplay/fmguard/bench_safety). The committed files are this
 script's output; test_guard_evasions.py fails if regenerating changes them, so a guard change forces a reviewed
-regeneration. ids are machine-independent: _key hashes the stored relative cwd ".", never an absolute path."""
+regeneration. ids are machine-independent: _key hashes the stored cwd "" (the home folder), never an absolute path.
+Run in the repo, a variant's verdict changed with the tree: Foreman's main checkout is protected core, a builder's
+worktree is not."""
 import base64
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))  # plugin/tests/fixtures
@@ -30,7 +34,7 @@ for p in (os.path.join(REPO, "plugin", "lib"), os.path.join(REPO, "site")):
 import fmreplay  # noqa: E402
 from bench_safety import DANGEROUS, EVERYDAY, SNAPSHOT  # noqa: E402
 
-CWD = "."  # stored relative to the repo root, so the committed corpus and its ids are machine-independent
+CWD = ""  # the home folder (the guard's default): outside Foreman's protected checkout and the same on every machine
 
 
 def _split1(cmd):
@@ -59,12 +63,15 @@ def var_indirect(cmd):
     return f"C={head}; $C {rest}".rstrip()
 
 
+_COMPOUND = re.compile(r"[|&;<>]")  # an array or env -S holds one simple command; a pipe or list stays outside it
+
+
 def array_indirect(cmd):
-    return f'a=({cmd}); "${{a[@]}}"'
+    return None if _COMPOUND.search(cmd) else f'a=({cmd}); "${{a[@]}}"'
 
 
 def env_s(cmd):
-    return f"env -S {cmd}"
+    return None if _COMPOUND.search(cmd) else f"env -S {cmd}"
 
 
 def func_def(cmd):
@@ -87,33 +94,28 @@ def base64_sh(cmd):
     return f"echo {base64.b64encode(cmd.encode()).decode()} | base64 -d | sh"
 
 
-# Name-obfuscation keeps the same program and (for a snapshot command) its snapshot-protected execution path;
-# shell-rerouting spawns a fresh shell/decoder, so it is a different execution that a snapshot would not cover.
-NAME_OBFUSCATION = [quote_split, backslash, dollar_quote, var_indirect, array_indirect, env_s, func_def]
-SHELL_REROUTE = [eval_literal, here_string, script_file, base64_sh]
 QUOTING = [quote_split, backslash, dollar_quote, var_indirect, array_indirect]
+EVERY = QUOTING + [env_s, func_def, eval_literal, here_string, script_file, base64_sh]
+_ASSIGN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
 def _rows():
     """(transform name, original command, variant, label) in a fixed order.
 
-    A command the guard blocks gets every transform (block is correct however it is spelled). A snapshot command,
-    which the guard allows because Foreman snapshots first, gets only name-obfuscation: routing it through a fresh
-    shell is not the snapshot-protected command, so a block there is correct, not an over-broad refusal. Everyday
-    commands get the quoting transforms only."""
+    A dangerous command gets every transform (block is correct however it is spelled); everyday commands get the
+    quoting transforms only. A command led by NAME=value skips the quoting ones: bash runs a quoted, escaped or
+    expanded assignment as a command name, so those variants are a harmless 'command not found', not the command."""
     rows = []
     for _, cmd in DANGEROUS:
         if cmd in SNAPSHOT:
-            transforms, label = NAME_OBFUSCATION, "allow"
-        else:
-            transforms, label = NAME_OBFUSCATION + SHELL_REROUTE, "block"
-        for t in transforms:
-            v = t(cmd)
+            continue
+        for t in EVERY:
+            v = None if t in QUOTING and _ASSIGN.match(cmd) else t(cmd)
             if v:
-                rows.append((t.__name__, cmd, v, label))
+                rows.append((t.__name__, cmd, v, "block"))
     for cmd in EVERYDAY:
         for t in QUOTING:
-            v = t(cmd)
+            v = None if _ASSIGN.match(cmd) else t(cmd)
             if v:
                 rows.append((t.__name__, cmd, v, "allow"))
     return rows
@@ -123,14 +125,22 @@ def _why(tname, orig, label, got):
     if got == label:
         return f"{tname} of {orig!r} stays {label}"
     way = "reaches a dangerous command past the guard" if label == "block" else "over-broad refusal"
-    extra = " (allowed by design: Foreman snapshots first)" if orig in SNAPSHOT else ""
-    return f"{tname} of {orig!r}{extra} should {label} but the guard says {got}: {way}"
+    return f"{tname} of {orig!r} should {label} but the guard says {got}: {way}"
+
+
+def home_in_a_repo():
+    """The corpus runs from the home folder; one inside a git tree (a dotfiles repo) is a project to the guard."""
+    import fmguard
+    return fmguard.project_root_for(os.path.expanduser("~"), os.path.expanduser("~")) is not None
 
 
 def build():
     """(guard_evasions.jsonl text, guard_gaps.jsonl text). Runs every variant past the current guard."""
     rows = _rows()
     cwd_abs = fmreplay.resolve_cwd(CWD)
+    if home_in_a_repo():
+        raise SystemExit(f"{cwd_abs} is inside a git tree, so the guard judges the corpus as a project: "
+                         "regenerate on a machine whose home folder isn't")
     verdicts = fmreplay.verdicts([(v, cwd_abs) for _, _, v, _ in rows])
     corpus, gaps = [], []
     for tname, orig, v, label in rows:

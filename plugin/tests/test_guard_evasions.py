@@ -23,6 +23,7 @@ CORPUS = os.path.join(FIX, "guard_evasions.jsonl")
 GAPS = os.path.join(FIX, "guard_gaps.jsonl")
 
 
+@unittest.skipIf(gen_evasions.home_in_a_repo(), "the home folder is inside a git tree: the guard judges it a project")
 class GuardEvasions(unittest.TestCase):
     def _cases(self, path):
         cases, broken = fmreplay.load_cases(path)
@@ -56,8 +57,12 @@ class GuardEvasions(unittest.TestCase):
         by_id = {g["id"]: g for g in gaps}
         for d in drifted:
             self.assertEqual(d["got"], by_id[d["id"]]["got"], f"stored got is stale for {d['cmd']!r}")
-        # every listed gap is a dangerous command the guard lets through (block mislabelled allow), never the reverse
-        self.assertTrue(all(g["should"] == "block" and g["got"] == "allow" for g in gaps))
+        # a gap is a dangerous command let through or, outside a project (the corpus runs from home), an everyday one
+        # refused once obfuscated: the guard can't see which tree a hidden rm or git writes to, so it says no
+        self.assertTrue(all(g["got"] != g["should"] for g in gaps))
+        known = ("-rf build/", "checkout -b fix/login")
+        self.assertEqual([g["cmd"] for g in gaps if g["should"] == "allow" and not any(k in g["cmd"] for k in known)],
+                         [], "a new over-broad refusal")
 
 
 if __name__ == "__main__":
