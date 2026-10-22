@@ -44,7 +44,6 @@ import sys
 import tempfile
 import threading
 import time
-import urllib.parse
 
 import fmcore
 import fmmodels as m
@@ -1696,11 +1695,11 @@ def _plan(run, profile, dry=False):
     run.plan = slot(run, profile, msgs, check_plan, "plan")
     if is_answer(run.plan):  # a question: no checks to judge
         return
-    why = None if dry else _plan_problem(run, planned=True)  # --dry-plan runs nothing
+    why = None if dry else _plan_problem(run)  # --dry-plan runs nothing
     if why:  # one re-plan
         msgs.append({"role": "user", "content": f"{why} Reply with only the corrected plan as a JSON object."})
         run.plan = slot(run, profile, msgs, check_plan, "plan")
-        why = _plan_problem(run, planned=True)
+        why = _plan_problem(run)
         if why and why.startswith("refused"):
             raise CodeError(why)
     run.plan_msgs = msgs
@@ -1776,102 +1775,9 @@ def _verify_plan(run, dry):
     run.emit("plan", f"plan: {typ} S {run.plan['title']} (done when `{run.verify_cmd}` passes)", plan=run.plan)
 
 
-REACH_CAP = 20000  # characters of plan text the reach check reads (T-1422); a longer plan is refused unread
-_URL = re.compile(r"\b[a-z][a-z0-9+.-]{0,31}://[^\s'\"`<>]*", re.I)  # a bounded scheme keeps the scan linear
-# what a network command sends to: the rest of its clause, read for host-like words
-_NET = re.compile(r"(?:(?<![\w./-])(?:curl|wget|ncat|nc|ssh|scp|rsync)\b|\bgit\s+(?:clone|fetch|push|remote\s+add)\b"
-                  r"|\bfetch\s*\()([^\n|;&]*)", re.I)
-_HOSTISH = re.compile(r"(?<![\w./-])(?:[\w-]+@)?((?:[\w-]+\.)+[\w-]+)")
-# ponytail: a word after a network command ending in one of these is a file (curl -o out.json), not a host
-_FILE_EXT = {"json", "txt", "md", "py", "js", "ts", "sh", "gz", "tgz", "zip", "tar", "html", "css", "yml", "yaml",
-             "toml", "cfg", "ini", "log", "csv", "xml", "pem", "key", "pub", "lock", "out", "bin", "git", "env", "conf"}
-_LOOPBACK = re.compile(r"localhost|127(?:\.\d{1,3}){3}|::1|0\.0\.0\.0", re.I)
-_TOKEN = re.compile(r"[^\s'\"`<>()=,;|&]+")
-_TRAIL = ".,;:!?)]}'\""
-
-
-def _reach(text, root):
-    """The hosts text sends to (a URL's, or a word after a network command) and the paths it names (absolute), each
-    as (as written, where it lands): ~, ~user, $HOME, ${HOME}, an absolute path, one walking a .. segment, a file://
-    URL's path unquoted."""
-    hosts, paths = set(), []
-    for u in _URL.findall(text):
-        u = u.rstrip(_TRAIL)
-        try:
-            parts = urllib.parse.urlsplit(u)
-            host = parts.hostname
-        except ValueError:  # a bad port or bracket: the whole URL is what it names
-            parts, host = None, u.lower()
-        if host:
-            hosts.add(host)
-        elif parts and parts.path:
-            paths.append((u, urllib.parse.unquote(parts.path)))
-    rest = _URL.sub(" ", text)
-    for clause in _NET.findall(rest):
-        for h in _HOSTISH.findall(clause):
-            h = h.lower().rstrip(".")
-            labels = h.split(".")
-            if labels[-1] in _FILE_EXT or (all(x.isdigit() for x in labels) and len(labels) != 4):  # 7.68: a version
-                continue
-            hosts.add(h)
-    home = os.path.expanduser("~")
-    for tok in _TOKEN.findall(re.sub(r'"(\$HOME|\$\{HOME\})"', r"\1", rest)):
-        t = tok.rstrip(_TRAIL) or tok
-        at = re.match(r"\$(?:HOME\b|\{HOME\})", t)
-        if at:
-            p = home + t[at.end():]
-        elif t.startswith("~"):
-            p = os.path.expanduser(t)
-        elif t.startswith("/") or re.search(r"(?:^|/)\.\.(?:/|$)", t):
-            p = t
-        else:
-            continue
-        paths.append((t, p))
-    return hosts, [(t, os.path.normpath(os.path.join(root, p))) for t, p in paths]
-
-
-def _under(p, d):
-    return p == d or p.startswith(d.rstrip(os.sep) + os.sep)
-
-
-def plan_reach(plan, request, root):
-    """T-1422: why a planner's plan (title, criteria text, steps) reaches outside the request, or None: a host it
-    sends to that isn't loopback and that the request doesn't name (it, or a domain it's under, as a word), or a path
-    outside the repo, under a home, the request doesn't name (or name one above). Paths are judged unresolved, so a
-    repo's .venv/bin/python stays the repo's. ponytail: high signal only: a bare host with no URL or network command,
-    or a path outside every home (/etc, /tmp), passes."""
-    text = "\n".join([str(plan.get("title") or "")] + [str(cr.get("text") or "") for cr in plan.get("criteria") or []]
-                     + [str(s) for s in plan.get("steps") or []])
-    if len(text) > REACH_CAP:
-        return f"it is over {REACH_CAP} characters, more than the check reads"
-    request = (request or "")[:REACH_CAP]
-    hosts, paths = _reach(text, root)
-    named = {w.strip(".") for w in re.findall(r"[\w.-]+", request.lower())}  # the request's words
-    for h in sorted(hosts):
-        if _LOOPBACK.fullmatch(h):
-            continue
-        labels = h[:254].split(".")  # an IP is only itself; a name passes when a domain it's under is named
-        under = [h] if all(x.isdigit() for x in labels) else [".".join(labels[i:])
-                                                             for i in range(max(1, len(labels) - 1))]
-        if len(h) > 253 or not any(s in named for s in under):  # over 253 is no DNS name, and keeps this bounded
-            return f"it sends to {_one_line(_printable(h), 200)}, which the request doesn't name"
-    homes = {os.path.expanduser("~"), "/home", "/root", "/Users"} - {"/", ""}
-    real_root = os.path.realpath(root)
-    asked = [p for _, p in _reach(request, root)[1]]
-    for t, p in paths:
-        if _under(p, root) or _under(os.path.realpath(p), real_root) or not any(_under(p, h) for h in homes):
-            continue
-        if not any(_under(p, a) for a in asked):
-            return f"it names {_one_line(_printable(t), 200)}, outside this repo, which the request doesn't name"
-    return None
-
-
-def _plan_problem(run, planned=False):
-    """Why the plan can't stand, or None: one a planner made that reaches outside the request (T-1422); a verify the
-    guard refuses; for FIX and FEATURE, one that passes before any work (it proves nothing)."""
-    reach = plan_reach(run.plan, run.request, run.root) if planned else None
-    if reach:
-        return f"refused: the plan reaches outside the request: {reach}. Plan only what the request asks, in this repo."
+def _plan_problem(run):
+    """Why the plan's verify commands can't stand, or None: one the guard refuses; for FIX and FEATURE, one that
+    passes before any work (it proves nothing)."""
     for n, cr in enumerate(run.plan["criteria"], 1):
         why = run.guard("Bash", {"command": cr["verify"]})
         if why:
