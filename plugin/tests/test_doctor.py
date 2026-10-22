@@ -118,6 +118,17 @@ class Checks(unittest.TestCase):
         self.write("cache/foreman-ui/0.4.0/hooks/register.tsx", "new panels\n")  # released: the same code
         self.assertEqual(d.check_mod_release(repo, listing).status, "PASS")
         self.assertEqual(d.check_mod_release(repo, os.path.join(self.t, "none.json")).status, "PASS")  # not installed
+        # T-1451: a directory marketplace is read in place (claude plugin list: "Read from" the checkout), so the
+        # stale cache record isn't what any session draws
+        self.write("cache/foreman-ui/0.4.0/hooks/register.tsx", "old rows\n")
+        self.write("home/.claude/plugins/known_marketplaces.json", json.dumps(
+            {"foreman": {"source": {"source": "directory", "path": repo + "/"}}}))
+        r = d.check_mod_release(repo, listing)
+        self.assertEqual(r.status, "PASS", r.detail)
+        self.assertIn("in place", r.detail)
+        self.write("home/.claude/plugins/known_marketplaces.json", json.dumps(
+            {"foreman": {"source": {"source": "github", "repo": "x/foreman"}}}))
+        self.assertEqual(d.check_mod_release(repo, listing).status, "WARN")
 
     def test_a_busy_machine_skips_hook_timing(self):
         # T-0367: at load 35 JARVIS spent 21 s on 136 timed hook runs, and slow numbers there say nothing of the hooks

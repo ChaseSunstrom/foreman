@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm doctor` no longer warns that foreman-ui is out of date when Claude Code reads it in place from this checkout (a directory marketplace); the old cache record it compared against is never loaded (T-1451).
 - Hooks: one note that fails to build (a full disk) no longer drops every other note of that tool call, and unread mail shows again next call instead of being lost (T-1449).
 
 ## 1.2.50 — 2026-10-21
