@@ -5,7 +5,7 @@ description: Use when a Foreman stage needs a proven procedure: refactors, perf,
 
 # Foreman playbooks
 
-On-demand procedures, ported with attribution from ECC (MIT; see `plugin/THIRD_PARTY_LICENSES.md`). Read only the file you need. They supplement the Foreman loop and never override it: Foreman's evidence rule, `fm` state, the guard and the focus lock still apply. Where a playbook mentions an ECC agent, command, hook or script, use the Foreman equivalent: planning → `/foreman:intake`; review agents → `foreman:fm-reviewer` or the checklist itself; security review → `/security-review` plus `references/security/security-review.md`; TDD → `../intake/references/regression-test.md`; session save/resume → `fm checkpoint` / `/foreman:resume`; compaction hygiene → Foreman's PreCompact checkpoint.
+On-demand procedures, ported with attribution from ECC (MIT; see `plugin/THIRD_PARTY_LICENSES.md`). Load only the one you need: `fm playbooks show PATH` adds this project's facts and overlay. They supplement the Foreman loop and never override it: Foreman's evidence rule, `fm` state, the guard and the focus lock still apply. Where a playbook mentions an ECC agent, command, hook or script, use the Foreman equivalent: planning → `/foreman:intake`; review agents → `foreman:fm-reviewer` or the checklist itself; security review → `/security-review` plus `references/security/security-review.md`; TDD → `../intake/references/regression-test.md`; session save/resume → `fm checkpoint` / `/foreman:resume`; compaction hygiene → Foreman's PreCompact checkpoint.
 
 Core debugging, regression-test and verification procedures live with intake: `../intake/references/debugging.md`, `../intake/references/regression-test.md`, `../intake/references/verification.md`.
 
