@@ -90,6 +90,40 @@ class Command(ForemanTestCase):
         self.env = {"HOME": self.uhome, "CLAUDECODE": "", "CLAUDE_CODE_ENTRYPOINT": ""}  # the user's own terminal
         self.claude = dict(self.env, CLAUDECODE="1")  # inside a Claude Code session: the guard decides
 
+    def term(self, *args):
+        """fm run as the user's own terminal runs it: stdin and stdout a pty, the Claude Code variables blank (T-1572:
+        with no terminal the guard decides, whatever the variables say)."""
+        import pty
+        import subprocess
+        import sys
+        from helpers import FM
+        env = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_INHIBITED="1", **self.env)
+        env.pop("CLAUDE_CODE_SESSION_ID", None)
+        main, sub = pty.openpty()
+        try:
+            p = subprocess.run([sys.executable, FM, *args], cwd=self.repo, env=env, stdin=sub, stdout=sub,
+                               stderr=subprocess.PIPE, text=True, timeout=30)
+        finally:
+            os.close(sub)
+        out = b""
+        while True:  # what it printed waits in the pty; EIO once it's read
+            try:
+                chunk = os.read(main, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            out += chunk
+        os.close(main)
+        self.assertEqual(p.returncode, 0, f"fm {' '.join(args)}\n{out.decode(errors='replace')}{p.stderr}")
+        return out.decode(errors="replace")
+
+    def test_blank_claude_variables_with_no_terminal_still_go_through_the_guard(self):
+        p = self.fm("settings", "set", "mascot", "orange", env=self.env, check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("guard", p.stdout + p.stderr)
+        self.assertEqual(read_text(self.settings), self.before, "settings.json untouched")
+
     def test_list_shows_user_bindings_and_what_the_app_cant_read(self):
         with open(os.path.join(self.home, "tui.toml"), "w") as f:
             f.write('theme = ["x"]\n[keys]\nz = "stop"\n')
@@ -99,7 +133,7 @@ class Command(ForemanTestCase):
         self.assertIn("keys.z", text)
         self.assertIn("theme = ['x']", text, "the bad setting is named, not hidden behind the default")
         self.assertIn("stop", self.fm("settings", "get", "keys.z", env=self.env).stdout)
-        self.fm("settings", "set", "theme", "paper", env=self.env)  # repairs a file the app chokes on
+        self.term("settings", "set", "theme", "paper")  # repairs a file the app chokes on
         self.assertIn('theme = "paper"', read_text(os.path.join(self.home, "tui.toml")))
 
     def test_inside_claude_code_tui_toml_needs_the_guard(self):
@@ -142,7 +176,7 @@ class Command(ForemanTestCase):
         self.assertNotEqual(self.fm("settings", "get", "nosuch", env=self.env, check=False).returncode, 0)
 
     def test_an_app_set_writes_tui_toml_in_place(self):
-        self.fm("settings", "set", "theme", "paper", env=self.env)
+        self.term("settings", "set", "theme", "paper")
         self.assertEqual(read_text(os.path.join(self.home, "tui.toml")), '# mine\nborder = "heavy"\ntheme = "paper"\n')
 
     def test_a_plugin_set_the_guard_protects_prints_the_change_and_writes_nothing(self):
@@ -154,7 +188,7 @@ class Command(ForemanTestCase):
         self.assertEqual(read_text(self.settings), self.before)
 
     def test_in_the_users_terminal_settings_json_is_written(self):
-        self.fm("settings", "set", "mascot", "orange", env=self.env)
+        self.term("settings", "set", "mascot", "orange")
         got = read_json(self.settings)
         self.assertEqual(got["pluginConfigs"]["foreman-ui@foreman"]["options"], {"motion": "calm", "mascot": "orange"})
         self.assertEqual((got["model"], got["pluginConfigs"]["other@m"]), ("x", {"options": {"a": 1}}))
@@ -178,7 +212,7 @@ class Command(ForemanTestCase):
         self.assertEqual(read_text(os.path.join(self.home, "tui.toml")), '# mine\nborder = "heavy"\n')
         self.assertEqual(read_json(os.path.join(other, "settings.json"))["pluginConfigs"]["foreman-ui@foreman"],
                          {"options": {"motion": "off"}})
-        self.fm("settings", "set", "motion", "off", env=self.env)  # the terminal: both
+        self.term("settings", "set", "motion", "off")  # the terminal: both
         self.assertIn('motion = "off"', read_text(os.path.join(self.home, "tui.toml")))
         self.assertEqual(read_json(self.settings)["pluginConfigs"]["foreman-ui@foreman"]["options"]["motion"], "off")
 
@@ -187,6 +221,32 @@ class Command(ForemanTestCase):
             p = self.fm("settings", "set", key, value, "--surface", "plugin", env=self.env, check=False)
             self.assertNotEqual(p.returncode, 0, (key, value))
         self.assertEqual(read_text(self.settings), self.before)
+
+
+class PluginSurface(unittest.TestCase):
+    """T-1574: /foreman:settings runs fm settings (one implementation); the pane re-reads its options on each poll."""
+    ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
+
+    def test_the_command_lists_and_sets_through_fm_settings(self):
+        text = read_text(os.path.join(self.ROOT, "plugin", "commands", "settings.md"))
+        head, _, body = text.partition("\n---\n")
+        self.assertTrue(head.startswith("---\n") and "\ndescription: " in head, "frontmatter with a description")
+        self.assertIn("disable-model-invocation: true", head, "the person's command: no share of the skill listing")
+        for cmd in ("fm settings list", "fm settings get", "fm settings set"):
+            self.assertIn(f"`{cmd}", body, cmd)
+        self.assertIn("$ARGUMENTS", body)
+
+    def test_the_pane_applies_changed_options_on_its_poll(self):
+        mod = os.path.join(self.ROOT, "mods", "foreman-ui")
+        src = read_text(os.path.join(mod, "hooks", "register.tsx"))
+        # a wiring check only: the behaviour's proof is the mod's own test, run by claude plugin test mods/foreman-ui
+        poll = src[src.index("async function pollOptions("):src.index("async function tick(")]
+        tick = src[src.index("async function tick("):src.index("async function gauge(")]
+        self.assertIn("$.config.list()", poll, "the engine's current option values")
+        self.assertIn("applyOptions(", poll)
+        self.assertIn("pollOptions($)", tick, "read on every 2 s poll")
+        tests = read_text(os.path.join(mod, "tests", "foreman-ui.test.tsx"))
+        self.assertIn("applies on the next poll, no restart (T-1574)", tests, "claude plugin test runs the behaviour")
 
 
 if __name__ == "__main__":

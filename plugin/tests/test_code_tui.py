@@ -1846,6 +1846,204 @@ class RunHistory(CodeCase):
         self.assertIn("plan", kinds)
 
 
+class SettingsScreen(unittest.TestCase):
+    """T-1572: the app's settings screen lists fmsettings' one schema (the app's tui.toml and the Claude Code pane's
+    options) and writes through fm settings' own writer."""
+    def setUp(self):
+        import tempfile
+        self.home, self.uhome = tempfile.mkdtemp(), tempfile.mkdtemp()
+        env = {"FOREMAN_HOME": self.home, "HOME": self.uhome, "CLAUDECODE": "", "CLAUDE_CODE_ENTRYPOINT": ""}
+        patch = unittest.mock.patch.dict(os.environ, env)
+        patch.start()
+        self.addCleanup(patch.stop)
+        tty = unittest.mock.patch("fmsettings._interactive", return_value=True)  # the app runs in a terminal
+        tty.start()
+        self.addCleanup(tty.stop)
+        os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        self.toml = os.path.join(self.home, "tui.toml")
+
+    def write(self, text):
+        with open(self.toml, "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def app(self):
+        app = tui().App(tui().load_config()[0], spawn=lambda *a, **k: None)
+        app.key(",")
+        self.assertEqual(app.mode, "settings")
+        return app
+
+    def text(self, app, w=120, h=40):
+        return tui().render(app.state, w, h, app.cfg, app).text()
+
+    def row(self, app, key, **kw):
+        return next(line for line in self.text(app, **kw).splitlines() if f" {key} " in line)
+
+    def keys(self, app):
+        return [(r["surface"], r["key"]) for r in app.items if "head" not in r]
+
+    def test_every_setting_is_listed_by_group_with_value_default_and_badge(self):
+        import fmsettings
+        app = self.app()
+        self.assertEqual(sorted(self.keys(app)), sorted((e["surface"], e["key"]) for e in fmsettings.schema()))
+        heads = [r["head"] for r in app.items if "head" in r]
+        self.assertEqual(heads, list(dict.fromkeys(e["group"] for e in fmsettings.schema())), "one header a group")
+        self.assertNotIn("head", app.items[app.item_index], "the selection starts on a setting")
+        text = self.text(app)
+        self.assertIn("Settings", text)
+        self.assertIn("LOOK", text)
+        line = self.row(app, "border")
+        for want in ("rounded", "NOW"):
+            self.assertIn(want, line)
+        self.assertEqual(line.count("rounded"), 2, "the value and the default")
+        for _ in range(len(app.items)):
+            app.key("j")
+        self.assertIn("IN SECONDS", self.row(app, "mascot"), "the pane reads its options again within seconds")
+        for k in "/nothing-is-called-this":
+            app.key(k)
+        self.assertEqual(app.items, [])
+        self.assertIn("no setting matches", self.text(app))
+
+    def test_search_narrows_and_modified_only_shows_changed_keys(self):
+        self.write('# mine\nmotion = "off"\n')
+        app = self.app()
+        for k in "/pal":
+            app.key(k)
+        self.assertEqual(sorted(self.keys(app)), [("app", "palette"), ("plugin", "palette")])
+        text = self.text(app)
+        self.assertIn("palette", text)
+        self.assertNotIn("border", text)
+        app.key("\x1b")  # Esc in the search clears it
+        self.assertGreater(len(self.keys(app)), 20)
+        app.key("m")
+        self.assertEqual(self.keys(app), [("app", "motion")])
+        line = self.row(app, "motion")
+        self.assertIn("●", line, "changed is marked, not only coloured")
+        self.assertLess(line.index("off"), line.index("full"), "the value, then the default")
+        app.key("m")
+        self.assertGreater(len(self.keys(app)), 20)
+
+    def test_set_line(self):
+        self.write("# my settings\nborder = \"rounded\"  # keep\n")
+        app = self.app()
+        for k in ":set border heavy":
+            app.key(k)
+        self.assertIn(":set border heavy", self.text(app))
+        app.key("\n")
+        with open(self.toml, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "# my settings\nborder = \"heavy\"  # keep\n", "fm settings' writer: in place")
+        self.assertEqual(app.cfg["border"], "heavy", "the app takes it now")
+        self.assertIn("heavy", self.row(app, "border"))
+        self.assertIn("┏", self.text(app), "the screen draws with it")
+        for k in ":set border wobbly\n":
+            app.key(k)
+        self.assertIn("one of", self.text(app))
+        with open(self.toml, encoding="utf-8") as f:
+            self.assertIn('"heavy"', f.read(), "a refused value writes nothing")
+        for k in ":set --surface plugin palette cb\n":
+            app.key(k)
+        with open(os.path.join(self.uhome, ".claude", "settings.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["pluginConfigs"]["foreman-ui@foreman"]["options"], {"palette": "cb"})
+        self.assertEqual(app.cfg["palette"], "default", "the pane's value only: the app's own is unchanged")
+
+    def test_enter_on_a_row_starts_a_set_line_for_it_and_esc_closes(self):
+        app = self.app()
+        app.key("\n")
+        self.assertIn(":set theme night", self.text(app))
+        app.key("\x1b")
+        app.key("\x1b")
+        self.assertEqual(app.mode, "main")
+        app.projects_source = lambda: [{"project": "demo", "root": self.home}]
+        app.show_home()
+        app.key(",")  # fm code app opens on its home: the settings are a key away there too
+        self.assertEqual(app.mode, "settings")
+        app.key("\x1b")
+        self.assertEqual(app.mode, "home")
+
+    def test_any_width_draws_and_rows_keep_their_columns(self):
+        self.write('motion = "off"\n[colors]\nok = "#4DA3FF"\n')
+        app = self.app()
+        for w in (60, 80, 140):
+            lines = self.text(app, w, 30).splitlines()
+            head = next(line for line in lines if "VALUE" in line and "DEFAULT" in line)
+            for key, value, default in (("motion", "off", "full"), ("colors.ok", "#4DA3FF", "#47C98B")):
+                line = next(line for line in lines if f" {key} " in line)
+                self.assertEqual(line.index(value, line.index(key) + len(key)), head.index("VALUE")
+                                 + (3 if key.startswith("colors") else 0), (w, key, "the value under VALUE (a swatch "
+                                                                             "before a colour)"))
+                self.assertEqual(line.rindex(default[:5]), head.index("DEFAULT"), (w, key, "the default under DEFAULT"))
+
+    def test_a_small_terminal_keeps_a_row_and_the_line_being_typed(self):
+        app = self.app()
+        for h in range(8, 15):
+            self.assertIn(" theme ", self.text(app, 80, h), h)
+        for k in ":set x":
+            app.key(k)
+        self.assertIn(":set x", self.text(app, 80, 10))
+
+    def test_a_paste_types_only_printable_characters(self):
+        app = self.app()
+        app.key("/")
+        app.key(("paste", "bo\x1brd\x7fer"))
+        self.assertEqual((app.mode, app.set_typing, app.set_query), ("settings", "search", "border"))
+
+    def test_a_value_nested_past_the_parsers_depth_is_refused_not_a_crash(self):
+        import fmsettings
+        for k in ":set layout.widths " + "[" * 600 + "\n":
+            app = getattr(self, "_app", None) or self.app()
+            self._app = app
+            app.key(k)
+        self.assertEqual(app.set_note[1], "bad")
+        self.assertFalse(os.path.exists(self.toml))
+        with self.assertRaises(fmsettings.SettingError):
+            fmsettings.set_app("layout.widths", "[" * 600)
+
+    def test_a_value_the_file_already_gets_wrong_is_still_refused(self):
+        self.write("[layout]\nwidths = [50]\n")
+        app = self.app()
+        for k in ":set layout.widths [10, 20, 30]\n":
+            app.key(k)
+        self.assertEqual(app.set_note[1], "bad", app.set_note)
+        with open(self.toml, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "[layout]\nwidths = [50]\n")
+
+    def test_inside_claude_code_the_guard_decides_a_set(self):
+        os.environ["CLAUDECODE"] = "1"
+        app = self.app()
+        for k in ":set border heavy\n":
+            app.key(k)
+        self.assertEqual(app.set_note[1], "bad")
+        self.assertIn("guard", app.set_note[0])
+        self.assertFalse(os.path.exists(self.toml), "nothing written")
+
+    def test_blank_claude_variables_without_a_terminal_still_ask_the_guard(self):
+        import fmsettings
+        settings = os.path.join(self.uhome, ".claude", "settings.json")
+        with unittest.mock.patch("fmsettings._interactive", return_value=False):
+            self.assertTrue(fmsettings.in_claude_code(), "no terminal: an agent's shell, whatever its variables say")
+            with self.assertRaises(fmsettings.SettingError) as e:
+                fmsettings.set_plugin("motion", "off")
+        self.assertIn("guard", str(e.exception))
+        self.assertFalse(os.path.exists(settings))
+        self.assertFalse(fmsettings.in_claude_code(), "the user's own terminal writes directly")
+
+    def test_leaving_settings_returns_to_the_view_it_came_from_where_it_was(self):
+        app = self.app()
+        app.key("\x1b")
+        app.projects_source = lambda: [{"project": n, "root": self.home} for n in ("a", "b", "c")]
+        app.state_source = lambda p: {"queue": [{"id": "T-0001", "title": "x"}, {"id": "T-0002", "title": "y"}]}
+        app.show_home()
+        app.key("j")
+        app.key("j")
+        app.key(",")
+        app.key("\x1b")
+        self.assertEqual((app.mode, app.item_index), ("home", 2), "the home keeps its cursor")
+        app.key("\n")
+        app.key("j")
+        app.key(",")
+        app.key("\x1b")
+        self.assertEqual((app.mode, app.item_index), ("project", 1))
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
