@@ -2174,6 +2174,8 @@ class TokenFallback(GuardCase):
                 self.assertEqual(g._strip_comments(text), want)
         self.assertEqual(g._pieces(")\">~/x"), [")", '"', ">", "~/x"])
         self.assertEqual(g._pieces("'a'2>&1"), ["'a'", "2", ">", "&", "1"])
+        self.assertEqual(g._pieces("'x'`cmd`>~/.bashrc"), ["'x'`cmd`", ">", "~/.bashrc"])  # re-review: after a `
+        self.assertBlocked(self.bash("echo 'x'`cmd`>~/.bashrc"), "system")
         self.assertEqual(g._pieces("'$1>4000"), ["'$1>4000"])  # a > after a quote's text is text (debris)
 
     def test_deep_nesting_is_masked_in_linear_time(self):

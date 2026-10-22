@@ -1260,11 +1260,11 @@ def _mask_nested_dq(text):
 def _pieces(piece):
     """One space-split piece of an unparseable line as the words the first reading takes from it: split at ; & | ( ),
     and a redirect from its target too (>~/.bashrc is no plain word: re-review). In a piece holding a quote only a
-    leading redirect and one right after a quote or ) ("$(…)">~/.bashrc: re-review): a < or > inside its quoted text is
+    leading redirect and one right after a quote, ) or ` ("$(…)">~/.bashrc: re-review): a < or > inside its quoted text is
     text as often as not (awk '$1>4000', the debris rule, T-0982)."""
     if not re.search(r"['\"\\]", piece):
         return re.sub(r"(&?[<>]+[&|(]?|[;&|()])", r" \1 ", piece).split()
-    piece = re.sub(r"(?<=[\"')])(\d*)(&?[<>]+)", r" \1 \2 ", re.sub(r"^(&?[<>]+)(?=.)", r"\1 ", piece))
+    piece = re.sub(r"(?<=[\"')`])(\d*)(&?[<>]+)", r" \1 \2 ", re.sub(r"^(&?[<>]+)(?=.)", r"\1 ", piece))
     return re.sub(r"([;&|()])", r" \1 ", piece).split()
 
 
