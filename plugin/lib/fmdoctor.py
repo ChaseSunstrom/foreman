@@ -1804,6 +1804,16 @@ def check_fsck(projects=None):
         if found else Result("fsck", "PASS", "no broken lanes, stale locks or torn journals")
 
 
+def check_landlock():
+    """T-1607: whether fm code workers can be confined (Landlock); unavailable is a note, never a failure."""
+    import fmlandlock
+    ok, why = fmlandlock.available()
+    if os.environ.get("FOREMAN_CONFINE") == "0":
+        return Result("worker confinement", "PASS", "off (FOREMAN_CONFINE=0)")
+    return Result("worker confinement", "PASS", f"Landlock {why}: fm code workers write only in their tree" if ok
+                  else f"not available ({why}): fm code workers run unconfined, as before")
+
+
 def cmd_fsck(args):
     here = getattr(args, "project", None) or getattr(c.find_project(os.getcwd()), "slug", None)
     found = fsck(here=here)
@@ -1856,6 +1866,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_heartbeats(projects))
     results.append(check_state_size(projects))
     results.append(check_fsck(projects))
+    results.append(check_landlock())
     brief_results = [check_briefs(p) for p in projects]
     worst = next((s for s in ("FAIL", "WARN") if any(r.status == s for r in brief_results)), "PASS")
     results.append(Result("briefs", worst, "; ".join(r.detail for r in brief_results if r.status != "PASS")

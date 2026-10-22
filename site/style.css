@@ -78,8 +78,15 @@ h3 { font-size: 1.45rem; font-weight: 600; line-height: 1.1; }
 .hero .lede { font-size: clamp(1.12rem, 1.7vw, 1.3rem); color: var(--ink-2); max-width: 58ch; margin: 22px 0 30px; }
 /* T-1609: the proof-chain poster build.py draws from data/stats.json: .points' diamonds on a quiet track, labels set
    like a .stamp; under 720px the 2x2 (labels stay ~13px at 320px, nothing clips) */
-.poster { width: 100%; max-width: 900px; height: auto; margin-top: clamp(28px, 5vw, 48px); }
-.poster.compact { display: none; max-width: 480px; }
+.poster { width: 100%; height: auto; }
+.poster.compact { display: none; }
+/* T-1610: the scene's canvas over the poster, the same box: it fades in on its first frame and only then do the
+   poster's diamonds and track step aside (its numbers and labels stay); any other state is the poster */
+.hero-scene { position: relative; max-width: 900px; margin-top: clamp(28px, 5vw, 48px); }
+.hero-scene canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
+.hero-scene[data-state="live"] canvas { opacity: 1; transition: opacity .4s ease-out; }
+.hero-scene[data-state="live"] .poster :is(.st, .track) { visibility: hidden; transition: visibility 0s .4s; }
+@media (max-width: 719px) { .hero-scene { max-width: 480px; } }
 .poster .track { stroke: var(--rule); stroke-width: 4; stroke-linecap: round; }
 .poster .st { fill: var(--signal); }
 .poster .kick { font: 600 20px var(--sans); fill: var(--ink-2); }
