@@ -181,6 +181,7 @@ class Command(ForemanTestCase):
         p = self.fm("settings", "list", "nope", env=self.env, check=False)
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("keys", p.stdout + p.stderr, "the groups it takes are named")
+        self.assertIn("list: a group", " ".join(self.fm("settings", "--help", env=self.env).stdout.split()))
         body = read_text(os.path.join(PluginSurface.ROOT, "plugin", "commands", "settings.md"))
         for cmd in ("fm settings list keys", "fm settings list layout", "fm code runners --check"):
             self.assertIn(f"`{cmd}", body, cmd)

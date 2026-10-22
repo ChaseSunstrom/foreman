@@ -1299,8 +1299,13 @@ _WHERE = {"app": "this app · tui.toml · applies now", "plugin": "the foreman-u
                                                                 "applies within seconds"}
 _SET_HINTS = (("/", "search"), ("m", "changed only"), (":", "set"), ("Enter", "edit"), ("b", "bind a key"),
               ("l", "layout"), ("r", "runners"), ("Esc", "close"))
-# T-1511: keys b never binds: the ones the app keeps for itself (any key bound to settings too), and what each does
+# T-1511: keys b never binds: the ones the app keeps for itself, and what each does; a key tui.toml moved one of KEPT
+# to is kept too, and the last key for one of LAST isn't bound away
 RESERVED = {"q": "quit", "\x1b": "back", "^C": "quit", "?": "help", "z": "hush"}
+KEPT, LAST = ("quit", "help", "hush", "settings"), ("up", "down", "expand", "focus")
+# in a list the arrows, PgUp/PgDn and Enter always move and open, whatever tui.toml binds them to (none locked out)
+LIST_KEYS = {"KEY_UP": "up", "KEY_DOWN": "down", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "\n": "expand",
+             "\r": "expand", "KEY_ENTER": "expand"}
 PREVIEW_KEYS, PREVIEW_SECONDS = ("theme", "palette", "motion"), 10  # T-1573: shown at once, written only when kept
 
 
@@ -1405,8 +1410,13 @@ def _layout_view(cv, st, app, cfg):
     """T-1511: the columns side by side as the screen has them, the picked panel highlighted; the screen behind (in
     shade) already draws each move."""
     cols = cfg["layout"]["columns"]
-    at = app._lay_pos()
-    iy, ix, ih, iw = _overlay(cv, cfg, "Layout", "Esc back", max(48, 20 * len(cols) + 4), max(map(len, cols)) + 7)
+    at, below = app._lay_pos(), max(int(cfg["layout"].get("narrow_below", 80)), SINGLE_BELOW)
+    narrow = cv.w < below  # the screen shows layout.narrow (or the log alone): a move here shows only when wider
+    iy, ix, ih, iw = _overlay(cv, cfg, "Layout", "Esc back", max(48, 20 * len(cols) + 4),
+                              max(map(len, cols)) + 7 + 3 * narrow)
+    say = f"below {below} columns the screen draws layout.narrow; a move shows once it is wider"
+    for n, line in enumerate(wrap(say, max(1, iw))[:2] if narrow else []):
+        cv.line(iy + ih - 4 + n, ix, [(line, "warn")], ix + iw)
     cw = max(1, iw // len(cols))
     for n, names in enumerate(cols):
         x = ix + n * cw
@@ -1567,6 +1577,7 @@ class App:
         self.set_pending = None  # T-1573: a previewed look: key, value, surface, the cfg before it, until when
         # T-1511: the layout editor's picked panel (column, row); the runner test going and whether one just ended
         self.lay_at, self.runner_test, self.runner_done, self.set_back = (0, 0), None, False, None
+        self.runner_proc = None  # the CLI a runner test started: stop() ends its process group with the app
         self.home_items, self.home_index = None, 0  # the home list a view over it goes back to
         self.commands = {"quit": self.quit, "new": self.new, "stop": self.stop, "resume": self.resume,
                          "help": self.help, "focus": self.next_focus, "up": lambda: self.move(-1),
@@ -1640,8 +1651,12 @@ class App:
         fn = self.commands.get(self.cfg["keys"].get(k))
         return fn() if fn else None
 
+    def _list_cmd(self, k):
+        """What a key runs in a list: LIST_KEYS first, then tui.toml's binding."""
+        return LIST_KEYS.get(k) or self.cfg["keys"].get(k)
+
     def _view_key(self, k):
-        cmd = self.cfg["keys"].get(k)
+        cmd = self._list_cmd(k)
         step = {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
         if k in ("\x1b", "q") or cmd == {"diff": "diff", "history": "history", "picker": "model"}[self.mode]:
             self._back()
@@ -1736,6 +1751,12 @@ class App:
         self.follow, self.selected = True, None
 
     def stop(self):
+        p = self.runner_proc  # T-1511: a runner test's CLI (its own session) ends with the app: q, a crash, a hangup
+        if p is not None and p.poll() is None:
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except OSError:
+                pass
         if self.running():
             try:
                 os.killpg(self.child.pid, signal.SIGTERM)
@@ -1797,7 +1818,7 @@ class App:
         self.items, self.item_index, self.mode = rows, 0, "project"
 
     def _home_key(self, k):
-        cmd = self.cfg["keys"].get(k)
+        cmd = self._list_cmd(k)
         step = {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
         item = self.items[self.item_index] if self.items else None
         if step:
@@ -1921,7 +1942,7 @@ class App:
     def _settings_key(self, k):
         if self.set_typing == "bind":  # T-1511: whatever key comes next is the one bound, an arrow too
             return self._settings_bind(k)
-        cmd = self.cfg["keys"].get(k)
+        cmd = self._list_cmd(k)
         moves = {"KEY_UP": -1, "KEY_DOWN": 1, "KEY_PPAGE": -10, "KEY_NPAGE": 10}
         step = moves.get(k) if self.set_typing else {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
         if step:
@@ -2058,14 +2079,27 @@ class App:
         elif not name or k not in (parse_key(name) or ()):
             self.set_note = (f"{'a paste' if isinstance(k, tuple) else _escaped(str(k))} can't be named in tui.toml "
                              f"(a letter, ctrl+x, f1-f12, {', '.join(KEY_ALIASES)}): nothing bound", "bad")
-        elif RESERVED.get(k) or self.cfg["keys"].get(k) == "settings":
-            self.set_note = (f"{name} is the app's own key ({RESERVED.get(k) or 'settings'}): nothing bound; pick "
-                             "another", "bad")
+        elif self._kept(k):
+            self.set_note = (f"{name} is the app's own key ({self._kept(k)}): nothing bound; pick another", "bad")
+        elif self._last(k, name) not in (None, r["value"]):
+            self.set_note = (f"{name} is the last key for {self._last(k, name)}: bind another key to it first; "
+                             "nothing bound", "bad")
         else:
             was = self.cfg["keys"].get(k)
             self._settings_write(f"keys.{name}", r["value"], "app")
             if was and was != r["value"] and self.set_note[1] == "ok":
                 self.set_note = (f"{self.set_note[0]}; it ran {was} before", "ok")
+
+    def _kept(self, k):
+        """What a key the app keeps for itself does (RESERVED, or a KEPT command tui.toml bound it to), or None."""
+        cmd = self.cfg["keys"].get(k)
+        return RESERVED.get(k) or (cmd if cmd in KEPT else None)
+
+    def _last(self, k, name):
+        """The LAST command no key but `k` runs (enter's two keys are one name: neither counts for the other), or
+        None."""
+        cmd, mine = self.cfg["keys"].get(k), parse_key(name)
+        return cmd if cmd in LAST and not any(c == cmd for x, c in self.cfg["keys"].items() if x not in mine) else None
 
     def _lay_pos(self):
         """The picked panel, kept inside the columns as they are now (an undo elsewhere can shorten them)."""
@@ -2106,20 +2140,22 @@ class App:
         name = cols[c].pop(i)
         cols[to].insert(at, name)
         hts[to].insert(at, hts[c].pop(i))
-        try:
-            done, refused = fmsettings.set_keys([("layout.columns", cols), ("layout.heights", hts)], "app")
-        except Exception as e:  # a lock or a write that failed: said, the screen stays
-            done, refused = [], [f"not written ({type(e).__name__}: {e})"]
-        if done:
-            self._settings_reload()
+        try:  # one write: both or neither
+            done = fmsettings.set_apps([("layout.columns", cols), ("layout.heights", hts)])
             self.lay_at = (to, at)
-        self.set_note = ("; ".join(refused) or f"{name} moved: column {to + 1}, row {at + 1}",
-                         "bad" if refused else "ok")
+            self.set_note = (f"{name} moved: column {to + 1}, row {at + 1}" + "".join(
+                f"; now skipped: {w}" for _, _, warn in done for w in warn), "ok")
+        except Exception as e:  # the guard, a value refused, a lock or a write that failed: nothing written
+            self.set_note = (f"app: {e}" if isinstance(e, fmsettings.SettingError) else
+                             f"not written ({type(e).__name__}: {e})", "bad")
+        finally:  # the screen as the file is, whatever happened
+            self._settings_reload()
         return None
 
     def _settings_back(self, keep=None):
-        """From an editor back to the settings list, its values read again, the setting it was opened from selected."""
-        self.mode = "settings_loading"  # the runners' list isn't a selection to keep
+        """From an editor back to the settings list, its values read again, the setting it was opened from selected;
+        the editor's note goes with it."""
+        self.mode, self.set_note = "settings_loading", None  # the runners' list isn't a selection to keep
         self._settings_load(keep)
         self.mode = "settings"
 
@@ -2136,7 +2172,7 @@ class App:
         self.item_index, self.set_note, self.mode = 0, note, "runners"
 
     def _runners_key(self, k):
-        cmd = self.cfg["keys"].get(k)
+        cmd = self._list_cmd(k)
         step = {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
         if k in ("\x1b", "q"):
             self._settings_back(self.set_back and (self.set_back["surface"], self.set_back["key"]))
@@ -2155,7 +2191,8 @@ class App:
 
         def run():
             try:
-                got = fmcode.test_runner(item["name"], cwd=self.root)
+                got = fmcode.test_runner(item["name"], cwd=self.root,
+                                         on_spawn=lambda p: setattr(self, "runner_proc", p))
             except Exception as e:  # not a runner with a command (CodeError), or anything else: its result
                 got = {"ok": False, "said": str(e) if isinstance(e, fmcode.CodeError) else f"{type(e).__name__}: {e}"}
             item.update(result=got, testing=False)

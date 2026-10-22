@@ -930,14 +930,17 @@ def lean_extras(line):
     return [m._shown(str(x))[:80] for x in out]
 
 
-def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, on_idle=None):
+def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, on_idle=None, on_spawn=None):
     """(exit code or None on timeout, output cut to head and tail). Memory stays bounded whatever the command prints;
     its whole process group is killed at the end, and with reap (Linux) whatever it started outside that group too
     (setsid, a double fork): this process is their subreaper, so they come back to it, not to init. on_line and
-    on_idle see its output live (fmcore.pump, T-1329)."""
+    on_idle see its output live (fmcore.pump, T-1329); on_spawn(process) as it starts (T-1511: a caller that ends
+    first can kill its group)."""
     reaping = reap and _subreaper(True)
     p = subprocess.Popen(["bash", "-c", cmd], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, start_new_session=True, env=env)
+    if on_spawn:
+        on_spawn(p)
     head, tail, total = bytearray(), bytearray(), [0]
 
     def sink(chunk):
@@ -1182,7 +1185,7 @@ def worker_argv(spec, prompt, which=True):
 RUNNER_TEST_SECONDS = 10
 
 
-def test_runner(name, timeout=RUNNER_TEST_SECONDS, cwd=None):
+def test_runner(name, timeout=RUNNER_TEST_SECONDS, cwd=None, on_spawn=None):
     """T-1511: a runner tried where it stands (the fm code app's settings screen): its command built as a run builds it
     (worker_argv: the dangerous-flag lint, the lean flags, on PATH), then its CLI asked for --version, bounded by
     `timeout`, with a worker's environment. Only a runner of the registry or code.toml with a work command: any other
@@ -1196,7 +1199,7 @@ def test_runner(name, timeout=RUNNER_TEST_SECONDS, cwd=None):
     try:
         argv = worker_argv(name, "")
         code, out = run_bounded(shlex.join([argv[0], "--version"]), cwd or os.getcwd(), timeout, env=worker_env(),
-                                cap=4096)
+                                cap=4096, on_spawn=on_spawn)
     except (CodeError, OSError) as e:  # not on PATH, a folder gone
         return {"name": name, "ok": False, "said": str(e)}
     first = (out.splitlines() or [""])[0][:120]
