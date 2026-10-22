@@ -146,6 +146,19 @@ class CloseGates(ForemanTestCase):
         self.fm("check", check=False, env={"FOREMAN_SENTINEL_RUN": "1", "FOREMAN_SENTINEL_TREE": "0" * 12})
         self.assertEqual([b for b in c.load_briefs(self.p) if b.meta.get("baseline")], [])
 
+    def test_the_background_sentinel_runs_at_low_priority(self):
+        # T-1463: started at full priority, it competed for CPU with the next task's foreground finish and tests
+        import fmcli
+        from unittest import mock
+        started, real = [], fmcli.subprocess.Popen
+        env = {k: v for k, v in os.environ.items() if k not in ("FOREMAN_SENTINEL", "FOREMAN_NO_BACKGROUND")}
+        # subprocess is shared: only the sentinel's own start is faked, git and the rest run for real
+        fake = lambda argv, **kw: (started.append(argv) or mock.Mock(pid=1)) if "sentinel" in argv else real(argv, **kw)
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(c, "host_strain", lambda: False), \
+                mock.patch.object(fmcli.subprocess, "Popen", fake):
+            self.assertEqual(fmcli._sentinel(self.p), "started")
+        self.assertEqual(started[0][:3], ["nice", "-n", "10"])
+
     def test_only_one_sentinel_runs_at_a_time(self):
         import fmcli
         with open(os.path.join(self.p.dir, "sentinel.pid"), "w") as f:

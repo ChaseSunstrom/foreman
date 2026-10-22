@@ -1132,7 +1132,9 @@ def _sentinel(p):
         finally:
             _unlink(pidf)
         return "ran"
-    pr = subprocess.Popen(["sh", "-c", 'echo $$ > "$1"; "$2" check; rm -f "$1"', "sentinel", pidf, argv[0]],
+    import shutil
+    low = ["nice", "-n", "10"] if shutil.which("nice") else []  # T-1463: never ahead of the next task's own runs
+    pr = subprocess.Popen(low + ["sh", "-c", 'echo $$ > "$1"; "$2" check; rm -f "$1"', "sentinel", pidf, argv[0]],
                           cwd=p.root, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                           stderr=subprocess.DEVNULL, start_new_session=True)
     return "started" if pr.pid else None
