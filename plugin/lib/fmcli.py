@@ -6088,7 +6088,8 @@ def _build_parser():
             help="your taste in looks (T-1537): the twelve ranked by what you kept; keep|revert|not LOOK; calibrate "
                  "(12 A-or-B pairs: a keyboard picker on a terminal, --answers to record); learn PATH… (only files "
                  "you name, read-only, never the network)")
-    s.add_argument("action", nargs="?", choices=["rank", "keep", "revert", "not", "calibrate", "learn"])
+    s.add_argument("action", nargs="?", metavar="rank|keep|revert|not|calibrate|learn",
+                   help="checked by fm looks itself, so a look named here gets the fix (fm looks keep LOOK)")
     s.add_argument("words", nargs="*", metavar="LOOK|PATH")
     s.add_argument("--why", help="keep/revert/not: the user's words")
     s.add_argument("--answers", help="calibrate: 12 answers, a, b or n (neither), comma-separated, in pair order")

@@ -2,6 +2,7 @@
 does: a look kept, reverted or met with 'not like that', twelve A-or-B calibration answers, and the local files the
 user names (read-only, capped, never the network). It ranks the looks by it; the directions skill drafts from the top.
 Stored in Foreman's state (state/taste/looks.json), one file for every project: taste is the user's. Stdlib only."""
+import errno
 import json
 import os
 import re
@@ -12,8 +13,10 @@ import fmcore as c
 
 LOOKS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills", "library", "cards", "looks")
 WEIGHTS = {"kept": 3, "reverted": -3, "not": -2, "learned": 1}  # a calibration pick is +1, the other look -1
+LEARNED_CAP = 3  # a look's learned score at most: a glob of files never outweighs one look the user kept
+VERBS = ("rank", "keep", "revert", "not", "calibrate", "learn")
 PAIRS = 12
-EVENTS_KEEP = 500  # the oldest go first; ponytail: a cap, not decay; weigh recent events more if old taste drags
+EVENTS_KEEP = 500  # learned go first, then the oldest; ponytail: a cap, not decay; weigh recent ones if old taste drags
 WHY_CAP = 200
 SOURCE_CAP = 8 * 1024 * 1024  # bytes read of a named file at most: a photo fits, a disk image doesn't
 IMAGE_PIXELS = 40_000_000  # a photo past this isn't decoded
@@ -62,21 +65,49 @@ def ledger_path():
     return os.path.join(c.state_dir(), "taste", "looks.json")
 
 
-def load():
+def _read():
+    """(the ledger, and the file's bytes when it is there but broken)."""
     try:
-        with open(ledger_path(), encoding="utf-8") as f:
-            data = json.load(f)
+        with open(ledger_path(), "rb") as f:
+            raw = f.read()
+    except OSError:
+        return {"events": []}, None
+    try:
+        data = json.loads(raw)
         if isinstance(data, dict) and isinstance(data.get("events"), list):
-            return data
-    except (OSError, ValueError):
-        pass  # missing, or broken: start over rather than fail every call (the events are taste, not records)
-    return {"events": []}
+            return data, None
+    except ValueError:
+        pass
+    return {"events": []}, raw  # broken: start over rather than fail every call; _append keeps a .bak first
+
+
+def load():
+    return _read()[0]
+
+
+def _learned_key(e):
+    """(look, file name) of a learned event, as text (a hand-edited row stays hashable); None for any other."""
+    if isinstance(e, dict) and e.get("signal") == "learned":
+        return str(e.get("look")), str(e.get("source") or "")
+    return None
+
+
+def _trim(events):
+    """At most EVENTS_KEEP: the oldest learned go first (a file matched is the weakest signal), then the oldest."""
+    over = len(events) - EVENTS_KEEP
+    if over > 0:
+        drop = set([i for i, e in enumerate(events) if _learned_key(e)][:over])
+        events = [e for i, e in enumerate(events) if i not in drop]
+    return events[-EVENTS_KEEP:]
 
 
 def _append(*events):
     with c.lock(os.path.dirname(ledger_path())):
-        data = load()
-        data["events"] = (data["events"] + list(events))[-EVENTS_KEEP:]
+        data, broken = _read()
+        if broken is not None:
+            c.write_atomic(ledger_path() + ".bak", broken)
+        seen = {_learned_key(e) for e in data["events"]} - {None}
+        data["events"] = _trim(data["events"] + [e for e in events if _learned_key(e) not in seen])
         c.write_atomic(ledger_path(), json.dumps(data, indent=1) + "\n")
     return data
 
@@ -99,8 +130,9 @@ def record(signal, look, why="", source=""):
 
 
 def scores(events=None):
-    """look → {score, kept, reverted, not, picked, passed, learned}."""
-    out = {}
+    """look → {score, kept, reverted, not, picked, passed, learned}; learned counts once per file name and look, and
+    LEARNED_CAP times per look at most."""
+    out, learned = {}, set()
 
     def bump(look, key, n):
         r = out.setdefault(look, {"score": 0})
@@ -110,6 +142,10 @@ def scores(events=None):
         if not isinstance(e, dict):
             continue
         if e.get("signal") in WEIGHTS and isinstance(e.get("look"), str):  # a hand-edited file: skip what's odd
+            if _learned_key(e):
+                if _learned_key(e) in learned or out.get(e["look"], {}).get("learned", 0) >= LEARNED_CAP:
+                    continue
+                learned.add(_learned_key(e))
             bump(e["look"], e["signal"], WEIGHTS[e["signal"]])
         elif e.get("signal") == "calibration" and isinstance(e.get("pairs"), list):
             for pair, ans in zip(e["pairs"], str(e.get("answers") or "")):
@@ -159,7 +195,8 @@ def calibrate(answers, rnd=None):
 
 def pick(prs, read_key, write, known=None):
     """The keyboard picker: one key per pair (1 or a, 2 or b, n neither); q, Ctrl-D or end of input stops with
-    nothing kept (None). Any other key is asked again: an arrow's escape sequence (Esc [ A) answers nothing."""
+    nothing kept (None). Any other key is asked again, and an escape sequence is read to its end and answers nothing:
+    Shift+Up is Esc [ 1 ; 2 A and Home Esc [ 1 ~, whose digits are no answer."""
     known = known or looks()
     answers = []
     for i, (a, b) in enumerate(prs):
@@ -168,6 +205,8 @@ def pick(prs, read_key, write, known=None):
               f"  n  neither   q  stop\n> ")
         while True:
             k = read_key()
+            if k == "\x1b":
+                k = _drain(read_key)
             if k in ("", "q", "\x04"):
                 write("\nstopped: nothing recorded\n")
                 return None
@@ -177,6 +216,21 @@ def pick(prs, read_key, write, known=None):
                 answers.append(ans)
                 break
     return answers
+
+
+def _drain(read_key, most=32):
+    """The rest of an escape sequence after Esc (ECMA-48): CSI (Esc [) runs to a final byte @ to ~, SS3 (Esc O)
+    takes one more key, Esc and any other key is an Alt chord. → "" when input ends inside it, else "\\x1b" (no
+    answer). ponytail: a bare Esc on a terminal swallows the next key; the user presses it again."""
+    k = read_key()
+    if k == "[":
+        for _ in range(most):
+            k = read_key()
+            if not k or "@" <= k <= "~":
+                break
+    elif k == "O":
+        k = read_key()
+    return "\x1b" if k else ""
 
 
 def _tty_key():
@@ -195,10 +249,16 @@ def _tty_key():
 
 def read_named(path):
     """The first SOURCE_CAP bytes of a local regular file the user named; never a URL, a folder or a pipe. Opened
-    read-only and non-blocking, then checked, so a swapped-in pipe can't hang it."""
+    read-only and non-blocking, then checked, so a swapped-in pipe can't hang it; a symlink is refused (O_NOFOLLOW):
+    the file read is the one named, not wherever a link points."""
     if re.match(r"(?i)^[a-z][a-z0-9+.-]*://", path):
         raise ValueError("a URL: fm looks learns only from local files you name, never the network")
-    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0))
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0))
+    except OSError as e:
+        if e.errno in (errno.ELOOP, errno.EMLINK):  # Linux and macOS say ELOOP, FreeBSD EMLINK
+            raise ValueError("a symlink: name the file it points to") from None
+        raise
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise ValueError("not a regular file")
@@ -221,9 +281,13 @@ def _image_colours(data):
     except ImportError:
         return None
     import io
-    with Image.open(io.BytesIO(data)) as im:
+    import warnings
+    with warnings.catch_warnings():  # Pillow warns past ~89 megapixels; the check below refuses at 40 anyway
+        warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+        im = Image.open(io.BytesIO(data))  # reads the header only
+    with im:
         if im.size[0] * im.size[1] > IMAGE_PIXELS:  # a small file can unpack huge (a decompression bomb)
-            raise ValueError(f"over {IMAGE_PIXELS // 1_000_000} megapixels")
+            raise ValueError(f"{im.size[0]}x{im.size[1]} is over {IMAGE_PIXELS // 1_000_000} megapixels")
         im.draft("RGB", (64, 64))  # JPEG decodes small; other formats decode whole, bounded by IMAGE_PIXELS
         im = im.convert("RGB")
         im.thumbnail((48, 48))
@@ -266,7 +330,7 @@ def learn(paths):
             try:
                 colours = _image_colours(data)
             except Exception as e:  # a broken or truncated image: say so, learn nothing from it
-                skipped.append({"file": name, "why": f"couldn't read the image: {type(e).__name__}"})
+                skipped.append({"file": name, "why": f"couldn't read the image: {_why(e)[:120] or type(e).__name__}"})
                 continue
             if colours is None:
                 skipped.append({"file": name, "why": "a photo needs Pillow to read (not found; Foreman never "
@@ -304,6 +368,9 @@ def cmd_looks(args):
     import fmcli
     action, words = args.action or "rank", list(args.words or [])
     try:
+        if action not in VERBS:  # a look where the verb goes (fm looks lido): the verbs, and the likely fix
+            raise ValueError(f"fm looks {action}: not a verb; one of {', '.join(VERBS)} "
+                             f"(to record a look you kept: fm looks keep {action})")
         if action == "rank":
             rows = rank()
             return fmcli.out(args, {"looks": rows, "ledger": ledger_path()}, _rank_text(rows))
@@ -316,9 +383,10 @@ def cmd_looks(args):
             if not words:
                 raise ValueError("fm looks learn PATH…: name the pages, photos or files to learn from")
             got = learn(words)
-            return fmcli.out(args, got, "\n".join(
+            fmcli.out(args, got, "\n".join(
                 [f"Learned: {x['file']} → {x['look']} ({x['votes']} matches)" for x in got["learned"]]
                 + [f"Skipped: {x['file']}: {x['why']}" for x in got["skipped"]]))
+            return 0 if got["learned"] else 1  # every file skipped: nothing learned
         # calibrate
         rnd = rounds_done() if args.round is None else args.round
         if args.answers:
