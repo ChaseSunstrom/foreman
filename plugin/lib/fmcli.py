@@ -3708,19 +3708,24 @@ _SIDE_EFFECTS = re.compile(r"\b(push|deploy|publish|release|install|uninstall|me
                            r"perl|bash|sh) -[ce]\b")
 
 
+_POINT_IN_TIME = re.compile(r"\borigin/|@\{u(?:pstream)?\}|\bls-remote\b")  # T-1380: a remote's state, then
+
+
 def cmd_sentinel(args):
     """Re-run the checks that passed for the last N finished tasks (their [ran] evidence) and report any that fail
     now: a later change broke what an earlier task proved. Commands with side effects are skipped."""
     p = resolve(args)
     done = sorted((b for b in c.load_briefs(p, include_archive=True) if b.status == "done"),
                   key=lambda b: str(b.meta.get("updated", "")), reverse=True)[:args.last]
-    cmds, skipped = {}, 0
+    cmds, skipped, dated = {}, 0, 0
     for b in done:
         for line in b.evidence():  # criteria checks only: steps record work (pushes, migrations) as well as checks
             if line.startswith("- (ac ") and c._RAN_MARK in line and "` → exit 0" in line:
                 cmd = line.split("`", 2)[1]
                 if _SIDE_EFFECTS.search(cmd):
                     skipped += 1
+                elif _POINT_IN_TIME.search(cmd):  # T-1380: where a remote was then (a release's "main is 1.2.47")
+                    dated += 1
                 elif cmd not in cmds:
                     cmds[cmd] = b.id
     checks = {}  # T-0489: assumptions a finished task rested on, with a command that stays true while they hold
@@ -3743,7 +3748,11 @@ def cmd_sentinel(args):
               + "; ".join(c.fit(x, 60) for x in refused[:3]), file=sys.stderr)
     for cmd, tid in list(cmds.items())[:args.max]:
         code, output = c.run_command(p.root, cmd, args.timeout)
-        results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output)})
+        flaky = bool(code and code != 124)
+        if flaky:  # T-1380: a failure that passes on a second run is a flake (canaries ran side by side, loaded)
+            code, output = c.run_command(p.root, cmd, args.timeout)
+        results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output),
+                        "flaky": flaky and not code})
     for cmd, (tid, fact) in list(checks.items())[:args.max]:
         code, output = c.run_command(p.root, cmd, args.timeout)
         results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output), "assumption": fact})
@@ -3762,7 +3771,10 @@ def cmd_sentinel(args):
         getattr(args, "bisect", False) else []  # T-0458
     out(args, {"results": results, "failed": len(failed), "skipped": skipped, "culprits": [x for x in culprits if x]},
         f"Sentinel: {len(results)} past check(s) from {len(done)} finished task(s); {len(failed)} failing now"
-        + (f"; {skipped} with side effects skipped" if skipped else "") + "".join(
+        + (f"; {skipped} with side effects skipped" if skipped else "")
+        + (f"; {dated} point-in-time skipped" if dated else "")
+        + (f"; {sum(1 for r in results if r.get('flaky'))} flaky (failed, then passed)"
+           if any(r.get("flaky") for r in results) else "") + "".join(
             f"\n  ✗ {r['task']}: " + (f"assumption \"{r['assumption']}\": " if r.get("assumption") else "")
             + f"{r['cmd']} → {r['result']}" for r in failed)
         + "".join(f"\n  ↳ broke at {x['sha'][:10]} {x['subject']}" + (f" ({x['task']})" if x["task"] else "")

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The sentinel (and the release canary that runs it) skips a past check that reads a remote's state (`origin/…`, `@{u}`, `ls-remote`), such as a release task's "main is Foreman 1.2.47", since it was only true at the time. A check that fails and then passes on one rerun is reported as flaky, not failing. Both caused the false canary failures after 1.2.48 and 1.2.50 (T-1380, T-1448).
 - `fm tidy` lists, then with `--apply` deletes, fm code's private copies of reverted files once they are over 30 days old (plain files only; links and folders are skipped). The fm code tests keep every XDG folder inside their temporary home (T-1442).
 - fm code app: the progress track's labels and every box title are measured in screen columns, so wide characters (CJK, emoji) fit, and a long note no longer makes a box title vanish at 80 columns; the title keeps at least a few letters (T-1431).
 - The supply check no longer flags a `__pycache__` file that is exactly what Python compiles from the source beside it (same interpreter, header, and code). A pyc whose body was changed under a copied header, an orphan, a hash-based pyc or another Python's pyc still shows, since Python would run it without checking it against the source (T-1466).
