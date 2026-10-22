@@ -1114,6 +1114,8 @@ def cmd_usage(args):
     skills, books, cmds = collections.Counter(), collections.Counter(), collections.Counter()
     followed, ignored, pending = collections.Counter(), collections.Counter(), {}
     named, loaded = collections.defaultdict(set), collections.defaultdict(set)  # T-1702: skills, per session
+    all_skills = sorted(n for n in os.listdir(os.path.join(c.PLUGIN_ROOT, "skills"))
+                        if os.path.isfile(os.path.join(c.PLUGIN_ROOT, "skills", n, "SKILL.md")))
     for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
         if e.get("project") != p.slug or str(e.get("ts", ""))[:19] < since:
             continue
@@ -1125,7 +1127,8 @@ def cmd_usage(args):
             pending[sid] = m.group(0) if m else None
             continue
         if e.get("kind") in ("skill_named", "slash") and isinstance(e.get("skills"), list):  # T-1702: the hooks'
-            names = {str(x) for x in e["skills"]}  # skill_named: a note named them; slash: the user typed one
+            names = {str(x) for x in e["skills"]} & set(all_skills)  # skill_named: a note named them; slash: the
+            # user typed one. A workflow (/foreman:review) or a typo is no skill
             (named if e["kind"] == "skill_named" else loaded)[sid].update(names)
             if e["kind"] == "slash":
                 skills.update(names)
@@ -1146,8 +1149,6 @@ def cmd_usage(args):
             cmds[m.group(1) + (" " + m.group(2) if m.group(1) == "task" and m.group(2) else "")] += 1
         if tool == "Bash" and (hit := fmplaybooks.shown(target, listed)):
             books[hit[len("references/"):-3]] += 1
-    all_skills = sorted(n for n in os.listdir(os.path.join(c.PLUGIN_ROOT, "skills"))
-                        if os.path.isfile(os.path.join(c.PLUGIN_ROOT, "skills", n, "SKILL.md")))
     ref = os.path.join(c.PLUGIN_ROOT, "skills", "playbooks", "references")
     all_books = sorted(os.path.relpath(os.path.join(d, n), ref)[:-3] for d, _, fs in os.walk(ref) for n in fs
                        if n.endswith(".md"))
