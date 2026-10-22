@@ -5965,9 +5965,16 @@ def _build_parser():
     import fmdesign  # T-1506: stdlib only and small; its rule list is the help's epilog
     s = add("design", lazy("fmdesign", "cmd_design"), tier=("Every task", 92), epilog=fmdesign.rules_help(),
             formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
-            "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings)")
-    s.add_argument("action", choices=["lint"])
-    s.add_argument("paths", nargs="+", metavar="PATH", help="files or directories (one run: the UI's root)")
+            "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
+            "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs")
+    s.add_argument("action", choices=["lint", "extract", "palette", "contrast"])
+    s.add_argument("paths", nargs="+", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
+                   "root); palette: a seed colour (hex, rgb(), hsl(), oklch()); contrast: a token file, then pairs "
+                   "fg/bg[:need[,dark need]] (default: the known role pairs, body text 7:1 in dark)")
+    s.add_argument("--format", choices=["css", "dtcg", "tailwind"], default="css",
+                   help="palette: CSS light-dark() roles, DTCG JSON or a Tailwind v4 @theme")
+    s.add_argument("--out", metavar="PATH", help="extract: the file to write the Tokens section into (default: "
+                                                 "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints)")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), tier=("Finding your way", 460), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
@@ -6262,7 +6269,7 @@ def _task_shape(parser, argv):
 WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
-                   "design": ("action", {"lint"})}  # T-1506: lint only reads the files it's given
+                   "design": ("action", {"lint", "palette", "contrast"})}  # T-1506, T-1507: these only read
 
 
 def _worker_may(args):
