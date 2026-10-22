@@ -1,0 +1,35 @@
+/* T-1507: type-and-colour.md's worked example (Tallyhouse) with a few more kinds; --fake: #ff0000; is a comment */
+:root {
+  color-scheme: light dark;
+  --n-99: oklch(0.99 0.004 250);  --n-97: oklch(0.97 0.006 250);  --n-93: oklch(0.93 0.008 250);
+  --n-87: oklch(0.87 0.010 250);  --n-66: oklch(0.66 0.014 250);  --n-55: oklch(0.55 0.016 250);
+  --n-45: oklch(0.45 0.016 250);  --n-27: oklch(0.27 0.012 250);  --n-22: oklch(0.22 0.010 250);
+  --n-18: oklch(0.18 0.010 250);
+  --blue-95: oklch(0.95 0.020 258); --blue-80: oklch(0.80 0.080 258); --blue-74: oklch(0.74 0.100 258);
+  --blue-45: oklch(0.45 0.130 258); --blue-39: oklch(0.39 0.120 258); --blue-30: oklch(0.30 0.060 258);
+  --white: oklch(1 0 0);
+
+  --surface:        light-dark(var(--n-97), var(--n-18));
+  --surface-raised: light-dark(var(--n-99), var(--n-22));
+  --surface-sunken: light-dark(var(--n-93), var(--n-27));
+  --text:           light-dark(var(--n-22), var(--n-93));
+  --text-muted:     light-dark(var(--n-45), var(--n-66));
+  --border:         var(--n-55);
+  --accent:         light-dark(var(--blue-45), var(--blue-74));
+  --on-accent:      light-dark(var(--white), var(--n-18));
+  --accent-subtle:  light-dark(var(--blue-95), var(--blue-30));
+  --on-subtle:      light-dark(var(--blue-39), var(--blue-80));
+
+  --font-body: "Source Sans 3", system-ui, sans-serif;
+  --step-0: 1rem;
+  --step-1: clamp(1.2rem, 1.18rem + 0.09vw, 1.25rem);
+  --dur-tap: 120ms;
+  --brand: #21539c;
+  --odd: a | b `c`;
+}
+[data-theme="dark"] {
+  --brand: #83adea;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-tap: 0ms; }
+}

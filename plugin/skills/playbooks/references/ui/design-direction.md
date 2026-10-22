@@ -162,6 +162,10 @@ Taste words: <words> → <which word owns type and colour, which gets motion>.
 - Shape: radius <values per element class>; border <spec>; shadow <spec or none>.
 - Motion: durations <ms>; easing <curve>; under reduced motion <what remains>.
 
+## Tokens
+<once the token file exists: `fm design extract <ui root>` writes this section, each custom property with its light
+and dark value and the contrast of each text/surface pair; rerun it after a token change>
+
 ## Signature moves
 1. <the one thing a screenshot is recognised by>
 

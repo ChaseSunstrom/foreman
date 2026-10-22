@@ -26,7 +26,8 @@ then `fm lib show look-NAME`: measured palettes, type, layout, motion and a cont
    `fm task new "Style direction for <product>" --type FEATURE --tier S --ac "DESIGN.md names a direction, a
    runner-up and an audacity :: grep -qE 'audacity (safe|bold|wild)' DESIGN.md" --focus`. If the repo already has a
    `DESIGN.md`, a token file or a brand guide, it wins (the playbook's step 1): name it and stop, unless the user
-   asked for a new look. Then draft against it (its direction is not offered again) and replace the file; git keeps
+   asked for a new look. A token file with no `DESIGN.md` table yet: `fm design extract <ui root>` writes one (its
+   Tokens section, with each pair's contrast). Then draft against it (its direction is not offered again) and replace the file; git keeps
    the old one, and the new Direction section says which direction it replaced.
 2. **Read the sentence.** Take the product, the audience and any taste words (the playbook's table; its empty words
    set no knob). Answer interview questions 1 (who, and what they were doing a minute before) and 3 (what it must
@@ -61,7 +62,7 @@ then `fm lib show look-NAME`: measured palettes, type, layout, motion and a cont
      can switch with one word.
 6. **Save DESIGN.md** at the repo root (or beside an existing design-system package), filling the playbook's DESIGN.md
    template with every heading in its order: Point of view, Interview, Direction, Knobs, Signature moves, Banned,
-   Allowed exceptions.
+   Allowed exceptions (Tokens waits for the token file; `fm design extract` writes it).
    - Point of view and Interview from step 2; "Feels like" is the picked card's physical thing, marked *user* when
      the user picked it and *assumed* under full autonomy.
    - Direction: `<bank row, look-NAME or "own: NAME">, audacity <safe | bold | wild>.`, then the runner-up and why it
