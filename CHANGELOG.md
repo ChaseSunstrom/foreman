@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Tests: one `fake_cli` helper writes misbehaving runner CLIs (hang, silent, waiting at a TTY prompt, garbage JSON, usage-limit text, fork-and-exit); `test_code_fakes` checks each ends an `fm code` run within its bound and names the reason (T-1361).
 - The drive no longer tells you to focus a task a builder lane holds (which `fm focus` refuses). When every queued task is in a lane, it says once that the lanes are working and that each builder's notification will wake the session (T-1469).
 - fm code's exported snapshot, recording (GIF/MP4) and plain event replay redact secrets before anything is drawn or printed, so a token a worker printed doesn't end up in a shared file (T-1302).
 - The sentinel (and the release canary that runs it) skips a past check that reads a remote's state (`origin/…`, `@{u}`, `ls-remote`), such as a release task's "main is Foreman 1.2.47", since it was only true at the time. A check that fails and then passes on one rerun is reported as flaky, not failing. Both caused the false canary failures after 1.2.48 and 1.2.50 (T-1380, T-1448).
