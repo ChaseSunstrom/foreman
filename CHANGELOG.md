@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm doctor`'s supply check now sees code in a plugin's `node_modules`, `.venv`, `__pycache__` and `.pytest_cache`, which it used to skip entirely. Files there are tracked by path, size and times (bounded per folder and per plugin). Scripts a hook or server names there are hashed by content. `.git` stays out. These records go in a new field that existing baselines take on silently. Scoped (`@scope/…`) and `+` package paths are now read whole, so a baseline may say "adds script" once. A file name that isn't valid UTF-8 no longer leaves its plugin unchecked (T-1459).
 - The background gate run after a close starts under `nice -n 10`, so it no longer competes with the next task's foreground finish and tests (T-1463).
 - fm code hands the worker a planner's plan inside the run's data envelope, with your request as what rules, so a planner steered by a hostile file in the repo can't hand the worker instructions; a `--task` brief or a `--verify` plan is your own and stays as instructions (T-1422).
 - The guard no longer refuses `cd <scratch> && python3 - <<'EOF' … EOF` writing a relative file there just because another line follows the heredoc: lines after the last Python block run after it and can't move where it wrote. A `cd` before it, or a second Python block after a `cd` back, still counts (T-1458).
