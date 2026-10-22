@@ -4,6 +4,7 @@ local entry needs."""
 import glob
 import json
 import os
+import unittest
 from unittest import mock
 
 from helpers import ForemanTestCase
@@ -397,16 +398,97 @@ class SupplyDelta(ForemanTestCase):
         self.held("adds hook Stop (agent a)", "adds hook PreToolUse (command x)", "adds hook SessionStart (command y)",
                   "adds hook ? (skill")
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads everything")
+    def test_an_unreadable_file_is_held_not_skipped(self):
+        tool, skill = (os.path.join(self.plugin, *p) for p in (("bin", "tool"), ("skills", "s", "SKILL.md")))
+        self.hooks({"hooks": dict(STOP["hooks"], PreToolUse=[])})
+        os.chmod(tool, 0)
+        try:  # an unreadable script no longer hides the plugin: a change elsewhere still shows
+            r = self.held("p@m adds hook PreToolUse")
+            self.assertNotIn("not checked", r.detail)
+            os.chmod(skill, 0)  # a component file that may hold hooks and can't be read holds the plugin
+            self.held("? (skill skills/s/SKILL.md)")
+        finally:
+            os.chmod(tool, 0o600)
+            os.chmod(skill, 0o600)
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads everything")
+    def test_an_unlistable_folder_and_an_exec_only_file_still_show_a_replacement(self):
+        bindir, tool = os.path.join(self.plugin, "bin"), os.path.join(self.plugin, "bin", "tool")
+        try:
+            os.chmod(tool, 0o111)
+            fmdoctor.check_supply(self.claude, accept=True)
+            write_over = lambda text: (os.chmod(tool, 0o600), write(tool, text), os.chmod(tool, 0o111))
+            write_over("#!/bin/sh\nevil\n")  # an exec-only file: unreadable, its replacement must still show
+            self.assertNotEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+            fmdoctor.check_supply(self.claude, accept=True)
+            os.chmod(tool, 0o600)
+            os.chmod(bindir, 0o111)  # a folder it can't list: its files were never hashed
+            fmdoctor.check_supply(self.claude, accept=True)
+            os.chmod(bindir, 0o711)
+            write(tool, "#!/bin/sh\nworse\n")
+            os.chmod(bindir, 0o111)
+            self.assertNotEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        finally:
+            os.chmod(bindir, 0o700)
+            os.chmod(tool, 0o600)
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads everything")
+    def test_a_marker_cant_be_forged_by_readable_content(self):
+        tool = os.path.join(self.plugin, "bin", "tool")
+        os.chmod(tool, 0)
+        try:
+            locked = fmdoctor.check_supply(self.claude)  # unreadable marker recorded in the sha
+        finally:
+            os.chmod(tool, 0o600)
+        self.assertIn(locked.status, ("WARN", "FAIL"))
+        fmdoctor.check_supply(self.claude, accept=True)
+        write(tool, "!unreadable")
+        self.assertNotEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+
+    def test_a_file_vanishing_mid_walk_doesnt_end_the_check(self):
+        gone = os.path.join(self.plugin, "bin", "tool")
+        real = os.path.getsize
+        def vanish(p):
+            if p == gone:
+                raise FileNotFoundError(p)
+            return real(p)
+        with mock.patch("os.path.getsize", vanish):
+            _, errors = fmdoctor._supply(self.claude)
+        self.assertEqual(errors, {})
+
+    def test_profile_ignores_a_component_linked_from_outside_the_plugin(self):
+        outside = os.path.join(self.tmp, "outside")
+        write(os.path.join(outside, "z.md"), "---\nname: zz\n---\n")
+        write(os.path.join(self.plugin, ".claude-plugin", "plugin.json"), {"name": "p", "commands": ["./ln/z.md"]})
+        os.symlink(outside, os.path.join(self.plugin, "ln"))
+        self.assertEqual(fmplugins.profile(self.plugin)["commands"], [])
+
+    def test_profile_reads_custom_component_paths(self):
+        write(os.path.join(self.plugin, ".claude-plugin", "plugin.json"),
+              {"name": "p", "agents": "./extras/", "commands": ["./more/x.md", "../../"], "skills": ["./sk"]})
+        write(os.path.join(self.plugin, "extras", "a.md"), "---\nname: aa\ndescription: dd\n---\n")
+        write(os.path.join(self.plugin, "more", "x.md"), "---\n---\n")
+        write(os.path.join(self.plugin, "commands", "sub", "y.md"), "---\n---\n")
+        write(os.path.join(self.plugin, "sk", "t", "SKILL.md"), "---\n---\n")
+        prof = fmplugins.profile(self.plugin)
+        names = lambda k: sorted(n for n, _ in prof[k])
+        self.assertEqual(names("agents"), ["aa"])
+        self.assertEqual(names("commands"), ["x", "y"])
+        self.assertEqual(names("skills"), ["s", "t"])
+        self.assertGreater(prof["tokens"], 0)
+
     def test_a_manifest_path_outside_the_plugin_is_unknown(self):
         write(os.path.join(self.plugin, ".claude-plugin", "plugin.json"), {"name": "p", "agents": "../../"})
         self.held("adds hook ? (agent ../../")
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads everything")
     def test_a_component_folder_or_file_it_cant_read_is_unknown(self):
         os.makedirs(os.path.join(self.plugin, "commands", "locked"))
         write(os.path.join(self.plugin, "agents", "a.md"), "---\nname: a\n---\n")
         os.chmod(os.path.join(self.plugin, "commands", "locked"), 0)
         os.chmod(os.path.join(self.plugin, "agents", "a.md"), 0)
-        try:  # check_supply stops earlier (the tree hash can't read it: "not checked"); the reader alone says "?"
+        try:  # the reader alone (the tree hash names what it can't read, T-1444) says "?"
             fm = fmplugins.capabilities(self.plugin)["fm_hooks"]
             self.assertIn("? (command commands)", fm)
             self.assertIn("? (agent agents/a.md)", fm)
