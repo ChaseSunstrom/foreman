@@ -51,7 +51,7 @@ RISO = {"night": dict(ok="#00A95C", ok2="#5EC8E5", bad="#FF48B0", bad2="#FF7477"
         "paper": dict(ok="#00784A", ok2="#14935A", bad="#C4126C", bad2="#E2457A", warn="#835300", accent="#0062A0",
                       accent2="#B0420F")}
 PALETTES["riso"] = dict(PALETTES["paper"], bg="#F2EDE1", bar="#E3DAC6", head="#EAE3D2", panel="#F8F4EB", ink="#1E2235",
-                        dim="#6A6252", said="#5A5242", barink="#2B2A33", edge="#C8BDA6", track="#D3C8B1",
+                        dim="#655D4E", said="#5A5242", barink="#2B2A33", edge="#C8BDA6", track="#D3C8B1",
                         shade="#D8CEBA", **RISO["paper"])
 INKS = {"cb": CB, "riso": RISO}  # a palette's colours for a dark theme (night) and a light one (paper)
 _BG, _INK = PALETTES["night"]["bg"], PALETTES["night"]["ink"]
@@ -109,7 +109,7 @@ LINK = {"done": ("━", "ok"), "now": ("━", "accent"), "fail": ("━", "bad"),
 BLOCKS = "▁▂▃▄▅▆▇█"
 RAIL = "▀"  # T-1512: the 3D track's built rail: its lit top in the link's colour, its side in shadow under it
 PROBE = RAIL  # the glyphs whose width the app asks the terminal at start (East Asian ambiguous: 1 or 2 columns)
-SPIN ="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 TEMPO = {"running": 10, "thinking": 5, "waiting": 2}  # T-1512: the spinner's frames a second, by agent_state
 MOTIONS = ("full", "reduced", "off")
 LOG_HIDES = ("plan", "task", "before")  # the track and Checks show these; --plain prints them
@@ -1580,8 +1580,8 @@ class App:
             return self._prompt_key(k)
         if self.mode == "settings":
             return self._settings_key(k)
-        if self.cfg["keys"].get(k) == "hush":  # T-1512: from every screen but where keys are typed
-            return self.hush()
+        if self.cfg["keys"].get(k) == "hush":  # T-1512: the run, its views, home and the keys poster (which it
+            return self.hush()  # closes); the prompt and the settings list (above) keep their own keys
         if self.mode == "help":
             self.mode = "main"
             return None
@@ -1659,6 +1659,8 @@ class App:
         except Exception as e:  # a lock or a write that failed
             done, refused = [], [f"not written ({type(e).__name__}: {e})"]
         self.cfg = dict(self.cfg, motion=nxt)
+        if self.mode == "help":  # any key closes the poster, z too
+            self.mode = "main"
         why = "; ".join(refused)
         self.message = f"motion: {nxt}" + ("" if not refused else f" ({why})" if any(s == "app" for s, _, _ in done)
                                           else f" on this screen only ({why})")

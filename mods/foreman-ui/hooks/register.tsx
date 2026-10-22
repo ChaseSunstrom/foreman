@@ -437,7 +437,8 @@ let motionClock: { cancel: () => void } | null = null
 const frameAt = (ms: number) => ms / FRAME_MS // time in frames, fractional: what a comet takes
 // T-1000: the kinds of tool call the Live section's lanes chart, and their colours
 const KINDS = ['edit', 'run', 'read', 'agent', 'skill', 'web'] as const
-const KIND_COLOR: Record<string, number> = { edit: C.edit, run: C.accent, read: C.accent2, agent: C.agent, skill: C.skill, web: C.web }
+// names in C, so a lane's colour follows the palette (T-1512)
+const KIND_COLOR: Record<string, keyof typeof C> = { edit: 'edit', run: 'accent', read: 'accent2', agent: 'agent', skill: 'skill', web: 'web' }
 // A step that just got done glows green and fades over FLASH_MS; the frame clock runs until it has
 const flashed = new Map<string, number>() // "T-0007:2" → when it was seen done
 const FLASH_MS = 2500
@@ -1820,17 +1821,18 @@ export const register: Register = (on, options) => {
     const busiest = [...KINDS].sort((x, y) => counts[y]! - counts[x]!).slice(0, lanes) // by the window only: nothing swaps as calls start
     const laneRows: RenderElement[] = KINDS.filter(k => busiest.includes(k)).map(k => {
       const n = counts[k]!
+      const color = C[KIND_COLOR[k]!]
       const slots = bucketize(recentTicks.filter(t => t.lane === k).map(t => t.at), clockNow, spanMs, laneW * 2)
-      if (blit && ft !== null && n) blit.set(`lane-r-${k}`, { columns: laneW, rows: 1, draw: t => laneCells([{ color: KIND_COLOR[k]!, slots }], laneW, t) })
+      if (blit && ft !== null && n) blit.set(`lane-r-${k}`, { columns: laneW, rows: 1, draw: t => laneCells([{ color, slots }], laneW, t) })
       const here = nowIn[k] ?? []
       const x = here[0]
       return (
         <Box key={`lane-${k}`} flexDirection="row" height={1} overflow="hidden">
           <Box flexShrink={0} width={LBL}>
-            <Text color={hex(n || x ? KIND_COLOR[k]! : C.dim)}>{k}</Text>
+            <Text color={hex(n || x ? color : C.dim)}>{k}</Text>
           </Box>
           <Box flexShrink={0}>
-            {raster(`lane-r-${k}`, laneW, laneCells([{ color: KIND_COLOR[k]!, slots }], laneW, n ? ft : null), n ? sparkText(slots.filter((_, i) => i % 2 === 0), laneW) : '⣀'.repeat(laneW), KIND_COLOR[k]!)}
+            {raster(`lane-r-${k}`, laneW, laneCells([{ color, slots }], laneW, n ? ft : null), n ? sparkText(slots.filter((_, i) => i % 2 === 0), laneW) : '⣀'.repeat(laneW), color)}
           </Box>
           <Box flexShrink={0} width={RW + 1} flexDirection="row" gap={1}>
             <Box key="lane-n" flexShrink={0} width={4} flexDirection="row" justifyContent="flex-end">
