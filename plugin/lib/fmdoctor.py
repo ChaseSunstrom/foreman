@@ -1603,6 +1603,165 @@ def check_idle_stops(p, days=7):
     return Result("idle stops", "PASS", f"last {days} days: {n} idle stop{'s' if n != 1 else ''} with open work")
 
 
+# ---------------------------------------------------------------- fm fsck (T-1667)
+
+FSCK_SKIP = {"lib-sources", "lib-drafts", "quarantine", "snapshots", "outputs", "cache", "research-cache"}  # other
+# repos' files and copies, not Foreman's live state: never scanned, so --fix can't reach them
+FSCK_TAIL = 65536  # bytes of a journal read: its last line is judged, never the whole file
+FSCK_YOUNG = 60  # s: a pid file this new and still empty may be getting its pid
+FSCK_KINDS = ("broken lane", "stale lock", "torn journal")
+
+
+def _tail(path, n):
+    """(the last n bytes, the stat) of a regular file; (None, None) for a symlink, a FIFO or a device (T-1434: a plain
+    open of a FIFO blocks forever) or a file that can't be read."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None, None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return None, None
+        os.lseek(fd, max(0, st.st_size - n), os.SEEK_SET)
+        return os.read(fd, n), st
+    except OSError:
+        return None, None
+    finally:
+        os.close(fd)
+
+
+def _stale_pid(path, now=None):
+    """Why a *.pid lock's holder is gone ("" while it may live): its pid names no process, or the file holds no pid and
+    is older than FSCK_YOUNG s. A pid that exists (another user's too: EPERM) keeps it, and so does a file too big to
+    be a pid file of ours."""
+    data, st = _tail(path, 33)
+    if data is None or st.st_size > 32:
+        return ""
+    text = data.strip()
+    if not (text.isdigit() and len(text) <= 9 and int(text) > 0):  # never os.kill(0): that signals our own group
+        old = (now or time.time()) - st.st_mtime >= FSCK_YOUNG
+        return ("it holds no pid" if text else "it is empty") if old else ""
+    try:
+        os.kill(int(text), 0)
+    except ProcessLookupError:
+        return f"process {int(text)} is gone"
+    except OSError:
+        pass
+    return ""
+
+
+def _torn(path):
+    """Why a journal's last line is torn ("" when it is whole): no newline after it (a write cut short) or not JSON. A
+    last line longer than FSCK_TAIL isn't judged."""
+    data, st = _tail(path, FSCK_TAIL)
+    if not data:
+        return ""
+    if not data.endswith(b"\n"):
+        return "its last line has no newline (a write cut short)"
+    body = data[:-1]
+    if b"\n" not in body and len(data) < st.st_size:
+        return ""
+    last = body.rsplit(b"\n", 1)[-1].strip()
+    try:
+        if last:
+            json.loads(last)
+    except ValueError:  # UnicodeDecodeError too
+        return "its last line isn't JSON"
+    return ""
+
+
+def _broken_lanes(projects):
+    """Open tasks whose lane folder is gone, is no git worktree, or whose branch is gone. Only looks: a lane's files and
+    another project's worktrees are never touched (git only reads refs, from the project's root)."""
+    out = []
+    for p in projects:
+        for b in c.load_briefs(p):
+            lane, branch = b.meta.get("lane"), b.meta.get("lane_branch")
+            if not isinstance(lane, str) or not lane or b.status in c.CLOSED:  # a closed task's lane is fm tidy's
+                continue
+            if not os.path.isdir(lane):
+                why = "its folder is gone"
+            elif not os.path.exists(os.path.join(lane, ".git")):
+                why = "its folder isn't a git worktree any more"
+            elif isinstance(branch, str) and branch and c._git(p.root, "rev-parse", "--verify", "-q",
+                                                                f"refs/heads/{branch}", timeout=10, proc=True).returncode == 1:
+                why = f"its branch {branch} is gone"  # only git's own "no such ref": a timeout or no repo says nothing
+            else:
+                continue
+            out.append({"kind": "broken lane", "path": lane, "task": b.id, "project": p.slug,
+                        "detail": f"{b.id}: {why} (fm lane rm {b.id} frees the task)"})
+    return out
+
+
+def fsck(projects=None, state=None):
+    """T-1667: what a crash or a hand edit left broken in Foreman's own state, as {kind, path, detail[, task, project]}:
+    open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, journals (*.jsonl) whose last
+    line is torn. Reads only."""
+    state = state or c.state_dir()
+    found = _broken_lanes([p for p, _ in c.all_projects()] if projects is None else projects)
+    now = time.time()
+    for root, dirs, names in os.walk(state):  # symlinked folders aren't followed
+        dirs[:] = sorted(x for x in dirs if root != state or x not in FSCK_SKIP)
+        for n in sorted(names):
+            path = os.path.join(root, n)
+            why = _stale_pid(path, now) if n.endswith(".pid") else _torn(path) if n.endswith(".jsonl") else ""
+            if why:
+                found.append({"kind": "stale lock" if n.endswith(".pid") else "torn journal", "path": path,
+                              "detail": why})
+    return found
+
+
+def fsck_fix(found):
+    """Remove the stale locks among found, each re-checked just before; (removed paths, the findings left for a person).
+    A broken lane or a torn journal is never repaired here: the ledger is hash-chained, and a lane holds work."""
+    fixed, left = [], []
+    for f in found:
+        if f["kind"] != "stale lock":
+            left.append(f)
+        elif _stale_pid(f["path"]):  # a new holder may have written its pid since the scan: then it isn't stale
+            try:  # ponytail: the re-check narrows the race with a holder starting now to microseconds; it doesn't close it
+                os.unlink(f["path"])
+                fixed.append(f["path"])
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                left.append(dict(f, detail=f"{f['detail']}; couldn't remove it: {e.strerror}"))
+    return fixed, left
+
+
+def _fsck_counts(found):
+    return ", ".join(f"{n} {k}{'s' if n > 1 else ''}" for k in FSCK_KINDS if (n := sum(f["kind"] == k for f in found)))
+
+
+def check_fsck(projects=None):
+    """T-1667: fm fsck's one line in fm doctor, so /foreman:doctor covers it."""
+    try:
+        found = fsck(projects)
+    except Exception as e:  # the scan failing is a finding, not a crash of doctor
+        return Result("fsck", "WARN", f"not run: {e}")
+    return Result("fsck", "WARN", f"{_fsck_counts(found)}: fm fsck lists them (--fix removes only the stale locks)") \
+        if found else Result("fsck", "PASS", "no broken lanes, stale locks or torn journals")
+
+
+def cmd_fsck(args):
+    found = fsck()
+    fixed, left = fsck_fix(found) if args.fix else ([], found)
+    if args.json:
+        print(json.dumps({"ok": not left, "findings": left, "fixed": fixed}, indent=2, ensure_ascii=False))
+        return 1 if left else 0
+    for path in fixed:
+        print(f"{'removed':<13} {c.plain(path)}: a stale lock")
+    for f in left:  # a hand-edited brief's lane path could hold escape sequences
+        print(f"{f['kind']:<13} {c.plain(f['path'])}: {c.plain(f['detail'])}")
+    hints = (["fm fsck --fix removes the stale locks"] if any(f["kind"] == "stale lock" for f in left) else []) + (
+        ["broken lanes and torn journals are left for a person (fm lane list; a torn ledger: fm verify-ledger)"]
+        if any(f["kind"] != "stale lock" for f in left) else [])
+    print(("\n" if fixed or left else "") + "fm fsck: " + (f"{_fsck_counts(left)}; " + "; ".join(hints) if left else
+                                                           "OK: no broken lanes, stale locks or torn journals"))
+    return 1 if left else 0
+
+
 def run_all(full=False, accept_supply=False):
     home = c.foreman_home()
     claude = os.path.join(os.path.expanduser("~"), ".claude")
@@ -1635,6 +1794,7 @@ def run_all(full=False, accept_supply=False):
     projects = [p for p, _ in c.all_projects()]
     results.append(check_heartbeats(projects))
     results.append(check_state_size(projects))
+    results.append(check_fsck(projects))
     brief_results = [check_briefs(p) for p in projects]
     worst = next((s for s in ("FAIL", "WARN") if any(r.status == s for r in brief_results)), "PASS")
     results.append(Result("briefs", worst, "; ".join(r.detail for r in brief_results if r.status != "PASS")
