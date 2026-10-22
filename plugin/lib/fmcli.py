@@ -523,7 +523,9 @@ def cmd_task(args):
         rows = {r["path"]: r for r in fmmap.tour(p, b)}
         ui = set(c.ui_paths(list(rows)))
         files = [dict(rows[f], ui=f in ui) for f in c.reading_order(list(rows))]
-        measured = b.section("Measurements").strip()
+        timed = [f"`{c.fit(m.group(1), 80)}`: {m.group(2).strip()}" for line in b.evidence()  # --repeat's runs
+                 if c._RAN_MARK in line and (m := re.search(r"`([^`]*)` → [^·]*· (×\d+[^·]*)", line))]
+        measured = "\n".join(x for x in [b.section("Measurements").strip(), *timed] if x)
         text = (f"{b.id} receipt: {b.title} ({b.type} {b.tier}, {b.status})"
                 + (f" · UI: {len(ui)} of {len(files)} files" if ui else "")
                 + ("\nReading order (what it builds on, styles, components, entry points, tests, docs):\n"
@@ -2046,29 +2048,37 @@ REPEAT_MAX = 50  # T-1518: fm task evidence --repeat's ceiling
 def _repeat_runs(root, cmd, n, timeout):
     """T-1518: (exit code, output, timing or "") of n runs of cmd through the one runner --run uses. The code and output
     are the first failing run's, else the last's; timeout bounds all n together, and runs it left unstarted fail it
-    (124). The timing: runs, failures, then median, spread (median absolute deviation), min and max in seconds."""
+    (124). The timing: runs, failures, then median, spread (median absolute deviation), min and max in seconds of the
+    runs that finished: a run the timeout cut off is a failure, not a time, and its message names the timeout given."""
     if n == 1:
         return (*c.run_command(root, cmd, timeout), "")
     import statistics
-    start, times, first, bad = time.monotonic(), [], None, 0
+    start, ran, times, first, bad = time.monotonic(), 0, [], None, 0
     for _ in range(n):
         left = None if timeout is None else timeout - (time.monotonic() - start)
         if left is not None and left <= 0:
             break
         t = time.monotonic()
         code, output = c.run_command(root, cmd, left)
-        times.append(time.monotonic() - t)
+        ran, cut = ran + 1, f"timed out after {left:g}s"
+        if code == 124 and left is not None and output.endswith(cut):
+            output = output[:-len(cut)] + f"timed out after {timeout:g}s (--timeout, all {n} runs together)"
+        else:
+            times.append(time.monotonic() - t)
         if code:
             bad, first = bad + 1, first or (code, output)
+    if not ran:
+        return 124, "timed out before the first run", ""
     code, output = first or (code, output)
-    if len(times) < n:
+    if ran < n:
         code = code or 124
+    head = (f"×{ran} runs" if ran == n else f"×{ran} of {n} runs (--timeout reached)") + (f", {bad} failed" if bad else "")
+    if not times:
+        return code, output, f"{head}: no run finished in time"
     med = statistics.median(times)
-    spread = statistics.median(abs(x - med) for x in times)
-    return code, output, (f"×{len(times)} runs" if len(times) == n else
-                          f"×{len(times)} of {n} runs (--timeout reached)") + (f", {bad} failed" if bad else "") + (
-        f": median {med:.3f}s, spread ±{spread:.3f}s ({spread / med if med else 0:.0%}), min {min(times):.3f}s, "
-        f"max {max(times):.3f}s")
+    spread = (f"±{(d := statistics.median(abs(x - med) for x in times)):.3f}s ({d / med if med else 0:.0%})"
+              if len(times) > 1 else "n/a")
+    return code, output, f"{head}: median {med:.3f}s, spread {spread}, min {min(times):.3f}s, max {max(times):.3f}s"
 
 
 def _step_checks(b, step, cmd, code, output, result):
@@ -5063,7 +5073,10 @@ def _build_parser():
     t.add_argument("--story", action="store_true", help="the ledger as chapters (plan, steps, evidence, reviews, "
                                                         "close) with their times")
     t = tadd("receipt")  # T-1518
-    t.add_argument("id", help="the changed files in reading order (UI ones marked) and the before/after numbers")
+    t.description = ("The task's changed files in reading order (the code they build on, styles, components, entry "
+                     "points, tests, docs; UI files marked), then its before/after: the task's own Measurements "
+                     "section and the medians of its fm task evidence --repeat runs.")
+    t.add_argument("id")
     t = tadd("set")
     t.add_argument("id")
     t.add_argument("assignments", nargs="*")

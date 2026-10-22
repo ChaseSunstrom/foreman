@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from unittest import mock
 
@@ -167,15 +168,17 @@ class VerifyStrength(ForemanTestCase):
 
 
 # a stub fm for the canary: `projects` lists STUB_PROJECTS; `sentinel` fails in "broken" always, in "flappy" once
+# (its marks in STUB_DIR)
 CANARY_STUB = '''import json, os, sys
 roots = json.loads(os.environ["STUB_PROJECTS"])
 if sys.argv[1] == "projects":
     print(json.dumps({"projects": [{"project": k, "root": v, "exists": True} for k, v in roots.items()]}))
     sys.exit(0)
-seen = os.path.join(os.getcwd(), "ran")
+name = next(k for k, v in roots.items() if os.path.realpath(v) == os.path.realpath(os.getcwd()))
+seen = os.path.join(os.environ["STUB_DIR"], name)
 first = not os.path.exists(seen)
 open(seen, "a").close()
-if os.path.basename(os.getcwd()) == "broken" or (os.path.basename(os.getcwd()) == "flappy" and first):
+if name == "broken" or (name == "flappy" and first):
     print("Sentinel: 1 past check(s); 1 failing now")
     sys.exit(1)
 print("Sentinel: 1 past check(s); 0 failing now")
@@ -235,29 +238,64 @@ class Repeat(ForemanTestCase):
         self.assertNotEqual(p.returncode, 0)
         line = self.evidence()[-1]
         self.assertIn("✗ exit 124", line)
-        self.assertIn("×1 of 5 runs (--timeout reached), 1 failed", line, "--timeout bounds all the runs together")
+        self.assertIn("×1 of 5 runs (--timeout reached), 1 failed: no run finished in time", line,
+                      "--timeout bounds all the runs together; a timed-out run isn't a time")
+        self.assertIn("timed out after 1s", line, "the user's --timeout, not what was left of it")
 
-    def test_the_canary_marks_a_load_flap_and_keeps_a_real_failure(self):
+    def test_timed_out_runs_stay_out_of_the_numbers(self):
+        import fmcli
+        self.assertEqual(fmcli._repeat_runs(self.repo, "true", 3, 0)[:2], (124, "timed out before the first run"))
+        self.write("slow.sh", "if [ -f once ]; then sleep 5; fi; : > once\n")
+        code, output, timing = fmcli._repeat_runs(self.repo, "sh slow.sh", 3, 3)
+        self.assertEqual(code, 124, output)
+        self.assertIn("timed out after 3s", output, "the user's --timeout, not what was left of it")
+        self.assertIn("×2 of 3 runs (--timeout reached), 1 failed: median ", timing)
+        self.assertIn("spread n/a", timing, "one finished run has no spread")
+
+    def canary(self, load, **patches):
+        """The canary's report over four projects: flappy (this repo) fails once, broken always, gone can't run, fine
+        passes; the host's load stands at `load` on 8 CPUs."""
         import fmrelease
         stub = os.path.join(self.tmp, "fmstub.py")
         with open(stub, "w") as f:
             f.write(CANARY_STUB)
-        roots = {name: os.path.join(self.tmp, name) for name in ("flappy", "broken", "fine")}
-        for r in roots.values():
-            os.makedirs(r)
+        roots = {"flappy": self.repo, **{k: os.path.join(self.tmp, k) for k in ("broken", "gone", "fine")}}
+        for k in ("broken", "fine"):
+            os.makedirs(roots[k], exist_ok=True)
+        env = {"STUB_PROJECTS": json.dumps(roots), "STUB_DIR": tempfile.mkdtemp(dir=self.tmp),
+               "FOREMAN_HOST": f"load={load},cpus=8"}
         out = io.StringIO()
-        with mock.patch.object(fmrelease, "FM", [sys.executable, stub]), \
-                mock.patch.dict(os.environ, {"STUB_PROJECTS": json.dumps(roots)}), contextlib.redirect_stdout(out):
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.multiple(fmrelease, FM=[sys.executable, stub], **patches))
+            stack.enter_context(mock.patch.dict(os.environ, env))
+            stack.enter_context(contextlib.redirect_stdout(out))
             fmrelease._canary_worker("9.9.9", self.repo)
-        report = out.getvalue()
+        return out.getvalue()
+
+    def test_the_canary_calls_a_failure_under_load_that_passes_alone_a_load_flap(self):
+        report = self.canary(40)
         flap = next((x for x in report.splitlines() if x.strip().startswith("~ flappy")), "")
         self.assertIn("load flap", flap, report)
         self.assertIn("1 failing now", flap, "the failing result is kept beside the passing one")
         self.assertIn("0 failing now", flap)
-        self.assertRegex(flap, r"load (\d+\.\d|\?).*load (\d+\.\d|\?)", "each result with the load it ran under")
+        self.assertIn("load 40.0 on 8 CPUs", flap, "each result with the load it ran under")
         self.assertRegex(report, r"✗ broken: .*alone", "a failure that fails alone too stays a failure")
+        self.assertNotRegex(report, r"gone: .*alone", "a sentinel that couldn't run isn't rerun")
         self.assertIn("✓ fine", report)
-        self.assertIn("canary done: 1 of 3 project(s) failing, 1 load flap", report)
+        self.assertIn("canary done: 2 of 4 project(s) failing, 1 load flap(s): flappy", report)
+        titles = [b.title for b in c.load_briefs(self.p)]
+        self.assertTrue(any("load flap" in t and "flappy" in t for t in titles), titles)  # an intermittent regression
+
+    def test_a_failure_on_a_quiet_host_stays_a_failure_and_reruns_have_a_time_budget(self):
+        report = self.canary(0.5)
+        self.assertNotIn("~ flappy", report, "a quiet host: no load flap, and no rerun to call one")
+        self.assertNotIn("alone", report)
+        self.assertIn("canary done: 3 of 4 project(s) failing\n", report)
+        titles = [b.title for b in c.load_briefs(self.p)]
+        self.assertTrue(any(t.startswith("Canary after Foreman 9.9.9") and "flappy" in t for t in titles), titles)
+        report = self.canary(40, RERUN_S=0)
+        self.assertIn("no rerun for flappy, broken", report)
+        self.assertIn("canary done: 3 of 4 project(s) failing\n", report)
 
     def test_a_ui_tasks_receipt_lists_files_in_reading_order(self):
         files = {"README.md": "# app\n\nA button.\n", "tests/test_button.py": "import Button\n",
@@ -266,6 +304,7 @@ class Repeat(ForemanTestCase):
         for rel, text in files.items():
             self.write(rel, text)
         self.fm("task", "set", "T-0001", "--section", "Measurements", "--text", "p50: 120 ms → 40 ms (bench.py)")
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true", "--repeat", "2")
         d = self.fm_json("task", "receipt", "T-0001")
         order = ["src/client.ts", "src/theme.css", "src/Button.tsx", "src/App.tsx", "tests/test_button.py", "README.md"]
         self.assertEqual([f["path"] for f in d["files"]], order, "what it builds on, styles, components, the entry "
@@ -275,3 +314,5 @@ class Repeat(ForemanTestCase):
         self.assertLess(text.index("src/theme.css"), text.index("tests/test_button.py"))
         self.assertIn("src/Button.tsx  +1 −0  [UI]", text)
         self.assertIn("120 ms → 40 ms", text, "the before/after numbers")
+        self.assertRegex(text, r"`true`: ×2 runs: median [\d.]+s", "and the --repeat medians")
+        self.assertIn("×2 runs: median", d["before_after"])

@@ -355,6 +355,16 @@ def panicked():
     return os.path.exists(os.path.join(state_dir(), "PANIC"))
 
 
+def host_load():
+    """T-1518: (1-minute load average, CPU count), or None when unreadable; FOREMAN_HOST's load and cpus in tests."""
+    try:
+        fake = dict(kv.split("=", 1) for kv in os.environ.get("FOREMAN_HOST", "").split(",") if "=" in kv)
+        return (float(fake["load"]) if "load" in fake else os.getloadavg()[0],
+                int(fake["cpus"]) if "cpus" in fake else (os.cpu_count() or 1))
+    except (OSError, ValueError):
+        return None
+
+
 def host_strain():
     """T-0465: why this machine shouldn't take another lane (load over twice its CPUs, or under 512 MB available), or
     None. FOREMAN_HOST="load=…,cpus=…,mem_mb=…" stands in for /proc in tests; unreadable: None (never blocks)."""
@@ -3362,7 +3372,7 @@ def reading_order(files):
     return sorted(files, key=rank)
 
 
-_BUILTINS ={"cd", "test", "[", "[[", "true", "false", "echo", "printf", "export", "set", "source", ".", "exit",
+_BUILTINS = {"cd", "test", "[", "[[", "true", "false", "echo", "printf", "export", "set", "source", ".", "exit",
              "!", "(", "{", "env", "command", "timeout", "time", "xargs", "sh", "bash"}
 
 
