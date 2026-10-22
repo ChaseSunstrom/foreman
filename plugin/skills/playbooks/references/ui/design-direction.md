@@ -86,6 +86,11 @@ Twelve points of view that do not resemble each other. Pick by matching intervie
 A direction is a starting stance, not a costume. Keep its signature move and its knobs; adapt hex values to the
 brand. Pass: `DESIGN.md` names the direction, the runner-up, and why the runner-up lost.
 
+**More points of view: the style shelf.** Twelve further looks (lab notebook, transit signage, cartographer, ceramic
+studio, broadcast graphics, archive ledger, night market, card catalogue, sewing pattern, shipping manifest,
+observatory, lido) are library cards with measured palettes, a contrast test and greps to check the build:
+`fm lib list --area looks`, then `fm lib show look-NAME`. They count as bank rows for steps 4 and 5.
+
 ## Audacity
 
 One dial, three settings. It controls how far the knobs move from neutral, never the accessibility floor.
