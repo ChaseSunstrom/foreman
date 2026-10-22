@@ -464,7 +464,8 @@ DEFECT_CLASSES = [
 ]
 
 
-_LENS_HEAD = re.compile(r"(?i)^#+\s*(?:lens:\s*)?(" + "|".join(c.AUDIT_LENSES) + r")\b")
+# "## edge", "## lens: edge" or "## edge: ok"; never "## Edge cases" or "## Design notes" (T-1501 review)
+_LENS_HEAD = re.compile(r"(?i)^#+\s*(?:lens:\s*)?(" + "|".join(c.AUDIT_LENSES) + r")\s*(?::.*)?$")
 _FINDING = re.compile(r"(?i)^(?:[-*]|\d+[.)])\s*(CRITICAL|HIGH|MEDIUM|LOW)\s*[—–-]+\s*(\S+?)\s*[—–-]+\s*(.+)$")
 
 

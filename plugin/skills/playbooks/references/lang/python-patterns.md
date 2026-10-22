@@ -13,6 +13,12 @@ Idiomatic Python patterns and best practices for building robust, efficient, and
 - Refactoring existing Python code
 - Designing Python packages/modules
 
+## How to use it
+
+1. Find the section for the construct at hand (errors, context managers, data classes, concurrency…).
+2. Match the code against its Good and Bad examples, and the anti-patterns at the end.
+3. Run the tooling commands below on the result.
+
 ## Core Principles
 
 ### 1. Readability Counts
@@ -35,7 +41,7 @@ def get_active_users(u):
 
 Avoid magic; be clear about what your code does.
 
-```python
+```python no-run
 # Good: Explicit configuration
 import logging
 
@@ -103,7 +109,7 @@ def process_items(items: List[str]) -> Dict[str, int]:
 
 ### Type Aliases and TypeVar
 
-```python
+```python no-run
 from typing import TypeVar, Union
 
 # Type alias for complex types
@@ -213,7 +219,7 @@ def process_file(path: str) -> str:
 
 ### Custom Context Managers
 
-```python
+```python no-run
 from contextlib import contextmanager
 
 @contextmanager
@@ -231,7 +237,7 @@ with timer("data processing"):
 
 ### Context Manager Classes
 
-```python
+```python no-run
 class DatabaseTransaction:
     def __init__(self, connection):
         self.connection = connection
@@ -257,7 +263,7 @@ with DatabaseTransaction(conn):
 
 ### List Comprehensions
 
-```python
+```python no-run
 # Good: List comprehension for simple transformations
 names = [user.name for user in users if user.is_active]
 
@@ -292,7 +298,7 @@ total = sum([x * x for x in range(1_000_000)])
 
 ### Generator Functions
 
-```python
+```python no-run
 def read_large_file(path: str) -> Iterator[str]:
     """Read a large file line by line."""
     with open(path) as f:
@@ -331,7 +337,7 @@ user = User(
 
 ### Data Classes with Validation
 
-```python
+```python no-run
 @dataclass
 class User:
     email: str
@@ -393,7 +399,7 @@ def slow_function():
 
 ### Parameterized Decorators
 
-```python
+```python no-run
 def repeat(times: int):
     """Decorator to repeat a function multiple times."""
     def decorator(func: Callable) -> Callable:
@@ -415,7 +421,7 @@ def greet(name: str) -> str:
 
 ### Class-Based Decorators
 
-```python
+```python no-run
 class CountCalls:
     """Decorator that counts how many times a function is called."""
     def __init__(self, func: Callable):
@@ -527,7 +533,7 @@ myproject/
 
 ### Import Conventions
 
-```python
+```python no-run
 # Good: Import order - stdlib, third-party, local
 import os
 import sys
@@ -545,7 +551,7 @@ from mypackage.utils import format_name
 
 ### __init__.py for Package Exports
 
-```python
+```python no-run
 # mypackage/__init__.py
 """mypackage - A sample Python package."""
 
@@ -595,7 +601,7 @@ def read_lines(path: str) -> Iterator[str]:
 
 ### Avoid String Concatenation in Loops
 
-```python
+```python no-run
 # Bad: O(n²) due to string immutability
 result = ""
 for item in items:
@@ -697,7 +703,7 @@ addopts = "--cov=mypackage --cov-report=term-missing"
 
 ## Anti-Patterns to Avoid
 
-```python
+```python no-run
 # Bad: Mutable default arguments
 def append_to(item, items=[]):
     items.append(item)

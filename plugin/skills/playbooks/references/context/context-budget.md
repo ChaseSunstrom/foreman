@@ -16,6 +16,11 @@ Analyze token overhead across every loaded component in a Claude Code session an
 
 ## How It Works
 
+1. Inventory every loaded component and estimate its tokens.
+2. Classify each one: always, sometimes or rarely needed.
+3. Detect the problem patterns below.
+4. Report the savings, biggest first.
+
 ### Phase 1: Inventory
 
 Scan all component directories and estimate token consumption:

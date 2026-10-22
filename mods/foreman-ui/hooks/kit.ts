@@ -20,20 +20,31 @@ export const C = {
 }
 
 // T-1081: the colourblind-safe pair (Okabe-Ito blue and orange); rows that mean an error also carry a glyph
-export const PALETTES = { default: { ok: 0x87d787, err: 0xff6b6b }, cb: { ok: 0x56b4e9, err: 0xe69f00 } }
-export const setPalette = (name: string) => void Object.assign(C, name === 'cb' ? PALETTES.cb : PALETTES.default)
+// T-1512: riso, fm code's risograph inks for a dark background (fmcodetui.RISO["night"]): green, fluorescent pink,
+// cornflower and sunflower (accent and accent2 stay far apart: running and reading rows)
+export const PALETTES = {
+  default: { ok: 0x87d787, err: 0xff6b6b, accent: 0x5fd7d7, accent2: 0x87afff },
+  cb: { ok: 0x56b4e9, err: 0xe69f00, accent: 0x5fd7d7, accent2: 0x87afff },
+  riso: { ok: 0x00a95c, err: 0xff48b0, accent: 0x62a8e5, accent2: 0xffb511 },
+}
+export const setPalette = (name: string) =>
+  void Object.assign(C, name === 'cb' || name === 'riso' ? PALETTES[name] : PALETTES.default)
 
 export const hex= (c: number) => `#${c.toString(16).padStart(6, '0')}`
 
-const TYPE_COLOR: Record<string, number> = {
-  FIX: C.err,
-  FEATURE: C.accent2,
-  CLEAN: C.accent,
-  PERFORMANCE: C.agent,
-  SECURITY: C.edit,
+// names in C, not values, so a type's colour follows the palette (T-1081, T-1512)
+const TYPE_COLOR: Record<string, keyof typeof C | number> = {
+  FIX: 'err',
+  FEATURE: 'accent2',
+  CLEAN: 'accent',
+  PERFORMANCE: 'agent',
+  SECURITY: 'edit',
   RESEARCH: 0xafafff,
 }
-export const typeColor = (type: string) => hex(type === 'FIX' ? C.err : TYPE_COLOR[type] ?? C.dim) // C.err follows the palette (T-1081)
+export const typeColor = (type: string) => {
+  const c = TYPE_COLOR[type] ?? 'dim'
+  return hex(typeof c === 'number' ? c : C[c])
+}
 
 export function mix(a: number, b: number, t: number): number {
   const k = Math.max(0, Math.min(1, t))

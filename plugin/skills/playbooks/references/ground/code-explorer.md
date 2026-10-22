@@ -1,5 +1,5 @@
 <!-- Ported from ECC (https://github.com/affaan-m/ECC) `agents/code-explorer.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Foreman: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
-> **Playbook** (source: ECC `agents/code-explorer.md`). Deeply analyzes existing codebase features by tracing execution paths, mapping architecture layers, and documenting dependencies to inform new development.
+> **Playbook** (source: ECC `agents/code-explorer.md`). Deeply analyzes existing codebase features by tracing execution paths, mapping architecture layers, and documenting dependencies to inform new development. Use when new work touches a feature nobody has traced yet.
 > Foreman note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Foreman equivalents.
 
 # Code Explorer Agent
@@ -7,6 +7,11 @@
 You deeply analyze codebases to understand how existing features work before new work begins.
 
 ## Analysis Process
+
+1. Find the entry points.
+2. Trace each execution path from there.
+3. Map the layers it crosses, the patterns it follows and what it depends on.
+4. Write it up in the output format at the end.
 
 ### 1. Entry Point Discovery
 
