@@ -586,8 +586,9 @@ class Looks(ForemanTestCase):
     STATUS_HUES = (27, 65, 150)  # type-and-colour.md: error, warning, success; an accent sits 30 degrees or more away
     FLOOR = {"text": 4.5, "text-muted": 4.5, "on-accent": 4.5, "on-strap": 4.5, "accent": 4.5, "border": 3}
 
-    def looks(self):
-        return [x for x in fmlib.cards() if x["area"] == "looks"]
+    def looks(self):  # the shelf's palette looks; T-1499's shader looks and recipes share the area (ShaderLooks)
+        return [x for x in fmlib.cards() if x["area"] == "looks" and not x["name"].startswith("shader-")
+                and x["name"] not in ShaderLooks.RECIPES]
 
     def test_twelve_looks_each_with_every_field(self):
         got = self.looks()
@@ -640,3 +641,144 @@ class Looks(ForemanTestCase):
         self.assertIn("## Palette", self.fm("lib", "show", "looks/look-lido").stdout)
         found = {r["name"] for r in fmlib.search("look style palette", n=20)}
         self.assertEqual(names - found, set())
+
+
+def _section(text, name):
+    m = re.search(rf"(?ms)^## {re.escape(name)}\n(.*?)(?=^## |\Z)", text)
+    return m.group(1) if m else ""
+
+
+def _browser():
+    """A headless Chromium for compiling shaders: FOREMAN_CHROME, one on PATH, or Playwright's download."""
+    import glob
+    import shutil
+    found = [os.environ.get("FOREMAN_CHROME")] + [shutil.which(n) for n in (
+        "chrome-headless-shell", "chromium", "chromium-browser", "google-chrome")] + sorted(glob.glob(os.path.expanduser(
+            "~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell")))
+    return next((p for p in found if p and os.access(p, os.X_OK)), None)
+
+
+class ShaderLooks(ForemanTestCase):
+    """T-1499: eight shader looks, a light-and-material recipe card and an SVG icon system, beside the looks."""
+    RECIPES = {"light-and-material", "svg-icon-system"}
+    SECTIONS = ["Shader", "Uniforms", "Cost", "Reduced motion", "Suits", "Verify", "Test first", "Do", "Avoid",
+                "Review"]
+    UNIFORM = re.compile(r"(?m)^\s*uniform\s+(?:(?:highp|mediump|lowp)\s+)?\w+\s+([^;]+);")
+
+    def shaders(self):
+        return {x["name"]: (x, _read(x["path"])) for x in fmlib.cards()
+                if x["area"] == "looks" and x["name"].startswith("shader-")}
+
+    def glsl(self, text):
+        return re.search(r"(?ms)^```glsl\n(.*?)^```", _section(text, "Shader")).group(1)
+
+    def test_eight_shader_looks_each_with_every_field(self):
+        got = self.shaders()
+        self.assertEqual(len(got), 8, sorted(got))
+        problems, _ = fmlib.lint()
+        self.assertEqual([p for p in problems if p.startswith("looks/")], [])
+        for name, (x, text) in got.items():
+            self.assertEqual(x["sections"], self.SECTIONS, name)
+            self.assertNotIn("plasma", name)
+            self.assertRegex(_section(text, "Cost"), r"^Class: (low|medium|high)\b", name)
+            self.assertIn("Not for:", _section(text, "Suits"), name)
+            self.assertEqual(len(re.findall(r"(?m)^- ", _section(text, "Do"))), 1, name)
+            self.assertEqual(len(re.findall(r"(?m)^- ", _section(text, "Avoid"))), 1, name)
+
+    def test_every_shader_is_an_es3_fragment_under_60_lines_with_documented_uniforms(self):
+        for name, (x, text) in self.shaders().items():
+            src = self.glsl(text)
+            lines = src.splitlines()
+            self.assertLess(len(lines), 60, name)
+            self.assertEqual(lines[0], "#version 300 es", name)
+            self.assertRegex(src, r"(?m)^precision (highp|mediump) float;", name)
+            self.assertRegex(src, r"(?m)^out vec4 \w+;", name)
+            self.assertRegex(src, r"(?m)^void main\(\) \{", name)
+            self.assertNotIn("gl_FragColor", src, name)  # GLSL ES 1.00's output, an error under 3.00
+            self.assertEqual(src.count("{"), src.count("}"), name)
+            self.assertEqual(src.count("("), src.count(")"), name)
+            declared = {n.strip() for m in self.UNIFORM.findall(src) for n in m.split(",")}
+            documented = {u for cell in re.findall(r"(?m)^\| (`u[^|]*) \|", _section(text, "Uniforms"))
+                          for u in re.findall(r"`(u\w+)`", cell)}
+            self.assertEqual(declared, documented, name)
+            self.assertIn("uIntensity", declared, f"{name}: scene-3d.md: an intensity uniform where 0 means plain")
+            self.assertGreaterEqual(len(re.findall(r"uniform vec3 ", src)), 1, f"{name}: colours come from tokens")
+            self.assertNotRegex(src, r"cos\([^)]*[tT]ime[^)]*\.xyx", f"{name}: the default rainbow palette")
+            if "for (" in src:
+                self.assertNotRegex(_section(text, "Cost"), r"^Class: low", f"{name}: a loop isn't low cost")
+            still = _section(text, "Reduced motion")
+            frozen = set(re.findall(r"`(u\w+) = [\d.]+`", still))
+            if "uTime" in declared:
+                self.assertIn("uTime", frozen, f"{name}: the still names its time")
+                row = re.search(r"(?m)^\| `uTime` \|.*$", _section(text, "Uniforms")).group(0)
+                self.assertIn("wrap", row, f"{name}: scene-3d.md: time grows stale unless wrapped on the CPU")
+            self.assertTrue(frozen <= declared, name)
+            self.assertTrue(frozen or still.startswith("Static"), name)
+
+    def test_every_shader_compiles_and_links_in_a_headless_browser(self):
+        browser = _browser()
+        if not browser:
+            self.skipTest("no headless Chromium (FOREMAN_CHROME, chrome-headless-shell or Playwright's download)")
+        import html
+        scene = _read(os.path.join(os.path.dirname(fmlib.CARDS), "..", "playbooks", "references", "ui", "templates",
+                                   "scene.html"))
+        vs = re.search(r"const BG_VS = `(.*?)`;", scene, re.S).group(1)
+        sources = {n: self.glsl(t) for n, (_, t) in self.shaders().items()}
+        page = os.path.join(self.tmp, "compile.html")
+        with open(page, "w", encoding="utf-8") as f:
+            f.write("<!doctype html><pre id=out></pre><script>const VS = " + json.dumps(vs).replace("</", "<\\/")
+                    + ", FS = " + json.dumps(sources).replace("</", "<\\/") + """;
+const gl = document.createElement("canvas").getContext("webgl2"), r = {};
+function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  return [s, gl.getShaderParameter(s, gl.COMPILE_STATUS) ? "" : gl.getShaderInfoLog(s)]; }
+if (gl) for (const [n, src] of Object.entries(FS)) {
+  const [v] = sh(gl.VERTEX_SHADER, VS), [s, err] = sh(gl.FRAGMENT_SHADER, src);
+  if (err) { r[n] = err; continue; }
+  const p = gl.createProgram(); gl.attachShader(p, v); gl.attachShader(p, s); gl.linkProgram(p);
+  r[n] = gl.getProgramParameter(p, gl.LINK_STATUS) ? "ok" : gl.getProgramInfoLog(p);
+}
+document.getElementById("out").textContent = gl ? JSON.stringify(r) : "NO-WEBGL2";
+</script>""")
+        try:
+            p = subprocess.run([browser, "--headless", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+                                "--user-data-dir=" + os.path.join(self.tmp, "chrome"), "--dump-dom", "file://" + page],
+                               capture_output=True, text=True, timeout=120)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            self.skipTest(f"{browser} didn't run: {e}")
+        out = re.search(r'<pre id="out">(.*?)</pre>', p.stdout, re.S)
+        if not out:  # the browser didn't start (a root sandbox, no display libs): an environment gap, not a shader's
+            self.skipTest(f"{browser} printed no page: {p.stderr[-300:]}")
+        if out.group(1) == "NO-WEBGL2":
+            self.skipTest(f"{browser} gives no WebGL2 context here")
+        self.assertEqual(json.loads(html.unescape(out.group(1))), {n: "ok" for n in sources})
+
+    def test_light_and_material_keeps_scene_3d_rules(self):
+        text = _read(os.path.join(fmlib.CARDS, "looks", "light-and-material.md"))
+        self.assertRegex(_section(text, "Pipeline"), r"\b(ACES|AgX|Neutral)\b")
+        rigs = re.findall(r"(?m)^\| (\S[^|]*?) \| [^|]+ \| (\d) direct: [^|]+ \| ([^|]+) \|", _section(text, "Rigs"))
+        self.assertEqual({r[0] for r in rigs}, {"Three-point", "Rim", "Studio", "Overcast"}, rigs)
+        for rig, direct, shadow in rigs:
+            self.assertLessEqual(int(direct), 3, f"{rig}: at most three direct lights")
+            self.assertRegex(shadow.strip(), r"^(none|\w+ only)$", f"{rig}: at most one shadow caster")
+        presets = re.findall(r"(?m)^\| ([A-Z][^|]*?) \| (#[0-9A-F]{6}) \| ([\d.]+) \| ([\d.]+) \|",
+                             _section(text, "Materials"))
+        self.assertGreaterEqual(len(presets), 6, presets)
+        for name, albedo, metal, rough in presets:
+            self.assertIn(metal, ("0", "1"), f"{name}: metalness is 0 or 1")
+            self.assertTrue(0 < float(rough) <= 1, f"{name}: roughness is never exactly 0")
+            rgb = [int(albedo[i:i + 2], 16) for i in (1, 3, 5)]
+            self.assertTrue(all(30 <= v <= 240 for v in rgb), f"{name}: albedo inside sRGB 30-240")
+
+    def test_svg_icon_system_check_passes_its_sample_and_catches_slips(self):
+        text = _read(os.path.join(fmlib.CARDS, "looks", "svg-icon-system.md"))
+        for k in ("Grid", "Stroke", "Corners", "Optical size", "Markup"):
+            self.assertTrue(_section(text, k).strip(), k)
+        self.assertIn("3:1", text)  # type-and-colour.md: icons that carry meaning
+        sample = re.search(r"(?ms)^```svg\n(.*?)^```", _section(text, "Markup")).group(1)
+        scope = {}
+        exec(compile(re.search(r"(?ms)^```python\n(.*?)^```", text).group(1), "svg-icon-system", "exec"), scope)
+        self.assertEqual(scope["check"](sample), [])
+        for slip in (sample.replace('stroke-width="1.5"', 'stroke-width="2"', 1).replace(
+                'stroke-width="1.5"', 'stroke-width="1"', 1), sample.replace('fill="none"', 'fill="#1A1A1A"', 1),
+                     sample.replace('viewBox="0 0 24 24"', 'viewBox="0 0 20 20"')):
+            self.assertNotEqual(scope["check"](slip), [], slip)
