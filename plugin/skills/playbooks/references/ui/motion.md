@@ -158,6 +158,7 @@ The page must be readable with animation and JS absent. Loading motion decorates
 
 ## Check it
 
+- `fm motion check [PATH]` — exits 0. The Motion Score (`motion.toml` at the repo root) lists each motion with `name`, `duration` (ms or a DESIGN.md token), `easing`, `properties` and `reduced` (`none`, `fade` or `instant`); the check names a missing reduced form, an unknown easing, a duration past 2000 ms, a duplicate name or a token DESIGN.md lacks.
 - `grep -rnE "([1-9][0-9]*|0?\.[0-9]+)m?s\b|cubic-bezier\(" src --include=*.css --include=*.scss | grep -v tokens/motion` — returns nothing (raw timing outside the tokens).
 - `grep -rnE "transition:\s*all|transition(-property)?:[^;]*\b(width|height|top|left|right|bottom|inset|margin|padding|font-size|box-shadow)\b" src` — returns nothing. It is a lower bound: it reads one line at a time, so also check multi-line `transition` lists and JS (`animate({ height … })`, Framer `animate={{ width … }}`) by eye or with `grep -rnE "animate\(?\{\{?[^}]*\b(width|height|top|left)\b" src`.
 - `grep -rnE "transitionend|animationend" src` — each hit has a timeout fallback or doesn't gate state.
