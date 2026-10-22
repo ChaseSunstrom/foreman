@@ -207,6 +207,9 @@ def verdicts(cmds, g=None):
     import tempfile
     home, out, was = os.path.expanduser("~"), {}, tempfile.tempdir
     tempfile.tempdir = "/tmp"  # T-1291: the corpus is labelled on Linux's layout; macOS's /var/folders/… must judge the same
+    # T-1599: the guard reads python's own settings from its environment (an inherited PYTHONPATH makes every python -c
+    # suspect); a replay judges as the hook does, not as the shell that runs the replay happens to be set up
+    py = {k: os.environ.pop(k) for k in getattr(g, "_PY_PATH_VARS", ()) if k in os.environ}
     try:
         for cmd, cwd in cmds:
             cwd = cwd or home
@@ -217,6 +220,7 @@ def verdicts(cmds, g=None):
                 out[_key(cmd, cwd)] = f"error: {type(e).__name__}"
     finally:
         tempfile.tempdir = was
+        os.environ.update(py)
     return out
 
 
