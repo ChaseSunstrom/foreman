@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 
-from helpers import ForemanTestCase, read_json, read_text
+from helpers import ForemanTestCase, read_json, read_text, stub_corpus_replay
 
 import fmcore as c
 
@@ -52,7 +52,9 @@ def stub_env(tmp, root):
     return {"FOREMAN_RELEASE_FM": path, "STUB_ROOT": root}
 
 
-class Release(ForemanTestCase):
+class ReleaseCase(ForemanTestCase):
+    replayed = True  # T-1401: a fresh green guard corpus replay on record, so --push isn't refused
+
     def setUp(self):
         super().setUp()
         put(self.repo, "plugin/.claude-plugin/plugin.json", '{\n  "name": "foreman",\n  "version": "1.0.0"\n}\n')
@@ -63,6 +65,8 @@ class Release(ForemanTestCase):
             {"name": "foreman", "version": "1.0.0"}, {"name": "foreman-ui", "version": "0.1.0"}]}
         put(self.repo, ".claude-plugin/marketplace.json", json.dumps(self.market))
         self.fm("init")
+        if self.replayed:
+            stub_corpus_replay(self.repo)
         sh(self.repo, "add", ".")
         sh(self.repo, "commit", "-qm", "Foreman 1.0.0")
         self.env = stub_env(self.tmp, self.repo)
@@ -96,6 +100,8 @@ class Release(ForemanTestCase):
     def subject(self):
         return sh(self.repo, "log", "-1", "--format=%s").strip()
 
+
+class Release(ReleaseCase):
     def test_dry_run_lists_every_step_and_changes_nothing(self):
         out = self.rel("9.9.9", "--dry-run").stdout
         for name in ("tree", "check", "bump", "changelog", "commit", "release-check", "canary", "push", "round"):

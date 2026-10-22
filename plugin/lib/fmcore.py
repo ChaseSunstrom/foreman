@@ -2883,7 +2883,9 @@ def _next_for(p, briefs=None):
                 return None, "reflect", fmfriction.ACTION
             waits += (f" · usage ahead of pace ({pace}): the self-improvement pass waits (optional work dropped; "
                       f"required gates still run)")
-    mine = lambda x: not (x.meta.get("confirm") and needs_approval(x))  # T-0289: waits for the user, never picked
+    # T-0289: waits for the user, never picked; T-1478: nor, in the main checkout, a task a builder lane holds
+    mine = lambda x: not (x.meta.get("confirm") and needs_approval(x)) and not (
+        not p.lane and x.meta.get("builder") and x.status not in CLOSED)
     b = active_brief(briefs, p.lane) or next(filter(mine, order_queue(briefs)[0]), None) or \
         next(filter(mine, rank_inbox(briefs)), None)
     if not b:

@@ -8,6 +8,7 @@ import select
 import signal
 import sys
 import termios
+import time
 import tty
 
 # what a terminal sends for a key → the name the App's keys use (curses' names, so tui.toml stays as it was)
@@ -17,9 +18,13 @@ SEQS = {"\x1b[A": "KEY_UP", "\x1b[B": "KEY_DOWN", "\x1b[C": "KEY_RIGHT", "\x1b[D
         "\x1bOF": "KEY_END", "\x1b[3~": "KEY_DC", "\x1b[Z": "KEY_BTAB", "\x1bOP": "KEY_F(1)", "\x1bOQ": "KEY_F(2)",
         "\x1bOR": "KEY_F(3)", "\x1bOS": "KEY_F(4)"}
 SEQS.update({f"\x1b[{n}~": f"KEY_F({i})" for i, n in zip(range(5, 13), (15, 17, 18, 19, 20, 21, 23, 24))})
-# wrap off (?7l): a character in the last column can never scroll the screen
-ENTER, LEAVE = "\x1b[?1049h\x1b[?25l\x1b[?7l\x1b[2J", "\x1b[0m\x1b[?7h\x1b[?25h\x1b[?1049l"
+# wrap off (?7l): a character in the last column can never scroll the screen; bracketed paste on (?2004h, T-1316)
+ENTER = "\x1b[?1049h\x1b[?25l\x1b[?7l\x1b[?2004h\x1b[2J"
+LEAVE = "\x1b[0m\x1b[?2004l\x1b[?7h\x1b[?25h\x1b[?1049l"
 _LONGEST_FIRST = sorted(SEQS, key=len, reverse=True)
+# a paste arrives between these as one ("paste", text) event; past PASTE_CAP characters the rest is dropped
+PASTE_START, PASTE_END, PASTE_CAP = "\x1b[200~", "\x1b[201~", 64 * 1024
+PASTE_STALL = 1.0  # seconds with no input before a paste whose end never came is taken as it stands
 
 
 def colour_depth(env=None):
@@ -36,6 +41,12 @@ def parse_keys(data):
     """Raw terminal input → key names: escape sequences as KEY_UP and the like, control keys as ^R, Enter as \\n."""
     out, i = [], 0
     while i < len(data):
+        if data.startswith(PASTE_START, i):  # a paste: one event, never keys (an unended one runs to the data's end)
+            end = data.find(PASTE_END, i)
+            text = data[i + len(PASTE_START):end if end >= 0 else len(data)]
+            out.append(("paste", text.replace("\r\n", "\n").replace("\r", "\n")[:PASTE_CAP]))
+            i = end + len(PASTE_END) if end >= 0 else len(data)
+            continue
         seq = next((s for s in _LONGEST_FIRST if data.startswith(s, i)), None)
         if seq:
             out.append(SEQS[seq])
@@ -55,7 +66,15 @@ def parse_keys(data):
 
 
 def split_tail(data):
-    """(data, tail): an escape sequence cut off at the end of a read waits for the rest of it in the next."""
+    """(data, tail): an escape sequence cut off at the end of a read waits for the rest of it in the next, and so does
+    a paste not yet ended; what a paste holds back is cut to PASTE_CAP (plus its last few characters, which may be
+    the start of its end) so a paste can never grow the buffer without bound."""
+    i = data.rfind(PASTE_START)
+    if i >= 0 and data.find(PASTE_END, i) < 0:
+        rest, head = data[i:], len(PASTE_START) + PASTE_CAP
+        if len(rest) > head + len(PASTE_END):
+            rest = rest[:head] + rest[-(len(PASTE_END) - 1):]
+        return data[:i], rest
     i = data.rfind("\x1b")
     rest = data[i:] if i >= 0 else ""
     if rest and (rest in ("\x1b", "\x1bO") or rest.startswith("\x1b[") and all(0x20 <= ord(c) <= 0x3F for c in rest[2:])):
@@ -155,7 +174,7 @@ def session(fn, fd_in=None, fd_out=None):
     fd_in = sys.stdin.fileno() if fd_in is None else fd_in
     fd_out = sys.stdout.fileno() if fd_out is None else fd_out
     old = termios.tcgetattr(fd_in)
-    flags = {"resized": True, "pending": ""}
+    flags = {"resized": True, "pending": "", "read_at": 0.0}
     wake_r, wake_w = os.pipe()  # a signal wakes the wait for keys: select is retried after a handler (PEP 475)
     os.set_blocking(wake_w, False)
 
@@ -179,18 +198,22 @@ def session(fn, fd_in=None, fd_out=None):
                 return 80, 24
 
         def keys(self, timeout):
-            if flags["pending"]:  # a lone Esc, or a sequence cut off: wait briefly for its rest
+            pasting = flags["pending"].startswith(PASTE_START)
+            if flags["pending"] and not pasting:  # a lone Esc, or a sequence cut off: wait briefly for its rest
                 timeout = min(timeout, 0.05)
             r, _, _ = select.select([fd_in, wake_r], [], [], timeout)
             if wake_r in r:
                 os.read(wake_r, 64)
             if fd_in not in r:
+                if pasting and time.monotonic() - flags["read_at"] < PASTE_STALL:  # a paste's rest is still coming
+                    return []
                 data, flags["pending"] = flags["pending"], ""
                 return parse_keys(data) if data else []
             try:
                 data = flags["pending"] + os.read(fd_in, 4096).decode("utf-8", "replace")
             except OSError:
                 return []
+            flags["read_at"] = time.monotonic()
             data, flags["pending"] = split_tail(data)
             return parse_keys(data)
 
