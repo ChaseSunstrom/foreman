@@ -72,6 +72,18 @@ class StackDumps(ForemanTestCase):
         self.fm("check", check=False)
         self.assertEqual(glob.glob(os.path.join(self.stacks, "*")), [])
 
+    def test_setup_removes_empty_dumps_of_dead_processes_only(self):
+        self.fm("check", "rm", "1")
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+        dead, kept = os.path.join(self.stacks, f"check-{gone.pid}.txt"), os.path.join(self.stacks, "code-1.txt")
+        live = os.path.join(self.stacks, f"bench-{os.getpid()}.txt")
+        for path, text in ((dead, ""), (kept, "Thread 0x1"), (live, "")):
+            with open(path, "w") as f:
+                f.write(text)
+        self.fm("check", check=False)
+        self.assertEqual(sorted(os.listdir(self.stacks)), sorted([os.path.basename(kept), os.path.basename(live)]))
+
     def test_a_short_verb_installs_nothing(self):
         shutil.rmtree(self.stacks, ignore_errors=True)
         self.fm("state", check=False)
@@ -95,11 +107,11 @@ class IndexLock(HookCase):
         t = time.time() - age
         os.utime(self.lock, (t, t))
 
-    def live_git(self):
+    def live_git(self, cwd=None):
         git = os.path.join(self.tmp, "bin", "git")  # a process whose comm is git, with the repo as its cwd
-        os.makedirs(os.path.dirname(git))
+        os.makedirs(os.path.dirname(git), exist_ok=True)
         shutil.copy("/bin/sleep", git)
-        pr = subprocess.Popen([git, "30"], cwd=self.repo)
+        pr = subprocess.Popen([git, "30"], cwd=cwd or self.repo)
         self.procs.append(pr)
         return pr
 
@@ -127,6 +139,84 @@ class IndexLock(HookCase):
         self.assertTrue(os.path.exists(self.lock))
         self.assertIn(self.lock, why)
         self.assertIn(str(pr.pid), why)
+
+    def denied(self, pid, uid=None):
+        """/proc/<pid>'s fd and cwd unreadable to us (non-dumpable, hidepid); owned by uid when given."""
+        real_listdir, real_readlink, real_stat = os.listdir, os.readlink, os.stat
+        base = f"/proc/{pid}/"
+
+        def guard(real):
+            def f(path, *a, **k):
+                if str(path).startswith(base):
+                    raise PermissionError(13, "Permission denied", path)
+                return real(path, *a, **k)
+            return f
+
+        def stat(path, *a, **k):
+            s = real_stat(path, *a, **k)
+            if uid is not None and str(path) == base.rstrip("/"):
+                s = list(s)
+                s[4] = uid
+                s = os.stat_result(s)
+            return s
+        return mock.patch.multiple(fmcli.os, listdir=guard(real_listdir), readlink=guard(real_readlink), stat=stat)
+
+    @unittest.skipUnless(os.path.isdir("/proc/self"), "the holder scan reads /proc")
+    def test_a_process_with_the_lock_open_keeps_it(self):
+        self.make_lock(20 * 60)
+        pr = subprocess.Popen([sys.executable, "-c", "import sys, time\nf = open(sys.argv[1])\nprint('open', flush=True)\n"
+                               "time.sleep(30)", self.lock], cwd=self.tmp, stdout=subprocess.PIPE, text=True)
+        self.procs.append(pr)
+        self.assertEqual(pr.stdout.readline().strip(), "open")
+        pr.stdout.close()
+        removed, why = fmcli._stale_index_lock(self.repo)
+        self.assertFalse(removed)
+        self.assertTrue(os.path.exists(self.lock))
+        self.assertIn(str(pr.pid), why)
+
+    @unittest.skipUnless(os.path.isdir("/proc/self"), "the holder scan reads /proc")
+    def test_a_git_in_a_subdirectory_of_the_repo_keeps_it(self):
+        os.makedirs(os.path.join(self.repo, "sub"))
+        pr = self.live_git(cwd=os.path.join(self.repo, "sub"))
+        self.make_lock(20 * 60)
+        removed, why = fmcli._stale_index_lock(self.repo)
+        self.assertFalse(removed)
+        self.assertIn(str(pr.pid), why)
+
+    @unittest.skipUnless(os.path.isdir("/proc/self"), "the holder scan reads /proc")
+    def test_an_own_git_we_cannot_inspect_keeps_it(self):
+        pr = self.live_git(cwd=self.tmp)
+        self.make_lock(20 * 60)
+        with self.denied(pr.pid):
+            removed, why = fmcli._stale_index_lock(self.repo)
+        self.assertFalse(removed)
+        self.assertTrue(os.path.exists(self.lock))
+        self.assertIn(f"couldn't inspect pid {pr.pid}", why)
+
+    @unittest.skipUnless(os.path.isdir("/proc/self"), "the holder scan reads /proc")
+    def test_unreadable_processes_that_cannot_hold_it_do_not_block(self):
+        # another user's git can't write our .git; our own non-dumpable browser isn't a git (ANDON.md)
+        other = self.live_git(cwd=self.tmp)
+        sleeper = subprocess.Popen(["sleep", "30"], cwd=self.tmp)
+        self.procs.append(sleeper)
+        self.make_lock(20 * 60)
+        with self.denied(other.pid, uid=os.getuid() + 1), self.denied(sleeper.pid):
+            removed, why = fmcli._stale_index_lock(self.repo)
+        self.assertTrue(removed, why)
+
+    @unittest.skipUnless(os.path.isdir("/proc/self"), "the holder scan reads /proc")
+    def test_a_lock_replaced_during_the_check_is_kept(self):
+        self.make_lock(20 * 60)
+
+        def swap(*a):
+            os.remove(self.lock)
+            self.make_lock(20 * 60 + 5)  # a new file (new inode, other mtime), old enough to pass the age check
+            return []
+        with mock.patch.object(fmcli, "_lock_holders", side_effect=swap):
+            removed, why = fmcli._stale_index_lock(self.repo)
+        self.assertFalse(removed)
+        self.assertTrue(os.path.exists(self.lock))
+        self.assertIn("changed", why)
 
     def test_without_proc_it_is_never_removed(self):
         self.make_lock(20 * 60)
@@ -166,6 +256,13 @@ class LockProbe(ForemanTestCase):
             r = fmdoctor.check_lock_probe(c.state_dir())
         self.assertEqual(r.status, "FAIL")
         self.assertIn(fmdoctor._fs_type(c.state_dir()), r.detail)
+
+    def test_a_probe_child_that_cannot_start_is_named_apart(self):
+        import fmdoctor
+        with mock.patch.object(fmdoctor.sys, "executable", "/bin/false"):
+            r = fmdoctor.check_lock_probe(c.state_dir())
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("couldn't start the probe child", r.detail)
 
     def test_doctor_reports_it(self):
         out = self.fm("doctor", "-v", check=False).stdout
