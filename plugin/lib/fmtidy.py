@@ -24,6 +24,7 @@ EVENTS_ROTATE_BYTES = 5_000_000
 HOOKS_LOG_ROTATE_BYTES = 1_000_000
 ROTATED_KEEP = 3
 SNAPSHOT_MAX_DAYS = 7
+STACKS_MAX_DAYS = 14  # T-1405: state/logs/stacks, a hung long verb's stack dumps
 REVERTED_DAYS = 30  # T-1442: fm code's kept-aside copies of reverted files
 WORK_SNAPSHOT_DAYS = 14 # T-0884: saved working files before a discarding command
 MEMORY_MAX_LINES, MEMORY_MAX_BYTES = 200, 25_000
@@ -627,27 +628,29 @@ def check_global(apply, actions, plugins=False):
             for old in rotated[:-ROTATED_KEEP]:
                 os.remove(os.path.join(logs, old))
             actions.append(("global", kind))
-    def stale(d):
+    def stale(d, days=SNAPSHOT_MAX_DAYS):
         out = []
         for f in os.listdir(d) if os.path.isdir(d) else []:
             if f == "shadow.jsonl":  # T-0963 review: fm compact-output shadow's measurement, not a cache
                 continue
             try:  # T-0839: a heartbeat its watcher removes between listdir and here
-                if time.time() - os.path.getmtime(os.path.join(d, f)) > SNAPSHOT_MAX_DAYS * 86400:
+                if time.time() - os.path.getmtime(os.path.join(d, f)) > days * 86400:
                     out.append(os.path.join(d, f))
             except OSError:
                 pass
         return out
-    for kind, what, old in (
+    for kind, what, old, days in (
             ("old_snapshots", "statusline snapshot(s)",  # by-pid/ is pruned by SessionStart (T-0777)
-             [f for f in stale(os.path.join(c.state_dir(), "sessions")) if not os.path.isdir(f)]),
+             [f for f in stale(os.path.join(c.state_dir(), "sessions")) if not os.path.isdir(f)], SNAPSHOT_MAX_DAYS),
             ("old_outputs", "sessions' compact-output full texts (T-0811)",
-             stale(os.path.join(c.state_dir(), "outputs"))),
+             stale(os.path.join(c.state_dir(), "outputs")), SNAPSHOT_MAX_DAYS),
             ("old_heartbeats", "mail watcher heartbeat(s) of ended sessions (T-0819)",  # a live one beats every 2 s;
              [f for f in stale(os.path.join(c.state_dir(), "bus"))  # seen-<sid> stays: a resumed session's read mark
-              if os.path.basename(f).startswith("watch-")])):
+              if os.path.basename(f).startswith("watch-")], SNAPSHOT_MAX_DAYS),
+            ("old_stacks", "long verbs' stack dumps (T-1405)",
+             stale(os.path.join(logs, "stacks"), STACKS_MAX_DAYS), STACKS_MAX_DAYS)):
         if old:
-            out.append(finding(None, kind, "action", f"{len(old)} {what} older than {SNAPSHOT_MAX_DAYS}d",
+            out.append(finding(None, kind, "action", f"{len(old)} {what} older than {days}d",
                                "delete (derived cache)", auto=True))
             if apply:
                 for f in old:
