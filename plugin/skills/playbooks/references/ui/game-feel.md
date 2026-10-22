@@ -5,6 +5,11 @@ Use when a game or a playful interface needs to feel responsive and physical: hi
 
 The one rule: **juice exaggerates what happened; it never hides what is happening, and it never hurts.** Every effect has a cause in play, a hard ceiling, and a reduced-motion version that keeps its meaning. Each rule below can be marked pass or fail by a reviewer.
 
+1. Write the juice table: one row per gameplay event, every cell filled, before any effect is built.
+2. Check every amount against the caps; where `motion.md` names a stricter number, it wins.
+3. Build the effects on the capped primitives (`juice.py` or its port), never on raw engine calls.
+4. Build each reduced-motion cell as its own path, then run the checks in Check it.
+
 ## Precedence
 
 - `motion.md` owns UI chrome: menus, HUD transitions, settings and store screens. Its tokens, its 500 ms ceiling and its reduced-motion path apply there unchanged.

@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 import fmcore as c
 
@@ -163,45 +164,82 @@ def _canary_status(p):
     print(f"{last}" + ("" if "canary done" in text else " (still running)") + "\n" + text.rstrip())
 
 
+RERUN_S = 600  # T-1518: all the canary's load-flap reruns together
+
+
 def _canary_worker(v, root):
     """`fm sentinel` in every local project fm knows: what an earlier task proved that fails there now. Never fatal."""
     try:
-        listed = json.loads(subprocess.run([*FM, "projects", "--json"], capture_output=True, text=True, timeout=120,
-                                           ).stdout or "{}").get("projects", [])
+        listed = json.loads(subprocess.run([*FM, "projects", "--json"], capture_output=True, text=True,
+                                           errors="replace", timeout=120).stdout or "{}").get("projects", [])
     except (ValueError, OSError, subprocess.TimeoutExpired):
         listed = []
     print(f"canary: fm sentinel in {len(listed)} project(s)", flush=True)
 
-    def one(x):
+    def one(x, timeout=1800):
+        """(the sentinel's exit code, None when it couldn't run or timed out; the report line)"""
         try:
-            r = subprocess.run([*FM, "sentinel"], cwd=x["root"], capture_output=True, text=True, timeout=1800)
+            r = subprocess.run([*FM, "sentinel"], cwd=x["root"], capture_output=True, text=True, errors="replace",
+                               timeout=timeout)
             first = (r.stdout.strip().splitlines() or ["(no output)"])[0]
-            return bool(r.returncode), f"  {'✗' if r.returncode else '✓'} {x['project']}: {first}"
+            return r.returncode, f"  {'✗' if r.returncode else '✓'} {x['project']}: {first}"
         except (OSError, subprocess.TimeoutExpired) as e:
-            return True, f"  ✗ {x['project']}: sentinel couldn't run ({type(e).__name__})"
+            return None, f"  ✗ {x['project']}: sentinel couldn't run ({type(e).__name__})"
+
+    def load(hl):
+        return f"load {hl[0]:.1f} on {hl[1]} CPUs" if hl else "load unknown"
 
     from concurrent.futures import ThreadPoolExecutor
     failed = []
     todo = [x for x in listed if x.get("exists")]
     with ThreadPoolExecutor(4) as pool:
-        for x, (bad, line) in zip(todo, pool.map(one, todo)):  # in project order, as each is ready
+        for x, (code, line) in zip(todo, pool.map(one, todo)):  # in project order, as each is ready
             print(line, flush=True)
-            if bad:
-                failed.append((x, line.strip()))
+            if code != 0:
+                failed.append((x, line.strip(), code, c.host_load()))
+    # T-1518: a check that failed (a real exit, not a timeout) while the host was loaded (load at least its CPUs) gets
+    # one rerun alone after the pool, all reruns within RERUN_S; passing there is a load flap, reported with both
+    # results and captured like a failure, so an intermittent regression still lands in the inbox. ponytail: "alone"
+    # is the canary's own load gone, not an idle machine; wait for the load to fall first if flaps hide real failures.
+    still, flaps, skipped, end = [], [], [], time.monotonic() + RERUN_S
+    for x, line, code, hl in failed:
+        if code is None or not hl or hl[0] < hl[1]:
+            still.append((x, line))
+            continue
+        if end - time.monotonic() <= 0:
+            still.append((x, line))
+            skipped.append(x["project"])
+            continue
+        again_code, again = one(x, timeout=end - time.monotonic())
+        again = f"{again.strip().split(': ', 1)[-1]} ({load(c.host_load())})"
+        if again_code == 0:
+            flaps.append((x, line))
+            print(f"  ~ {x['project']}: load flap: failed beside the others ({line.split(': ', 1)[-1]}) ({load(hl)}), "
+                  f"passed alone ({again})", flush=True)
+        else:
+            still.append((x, line))
+            print(f"  ✗ {x['project']}: failed alone too: {again}", flush=True)
+    if skipped:
+        print(f"  (no rerun for {', '.join(skipped)}: the reruns' {RERUN_S:g} s were spent)", flush=True)
+    failed = still
     import fmeco
-    for x, line in failed:  # a project's past check failing now: an item in that project's inbox
-        try:
+    for x, title in [(x, f"Canary after Foreman {v}: {line[:200]}") for x, line in failed] + [
+            (x, f"Canary load flap after Foreman {v}: {line[:200]}") for x, line in flaps]:
+        try:  # a project's past check failing now, or only under load: an item in that project's inbox
             q = c.find_project(x["root"])
             if q:
-                fmeco.capture_once(q, f"Canary after Foreman {v}: {line[:200]}", "FIX", "discovered")
+                fmeco.capture_once(q, title, "FIX", "discovered")
         except Exception as e:  # never fatal: the report above still names it
             print(f"  (couldn't capture for {x['project']}: {type(e).__name__})", flush=True)
-    print(f"canary done: {len(failed)} of {len(todo)} project(s) failing", flush=True)
-    if failed:
+    flapped = f"{len(flaps)} load flap(s): {', '.join(x['project'] for x, _ in flaps)}" if flaps else ""
+    print(f"canary done: {len(failed)} of {len(todo)} project(s) failing" + (f", {flapped}" if flaps else ""), flush=True)
+    if failed or flaps:
         try:
             import fmserve
             p = c.find_project(root)
-            fmserve._notify(p, f"Foreman {v} canary: {len(failed)} project(s) failing: " + ", ".join(x["project"] for x, _ in failed))
+            fmserve._notify(p, f"Foreman {v} canary: " + "; ".join(
+                ([f"{len(failed)} project(s) failing: " + ", ".join(x["project"] for x, _ in failed)] if failed else [])
+                + ([flapped] if flaps else [])))
         except Exception:
             pass
 

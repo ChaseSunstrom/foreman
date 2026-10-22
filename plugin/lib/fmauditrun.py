@@ -52,7 +52,10 @@ def run(p, args):
     path = os.path.join(p.dir, "audits", f"{b.id}.review.md")
     with open(path, encoding="utf-8") as f:
         brief = f.read()
-    lenses = [x for x in (args.lens or c.AUDIT_LENSES) if x != "self"]
+    # T-1501: design only when prep put it in the brief (a UI diff); fm writes this header, so a request can't add it
+    head = re.search(r"(?m)^=== review \(([^)\n]*)\) ===$", brief)
+    design = ["design"] if head and "design" in head.group(1).split(", ") else []
+    lenses = [x for x in (args.lens or list(c.DEFAULT_LENSES) + design) if x != "self"]
     if not lenses:
         raise fmcli.UsageError(f"fm audit run: {b.id} is an S task: its self audit is the main thread's "
                                f"(fm task audit {b.id} self …); pass --lens to run reviewers anyway")
