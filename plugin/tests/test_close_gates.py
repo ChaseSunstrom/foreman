@@ -146,6 +146,7 @@ class CloseGates(ForemanTestCase):
         self.fm("check", check=False, env={"FOREMAN_SENTINEL_RUN": "1", "FOREMAN_SENTINEL_TREE": "0" * 12})
         self.assertEqual([b for b in c.load_briefs(self.p) if b.meta.get("baseline")], [])
 
+    @unittest.skipUnless(shutil.which("nice"), "no nice on this host: the sentinel starts as before")
     def test_the_background_sentinel_runs_at_low_priority(self):
         # T-1463: started at full priority, it competed for CPU with the next task's foreground finish and tests
         import fmcli
