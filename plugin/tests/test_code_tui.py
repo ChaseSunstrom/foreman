@@ -1208,6 +1208,19 @@ class Width(unittest.TestCase):
         self.assertEqual(T.tail("日本語", 4), "…語")
         self.assertEqual(T.fit("café", 4), "café", "an accent fills no column of its own")
 
+    def test_labels_and_titles_measure_columns(self):
+        """T-1431: a wide-glyph track label fits its slot, and a long note leaves the box title cut, not gone."""
+        T = tui()
+        st = Core.state(Core(), RUN[:3])
+        st.steps = [{"text": "日本語のステップ名前が長い", "state": "now"}, {"text": "🚀🚀🚀🚀🚀🚀 launch", "state": "todo"},
+                    {"text": "日本語日本語日本語日本語", "state": "todo"}]
+        for w in (60, 80, 110):
+            for row in T._track(st, w, 3, None):
+                self.assertEqual(sum(T.width(t) for t, _ in row), w, (w, row))
+        cv = T.Canvas(80, 3)
+        T.box(cv, 0, 0, 3, 80, "Projects", T.DEFAULTS, note="n" * 90)
+        self.assertIn("Pro…", cv.text().splitlines()[0])
+
     def test_plain_ascii_is_cut_as_before(self):
         T = tui()
         self.assertEqual((T.fit("hello world", 5), T.fit("hi", 5), T.fit("abc", 0)), ("hell…", "hi", ""))
