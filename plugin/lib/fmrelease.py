@@ -309,6 +309,8 @@ def run(p, args):
     state["remote"] = state.get("remote") or "origin"
     if state["remote"].startswith("-"):
         _err(f"--remote {state['remote']!r} reads as a git option; name a remote or a URL")
+    if getattr(args, "stale_ok", None) is not None and not state["push"]:
+        _err("--stale-ok waives the safety gate of --push; without --push there is nothing to waive")
     if state["push"]:
         if state["no_check"] or state["skipped"]:
             _err("a release with skipped gates (--no-check) can't --push; nothing was changed")

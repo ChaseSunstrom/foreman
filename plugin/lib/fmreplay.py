@@ -448,8 +448,11 @@ def record(cases, drifted, broken):
     """T-1401: the corpus replay's result on the ledger of the project the corpus belongs to (Foreman's own), else
     cwd's; safety_gate reads it."""
     p = c.find_project(_corpus_root()) or c.find_project(os.getcwd())
+    data = {"cases": cases, "drifted": drifted, "broken": broken}
+    if os.environ.get("FOREMAN_GUARD_CASES"):  # a case file of the caller's own: recorded, never a pass
+        data["substitute"] = True
     if p:
-        c.log_event(p, "guard_corpus", data={"cases": cases, "drifted": drifted, "broken": broken})
+        c.log_event(p, "guard_corpus", data=data)
 
 
 def safety_gate(p):
@@ -461,7 +464,8 @@ def safety_gate(p):
         if q and q.dir not in seen:
             seen.add(q.dir)
             events += c.ledger_events(q, kinds=["guard_corpus"], since=since)
-    events = [e for e in events if isinstance(e.get("data"), dict) and c.parse_ts(e.get("ts"))]
+    events = [e for e in events if isinstance(e.get("data"), dict) and c.parse_ts(e.get("ts"))
+              and not e["data"].get("substitute")]
     head = "the guard corpus replay (fm replay --cases)"
     if not events:
         return f"{head} has no result on record in the last {GATE_WINDOW} days: run {REFRESH}"
@@ -472,7 +476,7 @@ def safety_gate(p):
         return (f"{head} failed on {on}: {drifted} drifted, {broken} broken, {cases} cases: fix the guard or the "
                 f"labels, then run {REFRESH}")
     age = c.age_days(e["ts"])
-    if age > STALE_DAYS:
+    if age > STALE_DAYS or age < 0:  # dated in the future: a skewed clock or a planted record
         return f"{head} last passed on {on}, {int(age)} days ago (older than {STALE_DAYS}): run {REFRESH}"
     return None
 
@@ -490,7 +494,8 @@ def enforce(p, by, waiver=None, attended=False):
         c.log_event(p, "safety_waiver", data={"check": "guard corpus replay", "by": by, "reason": waiver[:500],
                                                "problem": why})
         return f"{why} (waived: {waiver[:200]}; logged)"
-    if attended:
+    if attended:  # on the ledger too: FOREMAN_CODE_ATTENDED set by an agent is never a silent pass
+        c.log_event(p, "safety_warned", data={"check": "guard corpus replay", "by": by, "problem": why})
         return f"warning: {why}"
     raise fmcli.UsageError(f"{by} refuses: {why}; or --stale-ok REASON runs anyway (logged)")
 
