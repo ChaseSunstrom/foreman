@@ -98,7 +98,7 @@ DEFAULTS = {
     "keys": {"q": "quit", "n": "new", "s": "stop", "r": "resume", "?": "help", "d": "diff", "h": "history",
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
              "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
-             "p": "projects", ",": "settings", "z": "hush"},
+             "p": "projects", ",": "settings", "z": "hush", "L": "looks"},
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
          ("q", "quit")]
@@ -1126,6 +1126,7 @@ KEY_NAMES = {"\t": "Tab", "\n": "Enter", "KEY_ENTER": "Enter", "KEY_UP": "↑", 
 COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume", "resume it"),
                   ("diff", "the run's changes"), ("history", "past runs"), ("projects", "every Foreman project"),
                   ("model", "model or worker"), ("settings", "settings: look, layout, keys"),
+                  ("looks", "your taste: 12 looks in pairs"),
                   ("hush", "motion: full, reduced, off"),
                   ("thoughts", "the model's own words"), ("focus", "next panel"), ("up", "up"), ("down", "down"),
                   ("expand", "open a line"), ("follow", "follow the latest"), ("help", "keys"), ("quit", "quit")]
@@ -1142,7 +1143,7 @@ def _overlay(cv, cfg, title, note, w=None, h=None):
 
 
 POSTER = (("run", ("new", "stop", "resume", "model")),  # T-1512: the keys poster's groups; extensions' go under more
-          ("see", ("diff", "history", "projects", "thoughts", "settings", "hush")),
+          ("see", ("diff", "history", "projects", "thoughts", "settings", "hush", "looks")),
           ("move", ("focus", "up", "down", "expand", "follow")), ("app", ("help", "quit")))
 
 
@@ -1456,7 +1457,9 @@ VIEWS = {"help": _help_view, "diff": _diff_view, "history": _list_view("Past run
                                 "no setting matches", sized=True),
          "layout": _layout_view,
          "runners": _list_view("Runners", "Enter tests one (asks its CLI for --version) · Esc back", _runner_row,
-                               foot=_runners_foot)}
+                               foot=_runners_foot),
+         "looks": _list_view(lambda app: f"Which is more like you? {len(app.look_answers) + 1}/{len(app.look_pairs)}",
+                             "1 · 2 · n neither · Enter picks · Esc stops, nothing kept", lambda item: [(item[0], "text")])}
 
 
 # ---------------------------------------------------------------- colours and the SVG snapshot
@@ -1585,7 +1588,7 @@ class App:
                          "page_down": lambda: self.move(10), "expand": self.expand, "follow": self.follow_tail,
                          "diff": self.show_diff, "history": self.show_history, "model": self.show_picker,
                          "thoughts": self.toggle_thoughts, "projects": self.show_home,
-                         "settings": self.show_settings, "hush": self.hush}
+                         "settings": self.show_settings, "hush": self.hush, "looks": self.show_looks}
         self.commands.update({name: self._ext_command(name, fn) for name, fn in EXT_COMMANDS.items()})
 
     def fps(self, t):
@@ -1639,6 +1642,8 @@ class App:
             return self._layout_key(k)
         if self.mode == "runners":
             return self._runners_key(k)
+        if self.mode == "looks":
+            return self._looks_key(k)
         if self.cfg["keys"].get(k) == "hush":  # T-1512: the run, its views, home and the keys poster (which it
             return self.hush()  # closes); the prompt and the settings list (above) keep their own keys
         if self.mode == "help":
@@ -1878,6 +1883,44 @@ class App:
 
     def show_history(self):
         self.items, self.item_index, self.mode = history(self.history_dir), 0, "history"
+
+    # -- taste (T-1537): fm looks calibrate's twelve pairs, one a screen; the answers go to the taste ledger at once
+    def show_looks(self):
+        import fmtaste
+        try:
+            self.look_known, self.look_round = fmtaste.looks(), fmtaste.rounds_done()
+            self.look_pairs, self.look_answers = fmtaste.pairs(self.look_known, self.look_round), []
+        except (OSError, ValueError) as e:  # no look cards to pair: said in the status bar, the screen stays
+            self.message = f"taste: no calibration: {e}"
+            return
+        self._look_items()
+        self.mode = "looks"
+
+    def _look_items(self):
+        k, (a, b) = self.look_known, self.look_pairs[len(self.look_answers)]
+        self.items, self.item_index = [(f"1  {k[a]['title']}: {k[a]['line']}", "a"),
+                                       (f"2  {k[b]['title']}: {k[b]['line']}", "b"), ("n  Neither", "n")], 0
+
+    def _looks_key(self, k):
+        cmd = self._list_cmd(k)
+        step = {"up": -1, "down": 1}.get(cmd)
+        ans = {"1": "a", "2": "b", "n": "n"}.get(k) or (self.items[self.item_index][1] if cmd == "expand" else None)
+        if k in ("\x1b", "q"):
+            self.mode, self.message = "main", "taste: calibration stopped, nothing recorded"
+        elif step:
+            self.item_index = max(0, min(len(self.items) - 1, self.item_index + step))
+        elif ans:
+            self.look_answers.append(ans)
+            if len(self.look_answers) < len(self.look_pairs):
+                return self._look_items()
+            self.mode = "main"
+            try:
+                import fmtaste
+                fmtaste.calibrate(self.look_answers, self.look_round)
+                self.message = f"taste: {len(self.look_answers)} answers recorded (fm looks shows the ranking)"
+            except Exception as e:  # a busy lock, a full disk: said in the status bar, the app stays up
+                self.message = f"taste: not recorded: {e}"
+        return None
 
     def show_picker(self):
         try:
