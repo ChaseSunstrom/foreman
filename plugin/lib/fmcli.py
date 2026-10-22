@@ -6020,6 +6020,11 @@ def _build_parser():
                    help="palette: CSS light-dark() roles, DTCG JSON or a Tailwind v4 @theme")
     s.add_argument("--out", metavar="PATH", help="extract: the file to write the Tokens section into (default: "
                                                  "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints)")
+    s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 93), help="PNG files with no Pillow (T-1630): info "
+            "PATH: size and mode; diff A B: the changed-pixel count and box (exit 1 when they differ or sizes do)")
+    s.add_argument("action", choices=["info", "diff"])
+    s.add_argument("paths", nargs="+", metavar="PATH", help="info: one PNG; diff: two, A then B")
+    s.add_argument("--out", metavar="PATH", help="diff: write a PNG of A faded with each changed pixel in red")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), tier=("Finding your way", 460), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
