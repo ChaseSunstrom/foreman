@@ -1,0 +1,4 @@
+:root { --dur-fast: 120ms; --dur-slow: 400ms; }
+.btn { transition: transform 200ms ease; } /* expect */
+.sheet { transition: transform var(--dur-slow) ease; }
+@media (prefers-reduced-motion: reduce) { .btn, .sheet { transition: none; } }

@@ -1,0 +1,7 @@
+.drawer { width: 320px; transition: transform .3s ease, opacity .3s; }
+@keyframes grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+.panel { animation: grow .4s ease-out; }
+@media (prefers-reduced-motion: reduce) { .drawer, .panel { transition: none; animation: none; } }
