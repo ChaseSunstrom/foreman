@@ -1939,7 +1939,47 @@ def fix(results):
     return fixed, left
 
 
+def report_wrong(args):
+    """T-1606: fm doctor --wrong "CMD": a false alarm (or, --should block, a miss) filed as a labelled guard case plus
+    one FIX task for a person to review, once per case. The guard itself is never changed here."""
+    import fmcli
+    import fmreplay
+    should, why = args.should or "allow", (args.why or "").strip()
+    k = fmreplay.add_case(args.wrong, should, os.path.abspath(args.cwd) if args.cwd else "",
+                          f"fm doctor --wrong: {why}" if why else "fm doctor --wrong")
+    got = (fmreplay.drift([k]) or [{}])[0].get("got")  # None: the guard agrees with the label today
+    wrong_now = got is not None
+    # the case lives in Foreman's own corpus, so its review task goes to that checkout's project, not the cwd's
+    p, made = c.find_project(fmreplay._corpus_root()) or c.find_project(os.getcwd()), None
+    if wrong_now and p:
+        shown = c.fit(" ".join(k["cmd"].split()), 100)
+        with c.lock(p.dir):
+            have = "".join(b.section("Raw request") for b in c.load_briefs(p, include_archive=True))
+            if f"[guard-case {k['id']}]" not in have:
+                title = (f"Guard false alarm: should allow: {shown}" if should == "allow"
+                         else f"Guard miss: should block: {shown}")
+                b = fmcli._create(p, title, "FIX", "S", "captured", source="discovered", raw=(
+                    f"[guard-case {k['id']}] fm doctor --wrong (T-1606): the guard "
+                    f"{'refuses' if should == 'allow' else 'allows'} `{shown}` in {k.get('cwd') or '~'}; "
+                    f"{why or 'no reason given'}. Review it: correct fmguard.py if the label is right ("
+                    + ("never loosen the guard without the user's yes" if should == "allow" else "tighten it")
+                    + "), or correct the label."))
+                c.log_event(p, "capture", task=b.id, data={"source": "discovered", "type": "FIX"})
+                made = b.id
+        if made:
+            c.regen_views(p)
+    verdict = ("the guard couldn't judge it (it raised)" if got == "unable" else
+               "the guard " + ("refuses" if should == "allow" else "allows") + " it today") if wrong_now else \
+        f"the guard already {'allows' if should == 'allow' else 'refuses'} it today: nothing to review"
+    fmcli.out(args, {"case": k, "wrong_now": wrong_now, "got": got, "captured": made,
+                     "project": p.slug if p else None, "corpus": fmreplay.cases_path()},
+              f"Stored guard case {k['id']} (should {should}) in {fmreplay.cases_path()}; {verdict}"
+              + (f"; captured {made} in {p.slug} for review" if made else "") + ". The guard itself is unchanged.")
+
+
 def cmd_doctor(args):
+    if getattr(args, "wrong", None):
+        return report_wrong(args)
     if args.restore_state:
         try:
             return print(f"Foreman state is in {c.restore_default_state()}")
