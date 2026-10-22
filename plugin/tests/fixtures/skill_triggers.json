@@ -1,0 +1,52 @@
+{
+  "intake": [
+    "FIX: the login button does nothing. FEATURE: add dark mode. Make tasks for these new requests",
+    "I have a new request in plain words, edit the footer text, make a task and start the first one",
+    "Split these FIX and FEATURE lines into ordered tasks and start the first"
+  ],
+  "library": [
+    "I am about to debug a database query, show the stack card and its verify commands",
+    "Before I test code in this framework, what does fm lib say for the language and tool?",
+    "Which stack cards cover this language and database? I need verify commands to test the code"
+  ],
+  "directions": [
+    "I am about to build a new UI and it needs a look, show me style directions",
+    "Give me six style directions for the new UI and save the pick as DESIGN.md",
+    "Build a new UI for the dashboard: which look should I pick, save it as DESIGN.md"
+  ],
+  "brainstorm": [
+    "super improve it",
+    "what next? give me scored ideas by lens and turn them into tasks",
+    "This request is open-ended, brainstorm grounded ideas and score them"
+  ],
+  "reflect": [
+    "The phase ends here, record the decisions and lessons",
+    "Do a retro: what lessons and self-improvement ideas came out of this block?",
+    "This task ends, record the decisions and the lessons we learned"
+  ],
+  "resume": [
+    "where were we? I just did /clear",
+    "A crash killed my last session, restore the saved task context",
+    "I start a new session after /compact, restore the saved context"
+  ],
+  "next": [
+    "I finished this task, close it and start the next queued one",
+    "This task is blocked, drop it and continue with the next",
+    "ok, continue with the next one"
+  ],
+  "improve": [
+    "improve Foreman itself",
+    "The queue is empty and the self-inbox has items, make eval-gated changes in a worktree",
+    "Ask Foreman to improve itself with eval-gated changes"
+  ],
+  "playbooks": [
+    "I am about to refactor this module and tune performance",
+    "Do a security review, then fix the build errors",
+    "Write an ADR, plan it, and do TDD and run evals"
+  ],
+  "status": [
+    "I am about to report where work stands, what is left?",
+    "Give me a summary of what's left in at most 25 lines",
+    "Report where the work stands and what's left"
+  ]
+}
