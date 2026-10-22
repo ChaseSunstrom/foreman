@@ -136,7 +136,11 @@ class Source:
             self.css = _keep(code, spans)
         else:
             self.css = code
-        ends = _closers(self.css)
+        # T-1507: braces and semicolons inside a CSS string (content: "}") are text, not structure; JSX keeps its
+        # own (an apostrophe in JSX text is no quote)
+        self.braces = self.css if self.js else re.sub(r"\"[^\"\n]*\"|'[^'\n]*'",
+                                                      lambda m: re.sub(r"[{};]", " ", m.group()), self.css)
+        ends = _closers(self.braces)
         self.opens = sorted(ends)
         self.nl = [i for i, ch in enumerate(text) if ch == "\n"]
         self.allowed = {}
@@ -599,8 +603,9 @@ def _in_template(code, pos):
     return not re.search(r"(?:\bon:\w+|@\w+|v-on:\w+)\s*=\s*[\"{][^\"}]*$", code[max(0, pos - 300):pos])
 
 
-def _read(path):
-    """(text, None) for a regular file up to MAX_BYTES, else (None, why). Never blocks on a FIFO or device."""
+def _read(path, strict=False):
+    """(text, None) for a regular file up to MAX_BYTES, else (None, why). Never blocks on a FIFO or device. strict:
+    text that isn't UTF-8 is refused rather than decoded with replacement characters (a file fm will write back)."""
     try:
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
     except OSError as e:
@@ -617,7 +622,10 @@ def _read(path):
             return None, e.strerror.lower() if e.strerror else str(e)
     if len(data) > MAX_BYTES:
         return None, f"over {MAX_BYTES // 1000} KB"
-    return data.decode("utf-8", errors="replace"), None
+    try:
+        return data.decode("utf-8", errors="strict" if strict else "replace"), None
+    except UnicodeDecodeError as e:
+        return None, f"not UTF-8 text (byte {e.start}); convert it to UTF-8 first"
 
 
 def collect(paths):
@@ -691,6 +699,7 @@ SURFACES = ("surface", "surface-raised", "surface-sunken")
 PAIRS = [(fg, s, need, 7 if fg == "text" else need) for fg, need in
          (("text", 4.5), ("text-muted", 4.5), ("border", 3), ("accent", 4.5)) for s in SURFACES] + \
         [("on-accent", "accent", 4.5, 4.5), ("on-subtle", "accent-subtle", 4.5, 4.5)]
+MARGIN = 0.03  # palette aims this far past each floor: one 8-bit channel step can't land a pair under it
 F = r"[-+]?(?:\d++\.?\d*+|\.\d++)(?:e[-+]?\d++)?"  # possessive, as NUM: a long digit run never backtracks
 OKLCH = re.compile(r"oklch\(\s*(" + F + r")(%?)\s+(" + F + r")(%?)\s+(" + F + r"|none)(?:deg)?\s*(?:/\s*(" + F +
                    r")(%?)\s*)?\)", re.I)
@@ -806,7 +815,8 @@ def _floors(role, dark):
 def palette(seed):
     """Light and dark values for ROLES from one seed colour, and the proof of every pair. Neutrals take the seed's hue
     at a whisper of its chroma; each text role starts at type-and-colour.md's lightness and moves away from its
-    surfaces in 0.01 steps until every pair it is in meets its floor; the accent keeps the seed's hue and chroma."""
+    surfaces in 0.01 steps until every pair it is in clears its floor by MARGIN; the accent keeps the seed's hue and
+    chroma."""
     rgb = parse_colour(seed)
     if rgb is None:
         raise ValueError(f"can't read the seed {seed!r}: write a hex, rgb(), hsl() or oklch() colour, opaque")
@@ -826,7 +836,7 @@ def palette(seed):
             L, C = starts[role]
             for _ in range(102):  # 0.01 a step: at most from one end of L to the other
                 t[role] = _tok(L, C, h0)
-                if all(contrast(t[role]["rgb"], t[o]["rgb"]) >= need for o, need in _floors(role, dark)) \
+                if all(contrast(t[role]["rgb"], t[o]["rgb"]) >= need + MARGIN for o, need in _floors(role, dark)) \
                         or L >= 1 and dark or L <= 0 and not dark:
                     break
                 L = min(max(L + (.01 if dark else -.01), 0.0), 1.0)
@@ -871,27 +881,42 @@ def render_proofs(proofs, warnings=()):
         f"(needs {p['need']:g})" for p in proofs])
 
 
-ROOTISH = re.compile(r"(?<![\w-])(?::root|html|:host)(?![\w-])|^@theme\b|^\.(?:theme-)?(?:dark|light)$|"
-                     r"^\[data-[\w-]*(?:theme|mode|scheme)\b", re.I)
+QUALS = r"(?:\.[\w-]+|\[[^\]]{0,200}\]|:[\w-]+(?:\([^()]{0,200}\))?)*"
+# one whole compound selector that sets tokens: :root, html or :host with any qualifiers (html.dark,
+# :root[data-theme="dark"], :host(.dark)), or only theme classes and attributes (.dark, [data-theme="dark"])
+ROOT_PART = re.compile(r"(?::root|html|:host(?:\([^()]{0,200}\))?)" + QUALS +
+                       r"|(?:\.(?:theme-)?(?:dark|light)|\[data-[\w-]*(?:theme|mode|scheme)\b[^\]]{0,200}\])+", re.I)
 DARK = re.compile(r"\bdark\b", re.I)
 
 
+def _block(sel, parent):
+    """(sets tokens, dark, an override to leave out) for a block, from its selector and its parent block's flags. A
+    nested at-rule or &-selector inside a token block is one too (:root { @media (…dark) {…} &.dark {…} })."""
+    in_root, dark, skip = parent
+    parts = [p.strip() for p in sel.split(",")]
+    root = bool(re.match(r"@theme\b", sel)) or any(ROOT_PART.fullmatch(p) for p in parts) or \
+        in_root and (sel.startswith("@") or all(re.fullmatch("&" + QUALS, p) for p in parts))
+    cond = re.match(r"@(?:media|supports|container)\b", sel) and "prefers-color-scheme" not in sel
+    return root, dark or bool(DARK.search(sel)), skip or bool(cond)
+
+
 def _props(src):
-    """(name, value, dark, offset) for each custom property set in a :root-like block (:root, html, :host, @theme, a
-    .dark or [data-theme] block); dark when that block or an @media around it says dark. Other @media, @supports and
-    @container blocks are overrides, not the token, and are left out. ponytail: a ; inside a quoted value ends it, and
-    a dark-first file (dark in :root, light in a prefers-color-scheme: light block) reads as light only."""
-    css = re.sub(r"#\{([^{}\n]{0,200})\}", lambda m: "  " + m.group(1) + " ", src.css)  # SCSS #{$x}: not a block
-    stack, last, out = [], 0, []
-    for m in re.finditer(r"[{};]", css):
+    """(name, value, dark, offset) for each custom property set in a token block (:root, html or :host with any
+    qualifiers, @theme, a .dark or [data-theme] block, or an at-rule or &-selector nested in one); dark when the block
+    or one around it says dark. Other @media, @supports and @container blocks are overrides, not the token, and are
+    left out. Each block's flags come from its parent's, so deep nesting stays linear. ponytail: a dark-first file
+    (dark in :root, light in a prefers-color-scheme: light block) reads as light only."""
+    text = re.sub(r"#\{([^{}\n]{0,200})\}", lambda m: "  " + m.group(1) + " ", src.braces)  # SCSS #{$x}: not a block
+    css, stack, last, out = src.css, [], 0, []
+    for m in re.finditer(r"[{};]", text):
         if m.group() == "{":
-            stack.append(re.sub(r":not\([^)]{0,200}\)", "", css[last:m.start()][-2000:]).strip())
+            sel = re.sub(r":not\([^()]{0,200}\)", "", css[max(last, m.start() - 2000):m.start()]).strip()
+            stack.append(_block(sel, stack[-1] if stack else (False, False, False)))
         else:
             d = re.match(r"\s*(--[\w-]+)\s*:(.*)", css[last:m.start()], re.S)
-            if d and d.group(2).strip() and stack and ROOTISH.search(stack[-1]) and not any(
-                    re.match(r"@(?:media|supports|container)\b", s) and "prefers-color-scheme" not in s for s in stack):
-                out.append((d.group(1), " ".join(d.group(2).split()), any(DARK.search(s) for s in stack),
-                            last + d.start(1)))
+            value = d and re.sub(r" ?! ?important$", "", " ".join(d.group(2).split()), flags=re.I)
+            if value and stack and stack[-1][0] and not stack[-1][2]:
+                out.append((d.group(1), value, stack[-1][1], last + d.start(1)))
             if m.group() == "}" and stack:
                 stack.pop()
         last = m.end()
@@ -1029,21 +1054,21 @@ def _kind(name, value, colour):
 
 
 def extract(paths):
-    """(rows, proofs, files read): one row per custom property set in the run's :root-like blocks (and literal
-    tailwind.config colours), colours first; the known role pairs' contrast."""
-    files, _, configs, _ = collect(paths)
+    """(rows, proofs, files read, skipped): one row per custom property set in the run's token blocks (and literal
+    tailwind.config colours), colours first; the known role pairs' contrast; what wasn't read and why."""
+    files, skipped, configs, _ = collect(paths)
     props, read = [], 0
-    for f in files:
-        text, _ = _read(f)
-        if text is not None:
-            read += 1
+    for f in files + configs:
+        text, why = _read(f)
+        if text is None:
+            skipped.append({"file": f, "why": why})
+            continue
+        read += 1
+        if f in configs:
+            props += [(n, v, False, f, ln) for n, v, ln in _tw_colours(text)]
+        else:
             src = Source(f, text)
             props += [(n, v, d, f, src.line(o)) for n, v, d, o in _props(src)]
-    for f in configs:
-        text, _ = _read(f)
-        if text is not None:
-            read += 1
-            props += [(n, v, False, f, ln) for n, v, ln in _tw_colours(text)]
     base, over, where = {}, {}, {}
     for n, v, d, f, ln in props:
         (over if d else base)[n] = v
@@ -1067,7 +1092,7 @@ def extract(paths):
         proofs = check_pairs(tokens, strict=False)[0]
     except ValueError:  # none of the known role pairs is defined
         proofs = []
-    return rows, proofs, read
+    return rows, proofs, read, skipped
 
 
 def _cell(text, limit=60):
@@ -1076,9 +1101,13 @@ def _cell(text, limit=60):
 
 
 def _rel(path, base_dir):
-    """path from base_dir when it lies under it, else absolute: the same text whichever folder fm ran from."""
-    rel = os.path.relpath(os.path.abspath(path), base_dir)
-    return os.path.abspath(path) if rel == ".." or rel.startswith(".." + os.sep) else rel
+    """path from base_dir when it lies under it, else …/<folder>/<name>: the same text whichever folder fm ran from,
+    and no home folder or machine layout in a file meant for the repo."""
+    full = os.path.abspath(path)
+    rel = os.path.relpath(full, base_dir)
+    if rel == ".." or rel.startswith(".." + os.sep):
+        return "…/" + "/".join(full.rstrip(os.sep).split(os.sep)[-2:])
+    return rel
 
 
 def section(rows, proofs, srcs, base_dir):
@@ -1110,20 +1139,10 @@ def section(rows, proofs, srcs, base_dir):
     return out
 
 
-def write_section(path, lines, title):
-    """Put the section into the markdown file at path: replace its own (## Tokens up to the next heading, fenced code
-    aside), else insert it after ## Knobs, else append it; a missing file starts with a DESIGN.md title. Every other
-    section is kept byte for byte."""
-    import fmcore
-    text = ""
-    if os.path.lexists(path):
-        text, why = _read(path)
-        if text is None:
-            raise ValueError(f"{path}: {why}")
-    if not text.strip():
-        text = (f"# DESIGN.md: {_cell(title, 80)}\n\nNo direction recorded yet: /foreman:directions or the playbook "
-                "ui/design-direction.md fills the other sections.\n")
-    doc, heads, fence = text.split("\n"), [], None
+def headings(doc):
+    """((line index, heading) for each # and ## heading outside fenced code, the fence left open at the end or None)
+    of a markdown file's lines."""
+    heads, fence = [], None
     for i, ln in enumerate(doc):
         f = re.match(r" {0,3}(`{3,}|~{3,})", ln)
         if f:  # a fence closes on its own character, at least as long
@@ -1131,9 +1150,44 @@ def write_section(path, lines, title):
             fence = None if fence and mark[0] == fence[0] and len(mark) >= len(fence) else fence or mark
         elif not fence and re.match(r"#{1,2}\s", ln):
             heads.append((i, ln.strip()))
-    if fence:  # the section would land inside it, and every run would add another
-        raise ValueError(f"{path}: a {fence} code fence is never closed; close it and run again")
+    return heads, fence
 
+
+def has_direction(text):
+    """DESIGN.md records a design direction: it has a ## Direction section (the Tokens-only file fm design extract
+    starts is a palette, not a direction)."""
+    return any(h == "## Direction" for _, h in headings(text.split("\n"))[0])
+
+
+def write_section(path, lines, title):
+    """Put the section into the markdown file at path (through a symlink, under a lock): replace its own (## Tokens up
+    to the next heading, fenced code aside), else insert it after ## Knobs, else append it; a missing file starts with
+    a DESIGN.md title. Every other section is kept byte for byte, CRLF line ends included; a file that isn't UTF-8 is
+    refused, never rewritten."""
+    import fmcore
+    path = os.path.realpath(path)
+    with fmcore.lock(os.path.join(fmcore.state_dir(), "locks", "design-md")):  # ponytail: one lock for every DESIGN.md
+        text = ""
+        if os.path.lexists(path):
+            text, why = _read(path, strict=True)
+            if text is None:
+                raise ValueError(f"{path}: {why}")
+        crlf = "\r\n" in text
+        text = text.replace("\r\n", "\n")
+        if not text.strip():
+            text = (f"# DESIGN.md: {_cell(title, 80)}\n\nNo direction recorded yet: /foreman:directions or the "
+                    "playbook ui/design-direction.md fills the other sections.\n")
+        doc = text.split("\n")
+        heads, fence = headings(doc)
+        if fence:  # the section would land inside it, and every run would add another
+            raise ValueError(f"{path}: a {fence} code fence is never closed; close it and run again")
+        _splice(doc, heads, lines)
+        out = "\n".join(doc)
+        fmcore.write_atomic(path, out.replace("\n", "\r\n") if crlf else out)
+
+
+def _splice(doc, heads, lines):
+    """doc (a list of lines) with lines as its ## Tokens section, in place."""
     def end_of(i):
         return next((j for j, _ in heads if j > i), None)
     own = next((i for i, h in heads if h == "## Tokens"), None)
@@ -1148,10 +1202,9 @@ def write_section(path, lines, title):
         keep = doc[:len(doc) if a is None else a]
         while keep and not keep[-1].strip():
             keep.pop()
-        doc = keep + [""] + lines + [""]
+        doc[:] = keep + [""] + lines + [""]
     else:
         doc[a:b] = lines + [""]
-    fmcore.write_atomic(path, "\n".join(doc))
 
 
 def _default_out():
@@ -1193,20 +1246,23 @@ def _design_tokens(args, fmcli):
         missing = [p for p in args.paths if not os.path.exists(p)]
         if missing:
             raise ValueError(f"no such file or directory: {', '.join(missing)}")
-        rows, proofs, read = extract(args.paths)
+        rows, proofs, read, skipped = extract(args.paths)
+        gone = "; ".join(f"{x['file']} ({x['why']})" for x in skipped)
         if not rows:
             raise ValueError(f"no :root custom properties under {', '.join(args.paths)} (it reads :root, html, :host, "
-                             "@theme and .dark or [data-theme] blocks, and tailwind.config colours)")
+                             "@theme and .dark or [data-theme] blocks, and tailwind.config colours)"
+                             + (f"; skipped: {gone}" if gone else ""))
         out = args.out or _default_out()
-        base_dir = os.getcwd() if out == "-" else os.path.dirname(os.path.abspath(out))
+        base_dir = os.getcwd() if out == "-" else os.path.dirname(os.path.realpath(out))
         lines = section(rows, proofs, args.paths, base_dir)
         if out != "-":
             write_section(out, lines, os.path.basename(base_dir))
-        fmcli.out(args, {"out": out, "tokens": rows, "proofs": proofs, "files": read},
-                  "\n".join(lines) if out == "-" else
-                  f"design extract: {len(rows)} token(s) from {read} file(s) → {out} (## Tokens)")
+        text = "\n".join(lines) if out == "-" else \
+            f"design extract: {len(rows)} token(s) from {read} file(s) → {out} (## Tokens)"
+        fmcli.out(args, {"out": out, "tokens": rows, "proofs": proofs, "files": read, "skipped": skipped},
+                  text + (f"\nskipped: {gone}" if gone else ""))
         return 0
-    except (ValueError, OSError) as e:  # OSError: the write (a read-only folder, --out a directory)
+    except (ValueError, OSError, fmcli.c.LockTimeout) as e:  # OSError: the write (read-only, --out a directory)
         print(f"fm: design {act}: {e}", file=err)
         return 2
 

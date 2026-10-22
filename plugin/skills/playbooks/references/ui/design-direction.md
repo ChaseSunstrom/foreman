@@ -12,8 +12,10 @@ those cards cover *how* to ship it.
 
 ## The procedure
 
-1. **Look for a direction that already exists.** A `DESIGN.md`, a token file, a brand guide or a shipped design
-   system wins over everything below. Pass: you name the file you followed, or say "none found".
+1. **Look for a direction that already exists.** A `DESIGN.md` with a `## Direction` section, a brand guide or a
+   shipped design system wins over everything below. A token file, or a `DESIGN.md` holding only the Tokens section
+   `fm design extract` writes, is a palette, not a direction: keep its values unless the direction you pick replaces
+   them. Pass: you name the file you followed, or say "none found".
 2. **Get the taste words.** Collect the adjectives the user used. If there are none, or only the empty ones
    (see the table), run the interview.
 3. **Translate words to knobs** with the taste-word table. Five knobs: type, colour, density, motion, radius.
