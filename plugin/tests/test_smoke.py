@@ -128,7 +128,10 @@ class SmokeInABrowser(unittest.TestCase):
 
     def crawl(self, page):
         pw = fmsmoke.playwright(os.environ.get("FOREMAN_SMOKE_ROOT") or os.getcwd())
-        return fmsmoke.crawl(pw, f"{self.base}/{page}", os.path.join(self.dir, "shots-" + page))
+        res = fmsmoke.crawl(pw, f"{self.base}/{page}", os.path.join(self.dir, "shots-" + page))
+        if res.get("skipped"):  # T-1509: a Playwright without its browser
+            self.skipTest(res["skipped"])
+        return res
 
     def test_smoke_names_each_defect_in_a_real_browser(self):
         found = "\n".join(f"{d['where']}: {d['what']}" for d in self.crawl("bad.html")["defects"])

@@ -1,7 +1,7 @@
 <!-- Foreman's own playbook (written for Foreman, not ported). -->
 # Visual QA: screenshots, an eyeball pass and a receipt
 
-Use when a task changes what a web screen looks like: a new view, a restyle, a dark mode, a layout fix, a motion change. Green tests say the code does what the tests ask; only a frame says the screen looks right. This playbook proves a UI change by looking at it: `fm smoke` for the defects a crawler can name, a small frame script for the widths, themes and motion setting `fm smoke` doesn't cover, a checklist for the eye, and a receipt in the task's evidence.
+Use when a task changes what a web screen looks like: a new view, a restyle, a dark mode, a layout fix, a motion change. Green tests say the code does what the tests ask; only a frame says the screen looks right. This playbook proves a UI change by looking at it: `fm smoke` for the defects a crawler can name and the start page's frame matrix, its hostile profiles for the content, network and eyes the product will meet, a small frame script for the other views and fixtures, a checklist for the eye, and a receipt in the task's evidence.
 
 It checks the decisions the sibling playbooks make; it doesn't repeat them. The stance and the cover test are in `design-direction.md`, the scale, palette and contrast proof in `type-and-colour.md`, the reduced forms in `motion.md`, a WebGL scene's survival probes in `scene-3d.md`. Terminals: `terminal-ui.md`.
 
@@ -9,17 +9,33 @@ It checks the decisions the sibling playbooks make; it doesn't repeat them. The 
 
 | Pass | What runs | Widths | Themes, motion | Finds |
 |---|---|---|---|---|
-| `fm smoke` | Foreman's crawler (`smoke_web.cjs`) in a headless Chromium | 1440×900, 390×844 | the browser's defaults | load and console errors, failed requests to the app's host, placeholders still showing after 5 s, visible alerts, a page wider than the screen, overlapping fixed controls |
-| frame script | `qa/frames.mjs` below, in the project | 360×800, 768×1024, 1440×900 | light and dark; reduced motion at 360 | page overflow, junk text, a screen that still moves under reduced motion; and the frames the eye checks |
+| `fm smoke` | Foreman's crawler (`smoke_web.cjs`) in a headless Chromium | crawl: 1440×900, 390×844; the start page's frames: 360×800, 768×1024, 1440×900 | crawl: the browser's defaults; frames: light and dark, reduced motion at 360 | load and console errors, failed requests to the app's host, placeholders still showing after 5 s, visible alerts, a page wider than the screen, overlapping fixed controls; a start page that still moves under reduced motion |
+| frame script | `qa/frames.mjs` below, in the project | 360×800, 768×1024, 1440×900 | light and dark; reduced motion at 360 | the same frames for every path you name, on a seeded fixture: page overflow, junk text, a screen that still moves under reduced motion; and the frames the eye checks |
 
-Both use the project's own Playwright. Without it `fm smoke` prints `skipped … no Playwright`, which is not a pass: `npm i -D playwright`, then `npx playwright install chromium` (or point `FOREMAN_PLAYWRIGHT` at a Playwright package folder).
+Both use the project's own Playwright; Foreman never installs it. Without it, or with it but no browser, `fm smoke` prints `skipped …` and the reason, which is not a pass: `npm i -D playwright`, then `npx playwright install chromium` (or point `FOREMAN_PLAYWRIGHT` at a Playwright package folder).
 
 ## fm smoke
 
 1. Start the app on the seeded fixture (next section), then record its address once per project: `fm smoke set web http://localhost:5173`. This also adds `fm smoke` to the project's gates, so `fm check` runs it from then on.
-2. Run it: `fm smoke` (same as `fm smoke run`). It opens the page at desktop and phone width, clicks each visible tab among the first 24 `role="tab"` elements (with none, follows up to 10 same-origin nav links), and checks each view. Exit 0 means no defects; each defect prints as `✗ <viewport> <view>: <what>`.
-3. The last line is `Screenshots: <dir>`, one PNG per view per width (`fm smoke --json` gives it as `shots`). The folder is Foreman state and only the last three runs are kept, so a receipt never points at it; it points at the frame script's folder.
+2. Run it: `fm smoke` (same as `fm smoke run`). It first shoots the start page's frame matrix (the frame script's sizes, themes and reduce pass, with the clock fixed at 2026-01-15 10:00 UTC), then opens the page at desktop and phone width, clicks each visible tab among the first 24 `role="tab"` elements (with none, follows up to 10 same-origin nav links), and checks each view. Exit 0 means no defects; each defect prints as `✗ <viewport> <view>: <what>` (`✗ frame <width> <theme>: …` for a frame).
+3. The last lines are `Screenshots: <dir>`, one PNG per view per width named after the view (`desktop-start.png`, `phone-tab-Telemetry.png`), and `Frames: <dir>/frames`, named as the frame script names them (`home-360-light.png` … `home-1440-dark.png`, `home-360-reduce.png`); `fm smoke --json` gives them as `shots` and `frames`. The folder is `<project state>/smoke/<commit>/default` (`<commit>-dirty` with uncommitted changes): a second run on the commit replaces it and the last five commits' folders are kept, so a receipt for the start page can point at its frames.
 4. A UI no URL serves (a plugin's own panel, an Electron shell): `fm smoke set off <why>` stops the gate. The frame script and the eyeball pass still apply wherever a page can be opened.
+
+### Hostile profiles
+
+`fm smoke --profile NAME` crawls the same views under one hostile condition instead (no frame matrix); repeat the flag for several, or `--profile all`. They aren't a gate: run them when a task touches layout, data loading or colour, read what they print, and fix or `fm capture` each finding. Each run lands in `<project state>/smoke/<commit>/<profile>/`, and with several a last line sums them up (`Profiles: torture ✗ 2 · offline ✓`).
+
+| Profile | What it does to the page | What it finds |
+|---|---|---|
+| `torture` | writes 90-letter words, right-to-left runs and 20-digit numbers into the page's own text (tab labels left alone) | text that runs out of its box, a page pushed wider than the screen |
+| `empty` | empties every list in the JSON the app's own host sends | a page that breaks with no data; the screenshots show its empty states (lists served in the HTML need the `empty` fixture) |
+| `offline` | cuts the network once the page has loaded, then waits 3 s per view | uncaught errors and spinners that never stop; failed requests and an alert saying "offline" are expected |
+| `slow3g` | 2 s latency, 50 KB/s each way; 90 s to load, 15 s for placeholders | how long the start page takes (a note), placeholders still showing after 15 s |
+| `deuteranopia`, `protanopia`, `tritanopia`, `achromatopsia` | a colour-vision filter on the whole page | nothing it can name: the screenshots are for the eye (a state told apart by colour alone fails there) |
+| `frozen` | the clock fixed at 2026-01-15 10:00 UTC, CSS animations paused, transitions off | a view that still changes (a canvas, video or timer the frame can't hold): a note |
+| `motion` | five frames 250 ms apart per view (`<view>-motion-0…4.png`) | which views move (a note), and the frames to judge the motion by |
+
+In a Claude Code session the profiles are the same `fm smoke --profile …` command (this playbook is how `/foreman:playbooks` reaches it); open the PNGs with the Read tool as in "Looking at the frames".
 
 Pass: `fm smoke` exits 0 on the commit you're reporting, and its output says how many views it saw. One view where you expected several means its tabs aren't `role="tab"` or its nav isn't in `nav` or `role="navigation"`: fix the markup, not the crawler.
 
@@ -38,7 +54,7 @@ Pass: run the frame script twice on one commit and fixture; every hash it prints
 
 ## Frame script
 
-Copy into the project as `qa/frames.mjs` and add `.qa/` to `.gitignore`. It writes the frames to `.qa/frames/<commit>-<fixture>/` (a `-dirty` commit when the tree has changes), prints a short hash per frame, checks what a script can, and exits 1 on any finding. `QA_FIXTURE` only names the folder: the app must already be running on that fixture, so start both with the same value.
+`fm smoke` already shoots this matrix for the start page on whatever data the running app has; the script covers every other path, on a seeded fixture. Copy it into the project as `qa/frames.mjs` and add `.qa/` to `.gitignore`. It writes the frames to `.qa/frames/<commit>-<fixture>/` (a `-dirty` commit when the tree has changes), prints a short hash per frame, checks what a script can, and exits 1 on any finding. `QA_FIXTURE` only names the folder: the app must already be running on that fixture, so start both with the same value.
 
 ```js
 // qa/frames.mjs: the frame matrix of Foreman's visual QA playbook (ui/visual-qa.md).
