@@ -4,6 +4,7 @@ import os
 import shlex
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -2130,12 +2131,12 @@ class TokenFallback(GuardCase):
                 with self.subTest(cmd=prefix + hidden):
                     self.assertBlocked(self.bash(prefix + hidden), "rm-outside", prefix + hidden)
         # self-review: the masks' own stand-in characters written into the line mustn't turn them off
-        for cmd in ("echo   \x02; rm '>' -rf /home/x/data",
-                    "echo \"$(echo 'a\"b')\" \x02  ; X='a b' cat ~/.ssh/id_ed25519"):
+        e = g._ESC
+        for cmd in (f"echo \uf03e {e} \x02; rm '>' -rf /home/x/data",
+                    f"echo \"$(echo 'a\"b')\" \x02 {e} {e}\uf007; X='a b' cat ~/.ssh/id_ed25519"):
             with self.subTest(cmd=cmd):
                 self.assertIsNotNone(self.bash(cmd), cmd)
-        self.assertEqual(g._tokens("echo '>'  "),
-                         ["echo", ">", "", ""])
+        self.assertEqual(g._tokens(f"echo '{e}>' {e}{e} \uf003{e}"), ["echo", f"{e}>", f"{e}{e}", f"\uf003{e}"])
         self.assertIsNone(self.bash("grep '>' README.md"))  # data: nothing is written
         self.assertBlocked(self.bash("echo hi >'{home}/.bashrc'"), "system")  # a quoted target is still a target
 
@@ -2146,6 +2147,23 @@ class TokenFallback(GuardCase):
                        "X='a b' cat ~/.ssh/id_ed25519\necho 'x"):
             with self.subTest(hidden=hidden):
                 self.assertBlocked(self.bash(hidden), "credentials", hidden)
+
+    def test_a_trailing_escape_keeps_every_redirect_visible(self):
+        # re-review: an unpaired trailing \ made the quote-aware reading raise (and the first read it as a quoted ;),
+        # leaving only the space split, where >~/.bashrc is one plain word
+        for cmd in ("echo x >~/.bashrc \\", "echo x >~/.bashrc \"a \\", "echo x >~/.bashrc 'a \\"):
+            with self.subTest(cmd=cmd):
+                cmds = g._split(g._tokens(cmd))
+                self.assertTrue(cmds and all(c.redirs == ["~/.bashrc"] for c in cmds), [(c.argv, c.redirs) for c in cmds])
+                self.assertNotIn(";", [w for c in cmds for w in c.argv])
+                self.assertBlocked(self.bash(cmd), "system", cmd)
+        self.assertEqual(g._split(g._tokens("cat <~/.netrc 2>&1 'a"))[0].stdin, "~/.netrc")
+
+    def test_deep_nesting_is_masked_in_linear_time(self):
+        line = "\"$(echo " * 20000 + "\"x\" " * 20000
+        start = time.monotonic()
+        g._mask_nested_dq(line)
+        self.assertLess(time.monotonic() - start, 0.5)  # a rescan of every open frame per quote took 1.7 s
 
     def test_an_awk_program_in_a_substitution_tail_stays_strict(self):
         # the tail's split makes "sh"}' a piped name: debris, not a pipe into sh; the line itself is still refused
