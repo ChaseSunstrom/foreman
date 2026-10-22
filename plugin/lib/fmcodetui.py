@@ -446,9 +446,9 @@ def box(cv, y, x, h, w, title, cfg, focused=False, note=""):
         cv.put(r, x + w - 1, vt, edge)
     cv.put(y + h - 1, x, bl + hz * (w - 2) + br, edge)
     if title and w > 8:
-        end = cv.put(y, x + 2, f" {fit(title, w - 8 - (len(note) + 2 if note else 0))} ", "title")
-        if note and end + len(note) + 3 < x + w:
-            cv.put(y, x + w - len(note) - 4, f" {note} ", "dim")
+        end = cv.put(y, x + 2, f" {fit(title, min(w - 8, max(4, w - 8 - (width(note) + 2 if note else 0))))} ", "title")
+        if note and end + width(note) + 3 < x + w:  # the title keeps 4 columns at least; the note goes if it doesn't fit
+            cv.put(y, x + w - width(note) - 4, f" {note} ", "dim")
     return y + 1, x + 2, h - 2, w - 4
 
 
@@ -669,16 +669,25 @@ def _track(st, w, h, app):
     gap = (w - cw) // (n - 1)
     for r in (1, 2):
         last = fit(nodes[-1][r - 1], max(1, gap - 1))
-        starts = xs[:-1] + [w - len(last)]
+        starts = xs[:-1] + [w - width(last)]
         for i, node in enumerate(nodes):
-            room = len(last) if i == n - 1 else starts[i + 1] - starts[i] - 1
+            room = width(last) if i == n - 1 else starts[i + 1] - starts[i] - 1
             if room < 4 and node[2] not in ("now", "fail"):
                 continue
             style = {"now": "accent", "done": "text", "fail": "bad"}.get(node[2], "dim") if r == 1 else "dim"
-            text = node[r - 1] if r == 1 or len(node[r - 1]) <= room else node[r - 1].split("  ")[-1]  # time first
-            for k, ch in enumerate(fit(text, max(room, 4))):
-                if starts[i] + k < w:
-                    rows[r][starts[i] + k] = (ch, style)
+            text = node[r - 1] if r == 1 or width(node[r - 1]) <= room else node[r - 1].split("  ")[-1]  # time first
+            x = starts[i]
+            for ch in fit(text, max(room, 4)):  # a wide glyph fills two cells: the second is empty, as Canvas.put does
+                cw_ = width(ch)
+                if x + cw_ > w:
+                    break
+                if cw_:
+                    rows[r][x] = (ch, style)
+                    if cw_ == 2:
+                        rows[r][x + 1] = ("", style)
+                elif x:
+                    rows[r][x - 1] = (rows[r][x - 1][0] + ch, style)
+                x += cw_
     return [_segments(r) for r in rows]
 
 
