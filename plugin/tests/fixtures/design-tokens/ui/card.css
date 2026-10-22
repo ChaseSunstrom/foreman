@@ -1,0 +1,5 @@
+.card {
+  --pad: 8px; /* a component's own variable, not a design token */
+  padding: var(--pad);
+  background: var(--surface-raised);
+}

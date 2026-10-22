@@ -5,9 +5,15 @@ ponytail: regex and small tokenizers over source text, not computed style; a hea
 inheritance this can't. Rules that need the whole design (fonts, radius, shadows, tokens, keyframes, a reduced-motion
 path) look across every file of one run, so lint the UI's root rather than one component.
 An inline `design-lint: allow RULE why` comment silences RULE on its own line (and the next, when the comment stands on
-a line of its own); it needs the why."""
+a line of its own); it needs the why.
+
+T-1507: design tokens beside it: fm design palette (a light/dark role palette from one seed colour, OKLCH maths by
+hand), fm design contrast (a token file's pairs, WCAG 2.x on the sRGB hex a browser paints) and fm design extract (a
+repo's :root custom properties into DESIGN.md's Tokens section). `python3 fmdesign.py contrast …` runs without fm."""
 import bisect
 import colorsys
+import json
+import math
 import os
 import re
 import stat
@@ -130,7 +136,11 @@ class Source:
             self.css = _keep(code, spans)
         else:
             self.css = code
-        ends = _closers(self.css)
+        # T-1507: braces and semicolons inside a CSS string (content: "}") are text, not structure; JSX keeps its
+        # own (an apostrophe in JSX text is no quote)
+        self.braces = self.css if self.js else re.sub(r"\"[^\"\n]*\"|'[^'\n]*'",
+                                                      lambda m: re.sub(r"[{};]", " ", m.group()), self.css)
+        ends = _closers(self.braces)
         self.opens = sorted(ends)
         self.nl = [i for i, ch in enumerate(text) if ch == "\n"]
         self.allowed = {}
@@ -593,8 +603,9 @@ def _in_template(code, pos):
     return not re.search(r"(?:\bon:\w+|@\w+|v-on:\w+)\s*=\s*[\"{][^\"}]*$", code[max(0, pos - 300):pos])
 
 
-def _read(path):
-    """(text, None) for a regular file up to MAX_BYTES, else (None, why). Never blocks on a FIFO or device."""
+def _read(path, strict=False):
+    """(text, None) for a regular file up to MAX_BYTES, else (None, why). Never blocks on a FIFO or device. strict:
+    text that isn't UTF-8 is refused rather than decoded with replacement characters (a file fm will write back)."""
     try:
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
     except OSError as e:
@@ -611,7 +622,10 @@ def _read(path):
             return None, e.strerror.lower() if e.strerror else str(e)
     if len(data) > MAX_BYTES:
         return None, f"over {MAX_BYTES // 1000} KB"
-    return data.decode("utf-8", errors="replace"), None
+    try:
+        return data.decode("utf-8", errors="strict" if strict else "replace"), None
+    except UnicodeDecodeError as e:
+        return None, f"not UTF-8 text (byte {e.start}); convert it to UTF-8 first"
 
 
 def collect(paths):
@@ -676,9 +690,588 @@ def rules_help():
         f"  {r['id']:<20} {r['why']}" for r in RULES) + "\n\n" + NOT_COVERED + ".")
 
 
+# ---------------------------------------------------------------- T-1507: tokens (palette, contrast, extract)
+
+ROLES = ["surface", "surface-raised", "surface-sunken", "text", "text-muted", "border", "accent", "on-accent",
+         "accent-subtle", "on-subtle"]  # type-and-colour.md's roles, less status, hover and focus (focus: the accent)
+SURFACES = ("surface", "surface-raised", "surface-sunken")
+# (fg, bg, light floor, dark floor): text on every surface it lands on, edges 3:1, body text 7:1 in dark (Foreman's)
+PAIRS = [(fg, s, need, 7 if fg == "text" else need) for fg, need in
+         (("text", 4.5), ("text-muted", 4.5), ("border", 3), ("accent", 4.5)) for s in SURFACES] + \
+        [("on-accent", "accent", 4.5, 4.5), ("on-subtle", "accent-subtle", 4.5, 4.5)]
+MARGIN = 0.03  # palette aims this far past each floor: one 8-bit channel step can't land a pair under it
+F = r"[-+]?(?:\d++\.?\d*+|\.\d++)(?:e[-+]?\d++)?"  # possessive, as NUM: a long digit run never backtracks
+OKLCH = re.compile(r"oklch\(\s*(" + F + r")(%?)\s+(" + F + r")(%?)\s+(" + F + r"|none)(?:deg)?\s*(?:/\s*(" + F +
+                   r")(%?)\s*)?\)", re.I)
+
+
+def _cbrt(x):
+    return math.copysign(abs(x) ** (1 / 3), x)
+
+
+def _linear(L, C, h):
+    """Linear sRGB of an OKLCH colour, unclipped (Björn Ottosson's OKLab matrices)."""
+    a, b = C * math.cos(math.radians(h)), C * math.sin(math.radians(h))
+    l, m, s = ((L + x * a + y * b) ** 3 for x, y in
+               ((0.3963377774, 0.2158037573), (-0.1055613458, -0.0638541728), (-0.0894841775, -1.2914855480)))
+    return (4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+            -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+            -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s)
+
+
+def in_gamut(L, C, h):
+    return all(-1e-4 <= v <= 1 + 1e-4 for v in _linear(L, C, h))
+
+
+def _encode(v):
+    """Linear light to the sRGB curve, clipped as the browser clips an out-of-gamut value."""
+    v = min(max(v, 0.0), 1.0)
+    return 12.92 * v if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055
+
+
+def oklch_of(rgb):
+    """(L, C, h) of an sRGB colour in 0..1."""
+    r, g, b = (v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in rgb)
+    l, m, s = (_cbrt(x) for x in (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b,
+                                  0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b,
+                                  0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b))
+    a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+    bb = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+    L = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s
+    return L, math.hypot(a, bb), math.degrees(math.atan2(bb, a)) % 360
+
+
+def _oklch_parts(m):
+    """(L, C, h) of an OKLCH match, or None when its alpha is below 1 (a translucent colour has no contrast alone) or a
+    number isn't finite (1e999)."""
+    if m.group(6) is not None and not float(m.group(6)) / (100 if m.group(7) else 1) >= 1:
+        return None
+    L = float(m.group(1)) / (100 if m.group(2) else 1)
+    C = float(m.group(3)) * (0.004 if m.group(4) else 1)  # CSS: 100% chroma is 0.4
+    h = 0.0 if m.group(5).lower() == "none" else float(m.group(5))
+    if not all(map(math.isfinite, (L, C, h))):
+        return None
+    return min(max(L, 0.0), 1.0), max(C, 0.0), h % 360
+
+
+def parse_colour(text):
+    """(r, g, b) in 0..1 as a browser paints it (out-of-gamut clipped) for oklch(), a hex, rgb(), hsl() or a named
+    colour; None when it isn't one we read or it is translucent."""
+    t = (text or "").strip().lower()
+    m = OKLCH.fullmatch(t)
+    if m:
+        lch = _oklch_parts(m)
+        return lch and tuple(_encode(v) for v in _linear(*lch))
+    t = {"white": "#ffffff", "red": "#ff0000", "green": "#008000", "yellow": "#ffff00", "orange": "#ffa500"}.get(t, t)
+    if t.startswith("#"):
+        if not re.fullmatch(r"#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})", t) or len(t) in (5, 9) and t[-1] != "f" \
+                or len(t) == 9 and t[-2] != "f":
+            return None
+    elif t.startswith(("rgb", "hsl")):
+        nums = re.findall(r"-?\d*\.?\d+%?", t[t.find("(") + 1:])
+        if len(nums) > 3 and float(nums[3].rstrip("%")) / (100 if nums[3].endswith("%") else 1) < 1:
+            return None
+    rgb = _rgb(t)
+    return rgb and tuple(min(max(v, 0.0), 1.0) for v in rgb)
+
+
+def hex_of(rgb):
+    return "#" + "".join("%02X" % round(v * 255) for v in rgb)
+
+
+def _luminance(rgb):
+    """WCAG 2.x relative luminance of the 8-bit colour the browser paints."""
+    ch = [round(min(max(v, 0.0), 1.0) * 255) / 255 for v in rgb]
+    ch = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in ch]
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+
+
+def contrast(a, b):
+    """WCAG 2.x contrast ratio (1 to 21) of two sRGB colours."""
+    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _tok(L, C, h):
+    """A role's colour as written: L and h kept, chroma lowered until it fits sRGB, then rounded (C down, so it
+    still fits); its hex and contrast come from the rounded value."""
+    L, h = round(min(max(L, 0.0), 1.0), 3), round(h % 360, 1) % 360
+    if not in_gamut(L, C, h):
+        lo, hi = 0.0, C
+        for _ in range(30):
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if in_gamut(L, mid, h) else (lo, mid)
+        C = lo
+    lch = (L, math.floor(C * 1000) / 1000, h)
+    rgb = tuple(_encode(v) for v in _linear(*lch))
+    return {"oklch": lch, "hex": hex_of(rgb), "rgb": rgb}
+
+
+def _floors(role, dark):
+    """(other role, floor) for each pair the role is in."""
+    return [(b if f == role else f, dn if dark else ln) for f, b, ln, dn in PAIRS if role in (f, b)]
+
+
+def palette(seed):
+    """Light and dark values for ROLES from one seed colour, and the proof of every pair. Neutrals take the seed's hue
+    at a whisper of its chroma; each text role starts at type-and-colour.md's lightness and moves away from its
+    surfaces in 0.01 steps until every pair it is in clears its floor by MARGIN; the accent keeps the seed's hue and
+    chroma."""
+    rgb = parse_colour(seed)
+    if rgb is None:
+        raise ValueError(f"can't read the seed {seed!r}: write a hex, rgb(), hsl() or oklch() colour, opaque")
+    m = OKLCH.fullmatch(seed.strip().lower())
+    L0, C0, h0 = _oklch_parts(m) if m else oklch_of(rgb)
+    nc = min(0.012, C0 / 10)
+    pal = {"seed": hex_of(rgb), "proofs": []}
+    for dark, name in ((False, "light"), (True, "dark")):
+        t = {r: _tok(L, nc, h0) for r, L in zip(SURFACES, (.18, .22, .27) if dark else (.97, .99, .93))}
+        t["on-accent"] = t["surface"] if dark else _tok(.99, nc, h0)
+        t["accent-subtle"] = _tok(.30, min(C0 * .5, .06), h0) if dark else _tok(.95, min(C0 * .25, .03), h0)
+        starts = {"text": (.93 if dark else .22, nc), "text-muted": (.66 if dark else .45, nc), "border": (.55, nc),
+                  "accent": (min(max(L0, .70), .80), C0 * .8) if dark else (L0, C0)}
+        for role in ("text", "text-muted", "border", "accent", "on-subtle"):
+            if role == "on-subtle":  # the accent, a little further from its subtle fill
+                starts[role] = (max(t["accent"]["oklch"][0], .80), C0 * .6) if dark else (t["accent"]["oklch"][0], C0)
+            L, C = starts[role]
+            for _ in range(102):  # 0.01 a step: at most from one end of L to the other
+                t[role] = _tok(L, C, h0)
+                if all(contrast(t[role]["rgb"], t[o]["rgb"]) >= need + MARGIN for o, need in _floors(role, dark)) \
+                        or L >= 1 and dark or L <= 0 and not dark:
+                    break
+                L = min(max(L + (.01 if dark else -.01), 0.0), 1.0)
+        pal[name] = {r: t[r] for r in ROLES}
+        pal["proofs"] += _proofs(lambda r: t[r]["rgb"], name, [(f, b, dn if dark else ln) for f, b, ln, dn in PAIRS])
+    return pal
+
+
+def _proofs(colour, theme, pairs):
+    out = []
+    for fg, bg, need in pairs:
+        r = contrast(colour(fg), colour(bg))
+        out.append({"fg": fg, "bg": bg, "theme": theme, "ratio": r, "need": need, "pass": r >= need})
+    return out
+
+
+def _css(tok):
+    return "oklch({:g} {:g} {:g})".format(*tok["oklch"])
+
+
+def export(pal, fmt="css"):
+    """The palette as DTCG JSON (2025.10 colour values: oklch components and a hex fallback), CSS custom properties
+    (light-dark() roles, which fm design contrast reads back) or a Tailwind v4 theme (those, plus @theme inline)."""
+    if fmt == "dtcg":
+        return json.dumps({theme: {r: {"$type": "color", "$value": {"colorSpace": "oklch", "components":
+                                                                     list(tok["oklch"]), "hex": tok["hex"].lower()}}
+                                   for r, tok in pal[theme].items()} for theme in ("light", "dark")}, indent=2) + "\n"
+    lines = [f"/* fm design palette {pal['seed']}: light and dark roles; prove them with fm design contrast FILE */",
+             ":root {", "  color-scheme: light dark;"]
+    lines += [f"  --{r}: light-dark({_css(pal['light'][r])}, {_css(pal['dark'][r])});  "
+              f"/* {pal['light'][r]['hex']} {pal['dark'][r]['hex']} */" for r in ROLES]
+    lines += ["}", ':root[data-theme="light"] { color-scheme: light; }',
+              ':root[data-theme="dark"] { color-scheme: dark; }']
+    if fmt == "tailwind":
+        lines += ["@theme inline {"] + [f"  --color-{r}: var(--{r});" for r in ROLES] + ["}"]
+    return "\n".join(lines) + "\n"
+
+
+def render_proofs(proofs, warnings=()):
+    return "\n".join([f"  {w}" for w in warnings] + [
+        f"{'pass' if p['pass'] else 'FAIL'}  {p['theme']:5}  {p['fg'] + '/' + p['bg']:28} {p['ratio']:5.2f}:1  "
+        f"(needs {p['need']:g})" for p in proofs])
+
+
+QUALS = r"(?:\.[\w-]+|\[[^\]]{0,200}\]|:[\w-]+(?:\([^()]{0,200}\))?)*"
+# one whole compound selector that sets tokens: :root, html or :host with any qualifiers (html.dark,
+# :root[data-theme="dark"], :host(.dark)), or only theme classes and attributes (.dark, [data-theme="dark"])
+ROOT_PART = re.compile(r"(?::root|html|:host(?:\([^()]{0,200}\))?)" + QUALS +
+                       r"|(?:\.(?:theme-)?(?:dark|light)|\[data-[\w-]*(?:theme|mode|scheme)\b[^\]]{0,200}\])+", re.I)
+DARK = re.compile(r"\bdark\b", re.I)
+
+
+def _block(sel, parent):
+    """(sets tokens, dark, an override to leave out) for a block, from its selector and its parent block's flags. A
+    nested at-rule or &-selector inside a token block is one too (:root { @media (…dark) {…} &.dark {…} })."""
+    in_root, dark, skip = parent
+    parts = [p.strip() for p in sel.split(",")]
+    root = bool(re.match(r"@theme\b", sel)) or any(ROOT_PART.fullmatch(p) for p in parts) or \
+        in_root and (sel.startswith("@") or all(re.fullmatch("&" + QUALS, p) for p in parts))
+    cond = re.match(r"@(?:media|supports|container)\b", sel) and "prefers-color-scheme" not in sel
+    return root, dark or bool(DARK.search(sel)), skip or bool(cond)
+
+
+def _props(src):
+    """(name, value, dark, offset) for each custom property set in a token block (:root, html or :host with any
+    qualifiers, @theme, a .dark or [data-theme] block, or an at-rule or &-selector nested in one); dark when the block
+    or one around it says dark. Other @media, @supports and @container blocks are overrides, not the token, and are
+    left out. Each block's flags come from its parent's, so deep nesting stays linear. ponytail: a dark-first file
+    (dark in :root, light in a prefers-color-scheme: light block) reads as light only."""
+    text = re.sub(r"#\{([^{}\n]{0,200})\}", lambda m: "  " + m.group(1) + " ", src.braces)  # SCSS #{$x}: not a block
+    css, stack, last, out = src.css, [], 0, []
+    for m in re.finditer(r"[{};]", text):
+        if m.group() == "{":
+            sel = re.sub(r":not\([^()]{0,200}\)", "", css[max(last, m.start() - 2000):m.start()]).strip()
+            stack.append(_block(sel, stack[-1] if stack else (False, False, False)))
+        else:
+            d = re.match(r"\s*(--[\w-]+)\s*:(.*)", css[last:m.start()], re.S)
+            value = d and re.sub(r" ?! ?important$", "", " ".join(d.group(2).split()), flags=re.I)
+            if value and stack and stack[-1][0] and not stack[-1][2]:
+                out.append((d.group(1), value, stack[-1][1], last + d.start(1)))
+            if m.group() == "}" and stack:
+                stack.pop()
+        last = m.end()
+    return out
+
+
+def _branch(value, dark):
+    """light-dark(A, B)'s A or B; any other value as it is."""
+    m = re.fullmatch(r"light-dark\((.*)\)", value or "", re.S)
+    parts = _split(m.group(1), ",") if m else []
+    return parts[dark] if len(parts) == 2 else value
+
+
+def _colour_of(tokens, name, dark, seen=()):
+    """The sRGB colour a token paints in one theme, through var() and light-dark(); ValueError naming the token when
+    it can't be read."""
+    base, over = tokens
+    if name in seen:
+        raise ValueError(f"{name}: var() loop through {' → '.join(seen)}")
+    if len(seen) > 50:
+        raise ValueError(f"{name}: var() chain over 50 deep")
+    v = over.get(name, base.get(name)) if dark else base.get(name)
+    if v is None:
+        raise ValueError(f"{name}: not defined")
+    for _ in range(50):
+        v = _branch(v, dark)
+        m = re.fullmatch(r"var\(\s*(--[\w-]+)\s*(?:,(.*))?\)", v, re.S)
+        if not m:
+            break
+        if m.group(2) is None or m.group(1) in base or dark and m.group(1) in over:
+            return _colour_of(tokens, m.group(1), dark, seen + (name,))
+        v = m.group(2).strip()  # the fallback, when the reference is undefined
+    rgb = parse_colour(v)
+    if rgb is None:
+        raise ValueError(f"{name}: can't read {v[:80]!r} (write oklch(), a hex, rgb(), hsl(), var() or light-dark(); "
+                         "opaque)")
+    return rgb
+
+
+def _themes(tokens):
+    base, over = tokens
+    return (False, True) if over or any("light-dark(" in v for v in base.values()) else (False,)
+
+
+def check_pairs(tokens, specs=(), strict=True):
+    """(proofs, warnings) for each pair spec fg/bg[:need[,dark need]] (default: the known role pairs present) in each
+    theme the tokens have. strict: a token that can't be read raises ValueError; else its pairs are left out."""
+    base, over = tokens
+    pairs = []
+    for spec in specs:
+        pair, _, need = spec.partition(":")
+        names = pair.split("/")
+        needs = need.split(",") if need else ["4.5"]
+        if len(names) != 2 or not all(re.fullmatch(r"(?:--)?[\w-]+", n) for n in names) or len(needs) > 2 or \
+                not all(re.fullmatch(r"\d+(?:\.\d+)?", n) for n in needs):
+            raise ValueError(f"can't read the pair {spec!r}: write fg/bg, fg/bg:4.5 or fg/bg:4.5,7 (light, dark)")
+        fg, bg = (n if n.startswith("--") else "--" + n for n in names)
+        pairs.append((fg, bg, float(needs[0]), float(needs[-1])))
+    if not specs:
+        pairs = [("--" + f, "--" + b, ln, dn) for f, b, ln, dn in PAIRS if "--" + f in base and "--" + b in base]
+        if not pairs:
+            raise ValueError("no pairs given and none of the known roles (--text on --surface, …) defined")
+    proofs = []
+    for dark in _themes(tokens):
+        for fg, bg, ln, dn in pairs:
+            try:
+                p = _proofs(lambda n: _colour_of(tokens, n, dark), "dark" if dark else "light",
+                            [(fg, bg, dn if dark else ln)])
+            except ValueError:
+                if strict:
+                    raise
+                continue
+            proofs += [dict(x, fg=fg[2:], bg=bg[2:]) for x in p]
+    warnings = sorted({f"{n}: {m.group()} is outside sRGB, the browser will clip it; lower the chroma"
+                       for n, v in [*base.items(), *over.items()] for m in OKLCH.finditer(v)
+                       if (lch := _oklch_parts(m)) and not in_gamut(*lch)})
+    return proofs, warnings
+
+
+def read_tokens(path):
+    """(base, dark) custom properties of one token file."""
+    text, why = _read(path)
+    if text is None:
+        raise ValueError(f"{path}: {why}")
+    base, over = {}, {}
+    for name, value, dark, _ in _props(Source(path, text)):
+        (over if dark else base)[name] = value
+    if not base and not over:
+        raise ValueError(f"{path}: no :root custom properties")
+    return base, over
+
+
+TW_TOKEN = re.compile(r"""(['"]?)(?<![\w-])([\w-]++)\1\s*:\s*(?:(\{)|(['"])([^'"\n]{0,200})\4)|([{}])|"""
+                      r"""(['"`])(?:\\.|(?!\7)[^\\\n]){0,2000}\7""")
+
+
+def _tw_colours(text):
+    """(--color-NAME, value, line) for each literal colour under a colors key of a tailwind.config file, DEFAULT being
+    the bare name. ponytail: string literals only; spreads, require() and function values aren't read."""
+    code = _blank(text, r"/\*.*?(?:\*/|\Z)|(?<!\S)//[^\n]*")
+    nl = [i for i, ch in enumerate(code) if ch == "\n"]
+    stack, out = [], []
+    for m in TW_TOKEN.finditer(code):
+        if m.group(6) == "{":
+            stack.append("")
+        elif m.group(6) == "}":
+            stack = stack[:-1]
+        elif m.group(3):
+            stack.append(m.group(2))
+        elif m.group(5) is not None and "colors" in stack and parse_colour(m.group(5)):
+            path = [k for k in stack[stack.index("colors") + 1:] + [m.group(2)] if k and k != "DEFAULT"]
+            if path:
+                out.append(("--color-" + "-".join(path), m.group(5).strip(), bisect.bisect_left(nl, m.start()) + 1))
+    return out
+
+
+KINDS = ("colour", "font", "length", "duration", "shadow", "number", "other")
+MAX_ROWS = 500
+
+
+def _kind(name, value, colour):
+    v = value or ""
+    if colour:
+        return "colour"
+    if re.search(r"font|family", name):
+        return "font"
+    if re.fullmatch(NUM + r"(?:px|rem|em|ch|ex|lh|rlh|%|vw|vh|vmin|vmax|svh|dvh|lvh)", v) or \
+            re.match(r"(?:clamp|calc|min|max)\(", v):
+        return "length"
+    if TIME.fullmatch(v):
+        return "duration"
+    if "shadow" in name:
+        return "shadow"
+    return "number" if re.fullmatch("-?" + NUM, v) else "other"
+
+
+def extract(paths):
+    """(rows, proofs, files read, skipped): one row per custom property set in the run's token blocks (and literal
+    tailwind.config colours), colours first; the known role pairs' contrast; what wasn't read and why."""
+    files, skipped, configs, _ = collect(paths)
+    props, read = [], 0
+    for f in files + configs:
+        text, why = _read(f)
+        if text is None:
+            skipped.append({"file": f, "why": why})
+            continue
+        read += 1
+        if f in configs:
+            props += [(n, v, False, f, ln) for n, v, ln in _tw_colours(text)]
+        else:
+            src = Source(f, text)
+            props += [(n, v, d, f, src.line(o)) for n, v, d, o in _props(src)]
+    base, over, where = {}, {}, {}
+    for n, v, d, f, ln in props:
+        (over if d else base)[n] = v
+        if not d or n not in where:
+            where[n] = (f, ln)
+    tokens, rows = (base, over), []
+    for n in where:
+        hexes = []
+        for dark in (False, True):
+            try:
+                hexes.append(hex_of(_colour_of(tokens, n, dark)))
+            except ValueError:
+                hexes.append(None)
+        light, dark = _branch(base.get(n), 0), _branch(over.get(n, base.get(n)), 1)
+        same = (light, hexes[0]) == (dark, hexes[1])
+        rows.append({"name": n, "kind": _kind(n, light or dark, hexes[0] or hexes[1]), "light": light,
+                     "light_hex": hexes[0], "dark": None if same else dark, "dark_hex": None if same else hexes[1],
+                     "file": where[n][0], "line": where[n][1]})
+    rows.sort(key=lambda r: KINDS.index(r["kind"]))  # stable: each kind keeps the source's order
+    try:
+        proofs = check_pairs(tokens, strict=False)[0]
+    except ValueError:  # none of the known role pairs is defined
+        proofs = []
+    return rows, proofs, read, skipped
+
+
+def _cell(text, limit=60):
+    text = " ".join(str(text).split()).replace("`", "'")
+    return (text[:limit - 1] + "…" if len(text) > limit else text).replace("|", "\\|")
+
+
+def _rel(path, base_dir):
+    """path from base_dir when it lies under it, else …/<folder>/<name>: the same text whichever folder fm ran from,
+    and no home folder or machine layout in a file meant for the repo."""
+    full = os.path.abspath(path)
+    rel = os.path.relpath(full, base_dir)
+    if rel == ".." or rel.startswith(".." + os.sep):
+        return "…/" + "/".join(full.rstrip(os.sep).split(os.sep)[-2:])
+    return rel
+
+
+def section(rows, proofs, srcs, base_dir):
+    """DESIGN.md's Tokens section (markdown lines): the table, then each known text/surface pair's contrast."""
+    def val(v, h):
+        return " ".join(x for x in (f"`{_cell(v)}`" if v else "", h or "") if x)
+    out = ["## Tokens", "",
+           f"Written by `fm design extract {_cell(' '.join(_rel(p, base_dir) for p in srcs), 4096)}` from the CSS "
+           "custom properties set in :root, "
+           "html, :host and @theme (dark: a .dark, [data-theme] or prefers-color-scheme: dark block, or light-dark()) "
+           "and tailwind.config colours. Rerun it after a token change; it rewrites this section only.", "",
+           "| Token | Kind | Light | Dark | Source |", "|---|---|---|---|---|"]
+    for r in rows[:MAX_ROWS]:
+        out.append(f"| `{r['name']}` | {r['kind']} | {val(r['light'], r['light_hex'])} | "
+                   f"{val(r['dark'], r['dark_hex'])} | {_cell(_rel(r['file'], base_dir), 4096)}:{r['line']} |")
+    if len(rows) > MAX_ROWS:
+        out += ["", f"{len(rows) - MAX_ROWS} more token(s) left out of the table."]
+    if proofs:
+        out += ["", "Contrast (WCAG 2.x, on the sRGB hex the browser paints):", ""]
+        by = {}
+        for p in proofs:
+            by.setdefault((p["fg"], p["bg"]), []).append(p)
+        for (fg, bg), ps in by.items():
+            got = ", ".join(f"{p['ratio']:.2f}:1 {p['theme']}" if len(ps) > 1 else f"{p['ratio']:.2f}:1" for p in ps)
+            needs = ", ".join(f"{p['need']:g}" + (" dark" if p["theme"] == "dark" else "") for p in ps) \
+                if len({p["need"] for p in ps}) > 1 else f"{ps[0]['need']:g}"
+            bad = [p["theme"] for p in ps if not p["pass"]]
+            out.append(f"- `{fg}` on `{bg}`: {got} (needs {needs})" + (f": FAIL in {' and '.join(bad)}" if bad else ""))
+    return out
+
+
+def headings(doc):
+    """((line index, heading) for each # and ## heading outside fenced code, the fence left open at the end or None)
+    of a markdown file's lines."""
+    heads, fence = [], None
+    for i, ln in enumerate(doc):
+        f = re.match(r" {0,3}(`{3,}|~{3,})", ln)
+        if f:  # a fence closes on its own character, at least as long
+            mark = f.group(1)
+            fence = None if fence and mark[0] == fence[0] and len(mark) >= len(fence) else fence or mark
+        elif not fence and re.match(r"#{1,2}\s", ln):
+            heads.append((i, ln.strip()))
+    return heads, fence
+
+
+def has_direction(text):
+    """DESIGN.md records a design direction: it has a ## Direction section (the Tokens-only file fm design extract
+    starts is a palette, not a direction)."""
+    return any(h == "## Direction" for _, h in headings(text.split("\n"))[0])
+
+
+def write_section(path, lines, title):
+    """Put the section into the markdown file at path (through a symlink, under a lock): replace its own (## Tokens up
+    to the next heading, fenced code aside), else insert it after ## Knobs, else append it; a missing file starts with
+    a DESIGN.md title. Every other section is kept byte for byte, CRLF line ends included; a file that isn't UTF-8 is
+    refused, never rewritten."""
+    import fmcore
+    path = os.path.realpath(path)
+    with fmcore.lock(os.path.join(fmcore.state_dir(), "locks", "design-md")):  # ponytail: one lock for every DESIGN.md
+        text = ""
+        if os.path.lexists(path):
+            text, why = _read(path, strict=True)
+            if text is None:
+                raise ValueError(f"{path}: {why}")
+        crlf = "\r\n" in text
+        text = text.replace("\r\n", "\n")
+        if not text.strip():
+            text = (f"# DESIGN.md: {_cell(title, 80)}\n\nNo direction recorded yet: /foreman:directions or the "
+                    "playbook ui/design-direction.md fills the other sections.\n")
+        doc = text.split("\n")
+        heads, fence = headings(doc)
+        if fence:  # the section would land inside it, and every run would add another
+            raise ValueError(f"{path}: a {fence} code fence is never closed; close it and run again")
+        _splice(doc, heads, lines)
+        out = "\n".join(doc)
+        fmcore.write_atomic(path, out.replace("\n", "\r\n") if crlf else out)
+
+
+def _splice(doc, heads, lines):
+    """doc (a list of lines) with lines as its ## Tokens section, in place."""
+    def end_of(i):
+        return next((j for j, _ in heads if j > i), None)
+    own = next((i for i, h in heads if h == "## Tokens"), None)
+    knobs = next((i for i, h in heads if h == "## Knobs"), None)
+    if own is not None:
+        a, b = own, end_of(own)
+    elif knobs is not None and end_of(knobs) is not None:
+        a = b = end_of(knobs)
+    else:
+        a = b = None
+    if b is None:  # to the end of the file
+        keep = doc[:len(doc) if a is None else a]
+        while keep and not keep[-1].strip():
+            keep.pop()
+        doc[:] = keep + [""] + lines + [""]
+    else:
+        doc[a:b] = lines + [""]
+
+
+def _default_out():
+    import fmcore
+    root = fmcore.git_root(os.getcwd()) or os.getcwd()
+    out, docs = os.path.join(root, "DESIGN.md"), os.path.join(root, "docs", "DESIGN.md")
+    return docs if not os.path.lexists(out) and os.path.isfile(docs) else out
+
+
+def contrast_file(path, specs):
+    return check_pairs(read_tokens(path), specs)
+
+
+def _design_tokens(args, fmcli):
+    import sys
+    act, err = args.action, sys.stderr
+    try:
+        if act == "palette":
+            if len(args.paths) != 1:
+                raise ValueError("palette takes one seed colour, e.g. fm design palette '#3366cc'")
+            pal = palette(args.paths[0])
+            text = export(pal, args.format)
+            failed = sum(not p["pass"] for p in pal["proofs"])
+            if getattr(args, "json", False):
+                fmcli.out(args, {"seed": pal["seed"], "proofs": pal["proofs"], "export": text,
+                                 **{t: {r: {"oklch": list(x["oklch"]), "hex": x["hex"]} for r, x in pal[t].items()}
+                                    for t in ("light", "dark")}}, None)
+            else:
+                sys.stdout.write(text)
+                print(render_proofs(pal["proofs"]) + f"\npalette: {len(pal['proofs']) - failed} of "
+                      f"{len(pal['proofs'])} pairs pass (body text 7:1 in dark)", file=err)
+            return 1 if failed else 0
+        if act == "contrast":
+            proofs, warnings = contrast_file(args.paths[0], args.paths[1:])
+            failed = sum(not p["pass"] for p in proofs)
+            fmcli.out(args, {"proofs": proofs, "warnings": warnings, "failed": failed},
+                      render_proofs(proofs, warnings) + f"\ncontrast: {failed} of {len(proofs)} failed")
+            return 1 if failed else 0
+        missing = [p for p in args.paths if not os.path.exists(p)]
+        if missing:
+            raise ValueError(f"no such file or directory: {', '.join(missing)}")
+        rows, proofs, read, skipped = extract(args.paths)
+        gone = "; ".join(f"{x['file']} ({x['why']})" for x in skipped)
+        if not rows:
+            raise ValueError(f"no :root custom properties under {', '.join(args.paths)} (it reads :root, html, :host, "
+                             "@theme and .dark or [data-theme] blocks, and tailwind.config colours)"
+                             + (f"; skipped: {gone}" if gone else ""))
+        out = args.out or _default_out()
+        base_dir = os.getcwd() if out == "-" else os.path.dirname(os.path.realpath(out))
+        lines = section(rows, proofs, args.paths, base_dir)
+        if out != "-":
+            write_section(out, lines, os.path.basename(base_dir))
+        text = "\n".join(lines) if out == "-" else \
+            f"design extract: {len(rows)} token(s) from {read} file(s) → {out} (## Tokens)"
+        fmcli.out(args, {"out": out, "tokens": rows, "proofs": proofs, "files": read, "skipped": skipped},
+                  text + (f"\nskipped: {gone}" if gone else ""))
+        return 0
+    except (ValueError, OSError, fmcli.c.LockTimeout) as e:  # OSError: the write (read-only, --out a directory)
+        print(f"fm: design {act}: {e}", file=err)
+        return 2
+
+
 def cmd_design(args):
     import sys
     import fmcli
+    if args.action != "lint":
+        return _design_tokens(args, fmcli)
     missing = [p for p in args.paths if not os.path.exists(p)]
     if missing:
         print(f"fm: design lint: no such file or directory: {', '.join(missing)}", file=sys.stderr)
@@ -695,3 +1288,17 @@ def cmd_design(args):
         text += "\nskipped: " + "; ".join(f"{x['file']} ({x['why']})" for x in skipped)
     fmcli.out(args, {"findings": found, "files": n, "skipped": skipped}, text)
     return 1 if found else 0
+
+
+if __name__ == "__main__":  # T-1507: a CI without Foreman copies this file (stdlib only) and runs the proof
+    import sys
+    if sys.argv[1:2] != ["contrast"] or len(sys.argv) < 3:
+        print("usage: python3 fmdesign.py contrast TOKENS.css [fg/bg[:need[,dark need]] ...]", file=sys.stderr)
+        sys.exit(2)
+    try:
+        _proved, _warned = contrast_file(sys.argv[2], sys.argv[3:])
+    except ValueError as e:
+        print(f"fmdesign: {e}", file=sys.stderr)
+        sys.exit(2)
+    print(render_proofs(_proved, _warned))
+    sys.exit(1 if any(not p["pass"] for p in _proved) else 0)

@@ -1845,21 +1845,25 @@ _UI_EXT = {".css", ".scss", ".html", ".jsx", ".tsx", ".vue", ".svelte", ".astro"
 
 
 def _design_note(pl, p, act):
-    """T-1514: a task's first edit of a UI file, in a repo with no DESIGN.md (or docs/DESIGN.md), gets one note asking
-    for a design direction first. The extension test comes before any file read, so other edits cost nothing; the
-    marker (cards.json, as test-first's) is set only when the note goes out. Never blocks."""
+    """T-1514: a task's first edit of a UI file, in a repo whose DESIGN.md (or docs/DESIGN.md) records no direction,
+    gets one note asking for a design direction first. The extension test comes before any file read, so other edits
+    cost nothing; the marker (cards.json, as test-first's) is set only when the note goes out. Never blocks.
+    T-1507: a direction is a ## Direction section; the Tokens-only DESIGN.md fm design extract starts doesn't count."""
     if not p or not act or pl.get("tool_name") not in FILE_TOOLS:
         return None
     path = _edit_path(pl)
-    if not path or os.path.splitext(path)[1].lower() not in _UI_EXT or not _in_project(path, p):
-        return None
-    if any(os.path.isfile(os.path.join(p.root, *d)) for d in (("DESIGN.md",), ("docs", "DESIGN.md"))) \
+    if not path or os.path.splitext(path)[1].lower() not in _UI_EXT or not _in_project(path, p) \
             or _card_injected(p, act.id, ":design-direction"):
         return None
+    import fmdesign  # ~7 ms, at most once a task: regular files only, never blocks on a FIFO
+    for d in (("DESIGN.md",), ("docs", "DESIGN.md")):
+        text, _ = fmdesign._read(os.path.join(p.root, *d))
+        if text and fmdesign.has_direction(text):
+            return None
     _card_mark(p, act.id, ":design-direction")
     skill = os.path.isfile(os.path.join(c.PLUGIN_ROOT, "skills", "directions", "SKILL.md"))
-    return (f"Foreman: design direction: {act.id} edits UI and the repo has no DESIGN.md. Pick a direction and write "
-            f"DESIGN.md before more UI (playbook ui/design-direction.md{', or /foreman:directions' if skill else ''}). "
+    return (f"Foreman: design direction: {act.id} edits UI and no DESIGN.md has a ## Direction. Pick a direction and "
+            f"write it before more UI (playbook ui/design-direction.md{', or /foreman:directions' if skill else ''}). "
             "A nudge, not a block.")
 
 
