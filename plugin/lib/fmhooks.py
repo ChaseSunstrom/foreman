@@ -116,11 +116,13 @@ def run(event, raw):
         try:
             payload = json.loads(raw) if raw.strip() else {}
             handler = HANDLERS.get(event)
+            if event == "UserPromptSubmit":
+                _skill_named(payload, payload.get("prompt") if isinstance(payload, dict) else None, typed=True)
             out = handler(payload) if handler else None
             if out is not None:
                 print(json.dumps(out, ensure_ascii=False))
                 _log_inject(event, ((out.get("hookSpecificOutput") or {}) if isinstance(out, dict) else {})
-                            .get("additionalContext"))
+                            .get("additionalContext"), payload)
             if state:
                 _breaker_set(event, None)
         except HookBlock as e:
@@ -173,12 +175,33 @@ def _note_key(text):
     return " ".join(re.findall(r"[A-Za-z][\w-]*", t)[:5]).lower()
 
 
-def _log_inject(event, text):
+def _log_inject(event, text, pl=None):
     """T-0499: what a hook put into the model's context, for the friction digest's note budget."""
     if text:
         import hashlib  # T-0860: h tells the same note from another of its kind
         _event({"kind": "inject", "event": event, "key": _note_key(text), "chars": len(str(text)),
                 "h": hashlib.sha1(str(text).encode("utf-8", "replace")).hexdigest()[:10]})
+        _skill_named(pl, text)
+
+
+_TYPED = re.compile(r"\s*(?:<command-name>)?/foreman:([a-z][a-z-]*)")
+
+
+def _skill_named(pl, text, typed=False):
+    """T-1702: the /foreman:x skills a hook's note names (skill_named), or the one the user typed (slash), as an event
+    fm usage holds against what the session loaded: named and never loaded is offered and ignored. Every note goes
+    through here, so a hook naming a skill needs no call of its own; only text naming one pays for the lookup."""
+    try:
+        if not isinstance(pl, dict) or "/foreman:" not in str(text or ""):
+            return
+        m = _TYPED.match(str(text)) if typed else None
+        names = ([m.group(1)] if m else []) if typed else sorted(set(re.findall(r"/foreman:([a-z][a-z-]*)", str(text))))
+        if names:
+            p = c.find_project(_cwd(pl))
+            _event({"kind": "slash" if typed else "skill_named", "session_id": pl.get("session_id"),
+                    "project": p.slug if p else None, "skills": names[:20]})
+    except Exception:
+        log_error("skill_named", _tb())
 
 
 def _event(rec):
@@ -1742,7 +1765,7 @@ def _pre_tool_use(raw):
         note = " ".join(_said_once(pl, list(filter(None, [made, saved, slow, warn] + [_each(b) for b in builders]))))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
-            _log_inject("PreToolUse", note)
+            _log_inject("PreToolUse", note, pl)
     except Exception:
         log_error("PreToolUse", _tb())
     return 0
@@ -2549,6 +2572,9 @@ def post_tool_use(pl, ok=True):
            "target": _target(ti)[:120], "ms": pl.get("duration_ms"), "ok": ok, "project": p.slug if p else None}
     if pl.get("agent_type"):
         rec["agent_type"] = pl["agent_type"]
+    book = str(ti.get("file_path") or "") if tool == "Read" and isinstance(ti, dict) else ""
+    if "/skills/playbooks/references/" in book and book.endswith(".md"):  # T-1702: a lane's path outruns the cut
+        rec["book"] = book.rsplit("/skills/playbooks/references/", 1)[1][:-3][:200]  # target, so fm usage lost it
     if not ok:
         rec["error"] = str(pl.get("error") or "").split("\n")[0][:120]
     _event(rec)

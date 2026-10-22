@@ -1113,6 +1113,7 @@ def cmd_usage(args):
     listed = fmplaybooks.listed()  # T-1621: a load through fm playbooks show is a read too
     skills, books, cmds = collections.Counter(), collections.Counter(), collections.Counter()
     followed, ignored, pending = collections.Counter(), collections.Counter(), {}
+    named, loaded = collections.defaultdict(set), collections.defaultdict(set)  # T-1702: skills, per session
     for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
         if e.get("project") != p.slug or str(e.get("ts", ""))[:19] < since:
             continue
@@ -1123,6 +1124,12 @@ def cmd_usage(args):
             m = re.search(r"\bfm [a-z-]+(?: [a-z][a-z-]*)?", e.get("action", ""))  # e.g. fm task step, fm audit prep
             pending[sid] = m.group(0) if m else None
             continue
+        if e.get("kind") in ("skill_named", "slash") and isinstance(e.get("skills"), list):  # T-1702: the hooks'
+            names = {str(x) for x in e["skills"]}  # skill_named: a note named them; slash: the user typed one
+            (named if e["kind"] == "skill_named" else loaded)[sid].update(names)
+            if e["kind"] == "slash":
+                skills.update(names)
+            continue
         if e.get("kind") != "tool":
             continue
         tool, target = e.get("tool"), str(e.get("target") or "")
@@ -1131,8 +1138,10 @@ def cmd_usage(args):
             pending[sid] = None
         if tool == "Skill":
             skills[target.split(":")[-1]] += 1
-        elif tool == "Read" and "/skills/playbooks/references/" in target:
-            books[target.split("/skills/playbooks/references/")[1][:-3]] += 1
+            loaded[sid].add(target.split(":")[-1])
+        elif tool == "Read" and (e.get("book") or "/skills/playbooks/references/" in target and target.endswith(".md")):
+            books[str(e.get("book") or target.split("/skills/playbooks/references/")[1][:-3])] += 1  # T-1702: book is
+            # the whole path's tail: a lane's (a subagent's) path outruns the target's cut
         elif tool == "Bash" and (m := re.match(r"\s*fm\s+([a-z-]+)(?:\s+([a-z-]+))?", target)):
             cmds[m.group(1) + (" " + m.group(2) if m.group(1) == "task" and m.group(2) else "")] += 1
         if tool == "Bash" and (hit := fmplaybooks.shown(target, listed)):
@@ -1143,6 +1152,7 @@ def cmd_usage(args):
     all_books = sorted(os.path.relpath(os.path.join(d, n), ref)[:-3] for d, _, fs in os.walk(ref) for n in fs
                        if n.endswith(".md"))
     unused = {"skills": [s for s in all_skills if not skills[s]], "playbooks": [b for b in all_books if not books[b]]}
+    missed = collections.Counter(s for sid, ns in named.items() for s in ns - loaded[sid])  # sessions offered X, no load
     shown = sum(followed.values()) + sum(ignored.values())
     nexts = (f"\n  Next followed: {sum(followed.values())} of {shown}"
              + (f"; most often not: {', '.join(f'{k} ×{v}' for k, v in ignored.most_common(3))}" if ignored else "")
@@ -1150,13 +1160,16 @@ def cmd_usage(args):
     if getattr(args, "prune", False):  # T-0468: fm commands nobody ran in the window, in any project; never deletes
         return _prune(args, since)
     fmcli.out(args, {"days": args.days, "skills": dict(skills), "playbooks": dict(books), "commands": dict(cmds),
-                     "unused": unused, "next_followed": dict(followed), "next_ignored": dict(ignored)},
+                     "unused": unused, "next_followed": dict(followed), "next_ignored": dict(ignored),
+                     "named_not_loaded": dict(missed)},
               f"Last {args.days} day(s) in {p.slug}:\n  skills: "
               + (" · ".join(f"{k} {v}" for k, v in skills.most_common()) or "none")
               + "\n  playbooks read: " + (" · ".join(f"{k} {v}" for k, v in books.most_common(8)) or "none")
               + "\n  fm commands: " + (" · ".join(f"{k} {v}" for k, v in cmds.most_common(12)) or "none")
               + f"\n  never used: skills {', '.join(unused['skills']) or '-'}; {len(unused['playbooks'])} of "
-                f"{len(all_books)} playbooks" + nexts)
+                f"{len(all_books)} playbooks"
+              + ("\n  named, not loaded: " + ", ".join(f"{k} ×{v}" for k, v in missed.most_common()) if missed else "")
+              + nexts)
 
 
 def _prune(args, since):
