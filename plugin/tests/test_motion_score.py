@@ -21,6 +21,7 @@ DESIGN = """# DESIGN.md: demo
 
 ## Next
 """
+CURVE_ENTER = "cubic-bezier(0.05, 0.7, 0.1, 1)"
 
 GOOD = """# the menu
 [[motion]]
@@ -93,7 +94,7 @@ class Format(ForemanTestCase):
         self.assertFalse(any("row-move" in p for p in got), got)
 
     def test_shape_slips_are_problems_not_crashes(self):
-        for text, want in (('[motion.x]\nduration = 1\n', "[[motion]]"), ("", "no [[motion]]"),
+        for text, want in (('motion = "x"\n', "[[motion]] entries or [motion.NAME] tables"), ("", "no motions"),
                            ('title = "x"\n[[motion]]\nname = "a"\n', "unknown key 'title'"),
                            ('motion = [1]\n', "motion 1: not a table")):
             with self.subTest(text=text):
@@ -110,9 +111,91 @@ class Format(ForemanTestCase):
         self.assertEqual(got, ["fade-in: no reduced form (none, fade or instant)"])
 
     def test_unreadable_scores_raise(self):
-        for text, name in (("[[motion]\n", "motion.toml"), ("{", "m.json"), ("[1]", "m.json")):
-            with self.subTest(text=text), self.assertRaises(ValueError):
+        for text, name in (("[[motion]\n", "motion.toml"), ("{", "m.json"), ("[1]", "m.json"),
+                           ("[" * 100000 + "]" * 100000, "deep.json")):
+            with self.subTest(text=text[:20]), self.assertRaises(ValueError):
                 fmmotion.check(self.score(text, name=name))
+        fifo, big, latin = (os.path.join(self.repo, n) for n in ("fifo.toml", "big.toml", "latin.toml"))
+        os.mkfifo(fifo)  # read with O_NONBLOCK: refused, never waited on
+        with open(big, "w") as f:
+            f.write("#" * 1_000_001)
+        with open(latin, "wb") as f:
+            f.write(b'[[motion]]\nname = "caf\xe9"\n')
+        for path, want in ((fifo, "not a regular file"), (big, "over 1000 KB"), (latin, "not UTF-8")):
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, want):
+                fmmotion.check(path)
+
+    def test_named_tables_work_like_entries(self):
+        text = ('[motion.menu-enter]\nduration = 220\neasing = " Ease-Out "\nproperties = ["opacity"]\nreduced = "none"\n'
+                '[motion.row]\nname = "other"\nduration = 100\neasing = "linear"\nproperties = ["opacity"]\n'
+                'reduced = "fade"\n')
+        got = fmmotion.check(self.score(text))
+        self.assertEqual([(m["name"], m["curve"]) for m in got["motions"]], [("menu-enter", "ease-out"), ("row", "linear")])
+        self.assertEqual([f"{p['motion']}: {p['problem']}" for p in got["problems"]],
+                         ["row: name 'other' differs from its table key"])
+
+    def test_durations_say_what_they_mean(self):
+        for dur, want in (("0.3", "bare numbers are ms; write '0.3s'"), ("5", "bare numbers are ms; write '5s'"),
+                          ('"220"', "duration '220' has no unit"), ('"-5ms"', "duration '-5ms' is negative"),
+                          ("0", None), ("10", None), ('"0.25s"', None), ('" 90 ms "', None)):
+            text = f'[motion.a]\nduration = {dur}\neasing = "linear"\nproperties = ["opacity"]\nreduced = "fade"\n'
+            with self.subTest(dur=dur):
+                got = "\n".join(self.problems(text))
+                if want:
+                    self.assertIn(want, got)
+                else:
+                    self.assertEqual(got, "")
+
+    def test_easings_take_steps_linear_and_any_case(self):
+        good = {"steps(4)": "steps(4)", "STEPS( 3 , jump-none )": "steps(3, jump-none)", "  EASE-IN-OUT ": "ease-in-out",
+                "Cubic-Bezier(0.2, 0, 0, 1)": "cubic-bezier(0.2, 0, 0, 1)", "EASE-ENTER": CURVE_ENTER,
+                "linear(0, 0.25 75%, 1)": "linear(0, 0.25 75%, 1)", "linear(0,0.5 25% 75%,1)": "linear(0, 0.5 25% 75%, 1)"}
+        bad = ["steps(0)", "steps(1, jump-none)", "steps(2, sideways)", "linear(1)", "linear(0, 1",
+               "linear(" + "0, " * 200 + "1)", "linear(0, 1 50% 60% 70%)"]
+        for easing in [*good, *bad]:
+            text = f'[motion.a]\nduration = 100\neasing = "{easing}"\nproperties = ["opacity"]\nreduced = "fade"\n'
+            with self.subTest(easing=easing):
+                got = fmmotion.check(self.score(text))
+                if easing in good:
+                    self.assertEqual((got["problems"], got["motions"][0]["curve"]), ([], good[easing]))
+                else:
+                    self.assertIn("easing", got["problems"][0]["problem"])
+
+    def test_a_hand_written_value_table_and_a_second_table_are_read(self):
+        extra = ("Hand-written:\n\n| token | Value | Job |\n|:--|--:|---|\n| `--dur-tap` | 90 ms | press |\n"
+                 "| --ease-soft | `linear(0, 0.5 50%, 1)` | settle |\n\n## Next")
+        text = '[motion.tap]\nduration = "--dur-tap"\neasing = "--ease-soft"\nproperties = ["-webkit-transform"]\n' \
+               'reduced = "instant"\n[motion.in]\nduration = "--dur-enter"\neasing = "linear"\nproperties = ["opacity"]\n' \
+               'reduced = "fade"\n'
+        for design in (DESIGN.replace("## Next", extra), DESIGN.replace("## Next", extra).replace("## Tokens", "## TOKENS")):
+            with self.subTest(design=design[:30]):
+                got = fmmotion.check(self.score(text, design=design))
+                self.assertEqual(got["problems"], [])
+                self.assertEqual([(m["ms"], m["curve"]) for m in got["motions"]],
+                                 [(90, "linear(0, 0.5 50%, 1)"), (220, "linear")])
+
+    def test_a_table_without_a_value_column_is_named(self):
+        design = "# D\n\n## Tokens\n\n| Token | Job |\n|---|---|\n| `--dur-tap` | press |\n"
+        got = "\n".join(self.problems('[motion.tap]\nduration = "--dur-tap"\neasing = "linear"\nproperties = ["opacity"]\n'
+                                      'reduced = "fade"\n', design=design))
+        self.assertIn("tap: duration '--dur-tap': DESIGN.md's Tokens table at line 5 has no Light or Value column", got)
+
+    def test_a_truncated_token_says_so(self):
+        design = DESIGN.replace("| `--brand`", "| `--ease-long` | other | `linear(0, 0.1, 0.2, 0.3, 0.4, 0.5…` |  | t:6 |\n"
+                                               "| `--dur-cut` | duration | `12…` |  | t:7 |\n| `--brand`")
+        got = self.problems('[motion.a]\nduration = "--dur-cut"\neasing = "--ease-long"\nproperties = ["opacity"]\n'
+                            'reduced = "fade"\n', design=design)
+        self.assertEqual(len(got), 2, got)
+        self.assertTrue(all("truncated by fm design extract" in p for p in got), got)
+
+    def test_extract_keeps_long_curves_whole(self):
+        curve = "linear(0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121, 1)"
+        with open(os.path.join(self.repo, "tokens.css"), "w") as f:
+            f.write(f":root {{\n  --ease-spring: {curve};\n}}\n")
+        self.fm("design", "extract", "tokens.css")
+        got = fmmotion.check(self.score('[motion.a]\nduration = 300\neasing = "--ease-spring"\nproperties = ["opacity"]\n'
+                                        'reduced = "fade"\n', design=None))
+        self.assertEqual((got["problems"], got["motions"][0]["curve"]), ([], curve))
 
     def test_reads_the_table_fm_design_extract_writes(self):
         with open(os.path.join(self.repo, "tokens.css"), "w") as f:
@@ -138,6 +221,19 @@ class Cli(ForemanTestCase):
         with open(os.path.join(self.repo, "motion.toml"), "a") as f:
             f.write('reduced = "fade"\n')
         self.assertIn("clean", self.fm("motion", "check").stdout)
+
+    def test_escape_sequences_never_reach_the_terminal(self):
+        with open(os.path.join(self.repo, "DESIGN.md"), "w") as f:
+            f.write("## Tokens\n\n| Token | Value |\n|---|---|\n| --dur-x | \x1b[2J |\n| --ease-x | \x1b[31m… |\n")
+        with open(os.path.join(self.repo, "motion.toml"), "w") as f:
+            f.write('[[motion]]\nname = "\\u001b[2Jx"\nduration = "\\u001b]0;t\\u0007"\neasing = "\\u001b[31m"\n'
+                    'properties = ["\\u001b[1m"]\nreduced = "\\u001b"\n"\\u001bkey" = 1\n'
+                    '[[motion]]\nname = "y"\nduration = "--dur-x"\neasing = "--ease-x"\nproperties = ["opacity"]\n'
+                    'reduced = "fade"\n')
+        p = self.fm("motion", "check", check=False)
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn("y: duration token '--dur-x' is '\\x1b[2J'", p.stdout)
+        self.assertNotIn("\x1b", p.stdout + p.stderr)
 
     def test_a_missing_or_broken_score_exits_2(self):
         p = self.fm("motion", "check", check=False)
