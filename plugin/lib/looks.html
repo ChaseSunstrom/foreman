@@ -116,7 +116,7 @@ footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--g-r
 .bc .role span { padding: .4rem .9rem; }
 .bc .role .club { background: var(--accent); color: var(--on-accent); font: 700 .8125rem/1.6 var(--f1); text-transform: uppercase; letter-spacing: .08em; font-stretch: condensed; }
 .bc .ticker { display: flex; background: var(--strap); color: var(--on-strap); }
-.bc .pause { flex: none; min-height: 2.75rem; padding: 0 .9rem; border: 0; background: var(--accent); color: var(--on-accent); font: 700 .75rem/1 var(--f1); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+.bc .pause { flex: none; min-height: 2.75rem; padding: 0 .9rem; border: 0; background: var(--accent); color: var(--on-accent); font: 700 .75rem/1 var(--f1); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; transition: background-color var(--dur-small) var(--ease-move), color var(--dur-small) var(--ease-move); }
 .bc .pause[aria-pressed="true"] { background: var(--on-strap); color: var(--text); }
 .bc .window { overflow: hidden; min-width: 0; flex: 1; }
 .bc .track { display: flex; width: max-content; animation: lap 40s linear var(--dur-stage) backwards; }
