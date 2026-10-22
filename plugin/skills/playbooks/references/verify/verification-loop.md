@@ -54,6 +54,7 @@ ruff check . 2>&1 | head -30
 
 ### Phase 4: Test Suite
 ```bash
+# This project's tests (fm map): {{test}}
 # Run tests with coverage
 npm run test -- --coverage 2>&1 | tail -50
 

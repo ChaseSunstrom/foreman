@@ -1,19 +1,23 @@
 """T-1553 and its siblings: tools that test the guard against what the shell really does."""
+import json
 import os
 import shutil
+import subprocess
 import sys
 import unittest
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-for p in (HERE, os.path.join(HERE, "..", "lib")):
+for p in (HERE, os.path.join(HERE, "..", "lib"), os.path.join(HERE, "fixtures")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
 import fmguard  # noqa: E402
 import fmoracle  # noqa: E402
 import fmreplay  # noqa: E402
+import gen_evasions  # noqa: E402
 
+FIX = os.path.join(HERE, "fixtures")
 SANDBOX = fmoracle.sandbox() is not None
 
 
@@ -150,6 +154,102 @@ class NoSandbox(unittest.TestCase):
             self.assertIsNone(fmoracle.ran("rm -rf ~"))
             fmreplay.cmd_replay(args)
         self.assertIn("bwrap", buf.getvalue())
+
+
+_TO_SH = {"here_string", "script_file", "base64_sh"}
+
+
+@unittest.skipIf(gen_evasions.home_in_a_repo(), "the home folder is inside a git tree: the guard judges it a project")
+class Mutation(unittest.TestCase):
+    """T-1605: a guard rule (category) is caught when dropping its findings alone, so the next finding decides as it
+    would with the rule gone, turns the labelled corpus red; the rules no case catches are written down and may only
+    shrink; seeded stacked obfuscations join the evasion corpus, and none may reach a dangerous command."""
+
+    @classmethod
+    def setUpClass(cls):
+        with mock.patch.dict(os.environ):
+            os.environ.pop("FOREMAN_GUARD_CASES", None)
+            cases, _ = fmreplay.load_cases()
+        cls.cases = cases + fmreplay.load_cases(os.path.join(FIX, "guard_evasions.jsonl"))[0]
+        cls.green = fmreplay.drift(cls.cases)
+        real = fmguard.check
+        cls.caught = []
+        for cat in fmguard.CATEGORIES:
+            def mutant(tool, ti, ctx, found=None, cat=cat):
+                found = fmguard.findings(tool, ti, ctx) if found is None else found
+                return real(tool, ti, ctx, found=[f for f in found if f[0] != cat])
+            with mock.patch.object(fmguard, "check", mutant):
+                if any(d["should"] == "block" for d in fmreplay.drift(cls.cases)):
+                    cls.caught.append(cat)
+
+    def test_the_corpus_is_green_before_any_mutant(self):
+        self.assertEqual(self.green, [], "a mutant can only turn a green corpus red")
+
+    def test_dropping_a_caught_rule_turns_the_corpus_red(self):
+        self.assertGreaterEqual(len(self.caught), 7, "the corpora catch fewer guard rules than they did")
+
+    def test_the_untested_rules_are_written_down_and_only_shrink(self):
+        path = os.path.join(FIX, "guard_untested.json")
+        with open(path, encoding="utf-8") as f:
+            listed = json.load(f)["untested"]
+        untested = [c for c in fmguard.CATEGORIES if c not in self.caught]
+        self.assertEqual(untested, listed, "guard_untested.json is stale: a rule lost its last case (add one) or "
+                                           "gained one (take it off the list)")
+        try:  # in a git checkout, against the last commit: the list may lose names, never gain one
+            head = subprocess.run(["git", "show", "HEAD:plugin/tests/fixtures/guard_untested.json"], cwd=HERE,
+                                  capture_output=True, text=True, timeout=20)
+        except (OSError, subprocess.TimeoutExpired):
+            head = None
+        if head and head.returncode == 0:
+            self.assertEqual([c for c in listed if c not in json.loads(head.stdout)["untested"]], [],
+                             "a guard rule joined the untested list: give it a labelled case instead")
+
+    def test_no_evasion_reaches_a_dangerous_command(self):
+        gaps, _ = fmreplay.load_cases(os.path.join(FIX, "guard_gaps.jsonl"))
+        self.assertEqual([g["cmd"] for g in gaps if g["should"] == "block"], [],
+                         "an obfuscated dangerous command passes the guard: tighten fmguard.py, never list it")
+
+    def test_seeded_stacks_join_the_corpus(self):
+        stacked = [r for r in gen_evasions._rows() if "+" in r[0]]
+        per = {}
+        for _, orig, _, _ in stacked:
+            per[orig] = per.get(orig, 0) + 1
+        dangerous = {orig for _, orig, _, label in gen_evasions._rows() if label == "block"}
+        self.assertEqual({o: n for o, n in per.items() if n < gen_evasions.STACKS}, {}, "a command got fewer stacks")
+        self.assertEqual(set(per), dangerous, "every dangerous command gets stacks")
+        with open(os.path.join(FIX, "guard_evasions.jsonl"), encoding="utf-8") as f:
+            committed = {json.loads(ln)["cmd"] for ln in f if ln.strip()}
+        self.assertTrue({v for _, _, v, _ in stacked} <= committed, "regenerate: python3 fixtures/gen_evasions.py")
+
+    def test_a_stack_inside_bash_is_refused_for_what_it_hides(self):
+        # an opaque shape (text fed to sh, eval of computed text) may be refused as opaque; a stack the shell reads in
+        # place must still trip a rule the plain command trips, or the guard refused only its shape (a plain command
+        # that is itself refused only as opaque, eval "$(curl …)", has nothing more to keep)
+        import re
+        opaque = re.compile(r"computed text|downloaded script")
+        ctx = fmreplay._ctx(fmreplay.resolve_cwd(""))
+        payload = lambda cmd: {k for k, d in fmguard.findings("Bash", {"command": cmd}, ctx) if not opaque.search(d)}
+        off = [(t, o) for t, o, v, _ in gen_evasions._rows()
+               if "+" in t and not set(t.split("+")) & _TO_SH and payload(o) and not payload(o) & payload(v)]
+        self.assertEqual(off, [])
+
+    @unittest.skipUnless(SANDBOX, "no bwrap: the oracle only runs commands inside a sandbox")
+    def test_every_stack_runs_the_original(self):
+        # the shell is watched running each stack; a stack that hands text to sh is checked one layer down (sh is a
+        # recorded program too), by running what sh would be given; a plain command of builtins records nothing
+        fns = {f.__name__: f for f in gen_evasions.EVERY}
+        for tname, orig, v, _ in gen_evasions._rows():
+            if "+" not in tname:
+                continue
+            want = {tuple(a) for a in fmoracle.ran(orig) or []}
+            if not want:
+                continue
+            inner, outer = tname.split("+")
+            if inner in _TO_SH:
+                continue  # the original runs inside sh, which is itself a recorded program
+            watched = fns[inner](orig) if outer in _TO_SH else v
+            got = {tuple(a) for a in fmoracle.ran(watched) or []}
+            self.assertTrue(want <= got, f"{tname} of {orig!r} doesn't run it: {watched!r}")
 
 
 if __name__ == "__main__":

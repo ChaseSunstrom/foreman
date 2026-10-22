@@ -1113,7 +1113,7 @@ def _rel(path, base_dir):
 def section(rows, proofs, srcs, base_dir):
     """DESIGN.md's Tokens section (markdown lines): the table, then each known text/surface pair's contrast."""
     def val(v, h):
-        return " ".join(x for x in (f"`{_cell(v)}`" if v else "", h or "") if x)
+        return " ".join(x for x in (f"`{_cell(v, 200)}`" if v else "", h or "") if x)  # T-1624: fm motion reads them
     out = ["## Tokens", "",
            f"Written by `fm design extract {_cell(' '.join(_rel(p, base_dir) for p in srcs), 4096)}` from the CSS "
            "custom properties set in :root, "

@@ -76,6 +76,16 @@ h3 { font-size: 1.45rem; font-weight: 600; line-height: 1.1; }
 .hero { padding: clamp(40px, 8vw, 96px) 0 40px; }
 .hero h1 { max-width: 17ch; }
 .hero .lede { font-size: clamp(1.12rem, 1.7vw, 1.3rem); color: var(--ink-2); max-width: 58ch; margin: 22px 0 30px; }
+/* T-1609: the proof-chain poster build.py draws from data/stats.json: .points' diamonds on a quiet track, labels set
+   like a .stamp; under 720px the 2x2 (labels stay ~13px at 320px, nothing clips) */
+.poster { width: 100%; max-width: 900px; height: auto; margin-top: clamp(28px, 5vw, 48px); }
+.poster.compact { display: none; max-width: 480px; }
+.poster .track { stroke: var(--rule); stroke-width: 4; stroke-linecap: round; }
+.poster .st { fill: var(--signal); }
+.poster .kick { font: 600 20px var(--sans); fill: var(--ink-2); }
+.poster .num { font: condensed 700 50px var(--display); fill: var(--ink); font-variant-numeric: tabular-nums; }
+.poster .lab { font: condensed 700 20px var(--display); letter-spacing: .12em; text-transform: uppercase; fill: var(--ink-2); }
+@media (max-width: 719px) { .poster { display: none; } .poster.compact { display: block; } .poster.compact .lab { font-size: 22px; } }
 .install { display: flex; align-items: stretch; max-width: 760px; background: var(--term); color: var(--term-ink); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
 .install code { flex: 1; padding: 15px 18px; overflow-x: auto; white-space: nowrap; font-size: .86rem; line-height: 1.5; }
 .install code::before { content: "$ "; color: var(--term-dim); }
@@ -221,7 +231,7 @@ footer .fine { flex-basis: 100%; }
 .viz { width: 100%; height: auto; overflow: visible; }
 .viz .lab, .viz .tick, .viz .val { font: 500 12.5px var(--sans); }
 .viz .lab { fill: var(--ink-2); }
-.viz .tick { fill: var(--muted, #898781); font-variant-numeric: tabular-nums; }
+.viz .tick { fill: var(--muted); font-variant-numeric: tabular-nums; }
 .viz .val { fill: var(--ink); font-weight: 600; }
 @media (max-width: 560px) { .viz.pairs .lab { font-size: 24px; } .viz.pairs .val { font-size: 22px; } } /* T-1239: the chart scales down on phones */
 .viz .grid { stroke: var(--grid); stroke-width: 1; }
