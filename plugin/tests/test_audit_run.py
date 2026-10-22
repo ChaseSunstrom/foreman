@@ -49,7 +49,7 @@ class AuditRun(HookCase):
 
     def test_one_verdict_per_lens_and_the_findings(self):
         self.run_audit(env={"STUB_BAD_LENS": "edge"})
-        want = [x for x in c.AUDIT_LENSES if x != "self"]
+        want = list(c.DEFAULT_LENSES)  # T-1501: a non-UI diff pays for no design reviewer
         self.assertEqual(sorted(x["lens"] for x in self.calls()), sorted(want))
         self.assertEqual(self.audits(), sorted(want))
         for call in self.calls():
@@ -64,6 +64,15 @@ class AuditRun(HookCase):
         block = next(b for b in c.load_briefs(self.project()) if b.id == self.tid)
         self.assertTrue(any("changes needed" in l and "audit edge" in l for l in block.evidence()))
         self.assertTrue(any("audit intent" in l and "→ ok" in l for l in block.evidence()))
+
+    def test_a_ui_diff_adds_the_design_reviewer(self):  # T-1501
+        with open(os.path.join(self.repo, "page.html"), "w") as f:
+            f.write("<button>Go</button>\n")
+        self.run_audit()
+        self.assertEqual(sorted(x["lens"] for x in self.calls()), sorted(list(c.DEFAULT_LENSES) + ["design"]))
+        self.assertIn("design", self.audits())
+        design = next(x for x in self.calls() if x["lens"] == "design")
+        self.assertIn("## design", design["stdin"])
 
     def test_one_lens_only_and_a_failed_reviewer_records_nothing_for_it(self):
         p = self.run_audit("--lens", "edge", "--lens", "intent", env={"STUB_FAIL_LENS": "intent"}, check=False)
