@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The supply check no longer flags a `__pycache__` file that is exactly what Python compiles from the source beside it (same interpreter, header, and code). A pyc whose body was changed under a copied header, an orphan, a hash-based pyc or another Python's pyc still shows, since Python would run it without checking it against the source (T-1466).
 - A close's affected-tests run no longer pulls in every test that once changed alongside `CHANGELOG.md`: a file that co-changes with more than 10 tests carries no signal, so its co-change pairs are dropped (its direct links still count). Before, every close ran about 28 extra suites, 114–142 s of a 2-minute close (T-1467).
 - `fm lib source update` swaps one source in at a time (a lock beside the sources folder), so two updates of the same source can't interleave their renames; `fm lib source rm` also removes a stray `NAME.old-PID` or `.tmp-NAME-PID` folder a crash left, and still refuses `.`, `..`, paths and links (T-1428).
 - `fm edit` refuses a file holding NUL bytes (binary), as fm code does, and applies old text written with plain newlines to a file with Windows (CRLF) line endings, keeping the file's endings, where it used to say "not found" (T-1424).
