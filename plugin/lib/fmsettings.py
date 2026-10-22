@@ -281,8 +281,23 @@ def set_app(key, value, path=None, p=None):
     """Set one tui.toml setting in place: (the value written, [other settings it made bad, which the app skips]).
     SettingError (the file untouched) when the name or value is wrong, the guard refuses the write (inside Claude
     Code), the file doesn't parse, load_config rejects the value or the app can't draw with it."""
-    import fmcodetui as T
     import fmcore
+    path, value, table, name = _app_change(key, value, path, p)
+    real = os.path.realpath(path)  # a tui.toml linked from a dotfiles repo stays linked
+    with fmcore.lock(os.path.dirname(real)):  # another fm settings set between our read and our write
+        return _set_app(key, value, path, real, table, name)
+
+
+def preview_app(key, value, path=None, p=None):
+    """T-1573: (the value, the config the app would run with it); nothing written. Whatever set_app refuses, the
+    guard's refusal included, is refused here: the fm code app shows a look with it only when it could keep it."""
+    path, value, table, name = _app_change(key, value, path, p)
+    return value, _plan_app(key, value, path, table, name)[1]
+
+
+def _app_change(key, value, path, p):
+    """set_app's checks before the file is read (the name, the value, the guard): (path, the value, table, name)."""
+    import fmcodetui as T
     path = path or app_path()
     entries = find(key, "app")
     if not entries:
@@ -295,9 +310,7 @@ def set_app(key, value, path=None, p=None):
         raise SettingError(f"app {key}: not written, the guard protects {path} ({block}); to set it, edit {path}: "
                            + (f"under [{table}], " if table else "at the top, ")
                            + f"{T._toml_key(name)} = {T._toml(value)}")
-    real = os.path.realpath(path)  # a tui.toml linked from a dotfiles repo stays linked
-    with fmcore.lock(os.path.dirname(real)):  # another fm settings set between our read and our write
-        return _set_app(key, value, path, real, table, name)
+    return path, value, table, name
 
 
 def _utf8(value, key):
@@ -308,8 +321,16 @@ def _utf8(value, key):
 
 
 def _set_app(key, value, path, real, table, name):
-    import fmcodetui as T
     import fmcore
+    new, _, errors = _plan_app(key, value, path, table, name)
+    fmcore.write_atomic(real, new)
+    return value, errors
+
+
+def _plan_app(key, value, path, table, name):
+    """The file with the change made, checked: (its text, the config the app loads from it, [other settings it made
+    bad]); SettingError for a file or value set_app refuses."""
+    import fmcodetui as T
     try:
         with open(path, encoding="utf-8") as f:
             text = f.read()
@@ -349,8 +370,7 @@ def _set_app(key, value, path, real, table, name):
             T.render(T.State(), w, h, cfg)
     except Exception as e:
         raise SettingError(f"{key} = {T._toml(value)}: the app can't draw with it ({type(e).__name__}: {e})") from None
-    fmcore.write_atomic(real, new)
-    return value, errors
+    return new, cfg, errors
 
 
 # ---------------------------------------------------------------- the plugin: Claude Code's settings.json

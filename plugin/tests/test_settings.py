@@ -223,6 +223,31 @@ class Command(ForemanTestCase):
         self.assertEqual(read_text(self.settings), self.before)
 
 
+class PreviewApp(unittest.TestCase):
+    """T-1573: the fm code app's preview refuses what set_app refuses, the guard's refusal too, and writes nothing."""
+    def test_it_refuses_what_set_app_refuses_and_writes_nothing(self):
+        import tempfile
+        import unittest.mock as mock
+        path, mine = os.path.join(tempfile.mkdtemp(), "tui.toml"), '# mine\ntheme = "night"\n'
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(mine)
+        bad = (("theme", "nope"), ("colors.ok", '"\udcff"'), ("colors.ok", {"fg": "\udcff"}), ("nope", "x"))
+        with mock.patch.object(fmsettings, "in_claude_code", return_value=False):
+            for key, value in bad:
+                for fn in (fmsettings.set_app, fmsettings.preview_app):
+                    with self.subTest(fn=fn.__name__, key=key, value=value), self.assertRaises(fmsettings.SettingError):
+                        fn(key, value, path)
+            value, cfg = fmsettings.preview_app("motion", "calm", path)
+            self.assertEqual((value, cfg["motion"], cfg["preset"]), ("reduced", "reduced", "night"))
+        with mock.patch.object(fmsettings, "in_claude_code", return_value=True), \
+                mock.patch.object(fmsettings, "_guard_block", return_value="a protected file"):
+            for fn in (fmsettings.set_app, fmsettings.preview_app):
+                with self.subTest(fn=fn.__name__), self.assertRaises(fmsettings.SettingError) as e:
+                    fn("theme", "paper", path)
+                self.assertIn("guard", str(e.exception))
+        self.assertEqual(read_text(path), mine, "nothing written")
+
+
 class PluginSurface(unittest.TestCase):
     """T-1574: /foreman:settings runs fm settings (one implementation); the pane re-reads its options on each poll."""
     ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
