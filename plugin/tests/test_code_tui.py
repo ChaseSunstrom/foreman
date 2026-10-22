@@ -789,6 +789,108 @@ class Config(unittest.TestCase):
         self.assertFalse([n for n, spec in cfg["theme"].items() if n != "screen" and ("fg" in spec or "bg" in spec)])
 
 
+class Settings(unittest.TestCase):
+    """T-1496: one schema of every setting, and a writer that changes one key in tui.toml in place."""
+    TEXT = ('# my settings\ntheme = "night"  # dark\nmotion = "full"\n\n[colors]  # styles\nok = "#47C98B"\n'
+            '# keep this\n[layout]\ncolumns = [\n  ["log"],  # left\n  ["checks", "files"],\n]\nwidths = [58, 42]\n'
+            '[keys]\nx = "stop"\n"ctrl+r" = "resume"  # mine\n')
+
+    def path(self, text=None):
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "tui.toml")
+        if text is not None:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        return path
+
+    def read(self, path):
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+
+    def test_every_default_has_a_schema_entry(self):
+        import fmsettings
+        keys = {e["key"] for e in fmsettings.app_schema()}
+        T = tui()
+        names = {"preset": "theme", "motion": "motion", "border": "border"}
+        for k in T.DEFAULTS:
+            if k in names:
+                self.assertIn(names[k], keys, k)
+        self.assertTrue({f"colors.{n}" for n in T.DEFAULTS["theme"]} <= keys)
+        self.assertTrue({f"layout.{n}" for n in T.DEFAULTS["layout"]} <= keys)
+        self.assertTrue({f"keys.{T.key_name(k)}" for k in T.DEFAULTS["keys"]} <= keys)
+        self.assertEqual(set(T.DEFAULTS) - {"preset", "theme", "layout", "keys"} - set(names), {"palette"})
+        self.assertIn("palette", keys)
+        for e in fmsettings.app_schema():
+            self.assertTrue(e["help"] and e["group"] and e["effect"] in ("now", "next run"), e)
+            self.assertNotIn("\n", e["help"])
+
+    def test_a_set_changes_one_line_and_keeps_the_rest_byte_identical(self):
+        import fmsettings
+        path = self.path(self.TEXT)
+        self.assertEqual(fmsettings.set_app("theme", "signal", path), ("signal", []))
+        self.assertEqual(self.read(path), self.TEXT.replace('theme = "night"  # dark', 'theme = "signal"  # dark'))
+        fmsettings.set_app("keys.ctrl+r", "stop", path)
+        self.assertIn('"ctrl+r" = "stop"  # mine\n', self.read(path))
+        fmsettings.set_app("colors.ok", "#4DA3FF", path)
+        self.assertIn('ok = "#4DA3FF"\n# keep this\n', self.read(path))
+        cfg, errors = tui().load_config(path)
+        self.assertEqual((errors, cfg["preset"], cfg["keys"]["^R"]), ([], "signal", "stop"))
+        _, skipped = fmsettings.set_app("theme", "paper", path)  # the user's ok colour is too faint on paper
+        self.assertEqual(len(skipped), 1)
+        self.assertIn("colors.ok", skipped[0])
+
+    def test_a_multiline_value_is_replaced_whole(self):
+        import fmsettings
+        path = self.path(self.TEXT)
+        _, skipped = fmsettings.set_app("layout.columns", '[["log", "files"]]', path)
+        self.assertTrue(skipped and "layout.widths" in skipped[0], "two widths for one column: said, not refused")
+        fmsettings.set_app("layout.widths", "[100]", path)
+        text = self.read(path)
+        self.assertIn('[layout]\ncolumns = [["log", "files"]]\nwidths = [100]\n[keys]', text)
+        self.assertEqual(tui().load_config(path)[1], [])
+
+    def test_a_missing_key_goes_into_its_table_and_a_missing_table_is_added(self):
+        import fmsettings
+        path = self.path('# top\ntheme = "night"\n\n[keys]\nx = "stop"\n')
+        fmsettings.set_app("border", "heavy", path)
+        fmsettings.set_app("keys.y", "quit", path)
+        fmsettings.set_app("layout.narrow_below", "90", path)
+        self.assertEqual(self.read(path), '# top\ntheme = "night"\nborder = "heavy"\n\n[keys]\nx = "stop"\ny = "quit"\n'
+                                          '\n[layout]\nnarrow_below = 90\n')
+        new = self.path()
+        fmsettings.set_app("motion", "reduced", new)
+        self.assertEqual(self.read(new), 'motion = "reduced"\n')
+
+    def test_odd_but_valid_files_are_edited_in_place(self):
+        import fmsettings
+        text = '"a".b = 1\r\n[keys]\r\nx = "stop" # c#d\r\n'
+        self.assertEqual(fmsettings.edit_toml(text, "keys", "x", "quit"), text.replace('"stop"', '"quit"'))
+        real = self.path('motion = "full"\n')
+        link = os.path.join(os.path.dirname(self.path()), "tui.toml")
+        os.symlink(real, link)
+        fmsettings.set_app("motion", "calm", link)  # the old word, written as the one it means
+        self.assertTrue(os.path.islink(link), "a linked tui.toml stays linked")
+        self.assertEqual(self.read(real), 'motion = "reduced"\n')
+
+    def test_a_bad_value_leaves_the_file(self):
+        import fmsettings
+        path = self.path(self.TEXT)
+        for key, value in (("motion", "wobbly"), ("colors.dim", "#18202C"), ("nosuch", "1"), ("layout.widths", "[0]"),
+                           ("keys.x", "explode"), ("layout.narrow_below", "lots")):
+            with self.subTest(key=key), self.assertRaises(fmsettings.SettingError):
+                fmsettings.set_app(key, value, path)
+            self.assertEqual(self.read(path), self.TEXT)
+        with unittest.mock.patch("fmcodetui.render", side_effect=RuntimeError("boom")), \
+                self.assertRaises(fmsettings.SettingError) as e:
+            fmsettings.set_app("border", "heavy", path)
+        self.assertIn("boom", str(e.exception))
+        self.assertEqual(self.read(path), self.TEXT)
+        broken = self.path("theme = \n")
+        with self.assertRaises(fmsettings.SettingError):
+            fmsettings.set_app("border", "heavy", broken)
+        self.assertEqual(self.read(broken), "theme = \n")
+
+
 def git_repo():
     import subprocess
     import tempfile

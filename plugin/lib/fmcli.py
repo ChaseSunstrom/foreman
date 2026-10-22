@@ -5793,6 +5793,13 @@ def _build_parser():
     s.add_argument("--because", help="set: why a cap goes up (recorded as a costly decision)")
     s.add_argument("--days", type=int, default=1, help="show: spend over this many days")
 
+    s = add("settings", lazy("fmsettings", "cmd_settings"), tier=("Project and settings", 775),
+            help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496)")
+    s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set"])
+    s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …)")
+    s.add_argument("value", nargs="?", help="set: the new value")
+    s.add_argument("--surface", choices=["app", "plugin"], help="only the app's tui.toml, or only the pane's options")
+
     s = add("evolve", lazy("fmevolve", "cmd_evolve"), tier=("Reports", 1100), help="one bench-gated generation: revise (or --drop) one Foreman "
                                                             "instruction file on an evolve branch, bench both, gate (T-0224)")
     s.add_argument("--target", required=True, help="the file to revise, relative to the repo (e.g. plugin/skills/x/SKILL.md)")

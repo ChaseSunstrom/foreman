@@ -546,8 +546,9 @@ export const register: Register = (on, options) => {
   cfg.freshAt = typeof options.freshAt === 'number' ? options.freshAt : 40
   cfg.freshTokens = typeof options.freshTokens === 'number' ? options.freshTokens : 200000
   cfg.mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot in MASCOT_COLORS) ? options.mascot : 'blue'
-  // T-0912: full = 30 fps charts by blit; calm = the 8 fps frame clock only; off = no clocks, a still pane
-  cfg.motion = options.motion === 'calm' || options.motion === 'off' ? options.motion : 'full'
+  // T-0912: full = 30 fps charts by blit; reduced = the 8 fps frame clock only; off = no clocks, a still pane.
+  // T-1496: reduced is fm code's word too; the old calm still means it
+  cfg.motion = options.motion === 'reduced' || options.motion === 'calm' ? 'reduced' : options.motion === 'off' ? 'off' : 'full'
   cfg.chat = options.chat === 'full' ? 'full' : 'tree' // T-1040
   cfg.palette = options.palette === 'cb' ? 'cb' : 'default' // T-1081
   setPalette(cfg.palette)
