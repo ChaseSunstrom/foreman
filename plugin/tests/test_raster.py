@@ -1,5 +1,7 @@
 """T-1630: fm img, a stdlib PNG codec. Decode 8-bit (and 1/2/4-bit grey and palette) images with all five filters
-into RGBA; encode RGB or RGBA with filter 0; diff two images into a changed-pixel count and a bounding box."""
+into RGBA; encode RGB or RGBA with filter 0; diff two images into a changed-pixel count and a bounding box.
+T-1631: fmraster, an integer rasteriser (edge functions, a z-buffer, flat shading): a lit cube, the same bytes always."""
+import hashlib
 import importlib.util
 import json
 import os
@@ -13,6 +15,7 @@ import zlib
 from helpers import ForemanTestCase
 
 import fmimg
+import fmraster
 
 
 def chunk(kind, data):
@@ -264,6 +267,95 @@ class Img(ForemanTestCase):
         self.assertEqual(p.returncode, 2)
         self.assertIn("refused", p.stderr)
         self.assertFalse(os.path.exists(c))
+
+
+RED, GREEN = (255, 0, 0), (0, 255, 0)
+
+
+def facing(z, colour=RED, half=5):
+    """A triangle across the frame's middle at depth z, clockwise as the camera sees it (so its front faces it)."""
+    return (-half, -half, z), (0, half, z), (half, -half, z), colour
+
+
+def centre(rgb, w=8, h=8):
+    i = (h // 2 * w + w // 2) * 3
+    return tuple(rgb[i:i + 3])
+
+
+class Cube(ForemanTestCase):
+    # sha256 of the default 64x64 lit cube's RGB bytes: integers only, so this holds on every machine and Python
+    GOLDEN = "7de0f1d8b428074210b6ae99fb6b5eb6e8247bd6322ba044fef9ec6adda326e4"
+
+    def test_two_renders_are_byte_identical_pngs(self):
+        a, b = (os.path.join(self.tmp, n) for n in ("a.png", "b.png"))
+        fmraster.save(a, fmraster.cube(), 64, 64)
+        fmraster.save(b, fmraster.cube(), 64, 64)
+        with open(a, "rb") as f, open(b, "rb") as g:
+            self.assertEqual(f.read(), g.read())
+        rgb = fmraster.render(fmraster.cube(), 64, 64)
+        self.assertEqual(hashlib.sha256(rgb).hexdigest(), self.GOLDEN)
+        self.assertEqual(fmimg.load(a).rgba, b"".join(rgb[i:i + 3] + b"\xff" for i in range(0, len(rgb), 3)))
+
+    def test_three_faces_take_three_flat_shades(self):
+        rgb = fmraster.render(fmraster.cube(), 64, 64)
+        shades = {rgb[i:i + 3] for i in range(0, len(rgb), 3)} - {b"\x00\x00\x00"}
+        self.assertEqual(len(shades), 3, "three faces show, each one flat colour")
+        self.assertLess(rgb.count(b"\x00\x00\x00"), 64 * 64 * 0.9, "the cube fills a fair part of the frame")
+
+    def test_light_facing_gets_full_colour_and_away_gets_ambient(self):
+        lit = fmraster.render([facing(10)], 8, 8, light=(0, 0, -1))
+        self.assertEqual(centre(lit), RED)
+        dark = fmraster.render([facing(10)], 8, 8, light=(0, 0, 1))
+        self.assertEqual(centre(dark), (255 * fmraster.AMBIENT >> 8, 0, 0))
+
+    def test_the_nearer_triangle_wins_whatever_the_order(self):
+        near, far = facing(10, RED), facing(20, GREEN, half=20)
+        for tris in ([near, far], [far, near]):
+            self.assertEqual(centre(fmraster.render(tris, 8, 8, light=(0, 0, -1))), RED)
+
+    def test_back_faces_and_zero_areas_are_dropped(self):
+        a, b, c, colour = facing(10)
+        self.assertEqual(fmraster.render([(a, c, b, colour)], 8, 8), bytes(8 * 8 * 3), "a back face is culled")
+        dot = (1, 1, 10)
+        self.assertEqual(fmraster.render([(dot, dot, dot, colour)], 8, 8), bytes(8 * 8 * 3),
+                         "a zero-area triangle has every edge function 0: its depth would divide by zero")
+        far = [(1, 1, 10**6), (1, 5, 10**6), (5, 1, 10**6), colour]
+        self.assertEqual(fmraster.render([far], 8, 8), bytes(8 * 8 * 3),
+                         "a front face whose projection rounds to one point is zero-area too")
+        self.assertEqual(fmraster.render([((-5, -5, 0), (0, 5, 0), (5, -5, -9), colour)], 8, 8), bytes(8 * 8 * 3),
+                         "a triangle wholly behind the near plane is gone")
+
+    def test_a_floor_crossing_the_camera_plane_is_clipped_not_dropped(self):
+        # a quad on y = -10 from behind the camera (z = -50) to ahead of it (z = 100): one triangle has one vertex
+        # behind (clipped to two), the other two (clipped to one); rows 5-7 see it nearer than z = 100, rows 0-4 don't
+        v = (-50, -10, -50), (-50, -10, 100), (50, -10, 100), (50, -10, -50)
+        floor = [(v[0], v[1], v[2], RED), (v[0], v[2], v[3], RED)]
+        want = bytes(5 * 8 * 3) + bytes(RED) * (3 * 8)
+        self.assertEqual(fmraster.render(floor, 8, 8, light=(0, 1, 0)), want)
+        self.assertEqual(fmraster.render(floor[::-1], 8, 8, light=(0, 1, 0)), want, "no crack between the halves")
+
+    def test_the_work_is_capped_before_drawing(self):
+        side = 1 << 11  # a frame of MAX_PIXELS: allowed, but 17 triangles over all of it is past 16 frames' work
+        assert side * side == fmraster.MAX_PIXELS
+        big = facing(10, half=10**6)
+        with self.assertRaises(ValueError) as e:
+            fmraster.render([big] * 17, side, side)
+        self.assertIn("budget", str(e.exception))
+
+    def test_only_integers_go_in(self):
+        a, b, c, colour = facing(10)
+        for bad in ([((-5.0, -5, 10), b, c, colour)], [(a, b, c, (255, 0))], [(a, b, c, (256, 0, 0))],
+                    [(a, b, c, 3)], [(a, b, c, "abc")]):
+            with self.subTest(bad=bad), self.assertRaises((TypeError, ValueError)):
+                fmraster.render(bad, 8, 8)
+        for kw in ({"focal": 0}, {"focal": 2.5}, {"ambient": -1}, {"ambient": 257}, {"ambient": 1.5},
+                   {"light": (0, 0, 1.0)}, {"light": (0, 1)}, {"background": 0}):
+            with self.subTest(kw=kw), self.assertRaises((TypeError, ValueError)):
+                fmraster.render([], 8, 8, **kw)
+        with self.assertRaises(ValueError):
+            fmraster.render([], 0, 8)
+        with self.assertRaises(ValueError):
+            fmraster.render([], 1 << 12, 1 << 12)
 
 
 if __name__ == "__main__":

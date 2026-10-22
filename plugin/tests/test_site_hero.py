@@ -7,12 +7,13 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import unittest
 
-from helpers import PLUGIN, read_json, read_text
+from helpers import PLUGIN, headless_chrome, read_json, read_text
 
 ROOT = os.path.dirname(PLUGIN)
 KEYS = ("tasks_done", "evidence", "proofs", "commits")
@@ -125,6 +126,298 @@ class Hero(unittest.TestCase):
             r = build_copy(tmp, edit_index=lambda page: page.replace(build.POSTER_MARK, ""))
         self.assertNotEqual(r.returncode, 0, r.stdout)
         self.assertIn("site/index.html lost the poster mark", r.stderr)
+
+
+def hero_scene(page):
+    """T-1610: the hero's scene box (both posters and the canvas) and its inline script, or ('', '')."""
+    start = page.index('class="wrap hero"')
+    hero = page[start:page.index("<section", start)]
+    box = re.search(r'<div class="hero-scene"[^>]*>.*?</div>', hero, re.S)
+    script = re.search(r"<script type=\"module\">(.*?)</script>", hero, re.S)
+    return (box.group(0) if box else ""), (script.group(1) if script else "")
+
+
+# Run after the scene's module script: wait for the first frame, read the canvas, lose the context and get it back.
+PROBE = """<script>(async () => {
+  const box = document.querySelector(".hero-scene"), c = box.querySelector("canvas");
+  const wait = s => new Promise(r => { let n = 300; const t = setInterval(() => {
+    if (box.dataset.state === s || !n--) { clearInterval(t); r(box.dataset.state); } }, 10); });
+  const got = { first: await wait("live"), hidden: c.getAttribute("aria-hidden"), dpr: c.width / c.clientWidth };
+  const lose = c.getContext("webgl2").getExtension("WEBGL_lose_context");
+  lose.loseContext(); got.lost = await wait("lost");
+  lose.restoreContext(); got.back = await wait("live");
+  document.body.insertAdjacentHTML("beforeend", "<pre id=probe>" + JSON.stringify(got) + "</pre>");
+})();</script>"""
+
+
+class Scene(unittest.TestCase):
+    """T-1610: a single-file WebGL2 scene over the poster; the poster stays without WebGL2 or with reduced motion."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp()
+        cls.page = built_index(cls.tmp)
+        cls.out = os.path.join(cls.tmp, "out")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_the_built_hero_carries_the_scene_inline_over_the_poster(self):
+        box, script = hero_scene(self.page)
+        self.assertTrue(box, 'no <div class="hero-scene"> in the built hero')
+        self.assertIn('data-state="poster"', box[:box.index(">")], "the poster is the first paint")
+        canvas = re.search(r"<canvas[^>]*>", box)
+        self.assertTrue(canvas, "no canvas in the scene box")
+        self.assertLess(box.index('<svg class="poster"'), canvas.start(), "the canvas sits over the poster")
+        self.assertLess(box.index('<svg class="poster compact"'), canvas.start())
+        tag = canvas.group(0)
+        self.assertRegex(tag, r'\brole="img"')
+        self.assertRegex(tag, r'\baria-label="[^"]*\bfailing\b[^"]*\bproved\b')  # what it means, not red and green
+        self.assertNotRegex(tag, r'aria-label="[^"]*\b(red|green)\b')
+        self.assertRegex(tag, r'\baria-hidden="true"', "hidden from screen readers while the poster shows")
+        self.assertTrue(script.strip(), "no inline module script in the hero")
+        for need in ('getContext("webgl2"', "prefers-reduced-motion: reduce", "webglcontextlost",
+                     "webglcontextrestored", "preventDefault", "devicePixelRatio", "IntersectionObserver",
+                     "visibilitychange"):
+            self.assertIn(need, script)
+        self.assertNotRegex(self.page, r"<script[^>]*\bsrc=[\"'](?!site\.js)", "no other script file")
+        self.assertEqual(build_module().outside_loads(self.page, ".html"), [])
+        self.assertFalse(os.path.exists(os.path.join(self.out, "hero-scene.js")), "inlined, not shipped twice")
+        css = read_text(os.path.join(ROOT, "site", "style.css"))
+        self.assertRegex(css, r"\.hero-scene canvas \{[^}]*opacity: 0", "the canvas is invisible until live")
+        self.assertRegex(css, r'\.hero-scene\[data-state="live"\] canvas \{[^}]*opacity: 1')
+        if shutil.which("node"):  # the scene parses as a module
+            js = os.path.join(self.tmp, "scene.mjs")
+            with open(js, "w", encoding="utf-8") as f:
+                f.write(script)
+            r = subprocess.run(["node", "--check", js], capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_the_scene_keeps_the_templates_survival_code(self):
+        # review: hero-scene.js copies its survival code from the scene-3d.md template; neither may drift alone
+        ours = read_text(os.path.join(ROOT, "site", "hero-scene.js"))
+        template = read_text(os.path.join(PLUGIN, "skills", "playbooks", "references", "ui", "templates", "scene.html"))
+        for marker in (r'"webglcontextlost", e => \{ e\.preventDefault\(\)',
+                       r'Math\.min\(window\.devicePixelRatio \|\| 1, matchMedia\("\(pointer: coarse\)"\)\.matches \? 1\.5 : 2\)',
+                       r'on\(document, "visibilitychange"',
+                       r"new IntersectionObserver\(entries => \{ onscreen = entries\.at\(-1\)\.isIntersecting",
+                       r'matchMedia\("\(prefers-reduced-motion: reduce\)"\)', r"failIfMajorPerformanceCaveat: true"):
+            for name, text in (("site/hero-scene.js", ours), ("templates/scene.html", template)):
+                self.assertTrue(re.search(marker, text), f"{name} lost {marker}")
+
+    def test_the_newest_playwright_build_is_the_one_used(self):
+        # review: sorted as text, a build 999 would beat 1243; with nothing on PATH the newest download runs
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as home:
+            for build in ("999", "1243", "1100", "beta"):
+                d = os.path.join(home, ".cache", "ms-playwright", f"chromium_headless_shell-{build}", "chrome-headless-shell-linux64")
+                os.makedirs(d)
+                with open(os.path.join(d, "chrome-headless-shell"), "w") as f:
+                    f.write("#!/bin/sh\n")
+                os.chmod(os.path.join(d, "chrome-headless-shell"), 0o755)
+            with mock.patch.dict(os.environ, {"HOME": home, "PATH": home, "FOREMAN_CHROME": ""}):
+                self.assertIn("chromium_headless_shell-1243", headless_chrome())
+
+    def browse(self, *flags, page=None, shot=None, budget=12000):
+        """The built index (or `page`) in a headless Chromium at 1280x1100, `budget` ms of virtual time (12 s: a whole
+        pass): the dumped DOM, the box's data-state and the page's console lines; with `shot`, a screenshot instead."""
+        browser = headless_chrome()
+        if not browser:
+            self.skipTest("no headless Chromium (FOREMAN_CHROME, chrome-headless-shell or Playwright's download)")
+        try:  # its own process group: a timeout kills the GPU and renderer children too
+            p = subprocess.Popen([browser, "--headless", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+                                  "--window-size=1280,1100", "--hide-scrollbars", f"--virtual-time-budget={budget}",
+                                  "--enable-logging=stderr", "--v=0", *flags,
+                                  "--user-data-dir=" + tempfile.mkdtemp(dir=self.tmp),
+                                  "--screenshot=" + shot if shot else "--dump-dom",
+                                  "file://" + (page or os.path.join(self.out, "index.html"))],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            out, err = p.communicate(timeout=120)
+        except OSError as e:
+            self.skipTest(f"{browser} didn't run: {e}")
+        except subprocess.TimeoutExpired:
+            os.killpg(p.pid, signal.SIGKILL)
+            p.communicate()
+            self.fail("headless Chromium timed out after 120 s")
+        if not (os.path.isfile(shot) if shot else 'class="wrap hero"' in out):  # a root sandbox, no display libs
+            self.skipTest(f"{browser} printed no page: {err[-300:]}")
+        state = re.search(r'<div class="hero-scene" data-state="([^"]*)"', out)
+        return out, (state.group(1) if state else ""), [ln for ln in err.splitlines() if ":CONSOLE" in ln]
+
+    def spied(self, at, media=()):
+        """The built index driven over DevTools in real time (headless virtual time never runs the frame callbacks),
+        SPY added before any page script: what it counted at each of `at` seconds."""
+        browser = headless_chrome()
+        if not browser:
+            self.skipTest("no headless Chromium (FOREMAN_CHROME, chrome-headless-shell or Playwright's download)")
+        try:
+            return devtools(browser, "file://" + os.path.join(self.out, "index.html"), tempfile.mkdtemp(dir=self.tmp),
+                            SPY, media, at, "({ ...window.__spy, state: document.querySelector('.hero-scene').dataset.state })")
+        except (EOFError, BrokenPipeError, FileNotFoundError, PermissionError) as e:  # a root sandbox, no libs
+            self.skipTest(f"{browser} didn't take DevTools over a pipe: {e!r}")
+
+    def test_one_pass_then_no_frames_and_reduced_motion_makes_no_context(self):
+        # review: "one pass, then no frames" and "reduced motion makes no context" were only inferred: count them
+        early, late = self.spied((8, 12))
+        self.assertEqual(early["state"], "live")
+        self.assertIn("webgl2", early["contexts"], "the spy sees the scene's context")
+        self.assertGreater(early["raf"], 30, "the pass drew frames")
+        self.assertEqual(early["raf"], late["raf"], "no frames between 8 s and 12 s: the pass is over")
+        still, = self.spied((3,), [("prefers-reduced-motion", "reduce")])
+        self.assertNotIn("webgl2", still["contexts"], "reduced motion asks for no WebGL context at all")
+        self.assertEqual(still["state"], "still")
+        self.assertEqual(still["raf"], 0)
+
+    def test_a_poster_it_cant_read_ends_at_the_poster_logged_once(self):
+        # review: readPoster() threw inside the ResizeObserver: an uncaught error, and the scene never said why
+        page = os.path.join(self.out, "fault.html")
+        with open(page, "w", encoding="utf-8") as f:
+            f.write(self.page.replace("<head>", "<head>" + FAULT, 1))
+        _, state, console = self.browse(page=page)
+        self.assertEqual(state, "failed")
+        self.assertEqual(len([ln for ln in console if "hero scene: showing the poster" in ln]), 1, console)
+        self.assertEqual([ln for ln in console if "Uncaught" in ln], [], console)
+
+    def test_reduced_motion_and_no_webgl2_keep_the_poster_still(self):
+        for flags, want in ((["--force-prefers-reduced-motion"], "still"), (["--disable-3d-apis"], "no-webgl2")):
+            with self.subTest(flags=flags):
+                out, state, console = self.browse(*flags)
+                self.assertEqual(state, want)
+                self.assertEqual(console, [], "nothing logged, nothing thrown")
+                self.assertRegex(re.search(r"<canvas[^>]*>", out).group(0), r'aria-hidden="true"')
+
+    def test_with_webgl2_the_scene_goes_live_survives_a_lost_context_and_caps_the_pixel_ratio(self):
+        page = os.path.join(self.out, "probe.html")  # beside style.css, so it is styled
+        with open(page, "w", encoding="utf-8") as f:
+            f.write(self.page.replace("</body>", PROBE + "</body>"))
+        out, _, console = self.browse("--force-device-scale-factor=3", page=page)
+        got = re.search(r"<pre id=\"probe\">(.*?)</pre>", out)
+        self.assertTrue(got, "the probe never finished")
+        got = json.loads(html.unescape(got.group(1)))
+        self.assertEqual((got["first"], got["lost"], got["back"]), ("live", "lost", "live"), got)
+        self.assertIsNone(got["hidden"], "live, the canvas is named to screen readers")
+        self.assertLessEqual(got["dpr"], 2.01, "the device pixel ratio is capped at 2")
+        self.assertEqual([ln for ln in console if "scene" in ln.lower() or "Uncaught" in ln], [], console)
+
+    def test_after_its_pass_the_scene_is_the_poster_lit(self):
+        # the first build drew the track black (a NaN in a uniform) and every DOM check still passed: look at it.
+        # At rest, the track keeps the poster's --rule and each diamond is a lit form: its upper-left facet
+        # brighter than its lower-right, both the signal's amber, where the poster's flat diamond is one colour
+        import fmimg
+        page = os.path.join(self.out, "where.html")
+        with open(page, "w", encoding="utf-8") as f:
+            f.write(self.page.replace("</body>", WHERE + "</body>"))
+        where = re.search(r'<pre id="where">(.*?)</pre>', self.browse(page=page)[0])
+        self.assertTrue(where, "the geometry probe never finished")
+        where = json.loads(html.unescape(where.group(1)))
+        shot, still = os.path.join(self.tmp, "rest.png"), os.path.join(self.out, "rest.html")
+        with open(still, "w", encoding="utf-8") as f:  # the fade runs in real time, not virtual: catch it mid-way and
+            f.write(self.page.replace("</head>", NO_FADE + "</head>"))  # the poster shows through
+        self.browse(page=still, shot=shot)
+        img = fmimg.load(shot)
+        px = lambda x, y: img.rgba[(round(y) * img.width + round(x)) * 4:][:3]
+        lum = lambda c: 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+        rule = bytes.fromhex(re.search(r"--rule: #(\w{6})", read_text(os.path.join(ROOT, "site", "style.css")))[1])
+        (x0, _, h0), (x1, _, h1) = where["st"][:2]
+        track = px((x0 + h0 + x1 - h1) / 2, where["y"])
+        self.assertLessEqual(max(abs(a - b) for a, b in zip(track, rule)), 16, f"track {tuple(track)}, --rule {tuple(rule)}, {where}")
+        for i, (x, y, h) in enumerate(where["st"]):
+            lit, shade = px(x - h / 4, y - h / 4), px(x + h / 4, y + h / 4)
+            with self.subTest(station=i, lit=tuple(lit), shade=tuple(shade)):
+                self.assertGreater(lum(lit), lum(shade) + 25, "faceted and lit, not the flat poster")
+                self.assertGreater(lum(shade), 60, "not black")
+                for c in (lit, shade):
+                    self.assertGreater(c[0] - c[2], 80, "the signal's amber")
+
+
+NO_FADE = "<style>.hero-scene * { transition: none !important; }</style>"
+# Before any page script: count requestAnimationFrame calls and the context types asked for.
+SPY = """(() => {
+  const raf = window.requestAnimationFrame.bind(window), get = HTMLCanvasElement.prototype.getContext;
+  const seen = window.__spy = { raf: 0, contexts: [] };
+  window.requestAnimationFrame = fn => { seen.raf++; return raf(fn); };
+  HTMLCanvasElement.prototype.getContext = function (type, ...rest) { seen.contexts.push(type); return get.call(this, type, ...rest); };
+})();"""
+# First in <head>: a poster the scene can't read.
+FAULT = """<script>Object.defineProperty(SVGSVGElement.prototype, "viewBox",
+  { get() { throw new Error("fault: an unreadable poster"); } });</script>"""
+
+
+def devtools(browser, url, profile, init, media, at, expr, timeout=60):
+    """Open `url` in a headless Chromium driven over --remote-debugging-pipe (it reads fd 3 and writes fd 4,
+    NUL-separated JSON: no websocket, stdlib only), `init` run before any page script and `media` emulated; `expr`
+    evaluated at each of `at` seconds of real time. The values, in order; the browser is killed either way."""
+    import fcntl
+    import select
+    import time
+    child_in, feed = os.pipe()
+    out, child_out = os.pipe()
+    high = [fcntl.fcntl(fd, fcntl.F_DUPFD_CLOEXEC, 10) for fd in (child_in, child_out)]  # dup2 to 3 and 4 is safe
+    try:
+        pid = os.posix_spawn(browser, [browser, "--headless", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+                                       "--window-size=1280,1100", "--remote-debugging-pipe", "--user-data-dir=" + profile,
+                                       "about:blank"], os.environ, setsid=True,
+                             file_actions=[(os.POSIX_SPAWN_DUP2, high[0], 3), (os.POSIX_SPAWN_DUP2, high[1], 4),
+                                           (os.POSIX_SPAWN_OPEN, 1, os.devnull, os.O_WRONLY, 0),
+                                           (os.POSIX_SPAWN_OPEN, 2, os.devnull, os.O_WRONLY, 0)])
+    except OSError:
+        os.close(feed)
+        os.close(out)
+        raise
+    finally:
+        for fd in (child_in, child_out, *high):
+            os.close(fd)
+    buf, n, end = b"", 0, time.monotonic() + timeout
+
+    def call(method, session=None, **params):
+        nonlocal buf, n
+        n += 1
+        os.write(feed, json.dumps({"id": n, "method": method, "params": params,
+                                   **({"sessionId": session} if session else {})}).encode() + b"\0")
+        while True:
+            while b"\0" not in buf:
+                if not select.select([out], [], [], max(0.0, end - time.monotonic()))[0]:
+                    raise TimeoutError(f"no answer to {method} in {timeout} s")
+                chunk = os.read(out, 1 << 16)
+                if not chunk:
+                    raise EOFError(f"the browser closed during {method}")
+                buf += chunk
+            line, buf = buf.split(b"\0", 1)
+            got = json.loads(line)
+            if got.get("id") == n:
+                if "error" in got:
+                    raise RuntimeError(f"{method}: {got['error']}")
+                return got.get("result", {})
+
+    try:
+        start = time.monotonic()
+        sid = call("Target.attachToTarget", targetId=call("Target.createTarget", url="about:blank")["targetId"],
+                   flatten=True)["sessionId"]
+        call("Page.enable", sid)
+        call("Page.addScriptToEvaluateOnNewDocument", sid, source=init)
+        call("Emulation.setEmulatedMedia", sid, features=[{"name": k, "value": v} for k, v in media])
+        call("Page.navigate", sid, url=url)
+        got = []
+        for s in at:
+            time.sleep(max(0.0, s - (time.monotonic() - start)))
+            got.append(call("Runtime.evaluate", sid, expression=expr, returnByValue=True)["result"].get("value"))
+        return got
+    finally:
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        os.waitpid(pid, 0)
+        os.close(feed)
+        os.close(out)
+# Where the wide poster draws its stations and track, in CSS pixels: [centre x, centre y, half-diagonal] each.
+WHERE = """<script>addEventListener("load", () => {
+  const svg = document.querySelector("svg.poster:not(.compact)"), box = r => r.getBoundingClientRect();
+  const st = [...svg.querySelectorAll(".st")].map(e => { const b = box(e); return [b.x + b.width / 2, b.y + b.height / 2, b.width / 2]; });
+  const t = box(svg.querySelector(".track"));
+  document.body.insertAdjacentHTML("beforeend", "<pre id=where>" + JSON.stringify({ st, y: t.y + t.height / 2 }) + "</pre>");
+});</script>"""
 
 
 if __name__ == "__main__":
