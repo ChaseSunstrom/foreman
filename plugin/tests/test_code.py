@@ -118,7 +118,10 @@ class CodeCase(ForemanTestCase):
         return f
 
     def env(self, extra=None):
-        e = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_INHIBITED="1", HOME=self.fake_home, **(extra or {}))
+        xdg = {k: os.path.join(self.fake_home, d) for k, d in (  # T-1442: no ~/.config default can reach the real one
+            ("XDG_CONFIG_HOME", ".config"), ("XDG_DATA_HOME", ".local/share"), ("XDG_STATE_HOME", ".local/state"),
+            ("XDG_CACHE_HOME", ".cache"))}
+        e = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_INHIBITED="1", HOME=self.fake_home, **{**xdg, **(extra or {})})
         e.pop("CLAUDE_CODE_SESSION_ID", None)
         return e
 
@@ -141,6 +144,15 @@ class CodeCase(ForemanTestCase):
 
     def status(self):
         return subprocess.run(["git", "-C", self.repo, "status", "--porcelain"], capture_output=True, text=True).stdout
+
+
+class CodeEnv(CodeCase):
+    def test_xdg_dirs_stay_inside_the_temp_home(self):  # T-1442
+        e = self.env()
+        for k in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"):
+            self.assertTrue(e[k].startswith(self.fake_home + os.sep), (k, e[k]))
+        outside = self.env({"XDG_CONFIG_HOME": "/elsewhere"})  # a test's own extra still wins
+        self.assertEqual(outside["XDG_CONFIG_HOME"], "/elsewhere")
 
 
 class EndToEnd(CodeCase):

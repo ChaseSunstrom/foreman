@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import time
 
 import fmcore as c
@@ -23,7 +24,8 @@ EVENTS_ROTATE_BYTES = 5_000_000
 HOOKS_LOG_ROTATE_BYTES = 1_000_000
 ROTATED_KEEP = 3
 SNAPSHOT_MAX_DAYS = 7
-WORK_SNAPSHOT_DAYS = 14  # T-0884: saved working files before a discarding command
+REVERTED_DAYS = 30  # T-1442: fm code's kept-aside copies of reverted files
+WORK_SNAPSHOT_DAYS = 14 # T-0884: saved working files before a discarding command
 MEMORY_MAX_LINES, MEMORY_MAX_BYTES = 200, 25_000
 GLOBAL_MD_MAX, PROJECT_MD_MAX = 50, 150
 KNOWN_PLUGINS = {"ponytail", "claude-hud", "security-guidance", "code-review", "context7", "skill-creator",
@@ -297,6 +299,7 @@ def check_project(p, apply, actions):
     out += fmlanes.stale(p, briefs, apply, actions, finding)
     out += _roll_ledger(p, apply, actions)
     out += _prune_snapshots(p, apply, actions)
+    out += _prune_reverted(p, apply, actions)
     out += _backup_state(p, apply, actions)
     out += _check_memory(p, apply, actions)
     out += _hygiene(p, apply, actions)
@@ -410,6 +413,32 @@ def _prune_snapshots(p, apply, actions):
         actions.append(("snapshots", len(old)))
     return [finding(p.slug, "work_snapshots", "action", f"{len(old)} work snapshot(s) older than {WORK_SNAPSHOT_DAYS}d",
                     "deleted (git gc reclaims them)", auto=True)]
+
+
+def _prune_reverted(p, apply, actions):
+    """T-1442: fm code's private copies of reverted files (<state>/code/reverted/) older than REVERTED_DAYS go. Plain files
+    only: a link, a folder, or a reverted/ that is itself a link (the worker can write there) is left alone."""
+    d, cut, old = os.path.join(p.dir, "code", "reverted"), time.time() - REVERTED_DAYS * 86400, []
+    try:
+        if not stat.S_ISDIR(os.lstat(os.path.join(p.dir, "code")).st_mode) or not stat.S_ISDIR(os.lstat(d).st_mode):
+            return []
+        for n in os.listdir(d):
+            st = os.lstat(os.path.join(d, n))
+            if stat.S_ISREG(st.st_mode) and st.st_mtime < cut:
+                old.append(os.path.join(d, n))
+    except OSError:
+        return []
+    if not old:
+        return []
+    if apply:
+        for f in old:
+            try:
+                os.unlink(f)
+            except OSError:  # gone meanwhile
+                pass
+        actions.append(("reverted", len(old)))
+    return [finding(p.slug, "old_reverted", "action", f"{len(old)} fm code reverted cop(ies) older than {REVERTED_DAYS}d",
+                    "deleted (the worker's discarded file versions)", auto=True)]
 
 
 def _roll_ledger(p, apply, actions):
