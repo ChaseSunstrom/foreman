@@ -5256,6 +5256,11 @@ def _build_parser():
                                                      "repeatable")
     s.add_argument("--name", help="source add: the source's short name (default: the repo's)")
     s.add_argument("--dry", action="store_true", help="source defaults: list them with depth and licence class; add none")
+    s = add("playbooks", lazy("fmplaybooks", "cmd_show"), tier=("Finding your way", 382), help="show NAME: a playbook "
+            "as the skill loads it, {{fact}}s (test, language, entry…) filled in from fm map and this project's "
+            ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
+    s.add_argument("action", choices=["show"])
+    s.add_argument("name", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that name")
     s = add("scout", lazy("fmscout", "cmd_scout"), tier=("Running elsewhere", 1210), help="find work nobody asked for yet: a newer Claude Code, stack cards "
             "your projects lack, doctor failures, stale skill sources, a brainstorm when the queue is dry (T-0950)")
     s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (fm night's)")
@@ -5774,6 +5779,11 @@ def _build_parser():
                    "objects, fallback state); list the rest as left for a person")
     s.add_argument("--accept-supply", action="store_true",
                    help="take the current plugins and MCP servers as the supply-chain baseline (T-0672)")
+    s = add("fsck", lazy("fmdoctor", "cmd_fsck"), tier=("Project and settings", 872), help="a deeper read-only check "
+            "of Foreman's state: open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, "
+            "journals whose last line is torn; exit 1 on any (T-1667)")
+    s.add_argument("--fix", action="store_true", help="remove only the stale locks; a broken lane or a torn journal "
+                   "is left for a person")
 
     s = add("sweep", lazy("fmeco", "cmd_sweep"), tier=("Running elsewhere", 1260), help="ask every other project about a fix: where a pattern is (or what "
                                                        "recall relates), a brief in its inbox; edits nothing there")
@@ -6020,6 +6030,16 @@ def _build_parser():
                    help="palette: CSS light-dark() roles, DTCG JSON or a Tailwind v4 @theme")
     s.add_argument("--out", metavar="PATH", help="extract: the file to write the Tokens section into (default: "
                                                  "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints)")
+    s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 93), help="PNG files with no Pillow (T-1630): info "
+            "PATH: size and mode; diff A B: the changed-pixel count and box (exit 1 when they differ or sizes do)")
+    s.add_argument("action", choices=["info", "diff"])
+    s.add_argument("paths", nargs="+", metavar="PATH", help="info: one PNG; diff: two, A then B")
+    s.add_argument("--out", metavar="PATH", help="diff: write a PNG of A faded with each changed pixel in red")
+    s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
+            "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
+            "form, with DESIGN.md's tokens resolved (exit 1 on problems)")
+    s.add_argument("action", choices=["check"])
+    s.add_argument("path", nargs="?", help="the score (default: motion.toml at the repo root)")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), tier=("Finding your way", 460), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
@@ -6104,6 +6124,16 @@ def _build_parser():
     s.add_argument("--block", action="store_true", help="compile N as a block rule, not a warn: the user's to type (T-1063)")
     s.add_argument("--overwrites", action="store_true", help="files the user's own commits reworked soon after an "
                                                             "agent's (T-0655)")
+    s = add("looks", lazy("fmtaste", "cmd_looks"), tier=("Reports", 1055),
+            help="your taste in looks (T-1537): the twelve ranked by what you kept; keep|revert|not LOOK; calibrate "
+                 "(12 A-or-B pairs: a keyboard picker on a terminal, --answers to record); learn PATH… (only files "
+                 "you name, read-only, never the network)")
+    s.add_argument("action", nargs="?", metavar="rank|keep|revert|not|calibrate|learn",
+                   help="checked by fm looks itself, so a look named here gets the fix (fm looks keep LOOK)")
+    s.add_argument("words", nargs="*", metavar="LOOK|PATH")
+    s.add_argument("--why", help="keep/revert/not: the user's words")
+    s.add_argument("--answers", help="calibrate: 12 answers, a, b or n (neither), comma-separated, in pair order")
+    s.add_argument("--round", type=int, help="calibrate: the round the pairs were printed for")
     s = add("lane", lazy("fmlanes", "cmd_lane"), tier=("Running elsewhere", 1120), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent; "
@@ -6314,8 +6344,11 @@ def _task_shape(parser, argv):
 WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show", "glance"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
                    "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
+                   "playbooks": ("action", {"show"}),  # T-1621: prints, but can rebuild fm map's map.json cache
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
-                   "design": ("action", {"lint", "palette", "contrast"})}  # T-1506, T-1507: these only read
+                   "design": ("action", {"lint", "palette", "contrast"}),  # T-1506, T-1507: these only read
+                   "img": ("out", {None}),  # T-1630: info and diff read; --out writes
+                   "motion": ("action", {"check"})}
 
 
 def _worker_may(args):

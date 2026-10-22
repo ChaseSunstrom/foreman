@@ -138,7 +138,8 @@ def _sh(cmd, cwd, timeout):
         p.communicate()
 
 
-def run(module, rel, tree_root, dest, cmd, cats, weaken=False, only=None, limit=40, timeout=300, log=None, flip=False):
+def run(module, rel, tree_root, dest, cmd, cats, weaken=False, only=None, limit=40, timeout=300, log=None, flip=False,
+        extra=()):
     """Mutate module (a path); copy tree_root to dest in a temp dir, write each mutant at rel there and run cmd (a list,
     cwd = the copy's root). Returns {total, tried, killed, survived: [site], not_mutated: [categories with no site]}.
     The real tree is never written; a mutant whose tests hang counts as killed.
@@ -155,6 +156,9 @@ def run(module, rel, tree_root, dest, cmd, cats, weaken=False, only=None, limit=
     killed, survived = 0, []
     with tempfile.TemporaryDirectory(prefix="fm-mutate-") as tmp:
         shutil.copytree(tree_root, os.path.join(tmp, dest), ignore=shutil.ignore_patterns("__pycache__"))
+        for src, at in extra:  # T-1605: files outside the tree its tests import (site/bench_safety.py)
+            os.makedirs(os.path.dirname(os.path.join(tmp, at)), exist_ok=True)
+            shutil.copy2(src, os.path.join(tmp, at))
         target = os.path.join(tmp, rel)
         with open(target, "w", encoding="utf-8") as f:
             f.write(ast.unparse(ast.parse(text)))  # the mutants are unparsed too
