@@ -531,7 +531,10 @@ def gate(a, b, tolerance=0.15):
                  f" over {len(shared)} shared case(s)"
                  + (f"; cost/case ${ca:.2f} → ${cb:.2f}{band(cb - ca, cband, True)}"
                     if ca is not None and cb is not None else "")], True
-    if sb < sa and pband and sa - sb <= pband:
+    if sb < sa and pband and pband / 2 < sa - sb <= pband:  # T-1464: 1-2 SE is a likely loss, not a pass
+        ok = False
+        lines.append(f"? fewer passes, likely a loss: rerun {' '.join(lost)} with --runs 10 before proposing")
+    elif sb < sa and pband and sa - sb <= pband:
         lines.append(f"  fewer passes within noise (lost ground on {', '.join(lost)}): not a measured loss")
     elif sb < sa:
         ok = False
@@ -549,6 +552,11 @@ def gate(a, b, tolerance=0.15):
             lines.append(f"✗ {up} (over {round(100 * tolerance)}%{', outside noise' if cband else ''})")
     if pband is None:  # single runs only
         lines.append("  single runs: a flipped case may be noise (--runs 3 measures it)")
+    else:
+        few = min(_runs(r[i]) for r in (A, B) for i in shared)
+        if few < 5:
+            lines.append(f"  few runs ({few}): a real loss of about 2 passes is caught about half the time; "
+                         "--runs 10 for a firmer gate")
     lines.append("✓ no worse: may be proposed" if ok else "✗ not proposed")
     return ok, lines
 
