@@ -20,8 +20,14 @@ export const C = {
 }
 
 // T-1081: the colourblind-safe pair (Okabe-Ito blue and orange); rows that mean an error also carry a glyph
-export const PALETTES = { default: { ok: 0x87d787, err: 0xff6b6b }, cb: { ok: 0x56b4e9, err: 0xe69f00 } }
-export const setPalette = (name: string) => void Object.assign(C, name === 'cb' ? PALETTES.cb : PALETTES.default)
+// T-1512: riso, fm code's risograph inks for a dark background (fmcodetui.RISO["night"]): green, fluorescent pink, cornflower
+export const PALETTES = {
+  default: { ok: 0x87d787, err: 0xff6b6b, accent: 0x5fd7d7 },
+  cb: { ok: 0x56b4e9, err: 0xe69f00, accent: 0x5fd7d7 },
+  riso: { ok: 0x00a95c, err: 0xff48b0, accent: 0x62a8e5 },
+}
+export const setPalette = (name: string) =>
+  void Object.assign(C, name === 'cb' || name === 'riso' ? PALETTES[name] : PALETTES.default)
 
 export const hex= (c: number) => `#${c.toString(16).padStart(6, '0')}`
 

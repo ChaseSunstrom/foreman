@@ -577,7 +577,7 @@ function applyOptions(options: Record<string, unknown>) {
   // T-1496: reduced is fm code's word too; the old calm still means it
   cfg.motion = options.motion === 'reduced' || options.motion === 'calm' ? 'reduced' : options.motion === 'off' ? 'off' : 'full'
   cfg.chat = options.chat === 'full' ? 'full' : 'tree' // T-1040
-  cfg.palette = options.palette === 'cb' ? 'cb' : 'default' // T-1081
+  cfg.palette = options.palette === 'cb' || options.palette === 'riso' ? options.palette : 'default' // T-1081, T-1512
   setPalette(cfg.palette)
 }
 
