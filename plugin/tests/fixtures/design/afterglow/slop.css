@@ -1,0 +1,7 @@
+.btn { color: #333; }
+.btn:hover { color: #000; } /* expect */
+.card { opacity: 1; }
+.card:focus-visible { opacity: .8; } /* expect */
+.tab[aria-selected="true"] { background: #eee; } /* expect */
+.menu.is-open { transform: none; } /* expect */
+@media (prefers-reduced-motion: reduce) { .menu { transition: none; } }
