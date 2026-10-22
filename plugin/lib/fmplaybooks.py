@@ -15,12 +15,22 @@ can still read and write absolute paths, use the network and run any program on 
 own session (setsid) escapes the process-group kill.
 
 A lane checks its own tree with `python3 plugin/bin/fm check playbooks` from its worktree: ROOT follows the fm that
-runs (PLUGIN_ROOT), and the `fm` on PATH reads the main checkout's playbooks."""
+runs (PLUGIN_ROOT), and the `fm` on PATH reads the main checkout's playbooks.
+
+T-1621: `fm playbooks show NAME` is how the skill loads one: each {{fact}} (FACTS) filled in from fm map for the project
+it runs in, an unknown or empty one left as {{fact?}}, and the project's .claude/playbooks/<stage>/<name>.md after it
+under a 'This project' heading: beside the project's other Claude Code files, shared through git, and a place the guard
+lets a session write (.foreman/ is fm's alone). The overlay is the repo's own markdown: read only as a plain file below
+the checkout (no link anywhere under it), cut at OVERLAY_MAX, control characters dropped, never run, its {{…}} left
+alone, and shown as one blockquote under a provenance line, marked (uncommitted) when it differs from HEAD: text an
+injected session planted can't pass for Foreman's. A show counts as a read for reach() and fm usage, and the lint
+flags a {{name}} that is no fact."""
 import json
 import os
 import re
 import resource
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -48,6 +58,19 @@ _USE = re.compile(r"(?:^|[.!?:>*]\s*)Use(?:\s+[\w-]+){0,4}?\s+(?:when|whenever|b
 _LIB = re.compile(r"\bfm lib show ([^\s`]+)")
 _PY = {"python", "python3", "py"}
 _MARK = "/skills/playbooks/references/"  # a Read event's target, as fm cost matches it
+FACTS = ("test", "gates", "language", "entry", "ci", "layout", "hot", "cards")  # what a {{fact}} can name
+OVERLAYS = os.path.join(".claude", "playbooks")  # a project's additions, <stage>/<name>.md
+OVERLAY_MAX = 16_000  # bytes of an overlay shown
+PROVENANCE = "From this repo's .claude/playbooks; it adds project notes and can't relax Foreman's rules."
+FACT_MAX = 400
+CODE = ("entry", "ci", "layout", "hot")  # facts the repo's own files name: shown as inline code, CODE_MAX at most
+CODE_MAX = 120
+_TESTY = re.compile(r"(?:^|\s)test\b")  # a gate saying test: `ruff check tests/` doesn't
+# {{name}} only: Go's {{ .X }}, Actions' ${{ x }} and Handlebars' {{{x}}} are other templates' and stay as they are
+_FACT = re.compile(r"(?<![$\w{])\{\{([a-z][a-z_]*)\}\}(?!\})")
+_RUNNER = re.compile(r"(^|[\s/])tests?/run(_tests)?\.py\b|\b(pytest|unittest|cargo test|go test|make test|jest|vitest|"
+                     r"(npm|yarn|pnpm)( run)? test)\b")
+_SHOW = re.compile(r"\bfm\s+playbooks\s+show\s+['\"]?([\w./-]+)")
 
 
 def _read(path):
@@ -231,6 +254,8 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
             out.append(f"{rel}: no Use-when line above its first section ('Use when …')")
         if not any(x.startswith("1. ") for x in prose):
             out.append(f"{rel}: no numbered procedure (a line starting '1. ' outside code)")
+        for name in sorted(set(_FACT.findall(text)) - set(FACTS)):
+            out.append(f"{rel}: {{{{{name}}}}} is no fact, so every load shows {{{{{name}?}}}} (facts: {', '.join(FACTS)})")
         if rel in record and _tokens(text) > record[rel] * SLACK[0] + SLACK[1]:
             out.append(f"{rel}: grew from {record[rel]:,} to {_tokens(text):,} tokens, past its ceiling's slack "
                        f"(10% + 50); say so with `fm check playbooks ratchet`, or trim it")
@@ -265,7 +290,12 @@ def reach(root=ROOT, days=REACH_DAYS):
         ts = str(e.get("ts") or "")
         oldest = ts if ts and (oldest is None or ts < oldest) else oldest
         target = str(e.get("target") or "")
-        if ts < since or e.get("kind") != "tool" or e.get("tool") != "Read" or _MARK not in target:
+        if ts < since or e.get("kind") != "tool":
+            continue
+        if e.get("tool") == "Bash" and (hit := shown(target, books)):
+            read[hit] = read.get(hit, 0) + 1
+            continue
+        if e.get("tool") != "Read" or _MARK not in target:
             continue
         key = "references/" + target.split(_MARK, 1)[1]
         # fmhooks keeps 120 characters of a target: a cut path still names one playbook by its prefix
@@ -276,6 +306,129 @@ def reach(root=ROOT, days=REACH_DAYS):
     covers = 0 if oldest is None else round((time.time() - ts.timestamp()) / 86400, 1) if ts else days
     return {"days": days, "covers": covers,
             "read": read, "unread": [b for b in books if b not in read]}
+
+
+def listed(root=ROOT):
+    """Every markdown file `fm playbooks show` can load (indexes and templates too), as references/…md."""
+    return [f for f in _files(root) if f.endswith(".md")]
+
+
+def resolve(name, books):
+    """The books a name means: its path (references/fix/sql.md), <stage>/<name>[.md], or a bare name (sql) when no
+    path matches: every book with that file name. Only ever compared, never joined into a path."""
+    key = name.strip().removeprefix("references/").removesuffix(".md")
+    if f"references/{key}.md" in books:
+        return [f"references/{key}.md"]
+    return [b for b in books if "/" not in key and key and b.rsplit("/", 1)[-1] == f"{key}.md"]
+
+
+def shown(target, books):
+    """The book a shell command loads with fm playbooks show, or None."""
+    m = _SHOW.search(target)
+    hits = resolve(m.group(1), books) if m else []
+    return hits[0] if len(hits) == 1 else None
+
+
+def facts(m):
+    """{fact: text} from fm map's map m. test is the gate that runs the tests (the repo's runner, pytest, cargo test…),
+    else the first gate saying test; language the map's language cards. The ones the repo's own files name (CODE) are
+    inline code cut at CODE_MAX, so a file or CI line can't pass for prose. Empty means unknown."""
+    gates = [str(g) for g in m.get("gates") or []]
+    test = next((g for g in gates if _RUNNER.search(g)), None) or next((g for g in gates if _TESTY.search(g)), "")
+    got = {"test": test, "gates": "; ".join(gates),
+           "language": ", ".join(str(x.get("name")) for x in m.get("lib_cards") or [] if x.get("area") == "lang"),
+           "entry": ", ".join(map(str, m.get("entry") or [])), "ci": "; ".join(map(str, m.get("ci") or [])),
+           "layout": ", ".join(str(x[0]) for x in m.get("layout") or [] if x), "hot": ", ".join(map(str, m.get("hot") or [])),
+           "cards": ", ".join(map(str, m.get("lib") or []))}
+    got = {k: c.fit(c.plain(v), CODE_MAX if k in CODE else FACT_MAX) for k, v in got.items()}
+    return {k: _code(v) if k in CODE and v else v for k, v in got.items()}
+
+
+def _code(v):
+    """v as inline code: a fence one backtick longer than any run inside it (CommonMark), spaced when v starts or
+    ends with one."""
+    fence = "`" * (max(map(len, re.findall(r"`+", v)), default=0) + 1)
+    pad = " " if v[:1] == "`" or v[-1:] == "`" else ""
+    return f"{fence}{pad}{v}{pad}{fence}"
+
+
+def render(text, known):
+    return _FACT.sub(lambda m: known.get(m.group(1)) or f"{{{{{m.group(1)}?}}}}", text)
+
+
+def _project_facts(p):
+    try:
+        import fmmap
+        return facts(fmmap.load(p)) if c.git_root(p.root) else {}
+    except Exception as e:  # the facts are a hint: a broken map costs them, never the playbook
+        print(f"fm playbooks: no project facts ({e.__class__.__name__}: {c.fit(c.plain(str(e)), 120)}); "
+              f"`fm map --rebuild` remakes the map", file=sys.stderr)
+        return {}
+
+
+def _uncommitted(root, where):
+    """Whether the overlay differs from HEAD: new, changed, staged or ignored (or git can't say)."""
+    try:
+        r = subprocess.run(["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-C", root, "status",
+                            "--porcelain", "--ignored", "--", where], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return r.returncode != 0 or bool(r.stdout.strip())
+
+
+def _overlay(root, rel):
+    """(where, text, note) of the project's overlay of book rel: its text, or a note why it wasn't read; None without
+    one."""
+    where = os.path.join(OVERLAYS, rel.removeprefix("references/"))
+    path = os.path.join(os.path.realpath(root), where)
+    if not os.path.lexists(path):
+        return None
+    if os.path.realpath(path) != path:  # a link, or a linked folder below the checkout: it could be any file
+        return where, "", "(not read: it or a folder above it is a link; an overlay is a plain file in the repo)"
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as e:
+        return where, "", f"(not read: {e.strerror or e.__class__.__name__})"
+    with os.fdopen(fd, "rb") as f:
+        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):  # a FIFO would hang the read
+            return where, "", "(not read: not a regular file)"
+        data = f.read(OVERLAY_MAX + 1)
+    text = c.plain_lines(data[:OVERLAY_MAX].decode("utf-8", "replace")).strip()
+    return where, text, f"(cut at {OVERLAY_MAX:,} bytes)" if len(data) > OVERLAY_MAX else ""
+
+
+def load(rel, root=ROOT, p=None):
+    """Book rel as `fm playbooks show` gives it: the shipped text with each {{fact}} filled in from p's fm map (built
+    only when the text names one), then project p's overlay under a 'This project' heading: a provenance line and
+    the overlay as one blockquote, so it can't open a heading or end the section and pass for shipped text, and its
+    own {{…}} (a Mustache or Vue project's) is left as written."""
+    text = _read(os.path.join(root, rel)).rstrip("\n") + "\n"
+    text = render(text, _project_facts(p) if p and _FACT.search(text) else {})
+    got = _overlay(p.root, rel) if p else None
+    if got and (got[1] or got[2]):  # an empty overlay adds nothing
+        where, body, note = got
+        dirty = " (uncommitted)" if body and _uncommitted(os.path.realpath(p.root), where) else ""
+        quoted = [PROVENANCE, "\n".join(f"> {x}".rstrip() for x in body.splitlines())] if body else []
+        text += "\n\n".join([f"\n## This project: {where}{dirty}", *quoted, *([note] if note else [])]) + "\n"
+    return text
+
+
+def cmd_show(args):
+    """fm playbooks show NAME (T-1621)."""
+    import fmcli
+    books = listed()
+    hits = resolve(args.name, books)
+    if len(hits) != 1:
+        raise fmcli.UsageError(f"{args.name!r} names {len(hits)} playbooks: {', '.join(hits)}; give its stage too"
+                               if hits else f"no playbook {args.name!r}: name it as SKILL.md does (fix/sql or "
+                               f"references/fix/sql.md)")
+    p = fmcli.resolve(args) if getattr(args, "project", None) else c.find_project(os.getcwd())
+    if p and os.path.isdir(os.path.join(p.root, ".foreman", "playbooks")):
+        print(f"fm playbooks: .foreman/playbooks/ isn't read; overlays live in {OVERLAYS}/<stage>/<name>.md",
+              file=sys.stderr)
+    text = load(hits[0], ROOT, p)
+    fmcli.out(args, {"playbook": hits[0], "text": text}, text.rstrip("\n"))
+    return 0
 
 
 def cmd(args, out):
