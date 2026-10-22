@@ -323,6 +323,70 @@ class UserPromptSubmit(HookCase):
         self.hook("SessionStart", {"source": "compact"}, env={"CLAUDE_ENV_FILE": self.env_file})
         self.assertIn("Next:", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "carry on"})))
 
+    def test_the_skill_that_fits_is_named_once_per_stage(self):
+        # T-1697: the hooks handed over the exact fm command every turn, so the skill describing the step was never
+        # loaded (1 of 13 used in 30 days). The Next line names it once per stage; its body loads only when invoked.
+        self.fm("init")
+        ups = lambda prompt, sid="sess-1": self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt, "session_id": sid}))
+        fix = self.task(tier="M")
+        ctx = ups("carry on")
+        hint = "(load: Skill foreman:intake, then its references/debugging.md; fm playbooks show tdd-workflow)"
+        self.assertIn(hint, ctx, "named whole, worded as the call to make")
+        self.assertGreater(ctx.index(hint), ctx.index("Next: "), "on the Next line")
+        self.assertLessEqual(len(ctx), 400)
+        self.fm("task", "step", fix, "add", "another step")
+        ctx = ups("carry on")
+        self.assertIn("Next: ", ctx, "a new step restates the state")
+        self.assertNotIn("foreman:intake", ctx, "the same stage: named once")
+        feat = self.task("Add export", type_="FEATURE", tier="M")
+        self.assertIn("(load: Skill foreman:intake, then its references/execute.md", ups("go on"))
+        self.assertEqual(json.loads(self.fm("next", "--json").stdout)["skill"], c.SKILL_FOR["FEATURE"], "fm next: always")
+        for n in ("1", "2"):
+            self.fm("task", "step", feat, "done", n, "--evidence", "true", "ok")
+        self.assertIn("fm playbooks show verification-loop", ups("go on"))
+        start = self.ctx_of(self.hook("SessionStart", {"source": "compact"}, env={"CLAUDE_ENV_FILE": self.env_file}))
+        self.assertIn("verification-loop", start, "a compaction drops it from the context: named again")
+        self.assertNotIn("verification-loop", ups("go on"), "SessionStart named it")
+        self.fm("task", "ac", feat, "check", "1", "--evidence", "true", "ok")
+        self.fm("task", "set", feat, "--section", "Docs impact", "--text", "none: a test")
+        self.assertIn("/foreman:review", ups("go on"), "the audit stage names the review workflow")
+
+    def test_a_skill_hint_that_does_not_fit_waits_for_a_turn_with_room(self):
+        # T-1697 review: a long step plus a work request's note left no room, and the state was recorded as told, so
+        # the next turn said nothing and the hint was lost for the session
+        self.fm("init")
+        ups = lambda prompt: self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt}))
+        self.task(tier="M", steps=("reproduce the login timeout on a throttled connection, then record it",))
+        ctx = ups("fix the login timeout when wifi is slow")
+        self.assertIn('--run "<verify cmd>"', ctx, "the Next line whole")
+        self.assertNotIn("foreman:intake, then", ctx, "no room: held back, never cut")
+        self.assertLessEqual(len(ctx), 400)
+        ctx = ups("carry on")
+        self.assertIn("Next: ", ctx, "the state wasn't recorded as told: said again")
+        self.assertIn("(load: Skill foreman:intake, then its references/debugging.md", ctx)
+        self.assertNotIn("Next: ", ups("carry on"), "told now: the usual quiet")
+
+    def test_a_ui_request_names_the_design_skill_or_the_ui_playbooks(self):
+        # T-1697: a request for a new look gets the directions skill (it writes DESIGN.md); a smaller UI change gets
+        # the ui playbooks; each once a session, and never at the cost of the Next line
+        self.fm("init")
+        ups = lambda prompt, sid: self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt, "session_id": sid}))
+        ctx = ups("redesign the settings page", "sess-2")
+        self.assertIn("Skill foreman:directions", ctx)
+        self.assertIn("fm playbooks show ui/INDEX", ctx)
+        self.assertNotIn("foreman:directions", ups("redesign the landing page", "sess-2"), "said once a session")
+        for prompt in ("restyle the header", "give the UI a dark mode", "the frontend needs a colour palette"):
+            ctx = ups(prompt, "sess-4" + str(len(prompt)))
+            self.assertIn("fm playbooks show ui/INDEX", ctx, prompt)
+            self.assertNotIn("foreman:directions", ctx, prompt)
+        for prompt in ("design the database schema", "redesign the cache layer", "redesign how the app handles retries",
+                       "fix the fm ui --json crash", "the foreman-ui pane flickers", "the ui test fails", "fix the build"):
+            self.assertNotIn("ui/INDEX", ups(prompt, "sess-3"), prompt)
+        self.task()
+        ctx = ups("make the UI faster", "sess-5")  # a work request, a UI note, Active and Next: the Next line is never cut
+        self.assertIn('--run "<verify cmd>"', ctx)
+        self.assertLessEqual(len(ctx), 400)
+
     def test_untagged_work_request_names_classification(self):
         self.fm("init")
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "add a --verbose flag to the CLI"}))
@@ -2000,6 +2064,16 @@ class Stop(HookCase):
         self.assertEqual(self.decision(p), "block")
         self.assertIn(f"Foreman drive: {tid}", parse(p)["reason"])
         self.assertIn(f"Next: {tid} step 1/2", parse(p)["reason"])
+
+    def test_drive_names_the_skill_that_fits_once(self):
+        # T-1697: the drive's Next line carries the stage's skill the first time this session, not on every push
+        self.fm("init")
+        self.task()
+        first = parse(self.stop("Continuing with the retry helper next."))["reason"]
+        self.assertIn("(load: Skill foreman:intake, then its references/debugging.md", first)
+        again = parse(self.stop("Continuing with the retry helper next."))["reason"]
+        self.assertIn("Next: ", again)
+        self.assertNotIn("foreman:intake", again)
 
     def test_drive_does_not_push_an_unapproved_m_task_while_plans_keep_missing(self):
         # T-1061: under "slow" fm focus refuses the M task, so the drive pushing it spun the model
