@@ -4,6 +4,7 @@ import os
 import shlex
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -2141,6 +2142,109 @@ class AnsiCQuoting(GuardCase):
                     "printf $'%s\\n' hi"):
             with self.subTest(cmd=cmd):
                 self.assertIsNone(self.bash(cmd))
+
+
+class TokenFallback(GuardCase):
+    """T-1561: a quote inside a $( ) or `…` within "…" starts a fresh context to bash but ends the string to shlex, so
+    shlex failed and the quote-blind fallback split kept 'cat' as the name (its classifiers never ran)."""
+    def test_a_quoted_name_after_nested_quotes_is_read_as_bash_reads_it(self):
+        for plain, hidden in (
+                ("cat ~/.ssh/id_ed25519", "echo \"$(echo 'a\"b')\" ; 'cat' ~/.ssh/id_ed25519"),
+                ("cat ~/.ssh/id_ed25519", "echo \"$(echo 'a\"b')\" ; \"cat\" ~/.ssh/id_ed25519"),
+                ("cat ~/.ssh/id_ed25519", "echo \"`echo 'a\"b'`\" ; 'cat' ~/.ssh/id_ed25519"),
+                ("cat ~/.ssh/id_ed25519", "echo \"$(echo \"$(echo 'a\"b')\")\" ; c'a't ~/.ssh/id_ed25519"),
+                ("rm -rf ~", "echo \"$(echo 'a\"b')\" ; 'rm' -rf ~"),
+                # bash runs each complete line before a later line's odd quote stops it: the old split's words
+                ("cat ~/.ssh/id_ed25519", "'cat' ~/.ssh/id_ed25519\necho 'x"),
+                ("rm -rf ~", "\\r\"m\" -rf ~\necho 'x")):
+            with self.subTest(hidden=hidden):
+                want = self.bash(plain)
+                self.assertIsNotNone(want, plain)
+                self.assertBlocked(self.bash(hidden), want.category, hidden)
+
+    def test_a_quoted_operator_is_data_not_a_redirect(self):
+        # review: '>' read as a bare > made -rf the redirect's target, so rm saw no recursive flag (both paths)
+        for prefix in ("", "echo \"$(echo 'a\"b')\" ; "):
+            for hidden in ("rm '>' -rf /home/x/data", "rm \\> -rf /home/x/data", "rm \"<\" -rf /home/x/data",
+                           "rm '|' -rf /home/x/data", "rm ';' -rf /home/x/data"):
+                with self.subTest(cmd=prefix + hidden):
+                    self.assertBlocked(self.bash(prefix + hidden), "rm-outside", prefix + hidden)
+        # self-review: the masks' own stand-in characters written into the line mustn't turn them off
+        e = g._ESC
+        for cmd in (f"echo \uf03e {e} \x02; rm '>' -rf /home/x/data",
+                    f"echo \"$(echo 'a\"b')\" \x02 {e} {e}\uf007; X='a b' cat ~/.ssh/id_ed25519"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNotNone(self.bash(cmd), cmd)
+        self.assertEqual(g._tokens(f"echo '{e}>' {e}{e} \uf003{e}"), ["echo", f"{e}>", f"{e}{e}", f"\uf003{e}"])
+        self.assertIsNone(self.bash("grep '>' README.md"))  # data: nothing is written
+        self.assertBlocked(self.bash("echo hi >'{home}/.bashrc'"), "system")  # a quoted target is still a target
+
+    def test_quoted_spaces_stay_in_their_word_after_nested_quotes(self):
+        # review: the space split made X='a an assignment and b' the command name; -C took 'x, and y' was the name
+        for hidden in ("echo \"$(echo 'a\"b')\" ; X='a b' cat ~/.ssh/id_ed25519",
+                       "echo \"$(echo 'a\"b')\" ; env -C 'x y' cat ~/.ssh/id_ed25519",
+                       "X='a b' cat ~/.ssh/id_ed25519\necho 'x"):
+            with self.subTest(hidden=hidden):
+                self.assertBlocked(self.bash(hidden), "credentials", hidden)
+
+    def test_a_trailing_escape_keeps_every_redirect_visible(self):
+        # re-review: an unpaired trailing \ made the quote-aware reading raise (and the first read it as a quoted ;),
+        # leaving only the space split, where >~/.bashrc is one plain word
+        for cmd in ("echo x >~/.bashrc \\", "echo x >~/.bashrc \"a \\", "echo x >~/.bashrc 'a \\"):
+            with self.subTest(cmd=cmd):
+                cmds = g._split(g._tokens(cmd))
+                self.assertTrue(cmds and all(c.redirs == ["~/.bashrc"] for c in cmds), [(c.argv, c.redirs) for c in cmds])
+                self.assertNotIn(";", [w for c in cmds for w in c.argv])
+                self.assertBlocked(self.bash(cmd), "system", cmd)
+        self.assertEqual(g._split(g._tokens("cat <~/.netrc 2>&1 'a"))[0].stdin, "~/.netrc")
+
+    def test_a_hash_inside_nested_quotes_is_no_comment(self):
+        # re-review: a flat quote scan read the inner " of "$(echo "a #" )" as closing the string and cut from # to the
+        # line's end, redirect and all; the first reading kept ">~/.bashrc as one word
+        for cmd in ("echo \"$(echo \"a #\" )\">~/.bashrc", "echo \"$(echo \"a #\" )\">~/.bashrc\necho 'x",
+                    "echo \"`echo \"$(echo \"a #\")\"`\">~/.bashrc", "echo \"$(echo \"a #\" )\"2>~/.bashrc"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.bash(cmd), "system", cmd)
+        self.assertBlocked(self.bash("printf \"%s\" \"$(echo \"x # y\")\" > ~/.ssh/authorized_keys"), "credentials")
+        for text, want in (("echo \"$(echo \"a #\" )\">x # c", "echo \"$(echo \"a #\" )\">x "),
+                           ("echo $(echo a # c\n) b", "echo $(echo a \n) b"), ("a # b\nc", "a \nc"),
+                           ("echo \"`echo \"#\"`\" # c", "echo \"`echo \"#\"`\" "), ("echo ${#x} a#b", "echo ${#x} a#b")):
+            with self.subTest(text=text):
+                self.assertEqual(g._strip_comments(text), want)
+        self.assertEqual(g._pieces(")\">~/x"), [")", '"', ">", "~/x"])
+        self.assertEqual(g._pieces("'a'2>&1"), ["'a'", "2", ">", "&", "1"])
+        self.assertEqual(g._pieces("'x'`cmd`>~/.bashrc"), ["'x'`cmd`", ">", "~/.bashrc"])  # re-review: after a `
+        self.assertBlocked(self.bash("echo 'x'`cmd`>~/.bashrc"), "system")
+        self.assertEqual(g._pieces("'$1>4000"), ["'$1>4000"])  # a > after a quote's text is text (debris)
+
+    def test_deep_nesting_is_masked_in_linear_time(self):
+        line = "\"$(echo " * 20000 + "\"x\" " * 20000
+        start = time.monotonic()
+        g._mask_nested_dq(line)
+        self.assertLess(time.monotonic() - start, 0.5)  # a rescan of every open frame per quote took 1.7 s
+
+    def test_an_awk_program_in_a_substitution_tail_stays_strict(self):
+        # the tail's split makes "sh"}' a piped name: debris, not a pipe into sh; the line itself is still refused
+        self.assertEqual(g._tokens("x)\" | awk '{print | \"sh\"}'")[:8],
+                         ["x", ")", '"', "|", "awk", "'{print", "|", '"sh"}\''])
+        for cmd in ("echo \"$(x)\" | awk '{{print | \"sh\"}}'",
+                    "for f in a; do echo \"$(cat $f)\"; done | awk '{{print | \"sh\"}}'"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.bash(cmd), "system", cmd)
+
+    def test_the_words_are_bash_words(self):
+        # where shlex fails, two readings: the space split, each word whose own quotes balance read as bash reads it
+        # and an odd one kept; then shlex with the nested " masked and an odd quote run to the end
+        self.assertEqual(g._tokens("echo \"$(echo 'a\"b')\" ; 'cat' x"),
+                         ["echo", '"$', "(", "echo", 'a"b', ")", '"', ";", "cat", "x", ";", ";",
+                          "echo", "$(echo 'a\"b')", ";", "cat", "x"])
+        self.assertEqual(g._tokens("'cat' \"a\"'b' \\x; echo 'a"),
+                         ["cat", "ab", "x", ";", "echo", "'a", ";", ";", "cat", "ab", "x", ";", "echo", "a"])
+        self.assertEqual(g._tokens("echo \"$(a)\" (x 'y"), ["echo", '"$', "(", "a", ")", '"', "(", "x", "'y", ";", ")",
+                                                          ";", "echo", "$(a)", "(", "x", "y"])  # depth 0 again
+        self.assertIsInstance(g._tokens("rm '>' x")[1], g._Quoted)
+        self.assertEqual(g._split(g._tokens("find . -exec rm {} \\; -o -print"))[0].argv[-3:], [";", "-o", "-print"])
+        self.assertIsNone(self.bash("echo \"$(echo 'a\"b')\" ; 'cat' README.md"))
 
 
 class CredentialReadHook(ForemanTestCase):
