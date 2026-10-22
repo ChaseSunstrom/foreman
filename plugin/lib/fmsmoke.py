@@ -1,22 +1,41 @@
 """fm smoke (T-0417): the product checked the way its user uses it. JARVIS closed 34 tasks with its tests green while
 two panels of its web UI never loaded; nothing Foreman ran had ever opened the page. `fm smoke set web <url>` records
 the address and makes `fm smoke` one of the project's gates; `fm smoke` opens it in a headless browser (the project's
-own Playwright) at desktop and phone width, clicks every tab, and names each defect a user would see."""
+own Playwright) at desktop and phone width, clicks every tab, and names each defect a user would see.
+
+T-1509: it also shoots the start page's frame matrix (ui/visual-qa.md), and `fm smoke --profile NAME` crawls under a
+hostile condition (PROFILES); their findings fail it only when strict. Screenshots land in <project state>/smoke/
+<commit>[-dirty-<diff hash>]/<default|profile>/ under the views' own names, so a receipt can point at them; a second run
+on the same tree waits for the first, then replaces its folder."""
 import glob
+import hashlib
 import json
 import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import tempfile
-import time
 
 import fmcore as c
 
 SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "smoke_web.cjs")
 GATE = "fm smoke"
-KEEP = 3  # screenshot runs kept per project
+KEEP = 5  # commits whose screenshots are kept per project
+LOCK_S = 300  # a run waits this long for another on its commit folder (a crawl's 240 s, then its kill)
+PROFILES = {  # smoke_web.cjs applies each (its PROFILES has the same names, in this order)
+    "torture": "90-letter words, right-to-left runs and 20-digit numbers written into the page's text",
+    "empty": "every list in the JSON the app's own host sends emptied",
+    "offline": "the network cut once the page has loaded",
+    "slow3g": "2 s latency and 50 KB/s each way",
+    "deuteranopia": "seen without green cones (a colour filter on the page)",
+    "protanopia": "seen without red cones",
+    "tritanopia": "seen without blue cones",
+    "achromatopsia": "seen without colour",
+    "frozen": "the clock fixed at 2026-01-15 10:00 UTC and animations paused",
+    "motion": "five frames 250 ms apart per view",
+}
 
 
 def playwright(root):
@@ -44,25 +63,50 @@ def _clean(text):
     return c.fit(re.sub(r"[\x00-\x1f\x7f-\x9f]+", " ", str(text)), 300)
 
 
-def crawl(pw, url, out, timeout=240):
-    """{"views": [...], "defects": [{"where", "what"}], "notes": [...]} from one crawl."""
+def _kill(proc):
+    """A crawl past its time: its process group, SIGTERM first (node then exits, and Playwright's exit handler kills
+    the browser it started in a group of its own), SIGKILL for whatever is left (T-1509)."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        try:
+            proc.wait(5)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+def crawl(pw, url, out, timeout=240, profile=""):
+    """{"views": [...], "defects": [{"where", "what"}], "notes": [...]} from one crawl, or {"skipped": why} when the
+    Playwright found has no browser installed."""
     os.makedirs(out, exist_ok=True)
     runner = _runner()
-    cmd = shlex.split(runner) + [url, out] if runner else ["node", SCRIPT, pw, url, out]
+    cmd = (shlex.split(runner) + [url, out] if runner else ["node", SCRIPT, pw, url, out]) + ([profile] if profile else [])
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        res = json.loads(r.stdout.strip().splitlines()[-1])
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace",
+                                stdin=subprocess.DEVNULL, start_new_session=True)
+    except OSError as e:
+        return {"views": [], "defects": [{"where": "smoke", "what": f"the crawl did not start: {e}"}]}
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        _kill(proc)
+        proc.communicate()
+        return {"views": [], "defects": [{"where": "smoke", "what": f"the crawl did not finish: {e}"}]}
+    try:
+        res = json.loads(stdout.strip().splitlines()[-1])
         if not isinstance(res, dict):
             raise ValueError(res)
-    except (OSError, subprocess.TimeoutExpired) as e:
-        return {"views": [], "defects": [{"where": "smoke", "what": f"the crawl did not finish: {e}"}]}
     except (ValueError, IndexError):
         return {"views": [], "defects": [{"where": "smoke", "what": "the crawl failed: "
-                                          + _clean((r.stderr or r.stdout).strip())}]}
-    return {"views": [_clean(v) for v in res.get("views") or []],
-            "defects": [{"where": _clean(d.get("where", "?")), "what": _clean(d.get("what", "?"))}
-                        for d in res.get("defects") or [] if isinstance(d, dict)],
-            "notes": [_clean(n) for n in res.get("notes") or []]}
+                                          + _clean((stderr or stdout).strip())}]}
+    if res.get("skipped"):
+        return {"skipped": _clean(res["skipped"])}
+    found = lambda key: [{"where": _clean(d.get("where", "?")), "what": _clean(d.get("what", "?"))}  # noqa: E731
+                         for d in res.get(key) or [] if isinstance(d, dict)]
+    return {"views": [_clean(v) for v in res.get("views") or []], "defects": found("defects"),
+            "notes": [_clean(n) for n in res.get("notes") or []], "frame_findings": found("frame_findings")}
 
 
 def nudge(surfaces, meta):
@@ -75,6 +119,9 @@ def nudge(surfaces, meta):
 def cmd_smoke(args):
     import fmcli
     p = fmcli.resolve(args)
+    profiles = list(PROFILES) if "all" in (args.profile or []) else list(dict.fromkeys(args.profile or []))
+    if profiles and args.action == "set":
+        raise fmcli.UsageError("--profile goes with fm smoke run")
     if args.action == "set" and args.words[:1] == ["off"]:  # a UI no URL serves (a plugin's own UI mod): no gate
         with c.lock(p.dir):
             meta = c.read_meta(p)
@@ -82,6 +129,15 @@ def cmd_smoke(args):
             meta["checks"] = [x for x in meta.get("checks") or [] if x != GATE]
             c.write_meta(p, meta)
         return fmcli.out(args, meta["smoke"], f"fm smoke is off here ({meta['smoke']['off']}).")
+    if args.action == "set" and args.words[:1] == ["strict"]:  # review: beside meta["smoke"], whose keys are targets
+        if args.words[1:] not in (["on"], ["off"]):
+            raise fmcli.UsageError("fm smoke set strict on|off")
+        with c.lock(p.dir):
+            meta = c.read_meta(p)
+            meta["smoke_strict"] = args.words[1] == "on"
+            c.write_meta(p, meta)
+        return fmcli.out(args, {"strict": meta["smoke_strict"]}, "fm smoke: frame findings and profile findings now "
+                         + ("fail it." if meta["smoke_strict"] else "are reported, not failed."))
     if args.action == "set":
         kind, rest = (args.words[:1] or [""])[0], args.words[1:]
         url_ok = len(rest) == 1 and rest[0].startswith(("http://", "https://"))
@@ -93,7 +149,7 @@ def cmd_smoke(args):
             entry = {"run": " ".join(rest), "expect": args.expect}
         else:
             raise fmcli.UsageError("fm smoke set web <http(s) url> | http <http(s) url> [--status N] [--json-key K] | "
-                                   "cmd \"<command>\" [--expect REGEX] (or fm smoke set off <why>)")
+                                   "cmd \"<command>\" [--expect REGEX] | strict on|off (or fm smoke set off <why>)")
         with c.lock(p.dir):
             meta = c.read_meta(p)
             meta["smoke"] = dict({k: v for k, v in (meta.get("smoke") or {}).items() if k != "off"}, **{kind: entry})
@@ -101,10 +157,13 @@ def cmd_smoke(args):
             c.write_meta(p, meta)
         return fmcli.out(args, meta["smoke"], f"fm smoke checks the {kind} product check; it is one of this project's "
                                               f"gates (fm check runs it).")
-    smoke = c.read_meta(p).get("smoke") or {}
+    meta = c.read_meta(p)
+    smoke, strict = meta.get("smoke") or {}, args.strict or bool(meta.get("smoke_strict"))
+    url = smoke.get("web")
+    if profiles and not url:
+        raise fmcli.UsageError("a profile crawls the web UI: fm smoke set web <url> first")
     other = _other_checks(p, smoke, args)  # T-0460: before the browser, fast
     bad = [x for x in other if not x["ok"]]
-    url = smoke.get("web")
     if not url:
         if not other:
             raise fmcli.UsageError("nothing to check yet: fm smoke set web <url> | http <url> | cmd \"<command>\"")
@@ -117,28 +176,72 @@ def cmd_smoke(args):
     for x in other:
         print(f"{'ok' if x['ok'] else '✗ failed'}  {x['what']}: {x['detail']}")
     pw = playwright(p.root)
-    if not pw and not _runner():  # review: a lane or machine without it isn't a product defect; say so, don't block
-        return fmcli.out(args, {"url": url, "skipped": "no Playwright"},
-                         f"fm smoke: skipped {url}: no Playwright in this checkout (npm i -D playwright, then npx "
-                         f"playwright install chromium; or FOREMAN_PLAYWRIGHT=<its package folder>).")
-    runs = os.path.join(p.dir, "smoke")
-    out = os.path.join(runs, time.strftime("%Y%m%d-%H%M%S", time.gmtime()))
-    res = crawl(pw, url, out)
-    for old in sorted(glob.glob(os.path.join(runs, "*")))[:-KEEP]:
+    skipped = None if pw or _runner() else ("no Playwright in this checkout (npm i -D playwright, then npx playwright "
+                                            "install chromium; or FOREMAN_PLAYWRIGHT=<its package folder>)")
+    runs, rev = os.path.join(p.dir, "smoke"), _rev(p.root)
+    done, texts = [], []
+    for name in ([] if skipped else profiles or [""]):
+        out = os.path.join(runs, rev, name or "default")
+        with c.lock(os.path.dirname(out), timeout=LOCK_S):  # review: a second run on the commit waits, then replaces
+            shutil.rmtree(out, ignore_errors=True)  # no shot left from the run before
+            res = crawl(pw, url, out, profile=name)
+            if res.get("skipped"):  # no browser for one profile is none for the next
+                shutil.rmtree(out, ignore_errors=True)
+                skipped = f"{res['skipped']} (npx playwright install chromium installs it)"
+                break
+        # review: the frame matrix's findings (a live page still moving, a 768 overflow) are notes unless strict, so a
+        # polling panel or a video doesn't break an existing gate, nor count against a closed task in fm outcomes
+        findings = res.get("frame_findings") or []
+        defects = (res.get("defects") or []) + (findings if strict else [])
+        notes = (res.get("notes") or []) + ([] if strict else [f"{d['where']}: {d['what']}" for d in findings])
+        views = res.get("views") or []
+        c.log_event(p, "smoke_profile" if name else "smoke", session=fmcli.session(),  # a profile's finds: no regression
+                    data=dict({"url": url, "views": len(views), "defects": len(defects)}, **({"profile": name} if name else {})))
+        frames = os.path.join(out, "frames")
+        texts.append(f"fm smoke{f' --profile {name}' if name else ''}: {url}: {len(views)} views, "
+                     + (f"{len(defects)} defects:\n" + "\n".join(f"  ✗ {d['where']}: {d['what']}" for d in defects)
+                        if defects else "no defects.")
+                     + "".join(f"\n  · {n}" for n in notes)
+                     + (f"\nThe page didn't load: start it, or fm smoke set off <why> to stop checking it."
+                        if any(d["what"].startswith("did not load") for d in defects) else "")
+                     + f"\nScreenshots: {out}"
+                     + (f"\nFrames: {frames} (360, 768 and 1440 wide × light and dark, reduced motion at 360)"
+                        if not name and os.path.isdir(frames) else ""))
+        res = dict(res, defects=defects, notes=notes, frame_findings=findings)
+        done.append(dict(res, profile=name, shots=out) if name else dict(res, url=url, shots=out, frames=frames))
+    for old in sorted(glob.glob(os.path.join(runs, "*")), key=_mtime)[:-KEEP]:
         shutil.rmtree(old, ignore_errors=True)
-    defects = res.get("defects") or []
-    c.log_event(p, "smoke", data={"url": url, "views": len(res.get("views") or []), "defects": len(defects)},
-                session=fmcli.session())
-    text = (f"fm smoke: {url}: {len(res.get('views') or [])} views, "
-            + (f"{len(defects)} defects:\n" + "\n".join(f"  ✗ {d['where']}: {d['what']}" for d in defects)
-               if defects else "no defects.")
-            + "".join(f"\n  · {n}" for n in res.get("notes") or [])
-            + (f"\nThe page didn't load: start it, or fm smoke set off <why> to stop checking it."
-               if any(d["what"].startswith("did not load") for d in defects) else "")
-            + f"\nScreenshots: {out}")
-    fmcli.out(args, dict(res, url=url, shots=out), text)
-    if defects or bad:
+    if len(done) > 1:
+        texts.append("Profiles: " + " · ".join(f"{r['profile']} ✗ {len(r['defects'])}" if r.get("defects")
+                                               else f"{r['profile']} ✓" for r in done))
+    if not strict and any(r["frame_findings"] or r.get("profile") and r["defects"] for r in done):
+        texts.append("These findings are reported, not failed: --strict (or fm smoke set strict on) fails on them.")
+    if skipped:  # review: a lane or machine without a browser isn't a product defect; say so, don't block (and what
+        texts.append(f"fm smoke: skipped {url}: {skipped}.")  # earlier profiles found still shows)
+    data = {"url": url, "rev": rev, "profiles": done} if profiles else done[0] if done else {"url": url}
+    fmcli.out(args, dict(data, skipped=skipped) if skipped else data, "\n".join(texts))
+    if bad or any(r["defects"] and (strict or not r.get("profile")) for r in done):
         raise SystemExit(1)
+
+
+def _rev(root):
+    """The folder a run's screenshots go in: the short commit; with tracked changes (fm sync's .foreman mirror aside),
+    -dirty-<a hash of the diff>, so other changes never overwrite the frames a receipt names (-dirty alone when git
+    can't say)."""
+    sha = re.sub(r"\W", "", c._git(root, "rev-parse", "--short", "HEAD", timeout=10).strip())
+    if not sha:
+        return "no-commit"
+    diff = c._git(root, "diff", "HEAD", "--binary", "--", ".", ":(exclude).foreman", timeout=10, fail=None)
+    if diff is None:
+        return sha + "-dirty"
+    return sha + (f"-dirty-{hashlib.sha256(diff.encode('utf-8', 'replace')).hexdigest()[:8]}" if diff else "")
+
+
+def _mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:  # another run pruned it first
+        return 0
 
 
 def _other_checks(p, smoke, args):
