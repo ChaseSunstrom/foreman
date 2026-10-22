@@ -65,8 +65,9 @@ def _recheck(events):
     found = _transcript_commands({e["session_id"] for _, e in bash})
     runs = {i: found[(e["session_id"], e["cmd"])] for i, e in bash if (e["session_id"], e["cmd"]) in found}
     now = fmreplay.verdicts(runs.values())
-    return {i: "today's guard allows it" if now.get(fmreplay._key(*run)) == "allow" else "still blocks"
-            for i, run in runs.items()}
+    say = lambda v: "today's guard allows it" if v == "allow" else \
+        "today's guard is unable to judge it (it raised)" if fmreplay.unable(v) else "still blocks"  # T-1517
+    return {i: say(now.get(fmreplay._key(*run))) for i, run in runs.items()}
 
 
 def _rate(n, calls):
