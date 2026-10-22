@@ -262,6 +262,84 @@ class LibSources(ForemanTestCase):
         self.assertNotEqual(bad.returncode, 0)
         self.assertEqual(sorted(os.listdir(os.path.join(c.state_dir(), "lib-sources"))), [])
 
+    def _repo(self, name, files):
+        repo = os.path.join(self.tmp, name)
+        for rel, body in files.items():
+            os.makedirs(os.path.dirname(os.path.join(repo, rel)) or repo, exist_ok=True)
+            with open(os.path.join(repo, rel), "w") as f:
+                f.write(body)
+        self._git(repo, "init", "-q")
+        self._git(repo, "add", "-A")
+        self._git(repo, "commit", "-qm", name)
+        return repo
+
+    def test_anthropic_defaults_listed_with_depth_and_class(self):
+        # T-1389: the six anthropics repos, each with a depth and a licence class; --dry clones nothing
+        self.fm("lib", "source", "add", self._source_repo(), "--name", "anthropic-skills")  # an MIT licence: open
+        out = self.fm("lib", "source", "defaults", "--dry").stdout
+        for repo in ("skills", "claude-code", "claude-cookbooks", "claude-plugins-official", "financial-services",
+                     "prompt-eng-interactive-tutorial"):
+            line = next((x for x in out.splitlines() if x.endswith(f"https://github.com/anthropics/{repo}")), "")
+            self.assertTrue(line, f"{repo} not listed:\n{out}")
+            self.assertRegex(line, r"\b(reference|index|host)\b")
+            self.assertRegex(line, r"\b(open|source-available|ideas-only)\b|from its licence at add")
+        self.assertRegex(next(x for x in out.splitlines() if "anthropics/skills" in x), r"\bopen\b")
+        self.assertRegex(next(x for x in out.splitlines() if "anthropics/claude-cookbooks" in x), r"\breference\b")
+        self.assertEqual(os.listdir(os.path.join(c.state_dir(), "lib-sources")), ["anthropic-skills"])
+
+    def test_licence_class_gates_copies(self):
+        skill = {"skills/prompting/SKILL.md": "---\nname: prompting\ndescription: Prompt engineering lessons\n---\nbody\n"}
+        self.fm("lib", "source", "add", self._repo("tutorial", skill), "--name", "tut")
+        self.fm("lib", "source", "add", self._repo("closed", dict(skill, **{"LICENSE.md": "(c) Anthropic PBC. All rights "
+                                                                              "reserved.\n"})), "--name", "closed")
+        self.fm("lib", "source", "add", self._source_repo(), "--name", "kit")
+        listed = self.fm("lib", "source", "list").stdout
+        for name, klass in (("tut", "ideas-only"), ("closed", "source-available"), ("kit", "open")):
+            self.assertRegex(next(x for x in listed.splitlines() if x.strip().startswith(name + " ")), rf"\b{klass}\b")
+        refused = self.fm("lib", "show", "tut:prompting").stdout
+        self.assertIn("ideas-only", refused)
+        self.assertIn("Prompt engineering lessons", refused)  # the idea, never the text or a path to copy it from
+        self.assertNotIn("SKILL.md", refused)
+        self.assertIn("SKILL.md", self.fm("lib", "show", "kit:reverse-engineer").stdout)
+        self.assertIn("source-available", self.fm("lib", "show", "closed:prompting").stdout)
+        for text, klass in (("MIT License", "open"), ("                Apache License\n  Version 2.0", "open"),
+                            ("Copyright (c) 2024 X\n\nPermission is hereby granted, free of charge", "open"),
+                            ("BSD 3-Clause License", "open"), ("All rights reserved.", "source-available"),
+                            (None, "ideas-only")):
+            self.assertEqual(fmlib._licence_class(text), klass, text)
+
+    def test_a_reference_source_indexes_its_readmes_as_notes(self):
+        repo = self._repo("cook", {"README.md": "# Cookbook\n\n[![badge](x)](y)\nRecipes for tool use.\n",
+                                   "tool_use/README.md": "# Tool use\nCalling narwhal tools from Claude.\n",
+                                   "skills/x/SKILL.md": "---\nname: x\ndescription: narwhal skill\n---\n"})
+        meta, index = fmlib.source_add(repo, "cook", depth="reference")
+        self.assertEqual((meta["depth"], meta["notes"], meta["skills"]), ("reference", 2, 0))
+        self.assertIn({"name": "tool_use", "description": "Tool use: Calling narwhal tools from Claude.",
+                       "path": "tool_use/README.md", "kind": "note"}, index)
+        self.assertIn("Cookbook: Recipes for tool use.", [x["description"] for x in index])
+        self.assertIn("cook:tool_use", self.fm("lib", "search", "narwhal").stdout)
+        self.assertEqual(fmlib.source_add(repo, "cook", replace=True)[0]["depth"], "reference")  # update keeps it
+
+    def test_marketplace_plugins_indexed(self):
+        market = {"name": "official", "plugins": [
+            {"name": "pr-review", "description": "Review pull requests with zebrafish agents", "source": "./plugins/pr-review"},
+            {"name": "escape", "description": "Climbs out of the repo", "source": "../../etc"},
+            {"name": "remote", "description": "Hosted elsewhere by quokkas", "source": {"source": "github", "repo": "a/b"}},
+            "not an entry", {"description": "no name"}]}
+        repo = self._repo("market", {".claude-plugin/marketplace.json": json.dumps(market),
+                                     "plugins/pr-review/README.md": "# pr-review\n", "LICENSE": "MIT License\n"})
+        self.fm("lib", "source", "add", repo, "--name", "mk")
+        found = self.fm("lib", "search", "zebrafish").stdout
+        self.assertIn("mk:pr-review", found)
+        self.assertIn("mk:remote", self.fm("lib", "search", "quokkas").stdout)
+        base = os.path.join(c.state_dir(), "lib-sources", "mk", "repo")
+        self.assertIn(os.path.join(base, "plugins", "pr-review"), self.fm("lib", "show", "mk:pr-review").stdout)
+        escaped = self.fm("lib", "show", "mk:escape").stdout
+        self.assertIn(os.path.join(base, ".claude-plugin", "marketplace.json"), escaped)  # never ../../etc
+        self.assertNotIn("etc", escaped.replace("marketplace", ""))
+        # update keeps the entries (and the depth)
+        self.assertIn("(no change)", self.fm("lib", "source", "update", "mk").stdout)
+
 
 GOOD = """---
 name: zzlib
