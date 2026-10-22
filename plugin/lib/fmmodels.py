@@ -37,6 +37,7 @@ followed (urllib would carry the key to the new host). The key is read only from
 stripped, refused if it holds control characters, never sent over plain http to a host that isn't loopback, and
 scrubbed from every error; nothing here logs or writes it. A base_url with a user or password in it is refused.
 """
+import datetime
 import http.client
 import ipaddress
 import itertools
@@ -70,11 +71,14 @@ LOCAL = [("ollama", "http://127.0.0.1:11434/v1"), ("lmstudio", "http://127.0.0.1
          ("llamacpp", "http://127.0.0.1:8080/v1"), ("vllm", "http://127.0.0.1:8000/v1")]
 LOCAL_CONTEXT = 8192
 
-# T-1409: model ids the provider no longer serves, read off each provider's deprecation page on RETIRED_AS_OF
-# (research T-1409-retired-models). Only dates already past then; text/chat models only; Google's are its "earliest
-# possible" dates. ponytail: static and dated, so a stale table reads as stale; a "retiring soon" warning is the
-# upgrade.
-RETIRED_AS_OF = "2026-10-21"
+# T-1409/T-1433: model ids the provider no longer serves, read off each provider's deprecation page (research
+# T-1409-retired-models, T-1433-deprecations). _RETIRED_ROWS: dates already past on RETIRED_AS_OF; _RETIRING_ROWS:
+# announced later dates (they feed the "retiring soon" note, and count as retired once their day comes). Text/chat
+# models only; Google's are its "earliest possible" dates. Dates came through a page summary, not byte-checked
+# (medium confidence). Rows run newest first within each provider. ponytail: static and dated, so a stale table
+# reads as stale; re-read the pages to refresh.
+RETIRED_AS_OF = "2026-10-22"
+RETIRING_DAYS = 60
 _PAGES = {"anthropic": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
           "openai": "https://developers.openai.com/api/docs/deprecations",
           "gemini": "https://ai.google.dev/gemini-api/docs/deprecations"}
@@ -95,39 +99,91 @@ _RETIRED_ROWS = [  # provider, retired on, replacement, ids
     ("openai", "2026-09-28", "gpt-5.6-terra", "gpt-3.5-turbo-instruct babbage-002 davinci-002 gpt-3.5-turbo-1106"),
     ("openai", "2026-08-10", "gpt-5.6-sol", "gpt-5.2-chat-latest gpt-5.3-chat-latest"),
     ("openai", "2026-07-23", "gpt-5.6-sol",
-     "gpt-5-chat-latest gpt-5-codex gpt-5.1-chat-latest gpt-5.1-codex gpt-5.1-codex-max gpt-5.2-codex"),
-    ("openai", "2026-07-23", "gpt-5.6-terra", "gpt-5.1-codex-mini"),
+     "gpt-5-chat-latest gpt-5-codex gpt-5.1-chat-latest gpt-5.1-codex gpt-5.1-codex-max gpt-5.2-codex "
+     "o3-deep-research o4-mini-deep-research"),
+    ("openai", "2026-07-23", "gpt-5.6-terra",
+     "gpt-5.1-codex-mini gpt-4o-mini-search-preview-2025-03-11 gpt-4o-search-preview-2025-03-11"),
     ("openai", "2026-03-26", "gpt-5 or gpt-4.1", "gpt-4-0314 gpt-4-0125-preview gpt-4-turbo-preview"),
     ("openai", "2026-02-17", "gpt-5.1-chat-latest", "chatgpt-4o-latest"),
     ("openai", "2026-02-12", "gpt-5-codex-mini", "codex-mini-latest"),
-    ("openai", "2025-07-28", "o3", "o1-preview"),
     ("openai", "2025-10-27", "o4-mini", "o1-mini"),
+    ("openai", "2025-07-28", "o3", "o1-preview"),
     ("openai", "2025-07-14", "gpt-4.1", "gpt-4.5-preview"),
     ("openai", "2025-06-06", "gpt-4o", "gpt-4-32k gpt-4-32k-0613 gpt-4-32k-0314"),
-    ("openai", "2024-09-13", "gpt-3.5-turbo", "gpt-3.5-turbo-0613 gpt-3.5-turbo-16k-0613"),
+    ("openai", "2024-12-06", "gpt-4o", "gpt-4-vision-preview gpt-4-1106-vision-preview"),
+    ("openai", "2024-09-13", "gpt-3.5-turbo", "gpt-3.5-turbo-0613 gpt-3.5-turbo-16k-0613 gpt-3.5-turbo-0301"),
+    ("gemini", "2026-07-28", "gemini-3.8-flash", "gemini-2.5-computer-use-preview-10-2025"),
     ("gemini", "2026-06-01", "gemini-3.6-flash", "gemini-2.0-flash gemini-2.0-flash-001"),
     ("gemini", "2026-06-01", "gemini-3.1-flash-lite", "gemini-2.0-flash-lite gemini-2.0-flash-lite-001"),
-    ("gemini", "2026-07-28", "gemini-3.8-flash", "gemini-2.5-computer-use-preview-10-2025"),
     ("gemini", "2026-05-25", "gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview"),
     ("gemini", "2026-03-31", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite-preview-09-2025"),
     ("gemini", "2026-03-09", "gemini-3.1-pro-preview", "gemini-3-pro-preview"),
     ("gemini", "2026-02-17", "gemini-3.6-flash", "gemini-2.5-flash-preview-09-25"),
-    ("gemini", "2025-11-18", "gemini-3.6-flash", "gemini-2.5-flash-preview-05-20"),
-    ("gemini", "2025-12-02", "gemini-3.1-pro-preview",
-     "gemini-2.5-pro-preview-03-25 gemini-2.5-pro-preview-05-06 gemini-2.5-pro-preview-06-05"),
     ("gemini", "2025-12-09", "gemini-3.1-flash-lite",
      "gemini-2.0-flash-lite-preview gemini-2.0-flash-lite-preview-02-05"),
+    ("gemini", "2025-12-02", "gemini-3.1-pro-preview",
+     "gemini-2.5-pro-preview-03-25 gemini-2.5-pro-preview-05-06 gemini-2.5-pro-preview-06-05"),
+    ("gemini", "2025-11-18", "gemini-3.6-flash", "gemini-2.5-flash-preview-05-20"),
 ]
-RETIRED = {i: (day, repl, _PAGES[prov]) for prov, day, repl, ids in _RETIRED_ROWS for i in ids.split()}
+_RETIRING_ROWS = [  # provider, retires on, replacement, ids: dates after RETIRED_AS_OF
+    ("anthropic", "2026-11-30", "claude-sonnet-5-5", "claude-sonnet-4-5-20250929"),
+    ("openai", "2027-04-01", "gpt-6-sol", "gpt-5.3-codex gpt-5.1"),
+    ("openai", "2027-04-01", "gpt-6-luna", "gpt-5.4-nano"),
+    ("openai", "2027-01-14", "gpt-6-luna",
+     "gpt-4o-2024-08-06 gpt-4o-2024-11-20 gpt-4o-mini-2024-07-18 gpt-4.1-2025-04-14 gpt-4.1-mini-2025-04-14"),
+    ("openai", "2026-12-11", "gpt-5.6-sol", "gpt-5-2025-08-07 o3-2025-04-16 o3-pro-2025-06-10 gpt-5-pro-2025-10-06"),
+    ("openai", "2026-12-11", "gpt-5.6-terra", "gpt-5-mini-2025-08-07"),
+    ("openai", "2026-12-11", "gpt-5.6-luna", "gpt-5-nano-2025-08-07"),
+    ("openai", "2026-10-23", "gpt-5.6-terra",
+     "gpt-3.5-turbo-0125 gpt-3.5-turbo gpt-3.5-turbo-completions o4-mini o4-mini-2025-04-16"),
+    ("openai", "2026-10-23", "gpt-5.6-sol",
+     "gpt-4-0613 gpt-4 gpt-4-completions gpt-4-0613-completions gpt-4-1106-preview gpt-4-turbo "
+     "gpt-4-turbo-2024-04-09 gpt-4-turbo-completions gpt-4o-2024-05-13 o1 o1-2024-12-17 o3-mini "
+     "o3-mini-2025-01-31 o1-pro o1-pro-2025-03-19"),
+    ("openai", "2026-10-23", "gpt-5.6-luna", "gpt-4.1-nano"),
+    ("gemini", "2027-05-07", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"),
+]
 
 
-def retired(model_id):
-    """{"date", "replacement", "source"} when model_id (a provider prefix like openai/ or models/ is ignored) is on
-    RETIRED, else None."""
+def _table(rows):
+    return {i: (day, repl, _PAGES[prov]) for prov, day, repl, ids in rows for i in ids.split()}
+
+
+RETIRED = _table(_RETIRED_ROWS)
+RETIRING = _table(_RETIRING_ROWS)
+
+
+def _today(today):
+    """today if given, else $FOREMAN_TODAY when it parses as YYYY-MM-DD (a test pins the clock with it), else the
+    clock."""
+    for d in (today, os.environ.get("FOREMAN_TODAY")):
+        try:
+            return datetime.date.fromisoformat(d)
+        except (TypeError, ValueError):
+            pass
+    return datetime.date.today()
+
+
+def _lookup(table, model_id):
     if not isinstance(model_id, str):
         return None
-    hit = RETIRED.get(model_id.strip().lower().rsplit("/", 1)[-1])
+    hit = table.get(model_id.strip().lower().rsplit("/", 1)[-1])
     return hit and {"date": hit[0], "replacement": hit[1], "source": hit[2]}
+
+
+def retired(model_id, today=None):
+    """{"date", "replacement", "source"} when model_id (a provider prefix like openai/ or models/ is ignored) is on
+    RETIRED, or on RETIRING with its date reached by today (YYYY-MM-DD; default $FOREMAN_TODAY, then the clock)."""
+    hit = _lookup(RETIRED, model_id) or _lookup(RETIRING, model_id)
+    return hit if hit and hit["date"] <= _today(today).isoformat() else None
+
+
+def retiring(model_id, today=None):
+    """Same shape, for an id on RETIRING whose date is after today but at most RETIRING_DAYS away, else None."""
+    hit = _lookup(RETIRING, model_id)
+    t = _today(today)
+    soon = (t + datetime.timedelta(days=RETIRING_DAYS)).isoformat()
+    return hit if hit and t.isoformat() < hit["date"] <= soon else None
 
 
 STOPS = {"stop": "end", "end_turn": "end", "stop_sequence": "end", "tool_calls": "tool_calls",
