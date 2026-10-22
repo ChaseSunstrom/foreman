@@ -2164,6 +2164,22 @@ def _hides_claude(words):
     return False
 
 
+_CONFINE_SET = re.compile(r"^FOREMAN_CONFINE\+?=")
+
+
+def _unconfines(words):
+    """T-1607: whether one simple command sets FOREMAN_CONFINE, the user's switch that runs fm code workers without
+    Landlock: as a lead assignment, through env, or with export/declare and kin. ponytail: read/printf -v/eval forms
+    aren't caught; confinement is a guard against mistakes, and the user turns it off in their own shell."""
+    argv, _ = _strip_wrappers(words)
+    lead = words[:len(words) - len(argv)]
+    name = os.path.basename(argv[0]) if argv else ""
+    if any(_CONFINE_SET.match(w) for w in lead):
+        return True
+    return name in ("export", "readonly", "declare", "typeset", "local", "env") and any(
+        _CONFINE_SET.match(a) for a in argv[1:])
+
+
 # T-1575: awk runs commands from its program: system(…), print … | "cmd", "cmd" | getline; and writes print > "file"
 _AWKS = {"awk", "gawk", "mawk", "nawk", "original-awk"}
 _AWK_STR = r'"(?:[^"\\\n]|\\.)*"'
@@ -3320,6 +3336,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                     cands = [p]
                 if any(_system_path(v, ctx) for q in cands for v in _variants(q)):  # a link into /etc counts
                     found.append(("system", f"{p} ({name} in a system folder)"))
+        if _unconfines(c.argv):
+            found.append(("self-authorize", "it sets FOREMAN_CONFINE, the user's switch for running fm code workers "
+                                            "without Landlock confinement; only the user sets it, in their own shell"))
         if _hides_claude(c.argv):
             found.append(("self-authorize", "it unsets or overrides CLAUDECODE or CLAUDE_CODE_ENTRYPOINT, which fm "
                                             "reads to know Claude, not the user, runs it"))
