@@ -1109,6 +1109,8 @@ def cmd_usage(args):
     if getattr(args, "lesions", False):
         return _lesions(p, args, fmcli)
     since = _since(args.days)
+    import fmplaybooks
+    listed = fmplaybooks.listed()  # T-1621: a load through fm playbooks show is a read too
     skills, books, cmds = collections.Counter(), collections.Counter(), collections.Counter()
     followed, ignored, pending = collections.Counter(), collections.Counter(), {}
     for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
@@ -1133,6 +1135,8 @@ def cmd_usage(args):
             books[target.split("/skills/playbooks/references/")[1][:-3]] += 1
         elif tool == "Bash" and (m := re.match(r"\s*fm\s+([a-z-]+)(?:\s+([a-z-]+))?", target)):
             cmds[m.group(1) + (" " + m.group(2) if m.group(1) == "task" and m.group(2) else "")] += 1
+        if tool == "Bash" and (hit := fmplaybooks.shown(target, listed)):
+            books[hit[len("references/"):-3]] += 1
     all_skills = sorted(n for n in os.listdir(os.path.join(c.PLUGIN_ROOT, "skills"))
                         if os.path.isfile(os.path.join(c.PLUGIN_ROOT, "skills", n, "SKILL.md")))
     ref = os.path.join(c.PLUGIN_ROOT, "skills", "playbooks", "references")
