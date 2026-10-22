@@ -5774,6 +5774,11 @@ def _build_parser():
                    "objects, fallback state); list the rest as left for a person")
     s.add_argument("--accept-supply", action="store_true",
                    help="take the current plugins and MCP servers as the supply-chain baseline (T-0672)")
+    s = add("fsck", lazy("fmdoctor", "cmd_fsck"), tier=("Project and settings", 872), help="a deeper read-only check "
+            "of Foreman's state: open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, "
+            "journals whose last line is torn; exit 1 on any (T-1667)")
+    s.add_argument("--fix", action="store_true", help="remove only the stale locks; a broken lane or a torn journal "
+                   "is left for a person")
 
     s = add("sweep", lazy("fmeco", "cmd_sweep"), tier=("Running elsewhere", 1260), help="ask every other project about a fix: where a pattern is (or what "
                                                        "recall relates), a brief in its inbox; edits nothing there")
@@ -6020,7 +6025,12 @@ def _build_parser():
                    help="palette: CSS light-dark() roles, DTCG JSON or a Tailwind v4 @theme")
     s.add_argument("--out", metavar="PATH", help="extract: the file to write the Tokens section into (default: "
                                                  "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints)")
-    s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 93), help="motion check [PATH]: the Motion "
+    s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 93), help="PNG files with no Pillow (T-1630): info "
+            "PATH: size and mode; diff A B: the changed-pixel count and box (exit 1 when they differ or sizes do)")
+    s.add_argument("action", choices=["info", "diff"])
+    s.add_argument("paths", nargs="+", metavar="PATH", help="info: one PNG; diff: two, A then B")
+    s.add_argument("--out", metavar="PATH", help="diff: write a PNG of A faded with each changed pixel in red")
+    s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems)")
     s.add_argument("action", choices=["check"])
@@ -6331,6 +6341,7 @@ WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"s
                    "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
                    "design": ("action", {"lint", "palette", "contrast"}),  # T-1506, T-1507: these only read
+                   "img": ("out", {None}),  # T-1630: info and diff read; --out writes
                    "motion": ("action", {"check"})}
 
 
