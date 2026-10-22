@@ -350,7 +350,7 @@ class Canvas:
             return x
         end, last = min(self.w, right if right is not None else self.w), None
         for ch in str(s):
-            if unicodedata.combining(ch):  # an accent joins the letter before it, in the same cell
+            if _mark(ch):  # an accent joins the letter before it, in the same cell
                 if last is not None:
                     self.cells[y][last] = (self.cells[y][last][0] + ch, style)
                 continue
@@ -360,6 +360,13 @@ class Canvas:
                     self.cells[y][x] = (" ", style)  # half a wide character doesn't fit: a space
                 break
             if x >= 0:
+                row = self.cells[y]  # T-1516: writing over half of a wide character blanks its other half
+                if row[x][0] == "" and x:
+                    row[x - 1] = (" ", row[x - 1][1])
+                if x + 1 < self.w and row[x + 1][0] == "" and not wide:
+                    row[x + 1] = (" ", row[x + 1][1])
+                if wide and x + 2 < self.w and row[x + 2][0] == "":
+                    row[x + 2] = (" ", row[x + 2][1])
                 self.cells[y][x], last = (ch if ch.isprintable() else " ", style), x
                 if wide:  # it fills two columns: the second is an empty cell, so the row stays w columns
                     self.cells[y][x + 1] = ("", style)
@@ -389,10 +396,15 @@ class Canvas:
         return None
 
 
+def _mark(ch):
+    """T-1516: a character that fills no column of its own: an accent, a variation selector (U+FE0F), an enclosing mark."""
+    return bool(unicodedata.combining(ch)) or unicodedata.category(ch) in ("Mn", "Me")
+
+
 def _cells(ch):
     """The columns ch fills, by the rule put draws by: an accent none, a wide (CJK, emoji) character two.
     ponytail: an emoji ZWJ sequence counts by its parts; wcwidth-style tables if that ever matters."""
-    return 0 if unicodedata.combining(ch) else 2 if unicodedata.east_asian_width(ch) in "WF" else 1
+    return 0 if _mark(ch) else 2 if unicodedata.east_asian_width(ch) in "WF" else 1
 
 
 def width(s):
@@ -429,7 +441,7 @@ def tail(s, n):
     if len(_take(reversed(s), n)) == len(s):
         return s
     end = "".join(reversed(_take(reversed(s), n - 1 if n > 1 else max(n, 0))))
-    end = end.lstrip("".join(c for c in end if unicodedata.combining(c)))  # an accent whose letter was cut
+    end = end.lstrip("".join(c for c in end if _mark(c)))  # an accent whose letter was cut
     return "…" + end if n > 1 else end
 
 
