@@ -40,7 +40,7 @@ every cue is opt-in and earns its place.
 too high, that runs too long, or whose average level (RMS) is out of step with the family's. RMS is a rough stand-in
 for loudness; when the cues differ a lot in pitch, confirm by ear in step 8.
 
-```python
+```python no-run
 #!/usr/bin/env python3
 """sound_check.py CUE.wav... — peak, length and RMS spread for UI cues; exits 1 on any failure."""
 import array, math, sys, wave

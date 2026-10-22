@@ -18,6 +18,10 @@ This skill ensures all code follows security best practices and identifies poten
 
 ## Security Checklist
 
+1. Pick the sections the change touches (secrets, input, SQL, auth, XSS, CSRF, rate limits, data exposure, dependencies).
+2. Run each section's Verification Steps and note what fails.
+3. Add the security tests below for what you fixed, then walk the pre-deployment checklist.
+
 ### 1. Secrets Management
 
 #### FAIL: NEVER Do This

@@ -1,5 +1,5 @@
 <!-- Ported from ECC (https://github.com/affaan-m/ECC) `agents/code-architect.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Foreman: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
-> **Playbook** (source: ECC `agents/code-architect.md`). Designs feature architectures by analyzing existing codebase patterns and conventions, then providing implementation blueprints with concrete files, interfaces, data flow, and build order.
+> **Playbook** (source: ECC `agents/code-architect.md`). Designs feature architectures by analyzing existing codebase patterns and conventions, then providing implementation blueprints with concrete files, interfaces, data flow, and build order. Use when a feature needs a design that fits the codebase before any code is written.
 > Foreman note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Foreman equivalents.
 
 # Code Architect Agent
