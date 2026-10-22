@@ -451,6 +451,21 @@ def _write_plugin(data, pid, key, value, real, how):
     fmcore.write_atomic(real, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
+def set_key(key, value, surface=None, p=None):
+    """`fm settings set` and the fm code app's :set line (T-1572): `key` set on every surface that has it (or on
+    `surface`): ([(surface, value written, warnings)], [why each refused one wasn't written])."""
+    done, refused = [], []
+    for e in find(key, surface):
+        try:
+            if e["surface"] == "app":
+                done.append(("app", *set_app(key, value, p=p)))
+            else:
+                done.append(("plugin", set_plugin(key, value, p), []))
+        except SettingError as x:
+            refused.append(f"{e['surface']}: {x}")
+    return done, refused
+
+
 # ---------------------------------------------------------------- reading both, and the command
 
 def rows(entries=None, problems=None):
@@ -531,20 +546,16 @@ def cmd_settings(args):
         p = fmcli.resolve(args, create=False)
     except fmcli.UsageError:
         pass  # outside a project: no task grants, the guard decides as with none
-    done, refused = [], []
-    for e in entries:
-        try:
-            if e["surface"] == "app":
-                v, warn = set_app(args.key, args.value, p=p)
-                done.append({"surface": "app", "key": args.key, "value": v, "where": app_path(), "warnings": warn,
-                             "line": f"app: {args.key} = {T._toml(v)} in {app_path()} (the next fm code run reads it)"
-                                     + "".join(f"\n  now skipped: {w}" for w in warn)})
-            else:
-                v = set_plugin(args.key, args.value, p)
-                done.append({"surface": "plugin", "key": args.key, "value": v,
-                             "line": f"plugin: {args.key} = {json.dumps(v)} (the next Claude Code session reads it)"})
-        except SettingError as x:
-            refused.append(f"{e['surface']}: {x}")
+    got, refused = set_key(args.key, args.value, args.surface, p)
+    done = []
+    for surface, v, warn in got:
+        if surface == "app":
+            done.append({"surface": "app", "key": args.key, "value": v, "where": app_path(), "warnings": warn,
+                         "line": f"app: {args.key} = {T._toml(v)} in {app_path()} (the next fm code run reads it)"
+                                 + "".join(f"\n  now skipped: {w}" for w in warn)})
+        else:
+            done.append({"surface": "plugin", "key": args.key, "value": v,
+                         "line": f"plugin: {args.key} = {json.dumps(v)} (the next Claude Code session reads it)"})
     fmcli.out(args, {"set": done, "refused": refused}, "\n".join([d["line"] for d in done] + refused))
     if refused:
         import fmcore
