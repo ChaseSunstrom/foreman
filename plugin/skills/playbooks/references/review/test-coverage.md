@@ -1,5 +1,5 @@
 <!-- Ported from ECC (https://github.com/affaan-m/ECC) `agents/pr-test-analyzer.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Foreman: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
-> **Playbook** (source: ECC `agents/pr-test-analyzer.md`). Review pull request test coverage quality and completeness, with emphasis on behavioral coverage and real bug prevention.
+> **Playbook** (source: ECC `agents/pr-test-analyzer.md`). Review pull request test coverage quality and completeness, with emphasis on behavioral coverage and real bug prevention. Use when reviewing whether a change's tests would catch it breaking.
 > Foreman note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Foreman equivalents.
 
 # PR Test Analyzer Agent

@@ -3580,6 +3580,9 @@ def cmd_check(args):
         out(args, {"repeat": rows}, "\n".join(f"{'✓' if r['passed'] == n else '✗'} {r['passed']}/{n}  {r['cmd']}"
                                               for r in rows) or "no checks (fm check add '<cmd>')")
         return 0 if all(r["passed"] == n for r in rows) else 1
+    if args.action == "playbooks":  # T-1505: the playbook library's lint and reach report
+        import fmplaybooks
+        return fmplaybooks.cmd(args, out)
     if args.action == "ambient":  # T-0705
         if args.words[:1] == ["run"]:  # the detached run an edit starts
             import fmambient
@@ -5569,12 +5572,14 @@ def _build_parser():
                                                         "a throwaway worktree) and capture it as a FIX (T-0458)")
     s = add("check", cmd_check, tier=("Every task", 80), help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
     s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected",
-                                                                          "ambient", "onwrite"])
+                                                                          "ambient", "onwrite", "playbooks"])
     s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); paths: its number, then "
                                             "the globs it covers (none: always run); affected: a command with {tests} "
                                             "(paths) or {names} (file names without extension); onwrite: GLOB and a "
                                             "command with {file}, run on each matching write (5 s; a failure blocks; "
-                                            "GLOB alone removes it; nothing lists them)")
+                                            "GLOB alone removes it; nothing lists them); playbooks: lint the playbook "
+                                            "library and name the unread ones, `ratchet` records each one's size "
+                                            "as its new ceiling (T-1505)")
     s.add_argument("--for", dest="for_ext", metavar="EXT", help="affected: the command is for tests with this extension "
                                                                 "(.tsx), run beside the default (T-1135)")
     s.add_argument("--timeout", type=float, default=600, help="seconds per command")
