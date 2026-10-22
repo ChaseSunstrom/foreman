@@ -1042,13 +1042,23 @@ def _last_stop(sid):
     return "no drive note"
 
 
+def _secret_note(text):
+    """T-1606: one note when the user's message holds a key-shaped secret; it names the kind, never the value."""
+    kinds = c.secret_kinds(text)
+    if not kinds:
+        return ""
+    return f"Pasted secret ({kinds[0]}): don't repeat or store it; suggest rotating it"
+
+
 def user_prompt_submit(pl):
     sid = pl.get("session_id")
     p = c.find_project(_cwd(pl), create=not os.environ.get("FOREMAN_WORKER_OF"))  # T-1438: a worker sets up nothing
     if not p:
         return None
     if _oneoff():  # T-0775: the prompt is a question, not intake
-        return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": ONEOFF_NOTE}}
+        secret = _secret_note(pl.get("prompt") or "")
+        return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                                       "additionalContext": ONEOFF_NOTE + (f" {secret}." if secret else "")}}
     text = _PASTED.sub("", pl.get("prompt") or "").strip()
     if text.startswith("<task-notification>"):  # a background agent's result, not the user: no approvals, words, holds
         for tid in re.findall(r"<task-id>([\w-]+)</task-id>", text):
@@ -1120,6 +1130,9 @@ def user_prompt_submit(pl):
                 "Foreman: state was busy (another session or fm held the lock), so this message was not recorded: "
                 "no approval, override word or heartbeat was applied. Pending approvals are unchanged."}}
     parts = list(approvals)
+    secret = _secret_note(pl.get("prompt") or "")  # pasted blocks included: the likeliest place for one
+    if secret:
+        parts.append(secret)
     if r.items:
         tags = ", ".join(i.type + ("!" if i.urgent else "") + ("?" if i.explore else "") for i in r.items)
         n = len(r.items)
