@@ -920,11 +920,14 @@ def task_finish(p, args):
             raise UsageError(f"--lens takes '<lens>: <result>' with a lens of {', '.join(c.AUDIT_LENSES)}; got {spec!r}")
         lenses.append((lens.strip(), result.strip()))
     runs = {}
+    args.timings, t_close = [], time.monotonic()  # T-1462: (cmd, seconds) of every run, to name the slowest
 
     def run(cmd):
         if cmd not in runs:
             guard_stored(p, b, cmd)  # T-0901
+            t0 = time.monotonic()
             runs[cmd] = c.run_command(p.root, cmd, args.timeout)
+            args.timings.append((cmd, time.monotonic() - t0))
         return runs[cmd]
     # T-0142: an open step whose evidence is already recorded (fm task evidence --step) just closes; --run is only for
     # what has neither a verify command nor evidence, and the error names it
@@ -1021,6 +1024,11 @@ def task_finish(p, args):
             print(fmledger.receipt(p))
         except OSError as e:  # the close has landed; an unreadable archive must not make it look failed
             print(f"Ledger: unreadable ({e.strerror or e})")
+    total = time.monotonic() - t_close
+    if not rc and not getattr(args, "json", False) and args.timings and total > float(
+            os.environ.get("FOREMAN_SLOW_CLOSE_S") or 60):  # T-1462: which run made the close slow
+        cmd, secs = max(args.timings, key=lambda t: t[1])
+        print(f"Slowest: {c.fit(c.plain(cmd), 80)} {secs:.0f} s (of {total:.0f} s)")
     started = None
     if not rc:
         try:
@@ -1064,12 +1072,16 @@ def _close_affected(p, b, runs, args):
         return
     guard_stored(p, b, cmd)
     env, timeout = _skip_env(red_first_tests(p, b, [cmd])), (args.timeout if args.timeout > 0 else None)
+    t0 = time.monotonic()
     code, output = c.run_command(p.root, cmd, timeout, env=env)
     if code and code != 124:
         code, output = c.run_command(p.root, cmd, timeout, env=env)  # a flake passes the second time
+    secs = time.monotonic() - t0
+    if hasattr(args, "timings"):
+        args.timings.append((cmd, secs))
     names = c.failing_tests(output) if code else []
-    c.log_event(p, "close_affected", task=b.id, data={"cmd": c.fit(cmd, 200), "exit": code, "failing": names[:20]},
-                session=session())
+    c.log_event(p, "close_affected", task=b.id, data={"cmd": c.fit(cmd, 200), "exit": code, "failing": names[:20],
+                                                      "s": round(secs, 1)}, session=session())
     say = (lambda m: None) if getattr(args, "json", False) else print
     if not code:
         return
