@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm audit prep on a builder lane's task adds the main checkout's uncommitted edits only when that task is the main checkout's own focused task, so a lane review no longer carries another task's files (T-1579).
 - Nine playbooks: incidents (evidence before rollback for security events), observability, data-viz, task-first docs with a run_examples.py runner that fails on any nonzero exit, decks and reports, scrollytelling with cold deep links, demo production, UI sound design with peak and RMS checks, and Python's standard library first; stage indexes for ops, context, release and lang keep the playbooks skill under its 10,000-character budget (T-1504).
 - fm code app: a settings screen (`,`) on fm settings' one schema: every setting by group with value, default and a badge, / to search, m for changed-only, and a :set line that writes through fm settings. fm settings set refuses a value whenever the new file has an error for that key, and asks the guard whenever it isn't run from a terminal, so blanking CLAUDECODE no longer skips it (T-1572).
 - /foreman:settings lists, gets and sets the fm code app's and the foreman-ui pane's settings through fm settings; the pane applies a changed motion or palette on its next 2-second poll, no restart, and turning motion off mid-work stops its clocks (T-1574).

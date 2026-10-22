@@ -112,3 +112,25 @@ class AuditRun(HookCase):
         diff = open(os.path.join(self.project().dir, "audits", f"{self.tid}.diff")).read()
         self.assertIn("CHANGELOG.md", diff)
         self.assertIn("+x = 2", diff, "the uncommitted a.py edit is in the diff too")
+
+    def test_prep_diff_of_a_lane_task_leaves_out_another_tasks_uncommitted_edits(self):  # T-1579
+        import subprocess
+        g = lambda *a: subprocess.run(["git", "-C", self.repo, *a], check=True, capture_output=True)  # noqa: E731
+        g("add", "a.py")
+        g("commit", "-qm", "a")
+        g("branch", "foreman/lane")
+        g("checkout", "-q", "foreman/lane")
+        with open(os.path.join(self.repo, "CHANGELOG.md"), "w") as f:
+            f.write("- a line\n")
+        g("add", "CHANGELOG.md")
+        g("commit", "-qm", "changelog")
+        g("checkout", "-q", "main")
+        with open(os.path.join(self.repo, "a.py"), "w") as f:
+            f.write("x = 2\n")  # the main checkout's own task, not the lane's
+        b = next(x for x in c.load_briefs(self.project()) if x.id == self.tid)
+        b.meta.update(lane_branch="foreman/lane", lane=os.path.join(self.repo, ".claude", "worktrees", "lane"))
+        c.save_brief(self.project(), b)
+        self.fm("audit", "prep", self.tid)
+        diff = open(os.path.join(self.project().dir, "audits", f"{self.tid}.diff")).read()
+        self.assertIn("CHANGELOG.md", diff)
+        self.assertNotIn("+x = 2", diff, "another task's uncommitted edit isn't the lane's")
