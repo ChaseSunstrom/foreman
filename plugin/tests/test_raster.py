@@ -313,22 +313,45 @@ class Cube(ForemanTestCase):
         for tris in ([near, far], [far, near]):
             self.assertEqual(centre(fmraster.render(tris, 8, 8, light=(0, 0, -1))), RED)
 
-    def test_back_faces_and_the_near_plane_are_dropped(self):
+    def test_back_faces_and_zero_areas_are_dropped(self):
         a, b, c, colour = facing(10)
         self.assertEqual(fmraster.render([(a, c, b, colour)], 8, 8), bytes(8 * 8 * 3), "a back face is culled")
         dot = (1, 1, 10)
         self.assertEqual(fmraster.render([(dot, dot, dot, colour)], 8, 8), bytes(8 * 8 * 3),
                          "a zero-area triangle has every edge function 0: its depth would divide by zero")
-        self.assertEqual(fmraster.render([((-5, -5, 0), b, c, colour)], 8, 8), bytes(8 * 8 * 3),
-                         "a vertex on the camera's plane would divide by zero")
-        far = facing(10**6)
-        self.assertEqual(fmraster.render([far], 8, 8), bytes(8 * 8 * 3), "too far to cover a pixel's centre")
+        far = [(1, 1, 10**6), (1, 5, 10**6), (5, 1, 10**6), colour]
+        self.assertEqual(fmraster.render([far], 8, 8), bytes(8 * 8 * 3),
+                         "a front face whose projection rounds to one point is zero-area too")
+        self.assertEqual(fmraster.render([((-5, -5, 0), (0, 5, 0), (5, -5, -9), colour)], 8, 8), bytes(8 * 8 * 3),
+                         "a triangle wholly behind the near plane is gone")
+
+    def test_a_floor_crossing_the_camera_plane_is_clipped_not_dropped(self):
+        # a quad on y = -10 from behind the camera (z = -50) to ahead of it (z = 100): one triangle has one vertex
+        # behind (clipped to two), the other two (clipped to one); rows 5-7 see it nearer than z = 100, rows 0-4 don't
+        v = (-50, -10, -50), (-50, -10, 100), (50, -10, 100), (50, -10, -50)
+        floor = [(v[0], v[1], v[2], RED), (v[0], v[2], v[3], RED)]
+        want = bytes(5 * 8 * 3) + bytes(RED) * (3 * 8)
+        self.assertEqual(fmraster.render(floor, 8, 8, light=(0, 1, 0)), want)
+        self.assertEqual(fmraster.render(floor[::-1], 8, 8, light=(0, 1, 0)), want, "no crack between the halves")
+
+    def test_the_work_is_capped_before_drawing(self):
+        side = 1 << 11  # a frame of MAX_PIXELS: allowed, but 17 triangles over all of it is past 16 frames' work
+        assert side * side == fmraster.MAX_PIXELS
+        big = facing(10, half=10**6)
+        with self.assertRaises(ValueError) as e:
+            fmraster.render([big] * 17, side, side)
+        self.assertIn("budget", str(e.exception))
 
     def test_only_integers_go_in(self):
         a, b, c, colour = facing(10)
-        for bad in ([((-5.0, -5, 10), b, c, colour)], [(a, b, c, (255, 0))], [(a, b, c, (256, 0, 0))]):
+        for bad in ([((-5.0, -5, 10), b, c, colour)], [(a, b, c, (255, 0))], [(a, b, c, (256, 0, 0))],
+                    [(a, b, c, 3)], [(a, b, c, "abc")]):
             with self.subTest(bad=bad), self.assertRaises((TypeError, ValueError)):
                 fmraster.render(bad, 8, 8)
+        for kw in ({"focal": 0}, {"focal": 2.5}, {"ambient": -1}, {"ambient": 257}, {"ambient": 1.5},
+                   {"light": (0, 0, 1.0)}, {"light": (0, 1)}, {"background": 0}):
+            with self.subTest(kw=kw), self.assertRaises((TypeError, ValueError)):
+                fmraster.render([], 8, 8, **kw)
         with self.assertRaises(ValueError):
             fmraster.render([], 0, 8)
         with self.assertRaises(ValueError):
