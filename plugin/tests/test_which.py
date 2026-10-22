@@ -27,8 +27,7 @@ class Which(ForemanTestCase):
         self.assertNotIn("foreman:status", out, "a skill sharing no word isn't listed")
         self.assertIn("fm playbooks show ui/scene-3d", out)
         self.assertIn("fm playbooks show ui/motion", out)
-        self.assertLess(out.index("ui/scene-3d"), out.index("fm playbooks show ui/INDEX") if "ui/INDEX" in out
-                        else len(out), "procedures, not the index")
+        self.assertNotIn("INDEX", out, "procedures, not the index")
         got = json.loads(self.fm("which", "make a 3D hero with motion", "--json", env=env).stdout)
         self.assertIn("fm playbooks show ui/motion", [x["load"] for x in got["playbooks"]])
 
@@ -47,6 +46,41 @@ class Which(ForemanTestCase):
     def test_a_verb_is_listed_with_its_command(self):
         out = self.fm("which", "notify me when a run finishes").stdout
         self.assertIn("fm notify", out)
+
+    def test_one_common_word_is_no_match(self):
+        # T-1699 review: "page" alone listed the UI playbooks and fm page for a login task nothing covers
+        p = self.fm("which", "add a login page with oauth", check=False)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("Nothing matches", p.stdout)
+
+    def test_foremans_own_release_tool_is_not_a_users_release(self):
+        out = self.fm("which", "ship a release").stdout
+        self.assertIn("fm playbooks show release/release-and-changelog", out)
+        self.assertNotIn("fm release", out)
+
+    def test_only_a_playbooks_header_is_indexed(self):
+        # a playbook without a ## section was indexed whole, so its body's common words outranked real headers
+        import fmplaybooks
+        import fmwhich
+        root = os.path.join(self.tmp, "books")
+        os.makedirs(os.path.join(root, "references", "ui"))
+        with open(os.path.join(root, "references", "ui", "long.md"), "w") as f:
+            f.write("# Long\n\nUse when a thing.\n\n" + "filler words here. " * 100 + "zebra crossing\n")
+        old, fmplaybooks.ROOT = fmplaybooks.ROOT, root
+        try:
+            text = fmwhich.playbooks()[0]["text"]
+        finally:
+            fmplaybooks.ROOT = old
+        self.assertNotIn("zebra", text)
+        self.assertLessEqual(len(text), fmwhich.HEADER_MAX + 20)
+
+    def test_the_stemmer_is_fmrecalls_and_collapses_doubled_consonants(self):
+        import fmrecall
+        import fmwhich
+        self.assertEqual(fmrecall.stem("shipping"), fmrecall.stem("ship"))
+        self.assertEqual(fmrecall.stem("stopped"), "stop")
+        self.assertEqual(fmrecall.stem("calling"), "call", "l, s and z stay doubled")
+        self.assertEqual(fmwhich.words("Shipping 3D motions"), fmrecall.words("ship 3d motion", cut=6))
 
     def test_an_unknown_task_says_so(self):
         p = self.fm("which", "xyzzy frobnicate quux", check=False)
