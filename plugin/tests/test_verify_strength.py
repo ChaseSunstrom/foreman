@@ -115,6 +115,28 @@ class VerifyStrength(ForemanTestCase):
         self.assertIn("1 with side effects skipped", p.stdout)
         self.assertNotIn("test -d", p.stdout, "step evidence is work, not a declared check")
 
+    def test_point_in_time_skipped_and_flake_rerun(self):
+        # T-1380: release canaries failed on a release task's `git log origin/main …` check (true only until the next
+        # release) and on suites that flaked under the canaries' side-by-side load, then passed
+        self.write("flake.sh", "if [ -f once ]; then exit 0; fi\n: > once\nexit 1\n")
+        self.write("once", "")
+        self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--step", "do it", "--ac", "flaky",
+                "--ac", "released", "--focus")
+        self.fm("task", "evidence", "T-0001", "--ac", "1", "--run", "sh flake.sh")
+        self.fm("task", "ac", "T-0001", "check", "1")
+        self.fm("task", "evidence", "T-0001", "--ac", "2", "--run", "git rev-parse --verify -q origin/main || true")
+        self.fm("task", "ac", "T-0001", "check", "2")
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "test -d .")
+        self.fm("task", "step", "T-0001", "done", "1")
+        self.fm("task", "audit", "T-0001", "self", "checked", "ok")
+        self.fm("task", "done", "T-0001")
+        os.remove(os.path.join(self.repo, "once"))  # the next run fails once, then passes: a flake
+        p = self.fm("sentinel", check=False)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertIn("1 flaky", p.stdout)
+        self.assertIn("1 point-in-time skipped", p.stdout)
+        self.assertNotIn("origin/main", p.stdout)
+
     def test_a_timed_out_check_kills_its_whole_process_group(self):
         marker = os.path.join(self.tmp, "orphan")
         start = time.time()
