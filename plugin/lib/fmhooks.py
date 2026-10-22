@@ -1725,7 +1725,7 @@ def _pre_tool_use(raw):
         builders = (lambda: _fix_note(pl, p), lambda: _dep_note(pl, p), lambda: _veto_note(pl, p),
                     lambda: _scope_note(pl, p, act), lambda: _tripwire_note(pl, p, act), lambda: _step_note(pl, p, act),
                     lambda: _ambient_note(p), lambda: _bus_note(pl), lambda: _card_note(pl, p, act),
-                    lambda: _test_first_note(pl, p, act))
+                    lambda: _test_first_note(pl, p, act), lambda: _design_note(pl, p, act))
         note = " ".join(_said_once(pl, list(filter(None, [made, saved, slow, warn] + [_each(b) for b in builders]))))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
@@ -1838,6 +1838,29 @@ def _test_first_note(pl, p, act):
     except Exception:
         log_error("PreToolUse", _tb())
         return None
+
+
+_UI_EXT = {".css", ".scss", ".html", ".jsx", ".tsx", ".vue", ".svelte", ".astro"}  # ponytail: a local copy; share
+# fmcore.ui_paths' list (T-1501) once both are on main
+
+
+def _design_note(pl, p, act):
+    """T-1514: a task's first edit of a UI file, in a repo with no DESIGN.md (or docs/DESIGN.md), gets one note asking
+    for a design direction first. The extension test comes before any file read, so other edits cost nothing; the
+    marker (cards.json, as test-first's) is set only when the note goes out. Never blocks."""
+    if not p or not act or pl.get("tool_name") not in FILE_TOOLS:
+        return None
+    path = _edit_path(pl)
+    if not path or os.path.splitext(path)[1].lower() not in _UI_EXT or not _in_project(path, p):
+        return None
+    if any(os.path.isfile(os.path.join(p.root, *d)) for d in (("DESIGN.md",), ("docs", "DESIGN.md"))) \
+            or _card_injected(p, act.id, ":design-direction"):
+        return None
+    _card_mark(p, act.id, ":design-direction")
+    skill = os.path.isfile(os.path.join(c.PLUGIN_ROOT, "skills", "directions", "SKILL.md"))
+    return (f"Foreman: design direction: {act.id} edits UI and the repo has no DESIGN.md. Pick a direction and write "
+            f"DESIGN.md before more UI (playbook ui/design-direction.md{', or /foreman:directions' if skill else ''}). "
+            "A nudge, not a block.")
 
 
 def _said_once(pl, parts):
