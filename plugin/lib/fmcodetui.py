@@ -1140,23 +1140,33 @@ def _diff_view(cv, st, app, cfg):
         cv.line(iy + r, ix, [(line.expandtabs(4), _diff_style(line))], ix + iw)
 
 
-def _list_view(title, note, row, head=None, foot=None, empty="nothing here yet"):
-    """A list over the screen, the selected row highlighted and kept in sight; row(item, iw) draws one. head(app, iw)
-    and foot(app, iw) are lines fixed above and below it; a view with a foot keeps its full height as the list
-    changes (a search narrowing it doesn't make the box jump)."""
+def _list_view(title, note, row, head=None, foot=None, empty="nothing here yet", sized=False):
+    """A list over the screen, the selected row highlighted and kept in sight; row(item) draws one (row(item, iw)
+    when sized). head(app, iw) and foot(app, iw) are lines fixed above and below it; a view with a foot keeps its full
+    height as the list changes (a search narrowing it doesn't make the box jump). On a short terminal the list keeps
+    a row: the foot's lines go first (its last, the line being typed, stays longest), then the head."""
     def view(cv, st, app, cfg):
         iy, ix, ih, iw = _overlay(cv, cfg, title(app) if callable(title) else title,
                                   note(app) if callable(note) else note, 110,
                                   cv.h - 4 if foot else min(len(app.items) + 4, cv.h - 4))
+        if ih < 2:
+            return
         top, bottom = head(app, iw) if head else [], foot(app, iw) if foot else []
+        while ih - 1 - len(top) - len(bottom) < 1:
+            if len(bottom) > 1:
+                bottom = bottom[1:]
+            elif top:
+                top = []
+            else:
+                bottom = []
         for r, segs in enumerate(top):
             cv.line(iy + 1 + r, ix, segs, ix + iw)
-        y, lh = iy + 1 + len(top), max(1, ih - 1 - len(top) - len(bottom))
+        y, lh = iy + 1 + len(top), ih - 1 - len(top) - len(bottom)
         if not app.items:
             cv.line(y, ix, [(empty, "dim")], ix + iw)
         first = max(0, app.item_index - lh + 1)
         for r, item in enumerate(app.items[first:first + lh]):
-            segs = row(item, iw)
+            segs = row(item, iw) if sized else row(item)
             if first + r == app.item_index:
                 segs = [(pad("".join(t for t, _ in segs), iw), "select")]
             cv.line(y + r, ix, segs, ix + iw)
@@ -1165,7 +1175,7 @@ def _list_view(title, note, row, head=None, foot=None, empty="nothing here yet")
     return view
 
 
-def _history_row(item, iw=None):
+def _history_row(item):
     chip = {"closed": (" DONE ", "chip_ok"), "blocked": (" STOP ", "chip_bad"), "error": (" STOP ", "chip_bad")}.get(
         item["status"], (" ···· ", "chip_todo"))
     when = time.strftime("%b %d %H:%M", time.localtime(item["ts"])) if item.get("ts") else ""
@@ -1173,7 +1183,7 @@ def _history_row(item, iw=None):
             ("  " + item["request"], "text")]
 
 
-def _picker_row(item, iw=None):
+def _picker_row(item):
     kind, name = item
     return [(" MODEL  " if kind == "model" else " WORKER ", "chip_accent" if kind == "model" else "chip_warn"),
             ("  " + name, "text")]
@@ -1183,7 +1193,7 @@ def _num(v):
     return v if isinstance(v, (int, float)) and v == v else 0
 
 
-def _project_row(p, iw=None):
+def _project_row(p):
     """T-1330: one Foreman project on the home: what's active, its counts, or why it can't be shown."""
     name = str(p.get("project") or "?")
     if p.get("error"):
@@ -1201,7 +1211,7 @@ _SECTION = {"active": (" ACTIVE  ", "chip_accent"), "queue": (" QUEUED  ", "chip
             "inbox": (" INBOX   ", "chip_todo"), "blocked": (" BLOCKED ", "chip_bad")}
 
 
-def _work_row(it, iw=None):
+def _work_row(it):
     """T-1330: one line of a project's view: a task by section, a past run, or why its state can't be read."""
     if it.get("kind") == "error":
         return [(" ERROR ", "chip_bad"), ("  " + str(it.get("text")), "bad")]
@@ -1240,7 +1250,7 @@ def _fm_json(*args):
 
 _GROUPS = {"look": "Look", "colors": "Colours", "layout": "Layout", "keys": "Keys", "pane": "Claude Code pane"}
 _WHERE = {"app": "this app · tui.toml · applies now", "plugin": "the foreman-ui pane · Claude Code's settings.json · "
-                                                                "applies from the next session"}
+                                                                "applies within seconds"}
 _SET_HINTS = (("/", "search"), ("m", "changed only"), (":", "set"), ("Enter", "edit"), ("Esc", "close"))
 
 
@@ -1276,10 +1286,11 @@ def _set_cols(iw):
 
 
 def _badge(r, bw):
-    """When a change applies: now is the quiet common case, the pane's next session the one that stands out."""
+    """When a change applies: now is the quiet common case; the pane, which reads its options again within seconds
+    (it polls settings.json), is the one that stands out."""
     if r["surface"] == "app":
         return " NOW ", "chip_todo"
-    return (" NEXT SESSION " if bw >= 14 else " NEXT "), "chip_warn"
+    return (" IN SECONDS " if bw >= 14 else " SOON "), "chip_warn"
 
 
 def _setting_row(r, iw):
@@ -1342,7 +1353,7 @@ VIEWS = {"help": _help_view, "diff": _diff_view, "history": _list_view("Past run
                                "Esc projects",
                                _work_row),
          "settings": _list_view("Settings", _settings_note, _setting_row, _settings_head, _settings_foot,
-                                "no setting matches")}
+                                "no setting matches", sized=True)}
 
 
 # ---------------------------------------------------------------- colours and the SVG snapshot
@@ -1459,6 +1470,7 @@ class App:
         # T-1572: the settings screen: every setting, its search, changed-only, the :set line and what it last did
         self.set_rows, self.set_problems, self.set_query, self.set_line = [], [], "", ""
         self.set_typing, self.set_modified, self.set_note, self.no_colour = "", False, None, False
+        self.home_items, self.home_index = None, 0  # the home list a view over it goes back to
         self.commands = {"quit": self.quit, "new": self.new, "stop": self.stop, "resume": self.resume,
                          "help": self.help, "focus": self.next_focus, "up": lambda: self.move(-1),
                          "down": lambda: self.move(1), "page_up": lambda: self.move(-10),
@@ -1502,8 +1514,9 @@ class App:
                 text = "".join(c for c in k[1].replace("\t", " ") if c == "\n" or c.isprintable())
                 self.input = (self.input + text)[:PASTE_CAP]
             elif self.mode == "settings" and self.set_typing and k[0] == "paste":  # a colour, a list: one line
-                for ch in " ".join(k[1].split()):
-                    self._settings_key(ch)
+                for ch in " ".join(k[1].split())[:PASTE_CAP]:
+                    if ch.isprintable():  # never Esc, Delete or Enter: a paste is text, not keys (T-1316)
+                        self._settings_key(ch)
             return None
         if self.mode == "prompt":
             return self._prompt_key(k)
@@ -1623,6 +1636,8 @@ class App:
         back, self.view_back = self.view_back, "main"
         if back == "project" and self.project is not None:
             self.mode, self.items, self.item_index = "project", self.project_items, self.project_index
+        elif back == "home" and self.home_items is not None:
+            self.mode, self.items, self.item_index, self.home_items = "home", self.home_items, self.home_index, None
         elif back == "home":
             self.show_home()
         else:
@@ -1672,6 +1687,8 @@ class App:
             return self.quit()
         elif cmd == "settings":
             self.view_back = self.mode
+            if self.mode == "home":  # back to this list where it was, not read again from the top
+                self.home_items, self.home_index = self.items, self.item_index
             self.show_settings()
         elif self.mode == "home" and item and cmd in ("expand", "new"):
             self.open_project(item)
@@ -1835,7 +1852,7 @@ class App:
         try:  # "off" as TOML writes it is the word off; a list or a table stays text, as fm settings set takes it
             got = tomllib.loads(f"v = {value}")["v"]
             value = got if isinstance(got, str) else value
-        except tomllib.TOMLDecodeError:
+        except (tomllib.TOMLDecodeError, RecursionError):
             pass
         if not fmsettings.find(key, surface):
             self.set_note = (f"{key}: no such setting{f' in the {surface}' if surface else ''}", "bad")
@@ -1846,7 +1863,7 @@ class App:
             done, refused = [], [f"{key}: not written ({type(e).__name__}: {e})"]
         if any(s == "app" for s, _, _ in done):
             self._settings_reload()
-        said = [f"{s}: {key} = {_shown(v, s)} ({'now' if s == 'app' else 'from the next Claude Code session'})"
+        said = [f"{s}: {key} = {_shown(v, s)} ({'now' if s == 'app' else 'the pane reads it within seconds'})"
                 + "".join(f"; now skipped: {w}" for w in warn) for s, v, warn in done]
         self.set_note = ("; ".join(said + refused), "bad" if refused else "ok")
         self._settings_load(keep=(done[0][0] if done else surface or "app", key))
@@ -2176,7 +2193,7 @@ def load_config(path=None):
             user = tomllib.load(f)
     except FileNotFoundError:
         return cfg, []
-    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError) as e:
+    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError, RecursionError) as e:
         return cfg, [f"{path}: {(str(e).splitlines() or [type(e).__name__])[0]}"]
     errors = []
     bad = lambda msg: errors.append(f"{path}: {msg}")
