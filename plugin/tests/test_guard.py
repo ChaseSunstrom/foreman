@@ -2122,11 +2122,52 @@ class TokenFallback(GuardCase):
                 self.assertIsNotNone(want, plain)
                 self.assertBlocked(self.bash(hidden), want.category, hidden)
 
+    def test_a_quoted_operator_is_data_not_a_redirect(self):
+        # review: '>' read as a bare > made -rf the redirect's target, so rm saw no recursive flag (both paths)
+        for prefix in ("", "echo \"$(echo 'a\"b')\" ; "):
+            for hidden in ("rm '>' -rf /home/x/data", "rm \\> -rf /home/x/data", "rm \"<\" -rf /home/x/data",
+                           "rm '|' -rf /home/x/data", "rm ';' -rf /home/x/data"):
+                with self.subTest(cmd=prefix + hidden):
+                    self.assertBlocked(self.bash(prefix + hidden), "rm-outside", prefix + hidden)
+        # self-review: the masks' own stand-in characters written into the line mustn't turn them off
+        for cmd in ("echo   \x02; rm '>' -rf /home/x/data",
+                    "echo \"$(echo 'a\"b')\" \x02  ; X='a b' cat ~/.ssh/id_ed25519"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNotNone(self.bash(cmd), cmd)
+        self.assertEqual(g._tokens("echo '>'  "),
+                         ["echo", ">", "", ""])
+        self.assertIsNone(self.bash("grep '>' README.md"))  # data: nothing is written
+        self.assertBlocked(self.bash("echo hi >'{home}/.bashrc'"), "system")  # a quoted target is still a target
+
+    def test_quoted_spaces_stay_in_their_word_after_nested_quotes(self):
+        # review: the space split made X='a an assignment and b' the command name; -C took 'x, and y' was the name
+        for hidden in ("echo \"$(echo 'a\"b')\" ; X='a b' cat ~/.ssh/id_ed25519",
+                       "echo \"$(echo 'a\"b')\" ; env -C 'x y' cat ~/.ssh/id_ed25519",
+                       "X='a b' cat ~/.ssh/id_ed25519\necho 'x"):
+            with self.subTest(hidden=hidden):
+                self.assertBlocked(self.bash(hidden), "credentials", hidden)
+
+    def test_an_awk_program_in_a_substitution_tail_stays_strict(self):
+        # the tail's split makes "sh"}' a piped name: debris, not a pipe into sh; the line itself is still refused
+        self.assertEqual(g._tokens("x)\" | awk '{print | \"sh\"}'")[:8],
+                         ["x", ")", '"', "|", "awk", "'{print", "|", '"sh"}\''])
+        for cmd in ("echo \"$(x)\" | awk '{{print | \"sh\"}}'",
+                    "for f in a; do echo \"$(cat $f)\"; done | awk '{{print | \"sh\"}}'"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.bash(cmd), "system", cmd)
+
     def test_the_words_are_bash_words(self):
-        # the split shlex falls back to: each word whose own quotes balance read as bash reads it; an odd one kept
+        # where shlex fails, two readings: the space split, each word whose own quotes balance read as bash reads it
+        # and an odd one kept; then shlex with the nested " masked and an odd quote run to the end
         self.assertEqual(g._tokens("echo \"$(echo 'a\"b')\" ; 'cat' x"),
-                         ["echo", '"$', "(", "echo", 'a"b', ")", '"', ";", "cat", "x"])
-        self.assertEqual(g._tokens("'cat' \"a\"'b' \\x; echo 'a"), ["cat", "ab", "x", ";", "echo", "'a"])
+                         ["echo", '"$', "(", "echo", 'a"b', ")", '"', ";", "cat", "x", ";", ";",
+                          "echo", "$(echo 'a\"b')", ";", "cat", "x"])
+        self.assertEqual(g._tokens("'cat' \"a\"'b' \\x; echo 'a"),
+                         ["cat", "ab", "x", ";", "echo", "'a", ";", ";", "cat", "ab", "x", ";", "echo", "a"])
+        self.assertEqual(g._tokens("echo \"$(a)\" (x 'y"), ["echo", '"$', "(", "a", ")", '"', "(", "x", "'y", ";", ")",
+                                                          ";", "echo", "$(a)", "(", "x", "y"])  # depth 0 again
+        self.assertIsInstance(g._tokens("rm '>' x")[1], g._Quoted)
+        self.assertEqual(g._split(g._tokens("find . -exec rm {} \\; -o -print"))[0].argv[-3:], [";", "-o", "-print"])
         self.assertIsNone(self.bash("echo \"$(echo 'a\"b')\" ; 'cat' README.md"))
 
 

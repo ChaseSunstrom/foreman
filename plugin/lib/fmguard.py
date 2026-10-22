@@ -1113,18 +1113,120 @@ def _decode_ansi_c(text):
     return "".join(res) + "".join(cur)
 
 
+class _Quoted(str):
+    """T-1561 review: a word of quoted or escaped operator characters ('>', \\;): data to bash, never a redirect or a
+    separator. _split reads it as a word; it still equals its text (find -exec … ';' ends at it)."""
+
+
+_OPS = ";&|()<>"
+_OP_WORD = re.compile(r"[;&|()<>]+")
+# what shlex mustn't see as itself, as plain word characters: _ESC and a digit is _ENCODED's character at that place,
+# _ESC _ESC is _ESC (so no character a line already holds can pass for one: self-review)
+_ESC, _ENCODED = "", _OPS + '"'
+_DECODE = re.compile(_ESC + "(.)", re.S)
+
+
+def _decode(token):
+    return _DECODE.sub(lambda m: _ESC if m.group(1) == _ESC else _ENCODED[int(m.group(1))], token)
+
+
+def _hide_quoted_ops(text, encoded=False):
+    """(text with each operator character inside quotes or after a backslash encoded, the quote left open at its end):
+    shlex drops the quotes, so a quoted '>' came out as the bare redirect >. Quoting as shlex reads it. encoded: the
+    text's _ESC pairs are encoded already (_mask_nested_dq)."""
+    hide = lambda c: _ESC + str(_ENCODED.index(c)) if c in _OPS else c  # noqa: E731
+    out, q, i = [], None, 0
+    while i < len(text):
+        ch = text[i]
+        if ch == _ESC:
+            out.append(text[i:i + 2] if encoded else _ESC + _ESC)
+            i += 2 if encoded else 1
+            continue
+        if ch == "\\" and q != "'":
+            nxt = text[i + 1:i + 2]
+            out.append(ch + (hide(nxt) if nxt != _ESC else ""))
+            i += 2 if nxt and nxt != _ESC else 1
+            continue
+        if q:
+            q = None if ch == q else q
+        elif ch in "'\"":
+            q = ch
+        out.append(hide(ch) if q else ch)
+        i += 1
+    return "".join(out), q
+
+
+def _shlex_words(text, close=False, encoded=False):
+    """shlex's words, quoted operators as _Quoted; close: an odd quote runs to the end of the text."""
+    hidden, q = _hide_quoted_ops(text, encoded)
+    lex = shlex.shlex(hidden + (q or "") if close else hidden, posix=True, punctuation_chars=_OPS)
+    lex.whitespace_split = True
+    lex.commenters = ""
+    out = []
+    for t in lex:
+        w = _decode(t) if _ESC in t else t
+        out.append(_Quoted(w) if w is not t and _OP_WORD.fullmatch(w) else w)
+    return out
+
+
 def _tokens(cmd):
+    text = _strip_comments(cmd)
     try:
-        lex = shlex.shlex(_strip_comments(cmd), posix=True, punctuation_chars=";&|()<>")
-        lex.whitespace_split = True
-        lex.commenters = ""
-        return list(lex)
+        return _shlex_words(text)
     except ValueError:
-        # unbalanced to shlex (a quote inside "$( )" starts a fresh context to bash, or a later line's odd quote, after
-        # bash has run every complete line before it): still split commands apart, and read each word whose own quotes
-        # balance as bash does, so 'cat' is cat (T-1561). A word with an odd quote keeps it (the debris rule, T-0982);
-        # words are never joined across a space, so nothing hides inside a string a quote scan misplaced
-        return [_bash_word(w) for w in re.sub(r"([;&|()])", r" \1 ", cmd).split()]
+        pass
+    # unbalanced to shlex (a quote inside "$( )" starts a fresh context to bash, or a later line's odd quote, after bash
+    # has run every complete line before it): two readings, each command of both checked (T-1561). First the old split,
+    # each word whose own quotes balance read as bash does ('cat' is cat), an odd one kept (the debris rule, T-0982):
+    # it never joins words across a space, so nothing hides inside a string a quote scan misplaced. Then shlex again,
+    # each " inside a $( ) or `…` within "…" masked and an odd quote run to the end, so X='a b' cat stays cat's prefix
+    words = [_bash_word(w) for w in re.sub(r"([;&|()])", r" \1 ", cmd).split()]
+    try:
+        nested = _shlex_words(_mask_nested_dq(text), close=True, encoded=True)
+    except ValueError:
+        return words
+    d = sum(t.count("(") - t.count(")") for t in words if not isinstance(t, _Quoted) and _OP_WORD.fullmatch(t))
+    return words + [";"] + ([")" * d] if d > 0 else ["(" * -d] if d < 0 else []) + [";"] + nested  # depth 0 again
+
+
+def _mask_nested_dq(text):
+    """Each " inside a $( … ) or `…` that sits within "…" encoded (and each _ESC): bash reads that text in a fresh
+    quoting context, while shlex ends the outer string there. Scanned as _inner_quote does; a misread only adds a
+    reading."""
+    st, esc, out, i = [["", None, 0]], False, [], 0  # [kind, quote, paren depth]
+    while i < len(text):
+        ch, top = text[i], st[-1]
+        nested = ch == '"' and any(c[1] == '"' for c in st[:-1])
+        out.append(_ESC + "7" if nested else _ESC + _ESC if ch == _ESC else ch)
+        if esc:
+            esc = False
+        elif ch == "\\" and top[1] != "'":
+            esc = True
+        elif top[1] == "'":
+            top[1] = None if ch == "'" else "'"
+        elif ch == "`":
+            if top[0] == "`" and top[1] is None:
+                st.pop()
+            else:
+                st.append(["`", None, 0])
+        elif ch == "$" and text[i + 1:i + 2] == "(":
+            st.append(["$(", None, 0])
+            out.append("(")
+            i += 2
+            continue
+        elif top[1] == '"':
+            top[1] = None if ch == '"' else '"'
+        elif ch in "'\"":
+            top[1] = ch
+        elif ch == "(" and top[0] == "$(":
+            top[2] += 1
+        elif ch == ")" and top[0] == "$(":
+            if top[2]:
+                top[2] -= 1
+            else:
+                st.pop()
+        i += 1
+    return "".join(out)
 
 
 def _bash_word(word):
@@ -1134,7 +1236,9 @@ def _bash_word(word):
         parts = shlex.split(word)
     except ValueError:
         return word
-    return parts[0] if len(parts) == 1 else word
+    if len(parts) != 1:
+        return word
+    return _Quoted(parts[0]) if _OP_WORD.fullmatch(parts[0]) else parts[0]
 
 
 def _split(tokens):
@@ -1142,6 +1246,10 @@ def _split(tokens):
     i = 0
     while i < len(tokens):
         t = tokens[i]
+        if isinstance(t, _Quoted):  # '>' or \; is data
+            cur.argv.append(t)
+            i += 1
+            continue
         if re.fullmatch(r"[;&|()<>]+", t):  # every punctuation run, even one read below as a word (<(( …)
             depth += t.count("(") - t.count(")")
         if t in ("<(", ">("):
