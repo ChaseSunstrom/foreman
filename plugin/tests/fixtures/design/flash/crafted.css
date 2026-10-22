@@ -1,0 +1,7 @@
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes spin { to { transform: rotate(1turn); } }
+.alert { animation: blink 1s infinite; }
+.siren { animation: 200ms linear 10 blink alternate; }
+.once { animation: blink .2s 2; }
+.loader { animation: spin .25s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .alert, .siren, .once, .loader { animation: none; } }

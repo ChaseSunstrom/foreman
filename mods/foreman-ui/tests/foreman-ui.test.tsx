@@ -1912,6 +1912,12 @@ test('motion calm: the rail moves only with the 8 fps redraws, never by blit (T-
   expect(blits).toBe(0)
 })
 
+test('motion reduced, fm code\'s word for calm: the same 8 fps redraws, never a blit (T-1496)', { options: { motion: 'reduced' } }, async ($, on) => {
+  const { seen, blits } = await railFrames($, on)
+  expect(seen).toBeGreaterThan(1)
+  expect(blits).toBe(0)
+})
+
 test('motion off: nothing moves while work runs; the pane is still (T-0912)', { options: { motion: 'off' } }, async ($, on) => {
   const { seen, spinning, blits } = await railFrames($, on)
   expect(seen).toBe(1)

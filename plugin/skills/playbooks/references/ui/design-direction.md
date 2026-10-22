@@ -86,6 +86,11 @@ Twelve points of view that do not resemble each other. Pick by matching intervie
 A direction is a starting stance, not a costume. Keep its signature move and its knobs; adapt hex values to the
 brand. Pass: `DESIGN.md` names the direction, the runner-up, and why the runner-up lost.
 
+**More points of view: the style shelf.** Twelve further looks (lab notebook, transit signage, cartographer, ceramic
+studio, broadcast graphics, archive ledger, night market, card catalogue, sewing pattern, shipping manifest,
+observatory, lido) are library cards with measured palettes, a contrast test and greps to check the build:
+`fm lib list --area looks`, then `fm lib show look-NAME`. They count as bank rows for steps 4 and 5.
+
 ## Audacity
 
 One dial, three settings. It controls how far the knobs move from neutral, never the accessibility floor.
@@ -191,7 +196,8 @@ Taste words: warm, calm → warm owns type and colour, calm gets motion.
 - Type: a humanist serif for headings, a humanist sans for text, tabular figures for times; base 1rem; ratio
   1.333; weights 400 and 600; why: the serif carries the notebook, the sans keeps slot lists quick to scan.
 - Colour: paper #F3ECE0: background; ink #2B2420: text (13.0:1 on paper); slip #C8B9A6: rules and borders;
-  celadon #557463: available slot (white text 5.2:1); iron #8C3B23: booked or error (white text 7.6:1).
+  celadon #557463: available slot (white text 5.2:1); a booked slot is ink on paper with a slip hatch;
+  iron #8C3B23: errors only, status colours are reserved (white text 7.6:1; see `type-and-colour.md`).
 - Density: unit 8 px; slot row 48 px; section padding 48 px on phones.
 - Shape: radius 6 on cards, 0 on rules and the calendar grid; border 1 px slip; no shadows.
 - Motion: 200 ms ease-out on booking confirmation; under reduced motion the change is instant.

@@ -92,12 +92,18 @@ class Skills(unittest.TestCase):
         self.assertIn("references/audit.md", read_text(os.path.join(PLUGIN, "skills", "intake", "SKILL.md")))
 
     def test_playbook_index_covers_every_reference(self):
+        # T-1569: a stage may keep its own references/<stage>/INDEX.md (named in SKILL.md), so SKILL.md stays under
+        # doctor's SKILL_MAX as playbooks grow; every file is named in SKILL.md or in its stage's index
         body = read_text(os.path.join(PLUGIN, "skills", "playbooks", "SKILL.md"))
         root = os.path.join(PLUGIN, "skills", "playbooks", "references")
         for dirpath, _, files in os.walk(root):
+            index = os.path.join(root, os.path.relpath(dirpath, root).split(os.sep)[0], "INDEX.md")  # the stage's
+            stage = read_text(index) if os.path.isfile(index) and \
+                os.path.relpath(index, os.path.dirname(root)) in body else ""
             for f in files:
                 with self.subTest(file=f):
-                    self.assertIn(os.path.relpath(os.path.join(dirpath, f), os.path.dirname(root)), body)
+                    path = os.path.relpath(os.path.join(dirpath, f), os.path.dirname(root))
+                    self.assertTrue(path in body or path in stage, f"{path} is in no playbook index")
 
     def test_ported_files_carry_attribution(self):
         for skill, marker in (("playbooks", "Ported from ECC"), ("intake", "Ported from superpowers")):

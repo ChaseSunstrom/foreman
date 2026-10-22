@@ -1,0 +1,7 @@
+.drawer { transition: width .3s ease, opacity .3s; } /* expect */
+@keyframes grow {
+  from { height: 0; } /* expect */
+  to { height: 200px; } /* expect */
+}
+.panel { animation: grow .4s ease-out; }
+@media (prefers-reduced-motion: reduce) { .drawer, .panel { transition: none; animation: none; } }

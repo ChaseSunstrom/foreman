@@ -138,3 +138,49 @@ class TaskErgonomics(ForemanTestCase):
             f.write("x = 1\n")
         r = self.fm("task", "finish", tid, "--audit", "self: x", "--run", "true", check=False)
         self.assertIn('--lens "adversary:', r.stderr)
+
+
+class ExpectFail(ForemanTestCase):
+    """T-1486: a failing-test step's red run had no way in except fm task prove; --expect-fail records it."""
+    task, brief = TaskErgonomics.task, TaskErgonomics.brief
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+
+    def test_a_red_run_is_recorded_as_expected(self):
+        tid = self.task()
+        r = self.fm("task", "evidence", tid, "--step", "1", "--run", "exit 3", "--expect-fail")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        ev = "\n".join(self.brief(tid).evidence())
+        self.assertIn("red as expected (exit 3)", ev)
+        self.assertNotIn("✗ exit", ev, "not read as a failed run by the red-step scans")
+        self.assertTrue(self.brief(tid).has_evidence(step=1))
+
+    def test_a_passing_run_is_refused_and_nothing_recorded(self):
+        tid = self.task()
+        r = self.fm("task", "evidence", tid, "--step", "1", "--run", "true", "--expect-fail", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("expected", r.stderr)
+        self.assertFalse(self.brief(tid).has_evidence(step=1))
+
+    def test_a_criterion_never_takes_it(self):
+        tid = self.task()
+        r = self.fm("task", "evidence", tid, "--ac", "1", "--run", "false", "--expect-fail", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertFalse(self.brief(tid).has_evidence(ac=1))
+
+
+class ScopeWords(ForemanTestCase):
+    """T-1564: --scope 'a b c' was stored as one path, so every file it named read as outside the task's scope."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+
+    def test_a_space_or_comma_separated_scope_is_several_paths(self):
+        tid = json.loads(self.fm("task", "new", "Two files", "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
+                                 "--step", "do", "--scope", "a.py b.py, c.py", "--scope", "d.py", "--json").stdout)["id"]
+        self.assertEqual(c.find_brief(c.find_project(self.repo), tid).meta["scope"], ["a.py", "b.py", "c.py", "d.py"])
+        cid = self.fm("capture", "fix e and f", "--scope", "e.py f.py").stdout.split()[2]
+        self.assertEqual(c.find_brief(c.find_project(self.repo), cid).meta["scope"], ["e.py", "f.py"])

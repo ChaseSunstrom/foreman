@@ -140,7 +140,20 @@ def _raw_with_block(item, r):
     return "\n".join(lines)
 
 
+def _scope_paths(values):
+    """T-1564: --scope 'a.py b.py, c.py' names three paths (it was stored as one); quotes keep a path with a space."""
+    import shlex
+    out = []
+    for v in values or ():
+        try:
+            out += shlex.split(str(v).replace(",", " "))
+        except ValueError:
+            out += str(v).replace(",", " ").split()
+    return list(dict.fromkeys(out))
+
+
 def _create(p, title, type, tier, status, raw=None, scope=(), depends=(), source="user", priority="normal", explore=False):
+    scope = _scope_paths(scope)
     tid = c.next_id(p)
     b = c.Brief.new(tid, title, type, tier, raw=raw, scope=scope, depends=depends, source=source,
                     priority=priority, status=status, explore=explore)
@@ -531,9 +544,16 @@ def cmd_task(args):
         if args.run is not None:  # run it: the real exit code and output, never a typed summary
             if args.cmd is not None:
                 raise UsageError("give the command either as --run CMD or as CMD RESULT, not both")
+            if getattr(args, "expect_fail", False) and args.step is None:
+                raise UsageError("--expect-fail is for a step's red run (--step N); a criterion only takes a passing run")
             pre = need_brief(p, args.id)
             code, output = c.run_command(p.root, args.run, args.timeout if args.timeout > 0 else None)
             cmd, result, shown = args.run, c.run_result(code, output, args.run), "\n".join(output.rstrip().splitlines()[-20:])
+            if getattr(args, "expect_fail", False):  # T-1486: the red run of red→green, recorded as such
+                if not code or c.never_ran(args.run, code, output):
+                    raise UsageError(f"--expect-fail expected a failing run, but it {'passed' if not code else 'never reached its check'}"
+                                     f" ({result}); nothing recorded")
+                result, code = f"red as expected (exit {code}) · " + result.split(" · ", 1)[-1], 0
             result, tried = _step_checks(pre, args.step, args.run, code, output, result)
         elif args.cmd is None or args.result is None:
             raise UsageError("fm task evidence needs --run CMD (preferred) or CMD RESULT")
@@ -2382,7 +2402,7 @@ def task_new(p, args):
                 raise UsageError(f"{b.id} is {b.status}, not captured")
             b.meta.update(type=type_, tier=args.tier, status="planned")
             if args.scope:
-                b.meta["scope"] = args.scope
+                b.meta["scope"] = _scope_paths(args.scope)
             if args.depends:
                 b.meta["depends_on"] = args.depends
             b.preamble = f"# {c.plain(args.title).strip() or 'untitled'}\n"
@@ -4998,6 +5018,9 @@ def _build_parser():
     t.add_argument("--timeout", type=float, default=600, help="--run limit in seconds")
     t.add_argument("--inconclusive", action="store_true",
                    help="the check neither proves nor disproves: recorded, never counted as passing (exits with the run's code)")
+    t.add_argument("--expect-fail", action="store_true",
+                   help="with --step and --run: the run must fail (a failing test before the fix); recorded as the "
+                        "expected red, exits 0; a passing run is refused and nothing is recorded (T-1486)")
     g = t.add_mutually_exclusive_group()
     g.add_argument("--step", type=int)
     g.add_argument("--ac", type=int)
@@ -5793,6 +5816,13 @@ def _build_parser():
     s.add_argument("--because", help="set: why a cap goes up (recorded as a costly decision)")
     s.add_argument("--days", type=int, default=1, help="show: spend over this many days")
 
+    s = add("settings", lazy("fmsettings", "cmd_settings"), tier=("Project and settings", 775),
+            help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496)")
+    s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set"])
+    s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …)")
+    s.add_argument("value", nargs="?", help="set: the new value")
+    s.add_argument("--surface", choices=["app", "plugin"], help="only the app's tui.toml, or only the pane's options")
+
     s = add("evolve", lazy("fmevolve", "cmd_evolve"), tier=("Reports", 1100), help="one bench-gated generation: revise (or --drop) one Foreman "
                                                             "instruction file on an evolve branch, bench both, gate (T-0224)")
     s.add_argument("--target", required=True, help="the file to revise, relative to the repo (e.g. plugin/skills/x/SKILL.md)")
@@ -5830,6 +5860,12 @@ def _build_parser():
     s.add_argument("--expect", help="set cmd: a regex its output must match")
     s.add_argument("--status", type=int, default=200, help="set http: the status it must return")
     s.add_argument("--json-key", dest="json_key", help="set http: a key its JSON body must have")
+    import fmdesign  # T-1506: stdlib only and small; its rule list is the help's epilog
+    s = add("design", lazy("fmdesign", "cmd_design"), tier=("Every task", 92), epilog=fmdesign.rules_help(),
+            formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
+            "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings)")
+    s.add_argument("action", choices=["lint"])
+    s.add_argument("paths", nargs="+", metavar="PATH", help="files or directories (one run: the UI's root)")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), tier=("Finding your way", 460), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
@@ -6123,7 +6159,8 @@ def _task_shape(parser, argv):
 # T-1388 review: log appends ledger events (a forged check_run passes a gate); recall and map write with some flags.
 WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
-                   "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"})}
+                   "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
+                   "design": ("action", {"lint"})}  # T-1506: lint only reads the files it's given
 
 
 def _worker_may(args):

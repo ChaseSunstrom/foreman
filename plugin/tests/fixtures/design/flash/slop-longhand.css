@@ -1,0 +1,7 @@
+@keyframes strobe { from { background-color: #fff; } to { background-color: #d00; } }
+.alarm {
+  animation-name: strobe;
+  animation-duration: 150ms; /* expect */
+  animation-iteration-count: infinite;
+}
+@media (prefers-reduced-motion: reduce) { .alarm { animation: none; } }
