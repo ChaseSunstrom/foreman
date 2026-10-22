@@ -127,14 +127,20 @@ def profile(path):
     out = {"skills": [], "commands": [], "agents": [], "hooks": set(), "mcp": {}, "tokens": 0, "sync_stop": False}
     if not path or not os.path.isdir(path):
         return out
-    for kind, pattern in (("skills", "skills/*/SKILL.md"), ("commands", "commands/*.md"), ("agents", "agents/*.md")):
-        for f in sorted(glob.glob(os.path.join(path, pattern))):
-            fm = _frontmatter(f)
-            # unnamed: a skill is its folder's name, a command or agent its file's name without .md
-            name = fm.get("name") or (os.path.basename(os.path.dirname(f)) if kind == "skills" else
-                                      os.path.basename(f)[:-3])
-            out[kind].append((name, fm.get("description", "")))
-            out["tokens"] += (len(name) + len(fm.get("description", ""))) // 4 + 5
+    seen = set()  # T-1444: the default folders and plugin.json's paths (nested commands too), confined to the plugin
+    for kind, f, _ in _component_files(path):
+        real = os.path.realpath(f) if f else None
+        # a default folder may link out (as before); a named path is already confined by _component_files
+        if real is None or real in seen:
+            continue
+        seen.add(real)
+        kind += "s"
+        fm = _frontmatter(f)
+        # unnamed: a skill is its folder's name, a command or agent its file's name without .md
+        name = fm.get("name") or (os.path.basename(os.path.dirname(f)) if kind == "skills" else
+                                  os.path.basename(f)[:-3])
+        out[kind].append((name, fm.get("description", "")))
+        out["tokens"] += (len(name) + len(fm.get("description", ""))) // 4 + 5
     hooks, out["mcp"] = _plugin_spec(path, "hooks"), _plugin_spec(path, "mcpServers")
     hooks.pop("modules", None)  # T-1434: a hooks module list, not an event
     out["hooks"] = set(hooks)
@@ -202,7 +208,7 @@ def _handlers(hooks):
                     yield event, e.get("matcher") or "", h
 
 
-_ROOT_PATH = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\}?/([\w./-]+)")
+_ROOT_PATH = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\}?/([\w./@+~-]+)")  # T-1459 review: @scope/pkg+x paths whole
 _FM_CAP = 256_000  # a frontmatter not closed by here is the event "?" (ponytail: Claude Code reads the whole file)
 _FM_FILES, _FM_DIRS = 2000, 5000  # past these a component folder is the event "?" (a hostile tree stays bounded)
 # a top-level hooks key, quoted or spaced (review), and its block: indented lines, blank lines, column-0 comments

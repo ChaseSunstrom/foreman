@@ -120,10 +120,11 @@ def _private(path):
     """Owned by this user and not writable by anyone else: /tmp is shared, and a fallback (or marker) someone else
     planted would redirect all of this user's Foreman state."""
     try:
-        st = os.stat(path)
+        st, own = os.stat(path), os.lstat(path)
     except OSError:
         return False
-    return st.st_uid == os.getuid() and not st.st_mode & 0o022
+    # T-1317: the link itself is ours too: someone else's /tmp link to one of our private dirs (~/.ssh) would pass
+    return own.st_uid == st.st_uid == os.getuid() and not st.st_mode & 0o022
 
 
 def _marker_default(alt):

@@ -182,6 +182,9 @@ def _hint(detail, cat=""):
         return " Run a shorter script (split it, or run the part you need directly): a shorter one is read in full."
     if detail.startswith("IFS") and "can't read" in detail:
         return " Leave IFS at its default on a line that splits words, or set it inside a script file the guard reads."
+    if cat == "brief" and os.path.basename(detail).lower() == "changelog.md":  # T-1452
+        return (" A changelog line belongs to the task it describes: add it before fm task finish, or fm focus that "
+                "task again.")
     if detail.endswith(_FOCUS_LATE):
         return " Run the fm focus (or fm task new … --focus) as its own command, then this one."
     if detail.endswith("; git merge)"):
@@ -1325,10 +1328,11 @@ _PLAIN_IMPORTS = {"re", "json", "os", "sys", "pathlib", "textwrap", "difflib", "
 
 
 def _python_units(cmd):
-    """(the bodies of quoted heredocs fed straight to python, the rest of the command, the lines that feed them): a
-    unit only when it's the line's one heredoc, on a `python - <<` line with no pipe, `;`, `&`, backtick or `$(` —
-    after a chain of plain `cd DIR &&` (T-0282: a working directory doesn't change what the code does)."""
-    lines, rest, units, starters, seen, i = cmd.split("\n"), [], [], [], [], 0
+    """(the bodies of quoted heredocs fed straight to python, the rest of the command, the lines that feed them, the
+    rest's lines before the last of those): a unit only when it's the line's one heredoc, on a `python - <<` line with
+    no pipe, `;`, `&`, backtick or `$(` — after a chain of plain `cd DIR &&` (T-0282: a working directory doesn't
+    change what the code does). T-1458: lines after the last unit run after python, so they can't move where it ran."""
+    lines, rest, units, starters, seen, i, lead = cmd.split("\n"), [], [], [], [], 0, []
     while i < len(lines):
         line = lines[i]
         i += 1
@@ -1343,6 +1347,8 @@ def _python_units(cmd):
         # the heredoc scan doesn't know (`<<\E`: the last redirect wins)
         fed = len(starts) == 1 and starts[0][0] and run and not re.search(r"[|`;&\\]|\$\(", run.group(1)) and \
             len(re.findall(r"(?<!<)<<(?!<)", line)) == 1
+        if fed:
+            lead = list(rest)
         (starters if fed else rest).append(line)
         for quote, delim in starts:
             body = []
@@ -1353,7 +1359,7 @@ def _python_units(cmd):
                 rest.append(lines[i])
                 i += 1
             (units if fed else rest).append("\n".join(body))
-    return units, rest, starters
+    return units, rest, starters, lead
 
 
 # module → (functions it may call, values it may name: flags, exception classes, argv); nothing that holds a module
@@ -1477,7 +1483,7 @@ def _proved_writes(cmd, ctx):
     """T-0176: the files a command's python can write, as paths, when every interpreter in it is a quoted heredoc fed
     straight to python whose writes _open_targets proves; None otherwise (the coarse rule decides). A relative path
     after a cd counts in every folder the command names too."""
-    units, rest, starters = _python_units(cmd)
+    units, rest, starters, lead = _python_units(cmd)
     shell = "\n".join(rest)
     around = "\n".join(rest + starters)  # review (T-0286): a cd on the python line itself picks the folder too
     if not units or _INTERP.search(_mask_fm(_drop_data_heredocs(shell), ctx)):
@@ -1493,7 +1499,7 @@ def _proved_writes(cmd, ctx):
         targets += found
     bases = [ctx.cwd]
     if re.search(r"(?:^|[\s;&|(])(?:cd|pushd|popd)\b", around):
-        only = _chain_dir(starters, shell, ctx)
+        only = _chain_dir(starters, "\n".join(lead), ctx)
         bases = [only] if only else bases + [
             d for d in (_resolve(_expand(w, ctx), ctx.cwd) for w in _WORD.findall(around) if not _unresolvable(w))
             if os.path.isdir(d)]
@@ -1585,7 +1591,7 @@ def _drives_fm(cmd, cwd=None):
     importlib…). It only relaxes what it can prove."""
     if not (_FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd)):
         return False
-    units, rest, starters = _python_units(cmd)
+    units, rest, starters, _ = _python_units(cmd)
     c_units, shell, c_starters = _python_c_units("\n".join(rest))
     if _FM_INTERNALS.search("\n".join([shell] + starters)):
         return True
@@ -1748,7 +1754,10 @@ def _interpreter_writes(cmd, ctx):
     if proved is None and not _WRITE_API.search(cmd):
         return []
     found = []
-    for path in proved if proved is not None else [_resolve(_expand(m.group(2), ctx), ctx.cwd)
+    if proved is None:  # T-1458: after a provable `cd DIR &&` chain a relative name opens there, not in ctx.cwd
+        units, _, starters, lead = _python_units(cmd)
+        base = (_chain_dir(starters, "\n".join(lead), ctx) if units else None) or ctx.cwd
+    for path in proved if proved is not None else [_resolve(_expand(m.group(2), ctx), base)
                                                    for m in _QUOTED.finditer(cmd)]:
         found += [(cat, f"{path} (written from interpreter code)") for cat in classify_write(path, ctx)
                   if cat in _GUARDED_BY_PATH]
