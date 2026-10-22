@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm lib source defaults` adds the six anthropics repos (skills, claude-code, claude-cookbooks, claude-plugins-official, financial-services, prompt-eng-interactive-tutorial). Each is pinned to its commit, with a depth (reference: READMEs as notes; index: skills, agents and marketplace.json plugins) and a licence class from its licence file (open, source-available or ideas-only; a skill folder's own licence wins). `--dry` lists them without cloning, and `fm lib show` gives an ideas-only entry's idea but never a path to its text. Notes and plugins go through the T-1396 quarantine, and `update` and the weekly refresh name a class that moved (T-1389).
 - Tests: one `fake_cli` helper writes misbehaving runner CLIs (hang, silent, waiting at a TTY prompt, garbage JSON, usage-limit text, fork-and-exit); `test_code_fakes` checks each ends an `fm code` run within its bound and names the reason (T-1361).
 - The drive no longer tells you to focus a task a builder lane holds (which `fm focus` refuses). When every queued task is in a lane, it says once that the lanes are working and that each builder's notification will wake the session (T-1469).
 - fm code's exported snapshot, recording (GIF/MP4) and plain event replay redact secrets before anything is drawn or printed, so a token a worker printed doesn't end up in a shared file (T-1302).
