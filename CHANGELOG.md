@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Motion playbook (ui/motion.md): named timing tokens in CSS and JS that follow DESIGN.md's Motion knob, a state-to-motion table with a reduced form per row, storyboard before code with a worked example, compositor-only rules, loading that never blocks first paint, and reduced motion designed as its own path (T-1492).
 - UI playbook "design direction before pixels": a three-question interview, a taste-word table, a bank of twelve distinct directions, a safe/bold/wild dial, the generic defaults to avoid, and a DESIGN.md template, so UI work starts from a written point of view (T-1488).
 - fm code bench no longer leaves a seed's check running: each seed run carries FM_BENCH_SEED=<its temp folder> in its environment, and before the folder is deleted every process of yours carrying that marker is stopped. A check fm code started in its own session, such as a test_calc.py spinning in an endless loop, used to outlive the run for hours (T-1485).
 - Unattended fm code runs and fm release --push refuse when the guard's own check (fm replay --cases, now logged on the ledger each run) is red, empty or more than 7 days old. The refusal names the check, its date and the command that refreshes it. Runs you watch, in a terminal or the fm code app, only warn, and the warning is logged too. --stale-ok REASON runs anyway and logs the waiver (T-1401).
