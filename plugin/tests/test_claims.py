@@ -52,6 +52,25 @@ class Claims(Base):
         self.assertIn("a.py::f", held, "the first task's lease stays")
         self.assertNotIn("a.py::g", held)
 
+    def test_another_task_of_the_same_session_is_refused_and_warn_keeps_both(self):
+        # T-1588: builder lanes share the main session's id; T-1510's take handed T-1509's live lease to itself
+        one = self.fm_json("task", "new", "One", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s",
+                           env=A)["id"]
+        self.fm("focus", one, env=A)
+        self.fm("lease", "take", "a.py", env=A)
+        self.fm("task", "new", "Two", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus", env=A)
+        r = self.fm("lease", "take", "a.py", env=A, check=False)
+        self.assertNotEqual(r.returncode, 0, "another task's lease isn't mine because the session is")
+        self.assertIn(one, r.stderr + r.stdout)
+        self.fm("lease", "take", "a.py", "--warn", env=A)
+        rows = self.fm_json("lease", "list")["leases"]
+        self.assertEqual(len([v for v in rows if v["file"] == "a.py"]), 2, "both tasks' claims stay")
+        self.assertEqual(self.fm("lease", "take", "b.py", env=A).returncode, 0)
+        self.assertEqual(self.fm("lease", "take", "b.py", env=A).returncode, 0, "a task retakes its own lease")
+        import fmbus
+        fmbus.release(self.project(), one)  # the lane is removed: its task's leases go with it
+        self.assertEqual(len([v for v in self.fm_json("lease", "list")["leases"] if v["file"] == "a.py"]), 1)
+
     def test_dropping_a_file_releases_its_symbol_leases(self):
         self.fm("lease", "take", "a.py::f", "a.py::g", "c.py::h", env=A)
         self.assertIn("Dropped 2 lease(s)", self.fm("lease", "drop", "a.py", env=A).stdout)
