@@ -486,5 +486,175 @@ class Site(unittest.TestCase):
                 self.assertIn('class="side"', page)
 
 
+def _fm_temp(tmp, *args):
+    """fm from this checkout with a temporary HOME, Foreman home and state: nothing of the user's."""
+    import subprocess
+    import sys
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDE"))}
+    env.update(HOME=tmp, FOREMAN_HOME=os.path.join(tmp, "fh"), XDG_STATE_HOME=os.path.join(tmp, "xdg"),
+               FOREMAN_NO_BACKGROUND="1")
+    return subprocess.run([sys.executable, os.path.join(PLUGIN, "bin", "fm"), *args], cwd=tmp, env=env,
+                          capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+
+
+class Fences(unittest.TestCase):
+    """T-1519: the command fences README.md and MASTER.md mark runnable (```bash runnable) run green in a temporary
+    home, and each template fm new copies passes its own check."""
+    ROOT = Site.ROOT
+    _site = Site._site
+
+    def fixture(self, tmp, text):
+        with open(os.path.join(tmp, "README.md"), "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def test_the_documented_runnable_fences_run_green_in_a_temp_home(self):
+        import fmdemo
+        found = fmdemo.fences()
+        self.assertEqual({w.split(":")[0] for w, _ in found}, {"README.md", "MASTER.md"}, "each doc marks one")
+        self.assertEqual(fmdemo.run_fences(), [])
+
+    def test_a_failing_fence_is_named_and_runs_away_from_the_real_home(self):
+        import tempfile
+        import fmdemo
+        with tempfile.TemporaryDirectory() as tmp:
+            self.fixture(tmp, "Prose.\n\n```bash\nexit 3\n```\n\n```bash runnable\n"
+                              "cat\necho \"in its folder: ${HOME#$PWD/} ${FOREMAN_HOME#$PWD/} ${FOREMAN_STATE#$PWD/}\" >&2\n"
+                              "exit 4\n```\n")
+            fails = fmdemo.run_fences(tmp, timeout=20)
+        self.assertEqual(len(fails), 1, "an unmarked fence never runs")
+        # cat met a closed stdin (no hang); HOME, Foreman's home and state all sit in the fence's own temporary folder
+        self.assertEqual(fails[0], "README.md:7: fence exited 4: in its folder: home foreman foreman/state")
+
+    def test_a_hung_fence_is_stopped(self):
+        import tempfile
+        import fmdemo
+        with tempfile.TemporaryDirectory() as tmp:
+            self.fixture(tmp, "~~~sh runnable\nsleep 30\n~~~\n")
+            self.assertEqual(fmdemo.run_fences(tmp, timeout=1), ["README.md:1: timed out after 1 s"])
+
+    def test_each_template_passes_its_own_check(self):
+        import fmnew
+        build = self._site("build")
+        self.assertEqual(set(fmnew.TEMPLATES), {"web", "scene", "panel"})
+        for name in fmnew.TEMPLATES:
+            path = fmnew.source(name)
+            self.assertTrue(os.path.isfile(path), path)
+            self.assertEqual(fmnew.check(path), [], name)
+            if path.endswith(".html"):  # and loads nothing from another host
+                self.assertEqual(build.outside_loads(read_text(path), ".html"), [], name)
+
+    def test_the_checks_catch_a_template_gone_loose(self):
+        import tempfile
+        import unittest.mock
+        import fmnew
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, "index.html")
+            with open(page, "w", encoding="utf-8") as f:
+                f.write(re.sub(r"--font-(\w+):[^;]+;", r"--font-\1: Inter, sans-serif;", read_text(fmnew.source("web")))
+                        .replace("var(--font-body)", "Inter, sans-serif").replace("var(--font-display)", "Inter"))
+            self.assertIn("generic-font", " ".join(fmnew.check(page)))
+            panels = {"wide": "lambda st, w, h, app: [[('x' * (w + 1), 'text')]]",
+                      "lines": "lambda st, w, h, app: [[('x', 'text')]] * (h + 1)",
+                      "style": "lambda st, w, h, app: [[('x', 'purple')]]",
+                      "ZeroDivisionError": "lambda st, w, h, app: 1 / 0",
+                      " ms": "lambda st, w, h, app: __import__('time').sleep(0.12) or []"}
+            for want, fn in panels.items():
+                path = os.path.join(tmp, "p.py")
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(f"def setup(api):\n    api.panel('p', 'P', {fn})\n")
+                self.assertIn(want, " ".join(fmnew.check(path)), want)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("def setup(api):\n    raise RuntimeError('boom')\n")
+            self.assertIn("boom", " ".join(fmnew.check(path)))
+            with open(path, "w", encoding="utf-8") as f:  # a panel that never returns, inside its own try
+                f.write("def setup(api):\n    api.panel('p', 'P', draw)\n\n\ndef draw(st, w, h, app):\n    try:\n"
+                        "        __import__('time').sleep(60)\n    except Exception:\n        return []\n")
+            with unittest.mock.patch.object(fmnew, "CHECK_SECONDS", 1):
+                self.assertIn("still running after 1 s", " ".join(fmnew.check(path)))
+            self.assertFalse(os.path.exists(os.path.join(tmp, "__pycache__")), "a check writes nothing beside it")
+
+    def test_fm_new_lists_copies_and_never_overwrites(self):
+        import tempfile
+        import fmnew
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _fm_temp(tmp, "new", "templates", "list")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            for name in ("web", "scene", "panel"):
+                self.assertRegex(p.stdout, rf"(?m)^\s*{name}\b")
+            p = _fm_temp(tmp, "new", "web", "site")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertEqual(read_text(os.path.join(tmp, "site", "index.html")), read_text(fmnew.source("web")))
+            p = _fm_temp(tmp, "new", "web", "site")
+            self.assertEqual(p.returncode, 1, "a second copy never overwrites the first")
+            self.assertIn("--force", p.stderr)
+            p = _fm_temp(tmp, "new", "panel")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            panel = os.path.join(tmp, "fh", "tui", "panel.py")  # where fm code loads extensions from
+            self.assertTrue(os.path.isfile(panel), p.stdout)
+            p = _fm_temp(tmp, "new", "check", os.path.join(tmp, "site", "index.html"), panel)
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+            p = _fm_temp(tmp, "new", "nope")
+            self.assertEqual(p.returncode, 1)
+            self.assertIn("web", p.stderr)
+
+
+class HelpAnswers(unittest.TestCase):
+    """T-1519: 'can Foreman do X?' is answered from fm help: the commands whose help says so, or a plain no."""
+
+    def test_the_commands_whose_help_answers_the_question(self):
+        import fmrecall
+        self.assertEqual(fmrecall.can("Can Foreman scaffold an MCP server?")[0][0], "mcp")
+        self.assertEqual(fmrecall.can("can it start me from a web page template")[0][0], "new")
+        self.assertEqual(fmrecall.can("can foreman bake a cake"), [])
+        self.assertEqual(fmrecall.can("can foreman do it?"), [], "a question of stop words names nothing")
+
+    def test_fm_help_with_words_answers_and_says_no_plainly(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _fm_temp(tmp, "help", "can", "foreman", "notify", "me", "when", "a", "run", "finishes?")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn("fm notify", p.stdout)
+            p = _fm_temp(tmp, "help", "bake", "a", "cake")
+            self.assertEqual(p.returncode, 1)
+            self.assertIn("fm help --all", p.stdout)
+
+
+class CardDates(unittest.TestCase):
+    """T-1519: a library card may carry `verified: YYYY-MM-DD`, the day someone ran its Verify commands; fm lib check
+    holds the field to a real, past date and notes one over a year old."""
+
+    def test_a_verified_date_is_held_to_a_real_past_day(self):
+        import datetime
+        import tempfile
+        import fmlib
+        card = read_text(os.path.join(fmlib.CARDS, "tools", "jq.md"))
+        today = datetime.date.today()
+        cases = {"2026-13-01": "not a date", (today + datetime.timedelta(days=2)).isoformat(): "in the future",
+                 "2020-01-01": None, today.isoformat(): None}
+        for value, problem in cases.items():
+            with tempfile.TemporaryDirectory() as tmp:
+                os.makedirs(os.path.join(tmp, "tools"))
+                with open(os.path.join(tmp, "tools", "jq.md"), "w", encoding="utf-8") as f:
+                    bare = re.sub(r"(?m)^verified:.*\n", "", card)
+                    f.write(bare.replace("\n---\n", f"\nverified: {value}\n---\n", 1))
+                problems, notes = fmlib.lint(tmp)
+                if problem:
+                    self.assertEqual(len(problems), 1, problems)
+                    self.assertIn(problem, problems[0])
+                else:
+                    self.assertEqual(problems, [], value)
+                self.assertEqual(any("over a year ago" in n for n in notes), value == "2020-01-01", notes)
+
+    def test_fm_lib_show_says_when_a_card_was_verified(self):
+        import tempfile
+        import fmlib
+        dated = [x for x in fmlib.cards() if x.get("verified")]
+        self.assertTrue(dated, "at least one card has been verified")
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _fm_temp(tmp, "lib", "show", dated[0]["name"])
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn(f"Verified {dated[0]['verified']}", p.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

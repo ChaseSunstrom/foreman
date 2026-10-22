@@ -38,6 +38,15 @@ Or from inside Claude Code:
 
 Then just ask Claude for something: `fix the login timeout on slow wifi`. To see it work before you trust it with your repo, run `fm demo`: the real `fm` and guard hook on a seeded bug, in a throwaway repo, with no model calls and nothing left behind (`--pace 1` plays it at this speed). Bare `fm` in a project says where things stand and what's next; `eval "$(fm complete --shell bash)"` in your `~/.bashrc` (or `--shell zsh`) gives tab completion for commands, options and live task ids.
 
+Wondering whether it can do something? Ask `fm help` in plain words. Starting a page, a 3D scene or an `fm code` panel? Start from a template that already passes the check that keeps it strict:
+
+```bash runnable
+fm help can foreman scaffold an mcp server   # the commands whose help answers it, or a plain no
+fm new list                                  # the templates: web, scene, panel
+fm new web site                              # site/index.html: tokens, light and dark, no outside hosts
+fm design lint site                          # still clean: no generic-design tells
+```
+
 <p align="center">
   <img src="demo/demo.svg" width="860" alt="fm demo: Foreman refuses an edit made before any task exists and an rm -rf ~, records a failing test, the fix and a passing test, refuses to close the task until the audit is given, then closes and commits it">
 </p>
@@ -371,6 +380,8 @@ python3 plugin/tests/e2e/scenarios.py                           # live §12 scen
 python3 demo/record.py [--mp4]                                  # re-record the demo above (demo/demo.cast, .svg, .mp4)
 python3 demo/record_live.py [--from-cast]                       # re-record Claude Code + the mod (demo/live.*; a Sonnet turn)
 ```
+
+`fm release-check` also runs every fence marked `bash runnable` in this file and MASTER.md, each in a throwaway home with stdin closed and a timeout; mark a fence runnable only when it needs nothing but `fm` and the shell.
 
 ```
 BUILD_PROMPT.md       the spec Foreman was built from

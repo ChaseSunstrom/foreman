@@ -258,6 +258,37 @@ def covered(text):
     return [(name, c.plain(help_)) for _, name, help_ in sorted(hits, reverse=True)[:2]]
 
 
+_CAN_ASK = {_stem(w) for w in """what way see have how there able want need your you thing something anything possible
+support supports can could would foreman""".split()}  # a question's own words (as stems), never what it asks about
+
+
+def can(question, n=3):
+    """T-1519: 'can Foreman do X?' from fm help: [(command, help)] for the commands whose name, help and options' help
+    hold at least half the question's words, rarest words first (idf); [] when none do."""
+    import argparse
+    import fmcli
+    want = [w for w in dict.fromkeys(_tokens(question)) if w not in _CAN_ASK]
+    if not want:
+        return []
+    docs, helps = {}, {}
+    for a in fmcli.build_parser()._actions:
+        if isinstance(a, argparse._SubParsersAction):
+            helps = {ca.dest: ca.help or "" for ca in a._choices_actions}
+            for name, sub in a.choices.items():
+                if name in helps:
+                    words = [name.replace("-", " "), helps[name]] + [x.help for x in sub._actions
+                                                                    if x.help and x.help != argparse.SUPPRESS]
+                    docs[name] = set(_tokens(" ".join(words)))
+    df = collections.Counter(w for d in docs.values() for w in d)
+    hits = []
+    for name, d in docs.items():
+        shared = [w for w in want if w in d]
+        if shared and 2 * len(shared) >= len(want):
+            named = any(_stem(x) in want for x in name.split("-"))  # the question names the command itself
+            hits.append((sum(math.log(len(docs) / df[w]) for w in shared) + 2 * named, name))
+    return [(name, c.plain(" ".join(helps[name].split()))) for _, name in sorted(hits, reverse=True)[:n]]
+
+
 def brief_query(b):
     return " ".join([b.title, b.section("Raw request"), b.section("Interpretation"), " ".join(b.meta.get("scope") or [])])
 
