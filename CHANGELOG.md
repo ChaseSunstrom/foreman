@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm lib source update` swaps one source in at a time (a lock beside the sources folder), so two updates of the same source can't interleave their renames; `fm lib source rm` also removes a stray `NAME.old-PID` or `.tmp-NAME-PID` folder a crash left, and still refuses `.`, `..`, paths and links (T-1428).
 - `fm edit` refuses a file holding NUL bytes (binary), as fm code does, and applies old text written with plain newlines to a file with Windows (CRLF) line endings, keeping the file's endings, where it used to say "not found" (T-1424).
 - The bench gate calls a pass loss between 1 and 2 standard errors "likely a loss: rerun with --runs 10" and doesn't propose the change. With fewer than 5 runs it says how often a real 2-pass loss would be caught (about half the time at 3 runs; research bench-band-calibration) (T-1464).
 - `fm task finish` names its slowest run when a close takes over 60 s ("Slowest: <cmd> N s (of M s)"), and the affected-tests event records its seconds, so a slow close says what to speed up (T-1462).
