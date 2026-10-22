@@ -331,6 +331,97 @@ class Terminal(unittest.TestCase):
         self.assertIn("\x1b[?7h", fmcodeterm.LEAVE)
 
 
+class Paste(unittest.TestCase):
+    """T-1316: a bracketed paste is one event: the prompt takes it whole (newlines kept, nothing submitted), anywhere
+    else it fires nothing, and the terminal's paste mode is on while the screen runs and off however it ends."""
+
+    def app(self):
+        spawned = []
+        app = tui().App(tui().DEFAULTS, spawn=lambda words, opts: spawned.append(words))
+        return app, spawned
+
+    def paste(self, app, text):
+        for k in tui().parse_keys("\x1b[200~" + text + "\x1b[201~"):
+            app.key(k)
+
+    def test_three_lines_into_the_prompt_are_one_entry(self):
+        app, spawned = self.app()
+        app.new()
+        self.paste(app, "fix add\r\nthen q\rs too\x1b[2J\x07")
+        self.assertEqual(app.input, "fix add\nthen q\ns too[2J", "newlines kept, control characters dropped")
+        self.assertEqual((app.mode, app.done, spawned), ("prompt", False, []))
+        text = tui().render(Core.state(self), 80, 24, tui().DEFAULTS, app).text()
+        self.assertNotIn("\x1b", text)
+        self.assertEqual(len(text.splitlines()), 24, "the pasted newlines don't break the prompt line")
+        app.key("\n")
+        self.assertEqual(spawned, [["fix add\nthen q\ns too[2J"]])
+
+    def test_outside_the_prompt_a_paste_fires_nothing(self):
+        app, spawned = self.app()
+        killed = []
+        with unittest.mock.patch.object(os, "killpg", lambda pid, sig: killed.append(pid)):
+            for mode in ("main", "help", "diff", "home"):
+                app.mode = mode
+                self.paste(app, "q\ns\nn\n?\n")
+                self.assertEqual((app.mode, app.done), (mode, False), mode)
+        self.assertEqual((spawned, killed), ([], []))
+
+    def test_a_paste_is_capped_and_one_split_across_reads_waits_for_its_end(self):
+        cap = tui().PASTE_CAP
+        self.assertEqual(tui().parse_keys("\x1b[200~" + "a" * (cap * 2) + "\x1b[201~q"), [("paste", "a" * cap), "q"])
+        split = tui().split_tail
+        self.assertEqual(split("x\x1b[200~ab\ncd\x1b[20"), ("x", "\x1b[200~ab\ncd\x1b[20"))
+        self.assertEqual(split("x\x1b[200~ab\x1b[201~y"), ("x\x1b[200~ab\x1b[201~y", ""))
+        _, held = split("\x1b[200~" + "b" * (cap * 3))
+        self.assertLess(len(held), cap + 64, "what waits for a paste's end is bounded")
+        self.assertEqual(tui().parse_keys(held + "\x1b[201~"), [("paste", "b" * cap)])
+
+    def test_modes_on_and_off(self):
+        import fmcodeterm
+        import pty
+        import select
+        for crash in (False, True):
+            master, slave = pty.openpty()
+            got = []
+
+            def run(io):
+                os.write(master, b"\x1b[200~one\rtw")
+                got.extend(io.keys(0.05))
+                os.write(master, b"o\x1b[201~q")
+                got.extend(io.keys(0.5))
+                if crash:
+                    raise RuntimeError("boom")
+            try:
+                fmcodeterm.session(run, slave, slave)
+            except RuntimeError:
+                self.assertTrue(crash)
+            out = b""
+            while select.select([master], [], [], 0.1)[0]:
+                out += os.read(master, 65536)
+            os.close(master)
+            os.close(slave)
+            self.assertEqual(got, [("paste", "one\ntwo"), "q"], crash)
+            text = out.decode()
+            self.assertIn("\x1b[?2004h", text)
+            self.assertGreater(text.rindex("\x1b[?2004l"), text.index("\x1b[?2004h"), crash)
+
+    def test_a_paste_whose_end_never_comes_is_taken_once_input_stalls(self):
+        import fmcodeterm
+        import pty
+        master, slave = pty.openpty()
+        got = []
+
+        def run(io):
+            os.write(master, b"\x1b[200~abc")
+            got.append(io.keys(0.2))
+            got.append(io.keys(0.01))
+        with unittest.mock.patch.object(fmcodeterm, "PASTE_STALL", 0.0):
+            fmcodeterm.session(run, slave, slave)
+        os.close(master)
+        os.close(slave)
+        self.assertEqual(got, [[], [("paste", "abc")]])
+
+
 RUNNING = RUN[:10]  # step 2 just started, the checks not yet run
 
 
