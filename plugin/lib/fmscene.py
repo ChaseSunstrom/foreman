@@ -20,13 +20,22 @@ degrees, names a letter then letters, digits, - or _; an unknown key is refused,
               taking sky: "#ffffff" and ground: "#444444" in place of color; at most 3 directional and point lights
   materials   {name: {color: "#cccccc"; roughness: 0.8, above 0, at most 1; metalness: 0, 0-1; emissive: "#000000";
               emissiveIntensity: 1}}
-  meshes      [{name; material: a materials name; geometry; position: [0,0,0]; rotation: [0,0,0] (X, then Y, then
-              Z); scale: [1,1,1]}], geometry one of {type: box, size: [1,1,1]}, {type: sphere, radius: 1, segments:
+  meshes      [{name; material: a materials name; geometry; position: [0,0,0]; rotation: [0,0,0] (about X, Y, Z);
+              scale: [1,1,1]}], geometry one of {type: box, size: [1,1,1]}, {type: sphere, radius: 1, segments:
               32}, {type: plane, size: [1,1]} (in XY, facing +Z), {type: vertices, vertices: [[x,y,z], ...], faces:
               [[a,b,c], ...] (indices, counter-clockwise seen from the front)}
   animations  {name: {target: a mesh's name; property: position | rotation | scale; times: [seconds, rising];
               values: [[x,y,z], ...], one per time; loop: true}}: linear between keys, held outside them; a loop
-              restarts at its last time, so its last value should equal its first (or turn a whole 360)"""
+              restarts at its last time, so its last value should equal its first (or turn a whole 360)
+What a second renderer must not guess (three.js's conventions; world space is right-handed with +Y up):
+  rotation    the matrix is Rx * Ry * Rz (three.js's Euler order "XYZ"), so on a point Z turns first
+  transform   a mesh's model matrix is T * R * S: scale, then rotate, then move
+  camera      its up is +Y and it looks down -Z of its own frame, toward target (one straight above or below is
+              refused); a renderer whose view space looks along +z, as fmraster's does, negates view-space z
+  sphere      width segments are segments, height segments max(2, segments >> 1)
+  point       a point light falls off as intensity / distance^2: decay 2, no cutoff distance
+  vertices    smooth normals in three.js, flat per face in the rasteriser (three sums the faces' normals at
+              each vertex, area-weighted)"""
 
 MAX_FILE = 16 << 20  # a scene with a million vertices fits; the module carries all of it
 NAME = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,63}")  # never __proto__: the module's object literal would eat it
@@ -135,6 +144,10 @@ def validate(scene):
         _fail("camera.far", f"wants a number above near and at most 10,000 x near, not {_show(cam['far'])}")
     if cam["position"] == cam["target"]:
         _fail("camera.target", "is where the camera stands, so it has no direction to look")
+    dx, dy, dz = (t - p for t, p in zip(cam["target"], cam["position"]))
+    if math.hypot(dx, dz) <= 1e-9 * abs(dy):  # along up (+Y): the view has no sideways axis to build
+        _fail("camera.target", f"straight {'above' if dy > 0 else 'below'} the camera, along its up (+Y): move one "
+                               "of them aside a little")
 
     lights, direct = [], 0
     for i, l in enumerate(_list(scene.get("lights", []), "lights")):
@@ -295,17 +308,25 @@ function sample(a, t) {
 }
 
 export function mount(fig) {
-  const canvas = fig.querySelector("canvas"), setState = s => { fig.dataset.state = s; };
+  // A fresh canvas each mount: a context released by dispose() never comes back on its old canvas.
+  const old = fig.querySelector("canvas"), canvas = old.cloneNode(false), setState = s => { fig.dataset.state = s; };
+  old.replaceWith(canvas);
   const off = new AbortController(), on = (target, type, fn) => target.addEventListener(type, fn, { signal: off.signal });
   // Survival 1: no WebGL2 (or only a software renderer) -> the poster and the text twin stay, nothing throws.
   const gl = canvas.getContext("webgl2", { antialias: true, alpha: true, powerPreference: "low-power", failIfMajorPerformanceCaveat: true });
   if (!gl) return () => {};
   const reduce = matchMedia("(prefers-reduced-motion: reduce)"), c = SCENE.camera, owned = [];
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(c.fov, 1, c.near, c.far);
-  let renderer = null, anims = [], raf = 0, last = 0, time = 0, stopped = false, visible = !document.hidden, onscreen = true;
+  let renderer = null, anims = [], raf = 0, last = 0, time = 0, stopped = false, freed = false, visible = !document.hidden, onscreen = true;
 
-  // Survival 8: any failure ends at the poster, logged once.
-  const fail = err => { if (stopped) return; stopped = true; cancelAnimationFrame(raf); console.error("scene: showing the poster", err); setState("failed"); };
+  // Once, from fail() or dispose(): free what was made, then release the context (survival 4).
+  const free = () => {
+    if (freed) return; freed = true;
+    for (const o of owned) o.dispose();
+    if (renderer) { renderer.dispose(); renderer.forceContextLoss(); renderer = null; } else gl.getExtension("WEBGL_lose_context")?.loseContext();
+  };
+  // Survival 8: any failure ends at the poster, logged once; the freeing waits until three.js's own call has returned.
+  const fail = err => { if (stopped) return; stopped = true; cancelAnimationFrame(raf); raf = 0; console.error("scene: showing the poster", err); setState("failed"); queueMicrotask(free); };
   const pose = t => { for (const a of anims) { const v = sample(a, t); a.mesh[a.property].set(...(a.property === "rotation" ? v.map(d => d * RAD) : v)); } };
   try {
     renderer = new THREE.WebGLRenderer({ canvas, context: gl });
@@ -357,7 +378,7 @@ export function mount(fig) {
     camera.aspect = w / h; camera.updateProjectionMatrix();
     render();
   });
-  const io = new IntersectionObserver(([e]) => { onscreen = e.isIntersecting; onscreen ? wake() : sleep(); });
+  const io = new IntersectionObserver(entries => { onscreen = entries.at(-1).isIntersecting; onscreen ? wake() : sleep(); });  // oldest first
   on(document, "visibilitychange", () => { visible = !document.hidden; visible ? wake() : sleep(); });
   on(reduce, "change", wake);
   // Survival 3: preventDefault or the browser never restores; the poster covers the gap; three.js rebuilds its own state.
@@ -365,12 +386,7 @@ export function mount(fig) {
   on(canvas, "webglcontextrestored", () => { render(); wake(); });
   ro.observe(canvas); io.observe(canvas); wake();
   // Survival 4 and 9: cancel the loop, remove the listeners, free what was made, release the context.
-  return () => {
-    off.abort(); ro.disconnect(); io.disconnect(); sleep(); stopped = true;
-    for (const o of owned) o.dispose();
-    if (renderer) { renderer.dispose(); renderer.forceContextLoss(); } else gl.getExtension("WEBGL_lose_context")?.loseContext();
-    setState("poster");
-  };
+  return () => { off.abort(); ro.disconnect(); io.disconnect(); sleep(); stopped = true; free(); setState("poster"); };
 }
 """
 
@@ -387,7 +403,7 @@ def cmd_scene(args):
     import fmcli
     import fmcore
     try:
-        text = compile_three(load(args.path))
+        text = compile_three(load(args.path))  # --to has one target, three, until T-1634 adds component
         out = os.path.abspath(args.out) if args.out else None  # write_atomic makes dirname(path): "" for a bare name
         if out and os.path.exists(out) and os.path.samefile(out, args.path):
             raise ValueError(f"--out {args.out} is the scene it compiles")
