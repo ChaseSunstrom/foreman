@@ -5,13 +5,13 @@ description: Use when a Foreman stage needs a proven procedure: refactors, perf,
 
 # Foreman playbooks
 
-On-demand procedures, ported with attribution from ECC (MIT; see `plugin/THIRD_PARTY_LICENSES.md`). Load only the one you need: `fm playbooks show PATH` adds this project's facts and its `.claude/playbooks/` overlay. They supplement the Foreman loop and never override it: Foreman's evidence rule, `fm` state, the guard and the focus lock still apply. Where a playbook mentions an ECC agent, command, hook or script, use the Foreman equivalent: planning → `/foreman:intake`; review agents → `foreman:fm-reviewer` or the checklist itself; security review → `/security-review` plus `references/security/security-review.md`; TDD → `../intake/references/regression-test.md`; session save/resume → `fm checkpoint` / `/foreman:resume`; compaction hygiene → Foreman's PreCompact checkpoint.
+On-demand procedures, ported with attribution from ECC (MIT; see `plugin/THIRD_PARTY_LICENSES.md`). Load only the one you need: `fm playbooks show PATH` adds this project's facts and its `.claude/playbooks/` overlay. They supplement the Foreman loop and never override it: Foreman's evidence rule, `fm` state, the guard and the focus lock still apply. Where a playbook mentions an ECC agent, command, hook or script, use the Foreman equivalent: planning → `/foreman:intake`; review agents → `foreman:fm-reviewer` or the checklist itself; security review → `/security-review` plus `references/security/security-review.md`; TDD → `../intake/references/regression-test.md`; session save/resume → `fm checkpoint` / `/foreman:resume`.
 
 Core debugging, regression-test and verification procedures live with intake: `../intake/references/debugging.md`, `../intake/references/regression-test.md`, `../intake/references/verification.md`.
 
 ## PLAN — expanding and planning (R1/R4)
 - `references/plan/intent-driven-development.md` — Turn ambiguous or high-impact product and engineering changes into scoped, verifiable acceptance…
-- `references/plan/planner.md` — Expert planning specialist for complex features and refactoring. Automatically activated for planning…
+- `references/plan/planner.md` — Plan a complex feature or refactor: phases, risks, steps.
 - `references/plan/api-design.md` — Adding or changing a public interface (CLI, endpoint, library, config or file format): caller-first…
 - `references/plan/decision-memo.md` — A costly or contested choice: question, three options scored alike, choice, why, revisit trigger.
 
@@ -38,12 +38,12 @@ Core debugging, regression-test and verification procedures live with intake: `.
 - `references/security/security-review.md` — Use this skill when adding authentication, handling user input, working with secrets, creating API…
 
 ## BASELINE / FIX — build and compile errors
-- `references/build/INDEX.md` — build and compile errors per toolchain: C++, Rust, TypeScript, Go, JVM, Swift, C#, shell. Read the index, then the one you need.
+- `references/build/INDEX.md` — build and compile errors per toolchain: C++, Rust, TypeScript, Go, JVM, Swift, C#, shell. `fm playbooks show` the index, then the one you need.
 
 ## FIX / FEATURE / VERIFY — TDD and verification
 - `references/verify/tdd-guide.md` — Test-Driven Development specialist enforcing write-tests-first methodology. Ensures 80%+ test coverage.
-- `references/verify/tdd-workflow.md` — Use this skill when writing new features, fixing bugs, or refactoring code. Enforces test-driven…
-- `references/verify/verification-loop.md` — A comprehensive verification system for Claude Code sessions. Use when verifying a Claude Code session's…
+- `references/verify/tdd-workflow.md` — Test-first for a feature, fix or refactor: red, green, refactor.
+- `references/verify/verification-loop.md` — Before calling work done: build, types, lint, tests, secrets, diff, report.
 - `references/fix/flaky-tests.md` — A test that passes and fails without a code change: prove, classify, reproduce deterministically, fix…
 - `references/fix/sql.md` — Slow or new queries: real SQL, call count, plan on real data, query before index, before/after proof.
 - `references/fix/migration.md` — Live schema changes: expand, dual-write, batched backfill, switch reads, contract, lock timeout.
@@ -61,7 +61,7 @@ Core debugging, regression-test and verification procedures live with intake: `.
 - `references/review/typescript.md` — Expert TypeScript/JavaScript code reviewer specializing in type safety, async correctness, Node/web…
 
 ## Language references — idioms and testing
-For one framework, library, service or tool (1,000+ of them), use the stack library instead: `fm lib` suggests this repo's cards, `fm lib show NAME --section verify` reads one part (`../library/SKILL.md`).
+For one framework, library, service or tool, use the stack library instead: `fm lib` suggests this repo's cards, `fm lib show NAME --section verify` reads one part (`../library/SKILL.md`).
 - `references/lang/cpp-coding-standards.md` — C++ coding standards based on the C++ Core Guidelines (isocpp.github.io). Use when writing, reviewing…
 - `references/lang/cpp-testing.md` — Use only when writing/updating/fixing C++ tests, configuring GoogleTest/CTest, diagnosing failing or…
 - `references/lang/python-patterns.md` — Pythonic idioms, PEP 8 standards, type hints, and best practices for building robust, efficient, and…
@@ -71,7 +71,7 @@ For one framework, library, service or tool (1,000+ of them), use the stack libr
 - `references/lang/INDEX.md` — more: the Python standard library first.
 
 ## UI — design direction, motion, 3D, terminals and mods
-- `references/ui/INDEX.md` — the UI playbooks: design direction, type and colour, composition, interaction, motion, game feel, 3D and its template, visual QA, terminals and mods. Read the index, then the one you need.
+- `references/ui/INDEX.md` — the UI playbooks: design direction, type and colour, composition, interaction, motion, game feel, 3D and its template, visual QA, terminals and mods. `fm playbooks show` the index, then the one you need.
 
 ## OPS — incidents and observability
 - `references/ops/INDEX.md` — incident response; logs, metrics and traces worth having.
@@ -84,10 +84,10 @@ For one framework, library, service or tool (1,000+ of them), use the stack libr
 
 ## REFLECT — decisions and retros
 - `references/reflect/agent-introspection.md` — Structured self-debugging workflow for AI agent failures using capture, diagnosis, contained recovery…
-- `references/reflect/architecture-decision-records.md` — Capture architectural decisions made during Claude Code sessions as structured ADRs. Auto-detects…
+- `references/reflect/architecture-decision-records.md` — Record an architectural decision as an ADR: context, options, choice, consequences.
 
 ## Context and memory hygiene
-- `references/context/context-budget.md` — Audits Claude Code context window consumption across agents, skills, MCP servers, and rules. Identifies…
+- `references/context/context-budget.md` — Audit what fills the context window (agents, skills, MCP, rules) and cut it.
 - `references/context/living-docs.md` — Keep a long-lived project's documentation from rotting by assigning existing project docs clear…
 - `references/context/strategic-compact.md` — Suggests manual context compaction at logical intervals to preserve context through task phases rather…
 - `references/context/INDEX.md` — more: task-first docs; decks and reports.
