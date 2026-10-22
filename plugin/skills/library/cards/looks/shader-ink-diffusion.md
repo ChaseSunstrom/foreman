@@ -31,7 +31,8 @@ float fbm(vec2 p) {
 }
 void main() {
   vec2 aspect = vec2(uRes.x / uRes.y, 1.0), p = (vUv - uOrigin) * aspect * 3.0;
-  vec2 warp = vec2(fbm(p + uTime * 0.02), fbm(p + 5.2 - uTime * 0.015));  // fibres pull the ink unevenly
+  vec2 drift = 0.6 * vec2(cos(uTime * 0.02), sin(uTime * 0.015));       // a closed loop: the wrap is seamless
+  vec2 warp = vec2(fbm(p + drift), fbm(p + 5.2 - drift.yx));            // fibres pull the ink unevenly
   float edge = uSpread - length(p + (warp - 0.5) * 1.8) / 1.5;            // > 0 inside the stain
   float w = fwidth(edge) + 0.004;
   float inside = smoothstep(-w, w, edge);
@@ -47,9 +48,9 @@ void main() {
 | Uniform | Type | Meaning |
 |---|---|---|
 | `uRes` | vec2 | canvas size in device px |
-| `uTime` | float | seconds, wrapped on the CPU every 600 s (the drift has no loop, so the wrap only nudges the warp) |
+| `uTime` | float | seconds, wrapped on the CPU every 400 pi s, about 1,256.6 (a multiple of both drift periods, so the outline never jumps) |
 | `uIntensity` | float | 0 = plain `uPaper`, 1 = the full stain |
-| `uSpread` | float | stain radius: 0 = a dot, 1 = the reveal's end, 1.3 fills a 16:9 frame |
+| `uSpread` | float | stain radius, about half a frame height per unit (the warp moves the edge about 0.3 heights either way): 0 = a dot, 0.6 frames a headline, 1 spans the frame's height |
 | `uOrigin` | vec2 | the drop's centre in uv (0-1), set behind the element it frames |
 | `uInk`, `uPaper` | vec3 | sRGB 0-1 from the `--text` (or `--accent`) and `--surface` tokens |
 
@@ -68,7 +69,7 @@ Not for: dashboards, dense UI, anything behind body text (the rim crosses it).
 - Emulate `prefers-reduced-motion: reduce`, screenshot twice a second apart: identical.
 
 ## Test first
-Write the reduced-motion probe and a pixel probe at `uOrigin` (ink colour) and a corner (`uPaper`) before tuning the warp.
+Write the reduced-motion probe and pixel probes before tuning the warp: at `uOrigin` a pale wash (nearer `uPaper` than `uInk`), in a corner exactly `uPaper`.
 
 ## Do
 - Animate `uSpread` once, 0 to 1 over 1.2-2 s on load, then let only `uTime` drift.

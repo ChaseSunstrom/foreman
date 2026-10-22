@@ -18,7 +18,12 @@ uniform vec2 uRes;
 uniform float uTime, uIntensity, uGrain;
 uniform vec3 uBase, uA, uB;
 out vec4 outColor;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+uint pcg(uint v) { uint s = v * 747796405u + 2891336453u; uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+  return (w >> 22u) ^ w; }
+float hash(vec2 p) {  // integer PCG hash: exact at any pixel coordinate, where a sin() hash streaks on some GPUs
+  uvec2 q = uvec2(ivec2(floor(p)) & 0xffff);
+  return float(pcg(q.x + pcg(q.y))) / 4294967295.0;
+}
 vec2 orbit(vec2 home, float speed, float phase) {  // each centre circles its home, each at its own pace
   float t = uTime * speed + phase;
   return home + 0.12 * vec2(cos(t), sin(t * 1.5));
@@ -31,7 +36,7 @@ void main() {
   vec3 d = vec3(dot(p - c0, p - c0), dot(p - c1, p - c1), dot(p - c2, p - c2));
   vec3 w = 1.0 / (d * d + 0.004);                         // 1 / distance^4 pooling: broad pools, soft seams
   vec3 c = (uBase * w.x + uA * w.y + uB * w.z) / (w.x + w.y + w.z);
-  float grain = hash(floor(gl_FragCoord.xy)) - 0.5;       // fixed per pixel: grain, not snow
+  float grain = hash(gl_FragCoord.xy) - 0.5;              // fixed per pixel: grain, not snow
   c = mix(uBase, c, uIntensity) + grain * uGrain * uIntensity;
   outColor = vec4(c + (hash(gl_FragCoord.yx) - 0.5) / 255.0, 1.0);
 }

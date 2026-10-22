@@ -715,42 +715,104 @@ class ShaderLooks(ForemanTestCase):
             self.assertTrue(frozen <= declared, name)
             self.assertTrue(frozen or still.startswith("Static"), name)
 
-    def test_every_shader_compiles_and_links_in_a_headless_browser(self):
+    # Typical values for the browser run; any other float is 1.0, any vec2 the frame's middle.
+    VALUES = {"uTime": 3.0, "uIntensity": 0.0, "uProgress": 0.0, "uCell": 10.0, "uAngle": 0.2618, "uReach": 0.8,
+              "uCount": 18.0, "uSpread": 1.0, "uScale": 4.0, "uSoft": 0.2, "uHem": 0.45, "uGrain": 0.05,
+              "uPixel": 2.0}
+    COLOURS = [(51, 102, 153), (204, 178, 127), (25, 140, 90), (230, 60, 40), (120, 30, 200)]
+    _page = None
+
+    def browser_run(self):
+        """Each shader compiled, linked and drawn at uIntensity 0 in headless Chromium, once per test run:
+        {name: {"compile": "ok" or the log, "plain": the largest channel gap, in 0-255, from its plain colour}}."""
+        if ShaderLooks._page is not None:
+            return ShaderLooks._page
         browser = _browser()
         if not browser:
-            self.skipTest("no headless Chromium (FOREMAN_CHROME, chrome-headless-shell or Playwright's download)")
+            ShaderLooks._page = "no headless Chromium (FOREMAN_CHROME, chrome-headless-shell or Playwright's download)"
+            return ShaderLooks._page
         import html
+        import signal
+        import tempfile
         scene = _read(os.path.join(os.path.dirname(fmlib.CARDS), "..", "playbooks", "references", "ui", "templates",
                                    "scene.html"))
         vs = re.search(r"const BG_VS = `(.*?)`;", scene, re.S).group(1)
-        sources = {n: self.glsl(t) for n, (_, t) in self.shaders().items()}
-        page = os.path.join(self.tmp, "compile.html")
-        with open(page, "w", encoding="utf-8") as f:
-            f.write("<!doctype html><pre id=out></pre><script>const VS = " + json.dumps(vs).replace("</", "<\\/")
-                    + ", FS = " + json.dumps(sources).replace("</", "<\\/") + """;
-const gl = document.createElement("canvas").getContext("webgl2"), r = {};
+        jobs = {}
+        for n, (_, text) in self.shaders().items():
+            src, colours, uniforms = self.glsl(text), iter(self.COLOURS), []
+            for kind, names in re.findall(r"(?m)^uniform (\w+) ([^;]+);", src):
+                for u in (x.strip() for x in names.split(",")):
+                    value = ([160, 90] if u == "uRes" else [0.5, 0.5]) if kind == "vec2" else \
+                        [v / 255 for v in next(colours)] if kind == "vec3" else self.VALUES.get(u, 1.0)
+                    uniforms.append([u, kind, value])
+            row = re.search(r"(?m)^\| `uIntensity` \|.*$", _section(text, "Uniforms")).group(0)
+            plain = re.search(r"plain `(u\w+)`", row).group(1)
+            jobs[n] = {"src": src, "uniforms": uniforms,
+                       "plain": [[round(c * 255) for c in v] for u, _, v in uniforms if u == plain][0]}
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, "shaders.html")
+            with open(page, "w", encoding="utf-8") as f:
+                f.write("<!doctype html><pre id=out></pre><script>const VS = " + json.dumps(vs).replace("</", "<\\/")
+                        + ", JOBS = " + json.dumps(jobs).replace("</", "<\\/") + """;
+const canvas = document.createElement("canvas"); canvas.width = 160; canvas.height = 90;
+const gl = canvas.getContext("webgl2", { antialias: false, preserveDrawingBuffer: true }), r = {};
 function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
   return [s, gl.getShaderParameter(s, gl.COMPILE_STATUS) ? "" : gl.getShaderInfoLog(s)]; }
-if (gl) for (const [n, src] of Object.entries(FS)) {
-  const [v] = sh(gl.VERTEX_SHADER, VS), [s, err] = sh(gl.FRAGMENT_SHADER, src);
-  if (err) { r[n] = err; continue; }
+if (gl) for (const [n, job] of Object.entries(JOBS)) {
+  const [v] = sh(gl.VERTEX_SHADER, VS), [s, err] = sh(gl.FRAGMENT_SHADER, job.src);
+  if (err) { r[n] = { compile: err }; continue; }
   const p = gl.createProgram(); gl.attachShader(p, v); gl.attachShader(p, s); gl.linkProgram(p);
-  r[n] = gl.getProgramParameter(p, gl.LINK_STATUS) ? "ok" : gl.getProgramInfoLog(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { r[n] = { compile: gl.getProgramInfoLog(p) }; continue; }
+  gl.useProgram(p);
+  for (const [u, kind, value] of job.uniforms) {
+    const at = gl.getUniformLocation(p, u);
+    if (kind === "vec2") gl.uniform2fv(at, value); else if (kind === "vec3") gl.uniform3fv(at, value);
+    else gl.uniform1f(at, value);
+  }
+  gl.viewport(0, 0, 160, 90); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const px = new Uint8Array(160 * 90 * 4); gl.readPixels(0, 0, 160, 90, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let gap = 0;
+  for (let i = 0; i < px.length; i += 4) for (let c = 0; c < 3; c++) gap = Math.max(gap, Math.abs(px[i + c] - job.plain[c]));
+  r[n] = { compile: "ok", plain: gap };
 }
 document.getElementById("out").textContent = gl ? JSON.stringify(r) : "NO-WEBGL2";
 </script>""")
-        try:
-            p = subprocess.run([browser, "--headless", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
-                                "--user-data-dir=" + os.path.join(self.tmp, "chrome"), "--dump-dom", "file://" + page],
-                               capture_output=True, text=True, timeout=120)
-        except (OSError, subprocess.TimeoutExpired) as e:
-            self.skipTest(f"{browser} didn't run: {e}")
-        out = re.search(r'<pre id="out">(.*?)</pre>', p.stdout, re.S)
+            try:  # its own process group: a timeout kills the GPU and renderer children too
+                p = subprocess.Popen([browser, "--headless", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+                                      "--user-data-dir=" + os.path.join(tmp, "chrome"), "--dump-dom", "file://" + page],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                     start_new_session=True)
+            except OSError as e:
+                ShaderLooks._page = f"{browser} didn't run: {e}"
+                return ShaderLooks._page
+            try:
+                stdout, stderr = p.communicate(timeout=120)
+            except subprocess.TimeoutExpired:
+                os.killpg(p.pid, signal.SIGKILL)
+                p.communicate()
+                ShaderLooks._page = f"{browser} timed out after 120 s"
+                return ShaderLooks._page
+        out = re.search(r'<pre id="out">(.*?)</pre>', stdout, re.S)
         if not out:  # the browser didn't start (a root sandbox, no display libs): an environment gap, not a shader's
-            self.skipTest(f"{browser} printed no page: {p.stderr[-300:]}")
-        if out.group(1) == "NO-WEBGL2":
-            self.skipTest(f"{browser} gives no WebGL2 context here")
-        self.assertEqual(json.loads(html.unescape(out.group(1))), {n: "ok" for n in sources})
+            ShaderLooks._page = f"{browser} printed no page: {stderr[-300:]}"
+        elif out.group(1) == "NO-WEBGL2":
+            ShaderLooks._page = f"{browser} gives no WebGL2 context here"
+        else:
+            ShaderLooks._page = json.loads(html.unescape(out.group(1)))
+        return ShaderLooks._page
+
+    def test_every_shader_compiles_and_links_in_a_headless_browser(self):
+        got = self.browser_run()
+        if isinstance(got, str):
+            self.skipTest(got)
+        self.assertEqual({n: r["compile"] for n, r in got.items()}, {n: "ok" for n in self.shaders()})
+
+    def test_every_shader_at_intensity_zero_is_its_plain_colour(self):
+        got = self.browser_run()  # scene-3d.md: an intensity uniform where 0 means plain
+        if isinstance(got, str):
+            self.skipTest(got)
+        self.assertEqual({n: r.get("plain", 99) <= 2 for n, r in got.items()}, {n: True for n in self.shaders()},
+                         {n: r.get("plain") for n, r in got.items()})
 
     def test_light_and_material_keeps_scene_3d_rules(self):
         text = _read(os.path.join(fmlib.CARDS, "looks", "light-and-material.md"))
@@ -778,7 +840,11 @@ document.getElementById("out").textContent = gl ? JSON.stringify(r) : "NO-WEBGL2
         scope = {}
         exec(compile(re.search(r"(?ms)^```python\n(.*?)^```", text).group(1), "svg-icon-system", "exec"), scope)
         self.assertEqual(scope["check"](sample), [])
+        self.assertIn('width="1em"', sample)  # the card sizes icons in em; the check must take that
+        self.assertTrue(callable(scope.get("test_icons")), "pytest collects nothing without a test_ function")
         for slip in (sample.replace('stroke-width="1.5"', 'stroke-width="2"', 1).replace(
                 'stroke-width="1.5"', 'stroke-width="1"', 1), sample.replace('fill="none"', 'fill="#1A1A1A"', 1),
-                     sample.replace('viewBox="0 0 24 24"', 'viewBox="0 0 20 20"')):
+                     sample.replace('viewBox="0 0 24 24"', 'viewBox="0 0 20 20"'),
+                     re.sub(r'(<rect[^>]*?) width="\d+"', r'\1 width="100%"', sample),  # reported, not a crash
+                     '<!DOCTYPE svg [<!ENTITY a "aaaa">]>\n' + sample):
             self.assertNotEqual(scope["check"](slip), [], slip)

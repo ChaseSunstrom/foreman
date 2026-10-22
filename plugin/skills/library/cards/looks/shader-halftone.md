@@ -30,7 +30,7 @@ void main() {
   float tone = mix(0.12, 0.85, 1.0 - lit) * uIntensity;  // ink coverage: darker away from the light
   float r = sqrt(tone / 3.14159);                     // dot area = coverage, in cell units
   float d = length(f), aa = fwidth(d);
-  float dotInk = 1.0 - smoothstep(r - aa, r + aa, d);
+  float dotInk = (1.0 - smoothstep(r - aa, r + aa, d)) * step(1e-4, tone);  // no speck when r is 0
   outColor = vec4(mix(uPaper, uInk, dotInk), 1.0);
 }
 ```
