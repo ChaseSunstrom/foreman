@@ -1608,15 +1608,22 @@ def check_idle_stops(p, days=7):
 FSCK_SKIP = {"lib-sources", "lib-drafts", "quarantine", "snapshots", "outputs", "cache", "research-cache"}  # other
 # repos' files and copies, not Foreman's live state: never scanned, so --fix can't reach them
 FSCK_TAIL = 65536  # bytes of a journal read: its last line is judged, never the whole file
-FSCK_YOUNG = 60  # s: a pid file this new and still empty may be getting its pid
-FSCK_KINDS = ("broken lane", "stale lock", "torn journal")
+FSCK_LOCK_AGE = 3600  # s: a pid file is judged only once this old. A holder in another PID namespace (Claude Code's
+# sandbox) looks dead to os.kill, and fmcli._sentinel already counts an hour-old sentinel.pid as no run (review)
+FSCK_KINDS = ("broken lane", "stale lock", "torn journal", "unreadable")
+PID_NS = "/proc/self/ns/pid"
+INIT_PID_NS = "pid:[4026531836]"  # the kernel's fixed inode of the initial PID namespace (PROC_PID_INIT_INO); a user
+# can't read /proc/1/ns/pid to compare with
 
 
 def _tail(path, n):
     """(the last n bytes, the stat) of a regular file; (None, None) for a symlink, a FIFO or a device (T-1434: a plain
-    open of a FIFO blocks forever) or a file that can't be read."""
+    open of a FIFO blocks forever) or a file gone or unreadable for another reason. PermissionError is raised: the
+    caller names the file as unreadable rather than pass it over."""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except PermissionError:
+        raise
     except OSError:
         return None, None
     try:
@@ -1632,16 +1639,15 @@ def _tail(path, n):
 
 
 def _stale_pid(path, now=None):
-    """Why a *.pid lock's holder is gone ("" while it may live): its pid names no process, or the file holds no pid and
-    is older than FSCK_YOUNG s. A pid that exists (another user's too: EPERM) keeps it, and so does a file too big to
-    be a pid file of ours."""
+    """Why a *.pid lock's holder is gone ("" while it may live): the file is FSCK_LOCK_AGE s old or more and its pid
+    names no process, or it holds no pid. A pid that exists (another user's too: EPERM) keeps it, and so does a file
+    too big to be a pid file of ours."""
     data, st = _tail(path, 33)
-    if data is None or st.st_size > 32:
+    if data is None or st.st_size > 32 or (now or time.time()) - st.st_mtime < FSCK_LOCK_AGE:
         return ""
     text = data.strip()
     if not (text.isdigit() and len(text) <= 9 and int(text) > 0):  # never os.kill(0): that signals our own group
-        old = (now or time.time()) - st.st_mtime >= FSCK_YOUNG
-        return ("it holds no pid" if text else "it is empty") if old else ""
+        return "it holds no pid" if text else "it is empty"
     try:
         os.kill(int(text), 0)
     except ProcessLookupError:
@@ -1653,7 +1659,16 @@ def _stale_pid(path, now=None):
 
 def _torn(path):
     """Why a journal's last line is torn ("" when it is whole): no newline after it (a write cut short) or not JSON. A
-    last line longer than FSCK_TAIL isn't judged."""
+    last line longer than FSCK_TAIL isn't judged. A torn tail is read once more a moment later: events.jsonl is
+    appended all the time, and a line landing now is whole by then."""
+    why = _torn_once(path)
+    if why:
+        time.sleep(0.05)
+        why = _torn_once(path)
+    return why
+
+
+def _torn_once(path):
     data, st = _tail(path, FSCK_TAIL)
     if not data:
         return ""
@@ -1666,60 +1681,105 @@ def _torn(path):
     try:
         if last:
             json.loads(last)
-    except ValueError:  # UnicodeDecodeError too
+    except (ValueError, RecursionError):  # UnicodeDecodeError too; a line of 60k "[" is nested past the stack
         return "its last line isn't JSON"
     return ""
 
 
-def _broken_lanes(projects):
-    """Open tasks whose lane folder is gone, is no git worktree, or whose branch is gone. Only looks: a lane's files and
-    another project's worktrees are never touched (git only reads refs, from the project's root)."""
+def _not_a_worktree(lane):
+    """Why a lane folder is no git worktree any more ("" when it is one, or can't be told): gone, no .git, or a .git
+    file whose gitdir record git worktree prune removed."""
+    if not os.path.isdir(lane):
+        return "its folder is gone"
+    git = os.path.join(lane, ".git")
+    if os.path.isdir(git) or os.path.islink(git):
+        return ""
+    try:
+        data, _ = _tail(git, 4096)
+    except PermissionError:
+        return ""
+    m = re.fullmatch(rb"gitdir:\s*(.+?)\s*", data or b"")
+    if not m:
+        return "its folder isn't a git worktree any more"
+    record = os.path.join(lane, os.fsdecode(m.group(1)))  # a relative gitdir is relative to the lane
+    return "" if os.path.isdir(record) else f"its git record is gone ({record}: git worktree prune removed it)"
+
+
+def _broken_lanes(projects, here=None):
+    """Open tasks whose lane folder is gone or no git worktree, or whose branch is gone. Only looks: a lane's files and
+    another project's worktrees are never touched (git only reads refs, from the project's root). The fm lane rm hint
+    is given only for here, the current project's slug: task ids repeat across projects."""
     out = []
     for p in projects:
         for b in c.load_briefs(p):
             lane, branch = b.meta.get("lane"), b.meta.get("lane_branch")
             if not isinstance(lane, str) or not lane or b.status in c.CLOSED:  # a closed task's lane is fm tidy's
                 continue
-            if not os.path.isdir(lane):
-                why = "its folder is gone"
-            elif not os.path.exists(os.path.join(lane, ".git")):
-                why = "its folder isn't a git worktree any more"
-            elif isinstance(branch, str) and branch and c._git(p.root, "rev-parse", "--verify", "-q",
-                                                                f"refs/heads/{branch}", timeout=10, proc=True).returncode == 1:
+            why = _not_a_worktree(lane)
+            if not why and isinstance(branch, str) and branch and c._git(
+                    p.root, "rev-parse", "--verify", "-q", f"refs/heads/{branch}", timeout=10, proc=True).returncode == 1:
                 why = f"its branch {branch} is gone"  # only git's own "no such ref": a timeout or no repo says nothing
-            else:
-                continue
-            out.append({"kind": "broken lane", "path": lane, "task": b.id, "project": p.slug,
-                        "detail": f"{b.id}: {why} (fm lane rm {b.id} frees the task)"})
+            if why:
+                out.append({"kind": "broken lane", "path": lane, "task": b.id, "project": p.slug,
+                            "detail": f"{b.id}: {why}" + (f" (fm lane rm {b.id} frees the task)" if p.slug == here
+                                                          else "")})
     return out
 
 
-def fsck(projects=None, state=None):
-    """T-1667: what a crash or a hand edit left broken in Foreman's own state, as {kind, path, detail[, task, project]}:
+def fsck(projects=None, state=None, here=None):
+    """T-1667: what a crash or a hand edit left broken in Foreman's own state, as {kind, path, detail, project[, task]}:
     open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, journals (*.jsonl) whose last
-    line is torn. Reads only."""
+    line is torn, and locks or journals it can't read. project is None for state no project owns. Reads only."""
     state = state or c.state_dir()
-    found = _broken_lanes([p for p, _ in c.all_projects()] if projects is None else projects)
-    now = time.time()
+    found = _broken_lanes([p for p, _ in c.all_projects()] if projects is None else projects, here)
+    pdir, now = os.path.join(state, "projects"), time.time()
     for root, dirs, names in os.walk(state):  # symlinked folders aren't followed
         dirs[:] = sorted(x for x in dirs if root != state or x not in FSCK_SKIP)
         for n in sorted(names):
-            path = os.path.join(root, n)
-            why = _stale_pid(path, now) if n.endswith(".pid") else _torn(path) if n.endswith(".jsonl") else ""
+            path, lock = os.path.join(root, n), n.endswith(".pid")
+            try:
+                why = _stale_pid(path, now) if lock else _torn(path) if n.endswith(".jsonl") else ""
+                kind = "stale lock" if lock else "torn journal"
+            except PermissionError:
+                why, kind = f"permission denied: fsck can't check this {'lock' if lock else 'journal'}", "unreadable"
             if why:
-                found.append({"kind": "stale lock" if n.endswith(".pid") else "torn journal", "path": path,
-                              "detail": why})
+                rel = os.path.relpath(path, pdir)
+                found.append({"kind": kind, "path": path, "detail": why,
+                              "project": None if rel.startswith("..") else rel.split(os.sep)[0]})
     return found
+
+
+def _pid_ns_doubt():
+    """Why os.kill can't be trusted to see every lock's holder here ("" when it can): this process runs in a PID
+    namespace of its own (a sandbox or a container), or that can't be told."""
+    if not sys.platform.startswith("linux"):
+        return ""  # no PID namespaces
+    try:
+        ns = os.readlink(PID_NS)
+    except OSError as e:
+        return f"this process's PID namespace can't be read ({e.strerror})"
+    return "" if ns == INIT_PID_NS else (f"this process runs in a PID namespace of its own ({ns}: a sandbox or a "
+                                         f"container), where a live lock's holder can look dead")
 
 
 def fsck_fix(found):
     """Remove the stale locks among found, each re-checked just before; (removed paths, the findings left for a person).
-    A broken lane or a torn journal is never repaired here: the ledger is hash-chained, and a lane holds work."""
+    A broken lane or a torn journal is never repaired here: the ledger is hash-chained, and a lane holds work. Refused
+    (PolicyError) where os.kill can't see every process."""
+    doubt = _pid_ns_doubt()
+    if doubt:
+        raise c.PolicyError(f"{doubt}: fm fsck --fix removes no lock here; run it from a shell outside the sandbox")
     fixed, left = [], []
     for f in found:
         if f["kind"] != "stale lock":
             left.append(f)
-        elif _stale_pid(f["path"]):  # a new holder may have written its pid since the scan: then it isn't stale
+            continue
+        try:
+            stale = _stale_pid(f["path"])  # a new holder may have written its pid since the scan: then it isn't stale
+        except PermissionError:
+            left.append(dict(f, kind="unreadable", detail="permission denied: fsck can't check this lock"))
+            continue
+        if stale:
             try:  # ponytail: the re-check narrows the race with a holder starting now to microseconds; it doesn't close it
                 os.unlink(f["path"])
                 fixed.append(f["path"])
@@ -1745,7 +1805,8 @@ def check_fsck(projects=None):
 
 
 def cmd_fsck(args):
-    found = fsck()
+    here = getattr(args, "project", None) or getattr(c.find_project(os.getcwd()), "slug", None)
+    found = fsck(here=here)
     fixed, left = fsck_fix(found) if args.fix else ([], found)
     if args.json:
         print(json.dumps({"ok": not left, "findings": left, "fixed": fixed}, indent=2, ensure_ascii=False))
@@ -1753,9 +1814,9 @@ def cmd_fsck(args):
     for path in fixed:
         print(f"{'removed':<13} {c.plain(path)}: a stale lock")
     for f in left:  # a hand-edited brief's lane path could hold escape sequences
-        print(f"{f['kind']:<13} {c.plain(f['path'])}: {c.plain(f['detail'])}")
+        print(f"{f['kind']:<13} [{c.plain(f['project'] or 'state')}] {c.plain(f['path'])}: {c.plain(f['detail'])}")
     hints = (["fm fsck --fix removes the stale locks"] if any(f["kind"] == "stale lock" for f in left) else []) + (
-        ["broken lanes and torn journals are left for a person (fm lane list; a torn ledger: fm verify-ledger)"]
+        ["the rest is left for a person (fm lane list in its project; a torn ledger: fm verify-ledger)"]
         if any(f["kind"] != "stale lock" for f in left) else [])
     print(("\n" if fixed or left else "") + "fm fsck: " + (f"{_fsck_counts(left)}; " + "; ".join(hints) if left else
                                                            "OK: no broken lanes, stale locks or torn journals"))
@@ -1842,11 +1903,19 @@ def _fix_state_dir():
     return f"state moved back to {c.restore_default_state()}"
 
 
+def _fix_fsck():
+    try:
+        return f"removed {len(fsck_fix(fsck())[0])} stale lock(s)"
+    except c.PolicyError as e:
+        return f"no lock removed: {e}"
+
+
 # result name -> (the repair a flag already performs, whether the check now passes); nothing here is new behaviour
 FIXERS = {
     "views": (_fix_views, lambda: all(views_match(p) for p, _ in c.all_projects())),
     "integrity": (_fix_integrity, _recheck_integrity),
     "state dir": (_fix_state_dir, lambda: c.state_dir() == os.path.join(c.foreman_home(), "state")),
+    "fsck": (_fix_fsck, lambda: check_fsck().status == "PASS"),  # T-1667: only its stale locks
 }
 
 
