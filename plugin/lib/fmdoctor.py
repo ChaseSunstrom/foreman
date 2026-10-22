@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -1153,6 +1154,52 @@ def _in_use_marker(root, d, f, full):
     return bool(m) and m.group(1) == f.encode()
 
 
+_SKIP_CAP = 20_000
+
+
+def _stand_skipped(root, top, stand):
+    """T-1459: a folder _tree_hash skips (node_modules, .venv, …) by stat stand-ins: each entry's path, mode, size and
+    mtime_ns, a link's target, a folder it can't list. Never opened (a FIFO can't block), links never followed.
+    ponytail: past _SKIP_CAP entries the folder is named as too many and the rest is unseen; raise it if real trees
+    hit it."""
+    n, rel = 0, lambda p: os.path.relpath(p, root).encode()
+    for d, dirs, files in os.walk(top, onerror=lambda e: stand(rel(e.filename or top) + b"\0!unlisted\0")):
+        dirs.sort()
+        for x in sorted(dirs + files):
+            n += 1
+            if n > _SKIP_CAP:
+                stand(rel(top) + b"\0!too-many\0")
+                return
+            p = os.path.join(d, x)
+            try:
+                st = os.lstat(p)
+                if stat.S_ISLNK(st.st_mode):
+                    stand(rel(p) + b"\0->" + os.fsencode(os.readlink(p)) + b"\0")
+                elif not stat.S_ISDIR(st.st_mode):
+                    stand(rel(p) + f"\0{st.st_mode} {st.st_size} {st.st_mtime_ns}\0".encode())
+            except OSError:  # removed mid-walk
+                continue
+
+
+def _stand_named(root, rel, stand):
+    """T-1459: a script a plugin's hooks, MCP or LSP servers name inside a skipped folder, by content (a stat stand-in
+    misses an edit that keeps size and mtime). Inside the plugin only, a regular file up to 4 MB, opened non-blocking."""
+    import hashlib
+    base = os.path.realpath(root)
+    real = os.path.realpath(os.path.join(root, rel))
+    if os.path.commonpath([real, base]) != base or not os.path.isfile(real):
+        return  # outside the plugin or not a file: capabilities names it
+    try:
+        fd = os.open(real, os.O_RDONLY | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as fh:
+            st = os.fstat(fd)
+            ok = stat.S_ISREG(st.st_mode) and st.st_size <= 4_000_000
+            data = hashlib.sha256(fh.read(4_000_001)).hexdigest() if ok else f"!not-read {st.st_mode} {st.st_size}"
+    except OSError:
+        data = "!unreadable"
+    stand(rel.encode() + b"\0=" + data.encode() + b"\0")
+
+
 def _tree_hash(root, h, cap=4000, skipped=None):
     """Every file under an install dir (its hooks, scripts and code, not just its manifest), path and bytes, in order.
     T-1434: what h only names goes into skipped by a cheap stand-in: a symlink's target path (a linked folder's too,
@@ -1172,6 +1219,9 @@ def _tree_hash(root, h, cap=4000, skipped=None):
             link = os.path.join(d, x)
             if os.path.islink(link):
                 stand(os.path.relpath(link, root).encode() + b"\0->" + os.fsencode(os.readlink(link)) + b"\0")
+        for x in sorted(dirs):  # T-1459: what the walk skips is still seen by stat, in skipped only (sha unchanged)
+            if x in _SUPPLY_SKIP and x != ".git" and not os.path.islink(os.path.join(d, x)):
+                _stand_skipped(root, os.path.join(d, x), stand)
         dirs[:] = sorted(x for x in dirs if x not in _SUPPLY_SKIP)
         for f in sorted(files):
             full = os.path.join(d, f)
@@ -1216,7 +1266,11 @@ def _supply(claude):
                 root = inst.get("installPath") if isinstance(inst, dict) else None
                 if isinstance(root, str) and root and os.path.isdir(root):  # review: never "" (the cwd)
                     _tree_hash(root, h, skipped=skipped)
-                    for k, v in fmplugins.capabilities(root).items():
+                    got = fmplugins.capabilities(root)
+                    for s in got.get("scripts", []):  # T-1459: what runs from a skipped folder, by content
+                        if set(s.split(os.sep)) & _SUPPLY_SKIP:
+                            _stand_named(root, s, skipped.update)
+                    for k, v in got.items():
                         caps[k] = sorted(set(caps.get(k, [])) | set(v))
         except Exception as e:
             errors[pid] = f"{type(e).__name__}: {e}"

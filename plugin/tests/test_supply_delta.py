@@ -446,6 +446,51 @@ class SupplyDelta(ForemanTestCase):
         write(tool, "!unreadable")
         self.assertNotEqual(fmdoctor.check_supply(self.claude).status, "PASS")
 
+    def test_skipped_folders_still_show_changes(self):
+        """T-1459: node_modules, .venv and the like aren't hashed by content, but a file added or edited there still
+        shows; a script a hook names inside one is hashed by content (an edit that keeps size and mtime shows); .git
+        stays out; a FIFO there never blocks."""
+        dep = os.path.join(self.plugin, "hooks", "node_modules", "dep", "index.js")
+        run = os.path.join(self.plugin, "node_modules", ".bin", "run")
+        write(dep, "module.exports = 1\n")
+        write(run, "#!/bin/sh\necho a\n")
+        write(os.path.join(self.plugin, ".venv", "lib", "x.py"), "x = 1\n")
+        os.mkfifo(os.path.join(self.plugin, "node_modules", "pipe"))
+        self.hooks({"hooks": dict(STOP["hooks"], SessionStart=[{"hooks": [
+            {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/node_modules/.bin/run"}]}])})
+        fmdoctor.check_supply(self.claude, accept=True)
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        accept = lambda: fmdoctor.check_supply(self.claude, accept=True)
+        write(dep, "module.exports = 2\n")  # same size, new mtime
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "an edit under node_modules shows")
+        accept()
+        write(os.path.join(self.plugin, ".venv", "lib", "y.py"), "")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "a file added under .venv shows")
+        accept()
+        st = os.stat(run)
+        write(run, "#!/bin/sh\necho b\n")
+        os.utime(run, ns=(st.st_atime_ns, st.st_mtime_ns))  # same size and mtime: only its content tells
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "a named script is hashed by content")
+        accept()
+        write(os.path.join(self.plugin, ".git", "HEAD"), "ref: refs/heads/x\n")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS", ".git isn't code a session runs")
+
+    def test_a_skipped_folder_is_walked_only_so_far(self):
+        for i in range(30):
+            write(os.path.join(self.plugin, "node_modules", f"f{i:02}"), "")
+        seen = []
+        real = os.lstat
+        def lstat(p, *a, **k):
+            seen.append(p)
+            return real(p, *a, **k)
+        with mock.patch.object(fmdoctor, "_SKIP_CAP", 10):
+            fmdoctor.check_supply(self.claude, accept=True)
+            write(os.path.join(self.plugin, "node_modules", "f05"), "x")
+            self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "within the cap")
+            with mock.patch("os.lstat", lstat):
+                fmdoctor._supply(self.claude)
+        self.assertLess(sum("node_modules" in p for p in seen), 15, "the walk stops at the cap, not at 30")
+
     def test_a_file_vanishing_mid_walk_doesnt_end_the_check(self):
         gone = os.path.join(self.plugin, "bin", "tool")
         real = os.path.getsize
