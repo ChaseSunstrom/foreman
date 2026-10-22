@@ -278,15 +278,11 @@ def gist(text, question, width):
     return c.fit(("… " if i else "") + parts[i].rstrip(";,") + (" …" if i < len(parts) - 1 else ""), width)
 
 
-def can(question, n=3):
-    """T-1519: 'can Foreman do X?' from fm help: [(command, help)] for the commands whose name, help and options' help
-    hold at least half the question's words, rarest words first (idf); [] when none do."""
+def verb_docs():
+    """{command: (its help, its name, help and options' help as one text)} from fm's parser (fm which: T-1699)."""
     import argparse
     import fmcli
-    want = asked(question)
-    if not want:
-        return []
-    docs, helps = {}, {}
+    docs = {}
     for a in fmcli.build_parser()._actions:
         if isinstance(a, argparse._SubParsersAction):
             helps = {ca.dest: ca.help or "" for ca in a._choices_actions}
@@ -294,7 +290,19 @@ def can(question, n=3):
                 if name in helps:
                     words = [name.replace("-", " "), helps[name]] + [x.help for x in sub._actions
                                                                     if x.help and x.help != argparse.SUPPRESS]
-                    docs[name] = set(_tokens(" ".join(words)))
+                    docs[name] = (helps[name], " ".join(words))
+    return docs
+
+
+def can(question, n=3):
+    """T-1519: 'can Foreman do X?' from fm help: [(command, help)] for the commands whose name, help and options' help
+    hold at least half the question's words, rarest words first (idf); [] when none do."""
+    want = asked(question)
+    if not want:
+        return []
+    verbs = verb_docs()
+    helps = {k: h for k, (h, _) in verbs.items()}
+    docs = {k: set(_tokens(t)) for k, (_, t) in verbs.items()}
     df = collections.Counter(w for d in docs.values() for w in d)
     hits = []
     for name, d in docs.items():

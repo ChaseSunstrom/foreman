@@ -1052,6 +1052,10 @@ def _secret_note(text):
     return f"Pasted secret ({kinds[0]}): don't repeat or store it; suggest rotating it"
 
 
+WHICH_HINT = 'Unsure which skill fits: fm which "<the task>"'  # T-1699
+_NAMES_SKILL = re.compile(r"/[\w-]+:[\w-]+|\bskills?\b|\bplaybooks?\b|\bfm which\b", re.I)  # a request naming its own
+
+
 def user_prompt_submit(pl):
     sid = pl.get("session_id")
     p = c.find_project(_cwd(pl), create=not os.environ.get("FOREMAN_WORKER_OF"))  # T-1438: a worker sets up nothing
@@ -1232,6 +1236,11 @@ def user_prompt_submit(pl):
                 c.hints_shown(p, nxt)  # T-0250: what was shown and not used gets quieter
             except Exception:
                 log_error("UserPromptSubmit", _tb())
+    # T-1699: a task that names no skill, and got none from a note above, hears of fm which once a session; last, so
+    # it never takes the Next hint's room
+    if not ui_note and not r.items and c.is_work_request(text) and not _NAMES_SKILL.search(text) \
+            and room(len(WHICH_HINT) + 2) and _skill_once(sid, WHICH_HINT):
+        parts.append(WHICH_HINT)
     out = {"terminalSequence": _title_seq(sd)}
     if parts:
         out["hookSpecificOutput"] = {"hookEventName": "UserPromptSubmit",
