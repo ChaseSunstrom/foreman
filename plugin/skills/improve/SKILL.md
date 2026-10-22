@@ -1,6 +1,7 @@
 ---
 name: improve
 description: Use when asked to improve Foreman itself, or the self-inbox has items and the queue is empty: eval-gated changes in a worktree.
+disable-model-invocation: true
 ---
 
 # Foreman: improve (bounded, eval-gated)
