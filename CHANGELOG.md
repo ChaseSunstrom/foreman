@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Safety ratchet: the guard is held to an allow-corpus of about 100 everyday commands, replayed with the labelled cases (a missing or thinned corpus fails the replay); fm evolve refuses the guard's own files, its replay and evolve code, and symlinked targets, reading the pinned commit; a guard that raises reports unable everywhere (replay, candidate scoring, the friction digest), never a pass (T-1517).
 - fm lease take keeps tasks apart within one session: builder lanes share their main session's id, so another task's lease now refuses the take (naming that task) instead of being handed over; --warn keeps both claims, a task retakes its own, and a removed lane releases its task's leases (T-1588).
 - fm --json output prints any value as text (fm settings list --json no longer crashes on a TOML datetime) and escapes DEL and C1 control characters (T-1589).
 - Guard: git checkout -b NAME and git switch -c/--create NAME with no start point make a branch at HEAD and change no file, so they pass in Foreman's checkout and the home folder; with a start point, a pathspec, -B or -C they stay tree writes, and a hooks path set on the line still refuses (T-1598).
