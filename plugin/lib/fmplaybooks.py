@@ -3,14 +3,23 @@
 Every file under references/ is named in SKILL.md or in its stage's INDEX.md (itself named in SKILL.md), every path an
 index names exists, and SKILL.md stays inside doctor's budget. No two playbooks share a title or most of their words
 (5-word shingles, Jaccard over DUP). Each has a Use-when line above its first section and a numbered procedure (a
-line starting '1. ' outside code), and none grew past its size in ratchet.json (growth is said out loud with
-`fm check playbooks ratchet`; a new playbook has no record yet and passes). Every `fm lib show NAME` is a card, and
-every python block not marked no-run (```python no-run) exits 0 under python3 -I in an empty folder with stdin closed,
-PATH its only inherited variable, and a timeout. reach() names the playbooks no session has read lately (events.jsonl's Read
-events, as fm cost counts them, across every project: the playbooks are shared)."""
+line starting '1. ' outside code), and none grew past its ceiling in ratchet.json by more than SLACK (growth is said
+out loud with `fm check playbooks ratchet`, which also lowers the ceiling of one that shrank; a new playbook has no
+record yet and passes). Every `fm lib show NAME` is a card, and every python block not marked no-run
+(```python no-run) exits 0 under python3 -I in an empty folder with stdin closed, PATH its only inherited variable,
+limits on memory, processes and file size, and a timeout. reach() names the playbooks no session has read lately
+(events.jsonl's Read events, as fm cost counts them, across every project: the playbooks are shared).
+
+The blocks are trusted like the repo's tests: the folder, environment and limits are hygiene, not a sandbox. A block
+can still read and write absolute paths, use the network and run any program on PATH, and a process it moves to its
+own session (setsid) escapes the process-group kill.
+
+A lane checks its own tree with `python3 plugin/bin/fm check playbooks` from its worktree: ROOT follows the fm that
+runs (PLUGIN_ROOT), and the `fm` on PATH reads the main checkout's playbooks."""
 import json
 import os
 import re
+import resource
 import signal
 import subprocess
 import sys
@@ -20,13 +29,18 @@ import time
 
 import fmcore as c
 
-ROOT = os.path.join(c.PLUGIN_ROOT, "skills", "playbooks")
+ROOT = os.environ.get("FOREMAN_PLAYBOOKS") or os.path.join(c.PLUGIN_ROOT, "skills", "playbooks")  # tests: a fixture
 RATCHET = "ratchet.json"  # {path: tokens (chars / 4)}
+SLACK = (1.10, 50)  # a playbook fails once it passes ceiling × 1.10 + 50 tokens: a fix in passing needs no ratchet run
 DUP = 0.6  # word-shingle Jaccard over which two playbooks are one
 SHINGLE = 5
 TIMEOUT = 20  # seconds per python block
 REACH_DAYS = 60
+SHOWN = 30  # findings printed before "and N more"; --json lists them all
 OUTPUT_MAX = 8 << 20  # bytes a block may write (stderr included): a runaway loop stops here, not at a full disk
+MEMORY_MAX = 2 << 30  # bytes of address space per block
+PROCS_HEADROOM = 1024  # tasks (threads count) a block may add to the user's own, counted per block: RLIMIT_NPROC is
+# per user, so a parallel test run beside it eats into the same budget
 _FENCE = re.compile(r"^(\s*)(`{3,}|~{3,})(.*)$")
 _PATH = re.compile(r"`((?:\.\./[\w.-]+/)?references/[^`\s]+)`")
 # the sentence that says when to reach for it: "Use when…", "Use PROACTIVELY when…", "Use for…", "Use before…"
@@ -106,13 +120,42 @@ def _cards():
     return {n for x in fmlib.cards() for n in (x["name"], f"{x['dir']}/{x['name']}")}  # fm lib show takes both
 
 
-def _run(code, timeout):
+def _user_tasks():
+    """The processes and threads this user runs now (RLIMIT_NPROC counts them all), from /proc; None without it."""
+    uid, n = os.getuid(), 0
+    try:
+        pids = [x for x in os.listdir("/proc") if x.isdigit()]
+    except OSError:
+        return None
+    for pid in pids:
+        try:
+            if os.stat(f"/proc/{pid}").st_uid == uid:
+                n += len(os.listdir(f"/proc/{pid}/task"))
+        except OSError:
+            pass  # gone meanwhile
+    return n or None
+
+
+def _limits():
+    """[(resource, value)] for a block: file size, address space and (with /proc) the user's tasks plus headroom; never
+    looser than the limits fm itself runs under."""
+    want = [(resource.RLIMIT_FSIZE, OUTPUT_MAX), (resource.RLIMIT_AS, MEMORY_MAX)]
+    tasks = _user_tasks()
+    if tasks is not None:  # ponytail: no count without /proc (macOS), so no process cap there
+        want.append((resource.RLIMIT_NPROC, tasks + PROCS_HEADROOM))
+    return [(r, min(x for x in (v, *resource.getrlimit(r)) if x != resource.RLIM_INFINITY)) for r, v in want]
+
+
+def _run(code, timeout, limits=()):
     """Why the block failed, or None: python3 -I in an empty temporary folder, stdin closed, PATH the only variable
-    passed on (HOME is the folder, so ~ doesn't reach the real one); then its whole process group is killed, so neither
-    a hung block nor a server it started and forgot outlives the check."""
+    passed on (HOME is the folder, so ~ doesn't reach the real one), under `limits`; then its process group is killed,
+    so a hung block, or a server it started and forgot, stops with it (one that setsid()s escapes: see the module)."""
     def limit():
-        import resource
-        resource.setrlimit(resource.RLIMIT_FSIZE, (OUTPUT_MAX, OUTPUT_MAX))
+        for r, v in limits:
+            try:
+                resource.setrlimit(r, (v, v))
+            except (OSError, ValueError):
+                pass  # a platform without that limit
     with tempfile.TemporaryDirectory(prefix="fm-playbook-", ignore_cleanup_errors=True) as d, \
             tempfile.TemporaryFile() as err:
         env = {"PATH": os.environ.get("PATH") or os.defpath, "HOME": d}
@@ -185,9 +228,9 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
             out.append(f"{rel}: no Use-when line above its first section ('Use when …')")
         if not any(x.startswith("1. ") for x in prose):
             out.append(f"{rel}: no numbered procedure (a line starting '1. ' outside code)")
-        if rel in record and _tokens(text) > record[rel]:
-            out.append(f"{rel}: grew from {record[rel]:,} to {_tokens(text):,} tokens; say so with "
-                       f"`fm check playbooks ratchet`, or trim it")
+        if rel in record and _tokens(text) > record[rel] * SLACK[0] + SLACK[1]:
+            out.append(f"{rel}: grew from {record[rel]:,} to {_tokens(text):,} tokens, past its ceiling's slack "
+                       f"(10% + 50); say so with `fm check playbooks ratchet`, or trim it")
         for n, line in enumerate(text.splitlines(), 1):
             for name in _LIB.findall(line):
                 name = name.rstrip(".,;:)!?'\"")
@@ -204,7 +247,7 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
             if share > DUP:
                 out.append(f"{b}: shares {share:.0%} of its wording with {a}: merge them or cut one")
     for rel, n, body in snippets if run else ():
-        why = _run(body, timeout)
+        why = _run(body, timeout, _limits())
         if why:
             out.append(f"{rel}:{n}: {why} (mark it ```python no-run if it isn't a self-check)")
     return out
@@ -234,19 +277,21 @@ def reach(root=ROOT, days=REACH_DAYS):
 
 def cmd(args, out):
     """fm check playbooks [ratchet]: the lint and the reach report; exit 1 on any finding."""
-    if args.words[:1] == ["ratchet"]:
+    if args.words not in ([], ["ratchet"]):  # `ratchet typo` rewrites nothing
+        import fmcli
+        raise fmcli.UsageError("fm check playbooks [ratchet]")
+    if args.words:
         changed = ratchet()
         out(args, {"ratchet": changed}, f"ratchet.json: {len(changed)} playbook size(s) recorded"
             + "".join(f"\n  {k}: {o if o is not None else 'new'} → {n} tokens" for k, (o, n) in sorted(changed.items())))
         return 0
-    if args.words:
-        import fmcli
-        raise fmcli.UsageError("fm check playbooks [ratchet]")
     found, r = problems(), reach()
     n = len(r["read"]) + len(r["unread"])
     window = f"{r['days']} days" + (f" (the event log covers {r['covers']:g})" if r["covers"] < r["days"] else "")
+    shown = [f"✗ {x}" for x in found[:SHOWN]] + ([f"✗ … and {len(found) - SHOWN} more (--json lists them all)"]
+                                                 if len(found) > SHOWN else [])
     out(args, {"problems": found, "reach": r},
-        "\n".join(f"✗ {x}" for x in found) + ("\n" if found else "")
+        "\n".join(shown) + ("\n" if shown else "")
         + f"{'✗' if found else '✓'} playbooks: {n} checked, {len(found)} problem(s)\n"
         + f"  unread in {window}: {len(r['unread'])} of {n}"
         + (": " + ", ".join(x[len('references/'):-3] for x in r["unread"][:12])

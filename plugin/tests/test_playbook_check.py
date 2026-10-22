@@ -61,6 +61,13 @@ class Index(Fixture):
         got = self.assertFlags("references/ui/beta.md: in no index")
         self.assertTrue(any("references/ui/INDEX.md: in no index" in x for x in got), got)
 
+    def test_a_template_is_indexed_but_no_playbook(self):  # a DESIGN.md template has no Use-when line or procedure
+        self.write("references/ui/templates/DESIGN.md", "# DESIGN\n\nFill this in.\n")
+        self.assertFlags("references/ui/templates/DESIGN.md: in no index")
+        self.write("references/ui/INDEX.md", "# UI\n\n- `references/ui/beta.md` — beta.\n"
+                                             "- `references/ui/templates/DESIGN.md` — the template.\n")
+        self.assertEqual(self.problems(), [])
+
     def test_a_dead_index_line(self):
         self.write("references/ui/INDEX.md", "# UI\n\n- `references/ui/beta.md` — beta.\n"
                                              "- `references/ui/gone.md` — gone.\n")
@@ -130,6 +137,19 @@ class Ratchet(Fixture):
         pb.ratchet(self.root)
         self.assertEqual(self.problems(), [])
 
+    def test_growth_inside_the_slack_passes(self):  # 10% plus 50 tokens: an edit in passing needs no ratchet run
+        pb.ratchet(self.root)
+        self.write("references/fix/alpha.md", book("Alpha", extra="A few more words. " * 8))
+        self.assertEqual(self.problems(), [])
+
+    def test_ratchet_lowers_a_ceiling_when_a_playbook_shrinks(self):
+        self.write("references/fix/alpha.md", book("Alpha", extra="Padding that a later edit trims. " * 20))
+        pb.ratchet(self.root)
+        high = json.loads(self.read_skill(pb.RATCHET))["references/fix/alpha.md"]
+        self.write("references/fix/alpha.md", book("Alpha"))
+        self.assertEqual(pb.ratchet(self.root)["references/fix/alpha.md"][0], high)
+        self.assertLess(json.loads(self.read_skill(pb.RATCHET))["references/fix/alpha.md"], high)
+
     def test_a_new_playbook_needs_no_record(self):
         pb.ratchet(self.root)
         self.write("references/fix/fresh.md", book("Fresh", "Use when a fresh lane adds a playbook later on.",
@@ -141,8 +161,8 @@ class Ratchet(Fixture):
         self.write(pb.RATCHET, "{nope")
         self.assertFlags(pb.RATCHET)
 
-    def read_skill(self):
-        with open(os.path.join(self.root, "SKILL.md"), encoding="utf-8") as f:
+    def read_skill(self, rel="SKILL.md"):
+        with open(os.path.join(self.root, rel), encoding="utf-8") as f:
             return f.read()
 
 
@@ -153,6 +173,11 @@ class Snippets(Fixture):
     def test_a_passing_block_runs_isolated_in_an_empty_folder(self):
         self.snippet("import os, sys\nassert sys.flags.isolated\nassert os.listdir('.') == [], os.listdir('.')\n"
                      "assert sys.stdin.read() == ''\nassert 'FOREMAN_HOME' not in os.environ, sorted(os.environ)")
+        self.assertEqual(self.problems(), [])
+
+    def test_a_block_runs_under_memory_and_process_limits(self):
+        self.snippet("import resource\nfor r in (resource.RLIMIT_AS, resource.RLIMIT_NPROC, resource.RLIMIT_FSIZE):\n"
+                     "    assert resource.getrlimit(r)[0] != resource.RLIM_INFINITY, r")
         self.assertEqual(self.problems(), [])
 
     def test_a_failing_block_names_path_and_line(self):
@@ -213,6 +238,35 @@ class Reach(Fixture):
         os.makedirs(c.state_dir(), exist_ok=True)
         self.event("references/ui/be", 1)  # fmhooks keeps 120 characters of a target
         self.assertEqual(pb.reach(self.root, days=60)["read"], {"references/ui/beta.md": 1})
+
+
+class Cli(Fixture):
+    def check(self, *words):
+        return self.fm("check", "playbooks", *words, check=False, env={"FOREMAN_PLAYBOOKS": self.root})
+
+    def test_a_finding_exits_1(self):
+        self.assertEqual(self.check().returncode, 0)
+        self.write("references/fix/stray.md", book("Stray", "Use when a stray file turns up in a review."))
+        r = self.check()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("references/fix/stray.md: in no index", r.stdout)
+
+    def test_ratchet_records_and_a_stray_word_writes_nothing(self):
+        r = self.check("ratchet", "typo")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertFalse(os.path.exists(os.path.join(self.root, pb.RATCHET)))
+        self.assertEqual(self.check("ratchet").returncode, 0)
+        with open(os.path.join(self.root, pb.RATCHET), encoding="utf-8") as f:
+            self.assertEqual(sorted(json.load(f)), ["references/fix/alpha.md", "references/ui/beta.md"])
+
+    def test_many_findings_dont_flood_the_terminal(self):
+        for i in range(60):
+            self.write(f"references/fix/stray{i}.md", f"# Stray {i}\n\nUse when stray number {i} turns up.\n\n1. Go.\n")
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertLess(len(r.stdout.splitlines()), 40, r.stdout)
+        self.assertIn("more (--json lists them all)", r.stdout)
+        self.assertEqual(len(json.loads(self.check("--json").stdout)["problems"]), 60)
 
 
 class Repo(ForemanTestCase):
