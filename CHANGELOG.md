@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code hands the worker a planner's plan inside the run's data envelope, with your request as what rules, so a planner steered by a hostile file in the repo can't hand the worker instructions; a `--task` brief or a `--verify` plan is your own and stays as instructions (T-1422).
 - The guard no longer refuses `cd <scratch> && python3 - <<'EOF' … EOF` writing a relative file there just because another line follows the heredoc: lines after the last Python block run after it and can't move where it wrote. A `cd` before it, or a second Python block after a `cd` back, still counts (T-1458).
 - The guard's refusal of a CHANGELOG.md edit with no active task says the line belongs to its task: add it before `fm task finish`, or `fm focus` that task again (T-1452).
 - The builder rules (and every lane brief) say that reads or writes outside the worktree, such as another session's task output files or the main thread's scratchpad, are refused by Claude Code too, so builders stop retrying them (T-1454).
