@@ -86,6 +86,24 @@ class DryRun(TidyCase):
 
 
 class Apply(TidyCase):
+    def test_old_reverted_copies_are_aged_out(self):  # T-1442
+        rev = os.path.join(self.p.dir, "code", "reverted")
+        os.makedirs(rev)
+        outside = os.path.join(self.tmp, "outside")
+        open(outside, "w").close()
+        old, new, link = (os.path.join(rev, n) for n in ("old", "new", "link"))
+        for f in (old, new):
+            open(f, "w").close()
+        os.symlink(outside, link)
+        for f in (old, outside):
+            os.utime(f, (time.time() - 31 * 86400,) * 2)
+        os.utime(link, (time.time() - 31 * 86400,) * 2, follow_symlinks=False)
+        self.assertIn("old_reverted", self.kinds(self.tidy()))
+        self.assertTrue(os.path.exists(old), "a dry run removes nothing")
+        self.tidy("--apply")
+        self.assertEqual(sorted(os.listdir(rev)), ["link", "new"])
+        self.assertTrue(os.path.exists(outside))
+
     def test_apply_archives_and_loses_nothing(self):
         self.seed_rot()
         done_text = read_text(c.find_brief(self.p, "T-0004").path)
