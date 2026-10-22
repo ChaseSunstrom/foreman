@@ -159,6 +159,19 @@ class Apply(TidyCase):
         self.assertEqual(sorted(os.listdir(os.path.join(state, "bus"))), ["mail.jsonl", "seen-dead"],
                          "only heartbeats go: a read mark keeps a resumed session from re-reading old mail (T-0839)")
 
+    def test_prunes_stack_dumps_older_than_two_weeks(self):
+        # T-1405: a hung long verb's stack dump is evidence for a while, not forever
+        stacks = os.path.join(self.home, "state", "logs", "stacks")
+        os.makedirs(stacks)
+        old, recent = os.path.join(stacks, "check-1.txt"), os.path.join(stacks, "code-2.txt")
+        for x, days in ((old, 15), (recent, 10)):
+            with open(x, "w") as f:
+                f.write("Thread 0x1\n")
+            os.utime(x, (time.time() - days * 86400,) * 2)
+        self.assertIn("old_stacks", self.kinds(self.tidy()))
+        self.tidy("--apply")
+        self.assertEqual(os.listdir(stacks), ["code-2.txt"])
+
     def test_sweeps_the_empty_project_shells_foremans_children_left(self):
         # T-0856: 521 empty ~/.claude/projects folders, one per child run in a fresh temp dir
         projects = os.path.join(self.fake_home, ".claude", "projects")
