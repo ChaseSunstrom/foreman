@@ -6030,6 +6030,11 @@ def _build_parser():
     s.add_argument("action", choices=["info", "diff"])
     s.add_argument("paths", nargs="+", metavar="PATH", help="info: one PNG; diff: two, A then B")
     s.add_argument("--out", metavar="PATH", help="diff: write a PNG of A faded with each changed pixel in red")
+    s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
+            "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
+            "form, with DESIGN.md's tokens resolved (exit 1 on problems)")
+    s.add_argument("action", choices=["check"])
+    s.add_argument("path", nargs="?", help="the score (default: motion.toml at the repo root)")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), tier=("Finding your way", 460), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
@@ -6336,7 +6341,8 @@ WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"s
                    "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
                    "design": ("action", {"lint", "palette", "contrast"}),  # T-1506, T-1507: these only read
-                   "img": ("out", {None})}  # T-1630: info and diff read; --out writes
+                   "img": ("out", {None}),  # T-1630: info and diff read; --out writes
+                   "motion": ("action", {"check"})}
 
 
 def _worker_may(args):
