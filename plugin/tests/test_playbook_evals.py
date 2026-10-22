@@ -127,5 +127,35 @@ class Lift(ForemanTestCase):
                 self.assertFalse(pb.passes(pb.literal(b["task"], None), b["checks"]), f"{name} brief {i} without")
 
 
+
+class Ablate(ForemanTestCase):
+    """T-1619: each top-level section's share of the lift, the section dropped one at a time; zero share is flagged."""
+    BOOK = ("# Fixture\nIntro line.\n\n## Down first\n- Write the down migration before the up one.\n\n"
+            "## Twice\n- Run the migration twice.\n\n## Style\n- Name files in kebab-case.\n")
+
+    def test_each_section_gets_its_share_and_a_zero_share_one_is_flagged(self):
+        rows = pb.ablate(self.BOOK, BRIEFS["briefs"], pb.literal)
+        self.assertEqual([r["section"] for r in rows], ["Down first", "Twice", "Style"])
+        share = {r["section"]: r["share"] for r in rows}
+        self.assertEqual(share, {"Down first": 0.5, "Twice": 0.5, "Style": 0.0})
+        self.assertEqual([r["section"] for r in rows if r["cut"]], ["Style"])
+
+    def test_a_heading_inside_a_code_fence_is_not_a_section(self):
+        book = "# T\n\n## Real\n```md\n## not a section\n```\n\n## Also real\n"
+        self.assertEqual([t for t, _, _ in pb.sections(book)], ["Real", "Also real"])
+
+    def test_eval_ablate_prints_each_section_and_the_cut_candidate(self):
+        book = os.path.join(self.tmp, "migrations.md")
+        briefs = os.path.join(self.tmp, "migrations.json")
+        with open(book, "w") as f:
+            f.write(self.BOOK)
+        with open(briefs, "w") as f:
+            json.dump(BRIEFS, f)
+        p = subprocess.run([sys.executable, FM, "playbooks", "eval", book, "--briefs", briefs, "--ablate"],
+                           capture_output=True, text=True, cwd=self.tmp)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertRegex(p.stdout, r"Down first\s+\+0\.50")
+        self.assertRegex(p.stdout, r"Style\s+\+0\.00.*cut")
+
 if __name__ == "__main__":
     unittest.main()
