@@ -17,7 +17,7 @@
 │                                                                   │╰─────────────────────────────────────────────────╯  ⟨1b1ac429db⟩
 │                                                                   │╭─ Tokens per call ───────────────────── 1 calls ─╮  ⟨79ab81eaa6⟩
 │                                                                   ││                                                 │  ⟨5d68136c32⟩
-│                        ⠼ planning the work                        ││                                                 │  ⟨c910353f1a⟩
+│                        ⠧ planning the work                        ││                                                 │  ⟨c910353f1a⟩
 │                                                                   ││                                                 │  ⟨5d68136c32⟩
 │                                                                   ││ ██████                                          │  ⟨9f8b5a585a⟩
 │                                                                   ││ ██████                                          │  ⟨d43c0ef4c2⟩
@@ -31,4 +31,4 @@
 │                                                                   ││ ██████                                          │  ⟨94efbaff20⟩
 │                                                                   ││ 2.1k in   312 out                               │  ⟨cb47fa192a⟩
 ╰───────────────────────────────────────────────────────────────────╯╰─────────────────────────────────────────────────╯  ⟨8408b19c91⟩
- ⠼ PLANNING    step 0/3                               n new  p projects  d diff  h history  t thoughts  ? keys  q quit  ⟨24beb42cd7⟩
+ ⠧ PLANNING    step 0/3                               n new  p projects  d diff  h history  t thoughts  ? keys  q quit  ⟨24beb42cd7⟩

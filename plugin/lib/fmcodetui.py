@@ -44,6 +44,16 @@ CB = {"night": dict(ok="#4DA3FF", ok2="#9AD4FF", bad="#FF8A1F", bad2="#FFC46B", 
                     accent2="#FF8FD8"),
       "paper": dict(ok="#1D5FB8", ok2="#3B7DD8", bad="#B34D00", bad2="#C2571A", accent="#7B3FC9", accent2="#B0308F")}
 PALETTES["signal"] = dict(PALETTES["night"], **CB["night"])
+# palette = "riso" (T-1512, the pane's word too): risograph inks (green, fluorescent pink, yellow, cornflower; deeper
+# cuts of them on a light theme) over a theme's own colours; the riso theme is them on an uncoated paper stock
+RISO = {"night": dict(ok="#00A95C", ok2="#5EC8E5", bad="#FF48B0", bad2="#FF7477", warn="#FFE800", accent="#62A8E5",
+                      accent2="#FFB511"),
+        "paper": dict(ok="#00784A", ok2="#14935A", bad="#C4126C", bad2="#E2457A", warn="#835300", accent="#0062A0",
+                      accent2="#B0420F")}
+PALETTES["riso"] = dict(PALETTES["paper"], bg="#F2EDE1", bar="#E3DAC6", head="#EAE3D2", panel="#F8F4EB", ink="#1E2235",
+                        dim="#655D4E", said="#5A5242", barink="#2B2A33", edge="#C8BDA6", track="#D3C8B1",
+                        shade="#D8CEBA", **RISO["paper"])
+INKS = {"cb": CB, "riso": RISO}  # a palette's colours for a dark theme (night) and a light one (paper)
 _BG, _INK = PALETTES["night"]["bg"], PALETTES["night"]["ink"]
 
 
@@ -73,7 +83,7 @@ def _mono():
 
 
 PRESETS = {"night": lambda: _theme(PALETTES["night"]), "paper": lambda: _theme(PALETTES["paper"]),
-           "signal": lambda: _theme(PALETTES["signal"]), "mono": _mono}
+           "signal": lambda: _theme(PALETTES["signal"]), "riso": lambda: _theme(PALETTES["riso"]), "mono": _mono}
 THEME = PRESETS["night"]()
 BORDERS = {"rounded": "╭╮╰╯─│", "square": "┌┐└┘─│", "heavy": "┏┓┗┛━┃", "double": "╔╗╚╝═║", "ascii": "++++-|"}
 DEFAULTS = {
@@ -88,7 +98,7 @@ DEFAULTS = {
     "keys": {"q": "quit", "n": "new", "s": "stop", "r": "resume", "?": "help", "d": "diff", "h": "history",
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
              "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
-             "p": "projects", ",": "settings"},
+             "p": "projects", ",": "settings", "z": "hush"},
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
          ("q", "quit")]
@@ -97,7 +107,10 @@ CHIP = {"done": (" ✓ ", "chip_ok"), "now": (" ● ", "chip_accent"), "todo": (
 NODE = {"done": ("●", "ok"), "now": ("◉", "accent"), "todo": ("○", "track"), "fail": ("✖", "bad")}
 LINK = {"done": ("━", "ok"), "now": ("━", "accent"), "fail": ("━", "bad"), "todo": ("─", "track")}
 BLOCKS = "▁▂▃▄▅▆▇█"
+RAIL = "▀"  # T-1512: the 3D track's built rail: its lit top in the link's colour, its side in shadow under it
+PROBE = RAIL  # the glyphs whose width the app asks the terminal at start (East Asian ambiguous: 1 or 2 columns)
 SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+TEMPO = {"running": 10, "thinking": 5, "waiting": 2}  # T-1512: the spinner's frames a second, by agent_state
 MOTIONS = ("full", "reduced", "off")
 LOG_HIDES = ("plan", "task", "before")  # the track and Checks show these; --plain prints them
 SINGLE_BELOW = 60  # columns: a terminal narrower than this shows the activity log alone
@@ -517,6 +530,17 @@ def ease_out(k):
     return 1 - (1 - k) ** 3
 
 
+LIVE = ("planning", "running", "fixing")
+
+
+def agent_state(st):
+    """T-1512: what a live run's agent is doing, for the spinner's tempo: waiting (a quiet CLI turn, its heartbeat
+    the last word), thinking (planning) or running; None when no run is live."""
+    if st is None or st.status not in LIVE:
+        return None
+    return "waiting" if st.heard is not None else "thinking" if st.status == "planning" else "running"
+
+
 class Motion:
     """What render needs to animate, kept across frames: when each watched value changed, and from what. A value
     already there in the first frame is no change (opening a finished run shows it as it is); one first seen later
@@ -560,8 +584,8 @@ class FX:
     """One frame's motion: its time, the setting (full: everything moves; reduced: colours change, nothing moves;
     off: still) and the theme's colours. A frame drawn without an App (a snapshot, a test) is still."""
 
-    def __init__(self, cfg=None, app=None, t=0.0):
-        self.cfg, self.t = cfg or DEFAULTS, t
+    def __init__(self, cfg=None, app=None, t=0.0, st=None):
+        self.cfg, self.t, self.tempo = cfg or DEFAULTS, t, TEMPO.get(agent_state(st), TEMPO["running"])
         mode = self.cfg.get("motion", "full") if app is not None else "off"
         self.motion = app.motion if app is not None else None
         # a theme with no colours (mono) can't flash or fade: its chips keep their reverse; things still turn
@@ -581,7 +605,7 @@ class FX:
         return col(self.cfg, name, key)
 
     def spin(self):
-        return SPIN[int(self.t * 10) % len(SPIN)]
+        return SPIN[int(self.t * self.tempo) % len(SPIN)]
 
 
 _FX = FX()
@@ -598,9 +622,6 @@ def faded(style, k, cfg, under):
     fg = spec.get("fg") or col(cfg, "screen")
     return rgb(fg=mix(under, fg, k), bg=spec.get("bg") and mix(under, spec["bg"], k), bold=spec.get("bold", False),
                italic=spec.get("italic", False))
-
-
-LIVE = ("planning", "running", "fixing")
 
 
 def _waiting(st, text):
@@ -641,6 +662,7 @@ def _track(st, w, h, app):
     xs = [round(i * (w - cw) / (n - 1)) for i in range(n)]
     rows = [[(" ", "text")] * w for _ in range(3)]
     ok, ok2, accent, glow, track = fx.c("ok"), fx.c("ok2"), fx.c("accent"), fx.c("glow"), fx.c("track")
+    rail = app is not None and app.glyphs.get(RAIL) == 1 and accent is not None  # T-1512: measured, and in colour
     for i, (_, _, state) in enumerate(nodes):
         glyph, style = marks[state]
         if state == "now" and fx.moving:
@@ -660,6 +682,9 @@ def _track(st, w, h, app):
                 elif into == "now" and fx.moving:  # a light running toward the station being worked
                     d = (fx.t * 22) % (len(span) + 10) - j
                     style = rgb(fg=mix(mix(track, accent, 0.6), glow, (1 - d / 8) if 0 <= d < 8 else 0), bold=True)
+                if rail and into != "todo":  # built: a rail standing up; what's to come stays a thin line
+                    fg = resolve(style, fx.cfg).get("fg")
+                    ch, style = RAIL, rgb(fg=fg, bg=mix(fg, "#000000", 0.45))
                 rows[0][x] = (ch, style)
     wave = fx.since("track:status", st.status)
     if st.status == "closed" and fx.moving and wave < 1.8:  # done: a bright wave runs the length of the track
@@ -1048,7 +1073,7 @@ def render(st, w, h, cfg, app=None, t=None):
     if app is not None:
         app.motion.frames += 1
         t = app.clock() if t is None else t
-    _FX = FX(cfg, app, t or 0.0)
+    _FX = FX(cfg, app, t or 0.0, st)
     cv = Canvas(w, h)
     prompt = app is not None and app.mode == "prompt"
     y0, body_h = 1, h - 2 - (1 if prompt else 0)
@@ -1101,6 +1126,7 @@ KEY_NAMES = {"\t": "Tab", "\n": "Enter", "KEY_ENTER": "Enter", "KEY_UP": "↑", 
 COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume", "resume it"),
                   ("diff", "the run's changes"), ("history", "past runs"), ("projects", "every Foreman project"),
                   ("model", "model or worker"), ("settings", "settings: look, layout, keys"),
+                  ("hush", "motion: full, reduced, off"),
                   ("thoughts", "the model's own words"), ("focus", "next panel"), ("up", "up"), ("down", "down"),
                   ("expand", "open a line"), ("follow", "follow the latest"), ("help", "keys"), ("quit", "quit")]
 
@@ -1115,16 +1141,36 @@ def _overlay(cv, cfg, title, note, w=None, h=None):
     return box(cv, y, x, h, w, title, cfg, focused=True, note=note)
 
 
+POSTER = (("run", ("new", "stop", "resume", "model")),  # T-1512: the keys poster's groups; extensions' go under more
+          ("see", ("diff", "history", "projects", "thoughts", "settings", "hush")),
+          ("move", ("focus", "up", "down", "expand", "follow")), ("app", ("help", "quit")))
+
+
 def _help_view(cv, st, app, cfg):
+    """T-1512: the keys as a poster: keycaps grouped by what they do, each group's name in the gutter; two columns of
+    groups with a line between them when the screen is wide, one column as tall as the old list when it isn't."""
     keys = {}
     for k, cmd in (cfg.get("keys") or {}).items():
         name = KEY_NAMES.get(k) or key_name(k)
         if name not in keys.setdefault(cmd, []):
             keys[cmd].append(name)
-    rows = [(" ".join(keys[cmd]), label) for cmd, label in [*COMMAND_LABELS, *app.extra_labels] if keys.get(cmd)]
-    iy, ix, ih, iw = _overlay(cv, cfg, "Keys", "any key closes", 46, len(rows) + 4)
-    for i, (k, label) in enumerate(rows[:ih - 1]):
-        cv.line(iy + 1 + i, ix, [(f"{k:>11}", "warn"), ("   ", "text"), (label, "text")], ix + iw)
+    labels = dict([*COMMAND_LABELS, *app.extra_labels])
+    placed = {c for _, cmds in POSTER for c in cmds}
+    blocks = []
+    for name, cmds in [*POSTER, ("more", [c for c in labels if c not in placed])]:
+        shown = [c for c in cmds if keys.get(c) and c in labels]
+        blocks.append([[(f" {'' if i else name.upper():<4}", "title"),
+                        (" " * max(0, 8 - sum(width(n) + 3 for n in keys[c])), "text")]
+                       + [seg for n in keys[c] for seg in ((f" {n} ", "key"), (" ", "text"))]
+                       + [(" " + labels[c], "text")] for i, c in enumerate(shown)])
+    two = cv.w >= 90
+    gap = lambda bs: [line for b in bs if b for line in b + [[]]][:-1]
+    cols = [gap(blocks[:2]), gap(blocks[2:])] if two else [[line for b in blocks for line in b]]
+    iy, ix, ih, iw = _overlay(cv, cfg, "Keys", "any key closes", 88 if two else 46, max(map(len, cols)) + 4)
+    for c, lines in enumerate(cols):
+        x = ix + c * (iw // 2)
+        for i, segs in enumerate(lines[:ih - 1]):
+            cv.line(iy + 1 + i, x, segs, x + (iw // 2 if two else iw))
 
 
 def _diff_style(line):
@@ -1256,9 +1302,10 @@ PREVIEW_KEYS, PREVIEW_SECONDS = ("theme", "palette", "motion"), 10  # T-1573: sh
 
 
 def preset_theme(preset, palette="default"):
-    """The styles a theme gives before any [colors] change (the cb palette over it where it has cb colours)."""
-    if palette == "cb" and preset in CB:
-        return _theme(dict(PALETTES[preset], **CB[preset]))
+    """The styles a theme gives before any [colors] change: a palette's inks over its colours (mono has none)."""
+    base = PALETTES.get(preset)
+    if palette in INKS and base:
+        return _theme(dict(base, **INKS[palette]["paper" if base.get("paint") else "night"]))
     return PRESETS.get(preset, PRESETS["night"])()
 
 
@@ -1473,6 +1520,7 @@ class App:
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
         self.motion, self.clock = Motion(), time.monotonic  # T-1300: what moves, and the time it moves by
+        self.glyphs = {}  # T-1512: the columns the terminal draws each PROBE glyph in (none measured: none assumed)
         # T-1572: the settings screen: every setting, its search, changed-only, the :set line and what it last did
         self.set_rows, self.set_problems, self.set_query, self.set_line = [], [], "", ""
         self.set_typing, self.set_modified, self.set_note, self.no_colour = "", False, None, False
@@ -1484,7 +1532,7 @@ class App:
                          "page_down": lambda: self.move(10), "expand": self.expand, "follow": self.follow_tail,
                          "diff": self.show_diff, "history": self.show_history, "model": self.show_picker,
                          "thoughts": self.toggle_thoughts, "projects": self.show_home,
-                         "settings": self.show_settings}
+                         "settings": self.show_settings, "hush": self.hush}
         self.commands.update({name: self._ext_command(name, fn) for name, fn in EXT_COMMANDS.items()})
 
     def fps(self, t):
@@ -1532,6 +1580,8 @@ class App:
             return self._prompt_key(k)
         if self.mode == "settings":
             return self._settings_key(k)
+        if self.cfg["keys"].get(k) == "hush":  # T-1512: the run, its views, home and the keys poster (which it
+            return self.hush()  # closes); the prompt and the settings list (above) keep their own keys
         if self.mode == "help":
             self.mode = "main"
             return None
@@ -1596,6 +1646,24 @@ class App:
 
     def help(self):
         self.mode = "help"
+
+    def hush(self):
+        """T-1512: motion full → reduced → off → full, written as fm settings set writes it: tui.toml and the
+        foreman-ui pane's option of the same name (the pane takes it on its next poll). A write refused (the guard, a
+        lock) still hushes this screen, and says why."""
+        import fmsettings
+        now = self.cfg.get("motion", "full")
+        nxt = MOTIONS[(MOTIONS.index(now) + 1) % len(MOTIONS)] if now in MOTIONS else "full"
+        try:
+            done, refused = fmsettings.set_key("motion", nxt)
+        except Exception as e:  # a lock or a write that failed
+            done, refused = [], [f"not written ({type(e).__name__}: {e})"]
+        self.cfg = dict(self.cfg, motion=nxt)
+        if self.mode == "help":  # any key closes the poster, z too
+            self.mode = "main"
+        why = "; ".join(refused)
+        self.message = f"motion: {nxt}" + ("" if not refused else f" ({why})" if any(s == "app" for s, _, _ in done)
+                                          else f" on this screen only ({why})")
 
     def toggle_thoughts(self):
         self.thoughts = not self.thoughts
@@ -2228,6 +2296,11 @@ def _layout_error(k, v, table, cfg):
     return f"not a layout setting ({', '.join(DEFAULTS['layout'])})"
 
 
+def _escaped(s):
+    """s with each control or format character (a terminal escape, a bell, a bidi override) written as its escape."""
+    return "".join(c if c.isprintable() else repr(c)[1:-1] for c in s)
+
+
 def load_config(path=None):
     """DEFAULTS with the user's tui.toml over them: (config, [one line per bad setting]). A bad setting is skipped, the
     rest apply."""
@@ -2242,9 +2315,9 @@ def load_config(path=None):
     except FileNotFoundError:
         return cfg, []
     except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError, RecursionError) as e:
-        return cfg, [f"{path}: {(str(e).splitlines() or [type(e).__name__])[0]}"]
+        return cfg, [f"{path}: {_escaped((str(e).splitlines() or [type(e).__name__])[0])}"]
     errors = []
-    bad = lambda msg: errors.append(f"{path}: {msg}")
+    bad = lambda msg: errors.append(f"{path}: {_escaped(msg)}")  # a name from the file, said, never run by a terminal
     if "theme" in user:
         if isinstance(user["theme"], str) and user["theme"] in PRESETS:  # a list or table is unhashable: a bad value
             cfg["preset"], cfg["theme"] = user["theme"], PRESETS[user["theme"]]()
@@ -2253,9 +2326,7 @@ def load_config(path=None):
     if "palette" in user:  # before [colors], which changes single styles over it
         val = fmsettings.canon("palette", user["palette"])
         if val:
-            cfg["palette"] = val
-            if val == "cb" and cfg["preset"] in CB:
-                cfg["theme"] = _theme(dict(PALETTES[cfg["preset"]], **CB[cfg["preset"]]))
+            cfg["palette"], cfg["theme"] = val, preset_theme(cfg["preset"], val)
         else:
             bad(f"palette = {user['palette']!r}: one of {', '.join(fmsettings.SHARED['palette']['choices'])}")
     for key, val in user.items():
@@ -2325,7 +2396,8 @@ def print_config(cfg, path=None):
     out = [f"# fm code tui's settings{f': {path}' if path else ''}. Delete what you don't change.",
            f"theme = {_toml(cfg.get('preset', 'night'))}  # {', '.join(PRESETS)}; [colors] changes single styles",
            f"motion = {_toml(cfg.get('motion', 'full'))}  # full; reduced: colours change, nothing moves; off",
-           f"palette = {_toml(cfg.get('palette', 'default'))}  # default; cb: pass blue, fail orange",
+           f"palette = {_toml(cfg.get('palette', 'default'))}  # default; cb: pass blue, fail orange; riso: "
+           "risograph inks",
            f"border = {_toml(cfg['border'])}  # {', '.join(BORDERS)}", "",
            "[colors]  # a style: a colour (#rrggbb or 0-255), or { fg, bg, bold, italic, reverse }"]
     out += [f"{_toml_key(n)} = {_toml(spec)}" for n, spec in cfg["theme"].items()]
@@ -2384,6 +2456,7 @@ def key_of(k):
 def _loop(io, app):
     """Draw, wait for a key or the next frame, repeat: as often as what's on screen moves (App.fps)."""
     term, w, h = Term(colour_depth()), 80, 24
+    app.glyphs = io.widths(PROBE) if hasattr(io, "widths") else {}
     if term.depth == 0:  # NO_COLOR: the mono theme, whose chips are reversed and panels untinted
         app.cfg, app.no_colour = dict(app.cfg, theme=_mono(), preset="mono"), True  # kept when settings reload
     while not app.done:
