@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard: a line shlex can't parse is read both word by word and quote-aware, a quoted operator ('>', \;) is data, and a # inside nested quotes in $( ) is no comment: 'cat' ~/.ssh/id_ed25519 after unbalanced quotes, echo "$(echo "a #")">~/.bashrc and a redirect after a closing quote, ) or backtick are refused (T-1561).
 - fm audit prep on a builder lane's task adds the main checkout's uncommitted edits only when that task is the main checkout's own focused task, so a lane review no longer carries another task's files (T-1579).
 - Nine playbooks: incidents (evidence before rollback for security events), observability, data-viz, task-first docs with a run_examples.py runner that fails on any nonzero exit, decks and reports, scrollytelling with cold deep links, demo production, UI sound design with peak and RMS checks, and Python's standard library first; stage indexes for ops, context, release and lang keep the playbooks skill under its 10,000-character budget (T-1504).
 - fm code app: a settings screen (`,`) on fm settings' one schema: every setting by group with value, default and a badge, / to search, m for changed-only, and a :set line that writes through fm settings. fm settings set refuses a value whenever the new file has an error for that key, and asks the guard whenever it isn't run from a terminal, so blanking CLAUDECODE no longer skips it (T-1572).
