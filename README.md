@@ -381,7 +381,7 @@ python3 demo/record.py [--mp4]                                  # re-record the 
 python3 demo/record_live.py [--from-cast]                       # re-record Claude Code + the mod (demo/live.*; a Sonnet turn)
 ```
 
-`fm release-check` also runs every fence marked `bash runnable` in this file and MASTER.md, each in a throwaway home with stdin closed and a timeout; mark a fence runnable only when it needs nothing but `fm` and the shell.
+`fm release-check` also runs every fence marked `bash runnable` in this file and MASTER.md, each in a throwaway home with stdin closed and a timeout. That is hygiene, not a sandbox: a runnable fence is trusted like the tests and can still reach any file and the network. Mark a fence runnable only when it needs nothing but `fm` and the shell.
 
 ```
 BUILD_PROMPT.md       the spec Foreman was built from

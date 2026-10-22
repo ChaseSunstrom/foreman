@@ -262,12 +262,28 @@ _CAN_ASK = {_stem(w) for w in """what way see have how there able want need your
 support supports can could would foreman""".split()}  # a question's own words (as stems), never what it asks about
 
 
+def asked(question):
+    """The stems a question asks about: its words less the stop words and the asking ones (can, what, way…)."""
+    return [w for w in dict.fromkeys(_tokens(question)) if w not in _CAN_ASK]
+
+
+def gist(text, question, width):
+    """text when it fits in width, else its clause (split at ; and ,) holding most of the question's words, so the
+    words it matched aren't the part cut off."""
+    text = c.plain(" ".join(text.split()))
+    if len(text) <= width:
+        return text
+    parts, want = re.split(r"(?<=[;,])\s+", text), set(asked(question))
+    i = min(range(len(parts)), key=lambda k: (-len(want & set(_tokens(parts[k]))), k))
+    return c.fit(("… " if i else "") + parts[i].rstrip(";,") + (" …" if i < len(parts) - 1 else ""), width)
+
+
 def can(question, n=3):
     """T-1519: 'can Foreman do X?' from fm help: [(command, help)] for the commands whose name, help and options' help
     hold at least half the question's words, rarest words first (idf); [] when none do."""
     import argparse
     import fmcli
-    want = [w for w in dict.fromkeys(_tokens(question)) if w not in _CAN_ASK]
+    want = asked(question)
     if not want:
         return []
     docs, helps = {}, {}

@@ -288,7 +288,7 @@ def _card_problems(path, x):
         bad("placeholder text (TODO, TBD, FIXME, lorem ipsum)")
     if "verified" in x and not _verified(x):
         bad(f"verified {x['verified']!r} is not a date: YYYY-MM-DD, the day its Verify commands last held")
-    elif "verified" in x and _verified(x) > datetime.date.today():
+    elif "verified" in x and _verified(x) > datetime.date.today() + datetime.timedelta(days=1):  # a day of time zones
         bad(f"verified {x['verified']} is in the future")
     return problems
 

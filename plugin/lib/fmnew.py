@@ -4,12 +4,20 @@ loads, draws inside its box in theme styles within fm code's time budget at ever
 with no fields.
 
   fm new [list]            the templates: what each is and the file it lands as
-  fm new NAME [DIR]        copy one (never over an existing file without --force); a panel lands in fm code's tui/
-  fm new check PATH...     design lint for a page, the panel rules for a .py (it runs the file, as fm code would)
+  fm new NAME [DIR]        copy one, never over an existing file (created O_EXCL); --force replaces it, and a symlink
+                           there is replaced itself, never written through; a panel lands in fm code's tui/
+  fm new check PATH... [--run]   design lint for a page; for a .py the panel rules, which RUN the file: only one fm code
+                           would load (owned by you, writable by no one else), and one inside a project (a .git above
+                           it) only with --run, so a repo's code never runs as you by accident
 
-The scene is the playbook's own file (references/ui/templates/scene.html), not a copy of it."""
+The panel check runs in a child (fmplaybooks._run: a new temporary folder, stdin closed, limits, CHECK_SECONDS, then
+its process group killed); the child's verdict counts only on a line with a token made for that run, so a file that
+exits early (sys.exit, os._exit), swallows exceptions or hangs never passes. The scene is the playbook's own file
+(references/ui/templates/scene.html), not a copy of it."""
+import json
 import os
-import signal
+import secrets
+import tempfile
 import time
 import types
 
@@ -26,7 +34,16 @@ TEMPLATES = {  # name: (source under the plugin, the file it lands as, what it i
 }
 SIZES = ((1, 1), (12, 2), (40, 6), (120, 30))  # (columns, lines) a panel is drawn at
 SAMPLE_EVENTS = ("task", "plan", "step", "tokens", "say")  # what a "*" handler is fed, each with no fields
-CHECK_SECONDS = 10  # a panel check that runs longer stops
+CHECK_SECONDS = 20  # a panel check that runs longer is killed
+_CHILD = """import json, sys
+sys.path.insert(0, {lib!r})
+import fmnew
+try:
+    found = fmnew._panel_problems({path!r})
+except SystemExit as e:
+    found = [f"called sys.exit({{e.code!r}}): it would quit fm code"]
+print({token!r} + json.dumps(found), flush=True)
+"""
 
 
 def source(name):
@@ -60,27 +77,48 @@ def _draw(tui, fn, state, w, h):
     return None
 
 
-class _Overtime(BaseException):  # not an Exception: the file's own `except Exception` can't swallow it
-    pass
-
-
 def _panel(path):
-    """_panel_problems under an alarm of CHECK_SECONDS (fm's main thread; elsewhere unbounded): an extension that
-    loops forever would hang fm code too."""
-    def stop(*_):
-        raise _Overtime
+    """_panel_problems in a child (see the module): its verdict, or why it gave none."""
+    import fmplaybooks
+    token = f"fm-new-check-{secrets.token_hex(8)}:"
+    code = _CHILD.format(lib=os.path.dirname(os.path.abspath(__file__)), path=os.path.abspath(path), token=token)
+    with tempfile.TemporaryFile() as out:  # its size capped by the child's file-size limit
+        why = fmplaybooks._run(code, CHECK_SECONDS, fmplaybooks._limits(), what="the check", stdout=out)
+        out.seek(0)
+        text = out.read().decode("utf-8", "replace")
+    if why:
+        return [why + (": it would hang fm code" if why.startswith("timed out") else "")]
+    line = next((x for x in reversed(text.splitlines()) if x.startswith(token)), "")
     try:
-        old = signal.signal(signal.SIGALRM, stop)
-    except (AttributeError, ValueError):  # no SIGALRM, or not the main thread
-        return _panel_problems(path)
-    signal.alarm(CHECK_SECONDS)
+        found = json.loads(line[len(token):])
+    except ValueError:
+        found = None
+    if not isinstance(found, list):
+        return ["ended before the check finished (os._exit, or a thread that quit the process): fm code would too"]
+    return [str(x) for x in found]
+
+
+def _runnable(path, run):
+    """Why fm new check won't run this .py, or None: fm code's own rule (fmcodetui.load_extensions) first, then a
+    project's file (a .git above it, outside fm code's tui/ folder) only when run is asked for."""
+    import fmcodetui
     try:
-        return _panel_problems(path)
-    except _Overtime:
-        return [f"still running after {CHECK_SECONDS} s: it would hang fm code"]
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old)
+        st = os.stat(path)
+    except OSError as e:
+        return f"can't read it: {e.strerror}"
+    uid = getattr(os, "getuid", lambda: None)()
+    if (uid is not None and st.st_uid != uid) or st.st_mode & 0o022:
+        return "skipped: another user can change it (fm code wouldn't load it either)"
+    real = os.path.realpath(path)
+    if run or real.startswith(os.path.realpath(fmcodetui.extensions_dir()) + os.sep):
+        return None
+    d = os.path.dirname(real)
+    while not os.path.exists(os.path.join(d, ".git")):
+        if os.path.dirname(d) == d:
+            return None
+        d = os.path.dirname(d)
+    return (f"it sits in the project at {d}, and checking a panel runs it: a project's files never run as you "
+            f"unless you say so (fm new check PATH --run)")
 
 
 def _panel_problems(path):
@@ -131,14 +169,15 @@ def _panel_problems(path):
     return out
 
 
-def check(path):
-    """One file's problems against its template's rules: [] when it keeps them."""
+def check(path, run=False):
+    """One file's problems against its template's rules: [] when it keeps them. A .py is run (see _runnable)."""
     import fmdesign
     if not os.path.isfile(path):
         return [f"{path}: not a file"]
     ext = os.path.splitext(path)[1].lower()
     if ext == ".py":
-        return [f"{path}: {x}" for x in _panel(path)]
+        why = _runnable(path, run)
+        return [f"{path}: {why}"] if why else [f"{path}: {x}" for x in _panel(path)]
     if ext not in fmdesign.EXTS:
         return [f"{path}: fm new check reads a page ({' '.join(sorted(fmdesign.EXTS))}) or an fm code panel (.py)"]
     skipped = []
@@ -158,8 +197,9 @@ def cmd_new(args):
         return 0
     if words[0] == "check":
         if len(words) < 2:
-            raise fmcli.UsageError("fm new check PATH...: a page or an fm code panel to hold to its template's rules")
-        found = [x for p in words[1:] for x in check(p)]
+            raise fmcli.UsageError("fm new check PATH... [--run]: a page or an fm code panel (a panel's check runs "
+                                   "the file) to hold to its template's rules")
+        found = [x for p in words[1:] for x in check(p, run=getattr(args, "run", False))]
         fmcli.out(args, {"problems": found}, "\n".join(found) if found else
                   f"✓ {len(words) - 1} file(s) keep their template's rules")
         return 1 if found else 0
@@ -174,13 +214,24 @@ def cmd_new(args):
     else:
         d = "."
     dest = os.path.abspath(os.path.join(d, TEMPLATES[name][1]))
-    if os.path.lexists(dest) and not args.force:
-        raise fmcli.UsageError(f"{dest} exists; fm new never writes over a file (--force replaces it)")
     try:
         with open(source(name), encoding="utf-8") as f:
             text = f.read()
-        c.write_atomic(dest, text)  # a planted link at dest is replaced, never written through
-        os.chmod(dest, 0o644)  # fm code skips an extension others can write
+        if args.force:
+            c.write_atomic(dest, text)  # a symlink at dest is replaced itself, never written through
+            os.chmod(dest, 0o644)  # fm code skips an extension others can write
+        else:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)  # whatever is there, or appears, stays
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(text)
+            except BaseException:
+                os.unlink(dest)  # ours: O_EXCL made it
+                raise
+    except FileExistsError:
+        raise fmcli.UsageError(f"{dest} exists; fm new never writes over a file (--force replaces it, and a symlink "
+                               "there is replaced itself, never written through)")
     except OSError as e:
         raise fmcli.UsageError(f"can't write {dest}: {e.strerror or e}")
     then = (f"; then name its panel in a [layout] column of {os.path.join(c.foreman_home(), 'tui.toml')}"
