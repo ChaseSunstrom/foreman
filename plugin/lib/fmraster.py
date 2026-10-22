@@ -1,7 +1,9 @@
 """fmraster (T-1631): an integer software rasteriser, the deterministic frame source for tests and terminal previews.
 
 The camera sits at the origin looking along +z, x right and y up; callers move and turn their scene into that space
-first (cube()'s turn and at do it for the cube), in integers. Triangles are cut at the near plane z = NEAR, go
+first (cube()'s turn and at do it for the cube), in integers. From a right-handed view space (three.js: looking
+down -z, front faces counter-clockwise) negate z, the light's too, and swap two vertices of every triangle: the
+mirror leaves the screen winding as it was, so three's front faces would otherwise be culled. Triangles are cut at the near plane z = NEAR, go
 through a perspective divide to 1/16-pixel fixed point, fill by edge functions, depth-test on an interpolated 1/z
 and take one flat shade from a directional light. No float is ever made, so a frame's bytes are the same on every
 run, machine and Python (its PNG's too wherever zlib is the same build: zlib-ng deflates the same pixels to other
