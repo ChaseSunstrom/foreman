@@ -287,8 +287,8 @@ def poster(totals, asof="", cols=4):
     return "".join(out) + "</svg>"
 
 
-SCENE_LABEL = ("The proof chain in motion: a pulse of light runs the track from red to green and lights each station "
-               "as it passes")
+SCENE_LABEL = ("The proof chain in motion: a pulse of light runs the track from failing to proved and lights each "
+               "station as it passes")  # review: what it means, not colour words
 
 
 def scene(totals, asof=""):
