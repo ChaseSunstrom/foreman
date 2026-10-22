@@ -8,6 +8,26 @@ from test_hooks import HookCase
 import fmcore as c
 
 
+class LaneHeld(HookCase):
+    """T-1469: with every queued task held by a builder lane, the drive said 'fm focus T-x' each Stop, which fm focus
+    refuses ('held by lane'); a lane's task is running work, said once."""
+
+    def stop(self):
+        return self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting on the builders.",
+                                  "session_id": "sess-1"}).stdout
+
+    def test_a_task_a_lane_holds_is_not_offered_to_focus(self):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        tid = self.task("Lane work", focus=False)
+        import fmcli
+        fmcli.mutate(self.project(), tid, lambda x: x.meta.__setitem__("builder", c.now()), "lane_builder", {})
+        first = self.stop()
+        self.assertNotIn(f"fm focus {tid}", first)
+        self.assertIn(tid, first)
+        self.assertNotIn(tid, self.stop(), "said once, not on every Stop")
+
+
 class DriveSide(HookCase):
     def stop(self, msg):
         return self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": msg, "session_id": "sess-1"})

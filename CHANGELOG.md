@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The drive no longer tells you to focus a task a builder lane holds (which `fm focus` refuses). When every queued task is in a lane, it says once that the lanes are working and that each builder's notification will wake the session (T-1469).
 - fm code's exported snapshot, recording (GIF/MP4) and plain event replay redact secrets before anything is drawn or printed, so a token a worker printed doesn't end up in a shared file (T-1302).
 - The sentinel (and the release canary that runs it) skips a past check that reads a remote's state (`origin/…`, `@{u}`, `ls-remote`), such as a release task's "main is Foreman 1.2.47", since it was only true at the time. A check that fails and then passes on one rerun is reported as flaky, not failing. Both caused the false canary failures after 1.2.48 and 1.2.50 (T-1380, T-1448).
 - `fm tidy` lists, then with `--apply` deletes, fm code's private copies of reverted files once they are over 30 days old (plain files only; links and folders are skipped). The fm code tests keep every XDG folder inside their temporary home (T-1442).
