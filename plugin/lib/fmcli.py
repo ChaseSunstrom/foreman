@@ -5497,6 +5497,9 @@ def _build_parser():
     s.add_argument("--accept", action="store_true", help="take this run's verdicts as the baseline")
     s.add_argument("--cases", action="store_true", help="the labelled cases fm guard wrong stored, against the guard (T-1162)")
     s.add_argument("--capture", action="store_true", help="with --cases: one FIX per drifted case, once")
+    s.add_argument("--oracle", action="store_true", help="run each labelled case in a throwaway bwrap sandbox that records "
+                                                         "what the shell would start: a part the guard refuses alone "
+                                                         "is a line it misread; with --cmd, that one command (T-1553; needs bwrap)")
     s.add_argument("--cmd", metavar="TEXT", help="only this command: the guard's default verdict, never run it")
     s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
     s.add_argument("--candidate", metavar="REF|FILE", help="score another guard (a git ref of Foreman's repo, or a "
