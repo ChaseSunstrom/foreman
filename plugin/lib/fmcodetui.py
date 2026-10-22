@@ -617,7 +617,7 @@ def _focus_line(segs, w, band, cfg):
         out.append((t, style if spec.get("bg") or spec.get("reverse") else rgb(
             fg=spec.get("fg") or col(cfg, "screen"), bg=band, bold=spec.get("bold", False),
             italic=spec.get("italic", False))))
-    return out + [(" " * max(0, w - sum(len(t) for t, _ in segs)), rgb(bg=band))]
+    return out + [(" " * max(0, w - sum(width(t) for t, _ in segs)), rgb(bg=band))]
 
 
 # ---------------------------------------------------------------- panels: (state, width, height, app) → lines
@@ -874,7 +874,7 @@ def _log(st, w, h, app):
                                                          ease_out(arrived / 1.6)), bold=True)
             segs = [(t, hot if t == " GUARD " else style) for t, style in segs]
         if app is not None and app.selected == i:
-            segs = [("".join(t for t, _ in segs).ljust(w), "select")]
+            segs = [(pad("".join(t for t, _ in segs), w), "select")]
         else:
             now = len(out)
         out.append(segs)
@@ -896,11 +896,11 @@ def _welcome(w, h, fx):
     a, b = fx.c("accent"), fx.c("accent2")
     keys = [("n", "new request"), ("h", "past runs"), ("m", "model"), ("?", "keys")]
     chips = [seg for k, word in keys for seg in ((f" {k} ", "chip_accent"), (f" {word}   ", "dim"))]
-    width = sum(len(t) for t, _ in chips)
-    pad = lambda n: [(" " * max(0, (w - n) // 2), "text")]
-    lines = [pad(1) + [("◆", rgb(fg=mix(a, b, fx.wave(3.2)), bold=True) if a else "accent")], [],
-             pad(12) + [("Foreman Code", "strong")],
-             pad(42) + [("plan, edit, check and close, each guarded", "dim")], [], pad(width) + chips]
+    used = sum(width(t) for t, _ in chips)
+    left = lambda n: [(" " * max(0, (w - n) // 2), "text")]
+    lines = [left(1) + [("◆", rgb(fg=mix(a, b, fx.wave(3.2)), bold=True) if a else "accent")], [],
+             left(12) + [("Foreman Code", "strong")],
+             left(42) + [("plan, edit, check and close, each guarded", "dim")], [], left(used) + chips]
     top = max(0, ((h or len(lines)) - len(lines)) // 2)
     return [[]] * top + lines
 
@@ -999,7 +999,7 @@ def _status(cv, st, app):
     if app is not None and app.message:
         segs += [("   ", "bar"), (app.message, "key")]
     hints = [seg for k, word in HINTS for seg in ((f" {k} ", "key"), (f"{word} ", "bar_dim"))]
-    hint_w = sum(len(t) for t, _ in hints) + 1
+    hint_w = sum(width(t) for t, _ in hints) + 1
     room = cv.w - hint_w if cv.w - hint_w > 36 else cv.w
     cv.line(y, 0, segs, room)
     if room < cv.w:
