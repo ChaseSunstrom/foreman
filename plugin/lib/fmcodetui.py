@@ -88,7 +88,7 @@ DEFAULTS = {
     "keys": {"q": "quit", "n": "new", "s": "stop", "r": "resume", "?": "help", "d": "diff", "h": "history",
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
              "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
-             "p": "projects"},
+             "p": "projects", ",": "settings"},
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
          ("q", "quit")]
@@ -1100,7 +1100,7 @@ KEY_NAMES = {"\t": "Tab", "\n": "Enter", "KEY_ENTER": "Enter", "KEY_UP": "↑", 
              "KEY_NPAGE": "PgDn"}
 COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume", "resume it"),
                   ("diff", "the run's changes"), ("history", "past runs"), ("projects", "every Foreman project"),
-                  ("model", "model or worker"),
+                  ("model", "model or worker"), ("settings", "settings: look, layout, keys"),
                   ("thoughts", "the model's own words"), ("focus", "next panel"), ("up", "up"), ("down", "down"),
                   ("expand", "open a line"), ("follow", "follow the latest"), ("help", "keys"), ("quit", "quit")]
 
@@ -1140,18 +1140,38 @@ def _diff_view(cv, st, app, cfg):
         cv.line(iy + r, ix, [(line.expandtabs(4), _diff_style(line))], ix + iw)
 
 
-def _list_view(title, note, row):
+def _list_view(title, note, row, head=None, foot=None, empty="nothing here yet", sized=False):
+    """A list over the screen, the selected row highlighted and kept in sight; row(item) draws one (row(item, iw)
+    when sized). head(app, iw) and foot(app, iw) are lines fixed above and below it; a view with a foot keeps its full
+    height as the list changes (a search narrowing it doesn't make the box jump). On a short terminal the list keeps
+    a row: the foot's lines go first (its last, the line being typed, stays longest), then the head."""
     def view(cv, st, app, cfg):
-        iy, ix, ih, iw = _overlay(cv, cfg, title(app) if callable(title) else title, note, 110,
-                                  min(len(app.items) + 4, cv.h - 4))
+        iy, ix, ih, iw = _overlay(cv, cfg, title(app) if callable(title) else title,
+                                  note(app) if callable(note) else note, 110,
+                                  cv.h - 4 if foot else min(len(app.items) + 4, cv.h - 4))
+        if ih < 2:
+            return
+        top, bottom = head(app, iw) if head else [], foot(app, iw) if foot else []
+        while ih - 1 - len(top) - len(bottom) < 1:
+            if len(bottom) > 1:
+                bottom = bottom[1:]
+            elif top:
+                top = []
+            else:
+                bottom = []
+        for r, segs in enumerate(top):
+            cv.line(iy + 1 + r, ix, segs, ix + iw)
+        y, lh = iy + 1 + len(top), ih - 1 - len(top) - len(bottom)
         if not app.items:
-            cv.line(iy + 1, ix, [("nothing here yet", "dim")], ix + iw)
-        first = max(0, app.item_index - ih + 2)
-        for r, item in enumerate(app.items[first:first + ih - 1]):
-            segs = row(item)
+            cv.line(y, ix, [(empty, "dim")], ix + iw)
+        first = max(0, app.item_index - lh + 1)
+        for r, item in enumerate(app.items[first:first + lh]):
+            segs = row(item, iw) if sized else row(item)
             if first + r == app.item_index:
                 segs = [(pad("".join(t for t, _ in segs), iw), "select")]
-            cv.line(iy + 1 + r, ix, segs, ix + iw)
+            cv.line(y + r, ix, segs, ix + iw)
+        for r, segs in enumerate(bottom):
+            cv.line(iy + ih - len(bottom) + r, ix, segs, ix + iw)
     return view
 
 
@@ -1226,13 +1246,114 @@ def _fm_json(*args):
     return json.loads(r.stdout)
 
 
+# ---------------------------------------------------------------- the settings screen (T-1572)
+
+_GROUPS = {"look": "Look", "colors": "Colours", "layout": "Layout", "keys": "Keys", "pane": "Claude Code pane"}
+_WHERE = {"app": "this app · tui.toml · applies now", "plugin": "the foreman-ui pane · Claude Code's settings.json · "
+                                                                "applies within seconds"}
+_SET_HINTS = (("/", "search"), ("m", "changed only"), (":", "set"), ("Enter", "edit"), ("Esc", "close"))
+
+
+def preset_theme(preset, palette="default"):
+    """The styles a theme gives before any [colors] change (the cb palette over it where it has cb colours)."""
+    if palette == "cb" and preset in CB:
+        return _theme(dict(PALETTES[preset], **CB[preset]))
+    return PRESETS.get(preset, PRESETS["night"])()
+
+
+def _shown(v, surface):
+    """A setting's value as the screen and the :set line write it: a plain word bare, anything else as its file
+    has it."""
+    if v is None:
+        return "—"
+    if isinstance(v, str) and v and v == v.strip() and v.isprintable():
+        return v
+    return _toml(v) if surface == "app" else json.dumps(v, ensure_ascii=False)
+
+
+def _style_text(spec):
+    """A [colors] style in words: "#E7ECF4 on #0D1420 bold" (the :set line still writes it as TOML)."""
+    words = [str(spec["fg"])] if spec.get("fg") is not None else []
+    words += [f"on {spec['bg']}"] if spec.get("bg") is not None else []
+    return " ".join(words + [w for w in ("bold", "italic", "reverse", "paint") if spec.get(w)]) or "plain"
+
+
+def _set_cols(iw):
+    """Column widths for a settings row iw wide: (key, value, default, badge); 2-column gaps and a 2-column mark."""
+    badge, kw = (14 if iw >= 80 else 6), min(24, max(8, iw // 4))
+    rest = max(2, iw - 10 - kw - badge)
+    return kw, rest * 55 // 100, rest - rest * 55 // 100, badge
+
+
+def _badge(r, bw):
+    """When a change applies: now is the quiet common case; the pane, which reads its options again within seconds
+    (it polls settings.json), is the one that stands out."""
+    if r["surface"] == "app":
+        return " NOW ", "chip_todo"
+    return (" IN SECONDS " if bw >= 14 else " SOON "), "chip_warn"
+
+
+def _setting_row(r, iw):
+    if "head" in r:
+        return [(f" {_GROUPS.get(r['head'], r['head']).upper()} ", "chip_accent" if r["surface"] == "app" else
+                 "chip_warn"), (f"  {r['count']} · {_WHERE[r['surface']]}", "dim")]
+    kw, vw, dw, bw = _set_cols(iw)
+    changed = r["value"] != r["default"]
+    segs = [("● " if changed else "  ", "warn"), (pad(fit(r["key"], kw), kw) + "  ", "strong" if changed else "text")]
+    style = r["group"] == "colors"
+    show = lambda v: _style_text(v) if style and isinstance(v, dict) else _shown(v, r["surface"])
+    spec = r["value"] if style and isinstance(r["value"], dict) else {}
+    swatch = spec.get("fg", spec.get("bg"))
+    if swatch is not None and vw > 8:  # a colour shows itself beside its value
+        segs += [("██", rgb(fg=swatch)), (" ", "text")]
+        vw -= 3
+    label, chip = _badge(r, bw)
+    return segs + [(pad(fit(show(r["value"]), vw), vw) + "  ", "accent" if changed else "text"),
+                   (pad(fit(show(r["default"]), dw), dw) + "  ", "dim"), (" " * (bw - width(label)), "text"),
+                   (label, chip)]
+
+
+def _settings_head(app, iw):
+    kw, vw, dw, bw = _set_cols(iw)
+    when = "APPLIES" if bw >= 14 else "WHEN"
+    return [[("  " + pad("SETTING", kw + 2) + pad("VALUE", vw + 2) + pad("DEFAULT", dw + 2)
+              + " " * (bw - width(when)) + when, "dim")]]
+
+
+def _settings_foot(app, iw):
+    """A rule; the selected setting's help and choices; what the last :set did (or a setting the app skipped); the
+    search or :set line, else the screen's keys."""
+    r = app.items[app.item_index] if 0 <= app.item_index < len(app.items) else None
+    about = [] if not r or "head" in r else [(r["help"], "dim")] + (
+        [("   " + " · ".join(map(str, r["choices"])), "accent2")] if r.get("choices") else [])
+    note, style = app.set_note or ((f"! {app.set_problems[0][1]} (skipped: the default shows)", "warn")
+                                   if app.set_problems else ("", "dim"))
+    if app.set_typing:
+        text = tail(app.set_query if app.set_typing == "search" else app.set_line, max(1, iw - 4))
+        last = [(" /" if app.set_typing == "search" else " :", "key"), (text, "input"), ("▏", "key"),
+                (" " * max(0, iw - 3 - width(text)), "input")]
+    else:
+        last = [seg for k, word in _SET_HINTS for seg in ((f" {k} ", "key"), (f" {word}  ", "dim"))]
+    return [[("─" * iw, "border")], about] + [[(x, style)] for x in (wrap(note, iw) + [""])[:2]] + [last]
+
+
+def _settings_note(app):
+    n = sum("head" not in r for r in app.items)
+    return " · ".join([f"{n} of {len(app.set_rows)}"] + (["changed only"] if app.set_modified else [])
+                      + ([f"/{app.set_query}"] if app.set_query else []))
+
+
 VIEWS = {"help": _help_view, "diff": _diff_view, "history": _list_view("Past runs", "Enter opens one", _history_row),
          "picker": _list_view("Run the next request with", "Enter picks", _picker_row),
-         "home": _list_view("Foreman projects", "Enter opens · n new request there · Esc run screen · q quits",
+         "home": _list_view("Foreman projects",
+                            "Enter opens · n new request there · , settings · Esc run screen · q quits",
                             _project_row),
          "project": _list_view(lambda app: str((app.project or {}).get("project") or "project"),
-                               "Enter/r runs a task · Enter replays a run · n new · m runner · Esc projects",
-                               _work_row)}
+                               "Enter/r runs a task · Enter replays a run · n new · m runner · , settings · "
+                               "Esc projects",
+                               _work_row),
+         "settings": _list_view("Settings", _settings_note, _setting_row, _settings_head, _settings_foot,
+                                "no setting matches", sized=True)}
 
 
 # ---------------------------------------------------------------- colours and the SVG snapshot
@@ -1346,12 +1467,17 @@ class App:
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
         self.motion, self.clock = Motion(), time.monotonic  # T-1300: what moves, and the time it moves by
+        # T-1572: the settings screen: every setting, its search, changed-only, the :set line and what it last did
+        self.set_rows, self.set_problems, self.set_query, self.set_line = [], [], "", ""
+        self.set_typing, self.set_modified, self.set_note, self.no_colour = "", False, None, False
+        self.home_items, self.home_index = None, 0  # the home list a view over it goes back to
         self.commands = {"quit": self.quit, "new": self.new, "stop": self.stop, "resume": self.resume,
                          "help": self.help, "focus": self.next_focus, "up": lambda: self.move(-1),
                          "down": lambda: self.move(1), "page_up": lambda: self.move(-10),
                          "page_down": lambda: self.move(10), "expand": self.expand, "follow": self.follow_tail,
                          "diff": self.show_diff, "history": self.show_history, "model": self.show_picker,
-                         "thoughts": self.toggle_thoughts, "projects": self.show_home}
+                         "thoughts": self.toggle_thoughts, "projects": self.show_home,
+                         "settings": self.show_settings}
         self.commands.update({name: self._ext_command(name, fn) for name, fn in EXT_COMMANDS.items()})
 
     def fps(self, t):
@@ -1387,9 +1513,15 @@ class App:
             if self.mode == "prompt" and k[0] == "paste":
                 text = "".join(c for c in k[1].replace("\t", " ") if c == "\n" or c.isprintable())
                 self.input = (self.input + text)[:PASTE_CAP]
+            elif self.mode == "settings" and self.set_typing and k[0] == "paste":  # a colour, a list: one line
+                for ch in " ".join(k[1].split())[:PASTE_CAP]:
+                    if ch.isprintable():  # never Esc, Delete or Enter: a paste is text, not keys (T-1316)
+                        self._settings_key(ch)
             return None
         if self.mode == "prompt":
             return self._prompt_key(k)
+        if self.mode == "settings":
+            return self._settings_key(k)
         if self.mode == "help":
             self.mode = "main"
             return None
@@ -1504,6 +1636,8 @@ class App:
         back, self.view_back = self.view_back, "main"
         if back == "project" and self.project is not None:
             self.mode, self.items, self.item_index = "project", self.project_items, self.project_index
+        elif back == "home" and self.home_items is not None:
+            self.mode, self.items, self.item_index, self.home_items = "home", self.home_items, self.home_index, None
         elif back == "home":
             self.show_home()
         else:
@@ -1551,6 +1685,11 @@ class App:
                 self.mode = "main"
         elif cmd == "quit":
             return self.quit()
+        elif cmd == "settings":
+            self.view_back = self.mode
+            if self.mode == "home":  # back to this list where it was, not read again from the top
+                self.home_items, self.home_index = self.items, self.item_index
+            self.show_settings()
         elif self.mode == "home" and item and cmd in ("expand", "new"):
             self.open_project(item)
             if cmd == "new":
@@ -1599,6 +1738,140 @@ class App:
         except Exception as e:  # a model server that doesn't answer: say so, keep the screen
             self.items, self.message = [], f"no models: {e}"
         self.item_index, self.mode = 0, "picker"
+
+    # -- settings (T-1572): fmsettings' one schema, shared with the Claude Code pane, written by fm settings' writer
+    def show_settings(self):
+        self.set_query, self.set_line, self.set_typing, self.set_modified, self.set_note = "", "", "", False, None
+        self.mode = "settings_loading"  # not "settings" yet: the list before it isn't a selection to keep
+        self._settings_load()
+        self.mode = "settings"
+
+    def _settings_load(self, keep=None):
+        """Every setting's value now (both files read again), grouped; a colour's default is its theme's own."""
+        import fmsettings
+        problems = []
+        try:
+            rows = fmsettings.rows(problems=problems)
+        except Exception as e:  # a file that can't be read at all: said on the screen, the list empty
+            rows, problems = [], [("app", f"can't read the settings: {type(e).__name__}: {e}")]
+        now = {r["key"]: r["value"] for r in rows if r["surface"] == "app"}
+        base = preset_theme(now.get("theme", "night"), now.get("palette", "default"))
+        order = list(dict.fromkeys(r["group"] for r in rows))  # the user's own key bindings join the keys
+        self.set_rows = sorted((dict(r, default=base.get(r["key"][7:], r["default"])) if r["group"] == "colors" else r
+                                for r in rows), key=lambda r: order.index(r["group"]))
+        self.set_problems = problems
+        self._settings_filter(keep)
+
+    def _settings_row(self):
+        r = self.items[self.item_index] if 0 <= self.item_index < len(self.items) else None
+        return None if r is None or "head" in r else r
+
+    def _settings_filter(self, keep=None):
+        """The rows the search (every word in the key) and changed-only leave, a header over each group; the selection
+        stays on its setting while it's listed."""
+        cur = self._settings_row() if self.mode == "settings" else None
+        keep = keep or (cur and (cur["surface"], cur["key"]))
+        words = self.set_query.lower().split()
+        out, head = [], None
+        for r in self.set_rows:
+            if (self.set_modified and r["value"] == r["default"]) or not all(w in r["key"].lower() for w in words):
+                continue
+            if head is None or head["head"] != r["group"]:
+                head = {"head": r["group"], "surface": r["surface"], "count": 0}
+                out.append(head)
+            head["count"] += 1
+            out.append(r)
+        rows = [i for i, r in enumerate(out) if "head" not in r]
+        self.items = out
+        self.item_index = next((i for i in rows if (out[i]["surface"], out[i]["key"]) == keep), rows[0] if rows else 0)
+
+    def _settings_step(self, n):
+        """Up or down n settings; group headers are passed over."""
+        rows = [i for i, r in enumerate(self.items) if "head" not in r]
+        if rows:
+            want = self.item_index + n
+            self.item_index = min(rows, key=lambda i: (abs(i - want), (i - want) * n < 0))
+
+    def _settings_key(self, k):
+        cmd = self.cfg["keys"].get(k)
+        moves = {"KEY_UP": -1, "KEY_DOWN": 1, "KEY_PPAGE": -10, "KEY_NPAGE": 10}
+        step = moves.get(k) if self.set_typing else {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
+        if step:
+            return self._settings_step(step)
+        if self.set_typing:  # the search or the :set line takes every printable key
+            search, done = self.set_typing == "search", k in ("\n", "\r", "KEY_ENTER", "\x1b")
+            text = self.set_query if search else self.set_line
+            if done:
+                self.set_typing, self.set_line = "", ""
+                if k == "\x1b" and search:
+                    text = ""
+                elif not search:
+                    return self._settings_set(text) if k != "\x1b" else None
+            elif k in ("KEY_BACKSPACE", "\x7f", "\b"):
+                text = text[:-1]
+            elif len(k) == 1 and k.isprintable():
+                text = (text + k)[:500]
+            if search:
+                self.set_query = text
+                self._settings_filter()
+            else:
+                self.set_line = text
+            return None
+        r = self._settings_row()
+        if k in ("\x1b", "q") or cmd == "settings":
+            self._back()
+        elif k == "/":
+            self.set_typing = "search"
+        elif k == "m":
+            self.set_modified = not self.set_modified
+            self._settings_filter()
+        elif k == ":":
+            self.set_typing, self.set_line = "set", ""
+        elif cmd == "expand" and r:  # the :set line for this setting, its value ready to change
+            both = sum(x["key"] == r["key"] for x in self.set_rows) > 1
+            where = "--surface " + r["surface"] + " " if both else ""
+            self.set_typing, self.set_line = "set", f"set {where}{r['key']} {_shown(r['value'], r['surface'])}"
+        return None
+
+    def _settings_set(self, line):
+        """`set KEY VALUE [--surface app|plugin]`, as fm settings set takes it (the same writer; a value may be quoted
+        as in TOML). An app setting applies at once: the app reads its tui.toml again."""
+        import re
+        import tomllib
+        import fmsettings
+        m = re.search(r"(?:^|\s)--surface[= ](\S*)", line)
+        surface = m.group(1) if m else None
+        words = (line[:m.start()] + " " + line[m.end():] if m else line).strip()
+        if words == "set" or words.startswith("set "):
+            words = words[3:].strip()
+        key, _, value = words.partition(" ")
+        value = value.strip()
+        if surface not in (None, "app", "plugin") or not key or not value:
+            self.set_note = ("set KEY VALUE [--surface app|plugin]", "bad")
+            return None
+        try:  # "off" as TOML writes it is the word off; a list or a table stays text, as fm settings set takes it
+            got = tomllib.loads(f"v = {value}")["v"]
+            value = got if isinstance(got, str) else value
+        except (tomllib.TOMLDecodeError, RecursionError):
+            pass
+        if not fmsettings.find(key, surface):
+            self.set_note = (f"{key}: no such setting{f' in the {surface}' if surface else ''}", "bad")
+            return None
+        try:
+            done, refused = fmsettings.set_key(key, value, surface)
+        except Exception as e:  # a lock or a write that failed: said, the screen stays
+            done, refused = [], [f"{key}: not written ({type(e).__name__}: {e})"]
+        if any(s == "app" for s, _, _ in done):
+            self._settings_reload()
+        said = [f"{s}: {key} = {_shown(v, s)} ({'now' if s == 'app' else 'the pane reads it within seconds'})"
+                + "".join(f"; now skipped: {w}" for w in warn) for s, v, warn in done]
+        self.set_note = ("; ".join(said + refused), "bad" if refused else "ok")
+        self._settings_load(keep=(done[0][0] if done else surface or "app", key))
+        return None
+
+    def _settings_reload(self):
+        cfg, _ = load_config()
+        self.cfg = dict(cfg, theme=_mono(), preset="mono") if self.no_colour else cfg
 
     def replay(self, path):
         st = State()
@@ -1920,7 +2193,7 @@ def load_config(path=None):
             user = tomllib.load(f)
     except FileNotFoundError:
         return cfg, []
-    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError) as e:
+    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError, RecursionError) as e:
         return cfg, [f"{path}: {(str(e).splitlines() or [type(e).__name__])[0]}"]
     errors = []
     bad = lambda msg: errors.append(f"{path}: {msg}")
@@ -2064,7 +2337,7 @@ def _loop(io, app):
     """Draw, wait for a key or the next frame, repeat: as often as what's on screen moves (App.fps)."""
     term, w, h = Term(colour_depth()), 80, 24
     if term.depth == 0:  # NO_COLOR: the mono theme, whose chips are reversed and panels untinted
-        app.cfg = dict(app.cfg, theme=_mono(), preset="mono")
+        app.cfg, app.no_colour = dict(app.cfg, theme=_mono(), preset="mono"), True  # kept when settings reload
     while not app.done:
         app.poll()
         if io.resized():
