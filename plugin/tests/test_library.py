@@ -197,6 +197,36 @@ class LibSources(ForemanTestCase):
         self._git(repo, "commit", "-qm", "kit")
         return repo
 
+    def test_source_swap_is_locked_and_rm_clears_strays(self):
+        # T-1428: two updates of one source could interleave their renames; rm took only [a-z0-9-]+ names, so a stray
+        # NAME.old-PID or .tmp-NAME-PID folder (a crash's) couldn't be removed through fm
+        import threading
+        repo = self._source_repo()
+        self.fm("lib", "source", "add", repo, "--name", "kit")
+        base = os.path.join(c.state_dir(), "lib-sources")
+        held, go = threading.Event(), threading.Event()
+
+        def hold():
+            with c.lock(fmlib._SWAP_LOCK()):
+                held.set()
+                go.wait(10)
+        t = threading.Thread(target=hold)
+        t.start()
+        held.wait(5)
+        threading.Timer(1.5, go.set).start()
+        t0 = time.monotonic()
+        self.fm("lib", "source", "update", "kit")
+        self.assertGreater(time.monotonic() - t0, 1.4, "the swap waited for the held lock")
+        t.join()
+        for stray in ("kit.old-999999", ".tmp-kit-999999"):
+            os.makedirs(os.path.join(base, stray))
+            self.fm("lib", "source", "rm", stray)
+            self.assertFalse(os.path.exists(os.path.join(base, stray)), stray)
+        for bad in ("..", ".", "../x", "kit/../.."):
+            with self.subTest(bad=bad):
+                self.assertNotEqual(self.fm("lib", "source", "rm", bad, check=False).returncode, 0)
+        self.assertTrue(os.path.isdir(os.path.join(base, "kit")))
+
     def test_a_source_is_indexed_read_only_and_found_by_search(self):
         repo = self._source_repo()
         out = self.fm("lib", "source", "add", repo, "--name", "kit").stdout
