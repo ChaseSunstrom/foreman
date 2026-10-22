@@ -30,8 +30,8 @@ MAX_MS = 2000
 KEYWORDS = {"linear", "ease", "ease-in", "ease-out", "ease-in-out", "step-start", "step-end"}
 CURVES = {"ease-enter": "cubic-bezier(0.05, 0.7, 0.1, 1)", "ease-exit": "cubic-bezier(0.3, 0, 0.8, 0.15)",
           "ease-move": "cubic-bezier(0.45, 0, 0.2, 1)"}  # motion.md's defaults; DESIGN.md's tokens of the name win
-NAME = re.compile(r"[A-Za-z][\w-]{0,63}")
-PROP = re.compile(r"(?:--|-[a-z]+-)?[A-Za-z][\w-]{0,63}")
+NAME = re.compile(r"[A-Za-z][\w-]{0,63}", re.ASCII)  # T-1625 review: ASCII, as the messages say
+PROP = re.compile(r"(?:--|-[a-z]+-)?[A-Za-z][\w-]{0,63}", re.ASCII)
 NUM = r"-?(?:\d{1,9}(?:\.\d{0,9})?|\.\d{1,9})"  # bounded: no input makes these regexes backtrack for long
 TIME = re.compile(r"(" + NUM + r")\s*(ms|s)")
 _N = r"\s*(" + NUM + r")\s*"
@@ -316,23 +316,24 @@ def _variants(m):
              "properties": ["opacity"] if form == "fade" else m["properties"] if form == "instant" else []})
 
 
-def _ident(s):
-    """s with each non-ASCII character as a CSS escape, so the sheet stays ASCII."""
-    return "".join(c if c.isascii() else f"\\{ord(c):x} " for c in s)
+def _label(name):
+    """The score's file name for a header comment: quoted, ASCII, and unable to end a /* */ comment or a <script>."""
+    return json.dumps(name).replace("*/", "*\\/").replace("</", "<\\/")
 
 
 def _css(motions, label):
     root, reduced, frames = [], [], []
     for m in motions:
-        n, full, red = _ident(m["name"]), *_variants(m)
+        n, full, red = m["name"], *_variants(m)
         for v, into, ind in ((full, root, "  "), (red, reduced, "    ")):
             ms, curve = f"{json.dumps(v['duration'])}ms", v["easing"]
             frame = f"reduced-motion-{n}" if v.get("form") == "fade" else f"motion-{n}"
-            tr, an = ("none", "none") if v.get("form") == "none" else \
-                (", ".join(f"{_ident(p)} {ms} {curve}" for p in v["properties"]), f"{frame} {ms} {curve} backwards")
+            tr, an = ("all 0s", "none") if v.get("form") == "none" else \
+                (", ".join(f"{p} {ms} {curve}" for p in v["properties"]), f"{frame} {ms} {curve} backwards")
+            # all 0s, not none: none is only valid alone, so it would void a comma list holding other motions
             into += [f"{ind}--motion-{n}-duration: {ms};", f"{ind}--motion-{n}-easing: {curve};",
                      f"{ind}--motion-{n}-transition: {tr};", f"{ind}--motion-{n}-animation: {an};"]
-        starts = " ".join(f"{_ident(p)}: var(--motion-{n}-from-{_ident(p)});" for p in full["properties"])
+        starts = " ".join(f"{p}: var(--motion-{n}-from-{p});" for p in full["properties"])
         frames.append(f"@keyframes motion-{n} {{\n  from {{ {starts} }}\n}}")
         if red["form"] == "fade":
             frames.append(f"@keyframes reduced-motion-{n} {{\n  from {{ opacity: var(--motion-{n}-from-opacity, 0); }}"
@@ -344,7 +345,8 @@ def _css(motions, label):
         "   animation:, which starts from var(--motion-NAME-from-PROPERTY), set where it plays, and ends at the",
         "   element's own style). Under prefers-reduced-motion, unless <html data-motion=\"full\">, or with",
         "   <html data-motion=\"reduce\">, each motion takes its reduced form: none plays nothing (the element sits in",
-        "   its rest state), instant jumps to the end state (0ms), fade animates opacity only over the same duration.",
+        "   its rest state; transition all 0s, animation none), instant jumps to the end state (0ms), fade animates",
+        "   opacity only over the same duration.",
         "*/", ":root {", *root, "}", *frames, "@media (prefers-reduced-motion: reduce) {",
         '  :root:not([data-motion="full"]) {', *reduced, "  }", "}", ':root[data-motion="reduce"] {', plain, "}", ""])
 
@@ -374,10 +376,12 @@ const ease = ([kind, ...a]) => (kind === "steps" ? steps(...a) : kind === "linea
 for (const m of Object.values(motion)) for (const v of [m, m.reduced]) v.ease = ease(v.curve);
 """
 PICK = """\
-// <html data-motion="reduce|full"> wins over the system's prefers-reduced-motion, as the motion playbook says
+// as the CSS: reduced under the system's prefers-reduced-motion unless <html data-motion="full">, and always with
+// data-motion="reduce" (the motion playbook's app setting)
 export const reduced = () => {
   const set = typeof document === "object" ? document.documentElement.dataset.motion : undefined;
-  return set ? set === "reduce" : typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const system = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  return set === "reduce" || (set !== "full" && system);
 };
 export const pick = (name) => (reduced() ? motion[name].reduced : motion[name]);
 """
@@ -424,7 +428,7 @@ def compile_score(path, to):
     got = check(path)
     if got["problems"]:
         return None, got["problems"]
-    label = json.dumps(os.path.basename(path))  # quoted and ASCII: a name can't end the comment it sits in
+    label = _label(os.path.basename(path))
     return (_css(got["motions"], label) if to == "css" else _module(got["motions"], label, to)), []
 
 
@@ -437,6 +441,10 @@ def cmd_motion(args):
     import fmcli
     import fmcore
     act, path = args.action, args.path
+    for flag, v in (("--to", args.to), ("--out", args.out)):
+        if act == "check" and v is not None:
+            print(f"fm: motion check: {flag} is for compile (fm motion compile [PATH] {flag} …)", file=sys.stderr)
+            return 2
     if not path:
         root = fmcore.git_root(os.getcwd()) or os.getcwd()
         path = os.path.join(root, "motion.toml")
@@ -446,19 +454,23 @@ def cmd_motion(args):
     label = os.path.basename(path)
     try:
         if act == "compile":
-            text, problems = compile_score(path, args.to)
+            to = args.to or "css"
+            text, problems = compile_score(path, to)
             out = os.path.abspath(args.out) if args.out else None  # write_atomic makes dirname(path): "" if bare
-            if problems:
-                print("\n".join(_report(problems, label) + [f"motion compile: {len(problems)} problem(s), "
-                                                                   f"nothing compiled ({path})"]), file=sys.stderr)
+            if problems:  # stdout stays for the compiled text; --json puts {problems} there, as check does
+                if getattr(args, "json", False):
+                    fmcli.out(args, {"problems": problems}, None)
+                else:
+                    print("\n".join(_report(problems, label) + [f"motion compile: {len(problems)} problem(s), "
+                                                                f"nothing compiled ({path})"]), file=sys.stderr)
                 return 1
             if out and os.path.exists(out) and os.path.samefile(out, path):
                 raise ValueError(f"--out {args.out} is the score it compiles")
             if out:
                 fmcore.write_atomic(out, text)  # via a temp file: a symlink at out is replaced, never written through
-                fmcli.out(args, {"out": args.out, "to": args.to, "bytes": len(text.encode())}, f"wrote {args.out}")
+                fmcli.out(args, {"out": args.out, "to": to, "bytes": len(text.encode())}, f"wrote {args.out}")
             else:
-                fmcli.out(args, {"to": args.to, "text": text}, text.rstrip("\n"))
+                fmcli.out(args, {"to": to, "text": text}, text.rstrip("\n"))
             return 0
         got = check(path)
     except (OSError, ValueError, RecursionError) as e:
