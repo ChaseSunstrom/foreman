@@ -1764,11 +1764,24 @@ class DesignNudge(HookCase):
             path = os.path.join(self.repo, where)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w") as f:
-                f.write("# DESIGN.md: app\n")
+                f.write("# DESIGN.md: app\n\n## Direction\nField guide, audacity bold.\n")
             self.task(title=where)
             self.assertEqual(self.edit("web/App.vue"), "", where)
             os.remove(path)
         self.assertIn("ui/design-direction.md", self.edit("web/App.vue"), "and the note once it's gone")
+
+    def test_a_design_md_with_no_direction_still_gets_the_note(self):
+        # T-1507: fm design extract writes a DESIGN.md holding only its Tokens section; that is a palette, not a
+        # direction, so it mustn't silence the nudge (nor a ## Direction inside a code fence, nor a FIFO)
+        path = os.path.join(self.repo, "DESIGN.md")
+        with open(path, "w") as f:
+            f.write("# DESIGN.md: app\n\n## Tokens\n| Token |\n\n```\n## Direction\n```\n")
+        self.task()
+        self.assertIn("ui/design-direction.md", self.edit("web/App.vue"))
+        os.remove(path)
+        os.mkfifo(path)
+        self.task(title="Second")
+        self.assertIn("ui/design-direction.md", self.edit("web/App.vue"))
 
 
 class PostToolUse(HookCase):

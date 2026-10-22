@@ -12,8 +12,10 @@ those cards cover *how* to ship it.
 
 ## The procedure
 
-1. **Look for a direction that already exists.** A `DESIGN.md`, a token file, a brand guide or a shipped design
-   system wins over everything below. Pass: you name the file you followed, or say "none found".
+1. **Look for a direction that already exists.** A `DESIGN.md` with a `## Direction` section, a brand guide or a
+   shipped design system wins over everything below. A token file, or a `DESIGN.md` holding only the Tokens section
+   `fm design extract` writes, is a palette, not a direction: keep its values unless the direction you pick replaces
+   them. Pass: you name the file you followed, or say "none found".
 2. **Get the taste words.** Collect the adjectives the user used. If there are none, or only the empty ones
    (see the table), run the interview.
 3. **Translate words to knobs** with the taste-word table. Five knobs: type, colour, density, motion, radius.
@@ -161,6 +163,10 @@ Taste words: <words> → <which word owns type and colour, which gets motion>.
 - Density: unit <px>; row height <px>; section padding <px>.
 - Shape: radius <values per element class>; border <spec>; shadow <spec or none>.
 - Motion: durations <ms>; easing <curve>; under reduced motion <what remains>.
+
+## Tokens
+<once the token file exists: `fm design extract <ui root>` writes this section, each custom property with its light
+and dark value and the contrast of each text/surface pair; rerun it after a token change>
 
 ## Signature moves
 1. <the one thing a screenshot is recognised by>

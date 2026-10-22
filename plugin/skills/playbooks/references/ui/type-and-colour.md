@@ -111,7 +111,7 @@ Rules for the ramps:
 - **One accent hue.** It marks the one primary action per view, links and the current selection, and covers 10% of the screen or less in the squint test. A second accent hue is a second direction and fails unless `DESIGN.md` names it.
 - **Status colours are reserved.** Red means error, amber means warning, green means success, and nothing else uses them: no red brand header, no green "new" badge, no amber illustration. Each status hue sits at least 30° from the accent hue; if the brand colour is green or red, the accent takes it and that status is carried by icon and text plus a shifted hue (a teal success beside a green brand). "Info" uses the accent-subtle role or a neutral, never a fourth hue.
 - **Colour is never the only signal.** Every status also has an icon or a word; every chart series also has a label or a pattern.
-- **Stay inside sRGB** unless you design for wide gamut on purpose. Out-of-gamut OKLCH values are clipped by the browser, chroma and contrast drift, and the hex in your proof no longer matches the screen. Lower the chroma until the value fits (the proof script below flags it); wide-gamut colours go in an `@media (color-gamut: p3)` block, with the sRGB value as the default.
+- **Stay inside sRGB** unless you design for wide gamut on purpose. Out-of-gamut OKLCH values are clipped by the browser, chroma and contrast drift, and the hex in your proof no longer matches the screen. Lower the chroma until the value fits (`fm design contrast` flags it); wide-gamut colours go in an `@media (color-gamut: p3)` block, with the sRGB value as the default.
 
 ## Contrast
 
@@ -138,58 +138,17 @@ The WCAG 2 ratios are the floor. They are pass or fail numbers, so measure them 
 | 0.22 | ≥ 0.51 | ≥ 0.61 | ≥ 0.73 |
 | 0.18 | ≥ 0.49 | ≥ 0.59 | ≥ 0.70 |
 
-The limits are rounded toward the safe side. Tinted neutrals land within a few hundredths of them; saturated colours do not, so the proof script is what decides.
+The limits are rounded toward the safe side. Tinted neutrals land within a few hundredths of them; saturated colours do not, so the proof is what decides.
 
-**The proof is a script, not an eyeball.** Keep the pairs in the repo and run them in CI, so a token change that breaks contrast fails a build instead of a person. This one reads the token file (ramp values in `oklch()`, roles as `var()` or `light-dark()`), checks each pair in both themes, warns on out-of-gamut values and exits 1 on any failure:
+**The proof is a check, not an eyeball.** Keep the pairs in the repo and run them in CI, so a token change that breaks contrast fails a build instead of a person:
 
-```python no-run
-#!/usr/bin/env python3
-"""Contrast proof: python3 contrast_proof.py tokens.css text/surface:4.5 border/surface:3 ...
-Reads --name: oklch(L C h) | var(--other) | light-dark(A, B); checks each pair in light and dark."""
-import math, re, sys
-
-def oklch(L, C, h):
-    a, b = C * math.cos(math.radians(h)), C * math.sin(math.radians(h))
-    l, m, s = ((L + x * a + y * b) ** 3 for x, y in
-               ((0.3963377774, 0.2158037573), (-0.1055613458, -0.0638541728), (-0.0894841775, -1.2914855480)))
-    return (4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-            -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-            -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s)
-
-tokens = dict(re.findall(r"(--[\w-]+)\s*:\s*([^;]+);", open(sys.argv[1]).read()))
-
-def resolve(name, theme, depth=0):
-    if name not in tokens:
-        sys.exit(f"{name}: not defined in {sys.argv[1]}")
-    v = tokens[name].strip()
-    if depth > 20:
-        sys.exit(f"{name}: var() loop")
-    if m := re.fullmatch(r"light-dark\((.+?),\s*(.+)\)", v):
-        v = m.group(theme + 1).strip()
-    if m := re.fullmatch(r"var\((--[\w-]+)\)", v):
-        return resolve(m.group(1), theme, depth + 1)
-    if m := re.fullmatch(r"oklch\(\s*([\d.]+)(%?)\s+([\d.]+)\s+([\d.]+)(?:deg)?\s*\)", v):
-        L = float(m.group(1)) / (100 if m.group(2) else 1)
-        rgb = oklch(L, float(m.group(3)), float(m.group(4)))
-        if not all(-1e-4 <= c <= 1.0001 for c in rgb):
-            print(f"  {name}: outside sRGB, the browser will clip it; lower the chroma")
-        return 0.2126 * min(max(rgb[0], 0), 1) + 0.7152 * min(max(rgb[1], 0), 1) + 0.0722 * min(max(rgb[2], 0), 1)
-    sys.exit(f"{name}: can't read {v!r} (write oklch(L C h), var() or light-dark())")
-
-failed = 0
-for spec in sys.argv[2:]:
-    pair, _, need = spec.partition(":")
-    fg, bg = ("--" + t for t in pair.split("/"))
-    for theme, label in ((0, "light"), (1, "dark")):
-        hi, lo = sorted((resolve(fg, theme), resolve(bg, theme)), reverse=True)
-        r = (hi + 0.05) / (lo + 0.05)
-        ok = r >= float(need or 4.5)
-        failed += not ok
-        print(f"{'pass' if ok else 'FAIL'}  {label:5}  {pair:28} {r:5.2f}:1  (needs {need or 4.5})")
-sys.exit(1 if failed else 0)
+```bash
+fm design contrast tokens/colour.css text/surface-sunken:7 text-muted/surface-sunken border/surface-sunken:3
 ```
 
-It covers flat token files; a value it can't read stops it with the token's name rather than passing silently. Text over images and gradients still needs a scrim and a spot check by eye (`fm lib show color-contrast`).
+It reads the token file's custom properties (values in `oklch()`, hex, `rgb()` or `hsl()`; roles as `var()` or `light-dark()`; dark overrides in a `.dark`, `[data-theme="dark"]` or `prefers-color-scheme: dark` block), checks each pair in both themes on the sRGB hex the browser paints (WCAG 2.x relative luminance), warns on out-of-gamut values and exits 1 on any failure. A pair is `fg/bg`, `fg/bg:3` or `fg/bg:4.5,7` (light, dark); with no pairs it checks the roles above (text, muted text, border and accent on each surface, text on the accent and subtle fills), body text 7:1 in dark. A value it can't read stops it with the token's name rather than passing silently. A CI without Foreman copies `plugin/lib/fmdesign.py` (stdlib only, Python 3.11 or later) and runs `python3 fmdesign.py contrast …` the same way. Text over images and gradients still needs a scrim and a spot check by eye (`fm lib show color-contrast`).
+
+**A first palette from one colour.** `fm design palette 'oklch(0.45 0.13 258)'` makes every role above in both themes from one seed (hex, `rgb()`, `hsl()` or `oklch()`): neutrals at the seed's hue with a whisper of its chroma, the accent keeping its hue, and each text role moved in lightness until its pairs pass. It prints CSS `light-dark()` roles (`--format dtcg` for Design Tokens JSON, `tailwind` for a v4 `@theme`) and the proof on stderr, so `> tokens/colour.css` keeps only the tokens. It is a start, not a direction: status colours, hover states and the ramp names are yours to add. `fm design extract <ui root>` then writes the token table, with each pair's contrast, into `DESIGN.md`'s Tokens section.
 
 ## Dark mode
 
@@ -225,7 +184,7 @@ An invented product: Tallyhouse, bookkeeping for small workshops. `DESIGN.md` sa
 
 Adjacent levels are 1.25× apart on desktop and 1.2× on phones, so the flat-hierarchy check passes at every width. Step 5 is about 3× body: a confident number, not a poster, which is right for *trustworthy*. The fluid values come from `min + (max − min) × (viewport − 360) / (1280 − 360)`.
 
-**The palette**, in the token file the proof script reads. Neutrals at hue 250 (leaning toward the navy), named by lightness; the accent at hue 258; status hues at 27, 65 and 150, all more than 30° from the accent.
+**The palette**, in the token file the proof reads. Neutrals at hue 250 (leaning toward the navy), named by lightness; the accent at hue 258; status hues at 27, 65 and 150, all more than 30° from the accent.
 
 ```css
 /* tokens/colour.css — the only file allowed raw colour values */
@@ -266,24 +225,24 @@ Adjacent levels are 1.25× apart on desktop and 1.2× on phones, so the flat-hie
 
 The sRGB hex each ramp value lands on, for design tools: `n-99 #FAFCFE`, `n-97 #F2F5F9`, `n-93 #E4E8ED`, `n-87 #CFD5DB`, `n-66 #8C939B`, `n-55 #6B727B`, `n-45 #4F565E`, `n-27 #22272C`, `n-22 #171B1F`, `n-18 #0E1216`, `blue-45 #21539C`, `blue-74 #83ADEA`, `red-50 #B02B27`, `red-72 #F07F77`. All values are inside sRGB.
 
-**The proof.** Each text role is measured on its worst surface, `--surface-sunken` (`python3 contrast_proof.py tokens/colour.css text/surface-sunken:7 text-muted/surface-sunken …`):
+**The proof.** Each text role is measured on its worst surface, `--surface-sunken` (`fm design contrast tokens/colour.css text/surface-sunken:7 text-muted/surface-sunken …`):
 
 | Pair | Needs | Light | Dark |
 |---|---|---|---|
-| `text` on `surface-sunken` | 7 | 14.09 | 12.26 |
-| `text` on `surface` | 4.5 (7 in dark) | 15.87 | 15.31 |
-| `text-muted` on `surface-sunken` | 4.5 | 6.05 | 4.85 |
-| `accent` (links) on `surface-sunken` | 4.5 | 6.14 | 6.52 |
-| `on-accent` on `accent` | 4.5 | 7.54 | 8.14 |
-| `on-accent` on `accent-hover` | 4.5 | 9.73 | 10.07 |
-| `on-subtle` on `accent-subtle` | 4.5 | 8.41 | 7.32 |
-| `border` on `surface-sunken` | 3 | 3.94 | 3.11 |
-| `focus` on `surface-sunken` | 3 | 6.14 | 6.52 |
-| `error` on `surface-sunken` | 4.5 | 5.33 | 5.71 |
-| `warning` on `surface-sunken` | 4.5 | 4.62 | 7.92 |
-| `success` on `surface-sunken` | 4.5 | 4.64 | 7.38 |
+| `text` on `surface-sunken` | 7 | 14.07 | 12.24 |
+| `text` on `surface` | 4.5 (7 in dark) | 15.83 | 15.28 |
+| `text-muted` on `surface-sunken` | 4.5 | 6.04 | 4.85 |
+| `accent` (links) on `surface-sunken` | 4.5 | 6.13 | 6.55 |
+| `on-accent` on `accent` | 4.5 | 7.55 | 8.18 |
+| `on-accent` on `accent-hover` | 4.5 | 9.69 | 10.10 |
+| `on-subtle` on `accent-subtle` | 4.5 | 8.36 | 7.33 |
+| `border` on `surface-sunken` | 3 | 3.95 | 3.10 |
+| `focus` on `surface-sunken` | 3 | 6.13 | 6.55 |
+| `error` on `surface-sunken` | 4.5 | 5.30 | 5.74 |
+| `warning` on `surface-sunken` | 4.5 | 4.60 | 7.93 |
+| `success` on `surface-sunken` | 4.5 | 4.64 | 7.36 |
 
-Every pair passes. The tight ones are the ones to watch: dark `text-muted` and dark `border` on the sunken surface, light `warning` and `success`. Darken any surface further and those fail first, so they go in CI. `hairline` is left out on purpose: it fails 3:1 (1.36 light, 1.25 dark), which is fine only while no control relies on it for its edge.
+Every pair passes. The tight ones are the ones to watch: dark `text-muted` and dark `border` on the sunken surface, light `warning` and `success`. Darken any surface further and those fail first, so they go in CI. `hairline` is left out on purpose: it fails 3:1 (1.35 light, 1.25 dark), which is fine only while no control relies on it for its edge.
 
 ## Checks
 
@@ -298,7 +257,7 @@ Each line is pass or fail on the built screens and the token files.
 - [ ] Running text is at most 75ch wide on a 1440 px screen; body is at least 16 px on a phone.
 - [ ] The squint test shows three or more text greys and one clear primary action; the accent covers 10% of the screen or less.
 - [ ] Red, amber and green appear only on error, warning and success, each with an icon or word.
-- [ ] The contrast proof exits 0 in CI for every text role on every surface it can sit on, in both themes; dark body text is at least 7:1.
+- [ ] `fm design contrast` exits 0 in CI for every text role on every surface it can sit on, in both themes; dark body text is at least 7:1.
 - [ ] Every role has a dark value; the dark surfaces are not `#000` and dark text is not `#FFF` unless `DESIGN.md` says why.
 - [ ] A type-as-hero headline leaves no horizontal scroll at 320 px and at 200% zoom.
 

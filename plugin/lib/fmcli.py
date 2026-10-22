@@ -40,8 +40,9 @@ def _session_model():
 
 
 def out(args, data, text):
-    if getattr(args, "json", False):
-        print(json.dumps(data, indent=2, ensure_ascii=False))
+    if getattr(args, "json", False):  # T-1589: any value (a TOML datetime) as text; DEL and C1 controls escaped
+        print(re.sub(r"[\x7f-\x9f]", lambda m: f"\\u{ord(m.group()):04x}",
+                     json.dumps(data, indent=2, ensure_ascii=False, default=str)))
     elif text is not None:
         print(text)
 
@@ -4814,6 +4815,21 @@ HELP_TIERS = []
 
 
 def cmd_help(args):
+    if getattr(args, "words", None):  # T-1519: "can Foreman do X?", answered from the help below
+        import fmrecall
+        q = " ".join(args.words)
+        if args.all:
+            raise UsageError("fm help --all lists every command and fm help WORDS answers a question: one or the other")
+        if not fmrecall.asked(q):
+            raise UsageError(f"nothing to look up in {q!r}, only words like can, do and it: name the thing, e.g. "
+                             "fm help scaffold an mcp server")
+        hits = fmrecall.can(q)
+        line = lambda n, h, w: f"  fm {n:<{w}}{fmrecall.gist(h, q, 95 - w)}"  # noqa: E731 ≤ 100 columns, match kept
+        out(args, {"question": q, "commands": [{"command": n, "help": h} for n, h in hits]},
+            "Closest by their help:\n" + "\n".join(line(n, h, max(15, len(n) + 1)) for n, h in hits)
+            + "\nfm <command> -h for its options." if hits else "No fm command's help says so; fm help --all lists "
+            "every command.\nWorth building? fm capture \"<what you need>\".")
+        return 0 if hits else 1
     sub = next(a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction))
     helps = {a.dest: _no_ids(" ".join((a.help or "").split())) for a in sub._choices_actions}
     lines = []
@@ -4915,8 +4931,19 @@ def _build_parser():
         s.add_argument("-p", "--project", default=argparse.SUPPRESS)
         return s
 
-    s = add("help", cmd_help, tier=("Finding your way", 200), help="every command, in tiers: the everyday ones first")
+    s = add("help", cmd_help, tier=("Finding your way", 200), help="every command, in tiers: the everyday ones first; "
+            "with words, can Foreman do X? answered from the commands' help")
     s.add_argument("--all", action="store_true", help="the same: every command (fm --help: the everyday ones)")
+    s.add_argument("words", nargs="*", help="a question in plain words: the commands whose help answers it")
+    s = add("new", lazy("fmnew", "cmd_new"), tier=("Finding your way", 385), help="strict-by-default templates: a web "
+            "page, a 3D scene, an fm code panel (list; NAME [DIR] copies one; check PATH holds a copy to its rules)")
+    s.add_argument("words", nargs="*", metavar="list|NAME [DIR]|check PATH", help="web, scene or panel; a panel lands "
+                   "in fm code's tui/ folder unless DIR is given. check runs the file for a panel (.py): one fm code "
+                   "would load, in a child with limits and a timeout")
+    s.add_argument("--force", action="store_true", help="replace the file the copy lands on (a symlink there is "
+                   "replaced itself, never written through)")
+    s.add_argument("--run", action="store_true", help="check: run a panel that sits inside a project (a .git above "
+                   "it); without it a project's files never run as you")
     s = add("init", cmd_init, tier=("Project and settings", 650), help="register a project")
     s.add_argument("path", nargs="?")
     s.add_argument("--sensitive", action="store_true")
@@ -5411,6 +5438,19 @@ def _build_parser():
     s.add_argument("--sub", metavar="a,b", help="new: the subcommands a caller may pick (an enum)")
     s.add_argument("--dir", help="new: the folder to write (default: ./NAME)")
     s.add_argument("--force", action="store_true", help="new: write into a folder that isn't empty")
+    add("glance", lazy("fmintegrations", "cmd_glance"), tier=("Running elsewhere", 1232),
+        help="the status as one JSON line for a shell prompt or status bar (waybar's text, tooltip and class); "
+             "never creates a project (T-1551)")
+    s = add("timeline", lazy("fmintegrations", "cmd_timeline"), tier=("Running elsewhere", 1234),
+            help="a task's run from the ledger as Perfetto / Chrome trace JSON (open at ui.perfetto.dev): the task, "
+                 "its steps and checks as spans, every event as a mark, redacted; words left out in a sensitive "
+                 "project (T-1551)")
+    s.add_argument("id", nargs="?", help="the task (default: the active one)")
+    s.add_argument("--otlp", action="store_true", help="OTLP JSON for an OpenTelemetry collector instead")
+    s.add_argument("--out", metavar="PATH", help="write it here instead of printing it")
+    add("lsp", lazy("fmintegrations", "cmd_lsp"), tier=("Running elsewhere", 1236),
+        help="a Language Server over stdio (never a port) that publishes a brief's proof gaps: criteria with no "
+             "verify command or evidence, steps with no test run; reads only the document (T-1551)")
     add("wiring", lazy("fmdoctor", "cmd_wiring"), tier=("Project and settings", 840), help="one screen of what is wired: version, hooks, flags, standing "
                                                         "yeses, trust, pause, budget, plugins (T-0469)")
     s = add("orders", lazy("fmorders", "cmd_orders"), tier=("Running elsewhere", 1220), help="standing orders: requests that capture themselves on a "
@@ -5496,6 +5536,9 @@ def _build_parser():
     s.add_argument("--accept", action="store_true", help="take this run's verdicts as the baseline")
     s.add_argument("--cases", action="store_true", help="the labelled cases fm guard wrong stored, against the guard (T-1162)")
     s.add_argument("--capture", action="store_true", help="with --cases: one FIX per drifted case, once")
+    s.add_argument("--oracle", action="store_true", help="run each labelled case in a throwaway bwrap sandbox that records "
+                                                         "what the shell would start: a part the guard refuses alone "
+                                                         "is a line it misread; with --cmd, that one command (T-1553; needs bwrap)")
     s.add_argument("--cmd", metavar="TEXT", help="only this command: the guard's default verdict, never run it")
     s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
     s.add_argument("--candidate", metavar="REF|FILE", help="score another guard (a git ref of Foreman's repo, or a "
@@ -5913,9 +5956,11 @@ def _build_parser():
 
     s = add("settings", lazy("fmsettings", "cmd_settings"), tier=("Project and settings", 775),
             help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496)")
-    s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo"])
+    s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
+                                                                 "bisect"])  # T-1543: the setting the app can't draw
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
-                                          "share code fm settings export printed (T-1510)")
+                                          "share code fm settings export printed (T-1510); list: a group alone (look, "
+                                          "colors, layout, keys, pane; T-1511)")
     s.add_argument("value", nargs="?", help="set: the new value")
     s.add_argument("--surface", choices=["app", "plugin"], help="only the app's tui.toml, or only the pane's options")
 
@@ -5965,9 +6010,16 @@ def _build_parser():
     import fmdesign  # T-1506: stdlib only and small; its rule list is the help's epilog
     s = add("design", lazy("fmdesign", "cmd_design"), tier=("Every task", 92), epilog=fmdesign.rules_help(),
             formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
-            "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings)")
-    s.add_argument("action", choices=["lint"])
-    s.add_argument("paths", nargs="+", metavar="PATH", help="files or directories (one run: the UI's root)")
+            "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
+            "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs")
+    s.add_argument("action", choices=["lint", "extract", "palette", "contrast"])
+    s.add_argument("paths", nargs="+", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
+                   "root); palette: a seed colour (hex, rgb(), hsl(), oklch()); contrast: a token file, then pairs "
+                   "fg/bg[:need[,dark need]] (default: the known role pairs, body text 7:1 in dark)")
+    s.add_argument("--format", choices=["css", "dtcg", "tailwind"], default="css",
+                   help="palette: CSS light-dark() roles, DTCG JSON or a Tailwind v4 @theme")
+    s.add_argument("--out", metavar="PATH", help="extract: the file to write the Tokens section into (default: "
+                                                 "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints)")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), tier=("Finding your way", 460), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
@@ -6259,10 +6311,11 @@ def _task_shape(parser, argv):
 # gemini's shells don't pass Foreman's guard, so fm refuses the rest itself when FOREMAN_WORKER_OF names a run.
 # ponytail: a worker that unsets the variable gets past this; the judge and the CLI's own sandbox stay the outer walls.
 # T-1388 review: log appends ledger events (a forged check_run passes a gate); recall and map write with some flags.
-WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show"}
+WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show", "glance"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
+                   "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
-                   "design": ("action", {"lint"})}  # T-1506: lint only reads the files it's given
+                   "design": ("action", {"lint", "palette", "contrast"})}  # T-1506, T-1507: these only read
 
 
 def _worker_may(args):
