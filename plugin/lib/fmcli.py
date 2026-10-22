@@ -5028,6 +5028,8 @@ def _build_parser():
     s = add("verify-ledger", lazy("fmledger", "cmd_verify_ledger"), tier=("Project and settings", 880), help="prove no ledger line was edited or removed: "
                                                                          "each carries the hash of the one before (T-1065)")
     s.add_argument("--head", help="also prove this head (a finish receipt's) is still in the chain: the tail wasn't cut")
+    s.add_argument("--accept-damage", action="store_true",
+                   help="record the lines an unclean shutdown zeroed as known gaps (T-1456); never accepts an edit")
     s = add("outbound", lazy("fmledger", "cmd_outbound"), tier=("Project and settings", 890), help="every outbound request a task's sessions made: "
                                                               "WebFetch/WebSearch/MCP/curl hosts (T-1086)")
     s.add_argument("id", nargs="?", help="task (default: the focused one)")

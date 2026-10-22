@@ -133,6 +133,106 @@ class Chain(ForemanTestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn(f"ledger.jsonl:{n}", r.stdout + r.stderr)
 
+    def crash(self, keep=0):
+        """What an unclean shutdown leaves (ext4, 2026-10-22): the length kept, the unflushed last line zeroed."""
+        with open(self.ledger, "rb") as f:
+            body = f.read()
+        start = body.rstrip(b"\n").rfind(b"\n") + 1 + keep
+        with open(self.ledger, "wb") as f:
+            f.write(body[:start] + b"\0" * (len(body) - start))
+        return len(self.lines())
+
+    def test_crash_damage_is_named_until_accepted_once(self):
+        # T-1456: a zeroed line read as "not a whole JSON line", so every receipt said broken for good
+        for i in range(3):
+            c.log_event(self.p, "note", data={"i": i})
+        n = self.crash()
+        c.log_event(self.p, "note")  # the next write starts its own line, chained to the zeroed one
+        r = self.verify()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn(f"ledger.jsonl:{n}", r.stdout)
+        self.assertIn("zero bytes", r.stdout)
+        self.assertIn("--accept-damage", r.stdout)
+        r = self.verify("--accept-damage")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("accepted", r.stdout)
+        r = self.verify()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn(f"ledger.jsonl:{n}", r.stdout, "the accepted damage stays named")
+        import fmledger
+        self.assertIn("Ledger: head", fmledger.receipt(self.p))
+        c.log_event(self.p, "note", data={"after": 1})
+        m = self.crash(keep=12)  # a second crash, this time mid-line: broken again until it too is accepted
+        c.log_event(self.p, "note")
+        r = self.verify()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn(f"ledger.jsonl:{m}", r.stdout)
+        self.assertEqual(self.verify("--accept-damage").returncode, 0)
+        self.assertEqual(self.verify().returncode, 0)
+
+    def test_an_ack_counts_only_for_the_damage_before_it(self):
+        # the same number of zero bytes hashes the same: an ack names the line before it too, so it can't cover a
+        # later crash of the same size
+        c.log_event(self.p, "note", data={"i": 1})
+        size = len(self.lines()[-1])
+        self.crash()
+        c.log_event(self.p, "note")
+        self.assertEqual(self.verify("--accept-damage").returncode, 0)
+        c.log_event(self.p, "note", data={"i": 2})
+        self.assertEqual(len(self.lines()[-1]), size)
+        self.crash()
+        c.log_event(self.p, "note")
+        self.assertEqual(self.verify().returncode, 1)
+
+    def test_lines_removed_before_crash_damage_are_caught(self):
+        # T-1456 review: a zeroed line holds no prev, so lines before it could go unseen; the first write after the
+        # crash pins the line before the damage
+        for i in range(5):
+            c.log_event(self.p, "note", data={"i": i})
+        self.crash()
+        c.log_event(self.p, "note")
+        lines = self.lines()
+        self.put(lines[:2] + lines[-2:])  # lines before the zeroed one removed
+        r = self.verify("--accept-damage")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("Nothing accepted", r.stdout)
+        self.assertNotIn("ledger_damage_ack", read_text(self.ledger))
+        self.put(lines)
+        self.assertEqual(self.verify("--accept-damage").returncode, 0, "untouched, the same damage is accepted")
+
+    def test_accept_damage_checks_the_head_first(self):
+        c.log_event(self.p, "note", data={"i": 1})
+        head = h(self.lines()[-1])
+        self.crash()  # the anchored line itself is gone
+        c.log_event(self.p, "note")
+        r = self.verify("--accept-damage", "--head", head)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertNotIn("ledger_damage_ack", read_text(self.ledger))
+
+    def test_zeroed_lines_before_the_chain_predate_it(self):
+        self.put(["\0" * 40, json.dumps({"ts": "2026-09-01T00:00:00Z", "event": "note"})])
+        c.log_event(self.p, "note")
+        self.assertEqual(self.verify().returncode, 0, self.verify().stdout)
+
+    def test_the_receipt_names_accepted_damage(self):
+        import fmledger
+        c.log_event(self.p, "note")
+        self.crash()
+        c.log_event(self.p, "note")
+        self.verify("--accept-damage")
+        self.assertIn("1 crash-damaged line accepted", fmledger.receipt(self.p))
+
+    def test_accept_damage_never_accepts_an_edit(self):
+        for i in range(3):
+            c.log_event(self.p, "note", data={"i": i})
+        lines = self.lines()
+        self.put([x.replace('"i": 1', '"i": 9') for x in lines])
+        self.assertNotEqual(self.lines(), lines)
+        r = self.verify("--accept-damage")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("Nothing accepted", r.stdout)
+        self.assertNotIn("ledger_damage_ack", read_text(self.ledger))
+
     def test_head_anchor_catches_removed_tail(self):
         c.log_event(self.p, "note")
         head = h(self.lines()[-1])
