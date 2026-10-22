@@ -5,6 +5,7 @@ area: tools
 tags: [jq, json, cli, filters, scripting, data]
 detect: [file:*.jq]
 related: [shell-scripting, sed-awk, ripgrep, github-cli]
+verified: 2026-10-22
 ---
 jq: filter and reshape JSON on the command line, with correct quoting, null handling and exit codes.
 
