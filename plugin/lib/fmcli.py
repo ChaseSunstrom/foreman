@@ -6330,7 +6330,8 @@ WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "sh
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
                    "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
-                   "design": ("action", {"lint", "palette", "contrast"})}  # T-1506, T-1507: these only read
+                   "design": ("action", {"lint", "palette", "contrast"}),  # T-1506, T-1507: these only read
+                   "img": ("out", {None})}  # T-1630: info and diff read; --out writes
 
 
 def _worker_may(args):

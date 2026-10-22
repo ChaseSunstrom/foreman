@@ -4,7 +4,9 @@ import importlib.util
 import json
 import os
 import random
+import stat
 import struct
+import tracemalloc
 import unittest
 import zlib
 
@@ -98,30 +100,71 @@ class Img(ForemanTestCase):
         im = fmimg.decode(png(2, 1, 2, [b"\x01\x02\x03\x01\x02\x04"], extra=key))
         self.assertEqual(im.rgba[3::4], b"\x00\xff")
 
+    def test_idat_split_across_chunks(self):
+        rows = [bytes(range(i, i + 12)) for i in range(3)]
+        data = zlib.compress(filtered(rows, 4, (4, 1, 2)))
+        parts = b"".join(chunk(b"IDAT", data[i:i + 7]) for i in range(0, len(data), 7))
+        ihdr = struct.pack(">IIBBBBB", 3, 3, 8, 6, 0, 0, 0)
+        im = fmimg.decode(fmimg.SIGNATURE + chunk(b"IHDR", ihdr) + parts + chunk(b"IEND", b""))
+        self.assertEqual(im.rgba, b"".join(rows))
+
     def test_refuses_what_it_does_not_read(self):
         rows = [bytes(8)] * 2
         good = png(2, 2, 6, rows)
-        cases = {"interlaced": png(2, 2, 6, rows, interlace=1),
-                 "16-bit": png(1, 2, 6, rows, depth=16),
-                 "not a PNG": b"GIF89a" + bytes(40),
-                 "CRC": good[:41] + bytes([good[41] ^ 1]) + good[42:],  # a byte inside IDAT's data
-                 "truncated": good[:40],
-                 "short": png(2, 3, 6, rows),
-                 "too large": png(1 << 20, 1 << 20, 6, None, raw=b""),
-                 "filter": png(2, 2, 6, None, raw=b"\x05" + bytes(8) + b"\x00" + bytes(8)),
-                 "IHDR": fmimg.SIGNATURE + chunk(b"IEND", b""),
-                 "critical": good.replace(chunk(b"IEND", b""), chunk(b"CgBI", b"") + chunk(b"IEND", b""))}
-        for name, data in cases.items():
-            with self.subTest(name), self.assertRaises(ValueError) as e:
-                fmimg.decode(data)
-            self.assertIn(name, str(e.exception))
+        plte = chunk(b"PLTE", bytes(9))  # three entries
+        cases = [("interlaced", png(2, 2, 6, rows, interlace=1)),
+                 ("16-bit", png(1, 2, 6, rows, depth=16)),
+                 ("bad IHDR", png(1, 2, 3, rows, depth=16, extra=plte)),  # palettes stop at 8 bits
+                 ("not a PNG", b"GIF89a" + bytes(40)),
+                 ("CRC", good[:41] + bytes([good[41] ^ 1]) + good[42:]),  # a byte inside IDAT's data
+                 ("truncated", good[:40]),
+                 ("short", png(2, 3, 6, rows)),
+                 ("too large", png(1 << 20, 1 << 20, 6, None, raw=b"")),
+                 ("too large", png(fmimg.MAX_SIDE, fmimg.MAX_PIXELS // fmimg.MAX_SIDE + 1, 6, None, raw=b"")),
+                 ("empty", png(0, 2, 6, None, raw=b"")),
+                 ("filter", png(2, 2, 6, None, raw=b"\x05" + bytes(8) + b"\x00" + bytes(8))),
+                 ("IHDR", fmimg.SIGNATURE + chunk(b"IEND", b"")),
+                 ("critical", good.replace(chunk(b"IEND", b""), chunk(b"CgBI", b"") + chunk(b"IEND", b""))),
+                 ("palette index past PLTE", png(2, 1, 3, [b"\x02\x03"], extra=plte)),
+                 ("palette index past PLTE", png(4, 1, 3, [b"\x0c"], depth=2, extra=plte))]  # 0, 0, 3, 0
+        for expect, data in cases:
+            with self.subTest(expect):
+                with self.assertRaises(ValueError) as e:
+                    fmimg.decode(data)
+                self.assertIn(expect, str(e.exception))
+
+    def test_chunk_names_reach_the_terminal_escaped(self):
+        # a chunk type is four bytes of the file's choosing: ESC [ 2 J clears the screen it is printed on
+        good, iend = png(2, 2, 6, [bytes(8)] * 2), chunk(b"IEND", b"")
+        evil = chunk(b"\x1b[2J", b"")
+        cases = [good.replace(iend, evil + iend),  # an unknown critical chunk, its CRC right
+                 good.replace(iend, evil[:-1] + bytes([evil[-1] ^ 1]) + iend),  # its CRC wrong
+                 good[:33] + struct.pack(">I", 99) + b"\x1b[2J" + bytes(8)]  # running past the end
+        for i, data in enumerate(cases):
+            with self.subTest(i):
+                with self.assertRaises(ValueError) as e:
+                    fmimg.decode(data)
+                self.assertNotIn("\x1b", str(e.exception))
+                path = os.path.join(self.tmp, f"evil{i}.png")
+                with open(path, "wb") as f:
+                    f.write(data)
+                p = self.fm("img", "diff", path, path, check=False)
+                self.assertEqual(p.returncode, 2, p.stdout)
+                self.assertNotIn("\x1b", p.stderr)
+                self.assertIn("[2J", p.stderr)
 
     def test_inflate_is_capped_by_the_header(self):
         # a bomb: the header says 1x1, the stream inflates to 64 MB; decode stops at what the header allows
         bomb = zlib.compress(bytes(64 << 20), 9)
         ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
         data = fmimg.SIGNATURE + chunk(b"IHDR", ihdr) + chunk(b"IDAT", bomb) + chunk(b"IEND", b"")
-        self.assertEqual(fmimg.decode(data).rgba, bytes(4))
+        tracemalloc.start()
+        try:
+            self.assertEqual(fmimg.decode(data).rgba, bytes(4))
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        self.assertLess(peak, 8 << 20, "the whole stream was inflated")
 
     def test_diff_counts_changed_pixels_and_their_box(self):
         a = fmimg.decode(fmimg.encode(4, 4, rgba4x4()))
@@ -131,12 +174,23 @@ class Img(ForemanTestCase):
             px[(y * 4 + x) * 4] ^= 1  # one channel, one bit
         b = fmimg.decode(fmimg.encode(4, 4, bytes(px)))
         self.assertEqual(fmimg.diff(a, b), {"changed": 2, "total": 16, "bbox": [1, 1, 4, 3]})
-        out = fmimg.diff_image(a, b)
+        d = fmimg.diff(a, b, image=True)  # one walk gives the count and the picture
+        out = d.pop("image")
+        self.assertEqual(d["changed"], 2)
         self.assertEqual(len(out), 64)
         self.assertEqual(out[(1 * 4 + 1) * 4:(1 * 4 + 1) * 4 + 4], bytes(fmimg.CHANGED))
         self.assertNotEqual(out[:4], bytes(fmimg.CHANGED))
         with self.assertRaises(ValueError):
             fmimg.diff(a, fmimg.decode(fmimg.encode(2, 2, bytes(16))))
+
+    def test_diff_tolerance_and_transparent_pixels(self):
+        a = fmimg.Image(3, 1, "rgba", 8, bytes([10, 10, 10, 255, 0, 0, 0, 0, 5, 5, 5, 255]))
+        b = fmimg.Image(3, 1, "rgba", 8, bytes([13, 8, 10, 255, 255, 9, 1, 0, 5, 5, 5, 254]))
+        self.assertEqual(fmimg.diff(a, b)["changed"], 2, "two alpha-0 pixels are equal whatever their RGB")
+        self.assertEqual(fmimg.diff(a, b, tol=2), {"changed": 1, "total": 3, "bbox": [0, 0, 1, 1]})
+        self.assertEqual(fmimg.diff(a, b, tol=3)["changed"], 0, "tol is the per-channel maximum difference")
+        c = fmimg.Image(3, 1, "rgba", 8, bytes([10, 10, 10, 255, 0, 0, 0, 1, 5, 5, 5, 255]))
+        self.assertEqual(fmimg.diff(a, c)["bbox"], [1, 0, 2, 1], "alpha 0 against alpha 1 differs")
 
     @unittest.skipUnless(importlib.util.find_spec("PIL"), "Pillow is an optional cross-check")
     def test_pillow_written_files_decode_the_same(self):
@@ -169,6 +223,7 @@ class Img(ForemanTestCase):
         self.assertEqual(p.returncode, 1, p.stderr)
         self.assertIn("1 of 16 pixels changed", p.stdout)
         self.assertEqual(fmimg.load(c).rgba[:4], bytes(fmimg.CHANGED))
+        self.assertEqual(stat.S_IMODE(os.stat(c).st_mode), 0o600, "a copy of a screenshot stays private")
         d = json.loads(self.fm("img", "diff", a, b, "--json", check=False).stdout)
         self.assertEqual((d["changed"], d["bbox"]), (1, [0, 0, 1, 1]))
         p = self.fm("img", "diff", a, b, "--out", b, check=False)  # the baseline is never overwritten
@@ -185,9 +240,30 @@ class Img(ForemanTestCase):
         self.assertEqual(p.returncode, 2)
         self.assertIn("not a PNG", p.stderr)
         fmimg.save(c, 2, 2, bytes(16))
-        p = self.fm("img", "diff", a, c, check=False)
+        out = os.path.join(self.tmp, "none.png")
+        p = self.fm("img", "diff", a, c, "--out", out, check=False)
         self.assertEqual(p.returncode, 1)
         self.assertIn("sizes differ", p.stdout)
+        self.assertIn("no diff image written", p.stdout)
+        self.assertFalse(os.path.exists(out))
+        fifo = os.path.join(self.tmp, "fifo.png")
+        os.mkfifo(fifo)
+        p = self.fm("img", "info", fifo, check=False)  # open() alone would wait for a writer forever
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("not a regular file", p.stderr)
+
+    def test_a_worker_of_fm_code_may_read_but_not_write(self):
+        a, b, c = (os.path.join(self.tmp, n) for n in ("a.png", "b.png", "c.png"))
+        fmimg.save(a, 1, 1, bytes(4))
+        fmimg.save(b, 1, 1, b"\x01\x00\x00\xff")
+        env = {"FOREMAN_WORKER_OF": "run-1"}
+        self.assertIn("1x1 rgba", self.fm("img", "info", a, env=env).stdout)
+        p = self.fm("img", "diff", a, b, env=env, check=False)
+        self.assertEqual(p.returncode, 1, p.stderr)
+        p = self.fm("img", "diff", a, b, "--out", c, env=env, check=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("refused", p.stderr)
+        self.assertFalse(os.path.exists(c))
 
 
 if __name__ == "__main__":
