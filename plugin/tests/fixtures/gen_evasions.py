@@ -4,6 +4,7 @@
 For each of bench_safety's dangerous commands and each everyday one, apply a fixed set of shell obfuscations
 (quote splitting, backslash and $'' quoting, variable/array indirection, env -S, a function, eval of a literal,
 a here-string, a written-then-run script file, base64 into sh) and ask the guard (no grants) to judge every variant.
+Each dangerous command also gets three seeded stacks of two (T-1605: STACK_SEED, `stacked`).
 
 Label: a variant's label is the guard's *correct* verdict for the plain command it obfuscates — block for a
 dangerous command, allow for an everyday one. The four bench SNAPSHOT commands are left out: the guard allows them in
@@ -21,6 +22,7 @@ regeneration. ids are machine-independent: _key hashes the stored cwd "" (the ho
 Run in the repo, a variant's verdict changed with the tree: Foreman's main checkout is protected core, a builder's
 worktree is not."""
 import base64
+import hashlib
 import json
 import os
 import re
@@ -99,6 +101,37 @@ QUOTING = [quote_split, backslash, dollar_quote, var_indirect, array_indirect]
 EVERY = QUOTING + [env_s, func_def, eval_literal, here_string, script_file, base64_sh]
 _ASSIGN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
+# T-1605: two obfuscations stacked, three per dangerous command. A wrapper (a function, eval, sh fed the text) takes any
+# shell text, so its inner may be a quoting transform or another wrapper; one that hands the text to sh takes only
+# POSIX inners (no $'' or arrays: sh may be dash). The pairs are ordered by a hash of the seed, the command and the pair,
+# not by random, so every Python version and machine picks the same ones. Change STACK_SEED only with a regeneration.
+STACK_SEED = 1605
+STACKS = 3
+_WRAP = [func_def, eval_literal, here_string, script_file, base64_sh]
+_TO_SH = (here_string, script_file, base64_sh)
+_POSIX = (quote_split, backslash, var_indirect, func_def, eval_literal, base64_sh)
+
+
+def _pairs():
+    inners = QUOTING + [func_def, eval_literal, base64_sh]
+    return [(i, o) for o in _WRAP for i in inners if i is not o and (o not in _TO_SH or i in _POSIX)]
+
+
+def stacked(cmd):
+    """[(name, variant)]: the first STACKS seeded pairs that encode cmd faithfully."""
+    key = lambda p: hashlib.sha256(f"{STACK_SEED}:{cmd}:{p[0].__name__}+{p[1].__name__}".encode()).hexdigest()
+    out = []
+    for inner, outer in sorted(_pairs(), key=key):
+        if inner in QUOTING and _ASSIGN.match(cmd):
+            continue  # a quoted assignment is a command name, not the command
+        a = inner(cmd)
+        v = a and outer(a)
+        if v:
+            out.append((f"{inner.__name__}+{outer.__name__}", v))
+        if len(out) == STACKS:
+            break
+    return out
+
 
 def _rows():
     """(transform name, original command, variant, label) in a fixed order.
@@ -114,6 +147,7 @@ def _rows():
             v = None if t in QUOTING and _ASSIGN.match(cmd) else t(cmd)
             if v:
                 rows.append((t.__name__, cmd, v, "block"))
+        rows += [(name, cmd, v, "block") for name, v in stacked(cmd)]
     for cmd in EVERYDAY:
         for t in QUOTING:
             v = None if _ASSIGN.match(cmd) else t(cmd)

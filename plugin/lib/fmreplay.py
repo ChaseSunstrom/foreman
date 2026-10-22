@@ -245,6 +245,13 @@ def _checkout_plugin(cwd):
         d = up
 
 
+def mutate_extras(plugin_root):
+    """[(source, path in the copy)]: files beside the plugin tree that the guard's tests import (T-1605: the evasion
+    corpus's generator reads site/bench_safety.py), so a mutant copy of plugin/ can run them."""
+    src = os.path.join(os.path.dirname(os.path.abspath(plugin_root)), "site", "bench_safety.py")
+    return [(src, os.path.join("site", "bench_safety.py"))] if os.path.isfile(src) else []
+
+
 def cmd_mutate(args, fmcli):
     """Drop (or --weaken) one rule site of the guard at a time and run its tests on each; survivors are untested rules."""
     import shlex
@@ -264,7 +271,7 @@ def cmd_mutate(args, fmcli):
     try:
         res = fmmutate.run(module, rel, root, "plugin", cmd, g.CATEGORIES, weaken=args.weaken,
                            flip=getattr(args, "flip", False),
-                           only=args.only, limit=args.max, timeout=args.timeout,
+                           only=args.only, limit=args.max, timeout=args.timeout, extra=mutate_extras(root),
                            log=lambda m: print(m, file=sys.stderr, flush=True))
     except (ValueError, OSError, SyntaxError) as e:
         raise fmcli.UsageError(str(e))
