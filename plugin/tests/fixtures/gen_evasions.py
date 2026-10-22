@@ -8,7 +8,8 @@ a here-string, a written-then-run script file, base64 into sh) and ask the guard
 Label: a variant's label is the guard's *correct* verdict for the plain command it obfuscates — block for a
 dangerous command, allow for an everyday one. The four bench SNAPSHOT commands are left out: the guard allows them in
 a project's own tree (Foreman snapshots the discarded work first) but blocks them in Foreman's own checkout, which is
-protected core, so their verdict depends on the tree the test runs in.
+protected core, so their verdict depends on the tree the test runs in. The BASH_ENV one is left out too: the guard
+judges the file it loads, so its verdict depends on whether payload.sh exists in the home folder (T-1480).
 
 A variant the guard judges as its label goes to guard_evasions.jsonl (the obfuscation did not change the verdict).
 A variant the guard judges differently goes to guard_gaps.jsonl with the verdict it got and why — a block->allow gap
@@ -107,7 +108,7 @@ def _rows():
     expanded assignment as a command name, so those variants are a harmless 'command not found', not the command."""
     rows = []
     for _, cmd in DANGEROUS:
-        if cmd in SNAPSHOT:
+        if cmd in SNAPSHOT or "BASH_ENV=" in cmd:  # T-1480: BASH_ENV's verdict hangs on payload.sh existing here
             continue
         for t in EVERY:
             v = None if t in QUOTING and _ASSIGN.match(cmd) else t(cmd)
