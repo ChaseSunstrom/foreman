@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""foreman-ui replay (T-1534): the Foreman pane drawn from a recorded view with no live session, through the mod's own
-test kit (claude plugin test) and its fakes, and a check that two runs of one fixture draw the same bytes.
+"""foreman-ui pane replay (T-1534): the Foreman pane drawn from a recorded view with no live session, through the mod's
+own test kit (claude plugin test) and its fakes, and a check that two runs of one fixture draw the same bytes.
 
-  replay.py render FIXTURE [--cols 80] [--rows 40] [--json]  the pane as text (--json: the drawn tree, exact)
-  replay.py twin FIXTURE [--cols 80] [--rows 40] [--matrix]  two renders, each its own process, diffed: exit 1 and the
-                                                             diff when they differ. --matrix: a third in another time
-                                                             zone and locale
+  pane_replay.py render FIXTURE [--cols 80] [--rows 40] [--json]  the pane as text (--json: the drawn tree)
+  pane_replay.py twin FIXTURE [--cols 80] [--rows 40] [--matrix]  two renders, each its own process, diffed: exit 1
+                                                                  and the diff when they differ. --matrix: a third in
+                                                                  another time zone and locale
 
 A fixture is what `fm ui --json` prints, the pane's whole input: a .json file, or a .ts module like
 tests/fixtures/pane-busy.ts whose text after `export default` is that JSON (read as data, never run). Recording one
@@ -16,7 +16,9 @@ mock.clock), the store and the environment, mounts the Pane and prints its drawn
 C.UTF-8 locale and none of this session's CLAUDE_*/FOREMAN_* (shot.CLEAN), so nothing reads or writes Foreman's state.
 The pane takes time only from the engine's clock and draws no random numbers, so the frozen clock is its seed. The
 text is an approximate layout of the tree (columns stack, rows sit side by side, fixed heights clip); --json is the
-tree itself, less the engine's callback ids (press.handle), which count up per mount and draw nothing.
+tree itself, less the engine's callback ids (press.handle), which count up per mount and draw nothing. Nothing from
+the view reaches the terminal raw: the text drops escape sequences, control and bidi characters as the pane's own
+clean() does, and --json and the diffs escape everything outside ASCII.
 """
 import argparse
 import base64
@@ -25,6 +27,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -40,6 +43,16 @@ PINNED = {"TZ": "UTC", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"}
 OTHER = {"TZ": "Pacific/Kiritimati", "LANG": "de_DE.UTF-8", "LC_ALL": "de_DE.UTF-8"}  # UTC+14, a decimal comma
 TIMEOUT = 120  # s for one claude plugin test run (about 2 s here)
 KIT = "replay.test.tsx"
+# hooks/kit.ts clean() (T-0144): CSI (7- or 8-bit), the string forms OSC/DCS/SOS/PM/APC up to BEL or ST (or the end),
+# any other ESC form; then C0/C1 controls (the newline kept, for the split), bidi overrides, zero-width and direction marks
+ESC_SEQ = re.compile(r"(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|(?:\x1b[\]PX^_]|[\x90\x98\x9d-\x9f])[^\x07\x1b\x9c]*"
+                     r"(?:\x07|\x1b\\|\x9c)?|\x1b[ -/]*[0-~]")
+UNSAFE = re.compile("[\x00-\x09\x0b-\x1f\x7f-\x9f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def clean(s):
+    """s safe to print: no escape sequences, control or bidi characters but the newline; tabs as two spaces."""
+    return UNSAFE.sub("", ESC_SEQ.sub("", s).replace("\t", "  "))
 
 
 def options(view, cols, rows):
@@ -67,14 +80,22 @@ def stage(view, cols, rows, folder):
 
 
 def drawn(view, cols=80, rows=40, env=None):
-    """The pane's drawn tree for view, as the one JSON line the kit printed (byte-exact)."""
+    """The pane's drawn tree for view, as the one JSON line the kit printed (byte-exact). claude runs in a process
+    group of its own, killed whole past TIMEOUT: the runtime and the test it starts end with it."""
     with tempfile.TemporaryDirectory(prefix="fm-replay-") as tmp:
-        p = subprocess.run(["claude", "plugin", "test", stage(view, cols, rows, tmp)], capture_output=True, text=True,
-                           timeout=TIMEOUT, env={**CLEAN, **(env or PINNED)}, cwd=tmp)
-    out = (p.stdout + "\n" + p.stderr).splitlines()
+        with subprocess.Popen(["claude", "plugin", "test", stage(view, cols, rows, tmp)], stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, encoding="utf-8", errors="replace",
+                              env={**CLEAN, **(env or PINNED)}, cwd=tmp, start_new_session=True) as p:
+            try:
+                stdout, stderr = p.communicate(timeout=TIMEOUT)
+            except subprocess.TimeoutExpired:
+                os.killpg(p.pid, signal.SIGKILL)
+                p.wait()
+                raise
+    out = (stdout + "\n" + stderr).splitlines()
     line = next((ln for ln in out if ln.startswith(MARK)), None)
     if p.returncode or line is None:
-        why = "\n".join(ln for ln in out if not ln.startswith(MARK))[-2000:]  # the failure, not the 30 KB tree
+        why = clean("\n".join(ln for ln in out if not ln.startswith(MARK))[-2000:])  # the failure, not the 30 KB tree
         raise RuntimeError(f"claude plugin test failed (exit {p.returncode}):\n{why}")
     return line[len(MARK):]
 
@@ -103,7 +124,7 @@ def _pad(s, w):
 
 def _words(node):
     if isinstance(node, str):
-        return node
+        return clean(node)
     if isinstance(node, (int, float)) and not isinstance(node, bool):
         return str(node)
     if isinstance(node, dict):
@@ -117,7 +138,7 @@ def _raster(p, w):
     raw = base64.b64decode(p.get("cells") or "")
     cps = [struct.unpack_from("<I", raw, i)[0] for i in range(0, len(raw) - 11, 12)]
     cols = int(p.get("columns") or 0) or len(cps) or 1
-    ch = [chr(c) if 32 <= c < 0x110000 and not 0xD800 <= c < 0xE000 else " " for c in cps]
+    ch = [" " if c >= 0x110000 or 0xD800 <= c < 0xE000 or UNSAFE.match(chr(c)) else chr(c) for c in cps]
     return [_cut("".join(ch[i:i + cols]), w) for i in range(0, len(ch), cols)]
 
 
@@ -132,9 +153,9 @@ def _block(node, w):
     if kind == "Raster":
         return _raster(p, w)
     if kind == "Button":
-        return [_cut(str(p.get("label") or ""), w)]
+        return [_cut(clean(str(p.get("label") or "")), w)]
     if kind == "Input":
-        return [_cut(str(p.get("value") or p.get("placeholder") or ""), w)]
+        return [_cut(clean(str(p.get("value") or p.get("placeholder") or "")), w)]
     if isinstance(p.get("width"), int):
         w = min(w, p["width"])
     right = int(p.get("paddingX") or 0)
@@ -218,19 +239,21 @@ def main():
         s.add_argument("fixture")
         s.add_argument("--cols", type=size(20, 400), default=80)
         s.add_argument("--rows", type=size(4, 200), default=40)
-    sub.choices["render"].add_argument("--json", action="store_true", help="the drawn tree, exact, not the text")
+    sub.choices["render"].add_argument("--json", action="store_true", help="the drawn tree, not the text")
     sub.choices["twin"].add_argument("--matrix", action="store_true", help="a third run in another zone and locale")
     a = ap.parse_args()
     try:
         if a.cmd == "render":
-            line = drawn(load(a.fixture), a.cols, a.rows)
-            sys.stdout.write(line + "\n" if a.json else text(json.loads(line), a.cols, a.rows))
+            tree = json.loads(drawn(load(a.fixture), a.cols, a.rows))
+            # JSON.stringify leaves C1 controls and bidi raw: printed again, everything outside ASCII escaped
+            sys.stdout.write(json.dumps(tree, separators=(",", ":")) + "\n" if a.json else text(tree, a.cols, a.rows))
             return 0
         runs = twin(a.fixture, a.cols, a.rows, a.matrix)
     except FileNotFoundError as e:
-        sys.exit(f"replay: {e.filename} not found" + (": needs Claude Code (claude on PATH)" if e.filename == "claude" else ""))
+        sys.exit(f"pane_replay: {e.filename} not found"
+                 + (": needs Claude Code (claude on PATH)" if e.filename == "claude" else ""))
     except (ValueError, RuntimeError, subprocess.TimeoutExpired) as e:
-        sys.exit(f"replay: {e}")
+        sys.exit(f"pane_replay: {e}")
     lines = diff(runs)
     sys.stdout.writelines(lines)
     print(f"{'differ' if lines else 'identical'}: {', '.join(r[0] for r in runs)} ({a.cols}x{a.rows})")

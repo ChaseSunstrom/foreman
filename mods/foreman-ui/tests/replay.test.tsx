@@ -3,8 +3,8 @@ import type { On } from 'claude-code'
 import REPLAY from './fixtures/replay'
 
 // T-1534: the pane drawn from a recorded `fm ui --json` view with no live session: fm, the clock (frozen: it moves only
-// when a test advances it), the store and the environment are fakes. tools/replay.py runs this same file in a copy of
-// the mod with its own fixtures/replay.ts and print: true, and diffs two runs, each its own process.
+// when a test advances it), the store and the environment are fakes. tools/pane_replay.py runs this same file in a copy
+// of the mod with its own fixtures/replay.ts and print: true, and diffs two runs, each its own process.
 const MARK = 'FM-REPLAY '
 
 function world(on: On) {
