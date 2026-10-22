@@ -7,7 +7,7 @@ import subprocess
 import sys
 import threading
 
-from helpers import FM, ForemanTestCase, read_json, read_text
+from helpers import FM, ForemanTestCase, read_json, read_text, stub_corpus_replay
 
 PLAN = {"type": "FIX", "tier": "S", "title": "Make calc.add add",
         "criteria": [{"text": "calc.add adds", "verify": "python3 test_calc.py"}], "steps": ["fix calc.add"]}
@@ -88,8 +88,12 @@ CLOSE = {"text": json.dumps({"intent": "calc.add adds, as asked", "adversary": "
 
 
 class CodeCase(ForemanTestCase):
+    replayed = True  # T-1401: a fresh green guard corpus replay on record, so unattended runs aren't refused
+
     def setUp(self):
         super().setUp()
+        if self.replayed:
+            stub_corpus_replay(self.repo)
         with open(os.path.join(self.repo, "calc.py"), "w") as f:
             f.write("def add(a, b):\n    return a - b\n")
         with open(os.path.join(self.repo, "test_calc.py"), "w") as f:

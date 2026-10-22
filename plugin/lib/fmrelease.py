@@ -314,6 +314,10 @@ def run(p, args):
             _err("a release with skipped gates (--no-check) can't --push; nothing was changed")
         if not _grant(p):
             _err(_NEED_GRANT + "; nothing was changed")
+        import fmreplay  # T-1401: the guard's own corpus replay is green and recent, or the waiver is on the ledger
+        note = fmreplay.enforce(p, "fm release --push", getattr(args, "stale_ok", None))
+        if note:
+            print(f"  {note}")
         url = _git(root, "remote", "get-url", state["remote"], ok=True).strip() or state["remote"]
         if os.environ.get("FOREMAN_RELEASE_FM") and not os.path.isdir(url):
             _err("FOREMAN_RELEASE_FM (a stub fm for the gates, for tests) can't --push to a real remote; nothing was changed")
