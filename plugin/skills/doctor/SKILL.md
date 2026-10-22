@@ -2,6 +2,7 @@
 name: doctor
 description: Use when asked whether Foreman is healthy, or a hook or fm command misbehaves: runs fm doctor, fixes each failure.
 argument-hint: "[--full]"
+disable-model-invocation: true
 ---
 
 # Foreman: doctor
