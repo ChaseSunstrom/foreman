@@ -5,3 +5,13 @@
 .tab[aria-selected="true"] { background: #eee; } /* expect */
 .menu.is-open { transform: none; } /* expect */
 @media (prefers-reduced-motion: reduce) { .menu { transition: none; } }
+.a { transition: none; }
+.a:hover { color: red; } /* expect */
+.b { transition: color 0s, opacity 0.0s; }
+.b:hover { color: red; } /* expect */
+.c { transition-delay: 1s; }
+.c:hover { color: red; } /* expect */
+@media (prefers-reduced-motion: no-preference) { .d:hover { color: red; } } /* expect */
+.e:hover { color: red; background: blue; } /* expect */
+.f { transition: 0; }
+.f:hover { opacity: .5; } /* expect */

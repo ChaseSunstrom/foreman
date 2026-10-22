@@ -45,12 +45,13 @@ RULES = [
                                "transform or opacity with no transition: an instant jump reads as a glitch",
      "fix": "add a transition (or animation) on the element for the property, with a duration token"},
 ]
-BY_ID ={r["id"]: r for r in RULES}
+BY_ID = {r["id"]: r for r in RULES}
 NOT_COVERED = ("not read: computed style and the cascade; .js/.ts files; tailwind.config theme values (but a fontFamily "
                "there keeps font-sans from counting as the system face); class names built in code other than "
                "class/className attributes, cn/clsx/twMerge/cva calls and @apply; side-specific rounded-t-* classes; an "
                "unquoted JSX style value past its line; animation longhands other than name, duration, iteration "
-               "count and direction; animations run from JS (the Web Animations API, framer-motion props); Math.random in Vue and Svelte scripts")
+               "count and direction; afterglow matches a state block to a transition by selector text, so a transition set by a "
+               "parent rule, a nested &:hover or the cascade is missed; animations run from JS (the Web Animations API, framer-motion props); Math.random in Vue and Svelte scripts")
 
 EXTS = {".css", ".scss", ".html", ".htm", ".jsx", ".tsx", ".vue", ".svelte"}
 MARKUP = {".html", ".htm", ".vue", ".svelte"}
@@ -599,24 +600,34 @@ class Run:
         base = lambda sel: re.sub(r"\s+", " ", STATE.sub("", sel)).strip()
         sel_of = lambda d: [x for x in re.split(r",", re.split(r"[;{}]", d.src.css[:d.block])[-1]) if x.strip()] \
             if d.block >= 0 else []
-        moves = set()  # elements that transition or animate something
+        moves = set()  # elements that transition or animate something (a nonzero time, or a named property/animation)
         for d in self.decls:
-            if d.prop.startswith(("transition", "animation")) and not d.in_frames and d.value.split(" ")[0] not in (
-                    "none", "0s", "0ms") and d.value:
-                moves.update(base(x) for x in sel_of(d))
-        quiet = {}  # source → spans of prefers-reduced-motion blocks
+            if d.prop in ("transition", "transition-property", "transition-duration", "animation", "animation-name") \
+                    and not d.in_frames and d.value and d.value.lower() != "none":
+                named = d.prop in ("transition-property", "animation-name")
+                if named or any(_seconds(m.group()) > 0 for m in TIME.finditer(d.value)):
+                    moves.update(base(x) for x in sel_of(d))
+        if "*" in moves:  # a transition on * covers every element
+            return
+        quiet, seen = {}, set()  # source → spans of prefers-reduced-motion: reduce blocks; blocks already flagged
         for d in self.decls:
-            if d.prop not in AFTERGLOW_PROPS or d.in_frames or d.src.js or d.dynamic:
+            if d.prop not in AFTERGLOW_PROPS or d.in_frames or d.src.js or d.dynamic or (d.src.path, d.block) in seen:
                 continue
             sels = [x for x in sel_of(d) if STATE.search(x)]
-            if not sels or any(base(x) in moves for x in sels):
+            # a nested &:hover is skipped: ponytail: resolving & against the parent block is not done
+            if not sels or any("&" in x or base(x) in moves for x in sels):
                 continue
             if d.src.path not in quiet:
                 ends = _closers(d.src.css)
                 quiet[d.src.path] = [(m.end(), ends.get(m.end() - 1, len(d.src.css)))
-                                     for m in re.finditer(r"@media[^{]*prefers-reduced-motion[^{]*\{", d.src.css)]
+                                     for m in re.finditer(r"@media[^{]*prefers-reduced-motion\s*:\s*reduce[^{]*\{",
+                                                          d.src.css)]
             if not any(a <= d.offset < b for a, b in quiet[d.src.path]):
-                self.flag("afterglow", d.src, d.line, f"{d.prop} changes on {sels[0].strip()} with no transition")
+                seen.add((d.src.path, d.block))
+                sel = sels[0].strip()
+                self.flag("afterglow", d.src, d.line, f"{d.prop} changes on {sel} with no transition on "
+                          f"'{base(sel)}' in this run (matched by selector text); add one, or silence with "
+                          f"design-lint: allow afterglow <why>")
 
     def check(self):
         for rule in (self.generic_font, self.gradient, self.one_radius, self.same_shadow, self.img_alt, self.motion,
