@@ -327,7 +327,8 @@ def candidate(ref):
 
 def score(args, fmcli):
     """T-0712: a candidate guard against the working one on the corpus: what it would loosen (allow where the working
-    guard blocks: each one a possible bypass to review) and tighten (new refusals: friction). Exit 1 when it loosens."""
+    guard blocks: each one a possible bypass to review) and tighten (new refusals: friction). Exit 1 when it loosens, or
+    when it can't judge a command (T-1517: a candidate whose check raises is unable, never a clean score)."""
     t0 = time.monotonic()
     try:
         cand = candidate(args.candidate)
@@ -336,20 +337,24 @@ def score(args, fmcli):
     cmds = corpus(args.days)
     now, new = verdicts(cmds), verdicts(cmds, cand)
     by_key = {_key(cmd, cwd or os.path.expanduser("~")): cmd for cmd, cwd in cmds}
+    unjudged = [k for k in now if unable(new.get(k))]
     loosened = [k for k in now if now[k] != "allow" and new.get(k) == "allow"]
-    tightened = [k for k in now if now[k] == "allow" and new.get(k) not in (None, "allow")]
-    changed = [k for k in now if k not in loosened and k not in tightened and new.get(k) != now[k]]
+    tightened = [k for k in now if now[k] == "allow" and new.get(k) not in (None, "allow") and not unable(new.get(k))]
+    changed = [k for k in now if k not in loosened and k not in tightened and not unable(new.get(k))
+               and new.get(k) != now[k]]
     show = lambda k: c.fit(c.redact(" ".join(by_key[k].split())), 140)
     lines = [f"Candidate {args.candidate} on {len(cmds)} real commands ({time.monotonic() - t0:.1f} s): "
-             f"{len(loosened)} loosened, {len(tightened)} tightened, {len(changed)} recategorised"]
+             f"{len(loosened)} loosened, {len(tightened)} tightened, {len(changed)} recategorised, "
+             f"{len(unjudged)} unable"]
     for title, keys in (("loosened (allowed now: review each as a possible bypass)", loosened),
-                        ("tightened (new refusals: friction)", tightened)):
+                        ("tightened (new refusals: friction)", tightened),
+                        ("unable (the candidate raised: it judged nothing there)", unjudged)):
         if keys:
             lines.append(f"  {title}:")
             lines += [f"    {now[k]} → {new[k]} · {show(k)}" for k in keys[:SHOW]]
     fmcli.out(args, {"commands": len(cmds), "loosened": len(loosened), "tightened": len(tightened),
-                     "recategorised": len(changed)}, "\n".join(lines))
-    if loosened:
+                     "recategorised": len(changed), "unable": len(unjudged)}, "\n".join(lines))
+    if loosened or unjudged:
         raise SystemExit(1)
 
 
@@ -362,9 +367,22 @@ def allow_path():
     return os.path.join(_plugin_here(), "tests", "fixtures", "guard_allow.jsonl")
 
 
+ALLOW_MIN = 40  # an allow-corpus with fewer cases (missing, emptied, cut down) is a broken corpus, never a quiet pass
+
+
 def _corpus_paths():
     """The files a replay holds the guard to: a caller's own case file alone, else the cases and the allow-corpus."""
     return [cases_path()] if os.environ.get("FOREMAN_GUARD_CASES") else [cases_path(), allow_path()]
+
+
+def _where(k):
+    """A case's command and the folder it runs in: two cases with these equal are one case, whatever their ids."""
+    return k["cmd"], os.path.normpath(resolve_cwd(k.get("cwd") or ""))
+
+
+def unable(v):
+    """T-1517: a verdict the guard couldn't give (verdicts() caught it raising): never a pass, never a block."""
+    return isinstance(v, str) and v.startswith("error:")
 
 
 def _plugin_here():
@@ -396,15 +414,22 @@ def _store_cwd(cwd):
 def load_cases(path=None):
     """T-1162: ([{id, cmd, cwd, should: allow|block, why}], broken): the labelled cases fm guard wrong stored, and how
     many lines were not a case (a conflict marker, a torn line, a missing key). A missing file is no cases. No path:
-    every corpus file (_corpus_paths), a case both hold (the same id) once."""
+    every corpus file (_corpus_paths), one command and folder once; opposite labels for one are one broken line (both
+    kept, so the replay shows the command), and so is an allow-corpus under ALLOW_MIN cases (missing or cut down)."""
     if not path:
-        cases, broken, seen = [], 0, set()
+        cases, broken, label = [], 0, {}
         for one in _corpus_paths():
             got, bad = load_cases(one)
             broken += bad
+            if one == allow_path() and len(got) < ALLOW_MIN:
+                broken += 1
             for k in got:
-                if k["id"] not in seen:
-                    seen.add(k["id"])
+                w = _where(k)
+                if w not in label:
+                    label[w] = k["should"]
+                    cases.append(k)
+                elif label[w] != k["should"]:
+                    broken += 1
                     cases.append(k)
         return cases, broken
     cases, broken = [], 0
@@ -434,7 +459,7 @@ def drift(cases):
     out = []
     for k in cases:
         v = now[_key(k["cmd"], resolve_cwd(k.get("cwd") or ""))]
-        got = "allow" if v == "allow" else "unable" if v.startswith("error:") else "block"
+        got = "allow" if v == "allow" else "unable" if unable(v) else "block"
         if got != k["should"]:
             out.append({**k, "got": got})
     return out
@@ -451,9 +476,10 @@ def add_case(cmd, should, cwd="", why=""):
         raise fmcli.UsageError("that command holds a key-shaped literal: replace it with a placeholder before storing it")
     cwd = _store_cwd(cwd or os.getcwd())
     case = {"id": _key(cmd, cwd), "cmd": cmd, "cwd": cwd, "should": should, "why": why}
+    here = _where(case)
     for path in _corpus_paths():  # T-1517: a label the allow-corpus contradicts is refused too
         for k in load_cases(path)[0]:
-            if k["id"] == case["id"]:
+            if _where(k) == here:
                 if k["should"] != should:
                     raise fmcli.UsageError(f"already stored as should {k['should']}: edit {path} to change a label")
                 return k
@@ -585,19 +611,24 @@ def cmd_replay(args):
         base = {}
     old = base.get("verdicts") or {}
     by_key = {_key(cmd, cwd or os.path.expanduser("~")): (cmd, cwd) for cmd, cwd in cmds}
-    blocked = [k for k, v in now.items() if k in old and v != "allow" and old[k] != v]
+    unjudged = [k for k, v in now.items() if unable(v)]  # T-1517: the guard raised: its own bucket, never a baseline
+    blocked = [k for k, v in now.items() if k in old and v != "allow" and old[k] != v and not unable(v)]
     allowed = [k for k, v in now.items() if k in old and v == "allow" and old[k] != "allow"]
     fresh = sum(1 for k in now if k not in old)
     if args.accept:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        c.write_atomic(path, json.dumps({"at": c.now(), "verdicts": {**old, **now}}, sort_keys=True))
+        judged = {k: v for k, v in now.items() if not unable(v)}
+        c.write_atomic(path, json.dumps({"at": c.now(), "verdicts": {**old, **judged}}, sort_keys=True))
     res = {"commands": len(cmds), "since_days": args.days, "baseline": base.get("at"), "newly_blocked": len(blocked),
-           "newly_allowed": len(allowed), "new": fresh, "seconds": round(time.monotonic() - t0, 1),
-           "accepted": bool(args.accept)}
+           "newly_allowed": len(allowed), "unable": len(unjudged), "new": fresh,
+           "seconds": round(time.monotonic() - t0, 1), "accepted": bool(args.accept)}
     show = lambda k: c.fit(c.redact(" ".join(by_key[k][0].split())), 140)
     lines = [f"Guard replay: {len(cmds)} real commands from the last {args.days} days of sessions "
              f"({res['seconds']} s) · baseline {base.get('at') or 'none yet'}"]
-    for title, keys in (("newly blocked (likely false positives)", blocked), ("newly allowed (possible bypasses)", allowed)):
+    buckets = [("newly blocked (likely false positives)", blocked), ("newly allowed (possible bypasses)", allowed)]
+    if unjudged:
+        buckets.append(("unable (the guard raised: it judged nothing there; never accepted as the baseline)", unjudged))
+    for title, keys in buckets:
         lines.append(f"  {len(keys)} {title}")
         lines += [f"    {old.get(k)} → {now[k]} · {show(k)}" for k in keys[:SHOW]]
         if len(keys) > SHOW:
@@ -614,5 +645,5 @@ def cmd_replay(args):
         lines += [f"    should {k['should']}, guard {k['got']}: {c.fit(c.redact(' '.join(k['cmd'].split())), 120)}"
                   for k in bad[:SHOW]]
     fmcli.out(args, res, "\n".join(lines))
-    if ((blocked or allowed) and not args.accept) or bad or broken:
+    if ((blocked or allowed) and not args.accept) or unjudged or bad or broken:
         raise SystemExit(1)
