@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The playbooks skill stays under its 10,000-character budget as playbooks grow: a stage can keep its own references/<stage>/INDEX.md (UI does now), named once in SKILL.md, and the index test accepts a file named there (T-1569).
 - 3D template (ui/templates/scene.html): a single-file raw WebGL2 scene with no dependencies: a lit procedural form, a lens fitted from its bounds, a palette from CSS tokens, a dithered backdrop with a contact shadow, and every survival clause (poster first, text twin, context loss and restore, reduced motion, keyboard, contained failure, sleeping offscreen), checked in a headless browser (T-1495).
 - UI playbook: composition, depth and states (ui/composition.md): a spacing scale with rhythm tiers, grids picked by direction, alignment counted as axes, hierarchy by the cheapest lever, depth from one stated light with elevation and z-index from one table, a white-image test for scrims, a hero that opens with the subject's most characteristic thing, landing pages as an argument, three scored wireframes for one brief, a state atlas per screen with an overflow fixture, and a console probe that measures it (T-1490).
 - UI playbook: visual QA: fm smoke plus a seeded frame matrix (360, 768 and 1440 px, light and dark, reduced motion) from a small Playwright script that freezes the clock and fails on overflow, junk text and motion under reduced motion; an eyeball checklist; a receipt in the task's evidence. In Claude Code the frames are read with the Read tool (T-1500).
