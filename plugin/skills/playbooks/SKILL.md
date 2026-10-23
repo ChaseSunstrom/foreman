@@ -1,11 +1,11 @@
 ---
 name: playbooks
-description: Use when a Foreman stage needs a proven procedure: refactors, perf, security review, build errors, TDD, review checklists, planning, ADRs, evals.
+description: Use whenever you are about to refactor, tune performance, review security, fix build errors, do TDD, plan, write an ADR or run evals.
 ---
 
 # Foreman playbooks
 
-On-demand procedures, ported with attribution from ECC (MIT; see `plugin/THIRD_PARTY_LICENSES.md`). Load only the one you need: `fm playbooks show PATH` adds this project's facts and its `.claude/playbooks/` overlay. They supplement the Foreman loop and never override it: Foreman's evidence rule, `fm` state, the guard and the focus lock still apply. Where a playbook mentions an ECC agent, command, hook or script, use the Foreman equivalent: planning → `/foreman:intake`; review agents → `foreman:fm-reviewer` or the checklist itself; security review → `/security-review` plus `references/security/security-review.md`; TDD → `../intake/references/regression-test.md`; session save/resume → `fm checkpoint` / `/foreman:resume`.
+On-demand procedures, ported with attribution from ECC (MIT; see `plugin/THIRD_PARTY_LICENSES.md`). Load only the one you need: `fm playbooks show PATH` adds this project's facts and its `.claude/playbooks/` overlay; before editing one, `fm playbooks eval PATH` scores the shipped text against its held-out briefs (`plugin/evals/playbooks/`), with and without it. They supplement the Foreman loop and never override it: Foreman's evidence rule, `fm` state, the guard and the focus lock still apply. Where a playbook mentions an ECC agent, command, hook or script, use the Foreman equivalent: planning → `/foreman:intake`; review agents → `foreman:fm-reviewer` or the checklist itself; security review → `/security-review` plus `references/security/security-review.md`; TDD → `../intake/references/regression-test.md`; session save/resume → `fm checkpoint` / `/foreman:resume`.
 
 Core debugging, regression-test and verification procedures live with intake: `../intake/references/debugging.md`, `../intake/references/regression-test.md`, `../intake/references/verification.md`.
 

@@ -863,6 +863,18 @@ _SECRET_RES = [
 ]
 
 
+_SECRET_KINDS = ["a private key", "a JWT", "an API key or token", "an authorization header", "a password or secret value",
+                 "a password in a URL"]  # T-1606: one name per pattern above, in the same order
+assert len(_SECRET_KINDS) == len(_SECRET_RES), "one kind name per secret pattern"
+
+
+def secret_kinds(text):
+    """T-1606: what kinds of secret the text holds (names only, never the values), in _SECRET_RES order."""
+    if not isinstance(text, str):
+        return []
+    return [name for (rx, _), name in zip(_SECRET_RES, _SECRET_KINDS) if rx.search(text)]
+
+
 def redact(text):
     if not isinstance(text, str):
         return text
@@ -2012,6 +2024,22 @@ def is_sweep(text):
     return bool(_SWEEP.search(text or ""))
 
 
+# T-1697: a request for a new look (the directions skill, which writes DESIGN.md, fits first) or a smaller change to a
+# screen (the ui playbooks). "design" alone isn't one ("design the schema"), nor a redesign of something with no
+# screen ("the cache layer", "how the app handles retries"), nor Foreman's own fm ui, foreman-ui or a ui test.
+_DESIGN = re.compile(r"(?i)\b(landing page|re-?design\w* (the |a |an |our |my |this |its )?(\w+ )?(page|screen|site|"
+                     r"layout|dashboard|header|footer|menu|form|modal|look)|(visual|web|page|screen|ui) design|"
+                     r"design (direction|system|language)|look and feel)\b")
+_UI = re.compile(r"(?i)(?<![\w-])(?<!fm )(ui|ux)(?![\w-]| tests?\b| --)|\b(front-?end|user interface|web interface|"
+                 r"restyl\w*|colou?r (scheme|palette)|typography|dark mode|design tokens)\b")
+
+
+def ui_request(text):
+    """T-1697: "design" for a request for a new look, "ui" for a smaller change to a screen, else "" (SKILL_FOR keys)."""
+    t = text or ""
+    return "design" if _DESIGN.search(t) else "ui" if _UI.search(t) else ""
+
+
 def is_broad(text):
     """A concrete request asked for in bulk: the plan enumerates the whole space first, not the first few items."""
     return bool(_BROAD.search(text or "")) and not is_exhaustive(text)
@@ -2161,12 +2189,24 @@ def brief_detail(b):
 
 # ---------------------------------------------------------------- stages (derived, never stored)
 
-STAGE_REFERENCE = {
-    "FIX": "skills/intake/references/debugging.md, then regression-test.md",
-    "CLEAN": "/foreman:playbooks (clean)", "PERFORMANCE": "/foreman:playbooks (perf: baseline first)",
-    "SECURITY": "/foreman:playbooks (security)", "FEATURE": "skills/intake/references/execute.md (TDD)",
-    "RESEARCH": "skills/intake/references/delegate.md (recon) and fm research add",
+# T-1697: the Foreman skill or playbook each moment fits: a task type while executing, else the stage (or ui_request's
+# "design"/"ui"). Worded as the call to make. The hooks name each once a session (SessionStart re-arms); the body
+# loads only when invoked.
+SKILL_FOR = {
+    "FIX": "load: Skill foreman:intake, then its references/debugging.md; fm playbooks show tdd-workflow",
+    "FEATURE": "load: Skill foreman:intake, then its references/execute.md; fm playbooks show tdd-workflow",
+    "CLEAN": "load: Skill foreman:playbooks (clean)", "PERFORMANCE": "load: Skill foreman:playbooks (perf: baseline first)",
+    "SECURITY": "load: Skill foreman:playbooks (security)",
+    "RESEARCH": "load: Skill foreman:intake, then its references/delegate.md; fm research add",
+    "verifying": "run: fm playbooks show verification-loop", "auditing": "run: the /foreman:review workflow",
+    "design": "load: Skill foreman:directions, then fm playbooks show ui/INDEX",  # T-1700's ui-design skill, once it exists
+    "ui": "run: fm playbooks show ui/INDEX",
 }
+
+
+def skill_for(b, st):
+    """The SKILL_FOR hint for a brief at a stage (next_for's), or ""."""
+    return SKILL_FOR.get(b.type if st == "executing" else st, "") if b is not None else ""
 
 
 def needs_approval(b, autonomy="standard"):
@@ -2303,7 +2343,7 @@ def next_action(b, autonomy="standard", since=None):
             return (f"{tid} step {cur.n}/{len(steps)}: its last check was inconclusive — design a sharper check (one "
                     f"that fails if the step is wrong), then fm task evidence {tid} --step {cur.n} --run \"<cmd>\"")
         return (f"{tid} step {cur.n}/{len(steps)}: {cur.text[:100]} — do it, then fm task evidence {tid} --step {cur.n} "
-                f"--run \"<verify cmd>\" (procedure: {STAGE_REFERENCE.get(b.type, 'execute.md')})")
+                f"--run \"<verify cmd>\"")  # T-1697: the procedure is skill_for's, named once a stage, not every step
     if st == "verifying":
         a = next(a for a in b.acceptance() if not a.checked)
         cmd = dict(b.verify_cmds(unchecked=True)).get(a.n)
@@ -2392,7 +2432,8 @@ def add_veto(p, text, words=None):
     """Record the veto in a correction (the newest VETOES_KEEP, one per set of key words); None when it has none.
     words: the key words already known (T-0439: a proposal from repeated steers the user said yes to)."""
     words = list(words or [])
-    for m in [] if words else _VETO.finditer(text or ""):  # each clause alone: "I don't think so, never push" is pushing
+    text = redact(text or "")  # T-1606: a key inside "never use <key>" never reaches vetoes.json, nor its words
+    for m in [] if words else _VETO.finditer(text):  # each clause alone: "I don't think so, never push" is pushing
         if _GRANTS.match(m.group(1)):  # T-1323: "stop asking me if you can release" says go ahead, it isn't a no
             continue
         found = [w for w in re.findall(r"[a-z0-9]{3,}", m.group(1).lower()) if w not in _VETO_STOP]
