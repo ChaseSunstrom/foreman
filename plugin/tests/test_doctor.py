@@ -706,3 +706,46 @@ class BoardDoctor(unittest.TestCase):  # T-0954
             self.assertIn("`fm nosuchverb` isn't an fm command", r.detail)
             self.assertIn("`fm fencedverb` isn't an fm command", r.detail)  # usage examples sit in fences
             self.assertNotIn("`fm task", r.detail)
+
+
+class Headless(unittest.TestCase):
+    """T-1638: fm doctor says whether headless rendering is available, or why not; never a failure."""
+
+    def probe(self, path, **env):
+        import fmshot
+        from unittest import mock
+        with mock.patch.object(fmshot, "chrome", return_value=path), mock.patch.dict(os.environ, env):
+            return d.check_headless()
+
+    def fake(self, body):
+        dr = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, dr, True)
+        p = os.path.join(dr, "chromium")
+        with open(p, "w") as f:
+            f.write("#!/bin/sh\n" + body + "\n")
+        os.chmod(p, 0o755)
+        return p
+
+    def test_available_names_path_and_version(self):
+        p = self.fake('echo "Chromium 130.0.1 "')
+        r = self.probe(p)
+        self.assertEqual(r.status, "PASS")
+        self.assertIn(p, r.detail)
+        self.assertIn("Chromium 130.0.1", r.detail)
+        self.assertTrue(r.detail.startswith("available ("))
+
+    def test_none_found_is_a_note(self):
+        r = self.probe(None, FOREMAN_CHROME="")
+        self.assertEqual(r.status, "PASS")
+        self.assertIn("no Chromium", r.detail)
+
+    def test_unusable_foreman_chrome_is_named(self):
+        r = self.probe(None, FOREMAN_CHROME="/nope/chrome")
+        self.assertEqual(r.status, "PASS")
+        self.assertIn("FOREMAN_CHROME", r.detail)
+
+    def test_failed_start_gives_the_last_stderr_line(self):
+        r = self.probe(self.fake('echo first >&2; echo "cannot load libnss3" >&2; exit 127'))
+        self.assertEqual(r.status, "PASS")
+        self.assertIn("cannot load libnss3", r.detail)
+        self.assertNotIn("first", r.detail)
