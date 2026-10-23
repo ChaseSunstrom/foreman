@@ -628,6 +628,49 @@ class Durable(CodeCase):  # T-1338
         self.assertEqual(again.seen, [], "the step was done: no model call on resume")
 
 
+class RunHooks(CodeCase):  # T-1351
+    def on(self, **cmds):
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write("[on]\n" + "".join(f'{k} = {json.dumps(v)}\n' for k, v in cmds.items()))
+
+    def test_a_closed_run_hands_its_event_to_the_on_closed_command(self):
+        got = os.path.join(self.tmp, "got.json")
+        self.on(closed=f"cat > {got}", **{"needs-you": f"touch {self.tmp}/wrong"})
+        self.serve("openai", plan(), *FIX)
+        r = self.code("fix add", "--model", "fake")
+        self.assertTrue(os.path.exists(got), r.stdout + r.stderr)
+        with open(got) as f:
+            e = json.load(f)
+        self.assertEqual((e["event"], e["task"]), ("closed", "T-0001"))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "wrong")))
+        self.assertRegex(self.fm("state", "--line").stdout, r"code T-0001 closed\s*$")
+
+    def test_a_block_runs_blocked_and_needs_you_and_a_refused_or_failing_one_is_a_note(self):
+        self.on(blocked=f"touch {self.tmp}/blocked; exit 3", **{"needs-you": "rm -rf ~"})
+        self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
+        r = self.code("fix add", "--model", "fake", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertTrue(os.path.exists(os.path.join(self.tmp, "blocked")))
+        self.assertIn("on blocked: exit 3", r.stdout + r.stderr)
+        self.assertIn("on needs-you: not run", r.stdout + r.stderr)
+        self.assertTrue(os.path.exists(os.path.join(self.fake_home, "keep")), "the guard stopped it")
+        self.assertRegex(self.fm("state", "--line").stdout, r"code T-0001 blocked\s*$")
+
+    def test_the_state_line_tells_a_live_run_from_one_a_kill_stopped(self):
+        import fcntl
+        import fmcore
+        self.fm("init")
+        p = fmcore.find_project(self.repo)
+        d = os.path.join(p.dir, "code")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "T-0009.events.jsonl"), "w") as f:
+            f.write(json.dumps({"event": "start", "request": "x"}) + "\n")
+        self.assertEqual(fmcore.code_line(p), "code T-0009 stopped")
+        with open(os.path.join(d, "T-0009.lock"), "w") as lk:
+            fcntl.flock(lk, fcntl.LOCK_EX)
+            self.assertEqual(fmcore.code_line(p), "code T-0009 running")
+
+
 class Cost(CodeCase):  # T-1357
     def priced(self, per_m=10000):  # $0.01 a token: a fake call (5 in, 2 out) costs $0.07
         path = os.path.join(self.home, "models.json")

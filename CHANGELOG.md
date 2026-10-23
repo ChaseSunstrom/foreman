@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code run-event hooks: code.toml [on] closed, blocked and needs-you commands get the event's JSON on stdin, past Foreman's guard, 30 s at most (a refusal or a failure is a note, never the run's end); fm state --line ends with the newest fm code run, running, stopped or how it ended (T-1351)
 - fm code durable runs: a new run names each unfinished run in the project with its fm code --resume command (a run another fm code is working is left out); the app's past runs show an unfinished one with that command and r resumes it there; opened from home outside any project, the app reopens the project left last with a welcome back; tests kill a run while planning, mid-step and during its check and resume it (T-1338)
 - fm code cost: each call's dollars (a claude CLI's total_cost_usd, or tokens times a models.json profile's price per million) go to the budget ledger under the project, the close line shows the run's total, and --max-usd caps a run across resumes, claude turns getting --max-budget-usd with what is left (T-1357)
 - fm code: every failure ends with one Next: line naming the command to run (and the event carries it; the app shows it under the failure); the start event names the Foreman running it (root and version); every runner fm code starts is registered, and the next run stops any a hard-killed fm code left running and says which (T-1754: T-1334, T-1355, T-1337)

@@ -118,7 +118,8 @@ def cmd_state(args):
         return print(f"{p.slug}: no tasks yet. Start with fm capture \"<request>\" or fm task new \"<title>\" --type FIX "
                      f"--tier S --focus (or just give Claude a request).")
     if args.line:
-        print(c.state_line(sd))
+        run = c.code_line(p)  # T-1351: the newest fm code run, for tmux and prompt segments
+        print(c.state_line(sd) + (f" · {run}" if run else ""))
     elif args.json:
         print(json.dumps(sd, indent=2, ensure_ascii=False))
     else:
