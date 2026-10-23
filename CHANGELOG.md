@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code run friction: a blocked run, a stalled worker, a run a kill left unfinished and a run that fails before its task exists each count as friction with fm code, logged once per cause onto the one improvement round in Foreman's own project (never the user's), and the app's home shows it first as Foreman noticed (T-1339)
 - fm code config: every fm code setting (runner, model, lean, limit_wait, chain, the on hooks, worker timeout, max steps, max usd, confinement, sensitivity) with its value and source, --explain KEY for what one does and how to change it, and a code.toml that doesn't parse named with its line while the view shows the defaults (a run still refuses it) (T-1359)
 - fm code routing by record: fm code runners shows each runner's record per kind from every project's past runs (runs, closed, dollars a closed run), and runner = auto gives the work to the cheapest runner green on the plan's kind (3+ runs, two thirds closed), saying why, or keeps the planning runner when none is (T-1358)
 - fm code runner pings: fm code runners --ping [NAME] asks each installed runner one tiny question through its read-only plan command in a scratch folder and sorts the answer (ok, not logged in, usage limit, flag refused, endpoint down, no answer) with latency and version, kept for the app, whose runners screen shows a lamp per runner and pings the selected one with p (T-1335)

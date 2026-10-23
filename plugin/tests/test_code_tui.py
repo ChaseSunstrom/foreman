@@ -1992,6 +1992,23 @@ class Home(unittest.TestCase):
         self.assertEqual(app.mode, "home")
 
 
+class Noticed(unittest.TestCase):  # T-1339
+    def test_home_shows_what_foreman_noticed_first_and_enter_opens_its_project(self):
+        T = tui()
+        projects = Home.PROJECTS + [{"project": "foreman-x", "root": "/f", "exists": True, "updated": 1.0}]
+        app = T.App(T.DEFAULTS, spawn=lambda *a: None, projects=lambda: [dict(p) for p in projects],
+                    project_state=lambda p: {"code_dir": None},
+                    noticed=lambda: [{"project": "foreman-x", "task": "T-0042", "title": "Improve fm code: …",
+                                      "causes": ["blocked: the verify still fails", "stalled: launch"]}])
+        app.show_home()
+        self.assertEqual(app.items[0]["kind"], "noticed")
+        text = T.render(app.state, 120, 34, T.DEFAULTS, app, t=100.0).text()
+        self.assertIn("Foreman noticed", text)
+        self.assertIn("stalled: launch", text)
+        app.key("\n")
+        self.assertEqual((app.mode, app.project["project"]), ("project", "foreman-x"))
+
+
 class Reopen(unittest.TestCase):  # T-1338
     PROJECTS = Home.PROJECTS
 
