@@ -223,6 +223,11 @@ def cmd_capture(args):
     if not text:
         raise UsageError("fm capture \"<request>\" [--from-file PATH|-]: say what to do, or attach a file that does")
     with c.lock(p.dir):
+        import fmrecall
+        near, near_done = fmrecall.near_tasks(p, _title(text), _scope_paths(args.scope or ()))
+        if near and not args.anyway:  # T-1662
+            raise UsageError(f"near-duplicate of open {near[0]} ({c.fit(c.plain(near[1]), 80)}): add to it "
+                             f"(fm task log {near[0]} \"…\"), or keep both with fm capture … --anyway")
         b = _create(p, _title(text), type_, args.tier or c.guess_tier(type_, text), "captured",
                     raw=raw, scope=args.scope or (), source=args.source,
                     depends=list(dict.fromkeys(c._REF_RE.findall(args.text or ""))),  # T-0334: as fm intake does
@@ -231,7 +236,7 @@ def cmd_capture(args):
         c.regen_views(p)
     _note_escapes(p, b, args.text)
     out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source})."
-        + _covered_note(p, b.id, text) + _reask_note(p, b.id, text))
+        + _covered_note(p, b.id, text, near_done if type_ == "FEATURE" else None) + _reask_note(p, b.id, text))
 
 
 EXCERPT_HEAD, EXCERPT_TAIL = 10, 30  # T-0477: a log's start says what ran, its end what broke
@@ -306,17 +311,20 @@ def _reask_note(p, tid, text):
     return ("\n" + "; ".join(notes) + f". If that still holds, drop this: fm task drop {tid} \"<why>\".") if notes else ""
 
 
-def _covered_note(p, tid, text):
-    """T-0256: the request may already be an fm command; say so before anything is built."""
+def _covered_note(p, tid, text, done=None):
+    """T-0256: the request may already be an fm command; say so before anything is built. T-1662: or done work, the
+    (id, title) of a finished task close to it."""
+    note = (f"\nClose to done work: {done[0]} ({c.fit(c.plain(done[1]), 80)}). If it already does this, drop this: "
+            f"fm task drop {tid} \"done in {done[0]}\".") if done else ""
     try:
         import fmrecall
         hits = fmrecall.covered(text)
     except Exception:
-        return ""
+        return note
     if not hits:
-        return ""
-    return ("\nAlready covered? " + "; ".join(f"fm {name} — {help_}" for name, help_ in hits)
-            + f". If it is, use it and drop this: fm task drop {tid} \"covered by fm {hits[0][0]}\".")
+        return note
+    return note + ("\nAlready covered? " + "; ".join(f"fm {name} — {help_}" for name, help_ in hits)
+                   + f". If it is, use it and drop this: fm task drop {tid} \"covered by fm {hits[0][0]}\".")
 
 
 HYPO_STATUS = {"ruled-out": "ruled out", "confirmed": "confirmed", "open": "open"}
@@ -4983,6 +4991,7 @@ def _build_parser():
     s.add_argument("--tier", choices=["S", "M", "L"])
     s.add_argument("--scope", action="append")
     s.add_argument("--urgent", action="store_true")
+    s.add_argument("--anyway", action="store_true", help="keep a near-duplicate of an open task (T-1662)")
     s.add_argument("--self", dest="self_", action="store_true", help="capture into Foreman's own project (self-improvement)")
 
     s = add("ask", cmd_ask, tier=("Every task", 180), help="ask the user to authorize guard categories for a task; their next message decides")
