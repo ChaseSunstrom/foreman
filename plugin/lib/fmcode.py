@@ -1102,6 +1102,33 @@ def _confining(confine):
     return rs, (lambda: fmlandlock.enter(rs))
 
 
+def install_warning():
+    """T-1757: fm doctor's two-installs and duplicate-hook findings as one line for a run's start, each distinct
+    finding said once (state/code-warned.json keeps their hashes); None when both pass, or once said."""
+    import fmdoctor
+    try:
+        claude = os.path.join(os.path.expanduser("~"), ".claude")
+        settings = fmdoctor._load_json(os.path.join(claude, "settings.json")) or {}
+        found = [r.detail for r in (fmdoctor.check_dual_install(), fmdoctor.check_hook_writers(
+            settings, fmcore.foreman_home())) if r.status != "PASS"]
+    except Exception:  # a warning is extra: a check that trips never stops a run
+        return None
+    path = os.path.join(fmcore.state_dir(), "code-warned.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            said = set(json.load(f))
+    except (OSError, ValueError, TypeError):
+        said = set()
+    new = [d for d in found if hashlib.sha256(d.encode()).hexdigest()[:16] not in said]
+    if not new:
+        return None
+    try:
+        fmcore.write_atomic(path, json.dumps(sorted(said | {hashlib.sha256(d.encode()).hexdigest()[:16] for d in new})))
+    except OSError:
+        pass
+    return "fm doctor: " + "; ".join(_one_line(d, 200) for d in new)
+
+
 def containment(root):
     """T-1402: what holds this run's commands and workers in, for the start event and the app: {kind, label}."""
     import fmlandlock
@@ -2205,6 +2232,9 @@ def cmd_code(args):
         run.emit("start", "", quiet=True, schema=SCHEMA, request=run.request, task=run.tid, worker=run.worker,
                  model=profile and profile["name"], verify=run.verify_cmd, resume=args.resume is not None,
                  foreman={"root": fmcore.PLUGIN_ROOT, "version": fmcodebench.version()}, containment=containment(root))
+        warned = install_warning()  # T-1757
+        if warned:
+            run.emit("note", warned)
         if gate:
             run.emit("note", gate)
         if picked:

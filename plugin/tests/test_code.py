@@ -844,6 +844,21 @@ class Failures(CodeCase):  # T-1754 (T-1334, T-1355)
             version = json.load(f)["version"]
         self.assertEqual(start["foreman"], {"root": PLUGIN, "version": version})
 
+    def test_two_installs_or_a_doubled_hook_are_said_once_at_start(self):  # T-1757
+        import unittest.mock
+        import fmcode
+        import fmdoctor
+        warn = fmdoctor.Result("installs", "WARN", "two Foreman installs: 1.2.0 from x and 1.2.50 in y")
+        ok = fmdoctor.Result("hook state writers", "PASS", "fine")
+        with unittest.mock.patch.object(fmdoctor, "check_dual_install", return_value=warn), \
+                unittest.mock.patch.object(fmdoctor, "check_hook_writers", return_value=ok):
+            first, again = fmcode.install_warning(), fmcode.install_warning()
+        self.assertEqual(first, "fm doctor: two Foreman installs: 1.2.0 from x and 1.2.50 in y")
+        self.assertIsNone(again, "said once")
+        with unittest.mock.patch.object(fmdoctor, "check_dual_install", return_value=ok), \
+                unittest.mock.patch.object(fmdoctor, "check_hook_writers", return_value=ok):
+            self.assertIsNone(fmcode.install_warning())
+
     def test_the_start_event_names_the_runs_containment(self):  # T-1760 (T-1402)
         self.serve("openai", plan(), *FIX)
         start = json.loads(self.code("fix add", "--model", "fake", "--json",
