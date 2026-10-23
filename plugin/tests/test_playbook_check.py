@@ -20,6 +20,10 @@ def book(title, use="Use when the alpha widget misbehaves under load.", steps="1
     return f"# {title}\n\n{use}\n\n## The procedure\n\n{steps}\n{extra}"
 
 
+CONTRACT = ("\n## UI contract\n\n- motion: no motion here.\n- contrast: proven by the contrast script.\n"
+            "- keyboard: n/a: paper.\n- small screens: sketched at 360 px first.\n- states: empty and error sketched.\n")
+
+
 class Fixture(ForemanTestCase):
     def setUp(self):
         super().setUp()
@@ -28,7 +32,7 @@ class Fixture(ForemanTestCase):
         self.write("references/ui/INDEX.md", "# UI\n\n- `references/ui/beta.md` — beta.\n")
         self.write("references/ui/beta.md", book(
             "Beta", "Use before a gamma screen ships to the store.",
-            "1. Sketch the screen on paper first.\n2. Count every tap a person needs.\n"))
+            "1. Sketch the screen on paper first.\n2. Count every tap a person needs.\n", CONTRACT))
         self.write("SKILL.md", "---\nname: playbooks\n---\n\n- `references/fix/alpha.md` — alpha.\n"
                                "- `references/ui/INDEX.md` — the UI index.\n")
 
@@ -80,6 +84,48 @@ class Index(Fixture):
         self.assertFlags(f"over its {fmdoctor.SKILL_MAX:,}-character budget")
 
 
+class UiContract(Fixture):  # T-1623
+    def test_a_ui_playbook_states_each_of_the_five_rules(self):
+        beta = book("Beta", "Use before a gamma screen ships to the store.", "1. Sketch it.\n2. Count taps.\n")
+        self.write("references/ui/beta.md", beta)
+        self.assertFlags("references/ui/beta.md: no ## UI contract section")
+        self.write("references/ui/beta.md", beta + CONTRACT.replace("- states: empty and error sketched.\n", "")
+                   .replace("- keyboard: n/a: paper.\n", "- keyboard:\n"))
+        self.assertFlags("references/ui/beta.md: its ## UI contract doesn't say keyboard, states")
+        self.write("references/fix/alpha.md", book("Alpha"))  # outside ui/: no contract asked
+        self.write("references/ui/beta.md", beta + CONTRACT)
+        self.assertEqual(self.problems(), [])
+
+    def test_the_shipped_ui_playbooks_all_carry_it(self):
+        self.assertEqual([x for x in pb.problems(run=False) if "UI contract" in x], [])
+        with open(os.path.join(pb.ROOT, "references", "ui", "INDEX.md"), encoding="utf-8") as f:
+            index = f.read()
+        for rule in pb.UI_CONTRACT:
+            self.assertIn(f"**{rule}**", index, "the rules are written down where the UI playbooks are indexed")
+
+
+class Coverage(Fixture):  # T-1623
+    def test_each_stage_counts_the_playbooks_naming_a_card_of_each_area(self):
+        self.write("references/ui/gamma.md", book("Gamma", "Use when a three-js scene stutters.", extra=CONTRACT))
+        self.write("references/ui/INDEX.md", "# UI\n\n- `references/ui/beta.md` — beta.\n"
+                                            "- `references/ui/gamma.md` — gamma.\n")
+        cards = [("web", "three-js"), ("lang", "real-card"), ("lang", "go")]  # go: under 3 characters, not counted
+        cov = pb.coverage(self.root, cards)
+        self.assertEqual(cov["ui"], {"lang": 0, "web": 1})
+        self.assertEqual(cov["fix"], {"lang": 0, "web": 0})
+        text = pb.coverage_text(cov)
+        self.assertIn("\nui        · ░", text)  # areas sorted (lang, web): none, one
+        self.assertIn("░ 1", text, "a legend")
+
+    def test_fm_playbooks_coverage_on_the_shipped_library(self):
+        out = self.fm("playbooks", "coverage").stdout
+        for stage in ("ui", "fix", "review"):
+            self.assertRegex(out, rf"(?m)^{stage}\s")
+        got = json.loads(self.fm("playbooks", "coverage", "--json").stdout)
+        self.assertIn("python", got["ui"])
+        self.assertNotEqual(self.fm("playbooks", "show", check=False).returncode, 0, "show still needs a NAME")
+
+
 class Duplicates(Fixture):
     def test_a_shared_title(self):
         self.write("references/fix/alpha2.md", book("alpha", "Use when nothing else in this file is alike at all.",
@@ -89,7 +135,8 @@ class Duplicates(Fixture):
 
     def test_untitled_playbooks_never_share_a_title(self):  # ported reviewers have no '# ' heading: review/cpp.md
         self.write("references/fix/cpp.md", "Use when C++ changes land in a fix.\n\n1. Read the diff first.\n")
-        self.write("references/ui/cpp.md", "Use for C++ widgets in a native toolkit.\n\n1. Build the demo app.\n")
+        self.write("references/ui/cpp.md", "Use for C++ widgets in a native toolkit.\n\n1. Build the demo app.\n"
+                   + CONTRACT)  # T-1623: a UI playbook carries the contract
         self.write("SKILL.md", self.read("SKILL.md") + "- `references/fix/cpp.md` — cpp.\n")
         self.write("references/ui/INDEX.md", self.read("references/ui/INDEX.md") + "- `references/ui/cpp.md` — c.\n")
         self.assertEqual(self.problems(), [])

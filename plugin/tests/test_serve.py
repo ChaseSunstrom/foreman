@@ -3,7 +3,7 @@ import json
 import os
 import sys
 
-from helpers import FM, ForemanTestCase, read_text
+from helpers import FM, ForemanTestCase, git_repo, read_text
 
 import fmcore as c
 import fmserve
@@ -216,6 +216,26 @@ class Run(RunCase):
         sessions = [l for l in self.called().splitlines() if l.startswith("claude ")]
         self.assertEqual(len(sessions), 2)  # 0.30 < 0.5 starts a second; 0.60 >= 0.5 stops the third
         self.assertIn("spend cap reached", out)
+
+    def test_all_projects_works_each_projects_queue_in_turn(self):  # T-1782
+        a = self.task("one")
+        other = git_repo(self.tmp, "other")
+        self.fm("init", cwd=other)
+        b = json.loads(self.fm("task", "new", "two", "--type", "FIX", "--tier", "S", "--ac", "works", "--step",
+                               "fix it", "--json", cwd=other).stdout)["id"]
+        idle = git_repo(self.tmp, "idle")
+        self.fm("init", cwd=idle)  # nothing queued: skipped
+        self.stub("claude", self.finisher)
+        out = self.run_fm("--all-projects").stdout
+        p1, p2 = c.find_project(self.repo), c.find_project(other)
+        self.assertEqual((c.find_brief(p1, a).status, c.find_brief(p2, b).status), ("done", "done"))
+        self.assertIn(f"== {p1.slug}: 1 queued", out)
+        self.assertIn(f"== {p2.slug}: 1 queued", out)
+        self.assertNotIn(c.find_project(idle).slug, out)
+        self.assertIn("2 project(s) worked, 0 stopped early", out)
+        r = self.run_fm("--all-projects", "-p", p1.slug, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--all-projects works every project: drop -p", r.stderr)
 
     def test_a_runner_works_each_task_through_fm_code(self):  # T-1773
         import types

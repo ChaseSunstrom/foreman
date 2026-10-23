@@ -570,3 +570,11 @@ The code side lives in the stack library: `fm lib show css-layout` (grid, flexbo
 state), `fm lib show data-tables` and `fm lib show infinite-scroll` (long lists), `fm lib show image-optimization`
 (the hero's artefact), `fm lib show toasts`, `fm lib show i18n` (plurals, pseudo-locale, right-to-left),
 `fm lib show accessibility` (reading order, live regions). Add `--section verify` for just the checks.
+
+## UI contract
+
+- motion: depth and the hero hold still under reduced motion; no layout needs an entrance animation to be read.
+- contrast: text over images or depth layers keeps 4.5:1 (a scrim where needed); hierarchy shows in size and weight, not colour alone.
+- keyboard: tab and reading order follow the visual order the grid sets.
+- small screens: every grid collapses to one column at 360 px with no sideways scroll, and the hero fits the first screen.
+- states: the state atlas designs empty, loading, error and done for each screen.

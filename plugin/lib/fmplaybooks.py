@@ -43,6 +43,11 @@ ROOT = os.environ.get("FOREMAN_PLAYBOOKS") or os.path.join(c.PLUGIN_ROOT, "skill
 RATCHET = "ratchet.json"  # {path: tokens (chars / 4)}
 SLACK = (1.10, 50)  # a playbook fails once it passes ceiling × 1.10 + 50 tokens: a fix in passing needs no ratchet run
 DUP = 0.6  # word-shingle Jaccard over which two playbooks are one
+# T-1623: the UI contract references/ui/INDEX.md writes down; each UI playbook says how it meets each rule ("- rule: how",
+# or "n/a: why") in its ## UI contract section
+UI_CONTRACT = ("motion", "contrast", "keyboard", "small screens", "states")
+_CONTRACT = re.compile(r"^## UI contract[ \t]*$(.*?)(?=^## |\Z)", re.M | re.S)
+_RULE = re.compile(r"^- ([a-z][a-z ]*?):[ \t]*\S", re.M)
 SHINGLE = 5
 TIMEOUT = 20  # seconds per python block
 REACH_DAYS = 60
@@ -259,6 +264,14 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
             out.append(f"{rel}: no Use-when line above its first section ('Use when …')")
         if not any(x.startswith("1. ") for x in prose):
             out.append(f"{rel}: no numbered procedure (a line starting '1. ' outside code)")
+        if rel.startswith("references/ui/") and not rel.endswith("/INDEX.md"):  # T-1623
+            sec = _CONTRACT.search(text)
+            miss = [r for r in UI_CONTRACT if r not in set(_RULE.findall(sec.group(1)))] if sec else None
+            if sec is None:
+                out.append(f"{rel}: no ## UI contract section ({', '.join(UI_CONTRACT)}: references/ui/INDEX.md)")
+            elif miss:
+                out.append(f"{rel}: its ## UI contract doesn't say {', '.join(miss)} (a '- rule: how' line each, or "
+                           "'n/a: why'; the rules: references/ui/INDEX.md)")
         for name in sorted(set(_FACT.findall(text)) - set(FACTS)):
             out.append(f"{rel}: {{{{{name}}}}} is no fact, so every load shows {{{{{name}?}}}} (facts: {', '.join(FACTS)})")
         if rel in record and _tokens(text) > record[rel] * SLACK[0] + SLACK[1]:
@@ -290,6 +303,46 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
         if why:
             out.append(f"{rel}:{n}: {why} (mark it ```python no-run if it isn't a self-check)")
     return out
+
+
+def coverage(root=ROOT, cards=None):
+    """T-1623: {stage: {area: n}}: per stage (references/<stage>/), how many playbooks name a card of each stack area
+    (fm lib's card folders). Names of 3+ characters, matched as words. ponytail: a name is a word match, so a playbook
+    that mentions a stack in passing counts as covering it."""
+    if cards is None:
+        import fmlib
+        cards = [(x["dir"], x["name"]) for x in fmlib.cards()]
+    names = {}
+    for area, name in cards:
+        names.setdefault(area, set())
+        if len(name) >= 3:
+            names[area].add(name.lower())
+    rx = {a: re.compile(r"(?<![\w-])(?:" + "|".join(map(re.escape, sorted(ns, key=len, reverse=True))) + r")(?![\w-])",
+                        re.I) for a, ns in names.items() if ns}
+    out = {}
+    for rel in _playbooks(root):
+        parts = rel.split("/")
+        if len(parts) < 3 or parts[0] != "references":
+            continue
+        row = out.setdefault(parts[1], {a: 0 for a in sorted(names)})
+        text = _read(os.path.join(root, rel))
+        for a, r in rx.items():
+            row[a] += bool(r.search(text))
+    return dict(sorted(out.items()))
+
+
+HEAT = "·░▒▓█"  # none, 1, 2, 3, 4+
+
+
+def coverage_text(cov):
+    """The heatmap: a row per stage, a column per area (its name down the column), and a legend."""
+    areas = sorted({a for row in cov.values() for a in row})
+    if not areas:
+        return "no playbooks under references/<stage>/"
+    tall = max(map(len, areas))
+    head = ["          " + " ".join(a.rjust(tall)[i] for a in areas) for i in range(tall)]
+    rows = [f"{stage:<9} " + " ".join(HEAT[min(row.get(a, 0), 4)] for a in areas) for stage, row in cov.items()]
+    return "\n".join(head + rows + ["", "playbooks in a stage naming a card of that stack: · none  ░ 1  ▒ 2  ▓ 3  █ 4+"])
 
 
 def reach(root=ROOT, days=REACH_DAYS):
@@ -526,6 +579,11 @@ def _one(name, books):
 def cmd_show(args):
     """fm playbooks show NAME (T-1621); eval NAME (T-1618); route STAGE, blame NAME, preview NAME (T-1622)."""
     import fmcli
+    if args.action == "coverage":  # T-1623
+        cov = coverage()
+        return fmcli.out(args, cov, coverage_text(cov)) or 0
+    if args.name is None:  # left out (coverage takes none); an empty one still says no playbook
+        raise fmcli.UsageError(f"fm playbooks {args.action} NAME")
     if args.action == "eval":
         return cmd_eval(args)
     if args.action == "route":

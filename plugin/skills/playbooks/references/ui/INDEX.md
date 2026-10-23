@@ -18,3 +18,13 @@ strict-by-default template: `fm new list`, then `fm new web|scene|panel [DIR]`, 
 - `references/ui/visual-qa.md` — Prove UI by looking: a seeded frame matrix (360/768/1440, light/dark, reduced motion), a receipt.
 - `references/ui/templates/scene.html` — A one-file WebGL2 scene that passes every survival clause.
 - `references/ui/terminal-ui.md` — Building UI in a terminal, a Claude Code mod or a CLI: hierarchy and colour roles, display width and wide glyphs, resize, bracketed paste, the motion budget, the terminal's lifecycle, CLI product design
+
+## The UI contract
+
+Every UI playbook here meets five rules and says how in its own `## UI contract` section (a `- rule: how` line each, or `n/a: why` where one can't apply); `fm check playbooks` refuses a UI playbook without it (T-1623).
+
+- **motion**: reduced motion is its own path. `prefers-reduced-motion` (or the app's motion setting) gets a designed still or calm version, and nothing a person needs exists only in motion.
+- **contrast**: text and meaning pass a contrast check by numbers (4.5:1 body text, 3:1 large text and UI parts), and nothing is told by colour alone.
+- **keyboard**: every action works from the keyboard in a sensible order, with a visible focus.
+- **small screens**: it works at 360 px wide (40 columns in a terminal) with no sideways scroll, and touch targets are at least 44 px.
+- **states**: empty, loading, error and done each have a designed look, never a blank or a stack trace.
