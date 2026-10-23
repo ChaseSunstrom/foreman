@@ -6140,6 +6140,9 @@ def _build_parser():
                                                                  "becomes a case a judge grades against its criteria")
             b.add_argument("--together", action="store_true", help="with --commits: one case asking for all the "
                                                                    "range's requests in one session (T-1242)")
+            b.add_argument("--impossible", action="store_true", help="with --commits: tasks no change can do (their "
+                           "tests fail at their own commit too); a judge passes a run only when it says so, and a "
+                           "duel counts each arm's false dones (T-1377)")
         if name == "run":
             b.add_argument("--plugin", help="the plugin folder to test (default: this Foreman)")
             b.add_argument("--max", type=int, default=3, help="cases to run")
