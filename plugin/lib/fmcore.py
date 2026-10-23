@@ -3713,9 +3713,6 @@ def gate_lock(label, say=None, timeout=None):
     holder (FOREMAN_GATE_HELD names the holder's pid) passes: it runs under the lock its parent holds. A dead holder
     releases the flock itself. timeout None waits for ever; LockTimeout when it runs out."""
     held = os.environ.get("FOREMAN_GATE_HELD")
-    if held and held != str(os.getpid()):
-        yield
-        return
     os.makedirs(state_dir(), exist_ok=True)
     path = os.path.join(state_dir(), "gate.lock")
     fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
@@ -3724,9 +3721,17 @@ def gate_lock(label, say=None, timeout=None):
     try:
         while True:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # free: a stale FOREMAN_GATE_HELD is ignored
                 break
             except BlockingIOError:
+                if held and held != str(os.getpid()):  # a pass only while the lock file names that pid right now
+                    try:
+                        child = f"(pid {held})" in os.pread(fd, 200, 0).decode("utf-8", "replace")
+                    except OSError:
+                        child = False
+                    if child:
+                        yield
+                        return
                 if not told and say:
                     told = True
                     with contextlib.suppress(OSError):
