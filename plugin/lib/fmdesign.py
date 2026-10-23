@@ -1213,11 +1213,12 @@ def has_direction(text):
     return any(h == "## Direction" for _, h in headings(text.split("\n"))[0])
 
 
-def write_section(path, lines, title):
-    """Put the section into the markdown file at path (through a symlink, under a lock): replace its own (## Tokens up
+def write_section(path, lines, title, heading="## Tokens", keep=None):
+    """Put the section into the markdown file at path (through a symlink, under a lock): replace its own (heading up
     to the next heading, fenced code aside), else insert it after ## Knobs, else append it; a missing file starts with
     a DESIGN.md title. Every other section is kept byte for byte, CRLF line ends included; a file that isn't UTF-8 is
-    refused, never rewritten."""
+    refused, never rewritten. keep(text, or None for no file) runs under the lock before the write (fm design roll's
+    undo record, T-1648); returns the text written."""
     import fmcore
     path = os.path.realpath(path)
     with fmcore.lock(os.path.join(fmcore.state_dir(), "locks", "design-md")):  # ponytail: one lock for every DESIGN.md
@@ -1226,6 +1227,8 @@ def write_section(path, lines, title):
             text, why = _read(path, strict=True)
             if text is None:
                 raise ValueError(f"{path}: {why}")
+        if keep:
+            keep(text if os.path.lexists(path) else None)
         crlf = "\r\n" in text
         text = text.replace("\r\n", "\n")
         if not text.strip():
@@ -1235,16 +1238,18 @@ def write_section(path, lines, title):
         heads, fence = headings(doc)
         if fence:  # the section would land inside it, and every run would add another
             raise ValueError(f"{path}: a {fence} code fence is never closed; close it and run again")
-        _splice(doc, heads, lines)
+        _splice(doc, heads, lines, heading)
         out = "\n".join(doc)
-        fmcore.write_atomic(path, out.replace("\n", "\r\n") if crlf else out)
+        out = out.replace("\n", "\r\n") if crlf else out
+        fmcore.write_atomic(path, out)
+        return out
 
 
-def _splice(doc, heads, lines):
-    """doc (a list of lines) with lines as its ## Tokens section, in place."""
+def _splice(doc, heads, lines, heading="## Tokens"):
+    """doc (a list of lines) with lines as its heading section (## Tokens; ## Look for fm design roll), in place."""
     def end_of(i):
         return next((j for j, _ in heads if j > i), None)
-    own = next((i for i, h in heads if h == "## Tokens"), None)
+    own = next((i for i, h in heads if h == heading), None)
     knobs = next((i for i, h in heads if h == "## Knobs"), None)
     if own is not None:
         a, b = own, end_of(own)
@@ -1476,7 +1481,14 @@ def _design_tokens(args, fmcli):
                                  **{t: {r: {"oklch": list(x["oklch"]), "hex": x["hex"]} for r, x in pal[t].items()}
                                     for t in ("light", "dark")}}, None)
             else:
-                sys.stdout.write(text)
+                out = getattr(args, "out", None)
+                if out and out != "-":  # T-1714: --out was advertised and ignored
+                    if os.path.islink(out):
+                        raise ValueError(f"{out} is a symbolic link: give the file itself")
+                    fmcli.c.write_atomic(os.path.abspath(out), text)
+                    print(f"palette: written to {out}", file=err)
+                else:
+                    sys.stdout.write(text)
                 print(render_proofs(pal["proofs"]) + f"\npalette: {len(pal['proofs']) - failed} of "
                       f"{len(pal['proofs'])} pairs pass (body text 7:1 in dark)", file=err)
             return 1 if failed else 0
@@ -1537,6 +1549,12 @@ def _design_tokens(args, fmcli):
 def cmd_design(args):
     import sys
     import fmcli
+    if args.action == "roll":  # T-1648
+        if args.paths:
+            print("fm: design roll takes no paths", file=sys.stderr)
+            return 2
+        import fmroll
+        return fmroll.cmd_roll(args, fmcli)
     if args.action == "check":  # T-1645: the gates DESIGN.md opts into
         if len(args.paths) > 1:
             print("fm: design check takes one project root", file=sys.stderr)

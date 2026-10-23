@@ -30,7 +30,7 @@ Work inside a focused task (each step edits files). Per step, read only the play
   pass.
 - Existing CSS: `fm design extract SRC` writes the token table from its custom properties into DESIGN.md's
   `## Tokens` section (`--out -` prints it instead). From nothing:
-  `fm design palette SEED > tokens.css` makes a light and dark palette from one colour (`--format css|dtcg|tailwind`);
+  `fm design palette SEED --out tokens.css` makes a light and dark palette from one colour (`--format css|dtcg|tailwind`);
   it prints to stdout, so redirect with >.
 - Prove it before building on it: `fm design contrast TOKENS` checks the role pairs (body text 7:1 in dark).
 
