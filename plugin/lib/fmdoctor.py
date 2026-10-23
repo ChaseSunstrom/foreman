@@ -854,10 +854,11 @@ _FM_MENTION = re.compile(r"(?:^|[\s;|&(])fm\s+([a-z][\w-]*)(?:\s+([a-z][\w-]*))?
 
 # T-0954: zero-width, bidi and tag characters hide instructions from the person reading the file; a ZWJ between two
 # non-ASCII characters is an emoji sequence, not hidden text
-_INVISIBLE = re.compile(  # emoji glue (a ZWJ or VS15/16 after a non-ASCII character) is fine; a run of it isn't
-    "[\u00ad\u061c\u180e\u200b\u200c\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\ufe00-\ufe0d"
+_INVISIBLE = re.compile(  # emoji glue (a ZWJ between non-ASCII characters) is fine; a run of it isn't. Variation
+    # selectors, VS15/16 included, are hidden wherever they sit, as fmcore.plain has it (T-1687)
+    "[\u00ad\u061c\u180e\u200b\u200c\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\ufe00-\ufe0f"
     "\U000e0000-\U000e007f\U000e0100-\U000e01ef]"
-    "|(?:^|[\x00-\x7f])[\u200d\ufe0e\ufe0f]|[\u200d\ufe0e\ufe0f]{2}|\u200d(?:$|[\x00-\x7f])", re.M)
+    "|(?:^|[\x00-\x7f])\u200d|\u200d{2}|\u200d(?:$|[\x00-\x7f])", re.M)
 
 
 def instruction_files(plugin=PLUGIN):

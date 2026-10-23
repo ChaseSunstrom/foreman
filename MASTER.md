@@ -114,7 +114,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fmguard`
 - `fmhooks` (incl. chat approvals)
 - `fmtidy`
-- `fmdoctor`
+- `fmdoctor` (also `fm wiring`, one screen of what is wired; checks the status views match the briefs, `--repair` regenerates them)
 - `fmwatch` (`fm ui --demo`: a canned view from `ui-demo.json` with every key a real one has, T-0962)
 - `fmsetup`
 - `fmideas` (tool-less brainstorm children with a coverage map and holes per round, `--falsify` kill tests, `--crossbreed`, reframing and provocation lenses, and per-lens keep rates in `fm taste` from each brainstorm's `ideas.json`, T-0684; and `fm oracle`: behaviour examples from a task's spec alone)
@@ -170,7 +170,6 @@ One line per module, so two changes to different modules never touch the same li
 - `fmstack` (`fm task finish --commit … --stack`: one commit per step group, per member for a batch host, each checked alone in a scratch worktree; a red one folds into the next, T-0710)
 - `fmchange` (`fm spec "<wish>" --module M`: a one-line wish as a red unittest from a tool-less child's assertions, only safe ones kept; `fm rewrite OLD NEW [--apply] [--convert]`: one rename rule, Python by tokens and other code by whole word, every residual spelling named and optionally rewritten by a cheap child, T-0713)
 - `fmdocs` (`fm docs`: doc drift against the code)
-- `fmdoctor` also answers `fm wiring` (one screen of what is wired) and checks the status views match the briefs (`--repair` regenerates them)
 - `fmreplay` (`fm replay`: the guard's verdicts on real past commands, against a baseline; `--candidate REF|FILE` scores another guard against the working one, loosened verdicts first, T-0712)
 - `fmmcp` (`fm mcp`: read-only MCP tools over stdio)
 - `fmsession` (`fm session`: detached agent sessions for claude, codex, gemini and opencode, one normalised event stream each)
@@ -178,6 +177,30 @@ One line per module, so two changes to different modules never touch the same li
 - `fmagents` (`fm agents list|install|uninstall codex|gemini|opencode`: `list` also prints what each harness enforces (T-0442: the guard blocks everywhere; gemini and opencode have no Stop, so no drive or done-gate; an ask is a deny outside Claude Code), and a parity test checks each harness decides like Claude Code; the hook adapter behind `hook --agent X EVENT` and the installer that wires hooks, the `fm mcp` server and a rules block into each agent's user config)
 - `fmmodels` (T-1211: fm code's model layer — one urllib client for OpenAI-compatible chat completions and Anthropic Messages; `profiles()`, `resolve(name)` (models.json's named or default profile, else the first local server answering `/v1/models` in 0.3 s: Ollama, LM Studio, llama.cpp, vLLM, else the first cloud whose key is set: Anthropic, OpenAI, OpenRouter, Groq, Gemini), `complete()` (one `stop` vocabulary: end, tool_calls, length; 3 tries on 429/5xx, Retry-After capped at 20 s, no redirects, the key never over plain http to a non-loopback host and scrubbed from every `ModelError`), `extract_json()`; profiles in `$FOREMAN_HOME/models.json`)
 - `fmcode` (T-1212: `fm code`, Foreman's loop run by the harness on any fmmodels profile — a validated PLAN slot, the task made with `fm task new --focus`, one action at a time per step, edits/writes/runs through `hooks/hook PreToolUse`, verify as `fm task evidence --ac N --run`, `fm task finish`; journal `code/<task>.jsonl` in the project's state) — all protected core | Claude | on call | stdlib only
+- `fmcodetui` (T-1283: `fm code tui`, fm code's terminal UI, drawn only from its `--json` event stream; never edits, verifies or closes)
+- `fmcodeterm` (T-1300: the terminal under `fm code tui` without curses: ANSI in the colours the terminal shows, only changed cells after the first frame)
+- `fmcodebench` (T-1215: `fm code bench`, a model or worker CLI graded as a Foreman worker on seeded tasks, each in its own throwaway repo and home)
+- `fmlandlock` (T-1607: an fm code worker's writes confined with Landlock through ctypes, beneath its writable set)
+- `fmsettings` (T-1496: one schema for every setting the fm code app's tui.toml and the foreman-ui mod's userConfig read)
+- `fmauditrun` (T-1186: `fm audit run ID`, the audit lenses as headless read-only reviewers over the brief `fm audit prep` writes)
+- `fmaway` (T-1155: `fm away`, the summary on return after a long gap)
+- `fmbacktest` (T-1058: `fm backtest`, where a changed rule, known fix or card would have fired on recorded sessions)
+- `fmci` (T-1052: `fm ci-watch`, the branch's latest GitHub Actions run polled through gh after a push)
+- `fmcontract` (T-1158: `fm contract`, how long and how much an unattended run may take, and its receipt)
+- `fmdeps` (T-1049: a package new to the project in an npm/pip/cargo install gets a typosquat, registry and age look; notes only)
+- `fmdraft` (T-1062: `fm draft`, a headless claude drafts the top queued S task in a throwaway worktree while nobody waits)
+- `fmedit` (T-1089: `fm edit` and `fm sub`, many exact replacements in one call)
+- `fmintegrations` (T-1551: Foreman for other tools, read-only: `fm timeline` as Perfetto/Chrome trace or OTLP JSON, and more)
+- `fmloop` (T-1057: `fm loop`, an empty queue starts an improvement round instead of ending the run)
+- `fmmutate` (T-1066: mutation tests for the guard, one ast mutant per rule site in fmguard.py)
+- `fmoracle` (T-1553: the guard's oracle, a line run in a throwaway bwrap sandbox that records each command it would run)
+- `fmpr` (T-1087: `fm pr threads` turns a PR's unresolved comments into steps; `fm pr train` merges approved green PRs in order)
+- `fmrelease` (T-1188: `fm release VERSION`, the release ritual as named, resumable steps; Foreman's own repo only)
+- `fmrisk` (T-1080: the daily risk budget: destructive blocks, failed closes and reverts spend points; past the cap autonomy steps down)
+- `fmroll` (T-1648: `fm design roll`, a seeded, coherent pick of one look card's palette, type, motion and texture)
+- `fmrollback` (T-1085: a snapshot of every project's record before a new version runs, and `fm rollback` to restore it)
+- `fmtrials` (T-1059: a self-change as a pre-registered trial, graded by the digest on ledger event rates before and after)
+- `fmwhich` (T-1699: `fm which TASK`, the skills, playbooks and commands that fit a task, each with the call that loads it)
 
 ## 4. Interaction diagram
 
