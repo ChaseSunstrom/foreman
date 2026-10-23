@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A Bash call that pipes fm check (`fm check | tail -5`, in the background too) gets a note that its exit status is the last program's, not the gates': read the ✓/✗ line before pushing. T-1758 reached main after such a call's exit 0 was tail's (T-1759)
 - A flag among a command's path words no longer strands the paths after it: `fm new check --run PATH`, `fm img diff A --tol 3 B` and the like parse as meant (the command's own options move in front of its paths). Free text (a request, a message) is left as typed, so a flag inside one is still an error (T-1671)
 - fm design lint's afterglow rule reads Tailwind state classes: hover:bg-…, focus:scale-…, group-hover:opacity-… or aria-[…]:text-… on an element with no transition-*, duration-* or animate-* class is flagged, as a :hover rule with no transition is; NOT_COVERED says CSS-in-JS state styles and @apply aren't read for it (T-1689)
 - The guard's hint for a changelog edit with no task no longer says to focus the finished task again (fm focus refuses a done task); it says to add the line in the next task with a scope note (T-1767)
