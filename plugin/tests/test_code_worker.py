@@ -830,6 +830,71 @@ class Ping(CodeCase):  # T-1335
         self.assertIn("isn't a runner", self.work("runners", "--ping", "nope", check=False).stderr)
 
 
+class Routing(CodeCase):  # T-1358
+    cli, work = Worker.cli, Worker.work
+
+    def setUp(self):
+        super().setUp()
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        self.cli("fix-calc", "exec python3 -c 'import pathlib; p = pathlib.Path(\"calc.py\"); "
+                             "p.write_text(p.read_text().replace(\"a - b\", \"a + b\"))'\n")
+        self.fm("init")
+
+    def past(self, worker, kind, end, usd=None, n=1, project="elsewhere"):
+        d = os.path.join(self.home, "state", "projects", project, "code")
+        os.makedirs(d, exist_ok=True)
+        for _ in range(n):
+            self.seq = getattr(self, "seq", 0) + 1
+            evs = [{"event": "start", "worker": worker}, {"event": "tool", "worker": worker},
+                   {"event": "plan", "plan": {"type": kind}}, {"event": end, **({"usd": usd} if usd is not None else {})}]
+            with open(os.path.join(d, f"T-{self.seq:04d}.events.jsonl"), "w") as f:
+                f.write("".join(json.dumps(e) + "\n" for e in evs))
+
+    def test_runners_shows_each_runners_record_per_kind(self):
+        self.past("claude", "FIX", "closed", 0.5, n=2)
+        self.past("claude", "FIX", "blocked")
+        self.past("claude", "FEATURE", "closed")
+        d = os.path.join(self.home, "state", "projects", "elsewhere", "code")
+        with open(os.path.join(d, "T-0099.events.jsonl"), "w") as f:  # still running: no verdict, not counted
+            f.write(json.dumps({"event": "start", "worker": "claude"}) + "\n" + json.dumps(
+                {"event": "plan", "plan": {"type": "FIX"}}) + "\n")
+        r = self.work("runners", "--json")
+        self.assertEqual(json.loads(r.stdout)["records"]["claude"],
+                         {"FIX": {"runs": 3, "closed": 2, "priced": 2, "usd": 1.0},
+                          "FEATURE": {"runs": 1, "closed": 1, "priced": 0, "usd": None}})
+        self.assertIn("claude: FIX 3 runs, 2 closed, $0.50 a closed run; FEATURE 1 run, 1 closed",
+                      self.work("runners").stdout)
+
+    def test_auto_hands_the_work_to_the_cheapest_runner_green_on_the_kind(self):
+        self.cli("claude", "exit 2\n")  # the planner (no plan needed with --verify); it must never work
+        self.cli("spare", "fix-calc\n")
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write('runner = "auto"\n[runners.spare]\nwork = "spare {prompt}"\n')
+        self.past("claude", "FIX", "closed", 0.5, n=3)
+        self.past("spare", "FIX", "closed", 0.1, n=3)
+        self.past("spare", "FEATURE", "blocked", n=3)
+        r = self.work("FIX: make calc.add add", "--verify", VERIFY, "--json")
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        notes = [e["text"] for e in map(json.loads, r.stdout.splitlines()) if e["event"] == "note"]
+        self.assertIn("auto: spare works this FIX (3 runs, 3 closed, $0.10 a closed run; the cheapest green one)", notes)
+        self.assertEqual(runner_records_for(self, "spare")["FIX"]["runs"], 4, "this run counts for spare")
+
+    def test_auto_with_no_green_runner_keeps_the_planning_runner(self):
+        self.cli("claude", "fix-calc\n")
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write('runner = "auto"\n')
+        self.past("claude", "FIX", "blocked", n=3)
+        r = self.work("FIX: make calc.add add", "--verify", VERIFY)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        self.assertIn("auto: no runner has 3 runs of FIX with two thirds closed yet; claude keeps it", r.stdout)
+
+
+def runner_records_for(case, name):
+    r = case.work("runners", "--json")
+    return json.loads(r.stdout)["records"][name]
+
+
 class Failover(CodeCase):  # T-1356 (not a Worker subclass: its tests would run twice)
     cli, work = Worker.cli, Worker.work
 
