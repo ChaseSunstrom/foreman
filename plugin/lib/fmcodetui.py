@@ -1824,6 +1824,9 @@ def _settings_foot(app, iw):
     r = app.items[app.item_index] if 0 <= app.item_index < len(app.items) else None
     mine = [(f"◆ set by profile {_escaped(r['profile'])} here · ", "accent2")] if r and r.get("profile") is not None \
         else []  # T-1656: a :set writes the file's own value, which this terminal doesn't show
+    if r and r.get("scope"):  # T-1611: what the app runs with comes from a narrower scope
+        mine += [({"pin": "◆ pinned by the repo's policy · ", "project": "◆ this project sets it · ",
+                   "run": "◆ this run sets it · "}[r["scope"]], "accent2")]
     about = [] if not r or "head" in r else mine + [(r["help"], "dim")] + (
         [("   " + " · ".join(map(str, r["choices"])), "accent2")] if r.get("choices") else [])
     first = app.set_problems[0][1] if app.set_problems else ""
@@ -1846,7 +1849,8 @@ def _settings_foot(app, iw):
 
 def _settings_note(app):
     n, on = sum("head" not in r for r in app.items), (app.cfg.get("profile") or {}).get("name")
-    return " · ".join([f"{n} of {len(app.set_rows)}"] + ([f"profile {_escaped(on)}"] if on is not None else [])
+    return " · ".join([f"{n} of {len(app.set_rows)}", f"s: saves to {SCOPE_WORDS[app.set_scope]}"]
+                      + ([f"profile {_escaped(on)}"] if on is not None else [])
                       + (["changed only"] if app.set_modified else [])
                       + ([f"/{app.set_query}"] if app.set_query else []))
 
@@ -2139,6 +2143,7 @@ class App:
         # T-1572: the settings screen: every setting, its search, changed-only, the :set line and what it last did
         self.set_rows, self.set_problems, self.set_query, self.set_line = [], [], "", ""
         self.set_typing, self.set_modified, self.set_note, self.no_colour = "", False, None, False
+        self.set_scope, self.run_settings, self.layer_said = "everywhere", {}, []  # T-1611: :set's scope, this run's
         self.set_pending = None  # T-1573: a previewed look: key, value, surface, the cfg before it, until when
         # T-1511: the layout editor's picked panel (column, row); the runner test going and whether one just ended
         self.lay_at, self.runner_test, self.runner_done, self.set_back = (0, 0), None, False, None
@@ -2956,6 +2961,9 @@ class App:
         now = {r["key"]: r["value"] for r in rows if r["surface"] == "app"}
         base = preset_theme(now.get("theme", "night"), now.get("palette", "default"))
         order = list(dict.fromkeys(r["group"] for r in rows))  # the user's own key bindings join the keys
+        where = self.cfg.get("scopes") or {}  # T-1611: a narrower scope that sets a row's setting is marked on it
+        rows = [dict(r, scope=where[fmsettings._norm(r["key"])]) if r["surface"] == "app"
+                and fmsettings._norm(r["key"]) in where else r for r in rows]
         self.set_rows = sorted((dict(r, default=base.get(r["key"][7:], r["default"])) if r["group"] == "colors" else r
                                 for r in rows), key=lambda r: order.index(r["group"]))
         self.set_problems = problems
@@ -3033,6 +3041,9 @@ class App:
                 self.set_typing, self.set_note = "bind", None
             else:
                 self.set_note = ("b binds a key to a command: pick a row under KEYS that runs one", "bad")
+        elif k == "s":  # T-1611: where the next :set goes: everywhere, this project, this run
+            self.set_scope = SCOPES[(SCOPES.index(self.set_scope) + 1) % len(SCOPES)]
+            self.set_note = (f"a :set now goes to {SCOPE_WORDS[self.set_scope]} (s changes it)", "ok")
         elif k == "l":
             self.set_note, self.lay_at, self.mode = None, (0, 0), "layout"
         elif k == "r":
@@ -3049,6 +3060,9 @@ class App:
         import re
         import tomllib
         import fmsettings
+        m = re.search(r"(?:^|\s)--scope[= ](\S*)", line)  # T-1611: else the scope s picked
+        scope = m.group(1) if m else self.set_scope
+        line = line[:m.start()] + " " + line[m.end():] if m else line
         m = re.search(r"(?:^|\s)--surface[= ](\S*)", line)
         surface = m.group(1) if m else None
         words = (line[:m.start()] + " " + line[m.end():] if m else line).strip()
@@ -3067,9 +3081,51 @@ class App:
         if not fmsettings.find(key, surface):
             self.set_note = (f"{key}: no such setting{f' in the {surface}' if surface else ''}", "bad")
             return None
+        if scope not in SCOPES or scope != "everywhere" and (surface == "plugin" or not fmsettings.find(key, "app")):
+            self.set_note = (f"--scope takes {', '.join(SCOPES)}; this project and this run hold the app's settings",
+                             "bad")
+            return None
+        if (self.cfg.get("scopes") or {}).get(fmsettings._norm(key)) == "pin" and surface != "plugin":
+            self.set_note = (f"{key}: pinned by {policy_path(self.root)}: the repo's policy holds it", "bad")
+            return None
+        if scope != "everywhere":
+            return self._settings_scoped(scope, key, value)
         if key in PREVIEW_KEYS and surface in (None, "app"):
             return self._settings_preview(key, value, surface)
         return self._settings_write(key, value, surface)
+
+    def _settings_scoped(self, scope, key, value):
+        """T-1611: a :set for this project (written to project_settings_path as tui.toml is written) or this run
+        (checked as a write is, held in memory, gone when the app quits)."""
+        import fmsettings
+        try:
+            if scope == "project":
+                path = project_settings_path(self.root)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                value, _ = fmsettings.set_app(key, value, path=path)
+            else:
+                value = fmsettings._check(fmsettings.find(key, "app")[0], value)  # nothing is written: no guard
+                table, name = fmsettings._split(key)
+                (self.run_settings.setdefault(table, {}) if table else self.run_settings)[name] = value
+        except Exception as e:
+            self.set_note = (_escaped(f"{scope}: {e}" if isinstance(e, fmsettings.SettingError) else
+                                      f"{scope}: {key}: not set ({type(e).__name__}: {e})"), "bad")
+            return None
+        self._settings_reload()
+        self.set_note = (_escaped(f"{SCOPE_WORDS[scope]}: {key} = {_shown(value, 'app')}"
+                                  + (f" in {path}" if scope == "project" else ", gone when the app quits")), "ok")
+        self._settings_load(keep=("app", key))
+        return None
+
+    def _layer(self, cfg):
+        """T-1611: cfg with this project's settings, this run's and the repo's pins over it; a problem said once."""
+        try:
+            cfg, problems = layered(cfg, self.root, self.run_settings)
+        except Exception as e:  # a layer that chokes: tui.toml's look stays, said
+            problems = [f"the project's or the policy's settings weren't read ({type(e).__name__}: {e})"]
+        if problems and problems != self.layer_said:
+            self.message, self.layer_said = _escaped("; ".join(problems))[:400], problems
+        return cfg
 
     def _settings_preview(self, key, value, surface):
         """T-1573: a look shown at once on the live config, so the screen behind the overlay repaints; written (on
@@ -3077,6 +3133,7 @@ class App:
         import fmsettings
         try:  # the write's checks, the guard's too: what it would refuse is refused now, not after the keep
             value, cfg = fmsettings.preview_app(key, value)
+            cfg = self._layer(cfg)  # T-1611: the narrower scopes still over it
         except Exception as e:
             self.set_note = (f"app: {e}" if isinstance(e, fmsettings.SettingError) else
                              f"app: {key}: can't show it ({type(e).__name__}: {e})", "bad")
@@ -3125,6 +3182,7 @@ class App:
         import fmsettings
         try:
             cfg, _ = load_config()
+            cfg = self._layer(cfg)  # T-1611: this project's, this run's and the pins over tui.toml
             why = fmsettings.render_error(cfg)  # T-1543: an outside edit the write merged in may not draw
         except Exception as e:  # T-1657: one load_config chokes on: the running look stays, said
             cfg, why = None, f"{type(e).__name__}: {e}"
@@ -3161,6 +3219,7 @@ class App:
             return False
         cfg, self.message = got
         if cfg is not None:
+            cfg = self._layer(cfg)  # T-1611
             cfg = dict(cfg, theme=_mono(), preset="mono") if self.no_colour else cfg
             if self.set_pending:
                 self.set_pending["cfg"] = cfg
@@ -3983,6 +4042,75 @@ def load_config(path=None, env=None, profile=True):
     return cfg, errors
 
 
+SCOPES = ("everywhere", "project", "run")  # T-1611: where the settings screen's :set goes (s cycles it)
+SCOPE_WORDS = {"everywhere": "everywhere (tui.toml)", "project": "this project", "run": "this run only"}
+PIN_FREE = ("keys", "motion")  # T-1611: the person's own (their hands, their comfort): a repo's policy never pins them
+LAYER_ONLY = ("profile", "rule", "ext")  # T-1611: tables only tui.toml has; a project's file or a pin sets settings
+
+
+def project_settings_path(root):
+    """T-1611: this project's own settings, beside tui.toml and protected by the guard as it is (they bind keys),
+    never in the repo (a clone brings none)."""
+    import fmcore
+    return os.path.join(fmcore.foreman_home(), "tui.projects", fmcore.slug_for(os.path.realpath(root)) + ".toml")
+
+
+def policy_path(root):
+    """T-1611: the repo's policy, committed with it: [pin] settings no narrower scope overrides."""
+    return os.path.join(root, ".foreman", "policy.toml")
+
+
+def _settings_file(path):
+    """A settings file read the way tui.toml is (bounded, never a FIFO or a device): (its tables, a problem or None);
+    ({}, None) when there is none."""
+    import tomllib
+    import fmsettings
+    try:
+        data, st = fmsettings._read_raw(path)
+        return (tomllib.loads(data.decode("utf-8")) if st is not None else {}), None
+    except fmsettings.SettingError as e:
+        return {}, _escaped(str(e))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError, RecursionError) as e:
+        return {}, f"{path}: {_escaped((str(e).splitlines() or [type(e).__name__])[0])}"
+
+
+def flat_keys(table):
+    """The settings a parsed settings table sets, by name: theme, colors.ok, layout.columns, keys.q, …"""
+    import fmsettings
+    out = []
+    for k, v in table.items():
+        out += [fmsettings._norm(f"{k}.{n}") for n in v] if isinstance(v, dict) else [k]
+    return out
+
+
+def layered(cfg, root, run=None):
+    """T-1611: `cfg` (tui.toml's: everywhere) with the narrower scopes over it, in order: this project's settings
+    (project_settings_path), this run's (`run`, held in memory), then the repo's policy pins ([pin] in policy_path),
+    which no scope under them overrides; keys and motion are never pinned. Each setting checked as tui.toml's are, a
+    bad one said and skipped. (config, [problems]); config["scopes"] = {setting: the narrowest scope that set it}."""
+    import copy
+    cfg, problems, where = copy.deepcopy(cfg), [], {}
+    project, why = _settings_file(project_settings_path(root))
+    policy, why2 = _settings_file(policy_path(root))
+    problems += [w for w in (why, why2) if w]
+    pins = policy.get("pin", {})
+    if not isinstance(pins, dict):
+        problems.append(f"{policy_path(root)}: pin: a [pin] table")
+        pins = {}
+    problems += [f"{policy_path(root)}: pin.{k}: never pinned, it stays the person's own" for k in pins if k in PIN_FREE]
+    for name, table, path in (("project", project, project_settings_path(root)),
+                              ("run", copy.deepcopy(run or {}), "this run"),
+                              ("pin", {k: v for k, v in pins.items() if k not in PIN_FREE}, policy_path(root))):
+        problems += [f"{path}: {k}: only tui.toml has [{k}] tables" for k in LAYER_ONLY if table.pop(k, None)
+                     is not None]
+        said = []
+        _apply(cfg, table, said.append)
+        problems += [f"{path}: {_escaped(m)}" for m in said]
+        where.update(dict.fromkeys(flat_keys(table), name))
+    cfg["scopes"] = where
+    return cfg, problems
+
+
 # T-1657: what a [[rule]]'s when clause can name: the run's events, each judged from the State the app already has
 RULE_EVENTS = {
     "running": (lambda st: st.status in LIVE, "a run going"),
@@ -4630,6 +4758,7 @@ def main(args, words, home=False):
               used=os.path.join(fmcore.state_dir(), "code-keys.json"),  # T-1348: the launch tip's memory
               place=os.path.join(fmcore.state_dir(), "code-place.json"))
     app.tui = seen  # T-1543: an edit to tui.toml while it runs is read back in
+    app.cfg = app._layer(app.cfg)  # T-1611: this project's settings and the repo's pins over tui.toml
     app.sweep()  # T-1756: runners a killed run left, stopped as the app opens
     if home:  # T-1330: inside a project, its view; elsewhere every project
         app.show_home()

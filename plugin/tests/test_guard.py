@@ -635,7 +635,7 @@ class Core(GuardCase):
             ("{fhome}/BUILD_PROMPT.md", "core"),
             # T-1328: Foreman's own config that becomes a command, runs Python or picks where code is sent
             ("{fhome}/code.toml", "core"), ("{fhome}/tui.toml", "core"), ("{fhome}/tui/panel.py", "core"),
-            ("{fhome}/models.json", "core"),
+            ("{fhome}/models.json", "core"), ("{fhome}/tui.projects/app-1a2b3c.toml", "core"),  # T-1611
             ("{home}/.claude/settings.json", "core"),
             ("{repo}/.claude/settings.local.json", "core"),
             ("{fhome}/plugin/lib/fmcli.py", "core"),

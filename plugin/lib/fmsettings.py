@@ -1498,6 +1498,8 @@ def cmd_settings(args):
     if not entries:
         raise fmcli.UsageError(f"{args.key}: no such setting{f' in the {args.surface}' if args.surface else ''} "
                                "(fm settings list shows them)")
+    if getattr(args, "scope", None) == "project":
+        return _set_project(args)
     got, refused = set_key(args.key, args.value, args.surface, _project(args))
     done, lines = [], []
     for surface, v, warn in got:
@@ -1517,6 +1519,33 @@ def cmd_settings(args):
         import fmcore
         raise fmcore.PolicyError(f"{len(refused)} of {len(entries)} not written (above)")
     return 0
+
+
+def _set_project(args):
+    """T-1611: fm settings set KEY VALUE --scope project: this project's own settings file, which the fm code app
+    run in it reads over tui.toml (and under the repo's policy pins)."""
+    import fmcli
+    import fmcodetui as T
+    import fmcore
+    p = _project(args)
+    root = p.root if p else fmcore.git_root(os.getcwd())
+    if not root:
+        raise fmcli.UsageError("--scope project: run it inside a project (or name one with -p)")
+    if args.surface == "plugin" or not find(args.key, "app"):
+        raise fmcli.UsageError(f"{args.key}: --scope project holds the app's settings (fm settings list --surface app)")
+    path = T.project_settings_path(root)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        value, warn = set_app(args.key, args.value, path=path, p=p)
+    except SettingError as e:
+        raise fmcli.UsageError(str(e))
+    pinned = (T.layered(T.DEFAULTS, root)[0].get("scopes") or {}).get(_norm(args.key)) == "pin"
+    lines = [f"app: {args.key} = {T._toml(value)} in {path} (this project's: fm code run in {root} reads it)"]
+    lines += [f"  now skipped: {w}" for w in warn]
+    lines += [f"  pinned by {T.policy_path(root)}: the repo's policy wins in the app"] if pinned else []
+    return fmcli.out(args, {"set": [{"surface": "app", "scope": "project", "key": args.key, "value": value,
+                                     "where": path, "warnings": warn, "pinned": pinned}], "refused": []},
+                     _safe("\n".join(lines)))
 
 
 def _project(args):
