@@ -6055,14 +6055,18 @@ def _build_parser():
     s = add("design", lazy("fmdesign", "cmd_design"), tier=("Every task", 92), epilog=fmdesign.rules_help(),
             formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
             "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
-            "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs")
-    s.add_argument("action", choices=["lint", "extract", "palette", "contrast"])
-    s.add_argument("paths", nargs="+", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
+            "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs; "
+            "roll [--seed N] [--apply|--undo]: one look card's palette, type and motion, seeded, into DESIGN.md")
+    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "roll"])
+    s.add_argument("--seed", type=int, help="roll: the same seed gives the same look (default: a fresh one, printed)")
+    s.add_argument("--apply", action="store_true", help="roll: write it as DESIGN.md's ## Look, undoable")
+    s.add_argument("--undo", action="store_true", help="roll: put DESIGN.md back as it was before the roll(s)")
+    s.add_argument("paths", nargs="*", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
                    "root); palette: a seed colour (hex, rgb(), hsl(), oklch()); contrast: a token file, then pairs "
                    "fg/bg[:need[,dark need]] (default: the known role pairs, body text 7:1 in dark)")
     s.add_argument("--format", choices=["css", "dtcg", "tailwind"], default="css",
                    help="palette: CSS light-dark() roles, DTCG JSON or a Tailwind v4 @theme")
-    s.add_argument("--out", metavar="PATH", help="extract: the file to write the Tokens section into (default: "
+    s.add_argument("--out", metavar="PATH", help="extract, roll: the file to write the section into (default: "
                                                  "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints)")
     s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 93), help="PNG files with no Pillow (T-1630): info "
             "PATH: size and mode; diff A B: the changed-pixel count and box (exit 1 when they differ or sizes do)")
