@@ -1393,8 +1393,18 @@ def _num(v):
     return v if isinstance(v, (int, float)) and v == v else 0
 
 
+def _noticed():
+    import fmcode
+    return fmcode.noticed()
+
+
 def _project_row(p):
-    """T-1330: one Foreman project on the home: what's active, its counts, or why it can't be shown."""
+    """T-1330: one Foreman project on the home: what's active, its counts, or why it can't be shown. T-1339: first,
+    a round Foreman queued on itself from runs that went wrong, with their causes."""
+    if p.get("kind") == "noticed":
+        causes = [str(x) for x in p.get("causes") or []]
+        return [(" NOTICED ", "chip_warn"), ("  Foreman noticed", "strong"), (f"  {p.get('task')} ", "dim"),
+                ("  " + ("; ".join(causes[-3:]) if causes else str(p.get("title") or "")), "text")]
     name = str(p.get("project") or "?")
     if p.get("error"):
         return [(" ERROR ", "chip_bad"), ("  " + pad(name, 24), "strong"), ("  " + str(p["error"]), "bad")]
@@ -1793,12 +1803,15 @@ PANEL_HINTS = {"log": "/ search  ↵ open  t thoughts", "files": "d the diff", "
 
 class App:
     def __init__(self, cfg, spawn=None, root=None, opts=None, diff=None, history=None, choices=None, projects=None,
-                 project_state=None, used=None, place=None):
+                 project_state=None, used=None, place=None, noticed=None):
         self.line, self.search, self.search_draft, self.files = LineEditor(), "", "", None  # T-1346, T-1313
         self.cfg, self.state = cfg, State()
         self.mode, self.input, self.message, self.done = "main", "", "", False
         self.used_path, self.used = used, set()  # T-1348: the commands ever run here (a JSON list), for the tip
         self.place_path = place  # T-1338: the project left last, reopened by the next launch from home
+        # T-1339: Foreman's own friction rounds (fmcode.noticed), first on home; a caller giving its own projects (a
+        # test) gives its own noticed too, or none
+        self.noticed_source = noticed if noticed is not None or projects is not None else _noticed
         if used:
             try:
                 with open(used, encoding="utf-8") as f:
@@ -2070,7 +2083,8 @@ class App:
                 name = json.load(f).get("project")
         except (OSError, ValueError, AttributeError):
             return
-        hit = next((x for x in self.items if name and x.get("project") == name and x.get("exists") is not False), None)
+        hit = next((x for x in self.items if name and x.get("project") == name and x.get("exists") is not False
+                    and x.get("kind") != "noticed"), None)
         if hit:
             self.open_project(hit)
             self.message = f"welcome back to {name}"
@@ -2182,6 +2196,11 @@ class App:
             found, self.message = [], f"can't list projects: {e}"
         self.items = sorted((x for x in found if isinstance(x, dict)),  # a missing folder last, then newest first
                             key=lambda x: (x.get("exists") is False, -_num(x.get("updated"))))
+        try:
+            seen = [dict(n, kind="noticed") for n in (self.noticed_source or list)() if isinstance(n, dict)]
+        except Exception:  # what Foreman noticed is extra: home draws without it
+            seen = []
+        self.items = seen + self.items
         self.item_index, self.mode = 0, "home"
 
     def open_project(self, proj):
@@ -2222,7 +2241,12 @@ class App:
             if self.mode == "home":  # back to this list where it was, not read again from the top
                 self.home_items, self.home_index = self.items, self.item_index
             self.show_settings()
-        elif self.mode == "home" and item and cmd in ("expand", "new"):
+        elif self.mode == "home" and item and item.get("kind") == "noticed" and cmd == "expand":
+            target = next((x for x in self.items if x.get("kind") != "noticed" and x.get("project") == item.get("project")),
+                          None)
+            if target:
+                self.open_project(target)
+        elif self.mode == "home" and item and item.get("kind") != "noticed" and cmd in ("expand", "new"):
             self.open_project(item)
             if cmd == "new":
                 self.new_here()
@@ -3576,7 +3600,8 @@ def main(args, words, home=False):
     app.tui = seen  # T-1543: an edit to tui.toml while it runs is read back in
     if home:  # T-1330: inside a project, its view; elsewhere every project
         app.show_home()
-        here = next((x for x in app.items if p and x.get("project") == p.slug), None)  # a worktree too
+        here = next((x for x in app.items if p and x.get("project") == p.slug and x.get("kind") != "noticed"),
+                    None)  # a worktree too
         if here:
             app.open_project(here)
         else:

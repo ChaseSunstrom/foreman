@@ -842,6 +842,7 @@ class Run:
                    "limit": f"hit a rate or usage limit: {last}"}.get(
                 cause, f"silent {silent} s after: {last}" if last else f"silent {silent} s")
             self.emit("stalled", f"    {who} stalled: {why}", worker=who, secs=silent, cause=cause, last=last)
+            run_friction("stalled", cause)  # T-1339
         return beat
 
     def judge(self, b):
@@ -2094,6 +2095,8 @@ def cmd_code(args):
         waiting = unfinished(run.jdir)
         for tid, req in waiting[:3]:
             run.emit("note", f"unfinished run {tid} ({_one_line(req, 60)}): fm code --resume {tid}", unfinished=tid)
+        if waiting:  # T-1339: a run something killed outright
+            run_friction("killed", "a run was left unfinished (killed outright)")
         if len(waiting) > 3:
             run.emit("note", f"… and {len(waiting) - 3} more unfinished runs (the app's history lists them)")
 
@@ -2175,6 +2178,8 @@ def cmd_code(args):
         _drive(run, profile)
     except (m.ModelError, CodeError) as e:  # T-1334: every failure ends with the one command to run next
         msg, then = f"fm code: {'model: ' if isinstance(e, m.ModelError) else ''}{e}", next_step(e, run.tid)
+        if not run.tid:  # T-1339: it failed before any task: a preflight
+            run_friction("preflight", e)
         run.emit("error", msg, quiet=True, task=run.tid, next=then)
         print(f"{msg}\nNext: {then}", file=sys.stderr)
         raise SystemExit(1)
@@ -2182,6 +2187,7 @@ def cmd_code(args):
         run.fm("task", "block", run.tid, str(e)[:500])
         run.log(kind="end", status="blocked", reason=str(e))
         then = f"fm task show {run.tid}"
+        run_friction("blocked", re.sub(r"^fm code: ", "", str(e)))  # T-1339
         run.emit("blocked", f"{run.tid} blocked: {e}", task=run.tid, reason=str(e), next=then)
         print(f"Next: {then}", file=sys.stderr)
         raise SystemExit(1)
@@ -2320,6 +2326,43 @@ def _make_task(run, profile):
     _hold(run)
     _journal_start(run, profile)
     run.emit("task", f"task {run.tid} created and focused", task=run.tid)
+
+
+def run_friction(cause, detail):
+    """T-1339: a run that went wrong (blocked, stalled, killed, or failed before its task) is friction with fm code,
+    filed in Foreman's own project (never the user's) on the one 'Improve fm code' round fmcli.capture_friction keeps
+    (urgent on a second complaint within 7 days), once per cause: its key (the cause and the reason's first words,
+    digits dropped) is logged there and a key already there adds nothing. Never fails the run."""
+    try:
+        import fmcli
+        words = re.sub(r"\d+", "", fmcore.plain(fmcore.redact(str(detail)))).split()
+        key = f"{cause}: {' '.join(words[:8])}".strip()
+        home = fmcore.foreman_home()
+        sp = fmcore.find_project(home, create=True) or fmcore.init_project(home)
+        b = next((b for b in fmcore.load_briefs(sp) if b.status not in fmcore.CLOSED
+                  and b.title.startswith("Improve fm code")), None)
+        if b is not None and f"run friction: {key}" in b.section("Log"):
+            return
+        _, tid, _ = fmcli.capture_friction(sp, f"fm code run {cause}")  # the cause only: a reason quotes the repo
+        with fmcore.lock(sp.dir, timeout=1):
+            b = fmcore.find_brief(sp, tid)
+            b.append_log(f"run friction: {key}")
+            fmcore.save_brief(sp, b, touch=False)
+    except Exception:  # friction is a signal for later: a busy lock or a full disk never touches the run
+        pass
+
+
+def noticed():
+    """T-1339: Foreman's own open friction rounds with the run causes logged on them, newest last:
+    [{project, task, title, causes}]."""
+    try:
+        sp = fmcore.find_project(fmcore.foreman_home())
+        briefs = fmcore.load_briefs(sp) if sp else []
+    except Exception:
+        return []
+    return [{"project": sp.slug, "task": b.id, "title": b.title,
+             "causes": [x.split("run friction: ", 1)[1] for x in b.section("Log").splitlines() if "run friction: " in x]}
+            for b in briefs if b.status not in fmcore.CLOSED and b.title.startswith("Improve ") and b.meta.get("friction_at")]
 
 
 def unfinished(jdir):
