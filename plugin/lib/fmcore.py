@@ -1127,6 +1127,7 @@ _AUDIT_RE = re.compile(r"^-\s+\(audit\s+([a-z]+)\)")
 _TREE_MARK = re.compile(r"\[tree ([0-9a-f]+)\]")
 _RAN_MARK = " [ran]"  # evidence fm produced by running the command (fm task evidence --run, fm check)
 _INCONCLUSIVE = " [inconclusive]"  # T-0255: a run that neither proves nor disproves: kept, never counted
+_REWOUND = " [rewound]"  # T-1267: a step proof whose files a /rewind or a revert took back: kept, never counted
 _ASSUME_RE = re.compile(r"^- (?:\[(assumed|verified|false)(?:: (.*?))?\] )?(.*)$")  # T-0254
 
 
@@ -1139,7 +1140,7 @@ def _ledger(text, code=False):
 
 def _unmarked(text):
     """Typed text can't carry the marks fm appends ([tree …], [ran]): they would forge a worktree id or a run."""
-    return re.sub(r"\[(tree|ran|inconclusive)\b", r"(\1", text)
+    return re.sub(r"\[(tree|ran|inconclusive|rewound)\b", r"(\1", text)
 _TS_TAIL = re.compile(r"\((\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\)\s*$")
 DEFAULT_LENSES = ("intent", "adversary", "edge", "operator", "maintainer")  # what M/L reviews run by default
 # design (T-1501): advisory, never required; fm audit prep adds it only when the diff touches UI (ui_paths)
@@ -1419,7 +1420,25 @@ class Brief:
     def evidence(self):
         """The evidence that counts: an inconclusive run (T-0255) proves nothing, so no caller sees it."""
         return [l for l in self.section("Verification evidence").splitlines()
-                if l.startswith("- ") and _INCONCLUSIVE not in l]
+                if l.startswith("- ") and _INCONCLUSIVE not in l and _REWOUND not in l]
+
+    def mark_rewound(self, steps, now):
+        """T-1267: reopen `steps` (see rewound()): their proofs kept but marked rewound, the first open step current."""
+        lines = self.section("Verification evidence").splitlines()
+        for i, line in enumerate(lines):
+            m, t = _EV_RE.match(line), _TS_TAIL.search(line)
+            if m and t and m.group(1) == "step" and int(m.group(2)) in steps and _REWOUND not in line:
+                lines[i] = line[:t.start()].rstrip() + _REWOUND + " " + line[t.start():]
+        self.set_section("Verification evidence", "\n".join(lines) + "\n")
+        all_ = self.steps()
+        for x in all_:
+            x.done = x.done and x.n not in steps
+        first = min(x.n for x in all_ if not x.done)
+        for x in all_:
+            x.current = x.n == first
+        self._write_steps(all_)
+        self.append_log(f"rewind: the working files (tree {now}) are back to before the proof of step(s) "
+                        f"{', '.join(map(str, steps))}: reopened, their proofs kept as rewound")
 
     def inconclusive(self, step=None):
         return [l for l in self.section("Verification evidence").splitlines() if _INCONCLUSIVE in l
@@ -2389,6 +2408,51 @@ def next_action(b, autonomy="standard", since=None):
         lesson = "" if b.tier == "S" or b.section("Lessons").strip() else " --lesson \"<what the next similar task should know>\""
         return f"{tid}: fm task done {tid}{lesson}, then /foreman:next"
     return f"{tid} is {st}"
+
+
+def rewound(b, now):
+    """T-1267: the steps whose newest passing proof no longer describes the working files: `now` (a worktree id) is a
+    tree recorded before that proof (the task's start or an earlier run), isn't the proof's own, and no run since was
+    recorded on it (later work that undid a step proves its own tree). Claude Code raises no rewind event: a /rewind,
+    a revert or a checkout shows here as files back where they were."""
+    rows = []  # (what, passed, tree, order): the section is append-only, so its order is the order things happened
+    for i, line in enumerate(b.evidence()):
+        m, w = _EV_RE.match(line), _TREE_MARK.search(line)
+        if w:
+            rows.append(((m.group(1), int(m.group(2))) if m else None, "` → ✗ " not in line, w.group(1), i))
+    start, out = (b.meta.get("base_tree") or "")[:12], []
+    for s in b.steps():
+        proofs = [r for r in rows if r[0] == ("step", s.n) and r[1]]
+        if not now or not proofs:
+            continue
+        _, _, tree, at = proofs[-1]
+        before = {start} | {r[2] for r in rows if r[3] < at}
+        if now != tree and now in before and not any(r[2] == now and r[3] > at for r in rows):
+            out.append(s.n)
+    return out
+
+
+def reconcile_rewind(p, lane=None, timeout=2):
+    """T-1267: rewound() on the active task against the working files now, reopening what it finds; the caller holds
+    the project lock. (task id, steps) when it reopened any, else None."""
+    b = active_brief_fast(p, lane)
+    if not b or not b.steps() or not b.meta.get("base_tree"):
+        return None
+    now = (worktree_tree(p.root, timeout) or "")[:12]
+    steps = rewound(b, now)
+    if not steps:
+        return None
+    b.mark_rewound(steps, now)
+    save_brief(p, b)
+    log_event(p, "rewound", task=b.id, data={"steps": steps, "tree": now})
+    return b.id, steps
+
+
+def rewind_note(hit):
+    tid, steps = hit
+    return (f"Foreman: the working files are back to before the proof of {tid} step(s) {', '.join(map(str, steps))} "
+            f"(a /rewind or a revert): reopened, and their proofs no longer count. Do them again and re-prove them "
+            f"(fm next).")
 
 
 def last_change(p, tid):

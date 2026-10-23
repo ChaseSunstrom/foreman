@@ -113,6 +113,11 @@ def cmd_init(args):
 
 def cmd_state(args):
     p = resolve(args, create=not args.line)  # T-0962: a status bar polling --line never creates a project
+    if not args.line:  # T-1267: a /rewind or a revert took back a done step's files: reopen it
+        with c.lock(p.dir):
+            hit = c.reconcile_rewind(p, getattr(p, "lane", None))
+        if hit and not args.json:
+            print(c.rewind_note(hit) + "\n")
     sd = c.state_dict(p)
     if args.cmd == "status" and not (args.line or args.json) and not c.load_briefs(p):  # T-0847: nothing yet
         return print(f"{p.slug}: no tasks yet. Start with fm capture \"<request>\" or fm task new \"<title>\" --type FIX "
@@ -6097,6 +6102,14 @@ def _build_parser():
     b = bsp.add_parser("scorecard", help="each saved run's pass rate on the train and holdout splits (T-0734)")
     b.add_argument("--json", action="store_true")
     b.add_argument("-p", "--project", default=argparse.SUPPRESS)
+    b = bsp.add_parser("repro", help="rerun one duel row on both sides with its saved model and settings: fm bench "
+                                     "repro LABEL CASE, as the benchmarks page's Where Foreman loses names it (T-1261)")
+    b.add_argument("--json", action="store_true")
+    b.add_argument("-p", "--project", default=argparse.SUPPRESS)
+    b.add_argument("label", help="the Foreman side's results label (duel-none-foreman-<time>)")
+    b.add_argument("case", help="the case id")
+    b.add_argument("--budget", type=float, help="USD per session (default: the run's own, else 3)")
+    b.add_argument("--timeout", type=int, default=30, help="minutes per session")
     b = bsp.add_parser("hygiene", help="cases that pass or fail the same in every saved run: they tell no version "
                                         "from another (T-0656)")
     b.add_argument("--json", action="store_true")
@@ -6159,8 +6172,10 @@ def _build_parser():
         b.add_argument("-p", "--project", default=argparse.SUPPRESS)
         if name == "duel":
             b.add_argument("plugin", nargs="?", help="a plugin folder, or an installed plugin's id")
-            b.add_argument("--vs", choices=["none"], help="none: Foreman against Claude with no plugins (only the "
-                                                          "guard, as a settings hook) instead of a rival (T-0963)")
+            b.add_argument("--vs", choices=["none", "snippet"], help="none: Foreman against Claude with no plugins "
+                           "(only the guard, as a settings hook) instead of a rival (T-0963); snippet: against Claude "
+                           "with no plugins reading Foreman's rules as one CLAUDE.md, plugin/templates/CLAUDE.lite.md "
+                           "(T-1264)")
         if name == "versions":
             b.add_argument("rev", help="the earlier Foreman revision (a commit, tag or HEAD~N)")
             b.add_argument("--source", help="the Foreman checkout REV is in (default: the running one's repo)")
@@ -6170,6 +6185,11 @@ def _build_parser():
             b.add_argument("--ids", nargs="+", help="only these case ids")
         if name == "soak":
             b.add_argument("--turns", type=int, default=3, help="the user's replies at most")
+            b.add_argument("--compact-at", type=int, metavar="TOKENS", help="a compaction storm: each session "
+                           "compacts once its context nears TOKENS (CLAUDE_CODE_AUTO_COMPACT_WINDOW), every few turns "
+                           "when small; each case counts its compactions (T-1259)")
+            b.add_argument("--sweep", metavar="T1,T2", help="the soak once per compaction window (20000,40000,80000), "
+                           "a row each: passes, repeats, compactions and cost (T-1259)")
         b.add_argument("--max", type=int, default=1 if name == "soak" else 3 if name != "court" else 8,
                        help="cases to run")
         b.add_argument("--model")
@@ -6406,6 +6426,8 @@ def _build_parser():
     s.add_argument("--catalogue", metavar="NAME", help="research/NAME.json or research/NAME/catalogue.json: clusters")
     s.add_argument("--url", help="record the Artifact link from a first publish, printed on later runs")
     s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
+    s.add_argument("--cards", action="store_true", help="looks: the look cards as trading cards on a print sheet "
+                   "(63 x 88 mm, nine to an A4 page) instead of the gallery")
     s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
                                                    "in state picks.json; needs --catalogue (T-0962)")
     s.add_argument("what", nargs="?", choices=["looks", "city", "graph"], help="looks: the looks gallery instead, one "

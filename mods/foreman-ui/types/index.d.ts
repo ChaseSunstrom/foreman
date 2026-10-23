@@ -141,6 +141,7 @@ declare module 'claude-code' {
       away: string[]
       resumed: string | null // the resume record (its `at`) this session already acted on
       reviewing: string | null // T-0989: the waiting plan shown in the Task section, by id
+      scrub: number // T-1081: how many history entries back the pane is showing
     }
   }
 }

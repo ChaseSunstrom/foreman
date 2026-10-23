@@ -20,7 +20,8 @@ system = args[args.index("--append-system-prompt") + 1] if "--append-system-prom
 with open(os.environ["STUB_LOG"], "a") as f:
     f.write(json.dumps({"args": args, "stdin": stdin, "system": system,
                         "window": os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW"),
-                        "marathon": os.environ.get("FOREMAN_MARATHON")}) + "\n")
+                        "marathon": os.environ.get("FOREMAN_MARATHON"),
+                        "claude_md": open("CLAUDE.md").read() if os.path.exists("CLAUDE.md") else None}) + "\n")
 if "--plugin-dir" in args and os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW"):  # a kept session that compacted twice
     d = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", "-tmp-replay")
     os.makedirs(d, exist_ok=True)
@@ -296,6 +297,63 @@ class Soak(_Bench):
         res = json.loads(self.fm("bench", "soak", "--ids", self.calc, "--json", env=dict(self.env, STUB_NO_SID="1")).stdout)
         self.assertIn("session id", res["cases"][0]["error"])
         self.assertFalse(res["cases"][0]["pass"])
+
+
+class Snippet(_Bench):  # T-1264
+    def test_a_snippet_duel_gives_claude_with_no_plugins_the_one_file_rules_as_claude_md(self):
+        self.fm("bench", "build", env=self.env)
+        res = json.loads(self.fm("bench", "duel", "--vs", "snippet", "--ids", self.calc, "--json", env=self.env).stdout)
+        self.assertTrue(res["with"].startswith("duel-snippet-bare-"), res)
+        rules = read_text(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates",
+                                       "CLAUDE.lite.md"))
+        tasks = [s for s in self.calls() if s["args"][:1] == ["-p"] and s["args"][1].startswith("Task:")]
+        self.assertEqual(len(tasks), 2)
+        bare = [s for s in tasks if "--plugin-dir" not in s["args"]]
+        self.assertEqual(len(bare), 1)
+        self.assertIn(rules.strip(), bare[0]["claude_md"] or "", "Claude with no plugins reads the rules")
+        self.assertIsNone(next(s for s in tasks if "--plugin-dir" in s["args"])["claude_md"], "Foreman's side doesn't")
+        self.assertIn("Claude with Foreman's rules as one CLAUDE.md", json.dumps(res))
+        p = self.fm("bench", "duel", "some-plugin", "--vs", "snippet", "--ids", self.calc, env=self.env, check=False)
+        self.assertNotEqual(p.returncode, 0)
+
+
+class Repro(_Bench):  # T-1261
+    def test_repro_reruns_one_duel_row_on_both_sides_with_its_saved_settings(self):
+        self.fm("bench", "build", env=self.env)
+        res = json.loads(self.fm("bench", "duel", "--vs", "none", "--ids", self.calc, "--json", env=self.env).stdout)
+        tasks = lambda: [s for s in self.calls()  # noqa: E731  both sides' task sessions (the bare one has no plugin)
+                         if s["args"][:1] == ["-p"] and s["args"][1].startswith("Task:")]
+        before = len(tasks())
+        out = self.fm("bench", "repro", res["without"], self.calc, env=self.env).stdout
+        self.assertIn(f"fm bench repro {res['without']} {self.calc}", out)
+        self.assertRegex(out, r"Foreman: then [✓✗].*, now [✓✗]")
+        self.assertRegex(out, r"Claude Code: then [✓✗].*, now [✓✗]")
+        self.assertEqual(len(tasks()) - before, 2, "one session a side")
+        for bad in ((res["with"], self.calc), (res["without"], "nope"), ("duel-none-foreman-missing", self.calc)):
+            p = self.fm("bench", "repro", *bad, env=self.env, check=False)
+            self.assertNotEqual(p.returncode, 0, bad)
+
+
+class SoakStorm(_Bench):  # T-1259
+    def test_a_soak_storm_compacts_early_and_a_sweep_runs_once_per_window(self):
+        cfg = os.path.join(self.tmp, "cfg")
+        env = dict(self.env, CLAUDE_CONFIG_DIR=cfg)
+        self.fm("bench", "build", env=env)
+        res = json.loads(self.fm("bench", "soak", "--ids", self.calc, "--turns", "1", "--compact-at", "20000",
+                                 "--json", env=env).stdout)
+        self.assertEqual((res["cases"][0]["compactions"], res["compact_at"]), (2, 20000))
+        self.assertEqual({s["window"] for s in self.sessions()}, {"20000"}, "every soak session compacts early")
+        self.assertFalse(os.path.exists(os.path.join(cfg, "projects", "-tmp-replay")), "the kept session is removed")
+        out = json.loads(self.fm("bench", "soak", "--ids", self.calc, "--turns", "1", "--sweep", "20000,40000",
+                                 "--json", env=env).stdout)
+        self.assertEqual([w["compact_at"] for w in out["windows"]], [20000, 40000])
+        self.assertTrue(all(w["cases"][0]["compactions"] == 2 for w in out["windows"]))
+        text = self.fm("bench", "soak", "--ids", self.calc, "--turns", "1", "--sweep", "30000", env=env).stdout
+        self.assertRegex(text, r"window 30000: \d/1 passed · \d+ repeat\(s\) · 2 compaction\(s\)")
+        for bad in (["--sweep", "10"], ["--sweep", "a,b"], ["--compact-at", "20000", "--sweep", "30000"],
+                    ["--compact-at", "0"]):
+            p = self.fm("bench", "soak", "--ids", self.calc, *bad, env=env, check=False)
+            self.assertNotEqual(p.returncode, 0, bad)
 
 
 class Marathon(_Bench):

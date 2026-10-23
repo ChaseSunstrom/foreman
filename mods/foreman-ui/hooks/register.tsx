@@ -703,6 +703,17 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // T-1262: a grant is a person's to give. Foreman's PreToolUse hook asks for each lone fm ask; answered here as this
+  // plugin's own ask, Claude Code puts it only to the dialog, a host's callback or a PermissionRequest hook: auto
+  // mode's classifier, bypass mode and a saved rule for all of Bash can't settle it, and where nobody can be asked it
+  // is refused. On a failure the verdict beneath stands: the classic ask (the grant still needs the dialog's record).
+  on('tool.check', { tool: 'Bash' }, async ($, e, next) => {
+    const r = await next(e)
+    return r.decision === 'ask' && r.hook === 'PreToolUse' && /^Foreman asks /.test(r.reason ?? '')
+      ? { decision: 'ask', reason: r.reason }
+      : r
+  }).catch(($, e, next) => next(e)) // the verdict beneath: the classic ask, never an allow of its own
+
   on('tool.call', async ($, e, next) => {
     const id = e.tool_use_id
     let noteTimer: { cancel: () => void } | null = null
