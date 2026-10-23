@@ -582,6 +582,32 @@ class SupplyDelta(ForemanTestCase):
         os.utime(big, ns=(st.st_atime_ns, st.st_mtime_ns))
         self.assertNotEqual(stands(), before)
 
+    def test_a_large_file_edited_in_place_with_size_and_mtime_put_back_is_a_change(self):  # T-1446
+        big = os.path.join(self.plugin, "assets", "model.bin")
+        write(big, "a" * 5_000_000)
+        fmdoctor.check_supply(self.claude, accept=True)
+        st = os.stat(big)
+        with open(big, "r+b") as f:  # one byte in the middle: same size
+            f.seek(2_500_000)
+            f.write(b"b")
+        os.utime(big, ns=(st.st_atime_ns, st.st_mtime_ns))
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "its bytes are hashed, not only its stat")
+
+    def test_a_baseline_from_before_the_large_hash_reads_unchanged(self):  # T-1446
+        write(os.path.join(self.plugin, "assets", "model.bin"), "a" * 5_000_000)
+        fmdoctor.check_supply(self.claude, accept=True)
+        path = os.path.join(c.state_dir(), "supply.json")
+        with open(path) as f:
+            old = json.load(f)
+        for v in old.values():
+            if isinstance(v, dict):
+                v.pop("large", None)
+        with open(path, "w") as f:
+            json.dump(old, f)
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        with open(path) as f:
+            self.assertIn("large", json.load(f)["p@m"], "upgraded in place")
+
     def test_a_pyc_matching_its_source_is_not_a_change(self):
         import py_compile
         src = os.path.join(self.plugin, "hooks", "m.py")

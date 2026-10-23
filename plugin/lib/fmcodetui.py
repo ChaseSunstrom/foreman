@@ -16,6 +16,7 @@ import math
 import os
 import queue
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -129,6 +130,7 @@ class NewerStream(ValueError):
 class State:
     def __init__(self):
         self.request = self.task = self.model = self.worker = self.error = None
+        self.next = self.stall = self.containment = None  # T-1762: a failure's next command, a live stall's words
         self.plan, self.criteria, self.steps, self.step = {}, [], [], 0
         self.actions, self.log, self.verify, self.files, self.stat = [], [], [], {}, {}
         self.tokens, self.calls, self.status, self.closed = [0, 0], [], "idle", ""
@@ -160,6 +162,8 @@ class State:
             if "ts" in e:
                 self.first_ts = self.first_ts or e["ts"]
                 self.last_ts = e["ts"]
+            if kind not in ("stalled", "working", "tokens"):  # T-1762: anything it does after a stall ends it
+                self.stall = None
         for h in (HANDLERS.get(kind, []) + HANDLERS.get("*", [])) if isinstance(kind, str) else []:
             t0, why = time.monotonic(), None
             try:
@@ -281,6 +285,7 @@ class State:
 
     def _on_stalled(self, e):  # T-1336: a CLI turn silent past FM_STALL, with its likely cause: a warning that stays
         self.note("stalled", text=str(e.get("text") or "stalled"))
+        self.stall = str(e.get("text") or "stalled").strip()  # T-1762: its card, until the turn shows life
         self.heard = _secs(e.get("secs"))
 
     def _on_answer(self, e):  # T-1320: a question answered: no task, nothing changed
@@ -301,6 +306,7 @@ class State:
     def _next(self, e):  # T-1334: the one command to run now, under the failure
         if e.get("next"):
             self.note("next", text=str(e["next"]))
+            self.next = str(e["next"])[:200]  # T-1762: its card runs it on Enter
 
     def _on_exit(self, e):  # the TUI's own: the child ended
         if self.status in ("planning", "running", "fixing", "idle") and e.get("code"):
@@ -1213,6 +1219,8 @@ def render(st, w, h, cfg, app=None, t=None):
         app.order = order
     _header(cv, st, app)
     _status(cv, st, app)
+    if app is not None:  # T-1762: a failure's or a stall's card, above the status bar (and the request box)
+        _card(cv, st, app, cfg, h - 1 - (2 if prompt else 1 if search else 0))
     if prompt:  # T-1346: the cursor where the line editor has it, and where Enter sends the request
         shown = lambda s: s.replace("\n", " ↵ ")
         cv.fill(h - 3, "input")
@@ -1326,8 +1334,50 @@ def intraline(lines):
 DIFF_RATE = 40  # T-1312: lines a second the diff view reveals on open
 
 
+def card(st, app):
+    """T-1762: the card a failure or a live stall shows over the run, or None: (kind, title, rows, keys). A failure's
+    rows: what happened, what Foreman did, the next command (Enter runs it); a stall's: w waits, k stops the run,
+    m stops it and picks another runner to resume with. Esc hides it until the next one."""
+    if app is None or app.mode != "main":
+        return None
+    if st.status in ("error", "blocked") and st.error:
+        did = (f"blocked {st.task}: its log says why" if st.status == "blocked" else
+               f"stopped; {st.task} stays as it was" if st.task else "stopped before any task: nothing ran")
+        kind, rows = "failure", [("what happened", str(st.error)), ("Foreman did", did),
+                                 ("next", st.next or "nothing to run")]
+        keys = ("Enter runs it · " if st.next else "") + "Esc hides"
+        title = "Stopped"
+    elif st.stall and st.status in LIVE:
+        kind, title = "stall", "Stalled"
+        rows = [("what happened", st.stall), ("Foreman did", "kept the turn going; nothing is lost"),
+                ("next", "w wait · k stop the run · m stop and resume with another runner")]
+        keys = "w · k · m · Esc hides"
+    else:
+        return None
+    if app.card_hidden == (kind, rows[0][1]):
+        return None
+    return kind, title, rows, keys
+
+
+def _card(cv, st, app, cfg, bottom):
+    got = card(st, app)
+    if not got:
+        return
+    _, title, rows, keys = got
+    h, w = len(rows) + 2, min(cv.w, 110)
+    iy, ix, ih, iw = box(cv, bottom - h, 0, h, w, title, cfg, focused=True, note=keys)
+    for r, (label, text) in enumerate(rows[:ih]):
+        cv.line(iy + r, ix, [(f"{label:<15}", "dim"), (_one_line(text), "bad" if r == 0 else
+                                                                     "accent" if label == "next" else "text")],
+                ix + iw)
+
+
+def _one_line(text):
+    return " ".join(str(text).split())
+
+
 def _diff_view(cv, st, app, cfg):
-    iy, ix, ih, iw = _overlay(cv, cfg, "Changes", "q closes")
+    iy, ix, ih, iw = _overlay(cv, cfg, app.view_title or "Changes", "q closes")
     lines = app.view_lines or ["no changes"]
     app.view_scroll = max(0, min(app.view_scroll, len(lines) - ih))
     fx = current()
@@ -1812,6 +1862,8 @@ class App:
         self.mode, self.input, self.message, self.done = "main", "", "", False
         self.used_path, self.used = used, set()  # T-1348: the commands ever run here (a JSON list), for the tip
         self.place_path = place  # T-1338: the project left last, reopened by the next launch from home
+        self.card_hidden = self.after_pick = self.view_title = None  # T-1762
+        self.stopping = []  # T-1756: (name, pid) of the runners the last stop ended
         # T-1339: Foreman's own friction rounds (fmcode.noticed), first on home; a caller giving its own projects (a
         # test) gives its own noticed too, or none
         self.noticed_source = noticed if noticed is not None or projects is not None else _noticed
@@ -1922,6 +1974,8 @@ class App:
             return None
         if self.mode in ("home", "project"):
             return self._home_key(k)
+        if self.mode == "main" and self._card_key(k):  # T-1762
+            return None
         if self.mode in ("diff", "history", "picker"):
             return self._view_key(k)
         cmd = self.cfg["keys"].get(k)
@@ -1962,6 +2016,9 @@ class App:
                 kind, name = item
                 self.opts.update(model=name if kind == "model" else None, worker=name if kind == "worker" else None)
                 self.message = f"next run: {kind} {name}"
+                if self.after_pick == "resume":  # T-1762: m on a stall's card: carry the run on with this one
+                    self.after_pick = None
+                    self.resume()
 
     @property
     def input(self):  # T-1346: the request box's text, kept by its line editor
@@ -2159,11 +2216,110 @@ class App:
             except OSError:
                 pass
         if self.running():
+            self.stopping = self._runners_of_child()  # T-1756: named on the way out
             try:
                 os.killpg(self.child.pid, signal.SIGTERM)
             except (OSError, AttributeError):
                 pass
             self.message = "stopped: r resumes"
+
+    # -- cards (T-1762)
+    READ_ONLY_NEXT = re.compile(r"fm (?:task show T-\d+|code why(?: T-\d+)?|doctor|code models|code runners|code config)")
+
+    def _card_key(self, k):
+        """A key the card on screen takes (True), or False to let it through."""
+        got = card(self.state, self)
+        if not got:
+            return False
+        kind, _, rows, _ = got
+        if k == "\x1b":
+            self.card_hidden = (kind, rows[0][1])
+        elif kind == "failure" and k in ("\n", "\r", "KEY_ENTER") and self.state.next:
+            self.run_next(self.state.next)
+        elif kind == "stall" and k == "w":
+            self.card_hidden, self.message = (kind, rows[0][1]), "waiting: the turn goes on"
+        elif kind == "stall" and k == "k":
+            self.stop()
+        elif kind == "stall" and k == "m":
+            self.stop()
+            try:
+                self.child.wait(5)
+            except (subprocess.TimeoutExpired, AttributeError):
+                pass
+            self.after_pick, self.view_back = "resume", "main"
+            self.show_picker()
+        else:
+            return False
+        return True
+
+    def run_next(self, nxt):
+        """T-1762: a failure's next command, one key away: a resume carries the run on here; a read-only fm command's
+        output opens in a view; anything else is named for the user's own shell (it may need their answer)."""
+        if nxt.startswith("fm code --resume"):
+            return self.resume()
+        if not self.READ_ONLY_NEXT.fullmatch(nxt):
+            self.message = f"run it in your shell: {nxt}"
+            return None
+        try:
+            out = self.fm_output(shlex.split(nxt)[1:])
+        except (OSError, subprocess.SubprocessError) as e:
+            out = f"couldn't run {nxt}: {e}"
+        self.view_lines, self.view_title, self.view_marks = out.splitlines() or ["(no output)"], nxt, {}
+        self.view_scroll, self.view_opened, self.view_back, self.mode = 0, self.clock(), "main", "diff"
+        return None
+
+    def fm_output(self, argv):
+        r = subprocess.run([sys.executable, FM, *argv], cwd=self.root, capture_output=True, text=True, timeout=30,
+                           stdin=subprocess.DEVNULL)
+        return (r.stdout + r.stderr).strip()
+
+    def sweep(self):
+        """T-1756: at the app's start, the runners a killed run left are stopped, and the status bar says so."""
+        import fmcode
+        try:
+            stopped = fmcode.stop_survivors()
+        except Exception:  # a sweep is housekeeping: the app opens whatever it finds
+            stopped = []
+        if stopped:
+            self.message = f"stopped {len(stopped)} runner(s) a killed run left (pid {', '.join(map(str, stopped))})"
+        return stopped
+
+    def _runners_of_child(self):
+        """T-1756: (name, pid) of each runner the running fm code registered (fmcode's code-procs entries it owns)."""
+        import fmcode
+        out, owner = [], str(getattr(self.child, "pid", ""))
+        try:
+            names = [n for n in os.listdir(fmcode._registry()) if n.isdigit()]
+        except OSError:
+            return out
+        for n in names:
+            try:
+                with open(fmcode._registry(n)) as f:
+                    if f.read().split()[1] != owner:
+                        continue
+                with open(f"/proc/{n}/cmdline", "rb") as f:
+                    name = os.path.basename(os.fsdecode(f.read().split(b"\0")[0])) or "runner"
+            except (OSError, IndexError):
+                continue
+            out.append((name, int(n)))
+        return out
+
+    def stop_report(self, wait=3.0):
+        """T-1756: after a stop, a line per runner it had: 'stopping NAME (pid N)… stopped'; one still there after
+        `wait` s has its group killed and says so."""
+        lines, end = [], time.monotonic() + wait
+        for name, pid in self.stopping:
+            while time.monotonic() < end and _alive(pid):
+                time.sleep(0.05)
+            how = "stopped"
+            if _alive(pid):
+                try:
+                    os.killpg(pid, signal.SIGKILL)
+                    how = "stopped (killed)"
+                except OSError:
+                    how = f"still running: kill {pid}"
+            lines.append(f"stopping {name} (pid {pid})… {how}")
+        return lines
 
     def resume(self):
         if self.running() or not self.state.task:
@@ -2176,7 +2332,7 @@ class App:
             self.view_lines = (self.diff_source() or "").splitlines()
         except (OSError, subprocess.SubprocessError) as e:
             self.view_lines = [f"no diff: {e}"]
-        self.view_scroll, self.mode = 0, "diff"
+        self.view_scroll, self.mode, self.view_title = 0, "diff", None
         self.view_opened, self.view_marks = self.clock(), intraline(self.view_lines)  # T-1312
 
     # -- the app (T-1330): home over every Foreman project, a project's work and past runs
@@ -2852,6 +3008,19 @@ def _json_line(raw):
     except ValueError:
         return None
     return e if isinstance(e, dict) else None
+
+
+def _alive(pid):
+    """A pid that is a live process (a zombie isn't)."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().rsplit(")", 1)[1].split()[0] not in "ZX"
+    except (OSError, IndexError):
+        try:
+            os.kill(pid, 0)
+            return not os.path.isdir("/proc")
+        except OSError:
+            return False
 
 
 def history(folder):
@@ -3601,6 +3770,7 @@ def main(args, words, home=False):
               used=os.path.join(fmcore.state_dir(), "code-keys.json"),  # T-1348: the launch tip's memory
               place=os.path.join(fmcore.state_dir(), "code-place.json"))
     app.tui = seen  # T-1543: an edit to tui.toml while it runs is read back in
+    app.sweep()  # T-1756: runners a killed run left, stopped as the app opens
     if home:  # T-1330: inside a project, its view; elsewhere every project
         app.show_home()
         here = next((x for x in app.items if p and x.get("project") == p.slug and x.get("kind") != "noticed"),
@@ -3612,6 +3782,8 @@ def main(args, words, home=False):
         if problems:
             app.message = booted or f"{len(problems)} setting(s) skipped: {problems[0]}"
         run_screen(app)
+        for line in app.stop_report():  # T-1756: after the screen is gone, each runner the quit stopped
+            print(line, file=sys.stderr)
         return 0
     resume = getattr(args, "resume", None)
     first = (lambda: app.start([], resume=resume or True)) if resume is not None else (
@@ -3627,4 +3799,6 @@ def main(args, words, home=False):
     if first:
         first()
     run_screen(app)
+    for line in app.stop_report():  # T-1756
+        print(line, file=sys.stderr)
     return 0
