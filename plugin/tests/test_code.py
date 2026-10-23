@@ -625,6 +625,31 @@ def run_friction_lines(case):
     return b and [x.split("run friction: ", 1)[1] for x in b.section("Log").splitlines() if "run friction: " in x]
 
 
+class SkillOffer(CodeCase):  # T-1397
+    def test_a_matching_indexed_skill_is_offered_once_and_nothing_else_is(self):
+        kit = os.path.join(self.tmp, "kit")
+        for rel, body in {"skills/pdf/SKILL.md": "---\nname: pdf\ndescription: Extract text and tables from PDF "
+                                                  "files, fill forms\n---\n" + "body\n" * 200,
+                          "skills/docx/SKILL.md": "---\nname: docx\ndescription: Word documents and their tables\n---\n",
+                          "LICENSE": "MIT License\n\nCopyright\n"}.items():
+            os.makedirs(os.path.dirname(os.path.join(kit, rel)), exist_ok=True)
+            with open(os.path.join(kit, rel), "w") as f:
+                f.write(body)
+        for a in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "kit"]):
+            subprocess.run(["git", "-C", kit, *a], check=True)
+        p = subprocess.run([sys.executable, FM, "lib", "source", "add", kit, "--name", "kit"], cwd=self.repo,
+                           env=self.env(), capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.serve("openai", plan())
+        out = self.code("extract tables from this pdf", "--model", "fake", "--dry-plan").stdout
+        offers = [x for x in out.splitlines() if "skill: " in x]
+        self.assertEqual(len(offers), 1, out)
+        self.assertIn("skill: kit:pdf matches (open, ~", offers[0])
+        self.assertIn("nothing is installed", out)
+        self.serve("openai", plan())
+        self.assertNotIn("skill:", self.code("fix add", "--model", "fake", "--dry-plan").stdout)
+
+
 class Toolchain(CodeCase):  # T-1407
     def test_pins_are_read_as_data(self):
         import fmcode
