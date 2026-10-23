@@ -51,6 +51,21 @@ FREEZE = """(() => {
 # held at its start. Either way a frozen shot is the same on every run.
 HOLD = ("document.getAnimations().forEach(a => { try { const t = a.effect && a.effect.getComputedTiming(); "
         "if (t && isFinite(t.endTime)) a.finish(); else { a.pause(); a.currentTime = 0; } } catch (e) { a.pause(); } })")
+# T-1637: the font families the page asked for but drew in a fallback, once its fonts settle (5 s at most): a family
+# with a face that failed to load, or one an element names first with none of its faces loaded. A declared face no
+# element uses stays unloaded and isn't one. ponytail: a family that's neither declared nor installed falls back
+# unseen (document.fonts lists only @font-face faces); local-font probing would catch it.
+FONTS = """Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 5000))]).then(() => {
+  const bare = s => s.trim().replace(/^["']|["']$/g, "").toLowerCase(), used = new Set(), faces = new Map();
+  for (const el of document.querySelectorAll("body, body *"))
+    used.add(bare(getComputedStyle(el).fontFamily.split(",")[0]));
+  document.fonts.forEach(f => { const k = f.family.trim().replace(/^["']|["']$/g, "");
+    faces.set(k, (faces.get(k) || []).concat(f.status)); });
+  const bad = [];
+  faces.forEach((st, fam) => { if (st.includes("error") || (used.has(bare(fam)) && !st.includes("loaded")))
+    bad.push({family: fam, status: [...new Set(st)].join("/")}); });
+  return bad;
+})"""
 OURS = re.compile(r"(viewport|poster|frame-\d+)\.png")
 NAMES = ("chrome-headless-shell", "chromium", "chromium-browser", "google-chrome")
 NONE = ("no browser found (looked for FOREMAN_CHROME, chrome-headless-shell, chromium, chromium-browser or "
@@ -249,8 +264,38 @@ def _write(folder, name, data):
     return path
 
 
+def fonts(b):
+    """[{family, status}] the page drew in a fallback font (FONTS), at most 20; None if the page wouldn't say."""
+    got = b.call("Runtime.evaluate", b.sid, expression=FONTS, awaitPromise=True, returnByValue=True)
+    found = (got.get("result") or {}).get("value")
+    if "exceptionDetails" in got or not isinstance(found, list):
+        return None
+    return [{"family": str(f.get("family"))[:100], "status": str(f.get("status"))[:40]}
+            for f in found[:20] if isinstance(f, dict)]
+
+
+def floor(folder):
+    """(the baseline's viewport shot, its noise floor): the most pixels any of its frames differs from that shot,
+    0 without frames. ponytail: pure-Python diffs, about a second a megapixel per frame."""
+    view = fmimg.load(os.path.join(folder, "viewport.png"))
+    frames = sorted(f for f in os.listdir(folder) if re.fullmatch(r"frame-\d+\.png", f))
+    return view, max((fmimg.diff(view, fmimg.load(os.path.join(folder, f)))["changed"] for f in frames), default=0)
+
+
+def compare(page, base):
+    """The page's viewport shot against BASE/<its folder's name>/: {baseline, changed, floor, bbox, ok}, or
+    {baseline, error, ok: False} when the baseline is missing, unreadable or another size."""
+    ref = os.path.join(base, os.path.basename(page["folder"]))
+    try:
+        view, noise = floor(ref)
+        d = fmimg.diff(view, fmimg.load(page["shots"][0]))
+    except (OSError, ValueError) as e:
+        return {"baseline": ref, "error": str(e), "ok": False}
+    return {"baseline": ref, "changed": d["changed"], "floor": noise, "bbox": d["bbox"], "ok": d["changed"] <= noise}
+
+
 def shoot(b, url, folder, frames, every, frozen):
-    """One page: {url, folder, shots, animated, poster_of, notes}."""
+    """One page: {url, folder, shots, animated, poster_of, fallback_fonts, notes}."""
     notes = []
     b.events.clear()  # the last page's load is not this one's
     nav = b.call("Page.navigate", b.sid, url=url)
@@ -259,6 +304,9 @@ def shoot(b, url, folder, frames, every, frozen):
     if not b.wait("Page.loadEventFired", LOAD_S):
         notes.append(f"still loading after {LOAD_S} s; shot as it stood")
     time.sleep(SETTLE_S)
+    fell = fonts(b)
+    if fell is None:
+        notes.append("document.fonts didn't answer: fonts unchecked")
     if frozen:
         b.call("Runtime.evaluate", b.sid, expression=HOLD)
     shots = [_write(folder, "viewport.png", b.png())]
@@ -277,7 +325,7 @@ def shoot(b, url, folder, frames, every, frozen):
             notes.append("still moves with the clock frozen and CSS animations paused (a canvas, video, timer or "
                          "requestAnimationFrame loop)")
     return {"url": url, "folder": folder, "shots": shots, "animated": animated, "poster_of": poster_of,
-            "notes": notes}
+            "fallback_fonts": fell or [], "notes": notes}
 
 
 def _run(path, urls, base, args):
@@ -293,6 +341,8 @@ def _run(path, urls, base, args):
         for url in urls:
             try:
                 pages.append(shoot(b, url, _folder(base, _slug(url, taken)), args.frames, args.every, args.frozen))
+                if args.diff:
+                    pages[-1]["diff"] = compare(pages[-1], args.diff)
             except (OSError, RuntimeError, EOFError, ValueError) as e:
                 failed.append({"url": url, "error": str(e)})
                 if isinstance(e, (EOFError, TimeoutError)):  # the browser is gone or hung: the rest would wait too
@@ -321,7 +371,13 @@ def cmd_shot(args):
             raise fmcli.UsageError(f"--out {_safe(base)} isn't a folder")
     else:
         base = os.path.join(fmcli.resolve(args).dir, "shots")
-    env = os.environ.get("FOREMAN_CHROME")
+    if args.diff:
+        args.diff = os.path.abspath(args.diff)
+        mine, theirs = os.path.realpath(base), os.path.realpath(args.diff)
+        if theirs == mine or theirs.startswith(mine + os.sep):  # a page's folder is cleared before it's shot
+            raise fmcli.UsageError(f"--diff {_safe(args.diff)} is where these shots go and would be cleared: "
+                                   "shoot into another --out")
+    env =os.environ.get("FOREMAN_CHROME")
     bad = f"FOREMAN_CHROME={_safe(env)!r} isn't an executable file" if env and not _usable(env) else None
     path = chrome()
     if not path:
@@ -353,8 +409,21 @@ def cmd_shot(args):
         elif len(frames) > 1:
             lines.append("  no poster: the page held still")
         lines += [f"  note: {n}" for n in pg["notes"]]
+        if pg["fallback_fonts"]:
+            lines.append(("  ✗ " if args.diff else "  note: ") + "fonts fell back: " + ", ".join(
+                f"{_safe(f['family'])} ({_safe(f['status'])})" for f in pg["fallback_fonts"]))
+        d = pg.get("diff")
+        if d and "error" in d:
+            lines.append(f"  ✗ diff: no usable baseline: {_safe(d['error'])}")
+        elif d and not d["changed"]:
+            lines.append(f"  diff: identical to {_safe(d['baseline'])}")
+        elif d:
+            x0, y0, x1, y1 = d["bbox"]
+            lines.append(("  diff: " if d["ok"] else "  ✗ diff: ") + f"{d['changed']} pixels changed in "
+                         f"x {x0}-{x1 - 1}, y {y0}-{y1 - 1} (floor {d['floor']}, from the baseline's own frames): "
+                         + ("within it" if d["ok"] else "over it"))
     lines += [f"✗ {_safe(f['url'])}: {_safe(f['error'])}" for f in failed]
     fmcli.out(args, {"browser": path, "pages": pages, "failed": failed}, "\n".join(lines))
-    if failed:
+    if failed or (args.diff and any(not p["diff"]["ok"] or p["fallback_fonts"] for p in pages)):
         sys.exit(1)
     return None

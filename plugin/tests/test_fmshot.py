@@ -22,7 +22,7 @@ import fmshot
 LIB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
 # A stand-in for Chromium's --remote-debugging-pipe: NUL-separated JSON on fds 3 (in) and 4 (out). Each screenshot is
 # an 8x8 white PNG with the next count from STUB_PAINT painted black (the first is the viewport shot); every call is
-# logged to STUB_LOG. STUB_MODE: flood (endless events once navigated), hang (screenshots never answered), die (exits
+# logged to STUB_LOG; fm shot's document.fonts check gets STUB_FONTS (JSON, default []). STUB_MODE: flood (endless events once navigated), hang (screenshots never answered), die (exits
 # at the first screenshot), nostart (says why on stderr and exits).
 STUB = f"""#!{sys.executable}
 import base64, json, os, sys, time
@@ -64,6 +64,8 @@ while True:
             for i in range(n):
                 px[i * 4:i * 4 + 3] = b"\\0\\0\\0"
             res = {{"data": base64.b64encode(fmimg.encode(8, 8, bytes(px))).decode()}}
+        elif msg["method"] == "Runtime.evaluate" and "document.fonts" in msg["params"].get("expression", ""):
+            res = {{"result": {{"type": "object", "value": json.loads(os.environ.get("STUB_FONTS", "[]"))}}}}
         send({{"id": msg["id"], "result": res}})
         if msg["method"] == "Page.navigate":
             while mode == "flood":
@@ -86,8 +88,8 @@ class StubCase(ForemanTestCase):
             f.write(STUB)
         os.chmod(self.stub, stat.S_IRWXU)
 
-    def shot(self, *args, paint="0", check=True):
-        env = {"FOREMAN_CHROME": self.stub, "STUB_LOG": self.log, "STUB_PAINT": paint}
+    def shot(self, *args, paint="0", fonts="[]", check=True):
+        env = {"FOREMAN_CHROME": self.stub, "STUB_LOG": self.log, "STUB_PAINT": paint, "STUB_FONTS": fonts}
         return self.fm("shot", *args, env=env, check=check)
 
     def calls(self):
@@ -223,7 +225,7 @@ class Unruly(StubCase):
 
     def run_shot(self, mode, frames=2):
         args = argparse.Namespace(targets=[self.page], frames=frames, every=10, frozen=False, json=True,
-                                  out=os.path.join(self.tmp, "o"), project=None)
+                                  out=os.path.join(self.tmp, "o"), project=None, diff=None)
         env = {"FOREMAN_CHROME": self.stub, "STUB_LOG": self.log, "STUB_MODE": mode}
         out, code, start = io.StringIO(), 0, time.monotonic()
         with mock.patch.dict(os.environ, env), mock.patch.object(fmshot, "CALL_S", 1), \
@@ -238,7 +240,7 @@ class Unruly(StubCase):
         code, data, took = self.run_shot("flood")
         self.assertEqual(code, 1)
         self.assertLess(took, 10)
-        self.assertIn("no answer to Page.captureScreenshot", data["failed"][0]["error"])
+        self.assertIn("no answer to Runtime.evaluate", data["failed"][0]["error"])  # the fonts check, the first call
 
     def test_a_hung_browser_times_out(self):
         code, data, took = self.run_shot("hang")
@@ -257,6 +259,90 @@ class Unruly(StubCase):
         self.assertEqual(code, 1)
         self.assertIn("did not start", data["failed"][0]["error"])
         self.assertIn("libnss3.so", data["failed"][0]["error"])  # its own last words
+
+
+class Diff(StubCase):
+    """T-1637: fm shot --diff BASE compares each page's viewport shot with BASE/<page>/viewport.png. The pass line is
+    the baseline's own noise floor: the most pixels any of its frames differs from its viewport shot. A page whose
+    fonts fell back (document.fonts: a face that failed, or a family in use with no face loaded) fails too."""
+
+    def baseline(self, paint):
+        base = os.path.join(self.tmp, "base")
+        self.shot(self.page, "--frames", "3", "--every", "10", "--out", base, paint=paint)
+        return base
+
+    def diff(self, base, paint, fonts="[]"):
+        r = self.shot(self.page, "--frames", "0", "--diff", base, "--json", paint=paint, fonts=fonts, check=False)
+        return r.returncode, json.loads(r.stdout)
+
+    def test_a_diff_under_the_baseline_noise_floor_passes_and_one_above_fails_with_its_area(self):
+        base = self.baseline("0,3,0,5")  # viewport 0 painted, frames 3, 0, 5: a floor of 5 pixels
+        code, data = self.diff(base, "4")
+        self.assertEqual(code, 0, data)
+        d = data["pages"][0]["diff"]
+        self.assertEqual((d["changed"], d["floor"], d["ok"]), (4, 5, True))
+        self.assertEqual(d["baseline"], os.path.join(base, "page"))
+        code, data = self.diff(base, "9")
+        self.assertEqual(code, 1, data)
+        d = data["pages"][0]["diff"]
+        self.assertEqual((d["changed"], d["floor"], d["ok"]), (9, 5, False))
+        self.assertEqual(d["bbox"], [0, 0, 8, 2])
+        text = self.shot(self.page, "--frames", "0", "--diff", base, paint="9", check=False).stdout
+        self.assertIn("9 pixels changed", text)
+        self.assertIn("x 0-7, y 0-1", text)
+        self.assertIn("floor 5", text)
+
+    def test_a_still_baseline_has_a_floor_of_zero(self):
+        base = self.baseline("2")
+        self.assertEqual(self.diff(base, "2")[0], 0)
+        code, data = self.diff(base, "3")
+        self.assertEqual((code, data["pages"][0]["diff"]["floor"], data["pages"][0]["diff"]["changed"]), (1, 0, 1))
+
+    def test_a_fallback_font_fails(self):
+        base = self.baseline("0")
+        self.assertEqual(self.diff(base, "0")[0], 0)
+        fell = '[{"family": "Brand\\u001b[2J", "status": "error"}]'
+        code, data = self.diff(base, "0", fell)
+        self.assertEqual(code, 1, data)
+        page = data["pages"][0]
+        self.assertTrue(page["diff"]["ok"], "the pixels match: the font alone fails it")
+        self.assertEqual(page["fallback_fonts"][0]["family"], "Brand\x1b[2J")
+        r = self.shot(self.page, "--frames", "0", "--diff", base, fonts=fell, check=False)
+        self.assertIn("fell back", r.stdout)
+        self.assertIn("Brand", r.stdout)
+        self.assertNotIn("\x1b", r.stdout)
+        # without --diff a fallback is a note, not a failure
+        r = self.shot(self.page, "--frames", "0", fonts=fell)
+        self.assertIn("fell back", r.stdout)
+        calls = [c["params"] for c in self.calls() if c.get("method") == "Runtime.evaluate"]
+        self.assertTrue(all(p.get("awaitPromise") and p.get("returnByValue") for p in calls))
+
+    def test_a_missing_baseline_fails_and_the_output_folder_cant_be_the_baseline(self):
+        code, data = self.diff(os.path.join(self.tmp, "nothing"), "0")
+        self.assertEqual(code, 1)
+        self.assertFalse(data["pages"][0]["diff"]["ok"])
+        self.assertIn("viewport.png", data["pages"][0]["diff"]["error"])
+        base = self.baseline("0")
+        r = self.shot(self.page, "--frames", "0", "--diff", base, "--out", base, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--diff", r.stderr + r.stdout)
+        self.assertTrue(os.path.exists(os.path.join(base, "page", "frame-02.png")), "the baseline is untouched")
+
+    @unittest.skipUnless(fmshot.chrome(), "no headless Chromium here")
+    def test_in_a_browser_a_font_that_fails_to_load_is_caught(self):
+        page = os.path.join(self.repo, "font.html")
+        with open(page, "w") as f:
+            f.write("<style>@font-face{font-family:Brand;src:url(missing.woff2)}"
+                    "@font-face{font-family:Unused;src:url(gone.woff2)}"
+                    "p{font:40px Brand,serif}</style><p>Hello</p>")
+        base = os.path.join(self.tmp, "real")
+        shot = json.loads(self.fm("shot", page, "--frames", "2", "--every", "50", "--frozen", "--out", base,
+                                  "--json").stdout)["pages"][0]
+        self.assertEqual([f["family"] for f in shot["fallback_fonts"]], ["Brand"], "the unused face isn't one")
+        r = self.fm("shot", page, "--frames", "0", "--frozen", "--diff", base, "--json", check=False)
+        page = json.loads(r.stdout)["pages"][0]
+        self.assertEqual(r.returncode, 1)
+        self.assertTrue(page["diff"]["ok"], page["diff"])  # the same page, frozen: within its own floor
 
 
 def _png(n):
