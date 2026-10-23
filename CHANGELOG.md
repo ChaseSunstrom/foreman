@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Load-proof tests: run.py --load N reproduces load flakes beside N busy processes; hook, fm and fm code hang guards stretch with the measured load; the hero, city and graph frame checks are judged by animation time and rest, not wall-clock windows (T-1730: T-1719, T-1721, T-1728)
 - One WCAG contrast formula (fm code's TUI uses fmdesign's), every fm help command its own position, fm doctor flags emoji variation selectors anywhere, and MASTER.md lists every plugin/lib module with a test that keeps it so (T-1736: T-1675, T-1686, T-1687, T-1724)
 - fm home export / import: Foreman's projects (tasks, archive, research, decisions, ledger, meta) and tui.toml as one tarball, secrets redacted and sensitive projects left out, with a hash manifest; import is the user's to run, takes only that allowlist (no grants, trust, runner config, check commands or recorded runs; open tasks wait for fm ask ID confirm), checks every path and hash first and only goes into an empty home (T-1665)
 - fm sync import: an invisible character inside a run, worktree or audit mark no longer keeps it counting on the importing machine (T-1665)
