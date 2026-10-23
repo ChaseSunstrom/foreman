@@ -2,7 +2,31 @@
 Every claim here is something Foreman does today; the charts are its own record of building itself."""
 import re
 
+import os
+
 from build import TYPES, columns, esc, hbars, line, pairs, tiles, verdicts
+
+LIBRARY = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin", "skills", "playbooks",
+                       "references")
+
+
+def _field_guide(s):
+    """T-1525: every playbook in the library by stage, with the line that says when to use it."""
+    stages = {}
+    for stage in sorted(os.listdir(LIBRARY)):
+        folder = os.path.join(LIBRARY, stage)
+        for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else ():
+            if name.endswith(".md") and name != "INDEX.md":
+                with open(os.path.join(folder, name), encoding="utf-8") as f:
+                    text = f.read()
+                title = re.search(r"(?m)^# (.+)$", text)
+                use = re.search(r"(?ms)^(Use when\b.+?)(?:\n\s*\n|\Z)", text)
+                stages.setdefault(stage, []).append((name[:-3], title.group(1) if title else name[:-3],
+                                                     " ".join(use.group(1).split()) if use else ""))
+    return tiles([(stage, len(books)) for stage, books in stages.items()]) + "".join(
+        f"<section><h2>{esc(stage)}</h2><dl>" + "".join(
+            f"<dt><code>{esc(stage)}/{esc(name)}</code> {esc(title)}</dt><dd>{esc(use)}</dd>"
+            for name, title, use in books) + "</dl></section>" for stage, books in stages.items())
 
 
 def _daily_types(s):
@@ -562,6 +586,21 @@ PAGES = [
           "commands; <code>python3 site/bench_safety.py</code> reruns the safety set."
           "</li><li><strong>Other plugins.</strong> <code>fm bench duel PLUGIN</code> runs the same cases with another "
           "plugin beside Foreman.</li></ul>")]},
+    {"slug": "playbooks", "nav": "Playbooks", "title": "A field guide to the playbooks",
+     "desc": "Every procedure Foreman can load, by stage, with when to use it.",
+     "lede": "A playbook is a short procedure loaded only when its stage comes up: a flaky test, a migration, a "
+             "release. Each one names when to use it and the steps that prove the work.",
+     "blocks": [
+         ("text", "Using and learning them", "<ul><li><strong>Load one.</strong> <code>fm playbooks show NAME</code> "
+          "fills in the project's facts and adds its own notes from <code>.claude/playbooks/</code>.</li><li><strong>"
+          "Practise.</strong> <code>fm playbooks kata NAME</code> gives held-out briefs to answer; <code>--answer "
+          "FILE</code> scores yours.</li><li><strong>Score a run.</strong> <code>fm playbooks score NAME --task ID"
+          "</code> shows which steps a finished task followed.</li><li><strong>Learn from a change.</strong> <code>"
+          "fm playbooks lesson RANGE</code> is a five-minute read of a diff: what changed, where, what its tasks "
+          "learned and the checklists to read it with.</li><li><strong>Grow your own.</strong> <code>fm playbooks "
+          "draft ID</code> turns a finished task into a draft; <code>mine</code> and <code>counter</code> read the "
+          "repo's history for what changes together and what failed.</li></ul>"),
+         ("chart", _field_guide)]},
     {"slug": "releases", "nav": "Releases", "title": "Shipped in small, gated releases",
      "desc": "Every release passes the full gates and a release check before it reaches main.",
      "lede": "<code>fm release</code> runs the ritual as nine named steps with a checkpoint after each: gates, version "
