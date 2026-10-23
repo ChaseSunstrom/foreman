@@ -169,6 +169,62 @@ class ScoutProbes(ForemanTestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("old: class ideas-only → open", found[0].title)
 
+    def test_an_upstream_that_moved_is_one_finding_and_an_unchanged_one_is_not_fetched(self):  # T-1391
+        import fmlib
+        p = self._p()
+        kit = os.path.join(self.tmp, "kit")
+
+        def git(*a):
+            subprocess.run(["git", "-C", kit, "-c", "user.email=t@t", "-c", "user.name=t", *a], check=True,
+                           capture_output=True)
+
+        def put(rel, name):
+            os.makedirs(os.path.dirname(os.path.join(kit, rel)), exist_ok=True)
+            with open(os.path.join(kit, rel), "w") as f:
+                f.write(f"---\nname: {name}\ndescription: {name} things\n---\nbody\n")
+        put("skills/a/SKILL.md", "alpha")
+        put("skills/b/SKILL.md", "beta")
+        with open(os.path.join(kit, "LICENSE"), "w") as f:
+            f.write("MIT License\n")
+        git("init", "-q")
+        git("add", "-A")
+        git("commit", "-qm", "one")
+        fmlib.source_add(kit, "kit")
+        calls, real = [], fmlib.source_add
+        fmlib.source_add = lambda *a, **k: calls.append(a) or real(*a, **k)
+        old_stale = fmscout.SOURCES_STALE_S
+        fmscout.SOURCES_STALE_S = -1  # every source counts as stale
+        try:
+            self.assertEqual(fmscout.probe_sources(p, {}), [])
+            self.assertEqual(calls, [], "an unchanged upstream isn't fetched")
+            put("skills/a/SKILL.md", "alpha2")  # renamed
+            os.remove(os.path.join(kit, "skills", "b", "SKILL.md"))
+            put("skills/c/SKILL.md", "gamma")
+            git("add", "-A")
+            git("commit", "-qm", "two")
+            found = fmscout.probe_sources(p, {})
+        finally:
+            fmlib.source_add, fmscout.SOURCES_STALE_S = real, old_stale
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("+1 −1 ~1", found[0].title)
+        self.assertIn("added: gamma; removed: beta; renamed: alpha → alpha2", found[0].why)
+        self.assertIn("(open)", found[0].why)
+
+    def test_claude_code_changelog_lines_no_foreman_text_matches_are_findings(self):  # T-1391
+        p = self._p()
+        log = os.path.join(self.tmp, "CHANGELOG.md")
+        with open(log, "w") as f:
+            f.write("# Changelog\n\n## 9.9.9\n\n- Added `--frobnicate-everything` to claude -p\n"
+                    "- Hooks: `PreToolUse` gets a timing field\n- Fixed a crash on start\n\n"
+                    "## 2.0.1\n\n- Added `--ancient-flag-nobody-has`\n")
+        os.environ["FOREMAN_SCOUT_CHANGELOG"] = log
+        try:
+            found = fmscout.probe_cc_changelog(p, {})
+        finally:
+            os.environ.pop("FOREMAN_SCOUT_CHANGELOG")
+        self.assertEqual([f.title for f in found], ["Claude Code 9.9.9: Added `--frobnicate-everything` to claude -p"])
+        self.assertTrue(found[0].key.startswith("ccfeat:9.9.9:"))
+
     def test_doctor_failures_are_findings(self):
         p = self._p()
         rows = {"ok": False, "results": [{"name": "footprint", "status": "FAIL", "detail": "rules 6059 chars"},
