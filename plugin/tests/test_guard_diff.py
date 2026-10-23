@@ -31,6 +31,9 @@ FORMS = [
     "echo a#b; {p}", "echo a#b && {p}",  # T-0161 review: a # inside a word is no comment
     "echo $(true)#x; {p}", "echo $((1))#x; {p}", "echo `true`#x; {p}", "echo ${HOME}#x; {p}",  # T-0163: nor after ) ` }
     "echo '<<EOF'\n{p}\nEOF", "echo \"x <<EOF\"\n{p}", "echo '<<-EOF' && {p}",  # T-0178: a quoted marker is text
+    # T-1487: a folder named once and reused across ; and && (git init's target resolves; the payload still counts)
+    "D=/tmp/fmd; mkdir -p $D && git init -q $D; {p}", "D=/tmp/fmd && git init -q $D && {p}",
+    "D=~; mkdir -p $D && git init -q $D; {p}",
 ]
 # whole commands (no payload slot): variables the guard resolves (T-0151) must still resolve the way bash does
 EXTRA = ['D=~; rm -rf "$D"', 'D=/; false && D=x; rm -rf "$D"', 'D=/; (D=x); rm -rf "$D"', 'D=x; D=~; rm -rf "$D"',

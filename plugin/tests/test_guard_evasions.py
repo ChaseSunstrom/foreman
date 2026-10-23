@@ -65,5 +65,49 @@ class GuardEvasions(unittest.TestCase):
                          [], "a new over-broad refusal")
 
 
+class SnapshotForms(unittest.TestCase):
+    """T-1482: the four bench SNAPSHOT commands are allowed in a project because the PreToolUse hook saves the work
+    they discard first. The corpus leaves them out (their verdict hangs on the tree), so here each obfuscated form runs
+    from a disposable git folder: the hook must save it, or the guard refuse it; one that does neither (\\git reset
+    --hard read as no git command) throws the work away unsaved."""
+    def test_every_obfuscated_snapshot_command_is_saved_or_refused(self):
+        import subprocess
+        import fmguard as g
+        import fmhooks
+        base = os.environ.get("XDG_RUNTIME_DIR") or os.path.expanduser("~/.cache")  # /tmp is scratch to the guard
+        with tempfile.TemporaryDirectory(dir=base if os.access(base, os.W_OK) else None) as t:
+            t = os.path.realpath(t)
+            home, repo = os.path.join(t, "home"), os.path.join(t, "repo")
+            os.makedirs(os.path.join(home, ".claude", "foreman"))
+            os.makedirs(repo)
+            git = lambda *a: subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t",
+                                             "-c", "commit.gpgSign=false", *a], check=True, capture_output=True)
+            git("init", "-q")
+            for i, step in enumerate(["0", "1", "2", "3", "4", "5", "6", "stashed", "dirty"]):
+                with open(os.path.join(repo, "f.txt"), "w") as f:
+                    f.write(step)
+                if i < 7:  # HEAD~5 exists
+                    git("add", "f.txt")
+                    git("commit", "-qm", step)
+                elif step == "stashed":  # a stash for stash clear to drop
+                    git("stash", "push", "-q")
+            # f.txt left "dirty": uncommitted work the commands would discard
+            ctx = g.Ctx(cwd=repo, project_root=repo, home=home, foreman_home=os.path.join(home, ".claude", "foreman"),
+                        scratch=["/tmp"], task_id="T-0001")
+            ran, unsaved = 0, []
+            for cmd in sorted(gen_evasions.SNAPSHOT):
+                variants = [(tr.__name__, tr(cmd)) for tr in gen_evasions.EVERY] + gen_evasions.stacked(cmd)
+                for name, v in variants:
+                    if not v:
+                        continue
+                    ran += 1
+                    refused = g.check("Bash", {"command": v}, ctx)  # the hook's order: the guard, then the save
+                    saved = fmhooks._snapshot_note({"tool_input": {"command": v}, "cwd": repo}, g)
+                    if not saved and refused is None:
+                        unsaved.append(f"{name}: {v!r}")
+            self.assertGreater(ran, len(gen_evasions.SNAPSHOT) * 5, "too few forms: the test would be vacuous")
+            self.assertEqual(unsaved, [], "allowed with nothing saved first:\n" + "\n".join(unsaved))
+
+
 if __name__ == "__main__":
     unittest.main()
