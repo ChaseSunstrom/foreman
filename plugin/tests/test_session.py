@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import time
+from unittest import mock
 
 from helpers import FM, ForemanTestCase
 
@@ -101,6 +102,20 @@ class Session(ForemanTestCase):
         self.wait(lambda: not _alive(child))
         self.assertEqual(self.row(sid)["status"], "stopped")
         self.assertEqual(self.events(sid)[-1]["kind"], "status")
+
+    def test_stop_marks_before_it_reads_the_pid(self):
+        # T-1789: stop read the runner's pid, then wrote the stopped marker. A runner that set its pid and checked for
+        # the marker in between was never killed, ran its turn on, and its later writes put the status back to running.
+        sid = self.start("hello")
+        self.wait(lambda: self.row(sid)["status"] == "idle")
+        marked, real = [], s.read_meta
+
+        def spy(x):
+            marked.append(os.path.exists(os.path.join(s._dir(x), "stopped")))
+            return real(x)
+        with mock.patch.object(s, "read_meta", spy):
+            s.stop(sid)
+        self.assertTrue(marked and marked[0], "stop read the pid before it wrote the stopped marker")
 
     def test_a_dead_runner_reads_as_died(self):
         sid = self.start("hello")
