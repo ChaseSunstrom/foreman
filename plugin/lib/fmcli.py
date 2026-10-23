@@ -6057,9 +6057,9 @@ def _build_parser():
             "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
             "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs; "
             "tokens DESIGN.md --to css|app|pane: its Tokens table as CSS variables, an fm code theme or the pane's "
-            "palette")
-    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens"])
-    s.add_argument("paths", nargs="+", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
+            "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into (advisory exits 0, blocking 1; T-1645)")
+    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check"])
+    s.add_argument("paths", nargs="*", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
                    "root); palette: a seed colour (hex, rgb(), hsl(), oklch()); contrast: a token file, then pairs "
                    "fg/bg[:need[,dark need]] (default: the known role pairs, body text 7:1 in dark)")
     s.add_argument("--format", choices=["css", "dtcg", "tailwind"], default="css",

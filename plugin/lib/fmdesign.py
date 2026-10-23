@@ -1537,6 +1537,17 @@ def _design_tokens(args, fmcli):
 def cmd_design(args):
     import sys
     import fmcli
+    if args.action == "check":  # T-1645: the gates DESIGN.md opts into
+        if len(args.paths) > 1:
+            print("fm: design check takes one project root", file=sys.stderr)
+            return 2
+        got = check_gates(args.paths[0] if args.paths else ".")
+        fmcli.out(args, got, render_gates(got))
+        return 1 if any(g["mode"] == "blocking" and not all(m["pass"] for m in g["musts"])
+                        for g in got["gates"]) else 0
+    if not args.paths:  # only check defaults its argument (the project root)
+        print(f"fm: design {args.action}: needs an argument (fm design -h)", file=sys.stderr)
+        return 2
     if args.action != "lint":
         return _design_tokens(args, fmcli)
     missing = [p for p in args.paths if not os.path.exists(p)]
@@ -1555,6 +1566,105 @@ def cmd_design(args):
         text += "\nskipped: " + "; ".join(f"{x['file']} ({x['why']})" for x in skipped)
     fmcli.out(args, {"findings": found, "files": n, "skipped": skipped}, text)
     return 1 if found else 0
+
+
+# T-1645: design gates a project opts into in DESIGN.md's ## Gates section ("- brief: advisory" or "blocking")
+GATES = ("brief",)
+MODES = ("advisory", "blocking")
+
+
+def _section_lines(doc, name):
+    """The lines of DESIGN.md's ## name section (outside code fences), [] when it has none."""
+    heads, _ = headings(doc)
+    for k, (i, h) in enumerate(heads):
+        if h == f"## {name}":
+            return doc[i + 1:heads[k + 1][0] if k + 1 < len(heads) else len(doc)]
+    return []
+
+
+def brief_musts(doc):
+    """What the brief promises the code holds, as (label, kind, value): each hex in the Colour knob, each quoted or
+    backticked family in the Type knob, each duration in the Motion knob, and each "- must: TEXT" in Direction."""
+    musts = []
+    for ln in _section_lines(doc, "Knobs"):
+        m = re.match(r"\s*[-*]\s*(Type|Colou?r|Motion)\s*:(.*)", ln)
+        if not m:
+            continue
+        kind, rest = m.group(1).lower(), m.group(2)
+        if kind == "type":
+            musts += [(f"font {f.strip()}", "font", f.strip()) for f in re.findall(r'["`“]([^"`”\n]{1,60})["`”]', rest)]
+        elif kind.startswith("colo"):
+            musts += [(f"colour {h.upper()}", "colour", h.lower()) for h in re.findall(r"#[0-9A-Fa-f]{6}\b", rest)]
+        else:
+            for n, unit in re.findall(r"(?<![\w.])(\d+(?:\.\d+)?)\s*(ms|s)\b", rest):
+                ms = float(n) * (1000 if unit == "s" else 1)
+                musts.append((f"duration {ms:g}ms", "duration", ms))
+    for ln in _section_lines(doc, "Direction"):
+        m = re.match(r"\s*[-*]\s*must\s*:\s*(.{1,200}?)\s*$", ln, re.I)
+        if m:
+            musts.append((f"has {m.group(1)}", "has", m.group(1)))
+    return list({x[0]: x for x in musts}.values())
+
+
+def _found(kind, value, text):
+    """Whether one UI file's text holds the promise, case-blind."""
+    low = text.lower()
+    if kind in ("colour", "font", "has"):
+        return value.lower() in low
+    sec = f"{value / 1000:g}".lstrip("0") if value < 1000 else f"{value / 1000:g}"  # 200 → .2, 1500 → 1.5
+    return bool(re.search(rf"(?<![\w.]){value:g}ms\b|(?<![\w.])0?{re.escape(sec)}s\b", low))
+
+
+def check_gates(root):
+    """{design, gates: [{gate, mode, musts: [{must, pass, why}]}], notes}: the gates DESIGN.md under root opts into,
+    each run over the UI files under root. Nothing opted in: no gates."""
+    path = os.path.join(root, "DESIGN.md")
+    text, why = _read(path) if os.path.isfile(path) else (None, "no DESIGN.md")
+    out = {"design": path, "gates": [], "notes": []}
+    if text is None:
+        out["notes"].append(f"{os.path.relpath(path)}: {why}")
+        return out
+    doc = text.split("\n")
+    files, *_ = collect([root])
+    bodies = []
+    for f in files:
+        body, _ = _read(f)
+        if body is not None:
+            bodies.append((os.path.relpath(f, root), body))
+    for ln in _section_lines(doc, "Gates"):
+        m = re.match(r"\s*[-*]\s*([\w-]+)\s*:\s*([\w-]+)", ln)
+        if not m:
+            continue
+        gate, mode = m.group(1).lower(), m.group(2).lower()
+        if gate not in GATES:
+            out["notes"].append(f"unknown gate '{gate}' (known: {', '.join(GATES)})")
+            continue
+        if mode not in MODES:
+            out["notes"].append(f"unknown mode '{mode}' for {gate}: read as advisory ({' or '.join(MODES)})")
+            mode = "advisory"
+        musts = []
+        for label, kind, value in brief_musts(doc):
+            where = [rel for rel, body in bodies if _found(kind, value, body)]
+            musts.append({"must": label, "pass": bool(where),
+                          "why": f"in {', '.join(where[:3])}" + (f" and {len(where) - 3} more" if len(where) > 3 else "")
+                          if where else f"not in the {len(bodies)} UI file(s) under {os.path.basename(os.path.abspath(root))}"})
+        out["gates"].append({"gate": gate, "mode": mode, "musts": musts})
+    return out
+
+
+def render_gates(got):
+    """The gates as text; DESIGN.md's words (labels, file names) reach the terminal with control and bidi
+    characters replaced."""
+    safe = lambda s: re.sub(r"[\x00-\x1f\x7f-\x9f​-‏ -‮⁦-⁩]", "?", s)  # noqa: E731
+    if not got["gates"]:
+        return "\n".join([safe(n) for n in got["notes"]]
+                         + ["no design gates opted in (DESIGN.md's ## Gates: '- brief: advisory')"])
+    lines = []
+    for g in got["gates"]:
+        ok = sum(m["pass"] for m in g["musts"])
+        lines.append(f"{g['gate']} ({g['mode']}): {ok} of {len(g['musts'])} must-have(s) found")
+        lines += [f"  {'✓' if m['pass'] else '✗'} {safe(m['must'])}: {safe(m['why'])}" for m in g["musts"]]
+    return "\n".join(lines + [safe(n) for n in got["notes"]])
 
 
 if __name__ == "__main__":  # T-1507: a CI without Foreman copies this file (stdlib only) and runs the proof
