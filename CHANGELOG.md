@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Gate runs share one machine-wide lock: a full fm check and the release canary queue behind each other, a waiter says who holds it, and a stale or stray holder value is ignored (T-1668)
 - fm capture refuses a near-duplicate of an open task of the same type, naming it (exit 5; --json gives {"refused", "of", "title"}; --anyway keeps both), notes a similar open task of another type, and notes a FEATURE close to done work with that task's id; only fm capture checks, not fm intake, fm task new or fm research --from-agent (T-1662)
 - fm ui --json: every string of the view is plain text (escape sequences, control, format and separator characters removed; newlines kept), so no ledger line, signal or hand-edited brief can make Claude Code refuse the pane; paths are kept as they are (T-1674)
 - Settings: setting a key no surface has is refused by name everywhere (fm code's :set line and fm settings serve said nothing before) (T-1723)
