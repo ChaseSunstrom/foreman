@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- One WCAG contrast formula (fm code's TUI uses fmdesign's), every fm help command its own position, fm doctor flags emoji variation selectors anywhere, and MASTER.md lists every plugin/lib module with a test that keeps it so (T-1736: T-1675, T-1686, T-1687, T-1724)
 - fm shot and fm stories take --profile tv|eink|car|wrist (that surface's width, height and scale, from fm critique's table) and --reduced-motion (prefers-reduced-motion: reduce, set before the first paint) (T-1737: T-1725, T-1734)
 - Lane and close friction: finish --commit names another open task that edited a file it commits whole (shared.py was also edited by T-xxxx since this task's focus); a CLEAN task's builder brief says to record the behaviour lock (fm check --evidence ID --step 1) first; fm check --affected leaves another lane's red-first test file out of the command it runs (by path, so a same-name test of another runner still runs) and says when every linked test was skipped; fm lease drop lists only what it dropped (8 at most) and the lane claims still held (T-1731)
 - Redaction reads key names: "password": "x" in JSON text (escaped JSON and Python reprs too) and {"password": "x"} in logged objects are redacted; token counts and other keys that only contain the words are kept (T-1733)
