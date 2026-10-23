@@ -578,6 +578,34 @@ class TaskRun(CodeCase):
         self.assertIn("another fm code run", r.stderr)
 
 
+def run_friction_lines(case):
+    """T-1339: the 'run friction:' log lines on Foreman's own Improve fm code task (None when there's no task)."""
+    import fmcore
+    sp = fmcore.find_project(case.home)
+    b = sp and next((b for b in fmcore.load_briefs(sp) if b.title.startswith("Improve fm code")), None)
+    return b and [x.split("run friction: ", 1)[1] for x in b.section("Log").splitlines() if "run friction: " in x]
+
+
+class RunFriction(CodeCase):  # T-1339
+    def test_each_new_cause_is_logged_once_onto_foremans_own_friction_task(self):
+        for _ in range(2):  # blocked twice for the same reason: one line
+            self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
+            self.code("fix add", "--model", "fake", check=False)
+        self.code("fix it", "--model", "nope", check=False)  # fails before any task
+        lines = run_friction_lines(self)
+        self.assertEqual([x.split(":")[0] for x in lines], ["blocked", "preflight"], lines)
+        here = [b.title for b in __import__("fmcore").load_briefs(__import__("fmcore").find_project(self.repo))]
+        self.assertFalse(any(t.startswith("Improve fm code") for t in here), "never in the user's own project")
+
+    def test_a_run_a_kill_left_unfinished_is_friction_at_the_next_start(self):
+        first = self.serve("openai", plan(), HANG)
+        p = Durable.start(self, "fix add", "--model", "fake")
+        Durable.kill_when(self, p, first.hung.is_set)
+        self.serve("openai", plan())
+        self.code("something else", "--model", "fake", "--dry-plan")
+        self.assertIn("killed", [x.split(":")[0] for x in run_friction_lines(self)])
+
+
 class Durable(CodeCase):  # T-1338
     def start(self, *args):
         return subprocess.Popen([sys.executable, FM, "code", *args], cwd=self.repo, env=self.env(),
