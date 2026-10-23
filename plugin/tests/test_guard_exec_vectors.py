@@ -538,6 +538,37 @@ class ScriptCache(GuardCase):
         self.assertTrue(hits)  # the danger after 5000 characters on one line is still found
 
 
+class ScriptReadSpeed(GuardCase):  # T-1778
+    """A script read keeps only findings that name no $ and say nothing is 'not known', so it never guesses where an
+    unknown target lands (the guesses were most of a read's time); typed commands still do. Same findings."""
+    def test_a_script_read_guesses_no_target_and_finds_the_same(self):
+        d = os.path.join(os.path.dirname(self.home), "scripts1778")
+        os.makedirs(d, exist_ok=True)
+        p = os.path.join(d, "guess.sh")
+        with open(p, "w") as f:
+            f.write('cp a "$(cat f)/x"\nD=$(cat g); cp b "$D/y" lib src\nrm -rf ~\n')
+        with mock.patch.object(g, "_possible", wraps=g._possible) as possible:
+            self.assertEqual([c for c, _ in g.check_bash(f"bash {p}", self.ctx())], ["rm-outside"])
+        self.assertEqual(possible.call_count, 0, "no target guessed inside a script read")
+        with mock.patch.object(g, "_possible", wraps=g._possible) as possible:
+            g.check_bash('cp a "$(cat f)/x"', self.ctx())
+        self.assertGreater(possible.call_count, 0, "a typed command still guesses")
+
+    def test_lines_are_joined_and_heredocs_found_as_before(self):
+        # the cheap checks first: a line not ending in \ never joins the next; a line with no << starts no heredoc
+        self.assertEqual(g._join_continued("echo a \\\nb\necho c # x \\\nrm d"), "echo a b\necho c # x \\\nrm d")
+        self.assertEqual(g._join_continued("echo 'a \\\nb'"), "echo 'a \\\nb'", "in '…' a \\ is text")
+        self.assertEqual(g._join_continued('echo "a \\\nb"'), 'echo "a b"')
+        self.assertEqual(g._join_continued("x=$'a\\\nb' \\\nc"), "x=$'a\\\nb' c")
+        self.assertEqual(g._heredoc_starts([], "cat <<EOF"), [("", "EOF")])
+        self.assertEqual(g._heredoc_starts(["echo '"], "cat <<EOF"), [])
+        self.assertEqual(g._heredoc_starts([], "cat < in"), [])
+        self.assertEqual(g._tokens("echo a # b"), g._tokens("echo a # b"))
+        t = g._tokens("echo a b")
+        t.append("x")
+        self.assertEqual(g._tokens("echo a b"), ["echo", "a", "b"], "a caller's change never reaches the next call")
+
+
 class ScriptHook(HookCase):
     def test_the_hook_notes_and_logs_an_unread_script(self):
         self.task()

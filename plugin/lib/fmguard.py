@@ -6,6 +6,7 @@ exception as a block (fail closed). This is a speed bump with good coverage, not
 text can always be obfuscated; deny rules and git are the other layers.
 """
 import collections
+import functools
 import os
 import re
 import sys
@@ -651,6 +652,8 @@ def _heredoc_starts(seen, line):
     """T-0178: the heredocs a line starts, only where a shell reads one: outside every quote, comments aside (seen: the
     command's lines before it, bodies left out). A quoted marker is text; taken for a start, it made every later line
     a body, so `echo '<<EOF'` hid the command after it from the guard."""
+    if "<<" not in line:  # T-1778: no marker, nothing to read (the lines before were joined for every line: quadratic)
+        return []
     before = "".join(x + "\n" for x in seen)
     return [(m.group(1), m.group(2)) for m in re.finditer(_HEREDOC_START, line)
             if _inner_quote(_strip_comments(before + line[:m.start()])) is None]
@@ -826,7 +829,9 @@ def _join_continued(cmd):
     while i < len(lines):
         line = lines[i]
         i += 1
-        while i < len(lines):
+        # T-1778: only a line ending in \ can go on (a comment never starts just after one), so the lines before are
+        # read only then: reading them for every line was quadratic
+        while i < len(lines) and line.endswith("\\"):
             code = _strip_comments("\n".join(out + [line]))
             tail = len(code) - len(code.rstrip("\\"))
             if not (code.endswith("\\") and tail % 2 and _quote_at(code[:-1]) in (None, '"')):  # T-0669: in "…" too
@@ -1020,6 +1025,7 @@ def _drop_data_heredocs(cmd, only=None):
     return "\n".join(out)
 
 
+@functools.lru_cache(maxsize=256)  # T-1778: text in, text out; the same text is stripped by many checks
 def _strip_comments(text):
     """T-0161 review: a # starts a comment only at the start of a word outside quotes; shlex's own commenters also cut
     at the # in `echo a#b; rm …` and hid the rest of the line. Under $'…' quoting nothing is cut (fails closed).
@@ -1236,6 +1242,16 @@ def _shlex_words(text, close=False, encoded=False):
 
 
 def _tokens(cmd):
+    """T-1778: by text, as one command is tokenized by many checks (a fresh list each call: callers may change it)."""
+    return list(_tokens_of(cmd))
+
+
+@functools.lru_cache(maxsize=256)
+def _tokens_of(cmd):
+    return tuple(_tokens_read(cmd))
+
+
+def _tokens_read(cmd):
     text = _strip_comments(cmd)
     try:
         return _shlex_words(text)
@@ -2725,6 +2741,7 @@ def _possible(path):
 
 
 GUESS_WORDS = 48  # ponytail: words tried per unknown part (two parts: their pairs); a longer command is guessed this far
+_NO_GUESS = []  # T-1778: non-empty while a shell script's pieces are read (_check_script keeps no guessed target)
 
 
 _PLAIN = r"[^()`'\"\\#\n]*"  # no quote, escape, comment, newline or paren: bash's closing ) is the first one
@@ -2952,6 +2969,7 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="",
     substitution) could be any path the command names, in the unknown part's place; a relative one after a cd the guard
     couldn't follow, any folder the command names. Each counts, the way interpreter code is judged."""
     here = cwds or [ctx.cwd]
+    guess = guess and not _NO_GUESS
     t = re.sub(r"^~-(?=/|$)", "$OLDPWD", re.sub(r"^~\+(?=/|$)", "$PWD", target))  # review: ~+ and ~-
     t = _with_vars(t, {**known, "PWD": cwds[0]} if len(cwds) == 1 and not lost else known)
     found = []
@@ -3812,7 +3830,12 @@ def _check_script(text, ctx, depth, acc):
     state = []  # what earlier pieces did that a later one depends on: cd, literal assignments, files written
     for chunk in _script_chunks(text):
         # core: a script of Foreman's own (evals) writes its checkout; only its state folder counts
-        for f in check_bash("\n".join(state[-40:] + [chunk]), ctx, depth + 1):
+        _NO_GUESS.append(1)  # T-1778: a guessed target's finding names it ($, "not known"): dropped below, so not made
+        try:
+            got = check_bash("\n".join(state[-40:] + [chunk]), ctx, depth + 1)
+        finally:
+            _NO_GUESS.pop()
+        for f in got:
             if f == ("system", "script nests too deep to read"):
                 pass  # from a script further down the chain: it keeps its way up
             elif "too deep" in f[1]:
