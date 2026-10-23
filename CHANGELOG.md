@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Settings: setting a key no surface has is refused by name everywhere (fm code's :set line and fm settings serve said nothing before) (T-1723)
 - fm critique --stress TEXT pseudo-localises a string (accents, 40% longer, [brackets]; placeholders and HTML entities intact) and --profile tv|eink|car|wrist prints a surface's viewport and contrast preset (T-1643)
 - fm settings serve: the settings as a page on 127.0.0.1 (random port; the printed URL's token works once and becomes an HttpOnly SameSite=Strict cookie; Host and Origin checked, bodies capped, CSP default-src 'none'), each change through fm settings set's own checks and the guard; stops on Ctrl-C, SIGTERM or 30 idle minutes (T-1659)
 - Guard: unsetting or overriding CLAUDECODE through any wrapper is refused, since env's own words are read wherever env appears (chrt, taskset and stdbuf -o L before env, unbuffer [-p]); script -c, sh -c and setsid forms were already refused, and each is now a test row (T-1722)
