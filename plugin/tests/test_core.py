@@ -244,6 +244,27 @@ class Redaction(unittest.TestCase):
         for text in ["run pytest -q", "the token count is 400", "password field validation", "key: value"]:
             self.assertEqual(c.redact(text), text)
 
+    def test_a_credential_named_json_key_is_redacted(self):  # T-1733
+        for s in (json.dumps({"password": "hunter2x", "user": "ann"}), "{'api_key': 'abcd1234'}",  # pragma: allowlist secret
+                  json.dumps(json.dumps({"client_secret": "s3cr3tvalue"})),  # pragma: allowlist secret
+                  '"auth_token" : "zzzz9999"'):  # pragma: allowlist secret
+            with self.subTest(s=s):
+                out = c.redact(s)
+                for secret in ("hunter2x", "abcd1234", "s3cr3tvalue", "zzzz9999"):
+                    self.assertNotIn(secret, out)
+                self.assertIn("REDACTED", out)
+        self.assertIsInstance(json.loads(c.redact(json.dumps({"password": "hunter2x"}))), dict)  # pragma: allowlist secret
+        self.assertEqual(c.redact('{"tokens": 1234, "token_count": "5000", "secret_kinds": "a JWT"}'),
+                         '{"tokens": 1234, "token_count": "5000", "secret_kinds": "a JWT"}')
+
+    def test_redact_obj_reads_key_names(self):  # T-1733: log_event stored {"password": "x"} as it was
+        got = c.redact_obj({"password": "x", "nested": [{"apiKey": "abcd"}, {"AUTH_TOKEN": "t"}], "tokens": 400,
+                            "subagent_tokens": 12, "token_count": 3, "secret_kinds": ["a JWT"], "pwd": None})
+        self.assertEqual(got["password"], "[REDACTED]")
+        self.assertEqual(got["nested"], [{"apiKey": "[REDACTED]"}, {"AUTH_TOKEN": "[REDACTED]"}])
+        self.assertEqual((got["tokens"], got["subagent_tokens"], got["token_count"], got["secret_kinds"], got["pwd"]),
+                         (400, 12, 3, ["a JWT"], None))
+
     def test_redacted_json_stays_valid(self):
         s = json.dumps({"cmd": "export TOKEN=abcd1234efgh && curl -H \"Authorization: Bearer xyz123\""})
         self.assertIsInstance(json.loads(c.redact(s)), dict)
