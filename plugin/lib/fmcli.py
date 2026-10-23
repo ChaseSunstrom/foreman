@@ -6057,7 +6057,8 @@ def _build_parser():
             "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
             "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs; "
             "tokens DESIGN.md --to css|app|pane: its Tokens table as CSS variables, an fm code theme or the pane's "
-            "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into (advisory exits 0, blocking 1; T-1645); "
+            "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into: brief, a11y (contrast, reduced motion, "
+            "flashes, alt, focus styles) and debt N (untokened literals under a budget); advisory exits 0, blocking 1; "
             "roll [--seed N] [--apply|--undo]: one look card's palette, type and motion, seeded, into DESIGN.md")
     s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll"])
     s.add_argument("--seed", type=int, help="roll: the same seed gives the same look (default: a fresh one, printed)")
