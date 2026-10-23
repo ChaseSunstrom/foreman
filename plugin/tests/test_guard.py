@@ -2484,7 +2484,29 @@ class ProtectedTouch(GuardCase):
             (f"touch -ac {cache}/hooks.json", None),
             ("touch -d 2020-01-01 new.txt", None),  # an ordinary file in the project; the date isn't a file
             ("touch {repo}/a {repo}/b", None),
+            (f"touch {cache}/hooks.json -c", None),  # GNU reads options after operands too: still -c
+            # review: a file the same command removes or moves away first is made again (existence is read now)
+            (f"unlink {old} && touch {old}", "plugin"),
+            (f"mv {old} /tmp/x; touch {old}", "plugin"),
+            (f"rm -f {old}; touch {old}", "plugin"),
         ], self.bash)
+
+    def test_a_touched_file_run_after_is_no_script_written_here(self):
+        # review: touch makes an empty file, not one whose content the guard can't read
+        self.run_table([
+            ("touch build.sh && ./build.sh", None),
+            ("touch x.py; python3 x.py", None),
+            ("echo 'rm -rf ~' > build.sh && ./build.sh", "system"),  # a write still is
+        ], self.bash)
+
+
+class GitCAfterC(GuardCase):
+    """T-1727 review: a later -C $D is read both as its own folder and under the -C before it (D may be relative)."""
+    def test_a_variable_folder_after_a_protected_one_stays_refused(self):
+        rows = []
+        for sub in ("reset --hard", "checkout -- f", "clean -fdx"):
+            rows += [(f"D=plugin; git -C {{fhome}} -C $D {sub}", "core"), (f"git -C {{fhome}} -C $D {sub}", "core")]
+        self.run_table(rows, self.bash)
 
 
 class GitInitTarget(GuardCase):
