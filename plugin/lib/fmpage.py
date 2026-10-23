@@ -434,6 +434,266 @@ def city_page(p, args):
                      "from another host (fm shot it to see it)")
 
 
+GRAPH_TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "graph.html")
+GRAPH_MAX = 1500  # ponytail: the newest 1500 tasks stand; older ones are left out, and the page says so
+GRAPH_EDGES = 6000  # and the first 6000 dependencies by waiter id are drawn (the text twin lists every one)
+GRAPH_NAMED = 12  # tasks named on the poster: the active work first, then the blocked
+GRAPH_STATUSES = ["active", "verifying", "blocked", "planned", "captured", "deferred", "done", "dropped"]
+TIER_HEIGHT = {"S": 0.5, "M": 0.9, "L": 1.4}
+
+
+def graph_tasks(p):
+    """T-1654: [{id, title, status, tier, deps}] from fm state, through graph_keep. deps: the brief's own
+    depends_on, not what fm relate inferred (a guess draws no edge)."""
+    out = []
+    for b in c.load_briefs(p):
+        deps = b.meta.get("depends_on") or []
+        out.append({"id": b.id, "title": b.title, "status": b.status, "tier": b.tier,
+                    "deps": [str(d) for d in (deps if isinstance(deps, list) else [deps])]})
+    return graph_keep(out)
+
+
+def graph_keep(rows):
+    """Every open task and every task a dependency links, each dep kept only when its task is loaded (an archived
+    one draws no edge, so it keeps no closed task): a closed task with no link would stand alone."""
+    ids = {t["id"] for t in rows}
+    rows = [dict(t, deps=[d for d in t["deps"] if d in ids]) for t in rows]
+    linked = {d for t in rows for d in t["deps"]}
+    return [t for t in rows if t["status"] in c.OPEN or t["deps"] or t["id"] in linked]
+
+
+def _components(deps, kids):
+    """Strongly connected components (Kosaraju, iterative: a 1500-long chain needs no recursion), as a component
+    index per node."""
+    n, order, seen = len(deps), [], [False] * len(deps)
+    for s in range(n):
+        if seen[s]:
+            continue
+        seen[s], stack = True, [(s, iter(deps[s]))]
+        while stack:
+            v, it = stack[-1]
+            w = next((w for w in it if not seen[w]), None)
+            if w is None:
+                stack.pop()
+                order.append(v)
+            else:
+                seen[w] = True
+                stack.append((w, iter(deps[w])))
+    comp, k = [-1] * n, 0
+    for s in reversed(order):
+        if comp[s] >= 0:
+            continue
+        comp[s], todo = k, [s]
+        while todo:
+            for w in kids[todo.pop()]:
+                if comp[w] < 0:
+                    comp[w] = k
+                    todo.append(w)
+        k += 1
+    return comp
+
+
+def graph_layout(tasks):
+    """T-1654: the graph's plan from [{id, status, tier, deps}], deterministic: each task in the layer after the
+    longest chain it waits on (Kahn's order, no recursion; each cycle, found as a strongly connected set, is broken
+    at its lowest id once nothing outside it holds it back, its members counted),
+    ordered in its layer by where what it waits on stands (one barycentre sweep), a big layer wrapped into a square
+    block. Nodes [x, z, height (by tier), status index into GRAPH_STATUSES, layer, rise delay 0-1]; edges [waited
+    on, waiter] as node indices; layers {x, w} for the ground under each; chain: the longest chain's node indices."""
+    import collections
+    import math
+    n = len(tasks)
+    index = {t["id"]: i for i, t in enumerate(tasks)}
+    deps = [[index[d] for d in dict.fromkeys(t["deps"]) if d in index and index[d] != i] for i, t in enumerate(tasks)]
+    kids = [[] for _ in tasks]
+    for i, ds in enumerate(deps):
+        for d in ds:
+            kids[d].append(i)
+    left, layer, pred, done = [len(ds) for ds in deps], [0] * n, [None] * n, [False] * n
+    ready = collections.deque(i for i in range(n) if not left[i])
+
+    def drain():
+        while ready:
+            i = ready.popleft()
+            done[i] = True
+            for k in kids[i]:
+                if done[k]:
+                    continue
+                if layer[i] + 1 > layer[k]:
+                    layer[k], pred[k] = layer[i] + 1, i
+                left[k] -= 1
+                if not left[k]:
+                    ready.append(k)
+    drain()
+    cyclic = 0
+    if not all(done):
+        comp = _components(deps, kids)
+        size = collections.Counter(comp)
+        cyclic = sum(size[comp[i]] > 1 for i in range(n))
+        while not all(done):  # ponytail: one pass per cycle (O(cycles × tasks)); cycles in a task graph are rare
+            # a cycle nothing else unplaced holds back, broken at its lowest index: that task stands after what of it
+            # is already placed, and what waits on the cycle stands after it
+            blocked = {comp[i] for i in range(n) if not done[i] for d in deps[i] if not done[d] and comp[d] != comp[i]}
+            i = min(i for i in range(n) if not done[i] and comp[i] not in blocked)
+            left[i] = 0
+            ready.append(i)
+            drain()
+    layers = collections.defaultdict(list)
+    for i in range(n):
+        layers[layer[i]].append(i)
+    pos, x, gap, places, grounds = {}, 0.0, 1.6, [None] * n, []
+    for L in range(max(layers) + 1 if layers else 0):
+        row = layers[L]
+        if not row:
+            continue
+        bary = {i: sum(pos[d] for d in deps[i] if d in pos) / max(1, sum(d in pos for d in deps[i])) for i in row}
+        row.sort(key=lambda i: (not any(d in pos for d in deps[i]), bary[i], i))
+        per = max(12, math.ceil(math.sqrt(len(row))))
+        cols = math.ceil(len(row) / per)
+        rows = math.ceil(len(row) / cols)
+        for j, i in enumerate(row):
+            col, r = divmod(j, rows)
+            pos[i] = (r - (rows - 1) / 2) / max(1, rows)
+            places[i] = (x + col, (r - (rows - 1) / 2) * 1.2)
+        grounds.append([x - 0.6, (cols - 1) + 1.2, rows * 1.2 + 0.2])
+        x += (cols - 1) + gap + 1
+    mid = (grounds[0][0] + grounds[-1][0] + grounds[-1][1]) / 2 if grounds else 0
+    top = max(layer) if n else 0
+    nodes = [[round(places[i][0] - mid, 2), round(places[i][1], 2), TIER_HEIGHT.get(str(t["tier"]), 0.5),
+              GRAPH_STATUSES.index(t["status"]) if t["status"] in GRAPH_STATUSES else GRAPH_STATUSES.index("captured"),
+              layer[i], round(layer[i] / top, 3) if top else 0.0] for i, t in enumerate(tasks)]
+    end = max(range(n), key=lambda i: (layer[i], -i)) if n else None
+    chain = []
+    while end is not None:
+        chain.append(end)
+        end = pred[end]
+    return {"n": nodes, "e": [[d, i] for i, ds in enumerate(deps) for d in ds],
+            "layers": [{"x": round(g[0] - mid + g[1] / 2, 2), "w": round(g[1], 2), "d": round(g[2], 2)} for g in grounds],
+            "chain": chain[::-1], "cyclic": cyclic, "hmax": max(TIER_HEIGHT.values())}
+
+
+def _graph_poster(plan, named):
+    """The first paint: the same plan drawn isometric in SVG, each layer's ground, the edges as arcs, then each task
+    back to front as its two sides and its roof, coloured by status, a blocked roof hatched and a done one ringed
+    (status isn't colour alone); then the named tasks' ids ({node index: id}) over their roofs."""
+    import math
+    cos, sin = math.cos(math.pi / 6), math.sin(math.pi / 6)
+    iso = lambda x, z, y=0.0: ((x - z) * cos, (x + z) * sin - y)
+    pts = [iso(g["x"] + sx * g["w"] / 2, sz * g["d"] / 2) for g in plan["layers"] for sx in (-1, 1) for sz in (-1, 1)]
+    pts += [iso(nd[0], nd[1], nd[2] + 1) for nd in plan["n"]] + [(0.0, 0.0)]
+    x0, y0 = min(p[0] for p in pts) - 2, min(p[1] for p in pts) - 2
+    w, h = max(p[0] for p in pts) + 2 - x0, max(p[1] for p in pts) + 2 - y0
+    pt = lambda p: f"{p[0] - x0:.1f} {p[1] - y0:.1f}"
+    path = lambda corners: "M" + "L".join(map(pt, corners)) + "Z"
+    out = [f'<path class="ground" d="{path([iso(g["x"] + a * g["w"] / 2, b * g["d"] / 2) for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))])}"/>'
+           for g in plan["layers"]]
+    for a, b in plan["e"]:
+        (ax, az, ah), (bx, bz, bh) = plan["n"][a][:3], plan["n"][b][:3]
+        lift = max(ah, bh) + 0.4 + 0.15 * math.hypot(bx - ax, bz - az)
+        out.append(f'<path class="e" d="M{pt(iso(ax, az, ah))}Q{pt(iso((ax + bx) / 2, (az + bz) / 2, lift))} '
+                   f'{pt(iso(bx, bz, bh))}"/>')
+    for nd in sorted(plan["n"], key=lambda nd: (nd[0] + nd[1], nd[0])):
+        x, z, y, s = nd[0], nd[1], nd[2], 0.3
+        st = GRAPH_STATUSES[nd[3]]
+        sides = [iso(x - s, z + s), iso(x + s, z + s), iso(x + s, z - s), iso(x + s, z - s, y), iso(x + s, z + s, y),
+                 iso(x - s, z + s, y)]
+        square = lambda s: [iso(x - s, z - s, y), iso(x + s, z - s, y), iso(x + s, z + s, y), iso(x - s, z + s, y)]
+        out.append(f'<path class="n side st-{st}" d="{path(sides)}"/><path class="n roof st-{st}" d="{path(square(s))}"/>')
+        if st == "blocked":
+            out.append(f'<path class="mark hatch" d="{path(square(s))}"/>')
+        elif st == "done":
+            out.append(f'<path class="mark ring" d="{path(square(s * 0.55))}"/>')
+    for i, tid in named.items():
+        tx, ty = iso(plan["n"][i][0], plan["n"][i][1], plan["n"][i][2])
+        out.append(f'<text class="tag" x="{tx - x0:.1f}" y="{ty - y0 - 0.45:.1f}">{html.escape(tid)}</text>')
+    hatch = ('<defs><pattern id="hatch" width=".2" height=".2" patternUnits="userSpaceOnUse" '
+             'patternTransform="rotate(45)"><rect width=".08" height=".2"/></pattern></defs>')
+    return (f'<svg class="poster" viewBox="0 0 {w:.1f} {h:.1f}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">'
+            + hatch + "".join(out) + "</svg>")
+
+
+def graph_html(tasks, name, when=None):
+    """T-1654: the task graph page, one file, on the city's contract: the SVG poster, a canvas named by what the
+    graph shows (counts by status, the active work, the longest chain, any cycle), its text twin holding every task
+    and what it waits on, and the plan as JSON for the WebGL2 scene. Leak, naming the task, when a string is still
+    absolute after redaction."""
+    import collections
+    tasks = sorted(tasks, key=lambda t: (c.id_num(t["id"]), str(t["id"])))
+    left = max(0, len(tasks) - GRAPH_MAX)
+    kept = []
+    for t in tasks[left:]:
+        try:
+            kept.append({"id": clean(str(t["id"])), "title": clean(str(t.get("title") or "")),
+                         "status": str(t.get("status") or ""),
+                         "tier": t.get("tier") if t.get("tier") in TIER_HEIGHT else "",  # S, M or L only
+                         "deps": [clean(str(d)) for d in t.get("deps") or []]})
+        except Leak:
+            raise Leak(f"task {t['id']}") from None
+    tasks, name = kept, clean(str(name), "name")
+    plan = graph_layout(tasks)
+    status = [GRAPH_STATUSES[nd[3]] for nd in plan["n"]]
+    counts = collections.Counter(status)
+    tag = lambda i: f"{tasks[i]['id']} {tasks[i]['title']}"
+    active = [i for i, s in enumerate(status) if s in ("active", "verifying")]
+    chain = plan["chain"]
+    shown = [tasks[i]["id"] for i in chain] if len(chain) <= 6 else (
+        [tasks[i]["id"] for i in chain[:3]] + ["…"] + [tasks[i]["id"] for i in chain[-2:]])
+    layers = len(plan["layers"])
+    label = (f"{name}'s task graph: {len(tasks):,} task{'s' * (len(tasks) != 1)} and {len(plan['e']):,} "
+             f"dependenc{'ies' if len(plan['e']) != 1 else 'y'} in {layers} layer{'s' * (layers != 1)}, each task a "
+             "block as tall as its tier and coloured by status, standing after what it waits on: "
+             + ", ".join(f"{counts[s]:,} {s}" for s in GRAPH_STATUSES if counts[s]) + ". "
+             + (("Active now: " + "; ".join(tag(i) for i in active[:3]) + (f" and {len(active) - 3} more" if
+                 len(active) > 3 else "") + "; ") if active else "No task is active; ")
+             + (f"longest chain: {len(chain)} tasks, {' → '.join(shown)}." if len(chain) > 1 else
+                "no task waits on another."))
+    cut = max(0, len(plan["e"]) - GRAPH_EDGES)
+    notes = ([f"{plan['cyclic']:,} tasks wait on each other in a cycle; each cycle is broken at its lowest id."]
+             if plan["cyclic"] else []) + (
+             [f"{left:,} older task{'s are' if left != 1 else ' is'} not drawn (the newest {GRAPH_MAX:,} are)."]
+             if left else []) + (
+             [f"{cut:,} more dependenc{'ies are' if cut != 1 else 'y is'} not drawn (the first {GRAPH_EDGES:,} by "
+              "waiter are; the list below holds them all)."] if cut else [])
+    ids = [t["id"] for t in tasks]
+    waits = [[] for _ in tasks]
+    for a, b in plan["e"]:
+        waits[b].append(ids[a])
+    order = sorted(range(len(tasks)), key=lambda i: (plan["n"][i][4], i))
+    twin = (f"<p>{html.escape(' '.join([label] + notes))}</p><ol class=\"tasks\">"
+            + "".join(f"<li>{html.escape(tag(i))} ({status[i]}{html.escape(', ' + tasks[i]['tier']) if tasks[i]['tier'] else ''})"
+                      + (html.escape(f" — waits on {', '.join(waits[i])}") if waits[i] else "") + "</li>"
+                      for i in order) + "</ol>")
+    drawn = dict(plan, e=plan["e"][:GRAPH_EDGES])
+    named = {i: ids[i] for i in (active + [i for i, s in enumerate(status) if s == "blocked"])[:GRAPH_NAMED]}
+    data = dict(drawn, s=GRAPH_STATUSES, t=[{"id": t["id"], "title": t["title"]} for t in tasks], a=active[:6])
+    fill = {"TITLE": html.escape(name), "EYEBROW": html.escape(f"fm page graph · {when or time.strftime('%Y-%m-%d')}"),
+            "LEDE": html.escape(f"{len(tasks):,} tasks · {len(plan['e']):,} dependencies · {layers} layers"),
+            "LABEL": html.escape(label), "TWIN": twin, "POSTER": _graph_poster(drawn, named),
+            "DATA": embed(data)}
+    with open(GRAPH_TEMPLATE, encoding="utf-8") as f:
+        return re.sub(r"__([A-Z]+)__", lambda m: fill.get(m.group(1), m.group(0)), f.read())
+
+
+def graph_page(p, args):
+    import fmcli
+    if args.catalogue or args.picks or args.url:
+        raise fmcli.UsageError("fm page graph takes only --out: the graph shows fm's tasks, not a catalogue")
+    tasks = graph_tasks(p)
+    if not tasks:
+        raise fmcli.UsageError("fm page graph: no open or linked task to draw")
+    try:
+        page = graph_html(tasks, os.path.basename(p.root.rstrip("/")) or p.slug)
+    except Leak as e:
+        raise fmcli.UsageError(f"refused: {e} still holds an absolute or home path after redaction; fm page graph "
+                               "writes no page that names one")
+    path = _out(args, os.path.join(p.dir, "graph.html"), "/* fm page graph (T-1654):")
+    c.write_atomic(path, page)
+    drawn = min(len(tasks), GRAPH_MAX)
+    return fmcli.out(args, {"path": path, "tasks": drawn},
+                     f"Wrote {path}: {drawn:,} tasks in layers by what they wait on; one file that loads nothing from "
+                     "another host (run it again to refresh it from fm state)")
+
+
 def _out(args, default, mark):
     """Where the page goes. Review of T-1649: an --out that already exists is replaced only when it holds mark, the
     template's own opening comment, so the user's own page is never overwritten (the default path is Foreman's)."""
@@ -471,6 +731,8 @@ def cmd_page(args):
         return looks_page(p, args)
     if getattr(args, "what", None) == "city":
         return city_page(p, args)
+    if getattr(args, "what", None) == "graph":
+        return graph_page(p, args)
     meta = c.read_meta(p)
     if args.url:
         if not re.fullmatch(r"https://claude\.ai/(?:code/)?artifact/[\w-]{6,80}", args.url):
