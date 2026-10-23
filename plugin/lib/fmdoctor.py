@@ -1880,8 +1880,8 @@ def check_headless():
         return Result(name, "PASS", f"not available ({path} did not start: {type(e).__name__})")
     if p.returncode:
         last = next((x for x in reversed((p.stderr or p.stdout).splitlines()) if x.strip()), f"exit {p.returncode}")
-        return Result(name, "PASS", f"not available ({path} failed to start: {fmshot._safe(last.strip())[:200]})")
-    ver = fmshot._safe((p.stdout.strip().splitlines() or ["version unknown"])[0])[:80]
+        return Result(name, "PASS", f"not available ({path} failed to start: {fmshot.safe(last.strip())[:200]})")
+    ver = fmshot.safe((p.stdout.strip().splitlines() or ["version unknown"])[0])[:80]
     return Result(name, "PASS", f"available ({path}, {ver})")
 
 
