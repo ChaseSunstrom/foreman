@@ -1099,6 +1099,17 @@ def yields(p, since):
     return lenses, passes
 
 
+def note_skill(e, all_skills, named, loaded):
+    """T-1702/T-1703: fold one skill_named (a hook's note named them) or slash (the user typed one) event into the
+    per-session `named` sets; a slash is a load, so it goes in `loaded` and comes back. A workflow (/foreman:review)
+    or a typo is no skill. fm usage and fm doctor both count through here."""
+    if not isinstance(e.get("skills"), list):
+        return set()
+    names = {str(x) for x in e["skills"]} & set(all_skills)
+    (named if e["kind"] == "skill_named" else loaded)[e.get("session_id")].update(names)
+    return names if e["kind"] == "slash" else set()
+
+
 def cmd_usage(args):
     """Which skills, playbooks and fm commands this project used in the window, and which it never did: candidates to
     trim from the always-loaded context."""
@@ -1126,12 +1137,11 @@ def cmd_usage(args):
             m = re.search(r"\bfm [a-z-]+(?: [a-z][a-z-]*)?", e.get("action", ""))  # e.g. fm task step, fm audit prep
             pending[sid] = m.group(0) if m else None
             continue
-        if e.get("kind") in ("skill_named", "slash") and isinstance(e.get("skills"), list):  # T-1702: the hooks'
-            names = {str(x) for x in e["skills"]} & set(all_skills)  # skill_named: a note named them; slash: the
-            # user typed one. A workflow (/foreman:review) or a typo is no skill
-            (named if e["kind"] == "skill_named" else loaded)[sid].update(names)
+        if e.get("kind") in ("skill_named", "slash"):
             if e["kind"] == "slash":
-                skills.update(names)
+                skills.update(note_skill(e, all_skills, named, loaded))
+            else:
+                note_skill(e, all_skills, named, loaded)
             continue
         if e.get("kind") != "tool":
             continue
