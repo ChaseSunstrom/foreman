@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Brief parsing is linear on step and criterion lines: a run of 20,000 spaces inside one took 1.5 s per parse (every hook parses briefs, and a pulled brief can hold one); now under a millisecond, same groups (T-1616)
 - fm check --affected --evidence records the affected run on the task (labelled affected tests only; closing still needs the full gates); fm lease take lists only what it took; a task waiting for the user's yes says why (synced, imported, written by a replay, or found in an old session) (T-1752: T-1747, T-1748, T-1750)
 - Layout collisions: the site header fits at 320 px (it made the page 349 px wide; a real-browser test measures 320, 360 and 390), and fm page graph's poster drops a label that would overlap one already placed (the text twin still names every task) (T-1738: T-1683, T-1735)
 - fm check waits for the machine-wide gate lock at most 15 minutes (FOREMAN_GATE_WAIT seconds), then runs beside the holder and says so: a hung check in another project held every check for over 40 minutes (T-1753)
