@@ -30,6 +30,11 @@ _LOOK = re.compile(r"^(ls|cat|head|tail|less|more|grep|egrep|rg|ag|find|fd|echo|
 _RUNNERS = {"python", "python3", "node", "bash", "sh", "zsh", "npx", "bunx", "uv", "uvx", "poetry", "pipenv", "env",
             "sudo", "time", "nice", "exec", "deno", "bun", "ruby", "perl", "php"}
 WINDOW = 4  # commands after a failure that may be its fix
+# T-1771: a command that writes files changed the code, as an Edit does: the pass after it is a code fix, never a
+# command to offer (a debugging sed on a test file was kept and offered as "the fix" for a failing run)
+_WRITES = re.compile(r"\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i|\bfm\s+(?:edit|sub)\b|\bpatch\b|"
+                     r"\bgit\s+(?:apply|checkout|restore|reset|stash)\b|\btee\s+(?!/dev/null\b)\S|"
+                     r"(?<![\d&<>])>>?\s*(?!&|/dev/null\b)[\w./~\"'$]")
 ESCALATE = 3  # a failure met this often with no fix captures a task
 
 
@@ -332,7 +337,8 @@ def on_success(p, sid, cmd):
     norm = c.redact(_norm(cmd))[:300]  # as the failure was kept, so a long or secret-bearing retry still matches
     if not fail or _LOOK.match(norm):
         return
-    if time.time() - float(fail.get("at") or 0) > 1800 or norm == fail.get("cmd") or fail.get("edited"):
+    if time.time() - float(fail.get("at") or 0) > 1800 or norm == fail.get("cmd") or fail.get("edited") \
+            or _WRITES.search(norm):  # T-1771: or this command changed files itself
         sess.pop("fail", None)  # stale, a retry that passed, or the code changed in between (a code fix, not this)
     elif _relates(fail.get("cmd", ""), norm):
         offered = sess.get("offered") or {}
