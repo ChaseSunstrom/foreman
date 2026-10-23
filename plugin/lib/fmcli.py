@@ -6257,6 +6257,8 @@ def _build_parser():
     s.add_argument("action", choices=["info", "diff"])
     s.add_argument("paths", nargs="+", metavar="PATH", help="info: one PNG; diff: two, A then B")
     s.add_argument("--out", metavar="PATH", help="diff: write a PNG of A faded with each changed pixel in red")
+    s.add_argument("--tol", type=int, default=0, metavar="N", help="diff: a pixel within N on every channel counts "
+                                                                   "as unchanged (0 to 255; default 0; T-1684)")
     s = add("shot", lazy("fmshot", "cmd_shot"), tier=("Every task", 93), help="URL|FILE...: a viewport shot, frames "
             "in real time and a poster frame (the most painted) per page that moves, from a headless Chromium already "
             "here (none: exit 0 and why; nothing is installed) into the project's state shots/ (T-1636)")
