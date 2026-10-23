@@ -6065,7 +6065,8 @@ def _build_parser():
     s.add_argument("--format", choices=["css", "dtcg", "tailwind"], default="css",
                    help="palette: CSS light-dark() roles, DTCG JSON or a Tailwind v4 @theme")
     s.add_argument("--out", metavar="PATH", help="extract: the file to write the Tokens section into (default: "
-                                                 "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints)")
+                                                 "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints); "
+                                                 "palette: the file to write the export to (default prints)")
     s.add_argument("--to", choices=["css", "app", "pane"], default="css", help="tokens: CSS custom properties (dark "
                    "under prefers-color-scheme), a tui.toml [colors] table fm settings accepts, or the pane's palette "
                    "JSON (T-1651)")

@@ -203,10 +203,9 @@ class Skills(unittest.TestCase):
             self.assertIn(need, named)
         self.assertEqual(fm_mention_problems(body), [])  # T-1701: the checker every skill test shares
         self.assertIn("Skill foreman:directions", body)
-        # palette prints to stdout and ignores --out; extract writes DESIGN.md's Tokens section unless --out says else
+        # T-1714: palette writes --out (it was ignored before); extract writes DESIGN.md's Tokens section unless --out
         palette = next(line for line in body.splitlines() if "fm design palette" in line)
-        self.assertRegex(palette, r"`fm design palette \S+ > ")
-        self.assertNotIn("--out", palette)
+        self.assertRegex(palette, r"`fm design palette \S+ --out \S+`")
         self.assertRegex(body, r"`fm design extract SRC`[^.]*DESIGN\.md")
 
     def test_audit_reference_defines_every_lens_fm_requires(self):
