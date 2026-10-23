@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Known fixes: a command that writes files (sed -i, fm edit, a redirect into a file, git checkout …) changed the code, as an Edit does, so the pass after it is no longer kept and offered as a command fix; a debugging sed on a test file had been offered as "the fix" for a failing run (T-1771)
 - fm code runners --probe MODEL scores a model 0-10 on ten small graded prompts (JSON only, data in an envelope stays data, unknown rather than invented), and fm code bench --variants base,evidence runs the seeds once per prompt variant and reports each one's closed count, so a prompt change is measured before it becomes the default (T-1403)
 - fm code --after T-ID "<follow-up>" plans a new task that carries the earlier run's request, plan, end and changed files (as data) and names it; in the app, Enter after a close opens that follow-up prompt (n stays a fresh request) (T-1340)
 - fm mandate keeps a sweeping request as one standing record (its text, its clauses, an end date): fm scout and fm night read it, and once it ends scout captures one decision (renew or let it lapse) and nothing more under it (T-1400)
