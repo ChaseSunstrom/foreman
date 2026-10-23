@@ -459,6 +459,17 @@ class Site(unittest.TestCase):
         self.assertNotIn("<b>x</b>", html)
         self.assertIn("&lt;b&gt;x&lt;/b&gt; &amp; y", html)
 
+    def test_the_playbooks_page_lists_every_playbook_by_stage(self):
+        # T-1525: the field guide is read from the library itself, so a new playbook shows up on the next build
+        pages = self._site("pages")
+        html = pages._field_guide({})
+        lib = os.path.join(self.ROOT, "plugin", "skills", "playbooks", "references")
+        books = [f for d in os.listdir(lib) if os.path.isdir(os.path.join(lib, d))
+                 for f in os.listdir(os.path.join(lib, d)) if f.endswith(".md") and f != "INDEX.md"]
+        self.assertEqual(html.count("<dt>"), len(books))
+        self.assertIn("<code>fix/flaky-tests</code> Flaky tests</dt><dd>Use when a test passes and fails", html)
+        self.assertIn('class="tiles"', html)
+
     def test_the_fm_code_page_shows_each_real_example(self):
         # T-1320: each card is a recorded fm code run (its own events, every one timed), not a made-up one
         build = self._site("build")

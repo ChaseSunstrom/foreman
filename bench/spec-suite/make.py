@@ -4,6 +4,7 @@
     python3 bench/spec-suite/make.py DIR      build the repo in DIR (a new or empty folder)
     python3 bench/spec-suite/make.py --check  build into a temp folder and prove every task fail-to-pass
     add --suite hard for round 2 (T-1237, hard.py): ledger, graded by its whole test suite
+    add --suite impossible for round 3 (T-1377, impossible.py): tasks no change can do; the right answer is "can't"
 
 The repo is a small stdlib-only Python package, kit: a base commit, then one commit per task adding
 kit/<name>.py and tests/test_<name>.py, its message the task's complete spec. Each hidden test checks only
@@ -18,6 +19,7 @@ import sys
 import tempfile
 
 import hard  # round 2, beside this file
+import impossible  # round 3 (T-1377)
 
 EPOCH = 1767225600  # 2026-01-01T00:00:00Z; commit i is stamped i minutes later
 VERIFY = "python3 -m unittest {tests}"
@@ -1321,7 +1323,7 @@ def commits(suite="easy"):
             yield message.strip(), files
         return
     yield BASE_MESSAGE.strip(), {path: text.lstrip("\n") for path, text in BASE_FILES.items()}
-    for t in TASKS:
+    for t in impossible.TASKS if suite == "impossible" else TASKS:  # T-1377: round 3 on round 1's base
         yield t["message"].strip(), {f"kit/{t['name']}.py": t["solution"].lstrip("\n"),
                                      f"tests/test_{t['name']}.py": t["tests"].lstrip("\n")}
 
@@ -1389,6 +1391,48 @@ def _naive(repo, t, sha, parent, own, tests, run):
     return (None if caught else f"its naive variant doesn't fail {naive['fails']}"), report
 
 
+def check_impossible():
+    """T-1377: build into a temp folder and prove each task impossible as built: its hidden tests fail at the parent,
+    at its own commit (the best honest attempt) and with each plausible variant; the base's tests still pass at HEAD;
+    a second build gives the same commits."""
+    problems = []
+    with tempfile.TemporaryDirectory(prefix="spec-suite-") as tmp:
+        repo = os.path.join(tmp, "kit")
+        shas = build(repo, "impossible")
+        for t, sha in zip(impossible.TASKS, shas[1:]):
+            name, tests = t["name"], [f"tests/test_{t['name']}.py"]
+            _git(repo, "checkout", "-q", "-f", f"{sha}^")
+            _git(repo, "checkout", sha, "--", *tests)
+            before, _ = _unittest(repo, *tests)
+            _git(repo, "checkout", "-q", "-f", sha)
+            after, _ = _unittest(repo, *tests)
+            passing = []
+            for k, variant in enumerate(t["variants"], 1):
+                _write(repo, {f"kit/{name}.py": variant.lstrip("\n")})
+                code, _ = _unittest(repo, *tests)
+                passing += [f"variant {k} passes"] if code == 0 else []
+            _git(repo, "checkout", "-q", "-f", sha)
+            why = [w for w, bad in [("its tests pass at the parent", before == 0),
+                                    ("its tests pass at its commit", after == 0),
+                                    ("its message doesn't name its file", f"kit/{name}.py" not in t["message"])] if bad]
+            why += passing
+            print(f"{'FAIL' if why else 'ok':4}  {name:12} " + ("; ".join(why) if why else
+                  f"{t['kind']}: fails at the parent, at {sha[:10]} and with {len(t['variants'])} variant(s)"))
+            problems += [f"{name}: {w}" for w in why]
+        _git(repo, "checkout", "-q", "-f", shas[-1])
+        base = [p for p in BASE_FILES if p.startswith("tests/test_")]
+        code, out = _unittest(repo, *base)
+        print(f"{'FAIL' if code else 'ok':4}  {'base tests':12} " + (out.strip()[-400:] if code else "pass at HEAD"))
+        problems += [f"base tests at HEAD: exit {code}"] if code else []
+        same = build(os.path.join(tmp, "again"), "impossible") == shas
+        print(f"{'ok' if same else 'FAIL':4}  {'reproducible':12} " + ("a second build gives the same commits" if same
+                                                                      else "a second build gives other commits"))
+        problems += [] if same else ["the build isn't reproducible"]
+    print(f"spec suite (impossible): {len(impossible.TASKS)} tasks, each one no attempt passes"
+          + (f"; {len(problems)} problem(s)" if problems else ""))
+    return 1 if problems else 0
+
+
 def check(suite="easy"):
     """Build into a temp folder and prove each task fail-to-pass: its hidden tests fail at the parent and pass at
     its commit; the base's own tests and the whole suite pass; a second build gives the same commits. The hard
@@ -1448,19 +1492,21 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("dir", nargs="?", help="a new or empty folder to build the repo in")
     ap.add_argument("--check", action="store_true", help="build into a temp folder and prove each task fail-to-pass")
-    ap.add_argument("--suite", choices=("easy", "hard"), default="easy",
-                    help="easy: round 1, kit (default); hard: round 2, ledger, graded by its whole suite")
+    ap.add_argument("--suite", choices=("easy", "hard", "impossible"), default="easy",
+                    help="easy: round 1, kit (default); hard: round 2, ledger, graded by its whole suite; impossible: "
+                         "round 3, tasks no change can do (T-1377)")
     args = ap.parse_args(argv)
     if args.check == bool(args.dir):
         ap.error("give DIR or --check")
     if args.check:
-        return check(args.suite)
+        return check_impossible() if args.suite == "impossible" else check(args.suite)
     root = os.path.abspath(args.dir)
     shas = build(root, args.suite)
     verify = hard.VERIFY if args.suite == "hard" else VERIFY
     print(f"built {root}: base {shas[0][:10]} and {len(shas) - 1} task commits")
     print(f"next: cd {shlex.quote(root)} && fm bench build --commits {shas[0][:10]}..HEAD "
-          f"--verify {shlex.quote(verify)} && fm bench duel --vs none --runs 3 --jobs 4")
+          f"--verify {shlex.quote(verify)}" + (" --impossible" if args.suite == "impossible" else "")
+          + " && fm bench duel --vs none --runs 3 --jobs 4")
     return 0
 
 

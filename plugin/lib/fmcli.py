@@ -566,14 +566,20 @@ def cmd_task(args):
         timed = [f"`{c.fit(m.group(1), 80)}`: {m.group(2).strip()}" for line in b.evidence()  # --repeat's runs
                  if c._RAN_MARK in line and (m := re.search(r"`([^`]*)` → [^·]*· (×\d+[^·]*)", line))]
         measured = "\n".join(x for x in [b.section("Measurements").strip(), *timed] if x)
+        import fmdesign  # T-1538: the colours and motion the change adds to its UI files
+        strip = fmdesign.swatches(c.git_root(p.root) or p.root, b.meta.get("base"), [f["path"] for f in files
+                                                                                      if f["ui"] and not f["deleted"]])
         text = (f"{b.id} receipt: {b.title} ({b.type} {b.tier}, {b.status})"
                 + (f" · UI: {len(ui)} of {len(files)} files" if ui else "")
                 + ("\nReading order (what it builds on, styles, components, entry points, tests, docs):\n"
                    + "\n".join(f"  {i}. {f['path']}  +{f['add']} −{f['del']}" + ("  [UI]" if f["ui"] else "")
                                + ("  (deleted)" if f["deleted"] else "") for i, f in enumerate(files, 1))
                    if files else "\nNo changed files since it was focused.")
-                + (f"\nBefore/after:\n{measured}" if measured else ""))
-        return out(args, {"id": b.id, "files": files, "before_after": measured}, c.plain_lines(text))
+                + (f"\nBefore/after:\n{measured}" if measured else "")
+                + (f"\nSwatches: {' '.join(strip['colours']) or 'no new colour'} · motion: "
+                   f"{' '.join(strip['motion']) or 'none'}" if strip["colours"] or strip["motion"] else ""))
+        return out(args, {"id": b.id, "files": files, "before_after": measured, "swatches": strip},
+                   c.plain_lines(text))
     if sub == "set":
         return task_set(p, args)
     if sub == "step":
@@ -5480,11 +5486,17 @@ def _build_parser():
     s = add("playbooks", lazy("fmplaybooks", "cmd_show"), tier=("Finding your way", 382), help="show NAME: a playbook "
             "as the skill loads it, {{fact}}s (test, language, entry…) filled in from fm map and this project's "
             ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
-    s.add_argument("action", choices=["show", "eval", "route", "blame", "preview", "coverage"], help="eval NAME: "
+    s.add_argument("action", choices=["show", "eval", "route", "blame", "preview", "coverage", "draft", "mine",
+                                      "counter", "score", "kata", "lesson"], help="eval NAME: "
                    "held-out briefs with and without the playbook loaded, the lift recorded (T-1618); route STAGE: the "
                    "playbooks a stage or task type loads; blame NAME: each line's task, from git; preview NAME: the "
                    "checks a load adds (T-1622); coverage: a heatmap of stages by stack, the playbooks naming each "
-                   "stack's cards")
+                   "stack's cards; draft ID: a playbook draft from a done task; mine: files this repo changes together; "
+                   "counter: what failed here, reverted commits and blocked tasks (T-1523); score NAME --task ID: the "
+                   "steps a done task's run followed; kata NAME [--answer FILE]: its held-out briefs as practice; "
+                   "lesson [RANGE]: a five-minute lesson from a diff (T-1525)")
+    s.add_argument("--task", help="score: the task whose run is scored")
+    s.add_argument("--answer", help="kata: a file holding your answer, scored against every kata's checks")
     s.add_argument("name", nargs="?", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that "
                    "name; route: a stage (verifying) or type (FIX); coverage takes none")
     s.add_argument("--briefs", help="eval: the brief set (default plugin/evals/playbooks/<stage>/<name>.json)")
@@ -6140,6 +6152,9 @@ def _build_parser():
                                                                  "becomes a case a judge grades against its criteria")
             b.add_argument("--together", action="store_true", help="with --commits: one case asking for all the "
                                                                    "range's requests in one session (T-1242)")
+            b.add_argument("--impossible", action="store_true", help="with --commits: tasks no change can do (their "
+                           "tests fail at their own commit too); a judge passes a run only when it says so, and a "
+                           "duel counts each arm's false dones (T-1377)")
         if name == "run":
             b.add_argument("--plugin", help="the plugin folder to test (default: this Foreman)")
             b.add_argument("--max", type=int, default=3, help="cases to run")
@@ -6316,7 +6331,12 @@ def _build_parser():
             "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into: brief, a11y (contrast, reduced motion, "
             "flashes, alt, focus styles) and debt N (untokened literals under a budget); advisory exits 0, blocking 1; "
             "roll [--seed N] [--apply|--undo]: one look card's palette, type and motion, seeded, into DESIGN.md")
-    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll"])
+    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll", "diverge",
+                                      "sprint", "vague"],
+                   help="diverge [N] [WHAT] [--out DIR]: N (2-6, default 3) variant briefs for WHAT in looks far "
+                   "apart; diverge pick LOOK: keep the winner in the taste ledger (T-1536); sprint [ROOT]: the "
+                   "ten-minute design sprint, five stages each with a check, the next step of the first that fails; "
+                   "vague TEXT: the vague words in a request and what to ask instead (T-1538)")
     s.add_argument("--seed", type=int, help="roll: the same seed gives the same look (default: a fresh one, printed)")
     s.add_argument("--apply", action="store_true", help="roll: write it as DESIGN.md's ## Look, undoable")
     s.add_argument("--undo", action="store_true", help="roll: put DESIGN.md back as it was before the roll(s)")
@@ -6404,8 +6424,17 @@ def _build_parser():
     s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 98), epilog=fmscene.SCHEMA,
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
             "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
-    s.add_argument("action", choices=["compile"])
-    s.add_argument("path", metavar="FILE", help="the scene.json")
+    s.add_argument("action", choices=["compile", "check", "turntable", "shader", "soak"], help="compile: the module; "
+                   "check: validate and count (a .gltf or .glb: its structure, offline); turntable: a contact sheet of "
+                   "the scene turned about +Y, drawn by fmraster with no browser or GPU (--out PNG); shader: GLSL "
+                   "checks of a shader card, file or folder; soak: the --hud build in headless Chrome for --seconds, "
+                   "leaks and the frame budget, skipped with the reason when there's no browser or three.js (T-1530)")
+    s.add_argument("path", metavar="FILE", help="the scene.json (shader: a card, a GLSL file or a folder of them)")
+    s.add_argument("--hud", action="store_true", help="compile: add a dev overlay (frame rate, draw calls, triangles, "
+                   "geometries, textures; globalThis.__fmScene); not for production (T-1530)")
+    s.add_argument("--frames", type=int, default=8, help="turntable: how many turns, 1-36")
+    s.add_argument("--seconds", type=int, default=10, help="soak: how long it runs")
+    s.add_argument("--budget-ms", type=float, help="soak: fail when the p95 render time is over this")
     s.add_argument("--to", choices=["three", "component"], default="three", help="three: an ES module importing "
                    "\"three\" (r155+); component: that module plus <fm-scene>, a custom element mounting it in a shadow "
                    "DOM over its slot=\"poster\" child (T-1634)")
@@ -6534,12 +6563,15 @@ def _build_parser():
             help="your taste in looks (T-1537): the twelve ranked by what you kept; keep|revert|not LOOK; calibrate "
                  "(12 A-or-B pairs: a keyboard picker on a terminal, --answers to record); learn PATH… (only files "
                  "you name, read-only, never the network)")
-    s.add_argument("action", nargs="?", metavar="rank|keep|revert|not|calibrate|learn",
+    s.add_argument("action", nargs="?", metavar="rank|keep|revert|not|calibrate|learn|tournament|opposite|book",
                    help="checked by fm looks itself, so a look named here gets the fix (fm looks keep LOOK)")
     s.add_argument("words", nargs="*", metavar="LOOK|PATH")
     s.add_argument("--why", help="keep/revert/not: the user's words")
     s.add_argument("--answers", help="calibrate: 12 answers, a, b or n (neither), comma-separated, in pair order")
     s.add_argument("--round", type=int, help="calibrate: the round the pairs were printed for")
+    s.add_argument("--n", type=int, help="tournament: 2 (a duel), 4 or 8 of the best-ranked looks; book: how many "
+                   "(default 6) (T-1536)")
+    s.add_argument("--out", help="book: the HTML page to write")
     s = add("lane", lazy("fmlanes", "cmd_lane"), tier=("Running elsewhere", 1120), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent; "

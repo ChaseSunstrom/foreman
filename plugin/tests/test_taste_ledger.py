@@ -312,6 +312,53 @@ class CodeApp(ForemanTestCase):
         self.assertIn("no calibration", app.message)
 
 
+class Divergence(ForemanTestCase):
+    """T-1536: a tournament the user answers match by match (each winner +1, each loser -1), opposite day, a lookbook
+    page, and five historical idioms of one layout for the directions skill."""
+
+    def test_a_four_look_tournament_is_answered_match_by_match(self):
+        first = json.loads(self.fm("looks", "tournament", "--json").stdout)
+        seeds = first["seeds"]
+        self.assertEqual((len(seeds), len(first["next"])), (4, 2))
+        self.assertEqual([x["look"] for x in first["next"][0]], [seeds[0], seeds[3]])  # 1 v 4, then 2 v 3
+        half = json.loads(self.fm("looks", "tournament", *seeds, "--answers", "a,b", "--json").stdout)
+        self.assertEqual([x["look"] for x in half["next"][0]], [seeds[0], seeds[2]])  # the final: 1 v 3
+        self.assertIn("--answers a,b,<a|b>", half["then"])
+        done = json.loads(self.fm("looks", "tournament", *seeds, "--answers", "a,b,b", "--json").stdout)
+        self.assertEqual(done["champion"], seeds[2])
+        top = json.loads(self.fm("looks", "--json").stdout)["looks"][0]
+        self.assertEqual((top["look"], top["score"], top.get("picked")), (seeds[2], 2, 2))
+        for bad in (["--n", "3"], ["--answers", "n"], ["--answers", "a,b,a,a"]):
+            p = self.fm("looks", "tournament", *(seeds if bad[0] == "--answers" else []), *bad, check=False)
+            self.assertNotEqual(p.returncode, 0, bad)
+        duel = json.loads(self.fm("looks", "tournament", "lido", "Night market", "--answers", "a", "--json").stdout)
+        self.assertEqual(duel["champion"], "look-lido")
+
+    def test_opposite_day_and_the_lookbook(self):
+        got = json.loads(self.fm("looks", "opposite", "lido", "--json").stdout)["opposites"]
+        self.assertEqual(len(got), len(fmtaste.looks()) - 1)
+        self.assertNotIn("look-lido", [x["look"] for x in got])
+        self.assertEqual([x["distance"] for x in got], sorted((x["distance"] for x in got), reverse=True))
+        page = os.path.join(self.tmp, "book.html")
+        self.fm("looks", "book", "--n", "3", "--out", page)
+        text = read_text(page)
+        self.assertEqual(text.count("<section>"), 3)
+        self.assertNotIn("<script", text)
+        self.assertRegex(text, r'<li style="background:#[0-9a-f]{6};color:#(000|fff)">#[0-9a-f]{6}</li>')
+        self.assertNotEqual(self.fm("looks", "book", check=False).returncode, 0, "it writes a page: --out")
+
+    def test_the_skill_and_command_offer_them(self):
+        skill = read_text(os.path.join(PLUGIN, "skills", "directions", "SKILL.md"))
+        for word in ("fm looks opposite", "fm looks book", "/foreman:looks tournament", "references/idioms.md"):
+            self.assertIn(word, skill)
+        idioms = read_text(os.path.join(PLUGIN, "skills", "directions", "references", "idioms.md"))
+        for era in ("Swiss", "Bauhaus", "Art Deco", "Memphis", "Brutalist"):
+            self.assertIn(era, idioms)
+        cmd = read_text(os.path.join(PLUGIN, "commands", "looks.md"))
+        for word in ("fm looks tournament --json", "no Neither", "fm looks opposite", "fm looks book"):
+            self.assertIn(word, cmd)
+
+
 class Surfaces(unittest.TestCase):
     def test_claude_code_has_a_user_only_command_and_the_directions_skill_ranks_by_it(self):
         cmd = read_text(os.path.join(PLUGIN, "commands", "looks.md"))

@@ -550,6 +550,131 @@ def preview(text):
             "verify": list(dict.fromkeys(v for v in verify if v))}
 
 
+# T-1523: playbooks drafted from what this repo has done: a proved task's steps, its history's co-changes, its failures
+_EVIDENCE = re.compile(r"^- \(step (\d+)\) `(.+?)` → exit 0\b")
+_WORD = re.compile(r"[a-z][a-z0-9_]{4,}")
+_COMMON = {"python3", "plugin", "tests", "failed", "error", "classes", "slowest", "after", "before", "which", "there",
+           "their", "about", "should", "would", "every", "first", "check", "where", "these", "those", "things"}
+
+
+def draft(b):
+    """T-1523: a playbook draft in the library's shape (a Use-when line, a numbered procedure) from a done task's
+    brief, the distilled transcript: each step with the last run that proved it, the criteria as checks, its lessons
+    and what failed first as pitfalls, and the files it touched."""
+    proof = {int(m.group(1)): m.group(2) for m in map(_EVIDENCE.match, b.evidence()) if m}
+    out = [f"# {b.title}", "", f"Use when: a {str(b.meta.get('type') or 'task').lower()} task like {b.id}'s. "
+           f"Drafted by fm playbooks draft {b.id}; edit it before you keep it.", "", "## Procedure", ""]
+    out += [f"{s.n}. {s.text}" + (f" — proved by `{proof[s.n]}`." if s.n in proof else "") for s in b.steps()]
+    for head, rows in (("Checks", [f"- {a.text}" for a in b.acceptance()]),
+                       ("Pitfalls", [x for x in (b.section("Lessons") + "\n" + b.section("Plan gaps")).splitlines()
+                                     if x.startswith("- ")]),
+                       ("Files it touched", [x for x in b.section("Files touched").splitlines() if x.startswith("- ")])):
+        out += ["", f"## {head}", ""] + rows if rows else []
+    return "\n".join(out) + "\n"
+
+
+def mine(root, last=400, least=5, share=0.6):
+    """T-1523: recipes from the repo's history: each file changed in at least `least` of the last commits, with the
+    files changed beside it in at least `share` of those (the unwritten "change X, change Y too"). A commit of more
+    than 30 files is a sweep and says nothing about pairs."""
+    from collections import Counter
+    seen, beside = Counter(), {}
+    for chunk in c._git(root, "log", "--no-merges", f"-{last}", "--name-only", "--format=%x00", timeout=30).split("\0"):
+        files = set(filter(None, chunk.splitlines()))
+        for f in files if 1 < len(files) <= 30 else ():
+            seen[f] += 1
+            beside.setdefault(f, Counter()).update(files - {f})
+    out = []
+    for f, n in sorted(seen.items(), key=lambda x: (-x[1], x[0])):
+        pals = sorted(((g, k) for g, k in beside[f].items() if k / n >= share), key=lambda x: (-x[1], x[0]))
+        if n >= least and pals:
+            out.append({"file": f, "commits": n, "with": [[g, round(k / n, 2)] for g, k in pals]})
+    return out
+
+
+def counter(p, root, last=2000):
+    """T-1523: the counter-playbook, what failed here: commits git reverted (its "This reverts commit" line) and the
+    tasks blocked with a reason, newest first (a dropped task is mostly a duplicate or already built, not a failure)."""
+    rows = []
+    for line in c._git(root, "log", f"-{last}", "--grep=This reverts commit", "--format=%h%x09%s", timeout=30).splitlines():
+        sha, _, subject = line.partition("\t")
+        m = re.fullmatch(r'Revert "(.*)"', subject)
+        rows.append({"kind": "reverted", "what": m.group(1) if m else subject, "why": f"reverted by {sha}"})
+    for b in sorted(c.load_briefs(p, include_archive=True) if p else [], key=lambda b: str(b.meta.get("updated")),
+                    reverse=True):
+        why = [m.group(1) for m in re.finditer(rf"(?m)^- \S+ {b.status}: (.+)$", b.section("Log"))]
+        if b.status == "blocked" and why:
+            rows.append({"kind": b.status, "what": f"{b.id} {b.title}", "why": why[-1]})
+    return rows
+
+
+def _sharing(text, words):
+    """[{n, text, words}]: each numbered line of a playbook with the words (5+ letters, not common) it shares with
+    `words`."""
+    words = set(_WORD.findall(" ".join(words).lower())) - _COMMON
+    return [{"n": int(m.group(1)), "text": m.group(2), "words": sorted(words & set(_WORD.findall(m.group(2).lower())))}
+            for m in (re.match(r"(\d+)\. (.+)", line.strip()) for line in text.splitlines()) if m]
+
+
+def look_first(text, b):
+    """T-1523: the playbook re-ranked by this task's trouble: up to three of its numbered lines sharing the most words
+    (two at least) with the active task's failed runs and what failed first."""
+    bad = [x for x in b.evidence() if "→ ✗" in x] + b.section("Plan gaps").splitlines() if b else []
+    hits = [x for x in _sharing(text, bad) if len(x["words"]) >= 2] if bad else []
+    return sorted(hits, key=lambda x: (-len(x["words"]), x["n"]))[:3]
+
+
+def score(text, b):
+    """T-1525, the dojo: each of a playbook's numbered steps, followed when the task's run (its steps, evidence, approach
+    and log) shares two or more of its telling words: ones at most an eighth of the library's playbooks use, so 'files'
+    or 'evidence' never make a match."""
+    books = listed()
+    seen = {}
+    for rel in books:
+        for w in set(_WORD.findall(_read(os.path.join(ROOT, rel)).lower())):
+            seen[w] = seen.get(w, 0) + 1
+    limit = max(1, len(books) // 8)
+    run = [s.text for s in b.steps()] + b.evidence() + [b.section("Approach (options → choice → why)"), b.section("Log")]
+    rows = [dict(x, words=[w for w in x["words"] if seen.get(w, 0) <= limit]) for x in _sharing(text, run)]
+    return [dict(x, followed=len(x["words"]) >= 2) for x in rows]
+
+
+def lesson(p, root, rng):
+    """T-1525: a five-minute lesson from a diff: its commits, the folders it changed, what each task its commits name
+    learned, and the review checklists the change calls for. ponytail: one level for every reader; a user level would
+    choose how much each part explains."""
+    rng = rng if ".." in rng else f"{rng}~1..{rng}"  # one commit: the change it made
+    log = c._git(root, "log", "--no-merges", "-50", "--format=%h%x09%s", rng, "--", timeout=30, fail=None)
+    if log is None:
+        raise ValueError(f"git can't read {rng}")
+    commits = [x.split("\t", 1) for x in log.splitlines() if "\t" in x]
+    files = [f for f in c._git(root, "diff", "--name-only", rng, "--", timeout=30).splitlines() if f]
+    folders = {}
+    for f in files:
+        folders.setdefault(os.path.dirname(f) or ".", []).append(os.path.basename(f))
+    learned = []
+    for tid in dict.fromkeys(re.findall(r"\bT-\d{4,}\b", " ".join(s for _, s in commits))):
+        b = c.find_brief(p, tid) if p else None
+        rows = [x[2:] for x in (b.section("Lessons").splitlines() if b else []) if x.startswith("- ")]
+        learned += [f"{tid} {b.title}: {x}" for x in rows[:2]] if b else []
+    names = ["review/code-reviewer"] + sorted({REVIEW_BY_EXT[e] for f in files
+                                               if (e := os.path.splitext(f)[1].lower()) in REVIEW_BY_EXT})
+    return {"range": rng, "commits": commits[:12], "more": max(0, len(commits) - 12), "files": len(files),
+            "folders": sorted(folders.items(), key=lambda x: -len(x[1]))[:8], "learned": learned[:8],
+            "checklists": names}
+
+
+def lesson_text(x):
+    parts = [f"Lesson: {x['range']}, {len(x['commits']) + x['more']} commit(s), {x['files']} file(s) (about five "
+             "minutes)", "", "What changed"] + [f"  {sha} {subject}" for sha, subject in x["commits"]]
+    parts += [f"  … and {x['more']} more"] if x["more"] else []
+    parts += ["", "Where"] + [f"  {d}/ ({len(fs)}): {', '.join(fs[:6])}{' …' if len(fs) > 6 else ''}"
+                              for d, fs in x["folders"]]
+    parts += ["", "What was learned"] + [f"  {y}" for y in x["learned"]] if x["learned"] else []
+    parts += ["", "Read it with", "  " + ", ".join(f"fm playbooks show {n}" for n in x["checklists"])]
+    return "\n".join(parts)
+
+
 def _blame_text(rel, rows):
     """Runs of lines from one commit: '1-12  T-1505  <sha>  <summary>'."""
     out, i = [rel], 0
@@ -582,10 +707,46 @@ def cmd_show(args):
     if args.action == "coverage":  # T-1623
         cov = coverage()
         return fmcli.out(args, cov, coverage_text(cov)) or 0
+    if args.action == "lesson":  # T-1525: a five-minute lesson from a diff
+        p = fmcli.resolve(args) if getattr(args, "project", None) else c.find_project(os.getcwd())
+        root = c.git_root(p.root if p else os.getcwd())
+        rng = args.name or "HEAD"
+        if not root or rng.startswith("-"):
+            raise fmcli.UsageError("fm playbooks lesson [RANGE] reads a git range (a..b or one commit) in a repository")
+        try:
+            got = lesson(p, root, rng)
+        except ValueError as e:
+            raise fmcli.UsageError(f"fm playbooks lesson: {e}")
+        return fmcli.out(args, got, lesson_text(got)) or 0
+    if args.action in ("mine", "counter"):  # T-1523: from this repo's history
+        p = fmcli.resolve(args) if getattr(args, "project", None) else c.find_project(os.getcwd())
+        root = c.git_root(p.root if p else os.getcwd())
+        if not root:
+            raise fmcli.UsageError(f"fm playbooks {args.action} reads git history: run it in a git repository")
+        if args.action == "mine":
+            got = mine(root)
+            return fmcli.out(args, {"recipes": got}, (
+                f"Recipes from {root}'s last 400 commits: files changed together\n" + "\n".join(
+                    f"  {x['file']} ({x['commits']} commits): also "
+                    + ", ".join(f"{g} {round(s * 100)}%" for g, s in x["with"][:5]) for x in got[:30])
+                if got else "no recipes: no file changed in 5 or more of the last 400 commits with the same others")) or 0
+        got = counter(p, root)
+        return fmcli.out(args, {"failures": got}, ("What failed here (don't repeat it)\n" + "\n".join(
+            f"  ✗ {x['what']} ({x['kind']}: {x['why']})" for x in got[:40])
+            if got else "nothing failed here: no reverted commit and no task blocked with a reason")) or 0
     if args.name is None:  # left out (coverage takes none); an empty one still says no playbook
         raise fmcli.UsageError(f"fm playbooks {args.action} NAME")
     if args.action == "eval":
         return cmd_eval(args)
+    if args.action == "draft":  # T-1523
+        p = fmcli.resolve(args)
+        b = c.find_brief(p, args.name)
+        if not b:
+            raise fmcli.UsageError(f"no task {args.name}")
+        if b.status != "done":
+            raise fmcli.UsageError(f"{b.id} is {b.status}: a draft comes from a done task, whose steps were proved")
+        text = draft(b)
+        return fmcli.out(args, {"task": b.id, "text": text}, text.rstrip("\n")) or 0
     if args.action == "route":
         got = route(args.name)
         if got is None:
@@ -596,6 +757,35 @@ def cmd_show(args):
                                                                                        "a skill or a verb)")) or 0
     books = listed()
     hits = [_one(args.name, books)]
+    if args.action == "score":  # T-1525, the dojo: a done task's run against this playbook
+        p = fmcli.resolve(args)
+        b = c.find_brief(p, args.task) if args.task else None
+        if not b:
+            raise fmcli.UsageError(f"fm playbooks score {args.name} --task ID: " + (f"no task {args.task}" if args.task
+                                                                                   else "which task's run to score"))
+        rows = score(load(hits[0], ROOT), b)
+        got = sum(x["followed"] for x in rows)
+        return fmcli.out(args, {"playbook": hits[0], "task": b.id, "followed": got, "steps": rows}, (
+            f"{b.id} followed {got} of {len(rows)} steps of {hits[0]}" + "".join(
+                f"\n  {'✓' if x['followed'] else '·'} {x['n']}. {c.fit(x['text'], 100)}" for x in rows))) or 0
+    if args.action == "kata":  # T-1525: the playbook's held-out briefs as practice; --answer FILE scores one answer
+        path = os.path.join(EVALS, hits[0][len("references/"):-len(".md")] + ".json")
+        try:
+            briefs = load_briefs(path)
+        except ValueError:
+            raise fmcli.UsageError(f"no katas for {hits[0]}: its held-out briefs ({path}) are missing or broken")
+        if not args.answer:
+            return fmcli.out(args, {"playbook": hits[0], "katas": [x["task"] for x in briefs]}, (
+                f"Katas for {hits[0]}: answer one with your plan and commands, then fm playbooks kata "
+                f"{args.name} --answer FILE" + "".join(f"\n  {k}. {x['task']}" for k, x in enumerate(briefs, 1)))) or 0
+        try:
+            answer = _read(args.answer)
+        except OSError as e:
+            raise fmcli.UsageError(f"can't read {args.answer}: {e.strerror}")
+        rows = [{"task": x["task"], "pass": passes(answer, x["checks"])} for x in briefs]
+        return fmcli.out(args, {"playbook": hits[0], "katas": rows}, (
+            f"{sum(x['pass'] for x in rows)} of {len(rows)} katas pass with this answer" + "".join(
+                f"\n  {'✓' if x['pass'] else '✗'} {c.fit(x['task'], 100)}" for x in rows))) or 0
     if args.action == "blame":
         try:
             rows = blame(os.path.join(ROOT, hits[0]))
@@ -615,7 +805,11 @@ def cmd_show(args):
         print(f"fm playbooks: .foreman/playbooks/ isn't read; overlays live in {OVERLAYS}/<stage>/<name>.md",
               file=sys.stderr)
     text = load(hits[0], ROOT, p)
-    fmcli.out(args, {"playbook": hits[0], "text": text}, text.rstrip("\n"))
+    first = look_first(text, c.active_brief_fast(p) if p else None)  # T-1523
+    if first:
+        text = ("Look here first: this task's failed runs share words with these steps\n"
+                + "".join(f"  {x['n']}. {x['text']} ({', '.join(x['words'])})\n" for x in first) + "\n" + text)
+    fmcli.out(args, {"playbook": hits[0], "text": text, **({"look_first": first} if first else {})}, text.rstrip("\n"))
     return 0
 
 

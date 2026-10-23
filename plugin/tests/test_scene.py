@@ -404,5 +404,114 @@ class Schema(ForemanTestCase):
         self.assertEqual(fmscene.loads('﻿{"camera": {"fov": 30, "position": [0, 0, 5]}}')["camera"]["fov"], 30)
 
 
+CARDS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(fmscene.__file__))), "skills", "library", "cards",
+                     "looks")
+
+
+def plate(**geometry):
+    """One red mesh in front of a camera on +Z, on black."""
+    return fmscene.validate({"camera": {"fov": 40, "position": [0, 0, 5]}, "background": "#000000",
+                             "materials": {"red": {"color": "#ff0000"}},
+                             "meshes": [{"geometry": geometry, "material": "red"}]})
+
+
+def lit(w, h, rgb, cols, k):
+    """How many pixels of tile k of a contact sheet aren't the black background."""
+    tw, x0, y0 = w // cols, (k % cols) * (w // cols), 0
+    return sum(rgb[3 * (y * w + x):3 * (y * w + x) + 3] != b"\0\0\0" for y in range(y0, y0 + h)
+               for x in range(x0, x0 + tw))
+
+
+class Offline(ForemanTestCase):
+    """T-1530: 3D checks with no browser or GPU: a camera path, the --hud dev build, a turntable contact sheet drawn by
+    fmraster, and GLSL checks of the shader cards."""
+
+    def test_a_camera_path_moves_the_camera_and_keeps_its_aim(self):
+        scene = copy.deepcopy(SCENE)
+        fly = {"target": "camera", "property": "position", "times": [0, 4], "values": [[0, 1.2, 6], [6, 1.2, 0]]}
+        scene["animations"]["fly"] = fly
+        module = fmscene.compile_three(fmscene.validate(scene))
+        self.assertIn('a.target === "camera" ? camera', module)
+        self.assertIn("camera.lookAt(...c.target); };", module)  # every pose keeps the aim
+        for bad, said in [({"fly": dict(fly, property="rotation")}, "a camera path moves the camera's position"),
+                          ({"fly": dict(fly, target="drone")}, "no mesh named drone (or camera")]:
+            with self.subTest(said=said), self.assertRaises(ValueError) as e:
+                fmscene.validate(dict(scene, animations=bad))
+            self.assertIn(said, str(e.exception))
+        named = copy.deepcopy(SCENE)
+        named["meshes"][0]["name"] = "camera"
+        named["animations"] = {}
+        with self.assertRaises(ValueError) as e:
+            fmscene.validate(named)
+        self.assertIn("camera names the camera", str(e.exception))
+
+    def test_the_hud_is_only_in_a_hud_build(self):
+        scene = fmscene.validate(SCENE)
+        plain, hud = fmscene.compile_three(scene), fmscene.compile_three(scene, hud=True)
+        self.assertNotIn("__fmScene", plain)
+        self.assertIn("hud(renderer, fig, performance.now() - t0); }", hud)
+        self.assertIn("globalThis.__fmScene", hud)
+        self.assertIn("globalThis.__fmScene", fmscene.compile_component(scene, hud=True))
+        if shutil.which("node"):  # the dev build still parses as a module
+            path = os.path.join(self.tmp, "hud.mjs")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(hud)
+            p = subprocess.run(["node", "--check", path], capture_output=True, text=True, timeout=30)
+            self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_turntable_shows_front_faces_and_culls_back_ones(self):
+        w, h, rgb = fmscene.turntable(plate(type="plane", size=[2, 1]), frames=2, size=(40, 30), cols=2)
+        self.assertEqual((w, h, len(rgb)), (80, 30, 80 * 30 * 3))
+        self.assertGreater(lit(w, h, rgb, 2, 0), 100)  # facing the camera: drawn
+        self.assertEqual(lit(w, h, rgb, 2, 1), 0)  # turned half round: its back, culled as three.js culls it
+        w, h, rgb = fmscene.turntable(plate(type="box", size=[2, 1, 0.2]), frames=4, size=(40, 30), cols=4)
+        side, front, back = lit(w, h, rgb, 4, 1), lit(w, h, rgb, 4, 0), lit(w, h, rgb, 4, 2)
+        self.assertGreater(front, 3 * side)  # a slab face-on, then edge-on
+        self.assertLess(abs(front - back), front // 10)
+        ball = fmscene.turntable(plate(type="sphere", radius=1, segments=12), frames=1, size=(40, 30), cols=1)
+        self.assertGreater(lit(*ball, 1, 0), 100)  # outward faces, whatever order the grid made them in
+
+    def test_fm_scene_check_and_turntable(self):
+        path = os.path.join(self.tmp, "scene.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(SCENE, f)
+        got = json.loads(self.fm("scene", "check", path, "--json").stdout)
+        self.assertEqual((got["meshes"], got["lights"], got["animations"]), (3, 2, 1))
+        self.assertEqual(got["triangles"], 32 * 16 * 2 - 2 * 32 + 1 + 2)  # sphere (no empty pole faces), 1, plane
+        out = os.path.join(self.tmp, "sheet.png")
+        self.fm("scene", "turntable", path, "--out", out, "--frames", "2")
+        import fmimg
+        info = fmimg.info(out)
+        self.assertEqual((info["width"], info["height"]), (320, 100))
+        p = self.fm("scene", "turntable", path, check=False)
+        self.assertNotEqual(p.returncode, 0, "it writes a PNG: --out")
+
+    def test_the_shipped_shader_cards_pass(self):
+        paths = fmscene.shader_paths(CARDS)
+        self.assertGreaterEqual(len(paths), 8)
+        validator = shutil.which("glslangValidator")
+        self.assertEqual([x for p in paths for x in fmscene.shader_problems(p, validator)], [])
+
+    def test_a_card_whose_code_and_table_disagree(self):
+        folder = os.path.join(self.tmp, "shaders")
+        os.makedirs(folder)
+        card = os.path.join(folder, "shader-x.md")
+        with open(card, "w", encoding="utf-8") as f:
+            f.write("## Shader\n```glsl\n#version 300 es\nprecision highp float;\nuniform float uA;\nout vec4 o;\n"
+                    "void main() { o = vec4(uA); }\n```\n\n## Uniforms\n| Uniform | Type |\n|---|---|\n| `uB` | float |\n")
+        found = fmscene.shader_problems(card)
+        self.assertIn("shader-x.md: the Uniforms table lists uB, which no block declares", found)
+        self.assertIn("shader-x.md: uA is declared but not in the Uniforms table", found)
+        bad = os.path.join(folder, "broken.frag")
+        with open(bad, "w", encoding="utf-8") as f:
+            f.write("#version 300 es\nprecision highp float;\nout vec4 o;\nvoid main() { o = vec4(1.0) }\n")
+        validator = shutil.which("glslangValidator")
+        if validator:
+            self.assertTrue(any("doesn't compile as GLSL (frag)" in x for x in fmscene.shader_problems(bad, validator)))
+        p = self.fm("scene", "shader", folder, check=False)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("2 shader file(s)", p.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
