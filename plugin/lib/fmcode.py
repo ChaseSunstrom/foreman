@@ -1674,6 +1674,10 @@ def cmd_code(args):
         except (ValueError, AttributeError):  # not the main thread, or no such signal here
             pass
     words = list(args.request or [])
+    if getattr(args, "themes", False):  # T-1311: every theme side by side on a sample run
+        import fmcodetui
+        print(fmcodetui.gallery(shutil.get_terminal_size((120, 40)).columns))
+        return 0
     if not words and args.resume is None and not getattr(args, "task", None) and not getattr(args, "json", False) \
             and not getattr(args, "tui", False) and sys.stdin.isatty() and sys.stdout.isatty():
         import fmcodetui  # T-1330: fm code alone on a terminal opens the app, like claude does

@@ -226,6 +226,60 @@ class Keys(unittest.TestCase):
             self.assertIn(cli, text)
 
 
+class WideLayout(unittest.TestCase):
+    """T-1347: 160 columns or more add a third column with the Plan and Check output panels."""
+
+    def test_a_wide_terminal_adds_plan_and_check_output(self):
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
+        for e in RUN:
+            app.feed(e)
+        wide = tui().render(app.state, 170, 44, tui().DEFAULTS, app).text()
+        self.assertIn("╭─ Plan ", wide)
+        self.assertIn("╭─ Check output ", wide)
+        self.assertIn("Activity", wide)
+        narrow = tui().render(app.state, 150, 44, tui().DEFAULTS, app).text()
+        self.assertNotIn("╭─ Plan ", narrow)
+
+
+class DiffView(unittest.TestCase):
+    """T-1312: the diff view reveals its lines on open (all at once with motion reduced or off) and marks the words a
+    changed line changed."""
+
+    def test_changed_words_are_marked_on_a_paired_line(self):
+        marks = tui().intraline(["@@ -1 +1 @@", "-    return upload_done()", "+    return upload_done(files)", " x"])
+        self.assertEqual(set(marks), {2}, "the removed line lost nothing; the added one gained files")
+        line = "+    return upload_done(files)"
+        self.assertEqual(["".join(line[1:][a:b] for a, b in marks[2])], ["files"])
+        marks = tui().intraline(["-a = old_name(1)", "+a = new_name(1)"])
+        self.assertEqual(("-a = old_name(1)"[1:][slice(*marks[0][0])], "+a = new_name(1)"[1:][slice(*marks[1][0])]),
+                         ("old_name", "new_name"))
+
+    def test_lines_reveal_over_time_and_at_once_without_motion(self):
+        lines = [f"+line {i}" for i in range(60)]
+        for motion, first in (("full", True), ("off", False)):
+            app = tui().App(dict(tui().DEFAULTS, motion=motion), spawn=lambda *a, **k: None, diff=lambda: "\n".join(lines))
+            now = [10.0]
+            app.clock = lambda: now[0]
+            app.key("d")
+            text = tui().render(app.state, 120, 40, app.cfg, app).text()
+            self.assertEqual("+line 20" not in text, first, motion)
+            now[0] += 2
+            self.assertIn("+line 20", tui().render(app.state, 120, 40, app.cfg, app).text())
+
+
+class Themes(unittest.TestCase):
+    """T-1311: every theme side by side on a sample run."""
+
+    def test_the_gallery_shows_every_theme(self):
+        out = tui().gallery(130, 18, depth=24)
+        for name in tui().PRESETS:
+            self.assertIn(name, out)
+        self.assertIn("\x1b[", out, "in colour")
+        plain = tui().gallery(130, 18, depth=0)
+        self.assertNotIn("\x1b[", plain)
+        self.assertTrue(all(len(line) <= 130 for line in plain.splitlines()), "fits the width it was given")
+
+
 class Navigation(unittest.TestCase):
     """T-1313: / filters the Activity log; the bottom bar's hints follow the focused panel."""
 
@@ -406,6 +460,7 @@ class Views(unittest.TestCase):
             app.feed(e)
         app.key("d")
         self.assertEqual(app.mode, "diff")
+        app.view_opened -= 10  # T-1312: the reveal on open is over
         cv = tui().render(app.state, 100, 30, tui().DEFAULTS, app)
         self.assertEqual(cv.style_of("+    if args.dry_run:"), "ok")
         self.assertEqual(cv.style_of("-    return upload_done()"), "bad")

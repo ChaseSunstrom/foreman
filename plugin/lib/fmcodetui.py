@@ -8,12 +8,14 @@ driver, --plain its line-by-line twin and --snapshot an SVG of the screen. Pictu
 chips, change bars and a token chart; the model's own words are one key away. Themes, layout and keys are config;
 panels and commands are registries extensions add to. Stdlib only."""
 import contextlib
+import difflib
 import functools
 import html
 import json
 import math
 import os
 import queue
+import re
 import shutil
 import signal
 import subprocess
@@ -1172,6 +1174,9 @@ def render(st, w, h, cfg, app=None, t=None):
         _panel(cv, st, app, cfg, name, y0, 0, ph, w, lines)
         y0, body_h = y0 + ph, body_h - ph
     columns_ = [["log"]] if single else [lay.get("narrow") or ["log"]] if narrow else lay.get("columns") or [["log"]]
+    extra = [n for n in WIDE_COLUMN if all(n not in col for col in columns_) and n not in (lay.get("top") or [])]
+    if not narrow and not single and w >= WIDE_ABOVE and extra and len(columns_) > 1:  # T-1347: room for a third
+        columns_ = [*columns_, extra]
     widths = [100] if len(columns_) == 1 else list(lay.get("widths") or [])
     widths = (widths + [100 // len(columns_)] * len(columns_))[:len(columns_)]
     heights = [lay.get("narrow_heights") or []] if narrow else list(lay.get("heights") or [])
@@ -1239,6 +1244,7 @@ def _overlay(cv, cfg, title, note, w=None, h=None):
 CLI = {"new": 'fm code "…"', "resume": "fm code --resume", "model": "fm code --model M", "settings": "fm settings",
        "hush": "fm settings set motion off", "diff": "git diff"}  # T-1348: the command line behind a key, where one is
 CONFIRM_S = 2.0  # T-1348: q or s during a live run waits this long for the second press
+WIDE_ABOVE, WIDE_COLUMN = 160, ["plan", "verify"]  # T-1347: a third column's panels, from this many columns
 TIP_SKIP = {"stop", "up", "down", "focus", "expand", "follow", "help", "quit"}  # too plain to need a tip
 POSTER = (("run", ("new", "stop", "resume", "model")),  # T-1512: the keys poster's groups; extensions' go under more
           ("see", ("diff", "history", "projects", "thoughts", "settings", "hush", "looks")),
@@ -1277,12 +1283,52 @@ def _diff_style(line):
             else "ok" if line.startswith("+") else "bad" if line.startswith("-") else "text")
 
 
+_WORDS = re.compile(r"\w+|\s+|[^\w\s]")
+
+
+def intraline(lines):
+    """T-1312: {line index: [(start, end) in the text after its +/-]} for the words a changed line changed: a run of
+    removed lines paired, in order, with the added run right after it (lines over 400 characters aren't compared)."""
+    marks, i = {}, 0
+    side = lambda s, ch: s.startswith(ch) and not s.startswith(ch * 3)
+    while i < len(lines):
+        j = i
+        while j < len(lines) and side(lines[j], "-"):
+            j += 1
+        k = j
+        while k < len(lines) and side(lines[k], "+"):
+            k += 1
+        for a, b in zip(range(i, j), range(j, k)):
+            old, new = _WORDS.findall(lines[a][1:401]), _WORDS.findall(lines[b][1:401])
+            pos = lambda toks: [sum(map(len, toks[:n])) for n in range(len(toks) + 1)]
+            po, pn = pos(old), pos(new)
+            for tag, a1, a2, b1, b2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+                if tag != "equal":
+                    if a2 > a1:
+                        marks.setdefault(a, []).append((po[a1], po[a2]))
+                    if b2 > b1:
+                        marks.setdefault(b, []).append((pn[b1], pn[b2]))
+        i = max(k, i + 1)
+    return marks
+
+
+DIFF_RATE = 40  # T-1312: lines a second the diff view reveals on open
+
+
 def _diff_view(cv, st, app, cfg):
     iy, ix, ih, iw = _overlay(cv, cfg, "Changes", "q closes")
     lines = app.view_lines or ["no changes"]
     app.view_scroll = max(0, min(app.view_scroll, len(lines) - ih))
-    for r, line in enumerate(lines[app.view_scroll:app.view_scroll + ih]):
-        cv.line(iy + r, ix, [(line.expandtabs(4), _diff_style(line))], ix + iw)
+    fx = current()
+    shown = len(lines) if not fx.moving else int((app.clock() - app.view_opened) * DIFF_RATE) + 1
+    marks = app.view_marks
+    for r, line in enumerate(lines[app.view_scroll:app.view_scroll + min(ih, max(0, shown - app.view_scroll))]):
+        n, style, text = app.view_scroll + r, _diff_style(line), line.expandtabs(4)
+        segs, at = [(text[:1], style)], 1
+        for a, b in marks.get(n, []) if "\t" not in line else []:  # a tab moves columns: marks would land wrong
+            segs += [(text[at:a + 1], style), (text[a + 1:b + 1], "chip_ok" if line[0] == "+" else "chip_bad")]
+            at = b + 1
+        cv.line(iy + r, ix, segs + [(text[at:], style)], ix + iw)
 
 
 def _list_view(title, note, row, head=None, foot=None, empty="nothing here yet", sized=False):
@@ -1747,6 +1793,7 @@ class App:
         self.order, self.focus, self.scroll, self.follow, self.thoughts = [], 0, 0, True, False
         self.selected, self.expanded = None, set()
         self.view_lines, self.view_scroll, self.items, self.item_index = [], 0, [], 0
+        self.view_opened, self.view_marks = 0.0, {}  # T-1312: when the diff view opened; its changed-word marks
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
@@ -2070,6 +2117,7 @@ class App:
         except (OSError, subprocess.SubprocessError) as e:
             self.view_lines = [f"no diff: {e}"]
         self.view_scroll, self.mode = 0, "diff"
+        self.view_opened, self.view_marks = self.clock(), intraline(self.view_lines)  # T-1312
 
     # -- the app (T-1330): home over every Foreman project, a project's work and past runs
     def _back(self):
@@ -3359,6 +3407,49 @@ def record(events, path, size=(120, 34), fps=20, seconds=None, cfg=None, hold=2.
             "-pix_fmt", "yuv420p", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"]
         subprocess.run(args[:1] + ["-nostdin"] + args[1:] + [os.path.abspath(path)], check=True, stdin=subprocess.DEVNULL)
     return path
+
+
+SAMPLE_RUN = [  # T-1311: a short run every theme draws in the gallery
+    {"event": "start", "request": "fix add", "model": "sample", "schema": 1},
+    {"event": "plan", "plan": {"type": "FIX", "tier": "S", "title": "Make calc.add add",
+                               "criteria": [{"text": "calc.add adds", "verify": "python3 test_calc.py"}],
+                               "steps": ["write the failing test", "fix calc.add"]}},
+    {"event": "task", "text": "task T-0001 created and focused", "task": "T-0001"},
+    {"event": "verify", "criterion": 1, "label": "before", "exit": 1, "cmd": "python3 test_calc.py",
+     "output": "AssertionError: -1"},
+    {"event": "step", "step": 1},
+    {"event": "tokens", "call_in": 1200, "call_out": 80, "total_in": 1200, "total_out": 80},
+    {"event": "action", "action": "read", "target": "calc.py", "result": "ok", "detail": "1 def add"},
+    {"event": "action", "action": "run", "target": "rm -rf ~", "result": "refused", "detail": "the guard said no"},
+    {"event": "step", "step": 2},
+    {"event": "tokens", "call_in": 2100, "call_out": 140, "total_in": 3300, "total_out": 220},
+    {"event": "action", "action": "edit", "target": "calc.py", "result": "ok", "detail": "edited"},
+    {"event": "changed", "step": 2, "files": ["calc.py"]},
+    {"event": "verify", "criterion": 1, "label": "verify", "exit": 0, "cmd": "python3 test_calc.py"},
+]
+
+
+def gallery(cols, height=18, depth=None):
+    """T-1311: every theme drawn on SAMPLE_RUN, as many side by side as fit `cols`, each named above its tile; ANSI
+    colour at the terminal's depth (0: plain text, as NO_COLOR asks)."""
+    depth = colour_depth() if depth is None else depth
+    per = max(1, (cols + 2) // 62)  # tiles at least 60 wide (Checks beside Activity), two apart
+    tw = max(20, (cols - 2 * (per - 1)) // per)
+    tiles = []
+    for name in PRESETS:
+        cfg = dict(DEFAULTS, theme=PRESETS[name](), preset=name, motion="off")
+        app = App(cfg, spawn=lambda *a, **k: None)
+        for e in SAMPLE_RUN:
+            app.feed(e)
+        cv = render(app.state, tw, height, cfg, app)
+        rows = Term(depth).cells(cv, cfg) if depth else [[(ch, "") for ch, _ in row] for row in cv.cells]
+        tiles.append((name, ["".join(sgr + ch for ch, sgr in row) + ("\x1b[0m" if depth else "") for row in rows]))
+    out = []
+    for i in range(0, len(tiles), per):
+        row = tiles[i:i + per]
+        out.append("  ".join(fit(n, tw) + " " * (tw - width(fit(n, tw))) for n, _ in row).rstrip())
+        out += ["  ".join(t[1][r] for t in row) for r in range(height)] + [""]
+    return "\n".join(out).rstrip("\n")
 
 
 def snapshot(events, path, size=(120, 34), cfg=None, mode="main"):
