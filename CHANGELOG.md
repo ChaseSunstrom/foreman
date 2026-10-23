@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm research add --from-agent: a Noticed line close to an open task (fm capture's near-duplicate rule) is logged onto that task instead of becoming a second one, and the output names where it went (T-1726)
 - Playbooks reach reviewers and recall as fm playbooks show gives them: fm audit prep writes the review checklists the diff's languages call for (code-reviewer always) with this project's {{facts}} and overlays filled in, and names the file in the brief, which the fm-reviewer agent reads first; fm recall points at fm playbooks show NAME, not a file path (T-1681)
 - fm code's TUI: fm code --themes prints every theme side by side on a sample run (plain text under NO_COLOR); the diff view reveals its lines on open (at once with motion reduced or off) and marks the words a changed line changed; at 160 columns or more a third column shows the Plan and Check output panels (T-1742: T-1311, T-1312, T-1347)
 - fm code's TUI: the request box edits like a shell line (arrows, Home/End, Ctrl-A/E/W/U/K, Up/Down for this launch's requests) with a preview of where Enter sends it and which runner takes it; /name runs an app command, Tab after @ completes a tracked file; / in the run view filters the Activity log (its title counts the matches), and the focused panel names its own keys in its bottom edge (T-1741: T-1313, T-1346)
