@@ -6097,6 +6097,15 @@ def _build_parser():
     s.add_argument("--diff", metavar="BASE", help="compare each viewport shot with BASE/<page>/viewport.png (an earlier "
                    "fm shot --out BASE): exit 1 over the baseline's noise floor (the most its own frames differ) or "
                    "when a font fell back (T-1637)")
+    s = add("critique", lazy("fmcritique", "cmd_critique"), tier=("Every task", 93), help="URL|FILE: a computed-style "
+            "census of the page (colours, fonts, sizes, radii, shadows, spacing, with counts; or a census .json) "
+            "critiqued against DESIGN.md's tokens: unnamed values, near-duplicates, outliers (exit 1 on findings; no "
+            "browser: not run, exit 2); --why SELECTOR: the cascade behind one element (T-1642)")
+    s.add_argument("target", metavar="URL|FILE")
+    s.add_argument("--why", metavar="SELECTOR", help="the matched rules and winning declaration per property")
+    s.add_argument("--design", metavar="PATH", help="the DESIGN.md (default: the repo root's, or docs/DESIGN.md)")
+    s.add_argument("--any-url", action="store_true", help="open any http(s) page, not only localhost, 127.0.0.1, "
+                   "[::1] and files")
     s = add("flow", lazy("fmflow", "cmd_flow"), tier=("Every task", 96), help="FILE: a user journey, one step a line "
             "(goto URL|FILE, click SEL, type SEL TEXT, expect SEL [TEXT], wait MS), in the headless Chromium fm shot "
             "finds, as a verify command: exit 1 names the step that failed, 2 with no browser (never a pass) (T-1639)")
