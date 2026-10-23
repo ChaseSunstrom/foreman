@@ -139,27 +139,43 @@ function freeze() {  // in the page: CSS animations and transitions held still
 // fm motion verify holds them to the score's duration and curve. Transitions are off under freeze(), so not sampled.
 function sampleMotion(where) {
   const nums = v => ((v.trim() === "none" ? "matrix(1, 0, 0, 1, 0, 0)" : v).match(/-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?/gi) || []).map(Number);
-  const skip = new Set(["offset", "computedOffset", "easing", "composite"]), out = [];
-  for (const a of document.getAnimations().slice(0, 50)) {
+  const skip = new Set(["offset", "computedOffset", "easing", "composite"]), out = [], notes = [];
+  const all = document.getAnimations();  // reduced-motion-NAME forms play only under reduced motion: not these
+  if (all.length > 50) notes.push(`${where}: sampled the first 50 of ${all.length} animations`);
+  for (const a of all.slice(0, 50)) {
     const e = a.effect, name = a.animationName || "";
-    const dur = e && e.getTiming ? Number(e.getTiming().duration) || 0 : 0;
-    if (!name.startsWith("motion-") || !e.target || !(dur > 0 && dur <= 20000)) continue;
-    const props = [...new Set(e.getKeyframes().flatMap(k => Object.keys(k)))].filter(k => !skip.has(k))
-      .map(k => (k.startsWith("--") ? k : k.replace(/[A-Z]/g, c => "-" + c.toLowerCase()))).slice(0, 8);
-    const was = a.currentTime, delay = e.getTiming().delay || 0;
-    const read = ms => {
-      a.currentTime = delay + ms;
-      const s = getComputedStyle(e.target, e.pseudoElement || null);
-      return props.map(p => nums(s.getPropertyValue(p)).slice(0, 16));
-    };
-    const from = read(0), to = read(dur), at = [1, 2, 3, 4, 5, 6, 7].map(k => [dur * k / 8, read(dur * k / 8)]);
-    a.currentTime = was;
-    props.forEach((p, i) => out.push({ motion: name.slice(7, 71), property: p, where, from: from[i], to: to[i],
-                                       at: at.map(([ms, v]) => [ms, v[i]]) }));
+    if (!name.startsWith("motion-") || !e || !e.target) continue;
+    let t = null, was = null;
+    try {
+      t = e.getTiming(); was = a.currentTime;
+      const dur = Number(t.duration) || 0;
+      if (!(dur > 0 && dur <= 20000)) continue;
+      const props = [...new Set(e.getKeyframes().flatMap(k => Object.keys(k)))].filter(k => !skip.has(k))
+        .map(k => (k.startsWith("--") ? k : k.replace(/[A-Z]/g, c => "-" + c.toLowerCase()))).slice(0, 8);
+      // one forward iteration, held at both ends: a repeating or reversed animation seeked to its duration would be
+      // back at its start (review)
+      e.updateTiming({ iterations: 1, iterationStart: 0, direction: "normal", fill: "both" });
+      const read = ms => {
+        a.currentTime = (t.delay || 0) + ms;
+        const s = getComputedStyle(e.target, e.pseudoElement || null);
+        return props.map(p => nums(s.getPropertyValue(p)).slice(0, 16));
+      };
+      const from = read(0), to = read(dur), at = [1, 2, 3, 4, 5, 6, 7].map(k => [dur * k / 8, read(dur * k / 8)]);
+      props.forEach((p, i) => out.push({ motion: name.slice(7, 71), property: p, where, from: from[i], to: to[i],
+                                         at: at.map(([ms, v]) => [ms, v[i]]) }));
+    } catch (err) {
+      notes.push(`${where}: ${name.slice(0, 71)}: not sampled: ${String(err && err.message || err).slice(0, 120)}`);
+    } finally {
+      try {
+        if (t) e.updateTiming({ iterations: t.iterations, iterationStart: t.iterationStart || 0,
+                                direction: t.direction, fill: t.fill });
+        if (was !== null) a.currentTime = was;
+      } catch (err) { /* the page took it back: nothing to restore */ }
+    }
   }
-  return out;
+  return { samples: out, notes };
 }
-const motionSamples = [];
+const motionSamples = [], motionNotes = [];
 const PROFILES = {
   torture: {
     view: async (page, where) => {
@@ -198,7 +214,17 @@ const PROFILES = {
       await page.waitForTimeout(1000);
       if (!a.equals(await snap(page)))
         notes.push(`${where}: still changes with the clock frozen and animations paused (a canvas, video or timer)`);
-      if (motionSamples.length < 500) motionSamples.push(...await page.evaluate(sampleMotion, where));  // after the stillness check: seeking moves the page
+      if (motionSamples.length >= 500) {  // after the stillness check: seeking moves the page
+        if (!motionNotes.some(n => n.startsWith("stopped sampling"))) motionNotes.push(`stopped sampling at 500 samples, before ${where}`);
+        return;
+      }
+      try {
+        const got = await page.evaluate(sampleMotion, where);
+        motionSamples.push(...got.samples);
+        motionNotes.push(...got.notes);
+      } catch (e) {  // a sampler that throws costs its samples, never the frozen crawl
+        motionNotes.push(`${where}: motion sampling failed: ${e.message.split("\n")[0]}`);
+      }
     },
   },
   motion: {
@@ -273,7 +299,8 @@ async function main() {
   const finish = () => {
     if (p.end) p.end();
     console.log(JSON.stringify({ views, defects, notes, frame_findings: framed,
-                                 ...(motionSamples.length ? { motion: motionSamples.slice(0, 500) } : {}) }));
+                                 ...(motionSamples.length ? { motion: motionSamples.slice(0, 500) } : {}),
+                                 ...(motionNotes.length ? { motion_notes: motionNotes.slice(0, 20) } : {}) }));
     process.exit(0);
   };
   // T-0420: a frozen page leaves Playwright calls that never return; whatever happens, print what was found

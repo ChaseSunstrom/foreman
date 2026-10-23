@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm motion verify [PATH] [--samples FILE]: values sampled under fm smoke's frozen profile (each motion-NAME animation seeked through one iteration) held to the Motion Score's duration and curve within 2% of the travel; each drift names the motion, property, time, expected and sampled values and the tolerance; colours and rotations are noted, not compared; with no browser it says so and checks only the score (T-1627)
 - foreman:ui-design: one skill for page, component, animation and 3D work (pick a direction, set tokens, build, add motion and a 3D scene, then check contrast, lint and screenshots) that routes to the ui playbooks, the directions skill and fm design/scene/motion/looks/page/img/smoke. A design request's hint now loads it, and a UI request's hint (now also raised by animation, motion, 3D, WebGL and three.js words) names it beside the playbook index. MASTER.md and the plugin README list tidy and doctor as user-only (T-1700).
 - The Stop drive and fm next no longer name a queued task whose dependency is still open (held by a builder lane or waiting): they offer free work instead, and the drive's side-work lists skip it too (T-1708)
 - fm playbooks eval NAME --ablate: each ## section (outside code fences) dropped in turn and the lift re-scored; a section's share is the lift it carries alone, and zero share flags a cut candidate (or a section another one repeats). The no-playbook pass runs once; --real's up-front budget estimate counts every ablation (T-1619)
