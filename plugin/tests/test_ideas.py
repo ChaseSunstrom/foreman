@@ -13,8 +13,10 @@ args = sys.argv[1:]
 lens = next(l for l in args if l.startswith("Lens: ")).split("\n")[0][6:] if any(a.startswith("Lens: ") for a in args) else "?"
 stdin = sys.stdin.read()
 lens = next((l for l in stdin.splitlines() if l.startswith("Lens: ")), "Lens: ?")[6:]
+system = open(args[args.index("--append-system-prompt-file") + 1]).read() if "--append-system-prompt-file" in args else ""
+stdin = system + "\n" + stdin  # T-1265: what the child reads in all, pack included
 with open(os.environ["STUB_LOG"], "a") as f:
-    f.write(json.dumps({"args": args, "stdin": stdin, "cwd": os.getcwd(), "t": time.time()}) + "\n")
+    f.write(json.dumps({"args": args, "stdin": stdin, "system": system, "cwd": os.getcwd(), "t": time.time()}) + "\n")
 time.sleep(float(os.environ.get("STUB_SLEEP", "0")))
 if lens == os.environ.get("STUB_FAIL_LENS"):
     sys.exit(3)
@@ -24,7 +26,12 @@ if lens == os.environ.get("STUB_CHAT_LENS"):
 phrases = ["apple banana cherry", "delta echo foxtrot", "golf hotel india", "juliet kilo lima", "mike november oscar"]
 vary = " " + phrases[stdin.count(chr(10) + '- ') // 2 % 5] if os.environ.get("STUB_VARY") else ""
 cat = "speed" if "user" in lens or "deepen" in lens else "looks"
-print(f"- **Idea for {lens}{vary}** — FEATURE — value 4 — effort S — risk low — category: {cat}")
+idea = f"- **Idea for {lens}{vary}** — FEATURE — value 4 — effort S — risk low — category: {cat}"
+if os.environ.get("STUB_JSON"):  # T-1265: claude -p's json, with the prompt cache's token counts
+    print(json.dumps({"type": "result", "result": idea, "total_cost_usd": 0.01,
+                      "usage": {"cache_read_input_tokens": 200, "cache_creation_input_tokens": 100}}))
+else:
+    print(idea)
 sys.exit(2 if lens == os.environ.get("STUB_PARTIAL_LENS") else 0)
 '''
 
@@ -66,7 +73,7 @@ class Ideas(Stubbed):
         self.assertEqual(res["yield"], {"user value": 3, "bold bets": 3})
 
     def test_one_toolless_child_per_lens_in_parallel(self):
-        env = dict(self.env, STUB_SLEEP="1")
+        env = dict(self.env, STUB_SLEEP="1", FOREMAN_IDEAS_WARM="0")
         start = time.time()
         res = json.loads(self.fm("ideas", "--pack", self.pack, "--lens", "reliability", "--lens", "bold bets",
                                  "--json", env=env).stdout)
@@ -84,8 +91,26 @@ class Ideas(Stubbed):
         self.assertEqual(sorted(r["lens"] for r in res["results"]), ["bold bets", "reliability"])
         for r in res["results"]:
             self.assertIn(f"Idea for {r['lens']}", read_text(r["file"]))
-        self.assertIn("super improve it", calls[0]["stdin"], "context pack goes in on stdin (no argv size limit)")
+        self.assertIn("super improve it", calls[0]["system"], "the pack goes in a file (no argv size limit)")
         self.assertNotIn("super improve it", " ".join(calls[0]["args"]))
+
+    def test_the_pack_is_one_cached_system_prompt_and_the_first_child_warms_it(self):  # T-1265
+        env = dict(self.env, STUB_SLEEP="1", FOREMAN_IDEAS_WARM="5", STUB_JSON="1")
+        three = ["--lens", "reliability", "--lens", "bold bets", "--lens", "delight"]
+        out = self.fm("ideas", "--pack", self.pack, *three, env=env).stdout
+        calls = sorted(self.calls(), key=lambda x: x["t"])
+        self.assertEqual(len({x["system"] for x in calls}), 1, "one system text: the cache's shared prefix")
+        self.assertIn("super improve it", calls[0]["system"])
+        for x in calls:
+            self.assertNotIn("super improve it", x["stdin"][len(x["system"]):], "the message is the lens alone")
+            self.assertTrue(x["stdin"][len(x["system"]):].strip().startswith("Lens: "))
+        self.assertGreater(calls[1]["t"] - calls[0]["t"], 0.9, "the rest wait for the first child to write the cache")
+        self.assertLess(calls[1]["t"] - calls[0]["t"], 4, "it ended before the warm time: no longer wait")
+        self.assertLess(calls[2]["t"] - calls[1]["t"], 0.8, "then the rest run together")
+        self.assertIn("prompt cache: 600 tokens read, 300 written", out)
+        res = json.loads(self.fm("ideas", "--pack", self.pack, "--lens", "delight", "--json", env=env).stdout)
+        manifest = json.loads(read_text(os.path.join(res["dir"], "manifest.json")))
+        self.assertEqual(manifest["cache"], {"read": 200, "written": 100})
 
     def test_missing_claude_is_a_clear_error(self):
         empty = os.path.join(self.tmp, "empty-bin")

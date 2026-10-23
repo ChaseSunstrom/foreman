@@ -11,7 +11,10 @@ import fmideas
 
 STUB = r'''#!/usr/bin/env python3
 import json, os, sys
+args = sys.argv[1:]
 prompt = sys.stdin.read()
+if "--append-system-prompt-file" in args:  # T-1265: the pack comes in the shared system text
+    prompt = open(args[args.index("--append-system-prompt-file") + 1]).read() + "\n" + prompt
 with open(os.environ["STUB_LOG"], "a") as f:
     f.write(json.dumps({"stdin": prompt}) + "\n")
 if "KILL IT FAST" in prompt:
@@ -87,7 +90,7 @@ class Lenses(Base):
     def test_reframing_and_wild_lenses_exist_with_their_notes(self):
         for lens in ("reframe", "flip assumptions", "oblique provocation", "devil's idea", "worst-bugs persona"):
             self.assertIn(lens, fmideas.LENSES)
-            self.assertIn(fmideas.LENS_NOTES[lens], fmideas.child_prompt(lens, "pack"))
+            self.assertIn(fmideas.LENS_NOTES[lens], fmideas.lens_prompt(lens))
         self.assertIn("flip", read_text(os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references",
                                                      "planning.md")).lower())
 

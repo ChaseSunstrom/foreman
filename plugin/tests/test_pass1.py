@@ -65,10 +65,10 @@ class Outgrown(ForemanTestCase):
 
 class Prefix(ForemanTestCase):
     def test_siblings_and_later_rounds_share_the_pack_prefix(self):
-        import fmideas
+        import fmideas  # T-1265: the pack is the system text every lens of a round shares; the lens is the message
         pack = "# pack\n" + "context line\n" * 50
-        a, b = fmideas.child_prompt("bold bets", pack), fmideas.child_prompt("reliability", pack)
-        shared = os.path.commonprefix([a, b])
-        self.assertIn(pack, shared)
-        later = fmideas.child_prompt("bold bets", fmideas.later_round_pack(pack, ["idea one"], 2))
+        a = fmideas.system_text("rules", pack)
+        self.assertIn(pack, a)
+        self.assertNotIn(pack, fmideas.lens_prompt("bold bets"))
+        later = fmideas.system_text("rules", fmideas.later_round_pack(pack, ["idea one"], 2))
         self.assertIn(pack, os.path.commonprefix([a, later]))

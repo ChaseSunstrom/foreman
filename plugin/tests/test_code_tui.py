@@ -504,6 +504,34 @@ class Views(unittest.TestCase):
         self.assertIn(app.state.task, ("T-0001", "T-0002"))
         self.assertIn(app.state.status, ("closed", "blocked"))
 
+    def test_a_replay_steps_through_its_events_with_the_arrows(self):  # T-1307
+        path = os.path.join(tempfile.mkdtemp(), "T-0001.events.jsonl")
+        with open(path, "w") as f:
+            f.write("".join(json.dumps(e) + "\n" for e in RUN))
+        app = self.app()
+        app.replay(path)
+        self.assertEqual(app.state.status, "closed")
+        self.assertIn("←/→ step through its 14 events", app.message)
+        app.key("KEY_LEFT")
+        self.assertNotEqual(app.state.status, "closed", "one event back: before the close")
+        self.assertIn("◂▸ 13/14 verify", app.message)
+        app.key("KEY_HOME")
+        self.assertEqual((app.state.task, app.state.status), (None, "planning"), "the start alone")
+        self.assertIn("◂▸ 1/14 start", app.message)
+        app.key("KEY_RIGHT")
+        app.key("KEY_RIGHT")
+        self.assertEqual(app.state.task, "T-0001")
+        app.key("KEY_END")
+        self.assertEqual(app.state.status, "closed")
+        app.key("KEY_RIGHT")  # past the end: stays
+        self.assertIn("◂▸ 14/14", app.message)
+        live = self.app()
+        for e in RUN[:5]:
+            live.feed(e)
+        before = len(live.state.log)
+        live.key("KEY_LEFT")  # a live run isn't a replay: nothing to step
+        self.assertEqual(len(live.state.log), before)
+
     def test_m_picks_the_model_or_worker_the_next_run_uses(self):
         app = self.app(choices=lambda: [("model", "qwen2.5-coder:32b"), ("worker", "claude"), ("worker", "codex")])
         app.key("m")
@@ -762,6 +790,20 @@ class Motion(unittest.TestCase):
             if i >= 0:
                 return tui().resolve(row[i + offset][1], cfg, cv.bg[y][i + offset])
         self.fail(f"{needle!r} not drawn")
+
+    def test_a_switch_between_views_fades_in_unless_motion_is_off(self):  # T-1307
+        for motion, fades in (("full", True), ("reduced", True), ("off", False)):
+            app, cfg = self.app(RUN, motion)
+            self.frame(app, cfg, 100.0)
+            app.key("h")
+            self.frame(app, cfg, 100.0)
+            mid, end = self.frame(app, cfg, 100.08), self.frame(app, cfg, 101.0)
+            a, b = self.cell(mid, "Past runs", cfg), self.cell(end, "Past runs", cfg)
+            self.assertEqual(a != b, fades, motion)
+            app.key("q")  # back to the run: it fades in too
+            self.frame(app, cfg, 101.0)
+            mid, end = self.frame(app, cfg, 101.08), self.frame(app, cfg, 102.0)
+            self.assertEqual(self.cell(mid, "fix add", cfg) != self.cell(end, "fix add", cfg), fades, motion)
 
     def test_the_station_being_worked_pulses_and_its_spinner_turns(self):
         app, cfg = self.app(RUNNING)
@@ -2237,6 +2279,51 @@ class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
         app.feed({"event": "tool", "action": "read", "target": "calc.py", "worker": "claude"})
         self.assertNotIn("Stalled", self.text(T, app), "life again: no card")
 
+    def test_x_hands_a_stopped_task_to_a_live_cli_then_rechecks_it(self):  # T-1341
+        T, app = self.app()
+        app.feed({"event": "plan", "plan": {"type": "FIX", "tier": "S", "title": "Make calc.add add",
+                                            "criteria": [{"text": "calc.add adds", "verify": "python3 test_calc.py"}],
+                                            "steps": ["fix it"]}})
+        app.feed({"event": "blocked", "text": "T-0001 blocked: checks never passed", "reason": "checks never passed",
+                  "task": "T-0001", "next": "fm task show T-0001"})
+        with unittest.mock.patch.object(T, "live_cli", return_value=("claude", "claude {prompt}")):
+            self.assertIn("x hands it to claude", self.text(T, app))
+            app.key("x")
+        argv, root, tid, name = app.handoff
+        self.assertEqual((argv[0], len(argv), tid, name), ("claude", 2, "T-0001", "claude"))
+        for want in ("T-0001", "Make calc.add add", "calc.add adds", "python3 test_calc.py", "checks never passed",
+                     "re-runs"):
+            self.assertIn(want, argv[1])
+        ran, rechecks = [], []
+        app.live = lambda argv, cwd: ran.append((argv[0], cwd)) or 0
+        app.spawn = lambda words, opts: rechecks.append((words, opts.get("recheck")))
+        app.run_handoff()
+        self.assertEqual((ran[0][0], app.handoff, rechecks), ("claude", None, [([], "T-0001")]))
+        self.assertIn("re-running T-0001's checks", app.message)
+
+    def test_x_on_a_stall_stops_the_run_and_with_no_cli_says_so(self):  # T-1341
+        T, app = self.app()
+        app.feed({"event": "stalled", "text": "    claude stalled: no output since launch (130 s)", "secs": 130})
+        stopped = []
+        app.stop = lambda: stopped.append(1)
+        with unittest.mock.patch.object(T, "live_cli", return_value=None):
+            app.key("x")
+        self.assertEqual((app.handoff, stopped), (None, []), "nothing to hand to: the run goes on")
+        self.assertIn("no interactive CLI", app.message)
+        with unittest.mock.patch.object(T, "live_cli", return_value=("claude", "claude {prompt}")):
+            app.key("x")
+        self.assertEqual(stopped, [1])
+        self.assertEqual(app.handoff[2], "T-0001")
+
+    def test_the_live_cli_is_the_runs_own_when_interactive_and_installed(self):  # T-1341
+        T = tui()
+        with unittest.mock.patch.object(T.shutil, "which", side_effect=lambda n: f"/bin/{n}" if n != "gemini" else None):
+            self.assertEqual(T.live_cli("codex")[0], "codex")
+            self.assertEqual(T.live_cli("gemini")[0], "claude", "not installed: claude")
+            self.assertEqual(T.live_cli("aider")[0], "claude", "no interactive form: claude")
+        with unittest.mock.patch.object(T.shutil, "which", return_value=None):
+            self.assertIsNone(T.live_cli("claude"))
+
     def test_the_app_sweeps_runners_a_kill_left_when_it_opens(self):
         import fmcode
         T, app = self.app()
@@ -2534,6 +2621,17 @@ class Command(CodeCase):
         r = self.code("tui", "--events", os.path.join(self.tmp, "missing.jsonl"), check=False)
         self.assertEqual(r.returncode, 2)
         self.assertIn("missing.jsonl", r.stderr)
+
+    def test_tour_plain_prints_the_captions_and_a_tour_svg_is_written(self):  # T-1309
+        r = self.code("tui", "--tour", "--plain", check=False)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("▶ fm code works one task to proof", r.stdout)
+        self.assertIn("rm -rf ~", r.stdout)
+        self.assertIn("▶ Closed and committed", r.stdout)
+        svg = os.path.join(self.tmp, "tour.svg")
+        r = self.code("tui", "--tour", "--snapshot", svg, check=False)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(os.path.getsize(svg) > 1000)
 
     def test_print_config_and_a_bad_file(self):
         out = self.code("tui", "--print-config").stdout
@@ -3500,3 +3598,88 @@ class MotionVisuals(unittest.TestCase):
 if __name__ == "__main__":
     import unittest
     unittest.main()
+
+
+class FirstRun(unittest.TestCase):  # T-1333
+    CHECKS = [("fm on PATH", False, "l", "link it"), ("a runner", True, "m", "pick one"),
+              ("this folder is a project", False, "i", "make it one")]
+
+    def app(self, past=False):
+        hist = tempfile.mkdtemp()
+        if past:
+            with open(os.path.join(hist, "T-0001.events.jsonl"), "w") as f:
+                f.write(json.dumps(RUN[0]) + "\n")
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None, history=hist, root=tempfile.mkdtemp())
+        app.setup_checks = lambda: list(self.CHECKS)
+        return app
+
+    def test_the_welcome_before_a_first_run_shows_three_chips_and_their_fixes(self):
+        app = self.app()
+        text = tui().render(app.state, 110, 30, tui().DEFAULTS, app).text()
+        for what in ("fm on PATH", "a runner", "this folder is a project", "l  link it", "i  make it one",
+                     "e  ask: explain this repo"):
+            self.assertIn(what, text)
+        self.assertNotIn("m  pick one", text, "a check that passes needs no fix")
+        fixed = []
+        app._link_fm = lambda: fixed.append("l") or "linked"
+        app._init_project = lambda: fixed.append("i") or "made"
+        app.key("l")
+        app.key("i")
+        self.assertEqual(fixed, ["l", "i"])
+        app.key("e")
+        self.assertEqual((app.mode, app.asking, app.input), ("prompt", True, "explain this repo"))
+
+    def test_a_project_with_a_past_run_shows_the_usual_welcome(self):
+        app = self.app(past=True)
+        text = tui().render(app.state, 110, 30, tui().DEFAULTS, app).text()
+        self.assertNotIn("fm on PATH", text)
+        self.assertIn("new request", text)
+
+
+class Tour(unittest.TestCase):  # T-1309
+    def test_the_tour_feeds_the_sample_run_on_its_clock_and_captions_each_panel(self):
+        now = [10.0]
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
+        app.clock = lambda: now[0]
+        app.start_tour()
+        app.poll()
+        self.assertEqual(len(app.state.log) >= 0 and app.tour[1], 1)
+        self.assertTrue(app.caption.startswith("fm code works one task to proof"), app.caption)
+        self.assertGreaterEqual(app.fps(now[0]), 4, "the next event comes on time")
+        now[0] += tui().TOUR_GAP * 7
+        app.poll()
+        self.assertEqual(app.tour[1], 8)
+        self.assertIn("guard", app.caption)
+        text = tui().render(app.state, 110, 32, tui().DEFAULTS, app, t=now[0]).text()
+        self.assertIn("▶ The guard", text)
+        now[0] += 100
+        app.poll()
+        self.assertEqual(app.state.status, "closed")
+        self.assertTrue(app.caption.startswith("Closed and committed"))
+        text = tui().render(app.state, 110, 32, tui().DEFAULTS, app, t=now[0]).text()
+        captions = " ".join(tui().TOUR.values())
+        for panel in ("Checks", "Activity", "Tokens per call", "Changed", "Time"):
+            self.assertIn(panel, text, "a panel the tour names is drawn")
+            self.assertIn(panel, captions, "and the tour names it")
+        self.assertAlmostEqual(len(tui().TOUR_RUN) * tui().TOUR_GAP + tui().TOUR_HOLD, 30, delta=3)
+
+    def test_the_tour_as_one_looping_smil_svg(self):
+        import xml.etree.ElementTree as ET
+        path = os.path.join(tempfile.mkdtemp(), "tour.svg")
+        tui().tour_svg(path, (100, 30))
+        raw = read(path)
+        self.assertNotIn("<script", raw)
+        root = ET.fromstring(raw)
+        ns = "{http://www.w3.org/2000/svg}"
+        frames = [g for g in root.iter(ns + "g") if g.find(ns + "set") is not None]
+        self.assertEqual(len(frames), len(tui().TOUR_RUN), "a frame per event")
+        self.assertEqual([g.get("visibility") for g in frames].count("visible"), 1, "the last one stands still")
+        clock = next(a for a in root.iter(ns + "animate") if a.get("id") == "tour")
+        self.assertEqual(clock.get("begin"), "0s;tour.end", "it loops")
+        self.assertIn("The guard", raw)
+        self.assertEqual(raw.count("<style>"), 1)
+
+
+def read(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()

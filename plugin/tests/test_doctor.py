@@ -192,19 +192,43 @@ class Checks(unittest.TestCase):
         with open(target, "w") as f:
             f.write("#!/bin/sh\n")
         link = os.path.join(bin_, "fm")
-        r = d.check_fm_link(link, target, bin_)
+        r = d.check_fm_link(link, target, bin_, shell=False)
         self.assertEqual(r.status, "WARN")
         self.assertIn("fm install-user", r.detail)
         os.symlink(target, link)
-        self.assertEqual(d.check_fm_link(link, target, bin_).status, "PASS")
-        r = d.check_fm_link(link, target, "/usr/bin")
+        self.assertEqual(d.check_fm_link(link, target, bin_, shell=False).status, "PASS")
+        r = d.check_fm_link(link, target, "/usr/bin", shell=False)
         self.assertEqual(r.status, "WARN")
         self.assertIn("PATH", r.detail)
         os.unlink(link)
         os.symlink("/elsewhere/fm", link)
-        r = d.check_fm_link(link, target, bin_)
+        r = d.check_fm_link(link, target, bin_, shell=False)
         self.assertEqual(r.status, "WARN")
         self.assertIn("/elsewhere/fm", r.detail)
+
+    def test_a_login_shell_that_cant_find_fm_fails_with_the_profile_line(self):  # T-1333
+        target = os.path.join(self.t, "plugin-bin-fm")
+        with open(target, "w") as f:
+            f.write("#!/bin/sh\n")
+        link = os.path.join(self.t, "bin", "fm")
+        os.makedirs(os.path.dirname(link))
+        os.symlink(target, link)
+
+        def shell(name, prints):
+            path = os.path.join(self.t, name)
+            with open(path, "w") as f:
+                f.write(f"#!/bin/sh\n[ \"$PATH\" = /usr/bin:/bin ] || exit 9\n{'echo ' + prints if prints else 'exit 1'}\n")
+            os.chmod(path, 0o755)
+            return path
+        r = d.check_fm_link(link, target, shell=shell("bash", None))
+        self.assertEqual(r.status, "FAIL", r)
+        self.assertIn('export PATH="$HOME/.local/bin:$PATH"', r.detail)
+        self.assertIn("~/.bash_profile", r.detail)
+        self.assertIn("~/.zprofile", d.check_fm_link(link, target, shell=shell("zsh", None)).detail)
+        self.assertEqual(d.check_fm_link(link, target, shell=shell("sh", link)).status, "PASS")
+        r = d.check_fm_link(link, target, shell=shell("dash", "/usr/local/bin/fm"))
+        self.assertEqual(r.status, "FAIL", "another fm comes first")
+        self.assertIn("/usr/local/bin/fm", r.detail)
 
     def test_settings_json(self):
         good = self.write("good.json", '{"a": 1}')

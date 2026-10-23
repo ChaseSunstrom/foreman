@@ -2380,7 +2380,8 @@ def cmd_code(args):
         print(fmcodetui.gallery(shutil.get_terminal_size((120, 40)).columns))
         return 0
     if not words and args.resume is None and not getattr(args, "task", None) and not getattr(args, "json", False) \
-            and not getattr(args, "tui", False) and sys.stdin.isatty() and sys.stdout.isatty():
+            and not getattr(args, "tui", False) and not getattr(args, "recheck", None) \
+            and sys.stdin.isatty() and sys.stdout.isatty():
         import fmcodetui  # T-1330: fm code alone on a terminal opens the app, like claude does
         return fmcodetui.main(args, [], home=True)
     if words == ["models"]:
@@ -2416,6 +2417,13 @@ def cmd_code(args):
         run.emit("note", f"stopped {len(stopped)} runner(s) a killed fm code left running "
                          f"(pid {', '.join(map(str, stopped))})", stopped=stopped)
 
+    if getattr(args, "recheck", None):  # T-1341: a person worked the task: its checks again, nothing else
+        try:
+            return _recheck(run, args.recheck)
+        except CodeError as e:
+            run.emit("error", f"fm code: {e}", quiet=True, task=args.recheck, next=f"fm task show {args.recheck}")
+            print(f"fm code: {e}", file=sys.stderr)
+            raise SystemExit(1)
     if args.resume is None and not getattr(args, "task", None):  # T-1338: a run a kill left is never forgotten
         waiting = unfinished(run.jdir)
         for tid, req in waiting[:3]:
@@ -3139,8 +3147,29 @@ def _json_or_none(raw):
         return None
 
 
-def _load(run, tid):
-    """Rebuild a run from its journal: the newest unfinished one, or tid's."""
+def _recheck(run, tid):
+    """T-1341: tid's run's criteria again after a person worked the task (fm code tui's x hands it to a live CLI):
+    each command through Foreman's guard and recorded as evidence, as a run's own checks are. No model, no edit; exit 1
+    while any fails."""
+    _load(run, tid, ended=True)
+    run.emit("start", "", quiet=True, schema=SCHEMA, request=run.request, task=run.tid, worker=run.worker, model=None,
+             verify=run.verify_cmd, resume=True, recheck=True)
+    run.emit("plan", "plan", plan=run.plan)
+    run.emit("task", f"recheck {run.tid}", task=run.tid)
+    try:
+        failed = run.verify("recheck")
+    except Blocked as e:  # the guard refused a check: said, nothing ran
+        run.emit("note", f"{run.tid}: {e}")
+        raise SystemExit(1)
+    n = len(run.plan.get("criteria") or [])
+    run.emit("note", f"{run.tid}: {n - len(failed)}/{n} checks pass" + (
+        f"; fm task finish {run.tid} --audit \"<how>\" closes it" if not failed else
+        f"; still failing: {', '.join(str(k) for k, *_ in failed)}"))
+    return 1 if failed else 0
+
+
+def _load(run, tid, ended=False):
+    """Rebuild a run from its journal: the newest unfinished one, or tid's (ended: tid's even when it ended)."""
     def records(path):
         out = []
         try:
@@ -3161,10 +3190,11 @@ def _load(run, tid):
         paths = [x for x in paths if os.path.basename(x) == f"{tid}.jsonl"]
     for path in paths:
         recs = records(path)
-        if recs and recs[0].get("kind") == "start" and not any(r.get("kind") == "end" for r in recs):
+        if recs and recs[0].get("kind") == "start" and (ended or not any(r.get("kind") == "end" for r in recs)):
             break
     else:
-        raise CodeError(f"nothing to resume{' for ' + tid if tid else ''}: no unfinished fm code journal in {run.jdir}")
+        raise CodeError(f"no fm code journal for {tid} in {run.jdir}" if ended else
+                        f"nothing to resume{' for ' + tid if tid else ''}: no unfinished fm code journal in {run.jdir}")
     start = recs[0]
     run.journal, run.tid, run.plan, run.request = path, start["task"], start["plan"], start["request"]
     run.model_name, run.close_notes = start.get("model"), None
