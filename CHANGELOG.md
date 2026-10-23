@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm playbooks route STAGE names the playbooks a stage or task type loads (from the stage table), blame NAME maps each line to the task whose commit wrote it (the summary's id first, then a Task: trailer, then the body), and preview NAME lists the checks loading it adds: its runnable python blocks and quoted `… :: CMD` verify commands (T-1622)
 - foreman:ui-design: one skill for page, component, animation and 3D work (pick a direction, set tokens, build, add motion and a 3D scene, then check contrast, lint and screenshots) that routes to the ui playbooks, the directions skill and fm design/scene/motion/looks/page/img/smoke. A design request's hint now loads it, and a UI request's hint (now also raised by animation, motion, 3D, WebGL and three.js words) names it beside the playbook index. MASTER.md and the plugin README list tidy and doctor as user-only (T-1700).
 - The Stop drive and fm next no longer name a queued task whose dependency is still open (held by a builder lane or waiting): they offer free work instead, and the drive's side-work lists skip it too (T-1708)
 - fm playbooks eval NAME --ablate: each ## section (outside code fences) dropped in turn and the lift re-scored; a section's share is the lift it carries alone, and zero share flags a cut candidate (or a section another one repeats). The no-playbook pass runs once; --real's up-front budget estimate counts every ablation (T-1619)
