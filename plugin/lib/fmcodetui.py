@@ -102,7 +102,8 @@ DEFAULTS = {
     "keys": {"q": "quit", "n": "new", "s": "stop", "r": "resume", "?": "help", "d": "diff", "h": "history",
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
              "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
-             "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search", "g": "queue", "T": "tickets"},
+             "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search", "g": "queue", "T": "tickets",
+             "u": "undo", "P": "pr"},
     "ext": {},  # T-1657: each extension's settings ({name: {key: value}}), its declared defaults (API.setting)
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
@@ -1378,6 +1379,8 @@ COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume"
                   ("hush", "motion: full, reduced, off"),
                   ("queue", "work the queue: each task in turn"),
                   ("tickets", "tickets: requests that run after this one"),
+                  ("undo", "undo the closed run: a git revert of its commit"),
+                  ("pr", "the closed run's pull request text; Enter posts it"),
                   ("thoughts", "the model's own words"), ("focus", "next panel"), ("up", "up"), ("down", "down"),
                   ("expand", "open a line"), ("follow", "follow the latest"), ("search", "search the Activity"),
                   ("help", "keys"), ("quit", "quit")]
@@ -1564,7 +1567,8 @@ def _list_view(title, note, row, head=None, foot=None, empty="nothing here yet",
 
 
 def _history_row(item):
-    chip = {"closed": (" DONE ", "chip_ok"), "blocked": (" STOP ", "chip_bad"), "error": (" STOP ", "chip_bad")}.get(
+    chip = {"closed": (" DONE ", "chip_ok"), "blocked": (" STOP ", "chip_bad"), "error": (" STOP ", "chip_bad"),
+            "undone": (" UNDONE ", "chip_warn")}.get(  # T-1352
         item["status"], (" ···· ", "chip_todo"))
     when = time.strftime("%b %d %H:%M", time.localtime(item["ts"])) if item.get("ts") else ""
     again = [(f"  fm code --resume {item['task']}", "accent")] if item["status"] == "stopped" else []  # T-1338
@@ -2104,6 +2108,7 @@ class App:
         self.handoff = None  # T-1341: (argv, folder, task, CLI) the screen loop runs with the terminal handed over
         self.deck_cols, self.deck_rects, self.deck_ring, self.grow = 1, {}, None, None  # T-1345: the home's cards
         self.tickets, self.ticketing, self.ticket_held = [], False, False  # T-1350: requests for after this run
+        self.undone, self.view_post = None, None  # T-1352: the commit undone this launch; the task a PR draft posts
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
@@ -2128,7 +2133,8 @@ class App:
                          "diff": self.show_diff, "history": self.show_history, "model": self.show_picker,
                          "thoughts": self.toggle_thoughts, "projects": self.show_home,
                          "settings": self.show_settings, "hush": self.hush, "looks": self.show_looks,
-                         "queue": self.work_queue, "tickets": self.show_tickets}
+                         "queue": self.work_queue, "tickets": self.show_tickets, "undo": self.undo,
+                         "pr": self.draft_pr}
         self.commands.update({name: self._ext_command(name, fn) for name, fn in EXT_COMMANDS.items()})
 
     def fps(self, t):
@@ -2216,7 +2222,8 @@ class App:
                 self.confirm_key = (cmd, self.clock() + CONFIRM_S)
                 self.message = f"{key_name(k)} again within {CONFIRM_S:g} s to {cmd} the run"
                 return None
-        self.confirm_key = None
+        if not (self.confirm_key and self.confirm_key[0] == cmd):  # T-1352: a second press of the same key confirms
+            self.confirm_key = None
         fn = self.commands.get(cmd)
         if fn:
             self.used.add(cmd)
@@ -2231,6 +2238,14 @@ class App:
         step = {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
         if k in ("\x1b", "q") or cmd == {"diff": "diff", "history": "history", "picker": "model"}[self.mode]:
             self._back()
+        elif cmd == "expand" and self.mode == "diff" and self.view_post:  # T-1352: post the PR draft shown
+            tid = self.view_post
+            try:
+                out = self.fm_output(["pr", tid, "--post"])
+            except (OSError, subprocess.SubprocessError) as e:
+                out = f"couldn't run fm pr {tid} --post: {e}"
+            self._back()
+            self.message = _one_line(out)[:200] or f"posted {tid}'s description"
         elif step and self.mode == "diff":
             self.view_scroll = max(0, self.view_scroll + step)
         elif step:
@@ -2534,6 +2549,66 @@ class App:
             return False
         return True
 
+    def _closed_commit(self):
+        """T-1352: (task, commit) of the run on screen when it closed and committed, else None."""
+        st = self.state
+        m = re.search(r"\bcommitted ([0-9a-f]{7,40})\b", st.closed or "")
+        return (st.task, m.group(1)) if st.status == "closed" and st.task and m and not self.running() else None
+
+    def undo(self):
+        """T-1352: u twice within CONFIRM_S on a closed run: a git revert of its commit (a new commit, nothing lost),
+        and its history file says undone, so past runs show it."""
+        got = self._closed_commit()
+        if not got:
+            self.message = "nothing to undo: u undoes a closed run's commit"
+            return None
+        tid, sha = got
+        if self.undone == sha:
+            self.message = f"{tid} is undone already"
+            return None
+        first = self.confirm_key
+        if not (first and first[0] == "undo" and self.clock() < first[1]):
+            self.confirm_key = ("undo", self.clock() + CONFIRM_S)
+            self.message = f"u again within {CONFIRM_S:g} s to undo {tid} (git revert {sha})"
+            return None
+        self.confirm_key = None
+        git = lambda *a: subprocess.run(["git", "-C", self.root or os.getcwd(), *a], capture_output=True, text=True,  # noqa: E731
+                                        timeout=60, stdin=subprocess.DEVNULL)
+        r = git("revert", "--no-edit", sha)
+        if r.returncode:
+            self.message = f"couldn't undo {tid}: {_one_line(r.stderr or r.stdout)[:160]}"
+            return None
+        new, self.undone = git("rev-parse", "--short", "HEAD").stdout.strip(), sha
+        e = {"event": "undone", "text": f"{tid} undone: reverted by {new}", "task": tid, "revert": new, "ts": time.time()}
+        path = os.path.join(self.history_dir, f"{tid}.events.jsonl") if self.history_dir else None
+        if path and os.path.isfile(path):
+            try:
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(e) + "\n")
+            except OSError:
+                pass
+        self.state.note("note", text=e["text"])
+        self.message = f"undid {tid}: reverted by {new}"
+        return None
+
+    def draft_pr(self):
+        """T-1352: P on a closed run: fm pr's description in the text view; Enter there posts it (fm pr ID --post),
+        which fm pr allows only with the task's publish grant."""
+        got = self._closed_commit()
+        if not got:
+            self.message = "no closed run: P drafts a closed run's pull request text"
+            return None
+        tid = got[0]
+        try:
+            out = self.fm_output(["pr", tid])
+        except (OSError, subprocess.SubprocessError) as e:
+            out = f"couldn't run fm pr {tid}: {e}"
+        self.view_lines, self.view_marks = out.splitlines() or ["(no output)"], {}
+        self.view_title = f"fm pr {tid} · Enter posts it to its PR (needs the publish grant)"
+        self.view_scroll, self.view_opened, self.view_back, self.mode = 0, self.clock(), "main", "diff"
+        self.view_post = tid
+        return None
+
     def run_next(self, nxt):
         """T-1762: a failure's next command, one key away: a resume carries the run on here; a read-only fm command's
         output opens in a view; anything else is named for the user's own shell (it may need their answer)."""
@@ -2632,7 +2707,7 @@ class App:
     # -- the app (T-1330): home over every Foreman project, a project's work and past runs
     def _back(self):
         """Close a view: to the project or home it was opened from, else the run's screen."""
-        back, self.view_back = self.view_back, "main"
+        back, self.view_back, self.view_post = self.view_back, "main", None
         if back == "project" and self.project is not None:
             self.mode, self.items, self.item_index = "project", self.project_items, self.project_index
         elif back == "home" and self.home_items is not None:
@@ -3551,7 +3626,8 @@ def history(folder):
                 tail = f.read().decode("utf-8", "replace").splitlines()
         except OSError:
             continue
-        last = next((e for e in map(_json_line, reversed(tail)) if e and e.get("event") in ("closed", "blocked", "error")),
+        last = next((e for e in map(_json_line, reversed(tail)) if e and e.get("event") in ("closed", "blocked", "error",
+                                                                                            "undone")),
                     None)
         if first:
             out.append({"path": path, "task": n.split(".")[0], "request": str(first.get("request") or ""),
