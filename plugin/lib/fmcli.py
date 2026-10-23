@@ -6087,6 +6087,13 @@ def _build_parser():
     s.add_argument("--frozen", action="store_true", help="fm smoke's frozen profile first: the clock fixed, CSS "
                    "animations and transitions paused")
     s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
+    s = add("critique", lazy("fmcritique", "cmd_critique"), tier=("Every task", 93), help="URL|FILE: a computed-style "
+            "census of the page (colours, fonts, sizes, radii, shadows, spacing, with counts; or a census .json) "
+            "critiqued against DESIGN.md's tokens: unnamed values, near-duplicates, outliers (exit 1 on findings; no "
+            "browser: not run, exit 2); --why SELECTOR: the cascade behind one element (T-1642)")
+    s.add_argument("target", metavar="URL|FILE")
+    s.add_argument("--why", metavar="SELECTOR", help="the matched rules and winning declaration per property")
+    s.add_argument("--design", metavar="PATH", help="the DESIGN.md (default: the repo root's, or docs/DESIGN.md)")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
