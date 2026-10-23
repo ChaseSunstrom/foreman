@@ -276,6 +276,23 @@ test('signal glyph: quiet when calm, the worst first with a count (T-0472)', () 
     .toEqual({ level: 'red', text: 'gate failing: pytest +1' })
 })
 
+test('a grant is put to a person: Foreman\'s ask for fm ask comes back as this plugin\'s own; other verdicts pass (T-1262)', async ($, on) => {
+  const asked = 'Foreman asks you to grant core for T-0007: x. Yes grants it to that task; No refuses. Only your answer here can grant it.'
+  on('tool.check', { tool: 'Bash' }, ($, e) => {
+    const cmd = String((e.input as { command?: unknown }).command ?? '')
+    if (cmd.startsWith('fm ask')) return { decision: 'ask', reason: asked, hook: 'PreToolUse' }
+    if (cmd === 'make') return { decision: 'ask', reason: 'Bash(make) needs your approval', hook: 'PreToolUse' }
+    if (cmd === 'rm -rf /') return { decision: 'deny', reason: 'Foreman guard: blocked', hook: 'PreToolUse' }
+    return { decision: 'allow' }
+  })
+  const grant = await $.tool.check({ tool: 'Bash', input: { command: 'fm ask T-0007 core --why x' } })
+  expect([grant.decision, grant.reason, grant.plugin]).toEqual(['ask', asked, 'foreman-ui'])
+  for (const [command, decision] of [['make', 'ask'], ['rm -rf /', 'deny'], ['ls', 'allow']]) {
+    const r = await $.tool.check({ tool: 'Bash', input: { command } })
+    expect([command, r.decision, r.plugin]).toEqual([command, decision, undefined])
+  }
+})
+
 test('guard refusals are recognised by their Foreman prefix only', () => {
   expect(guardReason({ deny: 'PreToolUse:Edit hook error: Foreman guard: blocked core: x.py' })).toBe('blocked core: x.py')
   expect(guardReason({ isError: true, text: 'Foreman: run fm ask as its own Bash command' })).toBe(

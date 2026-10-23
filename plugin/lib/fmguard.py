@@ -3651,10 +3651,6 @@ def _parse_opts(args, short="", long=()):
     return vals, pos
 
 
-def _quoted(*words):
-    return " ".join(shlex.quote(w) for w in words)
-
-
 def _ssh_options(name, args):
     out = []
     vals, _ = _parse_opts(args, "BbcDEeFIiJLlmOopQRSWw" if name == "ssh" else "BbcDFiJloPRSsX")

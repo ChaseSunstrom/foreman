@@ -384,9 +384,12 @@ def session_start(pl):
                     foreman=fmeco.stamp())
         c.write_meta(p, meta)
         synced = _sync_import(p)
+        rewind = _reconcile(p, "SessionStart")
         sd = c.regen_views(p)
     if synced:
         other_note = " ".join(x for x in (other_note, synced) if x)
+    if rewind:
+        other_note = " ".join(x for x in (other_note, c.rewind_note(rewind)) if x)
     try:  # T-1155: after a long silence, at a real start only (a compaction mid-run is not a return)
         import fmaway
         if pl.get("source") in ("startup", "resume") and (away := fmaway.line(p)):
@@ -531,6 +534,15 @@ def _sync_import(p):
     return (f"fm sync: {res['added']} added, {res['updated']} updated from .foreman/"
             + (f"; {len(res['conflicts'])} conflict(s) (fm sync status)" if res["conflicts"] else "") + ".") if n or \
         res["conflicts"] else None
+
+
+def _reconcile(p, event):
+    """T-1267: a /rewind or a revert took back a done step's files: reopen it (the caller holds the project lock)."""
+    try:
+        return c.reconcile_rewind(p, getattr(p, "lane", None), timeout=1)
+    except Exception:
+        log_error(event, _tb())
+        return None
 
 
 def _grants_note(meta):
@@ -1157,12 +1169,13 @@ def user_prompt_submit(pl):
             # a plan-only prompt holds drive this turn; turn_at: when this turn began (T-0145)
             g["drive"].setdefault(sid, {}).update(count=0, hold=hold, turn_at=time.time())
             _write_gate(p, g)
-            sd = c.regen_views(p) if r.overrides or approvals else c.state_dict(p)
+            rewind = _reconcile(p, "UserPromptSubmit")
+            sd = c.regen_views(p) if r.overrides or approvals or rewind else c.state_dict(p)
     except c.LockTimeout:  # never drop a yes / PAUSE silently
         return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
                 "Foreman: state was busy (another session or fm held the lock), so this message was not recorded: "
                 "no approval, override word or heartbeat was applied. Pending approvals are unchanged."}}
-    parts = list(approvals)
+    parts = list(approvals) + ([c.rewind_note(rewind)] if rewind else [])
     secret = _secret_note(pl.get("prompt") or "")  # pasted blocks included: the likeliest place for one
     if secret:
         parts.append(secret)
