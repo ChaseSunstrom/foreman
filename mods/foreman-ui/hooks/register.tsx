@@ -227,7 +227,8 @@ async function refresh($: EngineInterface): Promise<boolean> {
     const r = await run($, ['ui', '--json'])
     if (r.exitCode !== 0) throw new Error(r.stderr.trim().split('\n').at(-1) || `fm ui exited ${r.exitCode}`)
     const next = cleanDeep(JSON.parse(r.stdout)) as FmView // T-1679: no title or name draws a control or bidi override
-    if (cfg.palette === 'default') setPalette('default', next.palette_custom) // T-1717: a saved palette paints over
+    savedPalette = next.palette_custom // T-1780: kept, so an options change paints it too
+    if (cfg.palette === 'default') setPalette('default', savedPalette) // T-1717: a saved palette paints over
     const prev = await read($, view)
     const was = prev?.active
     const now = next.active
@@ -290,6 +291,7 @@ async function refresh($: EngineInterface): Promise<boolean> {
 // T-1574: the options the mod started with; the poll applies the engine's current ones over them when they change
 let startOptions: Record<string, unknown> = {}
 let seenOptions = ''
+let savedPalette: Record<string, unknown> | undefined // T-1780: fm ui's last palette_custom (T-1717)
 
 // T-1574: /config or fm settings set (settings.json) changed an option: it applies on this poll, no restart. The first
 // poll applies the engine's values too, so a change made before it is never only recorded.
@@ -582,7 +584,7 @@ function applyOptions(options: Record<string, unknown>) {
   cfg.motion = options.motion === 'reduced' || options.motion === 'calm' ? 'reduced' : options.motion === 'off' ? 'off' : 'full'
   cfg.chat = options.chat === 'full' ? 'full' : 'tree' // T-1040
   cfg.palette = options.palette === 'cb' || options.palette === 'riso' ? options.palette : 'default' // T-1081, T-1512
-  setPalette(cfg.palette)
+  setPalette(cfg.palette, savedPalette) // T-1780: the saved one too, or an options change dropped it until a refresh
 }
 
 export const register: Register = (on, options) => {
