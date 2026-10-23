@@ -14,6 +14,11 @@
     "Give me six style directions for the new UI and save the pick as DESIGN.md",
     "Build a new UI for the dashboard: which look should I pick, save it as DESIGN.md"
   ],
+  "ui-design": [
+    "Restyle the pricing page and give the hero component some motion",
+    "Build a 3D scene for the landing page with a smooth animation",
+    "Add an animation to this component and set the colour tokens"
+  ],
   "brainstorm": [
     "super improve it",
     "what next? give me scored ideas by lens and turn them into tasks",
@@ -43,6 +48,21 @@
     "I am about to refactor this module and tune performance",
     "Do a security review, then fix the build errors",
     "Write an ADR, plan it, and do TDD and run evals"
+  ],
+  "debug-test": [
+    "A test fails after my change, reproduce it and find the root cause",
+    "The app crashes on startup, find the bug and fix it red to green",
+    "This bug comes back every week, find the root cause"
+  ],
+  "release": [
+    "Ship it: bump the version, update the changelog and tag the release",
+    "Cut a release and publish it",
+    "We are ready to ship, gate the exact commit and publish"
+  ],
+  "research": [
+    "Find out what exists before building a CSV parser, and what we can reuse",
+    "I need cited answers on which auth library to use; save one note",
+    "Before building the sync feature, find something to reuse"
   ],
   "status": [
     "I am about to report where work stands, what is left?",

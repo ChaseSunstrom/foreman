@@ -5274,15 +5274,21 @@ def _build_parser():
     s = add("playbooks", lazy("fmplaybooks", "cmd_show"), tier=("Finding your way", 382), help="show NAME: a playbook "
             "as the skill loads it, {{fact}}s (test, language, entry…) filled in from fm map and this project's "
             ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
-    s.add_argument("action", choices=["show", "eval"], help="eval NAME: held-out briefs with and without the playbook "
-                   "loaded, the lift recorded (T-1618)")
-    s.add_argument("name", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that name")
+    s.add_argument("action", choices=["show", "eval", "route", "blame", "preview"], help="eval NAME: held-out briefs "
+                   "with and without the playbook loaded, the lift recorded (T-1618); route STAGE: the playbooks a "
+                   "stage or task type loads; blame NAME: each line's task, from git; preview NAME: the checks a "
+                   "load adds (T-1622)")
+    s.add_argument("name", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that name; route: "
+                   "a stage (verifying) or type (FIX)")
     s.add_argument("--briefs", help="eval: the brief set (default plugin/evals/playbooks/<stage>/<name>.json)")
     s.add_argument("--real", action="store_true", help="eval: ask a model (claude -p, budgeted) instead of reading "
                    "the playbook literally")
     s.add_argument("--model", default="haiku", help="eval --real: the model")
     s.add_argument("--ablate", action="store_true", help="eval: each ## section's share of the lift, dropped one at "
                    "a time; zero share is a cut candidate (T-1619)")
+    s = add("which", lazy("fmwhich", "cmd"), tier=("Finding your way", 205), help="a task in plain words → the skills, "
+            "playbooks and fm commands that fit, each with the call that loads it (T-1699)")
+    s.add_argument("task", nargs="+", help="the work, e.g. make a 3D hero with motion")
     s = add("scout", lazy("fmscout", "cmd_scout"), tier=("Running elsewhere", 1210), help="find work nobody asked for yet: a newer Claude Code, stack cards "
             "your projects lack, doctor failures, stale skill sources, a brainstorm when the queue is dry (T-0950)")
     s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (fm night's)")
@@ -6063,15 +6069,27 @@ def _build_parser():
     s.add_argument("action", choices=["info", "diff"])
     s.add_argument("paths", nargs="+", metavar="PATH", help="info: one PNG; diff: two, A then B")
     s.add_argument("--out", metavar="PATH", help="diff: write a PNG of A faded with each changed pixel in red")
+    s = add("shot", lazy("fmshot", "cmd_shot"), tier=("Every task", 93), help="URL|FILE...: a viewport shot, frames "
+            "in real time and a poster frame (the most painted) per page that moves, from a headless Chromium already "
+            "here (none: exit 0 and why; nothing is installed) into the project's state shots/ (T-1636)")
+    s.add_argument("targets", nargs="+", metavar="URL|FILE")
+    s.add_argument("--frames", type=int, default=5, help="frames to take (0 to 60; default 5)")
+    s.add_argument("--every", type=int, default=250, metavar="MS", help="ms between frames (10 to 10000; default 250)")
+    s.add_argument("--frozen", action="store_true", help="fm smoke's frozen profile first: the clock fixed, CSS "
+                   "animations and transitions paused")
+    s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
             "score as CSS custom properties and @keyframes, WAAPI options or three.js tween parameters, the same "
-            "durations and easings in each, reduced forms included (T-1625)")
-    s.add_argument("action", choices=["check", "compile"])
+            "durations and easings in each, reduced forms included (T-1625); verify [PATH] [--samples FILE]: the page at "
+            "fm smoke's web URL sampled under its frozen profile (or a samples file), each value held to the score's "
+            "duration and curve within tolerance, every drift named; no browser: says so and checks the score (T-1627)")
+    s.add_argument("action", choices=["check", "compile", "verify"])
     s.add_argument("path", nargs="?", help="the score (default: motion.toml at the repo root)")
     s.add_argument("--to", choices=["css", "waapi", "three"], help="compile: the target (default css)")
     s.add_argument("--out", metavar="FILE", help="compile: write here, replacing the file whole, not print it")
+    s.add_argument("--samples", metavar="FILE", help="verify: a JSON list of samples, not a live crawl")
     import fmscene  # T-1633: stdlib only and small; its schema is the help's epilog
     s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 95), epilog=fmscene.SCHEMA,
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
@@ -6388,7 +6406,8 @@ def _task_shape(parser, argv):
 WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show", "glance"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
                    "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
-                   "playbooks": ("action", {"show"}),  # T-1621: prints, but can rebuild fm map's map.json cache
+                   "playbooks": ("action", {"show", "route", "preview"}),  # T-1621: prints, but can rebuild fm
+                   # map's map.json cache; not blame (T-1622): git in a FOREMAN_PLAYBOOKS repo runs its filters
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
                    "design": ("action", {"lint", "palette", "contrast"}),  # T-1506, T-1507: these only read
                    "img": ("out", {None}),  # T-1630: info and diff read; --out writes

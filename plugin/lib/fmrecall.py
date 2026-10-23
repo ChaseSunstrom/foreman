@@ -23,11 +23,28 @@ LINE, TOTAL, HITS = 170, 800, 4
 TIERS = {"S": 0, "M": 1, "L": 2}
 
 
-def _stem(w):
+def stem(w, cut=5):
+    """w less a suffix (ing, ed, es, s) when 4 letters stay, a doubled last consonant then made single as Porter does
+    (shipping → ship; l, s and z stay: calling → call), cut at `cut` letters."""
     for suffix in ("ing", "ed", "es", "s"):
         if w.endswith(suffix) and len(w) - len(suffix) >= 4:
-            return w[:-len(suffix)][:5]
-    return w[:5]
+            w = w[:-len(suffix)]
+            if len(w) > 3 and w[-1] == w[-2] and w[-1] in "bcdfghjkmnpqrtvwx":
+                w = w[:-1]
+            break
+    return w[:cut]
+
+
+_stem = stem
+_SHORT = set("""to of in on it is be as at by or an my me we us so do if up no go am where were who why they them their
+our about some very really please""".split())  # two-letter and function words _STOP leaves in (fm which's words)
+
+
+def words(text, cut=5):
+    """A text's content stems for fm which (T-1699): \\w+ words, so 3d and ui count, less stop, asking and function
+    words."""
+    return [stem(w, cut) for w in re.findall(r"\w+", (text or "").lower()) if len(w) > 1 and w not in _SHORT
+            and w not in _STOP and stem(w) not in _CAN_ASK]
 
 
 def _tokens(text):
@@ -278,15 +295,11 @@ def gist(text, question, width):
     return c.fit(("… " if i else "") + parts[i].rstrip(";,") + (" …" if i < len(parts) - 1 else ""), width)
 
 
-def can(question, n=3):
-    """T-1519: 'can Foreman do X?' from fm help: [(command, help)] for the commands whose name, help and options' help
-    hold at least half the question's words, rarest words first (idf); [] when none do."""
+def verb_docs():
+    """{command: (its help, its name, help and options' help as one text)} from fm's parser (fm which: T-1699)."""
     import argparse
     import fmcli
-    want = asked(question)
-    if not want:
-        return []
-    docs, helps = {}, {}
+    docs = {}
     for a in fmcli.build_parser()._actions:
         if isinstance(a, argparse._SubParsersAction):
             helps = {ca.dest: ca.help or "" for ca in a._choices_actions}
@@ -294,7 +307,19 @@ def can(question, n=3):
                 if name in helps:
                     words = [name.replace("-", " "), helps[name]] + [x.help for x in sub._actions
                                                                     if x.help and x.help != argparse.SUPPRESS]
-                    docs[name] = set(_tokens(" ".join(words)))
+                    docs[name] = (helps[name], " ".join(words))
+    return docs
+
+
+def can(question, n=3):
+    """T-1519: 'can Foreman do X?' from fm help: [(command, help)] for the commands whose name, help and options' help
+    hold at least half the question's words, rarest words first (idf); [] when none do."""
+    want = asked(question)
+    if not want:
+        return []
+    verbs = verb_docs()
+    helps = {k: h for k, (h, _) in verbs.items()}
+    docs = {k: set(_tokens(t)) for k, (_, t) in verbs.items()}
     df = collections.Counter(w for d in docs.values() for w in d)
     hits = []
     for name, d in docs.items():

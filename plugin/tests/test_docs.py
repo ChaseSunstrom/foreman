@@ -7,7 +7,7 @@ import unittest
 from helpers import PLUGIN, read_text, read_json
 
 SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks", "brainstorm",
-          "directions", "design-extract"]
+          "directions", "design-extract", "ui-design"]
 # everything else Claude may start itself when the user asks in plain words; design-extract: the 2,000-character
 # listing has no room for it, so Claude reaches its verbs through the directions skill and the UI playbooks (T-1507)
 USER_ONLY = {"capture", "design-extract", "tidy", "doctor"}  # T-1705: the rules map these plain words to the fm verbs, not the skills
@@ -29,6 +29,25 @@ def frontmatter(path):
         if k.strip():
             meta[k.strip()] = v.strip().strip('"')
     return meta, m.group(2)
+
+
+def fm_mention_problems(text):
+    """T-1701: each `fm VERB [word]` in backticks that names no command, or a lowercase word that isn't one of the
+    verb's subcommands or its first positional's choices. The one checker every skill test shares."""
+    import fmcli
+
+    def first_positional_choices(parser):
+        pos = next((a for a in parser._actions if not a.option_strings), None)
+        return pos.choices if pos is not None else None
+
+    verbs, bad = first_positional_choices(fmcli.build_parser()), []
+    for verb, word in re.findall(r"`fm ([\w-]+)((?: [a-z][\w-]*)?)", text):
+        inner = first_positional_choices(verbs[verb]) if verb in verbs else None
+        if verb not in verbs:
+            bad.append(f"fm {verb}")
+        elif inner and word and word.strip() not in inner:
+            bad.append(f"fm {verb}{word}")
+    return bad
 
 
 def rel(path):
@@ -108,7 +127,7 @@ class Skills(unittest.TestCase):
         for name in os.listdir(os.path.join(PLUGIN, "workflows")):
             text = read_text(os.path.join(PLUGIN, "workflows", name))
             total += sum(len(m) for m in re.findall(r"(?m)^\s*(?:description|whenToUse): '([^']*)'", text))
-        self.assertLessEqual(total, 2000, "Foreman's part of the skill listing")
+        self.assertLessEqual(total, 2200, "Foreman's part of the skill listing")  # T-1700/T-1701: four job skills
 
     def test_the_rules_carry_the_reply_format_and_stay_small(self):
         # T-1279: the rules ride once a session; the output style's reminder rode every turn
@@ -123,6 +142,30 @@ class Skills(unittest.TestCase):
             for ref in re.findall(r"`((?:\.\./[\w-]+/)?references/[\w./-]+\.md)`", body):  # ../playbooks/…: a sibling's
                 with self.subTest(skill=name, ref=ref):
                     self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)))
+
+    def test_the_job_skills_are_short_and_name_only_real_playbooks_and_verbs(self):
+        # T-1701: debug-test, release and research wrap playbooks and fm verbs that exist, and fire on task words
+        import fmdoctor
+        self.assertEqual(fm_mention_problems("`fm nosuch` `fm lane nosuch ID` `fm lane brief ID` `fm task hypo ID add`"),
+                         ["fm nosuch", "fm lane nosuch"], "the checker itself")
+        jobs, chars = ("debug-test", "release", "research"), 0
+        for name in jobs:
+            with self.subTest(skill=name):
+                meta, body = frontmatter(os.path.join(PLUGIN, "skills", name, "SKILL.md"))
+                self.assertEqual(meta.get("name"), name)
+                self.assertTrue(meta.get("description", "").startswith("Use whenever "), "task words, not Foreman's")
+                self.assertNotEqual(meta.get("disable-model-invocation"), "true")
+                chars += len(meta["description"])
+                self.assertLess(len(body.splitlines()), 60)
+                refs = re.findall(r"`((?:\.\./[\w-]+/)?references/[\w./-]+\.md)`", body)
+                self.assertTrue(refs, "wraps at least one playbook")
+                for ref in refs:
+                    self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)), ref)
+                self.assertIn("`fm ", body, "wraps at least one fm verb")
+                self.assertEqual(fm_mention_problems(body), [])
+        self.assertLessEqual(chars, 360, "three of the 2,200-character listing's job-skill room")
+        self.assertEqual([p for p in fmdoctor._description_problems(os.path.join(PLUGIN, "skills"))
+                          if any(j in p for j in jobs)], [])
 
     def test_the_directions_skill_offers_six_measured_cards_and_saves_the_pick(self):
         # T-1508: one sentence in, six distinct one-screen directions out, the pick saved as DESIGN.md with an
@@ -148,6 +191,23 @@ class Skills(unittest.TestCase):
                 got = fmcodetui.contrast(fg, bg)
                 self.assertAlmostEqual(got, float(ratio), delta=0.05)
                 self.assertGreaterEqual(got, 4.5)
+
+    def test_the_ui_design_skill_routes_to_real_playbooks_and_verbs(self):
+        # T-1700: one job skill for UI, motion and 3D work; every playbook and fm verb it names exists
+        body = read_text(os.path.join(PLUGIN, "skills", "ui-design", "SKILL.md"))
+        self.assertLess(len(body.splitlines()), 100)
+        for ref in ("design-direction", "type-and-colour", "composition", "motion", "scene-3d", "visual-qa"):
+            self.assertIn(f"`../playbooks/references/ui/{ref}.md`", body)
+        named = set(re.findall(r"`fm ([\w-]+)", body))
+        for need in ("design", "scene", "motion", "looks", "page", "img", "new"):
+            self.assertIn(need, named)
+        self.assertEqual(fm_mention_problems(body), [])  # T-1701: the checker every skill test shares
+        self.assertIn("Skill foreman:directions", body)
+        # palette prints to stdout and ignores --out; extract writes DESIGN.md's Tokens section unless --out says else
+        palette = next(line for line in body.splitlines() if "fm design palette" in line)
+        self.assertRegex(palette, r"`fm design palette \S+ > ")
+        self.assertNotIn("--out", palette)
+        self.assertRegex(body, r"`fm design extract SRC`[^.]*DESIGN\.md")
 
     def test_audit_reference_defines_every_lens_fm_requires(self):
         import fmcore as c
