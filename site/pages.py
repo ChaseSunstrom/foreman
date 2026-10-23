@@ -85,6 +85,28 @@ def _cards(s):
                  list(s["cards"].items()))
 
 
+def _wall(s):
+    """T-1541: the release-over-release wall: a generated cover per release, its hue from its version, its bar the
+    share of the latest release's tests it had."""
+    rel = s.get("releases") or []
+    most = max((r["tests"] for r in rel), default=1) or 1
+    covers = []
+    for r in rel:
+        parts = [int(x) if x.isdigit() else 0 for x in str(r["version"]).split(".")[:3]] + [0, 0, 0]
+        hue = (parts[0] * 97 + parts[1] * 31 + parts[2] * 7) % 360
+        covers.append(
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 100" role="img" aria-label="Foreman '
+            f'{esc(r["version"])}, {esc(r["day"])}: {r["tests"]} tests"><rect width="150" height="100" '
+            f'fill="hsl({hue} 38% 20%)"/><text x="12" y="44" font-size="26" font-weight="700" fill="hsl({hue} 70% 82%)"'
+            f' font-family="system-ui,sans-serif">{esc(r["version"])}</text><text x="12" y="64" font-size="11" '
+            f'fill="#e8e2d6" font-family="ui-monospace,monospace">{esc(r["day"])} · {r["tests"]:,} tests</text>'
+            f'<rect x="12" y="78" width="126" height="6" rx="3" fill="hsl({hue} 30% 32%)"/><rect x="12" y="78" '
+            f'width="{round(126 * r["tests"] / most, 1)}" height="6" rx="3" fill="hsl({hue} 70% 65%)"/></svg>')
+    return (f'<section><h2>Release over release</h2><p>Each release\'s cover is drawn from its own numbers: the hue from '
+            f'its version, the bar its tests as a share of the latest.</p><div class="wall">{"".join(covers)}</div>'
+            f'</section>') if covers else ""
+
+
 def _tests(s):
     return line("Tests in the suite, release by release", "Counted at each release commit; every release passes all of them.",
                 s["releases"], "tests", "version")
@@ -607,6 +629,7 @@ PAGES = [
              "bumps, changelog, commit, release check, push, round close and a canary in every local project.",
      "blocks": [
          ("chart", _tests),
+         ("chart", _wall),
          ("text", "What a release proves", "<ul><li><strong>The full gates</strong> on the exact commit that is "
           "pushed, never later work.</li><li><strong>A release check</strong>: doctor and the demo in a throwaway "
           "home.</li><li><strong>Your yes to push</strong>, spent by that one push.</li><li><strong>Resumable.</strong> "

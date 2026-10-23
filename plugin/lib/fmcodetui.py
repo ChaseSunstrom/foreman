@@ -4383,8 +4383,8 @@ def snapshot(events, path, size=(120, 34), cfg=None, mode="main"):
     for e in fmcore.redact_obj(list(events)):  # T-1302: a shared file never holds a token a worker printed
         app.feed(e)
     app.mode = mode
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(to_svg(render(app.state, size[0], size[1], cfg, app), cfg))
+    with open(path, "w", encoding="utf-8") as f:  # T-1541: at t=0, never the wall clock, so a build is byte-for-byte
+        f.write(to_svg(render(app.state, size[0], size[1], cfg, app, t=0.0), cfg))
     return path
 
 
