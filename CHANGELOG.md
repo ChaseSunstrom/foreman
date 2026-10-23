@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm task finish no longer captures a 'Catch it earlier' follow-up when the why-not-caught says the work was new ('new …', 'n/a'), as it already didn't for 'none'; three such items were noise (T-1763)
 - fm code delight: a project's first closed run says so once (first proved change in <project>, with two brighter, wider close waves in the app), and picking a runner in the app says hello with its newest run's end and age (T-1349)
 - fm code: a run's edit leases now end with it whether a model or a worker did the work; a model run's leases held the code for 20 more minutes, so the next run on the same function was refused (T-1764)
 - fm code says once at start when fm doctor finds two Foreman installs or Foreman's hook registered twice (each distinct finding once; state/code-warned.json remembers) (T-1757)

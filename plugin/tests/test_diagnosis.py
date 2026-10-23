@@ -66,6 +66,18 @@ class WhyNotCaught(Base):
         self.assertIn("the catch landed with it: tests/test_x.py", r.stdout)
 
 
+class NewWork(Base):
+    def test_no_followup_when_the_why_says_the_work_was_new(self):  # T-1763
+        for n, why in enumerate(("new playbook", "n/a: docs only", "New feature, nothing existed to catch"), 1):
+            tid = f"T-{n:04d}"
+            self.fm("task", "new", f"Fix {n}", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                    "--focus")
+            self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: x")
+            self.fm("task", "finish", tid, "--audit", "self", "--run", "true", "--docs", "none: internal",
+                    "--lesson", "none: trivial", "--why-not-caught", why)
+        self.assertFalse([b.title for b in c.load_briefs(self.p) if b.meta.get("source") == "followup"])
+
+
 class Ladder(Base):
     def test_the_next_rung_follows_failed_runs_and_open_hypotheses(self):
         self.fm("task", "new", "Fix flake", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s",
