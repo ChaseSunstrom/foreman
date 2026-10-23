@@ -1058,6 +1058,25 @@ class ClaudeEnv(GuardCase):
             ("export CLAUDECODE=", "self-authorize"),
             ("export -n CLAUDECODE", "self-authorize"),
             ("declare CLAUDE_CODE_ENTRYPOINT=cli", "self-authorize"),
+            # T-1722: a wrapper that runs the command in a new pty or shell still names the variables
+            ("script -qc 'env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT fm settings set motion off' /dev/null",
+             "self-authorize"),
+            ("script -q -c \"unset CLAUDECODE; fm settings list\" /dev/null", "self-authorize"),
+            ("script --command 'CLAUDECODE= fm settings list' /dev/null", "self-authorize"),
+            ("bash -c 'env -u CLAUDECODE fm settings list'", "self-authorize"),
+            ("sh -c \"CLAUDECODE= CLAUDE_CODE_ENTRYPOINT= fm settings list\"", "self-authorize"),
+            ("setsid env -u CLAUDECODE fm settings list", "self-authorize"),
+            ("timeout 5 env -u CLAUDE_CODE_ENTRYPOINT fm settings list", "self-authorize"),
+            ("unbuffer env -u CLAUDECODE fm settings list", "self-authorize"),
+            ("unbuffer -p env -u CLAUDECODE fm settings list", "self-authorize"),
+            # a wrapper the guard doesn't know still leaves env's own words to read
+            ("chrt 0 env -u CLAUDECODE fm settings list", "self-authorize"),
+            ("taskset 1 env -u CLAUDE_CODE_ENTRYPOINT fm settings list", "self-authorize"),
+            ("stdbuf -o L env --unset=CLAUDECODE fm settings list", "self-authorize"),
+            ("chrt 0 env CLAUDECODE= fm settings list", "self-authorize"),
+            ("chrt 0 env -u CLAUDE{{CODE,_CODE_ENTRYPOINT}} fm settings list", "self-authorize"),
+            ("env FOO=1 grep CLAUDECODE notes.txt", None),  # the name as the command's argument, not env's
+            ("script -qc 'fm settings list' /dev/null", None),
             # a whole fresh environment is a clean-env test run, not a hidden Claude (fm settings fails closed off a TTY)
             ("env -i PATH=/usr/bin:/bin HOME=/tmp/h python3 plugin/tests/run.py test_guard", None),
             ("sudo apt-get update && fm doctor", None),
