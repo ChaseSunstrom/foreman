@@ -93,7 +93,7 @@ SECRET_NAME = re.compile(r"(TOKEN|SECRET|PASSW(OR)?D|_PWD|_KEYS?|CREDENTIALS?)$"
 SCHEMA = 1  # T-1283: the --json event stream's version; a reader refuses a newer one it doesn't know
 # T-1283: every --json event (each also has "event", "text" and "ts", seconds since the epoch). The TUI reads only these.
 EVENTS = {
-    "start": "schema, request, task, worker, model, verify, resume",
+    "start": "schema, request, task, worker, model, verify, resume, foreman {root, version}",
     "plan": "plan (type, tier, title, criteria [{text, verify}], steps)",
     "task": "task", "resume": "task", "step": "step", "fix": "round",
     "say": "text: the model's own words beside its actions",
@@ -102,10 +102,10 @@ EVENTS = {
     "worker": "worker, exit", "revert": "file, reason",
     "verify": "criterion, label (before|verify), cmd, exit, output (when it failed)",
     "changed": "step, files (dirty after the step), stat {path: [added, removed]}",
-    "closed": "task, tokens", "blocked": "task, reason", "error": "task",
+    "closed": "task, tokens", "blocked": "task, reason, next (the command to run now)", "error": "task, next",
     "answer": "text: the answer to a question about the code (no task, nothing changed)",
     "note": "text, worker: which runner the run uses and why, or a caution about it (T-1328), or a worker turn that "
-            "changed nothing (T-1393)",
+            "changed nothing (T-1393); stopped [pids]: runners a killed fm code left, stopped at this start (T-1337)",
     "tool": "action (read|edit|run|search|…), target, worker: a CLI's tool use as it happens (T-1329)",
     "working": "worker, secs, silent (seconds since its last byte): a CLI turn still running with nothing to show "
                "(each FM_HEARTBEAT s, default 10)",
@@ -175,7 +175,21 @@ CLOSE_KEYS = ("intent", "adversary", "docs", "lesson", "why_not_caught")
 
 
 class CodeError(Exception):
-    """fm code stops: the message is the whole story (exit 1)."""
+    """fm code stops: the message is the whole story (exit 1); then, when given, is the one command to run next."""
+
+    def __init__(self, msg, then=None):
+        super().__init__(msg)
+        self.then = then
+
+
+def next_step(e, tid):
+    """T-1334: the one command to run after a failure: its own when it names one, else by kind and whether a task
+    exists yet."""
+    if getattr(e, "then", None):
+        return e.then
+    if isinstance(e, m.ModelError):
+        return f"fm code --resume {tid}" if tid else "fm code models"
+    return f"fm task show {tid}" if tid else "fm doctor"
 
 
 # ---------------------------------------------------------------- slots
@@ -996,6 +1010,7 @@ def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, 
     finally:
         if rs is not None:
             os.close(rs)
+    _register(p.pid)  # T-1337: a hard kill of this fm code can't reach the group's kill below; the next start does
     if on_spawn:
         on_spawn(p)
     head, tail, total = bytearray(), bytearray(), [0]
@@ -1031,6 +1046,7 @@ def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, 
         except (ProcessLookupError, PermissionError):
             pass
         p.wait()
+        _unregister(p.pid)
         if reaping:
             _kill_orphans()
             _subreaper(False)
@@ -1040,6 +1056,66 @@ def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, 
     out = head.decode("utf-8", "replace") + (f"\n… ({gap} bytes cut) …\n" if gap > 0 else "") + \
         tail.decode("utf-8", "replace")
     return code, out.strip()
+
+
+def _registry(pid=""):
+    return os.path.join(fmcore.state_dir(), "code-procs", str(pid))
+
+
+def _register(pid):
+    """T-1337: a runner on record (its start time, and this fm code's pid and start time), so the next fm code start
+    can stop it if this one is killed outright (SIGKILL, a closed terminal) before its own kill runs."""
+    import fmideas
+    try:
+        me = os.getpid()
+        fmcore.write_atomic(_registry(pid), f"{fmideas._starttime(pid)} {me} {fmideas._starttime(me)}")
+    except (OSError, IndexError):  # no state folder, or the runner already gone: its own kill still runs
+        pass
+
+
+def _unregister(pid):
+    try:
+        os.remove(_registry(pid))
+    except OSError:
+        pass
+
+
+def stop_survivors():
+    """T-1337: the runners a killed fm code left running, stopped: the pids. An entry whose owner is still the process
+    it names is a live run's and stays; otherwise its group is killed when the runner is still the process it names
+    (its start time), or is gone with a member it started still in the group (fmideas._strays). A reused pid only
+    loses its entry."""
+    import fmideas
+    try:
+        names = os.listdir(_registry())
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        if not name.isdigit():  # a write_atomic temp file mid-write
+            continue
+        if int(name) <= 1:  # never a runner: killpg(0) is this process's own group, 1 is init's
+            _unregister(name)
+            continue
+        try:
+            with open(_registry(name)) as f:
+                start, owner, owner_start = f.read().split()
+            try:
+                if fmideas._starttime(owner) == owner_start:
+                    continue  # its run is alive
+            except FileNotFoundError:
+                pass
+            try:
+                ours = fmideas._starttime(name) == start
+            except FileNotFoundError:
+                ours = fmideas._strays(int(name), start)
+            if ours:
+                os.killpg(int(name), signal.SIGKILL)
+                out.append(int(name))
+        except (OSError, ValueError, IndexError):  # gone, garbled or not ours to kill: the entry goes
+            pass
+        _unregister(name)
+    return out
 
 
 def _subreaper(on):
@@ -1235,7 +1311,8 @@ def worker_argv(spec, prompt, which=True):
         raise CodeError(f"--worker {spec!r} names no command")
     argv += lean_args(r, "work") if r.get("work") else []
     if which and not shutil.which(argv[0]):
-        raise CodeError(f"the worker {argv[0]} isn't on PATH: install it, or give --worker 'CMD {{prompt}}'")
+        raise CodeError(f"the worker {argv[0]} isn't on PATH: install it, or give --worker 'CMD {{prompt}}'",
+                        "fm code runners")
     return argv
 
 
@@ -1698,17 +1775,27 @@ def cmd_code(args):
     p = fmcli.resolve(args)
     root = os.path.realpath(p.root)
     run = Run(args, root, os.path.join(p.dir, "code"))
+    stopped = stop_survivors()
+    if stopped:
+        run.emit("note", f"stopped {len(stopped)} runner(s) a killed fm code left running "
+                         f"(pid {', '.join(map(str, stopped))})", stopped=stopped)
+
+    def _usage(msg, then):
+        e = fmcli.UsageError(msg)
+        e.then = then
+        return e
     try:
         if args.resume is not None:
             _load(run, args.resume)
             _hold(run)
         elif getattr(args, "task", None):  # T-1330: a planned brief is the plan
             if words:
-                raise fmcli.UsageError(f"--task {args.task} works that task's own plan: give it no request")
+                raise _usage(f"--task {args.task} works that task's own plan: give it no request",
+                             f"fm code --task {args.task}")
             _load_task(run, args.task)
         elif not words:
-            raise fmcli.UsageError('fm code needs a request: fm code "<what to do>" (or fm code models, '
-                                   'fm code --resume, fm code --task ID; on a terminal, fm code alone opens the app)')
+            raise _usage('fm code needs a request: fm code "<what to do>" (or fm code models, fm code --resume, '
+                         'fm code --task ID; on a terminal, fm code alone opens the app)', 'fm code "<what to do>"')
         else:
             run.request = " ".join(words)
         gate = None
@@ -1718,7 +1805,7 @@ def cmd_code(args):
                 gate = fmreplay.enforce(p, "fm code", getattr(args, "stale_ok", None), attended=bool(
                     os.environ.get("FOREMAN_CODE_ATTENDED") or sys.stdin.isatty() and sys.stdout.isatty()))
             except fmcli.UsageError as e:  # an error event, so --json readers see why
-                raise CodeError(str(e).replace("fm code refuses: ", "refused: ", 1))
+                raise CodeError(str(e).replace("fm code refuses: ", "refused: ", 1), "fm replay --cases")
         picked = None
         if args.resume is None and not run.worker and not args.model:  # T-1328
             run.worker, picked = pick_runner(p)
@@ -1740,8 +1827,10 @@ def cmd_code(args):
         run.escalate = m.resolve(run.escalate) if run.escalate else None  # a bad name fails now, not 3 rounds in
         if run.escalate:
             run.offsite_ok(p, run.escalate)
+        import fmcodebench  # T-1355: which Foreman ran this, for when two installs answer to fm
         run.emit("start", "", quiet=True, schema=SCHEMA, request=run.request, task=run.tid, worker=run.worker,
-                 model=profile and profile["name"], verify=run.verify_cmd, resume=args.resume is not None)
+                 model=profile and profile["name"], verify=run.verify_cmd, resume=args.resume is not None,
+                 foreman={"root": fmcore.PLUGIN_ROOT, "version": fmcodebench.version()})
         if gate:
             run.emit("note", gate)
         if picked:
@@ -1764,19 +1853,17 @@ def cmd_code(args):
                 raise CodeError(f"can't resume {run.tid}: {out}")
             run.emit("resume", f"resuming {run.tid} from {run.journal}", task=run.tid)
         _drive(run, profile)
-    except m.ModelError as e:
-        msg = f"fm code: model: {e}" + (f" (fm code --resume {run.tid} carries on)" if run.tid else "")
-        run.emit("error", msg, quiet=True, task=run.tid)
-        print(msg, file=sys.stderr)
-        raise SystemExit(1)
-    except CodeError as e:
-        run.emit("error", f"fm code: {e}", quiet=True, task=run.tid)
-        print(f"fm code: {e}", file=sys.stderr)
+    except (m.ModelError, CodeError) as e:  # T-1334: every failure ends with the one command to run next
+        msg, then = f"fm code: {'model: ' if isinstance(e, m.ModelError) else ''}{e}", next_step(e, run.tid)
+        run.emit("error", msg, quiet=True, task=run.tid, next=then)
+        print(f"{msg}\nNext: {then}", file=sys.stderr)
         raise SystemExit(1)
     except Blocked as e:
         run.fm("task", "block", run.tid, str(e)[:500])
         run.log(kind="end", status="blocked", reason=str(e))
-        run.emit("blocked", f"{run.tid} blocked: {e}", task=run.tid, reason=str(e))
+        then = f"fm task show {run.tid}"
+        run.emit("blocked", f"{run.tid} blocked: {e}", task=run.tid, reason=str(e), next=then)
+        print(f"Next: {then}", file=sys.stderr)
         raise SystemExit(1)
     finally:
         if run.worker and run.tid:  # T-1294: the run's leases (its workers' edits) end with it
