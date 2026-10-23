@@ -188,8 +188,8 @@ def _hint(detail, cat=""):
     if detail.startswith("IFS") and "can't read" in detail:
         return " Leave IFS at its default on a line that splits words, or set it inside a script file the guard reads."
     if cat == "brief" and os.path.basename(detail).lower() == "changelog.md":  # T-1452
-        return (" A changelog line belongs to the task it describes: add it before fm task finish, or fm focus that "
-                "task again.")
+        return (" A changelog line belongs to the task it describes: add it before fm task finish. Once that task is "
+                "done, add the line in the next task and say why there (fm task log ID \"scope: …\").")  # T-1767
     if detail.endswith(_FOCUS_LATE):
         return " Run the fm focus (or fm task new … --focus) as its own command, then this one."
     if detail.endswith("; git merge)"):
