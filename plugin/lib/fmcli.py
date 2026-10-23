@@ -5274,8 +5274,15 @@ def _build_parser():
     s = add("playbooks", lazy("fmplaybooks", "cmd_show"), tier=("Finding your way", 382), help="show NAME: a playbook "
             "as the skill loads it, {{fact}}s (test, language, entry…) filled in from fm map and this project's "
             ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
-    s.add_argument("action", choices=["show"])
+    s.add_argument("action", choices=["show", "eval"], help="eval NAME: held-out briefs with and without the playbook "
+                   "loaded, the lift recorded (T-1618)")
     s.add_argument("name", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that name")
+    s.add_argument("--briefs", help="eval: the brief set (default plugin/evals/playbooks/<stage>/<name>.json)")
+    s.add_argument("--real", action="store_true", help="eval: ask a model (claude -p, budgeted) instead of reading "
+                   "the playbook literally")
+    s.add_argument("--model", default="haiku", help="eval --real: the model")
+    s.add_argument("--ablate", action="store_true", help="eval: each ## section's share of the lift, dropped one at "
+                   "a time; zero share is a cut candidate (T-1619)")
     s = add("which", lazy("fmwhich", "cmd"), tier=("Finding your way", 205), help="a task in plain words → the skills, "
             "playbooks and fm commands that fit, each with the call that loads it (T-1699)")
     s.add_argument("task", nargs="+", help="the work, e.g. make a 3D hero with motion")
@@ -6059,6 +6066,15 @@ def _build_parser():
     s.add_argument("action", choices=["info", "diff"])
     s.add_argument("paths", nargs="+", metavar="PATH", help="info: one PNG; diff: two, A then B")
     s.add_argument("--out", metavar="PATH", help="diff: write a PNG of A faded with each changed pixel in red")
+    s = add("shot", lazy("fmshot", "cmd_shot"), tier=("Every task", 93), help="URL|FILE...: a viewport shot, frames "
+            "in real time and a poster frame (the most painted) per page that moves, from a headless Chromium already "
+            "here (none: exit 0 and why; nothing is installed) into the project's state shots/ (T-1636)")
+    s.add_argument("targets", nargs="+", metavar="URL|FILE")
+    s.add_argument("--frames", type=int, default=5, help="frames to take (0 to 60; default 5)")
+    s.add_argument("--every", type=int, default=250, metavar="MS", help="ms between frames (10 to 10000; default 250)")
+    s.add_argument("--frozen", action="store_true", help="fm smoke's frozen profile first: the clock fixed, CSS "
+                   "animations and transitions paused")
+    s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
