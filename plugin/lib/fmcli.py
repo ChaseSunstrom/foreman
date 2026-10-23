@@ -6551,6 +6551,41 @@ def _build_parser():
     return ap
 
 
+PATHLIKE = re.compile(r"PATH|FILE|URL")
+
+
+def _flags_before_paths(parser, argv, k):
+    """T-1671: argparse ends a positional's run at an option, so in `fm new check --run PATH` PATH is left over. For a
+    command whose words are paths (a variadic positional named paths or targets, or whose metavar names PATH, FILE or
+    URL), its own options and their values among the words move in front of them; '--' ends the words. An option it
+    doesn't know, or one taking a variable count, leaves argv as typed, and free text (a request, a message) is never
+    rearranged, so a flag inside one is still an error (T-0332's review)."""
+    sub, i = parser, k
+    while i < len(argv):
+        subs = next((a for a in sub._actions if isinstance(a, argparse._SubParsersAction)), None)
+        if subs is None or argv[i] not in subs.choices:
+            break
+        sub, i = subs.choices[argv[i]], i + 1
+    if sub is parser or not any(not a.option_strings and a.nargs in ("*", "+") and (
+            a.dest in ("paths", "targets") or PATHLIKE.search(a.metavar or "")) for a in sub._actions):
+        return argv
+    end = argv.index("--", i) if "--" in argv[i:] else len(argv)
+    opts, words, j = [], [], i
+    while j < end:
+        t = argv[j]
+        if not t.startswith("-") or t == "-":
+            words.append(t)
+            j += 1
+            continue
+        act = sub._option_string_actions.get(t.split("=", 1)[0])
+        if act is None or not (act.nargs in (None, 0) or isinstance(act.nargs, int)):
+            return argv
+        n = 0 if "=" in t or act.nargs == 0 else 1 if act.nargs is None else act.nargs
+        opts += argv[j:j + 1 + n]
+        j += 1 + n
+    return argv[:i] + opts + words + argv[end:]
+
+
 def _options_first(parser, argv):
     """T-0332: argparse reads a command's positionals in one run, so in `fm session send ID --json -- MSG` the option
     ends that run and MSG is left over. For the commands taking ID then words (session, claude), known options (with
@@ -6559,7 +6594,9 @@ def _options_first(parser, argv):
     k = 2 if argv[:1] in (["-p"], ["--project"]) else 0
     if argv[k:k + 2] == ["code", "tui"]:  # T-1283: so `fm code tui --plain "fix it"` keeps its request after a flag
         return argv[:k + 1] + ["--tui"] + argv[k + 2:]
-    if argv[k:k + 1] not in (["session"], ["claude"]) or "--" not in argv[k + 1:]:
+    if argv[k:k + 1] not in (["session"], ["claude"]):
+        return _flags_before_paths(parser, argv, k)
+    if "--" not in argv[k + 1:]:
         return argv
     sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction)).choices[argv[k]]
     head = argv[k + 1:argv.index("--", k + 1)]
