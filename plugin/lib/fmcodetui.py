@@ -1338,6 +1338,14 @@ def render(st, w, h, cfg, app=None, t=None):
     if app is not None and app.mode in VIEWS:
         VIEWS[app.mode](cv, st, app, cfg)
     if app is not None:  # T-1307: a switch between the run, its diff and past runs fades in instead of jumping
+        if app.mode == "project" and app.grow and app.grow[0] and _FX.moving:  # T-1345: out of the card it was
+            (y, x, gh, gw), k = app.grow[0], (_FX.t - app.grow[1]) / GROW
+            if 0 <= k < 1:
+                e = ease_out(k)
+                y0, x0 = round(y * (1 - e)), round(x * (1 - e))
+                y1, x1 = round(y + gh + (cv.h - y - gh) * e), round(x + gw + (cv.w - x - gw) * e)
+                cv.cells = [[cell if y0 <= r < y1 and x0 <= c < x1 else (" ", "shade") for c, cell in enumerate(row)]
+                            for r, row in enumerate(cv.cells)]
         k = _FX.since("view", app.mode if app.mode in ("diff", "history") else "main")
         if k < VIEW_FADE:
             e, screen = ease_out(k / VIEW_FADE), col(cfg, "screen", "bg")
@@ -1565,23 +1573,97 @@ def _noticed():
     return fmcode.noticed()
 
 
-def _project_row(p):
-    """T-1330: one Foreman project on the home: what's active, its counts, or why it can't be shown. T-1339: first,
-    a round Foreman queued on itself from runs that went wrong, with their causes."""
-    if p.get("kind") == "noticed":
-        causes = [str(x) for x in p.get("causes") or []]
-        return [(" NOTICED ", "chip_warn"), ("  Foreman noticed", "strong"), (f"  {p.get('task')} ", "dim"),
-                ("  " + ("; ".join(causes[-3:]) if causes else str(p.get("title") or "")), "text")]
-    name = str(p.get("project") or "?")
+HOME_NOTE = "Enter opens · n new request there · , settings · Esc run screen · q quits"
+CARD_W, CARD_H, GROW = 38, 6, 0.25  # T-1345: a project's card on the home, and how long Enter's grow takes
+DECK_STAGE = {"planning": 0, "ready": 0, "executing": 1, "verifying": 2, "auditing": 2, "closing": 3}
+
+
+def _deck_view(cv, st, app, cfg):
+    """T-1345: the home as a deck: a card per project (what Foreman noticed first), as many columns as fit. The focus
+    ring glides from the last card to the selected one (fx.ease: at once with motion reduced or off), which is drawn
+    focused once the ring lands. Each card's place is kept for the keys (deck_cols) and Enter's grow (deck_rects)."""
+    iy, ix, ih, iw = _overlay(cv, cfg, "Foreman projects", HOME_NOTE, cv.w - 2, cv.h - 2)
+    app.deck_rects = {}
+    if ih < 2 or iw < 8:
+        return
+    cols = max(1, min(len(app.items) or 1, (iw + 1) // (CARD_W + 1)))
+    cw, ch = (iw - (cols - 1)) // cols, CARD_H
+    app.deck_cols = cols
+    if not app.items:
+        cv.line(iy, ix, [("no Foreman projects yet: fm init in a repository makes one", "dim")], ix + iw)
+        return
+    rows = max(1, ih // ch)
+    top = max(0, app.item_index // cols - rows + 1)
+    for i in range(top * cols, min(len(app.items), (top + rows) * cols)):
+        r, c = divmod(i, cols)
+        app.deck_rects[i] = (iy + (r - top) * ch, ix + c * (cw + 1), ch, cw)
+        _project_card(cv, app.items[i], *app.deck_rects[i], cfg, focused=False)
+    target = app.deck_rects.get(app.item_index)
+    if target:
+        fx = current()
+        ring = (round(fx.ease("deck_y", target[0], 0.18)), round(fx.ease("deck_x", target[1], 0.18)))
+        app.deck_ring = ring
+        if ring == target[:2]:
+            _project_card(cv, app.items[app.item_index], *target, cfg, focused=True)
+        else:
+            _ring(cv, *ring, ch, cw)
+
+
+def _ring(cv, y, x, h, w):
+    """T-1345: the focus ring on its way between two cards: a border alone, over what's there."""
+    tl, tr, bl, br, hz, vt = BORDERS["rounded"]
+    cv.put(y, x, tl + hz * (w - 2) + tr, "accent")
+    for r in range(y + 1, y + h - 1):
+        cv.put(r, x, vt, "accent")
+        cv.put(r, x + w - 1, vt, "accent")
+    cv.put(y + h - 1, x, bl + hz * (w - 2) + br, "accent")
+
+
+def _printable(s, n):
+    return "".join(ch for ch in str(s) if ch.isprintable())[:n]
+
+
+def _project_card(cv, p, y, x, h, w, cfg, focused):
+    """T-1345: one project's card: its name, its runner, the active task's stations, the task, the badges."""
+    noticed = p.get("kind") == "noticed"
+    runner = _printable(p.get("runner") or "", 20) if isinstance(p.get("runner"), str) else ""
+    note = _printable(p.get("task") or "", 12) if noticed else (f"◆ {runner}" if runner else "")
+    iy, ix, ih, iw = box(cv, y, x, h, w, "Foreman noticed" if noticed else str(p.get("project") or "?"), cfg,
+                         focused=focused, note=note)
+    for r, segs in enumerate(_card_lines(p)[:ih]):
+        cv.line(iy + r, ix, segs, ix + iw)
+
+
+def _card_lines(p):
+    if p.get("kind") == "noticed":  # T-1339: a round Foreman queued on itself, with its newest causes
+        return [[(" NOTICED ", "chip_warn"), ("  " + str(p.get("title") or ""), "dim")]] + [
+            [(str(c), "text")] for c in [str(x) for x in p.get("causes") or []][-2:]]
     if p.get("error"):
-        return [(" ERROR ", "chip_bad"), ("  " + pad(name, 24), "strong"), ("  " + str(p["error"]), "bad")]
+        return [[(" ERROR ", "chip_bad")], [(str(p["error"]), "bad")]]
     if p.get("exists") is False:
-        return [(" GONE  ", "chip_bad"), ("  " + pad(name, 24), "strong"), (f"  folder missing: {p.get('root')}", "dim")]
+        return [[(" GONE ", "chip_bad")], [(f"folder missing: {p.get('root')}", "dim")]]
     a = p.get("active") if isinstance(p.get("active"), dict) else None
-    counts = f"queue {_num(p.get('queue'))}  inbox {_num(p.get('inbox'))}  blocked {_num(p.get('blocked'))}"
-    return [(" ACTIVE " if a else " IDLE   ", "chip_accent" if a else "chip_todo"), ("  " + pad(name, 24), "strong"),
-            (f"  {counts:<34}", "dim"), ("  " + (f"{a.get('id')} {a.get('title') or ''}" if a else "nothing active"),
-                                         "text")]
+    task = [(f"{a.get('id')} ", "strong"), (str(a.get("title") or ""), "text")] if a else [("nothing active", "dim")]
+    badges = []
+    for k, style in (("blocked", "chip_bad"), ("inbox", "chip_todo"), ("queue", "chip_accent")):
+        n = _num(p.get(k))
+        badges += [(f" {k} {n:g} ", style if n else "dim"), (" ", "text")]
+    return [_card_track(a), task, badges]
+
+
+def _card_track(a):
+    """T-1345: the active task's stations (plan, work, checks, close) as a mini track, the one it's at lit."""
+    if not a:
+        return [("○──○──○──○", "track")]
+    at, names = DECK_STAGE.get(a.get("stage"), 1), ("plan", "work", "checks", "close")
+    segs = []
+    for i in range(4):
+        segs.append(("●", "ok") if i < at else ("◉", "accent") if i == at else ("○", "track"))
+        if i < 3:
+            segs.append(("━━", "ok") if i < at else ("──", "track"))
+    done, total = a.get("steps_done"), a.get("steps_total")
+    steps = f" {done}/{total}" if at == 1 and isinstance(total, int) and total else ""
+    return segs + [(f"  {names[at]}{steps}", "dim")]
 
 
 _SECTION = {"active": (" ACTIVE  ", "chip_accent"), "queue": (" QUEUED  ", "chip_todo"),
@@ -1796,9 +1878,7 @@ def _runners_foot(app, iw):
 
 VIEWS = {"help": _help_view, "diff": _diff_view, "history": _list_view("Past runs", "Enter opens one", _history_row),
          "picker": _list_view("Run the next request with", "Enter picks", _picker_row),
-         "home": _list_view("Foreman projects",
-                            "Enter opens · n new request there · , settings · Esc run screen · q quits",
-                            _project_row),
+         "home": lambda cv, st, app, cfg: _deck_view(cv, st, app, cfg),  # T-1345: cards, not rows
          "project": _list_view(lambda app: str((app.project or {}).get("project") or "project"),
                                "Enter/r runs a task · Enter replays a run · n new · m runner · , settings · "
                                "Esc projects",
@@ -2006,6 +2086,7 @@ class App:
         self.tour = None  # T-1309: the tour's [when it began, how many of its events are shown]
         self._setup = None  # T-1333: the first-run checks shown on the welcome (None: not asked yet this launch)
         self.handoff = None  # T-1341: (argv, folder, task, CLI) the screen loop runs with the terminal handed over
+        self.deck_cols, self.deck_rects, self.deck_ring, self.grow = 1, {}, None, None  # T-1345: the home's cards
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
@@ -2037,6 +2118,8 @@ class App:
         """How often to draw: 30 while something eases or flashes, 12 while live work spins and pulses, 1 when the
         screen is still (4 with motion off and a run going, for its clock)."""
         mode = self.cfg.get("motion", "full")
+        if mode == "full" and self.grow and 0 <= t - self.grow[1] < GROW:  # T-1345: the project view growing
+            return 30
         live = self.running() or self.state.status in ("planning", "running", "fixing")
         live = live or bool(self.tour and self.tour[1] < len(TOUR_RUN))  # T-1309: its next event comes on time
         if mode == "off":
@@ -2567,7 +2650,10 @@ class App:
 
     def _home_key(self, k):
         cmd = self._list_cmd(k)
-        step = {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
+        cols = self.deck_cols if self.mode == "home" else 1  # T-1345: up and down move a row of cards
+        step = {"up": -cols, "down": cols, "page_up": -10, "page_down": 10}.get(cmd)
+        if self.mode == "home" and k in ("KEY_LEFT", "KEY_RIGHT"):
+            step = -1 if k == "KEY_LEFT" else 1
         item = self.items[self.item_index] if self.items else None
         if step:
             self.item_index = max(0, min(len(self.items) - 1, self.item_index + step))
@@ -2591,6 +2677,7 @@ class App:
             if target:
                 self.open_project(target)
         elif self.mode == "home" and item and item.get("kind") != "noticed" and cmd in ("expand", "new"):
+            self.grow = (self.deck_rects.get(self.item_index), self.clock())  # T-1345: drawn growing from its card
             self.open_project(item)
             if cmd == "new":
                 self.new_here()
