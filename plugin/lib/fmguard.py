@@ -113,6 +113,9 @@ def findings(tool_name, tool_input, ctx):
         path = _resolve(_expand(raw, ctx), ctx.cwd)
         return [(cat, path) for cat in classify_write(path, ctx)]
     if tool_name == "Bash":
+        _DISCARDS[:], _DISCARDS_OF[0] = [], tool_input["command"]  # T-1482: filled by this check only
+        _DCWD.clear()
+        _COMMITS.clear()
         return check_bash(tool_input["command"], ctx)
     if tool_name == "Read":  # T-1224
         path = _resolve(_expand(str(tool_input.get("file_path") or ""), ctx), ctx.cwd)
@@ -569,6 +572,17 @@ def _new_context_file(p, ctx):
         if q == d or (_under(q, d) and not os.path.exists(q) and (q.endswith(".md") or os.path.dirname(q) == d)):
             return True
     return False
+
+
+# T-1727 review: commands that may take a file away before a touch in the same command makes it again. ponytail: any of
+# them in the command counts, not only one naming the touched path; match the path if that over-refuses
+_REMOVERS = {"rm", "unlink", "mv", "shred", "rmdir", "find", "rsync", "git"}
+
+
+def _classify_made(path, ctx):
+    """T-1680: a touch writes only a file it makes. A dangling link doesn't exist to os.path.exists, so the file it
+    points at is judged as made (classify_write follows it)."""
+    return [] if os.path.exists(path) else classify_write(path, ctx)
 
 
 def classify_unlink(path, ctx):
@@ -2635,6 +2649,15 @@ def _outside(shell, cmds, ctx, fixed=None):
             and v and not re.search(r"[\s*?\[]", v) and not v.startswith("~")}, bare
 
 
+def _cd_from(tgt, here, ctx):
+    """T-1727 review: where `cd tgt` from here lands, for recording discards; None when the guard can't tell (an
+    unresolved name, $OLDPWD, a relative cd from an unknown folder)."""
+    if _unresolvable(tgt):
+        return None
+    t = _expand(tgt, ctx)
+    return os.path.normpath(t) if os.path.isabs(t) else _resolve(t, here) if here else None
+
+
 def _moved(cwds, lost, tgt, sure, cdpath, ctx):
     """T-0175 review: the places the shell may be after a cd: cwds, the ones the guard can name, and lost, the paths
     below a folder it can't name (a cd to a target it can't resolve, or a relative one CDPATH may send elsewhere). When
@@ -3092,6 +3115,10 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
+    # T-1727 review: the folders the caller may be in when it runs this text (eval, sh -c, sh <<<), so a discarding
+    # git command read here is saved where it runs, not in the hook's cwd
+    starts = _DCWD.get(depth - 1, [ctx.cwd]) if depth else [ctx.cwd]
+    _DCWD[depth] = starts
     # the whole command only: a nested shell's text alone would miss what its caller set (BASH_ENV=… bash -c '…')
     cmd = _mktemp_literal(_join_continued(cmd)) if depth == 0 else _join_continued(cmd)
     cmd = _decode_ansi_c(cmd)  # T-1480: $'cat' is cat
@@ -3109,9 +3136,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     # T-0158: every `…` and $( … ) a shell runs (unquoted heredoc bodies included), read as a command of its own
     # a tail (the text after a substitution opens) is read once as it stands: its own tails are suffixes of it already
     live = [x for t in _live_heredocs(cmd) for x in ([t, _unescape_ticks(t)] if "\\`" in t else [t])]  # T-0669: in
+    cmds = _split(_tokens(_lines(shell)))
+    _DCWD[depth] = list(dict.fromkeys(starts + [  # text read before the walk below (`…`, sh <<<): any folder a cd names
+        _cd_from(x.argv[1], s, ctx) for x in cmds if x.argv[:1] == ["cd"] and x.argv[1:2] for s in starts]))
     for body in _subst_bodies(shell, tails) + [b for t in live for b in _subst_bodies(t, tails)]:  # `…` a \` is a `
         found += check_bash(body, ctx, depth + 1, tails=False)
-    cmds = _split(_tokens(_lines(shell)))
     lits = _line_literals(shell)  # T-0587: literal values a computed name, eval or sh -c text may use
     for script in _stdin_scripts(cmd, cmds):  # T-0589: bash <<'EOF' … EOF and sh <<< '…' run that text
         found += check_bash(script, ctx, depth + 1)
@@ -3125,6 +3154,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     env = {k: v for k, v in outside.items() if k == "HOME"} if raw is not None and len(raw) == len(cmds) else None
     (straight, and_chain, mixed), cwds, lost, made = _top(shell), [ctx.cwd], [], set()  # where it may be (T-0175)
     base = None  # T-0339: (cwds, lost, made) where the current &&-segment of a mixed list began, and its folders
+    # T-1727 review: the same walk for recording discards only (verdicts use cwds): from the caller's folders, None for
+    # one a cd makes unknown; rbase is base's twin
+    rd, rbase = list(starts), None
     cdpath = bare is None or "CDPATH" in shell or bool(os.environ.get("CDPATH"))
     fixed = pre if env is None and bare is not None else {}  # T-0183: set once before the
     outside = {**outside, **fixed}                                                  # branches, known in them
@@ -3138,9 +3170,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             if base:
                 cwds, lost = list(dict.fromkeys(base[0] + cwds)), list(dict.fromkeys(base[1] + lost))
                 made = base[2]
+                rd = list(dict.fromkeys(rbase + rd))
             ops = [x.op for x in cmds[idx + 1:]]
             seg = ops[:next((i for i, o in enumerate(ops) if o not in ("&&", "|", "|&")), len(ops))]
             base = (cwds, lost, set(made)) if "&&" in seg else None
+            rbase = list(rd) if base else None
         if env is not None:
             env = _track_vars(raw[idx], env, tilde)
         known = outside if env is None else {**outside, **env}
@@ -3167,17 +3201,24 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                     os.path.isdir(d) and os.access(d, os.X_OK))))  # fails with too many arguments
                 certain = not piped and (and_chain or in_chain or ((straight or mixed) and not can_fail))
                 cwds, lost = _moved(cwds, lost, tgt, certain, cdpath, ctx)
+                new = [_cd_from(tgt, r, ctx) for r in rd]
+                rd = list(dict.fromkeys(new if certain else rd + new))
                 if base and c.op not in ("&&", "|", "|&") and not piped and not can_fail:
                     base = (list(cwds), list(lost), base[2])  # T-0384: a head cd that can't fail: the chain stops after
+                    rbase = list(rd)
                 elif base:  # the chain may stop after any cd in it: every folder it reaches stays possible (its review)
                     base = (base[0] + cwds, base[1] + lost, base[2])
+                    rbase = rbase + rd
         moves, places = (_moves_shell(name, args, cwds, ctx, shell) if name in ("eval", "source", ".", "trap",
                                                                                "mapfile", "readarray") else (0, []))
         if moves:  # T-0384: it may cd here: anywhere, or any folder it names after a cd
             for d in ["$OLDPWD"] + places:
                 cwds, lost = _moved(cwds, lost, d, False, cdpath, ctx)
+            rd = list(dict.fromkeys(rd + [_cd_from(d, r, ctx) for d in places for r in rd]))  # cd - aside
             if base:
                 base = (base[0] + cwds, base[1] + lost, base[2])
+                rbase = rbase + rd
+        here_dirs = _DCWD[depth] = rd  # T-1727 review: where this command may run (and nested text start)
         for inner in (x for t in _shell_c(args) for x in _readings(t, {**lits, **known})) if _SHELLS.match(name) else ():
             found += check_bash(inner, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(inner):
@@ -3261,7 +3302,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 found += _script_verdict(script, cwd, kind, ctx, depth)
         fed += c.redirs if any(op == "<<" for op, _ in c.feeds) else []
         # an in-place edit (sed -i FILE && python3 FILE) is the everyday edit-then-run: only a file made here counts
-        wrote += c.redirs + ([] if name in ("sed", "gsed", "perl", "ed", "ex") else _write_targets(name, args))
+        wrote += c.redirs + ([] if name in ("sed", "gsed", "perl", "ed", "ex", "touch")  # touch: an empty file
+                             else _write_targets(name, args))
         unlinks = set(_write_targets(name, args)) if name == "rm" else set()  # T-0412: rm of a link unlinks it
         # T-0859: a bare git init where the cwd the guard resolves already holds .git rewrites nothing
         init = name == "git" and args[:1] == ["init"]  # no global options: -C and --git-dir move the target
@@ -3274,15 +3316,25 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         # (anywhere in the command text: export, env, an earlier assignment)
         targs = args + ["--pathspec-from-file"] if name == "git" and re.search(
             r"(?:^|[\s;&|(`])(?:export\s+|env\s+)?GIT_(?:GLOB|ICASE)_PATHSPECS=", cmd) else args
+        # T-1680: touch makes what doesn't exist yet; on a file that does, it changes only the times (a redirect empties it)
+        # (review) unless the command may remove or move a file first (unlink P && touch P): existence is read now
+        touched = set(_write_targets(name, args)) - set(c.redirs) if name == "touch" and not any(
+            _name(x.argv) in _REMOVERS for x in cmds) else set()
+        # T-1487: git init's folder named by a variable the guard can't resolve says so, not that init writes its folder
+        unset = next((m[0] for t in _write_targets(name, args) if (m := _PART.search(_with_vars(t, known)))),
+                     None) if init else None
+        hint = (f"; {unset} unresolved: set it to a literal path earlier in the command, or pass the path" if unset
+                else '; git init writes its folder: chain the cd with && or pass the path, git init "$S/toy"') \
+            if init else ""
         for target in c.redirs + ([] if bare_init else _write_targets(name, targs)) + git_env + _env_files(c.argv):
-            how = classify_unlink if target in unlinks and not target.endswith("/") else classify_write
-            found += _target_cats(target, known, bare, cwds, lost, scan, ctx, how)
+            how = classify_unlink if target in unlinks and not target.endswith("/") else _classify_made if \
+                target in touched else classify_write
+            found += _target_cats(target, known, bare, cwds, lost, scan, ctx, how,
+                                  f" ({hint[2:]})" if init and target not in c.redirs else "")
         for target in [] if bare_init else _tree_targets(name, targs) + git_env:
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_tree,  # T-0394: a merge's
                                   " (a tree write over it" + ("; git merge" if name == "git" and "merge" in args
-                                                             else "") + ")" +  # refusal names fm lane merge
-                                  ("; git init writes its folder: chain the cd with && or pass the path, "
-                                   'git init "$S/toy"' if init else ""))
+                                                             else "") + ")" + hint)  # refusal names fm lane merge
         # T-1224: the files it reads (operands, a < redirect), what it sends out, a recursive or world-writable mode;
         # an unknown name is guessed from the words the command names, as a write's is (security review: for f in
         # ~/.ssh/*; do cat $f; done read every key)
@@ -3373,6 +3425,10 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             found += _check_rm(nm, [_with_vars(a, rm_vars) for a in args] if rm_vars else args, via_xargs, chain, cwd, ctx,
                                xodd)
             found += _check_git(nm, args, cwd, ctx)
+            if nm == "git":  # T-1482: what the hook saves, in each folder it may run in, through known names
+                wargs = [_with_vars(a, known) for a in args]
+                _DISCARDS.extend((d and w, x) for d in here_dirs for w, x in _git_discards(wargs, d or "/"))  # d None:
+                # the folder is unknown, and the hook says so rather than saving its own
             found += _check_system(nm, args)
             found += _check_claude_config(nm, args, cmd if c.piped or "<<" in cmd else "")
             found += _check_publish(nm, args)
@@ -4349,7 +4405,7 @@ def _checkout_files(base, rest):
             return []
         files = rest
         if not files or any(not os.path.exists(os.path.join(base, a))
-                            or _git(base, "rev-parse", "--verify", "-q", f"{a}^{{commit}}") for a in files):
+                            or _is_commit(base, a) for a in files):
             return []
     # git expands globs in a pathspec (and GIT_GLOB_PATHSPECS / GIT_ICASE_PATHSPECS change how), so a word with a
     # glob character names files the guard can't list
@@ -4370,6 +4426,14 @@ def _inplace_switch(a):
         if ch in "0CdDeEFIlmMxrKWT":
             return False
     return False
+
+
+def _under_git_c(base, p):
+    """T-1487: p as git reads it under its -C folder. Joined onto "." an absolute $D read as a folder under the cwd
+    (D=/x; git init $D refused as a write over the cwd); a value only known later ($D) is read both ways."""
+    if base == "." or p.startswith(("/", "~")):
+        return [p]
+    return [os.path.join(base, p)] + ([p] if p.startswith("$") else [])
 
 
 def _write_targets(name, args):
@@ -4404,13 +4468,16 @@ def _write_targets(name, args):
         if i < len(args) and args[i] == "clone":
             rest = _positionals(args[i + 1:])
             return ([rest[-1]] if len(rest) >= 2 else ["."]) + _opt_values(args[i + 1:], "--separate-git-dir")
-        base, sub, rest = os.path.join(*where) if where else ".", args[i] if i < len(args) else "", args[i + 1:]
+        bases = ["."]  # T-1487: an absolute -C (/x, ~) replaces the folder before it; a $D is read both ways (review)
+        for w in where:
+            bases = list(dict.fromkeys(x for b in bases for x in _under_git_c(b, w)))
+        sub, rest = args[i] if i < len(args) else "", args[i + 1:]
         # T-0269 review: --output=FILE writes a file from any diff-family subcommand (diff, log, show, stash show);
         # T-0270: the files and folders other subcommands write
         outs = [a.split("=", 1)[1] for a in rest if a.startswith("--output=")] + \
             [b for a, b in zip(rest, rest[1:]) if a == "--output"] + _opt_values(rest, "--separate-git-dir")
         outs += _git_writes(sub, rest)
-        outs = [os.path.join(base, o) for o in outs]
+        outs = [x for b in bases for o in outs for x in _under_git_c(b, o)]
         read_only = sub == "stash" and rest[:1] in (["list"], ["show"])  # T-0265: listing a stash writes nothing
         # T-0935: reset moves HEAD and the index; only --hard/--merge/--keep (or a unique prefix of one, git takes
         # those; or --recurse-submodules) rewrite files
@@ -4424,9 +4491,9 @@ def _write_targets(name, args):
                 sub == "fetch" and ({"-u", "--update-head-ok"} & set(rest)))):  # fetch can move HEAD then
             if sub == "checkout" and not trees and not any(  # --icase/--glob-pathspecs change what a word matches
                     a.endswith("pathspecs") and a not in ("--literal-pathspecs", "--noglob-pathspecs")
-                    for a in args[:i]) and (files := _checkout_files(base, rest)):
-                return [os.path.join(base, f) for f in files] + outs  # T-1195: named files, not the whole tree
-            return ([os.path.join(base, t) for t in trees] or [base]) + outs
+                    for a in args[:i]) and len(bases) == 1 and (files := _checkout_files(bases[0], rest)):
+                return [x for f in files for x in _under_git_c(bases[0], f)] + outs  # T-1195: named files only
+            return ([x for b in bases for t in trees for x in _under_git_c(b, t)] or bases) + outs
         return outs
     if name == "sed" and any(a == "--in-place" or a.startswith("-i") for a in args):
         return pos if any(a in ("-e", "-f") for a in args) else pos[1:]
@@ -4444,6 +4511,19 @@ def _write_targets(name, args):
         return [a[3:] for a in args if a.startswith("of=")]
     if name in ("truncate", "rm"):
         return pos
+    if name == "touch":  # T-1680: the files it may make (check_bash judges only those that don't exist yet)
+        out, i = [], 0
+        while i < len(args):
+            a = args[i]
+            if a == "--":
+                return out + args[i + 1:]
+            flags = re.fullmatch(r"-([afhmc]*)([rdt]?)", a)  # a short cluster; r, d and t take the next word
+            if a.startswith("--no-c") and "--no-create".startswith(a) or flags and "c" in flags[1]:
+                return []  # makes nothing
+            valued = len(a) > 2 and "=" not in a and any(w.startswith(a) for w in ("--reference", "--date", "--time"))
+            i += 2 if valued or flags and flags[2] else 1  # GNU takes a long option's unambiguous prefix (--da)
+            out += [] if a.startswith("-") else [a]  # - is its stdout
+        return out
     if name == "curl":
         return [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-o", "--output")]
     if name == "wget":
@@ -4600,45 +4680,76 @@ def discards_work(cmd, cwd, depth=0):
     for cm in _split(_tokens(_lines(_strip_heredocs(_join_continued(cmd))))):
         argv, _ = _strip_wrappers(cm.argv)
         name = os.path.basename(argv[0]) if argv else ""
-        here = lambda d, base: os.path.normpath(os.path.join(base, os.path.expanduser(os.path.expandvars(d))))
         if name == "cd" and argv[1:2] and argv[1] != "-":
-            cwd = here(argv[1], cwd)
+            cwd = _here(argv[1], cwd)
         elif re.fullmatch(r"(ba|z|da|k)?sh", name) and depth < 3:
             for text in _shell_c(argv[1:]):
                 out += discards_work(text, cwd, depth + 1)
-        if name != "git":
-            continue
-        i, where = 1, cwd
-        while i < len(argv) and argv[i].startswith("-"):
-            if argv[i] == "-C" and i + 1 < len(argv):
-                where = here(argv[i + 1], where)
-            i += 2 if argv[i] in _GIT_VALUED or argv[i] == "-C" else 1
-        if i >= len(argv):
-            continue
-        sub, rest = argv[i], argv[i + 1:]
-        flags = set(rest)
-        short = "".join(a[1:] for a in rest if re.fullmatch(r"-[a-zA-Z]+", a))
-        pos = [a for a in rest if not a.startswith("-")]
-        if sub == "stash" and pos[:1] in (["drop"], ["clear"]):
-            out.append((where, " ".join(["stash"] + pos[:2])))
-            continue
-        if sub == "worktree" and pos[:1] == ["remove"] and pos[1:] and (flags & {"-f", "--force"} or "f" in short):
-            out.append((here(pos[1], where), "tree"))
-            continue
-        # a word that names a file and no commit is a path (git checkout main beside a main/ folder is the branch)
-        paths = [a for a in pos if os.path.exists(os.path.join(where, a))
-                 and not _git(where, "rev-parse", "--verify", "-q", f"{a}^{{commit}}")] if sub == "checkout" else []
-        staged = "--staged" in flags or "S" in short
-        if (sub == "reset" and flags & {"--hard", "--merge"}
-                or sub == "checkout" and (flags & {"--force", "--", "."} or "f" in short or paths)
-                or sub == "restore" and (not staged or "--worktree" in flags or "W" in short)
-                or sub == "clean" and ("--force" in flags or "f" in short)
-                and not ("--dry-run" in flags or "n" in short)
-                or sub == "switch" and (flags & {"--force", "--discard-changes"} or "f" in short)
-                or sub == "rm" and ("--force" in flags or "f" in short)
-                or sub in ("merge", "rebase", "cherry-pick", "revert", "am") and "--abort" in flags):
-            out.append((where, "tree"))
+        if name == "git":
+            out += _git_discards(argv[1:], cwd)
     return out
+
+
+def _here(d, base):
+    return os.path.normpath(os.path.join(base, os.path.expanduser(os.path.expandvars(d))))
+
+
+def _git_discards(args, cwd):
+    """[(folder, what)] when `git ARGS` run in cwd throws away uncommitted work (discards_work's test of one command)."""
+    i, where = 0, cwd
+    while i < len(args) and args[i].startswith("-"):
+        if args[i] == "-C" and i + 1 < len(args):
+            where = _here(args[i + 1], where)
+        i += 2 if args[i] in _GIT_VALUED or args[i] == "-C" else 1
+    if i >= len(args):
+        return []
+    sub, rest = args[i], args[i + 1:]
+    flags = set(rest)
+    short = "".join(a[1:] for a in rest if re.fullmatch(r"-[a-zA-Z]+", a))
+    pos = [a for a in rest if not a.startswith("-")]
+    if sub == "stash" and pos[:1] in (["drop"], ["clear"]):
+        return [(where, " ".join(["stash"] + pos[:2]))]
+    if sub == "worktree" and pos[:1] == ["remove"] and pos[1:] and (flags & {"-f", "--force"} or "f" in short):
+        return [(_here(pos[1], where), "tree")]
+    # a word that names a file and no commit is a path (git checkout main beside a main/ folder is the branch)
+    paths = [a for a in pos if os.path.exists(os.path.join(where, a))
+             and not _is_commit(where, a)] if sub == "checkout" else []
+    staged = "--staged" in flags or "S" in short
+    if (sub == "reset" and flags & {"--hard", "--merge"}
+            or sub == "checkout" and (flags & {"--force", "--", "."} or "f" in short or paths)
+            or sub == "restore" and (not staged or "--worktree" in flags or "W" in short)
+            or sub == "clean" and ("--force" in flags or "f" in short)
+            and not ("--dry-run" in flags or "n" in short)
+            or sub == "switch" and (flags & {"--force", "--discard-changes"} or "f" in short)
+            or sub == "rm" and ("--force" in flags or "f" in short)
+            or sub in ("merge", "rebase", "cherry-pick", "revert", "am") and "--abort" in flags):
+        return [(where, "tree")]
+    return []
+
+
+# T-1482: (folder, what) of every discarding git command the last Bash check read, however it was spelled (\git, $'git',
+# a variable, eval, a function, sh <<<): the hook saves these too, where discards_work reads only the plain words
+_DISCARDS = []
+_DISCARDS_OF = [None]  # the command they were read from
+_DCWD = {}  # T-1727 review: depth -> the folders the check at that depth may be in, for the text it reads nested
+_COMMITS = {}  # (folder, word) -> whether it names a commit: the guard and the hook ask once per check
+
+
+def take_discards(cmd=None):
+    """What the last Bash check read (and clears it); None when that check wasn't of cmd (an older hook asks without)."""
+    if cmd is not None and cmd != _DISCARDS_OF[0]:
+        return None
+    out, _DISCARDS[:], _DISCARDS_OF[0] = list(_DISCARDS), [], None
+    return out
+
+
+def _is_commit(where, word):
+    key = (os.path.abspath(where), word)
+    if key not in _COMMITS:
+        if len(_COMMITS) > 256:  # a long-lived caller (fm mcp) never checks through findings, which clears it
+            _COMMITS.clear()
+        _COMMITS[key] = bool(_git(where, "rev-parse", "--verify", "-q", f"{word}^{{commit}}"))
+    return _COMMITS[key]
 
 
 _DISK = {"fdisk", "sfdisk", "cfdisk", "parted", "gdisk", "sgdisk", "wipefs", "mkswap"}
