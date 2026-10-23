@@ -605,6 +605,12 @@ def agent_state(st):
     return "waiting" if st.heard is not None else "thinking" if st.status == "planning" else "running"
 
 
+def title_text(st):
+    """T-1310: the terminal title: the run's state and task, printable characters only (a task's text is the run's)."""
+    words = f"fm code: {st.status} {st.task or ''}".strip() if st is not None and st.status else "fm code"
+    return "".join(ch for ch in words if ch.isprintable())[:80]
+
+
 class Motion:
     """What render needs to animate, kept across frames: when each watched value changed, and from what. A value
     already there in the first frame is no change (opening a finished run shows it as it is); one first seen later
@@ -1087,8 +1093,9 @@ def _status(cv, st, app):
         segs += [("  ", "bar"), (st.task, "bar")]
     if st.steps:
         segs += [("   ", "bar"), (f"step {st.step}/{len(st.steps)}", "bar_dim")]
-    if live and st.heard is not None:  # T-1336
-        segs += [("   ", "bar"), (f"last heard {duration(st.heard)} ago", "bar_dim")]
+    if live and st.heard is not None:  # T-1336; T-1310: past 10 s, say what the run waits on
+        segs += [("   ", "bar"), (("model: " if st.heard >= 10 else "")
+                                  + f"last heard {duration(st.heard)} ago", "bar_dim")]
     if app is not None and app.rule is not None:  # T-1657: the layout a [[rule]] switched to
         segs += [("   ", "bar"), (f" rule {app.rule} ", "chip_accent")]
     if app is not None and app.message:
@@ -1212,6 +1219,10 @@ def _overlay(cv, cfg, title, note, w=None, h=None):
     return box(cv, y, x, h, w, title, cfg, focused=True, note=note)
 
 
+CLI = {"new": 'fm code "…"', "resume": "fm code --resume", "model": "fm code --model M", "settings": "fm settings",
+       "hush": "fm settings set motion off", "diff": "git diff"}  # T-1348: the command line behind a key, where one is
+CONFIRM_S = 2.0  # T-1348: q or s during a live run waits this long for the second press
+TIP_SKIP = {"stop", "up", "down", "focus", "expand", "follow", "help", "quit"}  # too plain to need a tip
 POSTER = (("run", ("new", "stop", "resume", "model")),  # T-1512: the keys poster's groups; extensions' go under more
           ("see", ("diff", "history", "projects", "thoughts", "settings", "hush", "looks")),
           ("move", ("focus", "up", "down", "expand", "follow")), ("app", ("help", "quit")))
@@ -1230,10 +1241,10 @@ def _help_view(cv, st, app, cfg):
     blocks = []
     for name, cmds in [*POSTER, ("more", [c for c in labels if c not in placed])]:
         shown = [c for c in cmds if keys.get(c) and c in labels]
-        blocks.append([[(f" {'' if i else name.upper():<4}", "title"),
-                        (" " * max(0, 8 - sum(width(n) + 3 for n in keys[c])), "text")]
-                       + [seg for n in keys[c] for seg in ((f" {n} ", "key"), (" ", "text"))]
-                       + [(" " + labels[c], "text")] for i, c in enumerate(shown)])
+        blocks.append([line for i, c in enumerate(shown) for line in [
+            [(f" {'' if i else name.upper():<4}", "title"), (" " * max(0, 8 - sum(width(n) + 3 for n in keys[c])), "text")]
+            + [seg for n in keys[c] for seg in ((f" {n} ", "key"), (" ", "text"))] + [(" " + labels[c], "text")]]
+            + ([[(" " * 14, "text"), (CLI[c], "dim")]] if c in CLI else [])])  # T-1348: the command line behind it
     two = cv.w >= 90
     gap = lambda bs: [line for b in bs if b for line in b + [[]]][:-1]
     cols = [gap(blocks[:2]), gap(blocks[2:])] if two else [[line for b in blocks for line in b]]
@@ -1634,9 +1645,17 @@ def to_svg(cv, cfg, title="fm code tui"):
 
 class App:
     def __init__(self, cfg, spawn=None, root=None, opts=None, diff=None, history=None, choices=None, projects=None,
-                 project_state=None):
+                 project_state=None, used=None):
         self.cfg, self.state = cfg, State()
         self.mode, self.input, self.message, self.done = "main", "", "", False
+        self.used_path, self.used = used, set()  # T-1348: the commands ever run here (a JSON list), for the tip
+        if used:
+            try:
+                with open(used, encoding="utf-8") as f:
+                    self.used = {x for x in json.load(f) if isinstance(x, str)}
+            except (OSError, ValueError, TypeError):
+                pass
+            self.message = self._tip()
         self.spawn = spawn or self._spawn
         self.root, self.opts = root or os.getcwd(), dict(opts or {})
         self.diff_source, self.history_dir = diff or self._git_diff, history
@@ -1652,6 +1671,8 @@ class App:
         self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
         self.motion, self.clock = Motion(), time.monotonic  # T-1300: what moves, and the time it moves by
+        self.confirm_key = None  # T-1348: (command, until) after a first q or s during a live run
+        self.bell_seen = (0, False)  # T-1310: refusals counted and whether blocked, as of the last bell check
         self.glyphs = {}  # T-1512: the columns the terminal draws each PROBE glyph in (none measured: none assumed)
         # T-1572: the settings screen: every setting, its search, changed-only, the :set line and what it last did
         self.set_rows, self.set_problems, self.set_query, self.set_line = [], [], "", ""
@@ -1733,7 +1754,18 @@ class App:
             return self._home_key(k)
         if self.mode in ("diff", "history", "picker"):
             return self._view_key(k)
-        fn = self.commands.get(self.cfg["keys"].get(k))
+        cmd = self.cfg["keys"].get(k)
+        if cmd in ("quit", "stop") and self.running() and self.state.status in LIVE:  # T-1348: a live run ends only
+            # on a second press within 2 s (a closed run whose process is still exiting quits at once)
+            first = self.confirm_key
+            if not (first and first[0] == cmd and self.clock() < first[1]):
+                self.confirm_key = (cmd, self.clock() + CONFIRM_S)
+                self.message = f"{key_name(k)} again within {CONFIRM_S:g} s to {cmd} the run"
+                return None
+        self.confirm_key = None
+        fn = self.commands.get(cmd)
+        if fn:
+            self.used.add(cmd)
         return fn() if fn else None
 
     def _list_cmd(self, k):
@@ -1785,6 +1817,20 @@ class App:
     def quit(self):
         self.stop()
         self.done = True
+        if self.used_path:  # T-1348: what this launch used, for the next one's tip
+            import fmcore
+            try:
+                fmcore.write_atomic(self.used_path, json.dumps(sorted(self.used | {"quit"})))
+            except OSError:
+                pass
+
+    def _tip(self):
+        """T-1348: one command this person has never run here, named once per launch."""
+        keys = {cmd: k for k, cmd in self.cfg.get("keys", {}).items() if len(k) == 1 and k.isprintable()}
+        for cmd, label in COMMAND_LABELS:
+            if cmd not in self.used and cmd in keys and cmd not in TIP_SKIP:
+                return f"tip: {keys[cmd]} {label}"
+        return ""
 
     def new(self):
         if self.running():
@@ -2442,7 +2488,17 @@ class App:
     def running(self):
         return self.child is not None and getattr(self.child, "poll", lambda: 0)() is None
 
+    def bell_due(self):
+        """T-1310: whether to ring now: once each time the run turns blocked or the guard refuses another action;
+        never with motion off."""
+        refused = sum(1 for a in self.state.actions if a.get("result") == "refused")
+        blocked = self.state.status == "blocked"
+        due = refused > self.bell_seen[0] or blocked and not self.bell_seen[1]
+        self.bell_seen = (refused, blocked)
+        return due and self.cfg.get("motion", "full") != "off"
+
     def start(self, words, **extra):
+        self.bell_seen = (0, False)  # a new run's state counts from nothing
         self.state, self.selected, self.expanded, self.follow, self.message = State(), None, set(), True, ""
         self.motion = Motion()
         if self.next_root:  # T-1330: a run started from a project's view runs in that project
@@ -3076,16 +3132,25 @@ def _loop(io, app):
     app.glyphs = io.widths(PROBE) if hasattr(io, "widths") else {}
     if term.depth == 0:  # NO_COLOR: the mono theme, whose chips are reversed and panels untinted
         app.cfg, app.no_colour = dict(app.cfg, theme=_mono(), preset="mono"), True  # kept when settings reload
-    while not app.done:
-        app.poll()
-        if io.resized():
-            w, h = io.size()
-            term.prev = None
-            io.write("\x1b[2J")
-        t = app.clock()
-        io.write(term.frame(render(app.state, w, h, app.cfg, app, t=t), app.cfg))
-        for k in io.keys(1 / app.fps(t)):
-            app.key(k)
+    shown = None
+    io.write("\x1b[22;0t")  # T-1310: keep the terminal's own title, to put back after
+    try:
+        while not app.done:
+            app.poll()
+            if io.resized():
+                w, h = io.size()
+                term.prev = None
+                io.write("\x1b[2J")
+            t = app.clock()
+            frame = term.frame(render(app.state, w, h, app.cfg, app, t=t), app.cfg)
+            title = title_text(app.state)
+            if title != shown:  # T-1310: the run's state in the title, so another window shows it
+                frame, shown = frame + f"\x1b]0;{title}\x07", title
+            io.write(frame + ("\a" if app.bell_due() else ""))
+            for k in io.keys(1 / app.fps(t)):
+                app.key(k)
+    finally:
+        io.write("\x1b[23;0t")
 
 
 def run_screen(app, wrapper=None):
@@ -3196,7 +3261,9 @@ def main(args, words, home=False):
     opts = {k: getattr(args, k, None) for k in ("model", "worker", "verify", "escalate", "max_steps", "no_commit",
                                                  "worker_timeout", "dry_plan")}
     root = os.path.realpath(p.root) if p else os.getcwd()
-    app = App(cfg, root=root, opts=opts, history=p and os.path.join(p.dir, "code"))
+    import fmcore
+    app = App(cfg, root=root, opts=opts, history=p and os.path.join(p.dir, "code"),
+              used=os.path.join(fmcore.state_dir(), "code-keys.json"))  # T-1348: the launch tip's memory
     app.tui = seen  # T-1543: an edit to tui.toml while it runs is read back in
     if home:  # T-1330: inside a project, its view; elsewhere every project
         app.show_home()

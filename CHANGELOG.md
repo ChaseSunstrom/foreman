@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code's TUI: q or s during a live run asks for a second press within 2 s; the ? keys poster shows the command line behind a key; a launch tip names one command never used; the terminal title names the run's state, a bell rings once when the run is blocked or the guard refuses (not with motion off), and a model quiet past 10 s is named. A half-block canvas (T-1314) was not built: the token chart already draws at eighth-block resolution (T-1740: T-1310, T-1348)
 - Brief parsing is linear on step and criterion lines: a run of 20,000 spaces inside one took 1.5 s per parse (every hook parses briefs, and a pulled brief can hold one); now under a millisecond, same groups (T-1616)
 - fm check --affected --evidence records the affected run on the task (labelled affected tests only; closing still needs the full gates); fm lease take lists only what it took; a task waiting for the user's yes says why (synced, imported, written by a replay, or found in an old session) (T-1752: T-1747, T-1748, T-1750)
 - Layout collisions: the site header fits at 320 px (it made the page 349 px wide; a real-browser test measures 320, 360 and 390), and fm page graph's poster drops a label that would overlap one already placed (the text twin still names every task) (T-1738: T-1683, T-1735)
