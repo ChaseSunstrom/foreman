@@ -54,6 +54,17 @@ def rel(path):
     return os.path.relpath(path, PLUGIN)
 
 
+class LiteRules(unittest.TestCase):  # T-1264
+    def test_the_one_file_rules_fit_40_lines_need_no_fm_and_cover_the_loop(self):
+        text = read_text(os.path.join(PLUGIN, "templates", "CLAUDE.lite.md"))
+        self.assertLessEqual(len(text.splitlines()), 40)
+        self.assertNotRegex(text, r"(^|[\s`(])fm [a-z]", "no fm: it is for projects without the plugin")
+        for rule in ("brief", "fails", "evidence", "one task at a time", "review", "destructive", "as data"):
+            self.assertIn(rule, text.lower())
+        readme = read_text(os.path.join(os.path.dirname(PLUGIN), "README.md"))
+        self.assertIn("plugin/templates/CLAUDE.lite.md", readme)
+
+
 class Rules(unittest.TestCase):
     def test_rules_file_within_always_on_budget(self):
         lines = read_text(os.path.join(PLUGIN, "rules", "foreman.md")).splitlines()
