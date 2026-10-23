@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The guard reads a script a command runs about 6x faster with the same verdicts, so more real scripts are read whole inside its 0.2 s CPU box (182 of 200 public system shell scripts, was 145) instead of falling back to the literal scan: a script read no longer guesses where an unknown target lands (it dropped every such finding), a line is joined to the next or read for a heredoc only when it ends in \ or holds <<, and one command's comments and words are worked out once, not by each check (T-1778)
 - fm settings check draws tui.toml every way Foreman does (the app at every layout, a headless snapshot as --snapshot makes it, and --plain's lines) and names the way that can't, with exit 1, so a setting that only breaks the snapshot or a piped run shows before it matters (T-1612)
 - foreman-ui pane: fm design tokens DESIGN.md --to pane --save keeps that palette for the pane, which paints it over its default at the next refresh (cb and riso still win); fm ui carries it checked (known keys, #rrggbb only) and --clear forgets it (T-1717)
 - The hook bench's script case is budgeted as a hook (150 ms) plus the guard's CPU time box for one cold script read (200 ms), read from the guard: its 37 KB script never finishes inside the box, so 300 ms left the hook's own startup about 85 ms, which a loaded machine ate (T-1777)
