@@ -33,7 +33,7 @@ LOAD_S, CALL_S, SETTLE_S = 30, 30, 0.5
 FONTS_S = 10  # the fonts check: its own 5 s wait plus the walk; a slow page leaves fonts unchecked, not the run hung
 NOISY = 0.05  # a baseline floor over this share of the page's pixels: an animated baseline, a loose pass line
 MAX_MSG = 64 << 20  # one DevTools message: a screenshot's base64 is a few MB at most
-LOCK_S = 120
+LOCK_S, CLOSE_S = 120, 5
 WATCH = {"Page.loadEventFired"}  # the only events kept (a page can send endless others)
 FROZEN_MS = 1768471200000  # 2026-01-15T10:00:00Z, smoke_web.cjs's NOW
 # smoke_web.cjs's freeze(): CSS animations and transitions held still (test_fmshot keeps the two in step)
@@ -107,6 +107,29 @@ def _safe(text):
     return re.sub(r"[\x00-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩]", "?", str(text))
 
 
+safe, usable = _safe, _usable  # the names other verbs use (fm flow)
+
+
+def find_browser(who):
+    """(path, note) for verb `who`: a browser and a note when FOREMAN_CHROME was set but unusable, or (None, why)."""
+    env = os.environ.get("FOREMAN_CHROME")
+    bad = f"FOREMAN_CHROME={_safe(env)!r} isn't an executable file" if env and not _usable(env) else None
+    path = chrome()
+    return (path, bad) if path else (None, (bad + "; " if bad else "") + NONE.replace("fm shot", who))
+
+
+@contextlib.contextmanager
+def killable():
+    """SIGTERM unwinds (SystemExit) while this holds, so a browser's group dies and its profile goes."""
+    def stop(signum, frame):
+        raise SystemExit(128 + signum)
+    old = signal.signal(signal.SIGTERM, stop)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, old)
+
+
 class Browser:
     """One headless Chromium over the DevTools pipe; close() kills its whole process group."""
 
@@ -116,6 +139,7 @@ class Browser:
         self.profile = tempfile.TemporaryDirectory(prefix="fm-shot-")
         self.log = os.path.join(self.profile.name, "fm-shot-stderr.log")
         self.buf, self.scan, self.n, self.events = bytearray(), 0, 0, set()
+        self.on = {}  # event method -> handler(params), run as the event is read (fm flow answers Fetch.requestPaused)
         try:
             child_in, self.feed = os.pipe()
             fds.append(child_in)
@@ -180,27 +204,35 @@ class Browser:
 
     def call(self, method, session=None, _within=None, **params):
         """The answer's result; TimeoutError after _within seconds (CALL_S by default). A late answer is skipped."""
-        self.n += 1
-        os.write(self.feed, json.dumps({"id": self.n, "method": method, "params": params,
-                                        **({"sessionId": session} if session else {})}).encode() + b"\0")
+        mine = self.send(method, session, **params)
         deadline = time.monotonic() + (CALL_S if _within is None else _within)
         while True:
             got = self._next(deadline, method)
-            if got.get("id") == self.n:
+            if got.get("id") == mine:
                 if "error" in got:
                     raise RuntimeError(f"{method}: {got['error'].get('message', got['error'])}")
                 return got.get("result") or {}
-            if got.get("method") in WATCH:
-                self.events.add(got["method"])
+            self._event(got)
+
+    def send(self, method, session=None, **params):
+        """Ask without waiting for the answer (it is skipped when it comes); its id."""
+        self.n += 1
+        os.write(self.feed, json.dumps({"id": self.n, "method": method, "params": params,
+                                        **({"sessionId": session} if session else {})}).encode() + b"\0")
+        return self.n
+
+    def _event(self, got):
+        if got.get("method") in WATCH:
+            self.events.add(got["method"])
+        if got.get("method") in self.on:
+            self.on[got["method"]](got.get("params") or {})
 
     def wait(self, event, seconds):
         """True once `event` has come (since the events were last cleared), False after `seconds`."""
         deadline = time.monotonic() + seconds
         try:
             while event not in self.events:
-                got = self._next(deadline, event)
-                if got.get("method") in WATCH:
-                    self.events.add(got["method"])
+                self._event(self._next(deadline, event))
             return True
         except TimeoutError:
             return False
@@ -214,9 +246,15 @@ class Browser:
         if self.pid:
             try:
                 os.killpg(self.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
+            except ProcessLookupError:
                 pass
-            os.waitpid(self.pid, 0)
+            except PermissionError:  # the group can't be signalled: the browser itself, at least
+                with contextlib.suppress(OSError):
+                    os.kill(self.pid, signal.SIGKILL)
+            end = time.monotonic() + CLOSE_S  # a browser that can't be killed is left, not waited on forever
+            with contextlib.suppress(ChildProcessError):
+                while not os.waitpid(self.pid, os.WNOHANG)[0] and time.monotonic() < end:
+                    time.sleep(0.02)
             self.pid = None
         for fd in (self.feed, self.out):
             if fd is not None:
@@ -396,26 +434,17 @@ def cmd_shot(args):
         if theirs == mine or theirs.startswith(mine + os.sep):  # a page's folder is cleared before it's shot
             raise fmcli.UsageError(f"--diff {_safe(args.diff)} is where these shots go and would be cleared: "
                                    "shoot into another --out")
-    env = os.environ.get("FOREMAN_CHROME")
-    bad = f"FOREMAN_CHROME={_safe(env)!r} isn't an executable file" if env and not _usable(env) else None
-    path = chrome()
+    path, bad = find_browser("fm shot")
     if not path:
-        why = (bad + "; " if bad else "") + NONE
+        why = bad
         if args.diff is None:
             return fmcli.out(args, {"skipped": why}, f"fm shot: skipped: {why}.")
         fmcli.out(args, {"skipped": why, "compared": False}, f"✗ fm shot --diff: not compared: {why}.")
         sys.exit(1)
     os.makedirs(base, exist_ok=True)
-
-    def stop(signum, frame):  # killed: unwind, so the browser's group dies and its profile goes
-        raise SystemExit(128 + signum)
-    old = signal.signal(signal.SIGTERM, stop)
-    try:
-        # a second run into Foreman's folder waits for the first; --out is the user's folder: no .lock left in it
-        with contextlib.nullcontext() if args.out else c.lock(base, timeout=LOCK_S):
-            pages, failed = _run(path, urls, base, args)
-    finally:
-        signal.signal(signal.SIGTERM, old)
+    # a second run into Foreman's folder waits for the first; --out is the user's folder: no .lock left in it
+    with killable(), contextlib.nullcontext() if args.out else c.lock(base, timeout=LOCK_S):
+        pages, failed = _run(path, urls, base, args)
     lines = [f"note: {bad}; used {_safe(path)}"] if bad else []
     for pg in pages:
         names = [os.path.basename(s) for s in pg["shots"]]
