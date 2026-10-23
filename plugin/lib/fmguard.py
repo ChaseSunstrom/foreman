@@ -37,6 +37,8 @@ USER_ONLY_FM = {
                            "precedent for proxy answers: only the user records them", "fm decide ANSWER --answer N"),  # T-1064
     "risk": ("set", "fm risk set moves the daily risk budget that slows Claude's autonomy: the brake is the user's to "
                     "move", "fm risk set --day N --because \"<why>\""),  # T-1080
+    "home": ("import", "fm home import is the user's to run: it writes a whole Foreman state, settings included, from "
+                       "a file", "fm home import FILE"),  # T-1665
 }
 def _user_only_hit(word, arg):
     """A word matches itself; a --flag also matches argparse's abbreviations (--y, --ye) and --flag=value."""
