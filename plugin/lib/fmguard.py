@@ -54,6 +54,7 @@ _CORE_DIRS = ("lib", "bin", "hooks", "evals", "integrations")  # plugin/…: For
 # T-1328: Foreman's own config that becomes a command (code.toml), runs Python (tui.toml, tui/) or picks where code is
 # sent (models.json): an agent that writes one runs what it likes on the next fm code
 _CORE_CONFIG = ("code.toml", "tui.toml", "models.json")
+_CORE_CONFIG_DIRS = ("tui", "tui.projects")  # T-1611: extension panels, and each project's settings (they bind keys)
 DEFAULT_BRANCHES = {"main", "master", "trunk"}
 
 
@@ -476,7 +477,7 @@ def _is_core(path, ctx):
     """Protected core: all Foreman code (it enforces the guard), the rules, the eval suite, the spec and settings."""
     fh = ctx.foreman_home
     files = {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md") + _CORE_CONFIG}
-    dirs = [os.path.join(fh, "plugin", d) for d in _CORE_DIRS] + [os.path.join(fh, "tui")]
+    dirs = [os.path.join(fh, "plugin", d) for d in _CORE_DIRS] + [os.path.join(fh, d) for d in _CORE_CONFIG_DIRS]
     codex = os.environ.get("CODEX_HOME")
     return path in files or any(_under(path, d) for d in dirs) or path == os.path.join(ctx.home, ".claude.json") or \
         bool(re.search(r"/\.claude/settings(\.local)?\.json$", path) or _AGENT_WIRING.search(path)) or \
@@ -537,7 +538,7 @@ def _protected_roots(ctx):
     roots = [(os.path.join(fh, "plugin", d), "core") for d in _CORE_DIRS]
     roots += [(os.path.join(ctx.home, f), "core") for f in (".codex/hooks.json", ".codex/config.toml",  # T-0340
                                                              ".gemini/settings.json", ".config/opencode")]
-    roots += [(os.path.join(fh, f), "core") for f in _CORE_CONFIG + ("tui",)]
+    roots += [(os.path.join(fh, f), "core") for f in _CORE_CONFIG + _CORE_CONFIG_DIRS]
     roots += [(os.path.join(fh, "plugin", "rules", "foreman.md"), "core"), (os.path.join(fh, "BUILD_PROMPT.md"), "core"),
               (os.path.join(ctx.home, ".claude.json"), "core"), (os.path.join(cl, "plugins"), "plugin")]
     # user-wide Claude Code settings (a project's own are handled in classify_tree)
