@@ -55,13 +55,14 @@ _LAYOUT_HELP = {"top": ("panels", "panels across the top"), "columns": ("columns
                 "narrow_below": ("int", "columns below which the narrow layout is used")}
 
 
-_CONTROL = re.compile(r"[\x00-\x09\x0b-\x1f\x7f-\x9f]")
+_CONTROL = re.compile("[\x00-\x09\x0b-\x1f\x7f-\x9f‎‏‪-‮⁦-⁩]")  # bidi too (T-1657)
 
 
 def _safe(text):
-    """`text` with each control character shown as \\xNN (line breaks kept): a message can quote a share code or a
-    hand-written file, and the terminal must not act on what they hold."""
-    return _CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}", str(text))
+    """`text` with each control or bidi character shown as \\xNN or \\uNNNN (line breaks kept): a message can quote a
+    share code or a hand-written file, and the terminal must not act on (or reorder by) what they hold."""
+    return _CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}" if ord(m.group()) < 256 else f"\\u{ord(m.group()):04x}",
+                        str(text))
 
 
 class SettingError(ValueError):
@@ -204,6 +205,8 @@ def ext_value(e, value):
     takes a typed word, text only as text."""
     if e["type"] == "string" and not isinstance(value, str):
         raise SettingError(f"{e['key']} = {value!r}: text")
+    if e["type"] == "int" and not isinstance(value, str) and type(value) is not int:  # 2.5, true: not one
+        raise SettingError(f"{e['key']} = {value!r}: a whole number")
     return _check(e, value)
 
 
@@ -1287,9 +1290,10 @@ def skip_note(x, path=None):
     the file's own; a profile's value skipped leaves the value without it; a profile passed over says so itself."""
     path = path or app_path()
     msg = x[len(path) + 2:] if x.startswith(f"{path}: ") else x
-    if msg.startswith("extension") or msg.startswith("rule") and x.endswith("passed over"):  # T-1657: said itself
+    rule = msg.startswith(("rule.", "rule:"))  # T-1657: not a key that merely starts so ("rules")
+    if msg.startswith("extension ") or rule and x.endswith("passed over"):  # said itself
         return ""
-    if msg.startswith("rule"):  # a rule's bad key: the rest of it switches
+    if rule:  # a rule's bad key: the rest of it switches
         return " (skipped: the rest of the rule applies)"
     if not msg.startswith("profile"):
         return " (skipped: the default shows)"
@@ -1310,14 +1314,31 @@ def extensions():
     import fmcodetui as T
     if T.extensions_dir() in T.EXT_LOADED:
         return []
-    with contextlib.redirect_stdout(sys.stderr):  # what one prints never lands in fm settings --json
-        return T.load_extensions()
+    # what one prints never lands in fm settings --json; one that asks for input reads none; each has EXT_BUDGET
+    with open(os.devnull, encoding="utf-8") as nothing, contextlib.redirect_stdout(sys.stderr):
+        stdin, sys.stdin = sys.stdin, nothing
+        try:
+            return T.load_extensions(budget=EXT_BUDGET)
+        finally:
+            sys.stdin = stdin
+
+
+EXT_BUDGET = 3  # seconds an extension may take to load for fm settings
+
+
+def _needs_extensions(args):
+    """Whether this fm settings action reads an extension's settings: never one that repairs the file (bisect, a get
+    or set of the app's own key) or reads none (profile). diff, export, import and undo do: without them a key of
+    theirs would read as dead or unknown."""
+    if args.action in ("get", "set"):
+        return str(args.key or "").startswith("ext.")
+    return args.action not in ("profile", "bisect")
 
 
 def cmd_settings(args):
     import fmcli
     import fmcodetui as T
-    ext = extensions()
+    ext = extensions() if _needs_extensions(args) else []
     if args.action == "list":  # T-1511: fm settings list keys (or layout, …): that group alone
         problems, groups = [("app", f"extension {x}") for x in ext], list(dict.fromkeys(e["group"] for e in schema()))
         if args.key and args.key not in groups:

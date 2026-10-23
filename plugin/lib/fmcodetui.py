@@ -7,6 +7,7 @@ screen through fmcodetui's own ANSI renderer (fmcodeterm; no curses)
 driver, --plain its line-by-line twin and --snapshot an SVG of the screen. Pictures over prose: a station track, check
 chips, change bars and a token chart; the model's own words are one key away. Themes, layout and keys are config;
 panels and commands are registries extensions add to. Stdlib only."""
+import contextlib
 import functools
 import html
 import json
@@ -1088,6 +1089,8 @@ def _status(cv, st, app):
         segs += [("   ", "bar"), (f"step {st.step}/{len(st.steps)}", "bar_dim")]
     if live and st.heard is not None:  # T-1336
         segs += [("   ", "bar"), (f"last heard {duration(st.heard)} ago", "bar_dim")]
+    if app is not None and app.rule is not None:  # T-1657: the layout a [[rule]] switched to
+        segs += [("   ", "bar"), (f" rule {app.rule} ", "chip_accent")]
     if app is not None and app.message:
         segs += [("   ", "bar"), (app.message, "key")]
     hints = [seg for k, word in HINTS for seg in ((f" {k} ", "key"), (f"{word} ", "bar_dim"))]
@@ -1142,7 +1145,9 @@ def render(st, w, h, cfg, app=None, t=None):
     y0, body_h = 1, h - 2 - (1 if prompt else 0)
     lay = cfg.get("layout") or DEFAULTS["layout"]
     if app is None or app.mode != "layout":  # T-1657: a rule's layout while its events hold; the editor edits the file's
-        lay = rule_layout(cfg, st)
+        lay = rule_layout(cfg, st, app)
+    elif app is not None:
+        app.rule = None
     narrow, single = w < int(lay.get("narrow_below", 80)), w < SINGLE_BELOW
     order = []
     for name in [n for n in lay.get("top") or [] if n in PANELS and not single]:  # full-width rows, as tall as they need
@@ -1644,6 +1649,7 @@ class App:
         self.selected, self.expanded = None, set()
         self.view_lines, self.view_scroll, self.items, self.item_index = [], 0, [], 0
         self.extra_labels, self.ext = list(EXT_LABELS), {}
+        self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
         self.motion, self.clock = Motion(), time.monotonic  # T-1300: what moves, and the time it moves by
         self.glyphs = {}  # T-1512: the columns the terminal draws each PROBE glyph in (none measured: none assumed)
@@ -2196,8 +2202,11 @@ class App:
 
     def _settings_reload(self):
         import fmsettings
-        cfg, _ = load_config()
-        why = fmsettings.render_error(cfg)  # T-1543: an outside edit the write merged in may not draw
+        try:
+            cfg, _ = load_config()
+            why = fmsettings.render_error(cfg)  # T-1543: an outside edit the write merged in may not draw
+        except Exception as e:  # T-1657: one load_config chokes on: the running look stays, said
+            cfg, why = None, f"{type(e).__name__}: {e}"
         if why:
             self.message = fmsettings._safe(f"the app can't draw with tui.toml ({why}): the running look kept")
         else:
@@ -2543,8 +2552,8 @@ def _bare(s):
 
 class API:
     """What an extension's setup(api) gets: four calls, each adding to a registry the TUI reads. `name` is the
-    extension's file name: its settings' group."""
-    version = 1
+    extension's file name: its settings' group. Version 2 (T-1657) adds setting."""
+    version = 2
 
     def __init__(self, name=None):
         self.name = name
@@ -2561,7 +2570,8 @@ class API:
             raise ValueError(f"setting {key!r}: a name of letters, digits, _ and -, 40 at most")
         if type not in EXT_TYPES:
             raise ValueError(f"setting {key}: type {type!r}: one of {', '.join(EXT_TYPES)}")
-        if (type == "choice") != bool(choices) or (choices and not all(isinstance(c, str) for c in choices)):
+        if (type == "choice") != bool(choices) or (choices and not all(isinstance(c, str) and c and c.isprintable()
+                                                                       for c in choices)):
             raise ValueError(f"setting {key}: choices, a list of words, for a choice (and only for one)")
         if range is not None and (type not in ("int", "number") or len(range) != 2 or not all(
                 x is None or isinstance(x, (int, float)) and not isinstance(x, bool) for x in range)):
@@ -2597,9 +2607,14 @@ def extensions_dir():
     return os.path.join(fmcore.foreman_home(), "tui")
 
 
-def load_extensions(folder=None):
+class _Late(BaseException):
+    """An extension's load past its budget (T-1657)."""
+
+
+def load_extensions(folder=None, budget=None):
     """Run setup(API()) of each *.py in Foreman's home folder's tui/ (a project's files never: they'd run as you).
-    [one line per file that failed or was skipped]; the others still load."""
+    [one line per file that failed or was skipped]; the others still load. T-1657: whatever one raises, SystemExit
+    too, is its line; `budget`, seconds a file may take to load (SIGALRM: the main thread only), or it's skipped."""
     import importlib.util
     folder = folder or extensions_dir()
     EXT_LOADED.add(folder)
@@ -2615,13 +2630,34 @@ def load_extensions(folder=None):
             if (uid is not None and st.st_uid != uid) or st.st_mode & 0o022:
                 errors.append(f"{path}: skipped: another user can change it")
                 continue
-            spec = importlib.util.spec_from_file_location(f"fm_tui_ext_{n[:-3]}", path)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            mod.setup(API(n[:-3]))
-        except Exception as e:  # its own bug: one line, and the next extension still loads
+            with _timebox(budget):
+                spec = importlib.util.spec_from_file_location(f"fm_tui_ext_{n[:-3]}", path)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                mod.setup(API(n[:-3]))
+        except _Late:
+            errors.append(f"{path}: took over {budget} s to load: skipped")
+        except BaseException as e:  # its own bug, a sys.exit too: one line, and the next extension still loads
             errors.append(f"{path}: {type(e).__name__}: {e}")
     return errors
+
+
+@contextlib.contextmanager
+def _timebox(seconds):
+    """_Late raised in the block past `seconds` (None, or off the main thread: no limit)."""
+    if not seconds or threading.current_thread() is not threading.main_thread() or not hasattr(signal, "setitimer"):
+        yield
+        return
+
+    def late(*_):
+        raise _Late()
+    old = signal.signal(signal.SIGALRM, late)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old)
 
 
 # ---------------------------------------------------------------- config: tui.toml in Foreman's home folder
@@ -2711,6 +2747,7 @@ def _layout_error(k, v, table, cfg):
         return f"no panel {unknown[0]!r} (panels: {', '.join(PANELS)})" if unknown else None
     if k == "widths":
         cols = table.get("columns", cfg["layout"]["columns"])
+        cols = cols if isinstance(cols, list) else cfg["layout"]["columns"]  # T-1657: a bad one is skipped, said
         ok = isinstance(v, list) and len(v) == len(cols) and all(size(x) and x != "auto" for x in v)
         return None if ok else "one whole number above 0 per column"
     if k == "heights":
@@ -2763,10 +2800,16 @@ def load_config(path=None, env=None, profile=True):
         for msg in own:
             bad(msg)
         # each key as the file spells it (a message names it so), kept by the key it means: a value skipped isn't set
-        raw = [f"{k}.{n}" for k, v in mine.items() if isinstance(v, dict) for n in v]
-        raw += [k for k, v in mine.items() if not isinstance(v, dict)]
-        cfg["profile"] = {"name": on["name"], "sets": list(dict.fromkeys(fmsettings._norm(k) for k in raw if not any(
-            m.startswith((f"{at}{k}:", f"{at}{k} =", f"{at}{k.split('.')[0]}:")) for m in own)))}  # foo: not a setting
+        def spelled(t, pre=""):  # table.key, and T-1657's ext.NAME.key; a style's own table is its value
+            for k, v in t.items():
+                if isinstance(v, dict) and pre in ("", "ext."):
+                    yield from spelled(v, f"{pre}{k}.")
+                else:
+                    yield f"{pre}{k}"
+        hit = lambda k, m: m.startswith(f"{at}{k} =") or any(  # foo: not a setting, or a table above it
+            m.startswith(f"{at}{'.'.join(k.split('.')[:i])}:") for i in range(1, k.count(".") + 2))
+        cfg["profile"] = {"name": on["name"], "sets": list(dict.fromkeys(
+            fmsettings._norm(k) for k in spelled(mine) if not any(hit(k, m) for m in own)))}
     if rules is not None:  # T-1657: checked against the layout they switch from, a profile's included
         cfg["rules"], said = rule_list(rules, cfg)
         for msg in said:
@@ -2775,7 +2818,6 @@ def load_config(path=None, env=None, profile=True):
 
 
 # T-1657: what a [[rule]]'s when clause can name: the run's events, each judged from the State the app already has
-LIVE = ("planning", "running", "fixing")
 RULE_EVENTS = {
     "running": (lambda st: st.status in LIVE, "a run going"),
     "verify": (lambda st: "checks" in st.marks and st.status in LIVE, "the checks running: from the first result to "
@@ -2845,16 +2887,22 @@ def switched(lay, rule):
     return lay
 
 
-def rule_layout(cfg, st):
+def rule_layout(cfg, st, app=None):
     """The layout to draw for the run `st`: the first rule whose events all hold switches cfg's own, which is back the
-    moment they don't (judged each frame from the state: nothing to put back)."""
-    lay = cfg.get("layout") or DEFAULTS["layout"]
+    moment they don't (judged each frame from the state: nothing to put back). app.rule: that rule's number, or None
+    (the status line shows it)."""
+    lay, on = cfg.get("layout") or DEFAULTS["layout"], None
     try:
-        for r in cfg.get("rules") or ():
+        for i, r in enumerate(cfg.get("rules") or (), 1):
             if all(RULE_EVENTS[k][0](st) == v for k, v in r["when"].items()):
-                return switched(lay, r)
-    except Exception:  # a state it can't judge (never seen): the file's own layout, never a crashed screen
-        pass
+                lay, on = switched(lay, r), i
+                break
+    except Exception as e:  # a state it can't judge: the file's own layout, said once, never a crashed screen
+        if app is not None and not app.rule_said:
+            app.rule_said = True
+            app.state.note("error", text=f"rules: {type(e).__name__}: {e}; the file's own layout shows")
+    if app is not None:
+        app.rule = on
     return lay
 
 

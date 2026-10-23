@@ -435,6 +435,96 @@ class Rules(_Tui):
         self.assertIn("ext.demo.refresh 5", " ".join(self.fm("settings", "get", "ext.demo.refresh",
                                                             env=self.env).stdout.split()))
 
+    def extension(self, body, name="bad"):
+        folder = os.path.join(self.home, "tui")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, f"{name}.py")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(body)
+        os.chmod(path, 0o644)
+
+    def test_a_hanging_or_exiting_extension_never_stops_fm_settings(self):
+        import time
+        self.write('[ext.demo]\nrefresh = 3\n')
+        self.extension(DEMO, "demo")
+        for body, word in (("import time\ndef setup(api):\n    time.sleep(60)\n", "took over"),
+                           ("import sys\ndef setup(api):\n    sys.exit(3)\n", "SystemExit"),
+                           ("def setup(api):\n    input()\n", "EOFError")):
+            self.extension(body)
+            t0 = time.monotonic()
+            got = self.fm("settings", "list", "look", env=self.env, check=False)
+            self.assertLess(time.monotonic() - t0, 20, body)
+            self.assertEqual(got.returncode, 0, got.stderr)
+            self.assertIn(word, got.stdout, body)
+            t0 = time.monotonic()
+            self.fm("settings", "get", "motion", env=self.env)  # not an extension's key: none is run
+            self.assertLess(time.monotonic() - t0, 10, "get of an app key never loads them")
+        out = self.fm("settings", "list", "ext.demo", env=self.env).stdout
+        self.assertIn("ext.demo.refresh", out, "the good one still loads beside the bad one")
+
+    def test_columns_that_arent_a_list_never_break_widths(self):
+        self.write('[layout]\ncolumns = 5\nwidths = [50, 50]\n'
+                   '[[rule]]\nwhen = { verify = true }\nlayout = { columns = 5, widths = [50, 50] }\n')
+        cfg, errors = self.load()
+        said = "\n".join(errors)
+        self.assertIn("layout.columns: a list of columns", said)
+        self.assertIn("rule.1.layout.columns: a list of columns", said)
+        self.assertEqual(cfg["layout"]["widths"], [50, 50], "checked against the columns in force")
+        app = T.App(cfg, spawn=lambda *a, **k: None)
+        with mock.patch.object(T, "load_config", side_effect=TypeError("boom")):
+            app._settings_reload()
+        self.assertIn("boom", app.message)
+        self.assertIs(app.cfg, cfg, "the running look kept")
+
+    def test_an_int_setting_takes_whole_numbers_only(self):
+        self.demo()
+        for v in (2.5, True):
+            with self.assertRaises(fmsettings.SettingError, msg=v):
+                fmsettings.ext_value(T.EXT_SETTINGS["demo"]["refresh"], v)
+        self.write('[ext.demo]\nrefresh = 2.5\n')
+        self.assertIn("ext.demo.refresh = 2.5", self.load()[1][0])
+        self.assertEqual(fmsettings.ext_value(T.EXT_SETTINGS["demo"]["refresh"], "7"), 7)
+        for default in (2.5, True):
+            with self.assertRaises(ValueError):
+                T.API("demo").setting("n", "int", default, "h")
+
+    def test_the_small_things(self):
+        with self.assertRaises(ValueError):
+            T.API("demo").setting("c", "choice", "a", "h", choices=("a", "b\x1b[2J"))
+        self.assertIn("\\u202e", str(fmsettings.SettingError("x ‮ y")))
+        api = T.API("demo")
+        api.setting("n", "int", 1, "first")
+        api.setting("n", "int", 2, "second")
+        self.assertEqual((T.DEFAULTS["ext"]["demo"]["n"], T.EXT_SETTINGS["demo"]["n"]["default"],
+                          T.EXT_SETTINGS["demo"]["n"]["help"]), (2, 2, "second"))
+        self.assertGreaterEqual(T.API.version, 2)
+        self.write('[ext.demo]\nn = 3\n[profile.t]\nwhen = { tmux = true }\n[profile.t.ext.demo]\nn = 4\n')
+        with mock.patch.dict(os.environ, {"TMUX": "/tmp/t"}):
+            cfg, errors = T.load_config(self.toml)
+            self.assertEqual((cfg["ext"]["demo"]["n"], cfg["profile"]["sets"], errors), (4, ["ext.demo.n"], []))
+            row = next(r for r in fmsettings.rows() if r["key"] == "ext.demo.n")
+            self.assertEqual(row.get("profile"), "t")
+        self.assertEqual(fmsettings.skip_note(f"{self.toml}: rules: not a setting"), " (skipped: the default shows)")
+
+    def test_the_status_line_says_which_rule_switched_the_layout(self):
+        self.write('[[rule]]\nwhen = { closed = true }\npanels = { log = "verify" }\n' + RULES)
+        app = self.app(self.load()[0])
+        self.assertNotIn("rule ", self.shown(app).splitlines()[-1])
+        app.feed(PASSED)
+        self.assertIn("rule 2", self.shown(app).splitlines()[-1])
+        app.feed(CLOSED)
+        self.assertIn("rule 1", self.shown(app).splitlines()[-1])
+
+    def test_a_rule_that_cant_be_judged_is_said_once(self):
+        self.write(RULES)
+        app = self.app(self.load()[0])
+        with mock.patch.dict(T.RULE_EVENTS, verify=(lambda st: 1 / 0, "broken")):
+            self.shown(app)
+            self.shown(app)
+        said = [e for e in app.state.log if "rules" in str(e.get("text"))]
+        self.assertEqual(len(said), 1, app.state.log)
+        self.assertIn("ZeroDivisionError", said[0]["text"])
+
     def test_the_command_says_how_rules_and_extension_settings_are_set(self):
         body = read_text(os.path.join(os.path.dirname(__file__), "..", "commands", "settings.md"))
         self.assertIn("[[rule]]", body)
