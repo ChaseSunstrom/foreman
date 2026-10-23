@@ -2514,6 +2514,37 @@ class GitCAfterC(GuardCase):
             rows += [(f"D=plugin; git -C {{fhome}} -C $D {sub}", "core"), (f"git -C {{fhome}} -C $D {sub}", "core")]
         self.run_table(rows, self.bash)
 
+    def test_a_clone_destination_is_read_under_its_c_folder(self):  # T-1745
+        out = os.path.join(os.path.dirname(self.home), "out")
+        self.run_table([
+            ("git -C {fhome} clone https://x/y.git plugin", "core"),
+            ("git -C {fhome}/plugin clone https://x/y.git lib", "core"),
+            (f"git -C {out} clone https://x/y.git y", None),
+            ("git -C /tmp clone https://x/y.git {fhome}/plugin/lib/z", "core"),  # an absolute destination wins
+        ], self.bash)
+
+
+class MoveSource(GuardCase):
+    """T-1744: a move removes its sources, so moving a protected file out is a write where it was."""
+    def test_moving_a_protected_file_out_is_refused(self):
+        cache = "{home}/.claude/plugins/cache/x/hooks"
+        os.makedirs(self.sub(cache), exist_ok=True)
+        open(self.sub(cache + "/hooks.json"), "w").close()
+        out = os.path.join(os.path.dirname(self.home), "out")
+        os.makedirs(out, exist_ok=True)
+        open(os.path.join(out, "a.txt"), "w").close()
+        self.run_table([
+            (f"mv {cache}/hooks.json /tmp/x", "plugin"),
+            (f"mv -t /tmp {cache}/hooks.json", "plugin"),
+            (f"mv --target-directory=/tmp {cache}/hooks.json", "plugin"),
+            (f"mv -f {cache}/hooks.json {out}/a.txt /tmp/", "plugin"),
+            ("mv {fhome}/plugin/lib/fmcore.py /tmp/x", "core"),
+            (f"rsync -a --remove-source-files {cache}/hooks.json /tmp/x", "plugin"),
+            (f"rsync -a {cache}/hooks.json /tmp/x", None),  # a copy leaves the source
+            (f"cp {cache}/hooks.json /tmp/x", None),
+            (f"mv {out}/a.txt /tmp/b.txt", None),
+        ], self.bash)
+
 
 class GitInitTarget(GuardCase):
     """T-1487: a variable set to a literal path earlier on the line names git init's folder, joined with ; or &&; an

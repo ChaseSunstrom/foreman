@@ -4444,7 +4444,10 @@ def _write_targets(name, args):
         return pos
     if name in ("cp", "mv", "install", "ln", "rsync"):
         tdir = _opt_values(args, "-t", "--target-directory") if name != "rsync" else []  # rsync -t: keep times
-        return tdir + ([pos[-1]] if len(pos) >= 2 else [])
+        out = tdir + ([pos[-1]] if len(pos) >= 2 else [])
+        if name == "mv" or name == "rsync" and "--remove-source-files" in args:  # T-1744: a move removes its
+            out += pos if tdir else pos[:-1]  # sources, so moving a protected file out is a write where it was
+        return out
     if name in ("tar", "gtar", "bsdtar"):
         return _tar_targets(args)
     if name == "unzip":
@@ -4465,12 +4468,14 @@ def _write_targets(name, args):
             elif opt in ("--git-dir", "--work-tree"):
                 trees.append(val)
             i += 2 if args[i] in _GIT_VALUED else 1
-        if i < len(args) and args[i] == "clone":
-            rest = _positionals(args[i + 1:])
-            return ([rest[-1]] if len(rest) >= 2 else ["."]) + _opt_values(args[i + 1:], "--separate-git-dir")
         bases = ["."]  # T-1487: an absolute -C (/x, ~) replaces the folder before it; a $D is read both ways (review)
         for w in where:
             bases = list(dict.fromkeys(x for b in bases for x in _under_git_c(b, w)))
+        if i < len(args) and args[i] == "clone":  # T-1745: its destination is read under the -C folders
+            rest = _positionals(args[i + 1:])
+            made = [rest[-1]] if len(rest) >= 2 else ["."]
+            return [x for b in bases for d in made + _opt_values(args[i + 1:], "--separate-git-dir")
+                    for x in _under_git_c(b, d)]
         sub, rest = args[i] if i < len(args) else "", args[i + 1:]
         # T-0269 review: --output=FILE writes a file from any diff-family subcommand (diff, log, show, stash show);
         # T-0270: the files and folders other subcommands write
