@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__: the task graph</title>
+<style>
+  /* fm page graph (T-1654): the task graph in layers by what each task waits on. On the city's contract (T-1653),
+     itself references/ui/templates/scene.html's: poster first, no WebGL2 or reduced motion keeps it, context loss
+     falls back to it, DPR capped, no frames offscreen. */
+  :root {
+    --graph-bg: #0d1013;     /* the board at night; the canvas edges equal it */
+    --graph-glow: #18202a;   /* the haze behind the graph */
+    --graph-floor: #222a33;  /* a layer's ground */
+    --graph-kerb: #4f5f73;   /* its edge, drawn like a survey line */
+    --graph-link: #7d8ea6;   /* a dependency */
+    --graph-sky: #8ea4c8;    /* cool from above */
+    --graph-dirt: #3b2c26;   /* warm from below */
+    --graph-key: #ffd2a8;    /* the key light, low from the west */
+    --graph-rim: #7c98d8;
+    /* One colour per status: work in hand burns, waiting work is cool, closed work recedes */
+    --graph-active: #ffb347;
+    --graph-verifying: #f2e27a;
+    --graph-blocked: #ff5d4a;
+    --graph-planned: #6fa8ff;
+    --graph-captured: #b7a6e8;
+    --graph-deferred: #6f7d8c;
+    --graph-done: #4fb38a;
+    --graph-dropped: #4a4f57;
+    --ink: #ece6da;
+    --muted: #a8a196;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", P052, "EB Garamond", Garamond, serif;
+    --mono: "Cascadia Code", "SF Mono", "Source Code Pro", Menlo, Consolas, "Adwaita Mono", ui-monospace, monospace;
+    color-scheme: dark;
+  }
+  body { margin: 0; background: var(--graph-bg); color: var(--ink); font: 1rem/1.55 var(--serif); }
+  .graph { position: relative; margin: 0; }
+  /* Poster first: the stage has its size before any script runs, so the scene causes no layout shift. */
+  .stage { position: relative; height: 100svh; min-height: 30rem; overflow: hidden; }
+  .stage > svg, .stage > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .poster { padding: 9rem 4vw 5rem; box-sizing: border-box; }
+  .poster .ground { fill: var(--graph-floor); stroke: var(--graph-kerb); stroke-width: .06; }
+  .poster .e { fill: none; stroke: var(--graph-link); stroke-width: .07; }
+  .st-active { --c: var(--graph-active); } .st-verifying { --c: var(--graph-verifying); }
+  .st-blocked { --c: var(--graph-blocked); } .st-planned { --c: var(--graph-planned); }
+  .st-captured { --c: var(--graph-captured); } .st-deferred { --c: var(--graph-deferred); }
+  .st-done { --c: var(--graph-done); } .st-dropped { --c: var(--graph-dropped); }
+  .poster .roof { fill: var(--c); }
+  .poster .side { fill: color-mix(in srgb, var(--c) 55%, var(--graph-bg)); }
+  /* The scroll belongs to the page: vertical swipes scroll, horizontal drags turn the graph. No wheel handler. */
+  .stage canvas { opacity: 0; touch-action: pan-y; pointer-events: none; }
+  .graph[data-state="live"] canvas { opacity: 1; pointer-events: auto; cursor: grab; transition: opacity 700ms ease-out; }
+  .turn { display: none; }
+  .graph[data-state="live"] .turn { display: inline; }
+  .stage canvas:focus-visible { outline: 2px solid var(--graph-active); outline-offset: -3px; }
+  .tags { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
+  .graph[data-state="live"] .tags { opacity: 1; transition: opacity 700ms ease-out 1200ms; }
+  .tags span { position: absolute; left: 0; top: 0; font: 11px/1 var(--mono); letter-spacing: .06em;
+               color: var(--ink); white-space: nowrap; padding: 0 0 .35rem .45rem;
+               border-left: 1px solid var(--graph-active); }
+  header { position: absolute; top: 0; left: 0; z-index: 1; padding: 2.2rem 4vw; max-width: 34rem;
+           pointer-events: none; }
+  .eyebrow { margin: 0 0 .6rem; font: 12px/1.2 var(--mono); letter-spacing: .14em; text-transform: uppercase;
+             color: var(--muted); }
+  h1 { margin: 0; font-weight: 400; overflow-wrap: anywhere; font-size: clamp(2.2rem, 5vw, 4rem); line-height: 1; letter-spacing: -.01em; }
+  h1 em { font-style: italic; color: var(--graph-active); }
+  .lede { margin: .8rem 0 0; font: 13px/1.5 var(--mono); color: var(--muted); }
+  .key { position: absolute; left: 4vw; right: 4vw; bottom: 1.6rem; z-index: 1; display: flex; flex-wrap: wrap;
+         gap: .5rem .9rem; align-items: center; margin: 0; font: 12px/1 var(--mono); color: var(--muted);
+         pointer-events: none; }
+  .key i { display: inline-block; width: .6rem; height: .6rem; margin-right: .35rem; background: var(--c); }
+  figcaption { max-width: 46rem; padding: 2.5rem 4vw 4rem; color: var(--muted); }
+  figcaption p { margin: 0 0 1rem; color: var(--ink); }
+  .tasks { margin: 0; padding-left: 1.4rem; font: 13px/1.8 var(--mono); }
+  @media (max-width: 40rem) { .poster { padding: 11rem 2vw 4rem; } .key { display: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .graph[data-state="live"] canvas, .graph[data-state="live"] .tags { transition: none; }
+  }
+</style>
+</head>
+<body>
+<figure class="graph" data-state="poster">
+  <div class="stage">
+    <header>
+      <p class="eyebrow">__EYEBROW__</p>
+      <h1>__TITLE__, <em>its task graph</em></h1>
+      <p class="lede">__LEDE__</p>
+    </header>
+    __POSTER__
+    <!-- Named the template's way: role=img and the summary; the script adds tabindex and the key hint once live. -->
+    <canvas role="img" aria-label="__LABEL__" aria-describedby="graph-twin"></canvas>
+    <div class="tags" aria-hidden="true"></div>
+    <p class="key" aria-hidden="true"><span>height: tier</span><span>left to right: what waits on what</span>
+      <span class="st-active"><i></i>active</span><span class="st-verifying"><i></i>verifying</span>
+      <span class="st-blocked"><i></i>blocked</span><span class="st-planned"><i></i>planned</span>
+      <span class="st-captured"><i></i>captured</span><span class="st-deferred"><i></i>deferred</span>
+      <span class="st-done"><i></i>done</span><span class="st-dropped"><i></i>dropped</span>
+      <span class="turn">drag or arrow keys to turn</span></p>
+  </div>
+  <!-- Text twin: every task the graph shows, and what it waits on, also lives here. -->
+  <figcaption id="graph-twin">__TWIN__</figcaption>
+</figure>
+<script type="application/json" id="graph">__DATA__</script>
+<script type="module">
+// ---- Shaders, GLSL ES 3.00. Boxes light in linear, tone-map once, then sRGB; the backdrop and links work in sRGB. ----
+const HASH = `float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }`;
+const BG_VS = `#version 300 es
+out vec2 vUv;
+void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`;
+const BG_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec3 uBg, uGlow;
+out vec4 outColor;
+${HASH}
+void main() {
+  vec2 q = vUv * 2.0 - 1.0;
+  float inside = 1.0 - smoothstep(0.6, 1.0, max(abs(q.x), abs(q.y)));  // 0 on every edge: no seam with the page
+  float haze = pow(1.0 - clamp(length((q - vec2(0.0, 0.15)) * vec2(0.8, 1.4)), 0.0, 1.0), 1.6) * inside;
+  outColor = vec4(mix(uBg, uGlow, haze) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);  // dither: no banding
+}`;
+// One unit box (x, z in -0.5..0.5, y in 0..1), drawn once per layer's ground and per task.
+const BOX_VS = `#version 300 es
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec4 aFoot;    // centre x, z; width; depth
+layout(location = 3) in vec4 aBody;    // height, glow 0-1, rise delay 0-1, kind (0 task, 1 ground)
+layout(location = 4) in vec3 aColour;  // the status colour, linear
+uniform mat4 uPV;
+uniform float uRise;                   // seconds into the rise
+out vec3 vN, vWorld, vLocal;
+flat out vec4 vBody;
+flat out vec3 vColour;
+flat out vec2 vSize;
+void main() {
+  float ground = aBody.w, h = aBody.x;
+  // Layer by layer, from 40% out of the ground, so the fade from the poster lands on tasks; ease out: it lands.
+  float t = clamp((uRise - aBody.z * 2.0) / 1.0, 0.0, 1.0), up = 0.4 + 0.6 * (1.0 - pow(1.0 - t, 3.0));
+  vLocal = vec3(aPos.x * aFoot.z, aPos.y * h, aPos.z * aFoot.w);
+  vWorld = vec3(aFoot.x, ground > 0.5 ? -h : -(1.0 - up) * h, aFoot.y) + vLocal;
+  vN = aNormal; vBody = aBody; vColour = aColour; vSize = aFoot.zw;
+  gl_Position = uPV * vec4(vWorld, 1.0);
+}`;
+const BOX_FS = `#version 300 es
+precision highp float;
+in vec3 vN, vWorld, vLocal;
+flat in vec4 vBody;
+flat in vec3 vColour;
+flat in vec2 vSize;
+uniform vec3 uFloor, uKerb, uSky, uDirt, uKey, uRim;  // linear
+uniform vec3 uBg, uEye;  // uBg in sRGB, as the backdrop draws it
+uniform vec2 uFog;       // near, far
+uniform float uWake;     // 0-1: the work in hand lights up
+out vec4 outColor;
+${HASH}
+const vec3 KEY = normalize(vec3(-0.3, 0.55, 0.78));  // world space, low: the poster's lit face lit, the other in shade
+vec3 aces(vec3 x) { return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 toSrgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 1e-6), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+void main() {
+  bool ground = vBody.w > 0.5;
+  if (!ground && vWorld.y < -0.001) discard;
+  vec3 N = normalize(vN), V = normalize(uEye - vWorld);
+  vec3 albedo = ground ? uFloor : vColour;
+  if (ground && N.y > 0.5) {  // a kerb line round each layer, like a survey plan
+    vec2 e = vSize * 0.5 - abs(vLocal.xz);
+    albedo = mix(uKerb, albedo, smoothstep(0.03, 0.09, min(e.x, e.y)));
+  }
+  float d = dot(N, KEY);
+  vec3 c = mix(uDirt, uSky, N.y * 0.5 + 0.5) * albedo * 0.3 + uKey * albedo * max((d + 0.1) / 1.1, 0.0) * 0.9;
+  c += uRim * pow(1.0 - max(dot(N, V), 0.0), 3.0) * 0.18;
+  if (!ground) c *= mix(0.55, 1.0, smoothstep(0.0, 0.5, vWorld.y));  // the floor's shade at its foot
+  vec3 glow = ground ? vec3(0.0) : vColour * vBody.y * uWake * (N.y > 0.5 ? 0.9 : 0.4);
+  vec3 col = toSrgb(aces(c * 1.15 + glow));
+  float fog = smoothstep(uFog.x, uFog.y, length(uEye - vWorld)) * 0.75;
+  outColor = vec4(mix(col, uBg, fog) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+}`;
+// The dependencies: arcs from what's waited on to the waiter, drawn as lines once both ends stand.
+const LINK_VS = `#version 300 es
+layout(location = 0) in vec4 aPoint;  // x, y, z; the waiter's rise delay
+uniform mat4 uPV;
+uniform float uRise;
+out float vOn;
+out vec3 vWorld;
+void main() { vOn = clamp((uRise - aPoint.w * 2.0 - 0.8) / 0.8, 0.0, 1.0); vWorld = aPoint.xyz; gl_Position = uPV * vec4(aPoint.xyz, 1.0); }`;
+const LINK_FS = `#version 300 es
+precision highp float;
+in float vOn;
+in vec3 vWorld;
+uniform vec3 uLink, uBg, uEye;  // sRGB
+uniform vec2 uFog;
+out vec4 outColor;
+void main() {
+  float fog = smoothstep(uFog.x, uFog.y, length(uEye - vWorld)) * 0.75;
+  outColor = vec4(mix(mix(uBg, uLink, vOn), uBg, fog), 1.0);
+}`;
+
+// The unit box: five faces (no floor), flat normals.
+function buildBox() {
+  const faces = [[[0, 1, 0], [[-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]]], [[1, 0, 0], [[1, 0, -1], [1, 0, 1], [1, 1, 1], [1, 1, -1]]],
+    [[-1, 0, 0], [[-1, 0, 1], [-1, 0, -1], [-1, 1, -1], [-1, 1, 1]]], [[0, 0, 1], [[-1, 0, 1], [1, 0, 1], [1, 1, 1], [-1, 1, 1]]],
+    [[0, 0, -1], [[1, 0, -1], [-1, 0, -1], [-1, 1, -1], [1, 1, -1]]]];
+  const v = [], idx = [];
+  faces.forEach(([n, quad], f) => { quad.forEach(([x, y, z]) => v.push(x / 2, y, z / 2, ...n)); idx.push(f * 4, f * 4 + 1, f * 4 + 2, f * 4, f * 4 + 2, f * 4 + 3); });
+  return { vertices: new Float32Array(v), indices: new Uint16Array(idx) };
+}
+// Each edge an arc of SEG lines from the top of what's waited on, lifted by its length, to the top of the waiter.
+function buildLinks(plan, SEG = 12) {
+  const out = new Float32Array(plan.e.length * SEG * 2 * 4);
+  let o = 0;
+  for (const [a, b] of plan.e) {
+    const [ax, az, ah] = plan.n[a], [bx, bz, bh, , , delay] = plan.n[b];
+    const lift = Math.max(ah, bh) + 0.4 + 0.15 * Math.hypot(bx - ax, bz - az);
+    const at = t => { const u = 1 - t; return [u * u * ax + 2 * u * t * (ax + bx) / 2 + t * t * bx, u * u * ah + 2 * u * t * lift + t * t * bh,
+      u * u * az + 2 * u * t * (az + bz) / 2 + t * t * bz]; };
+    for (let s = 0; s < SEG; s++) for (const t of [s / SEG, (s + 1) / SEG]) { out.set([...at(t), delay], o); o += 4; }
+  }
+  return out;
+}
+
+// ---- Column-major 4x4 matrices. ----
+const mul = (a, b) => { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k]; return o; };
+const rotX = a => new Float32Array([1, 0, 0, 0, 0, Math.cos(a), Math.sin(a), 0, 0, -Math.sin(a), Math.cos(a), 0, 0, 0, 0, 1]);
+const rotY = a => new Float32Array([Math.cos(a), 0, -Math.sin(a), 0, 0, 1, 0, 0, Math.sin(a), 0, Math.cos(a), 0, 0, 0, 0, 1]);
+const move = (x, y, z) => new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1]);
+const perspective = (fovy, aspect, near, far) => { const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+  return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0]); };
+const ease = t => { t = Math.min(Math.max(t, 0), 1); return t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2; };
+
+// ---- The graph. Returns dispose(): cancels the loop, removes listeners, frees GPU resources, releases the context. ----
+function mountGraph(fig, plan) {
+  const canvas = fig.querySelector("canvas"), tags = fig.querySelector(".tags");
+  const label = canvas.getAttribute("aria-label"), setState = s => { fig.dataset.state = s; };
+  // Reduced motion: the poster is the graph, still; no context is made at all.
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+  if (reduce.matches) { setState("still"); return () => {}; }
+  const off = new AbortController(), on = (target, type, fn) => target.addEventListener(type, fn, { signal: off.signal });
+  // Survival 1: no WebGL2 (or only a software fallback the browser flags) -> the poster and the text twin stay.
+  const gl = canvas.getContext("webgl2", { antialias: true, alpha: false, powerPreference: "low-power", failIfMajorPerformanceCaveat: true });
+  if (!gl) { setState("no-webgl2"); return () => {}; }
+  const box = buildBox(), links = buildLinks(plan), VFOV = 30 * Math.PI / 180, PASS = 4.5, STEP = Math.PI / 12, PITCH = [0.42, 0.95];
+  const grounds = plan.layers, count = grounds.length + plan.n.length;
+  const reach = k => Math.max(1, ...grounds.map(g => k === "x" ? Math.abs(g.x) + g.w / 2 : g.d / 2));
+  const r = Math.hypot(reach("x"), reach("z"), plan.hmax), target = [0, plan.hmax * 0.3, 0];
+  let res = null, raf = 0, t0 = 0, stopped = false, visible = !document.hidden, onscreen = true, palette, inst;
+  // Starts from the poster's own view (isometric: from +x+z, 30° down), then turns TURN over the pass.
+  const TURN = 0.5;
+  let yaw = -Math.PI / 4, pitch = 0.52, toYaw = yaw, toPitch = pitch, drag = null, pass = 0, last = 0;
+
+  // Survival 8: any failure ends at the poster, logged once.
+  const fail = err => { if (stopped) return; stopped = true; cancelAnimationFrame(raf); console.error("graph: showing the poster", err);
+    canvas.removeAttribute("tabindex"); canvas.setAttribute("aria-label", label); setState("failed"); };
+
+  function program(vs, fs) {
+    const p = gl.createProgram();
+    for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS) && !gl.isContextLost()) throw new Error(gl.getShaderInfoLog(s));
+      gl.attachShader(p, s); gl.deleteShader(s);
+    }
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS) && !gl.isContextLost()) throw new Error(gl.getProgramInfoLog(p));
+    const u = {};
+    for (let i = 0, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS) || 0; i < n; i++) {
+      const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name);
+    }
+    return { p, u };
+  }
+  // Every GPU resource made here; a restored context runs it again (survival 3).
+  function init() {
+    const vao = gl.createVertexArray(), vbo = gl.createBuffer(), ibo = gl.createBuffer(), ins = gl.createBuffer();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, box.vertices, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+    gl.bindBuffer(gl.ARRAY_BUFFER, ins); gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
+    for (const [loc, n, at] of [[2, 4, 0], [3, 4, 16], [4, 3, 32]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 44, at); gl.vertexAttribDivisor(loc, 1); }
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, box.indices, gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+    const lvao = gl.createVertexArray(), lbo = gl.createBuffer();
+    gl.bindVertexArray(lvao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, lbo); gl.bufferData(gl.ARRAY_BUFFER, links, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0);
+    gl.bindVertexArray(null);
+    res = { bg: program(BG_VS, BG_FS), box: program(BOX_VS, BOX_FS), link: program(LINK_VS, LINK_FS), vaos: [vao, lvao],
+            bufs: [vbo, ibo, ins, lbo] };
+  }
+  function free() {
+    if (!res || gl.isContextLost()) return;
+    for (const k of ["bg", "box", "link"]) gl.deleteProgram(res[k].p);
+    res.vaos.forEach(v => gl.deleteVertexArray(v)); res.bufs.forEach(b => gl.deleteBuffer(b));
+    res = null;
+  }
+  // Palette from the CSS tokens: a 1x1 2D canvas resolves any CSS colour to sRGB bytes.
+  const probe = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+  const cssColour = name => { probe.fillStyle = "#808080"; probe.fillStyle = getComputedStyle(fig).getPropertyValue(name).trim() || "#808080";
+    probe.clearRect(0, 0, 1, 1); probe.fillRect(0, 0, 1, 1); return [...probe.getImageData(0, 0, 1, 1).data.slice(0, 3)].map(v => v / 255); };
+  const linear = c => c.map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  const NAMES = ["bg", "glow", "link", "floor", "kerb", "sky", "dirt", "key", "rim"];
+  const GLOW = { active: 1, verifying: 0.7, blocked: 0.6 };
+  const readPalette = () => {
+    palette = Object.fromEntries(NAMES.map(k => [k, cssColour(`--graph-${k}`)]));
+    const status = plan.s.map(s => linear(cssColour(`--graph-${s}`)));
+    inst = new Float32Array(count * 11);
+    grounds.forEach((g, i) => inst.set([g.x, 0, g.w, g.d, 0.08, 0, 0, 1, 0, 0, 0], i * 11));
+    plan.n.forEach(([x, z, h, s, , delay], i) => inst.set([x, z, 0.6, 0.6, h, GLOW[plan.s[s]] || 0, delay, 0, ...status[s]], (grounds.length + i) * 11));
+  };
+
+  // Up to six tasks in hand named in the scene, placed each frame over their top.
+  const named = plan.a.map(i => { const s = document.createElement("span"); s.textContent = plan.t[i].id;
+    tags.appendChild(s); return { s, at: [plan.n[i][0], plan.n[i][2], plan.n[i][1]] }; });
+
+  function draw() {
+    const w = canvas.width, h = canvas.height, aspect = w / h, k = ease(pass / PASS);
+    const half = Math.min(VFOV, 2 * Math.atan(Math.tan(VFOV / 2) * aspect)) / 2;
+    const dist = r / Math.sin(Math.atan(1.25 * Math.tan(half)));
+    const y = yaw + TURN * k, P = perspective(VFOV, aspect, Math.max(0.1, dist - 2 * r), dist + 2 * r);
+    const PV = mul(P, mul(move(0, 0, -dist), mul(rotX(pitch), mul(rotY(y), move(-target[0], -target[1], -target[2])))));
+    const flat = dist * Math.cos(pitch), eye = [target[0] - Math.sin(y) * flat, target[1] + Math.sin(pitch) * dist, target[2] + Math.cos(y) * flat];
+    const fog = [dist - r * 0.6, dist + r * 1.4];
+    gl.viewport(0, 0, w, h); gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.disable(gl.DEPTH_TEST);
+    gl.useProgram(res.bg.p);
+    gl.uniform3fv(res.bg.u.uBg, palette.bg); gl.uniform3fv(res.bg.u.uGlow, palette.glow);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.enable(gl.DEPTH_TEST);
+    const u = res.box.u;
+    gl.useProgram(res.box.p);
+    gl.uniformMatrix4fv(u.uPV, false, PV);
+    gl.uniform1f(u.uRise, pass); gl.uniform1f(u.uWake, Math.min(Math.max((pass - 1.5) / 2.0, 0), 1));
+    gl.uniform3fv(u.uEye, eye); gl.uniform3fv(u.uBg, palette.bg); gl.uniform2f(u.uFog, ...fog);
+    for (const n of NAMES.slice(3)) gl.uniform3fv(u[`u${n[0].toUpperCase()}${n.slice(1)}`], linear(palette[n]));
+    gl.bindVertexArray(res.vaos[0]); gl.drawElementsInstanced(gl.TRIANGLES, box.indices.length, gl.UNSIGNED_SHORT, 0, count);
+    const l = res.link.u;
+    gl.useProgram(res.link.p);
+    gl.uniformMatrix4fv(l.uPV, false, PV); gl.uniform1f(l.uRise, pass);
+    gl.uniform3fv(l.uLink, palette.link); gl.uniform3fv(l.uBg, palette.bg); gl.uniform3fv(l.uEye, eye); gl.uniform2f(l.uFog, ...fog);
+    gl.bindVertexArray(res.vaos[1]); gl.drawArrays(gl.LINES, 0, links.length / 4); gl.bindVertexArray(null);
+    const cw = canvas.clientWidth, ch = canvas.clientHeight;
+    for (const { s, at: [x, yy, z] } of named) {
+      const cx = PV[0] * x + PV[4] * yy + PV[8] * z + PV[12], cy = PV[1] * x + PV[5] * yy + PV[9] * z + PV[13], cw4 = PV[3] * x + PV[7] * yy + PV[11] * z + PV[15];
+      s.style.visibility = cw4 > 0 ? "visible" : "hidden";
+      s.style.transform = `translate(${((cx / cw4) * 0.5 + 0.5) * cw}px, ${(0.5 - (cy / cw4) * 0.5) * ch}px) translateY(-100%)`;
+    }
+  }
+  // Draw now; the first good frame fades the canvas in over the poster (survival 2).
+  function render() {
+    if (stopped || !res || gl.isContextLost()) return;
+    try { draw(); } catch (err) { return fail(err); }
+    if (fig.dataset.state === "live") return;
+    setState("live");
+    canvas.tabIndex = 0; canvas.setAttribute("aria-label", `${label} Arrow keys turn it.`);  // survival 7
+  }
+
+  // One pass: the layers rise in order, the work in hand lights, the camera turns and settles; then no frames until input.
+  function frame(now) {
+    raf = 0;
+    if (!t0) t0 = now;
+    const dt = Math.min((now - (last || now)) / 1000, 0.1); last = now;
+    pass = reduce.matches ? PASS : Math.min((now - t0) / 1000, PASS);
+    const k = reduce.matches ? 1 : 1 - Math.exp(-8 * dt);  // damped input; reduced motion snaps
+    yaw += (toYaw - yaw) * k; pitch += (toPitch - pitch) * k;
+    const lag = toYaw - yaw; yaw %= 2 * Math.PI; toYaw = yaw + lag;  // angles stay bounded on a page left open for days
+    render();
+    if (pass < PASS || Math.abs(toYaw - yaw) + Math.abs(toPitch - pitch) > 1e-4) wake(); else last = 0;
+  }
+  // Survival 9: no frames offscreen, in a hidden tab, or when nothing changes.
+  function wake() { if (!raf && !stopped && visible && onscreen && res && !gl.isContextLost()) raf = requestAnimationFrame(frame); }
+  function sleep() { cancelAnimationFrame(raf); raf = 0; last = 0; }
+
+  // Budget: DPR capped at 2 (1.5 on touch screens); resize redraws in the same callback, so no black frame.
+  const ro = new ResizeObserver(() => {
+    const dpr = Math.min(window.devicePixelRatio || 1, matchMedia("(pointer: coarse)").matches ? 1.5 : 2);
+    canvas.width = Math.max(1, Math.round(canvas.clientWidth * dpr)); canvas.height = Math.max(1, Math.round(canvas.clientHeight * dpr));
+    render();
+  });
+  const io = new IntersectionObserver(entries => { onscreen = entries.at(-1).isIntersecting; onscreen ? wake() : sleep(); });  // oldest first
+  on(document, "visibilitychange", () => { visible = !document.hidden; visible ? wake() : sleep(); });
+  on(reduce, "change", wake);
+  // Survival 3: preventDefault or the browser never restores; the poster covers the gap.
+  on(canvas, "webglcontextlost", e => { e.preventDefault(); sleep(); res = null; setState("lost"); });
+  on(canvas, "webglcontextrestored", () => { try { init(); } catch (err) { return fail(err); } render(); wake(); });
+  // Input: drag turns (pitch clamped), arrow keys step; Tab is never caught, so focus never traps.
+  // The first input ends the intro (WCAG 2.2.2): the graph stands lit at once, the view kept where it was.
+  const stopIntro = () => { if (pass >= PASS) return; const gone = TURN * (1 - ease(pass / PASS)); yaw -= gone; toYaw -= gone; };
+  const turn = (dy, dp) => { stopIntro(); pass = PASS; t0 = -Infinity; toYaw += dy; toPitch = Math.max(PITCH[0], Math.min(PITCH[1], toPitch + dp)); wake(); };
+  on(canvas, "pointerdown", e => { turn(0, 0); drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+  on(canvas, "pointermove", e => { if (!drag) return; turn((e.clientX - drag.x) * 0.006, (e.clientY - drag.y) * 0.004); drag = { x: e.clientX, y: e.clientY }; });
+  for (const type of ["pointerup", "pointercancel"]) on(canvas, type, () => { drag = null; wake(); });
+  const KEYS = { ArrowLeft: [-STEP, 0], ArrowRight: [STEP, 0], ArrowUp: [0, -STEP / 2], ArrowDown: [0, STEP / 2] };
+  on(canvas, "keydown", e => { const k = KEYS[e.key]; if (!k || e.altKey || e.ctrlKey || e.metaKey) return; e.preventDefault(); turn(...k); });
+
+  try { readPalette(); init(); } catch (err) { fail(err); }
+  ro.observe(canvas); io.observe(canvas); wake();
+  return () => {
+    off.abort(); ro.disconnect(); io.disconnect(); sleep(); stopped = true; free(); tags.replaceChildren();
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+    canvas.removeAttribute("tabindex"); canvas.setAttribute("aria-label", label); setState("poster");
+  };
+}
+
+// One scene, one context per page.
+window.disposeGraph = mountGraph(document.querySelector(".graph"), JSON.parse(document.getElementById("graph").textContent));
+</script>
+</body>
+</html>
