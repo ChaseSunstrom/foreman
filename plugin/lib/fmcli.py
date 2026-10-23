@@ -3683,8 +3683,19 @@ def cmd_check(args):
     """The project's gate commands (tests, lint, doctor…), run together; any failure exits 1, so a pipe can't mask it."""
     # T-1668: full runs queue on the machine-wide gate lock; T-1743: --affected runs (each builder's own) don't
     if args.action == "run" and not getattr(args, "repeat", 0) and not getattr(args, "affected", False):
-        with c.gate_lock("fm check", say=lambda m: print(m, file=sys.stderr)):
-            return _cmd_check(args)
+        try:  # T-1753: a hung run elsewhere (another project's) mustn't hold every check for hours
+            wait = max(0.0, float(os.environ.get("FOREMAN_GATE_WAIT") or 900))
+        except ValueError:
+            wait = 900.0
+        started = False
+        try:
+            with c.gate_lock("fm check", say=lambda m: print(m, file=sys.stderr), timeout=wait):
+                started = True
+                return _cmd_check(args)
+        except c.LockTimeout:
+            if started:  # the check's own lock, not the gate's
+                raise
+            print(f"gate lock still held after {wait / 60:g} min; running beside it", file=sys.stderr)
     return _cmd_check(args)
 
 
