@@ -6097,6 +6097,14 @@ def _build_parser():
     b = bsp.add_parser("scorecard", help="each saved run's pass rate on the train and holdout splits (T-0734)")
     b.add_argument("--json", action="store_true")
     b.add_argument("-p", "--project", default=argparse.SUPPRESS)
+    b = bsp.add_parser("repro", help="rerun one duel row on both sides with its saved model and settings: fm bench "
+                                     "repro LABEL CASE, as the benchmarks page's Where Foreman loses names it (T-1261)")
+    b.add_argument("--json", action="store_true")
+    b.add_argument("-p", "--project", default=argparse.SUPPRESS)
+    b.add_argument("label", help="the Foreman side's results label (duel-none-foreman-<time>)")
+    b.add_argument("case", help="the case id")
+    b.add_argument("--budget", type=float, help="USD per session (default: the run's own, else 3)")
+    b.add_argument("--timeout", type=int, default=30, help="minutes per session")
     b = bsp.add_parser("hygiene", help="cases that pass or fail the same in every saved run: they tell no version "
                                         "from another (T-0656)")
     b.add_argument("--json", action="store_true")
