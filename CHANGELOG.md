@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm shot and fm stories take --profile tv|eink|car|wrist (that surface's width, height and scale, from fm critique's table) and --reduced-motion (prefers-reduced-motion: reduce, set before the first paint) (T-1737: T-1725, T-1734)
 - Redaction reads key names: "password": "x" in JSON text (escaped JSON and Python reprs too) and {"password": "x"} in logged objects are redacted; token counts and other keys that only contain the words are kept (T-1733)
 - fm check --affected (each builder's own run) no longer queues on the machine-wide gate lock; only a full run does (T-1743)
 - Gate runs share one machine-wide lock: a full fm check and the release canary queue behind each other, a waiter says who holds it, and a stale or stray holder value is ignored (T-1668)
