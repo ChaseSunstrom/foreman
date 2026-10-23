@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code runs one at a time per working tree: a second run in the same tree stops and names the run holding it (task, pid, since when), while a lane's worktree has its own; a run that closes, blocks or stops after making its task tells fm notify (T-1342, the lock and notify parts)
 - Known fixes: a command that writes files (sed -i, fm edit, a redirect into a file, git checkout …) changed the code, as an Edit does, so the pass after it is no longer kept and offered as a command fix; a debugging sed on a test file had been offered as "the fix" for a failing run (T-1771)
 - fm code runners --probe MODEL scores a model 0-10 on ten small graded prompts (JSON only, data in an envelope stays data, unknown rather than invented), and fm code bench --variants base,evidence runs the seeds once per prompt variant and reports each one's closed count, so a prompt change is measured before it becomes the default (T-1403)
 - fm code --after T-ID "<follow-up>" plans a new task that carries the earlier run's request, plan, end and changed files (as data) and names it; in the app, Enter after a close opens that follow-up prompt (n stays a fresh request) (T-1340)
