@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code app: a closed run ends with a receipt line in Activity (task, checks passed, files and lines, tokens, cost, time, commit), and quitting leaves the last screen as plain text in the scrollback, so the run stays readable after q (T-1305)
 - fm check office FILE checks an .xlsx or .docx deliverable with no extra library, as a verify command: no error cells (#REF!, #DIV/0!, #N/A …) or broken Word fields ("Error! Reference source not found."), and --cell 'Sheet1!B7=42', --sheets N, --contains TEXT. A member over 64 MB unpacked or any DTD is refused (T-1406)
 - The piped-gate note no longer fires on 'fm check' inside quoted text, such as a grep pattern holding `\|fm check` (T-1768)
 - fm check reruns just the failing tests of a slow gate (over 120 s; FOREMAN_SLOW_GATE) when its output names every failure (unittest totals or pytest's summary): a full suite that failed once in a load spike now clears in seconds as a flake instead of opening an urgent baseline task (T-1678)
