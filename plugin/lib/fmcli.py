@@ -6406,6 +6406,8 @@ def _build_parser():
     s.add_argument("--catalogue", metavar="NAME", help="research/NAME.json or research/NAME/catalogue.json: clusters")
     s.add_argument("--url", help="record the Artifact link from a first publish, printed on later runs")
     s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
+    s.add_argument("--cards", action="store_true", help="looks: the look cards as trading cards on a print sheet "
+                   "(63 x 88 mm, nine to an A4 page) instead of the gallery")
     s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
                                                    "in state picks.json; needs --catalogue (T-0962)")
     s.add_argument("what", nargs="?", choices=["looks", "city", "graph"], help="looks: the looks gallery instead, one "
