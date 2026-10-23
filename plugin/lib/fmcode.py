@@ -1830,6 +1830,13 @@ def cmd_code(args):
         run.emit("note", f"stopped {len(stopped)} runner(s) a killed fm code left running "
                          f"(pid {', '.join(map(str, stopped))})", stopped=stopped)
 
+    if args.resume is None and not getattr(args, "task", None):  # T-1338: a run a kill left is never forgotten
+        waiting = unfinished(run.jdir)
+        for tid, req in waiting[:3]:
+            run.emit("note", f"unfinished run {tid} ({_one_line(req, 60)}): fm code --resume {tid}", unfinished=tid)
+        if len(waiting) > 3:
+            run.emit("note", f"… and {len(waiting) - 3} more unfinished runs (the app's history lists them)")
+
     def _usage(msg, then):
         e = fmcli.UsageError(msg)
         e.then = then
@@ -2050,6 +2057,42 @@ def _make_task(run, profile):
     _hold(run)
     _journal_start(run, profile)
     run.emit("task", f"task {run.tid} created and focused", task=run.tid)
+
+
+def unfinished(jdir):
+    """T-1338: the runs in jdir that never ended and that no fm code is working now (its task lock is free), newest
+    first: [(task, request)]. Each journal is read at its first line and its last 64 KB, not whole."""
+    import fcntl
+    out = []
+    try:
+        names = [n for n in os.listdir(jdir) if n.endswith(".jsonl") and not n.endswith(".events.jsonl")]
+    except OSError:
+        return out
+    for n in names:
+        path, tid = os.path.join(jdir, n), n[:-len(".jsonl")]
+        try:
+            with open(path, "rb") as f:
+                first = json.loads(f.readline() or b"{}")
+                f.seek(max(0, os.fstat(f.fileno()).st_size - 65536))
+                ended = b'"kind": "end"' in f.read()
+            when = os.path.getmtime(path)
+        except (OSError, ValueError):
+            continue
+        if ended or not isinstance(first, dict) or first.get("kind") != "start":
+            continue
+        try:
+            fd = os.open(os.path.join(jdir, f"{tid}.lock"), os.O_RDONLY)
+        except OSError:
+            fd = None  # never locked: no run holds it
+        if fd is not None:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except OSError:
+                continue  # a live run is working it
+            finally:
+                os.close(fd)
+        out.append((when, tid, str(first.get("request") or "")))
+    return [(t, r) for _, t, r in sorted(out, reverse=True)]
 
 
 def _hold(run):
