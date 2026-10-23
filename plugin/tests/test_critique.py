@@ -172,6 +172,26 @@ class Census(Case):
         self.assertGreater(res["near_total"], fmcritique.MAX_NEAR)
 
 
+class Pseudo(unittest.TestCase):
+    def test_longer_bracketed_and_placeholders_kept(self):
+        for s in ("Save changes", "Hello {name}, you have %d items", "Delete %(n)s files <b>now</b> ${x}", "{0} of {1}"):
+            p = fmcritique.pseudo(s)
+            self.assertGreaterEqual(len(p), len(s) * 1.3, s)
+            self.assertTrue(p.startswith("[") and p.endswith("]"), p)
+            for ph in fmcritique.PLACEHOLDER.findall(s):
+                self.assertIn(ph, p)
+        self.assertNotIn("Save", fmcritique.pseudo("Save changes"))
+
+    def test_empty_and_huge(self):
+        self.assertEqual(fmcritique.pseudo(""), "")
+        self.assertLessEqual(len(fmcritique.pseudo("a" * 10**6)), fmcritique.MAX_STRESS * 2 + 20)
+
+    def test_profiles(self):
+        for name, p in fmcritique.PROFILES.items():
+            self.assertTrue(p["width"] > 0 and p["height"] > 0 and p["scale"] > 0, name)
+        self.assertEqual(set(fmcritique.PROFILES), {"tv", "eink", "car", "wrist"})
+
+
 class Clean(unittest.TestCase):
     def test_format_and_private_characters_are_stripped(self):
         for ch in ("\U000E0041", "⁠", "⁤", "﻿", "­", "؜", "", "‮", "\x1b", "\x85"):
