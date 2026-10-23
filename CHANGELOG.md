@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code app action cards: a failure shows what happened, what Foreman did and the next command (Enter resumes, opens a read-only fm command's output, or names any other for your shell); a live stall shows w wait, k stop, m stop and resume with another runner; the app stops runners a killed run left when it opens, and quitting mid-run prints a stopping … stopped line per runner (T-1762: T-1755, T-1756, T-1761)
 - fm code diagnostics: fm code why [ID] explains a run (how it ended or that a kill stopped it, the steps done, a stall's cause, the next command); text piped on stdin becomes the request's fenced context (a pipe or file only, 256 KB and 5 s at most, so a pipe that never closes can't hang a run); the start event names the run's containment (Landlock with its ABI, or guard only) and the app's header shows it (T-1760: T-1373, T-1374, T-1402)
 - Security: fm code --task (and the app's r on a task) refuses a task still waiting for the user's own yes (a brief pulled by fm sync, imported, or written by a replay) before any of its commands runs, naming why and fm ask ID confirm; the task's verify command could run on one key press (T-1369)
 - fm ideas' "near T-…" marks: an idea is marked near a done task only when half its distinctive words are in that task's title, or three quarters in its title and request together; words in a fifth of the done tasks (three at least) don't count. Two words a long request happened to hold made spurious matches (T-1303)
