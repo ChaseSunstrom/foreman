@@ -587,10 +587,8 @@ class Run:
         if not self.dur_tokens:
             return
         for d in self.decls:
-            if d.prop in ("transition", "animation", "transition-duration", "animation-duration", "transition-delay",
-                          "animation-delay") and not d.in_frames:
-                bare = re.sub(r"var\([^)]*\)", "", d.value)  # a token's fallback is fine
-                lit = [m.group() for m in TIME.finditer(bare) if _seconds(m.group()) >= .02]  # .01ms resets pass
+            if not d.in_frames:
+                lit = [v for k, v in _literals(d) if k == "duration"]
                 if lit:
                     self.flag("untokened-duration", d.src, d.line, f"{lit[0]} where tokens exist (e.g. "
                                                                    f"{self.dur_tokens[0].prop})")
@@ -650,6 +648,25 @@ class Run:
         by_path = {s.path: s for s in self.sources}
         kept = [f for f in self.found if f["rule"] not in by_path[f["file"]].allowed.get(f["line"], ())]
         return sorted(kept, key=lambda f: (self.order[f["file"]], f["line"], f["rule"]))
+
+
+DUR_PROPS = ("transition", "animation", "transition-duration", "animation-duration", "transition-delay",
+             "animation-delay")
+
+
+def _literals(d):
+    """(kind, literal) for each colour, duration or radius one declaration writes out rather than through a token: a
+    var() and its fallback are the token's, and a custom property's own value is the token. ponytail: NAMED's few
+    colour names, not CSS's 148; class-string values (bg-[#123]) aren't read."""
+    if d.prop[0] in "-$" or d.prop == "content":
+        return []
+    bare = re.sub(r"var\([^)]*\)", "", d.value)
+    out = [("colour", m.group()) for m in COLOUR.finditer(bare)]
+    if d.prop in DUR_PROPS:
+        out += [("duration", m.group()) for m in TIME.finditer(bare) if _seconds(m.group()) >= .02]  # .01ms resets
+    if "radius" in d.prop:
+        out += [("radius", t) for t in re.split(r"[\s/]+", bare) if (_px(t, d.src.js) or 0) > 0]
+    return out
 
 
 def _in_template(code, pos):
@@ -1568,9 +1585,84 @@ def cmd_design(args):
     return 1 if found else 0
 
 
-# T-1645: design gates a project opts into in DESIGN.md's ## Gates section ("- brief: advisory" or "blocking")
-GATES = ("brief",)
+# T-1645: design gates a project opts into in DESIGN.md's ## Gates section ("- brief: advisory" or "blocking");
+# T-1646: a11y and debt ("- debt: advisory 40": its budget of untokened literals)
+GATES = ("brief", "a11y", "debt")
 MODES = ("advisory", "blocking")
+A11Y_RULES = (("reduced motion", "reduced-motion"), ("no fast flashes", "flash"), ("img alt text", "img-alt"))
+FOCUS = re.compile(r":focus(?:-visible|-within)?(?![\w-])")
+TW_FOCUS = re.compile(r"(?<![\w-])focus(?:-visible|-within)?:(?!(?:outline-none|outline-0|ring-0)(?![\w-]))\S")
+INTERACTIVE = re.compile(r"<(?:a|button|input|select|textarea|summary)(?![\w-])|\btabindex\s*=", re.I)
+
+
+def _at(hits, n=3):
+    """file:line for the first n findings, and how many more."""
+    return ", ".join(f"{f['file']}:{f['line']}" for f in hits[:n]) + (f" and {len(hits) - n} more" if len(hits) > n
+                                                                       else "")
+
+
+def _a11y(run, found, notes):
+    """Contrast of the role tokens the run defines, the lint's motion, flash and alt findings, and a focus style
+    that shows wherever there are interactive elements."""
+    musts, tokens = [], ({}, {})
+    for s in run.sources:
+        for name, value, dark, _ in _props(s):
+            tokens[dark].setdefault(name, value)
+    try:
+        proofs = check_pairs(tokens, strict=False)[0] if tokens[0] or tokens[1] else []
+    except ValueError as e:
+        proofs, why = [], str(e)
+    else:
+        why = "no role token's colour could be read" if tokens[0] or tokens[1] else "no :root custom properties"
+    if not proofs:
+        notes.append(f"a11y: contrast not checked: {why}")
+    else:
+        bad = [p for p in proofs if not p["pass"]]
+        low = min(proofs, key=lambda p: p["ratio"] - p["need"])
+        musts.append({"must": "contrast", "pass": not bad, "why": "; ".join(
+            f"{p['fg']}/{p['bg']} {p['ratio']:.2f}:1 < {p['need']:g} ({p['theme']})" for p in bad[:3])
+            + (f" and {len(bad) - 3} more" if len(bad) > 3 else "") if bad else
+            f"{len(proofs)} role pair(s) pass; closest {low['fg']}/{low['bg']} {low['ratio']:.2f}:1"})
+    for label, rule in A11Y_RULES:
+        hits = [f for f in found if f["rule"] == rule]
+        musts.append({"must": label, "pass": not hits, "why": f"fm design lint {rule}: {_at(hits)}" if hits else
+                      f"no {rule} finding in {len(run.sources)} UI file(s)"})
+    used = next(((s, m) for s in run.sources if not s.css_file for m in [INTERACTIVE.search(s.code)] if m), None)
+    sels, shown = {}, None
+    for d in run.decls:
+        if d.block < 0 or d.value.lower() in ("none", "0", "0px", "transparent"):  # outline: none shows nothing
+            continue
+        key = (d.src.path, d.block)
+        if key not in sels:
+            css = d.src.css
+            sels[key] = css[max(css.rfind(c, 0, d.block) for c in ";{}") + 1:d.block]
+        if FOCUS.search(sels[key]):
+            shown = f"{d.src.path}:{d.line}"
+            break
+    if shown is None:
+        shown = next((f"{s.path}:{s.line(b)}" for s in run.sources for b, text in s.class_strings
+                      if TW_FOCUS.search(text)), None)
+    musts.append({"must": "focus styles", "pass": bool(shown or not used), "why": f"a visible focus style at {shown}"
+                  if shown else f"no interactive element (a, button, input, select, textarea, summary, tabindex)"
+                  if not used else f"interactive elements (first {used[0].path}:{used[0].line(used[1].start())}) "
+                  "and no :focus-visible or :focus rule that shows one (outline: none alone hides it)"})
+    return musts
+
+
+def _debt(run, budget):
+    """([the budget must], the top files): untokened colours, durations and radii counted per file."""
+    per = {}
+    for d in run.decls:
+        for kind, _ in _literals(d):
+            k = per.setdefault(d.src.path, {})
+            k[kind] = k.get(kind, 0) + 1
+    rows = sorted(({"file": f, "count": sum(k.values()), "kinds": dict(sorted(k.items()))} for f, k in per.items()),
+                  key=lambda r: (-r["count"], r["file"]))
+    total = sum(r["count"] for r in rows)
+    top = ", ".join(f"{r['file']} {r['count']}" for r in rows[:3])
+    return [{"must": f"untokened literals ≤ {budget}", "pass": total <= budget,
+             "why": f"{total} untokened literal(s) (colours, durations, radii) in {len(rows)} file(s), budget {budget}"
+                    + (f"; most in {top}" if top else "")}], rows[:10]
 
 
 def _section_lines(doc, name):
@@ -1617,7 +1709,8 @@ def _found(kind, value, text):
 
 def check_gates(root):
     """{design, gates: [{gate, mode, musts: [{must, pass, why}]}], notes}: the gates DESIGN.md under root opts into,
-    each run over the UI files under root. Nothing opted in: no gates."""
+    each run over the UI files under root (debt adds files: its top 10 by untokened literals). Nothing opted in: no
+    gates."""
     path = os.path.join(root, "DESIGN.md")
     text, why = _read(path) if os.path.isfile(path) else (None, "no DESIGN.md")
     out = {"design": path, "gates": [], "notes": []}
@@ -1631,8 +1724,9 @@ def check_gates(root):
         body, _ = _read(f)
         if body is not None:
             bodies.append((os.path.relpath(f, root), body))
+    lint = []  # the lint's run and findings, made once for the gates that read them
     for ln in _section_lines(doc, "Gates"):
-        m = re.match(r"\s*[-*]\s*([\w-]+)\s*:\s*([\w-]+)", ln)
+        m = re.match(r"\s*[-*]\s*([\w-]+)\s*:\s*([\w-]+)\s*(\S*)", ln)
         if not m:
             continue
         gate, mode = m.group(1).lower(), m.group(2).lower()
@@ -1642,6 +1736,21 @@ def check_gates(root):
         if mode not in MODES:
             out["notes"].append(f"unknown mode '{mode}' for {gate}: read as advisory ({' or '.join(MODES)})")
             mode = "advisory"
+        if gate != "brief":
+            if not lint:
+                run = Run([Source(rel, body) for rel, body in bodies])
+                lint += [run, run.check()]
+            if gate == "a11y":
+                out["gates"].append({"gate": gate, "mode": mode, "musts": _a11y(*lint, out["notes"])})
+            else:
+                budget = m.group(3)
+                if budget and not re.fullmatch(r"\d{1,9}", budget):
+                    out["notes"].append(f"debt: can't read the budget '{budget}': read as 0 (write "
+                                        "'- debt: advisory 40')")
+                    budget = ""
+                musts, top = _debt(lint[0], int(budget or 0))
+                out["gates"].append({"gate": gate, "mode": mode, "musts": musts, "files": top})
+            continue
         musts = []
         for label, kind, value in brief_musts(doc):
             where = [rel for rel, body in bodies if _found(kind, value, body)]
@@ -1649,6 +1758,7 @@ def check_gates(root):
                           "why": f"in {', '.join(where[:3])}" + (f" and {len(where) - 3} more" if len(where) > 3 else "")
                           if where else f"not in the {len(bodies)} UI file(s) under {os.path.basename(os.path.abspath(root))}"})
         out["gates"].append({"gate": gate, "mode": mode, "musts": musts})
+    out["notes"] = list(dict.fromkeys(out["notes"]))  # a gate listed twice says its note once
     return out
 
 
@@ -1662,8 +1772,11 @@ def render_gates(got):
     lines = []
     for g in got["gates"]:
         ok = sum(m["pass"] for m in g["musts"])
-        lines.append(f"{g['gate']} ({g['mode']}): {ok} of {len(g['musts'])} must-have(s) found")
+        lines.append(f"{g['gate']} ({g['mode']}): {ok} of {len(g['musts'])} "
+                     + ("must-have(s) found" if g["gate"] == "brief" else "check(s) pass"))
         lines += [f"  {'✓' if m['pass'] else '✗'} {safe(m['must'])}: {safe(m['why'])}" for m in g["musts"]]
+        lines += [f"    {safe(r['file'])} {r['count']} (" + ", ".join(f"{k} {n}" for k, n in r["kinds"].items()) + ")"
+                  for r in g.get("files", ())]
     return "\n".join(lines + [safe(n) for n in got["notes"]])
 
 
