@@ -289,10 +289,16 @@ class State:
     def _on_blocked(self, e):
         self.status, self.error = "blocked", e.get("reason") or e.get("text")
         self.note("blocked", text=e.get("text", ""))
+        self._next(e)
 
     def _on_error(self, e):
         self.status, self.error = "error", e.get("text")
         self.note("error", text=e.get("text", ""))
+        self._next(e)
+
+    def _next(self, e):  # T-1334: the one command to run now, under the failure
+        if e.get("next"):
+            self.note("next", text=str(e["next"]))
 
     def _on_exit(self, e):  # the TUI's own: the child ended
         if self.status in ("planning", "running", "fixing", "idle") and e.get("code"):
@@ -945,6 +951,8 @@ def entry_segments(e, w, thoughts=True):
         return [("  ", "text"), (e.get("text", ""), "text")]
     if k in ("blocked", "error"):
         return [(" STOP ", "chip_bad"), ("  " + e["text"], "bad")]
+    if k == "next":
+        return [("  Next: ", "dim"), (e["text"], "accent")]
     return [("  ", "text"), (e.get("text", ""), "dim")]
 
 

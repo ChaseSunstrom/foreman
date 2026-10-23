@@ -6,8 +6,9 @@ import os
 import subprocess
 import sys
 import threading
+import time
 
-from helpers import FM, ForemanTestCase, busy_factor, read_json, read_text, stub_corpus_replay
+from helpers import FM, PLUGIN, ForemanTestCase, busy_factor, read_json, read_text, stub_corpus_replay
 
 PLAN = {"type": "FIX", "tier": "S", "title": "Make calc.add add",
         "criteria": [{"text": "calc.add adds", "verify": "python3 test_calc.py"}], "steps": ["fix calc.add"]}
@@ -575,6 +576,98 @@ class TaskRun(CodeCase):
             r = self.code("--task", tid, "--model", "fake", check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("another fm code run", r.stderr)
+
+
+class Failures(CodeCase):  # T-1754 (T-1334, T-1355)
+    def test_every_failure_ends_with_one_next_line(self):
+        last = lambda r: r.stderr.strip().splitlines()[-1]  # noqa: E731
+        self.assertEqual(last(self.code("fix it", "--model", "nope", check=False)), "Next: fm code models")
+        self.assertEqual(last(self.code(check=False)), 'Next: fm code "<what to do>"')
+        self.serve("openai", plan(), call("read", path="calc.py"))  # the third call runs past the script: a 400
+        r = self.code("fix add", "--model", "fake", "--json", check=False)
+        self.assertEqual(last(r), "Next: fm code --resume T-0001")
+        end = [json.loads(line) for line in r.stdout.splitlines()][-1]
+        self.assertEqual((end["event"], end["next"]), ("error", "fm code --resume T-0001"))
+        self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
+        r = self.code("fix add", "--model", "fake", "--json", check=False)
+        self.assertEqual(last(r), "Next: fm task show T-0002")
+        self.assertEqual([json.loads(line) for line in r.stdout.splitlines()][-1]["next"], "fm task show T-0002")
+
+    def test_the_start_event_names_the_foreman_running_it(self):
+        self.serve("openai", plan(), *FIX)
+        start = json.loads(self.code("fix add", "--model", "fake", "--json").stdout.splitlines()[0])
+        with open(os.path.join(PLUGIN, ".claude-plugin", "plugin.json")) as f:
+            version = json.load(f)["version"]
+        self.assertEqual(start["foreman"], {"root": PLUGIN, "version": version})
+
+
+def cmdline(pid):
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read()
+    except OSError:
+        return b""
+
+
+def alive(pid):
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().rsplit(")", 1)[1].split()[0] not in "ZX"
+    except OSError:
+        return False
+
+
+class Survivors(CodeCase):  # T-1754 (T-1337)
+    def test_a_runner_a_hard_kill_left_is_stopped_by_the_next_start(self):
+        self.serve("openai", plan(), call("run", cmd="sleep 120"))
+        reg = os.path.join(self.home, "state", "code-procs")
+        p = subprocess.Popen([sys.executable, FM, "code", "fix add", "--model", "fake"], cwd=self.repo, env=self.env(),
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            for _ in range(1200):  # the run tool's runner, not the baseline check that runs before it
+                names = [n for n in os.listdir(reg) if n.isdigit()] if os.path.isdir(reg) else []
+                names = [n for n in names if b"sleep" in cmdline(n)]
+                if names:
+                    break
+                time.sleep(0.05)
+            self.assertTrue(names, "the runner was never registered")
+            pid = int(names[0])
+        finally:
+            p.kill()
+            p.wait(30)
+        self.assertTrue(alive(pid), "the hard kill left the runner going")
+        r = self.code("fix it", "--model", "nope", check=False)
+        self.assertIn(f"stopped 1 runner(s) a killed fm code left running (pid {pid})", r.stdout + r.stderr)
+        for _ in range(100):
+            if not alive(pid):
+                break
+            time.sleep(0.05)
+        self.assertFalse(alive(pid))
+        self.assertEqual(os.listdir(reg), [])
+
+    def test_a_live_runs_runner_and_a_reused_pid_are_left_alone(self):
+        import fmcode
+        import fmideas
+        live = subprocess.Popen(["sleep", "60"], start_new_session=True)
+        other = subprocess.Popen(["sleep", "60"], start_new_session=True)
+        try:
+            me = os.getpid()
+            fmcode._register(live.pid)  # its owner (this test) is alive
+            os.makedirs(os.path.join(self.home, "state", "code-procs"), exist_ok=True)
+            with open(os.path.join(self.home, "state", "code-procs", str(other.pid)), "w") as f:
+                f.write(f"1 {me} 1")  # an owner and runner that aren't the processes these pids now are
+            for garbled in ("0", "1"):  # killpg(0) would be this test's own group
+                with open(os.path.join(self.home, "state", "code-procs", garbled), "w") as f:
+                    f.write("0 999999999 0")
+            self.assertEqual(fmcode.stop_survivors(), [])
+            self.assertTrue(alive(live.pid) and alive(other.pid))
+            self.assertEqual(os.listdir(os.path.join(self.home, "state", "code-procs")), [str(live.pid)])
+            self.assertEqual(fmideas._starttime(me), open(os.path.join(  # noqa: SIM115
+                self.home, "state", "code-procs", str(live.pid))).read().split()[2])
+        finally:
+            for x in (live, other):
+                x.kill()
+                x.wait()
 
 
 if __name__ == "__main__":

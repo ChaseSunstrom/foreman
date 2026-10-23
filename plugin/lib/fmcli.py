@@ -6709,6 +6709,8 @@ def main(argv=None):
         return 3
     except (UsageError, KeyError) as e:
         print(f"fm: {e.args[0] if e.args else e}", file=sys.stderr)
+        if getattr(e, "then", None):  # T-1334: the one command to run next, when the error knows it
+            print(f"Next: {e.then}", file=sys.stderr)
         return 1
     except (FileNotFoundError, IsADirectoryError, PermissionError) as e:
         if not any(a == e.filename or a.endswith(f"={e.filename}") for a in argv):  # T-1189: only a file named on
