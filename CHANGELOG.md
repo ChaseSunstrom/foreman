@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm check office FILE checks an .xlsx or .docx deliverable with no extra library, as a verify command: no error cells (#REF!, #DIV/0!, #N/A …) or broken Word fields ("Error! Reference source not found."), and --cell 'Sheet1!B7=42', --sheets N, --contains TEXT. A member over 64 MB unpacked or any DTD is refused (T-1406)
 - The piped-gate note no longer fires on 'fm check' inside quoted text, such as a grep pattern holding `\|fm check` (T-1768)
 - fm check reruns just the failing tests of a slow gate (over 120 s; FOREMAN_SLOW_GATE) when its output names every failure (unittest totals or pytest's summary): a full suite that failed once in a load spike now clears in seconds as a flake instead of opening an urgent baseline task (T-1678)
 - A Bash call that pipes fm check (`fm check | tail -5`, in the background too) gets a note that its exit status is the last program's, not the gates': read the ✓/✗ line before pushing. T-1758 reached main after such a call's exit 0 was tail's (T-1759)
