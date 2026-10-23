@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard: touch that creates a file in a protected folder (Claude Code's plugin cache, Foreman's core) is judged as a write, as is one after an rm, unlink or mv in the same command; touch on an existing file and touch -c pass, and a touched file run after is no "script written here" (T-1680). git -C and git init read a $D set to an absolute path or ~ where it points, a later -C $D both on its own and under the folder before it, and the refusal says "$D unresolved" when it can't tell (T-1487). Discarding git commands however spelled (\git, g''it, $'git', a variable, eval, a function, sh <<<) are saved first like plain ones, in the folder an earlier cd or a -C $R names, every repo it discards in (T-1482)
 - Gate runs share one machine-wide lock: a full fm check and the release canary queue behind each other, a waiter says who holds it, and a stale or stray holder value is ignored (T-1668)
 - fm capture refuses a near-duplicate of an open task of the same type, naming it (exit 5; --json gives {"refused", "of", "title"}; --anyway keeps both), notes a similar open task of another type, and notes a FEATURE close to done work with that task's id; only fm capture checks, not fm intake, fm task new or fm research --from-agent (T-1662)
 - fm ui --json: every string of the view is plain text (escape sequences, control, format and separator characters removed; newlines kept), so no ledger line, signal or hand-edited brief can make Claude Code refuse the pane; paths are kept as they are (T-1674)

@@ -2017,15 +2017,17 @@ def _snapshot_note(pl, guard):
     if not cmd or not hasattr(guard, "discards_work"):  # the committed fallback guard may predate it
         return None
     saved, failed, why = [], [], c.fit(c.plain(c.redact(cmd)), 200)
-    # T-1482: and what the guard's check of this command read, however spelled (g''it, eval, $C): the plain-word reading
-    # first; the guard's adds a kind (the tree, a stash) it missed
-    found = guard.discards_work(cmd, _cwd(pl))
-    kinds = {w.split()[0] for _, w in found}
-    found += [x for x in getattr(guard, "take_discards", list)() if x[1].split()[0] not in kinds]
+    # T-1482: what the guard's check of this command read, however spelled (g''it, eval, $C, from a cd before them);
+    # the plain-word reading too where the command says git outright, or when the guard didn't read this command
+    read = getattr(guard, "take_discards", None)
+    theirs = read(cmd) if read else None
+    found = (guard.discards_work(cmd, _cwd(pl)) if theirs is None or "git" in cmd else []) + (theirs or [])
+    done = set()  # each repo saved once per kind (review: two repos with the same kind are both saved)
     for where, what in dict.fromkeys(found):
         top = c.git_root(where)
-        if not top:
+        if not top or (top, what) in done:
             continue
+        done.add((top, what))
         try:
             saved += [f"{sha} (restore: {c.restore_line(top, sha, what)})"
                       for sha in c.snapshot(top, why, SNAPSHOT_S, what)]
