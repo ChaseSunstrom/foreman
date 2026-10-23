@@ -301,6 +301,7 @@ In a repo on your server, ask Claude to "serve this repo". Claude asks you once 
 
 `fm code "make calc.add add"` runs Foreman's loop without Claude Code, on whatever model you have: a local server (Ollama, LM Studio, llama.cpp, vLLM), a profile in `$FOREMAN_HOME/models.json`, or a cloud whose API key is set (`fm code models` lists them). The harness does the stations itself: the model writes a short plan (checked, and sent back to fix when it's malformed), then picks one action at a time for each step. Every edit, file write and command goes past Foreman's guard first, so a refused `rm -rf ~` never runs; the model reads the refusal and tries another way. The harness runs each criterion's check, hands a failure back to the model (three rounds, three more on `--escalate MODEL`), and closes and commits the task, or blocks it with the reason.
 - `--dry-plan` shows the plan and changes nothing. `--no-commit` closes without committing. `--json` prints one event per line.
+- What a run costs: a claude CLI's own count, or a models.json profile's `"price": {"in": 3, "out": 15}` (USD per million tokens), goes to `fm budget`'s ledger call by call and onto the run's close line. `--max-usd 2` stops a run once it has spent $2 (a resume keeps what it spent), and each claude turn gets `--max-budget-usd` with what is left.
 
 #### What you can ask
 
