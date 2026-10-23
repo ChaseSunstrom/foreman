@@ -17,8 +17,8 @@ class Docs(ForemanTestCase):
             self.assertIn(word, cli)
         hunks = next(ln for ln in lines if ln.startswith("- Hunk mutation proof (T-0271"))
         self.assertNotIn("git apply", hunks)  # T-0286 replaced it
-        files = next(ln for ln in lines if ln.startswith("| `plugin/lib/` |"))
-        self.assertIn("duel", files.split("`fmbench`", 1)[1].split("`fmresearch`", 1)[0])
+        bench = next(ln for ln in lines if ln.startswith("- `fmbench` "))  # T-1713: one bullet per plugin/lib module
+        self.assertIn("duel", bench)
 
 
 class Operator(ForemanTestCase):

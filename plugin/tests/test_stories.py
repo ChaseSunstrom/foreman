@@ -160,6 +160,15 @@ class Stories(StubCase):
         self.assertIn("no element matches #nope", page)
         self.assertEqual(page.count("<img"), 4)  # shot as it stood, the failure beside it
 
+    def test_profile_and_reduced_motion_reach_every_state(self):
+        r = self.stories(CHART, "--out", self.out, "--profile", "tv", "--reduced-motion")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        [m] = self.calls("Emulation.setDeviceMetricsOverride")
+        self.assertEqual((m["width"], m["height"], m["deviceScaleFactor"]), (1920, 1080, 1.0))
+        [e] = self.calls("Emulation.setEmulatedMedia")
+        self.assertEqual(e["features"], [{"name": "prefers-reduced-motion", "value": "reduce"}])
+        self.assertIn("1920x1080", self.page())
+
     def test_the_default_path_is_in_the_project_state_and_a_rerun_replaces_it(self):
         r = self.stories(CHART, "--json")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

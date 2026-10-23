@@ -582,7 +582,7 @@ def cmd_lease(args):
     me = _sid(fmcli.session()) or "user"
     with c.lock(_dir()):
         data = _leases()
-        before = len(data)
+        before = dict(data)
         act = c.active_brief(c.load_briefs(p), p.lane) if args.action in ("take", "drop") else None
 
         def mine(v):  # T-1216, T-1416: the active task's only: builder lanes share their main session's id
@@ -619,11 +619,17 @@ def cmd_lease(args):
                            advisory=bool(claim_overlaps(p, rel, sym, me, act, data)))
             _write_leases(data)
     rows = [v for v in data.values() if v["project"] == p.slug]
-    dropped = before - len(data) if args.action == "drop" else None  # T-1205: what this drop released, then what's left
-    return fmcli.out(args, {"leases": rows, **({"dropped": dropped} if dropped is not None else {})},
-                     (f"Dropped {dropped} lease(s).\n" if dropped is not None else "") + ("\n".join(
-                         f"{v['file']}::{v['symbol']}  {_who(v)}"
-                         + f", {int((v['until'] - time.time()) // 60) + 1} min left" for v in rows) or "No leases held."))
+    if args.action == "drop":  # T-1205, T-1729: what this drop released, only that (fm lease list shows the rest)
+        gone = [f"{v['file']}::{v['symbol']}" for k, v in before.items() if k not in data]
+        # T-1731 review: a lane's pre-claims are held under lane-<ID>, not this session: say they stay
+        lane = sum(1 for v in rows if act and v.get("task") == act.id and v["session"] != me) if not args.target else 0
+        return fmcli.out(args, {"leases": rows, "dropped": len(gone), "released": gone, "lane_claims": lane},
+                         f"Dropped {len(gone)} lease(s)." + "".join(f"\ndropped: {x}" for x in gone[:8])
+                         + (f"\n… {len(gone) - 8} more" if len(gone) > 8 else "")
+                         + (f"\nstill held: {lane} lane claim(s) (fm lease list)" if lane else ""))
+    return fmcli.out(args, {"leases": rows}, "\n".join(
+        f"{v['file']}::{v['symbol']}  {_who(v)}"
+        + f", {int((v['until'] - time.time()) // 60) + 1} min left" for v in rows) or "No leases held.")
 
 
 REMOTE_S = 60  # a remote's tiles are refreshed (detached, over the user's own ssh) when older than this
