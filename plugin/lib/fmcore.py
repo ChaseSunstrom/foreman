@@ -2689,6 +2689,22 @@ def failing_tests(output):
     return sorted({next(g for g in m.groups() if g) for m in _FAILING_TEST.finditer(output or "")})[:200]
 
 
+def failure_excerpt(output, test, most=700):
+    """T-1789: how one failing test failed, from a gate's output: the lines from the first naming it to the next
+    test's rule or the summary (unittest's ===== and Ran), redacted, its last `most` characters (where the assertion
+    is). Empty when the output never names it."""
+    lines = (output or "").splitlines()
+    at = next((i for i, ln in enumerate(lines) if test in ln), None)
+    if at is None:
+        return ""
+    block = [lines[at]]
+    for ln in lines[at + 1:at + 40]:
+        if ln.startswith("=====") or ln.startswith("Ran "):
+            break
+        block.append(ln)
+    return redact("\n".join(block).strip())[-most:]
+
+
 def note_flakes(p, runs, tree, commands=None):
     """Record each gate's failing tests against (command, tree); the same command passing on the same tree later turns
     them flaky. Returns the lines fm check adds: flakes found now, and known flakes failing again. Never a pass."""
@@ -2713,15 +2729,20 @@ def note_flakes(p, runs, tree, commands=None):
                 if known:
                     lines.append("known flaky, failing again: " + ", ".join(
                         f"{i} ({flaky[i].get('count', 1)}× before)" for i in known[:5]))
-                pending[key] = {"tree": tree, "tests": ids}
+                pending[key] = {"tree": tree, "tests": ids,  # T-1789: how each failed, kept for when it turns flaky
+                                "why": {i: failure_excerpt(output, i) for i in ids[:20]}}
             else:
                 was = pending.pop(key, None)
                 if isinstance(was, dict) and tree and was.get("tree") == tree and was.get("tests"):
+                    why = was.get("why") if isinstance(was.get("why"), dict) else {}
                     for i in was["tests"]:
                         f = flaky.get(i) if isinstance(flaky.get(i), dict) else {"count": 0}
-                        flaky[i] = dict(f, count=int(f.get("count") or 0) + 1, last=now(), cmd=key[:120])
+                        flaky[i] = dict(f, count=int(f.get("count") or 0) + 1, last=now(), cmd=key[:120],
+                                        **({"why": str(why[i])} if why.get(i) else {}))
                     lines.append(f"flaky: {', '.join(was['tests'][:5])} failed on this same tree and now pass "
                                  f"({fit(key, 60)}); fix the race, don't rerun past it")
+                    lines += [f"  {i}: {fit(str(why[i]).splitlines()[-1], 140)}" for i in was["tests"][:3]
+                              if why.get(i)]  # T-1789: the assertion it failed with
         if len(flaky) > FLAKY_KEEP:
             flaky = dict(sorted(flaky.items(), key=lambda kv: str(kv[1].get("last") or ""))[-FLAKY_KEEP:])
         write_atomic(path, json.dumps({"pending": pending, "flaky": flaky}))
