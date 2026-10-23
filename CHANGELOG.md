@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm scout watches upstream: a skill source whose remote hasn't moved isn't fetched (git ls-remote), one that moved is one finding listing the skills added, removed and renamed with its licence class, and each Claude Code changelog line past the tested version naming something Foreman never mentions becomes a finding; nothing installs (T-1391)
 - fm code says in one line when an indexed skill from fm lib's sources clearly matches the request (its name, licence class and token cost; fm lib show reads it), and installs nothing; fm plugins suggest lists up to three marketplace plugins that fit the project's own stack, each with its reason (T-1397)
 - A failure's signature is never a test runner's tally (FAILED (1 classes), FAILED (failures=2), pytest's "N failed" line, fm quiet's ✗ exit line): every red test run had shared one, so deliberate red-first runs were captured as a "recurring obstacle" (T-1769)
 - foreman-ui pane: every string in the view is cleaned as it arrives, so a task title, project name or check note can no longer draw a bidi override (‮ turned text around) or a control character; below 26 columns the pane says "Foreman: 26+ columns" instead of spilling past its edge. A hostile-width sweep (CJK, emoji, combining, RTL, zero-width, controls) through the pane's own renderer now guards both (T-1679)
