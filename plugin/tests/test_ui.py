@@ -87,6 +87,46 @@ class UiView(ForemanTestCase):
                 "--approach", "y", "--ac", "csv opens :: true", "--step", "build", "--depends", "T-0001")
         self.fm("capture", "Merge the date helpers")
 
+    def test_no_string_holds_a_control_character(self):
+        """T-1674: Claude Code refuses the whole pane when a text child holds a control character."""
+        import unicodedata
+        import glob
+        self.fm("capture", "Evil title")
+        self.fm("task", "step", "T-0001", "add", "step with clear")
+        for path, old, new in ((glob.glob(os.path.join(self.home, "state", "projects", "*", "tasks", "T-0004-*.md"))[0],
+                                "# Evil title", "# Evil \x1b[31mred\x1b]0;pwn\x07 title‮️"),
+                               (glob.glob(os.path.join(self.home, "state", "projects", "*", "tasks", "T-0001-*.md"))[0],
+                                "step with clear", "step with \x1b[2J\x08 clear")):  # a brief edited by hand or synced
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            self.assertIn(old, text)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text.replace(old, new))
+        v = json.loads(self.fm("ui", "--json").stdout)
+
+        def strings(x, key=None):
+            if isinstance(x, dict):
+                for k, y in x.items():
+                    yield from strings(y, k)
+            elif isinstance(x, list):
+                for y in x:
+                    yield from strings(y, key)
+            elif isinstance(x, str) and key != "watch":
+                yield x
+        bad = [s for s in strings(v) if any(unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp") and ch != "\n"
+                                            or "︀" <= ch <= "️" for ch in s)]
+        self.assertEqual(bad, [])
+        self.assertIn("title", [x for x in v["inbox"] if x["id"] == "T-0004"][0]["title"])  # the text is kept
+
+    def test_every_string_of_the_view_is_shown_plain_but_paths(self):
+        import fmwatch
+        raw = {"recent": ["a \x1b[31mred\x1b[0m b\x07", "x‮y"], "signals": [{"text": "\x1b]0;pwn\x07ok\nnext"}],
+               "watch": ["/tmp/a\x1bb"], "trust_file": "/t\x07", "n": 3, "none": None}
+        got = fmwatch._shown(raw)
+        self.assertEqual(got["recent"], ["a red b", "xy"])
+        self.assertEqual(got["signals"], [{"text": "ok\nnext"}])
+        self.assertEqual((got["watch"], got["trust_file"], got["n"], got["none"]), (["/tmp/a\x1bb"], "/t\x07", 3, None))
+
     def test_view_model_contract(self):
         v = json.loads(self.fm("ui", "--json").stdout)
         self.assertEqual(v["v"], 1)
