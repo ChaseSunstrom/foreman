@@ -6400,8 +6400,8 @@ def _task_shape(parser, argv):
 WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show", "glance"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
                    "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
-                   "playbooks": ("action", {"show", "route", "blame", "preview"}),  # T-1621: prints, but can rebuild
-                   # fm map's map.json cache; T-1622's three only read
+                   "playbooks": ("action", {"show", "route", "preview"}),  # T-1621: prints, but can rebuild fm
+                   # map's map.json cache; not blame (T-1622): git in a FOREMAN_PLAYBOOKS repo runs its filters
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
                    "design": ("action", {"lint", "palette", "contrast"}),  # T-1506, T-1507: these only read
                    "img": ("out", {None}),  # T-1630: info and diff read; --out writes

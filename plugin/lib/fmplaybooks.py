@@ -419,7 +419,9 @@ def load(rel, root=ROOT, p=None):
 
 _STAGE = re.compile(r"\bforeman:playbooks \((\w+)")  # SKILL_FOR's "Skill foreman:playbooks (clean)": that stage's books
 _TASK = re.compile(r"\bT-\d{4,}\b")
-_VERIFY = re.compile(r"\s::\s+([^\"\n]+)")  # a criterion's "done when … :: CMD", as fm task new --ac takes it
+_TRAILER = re.compile(r"(?mi)^Task:\s*(T-\d{4,})\b")
+_QUOTED = re.compile(r"`([^`\n]+)`|\"([^\"\n]+)\"|“([^”\n]+)”")
+_VERIFY = re.compile(r"\s::\s+(.+)")  # a criterion's "done when … :: CMD", as fm task new --ac takes it
 
 
 def route(stage, root=ROOT):
@@ -441,16 +443,18 @@ def blame(path):
     """[{line, task, commit, summary, text}] per line of path from git blame: task is the first T-NNNN in the commit's
     whole message (None without one), commit None for a line not committed yet. ValueError when git can't blame it."""
     d, f = os.path.split(path)
-    git = ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-C", d]
+    # the repo's own config could name a command: no textconv, no signature check (gpg.program). ponytail: a clean
+    # filter in its .gitattributes still runs on an uncommitted file, so workers may not blame (fmcli._worker_may)
+    git = ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "log.showSignature=false", "-C", d]
     try:
-        r = subprocess.run([*git, "blame", "--porcelain", "--", f], capture_output=True, text=True, errors="replace",
-                           timeout=30)
+        r = subprocess.run([*git, "blame", "--porcelain", "--no-textconv", "--", f], capture_output=True, timeout=30)
     except (OSError, subprocess.SubprocessError) as e:
         raise ValueError(f"git blame failed: {e.__class__.__name__}")
     if r.returncode:
-        raise ValueError(f"git can't blame it: {c.fit(c.plain(r.stderr.strip()), 160) or 'no reason given'}")
+        why = c.fit(c.plain(r.stderr.decode("utf-8", "replace").strip()), 160)
+        raise ValueError(f"git can't blame it: {why or 'no reason given'}")
     rows, sha = [], None
-    for x in r.stdout.split("\n"):
+    for x in r.stdout.decode("utf-8", "replace").split("\n"):  # bytes: text mode would split a line at a \r
         if x.startswith("\t"):
             rows.append((sha, x[1:]))
         elif m := re.match(r"([0-9a-f]{40}) \d+ \d+", x):
@@ -460,25 +464,28 @@ def blame(path):
     if shas:  # one git call for every commit's whole message: an id can sit below the summary line
         try:
             log = subprocess.run([*git, "log", "--no-walk=unsorted", "--stdin", "--format=%H%x00%B%x1e"],
-                                 input="\n".join(shas) + "\n", capture_output=True, text=True, errors="replace",
-                                 timeout=30).stdout
+                                 input=("\n".join(shas) + "\n").encode(), capture_output=True,
+                                 timeout=30).stdout.decode("utf-8", "replace")
         except (OSError, subprocess.SubprocessError):
             log = ""
         msgs = dict(x.strip("\n").split("\0", 1) for x in log.split("\x1e") if "\0" in x)
     out = []
     for n, (s, text) in enumerate(rows, 1):
         msg = msgs.get(s, "") if s and s.strip("0") else None
-        task = _TASK.search(msg or "")
-        out.append({"line": n, "task": task.group(0) if task else None, "commit": s if msg is not None else None,
-                    "summary": c.fit(c.plain((msg or "").strip().split("\n")[0]), 80), "text": text})
+        head, _, body = (msg or "").strip().partition("\n")
+        # the summary's id, then a Task: trailer, then the body's first: "Reverts T-1500" in a body isn't the author
+        task = _TASK.search(head) or _TRAILER.search(body) or _TASK.search(body)
+        out.append({"line": n, "task": task.group(task.lastindex or 0) if task else None,
+                    "commit": s if msg is not None else None, "summary": c.fit(c.plain(head), 80), "text": text})
     return out
 
 
 def preview(text):
     """{runnable: [{line, code}], verify: [cmd]}: the python blocks fm check playbooks runs, and the criterion
-    verify commands ('… :: CMD') its prose names."""
+    verify commands its prose quotes ("… :: CMD" or `… :: CMD`): a bare :: in a sentence is no command."""
     blocks, prose = _blocks(text)
-    verify = [m.group(1).strip().rstrip("`.,;)").strip() for x in prose for m in _VERIFY.finditer(x)]
+    spans = [q.group(q.lastindex) for x in prose for q in _QUOTED.finditer(x)]
+    verify = [m.group(1).strip() for s in spans for m in [_VERIFY.search(s)] if m]
     return {"runnable": [{"line": n, "code": b} for n, b in runnable(blocks)],
             "verify": list(dict.fromkeys(v for v in verify if v))}
 

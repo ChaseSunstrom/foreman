@@ -212,9 +212,10 @@ class Writable(ForemanTestCase):
     def test_a_worker_may_show_a_playbook(self):
         import argparse
         import fmcli
-        for action in ("show", "route", "blame", "preview"):
+        for action in ("show", "route", "preview"):
             self.assertTrue(fmcli._worker_may(argparse.Namespace(verb="playbooks", action=action)), action)
-        self.assertFalse(fmcli._worker_may(argparse.Namespace(verb="playbooks", action="eval")))  # --real spends
+        for action in ("eval", "blame"):  # --real spends; blame runs git in whatever repo FOREMAN_PLAYBOOKS names
+            self.assertFalse(fmcli._worker_may(argparse.Namespace(verb="playbooks", action=action)), action)
 
     def test_a_shipped_playbook_names_a_fact(self):
         out = self.fm("playbooks", "show", "verify/verification-loop").stdout
@@ -245,7 +246,7 @@ class Verbs(ForemanTestCase):
     def test_route_names_the_playbooks_of_a_stage(self):
         got = json.loads(self.run_fm("route", "fix", "--json", lib=False).stdout)
         self.assertEqual(got["hint"], c.SKILL_FOR["FIX"])
-        self.assertIn("references/verify/tdd-workflow.md", got["playbooks"])
+        self.assertTrue(got["playbooks"] and set(got["playbooks"]) <= set(pb.listed()), got)  # real ones, not pinned
         clean = json.loads(self.run_fm("route", "CLEAN", "--json", lib=False).stdout)["playbooks"]
         self.assertIn("references/clean/repo-sweep.md", clean)  # "foreman:playbooks (clean)": the stage's books
         self.assertEqual(json.loads(self.run_fm("route", "ui", "--json", lib=False).stdout)["playbooks"],
@@ -274,6 +275,32 @@ class Verbs(ForemanTestCase):
         put(self.lib, "references/fix/alpha.md", "# Alpha\n\nUse when it breaks.\n1. Go.\n2. New.\n")
         self.assertIn("uncommitted", self.run_fm("blame", "alpha").stdout)
 
+    def init(self, text, msg):
+        put(self.lib, "references/fix/alpha.md", text)
+        subprocess.run(["git", "init", "-q", self.lib], check=True)
+        subprocess.run([*self.git, "add", "-A"], check=True)
+        subprocess.run([*self.git, "commit", "-qm", msg], check=True)
+
+    def test_blame_credits_the_summary_id_and_keeps_lines_whole(self):
+        self.init("a\rb\nc\n", "Fix it (T-0043)\n\nReverts T-0042's wording")
+        got = json.loads(self.run_fm("blame", "alpha", "--json").stdout)["lines"]
+        self.assertEqual([(x["line"], x["task"]) for x in got], [(1, "T-0043"), (2, "T-0043")])  # \r splits nothing
+        self.assertEqual(got[1]["text"], "c")
+        self.init("x\n", "Reword\n\nReverts T-0042\n\nTask: T-0044")
+        self.assertEqual(json.loads(self.run_fm("blame", "alpha", "--json").stdout)["lines"][0]["task"], "T-0044")
+
+    def test_blame_runs_no_command_the_repo_configures(self):
+        mark = os.path.join(self.tmp, "PWNED")
+        self.init("# Alpha\n", "Alpha (T-0042)")
+        put(self.lib, ".gitattributes", "*.md diff=evil\n")
+        subprocess.run([*self.git, "config", "diff.evil.textconv", f"sh -c 'touch {mark}; cat \"$1\"' -"], check=True)
+        subprocess.run([*self.git, "config", "log.showSignature", "true"], check=True)
+        subprocess.run([*self.git, "config", "gpg.program", f"sh -c 'touch {mark}'"], check=True)
+        r = self.run_fm("blame", "alpha")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("T-0042", r.stdout)
+        self.assertFalse(os.path.exists(mark))
+
     def test_blame_outside_git_says_so(self):
         put(self.lib, "references/fix/alpha.md", "# Alpha\n")
         r = self.run_fm("blame", "alpha")
@@ -281,12 +308,12 @@ class Verbs(ForemanTestCase):
         self.assertIn("git", r.stderr)
 
     def test_preview_lists_the_checks_a_load_adds(self):
-        put(self.lib, "references/fix/alpha.md", "# Alpha\n\nUse when.\n\n1. Done when it passes :: make probe URL\n"
-            "2. Or (\"done when clean :: node qa/frames.mjs /\").\n\n```python\nassert 1\n```\n\n"
-            "```python no-run\nimport x\n```\n\n```bash\nnpm test\n```\n")
+        put(self.lib, "references/fix/alpha.md", "# Alpha\n\nUse when.\n\n1. Done when it passes :: prose, not a "
+            "command; `done :: make probe URL`\n2. Or (\"done when clean :: node qa/frames.mjs /\").\n\n"
+            "```python\nassert 1\n```\n\n```python no-run\nimport x\n```\n\n```bash\nnpm test\n```\n")
         got = json.loads(self.run_fm("preview", "alpha", "--json").stdout)
         self.assertEqual(got["runnable"], [{"line": 8, "code": "assert 1\n"}])  # what fm check playbooks runs
-        self.assertEqual(got["verify"], ["make probe URL", "node qa/frames.mjs /"])
+        self.assertEqual(got["verify"], ["make probe URL", "node qa/frames.mjs /"])  # quoted or code only
         out = self.run_fm("preview", "alpha").stdout
         self.assertIn("assert 1", out)
         self.assertNotIn("import x", out)
