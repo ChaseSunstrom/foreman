@@ -1160,7 +1160,8 @@ class BriefChangelog(GuardCase):
         self.assertBlocked(block, "brief")
         msg = g.message(block, ctx)
         self.assertIn("before fm task finish", msg)
-        self.assertIn("fm focus", msg)
+        self.assertNotIn("fm focus that task again", msg, "fm focus refuses a done task (T-1767)")
+        self.assertIn('fm task log ID "scope: ', msg)
         self.assertNotIn("changelog line", g.message(edit("notes.md"), ctx))
 
 
