@@ -406,4 +406,5 @@ def run(p, args):
 
 
 if __name__ == "__main__" and len(sys.argv) == 4 and sys.argv[1] == "--canary-worker":  # _canary's detached child
-    _canary_worker(sys.argv[2], sys.argv[3])
+    with c.gate_lock("canary", say=lambda m: print(m, flush=True)):  # T-1668: queues behind fm check and release gates
+        _canary_worker(sys.argv[2], sys.argv[3])

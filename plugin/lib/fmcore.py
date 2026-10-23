@@ -3704,3 +3704,47 @@ def resume_info(p):
     return {"id": b.id, "type": b.type, "tier": b.tier, "title": b.title, "status": b.status, "step": s["step"],
             "steps_done": s["steps_done"], "steps_total": s["steps_total"], "resume": b.section("Resume here").strip(),
             "execution_prompt": b.section("Execution prompt").strip(), "path": b.path, "stale": stale_refs(p, b)}
+
+
+@contextlib.contextmanager
+def gate_lock(label, say=None, timeout=None):
+    """T-1668: one machine-wide gate lock (flock, state/gate.lock): release checks, the canary and full fm check runs
+    queue behind each other instead of overloading the machine. A waiter says (say(text)) who holds it. A child of the
+    holder (FOREMAN_GATE_HELD names the holder's pid) passes: it runs under the lock its parent holds. A dead holder
+    releases the flock itself. timeout None waits for ever; LockTimeout when it runs out."""
+    held = os.environ.get("FOREMAN_GATE_HELD")
+    if held and held != str(os.getpid()):
+        yield
+        return
+    os.makedirs(state_dir(), exist_ok=True)
+    path = os.path.join(state_dir(), "gate.lock")
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    deadline = None if timeout is None else time.monotonic() + timeout
+    told = False
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if not told and say:
+                    told = True
+                    with contextlib.suppress(OSError):
+                        who = os.pread(fd, 200, 0).decode("utf-8", "replace").strip() or "another gate run"
+                        say(f"gate lock held by {who}; waiting")
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise LockTimeout("gate lock busy")
+                time.sleep(0.1)
+        os.ftruncate(fd, 0)
+        os.pwrite(fd, f"{label} (pid {os.getpid()})".encode(), 0)
+        prev = os.environ.get("FOREMAN_GATE_HELD")
+        os.environ["FOREMAN_GATE_HELD"] = str(os.getpid())
+        try:
+            yield
+        finally:
+            if prev is None:
+                os.environ.pop("FOREMAN_GATE_HELD", None)
+            else:
+                os.environ["FOREMAN_GATE_HELD"] = prev
+    finally:
+        os.close(fd)  # closing the descriptor releases the flock
