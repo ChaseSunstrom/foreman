@@ -240,7 +240,8 @@ class Unruly(StubCase):
         code, data, took = self.run_shot("flood")
         self.assertEqual(code, 1)
         self.assertLess(took, 10)
-        self.assertIn("no answer to Runtime.evaluate", data["failed"][0]["error"])  # the fonts check, the first call
+        # the fonts check times out first and is only "unchecked"; the screenshot after it fails the page
+        self.assertIn("no answer to Page.captureScreenshot", data["failed"][0]["error"])
 
     def test_a_hung_browser_times_out(self):
         code, data, took = self.run_shot("hang")
@@ -301,24 +302,40 @@ class Diff(StubCase):
     def test_a_fallback_font_fails(self):
         base = self.baseline("0")
         self.assertEqual(self.diff(base, "0")[0], 0)
-        fell = '[{"family": "Brand\\u001b[2J", "status": "error"}]'
+        fell = '[{"family": "Brand\\u001b[2J\\u202e\\u200b", "status": "error"}]'
         code, data = self.diff(base, "0", fell)
         self.assertEqual(code, 1, data)
         page = data["pages"][0]
         self.assertTrue(page["diff"]["ok"], "the pixels match: the font alone fails it")
-        self.assertEqual(page["fallback_fonts"][0]["family"], "Brand\x1b[2J")
+        self.assertEqual(page["fallback_fonts"][0]["family"], "Brand\x1b[2J‮​")
         r = self.shot(self.page, "--frames", "0", "--diff", base, fonts=fell, check=False)
         self.assertIn("fell back", r.stdout)
         self.assertIn("Brand", r.stdout)
-        self.assertNotIn("\x1b", r.stdout)
+        for hidden in ("\x1b", "‮", "​"):  # no terminal escape, bidi override or zero-width space
+            self.assertNotIn(hidden, r.stdout)
         # without --diff a fallback is a note, not a failure
         r = self.shot(self.page, "--frames", "0", fonts=fell)
         self.assertIn("fell back", r.stdout)
         calls = [c["params"] for c in self.calls() if c.get("method") == "Runtime.evaluate"]
         self.assertTrue(all(p.get("awaitPromise") and p.get("returnByValue") for p in calls))
 
-    def test_a_missing_baseline_fails_and_the_output_folder_cant_be_the_baseline(self):
-        code, data = self.diff(os.path.join(self.tmp, "nothing"), "0")
+    def test_fonts_that_cant_be_checked_fail_a_diff(self):
+        base = self.baseline("0")
+        code, data = self.diff(base, "0", "null")
+        self.assertEqual(code, 1, data)
+        self.assertIsNone(data["pages"][0]["fallback_fonts"])
+        r = self.shot(self.page, "--frames", "0", "--diff", base, fonts="null", check=False)
+        self.assertIn("✗ fonts couldn't be checked", r.stdout)
+
+    def test_a_missing_or_odd_baseline_fails_and_the_output_folder_cant_be_the_baseline(self):
+        for bad in (os.path.join(self.tmp, "nothing"), "", "  "):  # refused before any browser, never skipped
+            r = self.shot(self.page, "--diff", bad, check=False)
+            self.assertNotEqual(r.returncode, 0, bad)
+            self.assertIn("isn't a folder", r.stderr, bad)
+        self.assertFalse(os.path.exists(self.log), "no browser was started")
+        empty = os.path.join(self.tmp, "empty-base")
+        os.makedirs(empty)
+        code, data = self.diff(empty, "0")
         self.assertEqual(code, 1)
         self.assertFalse(data["pages"][0]["diff"]["ok"])
         self.assertIn("viewport.png", data["pages"][0]["diff"]["error"])
@@ -327,6 +344,58 @@ class Diff(StubCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("--diff", r.stderr + r.stdout)
         self.assertTrue(os.path.exists(os.path.join(base, "page", "frame-02.png")), "the baseline is untouched")
+        out = os.path.join(self.tmp, "out")
+        os.makedirs(out)
+        os.symlink(out, os.path.join(self.tmp, "to-out"))
+        r = self.shot(self.page, "--diff", os.path.join(self.tmp, "to-out"), "--out", out, check=False)
+        self.assertNotEqual(r.returncode, 0, "a link to the output folder is the output folder")
+
+    def test_a_baseline_of_another_size_fails(self):
+        base = self.baseline("0")
+        fmimg.save(os.path.join(base, "page", "viewport.png"), 4, 4, b"\xff" * 64)
+        for f in os.listdir(os.path.join(base, "page")):
+            if f.startswith("frame-"):
+                os.unlink(os.path.join(base, "page", f))
+        code, data = self.diff(base, "0")
+        self.assertEqual(code, 1)
+        self.assertIn("sizes differ", data["pages"][0]["diff"]["error"])
+
+    def test_a_relative_or_linked_diff_folder_works(self):
+        base = self.baseline("0,2")
+        code, data = self.diff(os.path.relpath(base, self.repo), "1")
+        self.assertEqual((code, data["pages"][0]["diff"]["changed"]), (0, 1), data)
+        link = os.path.join(self.tmp, "base-link")
+        os.symlink(base, link)
+        self.assertEqual(self.diff(link, "1")[0], 0)
+
+    def test_a_page_folder_linked_to_its_own_baseline_is_refused(self):
+        base, out = self.baseline("0"), os.path.join(self.tmp, "out")
+        os.makedirs(out)
+        os.rename(os.path.join(base, "page"), os.path.join(out, "page"))
+        os.symlink(os.path.join(out, "page"), os.path.join(base, "page"))
+        r = self.shot(self.page, "--frames", "0", "--diff", base, "--out", out, "--json", paint="5", check=False)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("this page's own folder", json.loads(r.stdout)["pages"][0]["diff"]["error"])
+
+    def test_a_baseline_without_frames_says_its_floor_is_unmeasured_and_an_animated_one_warns(self):
+        base = os.path.join(self.tmp, "still")
+        self.shot(self.page, "--frames", "0", "--out", base, paint="0")
+        r = self.shot(self.page, "--frames", "0", "--diff", base, paint="1", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("floor unmeasured", r.stdout)
+        base = self.baseline("0,40,0,0")  # 40 of 64 pixels move between the baseline's own frames
+        r = self.shot(self.page, "--frames", "0", "--diff", base, paint="30", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("--frozen", r.stdout)
+        self.assertIn("animated baseline", r.stdout)
+
+    def test_with_no_browser_a_diff_fails_not_compared(self):
+        empty = os.path.join(self.tmp, "nobrowser")
+        os.makedirs(empty)
+        env = {"FOREMAN_CHROME": "", "PATH": empty, "HOME": empty, "PLAYWRIGHT_BROWSERS_PATH": empty}
+        r = self.fm("shot", self.page, "--diff", empty, env=env, check=False)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("not compared", r.stdout)
 
     @unittest.skipUnless(fmshot.chrome(), "no headless Chromium here")
     def test_in_a_browser_a_font_that_fails_to_load_is_caught(self):
@@ -343,6 +412,13 @@ class Diff(StubCase):
         page = json.loads(r.stdout)["pages"][0]
         self.assertEqual(r.returncode, 1)
         self.assertTrue(page["diff"]["ok"], page["diff"])  # the same page, frozen: within its own floor
+        canvas = os.path.join(self.repo, "canvas.html")  # a font no visible text uses isn't a fallback
+        with open(canvas, "w") as f:
+            f.write("<style>@font-face{font-family:Brand;src:url(missing.woff2)}body{font-family:Brand}"
+                    ".x{display:none}</style><canvas width=300 height=200></canvas>\n  <div>  </div>"
+                    "<p class=x>hidden</p><script>var s = 'text';</script>")
+        shot = json.loads(self.fm("shot", canvas, "--frames", "0", "--json").stdout)["pages"][0]
+        self.assertEqual(shot["fallback_fonts"], [])
 
 
 def _png(n):
