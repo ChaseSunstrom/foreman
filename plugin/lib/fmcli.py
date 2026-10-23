@@ -6068,8 +6068,10 @@ def _build_parser():
                    "fg/bg[:need[,dark need]] (default: the known role pairs, body text 7:1 in dark)")
     s.add_argument("--format", choices=["css", "dtcg", "tailwind"], default="css",
                    help="palette: CSS light-dark() roles, DTCG JSON or a Tailwind v4 @theme")
-    s.add_argument("--out", metavar="PATH", help="extract, roll: the file to write the section into (default: "
-                                                 "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints)")
+    s.add_argument("--out", metavar="PATH", help="extract, roll: the file to write the Tokens or Look section into "
+                                                 "(default: DESIGN.md at the repo root, or docs/DESIGN.md if that "
+                                                 "exists; - prints); palette: the file to write the export to "
+                                                 "(default prints)")
     s.add_argument("--to", choices=["css", "app", "pane"], default="css", help="tokens: CSS custom properties (dark "
                    "under prefers-color-scheme), a tui.toml [colors] table fm settings accepts, or the pane's palette "
                    "JSON (T-1651)")
