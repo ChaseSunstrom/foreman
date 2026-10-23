@@ -3,6 +3,7 @@ import json
 import subprocess
 import os
 import re
+import shutil
 import threading
 import time
 import unittest
@@ -1329,3 +1330,55 @@ class AffectedPairs(ForemanTestCase):
             f.write('{"n": 9}\n')
         _, tests, _ = fmcli.affected(c.find_project(self.repo, create=False))
         self.assertIn("tests/test_wiring.py", tests)
+
+    def red_lane(self, edits):
+        """Task B (checkpointed) recorded its new tests/test_red.py failing at step 1; A is active and the files in
+        edits (under tests/) changed since A's focus. B's id."""
+        self.fm("init")
+        os.makedirs(os.path.join(self.repo, "tests"))
+        shutil.copy(os.path.join(os.path.dirname(__file__), "run.py"), os.path.join(self.repo, "tests", "run.py"))
+        green = "import unittest\n\n\nclass G(unittest.TestCase):\n    def test_g(self):\n        pass\n"
+        with open(os.path.join(self.repo, "tests", "test_green.py"), "w") as f:
+            f.write(green)
+        for args in (["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "suite"]):
+            subprocess.run(["git", "-C", self.repo, *args], check=True)
+        self.fm("check", "affected", "python3 tests/run.py {names}")
+        self.fm("task", "new", "A", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s", "--focus")
+        b = self.fm_json("task", "new", "B", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s")["id"]
+        self.fm("focus", b)
+        with open(os.path.join(self.repo, "tests", "test_red.py"), "w") as f:
+            f.write(green.replace("pass", "self.fail('red')"))
+        self.fm("task", "evidence", b, "--step", "1", "--run", "python3 tests/run.py test_red", check=False)
+        self.fm("checkpoint")
+        self.fm("focus", "T-0001")
+        for name in edits:
+            with open(os.path.join(self.repo, "tests", name), "a") as f:
+                f.write("# edited\n")
+        return b
+
+    def test_a_skipped_red_first_module_isnt_named_to_run_py(self):
+        # T-1718: --affected said it skipped another lane's red-first test_red, then named it to run.py, which failed
+        # "no test matches test_red"
+        b = self.red_lane(["test_green.py", "test_red.py"])  # A's edit, and B's (its lane goes on) since A's focus
+        r = self.fm("check", "--affected", check=False)
+        self.assertIn(f"only task {b}'s red-first tests: test_red", r.stdout)
+        self.assertNotIn("no test matches", r.stdout + r.stderr)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_only_the_red_first_file_itself_is_left_out(self):
+        # T-1731 review: a same-stem test under another runner (web/test_red.js) was dropped by its name alone
+        self.red_lane(["test_green.py", "test_red.py"])
+        self.fm("check", "affected", "echo {tests}", "--for", ".js")
+        os.makedirs(os.path.join(self.repo, "web"))
+        with open(os.path.join(self.repo, "web", "test_red.js"), "w") as f:
+            f.write("// A's own test\n")
+        r = self.fm("check", "--affected", check=False)
+        self.assertIn("echo web/test_red.js", r.stdout)
+        self.assertNotIn("run.py test_green test_red", r.stdout)
+
+    def test_every_linked_test_skipped_is_said_so(self):
+        # T-1731 review: "No tests linked" when the one linked test was another lane's red-first file
+        self.red_lane(["test_red.py"])
+        r = self.fm("check", "--affected", check=False)
+        self.assertIn("all 1 linked test module(s) skipped (other lanes' red-first tests)", r.stdout)
+        self.assertNotIn("No tests linked", r.stdout)
