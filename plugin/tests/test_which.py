@@ -34,8 +34,12 @@ class Which(ForemanTestCase):
     def test_the_real_skills_folder_is_read_at_run_time(self):
         out = self.fm("which", "six style directions for a new look").stdout
         self.assertIn("Skill foreman:directions", out)
-        if os.path.isdir(os.path.join(SKILLS, "ui-design")):  # T-1700 builds it in parallel
-            self.assertIn("Skill foreman:ui-design", self.fm("which", "make a 3D hero with motion").stdout)
+        got = json.loads(self.fm("which", "make a 3D hero with motion", "--json").stdout)
+        self.assertIn("Skill foreman:ui-design", [x["load"] for x in got["skills"]])
+        loads = [x["load"] for x in got["playbooks"]]
+        self.assertIn("fm playbooks show ui/scene-3d", loads)
+        self.assertIn("fm playbooks show ui/motion", loads)
+        self.assertFalse(got["skills"][0]["summary"].startswith('"'), "a YAML-quoted description, unquoted")
 
     def test_a_user_only_skill_is_marked_as_typed(self):
         env = self.skills(tidy=("Use whenever the user asks to clean up Foreman memory and archives.", True))

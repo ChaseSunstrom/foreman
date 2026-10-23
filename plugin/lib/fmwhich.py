@@ -54,6 +54,8 @@ def skills(root=None):
         fm = fmplugins._frontmatter(path)
         name = c.plain(fm.get("name") or os.path.basename(os.path.dirname(path)))
         desc = c.plain(fm.get("description") or "")
+        if len(desc) > 1 and desc[0] == desc[-1] and desc[0] in "\"'":  # YAML's quoted scalar
+            desc = desc[1:-1]
         front = re.match(r"---\n(.*?)\n---", _head(path), re.S)
         typed = bool(front and _USER_ONLY.search(front.group(1)))
         out.append({"name": name, "load": f"(you type /foreman:{name})" if typed else f"Skill foreman:{name}",
