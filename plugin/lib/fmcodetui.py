@@ -131,6 +131,7 @@ class State:
     def __init__(self):
         self.request = self.task = self.model = self.worker = self.error = None
         self.next = self.stall = self.containment = None  # T-1762: a failure's next command, a live stall's words
+        self.first = False  # T-1349: this close is the project's first
         self.plan, self.criteria, self.steps, self.step = {}, [], [], 0
         self.actions, self.log, self.verify, self.files, self.stat = [], [], [], {}, {}
         self.tokens, self.calls, self.status, self.closed = [0, 0], [], "idle", ""
@@ -272,6 +273,9 @@ class State:
         for s in self.steps:
             s["state"] = "done"
         self.note("closed", text=e.get("text", ""))
+        if isinstance(e.get("first_in"), str) and e["first_in"]:  # T-1349: once a project, a brighter close
+            self.first = True
+            self.note("first", text=f"first proved change in {e['first_in'][:60]}")
 
     def _on_note(self, e):  # T-1328: which runner the run uses and why, or a caution about it
         self.note("note", text=str(e.get("text", "")))
@@ -773,10 +777,11 @@ def _track(st, w, h, app):
                     ch, style = RAIL, rgb(fg=fg, bg=mix(fg, "#000000", 0.45))
                 rows[0][x] = (ch, style)
     wave = fx.since("track:status", st.status)
-    if st.status == "closed" and fx.moving and wave < 1.8:  # done: a bright wave runs the length of the track
-        p = wave / 1.3 * (w + 16) - 8
+    first = getattr(st, "first", False)  # T-1349: a project's first close: two brighter, wider passes
+    if st.status == "closed" and fx.moving and wave < (3.6 if first else 1.8):  # done: a bright wave runs the track
+        p = (wave % 1.8) / 1.3 * (w + 16) - 8
         for x, (ch, style) in enumerate(rows[0]):
-            k = max(0.0, 1 - abs(x - p) / 7)
+            k = min(1.0, max(0.0, 1 - abs(x - p) / (11 if first else 7)) * (1.15 if first else 1))
             if k and ch != " ":
                 spec = resolve(style, fx.cfg)
                 rows[0][x] = (ch, rgb(fg=mix(spec.get("fg"), glow, 0.9 * k), bg=spec.get("bg") and mix(
@@ -914,6 +919,8 @@ def _time(st, w, h, app):
 def entry_segments(e, w, thoughts=True):
     """An Activity line; None for one the panel leaves out (the model's own words unless thoughts are on)."""
     k = e.get("kind")
+    if k == "first":  # T-1349
+        return [("  ✦ ", "accent"), (e.get("text", ""), "strong")]
     if k == "step":
         head = f" {e['n']} "
         return [("──", "border"), (head, "chip_accent"), (" " + e["text"] + " ", "strong"),
@@ -2015,7 +2022,7 @@ class App:
             else:
                 kind, name = item
                 self.opts.update(model=name if kind == "model" else None, worker=name if kind == "worker" else None)
-                self.message = f"next run: {kind} {name}"
+                self.message = f"next run: {kind} {name}" + (self._last_run(name) if kind == "worker" else "")
                 if self.after_pick == "resume":  # T-1762: m on a stall's card: carry the run on with this one
                     self.after_pick = None
                     self.resume()
@@ -2272,6 +2279,18 @@ class App:
         r = subprocess.run([sys.executable, FM, *argv], cwd=self.root, capture_output=True, text=True, timeout=30,
                            stdin=subprocess.DEVNULL)
         return (r.stdout + r.stderr).strip()
+
+    def _last_run(self, name):
+        """T-1349: a hello for a picked runner: its newest run's end, or that it has none yet."""
+        import fmcode
+        try:
+            got = fmcode.last_run_of(name)
+        except Exception:
+            return ""
+        if not got:
+            return " · no run with it yet"
+        tid, how, when = got
+        return f" · last: {how} {tid}, {duration(max(0, time.time() - when))} ago"
 
     def sweep(self):
         """T-1756: at the app's start, the runners a killed run left are stopped, and the status bar says so."""
