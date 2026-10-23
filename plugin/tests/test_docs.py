@@ -337,6 +337,17 @@ class PluginFiles(unittest.TestCase):
             with self.subTest(f=f):
                 self.assertTrue(os.access(os.path.join(PLUGIN, f), os.X_OK))
 
+    def test_master_lists_every_lib_module_with_its_own_bullet(self):
+        # T-1724: MASTER.md's '### plugin/lib modules' is one bullet per module (T-1713); a new module needs its line
+        text = read_text(os.path.join(os.path.dirname(PLUGIN), "MASTER.md"))
+        self.assertIn("\n### plugin/lib modules\n", text)
+        section = re.split(r"\n#", text.split("\n### plugin/lib modules\n", 1)[1], maxsplit=1)[0]
+        bullets = re.findall(r"^- `(\w+)`", section, re.M)
+        modules = {f[:-3] for f in os.listdir(os.path.join(PLUGIN, "lib")) if f.endswith(".py")}
+        self.assertEqual(sorted(modules - set(bullets)), [], "a module with no bullet")
+        self.assertEqual(sorted(set(bullets) - modules), [], "a bullet for no module")
+        self.assertEqual(sorted({b for b in bullets if bullets.count(b) > 1}), [], "a module with two bullets")
+
 
 class Site(unittest.TestCase):
     """T-1206, T-1220: the Pages site builds (site/build.py, as the workflow runs it) into pages whose local links all

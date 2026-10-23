@@ -2703,13 +2703,9 @@ def _colour(v):
 
 
 def contrast(a, b):
-    """WCAG contrast ratio of two colours (1 to 21)."""
-    def lum(c):
-        ch = [v / 255 for v in _rgb(c)]
-        ch = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in ch]
-        return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
-    hi, lo = sorted((lum(a), lum(b)), reverse=True)
-    return (hi + 0.05) / (lo + 0.05)
+    """WCAG contrast ratio of two colours (1 to 21): fmdesign's formula on the colours' sRGB (T-1675)."""
+    import fmdesign  # lazy: only a [colors] check needs it
+    return fmdesign.contrast(*(tuple(v / 255 for v in _rgb(c)) for c in (a, b)))
 
 
 def _faint(spec, theme):
