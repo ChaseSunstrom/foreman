@@ -57,6 +57,9 @@ Class: low. No noise and no loop: three distances and two hashes a pixel. The gr
 ## Reduced motion
 Still: `uTime = 0.0`: the centres rest at their homes; the grain never moved.
 
+## Sketch
+The sketchbook's preset (`fm scene sketchbook`): `uIntensity=1 uGrain=0.05 uBase=0.97,0.95,0.92 uA=0.95,0.55,0.45 uB=0.4,0.5,0.95`
+
 ## Suits
 Brand and campaign heroes, music and event pages, product launches, an app's sign-in backdrop.
 Not for: dense UI, data views, behind body text, print-led looks (grain plus halftone fights).
