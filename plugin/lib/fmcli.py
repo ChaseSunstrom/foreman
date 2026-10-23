@@ -5705,6 +5705,8 @@ def _build_parser():
     s.add_argument("state", nargs="?", choices=["on", "off"])
     s = add("digest", lazy("fmcost", "cmd_digest"), tier=("Reports", 970), help="the week in one screen: tasks, grades, lessons, decisions, cost")
     s.add_argument("--days", type=float, default=7)
+    s.add_argument("--say", action="store_true", help="read it aloud too, with the first of say, spd-say, espeak-ng or "
+                                                      "espeak installed (T-1549)")
     s = add("away", lazy("fmaway", "cmd_away"), tier=("Reports", 975), help="what closed, blocked, was asked or was reverted since you last spoke (T-1155)")
     s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), tier=("Reports", 980), help="what became of finished tasks: reverted, fixed later "
                                                                  "by a task naming them, or held; track record (T-0616)")
@@ -6449,7 +6451,8 @@ def _build_parser():
             help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496); "
                  "serve: the same as a page on 127.0.0.1, token-locked, changes through set")
     s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
-                                                                 "bisect", "profile", "chords", "serve", "check"])
+                                                                 "bisect", "profile", "chords", "serve", "check",
+                                                                 "changed"])  # T-1549 changed [SNAPSHOT]
     # T-1543 bisect, T-1656 profile, T-1660 chords, T-1659 serve
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
                                           "share code fm settings export printed (T-1510; tui.toml's [profile] tables "

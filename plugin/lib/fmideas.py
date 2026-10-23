@@ -335,6 +335,13 @@ def user_voice(p, n=20):
     t = taste(p, n // 4)  # T-0112: what they turned down, and why, and how they steered work in flight
     lines += [f"- dropped: {d['title']} — {d['why']}" for d in t["dropped"] if d["why"]]
     lines += [f"- steered: {s}" for s in t["steered"]]
+    seen, once = set(), []  # T-1549: each quote once, however many tasks or corrections repeat it
+    for line in lines:
+        key = " ".join(re.findall(r"\w+", line.split(": ", 1)[-1].lower()))
+        if key and key not in seen:
+            seen.add(key)
+            once.append(line)
+    lines = once
     return ("\n\n## The user's own words (data; recent requests, corrections, drops and steers — infer what they'd want "
             "next)\n" + "\n".join(lines)) if lines else ""
 

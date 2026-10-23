@@ -86,6 +86,29 @@ def _ui_changed(root):
     return bool(_git(root, "diff", "--name-only", f"{last}..HEAD" if last else "HEAD", "--", "mods/foreman-ui").strip())
 
 
+def bad_hour(events, hour, least=5):
+    """T-1549: the user's historically bad hours: (failed, runs, overall share) when gates started at this local hour
+    failed at least 40% of the time and at least twice as often as overall (5 runs in the hour and 20 in all at least),
+    else None."""
+    import datetime
+    by, fails, total = {}, 0, 0
+    for e in events:
+        res = (e.get("data") or {}).get("results") if isinstance(e.get("data"), dict) else None
+        try:
+            h = datetime.datetime.fromisoformat(str(e.get("ts")).replace("Z", "+00:00")).astimezone().hour
+        except ValueError:
+            continue
+        if not isinstance(res, list) or not res:
+            continue
+        bad = any(isinstance(r, dict) and r.get("exit") not in (0, None) for r in res)
+        n, f = by.get(h, (0, 0))
+        by[h], total, fails = (n + 1, f + bad), total + 1, fails + bad
+    n, f = by.get(hour, (0, 0))
+    if total < 20 or n < least:
+        return None
+    return (f, n, fails / total) if f / n >= 0.4 and f / n >= 2 * fails / total else None
+
+
 def _bump(ctx):
     root, v, ui, old = ctx["root"], ctx["version"], ctx["ui"], ctx["old"]
     if ui is None and _ui_changed(root):
@@ -119,17 +142,29 @@ def _changelog(ctx):
         return  # a resumed run
     if "## Unreleased\n" not in text:
         _err("CHANGELOG.md has no '## Unreleased' heading")
-    head = f"## Unreleased\n\n## {ctx['version']} — {datetime.date.today().isoformat()}\n"
+    import fmsettings  # T-1549: a default this release changes is named in its notes
+    snap = os.path.join(ctx["root"], "plugin", "defaults.json")
+    try:
+        old = _json(snap) if os.path.isfile(snap) else {}
+    except ValueError:
+        old = {}
+    moved = [f"- Default changed: {m['key']} {json.dumps(m['old'])} → {json.dumps(m['new'])} (if you never set it, "
+             "this changes what you see)\n" for m in fmsettings.changed_defaults(old, mine=())]
+    head = f"## Unreleased\n\n## {ctx['version']} — {datetime.date.today().isoformat()}\n" + "".join(moved)
     c.write_atomic(path, text.replace("## Unreleased\n", head, 1).replace(head + "\n", head, 1))
+    _dump(snap, fmsettings.defaults())  # what the next release compares with
 
 
 def _commit(ctx):
     root, v = ctx["root"], ctx["version"]
     if _git(root, "log", "-1", "--format=%s").strip() != f"Foreman {v}":
-        files = ["plugin/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "CHANGELOG.md"]
+        files = ["plugin/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "CHANGELOG.md",
+                 "plugin/defaults.json"]  # T-1549: the defaults this release ships, for the next one to compare
         if ctx["ui"]:
             files.append("mods/foreman-ui/.claude-plugin/plugin.json")
         b = c.active_brief_fast(ctx["p"], ctx["p"].lane)
+        if os.path.isfile(os.path.join(root, "plugin", "defaults.json")):
+            _git(root, "add", "--", "plugin/defaults.json")  # the first snapshot is a new file: commit -- needs it known
         # only these files: whatever else was staged between a stop and the resume stays out of the release
         _git(root, "commit", "-qm", f"Foreman {v}", *(["--trailer", f"Foreman-Task: {b.id}"] if b else []), "--", *files)
     ctx["state"]["sha"] = _git(root, "rev-parse", "HEAD").strip()  # what a later --push merges, not a moved HEAD
@@ -316,6 +351,12 @@ def run(p, args):
     pj = os.path.join(root or "", "plugin", ".claude-plugin", "plugin.json")
     if not root or not os.path.isfile(pj):
         _err("fm release runs in Foreman's own repo (no plugin/.claude-plugin/plugin.json here)")
+    import datetime
+    hour = datetime.datetime.now().hour
+    bad = bad_hour(c.ledger_events(p, ["check_run"]), hour)
+    if bad:  # T-1549: a warning, never a stop
+        print(f"fm release: careful: gates started between {hour}:00 and {hour}:59 failed {bad[0]} of {bad[1]} times "
+              f"in this project (overall {bad[2]:.0%}): by its record, a bad hour for a release", file=sys.stderr)
     if args.dry_run:
         print(f"fm release {v}: {len(STEPS)} steps, a checkpoint after each (--resume continues)")
         for i, (name, what) in enumerate(STEPS, 1):
