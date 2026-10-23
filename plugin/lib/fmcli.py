@@ -3896,6 +3896,12 @@ def cmd_sentinel(args):
     done = sorted((b for b in c.load_briefs(p, include_archive=True) if b.status == "done"),
                   key=lambda b: str(b.meta.get("updated", "")), reverse=True)[:args.last]
     cmds, skipped, dated = {}, 0, 0
+    import fmreverify  # T-1663: checks of closed tasks a later commit touched, ahead of the recent ones (under --max)
+    queued = {}
+    for e in fmreverify.scan(p):
+        queued.setdefault(e["cmd"], e)
+        if not (_SIDE_EFFECTS.search(e["cmd"]) or _POINT_IN_TIME.search(e["cmd"])):
+            cmds.setdefault(e["cmd"], e.get("task") or "?")
     for b in done:
         for line in b.evidence():  # criteria checks only: steps record work (pushes, migrations) as well as checks
             if line.startswith("- (ac ") and c._RAN_MARK in line and "` → exit 0" in line:
@@ -3942,6 +3948,19 @@ def cmd_sentinel(args):
                                  source="discovered", depends=[tid])
                     c.log_event(p, "capture", task=nb.id, data={"source": "sentinel", "assumption_of": tid})
                     c.regen_views(p)
+    for r in results:  # T-1663: a queued re-verify that fails reopens attention on its task
+        e = queued.get(r["cmd"]) if r["exit"] and not r.get("assumption") else None
+        title = e and _title(f"Re-verify failed for {r['task']}: {r['cmd']}")
+        if title and not any(x.title == title for x in c.load_briefs(p) if x.status not in c.CLOSED):
+            with c.lock(p.dir):
+                nb = _create(p, title, "FIX", "S", "captured", source="discovered", depends=[r["task"]],
+                             raw=f"{title} (now {r['result']}; queued by {e.get('sha', '')[:10]} "
+                                 f"{e.get('subject', '')})")
+                c.log_event(p, "capture", task=nb.id, data={"source": "sentinel reverify", "of": r["task"]})
+                c.regen_views(p)
+    later = set(list(cmds)[args.max:])  # cut by --max: the next run takes them
+    fmreverify.drop(p, {(e.get("task"), e["cmd"]) for e in fmreverify.load(p)["queue"]
+                        if e["cmd"] in queued and e["cmd"] not in later})
     failed = [r for r in results if r["exit"]]
     c.log_event(p, "sentinel", data={"ran": len(results), "failed": [(r["task"], r["cmd"][:120]) for r in failed]},
                 session=session())
