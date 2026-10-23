@@ -370,6 +370,16 @@ class Graph(OneFile, ForemanTestCase):
         d = data_of(page or self.page, "graph")
         return d, {t["id"]: n for t, n in zip(d["t"], d["n"])}
 
+    def test_poster_labels_in_a_dense_cluster_never_overlap(self):  # T-1735: T-0352 and T-0337 overlapped
+        blocked = fmpage.GRAPH_STATUSES.index("blocked")
+        plan = {"layers": [{"x": 0, "w": 8, "d": 8}], "e": [],
+                "n": [[0, 0, 1, blocked], [0.3, 0, 1, blocked], [0, 0.3, 1, blocked], [3, -3, 1, blocked]]}
+        svg = fmpage._graph_poster(plan, {0: "T-0352", 1: "T-0337", 2: "T-0400", 3: "T-0500"})
+        tags = [(float(x), float(y), t) for x, y, t in re.findall(r'<text class="tag" x="([\d.]+)" y="([\d.]+)">([^<]*)<', svg)]
+        self.assertEqual([t for *_, t in tags], ["T-0352", "T-0500"], "the first of a cluster is named, the far one too")
+        for (ax, ay, a), (bx, by, b) in itertools.combinations(tags, 2):
+            self.assertFalse(abs(ax - bx) < 0.15 * (len(a) + len(b)) and abs(ay - by) < 0.6, (a, b))
+
     def test_a_node_per_task_in_layers_by_what_it_waits_on(self):
         d, at = self.nodes()
         self.assertEqual(len(d["n"]), len(TASKS))
@@ -433,7 +443,8 @@ class Graph(OneFile, ForemanTestCase):
         many = TASKS + [{"id": f"T-{300 + i:04d}", "title": "x", "status": "blocked", "tier": "S", "deps": []}
                         for i in range(40)]
         poster = re.search(r'<svg class="poster".*?</svg>', fmpage.graph_html(many, "x"), re.S).group(0)
-        self.assertEqual(len(re.findall(r'<text class="tag"', poster)), fmpage.GRAPH_NAMED, "capped")
+        n = len(re.findall(r'<text class="tag"', poster))  # T-1735: colliding labels in the 40 are dropped too
+        self.assertTrue(0 < n <= fmpage.GRAPH_NAMED, f"capped: {n}")
         self.assertIn(">T-0003</text>", poster, "active work named first")
 
     def test_a_phone_keeps_a_compact_legend(self):

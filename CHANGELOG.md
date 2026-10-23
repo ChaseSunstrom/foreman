@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Layout collisions: the site header fits at 320 px (it made the page 349 px wide; a real-browser test measures 320, 360 and 390), and fm page graph's poster drops a label that would overlap one already placed (the text twin still names every task) (T-1738: T-1683, T-1735)
 - fm check waits for the machine-wide gate lock at most 15 minutes (FOREMAN_GATE_WAIT seconds), then runs beside the holder and says so: a hung check in another project held every check for over 40 minutes (T-1753)
 - fm sync import: a task new to this machine that arrives from the repo's .foreman/ waits for the user's yes (confirm), and no pulled brief carries another machine's lane, builder or cost marks; this machine's own marks and confirm stay on updates. fm home import shares the same settling (T-1749)
 - Guard: a move is judged at its sources too (mv, mv -t, rsync --remove-source-files), so moving a protected file out of the plugin cache or core is refused; git -C X clone url dir is judged at X/dir (T-1751: T-1744, T-1745)
