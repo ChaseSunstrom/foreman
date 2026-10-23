@@ -143,6 +143,18 @@ class Capture(StubCase):
         nav = [c["params"]["url"] for c in self.calls() if c.get("method") == "Page.navigate"]
         self.assertTrue(nav[0].startswith("file:///") and nav[0].endswith("/page.html"), nav)
 
+    def test_profile_sets_the_viewport_and_scale_and_reduced_motion_emulates_the_media(self):
+        self.shot(self.page, "--frames", "0", "--profile", "wrist")
+        [m] = [c["params"] for c in self.calls() if c.get("method") == "Emulation.setDeviceMetricsOverride"]
+        self.assertEqual((m["width"], m["height"], m["deviceScaleFactor"]), (396, 484, 2.0))
+        self.assertNotIn("Emulation.setEmulatedMedia", [c.get("method") for c in self.calls()])
+        os.remove(self.log)
+        self.shot(self.page, "--frames", "0", "--reduced-motion")
+        [e] = [c["params"] for c in self.calls() if c.get("method") == "Emulation.setEmulatedMedia"]
+        self.assertEqual(e["features"], [{"name": "prefers-reduced-motion", "value": "reduce"}])
+        r = self.shot(self.page, "--profile", "phone", check=False)
+        self.assertNotEqual(r.returncode, 0)
+
     def test_a_still_page_has_no_poster_and_a_rerun_drops_stale_frames(self):
         page = json.loads(self.shot(self.page, "--frames", "5", "--every", "10", "--json", paint="0,1,4").stdout)["pages"][0]
         folder = os.path.dirname(page["shots"][0])
