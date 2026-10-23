@@ -75,6 +75,23 @@ class Stories(unittest.TestCase):
         self.assertEqual(site("pages")._wall({"releases": []}), "")
 
 
+class Motion(unittest.TestCase):
+    """T-1615: the bench and stats charts draw themselves once when seen, only with motion allowed and JavaScript on."""
+
+    def test_charts_carry_their_motion_and_are_whole_without_it(self):
+        build = site("build")
+        self.assertIn('class="viz grow-x"', build.hbars("t", "", [("a", 1), ("b", 2)]))
+        rows = [{"d": "x", "v": 1}, {"d": "y", "v": 3}]
+        self.assertIn('class="viz draw"', build.line("t", "", rows, "v", "d"))
+        self.assertIn('pathLength="1"', build.line("t", "", rows, "v", "d"))
+        css, js = read_text(os.path.join(ROOT, "site", "style.css")), read_text(os.path.join(ROOT, "site", "site.js"))
+        at = css.index("T-1615")
+        self.assertIn("scaleX(0)", css[at:])
+        self.assertTrue(css[:at].rstrip().endswith("@media (prefers-reduced-motion: no-preference) { /*"),
+                        "the motion only where it's allowed")
+        self.assertLess(js.index("if (still ||"), js.index('classList.add("armed")'), "armed after the still check")
+
+
 class TitleCard(ForemanTestCase):
     def test_a_proved_task_gets_its_card_and_an_unproved_one_doesnt(self):
         self.fm("init")

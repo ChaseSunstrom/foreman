@@ -181,6 +181,124 @@ def cmd_glance(args):
     print(json.dumps(line, ensure_ascii=True))  # escaped: no U+2028 a line reader could split on
 
 
+# ---------------------------------------------------------------- fm desk (T-1615)
+
+DESK = (800, 480)  # the common 7.5-inch e-paper panel; an old phone scales it
+STATES = {"active": "working", "paused": "paused", "blocked": "blocked", "idle": "idle", "error": "can't read state"}
+
+
+def desk_svg(g, size=DESK, when=None):
+    """The glance as a desk card: black on white, large type, no colour and no motion, so an e-paper panel draws it as
+    is. The task and its step with a bar, the counts, the state and when it was drawn."""
+    import html
+    import textwrap
+    w, h = size
+    s = min(w / 800, h / 480)  # every measure scales with the card
+    px = lambda v: f"{v * s:.1f}"  # noqa: E731
+    esc = lambda t: html.escape(str(t))  # noqa: E731
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
+           f'font-family="DejaVu Sans, Helvetica, Arial, sans-serif" fill="#000"><rect width="{w}" height="{h}" '
+           f'fill="#fff"/>',
+           f'<text x="{px(32)}" y="{px(52)}" font-size="{px(22)}">{esc(g.get("project") or "no project")}</text>',
+           f'<text x="{w - 32 * s:.1f}" y="{px(52)}" font-size="{px(22)}" text-anchor="end">'
+           f'{esc(STATES.get(g.get("class"), g.get("class") or ""))}</text>',
+           f'<line x1="{px(32)}" y1="{px(70)}" x2="{w - 32 * s:.1f}" y2="{px(70)}" stroke="#000" stroke-width="{px(2)}"/>']
+    if g.get("task"):
+        out.append(f'<text x="{px(32)}" y="{px(132)}" font-size="{px(52)}" font-weight="700">{esc(g["task"])}</text>')
+        for i, line in enumerate(textwrap.wrap(g.get("title") or "", 34, max_lines=2, placeholder=" …")):
+            out.append(f'<text x="{px(32)}" y="{px(182 + i * 40)}" font-size="{px(32)}">{esc(line)}</text>')
+        done, _, of = str(g.get("step") or "").partition("/")
+        if done.isdigit() and of.isdigit() and int(of):
+            bar = (w - 64 * s) * min(1, int(done) / int(of))
+            out += [f'<rect x="{px(32)}" y="{px(280)}" width="{w - 64 * s:.1f}" height="{px(28)}" fill="#fff" '
+                    f'stroke="#000" stroke-width="{px(3)}"/>',
+                    f'<rect x="{px(32)}" y="{px(280)}" width="{bar:.1f}" height="{px(28)}"/>',
+                    f'<text x="{px(32)}" y="{px(345)}" font-size="{px(26)}">step {esc(g["step"])}</text>']
+    else:
+        out.append(f'<text x="{px(32)}" y="{px(150)}" font-size="{px(44)}" font-weight="700">No active task</text>')
+    counts = [("queued", g.get("queue", 0)), ("inbox", g.get("inbox", 0)), ("blocked", g.get("blocked", 0)),
+              ("lanes", g.get("lanes", 0))]
+    col = (w - 64 * s) / len(counts)
+    for i, (name, n) in enumerate(counts):
+        x = 32 * s + i * col
+        out += [f'<text x="{x:.1f}" y="{px(420)}" font-size="{px(40)}" font-weight="700">{esc(n)}</text>',
+                f'<text x="{x:.1f}" y="{px(452)}" font-size="{px(20)}">{name}</text>']
+    if when:
+        out.append(f'<text x="{w - 32 * s:.1f}" y="{px(345)}" font-size="{px(20)}" text-anchor="end">'
+                   f'at {esc(when)}</text>')
+    return "".join(out) + "</svg>\n"
+
+
+def desk_html(svg, every=60):
+    """The card as a page an old phone keeps open: it reloads itself every `every` seconds."""
+    return ("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,"
+            f"initial-scale=1\"><meta http-equiv=\"refresh\" content=\"{max(10, int(every))}\"><title>Foreman desk"
+            "</title><style>html,body{margin:0;background:#fff}svg{display:block;width:100vw;height:auto}</style>"
+            f"</head><body>{svg}</body></html>\n")
+
+
+def _desk_write(path, svg, every):
+    """The card to `path`: .html a page, .png through rsvg-convert, else the SVG; replaced whole, so a device never
+    reads half a card."""
+    if path.endswith(".png"):
+        import shutil
+        import subprocess
+        if not shutil.which("rsvg-convert"):
+            raise RuntimeError("a PNG card needs rsvg-convert (librsvg), which isn't installed; --out FILE.svg works")
+        tmp = path + ".svg.tmp"
+        c.write_atomic(tmp, svg)
+        try:
+            subprocess.run(["rsvg-convert", "-o", path + ".tmp", tmp], check=True, timeout=60,
+                           stdin=subprocess.DEVNULL, capture_output=True)
+            os.replace(path + ".tmp", path)
+        finally:
+            for f in (tmp, path + ".tmp"):
+                if os.path.exists(f):
+                    os.unlink(f)
+        return
+    c.write_atomic(path, desk_html(svg, every or 60) if path.endswith(".html") else svg)
+
+
+def cmd_desk(args):
+    """fm desk [--out FILE] [--size WxH] [--every S]: the glance as a desk card for an e-paper panel or an old phone.
+    Nothing listens on a port: the card is a file (SVG, .png with rsvg-convert, .html that reloads itself) that a
+    synced folder carries to the device; --every rewrites it every S seconds until Ctrl-C."""
+    import subprocess
+    import time
+    import fmcli
+    try:
+        w, _, h = (args.size or f"{DESK[0]}x{DESK[1]}").lower().partition("x")
+        size = (int(w), int(h))
+    except ValueError:
+        size = (0, 0)
+    if not (120 <= size[0] <= 4000 and 120 <= size[1] <= 4000):
+        raise fmcli.UsageError("--size takes WxH, each 120 to 4000 (800x480 is the common 7.5-inch e-paper panel)")
+    every = getattr(args, "every", None)
+    if every is not None and every < 10:
+        raise fmcli.UsageError("--every takes 10 seconds or more (an e-paper panel wears with each refresh)")
+    p = fmcli.resolve(args, create=False)
+    while True:
+        try:
+            g = glance(p)
+        except Exception as e:  # a card shows the error, never a trace
+            g = {"project": p.slug, "class": "error", "title": c.redact(f"{type(e).__name__}: {e}")[:80]}
+        svg = desk_svg(g, size, time.strftime("%H:%M"))
+        if not args.out:
+            print(svg, end="")
+            return 0
+        try:
+            _desk_write(args.out, svg, every)
+        except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+            raise fmcli.UsageError(str(e))
+        if every is None:
+            print(f"wrote {args.out} ({size[0]}x{size[1]})")
+            return 0
+        try:
+            time.sleep(every)
+        except KeyboardInterrupt:
+            return 0
+
+
 # ---------------------------------------------------------------- fm lsp
 
 MAX_BODY = 32 << 20  # a frame bigger than this ends the session (no client sends a 32 MB brief)
