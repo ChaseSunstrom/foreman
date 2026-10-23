@@ -6087,6 +6087,9 @@ def _build_parser():
     s.add_argument("--frozen", action="store_true", help="fm smoke's frozen profile first: the clock fixed, CSS "
                    "animations and transitions paused")
     s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
+    s.add_argument("--diff", metavar="BASE", help="compare each viewport shot with BASE/<page>/viewport.png (an earlier "
+                   "fm shot --out BASE): exit 1 over the baseline's noise floor (the most its own frames differ) or "
+                   "when a font fell back (T-1637)")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
