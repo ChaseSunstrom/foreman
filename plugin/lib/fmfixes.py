@@ -315,7 +315,8 @@ def _escalate(p, sig):
              f"the fix with fm fix add")
     try:
         subprocess.run([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "capture", title, "--type", "FIX", "--source",
-                        "discovered"], cwd=p.root, stdin=subprocess.DEVNULL, capture_output=True, timeout=15)
+                        "discovered", "--anyway"],  # T-1662: deduped by signature already
+                       cwd=p.root, stdin=subprocess.DEVNULL, capture_output=True, timeout=15)
     except (OSError, subprocess.SubprocessError):
         pass
 
