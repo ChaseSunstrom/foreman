@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm critique --stress TEXT pseudo-localises a string (accents, 40% longer, [brackets]; placeholders and HTML entities intact) and --profile tv|eink|car|wrist prints a surface's viewport and contrast preset (T-1643)
 - fm settings serve: the settings as a page on 127.0.0.1 (random port; the printed URL's token works once and becomes an HttpOnly SameSite=Strict cookie; Host and Origin checked, bodies capped, CSP default-src 'none'), each change through fm settings set's own checks and the guard; stops on Ctrl-C, SIGTERM or 30 idle minutes (T-1659)
 - Guard: unsetting or overriding CLAUDECODE through any wrapper is refused, since env's own words are read wherever env appears (chrt, taskset and stdbuf -o L before env, unbuffer [-p]); script -c, sh -c and setsid forms were already refused, and each is now a test row (T-1722)
 - fm stories CHART: a component's state matrix, one page with a cell per state a JSON chart lists (default, hover, error…), each state reached from about:blank by fm flow steps and shot in the headless Chromium fm shot finds, under fm flow's URL rule and request blocking; the shots inline with a CSP, so the page loads nothing from another host; no browser, or one that won't start: the states and their steps listed, and exit 2 (never a pass). The chart is untrusted: 20 states, 20 steps a state, 64 KB, 12 MB of shots in all, 300 s a run. fm flow's goto keeps a relative path's ?query#fragment, so a state can be a query string (T-1640)
