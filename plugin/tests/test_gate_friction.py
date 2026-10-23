@@ -32,6 +32,11 @@ class Flakes(ForemanTestCase):
         self.fm("check", "add", f"test -f {marker} || {{ touch {marker}; echo 'FAIL: test_x (pkg.T.test_x)'; exit 1; }}")
         out = self.fm("check").stdout
         self.assertIn("flaky: pkg.T.test_x", out)
+        import json  # T-1789: the record keeps how it failed, so a race can be found after the rerun passed
+        import fmcore as c
+        with open(os.path.join(c.find_project(self.repo).dir, "flakes.json")) as f:
+            flaky = json.load(f)["flaky"]
+        self.assertIn("FAIL: test_x (pkg.T.test_x)", flaky["pkg.T.test_x"]["why"])
 
     def test_log_lines_are_not_test_names(self):
         import fmcore as c

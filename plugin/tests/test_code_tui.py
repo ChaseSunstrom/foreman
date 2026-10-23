@@ -9,7 +9,10 @@ import time
 import unittest
 import unittest.mock
 
+from helpers import PLUGIN, ForemanTestCase
 from test_code import CodeCase, call, plan
+
+import fmcore as c
 
 
 class Events(CodeCase):
@@ -3879,3 +3882,43 @@ class Tour(unittest.TestCase):  # T-1309
 def read(path):
     with open(path, encoding="utf-8") as f:
         return f.read()
+
+
+class Extras(ForemanTestCase):
+    """T-1546: the photo booth (F) writes the frame on screen as an SVG and, with rsvg-convert, a PNG; the chaos twin
+    throws hostile events, keys and sizes at a headless app for N seconds without a crash."""
+
+    def test_the_photo_booth_writes_an_svg_and_a_png(self):
+        T = tui()
+        app = T.App(T.DEFAULTS, spawn=lambda *a, **k: None)
+        for e in T.SAMPLE_RUN:
+            app.feed(e)
+        folder = os.path.join(self.tmp, "photos")
+        svg, png, note = T.photo(app, folder, (80, 24), 0.0)
+        self.assertTrue(read(svg).startswith("<svg"))
+        if shutil.which("rsvg-convert"):
+            with open(png, "rb") as f:
+                self.assertEqual(f.read(8), b"\x89PNG\r\n\x1a\n")
+        else:
+            self.assertIsNone(png)
+            self.assertIn("rsvg-convert", note)
+        self.assertNotEqual(T.photo(app, folder, (80, 24), 0.0)[0], svg, "a second photo never overwrites the first")
+        app.size = (80, 24)
+        app.key("F")
+        self.assertIn("photo: ", app.message)
+        self.assertIn(os.path.join(c.foreman_home(), "photos"), app.message)
+
+    def test_the_chaos_twin_runs_without_a_crash(self):
+        got = tui().chaos(2.0, seed=7)
+        self.assertIsNone(got["crash"], got["crash"])
+        self.assertTrue(got["frames"] > 20 and got["keys"] and got["events"] and got["resizes"], got)
+        p = self.fm("code", "tui", "--chaos", "1", "--seed", "3")
+        self.assertIn("(seed 3): no crash", p.stdout)
+
+    @unittest.skipUnless(shutil.which("rsvg-convert"), "a PNG needs rsvg-convert")
+    def test_a_png_snapshot_of_a_recorded_run(self):
+        out = os.path.join(self.tmp, "run.png")
+        self.fm("code", "tui", "--snapshot", out, "--events", os.path.join(os.path.dirname(PLUGIN), "demo", "examples",
+                                                                          "fix.jsonl"))
+        with open(out, "rb") as f:
+            self.assertEqual(f.read(8), b"\x89PNG\r\n\x1a\n")
