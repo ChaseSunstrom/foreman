@@ -5997,10 +5997,12 @@ def _build_parser():
     s.add_argument("--because", help="set: why a cap goes up (recorded as a costly decision)")
     s.add_argument("--days", type=int, default=1, help="show: spend over this many days")
 
-    s = add("settings", lazy("fmsettings", "cmd_settings"), tier=("Project and settings", 775),
-            help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496)")
+    s = add("settings", lambda a: (lazy("fmsettingsserve", "cmd_serve") if a.action == "serve" else  # T-1659
+                                   lazy("fmsettings", "cmd_settings"))(a), tier=("Project and settings", 775),
+            help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496); "
+                 "serve: the same as a page on 127.0.0.1, token-locked, changes through set")
     s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
-                                                                 "bisect", "profile"])  # T-1543 bisect, T-1656 profile
+                                                                 "bisect", "profile", "serve"])  # T-1543 bisect, T-1656 profile
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
                                           "share code fm settings export printed (T-1510; tui.toml's [profile] tables "
                                           "aren't in it); list: a group alone (look, colors, layout, keys, pane; "
