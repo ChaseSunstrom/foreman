@@ -187,6 +187,72 @@ def check(path, run=False):
     return fmdesign.render(fmdesign.lint([path], skipped)) + [f"{x['file']}: not read: {x['why']}" for x in skipped]
 
 
+def born(folder, name):
+    """T-1554: a new folder born proven: git init, fm init, the template's own check as the project's gate (fm check
+    add "fm new check FILE"), a first commit when git knows who you are, then fm check, so the project starts green.
+    [(step, ok)]; a step that fails is said and the rest still run (the file is there either way)."""
+    import subprocess
+    import sys
+    fm = os.path.join(c.PLUGIN_ROOT, "bin", "fm")
+    steps = [("git init", ["git", "init", "-q"]), ("fm init", [sys.executable, fm, "init"]),
+             ("its check as the gate", [sys.executable, fm, "check", "add", f"fm new check {TEMPLATES[name][1]}"]),
+             ("first commit", ["git", "add", "-A"]), ("", ["git", "commit", "-qm", f"Born from fm new {name}"]),
+             ("fm check", [sys.executable, fm, "check"])]
+    out = []
+    for step, argv in steps:
+        try:
+            r = subprocess.run(argv, cwd=folder, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL)
+            ok = r.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            ok = False
+        if step:
+            out.append((step, ok))
+        elif not ok:
+            out[-1] = (out[-1][0], False)  # the commit half of "first commit"
+    return out
+
+
+def cmd_dev(args):
+    """fm dev [--once] [--interval S] (T-1554): the contributor's loop: whenever a tracked file changes, fm check
+    --affected runs the tests linked to what changed; Ctrl-C ends it. --once runs it now and exits with its code."""
+    import subprocess
+    import sys
+    import time
+    import fmcli
+    root = c.git_root(os.getcwd())
+    if not root:
+        raise fmcli.UsageError("fm dev watches a git repository's tracked files: run it inside one")
+    fm = os.path.join(c.PLUGIN_ROOT, "bin", "fm")
+    check = lambda: subprocess.run([sys.executable, fm, "check", "--affected"], cwd=root).returncode  # noqa: E731
+
+    def stamps():
+        got = {}
+        for rel in c._git(root, "ls-files", "-z", timeout=30).split("\0")[:50000]:
+            try:
+                got[rel] = os.stat(os.path.join(root, rel)).st_mtime_ns
+            except OSError:
+                got[rel] = None
+        return got
+    if getattr(args, "once", False):
+        return check()
+    last = stamps()
+    print(f"fm dev: watching {len(last)} tracked files in {root}; a change runs fm check --affected. Ctrl-C ends it.",
+          flush=True)
+    try:
+        while True:
+            time.sleep(max(0.2, getattr(args, "interval", None) or 1.0))
+            now = stamps()
+            moved = sorted(k for k in now if now[k] != last.get(k))
+            if moved:
+                print(f"fm dev: {', '.join(moved[:3])}{' …' if len(moved) > 3 else ''} changed: fm check --affected",
+                      flush=True)
+                check()
+                now = stamps()
+            last = now
+    except KeyboardInterrupt:
+        return 0
+
+
 def cmd_new(args):
     import fmcli
     words = list(args.words or [])
@@ -217,6 +283,7 @@ def cmd_new(args):
     else:
         d = "."
     dest = os.path.abspath(os.path.join(d, TEMPLATES[name][1]))
+    fresh = name != "panel" and len(words) > 1 and not os.path.exists(d)  # T-1554: a new folder is born a project
     try:
         with open(source(name), encoding="utf-8") as f:
             text = f.read()
@@ -239,5 +306,11 @@ def cmd_new(args):
         raise fmcli.UsageError(f"can't write {dest}: {e.strerror or e}")
     then = (f"; then name its panel in a [layout] column of {os.path.join(c.foreman_home(), 'tui.toml')}"
             if name == "panel" else "")
-    fmcli.out(args, {"wrote": dest, "template": name}, f"Wrote {dest}.\nKeep it strict: fm new check {dest}{then}")
+    steps = born(os.path.dirname(dest), name) if fresh else []
+    green = bool(steps) and all(ok for _, ok in steps)
+    fmcli.out(args, {"wrote": dest, "template": name, "born": [{"step": s, "ok": ok} for s, ok in steps],
+                     "green": green},
+              f"Wrote {dest}.\nKeep it strict: fm new check {dest}{then}" + (
+                  "\nBorn proven: " + ", ".join(f"{'✓' if ok else '✗'} {s}" for s, ok in steps)
+                  + ("" if green else " (what failed is yours to finish; the file is in place)") if steps else ""))
     return 0
