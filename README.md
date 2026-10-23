@@ -19,7 +19,7 @@ Claude Code is fast. Left to itself it also fails in familiar ways: it edits bef
 | **Proves it** | Evidence is a command fm ran and recorded, not a sentence. A fix needs a test that failed first. A reply claiming the tests pass is checked against the turn's own runs. Nothing closes without its audits. |
 | **Guards bypass mode** | A fail-closed guard stops recursive deletes outside the project, force-pushes, credential reads, `curl \| sh`, publishes and edits to Foreman itself. Before a git command throws away uncommitted work, Foreman saves that work first. |
 | **Stays on task** | One active task. New requests go to the inbox instead of being chased. `NOW:` switches tasks on purpose. |
-| **Never loses its place** | State lives on disk, so after `/compact` or in a new session Claude resumes at the exact step. |
+| **Never loses its place** | State lives on disk, so after `/compact` or in a new session Claude resumes at the exact step. After a `/rewind` or a revert takes back a done step's files, that step reopens and its proof stops counting. |
 | **Keeps going** | Drive mode works through the whole queue. In full auto, Claude decides and records its decisions instead of asking. When the queue drains it finds its own next work (`fm scout`: a newer Claude Code to adopt, dependencies with no stack card, doctor failures, a weekly brainstorm), so you never have to ask. `fm run` and `fm serve` keep it working headless. |
 | **Learns** | Lessons, tripwires and a self-improvement loop turn your corrections and Foreman's own friction into fixes. |
 
@@ -358,7 +358,7 @@ Within limits. Ideas come from retros, your corrections and its own metrics, and
 ## Updating and removing
 
 - **Update:** `git pull` in `~/.claude/foreman` (then `/reload-plugins`), or rerun `install.sh`.
-- **Health check:** ask "is foreman ok?" (`fm doctor`). **Hygiene:** "clean up" (`fm tidy`).
+- **Health check:** ask "is foreman ok?" (`fm doctor`; it also names any line in your CLAUDE.md, rules or Claude Code's memory that contradicts Foreman's, such as "never run the tests", with a fix). **Hygiene:** "clean up" (`fm tidy`).
 - **Remove:** `~/.claude/foreman/plugin/uninstall.sh`. It uninstalls the plugin and marketplace and undoes the wiring. It keeps `state/` unless you pass `--purge-state`, and `--dry-run` previews.
 
 <details>

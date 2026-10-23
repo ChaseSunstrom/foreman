@@ -873,6 +873,62 @@ def instruction_files(plugin=PLUGIN):
                                 for x in glob.glob(os.path.join(plugin, d, "*.md"))]))
 
 
+# T-1267: (a line that says it, the Foreman rule it contradicts, how to settle it in a line). Each pattern wants the
+# whole clause ("never run the tests."), so "don't run tests in parallel" or "don't commit secrets" pass
+_END = r"\s*(?:[.;,!:)]|$)"
+CONFLICTS = (
+    (r"\b(?:never|don'?t|do not) run (?:the |any )?(?:unit |integration )?(?:tests?|test suite|suite)" + _END,
+     "a task closes only on a fresh passing run", "name the slow or paid tests to skip instead (fm gates)"),
+    (r"\bskip (?:running )?(?:the )?tests" + _END,
+     "a task closes only on a fresh passing run", "name the slow or paid tests to skip instead (fm gates)"),
+    (r"\b(?:never|don'?t|do not) (?:write|add) (?:any )?(?:unit )?tests?" + _END,
+     "a FIX starts with a failing test", "say where tests aren't wanted (scripts, prototypes)"),
+    (r"\bcommit (?:after|on) (?:every|each) (?:change|edit|file|step)" + _END,
+     "one commit per task, after the gates pass", "commit per task instead"),
+    (r"\b(?:never|don'?t|do not) (?:git )?commit(?: anything| changes| yourself| on your own)?" + _END,
+     "fm task finish --commit commits a task's own files", "close tasks with fm task done, or allow task commits"),
+    (r"\b(?:skip|don'?t|do not|never) (?:the )?plan(?:ning)?" + _END,
+     "no edits without a brief", "keep small work tier S: a brief of one line"),
+)
+
+
+def rule_files(root):
+    """T-1267: the files whose lines Claude takes as the user's rules: CLAUDE.md, CLAUDE.local.md and rules, the user's
+    and the project's, and Claude Code's memory for the project."""
+    claude = os.path.join(os.path.expanduser("~"), ".claude")
+    files = [os.path.join(claude, "CLAUDE.md"), os.path.join(claude, "CLAUDE.local.md")] + sorted(
+        glob.glob(os.path.join(claude, "rules", "*.md")))
+    if root:
+        files += [os.path.join(root, "CLAUDE.md"), os.path.join(root, "CLAUDE.local.md"),
+                  os.path.join(root, ".claude", "CLAUDE.md")] + sorted(glob.glob(os.path.join(root, ".claude", "rules",
+                                                                                              "*.md")))
+        files += sorted(glob.glob(os.path.join(claude, "projects", re.sub(r"[^A-Za-z0-9]", "-", root), "memory", "*.md")))
+    return files
+
+
+def check_rule_conflicts(paths, plugin=PLUGIN):
+    """T-1267: WARN with file:line, Foreman's rule and a fix for each line that contradicts Foreman's rules; Foreman's
+    own files, its block in CLAUDE.md, code fences and lines about Foreman itself are left alone."""
+    hits, home, mine = [], os.path.expanduser("~"), os.path.realpath(plugin) + os.sep
+    for path in dict.fromkeys(paths):
+        if os.path.realpath(path).startswith(mine):
+            continue
+        text = re.sub(r"<!-- foreman:begin -->.*?<!-- foreman:end -->", lambda m: "\n" * m.group(0).count("\n"),
+                      _read(path) or "", flags=re.S)
+        fence = False
+        for n, line in enumerate(text.split("\n"), 1):
+            if line.lstrip().startswith("```"):
+                fence = not fence
+            elif not fence and not re.search(r"\b(?:fm|foreman)\b", line, re.I):
+                rule = next(((r, fix) for pat, r, fix in CONFLICTS if re.search(pat, line, re.I)), None)
+                if rule:
+                    hits.append(f"{path.replace(home, '~', 1)}:{n} \"{c.fit(line.strip(), 70)}\" contradicts Foreman's "
+                                f"rule ({rule[0]}): {rule[1]}")
+    return Result("rule conflicts", "WARN" if hits else "PASS",
+                  ("; ".join(hits[:6]) + (f"; and {len(hits) - 6} more" if len(hits) > 6 else "")) if hits else
+                  "no line in CLAUDE.md, rules or memory contradicts Foreman's")
+
+
 def check_invisible_text(paths):
     """WARN with file:line for each line of an instruction file holding invisible characters."""
     hits = []
@@ -1944,7 +2000,7 @@ def run_all(full=False, accept_supply=False):
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_lock_probe(c.state_dir()), check_disk(), check_env(settings, manifest),
                check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
                check_supply(claude, accept_supply), check_worktree_base(settings), check_fm_link(),
-               check_invisible_text(instruction_files())]
+               check_invisible_text(instruction_files()), check_rule_conflicts(rule_files(c.git_root(os.getcwd())))]
     try:
         if os.environ.get("FOREMAN_DOCTOR_BENCH") == "0":  # T-1379: the tests' fm doctor runs, which read no timings
             raise _NoBench

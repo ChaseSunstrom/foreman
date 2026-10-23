@@ -775,3 +775,29 @@ class Headless(unittest.TestCase):
         self.assertEqual(r.status, "PASS")
         self.assertIn("cannot load libnss3", r.detail)
         self.assertNotIn("first", r.detail)
+
+
+class RuleConflicts(ForemanTestCase):  # T-1267
+    def test_a_line_that_contradicts_foreman_is_named_with_its_rule_and_a_fix(self):
+        with open(os.path.join(self.repo, "CLAUDE.md"), "w") as f:
+            f.write("# app\n\nUse tabs.\nNever run the tests.\nDon't commit secrets.\nDon't run tests in parallel.\n"
+                    "<!-- foreman:begin -->\nnever run the tests.\n<!-- foreman:end -->\n```\nnever run the tests.\n```\n")
+        mem = os.path.join(self.tmp, ".claude", "projects", re.sub(r"[^A-Za-z0-9]", "-", self.repo), "memory")
+        os.makedirs(mem)
+        with open(os.path.join(mem, "feedback.md"), "w") as f:
+            f.write("---\nname: tests\n---\nDon't write tests.\n")
+        self.fm("init")
+        rs = {r["name"]: r for r in json.loads(self.fm("doctor", "--json", check=False, env={"HOME": self.tmp}).stdout)
+              ["results"]}
+        r = rs["rule conflicts"]
+        self.assertEqual(r["status"], "WARN", r)
+        self.assertIn("CLAUDE.md:4", r["detail"])
+        self.assertIn("fresh passing run", r["detail"])
+        self.assertIn("feedback.md:4", r["detail"])
+        self.assertIn("failing test", r["detail"])
+        self.assertEqual(r["detail"].count("contradicts"), 2, "secrets, parallel runs, Foreman's block and fences pass")
+        os.remove(os.path.join(self.repo, "CLAUDE.md"))
+        shutil.rmtree(mem)
+        rs = {r["name"]: r for r in json.loads(self.fm("doctor", "--json", check=False, env={"HOME": self.tmp}).stdout)
+              ["results"]}
+        self.assertEqual(rs["rule conflicts"]["status"], "PASS")
