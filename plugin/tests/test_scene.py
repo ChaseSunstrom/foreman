@@ -294,6 +294,7 @@ class Component(ForemanTestCase):
 class Schema(ForemanTestCase):
     def test_the_schema_states_what_a_second_renderer_must_not_guess(self):
         for fact in ("Rx * Ry * Rz", "T * R * S", "up is +Y", "looks down -Z", "negates view-space z",
+                     "and reverses each triangle's winding",  # T-1693: or three's front faces are culled
                      "max(2, segments >> 1)", "decay 2", "smooth normals in three.js, flat"):
             self.assertIn(fact, " ".join(fmscene.SCHEMA.split()))
 

@@ -33,6 +33,8 @@ What a second renderer must not guess (three.js's conventions; world space is ri
   transform   a mesh's model matrix is T * R * S: scale, then rotate, then move
   camera      its up is +Y and it looks down -Z of its own frame, toward target (one straight above or below is
               refused); a renderer whose view space looks along +z, as fmraster's does, negates view-space z
+              and reverses each triangle's winding (the mirror keeps the screen winding, so three's front
+              faces would be culled)
   sphere      width segments are segments, height segments max(2, segments >> 1)
   point       a point light falls off as intensity / distance^2: decay 2, no cutoff distance
   vertices    smooth normals in three.js, flat per face in the rasteriser (three sums the faces' normals at
