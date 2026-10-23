@@ -87,7 +87,8 @@ keeps or reverts one, run `fm looks keep` or `fm looks revert` yourself (step 5 
      (colour), audacity bold.`
    - Knobs: the card widened to the template's detail; every colour with its role, and the measured contrast of each
      text and background pair.
-   - Signature moves: as many as the audacity row allows (safe 1, bold 2, wild 3), the card's first.
+   - Signature moves: as many as the audacity row allows (safe 1, bold 2, wild 3), the card's first. A look that
+     calls for sound takes it from `references/sonic.md` (off by default, never the only signal).
    - Banned: the anti-reference, the generic default the set came closest to, and each "Defaults to avoid" line that
      applies.
    Check it, and record the check as the step's evidence (`fm task evidence <ID> --step N --run "<cmd>"`):

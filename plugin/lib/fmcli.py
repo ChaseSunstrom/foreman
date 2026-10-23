@@ -5351,6 +5351,12 @@ def _build_parser():
     s.add_argument("--stroke", type=float, help="icons, empty: the stroke width in grid units (default 2)")
     s.add_argument("--subset", metavar="FONT", help="fonts: a subset of this font file for self-hosting (fontTools)")
     s.add_argument("--text", help="fonts --subset: the characters to keep")
+    s = add("extras", lazy("fmextras", "cmd_extras"), tier=("Every task", 166), help="playful extras from an fm code "
+            "run: a printable zine, a vase to 3D-print, a cursor for demos (T-1556)")
+    s.add_argument("words", nargs="*", metavar="zine|vase|cursor X,Y X,Y …")
+    s.add_argument("--events", metavar="FILE", help="zine, vase: the run (fm code … --json > FILE records one); "
+                   "default: the sample run")
+    s.add_argument("--out", help="the file to write (default zine.svg, vase.stl, cursor.svg)")
     s = add("new", lazy("fmnew", "cmd_new"), tier=("Finding your way", 385), help="strict-by-default templates: a web "
             "page, a 3D scene, an fm code panel (list; NAME [DIR] copies one; check PATH holds a copy to its rules)")
     s.add_argument("words", nargs="*", metavar="list|NAME [DIR]|check PATH", help="web, scene or panel; a panel lands "

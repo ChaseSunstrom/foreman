@@ -103,7 +103,7 @@ DEFAULTS = {
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
              "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
              "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search", "g": "queue", "T": "tickets",
-             "u": "undo", "P": "pr", "F": "photo"},
+             "u": "undo", "P": "pr", "F": "photo", "B": "breakout"},
     "ext": {},  # T-1657: each extension's settings ({name: {key: value}}), its declared defaults (API.setting)
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
@@ -643,6 +643,11 @@ def ease_out(k):
 
 
 LIVE = ("planning", "running", "fixing")
+
+
+def checks_running(st):
+    """The run's checks are going: from their first result to the run's end (a rule's verify event, Breakout)."""
+    return "checks" in st.marks and st.status in LIVE
 VIEW_FADE = 0.25  # T-1307: seconds a view takes to fade in
 SCRUB_KEYS = ("KEY_LEFT", "KEY_RIGHT", "KEY_HOME", "KEY_END")  # T-1307: a replay's steps (fixed: not in tui.toml)
 CIRCLED = "①②③④⑤⑥⑦⑧⑨"  # T-1350: the rail's ticket numbers
@@ -1382,6 +1387,7 @@ COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume"
                   ("undo", "undo the closed run: a git revert of its commit"),
                   ("pr", "the closed run's pull request text; Enter posts it"),
                   ("photo", "photo booth: this frame as SVG and PNG"),
+                  ("breakout", "Breakout, while the checks run"),
                   ("thoughts", "the model's own words"), ("focus", "next panel"), ("up", "up"), ("down", "down"),
                   ("expand", "open a line"), ("follow", "follow the latest"), ("search", "search the Activity"),
                   ("help", "keys"), ("quit", "quit")]
@@ -1895,7 +1901,19 @@ def _runners_foot(app, iw):
     return [[("─" * iw, "border")]] + [[(x, style)] for x in (wrap(note, iw) + [""])[:2]]
 
 
-VIEWS = {"help": _help_view, "diff": _diff_view, "history": _list_view("Past runs", "Enter opens one", _history_row),
+def _breakout_view(cv, st, app, cfg):
+    """T-1556: Breakout over the screen while the checks run, stepped to the app's clock."""
+    g = app.game
+    g.step(min(0.5, max(0.0, _FX.t - app.game_t)))
+    app.game_t = _FX.t
+    end = " · you cleared it" if not g.bricks else " · out of balls" if g.over else ""
+    iy, ix, ih, iw = _overlay(cv, cfg, "Breakout", f"←/→ move · Esc closes · {g.score} · {'♥' * g.lives}{end}",
+                              g.w + 26, g.h + 4)  # wide enough for the title and its keys
+    for r, line in enumerate(g.lines()[:ih]):
+        cv.put(iy + r, ix + max(0, (iw - g.w) // 2), line[:iw], "text")
+
+
+VIEWS = {"breakout": _breakout_view, "help": _help_view, "diff": _diff_view, "history": _list_view("Past runs", "Enter opens one", _history_row),
          "picker": _list_view("Run the next request with", "Enter picks", _picker_row),
          "home": lambda cv, st, app, cfg: _deck_view(cv, st, app, cfg),  # T-1345: cards, not rows
          "tickets": _list_view("Tickets", "space picks up / puts down · ↑↓ move · Delete drops · Esc back", _ticket_row,
@@ -2116,6 +2134,7 @@ class App:
         self.motion, self.clock = Motion(), time.monotonic  # T-1300: what moves, and the time it moves by
         self.confirm_key = None  # T-1348: (command, until) after a first q or s during a live run
         self.bell_seen = (0, False)  # T-1310: refusals counted and whether blocked, as of the last bell check
+        self.game, self.game_t = None, 0.0  # T-1556: Breakout and the clock it was last stepped to
         self.glyphs = {}  # T-1512: the columns the terminal draws each PROBE glyph in (none measured: none assumed)
         # T-1572: the settings screen: every setting, its search, changed-only, the :set line and what it last did
         self.set_rows, self.set_problems, self.set_query, self.set_line = [], [], "", ""
@@ -2135,7 +2154,7 @@ class App:
                          "thoughts": self.toggle_thoughts, "projects": self.show_home,
                          "settings": self.show_settings, "hush": self.hush, "looks": self.show_looks,
                          "queue": self.work_queue, "tickets": self.show_tickets, "undo": self.undo,
-                         "pr": self.draft_pr, "photo": self.take_photo}
+                         "pr": self.draft_pr, "photo": self.take_photo, "breakout": self.open_breakout}
         self.size = None  # T-1546: the screen's size as last drawn, for the photo booth
         self.commands.update({name: self._ext_command(name, fn) for name, fn in EXT_COMMANDS.items()})
 
@@ -2143,6 +2162,8 @@ class App:
         """How often to draw: 30 while something eases or flashes, 12 while live work spins and pulses, 1 when the
         screen is still (4 with motion off and a run going, for its clock)."""
         mode = self.cfg.get("motion", "full")
+        if self.mode == "breakout":  # T-1556: a game moves every frame, whatever the motion setting
+            return 30
         if mode == "full" and self.grow and 0 <= t - self.grow[1] < GROW:  # T-1345: the project view growing
             return 30
         live = self.running() or self.state.status in ("planning", "running", "fixing")
@@ -2198,6 +2219,10 @@ class App:
             return self._runners_key(k)
         if self.mode == "looks":
             return self._looks_key(k)
+        if self.mode == "breakout":  # T-1556: the game plays its own keys; any other closes it and does its usual thing
+            if self._game_key(k):
+                return None
+            self.mode = "main"
         if self.cfg["keys"].get(k) == "hush":  # T-1512: the run, its views, home and the keys poster (which it
             return self.hush()  # closes); the prompt and the settings list (above) keep their own keys
         if self.mode == "help":
@@ -2230,6 +2255,29 @@ class App:
         if fn:
             self.used.add(cmd)
         return fn() if fn else None
+
+    def open_breakout(self):
+        """B (T-1556): Breakout over the screen while the run's checks run; it closes when they stop."""
+        if not checks_running(self.state):
+            self.message = "Breakout opens while a run's checks run"
+            return None
+        import fmextras
+        if self.game is None or self.game.over:
+            self.game = fmextras.Breakout()
+        self.game_t, self.mode = self.clock(), "breakout"
+        return None
+
+    def _game_key(self, k):
+        """A key Breakout plays (←/→ or h/l move, Esc or B closes): True; any other is the app's."""
+        if k in ("KEY_LEFT", "h"):
+            self.game.move(-2)
+        elif k in ("KEY_RIGHT", "l"):
+            self.game.move(2)
+        elif k == "\x1b" or self.cfg["keys"].get(k) == "breakout":
+            self.mode = "main"
+        else:
+            return False
+        return True
 
     def _list_cmd(self, k):
         """What a key runs in a list: LIST_KEYS first, then tui.toml's binding."""
@@ -3595,6 +3643,9 @@ class App:
             got = self._tour_tick() or got
         if self.runner_done:  # T-1511: a runner test's result came in
             got, self.runner_done = True, False
+        if self.mode == "breakout" and not checks_running(self.state):  # T-1556: the checks stopped, so does the game
+            got, self.mode = True, "main"
+            self.message = f"the checks stopped: Breakout closed at {self.game.score} brick(s)"
         while True:
             try:
                 self.feed(self.events.get_nowait())
@@ -3935,8 +3986,7 @@ def load_config(path=None, env=None, profile=True):
 # T-1657: what a [[rule]]'s when clause can name: the run's events, each judged from the State the app already has
 RULE_EVENTS = {
     "running": (lambda st: st.status in LIVE, "a run going"),
-    "verify": (lambda st: "checks" in st.marks and st.status in LIVE, "the checks running: from the first result to "
-                                                                      "the run's end"),
+    "verify": (checks_running, "the checks running: from the first result to the run's end"),
     "failing": (lambda st: st.status in ("blocked", "error", "stopped") or st.status != "closed" and any(
         c["state"] == "fail" and not c.get("first") for c in st.criteria), "a check failing, or the run stopped"),
     "closed": (lambda st: st.status == "closed", "the run closed"),
