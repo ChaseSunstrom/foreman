@@ -17,4 +17,4 @@ strict-by-default template: `fm new list`, then `fm new web|scene|panel [DIR]`, 
 - `references/ui/sound-design.md` — UI sound: off by default, earcons as one family, peak and repeat caps, a visual twin for every cue, a self-checked sound_check.py.
 - `references/ui/visual-qa.md` — Prove UI by looking: a seeded frame matrix (360/768/1440, light/dark, reduced motion), a receipt.
 - `references/ui/templates/scene.html` — A one-file WebGL2 scene that passes every survival clause.
-- `references/ui/terminal-ui.md` — Building UI in a terminal or a Claude Code mod: hierarchy, motion only for live work, color roles…
+- `references/ui/terminal-ui.md` — Building UI in a terminal, a Claude Code mod or a CLI: hierarchy and colour roles, display width and wide glyphs, resize, bracketed paste, the motion budget, the terminal's lifecycle, CLI product design

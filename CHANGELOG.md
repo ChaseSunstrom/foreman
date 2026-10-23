@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- The terminal UI playbook grows from eight rules to 31 a reviewer can mark: colour depth, display width and wide glyphs, resize, bracketed paste, a motion budget, the terminal's lifecycle and CLI product design, with Foreman's own terminal code as the worked example (T-1515)
+- fm code slot integrity: an edit or write that elides code ('# ... rest unchanged', '// … existing code') is refused and re-asked unless the file already says it; an edit whose old text misses only by whitespace is applied where that match is unique and refused as ambiguous otherwise; a fix round names up to five file:line places from the failing check's output (T-1398; the one-field-per-question ladder is T-1765)
 - fm task finish no longer captures a 'Catch it earlier' follow-up when the why-not-caught says the work was new ('new …', 'n/a'), as it already didn't for 'none'; three such items were noise (T-1763)
 - fm code delight: a project's first closed run says so once (first proved change in <project>, with two brighter, wider close waves in the app), and picking a runner in the app says hello with its newest run's end and age (T-1349)
 - fm code: a run's edit leases now end with it whether a model or a worker did the work; a model run's leases held the code for 20 more minutes, so the next run on the same function was refused (T-1764)
