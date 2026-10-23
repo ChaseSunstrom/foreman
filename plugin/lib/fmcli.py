@@ -113,6 +113,11 @@ def cmd_init(args):
 
 def cmd_state(args):
     p = resolve(args, create=not args.line)  # T-0962: a status bar polling --line never creates a project
+    if not args.line:  # T-1267: a /rewind or a revert took back a done step's files: reopen it
+        with c.lock(p.dir):
+            hit = c.reconcile_rewind(p, getattr(p, "lane", None))
+        if hit and not args.json:
+            print(c.rewind_note(hit) + "\n")
     sd = c.state_dict(p)
     if args.cmd == "status" and not (args.line or args.json) and not c.load_briefs(p):  # T-0847: nothing yet
         return print(f"{p.slug}: no tasks yet. Start with fm capture \"<request>\" or fm task new \"<title>\" --type FIX "
