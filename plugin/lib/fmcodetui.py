@@ -102,7 +102,7 @@ DEFAULTS = {
     "keys": {"q": "quit", "n": "new", "s": "stop", "r": "resume", "?": "help", "d": "diff", "h": "history",
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
              "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
-             "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search"},
+             "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search", "g": "queue"},
     "ext": {},  # T-1657: each extension's settings ({name: {key: value}}), its declared defaults (API.setting)
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
@@ -1289,6 +1289,7 @@ COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume"
                   ("model", "model or worker"), ("settings", "settings: look, layout, keys"),
                   ("looks", "your taste: 12 looks in pairs"),
                   ("hush", "motion: full, reduced, off"),
+                  ("queue", "work the queue: each task in turn"),
                   ("thoughts", "the model's own words"), ("focus", "next panel"), ("up", "up"), ("down", "down"),
                   ("expand", "open a line"), ("follow", "follow the latest"), ("search", "search the Activity"),
                   ("help", "keys"), ("quit", "quit")]
@@ -1900,7 +1901,7 @@ PANEL_HINTS = {"log": "/ search  ↵ open  t thoughts", "files": "d the diff", "
 
 class App:
     def __init__(self, cfg, spawn=None, root=None, opts=None, diff=None, history=None, choices=None, projects=None,
-                 project_state=None, used=None, place=None, noticed=None, asker=None):
+                 project_state=None, used=None, place=None, noticed=None, asker=None, queued=None):
         self.line, self.search, self.search_draft, self.files = LineEditor(), "", "", None  # T-1346, T-1313
         self.cfg, self.state = cfg, State()
         self.mode, self.input, self.message, self.done = "main", "", "", False
@@ -1920,6 +1921,7 @@ class App:
             self.message = self._tip()
         self.spawn = spawn or self._spawn
         self.asker, self.asking, self.side = asker or self._ask_side, False, []  # T-1770: questions beside a run
+        self.queued, self.queue_run, self.last_key = queued or self._queued, None, time.monotonic()  # T-1779
         self.root, self.opts = root or os.getcwd(), dict(opts or {})
         self.diff_source, self.history_dir = diff or self._git_diff, history
         self.choices_source = choices or self._choices
@@ -1954,7 +1956,8 @@ class App:
                          "page_down": lambda: self.move(10), "expand": self.expand, "follow": self.follow_tail,
                          "diff": self.show_diff, "history": self.show_history, "model": self.show_picker,
                          "thoughts": self.toggle_thoughts, "projects": self.show_home,
-                         "settings": self.show_settings, "hush": self.hush, "looks": self.show_looks}
+                         "settings": self.show_settings, "hush": self.hush, "looks": self.show_looks,
+                         "queue": self.work_queue}
         self.commands.update({name: self._ext_command(name, fn) for name, fn in EXT_COMMANDS.items()})
 
     def fps(self, t):
@@ -1986,6 +1989,7 @@ class App:
 
     # -- keys
     def key(self, k):
+        self.last_key = time.monotonic()  # T-1779: a digest says "while you were away" only when you were
         self._settings_expire()
         if self.set_pending:  # T-1573: any key, a paste too, keeps a previewed look, and does only that
             return self._settings_keep()
@@ -3086,6 +3090,66 @@ class App:
         except ValueError as x:
             self.state.status, self.state.error = "error", str(x)
             self.state.note("error", text=str(x))
+        if self.queue_run is not None and isinstance(e, dict) and e.get("event") == "exit":
+            self._queue_after()  # T-1779
+
+    # -- the queue (T-1779)
+    QUEUE_BLOCKS = 2  # blocked tasks in a row that stop it: the queue isn't working, not one task
+
+    def work_queue(self):
+        """T-1779: g works the project's queue here, one fm code --task run after another, until it is empty, two
+        tasks in a row block, or s stops it; then a digest of the stretch lands in Activity."""
+        if self.running():
+            self.message = "a run is going: g works the queue once it ends"
+            return
+        self.queue_run = {"closed": [], "blocked": [], "streak": 0, "since": time.monotonic(), "task": None}
+        self._queue_next()
+
+    def _queued(self):
+        """The next task the project's queue holds (fm queue's order), or None."""
+        try:
+            p = subprocess.run([sys.executable, FM, "queue", "--json"], cwd=self.root, capture_output=True, text=True,
+                               timeout=30)
+            order = json.loads(p.stdout).get("order") if p.returncode == 0 else None
+        except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+            return None
+        return next((str(b["id"]) for b in order or [] if isinstance(b, dict) and b.get("id")), None)
+
+    def _queue_next(self):
+        q = self.queue_run
+        tid = self.queued()
+        if tid is None or tid == q["task"]:  # empty, or the one that just ran is still first: it made no move
+            return self._queue_end("the queue is empty" if tid is None else f"{tid} is still first after its run")
+        q["task"] = tid
+        self.start([], task=tid)
+        self.state.note("note", text=f"working the queue: {tid} ({len(q['closed'])} closed so far; s stops it)")
+
+    def _queue_after(self):
+        q, st = self.queue_run, self.state
+        tid = q["task"] or st.task
+        if st.status == "closed":
+            q["closed"].append(tid)
+            q["streak"] = 0
+        elif st.status == "blocked":
+            q["blocked"].append(f"{tid}: {_printable_line(st.error, 120) or 'blocked'}")
+            q["streak"] += 1
+            if q["streak"] >= self.QUEUE_BLOCKS:
+                return self._queue_end(f"{q['streak']} tasks in a row blocked")
+        else:  # stopped (s), an error, a crash: the queue stops with it
+            return self._queue_end(f"{tid} {st.status or 'ended'}")
+        self._queue_next()
+
+    def _queue_end(self, why):
+        q, self.queue_run = self.queue_run, None
+        mins = max(1, round((time.monotonic() - q["since"]) / 60))
+        away = time.monotonic() - self.last_key >= 300
+        head = "While you were away" if away else "The queue run"
+        text = (f"{head} ({mins} min): {len(q['closed'])} closed" + (f" ({', '.join(q['closed'])})" if q["closed"] else "")
+                + f", {len(q['blocked'])} blocked; stopped: {why}")
+        self.state.note("note", text=text)
+        for b in q["blocked"]:
+            self.state.note("note", text=f"  blocked {b}")
+        self.message = text
 
     def poll(self):
         """Take the events that arrived, and put back a previewed look not kept in time; whether any did (so the
