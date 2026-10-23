@@ -19,7 +19,11 @@ screen: the changes from the last good copy tried in halves, each on a temporary
 
 T-1656: profiles. [profile.NAME] tables in tui.toml, each a when clause on the terminal (WHEN, matched against facts())
 and settings; load_config applies the first one the terminal meets after the file's own, through the same checks (a
-profile's theme or palette starts the colours afresh, as the file's own does). fm settings profile lists them."""
+profile's theme or palette starts the colours afresh, as the file's own does). fm settings profile lists them.
+
+T-1657: [[rule]] tables (fmcodetui.rule_list) switch the app's layout or a panel while the run's events hold; they are
+no setting here (never dead, never in a share code). An extension's declared settings (fmcodetui.API.setting) are app
+settings in their own group, ext.NAME.key, in tui.toml's [ext.NAME]: listed, checked and set as the rest."""
 import base64
 import contextlib
 import json
@@ -104,7 +108,7 @@ def app_schema():
     for k, cmd in D["keys"].items():
         seen.setdefault(T.key_name(k), cmd)
     out += [_key_entry(name, cmd) for name, cmd in seen.items()]
-    return out
+    return out + [e for mine in T.EXT_SETTINGS.values() for e in mine.values()]  # T-1657: each in its group
 
 
 def _key_entry(name, default):
@@ -161,6 +165,11 @@ def find(key, surface=None):
 def _check(e, value):
     """The value the entry takes for `value` (a typed word from the command line, or a value), or SettingError."""
     bad = lambda why: SettingError(f"{e['key']} = {value!r}: {why}")
+    if e["type"] == "bool":  # T-1657: an extension's
+        v = {"true": True, "false": False}.get(value.lower()) if isinstance(value, str) else value
+        if not isinstance(v, bool):
+            raise bad("true or false")
+        return v
     if e["type"] == "choice":
         v = value if value in (e["choices"] or ()) else e["aliases"].get(value) if isinstance(value, str) else None
         if v is None:
@@ -188,6 +197,14 @@ def _check(e, value):
         except RecursionError:  # nested past the parser's depth: no setting is
             raise bad("nested too deep") from None
     return value
+
+
+def ext_value(e, value):
+    """T-1657: the value an extension's setting `e` takes for `value` (tui.toml's, or its declared default): as _check
+    takes a typed word, text only as text."""
+    if e["type"] == "string" and not isinstance(value, str):
+        raise SettingError(f"{e['key']} = {value!r}: text")
+    return _check(e, value)
 
 
 # ---------------------------------------------------------------- tui.toml in place
@@ -285,7 +302,7 @@ def edit_toml(text, table, key, value, same=None):
                 lines, cr = [], []
             elif lines[-1]:
                 lines, cr = lines + [""], cr[:-1] + [eol, cr[-1]]  # the last line had no line break
-            add = ([""] if table and lines else []) + ([f"[{T._toml_key(table)}]"] if table else []) + [line]
+            add = ([""] if table and lines else []) + ([f"[{_head(table)}]"] if table else []) + [line]
             at = len(lines) - 1 if lines else 0
             lines[at:at], cr[at:at] = add, [eol] * len(add)
             if not lines or lines[-1]:
@@ -294,7 +311,17 @@ def edit_toml(text, table, key, value, same=None):
 
 
 def _split(key):
+    """(table, name) of a setting: ext.NAME.key is in the table ext.NAME (T-1657); anything else splits at its first
+    dot."""
+    if key.startswith("ext.") and key.count(".") >= 2:
+        return tuple(key.rsplit(".", 1))
     return tuple(key.split(".", 1)) if "." in key else (None, key)
+
+
+def _head(table):
+    """A table's [header]: ext.NAME dotted (NAME is bare, fmcodetui._bare), any other name as one key."""
+    import fmcodetui as T
+    return ".".join(map(T._toml_key, table.split(".", 1))) if table.startswith("ext.") else T._toml_key(table)
 
 
 def app_path():
@@ -417,8 +444,9 @@ def _plan_app(key, value, path, table, name, text=None):
         raise SettingError(f"{path} isn't valid TOML: fix it first (fm code tui names the line)")
     same =(lambda a, b: T.parse_key(a) == T.parse_key(b)) if table == "keys" else None
     new = edit_toml(text, table, name, value, same)
-    got = _parses(new)
-    placed = (got or {}).get(table, {}) if table else got
+    got = placed = _parses(new)
+    for part in (table.split(".", 1) if table.startswith("ext.") else [table]) if table else []:  # [ext.NAME] nests
+        placed = placed.get(part, {}) if isinstance(placed, dict) else None
     hits = [v for k, v in placed.items() if (same or (lambda a, b: a == b))(k, name)] \
         if got is not None and isinstance(placed, dict) else None
     if hits is None or (hits if value is None else value not in hits):
@@ -449,9 +477,11 @@ def _plan_app(key, value, path, table, name, text=None):
 def render_error(cfg):
     """Why the fm code app can't draw with `cfg` (wide and narrow: both layouts), or None."""
     import fmcodetui as T
-    try:
-        for w, h in ((100, 30), (60, 20)):
-            T.render(T.State(), w, h, cfg)
+    try:  # T-1657: and each rule's layout, which no state at start shows
+        for lay in [cfg.get("layout") or T.DEFAULTS["layout"]] + [T.switched(cfg["layout"], r) for r in
+                                                                 cfg.get("rules") or ()]:
+            for w, h in ((100, 30), (60, 20)):
+                T.render(T.State(), w, h, dict(cfg, layout=lay, rules=()))
     except Exception as e:
         return f"{type(e).__name__}: {e}"
     return None
@@ -660,7 +690,10 @@ def written(problems=None):
         problems.append(("app", f"can't read {path}: {e}"))
         raw = {}
     for k, v in raw.items():
-        if k == "profile":  # T-1656: not a setting; fm settings profile lists them
+        if k in ("profile", "rule"):  # T-1656, T-1657: not settings; fm settings profile lists the profiles
+            continue
+        if k == "ext" and isinstance(v, dict):  # T-1657: ext.NAME.key, by the schema its extension declared
+            found += [("app", n, x) for n, x in _flatten({k: v}).items()]
             continue
         table = k in ("colors", "layout", "keys") and isinstance(v, dict)
         found += [("app", _norm(f"{k}.{n}"), x) for n, x in v.items()] if table else [("app", k, v)]
@@ -968,7 +1001,10 @@ def _flat(text):
 def _flatten(table):
     out = {}
     for k, v in table.items():
-        if isinstance(v, dict):
+        if k == "ext" and isinstance(v, dict):  # T-1657: two levels, ext.NAME.key
+            for n, mine in v.items():
+                out.update({f"ext.{n}.{x}": y for x, y in mine.items()} if isinstance(mine, dict) else {f"ext.{n}": mine})
+        elif isinstance(v, dict):
             out.update({_norm(f"{k}.{n}"): x for n, x in v.items()})
         else:
             out[k] = v
@@ -1022,7 +1058,7 @@ def _build(good, bad, keys):
     lines = [f"{T._toml_key(k)} = {T._toml(v)}" for k, v in nest.items() if not isinstance(v, dict)]
     for k, v in nest.items():
         if isinstance(v, dict):
-            lines += [f"[{T._toml_key(k)}]"] + [f"{T._toml_key(n)} = {T._toml(x)}" for n, x in v.items()]
+            lines += [f"[{_head(k)}]"] + [f"{T._toml_key(n)} = {T._toml(x)}" for n, x in v.items()]
     return "\n".join(lines) + "\n"
 
 
@@ -1236,6 +1272,8 @@ def rows(entries=None, problems=None):
             return cfg["layout"].get(name)
         if table == "keys":
             return cfg["keys"].get((T.parse_key(name) or [None])[0], "none")
+        if table and table.startswith("ext."):  # T-1657
+            return (cfg.get("ext") or {}).get(table[4:], {}).get(name, e["default"])
         return cfg["preset"] if name == "theme" else cfg.get(name)
 
     on = cfg.get("profile") or {}  # T-1656: the value a profile gives this terminal, said as the profile's
@@ -1249,6 +1287,10 @@ def skip_note(x, path=None):
     the file's own; a profile's value skipped leaves the value without it; a profile passed over says so itself."""
     path = path or app_path()
     msg = x[len(path) + 2:] if x.startswith(f"{path}: ") else x
+    if msg.startswith("extension") or msg.startswith("rule") and x.endswith("passed over"):  # T-1657: said itself
+        return ""
+    if msg.startswith("rule"):  # a rule's bad key: the rest of it switches
+        return " (skipped: the rest of the rule applies)"
     if not msg.startswith("profile"):
         return " (skipped: the default shows)"
     return "" if x.endswith("passed over") else " (skipped: the value without the profile shows)"
@@ -1262,11 +1304,22 @@ def _text(r, width=22):
     return f"{r['key']:<{width}} {show(r['value'])}{note}"
 
 
+def extensions():
+    """T-1657: the fm code app's extensions (Foreman's home tui/*.py, as the app runs them) loaded into this process
+    once, for the settings they declare: [why each that failed did]. The app has loaded them already: none run twice."""
+    import fmcodetui as T
+    if T.extensions_dir() in T.EXT_LOADED:
+        return []
+    with contextlib.redirect_stdout(sys.stderr):  # what one prints never lands in fm settings --json
+        return T.load_extensions()
+
+
 def cmd_settings(args):
     import fmcli
     import fmcodetui as T
+    ext = extensions()
     if args.action == "list":  # T-1511: fm settings list keys (or layout, …): that group alone
-        problems, groups = [], list(dict.fromkeys(e["group"] for e in schema()))
+        problems, groups = [("app", f"extension {x}") for x in ext], list(dict.fromkeys(e["group"] for e in schema()))
         if args.key and args.key not in groups:
             raise fmcli.UsageError(f"fm settings list [{' | '.join(groups)}]: {_safe(args.key)!r} isn't one")
         got = [r for r in rows(problems=problems) if args.key in (None, r["group"])]

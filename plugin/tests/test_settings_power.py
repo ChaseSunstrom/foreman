@@ -1,7 +1,11 @@
 """T-1656: settings profiles. tui.toml's [profile.NAME] tables each hold a when clause on terminal facts (an ssh
 session, inside tmux, TERM, the width, the colour depth) and settings; the fm code app applies the first one it meets
 over the file's own settings, each value through the same checks, read through the same bounded reader. fm settings
-profile lists them and names the one that applies here."""
+profile lists them and names the one that applies here.
+
+T-1657: rules. tui.toml's [[rule]] tables each hold a when clause on the run's events (verify, failing, running,
+closed) and a layout or panel swap the app draws while it holds; an extension declares its settings (api.setting) and
+they list, check and set as the app's own, under [ext.NAME]."""
 import contextlib
 import io
 import json
@@ -36,7 +40,8 @@ BARE = {"TERM": "xterm", "COLUMNS": "120", "TMUX": "", "SSH_CONNECTION": "", "SS
         "COLORTERM": "", "NO_COLOR": ""}
 
 
-class Profile(ForemanTestCase):
+class _Tui(ForemanTestCase):
+    """A tui.toml in a fresh Foreman home, on a bare terminal, outside Claude Code."""
     def setUp(self):
         super().setUp()
         self.toml = os.path.join(self.home, "tui.toml")
@@ -69,6 +74,8 @@ class Profile(ForemanTestCase):
                                                           json=False, project=None))
         return out.getvalue()
 
+
+class Profile(_Tui):
     def test_the_first_profile_the_terminal_meets_applies_over_the_file(self):
         self.write(PROFILES)
         cfg, errors = self.load()
@@ -233,3 +240,202 @@ class Profile(ForemanTestCase):
 
     def test_export_says_profiles_arent_carried(self):
         self.assertIn("[profile] tables aren't in it", " ".join(self.fm("settings", "--help").stdout.split()))
+
+
+RUN = [{"event": "start", "schema": 1, "request": "fix it", "task": "T-1"},
+       {"event": "plan", "plan": {"title": "fix it", "criteria": [{"text": "tests pass", "verify": "make test"}],
+                                  "steps": ["edit"]}},
+       {"event": "task", "task": "T-1"}, {"event": "step", "step": 1}]
+PASSED = {"event": "verify", "criterion": 1, "label": "verify", "cmd": "make test", "exit": 0}
+FAILED = dict(PASSED, exit=1, output="1 failed")
+CLOSED = {"event": "closed", "task": "T-1", "text": "closed T-1 abc1234"}
+RULES = '''[[rule]]
+when = { verify = true }
+layout = { columns = [["verify"], ["checks"]], widths = [60, 40] }
+'''
+DEMO = '''def setup(api):
+    api.setting("refresh", "int", 5, "seconds between polls", range=(1, 60))
+    api.setting("mode", "choice", "fast", "how it polls", choices=("fast", "slow"))
+'''
+
+
+class Rules(_Tui):
+    def setUp(self):
+        super().setUp()
+        saved = (dict(T.EXT_SETTINGS), dict(T.DEFAULTS["ext"]), set(T.EXT_LOADED))
+
+        def put_back():
+            for live, was in zip((T.EXT_SETTINGS, T.DEFAULTS["ext"], T.EXT_LOADED), saved):
+                live.clear()
+                live.update(was)
+        self.addCleanup(put_back)
+
+    def app(self, cfg):
+        app = T.App(cfg, spawn=lambda *a, **k: None)
+        for e in RUN:
+            app.feed(e)
+        return app
+
+    def shown(self, app):
+        return T.render(app.state, 120, 34, app.cfg, app).text()
+
+    def demo(self):
+        api = T.API("demo")
+        api.setting("refresh", "int", 5, "seconds between polls", range=(1, 60))
+        api.setting("mode", "choice", "fast", "how it polls", choices=("fast", "slow"))
+        api.setting("loud", "bool", False, "a bell when a check fails")
+
+    def test_a_rule_switches_the_layout_while_verify_runs_and_back_after(self):
+        self.write(RULES)
+        cfg, errors = self.load()
+        self.assertEqual(errors, [])
+        app = self.app(cfg)
+        self.assertNotIn("Check output", self.shown(app), "no check yet: the file's own layout")
+        app.feed(PASSED)
+        self.assertIn("Check output", self.shown(app), "the checks running: the rule's layout")
+        self.assertNotIn("Activity", self.shown(app))
+        app.feed(CLOSED)
+        self.assertNotIn("Check output", self.shown(app), "the run closed: back to the file's layout")
+        self.assertEqual(T.rule_layout(cfg, app.state), cfg["layout"])
+
+    def test_a_rule_swaps_a_panel_while_a_check_fails(self):
+        self.write('[[rule]]\nwhen = { failing = true }\npanels = { log = "verify" }\n')
+        app = self.app(self.load()[0])
+        app.feed(FAILED)
+        self.assertIn("Check output", self.shown(app))
+        self.assertNotIn("Activity", self.shown(app))
+        app.feed(PASSED)
+        self.assertIn("Activity", self.shown(app), "the check passes again: the log is back")
+
+    def test_the_layout_editor_shows_the_files_layout_not_a_rules(self):
+        self.write(RULES)
+        app = self.app(self.load()[0])
+        app.feed(PASSED)
+        app.mode = "layout"
+        self.assertIn("Activity", self.shown(app))
+
+    def test_an_unknown_event_or_key_is_said_once_and_skipped(self):
+        self.write('[[rule]]\nwhen = { lane = true }\nlayout = { top = [] }\n'
+                   '[[rule]]\nlayout = { top = [] }\n'
+                   '[[rule]]\nwhen = { verify = "yes" }\n'
+                   '[[rule]]\nwhen = { verify = true }\ncolour = "red"\nlayout = { columns = [["nope"]] }\n'
+                   'panels = { log = "nope" }\n')
+        cfg, errors = self.load()
+        said = "\n".join(errors)
+        for word in ("rule.1.when.lane: not an event", "rule.2.when: a table of events", "rule.3.when.verify = 'yes'",
+                     "rule.4.colour: not a rule setting", "rule.4.layout.columns: no panel 'nope'", "rule.4.panels.log"):
+            self.assertIn(word, said)
+        self.assertEqual(len(errors), 6, "each said once")
+        self.assertEqual(cfg["rules"], [{"when": {"verify": True}, "layout": {}, "panels": {}}])
+        app = self.app(cfg)
+        app.feed(FAILED)
+        self.assertIn("Activity", self.shown(app), "nothing left to switch: the file's layout")
+        self.write("rule = 3\n")
+        self.assertIn("rule: a [[rule]] table per rule", self.load()[1][0])
+        out = self.fm("settings", "list", "layout", env=self.env).stdout
+        self.assertIn("rule: a [[rule]] table per rule: passed over", out)
+        self.assertNotIn("the default shows", out)
+        self.write('[[rule]]\nwhen = { closed = true }\npanels = { log = "verify" }\n' * (T.RULES_MAX + 1))
+        cfg, errors = self.load()
+        self.assertEqual((len(cfg["rules"]), errors), (T.RULES_MAX, [f"{self.toml}: rule.{T.RULES_MAX + 1} on: "
+                                                                       f"{T.RULES_MAX} rules at most: passed over"]))
+
+    def test_a_rule_the_app_cant_draw_with_starts_the_last_good_settings(self):
+        real = T.render
+
+        def picky(st, w, h, cfg, *a, **k):
+            if cfg["layout"].get("narrow_below") == 7:
+                raise ZeroDivisionError("a layout it can't draw")
+            return real(st, w, h, cfg, *a, **k)
+        self.write('border = "heavy"\n')
+        fmsettings.boot()
+        self.write('border = "heavy"\n[[rule]]\nwhen = { verify = true }\nlayout = { narrow_below = 7 }\n')
+        with mock.patch.object(T, "render", side_effect=picky):
+            cfg, _, note, _ = fmsettings.boot()
+        self.assertIn("last good", note)
+        self.assertIsNone(cfg.get("rules"))
+
+    def test_print_config_prints_the_rules_and_they_load_back(self):
+        import tomllib
+        self.write(RULES + '[[rule]]\nwhen = { failing = true, running = true }\npanels = { log = "verify" }\n')
+        out = self.fm("code", "tui", "--print-config", env=self.env).stdout
+        self.assertEqual(out.count("[[rule]]"), 2, out)
+        self.assertEqual(tomllib.loads(out)["rule"], tomllib.loads(RULES + '[[rule]]\nwhen = { failing = true, '
+                                                                          'running = true }\npanels = { log = '
+                                                                          '"verify" }\n')["rule"])
+        self.assertNotIn("dead", self.fm("settings", "diff", env=self.env).stdout, "a rule isn't a dead setting")
+
+    def test_an_extensions_settings_load_check_and_set_as_the_apps_own(self):
+        self.demo()
+        self.write('[ext.demo]\nrefresh = 99\nmode = "slow"\nnope = 1\n[ext.ghost]\nx = 1\n')
+        cfg, errors = self.load()
+        self.assertEqual(cfg["ext"]["demo"], {"refresh": 5, "mode": "slow", "loud": False})
+        said = "\n".join(errors)
+        for word in ("ext.demo.refresh = 99: from 1 to 60", "ext.demo.nope: not a setting of demo",
+                     "ext.ghost: no extension"):
+            self.assertIn(word, said)
+        self.write("")
+        self.assertEqual(fmsettings.set_app("ext.demo.refresh", "10")[0], 10)
+        self.assertEqual(fmsettings.set_app("ext.demo.loud", "true")[0], True)
+        self.assertIn("[ext.demo]", read_text(self.toml))
+        self.assertEqual(self.load()[0]["ext"]["demo"], {"refresh": 10, "mode": "fast", "loud": True})
+        for key, value in (("ext.demo.refresh", "0"), ("ext.demo.loud", "maybe"), ("ext.demo.mode", "slower"),
+                           ("ext.demo.nope", "1")):
+            with self.assertRaises(fmsettings.SettingError, msg=key):
+                fmsettings.set_app(key, value)
+        self.assertEqual(fmsettings.diff(), [
+            {"surface": "app", "key": "ext.demo.refresh", "value": 10, "default": 5},
+            {"surface": "app", "key": "ext.demo.loud", "value": True, "default": False}])
+        self.write('[ext.demo]\nrefresh = 10\n')
+        fmsettings.set_app("ext.demo.refresh", None)
+        self.assertNotIn("refresh", read_text(self.toml), "an undo removes it")
+
+    def test_the_settings_screen_lists_an_extensions_keys_under_its_own_group(self):
+        self.demo()
+        self.write('[ext.demo]\nmode = "slow"\n')
+        cfg, _, _, _ = fmsettings.boot()
+        app = T.App(cfg, spawn=lambda *a, **k: None)
+        app.show_settings()
+        row = next(r for r in app.set_rows if r["key"] == "ext.demo.mode")
+        self.assertEqual((row["group"], row["value"], row["default"], row["choices"]),
+                         ("ext.demo", "slow", "fast", ["fast", "slow"]))
+        head = next(r for r in app.items if r.get("head") == "ext.demo")
+        self.assertIn("DEMO", T._setting_row(head, 100)[0][0])
+        app._settings_set("set ext.demo.refresh 30")
+        self.assertEqual(app.cfg["ext"]["demo"]["refresh"], 30)
+
+    def test_a_bad_declaration_is_refused_when_the_extension_loads(self):
+        for args, kw in ((("Bad key", "int", 1, "h"), {}), (("n", "colour", 1, "h"), {}),
+                         (("n", "int", 0, "h"), {"range": (1, 9)}), (("n", "choice", "x", "h"), {"choices": ("a",)}),
+                         (("n", "choice", "a", "h"), {}), (("n", "bool", "yes", "h"), {})):
+            with self.assertRaises(ValueError, msg=args):
+                T.API("demo").setting(*args, **kw)
+        with self.assertRaises(ValueError):
+            T.API("we.ird").setting("n", "int", 1, "h")
+        with self.assertRaises(ValueError):
+            T.API().setting("n", "int", 1, "h")
+        self.assertNotIn("demo", T.EXT_SETTINGS)
+
+    def test_fm_settings_lists_and_sets_an_extensions_keys(self):
+        folder = os.path.join(self.home, "tui")
+        os.makedirs(folder)
+        path = os.path.join(folder, "demo.py")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(DEMO)
+        os.chmod(path, 0o644)
+        out = self.fm("settings", "list", "ext.demo", env=self.env).stdout
+        self.assertIn("ext.demo.refresh", out)
+        self.assertIn("ext.demo.mode", out)
+        no = self.fm("settings", "set", "ext.demo.refresh", "0", env=self.env, check=False)
+        self.assertNotEqual(no.returncode, 0)
+        self.assertIn("ext.demo.refresh = 0: from 1 to 60", no.stdout)
+        # a subprocess has no terminal: the guard decides, and says the change as the [ext.demo] line it needs
+        said = self.fm("settings", "set", "ext.demo.refresh", "12", env=self.env, check=False).stdout
+        self.assertIn("under [ext.demo], refresh = 12", said)
+        self.assertIn("ext.demo.refresh 5", " ".join(self.fm("settings", "get", "ext.demo.refresh",
+                                                            env=self.env).stdout.split()))
+
+    def test_the_command_says_how_rules_and_extension_settings_are_set(self):
+        body = read_text(os.path.join(os.path.dirname(__file__), "..", "commands", "settings.md"))
+        self.assertIn("[[rule]]", body)
+        self.assertIn("ext.NAME", body)
