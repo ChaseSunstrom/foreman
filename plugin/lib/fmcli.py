@@ -6057,15 +6057,21 @@ def _build_parser():
             "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
             "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs; "
             "tokens DESIGN.md --to css|app|pane: its Tokens table as CSS variables, an fm code theme or the pane's "
-            "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into (advisory exits 0, blocking 1; T-1645)")
-    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check"])
+            "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into (advisory exits 0, blocking 1; T-1645); "
+            "roll [--seed N] [--apply|--undo]: one look card's palette, type and motion, seeded, into DESIGN.md")
+    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll"])
+    s.add_argument("--seed", type=int, help="roll: the same seed gives the same look (default: a fresh one, printed)")
+    s.add_argument("--apply", action="store_true", help="roll: write it as DESIGN.md's ## Look, undoable")
+    s.add_argument("--undo", action="store_true", help="roll: put DESIGN.md back as it was before the roll(s)")
     s.add_argument("paths", nargs="*", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
                    "root); palette: a seed colour (hex, rgb(), hsl(), oklch()); contrast: a token file, then pairs "
                    "fg/bg[:need[,dark need]] (default: the known role pairs, body text 7:1 in dark)")
     s.add_argument("--format", choices=["css", "dtcg", "tailwind"], default="css",
                    help="palette: CSS light-dark() roles, DTCG JSON or a Tailwind v4 @theme")
-    s.add_argument("--out", metavar="PATH", help="extract: the file to write the Tokens section into (default: "
-                                                 "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints)")
+    s.add_argument("--out", metavar="PATH", help="extract, roll: the file to write the Tokens or Look section into "
+                                                 "(default: DESIGN.md at the repo root, or docs/DESIGN.md if that "
+                                                 "exists; - prints); palette: the file to write the export to "
+                                                 "(default prints)")
     s.add_argument("--to", choices=["css", "app", "pane"], default="css", help="tokens: CSS custom properties (dark "
                    "under prefers-color-scheme), a tui.toml [colors] table fm settings accepts, or the pane's palette "
                    "JSON (T-1651)")
@@ -6087,6 +6093,9 @@ def _build_parser():
     s.add_argument("--frozen", action="store_true", help="fm smoke's frozen profile first: the clock fixed, CSS "
                    "animations and transitions paused")
     s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
+    s.add_argument("--diff", metavar="BASE", help="compare each viewport shot with BASE/<page>/viewport.png (an earlier "
+                   "fm shot --out BASE): exit 1 over the baseline's noise floor (the most its own frames differ) or "
+                   "when a font fell back (T-1637)")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
