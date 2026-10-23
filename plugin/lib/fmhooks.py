@@ -396,6 +396,16 @@ def session_start(pl):
             other_note = " ".join(x for x in (other_note, away) if x)
     except Exception:
         log_error("SessionStart", _tb())
+    if pl.get("source") in (None, "startup", "resume") and not os.environ.get("FOREMAN_NO_LINK") \
+            and not os.environ.get("FOREMAN_WORKER_OF"):  # T-1438: a worker sets up nothing
+        try:  # T-1333: fm in any shell, for an install that never ran install.sh, and after an update moved the plugin
+            import fmsetup
+            made = fmsetup.ensure_fm_link()
+            if made:
+                c.log_event(p, "fm_link", data={"link": made, "target": os.path.join(c.PLUGIN_ROOT, "bin", "fm")},
+                            session=sid)
+        except Exception:
+            log_error("SessionStart", _tb())
     c.log_event(p, "session_start", data={"source": pl.get("source"), "root": c.PLUGIN_ROOT},  # T-0391: the code
                 session=sid)  # this session runs (fm doctor compares it with the installed one)
     if second_due(pl, meta, busy) and not os.environ.get("FOREMAN_NO_BACKGROUND"):  # T-0276: never in the hook's time

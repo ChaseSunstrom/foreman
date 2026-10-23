@@ -644,6 +644,26 @@ def ease_out(k):
 LIVE = ("planning", "running", "fixing")
 VIEW_FADE = 0.25  # T-1307: seconds a view takes to fade in
 SCRUB_KEYS = ("KEY_LEFT", "KEY_RIGHT", "KEY_HOME", "KEY_END")  # T-1307: a replay's steps (fixed: not in tui.toml)
+SETUP_KEYS = ("l", "i", "e")  # T-1333: the first-run fixes, where tui.toml binds nothing to them
+
+
+def _runner_found():
+    """T-1333: a run has something to work with: an installed runner CLI, or a model set up."""
+    import fmcode
+    import fmmodels
+    try:
+        return bool(any(r.get("work") and fmcode._installed(n, r) for n, r in fmcode.all_runners().items())
+                    or any(fmmodels.configured()))
+    except Exception:  # a broken code.toml or models.json: fm code says why when a run starts
+        return False
+
+
+def setup_checks(root):
+    """T-1333: (what, ok, key, fix) for what a first run needs: fm on PATH, a runner, this folder as a project."""
+    import fmcore
+    return [("fm on PATH", bool(shutil.which("fm")), "l", "link it"),
+            ("a runner", _runner_found(), "m", "pick one"),
+            ("this folder is a project", bool(root and fmcore.find_project(root)), "i", "make it one")]
 
 
 def agent_state(st):
@@ -1052,11 +1072,12 @@ def _log(st, w, h, app):
         words = {"planning": "planning the work", "fixing": "fixing the checks"}.get(st.status, "working")
         line = [(" " * max(0, (w - len(words) - 2) // 2), "text"), ((fx.spin() if fx.moving else "◆") + " ", "accent")] + _waiting(st, words)[0]
         return [[]] * max(0, ((h or 1) - 1) // 2) + [line]
-    return out or _welcome(w, h, fx)
+    return out or _welcome(w, h, fx, app)
 
 
-def _welcome(w, h, fx):
-    """The screen before any run: Foreman's mark, breathing, and the keys that start something."""
+def _welcome(w, h, fx, app=None):
+    """The screen before any run: Foreman's mark, breathing, and the keys that start something; before a project's
+    first run (T-1333), what a run needs, each missing one with the key that fixes it, and the first question."""
     a, b = fx.c("accent"), fx.c("accent2")
     keys = [("n", "new request"), ("h", "past runs"), ("m", "model"), ("?", "keys")]
     chips = [seg for k, word in keys for seg in ((f" {k} ", "chip_accent"), (f" {word}   ", "dim"))]
@@ -1064,7 +1085,16 @@ def _welcome(w, h, fx):
     left = lambda n: [(" " * max(0, (w - n) // 2), "text")]
     lines = [left(1) + [("◆", rgb(fg=mix(a, b, fx.wave(3.2)), bold=True) if a else "accent")], [],
              left(12) + [("Foreman Code", "strong")],
-             left(42) + [("plan, edit, check and close, each guarded", "dim")], [], left(used) + chips]
+             left(42) + [("plan, edit, check and close, each guarded", "dim")], []]
+    checks = app.first_run() if app is not None else []
+    if checks:
+        rows = [[(" ✓ " if ok else " ✗ ", "chip_ok" if ok else "chip_bad"), (f" {what}", "text")]
+                + ([("   ", "text"), (f" {key} ", "chip_accent"), (f" {fix}", "dim")] if not ok else [])
+                for what, ok, key, fix in checks]
+        rows += [[], [(" e ", "chip_accent"), (" ask: explain this repo", "text")]]
+        wide = max(sum(width(t) for t, _ in r) for r in rows)
+        lines += [left(wide) + r if r else [] for r in rows] + [[]]
+    lines.append(left(used) + chips)
     top = max(0, ((h or len(lines)) - len(lines)) // 2)
     return [[]] * top + lines
 
@@ -1947,6 +1977,7 @@ class App:
         self.view_opened, self.view_marks = 0.0, {}  # T-1312: when the diff view opened; its changed-word marks
         self.scrub = None  # T-1307: a replay's [events, how many are shown], stepped with the arrows
         self.tour = None  # T-1309: the tour's [when it began, how many of its events are shown]
+        self._setup = None  # T-1333: the first-run checks shown on the welcome (None: not asked yet this launch)
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
@@ -2042,6 +2073,9 @@ class App:
             return None
         if self.mode == "main" and self.scrub and k in SCRUB_KEYS and not self.running():  # T-1307
             return self._scrub_key(k)
+        if (self.mode == "main" and k in SETUP_KEYS and k not in self.cfg["keys"] and self.state.status == "idle"
+                and not self.running() and self.first_run()):  # T-1333: the welcome's fixes
+            return self._setup_key(k)
         if self.mode in ("diff", "history", "picker"):
             return self._view_key(k)
         cmd = self.cfg["keys"].get(k)
@@ -3017,6 +3051,43 @@ class App:
         self._scrub_to(len(events))
         self.message = (f"viewing {self.state.task or 'a past run'}"
                         + (f" · ←/→ step through its {len(events)} events" if len(events) > 1 else ""))
+
+    def setup_checks(self):
+        return setup_checks(self.root)
+
+    def first_run(self):
+        """T-1333: the checks the welcome shows before this project's first run; [] once it has a past run."""
+        if self._setup is None:
+            try:
+                past = bool(self.history_dir) and any(n.endswith(".events.jsonl") for n in os.listdir(self.history_dir))
+            except OSError:
+                past = False
+            self._setup = [] if past else self.setup_checks()
+        return self._setup
+
+    def _setup_key(self, k):
+        if k == "e":  # the first question: read-only, beside no run
+            self.mode, self.asking = "prompt", True
+            self.line.text = "explain this repo"
+            self.line.cur = len(self.line.text)
+            return None
+        try:
+            self.message = (self._link_fm if k == "l" else self._init_project)()
+        except OSError as e:
+            self.message = f"couldn't: {e}"
+        self._setup = None  # asked again on the next frame
+        return None
+
+    def _link_fm(self):
+        import fmsetup
+        made = fmsetup.ensure_fm_link()
+        return (f"linked {made}: a new terminal finds fm" if made else
+                "~/.local/bin/fm is there already, or someone else's: fm doctor says which")
+
+    def _init_project(self):
+        import fmcore
+        p = fmcore.find_project(self.root or os.getcwd(), create=True)
+        return f"{p.slug} is a Foreman project now" if p else "not a project: no git repository here"
 
     def start_tour(self):
         """T-1309: the sample run played on this app's clock, a caption over it naming each panel."""
