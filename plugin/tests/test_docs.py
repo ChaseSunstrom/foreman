@@ -238,6 +238,31 @@ class Skills(unittest.TestCase):
         self.assertIn("Copyright (c) 2025 Jesse Vincent", text)
 
 
+class PluginParity(unittest.TestCase):
+    """T-1520: every user-facing fm verb is reachable from a Claude Code session, not only from fm code: named in the
+    plugin's rules, commands or skills, or found by fm which (which the rules point at)."""
+
+    def test_every_user_facing_verb_is_reachable(self):
+        import glob
+        import sys
+        sys.path.insert(0, os.path.join(PLUGIN, "lib"))
+        import fmwhich
+        src = read_text(os.path.join(PLUGIN, "lib", "fmcli.py"))
+        tiers = {m.group(1): m.group(2) for m in re.finditer(
+            r'\badd\("([a-z][\w-]*)"[^\n]*?(?:\n[^\n]*?){0,6}?tier=\("([^"]+)"', src)}
+        docs = "".join(read_text(p) for p in glob.glob(os.path.join(PLUGIN, "commands", "*.md"))
+                       + glob.glob(os.path.join(PLUGIN, "skills", "*", "SKILL.md"))
+                       + glob.glob(os.path.join(PLUGIN, "skills", "*", "references", "*.md"))
+                       + [os.path.join(PLUGIN, "rules", "foreman.md")])
+        indexed = {x["name"] for x in fmwhich.commands()}
+        lost = [v for v, tier in sorted(tiers.items()) if not tier.startswith("Internal")
+                and v not in indexed | fmwhich.SELF | fmwhich.FOREMAN_ONLY and not re.search(rf"\bfm {v}\b", docs)]
+        self.assertEqual(lost, [], "verbs a Claude Code session can't find")
+        self.assertGreater(len(tiers), 100, "the tier parse found the verbs")
+        rules = read_text(os.path.join(PLUGIN, "rules", "foreman.md"))
+        self.assertRegex(rules, r"fm which", "the rules point a session at fm which")
+
+
 class Agents(unittest.TestCase):
     def test_agents_are_read_only(self):
         agents = sorted(os.listdir(os.path.join(PLUGIN, "agents")))
