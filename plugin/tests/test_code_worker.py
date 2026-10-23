@@ -792,6 +792,113 @@ class Worker(CodeCase):
         self.assertEqual(fmcode.worker_argv("plain", "x y", which=False), ["plain", "x y"])
 
 
+class Ping(CodeCase):  # T-1335
+    cli, work = Worker.cli, Worker.work
+
+    def setUp(self):
+        super().setUp()
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+
+    def test_a_ping_answer_is_sorted(self):
+        import fmcode
+        s = fmcode.ping_state
+        self.assertEqual(s(0, "ok"), "ok")
+        self.assertEqual(s(0, ""), "no answer")
+        self.assertEqual(s(None, ""), "no answer")
+        self.assertEqual(s(1, "Invalid API key · Please run /login"), "not logged in")
+        self.assertEqual(s(1, "Claude AI usage limit reached|1792745600"), "usage limit")
+        self.assertEqual(s(1, "error: unknown option '--strict-mcp-config'"), "flag refused")
+        self.assertEqual(s(1, "Error: connect ECONNREFUSED 127.0.0.1:443"), "endpoint down")
+        self.assertEqual(s(3, "boom"), "failed (exit 3)")
+
+    def test_runners_ping_asks_each_one_a_tiny_question_and_keeps_the_answer(self):
+        args = os.path.join(self.tmp, "args")
+        self.cli("claude", f'case "$*" in *--version*) echo "2.1.0 (Claude Code)";;\n'
+                           f'*) pwd > {args}; echo \'{{"type": "result", "is_error": false, "result": "ok"}}\';; esac\n')
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write('[runners.mine]\nwork = "claude {prompt}"\n')
+        r = self.work("runners", "--ping", "claude", "--json")
+        row = next(x for x in json.loads(r.stdout)["runners"] if x["name"] == "claude")
+        self.assertEqual((row["ping"]["state"], row["ping"]["version"]), ("ok", "2.1.0 (Claude Code)"))
+        self.assertIsInstance(row["ping"]["ms"], int)
+        self.assertNotEqual(os.path.realpath(read_text(args).strip()), os.path.realpath(self.repo), "a scratch folder")
+        with open(os.path.join(self.home, "state", "code-runners-ping.json")) as f:
+            self.assertEqual(json.load(f)["claude"]["state"], "ok")
+        mine = self.work("runners", "--ping", "mine").stdout
+        self.assertIn("version only", mine)  # no read-only plan command: never handed a prompt
+        self.assertIn("isn't a runner", self.work("runners", "--ping", "nope", check=False).stderr)
+
+
+class Failover(CodeCase):  # T-1356 (not a Worker subclass: its tests would run twice)
+    cli, work = Worker.cli, Worker.work
+
+    def setUp(self):
+        super().setUp()
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        self.cli("fix-calc", "exec python3 -c 'import pathlib; p = pathlib.Path(\"calc.py\"); "
+                             "p.write_text(p.read_text().replace(\"a - b\", \"a + b\"))'\n")
+
+    def toml(self, text):
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write(text)
+
+    def test_a_failure_is_sorted_by_its_exit_and_reply(self):
+        import fmcode
+        k = fmcode.failure_kind
+        self.assertEqual(k(0, "Claude AI usage limit reached|1792745600"), (None, None), "exit 0 is no failure")
+        self.assertEqual(k(None, ""), ("timeout", None))
+        self.assertEqual(k(1, "Claude AI usage limit reached|1792745600"), ("limit", 1792745600))
+        kind, at = k(1, "You've hit your limit · resets 3pm (Europe/London)")
+        self.assertEqual((kind, time.localtime(at)[3:5]), ("limit", (15, 0)))
+        self.assertTrue(0 < at - time.time() <= 86400, "the next 3 pm, not a past one")
+        self.assertEqual(k(1, "Invalid API key · Please run /login"), ("auth", None))
+        self.assertEqual(k(2, "Traceback (most recent call last):"), ("crash", None))
+        self.assertEqual(k(1, "5-hour limit reached"), ("limit", None), "no reset said")
+
+    def test_a_limit_resetting_soon_is_waited_out_and_the_turn_done_again(self):
+        mark = os.path.join(self.tmp, "limited")
+        self.cli("claude", f'if [ ! -f {mark} ]; then touch {mark}\n'
+                           'echo "Claude AI usage limit reached|$(( $(date +%s) + 2 ))"; exit 1; fi\nfix-calc\n')
+        self.toml("limit_wait = 60\n")
+        r = self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        self.assertIn("usage limit; waiting until", r.stdout)
+
+    def test_a_limit_past_the_wait_stops_the_run_with_its_resume_command(self):
+        self.cli("claude", 'echo "Claude AI usage limit reached|$(( $(date +%s) + 7200 ))"; exit 1\n')
+        self.toml("limit_wait = 60\n")
+        r = self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("hit its usage limit, which resets at", r.stderr)
+        self.assertEqual(r.stderr.strip().splitlines()[-1], "Next: fm code --resume T-0001")
+        self.assertEqual(self.task()["status"], "active")
+
+    def test_a_crash_passes_the_turn_to_the_next_runner_in_the_chain(self):
+        self.cli("claude", "echo boom; exit 2\n")
+        self.cli("spare", "fix-calc\n")
+        self.toml('chain = ["claude", "spare"]\n[runners.spare]\nwork = "spare {prompt}"\n')
+        r = self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        self.assertIn("claude: crash (exit 2); spare takes the turn", r.stdout)
+
+    def test_a_chain_naming_a_runner_twice_tries_each_once_a_turn(self):
+        self.cli("claude", "echo boom; exit 2\n")
+        self.cli("spare", "echo bust; exit 3\n")
+        self.toml('chain = ["claude", "spare", "claude"]\n[runners.spare]\nwork = "spare {prompt}"\n')
+        r = self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, check=False)
+        handoffs = r.stdout.count("takes the turn")  # two runners: at most one handoff in each of the four turns
+        self.assertTrue(1 <= handoffs <= 4, r.stdout)
+        self.assertEqual(self.task()["status"], "blocked")
+
+    def test_signed_out_with_no_chain_stops_the_run(self):
+        self.cli("claude", 'echo "Invalid API key · Please run /login"; exit 1\n')
+        r = self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("isn't signed in", r.stderr)
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
