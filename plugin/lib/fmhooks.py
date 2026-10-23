@@ -1831,12 +1831,15 @@ def _pre_tool_use(raw):
                         for n, r, _ in hits[:2])  # what's left after the blocks above: warns
         slow = " ".join(f"Foreman: the script {path} (or one it runs) was too long for the guard to parse in time; "
                         "a literal scan of it found nothing to refuse." for path, _ in unread[:2])
-        builders = (lambda: _fix_note(pl, p), lambda: _dep_note(pl, p), lambda: _veto_note(pl, p),
-                    lambda: _scope_note(pl, p, act), lambda: _tripwire_note(pl, p, act), lambda: _step_note(pl, p, act),
-                    lambda: _ambient_note(p), lambda: _bus_note(pl), lambda: _card_note(pl, p, act),
-                    lambda: _test_first_note(pl, p, act), lambda: _design_note(pl, p, act),
-                    lambda: _gate_pipe_note(pl))
-        note = " ".join(_said_once(pl, list(filter(None, [made, saved, slow, warn] + [_each(b) for b in builders]))))
+        builders = (("fix", lambda: _fix_note(pl, p)), ("deps", lambda: _dep_note(pl, p)),
+                    ("veto", lambda: _veto_note(pl, p)), ("scope", lambda: _scope_note(pl, p, act)),
+                    ("lessons", lambda: _tripwire_note(pl, p, act)), ("steps", lambda: _step_note(pl, p, act)),
+                    ("ambient", lambda: _ambient_note(p)), ("bus", lambda: _bus_note(pl)),
+                    ("cards", lambda: _card_note(pl, p, act)), ("test-first", lambda: _test_first_note(pl, p, act)),
+                    ("design", lambda: _design_note(pl, p, act)), ("gate-pipe", lambda: _gate_pipe_note(pl)))
+        off = c.ablated()  # T-1375: a bench arm's features switched off (never the guard, which spoke above)
+        note = " ".join(_said_once(pl, list(filter(None, [made, saved, slow, warn]
+                                                   + [_each(b) for name, b in builders if name not in off]))))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
             _log_inject("PreToolUse", note, pl)
@@ -3168,7 +3171,7 @@ def stop(pl):
             _evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED}) or _claims_gate(pl, g)
             or _question_nudge(pl)
             or _headless_wait(pl))
-        reason = nudge or (None if oneoff else _drive(p, sd, briefs, pl, g))
+        reason = nudge or (None if oneoff or "drive" in c.ablated() else _drive(p, sd, briefs, pl, g))  # T-1375
         d = g["drive"].setdefault(sid, {"count": 0})
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
         reloading, waiting_on = d.pop("reloading", None), d.pop("waiting_on", None)

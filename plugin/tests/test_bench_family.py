@@ -20,13 +20,16 @@ system = args[args.index("--append-system-prompt") + 1] if "--append-system-prom
 with open(os.environ["STUB_LOG"], "a") as f:
     f.write(json.dumps({"args": args, "stdin": stdin, "system": system,
                         "window": os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW"),
-                        "marathon": os.environ.get("FOREMAN_MARATHON"),
+                        "marathon": os.environ.get("FOREMAN_MARATHON"), "ablate": os.environ.get("FOREMAN_ABLATE"),
                         "claude_md": open("CLAUDE.md").read() if os.path.exists("CLAUDE.md") else None}) + "\n")
 if "--plugin-dir" in args and os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW"):  # a kept session that compacted twice
     d = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", "-tmp-replay")
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "s-1.jsonl"), "w") as f:
         f.write('{"type":"user"}\n' + '{"type":"system","subtype":"compact_boundary"}\n' * 2)
+if "--plugin-dir" not in args and args[1:2] and args[1].startswith("Task:") and os.environ.get("STUB_BARE_FIX"):
+    with open("calc.py", "w") as f:  # T-1376: the plain session fixes it
+        f.write("def double(x):\n    return x * 2\n")
 if "--plugin-dir" in args:  # a replayed session
     if os.environ.get("STUB_PLANT"):  # a session that leaves git config for whoever runs git here next
         import subprocess
@@ -315,6 +318,39 @@ class Snippet(_Bench):  # T-1264
         self.assertIn("Claude with Foreman's rules as one CLAUDE.md", json.dumps(res))
         p = self.fm("bench", "duel", "some-plugin", "--vs", "snippet", "--ids", self.calc, env=self.env, check=False)
         self.assertNotEqual(p.returncode, 0)
+
+
+class Ablation(_Bench):  # T-1375, T-1376
+    def results(self):
+        return os.path.join(c.find_project(self.repo).dir, "bench", "results")
+
+    def test_ablate_runs_full_foreman_and_one_arm_per_feature_off(self):
+        self.fm("bench", "build", env=self.env)
+        res = json.loads(self.fm("bench", "duel", "--ablate", "scope,lessons", "--ids", self.calc, "--json",
+                                 env=self.env).stdout)
+        tasks = [s for s in self.calls() if s["args"][:1] == ["-p"] and s["args"][1].startswith("Task:")]
+        self.assertEqual(sorted(str(s["ablate"]) for s in tasks), ["None", "lessons", "scope"])
+        self.assertEqual(sorted(res["arms"]), ["lessons", "scope"])
+        self.assertTrue(res["full"].startswith("duel-ablate-full-"))
+        text = self.fm("bench", "duel", "--ablate", "scope", "--ids", self.calc, env=self.env).stdout
+        self.assertRegex(text, r"scope off: \d/1 passed \(full \d/1\)")
+        for bad in (["--ablate", "guard"], ["--ablate", "scope", "--vs", "none"]):
+            p = self.fm("bench", "duel", *bad, "--ids", self.calc, env=self.env, check=False)
+            self.assertNotEqual(p.returncode, 0, bad)
+
+    def test_equal_spend_retries_the_plain_arm_up_to_foremans_spend(self):
+        self.fm("bench", "build", env=self.env)
+        res = json.loads(self.fm("bench", "duel", "--vs", "none", "--equal-spend", "--ids", self.calc, "--json",
+                                 env=self.env).stdout)
+        self.assertTrue(res["with"].startswith("duel-spend-bare-"), res)
+        bare = json.loads(read_text(os.path.join(self.results(), res["with"] + ".json")))["cases"][0]
+        self.assertEqual(bare["tries"], 5, "0.01 a try never reaches 0.4: five at most")
+        res = json.loads(self.fm("bench", "duel", "--vs", "none", "--equal-spend", "--ids", self.calc, "--json",
+                                 env=dict(self.env, STUB_BARE_FIX="1")).stdout)
+        bare = json.loads(read_text(os.path.join(self.results(), res["with"] + ".json")))["cases"][0]
+        self.assertEqual((bare["tries"], bare["pass"]), (1, True), "a pass stops it")
+        p = self.fm("bench", "duel", "--equal-spend", "--ids", self.calc, env=self.env, check=False)
+        self.assertNotEqual(p.returncode, 0, "--equal-spend goes with --vs none")
 
 
 class Repro(_Bench):  # T-1261
