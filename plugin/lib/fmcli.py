@@ -1554,8 +1554,11 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
     shared = {f: others[f] for f in files if f in others}
     if shared and not dry:  # T-1711: a file another open task edited too goes whole, its edits with it: say whose
         live = {x.id for x in c.load_briefs(p) if x.status not in c.CLOSED}
-        for f, ts in [(f, sorted(ts & live)) for f, ts in shared.items() if ts & live][:8]:
-            print(f"{b.id}: {f} also holds uncommitted edits of {', '.join(ts)} (committed with it)")
+        hits = [(f, sorted(ts & live)) for f, ts in shared.items() if ts & live]
+        for f, ts in hits[:8]:
+            print(f"{b.id}: {f} was also edited by {', '.join(ts)} since this task's focus (committed with it)")
+        if len(hits) > 8:
+            print(f"{b.id}: … {len(hits) - 8} more shared file(s)")
     add = run("add", "-A", "--", *addable) if addable else subprocess.CompletedProcess([], 0, "", "")
     if add.returncode == 0:  # T-0132: nothing that looks like a credential goes into a commit Foreman makes
         import fmsecrets
@@ -4324,11 +4327,11 @@ def _run_py_names(cmd):
     return (m.group(1), re.findall(r"(?:^|[\s/'\"])(test_\w+)", m.group(2))) if m else None
 
 
-def red_first_tests(p, act, gates):
+def red_first_tests(p, act, gates, paths=None):
     """T-1101: {module: task id} for the test files that are only another open task's red-first tests: its step-1
     run of a gate's own `tests/run.py NAME` (the same folder, inside the repo) failed, no run naming NAME passed since,
     the file is new (not at HEAD), and this task's scope and evidence don't name it. fm check leaves them out of
-    run.py (FOREMAN_SKIP_TESTS) and says so."""
+    run.py (FOREMAN_SKIP_TESTS) and says so. A set passed as paths gets their root-relative files (T-1731)."""
     # ponytail: one skip list for every run.py gate; per-gate lists if two suites ever share module names
     folder = lambda h: os.path.relpath(os.path.join(p.root, h[0]), p.root)  # noqa: E731
     folders = {f for g in gates if (h := _run_py_names(g)) and not (f := folder(h)).startswith("..")}
@@ -4356,7 +4359,10 @@ def red_first_tests(p, act, gates):
     if tracked is None:  # no git, or no commit yet: no telling a new file from a shared one, so nothing is left out
         return {}
     tracked = set(tracked.splitlines())
-    return {n: tid for n, (tid, path) in found.items() if path not in tracked}
+    found = {n: (tid, path) for n, (tid, path) in found.items() if path not in tracked}
+    if paths is not None:
+        paths.update(os.path.normpath(path) for _, path in found.values())
+    return {n: tid for n, (tid, _) in found.items()}
 
 
 def _skip_env(skip):
@@ -4451,9 +4457,10 @@ def affected(p, b=None, skipped=None):
         groups += [(e, t, [x for x in every if x.endswith(e)]) for e, t in by.items()]
         return [fill(t, ts) for _, t, ts in groups if ts], sorted({x for _, _, ts in groups for x in ts})
     cmds, tests = build(every)
-    skip = red_first_tests(p, act, cmds) if cmds else {}  # T-1101: another open task's red-first test files
+    red = set()  # T-1101: another open task's red-first test files
+    skip = red_first_tests(p, act, cmds, red) if cmds else {}
     if skip:  # T-1718: out of the command too: run.py fails "no test matches" on a name it was told to skip
-        cmds, tests = build([x for x in every if os.path.basename(x).rsplit(".", 1)[0] not in skip])
+        cmds, tests = build([x for x in every if os.path.normpath(x) not in red])
     if skipped is not None:
         skipped.update(skip)
     return (" && ".join(cmds) if cmds else None), tests, changed
@@ -4473,8 +4480,9 @@ def _check_affected(p, args):
             f"{' …' if len(odd) > 5 else ''}; run their own suite") if odd else ""
     if not tests:
         return out(args, {"tests": [], "changed": sorted(changed), "unrunnable": odd, "skipped_tests": skip},
-                   f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check" + note
-                   + (f"\n! {_left_out(skip)}" if skip else "")) or 0
+                   (f"all {len(skip)} linked test module(s) skipped (other lanes' red-first tests); run the full "
+                    f"gates: fm check\n! {_left_out(skip)}" if skip else
+                    f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check") + note) or 0
     code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=_skip_env(skip))
     out(args, {"tests": tests, "exit": code, "changed": sorted(changed), "skipped_tests": skip, "unrunnable": odd},
         f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → {c.run_result(code, output)}"
