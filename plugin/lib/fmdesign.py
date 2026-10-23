@@ -1626,6 +1626,35 @@ def cmd_design(args):
             return 2
         import fmroll
         return fmroll.cmd_roll(args, fmcli)
+    if args.action == "diverge":  # T-1536: a variant round: N briefs in looks far apart; pick LOOK keeps the winner
+        import fmtaste
+        words = list(args.paths)
+        try:
+            known = fmtaste.looks()
+            if words[:1] == ["pick"]:
+                if len(words) < 2:
+                    raise ValueError("pick LOOK: name the variant's look")
+                e = fmtaste.record("kept", " ".join(words[1:]), why="won a divergence round")
+                fmcli.out(args, e, f"Taste ledger: {e['look']} kept (it won the divergence round).")
+                return 0
+            n = int(words.pop(0)) if words and words[0].isdigit() else 3
+            if not 2 <= n <= 6:
+                raise ValueError(f"{n} variants: 2 to 6")
+            what = " ".join(words) or "the screen"
+            names = fmtaste.spread(n, known)
+            briefs = [fmtaste.variant(k, name, known[name], what) for k, name in enumerate(names, 1)]
+            if args.out:
+                os.makedirs(args.out, exist_ok=True)
+                for k, (name, text) in enumerate(zip(names, briefs), 1):
+                    fmcore.write_atomic(os.path.join(args.out, f"variant-{k}-{name}.md"), text)
+        except (ValueError, OSError) as e:
+            print(f"fm: design diverge: {e}", file=sys.stderr)
+            return 2
+        fmcli.out(args, {"variants": [{"look": n_, "brief": t} for n_, t in zip(names, briefs)], "out": args.out},
+                  (f"wrote {len(briefs)} variant briefs to {args.out}: {', '.join(names)}" if args.out
+                   else "\n\n".join(briefs))
+                  + "\nBuild each in its own lane (fm lane new), then fm design diverge pick LOOK with the winner.")
+        return 0
     if args.action == "check":  # T-1645: the gates DESIGN.md opts into
         if len(args.paths) > 1:
             print("fm: design check takes one project root", file=sys.stderr)
