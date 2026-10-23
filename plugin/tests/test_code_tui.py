@@ -2136,6 +2136,29 @@ class WorkQueue(unittest.TestCase):  # T-1779
         self.assertIsNone(app.queue_run)
         self.assertIn("stopped: T-0009", app.message)
 
+    def test_g_during_a_run_starts_the_queue_when_that_run_ends(self):  # T-1783
+        T = tui()
+        started = []
+
+        class Live:
+            pid = 0
+            done = False
+
+            def poll(self):
+                return 0 if self.done else None
+        app = T.App(T.DEFAULTS, spawn=lambda words, opts: started.append(opts.get("task") or words) or Live(),
+                    queued=lambda: "T-0002")
+        app.start(["fix add"])
+        app.feed({"event": "task", "task": "T-0001"})
+        app.key("g")
+        self.assertEqual(started, [["fix add"]], "the run going is left alone")
+        self.assertIn("when this run ends", app.message)
+        app.child.done = True
+        app.feed({"event": "closed", "text": "T-0001 closed", "task": "T-0001"})
+        app.feed({"event": "exit", "code": 0})
+        self.assertEqual(started, [["fix add"], "T-0002"], "then the queue starts")
+        self.assertEqual(app.queue_run["closed"], ["T-0001"])
+
 
 class Receipt(unittest.TestCase):  # T-1305
     def test_a_close_adds_a_receipt_and_quit_leaves_the_last_frame_in_the_scrollback(self):
