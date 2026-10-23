@@ -298,6 +298,7 @@ class Run:
         self.no_commit, self.max_steps = bool(getattr(args, "no_commit", False)), getattr(args, "max_steps", None)
         self.secret_envs = {cloud[4] for cloud in m.CLOUD}  # and each profile's own key_env, added as it's resolved
         self.worker, self.verify_cmd = getattr(args, "worker", None), getattr(args, "verify", None)
+        self.args_worker, self.auto = self.worker, False  # T-1358: a --worker given wins over a routed one on resume
         self.worker_timeout = getattr(args, "worker_timeout", None)
         self.read_only, self.summary = False, None  # T-1320: a question's run, and the last done's summary
         self.own_plan = False  # T-1422: the plan is the user's (--task's brief, --verify's), not a planner's
@@ -1440,6 +1441,11 @@ def pick_runner(p):
     rs = all_runners()
     for name, why in ((fmcore.read_meta(p).get("code_runner"), "this project's runner"),
                       (code_config().get("runner"), "code.toml's runner")):
+        if name == "auto":  # T-1358: plan with the usual fallback; route() gives the work by record
+            first = _first_verified(rs)
+            if not first:
+                raise CodeError(f"{why} is auto, but no installed runner plans read-only: install claude, or name one")
+            return first, f"auto ({why}): {first} plans, then the work goes to the runner with the best record"
         if name:
             if not isinstance(name, str) or not rs.get(name, {}).get("work"):
                 raise CodeError(f"{why} {name!r} isn't one fm code can run: {', '.join(n for n, r in rs.items() if r.get('work'))}"
@@ -1453,10 +1459,79 @@ def pick_runner(p):
         return None, None
     except m.ModelError:
         pass
-    for name, r in rs.items():
-        if r.get("verified") and r.get("work") and r.get("plan") and _installed(name, r):
-            return name, "no model is set up; it plans read-only and works"
-    return None, None
+    first = _first_verified(rs)
+    return (first, "no model is set up; it plans read-only and works") if first else (None, None)
+
+
+def _first_verified(rs):
+    return next((n for n, r in rs.items() if r.get("verified") and r.get("work") and r.get("plan") and _installed(n, r)),
+                None)
+
+
+ROUTE_RUNS = 3  # T-1358: runs of a kind before a runner's record counts
+
+
+def runner_records():
+    """T-1358: every project's past fm code runs by runner and kind: {runner: {kind: {runs, closed, priced, usd}}}.
+    Each code/*.events.jsonl is read at its first 64 KB (the start's worker, or the runner auto routed it to; the
+    plan's type) and its last 16 KB (how it ended; the closed event's usd). A run with no end yet isn't counted."""
+    def events(raw):
+        for line in raw.decode("utf-8", "replace").splitlines():
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(e, dict):
+                yield e
+    out = {}
+    for path in glob.glob(os.path.join(fmcore.state_dir(), "projects", "*", "code", "*.events.jsonl")):
+        try:
+            with open(path, "rb") as f:
+                head = f.read(65536)
+                f.seek(max(0, os.fstat(f.fileno()).st_size - 16384))
+                tail = f.read()
+        except OSError:
+            continue
+        first = list(events(head))
+        worker = next((e["routed"] for e in first if isinstance(e.get("routed"), str)), None) or next(
+            (e.get("worker") for e in first if e.get("event") == "start"), None)
+        kind = next((e["plan"].get("type") for e in first if e.get("event") == "plan" and isinstance(e.get("plan"), dict)),
+                    None)
+        end = next((e for e in reversed(list(events(tail))) if e.get("event") in ("closed", "blocked", "error")), None)
+        if not (isinstance(worker, str) and isinstance(kind, str) and end):
+            continue
+        r = out.setdefault(worker, {}).setdefault(kind, {"runs": 0, "closed": 0, "priced": 0, "usd": None})
+        r["runs"] += 1
+        if end["event"] == "closed":
+            r["closed"] += 1
+            if type(end.get("usd")) in (int, float):
+                r["priced"] += 1
+                r["usd"] = round((r["usd"] or 0) + end["usd"], 4)
+    return out
+
+
+def route(run):
+    """T-1358: runner = auto: the work goes to the installed runner green on the plan's kind (ROUTE_RUNS or more runs,
+    two thirds closed) that cost least a closed run (unpriced ones after, then the most closed), said in a note; with
+    none, the planning runner keeps it."""
+    kind, rs = (run.plan or {}).get("type"), all_runners()
+    green = []
+    for name, kinds in runner_records().items():
+        r = kinds.get(kind) or {}
+        if rs.get(name, {}).get("work") and _installed(name, rs[name]) and r.get("runs", 0) >= ROUTE_RUNS and \
+                r["closed"] * 3 >= r["runs"] * 2:
+            per = r["usd"] / r["priced"] if r["priced"] else None
+            green.append((per is None, per or 0, -r["closed"], name, r))
+    if not green:
+        run.emit("note", f"auto: no runner has {ROUTE_RUNS} runs of {kind} with two thirds closed yet; {run.worker} "
+                         "keeps it", worker=run.worker, routed=run.worker)
+        return
+    _, per, _, name, r = min(green)
+    run.emit("note", f"auto: {name} works this {kind} ({r['runs']} runs, {r['closed']} closed"
+                     f"{f', ${per:.2f} a closed run' if r['priced'] else ''}; the cheapest green one)", worker=name,
+             routed=name)
+    run.worker = name
+    run.log(kind="route", worker=name)
 
 
 def worker_argv(spec, prompt, which=True):
@@ -1993,6 +2068,8 @@ def cmd_code(args):
         return _models(args, fmcli)
     if words == ["runners"]:
         return _runners(args, fmcli)
+    if words == ["config"]:  # T-1359
+        return _config(args, fmcli)
     if words[:1] == ["bench"]:
         import fmcodebench
         return fmcodebench.cmd(args, words[1:])
@@ -2049,6 +2126,7 @@ def cmd_code(args):
         picked = None
         if args.resume is None and not run.worker and not args.model:  # T-1328
             run.worker, picked = pick_runner(p)
+            run.auto = bool(picked and picked.startswith("auto"))
         if run.worker:
             if fmcore.read_meta(p).get("sensitive"):
                 raise CodeError("this repo is marked sensitive (fm sensitive on), so its code can't go to a worker CLI, "
@@ -2092,6 +2170,8 @@ def cmd_code(args):
             if code:
                 raise CodeError(f"can't resume {run.tid}: {out}")
             run.emit("resume", f"resuming {run.tid} from {run.journal}", task=run.tid)
+        if run.auto and run.worker:  # T-1358: the plan's kind is known now
+            route(run)
         _drive(run, profile)
     except (m.ModelError, CodeError) as e:  # T-1334: every failure ends with the one command to run next
         msg, then = f"fm code: {'model: ' if isinstance(e, m.ModelError) else ''}{e}", next_step(e, run.tid)
@@ -2479,6 +2559,8 @@ def _load(run, tid):
             run.baseline = r["text"]
         elif k == "close_notes":
             run.close_notes = r["notes"]
+        elif k in ("route", "failover") and isinstance(r.get("worker"), str) and not run.args_worker:  # T-1358, T-1356
+            run.worker = r["worker"]
         elif k == "spend" and type(r.get("usd")) in (int, float):  # T-1357: the cap counts the whole run
             run.usd = round((run.usd or 0) + r["usd"], 6)
 
@@ -2558,6 +2640,14 @@ def _runners(args, fmcli):
     lines = [f"{'*' if r['default'] else ' '} {r['name']:<13} {'installed' if r['installed'] else '—':<10} {can(r)}"
              + (f"  [{r['version']}]" if r.get("version") else "") + (pinged(r["ping"]) if r.get("ping") else "")
              for r in rows]
+    records = runner_records()  # T-1358
+    if records:
+        lines.append("Past runs by kind (runner = auto in code.toml routes the work by these):")
+    for n, kinds in sorted(records.items()):
+        lines.append(f"  {n}: " + "; ".join(
+            f"{k} {r['runs']} run{'s' if r['runs'] != 1 else ''}, {r['closed']} closed"
+            + (f", ${r['usd'] / r['priced']:.2f} a closed run" if r["priced"] else "")
+            for k, r in sorted(kinds.items(), key=lambda kv: -kv[1]["runs"])))
     lines.append("Models: " + (", ".join(f"{x['name']} ({x['model']})" for x in models) if models else
                                "none set up (fm code models says how)"))
     lines += [f"  {x['name']} ({x['model']}) was retired {x['retired_on']}: use {x['replacement']} "
@@ -2567,8 +2657,95 @@ def _runners(args, fmcli):
     lines.append(problem or (f"(* used with no --worker or --model: {why})" if name else
                              "With no --worker, fm code uses the model" if models
                              else "No runner installed that can plan read-only, and no model: install claude, or set one up"))
-    fmcli.out(args, {"runners": rows, "models": models, "default": name, "why": why, "problem": problem},
-              "\n".join(lines))
+    fmcli.out(args, {"runners": rows, "models": models, "default": name, "why": why, "problem": problem,
+                     "records": records}, "\n".join(lines))
+
+
+CONFIG = {  # T-1359: fm code's settings, what each does and how to change it (fm code config --explain KEY)
+    "runner": ("the coding CLI that plans and works a run given no --worker or --model; auto plans with the first, then "
+               "routes the work by record (fm code runners)",
+               "--worker NAME for one run; fm code runners --use NAME [--here]; code.toml runner = NAME"),
+    "model": ("the model profile that plans and works when no runner does", '--model NAME for one run; models.json '
+                                                                         '"default"'),
+    "lean": ("runners start without your plugins, MCP servers or settings hooks, with Foreman's guard as their only hook",
+             "code.toml lean = false"),
+    "limit_wait": ("seconds a worker's usage limit is waited out before the run stops with its resume command",
+                   "code.toml limit_wait = N"),
+    "chain": ("the runners that take a crashed, timed-out or signed-out runner's turn, in order",
+              'code.toml chain = ["claude", "codex"]'),
+    "on.closed": ("a command run with a closed run's event JSON on stdin, past Foreman's guard",
+                  'code.toml [on] closed = "CMD"'),
+    "on.blocked": ("a command run with a blocked run's event JSON on stdin", 'code.toml [on] blocked = "CMD"'),
+    "on.needs-you": ("a command run when a run stops for you (blocked or an error), its event JSON on stdin",
+                     'code.toml [on] needs-you = "CMD"'),
+    "worker_timeout": ("seconds a worker turn may run before it and all it started are stopped", "--worker-timeout N"),
+    "max_steps": ("model turns a run may take", "--max-steps N (a resume keeps the run's own unless given)"),
+    "max_usd": ("dollars a run may spend (priced calls only); claude turns get --max-budget-usd with what is left",
+                "--max-usd N (a resume keeps the run's own unless given)"),
+    "confine": ("workers run under Landlock where the kernel has it, writing only in the tree, its git folders and "
+                "scratch", "FOREMAN_CONFINE=0 in your own shell turns it off"),
+    "sensitive": ("this repo's code never goes to a model off this machine or to a worker CLI", "fm sensitive on | off"),
+}
+
+
+def config_view(p, args):
+    """T-1359: ([{key, value, source}] for every CONFIG key, problem). The first source that sets a key wins: flag, env,
+    project, code.toml or models.json, then the default. A code.toml that doesn't parse is the problem (its line in
+    the parser's words) and the view shows the defaults; a run still refuses the file (CodeError)."""
+    import fmlandlock
+    problem = None
+    try:
+        conf, rs = code_config(), all_runners()
+    except CodeError as e:
+        conf, rs = {}, {k: dict(v) for k, v in RUNNERS.items()}
+        problem = f"{e}: showing the defaults here; a run refuses the file until it's fixed"
+    try:
+        mdefault = m.configured()[0]
+    except m.ModelError as e:
+        mdefault, problem = None, problem or str(e)
+    meta, on = fmcore.read_meta(p), conf.get("on") if isinstance(conf.get("on"), dict) else {}
+
+    def pick(*found, default=None):
+        return next(((v, src) for src, v in found if v is not None), (default, "default"))
+    ok, why = fmlandlock.available()
+    rows = {
+        "runner": pick(("flag", args.worker), ("project", meta.get("code_runner")), ("code.toml", conf.get("runner")),
+                       default=_first_verified(rs)),
+        "model": pick(("flag", args.model), ("models.json", mdefault)),
+        "lean": pick(("code.toml", conf.get("lean")), default=True),
+        "limit_wait": pick(("code.toml", conf.get("limit_wait")), default=LIMIT_WAIT),
+        "chain": pick(("code.toml", conf.get("chain"))),
+        "on.closed": pick(("code.toml", on.get("closed"))),
+        "on.blocked": pick(("code.toml", on.get("blocked"))),
+        "on.needs-you": pick(("code.toml", on.get("needs-you"))),
+        "worker_timeout": pick(("flag", args.worker_timeout), default=WORKER_TIMEOUT),
+        "max_steps": pick(("flag", args.max_steps), default=40),
+        "max_usd": pick(("flag", getattr(args, "max_usd", None))),
+        "confine": ("off", "env FOREMAN_CONFINE") if os.environ.get("FOREMAN_CONFINE") == "0" else (
+            "on" if ok else f"off ({why})", "default"),
+        "sensitive": pick(("project", meta.get("sensitive") or None), default=False),
+    }
+    return [{"key": k, "value": v, "source": src} for k, (v, src) in rows.items()], problem
+
+
+def _config(args, fmcli):
+    p = fmcli.resolve(args)
+    rows, problem = config_view(p, args)
+    shown = lambda v: "—" if v is None else json.dumps(v) if isinstance(v, (list, bool)) else str(v)  # noqa: E731
+    key = getattr(args, "explain", None)
+    if key:
+        if key not in CONFIG:
+            raise fmcli.UsageError(f"no fm code setting {key!r}: {', '.join(CONFIG)}")
+        row = next(r for r in rows if r["key"] == key)
+        what, change = CONFIG[key]
+        return fmcli.out(args, dict(row, what=what, change=change),
+                         f"{key}: {what}\n  now: {shown(row['value'])} ({row['source']})\n  change: {change}")
+    lines = ["fm code settings (the first that sets one wins: flag, env, project, code.toml or models.json, default; "
+             "fm code config --explain KEY says what one does):"]
+    lines += [f"  {r['key']:<15} {_one_line(shown(r['value']), 60):<28} {r['source']}" for r in rows]
+    if problem:
+        lines.append(f"! {problem}")
+    return fmcli.out(args, {"settings": rows, "problem": problem}, "\n".join(lines))
 
 
 def _set_default_runner(name, fmcli):
