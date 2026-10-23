@@ -13,7 +13,7 @@ import sys
 import tempfile
 import unittest
 
-from helpers import PLUGIN, SPY, devtools, headless_chrome, read_json, read_text
+from helpers import PLUGIN, SPY, anim_time, at_rest, devtools, headless_chrome, polls, read_json, read_text
 
 ROOT = os.path.dirname(PLUGIN)
 KEYS = ("tasks_done", "evidence", "proofs", "commits")
@@ -245,26 +245,33 @@ class Scene(unittest.TestCase):
         state = re.search(r'<div class="hero-scene" data-state="([^"]*)"', out)
         return out, (state.group(1) if state else ""), [ln for ln in err.splitlines() if ":CONSOLE" in ln]
 
-    def spied(self, at, media=()):
+    def spied(self, until, media=()):
         """The built index driven over DevTools in real time (headless virtual time never runs the frame callbacks),
-        SPY added before any page script: what it counted at each of `at` seconds."""
+        SPY added before any page script: what it counted at each poll until `until` held (T-1728: not at fixed
+        seconds, which a loaded machine's late start and slow frames outran)."""
         browser = headless_chrome()
         if not browser:
             self.skipTest("no headless Chromium (FOREMAN_CHROME, chrome-headless-shell or Playwright's download)")
         try:
             return devtools(browser, "file://" + os.path.join(self.out, "index.html"), tempfile.mkdtemp(dir=self.tmp),
-                            SPY, media, at, "({ ...window.__spy, state: document.querySelector('.hero-scene').dataset.state })")
+                            SPY, media, polls(), "({ ...window.__spy, state: document.querySelector('.hero-scene').dataset.state })",
+                            until=until)
         except (EOFError, BrokenPipeError, FileNotFoundError, PermissionError) as e:  # a root sandbox, no libs
             self.skipTest(f"{browser} didn't take DevTools over a pipe: {e!r}")
 
     def test_one_pass_then_no_frames_and_reduced_motion_makes_no_context(self):
-        # review: "one pass, then no frames" and "reduced motion makes no context" were only inferred: count them
-        early, late = self.spied((8, 12))
-        self.assertEqual(early["state"], "live")
-        self.assertIn("webgl2", early["contexts"], "the spy sees the scene's context")
-        self.assertGreater(early["raf"], 30, "the pass drew frames")
-        self.assertEqual(early["raf"], late["raf"], "no frames between 8 s and 12 s: the pass is over")
-        still, = self.spied((3,), [("prefers-reduced-motion", "reduce")])
+        # review: "one pass, then no frames" and "reduced motion makes no context" were only inferred: count them.
+        # T-1728: by the page's animation clock, not wall-clock windows (under load 133 frames by 8 s, 198 by 12 s)
+        got = self.spied(at_rest)
+        end = got[-1]
+        self.assertTrue(at_rest(got), f"the frames never stopped: {len(got)} polls, last {end and end['raf']} frames")
+        self.assertEqual(end["state"], "live")
+        self.assertIn("webgl2", end["contexts"], "the spy sees the scene's context")
+        self.assertGreater(end["raf"], 30, "the pass drew frames")
+        self.assertAlmostEqual(anim_time(end["stamps"]), 0.6 + 4.2 + 1.4, delta=0.3,
+                               msg="one pass (lead, run, fade) of animation time, then no frames")
+        still = self.spied(lambda g: len(g) >= 2 and all(s and s["state"] != "poster" for s in g[-2:]),
+                           [("prefers-reduced-motion", "reduce")])[-1]
         self.assertNotIn("webgl2", still["contexts"], "reduced motion asks for no WebGL context at all")
         self.assertEqual(still["state"], "still")
         self.assertEqual(still["raf"], 0)
