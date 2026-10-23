@@ -642,6 +642,8 @@ def ease_out(k):
 
 
 LIVE = ("planning", "running", "fixing")
+VIEW_FADE = 0.25  # T-1307: seconds a view takes to fade in
+SCRUB_KEYS = ("KEY_LEFT", "KEY_RIGHT", "KEY_HOME", "KEY_END")  # T-1307: a replay's steps (fixed: not in tui.toml)
 
 
 def agent_state(st):
@@ -1277,6 +1279,12 @@ def render(st, w, h, cfg, app=None, t=None):
                            ("   Enter keeps it, Esc clears", "dim")], w)
     if app is not None and app.mode in VIEWS:
         VIEWS[app.mode](cv, st, app, cfg)
+    if app is not None:  # T-1307: a switch between the run, its diff and past runs fades in instead of jumping
+        k = _FX.since("view", app.mode if app.mode in ("diff", "history") else "main")
+        if k < VIEW_FADE:
+            e, screen = ease_out(k / VIEW_FADE), col(cfg, "screen", "bg")
+            cv.cells = [[(ch, faded(s, e, cfg, cv.bg[y][x] or screen)) for x, (ch, s) in enumerate(row)]
+                        for y, row in enumerate(cv.cells)]
     return cv
 
 
@@ -1933,6 +1941,7 @@ class App:
         self.selected, self.expanded = None, set()
         self.view_lines, self.view_scroll, self.items, self.item_index = [], 0, [], 0
         self.view_opened, self.view_marks = 0.0, {}  # T-1312: when the diff view opened; its changed-word marks
+        self.scrub = None  # T-1307: a replay's [events, how many are shown], stepped with the arrows
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
@@ -2025,6 +2034,8 @@ class App:
             return self._home_key(k)
         if self.mode == "main" and self._card_key(k):  # T-1762
             return None
+        if self.mode == "main" and self.scrub and k in SCRUB_KEYS and not self.running():  # T-1307
+            return self._scrub_key(k)
         if self.mode in ("diff", "history", "picker"):
             return self._view_key(k)
         cmd = self.cfg["keys"].get(k)
@@ -2983,20 +2994,40 @@ class App:
         self.runner_test.start()
 
     def replay(self, path):
-        st = State()
+        events = []
         try:
             with open(path, encoding="utf-8") as f:
                 for line in f:
                     try:
-                        st.apply(json.loads(line))
+                        e = json.loads(line)
                     except ValueError:
                         continue
+                    if isinstance(e, dict):
+                        events.append(e)
         except OSError as e:
             self.message = f"can't read {path}: {e}"
             return
+        self.motion, self.scrub = Motion(), [events, 0]
+        self._scrub_to(len(events))
+        self.message = (f"viewing {self.state.task or 'a past run'}"
+                        + (f" · ←/→ step through its {len(events)} events" if len(events) > 1 else ""))
+
+    def _scrub_to(self, n):
+        """T-1307: the replay as it stood after its first n events (State.apply, the one reducer, from the start)."""
+        events = self.scrub[0]
+        n = max(min(1, len(events)), min(len(events), n))
+        st = State()
+        for e in events[:n]:
+            st.apply(e)
+        self.scrub[1] = n
         self.state, self.selected, self.expanded, self.follow = st, None, set(), True
-        self.motion = Motion()
-        self.message = f"viewing {st.task or 'a past run'}"
+        if n:
+            kind = "".join(ch for ch in str(events[n - 1].get("event") or "?") if ch.isprintable())[:30]
+            self.message = f"◂▸ {n}/{len(events)} {kind}"  # short: the status bar's hints take most of its width
+
+    def _scrub_key(self, k):
+        n, end = self.scrub[1], len(self.scrub[0])
+        self._scrub_to({"KEY_LEFT": n - 1, "KEY_RIGHT": n + 1, "KEY_HOME": 1, "KEY_END": end}[k])
 
     def _git_diff(self):
         """The run's changes step by step: each file under the step that first changed it, a new file in full; after
@@ -3050,7 +3081,7 @@ class App:
         return due and self.cfg.get("motion", "full") != "off"
 
     def start(self, words, **extra):
-        self.bell_seen = (0, False)  # a new run's state counts from nothing
+        self.bell_seen, self.scrub = (0, False), None  # a new run's state counts from nothing
         self.state, self.selected, self.expanded, self.follow, self.message = State(), None, set(), True, ""
         self.motion = Motion()
         if self.next_root:  # T-1330: a run started from a project's view runs in that project
