@@ -5777,6 +5777,12 @@ def _build_parser():
     s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
     s.add_argument("--candidate", metavar="REF|FILE", help="score another guard (a git ref of Foreman's repo, or a "
                                                           "fmguard.py file) against the working one (T-0712)")
+    s = add("dojo", lazy("fmdojo", "cmd_dojo"), tier=("Finding your way", 307),
+            help="a short drill of commands the guard refuses and why: allow or refuse, then the guard's own verdict "
+                 "(a study sheet with the answers off a terminal; T-1608)")
+    s.add_argument("--rounds", type=int, default=8, help="how many commands (1 to 40; default 8)")
+    s.add_argument("--seed", type=int, help="the same drill again")
+    s.add_argument("--quiz", action="store_true", help="ask even when stdin isn't a terminal (a or r, a line each)")
     s = add("guard", lazy("fmhooks", "cmd_guard_try"), tier=("Finding your way", 305), help="guard try \"CMD\" [--cwd DIR]: the real guard's "
                                                            "verdict for a command or --tool Edit --path P, as this session would get it; never run (T-1146)")
     s.add_argument("action", help="try | wrong (guard wrong \"CMD\" --should allow|block [--why TEXT]: store a labelled case, T-1162) | "
@@ -6217,7 +6223,7 @@ def _build_parser():
             help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496); "
                  "serve: the same as a page on 127.0.0.1, token-locked, changes through set")
     s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
-                                                                 "bisect", "profile", "chords", "serve"])
+                                                                 "bisect", "profile", "chords", "serve", "check"])
     # T-1543 bisect, T-1656 profile, T-1660 chords, T-1659 serve
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
                                           "share code fm settings export printed (T-1510; tui.toml's [profile] tables "
@@ -6304,6 +6310,9 @@ def _build_parser():
                    "theme)")
     s.add_argument("--dark", action="store_true", help="tokens --to app|pane: the dark values (app: on the night "
                    "theme; the default picks the theme by the screen colour's lightness)")
+    s.add_argument("--save", action="store_true", help="tokens --to pane: keep it as the foreman-ui pane's palette (it "
+                   "paints over the default one; cb and riso still win), not just print it (T-1717)")
+    s.add_argument("--clear", action="store_true", help="tokens --to pane: forget the saved pane palette (T-1717)")
     s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 91), help="PNG files with no Pillow (T-1630): info "
             "PATH: size and mode; diff A B: the changed-pixel count and box (exit 1 when they differ or sizes do)")
     s.add_argument("action", choices=["info", "diff"])
@@ -6426,6 +6435,8 @@ def _build_parser():
     s.add_argument("--after", metavar="ID", help="a follow-up to an earlier run's task: its request, plan, how it "
                                                  "ended and the files it changed go to the planner as data, and the "
                                                  "new task's request names it (T-1340)")
+    s.add_argument("--ask", action="store_true", help="answer the request as a question about the code: read-only, no "
+                   "task, and beside a run already working in this tree (the app's n during a run)")
     s.add_argument("--resume", nargs="?", const="", metavar="ID", help="carry on a crashed or killed run from its "
                                                                      "journal (default: the newest unfinished one)")
     s.add_argument("--no-commit", action="store_true", help="close the task without committing")
@@ -6560,6 +6571,8 @@ def _build_parser():
                                                           "session (T-0975); or fm sandbox on")
     s.add_argument("--no-sandbox", action="store_true", help="run sessions without Claude Code's sandbox")
     s.add_argument("--models", help="model per tier, e.g. S=sonnet,M=sonnet,L=opus (default: Claude Code's)")
+    s.add_argument("--runner", metavar="NAME", help="work each task with fm code --task on this runner (fm code "
+                                                   "runners lists them) instead of a claude -p session")
     s.add_argument("--save", action="store_true", help="keep --models for later runs")
     s = add("sandbox", lazy("fmserve", "cmd_sandbox"), tier=("Project and settings", 900), help="fm run's sandbox as a project setting: on, off, allow "
                                                            "DOMAIN, show (T-1086)")

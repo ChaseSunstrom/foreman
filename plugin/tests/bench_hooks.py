@@ -17,7 +17,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(HERE)
 HOOK = os.path.join(PLUGIN, "hooks", "hook")
 FM = os.path.join(PLUGIN, "bin", "fm")
-BUDGET_MS = {"default": 150, "MessageDisplay": 100, "PreToolUse:Bash:script": 300}
+sys.path.insert(0, os.path.join(PLUGIN, "lib"))
+import fmguard  # noqa: E402
+
+# T-1777: the script case is a hook plus the guard's CPU time box for one cold script read (the bench's script never
+# finishes inside it), so its budget is a hook's plus the box (300 left ~85 ms for startup, which load ate)
+BUDGET_MS = {"default": 150, "MessageDisplay": 100}
+BUDGET_MS["PreToolUse:Bash:script"] = BUDGET_MS["default"] + round(fmguard._script_budget() * 1000)
 # T-1192: a real-shaped build script (functions, case, quoting, substitutions, a heredoc) the guard reads when a command
 # runs it (T-0275); repeated to ~40 KB and rewritten before every run, so each run is a cold read, not a cached one
 SCRIPT_BLOCK = r'''

@@ -376,6 +376,13 @@ def _batch(p, head, skip, n):
     return batch
 
 
+def _session_cmd(p, b, args, models):
+    """T-1773: what works one task: a claude -p session, or fm code --task on the runner fm run --runner names."""
+    if getattr(args, "runner", None):
+        return [sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "code", "--task", b.id, "--worker", args.runner]
+    return _claude_cmd(p, b, args, models)
+
+
 def _claude_cmd(p, b, args, models):
     model = models.get(b.tier)
     import fmcontract
@@ -479,7 +486,7 @@ def _run_lanes(p, batch, args, models, log):
                 continue
             path = lanes[b.id] = json.loads(made.stdout)["path"]
             out = tempfile.TemporaryFile("w+", errors="replace")
-            proc = subprocess.Popen(_claude_cmd(p, b, args, models), cwd=path, stdout=out, stderr=subprocess.STDOUT,
+            proc = subprocess.Popen(_session_cmd(p, b, args, models), cwd=path, stdout=out, stderr=subprocess.STDOUT,
                                     env=dict(os.environ, FOREMAN_DRIVE_TASK=b.id), text=True, start_new_session=True)
             runs[b.id] = (path, proc, out, time.monotonic())
         deadline = time.monotonic() + args.timeout * 60
@@ -723,6 +730,12 @@ def cmd_run(args):
     import fmcli
     if args.sandbox and args.no_sandbox:
         raise fmcli.UsageError("--sandbox and --no-sandbox contradict each other: pick one")
+    if getattr(args, "runner", None):  # T-1773: each task through fm code --task on this runner
+        import fmcode
+        names = [n for n, r in fmcode.all_runners().items() if r.get("work")]
+        if args.runner not in names:
+            raise fmcli.UsageError(f"--runner {args.runner}: not a runner fm code can run ({', '.join(names)}; "
+                                   "fm code runners lists them)")
     _inhibit()
     p = fmcli.resolve(args)
     if _sandbox_wanted(p, args):  # T-1086: no working sandbox means no run, never a silently open one
@@ -828,7 +841,7 @@ def cmd_run(args):
             continue
         before = _fingerprint(b)
         model = models.get(b.tier)
-        cmd = _claude_cmd(p, b, args, models)
+        cmd = _session_cmd(p, b, args, models)
         started, t0 = c.now(), time.monotonic()
         import signal
         import tempfile
@@ -880,7 +893,8 @@ def cmd_run(args):
             time.sleep(pause)
             continue
         if code != 0:
-            fail(f"{b.id}: claude exited {code} (login or crash); stopping")
+            fail(f"{b.id}: {'fm code on ' + args.runner if getattr(args, 'runner', None) else 'claude'} exited {code} "
+                 "(login or crash); stopping")
         step = WAIT_FIRST
         spent = _session_tokens(p, started)
         c.log_event(p, "run_session", task=b.id, data={"model": model or "default", "tokens": spent,

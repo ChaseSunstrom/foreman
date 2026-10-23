@@ -227,6 +227,7 @@ async function refresh($: EngineInterface): Promise<boolean> {
     const r = await run($, ['ui', '--json'])
     if (r.exitCode !== 0) throw new Error(r.stderr.trim().split('\n').at(-1) || `fm ui exited ${r.exitCode}`)
     const next = cleanDeep(JSON.parse(r.stdout)) as FmView // T-1679: no title or name draws a control or bidi override
+    if (cfg.palette === 'default') setPalette('default', next.palette_custom) // T-1717: a saved palette paints over
     const prev = await read($, view)
     const was = prev?.active
     const now = next.active

@@ -256,6 +256,28 @@ class Mutation(unittest.TestCase):
 from helpers import ForemanTestCase  # noqa: E402
 
 
+class Dojo(ForemanTestCase):  # T-1608
+    def test_the_drill_mixes_refused_and_allowed_commands_with_the_guards_live_verdict(self):
+        drills = json.loads(self.fm("dojo", "--rounds", "6", "--seed", "1", "--json").stdout)
+        self.assertEqual(len(drills), 6)
+        self.assertEqual(sorted(d["should"] for d in drills), ["allow"] * 3 + ["block"] * 3)
+        for d in drills:
+            self.assertTrue(d["why"], d)
+            self.assertEqual(d["category"] == "allow", d["should"] == "allow", d)  # the corpus is green: they agree
+        sheet = self.fm("dojo", "--rounds", "2", "--seed", "1").stdout
+        self.assertIn("the guard refuses it", sheet)
+
+    def test_a_quiz_scores_the_answers(self):
+        drills = json.loads(self.fm("dojo", "--rounds", "4", "--seed", "2", "--json").stdout)
+        right = "".join("r\n" if d["should"] == "block" else "a\n" for d in drills)
+        out = self.fm("dojo", "--rounds", "4", "--seed", "2", "--quiz", input=right).stdout
+        self.assertIn("4/4 right.", out)
+        self.assertIn("fm guard try", out)
+        out = self.fm("dojo", "--rounds", "4", "--seed", "2", "--quiz", input="a\n").stdout  # input ends: it stops
+        self.assertRegex(out, r"[01]/1 right\.")
+        self.assertNotEqual(self.fm("dojo", "--rounds", "0", check=False).returncode, 0)
+
+
 class Trust(ForemanTestCase):
     """T-1606: a secret pasted into a prompt gets one note that never repeats it; the same kind of approval asked again
     and again in one session gets a note to batch; fm doctor --wrong files a false alarm as a labelled case for review."""

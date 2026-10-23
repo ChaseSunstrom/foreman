@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, diffRows, clean, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, setPalette, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace, typeColor } from '../hooks/kit'
+import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, diffRows, clean, customColors, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, setPalette, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace, typeColor } from '../hooks/kit'
 import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 import type { Part } from '../hooks/kit'
@@ -1534,6 +1534,27 @@ const HIST = [
   { time: '10:05', mark: '✗', task: 'T-0007', text: 'step 1 failed', title: 'Login times out' },
   { time: '10:09', mark: '✓', task: 'T-0012', text: 'step 1 passed', title: 'Other' },
 ]
+
+test("a saved palette keeps C's own keys only, never an inherited name (T-1717)", () => {
+  expect(customColors({ toString: '#123456', constructor: '#123456', accent: '#000001' })).toEqual({ accent: 1 })
+})
+
+test("a saved palette in fm ui's view paints over the default, checked (T-1717)", async ($, on) => {
+  world(on, [{ ...CALM, history: HIST, palette_custom: { err: '#123456', ok: 'red; x', evil: '#000000' } } as never])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect((await ui.find({ type: 'Text', text: 'step 1 failed' }))?.props.color).toBe(hex(0x123456))
+  expect((await ui.find({ type: 'Text', text: 'step 1 passed' }))?.props.color).toBe(hex(0x87d787)) // a bad value: kept
+  await ui.unmount()
+})
+
+test("an explicit palette still wins over a saved one (T-1717)", { options: { palette: 'cb' } }, async ($, on) => {
+  world(on, [{ ...CALM, history: HIST, palette_custom: { err: '#123456' } } as never])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect((await ui.find({ type: 'Text', text: 'step 1 failed' }))?.props.color).toBe(hex(0xe69f00))
+  await ui.unmount()
+})
 
 test("palette 'cb' swaps the ok/err colours and the error still carries a glyph (T-1081)", { options: { palette: 'cb' } }, async ($, on) => {
   world(on, [{ ...CALM, history: HIST }])

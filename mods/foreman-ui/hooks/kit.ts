@@ -27,8 +27,18 @@ export const PALETTES = {
   cb: { ok: 0x56b4e9, err: 0xe69f00, accent: 0x5fd7d7, accent2: 0x87afff },
   riso: { ok: 0x00a95c, err: 0xff48b0, accent: 0x62a8e5, accent2: 0xffb511 },
 }
-export const setPalette = (name: string) =>
-  void Object.assign(C, name === 'cb' || name === 'riso' ? PALETTES[name] : PALETTES.default)
+const BASE = { ...C } // T-1717: every colour as shipped, so a cleared saved palette puts all of them back
+export const setPalette = (name: string, custom?: Record<string, unknown>) =>
+  void Object.assign(C, BASE, name === 'cb' || name === 'riso' ? PALETTES[name] : { ...PALETTES.default, ...customColors(custom) })
+
+/** T-1717: a saved palette (fm design tokens --to pane --save, carried in fm ui's view) as C's numbers: known keys
+ * with #rrggbb values only, so a damaged file can't paint anything odd */
+export function customColors(custom?: Record<string, unknown>): Partial<typeof C> {
+  const out: Record<string, number> = {}
+  for (const [k, v] of Object.entries(custom ?? {}))
+    if (Object.prototype.hasOwnProperty.call(BASE, k) && typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)) out[k] = parseInt(v.slice(1), 16)
+  return out as Partial<typeof C>
+}
 
 export const hex= (c: number) => `#${c.toString(16).padStart(6, '0')}`
 

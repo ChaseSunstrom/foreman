@@ -76,6 +76,7 @@ export type FmView = {
   health?: { hook_p95_ms: number | null; guard_blocks: number; hook_errors: number; paused_hooks?: string[] }
   watch?: string[] // paths whose mtime moves when the record changes
   latency?: number[] // the latest hook run times (ms), oldest first
+  palette_custom?: Record<string, string> // T-1717: fm design tokens --to pane --save, checked: C's keys, #rrggbb
   checks?: FmChecks | null // the last fm check run
   today_done?: number // tasks closed as done today
   learned?: string | null // T-1045: what Foreman learned this week (fixes, rules, interventions per closed task)

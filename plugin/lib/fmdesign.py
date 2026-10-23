@@ -22,6 +22,8 @@ import os
 import re
 import stat
 
+import fmcore
+
 RULES = [
     {"id": "generic-font", "why": "every type stack leads with Inter or the system face: the default look of generated UI",
      "fix": "pick a typeface with a voice for headings or body (a system stack can stay as the fallback)"},
@@ -1340,8 +1342,7 @@ APP_STYLES = {  # role -> (fm code style, field): as fmcodetui._theme paints its
                ("input", "bg"), ("chip_todo", "bg"), ("panel", "bg"))}
 PANE_KEYS = {"accent": "accent", "ok": "ok", "warn": "warn", "err": "bad", "dim": "muted", "muted": "muted",
              "track": "border", "white": "text"}  # the C object in mods/foreman-ui/hooks/kit.ts, by role
-PANE_ALL = ("accent", "accent2", "ok", "warn", "err", "edit", "agent", "web", "skill", "dim", "muted", "add", "del",
-            "track", "white")
+PANE_ALL = fmcore.PANE_ALL  # the C object's keys in mods/foreman-ui/hooks/kit.ts (T-1717: fmcore's, for fm ui's reader)
 
 
 def read_design(path):
@@ -1552,10 +1553,22 @@ def _design_tokens(args, fmcli):
             fmcli.out(args, {"proofs": proofs, "warnings": warnings, "failed": failed},
                       render_proofs(proofs, warnings) + f"\ncontrast: {failed} of {len(proofs)} failed")
             return 1 if failed else 0
-        if act == "tokens":  # T-1651: prints only; the user puts it where the surface reads it
+        if act == "tokens" and (getattr(args, "save", False) or getattr(args, "clear", False)) \
+                and os.environ.get("FOREMAN_WORKER_OF"):  # T-1717: the user's pane, never a worker's to repaint
+            raise ValueError("--save and --clear change the pane's palette: not from an fm code worker")
+        if act == "tokens" and getattr(args, "clear", False):  # T-1717
+            had = os.path.exists(fmcore.pane_palette_path())
+            if had:
+                os.remove(fmcore.pane_palette_path())
+            print("The pane's saved palette is gone: it paints its default again." if had else
+                  "No saved pane palette to clear.")
+            return 0
+        if act == "tokens":  # T-1651: prints only (T-1717: --to pane --save keeps it for the pane)
             if len(args.paths) != 1:
                 raise ValueError("tokens takes one DESIGN.md, e.g. fm design tokens DESIGN.md --to css")
             to = getattr(args, "to", None) or "css"
+            if getattr(args, "save", False) and to != "pane":  # T-1717 review: never silently ignored
+                raise ValueError(f"--save keeps the foreman-ui pane's palette: use it with --to pane, not --to {to}")
             light, dark = getattr(args, "light", False), getattr(args, "dark", False)
             if light and dark:
                 raise ValueError("--light or --dark, not both")
@@ -1569,6 +1582,10 @@ def _design_tokens(args, fmcli):
                 text = to_app(tokens, theme)
             else:
                 text, unmapped = to_pane(tokens, theme)
+                if getattr(args, "save", False):  # T-1717: the pane reads it through fm ui's view
+                    fmcore.write_atomic(fmcore.pane_palette_path(), text)
+                    print(f"Saved for the foreman-ui pane: {fmcore.pane_palette_path()} (it paints over the default "
+                          "palette at the next refresh; fm design tokens --to pane --clear forgets it)", file=err)
             if getattr(args, "json", False):
                 fmcli.out(args, {"to": to, "text": text, "unmapped": unmapped}, None)
             else:
@@ -1617,7 +1634,8 @@ def cmd_design(args):
         fmcli.out(args, got, render_gates(got))
         return 1 if any(g["mode"] == "blocking" and not all(m["pass"] for m in g["musts"])
                         for g in got["gates"]) else 0
-    if not args.paths:  # only check defaults its argument (the project root)
+    if not args.paths and not (args.action == "tokens" and getattr(args, "clear", False)):  # check's defaults to the
+        # project root; tokens --clear forgets the saved pane palette and names no file (T-1717)
         print(f"fm: design {args.action}: needs an argument (fm design -h)", file=sys.stderr)
         return 2
     if args.action != "lint":
