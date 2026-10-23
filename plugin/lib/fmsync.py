@@ -80,8 +80,9 @@ def _for_mirror(text):
 def _from_mirror(text):
     """A mirrored brief as this machine may take it: no grants, no run or worktree marks, audits relabelled so they
     don't count here (this machine's gates need its own runs and audits)."""
-    # a pulled brief is untrusted text that fm task show and other listings print: no terminal sequences
-    b = c.Brief.parse(c.plain_lines(_AUDIT_LINE.sub(r"\1, imported)", c._unmarked(text))))
+    # a pulled brief is untrusted text that fm task show and other listings print: no terminal sequences. Plain first
+    # (T-1665 review): an invisible character inside a mark hid it from the subs, then plain took it out
+    b = c.Brief.parse(_AUDIT_LINE.sub(r"\1, imported)", c._unmarked(c.plain_lines(text))))
     for k in LOCAL_ONLY:
         b.meta.pop(k, None)
     return b
