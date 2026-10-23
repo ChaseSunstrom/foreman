@@ -152,7 +152,7 @@ class CommitOwnFiles(HookCase):
         self.fm("focus", "T-0001")
         r = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--commit", "First")
         self.assertIn("shared.py", self.shown())
-        self.assertIn("shared.py also holds uncommitted edits of T-0002", r.stdout)
+        self.assertIn("shared.py was also edited by T-0002 since this task's focus (committed with it)", r.stdout)
 
     def test_a_commit_with_nothing_left_says_so(self):
         self.fm("focus", "T-0001")
