@@ -429,3 +429,11 @@ From `fm code`, the `hand:` part reads `hand: pending` until someone does them; 
 ## Library cards
 
 The code side lives in the stack library: `fm lib show forms` (native controls, autofill tokens, server-side errors), `fm lib show input-validation` (the server half of every check above), `fm lib show react-hook-form`, `fm lib show focus-management` (where focus goes after open, close, delete and navigation), `fm lib show keyboard-navigation`, `fm lib show aria-patterns` (roving `tabindex`, menus, tabs, comboboxes), `fm lib show dialogs`, `fm lib show toasts`, `fm lib show optimistic-ui`, `fm lib show idempotency`, `fm lib show skeleton-loading`, `fm lib show drag-and-drop`, `fm lib show responsive-design` (viewport, breakpoints, pointer and hover queries), `fm lib show i18n` (string length, plurals), `fm lib show accessibility`, `fm lib show accessibility-testing` (axe in CI, which covers what this probe doesn't), `fm lib show playwright`, `fm lib show web-workers`. Add `--section verify` for each card's checks.
+
+## UI contract
+
+- motion: feedback that moves (a press, a shake on error) has a still form under reduced motion that means the same.
+- contrast: errors and disabled controls say so in words and shape as well as colour.
+- keyboard: the keyboard walk is part of the procedure: every action, in visual order, with visible focus.
+- small screens: the 360 px touch rules apply: 44 px targets, no hover-only actions, no sideways scroll.
+- states: every control has idle, busy, done and error looks, and a form error says how to fix it.

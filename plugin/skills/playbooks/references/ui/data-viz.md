@@ -67,3 +67,11 @@ those rules hold here unchanged.
 `fm lib show d3` (scales and axes), `fm lib show recharts`, `fm lib show plotly`, `fm lib show matplotlib`,
 `fm lib show data-tables` (the table view), `fm lib show color-contrast`, `fm lib show accessibility`,
 `fm lib show animation`.
+
+## UI contract
+
+- motion: chart transitions use the motion tokens and snap under reduced motion; no value appears only mid-animation.
+- contrast: colour by role with status hues reserved; every series has a label or pattern too, and text uses text tokens.
+- keyboard: the table view is the keyboard path, every value reachable without a pointer; tooltips open on focus too.
+- small screens: at 360 px a chart becomes a simpler form or its table, never a sideways-scrolling plot.
+- states: no data, loading, a failed fetch and a single point each have a designed chart state.
