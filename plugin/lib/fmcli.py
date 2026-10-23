@@ -3663,7 +3663,8 @@ def cmd_pause(args):
 
 def cmd_check(args):
     """The project's gate commands (tests, lint, doctor…), run together; any failure exits 1, so a pipe can't mask it."""
-    if args.action == "run" and not getattr(args, "repeat", 0):  # T-1668: full runs queue on the machine-wide gate lock
+    # T-1668: full runs queue on the machine-wide gate lock; T-1743: --affected runs (each builder's own) don't
+    if args.action == "run" and not getattr(args, "repeat", 0) and not getattr(args, "affected", False):
         with c.gate_lock("fm check", say=lambda m: print(m, file=sys.stderr)):
             return _cmd_check(args)
     return _cmd_check(args)
