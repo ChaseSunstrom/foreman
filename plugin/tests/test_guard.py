@@ -240,6 +240,20 @@ class KnownVars(GuardCase):
                 self.assertIsNotNone(g.check("Bash", {"command": self.sub(cmd)}, ctx))
 
 
+class LoopAfterQuotedBackslash(GuardCase):  # T-1781
+    def test_a_backslash_inside_single_quotes_still_lets_a_literal_loop_unroll(self):
+        s = os.path.join(os.path.dirname(self.home), "scratch1781")
+        os.makedirs(os.path.join(s, "full"), exist_ok=True)
+        ctx = g.Ctx(cwd=self.repo, project_root=self.repo, home=self.home, foreman_home=self.fhome,
+                    unbriefed=self.repo)  # no task yet: a write in the project waits for one
+        loop = f"cd {s} && for f in a b; do cp {self.repo}/$f full/$f; done"
+        self.assertEqual(g.check_bash(loop, ctx), [])
+        self.assertEqual(g.check_bash(loop + " && echo 'x\\' > b.txt", ctx), [], "in '…' a backslash is a character")
+        self.assertEqual(g._expand_literal_loops("for f in a; do echo 'x\\'; done"), "echo 'x\\'; f=a")
+        for kept in ('for f in a; do echo "\\$f"; done', "for f in a; do echo \\$f; done", "for f in a\\;b; do x; done"):
+            self.assertEqual(g._expand_literal_loops(kept), kept, "a backslash bash reads as an escape: as written")
+
+
 class RmOutside(GuardCase):
     def test_table(self):
         self.run_table([

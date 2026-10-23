@@ -6384,6 +6384,8 @@ def _build_parser():
                    "\"three\" (r155+); component: that module plus <fm-scene>, a custom element mounting it in a shadow "
                    "DOM over its slot=\"poster\" child (T-1634)")
     s.add_argument("--out", metavar="PATH", help="write the module here, replacing the file whole, not print it")
+    s.add_argument("--tag", metavar="NAME", help="--to component: the element's name instead of fm-scene, so two "
+                   "scenes can share a page (a custom element name: pebble-scene)")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), tier=("Finding your way", 460), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "

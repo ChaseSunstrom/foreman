@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, diffRows, clean, customColors, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, setPalette, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace, typeColor } from '../hooks/kit'
-import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts } from '../hooks/register'
+import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts, usable } from '../hooks/register'
 import type { FmView } from '../types'
 import type { Part } from '../hooks/kit'
 
@@ -1624,6 +1624,50 @@ test('a motion or palette changed in the settings applies on the next poll, no r
   expect(blits.length).toBe(0)
   await clock.advance(3000)
   await live.unmount()
+})
+
+test('a saved palette survives an options change on the next poll (T-1780)', async ($, on) => {
+  const { clock } = world(on, [{ ...CALM, history: HIST, palette_custom: { err: '#123456' } } as never])
+  const opts: Record<string, string> = { palette: 'default', motion: 'full' }
+  configRows(on, opts)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const failedColor = async () => (await ui.find({ type: 'Text', text: 'step 1 failed' }))?.props.color
+  await clock.advance(2000)
+  expect(await failedColor()).toBe(hex(0x123456))
+  opts.motion = 'reduced' // fm ui's view hasn't moved: only the options poll runs
+  await clock.advance(2000)
+  expect(await failedColor()).toBe(hex(0x123456))
+  opts.palette = 'cb' // an explicit palette still wins
+  await clock.advance(2000)
+  expect(await failedColor()).toBe(hex(0xe69f00))
+  await ui.unmount()
+})
+
+test('an option the pane cannot use keeps its last good value and says so (T-1613)', async ($, on) => {
+  const { clock, toasted } = world(on, [{ ...CALM, history: HIST }])
+  const opts: Record<string, string> = { palette: 'cb', motion: 'full' }
+  configRows(on, opts)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const failedColor = async () => (await ui.find({ type: 'Text', text: 'step 1 failed' }))?.props.color
+  await clock.advance(2000)
+  expect(await failedColor()).toBe(hex(0xe69f00))
+  opts.palette = 'chartreuse' // a typo in settings.json
+  await clock.advance(2000)
+  expect(await failedColor()).toBe(hex(0xe69f00)) // kept cb, not the default's red
+  expect(toasted.some(t => t.includes("palette 'chartreuse'") && t.includes('kept cb'))).toBe(true)
+  const shown = toasted.length
+  await clock.advance(2000)
+  expect(toasted.length).toBe(shown) // said once, not every poll
+  await ui.unmount()
+})
+
+test('usable: a value the pane can use is taken, else the last good one, else none; a stored entry is checked too (T-1613)', () => {
+  expect(usable({ palette: 'chartreuse', motion: 'off', other: 1 }, { palette: 'cb' }))
+    .toEqual({ out: { palette: 'cb', motion: 'off', other: 1 }, kept: ['palette'] })
+  expect(usable({ palette: 'chartreuse' }, { palette: 'nope' })).toEqual({ out: {}, kept: ['palette'] })
+  expect(usable({ palette: 'cb', mascot: { evil: 1 } }, {}).out).toEqual({ palette: 'cb' }) // a damaged stored copy
 })
 
 test('a palette changed before the first poll applies on it, not only recorded (T-1574 review)', async ($, on) => {

@@ -145,6 +145,15 @@ if (mode === "live" || element) {  // a second mount, after dispose() lost the f
   out.remount = [fig.dataset.state, fig.canvas !== canvas, fig.canvas.lost]; again();
 }
 if (fig.shadowRoot) out.element = [fig.shadowRoot.mode, canvas.attrs["aria-label"], fig.canvas.attrs["aria-label"]];
+if (element) {  // T-1706: label is watched: a new one reaches the canvas; taken away, the canvas hides and the twin speaks
+  out.observed = customElements.get("fm-scene").observedAttributes;
+  fig.attrs.label = "A wet pebble"; fig.attributeChangedCallback("label", "A clay pebble", "A wet pebble");
+  const named = fig.canvas.attrs["aria-label"];
+  delete fig.attrs.label; fig.attributeChangedCallback("label", "A wet pebble", null);
+  out.relabel = [named, fig.canvas.attrs["aria-label"] ?? null, fig.canvas.attrs["aria-hidden"] ?? null];
+  const bare = new (customElements.get("fm-scene"))();  // before it is connected (an upgrade sets attributes first)
+  bare.attributeChangedCallback("label", null, "x"); out.early_label = "ok";
+}
 out.errors = errors;
 console.log(JSON.stringify(out));
 """
@@ -285,10 +294,35 @@ class Component(ForemanTestCase):
         live, o = self.run_module("live"), self.run_module("component")
         self.assertEqual(o.pop("element"), ["open", "A clay pebble", "A clay pebble"],
                          "a shadow root; the label reaches the canvas, and the fresh one a remount makes")
+        self.assertEqual((o.pop("observed"), o.pop("relabel"), o.pop("early_label")),
+                         (["label"], ["A wet pebble", None, "true"], "ok"), "label is watched (T-1706)")
         self.assertEqual(o, live, "the same camera, frames, survival and freeing, the state on the element itself")
         o = self.run_module("declarative")
         self.assertEqual(o.pop("element"), ["open", "A clay pebble", "A clay pebble"])
+        for k in ("observed", "relabel", "early_label"):
+            o.pop(k)
         self.assertEqual(o, live, "a declarative shadow root with no canvas is filled in, not attached again")
+
+
+class Tag(ForemanTestCase):  # T-1706
+    def test_a_tag_names_the_element_so_two_scenes_share_a_page(self):
+        scene = fmscene.validate(copy.deepcopy(SCENE))
+        two = fmscene.compile_component(scene, tag="pebble-scene")
+        self.assertIn('customElements.define("pebble-scene", FmScene)', two)
+        self.assertIn("pebble-scene:not(:defined){display:block", two, "the page's box rule names it too")
+        self.assertNotIn("fm-scene", two.replace(fmscene.RUNTIME, ""), "nothing outside the shared runtime says fm-scene")
+        self.assertEqual(fmscene.compile_component(scene), fmscene.compile_component(scene, tag="fm-scene"))
+        for bad in ("pebble", "Pebble-scene", "1-scene", "font-face", "pebble-scène", 'a-"b', "a-b</script"):
+            with self.assertRaises(ValueError, msg=bad):
+                fmscene.compile_component(scene, tag=bad)
+        src = os.path.join(self.tmp, "scene.json")
+        with open(src, "w") as f:
+            json.dump(SCENE, f)
+        self.assertEqual(self.fm("scene", "compile", src, "--to", "component", "--tag", "pebble-scene").stdout.rstrip("\n"),
+                         two.rstrip("\n"))
+        p = self.fm("scene", "compile", src, "--tag", "pebble-scene", check=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("--tag names the element: use it with --to component", p.stderr)
 
 
 class Schema(ForemanTestCase):
