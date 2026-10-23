@@ -164,6 +164,130 @@ DIFF = """diff --git a/deploy.py b/deploy.py
 """
 
 
+class Keys(unittest.TestCase):
+    """T-1348: q or s during a live run asks for a second press within 2 s; the ? poster names the CLI command behind
+    each key."""
+
+    def live(self):
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
+        app.child = type("Child", (), {"poll": lambda self: None})()  # a run going (no pid: nothing to signal)
+        app.state.status = "running"
+        now, stopped = [100.0], []
+        app.clock, app.stop = (lambda: now[0]), (lambda: stopped.append(1))
+        app.commands["stop"] = app.stop
+        return app, now, stopped
+
+    def test_q_or_s_during_a_live_run_needs_a_second_press(self):
+        app, now, _ = self.live()
+        app.key("q")
+        self.assertFalse(app.done)
+        self.assertIn("q again", app.message)
+        now[0] += 1
+        app.key("q")
+        self.assertTrue(app.done)
+        app, now, stopped = self.live()
+        app.key("s")
+        now[0] += 3  # too late: it asks again
+        app.key("s")
+        self.assertEqual(stopped, [])
+        app.key("s")
+        self.assertEqual(stopped, [1])
+        app, now, _ = self.live()
+        app.key("q")
+        app.key("j")  # another key in between: start over
+        app.key("q")
+        self.assertFalse(app.done)
+
+    def test_a_launch_tip_names_a_command_never_used_and_learns(self):
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "code-keys.json")
+            with open(path, "w") as f:
+                json.dump(["new", "resume", "diff"], f)
+            app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None, used=path)
+            self.assertEqual(app.message, "tip: h past runs")  # the first in the poster's order not used yet
+            app.key("t")
+            app.key("q")
+            with open(path) as f:
+                self.assertEqual(set(json.load(f)), {"new", "resume", "diff", "thoughts", "quit"})
+        self.assertEqual(tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None).message, "")  # no store: no tip
+
+    def test_with_no_run_going_q_quits_at_once(self):
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
+        app.key("q")
+        self.assertTrue(app.done)
+
+    def test_the_keys_poster_names_the_cli_command_behind_a_key(self):
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
+        app.key("?")
+        text = tui().render(app.state, 140, 44, tui().DEFAULTS, app).text()
+        for cli in ("fm code --resume", "fm settings set motion off", "git diff"):
+            self.assertIn(cli, text)
+
+
+class Waiting(unittest.TestCase):
+    """T-1310: the terminal title names the run's state, a bell rings once when the run is blocked or the guard
+    refuses, and a model silent past 10 s is named as what the run waits on."""
+
+    def test_the_title_names_the_state_in_plain_text(self):
+        st = tui().State()
+        st.status, st.task = "running", "T-0001 fix \x1b]0;pwn\x07add‮"
+        title = tui().title_text(st)
+        self.assertTrue(title.startswith("fm code: running"), title)
+        self.assertIn("T-0001 fix", title)
+        self.assertFalse(any(not ch.isprintable() for ch in title), repr(title))
+        self.assertEqual(tui().title_text(tui().State()), "fm code: idle")
+        self.assertEqual(tui().title_text(None), "fm code")
+
+    def test_the_bell_rings_once_per_block_or_refusal_and_not_with_motion_off(self):
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
+        self.assertFalse(app.bell_due())
+        app.feed({"event": "action", "action": "edit", "target": "x", "result": "refused", "detail": "guard"})
+        self.assertTrue(app.bell_due())
+        self.assertFalse(app.bell_due(), "once")
+        app.feed({"event": "blocked", "text": "needs you"})
+        self.assertTrue(app.bell_due())
+        self.assertFalse(app.bell_due())
+        quiet = tui().App(dict(tui().DEFAULTS, motion="off"), spawn=lambda *a, **k: None)
+        quiet.feed({"event": "blocked", "text": "needs you"})
+        self.assertFalse(quiet.bell_due())
+
+    def test_a_silent_model_is_named_past_ten_seconds(self):
+        st = tui().State()
+        st.status = "running"
+        st.heard = 4
+        bar = tui().render(st, 120, 30, tui().DEFAULTS).text()
+        self.assertIn("last heard 4s ago", bar.replace(" s ago", "s ago"))
+        st.heard = 14
+        self.assertIn("model: last heard 14s ago", tui().render(st, 120, 30, tui().DEFAULTS).text())
+
+    def test_the_loop_writes_the_title_and_the_bell(self):
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
+        app.state.status = "blocked"
+        out = []
+
+        class IO:
+            first = True
+
+            def resized(self):
+                r, IO.first = IO.first, False
+                return r
+
+            def size(self):
+                return 100, 30
+
+            def write(self, s):
+                out.append(s)
+
+            def keys(self, timeout):
+                return ["q"]
+        tui()._loop(IO(), app)
+        text = "".join(out)
+        self.assertIn("\x1b]0;fm code: blocked\x07", text)
+        self.assertIn("\a", text.replace("\x1b]0;fm code: blocked\x07", ""))
+
+
 class Views(unittest.TestCase):
     def app(self, **kw):
         return tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None, **kw)
@@ -1072,6 +1196,8 @@ class Review(unittest.TestCase):
             app.feed(e)
         killed = []
         with unittest.mock.patch.object(os, "killpg", lambda pid, sig: killed.append(pid)):
+            app.key("s")
+            self.assertEqual(killed, [], "T-1348: a live run asks for a second press")
             app.key("s")
         self.assertEqual(killed, [999999])
         child.code = -15

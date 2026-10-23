@@ -1096,8 +1096,10 @@ def _parse_value(raw):
     return v
 
 
-_STEP_RE = re.compile(r"^(\d+)\.\s+\[([ xX])\]\s+(.*?)(\s+<- CURRENT)?\s*$")
-_AC_RE = re.compile(r"^-\s+\[([ xX])\]\s+(.*?)\s*$")
+# T-1616: the text is non-space characters and runs of spaces followed by one, so no lazy scan retries the tail at
+# every position (a run of 20,000 spaces took 1.5 s); same groups as the old (.*?) form
+_STEP_RE = re.compile(r"^(\d+)\.\s+\[([ xX])\]\s+((?:\S|\s+(?!<- CURRENT\s*$)(?=\S))*)(\s+<- CURRENT)?\s*$")
+_AC_RE = re.compile(r"^-\s+\[([ xX])\]\s+((?:\S|\s+(?=\S))*)\s*$")
 _HYPO_RE = re.compile(r"^- H(\d+) \[(open|ruled out|confirmed)\] (.*)$")
 _EV_RE = re.compile(r"^-\s+\((step|ac)\s+(\d+)\)")
 _AUDIT_RE = re.compile(r"^-\s+\(audit\s+([a-z]+)\)")
@@ -2275,7 +2277,8 @@ def plan_gaps(b, autonomy="standard"):
     if not b.steps():
         gaps.append("step")
     if needs_approval(b, autonomy):
-        gaps.append(f"the user's yes (fm ask {b.id} confirm: a child found this request in an old session)"
+        why = plain(str(b.meta.get("confirm_why") or ""))[:160] or "a child found this request in an old session"
+        gaps.append(f"the user's yes (fm ask {b.id} confirm: {why})"  # T-1750: why this one waits
                     if b.meta.get("confirm") else
                     f"approval (M tier needs it: plans keep missing or today's risk budget is spent, see fm risk and "
                     f"fm digest; approve "
