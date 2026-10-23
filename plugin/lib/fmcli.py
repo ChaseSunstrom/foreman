@@ -6369,6 +6369,10 @@ def _build_parser():
     s.add_argument("--here", action="store_true", help="fm code runners --use: for this project only")
     s.add_argument("--check", action="store_true", help="fm code runners: run each installed CLI's --version; flag a "
                    "configured model the provider has retired, or retires within 60 days (retiring soon)")
+    s.add_argument("--ping", nargs="?", const="", metavar="NAME", help="fm code runners: ask each installed runner "
+                   "(or NAME) one tiny question through its read-only plan command and say how it answered (ok, not "
+                   "logged in, usage limit, flag refused, endpoint down, no answer), how fast, and its version; spends "
+                   "a few tokens a runner")
     s.add_argument("--verify", metavar="CMD", help="the plan without a model: one S task done when CMD passes "
                                                    "(it must fail now)")
     s.add_argument("--tui", action="store_true", help=argparse.SUPPRESS)  # what `fm code tui` becomes

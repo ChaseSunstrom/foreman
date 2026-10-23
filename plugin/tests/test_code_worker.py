@@ -792,6 +792,44 @@ class Worker(CodeCase):
         self.assertEqual(fmcode.worker_argv("plain", "x y", which=False), ["plain", "x y"])
 
 
+class Ping(CodeCase):  # T-1335
+    cli, work = Worker.cli, Worker.work
+
+    def setUp(self):
+        super().setUp()
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+
+    def test_a_ping_answer_is_sorted(self):
+        import fmcode
+        s = fmcode.ping_state
+        self.assertEqual(s(0, "ok"), "ok")
+        self.assertEqual(s(0, ""), "no answer")
+        self.assertEqual(s(None, ""), "no answer")
+        self.assertEqual(s(1, "Invalid API key · Please run /login"), "not logged in")
+        self.assertEqual(s(1, "Claude AI usage limit reached|1792745600"), "usage limit")
+        self.assertEqual(s(1, "error: unknown option '--strict-mcp-config'"), "flag refused")
+        self.assertEqual(s(1, "Error: connect ECONNREFUSED 127.0.0.1:443"), "endpoint down")
+        self.assertEqual(s(3, "boom"), "failed (exit 3)")
+
+    def test_runners_ping_asks_each_one_a_tiny_question_and_keeps_the_answer(self):
+        args = os.path.join(self.tmp, "args")
+        self.cli("claude", f'case "$*" in *--version*) echo "2.1.0 (Claude Code)";;\n'
+                           f'*) pwd > {args}; echo \'{{"type": "result", "is_error": false, "result": "ok"}}\';; esac\n')
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write('[runners.mine]\nwork = "claude {prompt}"\n')
+        r = self.work("runners", "--ping", "claude", "--json")
+        row = next(x for x in json.loads(r.stdout)["runners"] if x["name"] == "claude")
+        self.assertEqual((row["ping"]["state"], row["ping"]["version"]), ("ok", "2.1.0 (Claude Code)"))
+        self.assertIsInstance(row["ping"]["ms"], int)
+        self.assertNotEqual(os.path.realpath(read_text(args).strip()), os.path.realpath(self.repo), "a scratch folder")
+        with open(os.path.join(self.home, "state", "code-runners-ping.json")) as f:
+            self.assertEqual(json.load(f)["claude"]["state"], "ok")
+        mine = self.work("runners", "--ping", "mine").stdout
+        self.assertIn("version only", mine)  # no read-only plan command: never handed a prompt
+        self.assertIn("isn't a runner", self.work("runners", "--ping", "nope", check=False).stderr)
+
+
 class Failover(CodeCase):  # T-1356 (not a Worker subclass: its tests would run twice)
     cli, work = Worker.cli, Worker.work
 
