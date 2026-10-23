@@ -1999,6 +1999,98 @@ class Home(unittest.TestCase):
         self.assertEqual(app.mode, "home")
 
 
+class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
+    def app(self):
+        T = tui()
+        self.spawned = []
+        app = T.App(T.DEFAULTS, spawn=lambda words, opts: self.spawned.append((words, opts.get("resume"))))
+        app.feed({"event": "start", "request": "fix add", "worker": "claude", "schema": 1})
+        app.feed({"event": "task", "task": "T-0001"})
+        return T, app
+
+    def text(self, T, app):
+        return T.render(app.state, 120, 34, T.DEFAULTS, app, t=100.0).text()
+
+    def test_a_failure_card_says_what_happened_and_enter_runs_a_read_only_next(self):
+        T, app = self.app()
+        app.feed({"event": "error", "text": "fm code: model: boom", "task": "T-0001", "next": "fm task show T-0001"})
+        text = self.text(T, app)
+        for want in ("Stopped", "what happened", "boom", "Foreman did", "T-0001 stays as it was", "fm task show T-0001"):
+            self.assertIn(want, text)
+        app.fm_output = lambda argv: f"ran {' '.join(argv)}\nline two"
+        app.key("\n")
+        self.assertEqual((app.mode, app.view_title, app.view_lines[0]), ("diff", "fm task show T-0001",
+                                                                          "ran task show T-0001"))
+        app.key("\x1b")
+        self.assertEqual(app.mode, "main")
+        app.key("\x1b")  # Esc on the card hides it
+        self.assertNotIn("what happened", self.text(T, app))
+
+    def test_enter_resumes_or_names_a_command_for_the_users_shell(self):
+        T, app = self.app()
+        app.feed({"event": "error", "text": "fm code: model: refused", "task": "T-0001",
+                  "next": "fm code --resume T-0001"})
+        app.key("\n")
+        self.assertEqual(self.spawned, [([], "T-0001")])
+        T, app = self.app()
+        app.feed({"event": "blocked", "text": "T-0001 blocked: waits", "reason": "waits", "task": "T-0001",
+                  "next": "fm ask T-0001 confirm"})
+        self.assertIn("blocked T-0001", self.text(T, app))
+        app.key("\n")
+        self.assertEqual(app.message, "run it in your shell: fm ask T-0001 confirm")
+        self.assertEqual(app.mode, "main")
+
+    def test_a_stall_card_offers_wait_stop_and_another_runner_until_the_turn_shows_life(self):
+        T, app = self.app()
+        app.feed({"event": "stalled", "text": "    claude stalled: no output since launch (130 s)", "secs": 130})
+        text = self.text(T, app)
+        self.assertIn("Stalled", text)
+        self.assertIn("no output since launch", text)
+        app.key("w")
+        self.assertNotIn("Stalled", self.text(T, app))
+        app.feed({"event": "stalled", "text": "    claude stalled: silent 300 s after: reading", "secs": 300})
+        self.assertIn("Stalled", self.text(T, app), "a new stall shows again")
+        app.key("m")
+        self.assertEqual((app.mode, app.after_pick), ("picker", "resume"))
+        app.key("\x1b")
+        app.feed({"event": "tool", "action": "read", "target": "calc.py", "worker": "claude"})
+        self.assertNotIn("Stalled", self.text(T, app), "life again: no card")
+
+    def test_the_app_sweeps_runners_a_kill_left_when_it_opens(self):
+        import fmcode
+        T, app = self.app()
+        with unittest.mock.patch.object(fmcode, "stop_survivors", return_value=[4242]):
+            self.assertEqual(app.sweep(), [4242])
+        self.assertIn("pid 4242", app.message)
+
+    def test_quitting_mid_run_names_and_stops_each_runner(self):
+        import subprocess
+        import tempfile
+        import fmcode
+        import fmideas
+        home = tempfile.mkdtemp()
+        patch = unittest.mock.patch.dict(os.environ, {"FOREMAN_HOME": home})
+        patch.start()
+        self.addCleanup(patch.stop)
+        T, app = self.app()
+        child = subprocess.Popen(["sleep", "60"], start_new_session=True)
+        runner = subprocess.Popen(["sleep", "61"], start_new_session=True)
+        self.addCleanup(lambda: [x.kill() or x.wait() for x in (child, runner)])
+        for _ in range(200):  # until the fork has become sleep (its name is read from /proc)
+            with open(f"/proc/{runner.pid}/cmdline", "rb") as f:
+                if f.read().startswith(b"sleep"):
+                    break
+            time.sleep(0.01)
+        os.makedirs(os.path.dirname(fmcode._registry(runner.pid)), exist_ok=True)
+        with open(fmcode._registry(runner.pid), "w") as f:
+            f.write(f"{fmideas._starttime(runner.pid)} {child.pid} {fmideas._starttime(child.pid)}")
+        app.child = child
+        app.stop()
+        self.assertEqual(app.stopping, [("sleep", runner.pid)])
+        self.assertEqual(app.stop_report(wait=0.3), [f"stopping sleep (pid {runner.pid})… stopped (killed)"])
+        runner.wait(5)
+
+
 class Noticed(unittest.TestCase):  # T-1339
     def test_home_shows_what_foreman_noticed_first_and_enter_opens_its_project(self):
         T = tui()
