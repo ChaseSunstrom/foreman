@@ -1213,11 +1213,12 @@ def has_direction(text):
     return any(h == "## Direction" for _, h in headings(text.split("\n"))[0])
 
 
-def write_section(path, lines, title, heading="## Tokens"):
+def write_section(path, lines, title, heading="## Tokens", keep=None):
     """Put the section into the markdown file at path (through a symlink, under a lock): replace its own (heading up
     to the next heading, fenced code aside), else insert it after ## Knobs, else append it; a missing file starts with
     a DESIGN.md title. Every other section is kept byte for byte, CRLF line ends included; a file that isn't UTF-8 is
-    refused, never rewritten."""
+    refused, never rewritten. keep(text, or None for no file) runs under the lock before the write (fm design roll's
+    undo record, T-1648); returns the text written."""
     import fmcore
     path = os.path.realpath(path)
     with fmcore.lock(os.path.join(fmcore.state_dir(), "locks", "design-md")):  # ponytail: one lock for every DESIGN.md
@@ -1226,6 +1227,8 @@ def write_section(path, lines, title, heading="## Tokens"):
             text, why = _read(path, strict=True)
             if text is None:
                 raise ValueError(f"{path}: {why}")
+        if keep:
+            keep(text if os.path.lexists(path) else None)
         crlf = "\r\n" in text
         text = text.replace("\r\n", "\n")
         if not text.strip():
@@ -1237,7 +1240,9 @@ def write_section(path, lines, title, heading="## Tokens"):
             raise ValueError(f"{path}: a {fence} code fence is never closed; close it and run again")
         _splice(doc, heads, lines, heading)
         out = "\n".join(doc)
-        fmcore.write_atomic(path, out.replace("\n", "\r\n") if crlf else out)
+        out = out.replace("\n", "\r\n") if crlf else out
+        fmcore.write_atomic(path, out)
+        return out
 
 
 def _splice(doc, heads, lines, heading="## Tokens"):

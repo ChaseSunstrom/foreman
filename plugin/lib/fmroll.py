@@ -1,9 +1,10 @@
 """T-1648: fm design roll. A seeded, coherent pick: one look card (plugin/skills/library/cards/looks) gives the palette
 roles, type pair, motion and texture together, never a mix of cards; the seed picks the card, then which named face of
 each type class leads its stack (the generic ones, Inter, Roboto, Arial, never lead and are dropped). --apply writes it
-as DESIGN.md's ## Look section, one patch: the file's exact bytes before the first roll go to an undo file in the
-project's state, and --undo puts them back (or removes a DESIGN.md the roll created) only while the file is still
-what the last roll wrote. A symlinked DESIGN.md is refused. Stdlib only."""
+as DESIGN.md's ## Look section (the card's name beside the seed: a seed means another card once the cards change),
+one patch: the file's exact bytes before the first roll go to an undo record and a plain .orig copy in the project's
+state, and --undo puts them back (or removes a DESIGN.md the roll created) only while the file is what the last roll
+wrote, or what was there before a roll that never landed. A symlinked DESIGN.md is refused. Stdlib only."""
 import base64
 import hashlib
 import json
@@ -71,36 +72,76 @@ def _load(path):
     try:
         with open(path, encoding="utf-8") as f:
             rec = json.load(f)
-        if not isinstance(rec, dict) or not {"before", "after"} <= set(rec):
+        if not isinstance(rec, dict) or not all(isinstance(rec.get(k, 0), (str, type(None)))
+                                                for k in ("before", "after")):
             raise ValueError("not an undo record")
         return rec
     except (OSError, ValueError) as e:
         raise ValueError(f"the undo file {path} is unreadable ({e}); nothing changed")
 
 
+def _orig(undo):
+    return undo[:-len(".json")] + ".orig"
+
+
+def _save(undo, rec):
+    """The record, and beside it a plain copy of the bytes before the roll (none when there was no file)."""
+    if rec["before"] is None:
+        _remove(_orig(undo))
+    else:
+        fmcore.write_atomic(_orig(undo), base64.b64decode(rec["before"]))
+    fmcore.write_atomic(undo, json.dumps(rec))
+
+
+def _remove(path):
+    if os.path.lexists(path):
+        os.remove(path)
+
+
 def apply(out, look, undo):
-    """Write the look as out's ## Look section; the undo file keeps the bytes before the first of a run of rolls."""
-    before = _bytes(out)
-    prior = _load(undo)
-    rec = prior if prior and prior["after"] == _sha(before) else {"path": out, "before": None if before is None else
-                                                                  base64.b64encode(before).decode()}
-    rec["after"] = None  # until the write lands: --undo refuses a half-done roll rather than guess
-    fmcore.write_atomic(undo, json.dumps(rec))
-    fmdesign.write_section(out, section(look), os.path.basename(os.path.dirname(out)), heading="## Look")
-    rec["after"] = _sha(_bytes(out))
-    fmcore.write_atomic(undo, json.dumps(rec))
+    """Write the look as out's ## Look section; the undo record keeps the bytes before the first of a run of rolls
+    (a roll that failed or died half-way is part of that run). Read and recorded under write_section's lock."""
+    prior, done = _load(undo), {}
+
+    def keep(text):
+        if os.path.islink(out):
+            raise ValueError(f"{out} is a symlink: roll writes only a plain file (--out the file it points to)")
+        before = None if text is None else text.encode("utf-8")
+        same_run = prior and (prior["after"] is None or prior["after"] == _sha(before))
+        rec = dict(prior) if same_run else {"path": out, "before": None if before is None else
+                                            base64.b64encode(before).decode()}
+        rec["after"] = None  # until the write lands
+        _save(undo, rec)
+        done["rec"] = rec
+
+    try:
+        written = fmdesign.write_section(out, section(look), os.path.basename(os.path.dirname(out)),
+                                         heading="## Look", keep=keep)
+    except BaseException:
+        if "rec" in done:  # the write didn't land: the record goes back to what it was
+            if prior:
+                _save(undo, prior)
+            else:
+                _remove(undo)
+                _remove(_orig(undo))
+        raise
+    done["rec"]["after"] = _sha(written.encode("utf-8"))
+    fmcore.write_atomic(undo, json.dumps(done["rec"]))
 
 
 def undo_roll(out, undo):
     rec = _load(undo)
     if rec is None:
         raise ValueError(f"nothing to undo for {out}: no roll was applied to it")
-    if rec["after"] is None or _sha(_bytes(out)) != rec["after"]:
-        raise ValueError(f"{out} changed since the roll; nothing restored (its bytes before the roll: {undo})")
-    if rec["before"] is None:
-        os.remove(out)
+    before = None if rec["before"] is None else base64.b64decode(rec["before"])
+    if _sha(_bytes(out)) not in (rec["after"], _sha(before)):  # the roll's output, or a roll that never landed
+        raise ValueError(f"{out} changed since the roll; nothing restored (its bytes before the roll: "
+                         + (f"{_orig(undo)})" if before is not None else "none, there was no file)"))
+    if before is None:
+        _remove(out)
     else:
-        fmcore.write_atomic(out, base64.b64decode(rec["before"]))
+        fmcore.write_atomic(out, before)
+    _remove(_orig(undo))
     os.remove(undo)
 
 
