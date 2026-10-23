@@ -138,7 +138,7 @@ def hbars(title, note, items, unit="", series=1, budget=None):
     row, label_w, w = 30, 170, 640
     plot = w - label_w - 70
     h = row * len(items) + 8
-    out = [f'<svg class="viz" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(title)}">']
+    out = [f'<svg class="viz grow-x" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(title)}">']  # T-1615
     for i, (k, v) in enumerate(items):
         y = 4 + i * row
         bw = max(2, plot * v / top)
@@ -164,7 +164,7 @@ def pairs(title, note, rows, names=("With Foreman", "Claude Code"), unit=""):
     band, label_w, w = 72, 0, 640  # T-1239: each label above its bars, full width, so a long task name stays inside
     plot = w - label_w - 80
     h = band * len(rows) + 6
-    out = [f'<svg class="viz pairs" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(title)}">']
+    out = [f'<svg class="viz pairs grow-x" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(title)}">']
     for i, (k, a, b) in enumerate(rows):
         y = 4 + i * band
         out.append(f'<text class="lab" x="0" y="{y + 14}">{esc(str(k))}</text>')
@@ -199,7 +199,7 @@ def columns(title, note, rows, keys, label_key="day", short=lambda s: s[5:]):
     plot_w, plot_h = w - left - 8, h - bottom - top_pad
     slot = plot_w / max(1, len(rows))
     bw = min(46, slot * 0.62)
-    out = [f'<svg class="viz" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(title)}">']
+    out = [f'<svg class="viz grow-y" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(title)}">']  # T-1615
     for t in range(0, int(top_tick) + 1, int(max(1, top_tick // 4))):
         y = top_pad + plot_h - plot_h * t / top_tick
         out.append(f'<line class="grid" x1="{left}" x2="{w - 8}" y1="{y:.1f}" y2="{y:.1f}"/>'
@@ -237,13 +237,13 @@ def line(title, note, rows, key, label_key):
     plot_w, plot_h = w - left - 70, h - bottom - top_pad
     xs = [left + (plot_w * i / max(1, len(rows) - 1)) for i in range(len(rows))]
     ys = [top_pad + plot_h - plot_h * (v - lo) / (hi - lo) for v in vals]
-    out = [f'<svg class="viz" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(title)}">']
+    out = [f'<svg class="viz draw" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(title)}">']  # T-1615
     for t in range(0, int(hi) + 1, int(max(1, hi // 4))):
         y = top_pad + plot_h - plot_h * t / hi
         out.append(f'<line class="grid" x1="{left}" x2="{left + plot_w}" y1="{y:.1f}" y2="{y:.1f}"/>'
                    f'<text class="tick" x="{left - 8}" y="{y + 4:.1f}" text-anchor="end">{fmt(t)}</text>')
     pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in zip(xs, ys))
-    out.append(f'<polyline class="ln s1" points="{pts}" fill="none"/>')
+    out.append(f'<polyline class="ln s1" points="{pts}" fill="none" pathLength="1"/>')  # T-1615: drawn as a fraction
     for x, y, r in zip(xs, ys, rows):
         out.append(f'<circle class="dot s1" cx="{x:.1f}" cy="{y:.1f}" r="4"><title>{esc(r[label_key])}: {fmt(r[key])}</title></circle>')
     out.append(f'<text class="val" x="{xs[-1] + 10:.1f}" y="{ys[-1] + 4:.1f}">{fmt(vals[-1])}</text>')
