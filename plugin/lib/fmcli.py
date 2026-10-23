@@ -6482,6 +6482,8 @@ def _build_parser():
                                           "T-1511)")
     s.add_argument("value", nargs="?", help="set: the new value")
     s.add_argument("--surface", choices=["app", "plugin"], help="only the app's tui.toml, or only the pane's options")
+    s.add_argument("--scope", choices=["everywhere", "project"], help="set: an app setting for every project "
+                   "(tui.toml, the default) or for this project alone, under the repo's policy pins (T-1611)")
     s = add("home", lazy("fmhome", "cmd_home"), tier=("Project and settings", 785),  # T-1665
             help="export: Foreman's state as one tarball, secrets redacted and credential files left out; import FILE: "
                  "into an empty home, every member's path and hash checked first")
