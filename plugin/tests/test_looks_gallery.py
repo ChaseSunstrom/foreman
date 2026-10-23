@@ -1,4 +1,5 @@
 """fm page looks (T-1649): one self-contained gallery page with a living specimen per look card."""
+import glob
 import json
 import os
 import re
@@ -166,6 +167,64 @@ class Roll(ForemanTestCase):
         r = self.fm("design", "roll", "--undo", check=False)
         self.assertEqual(r.returncode, 2)
         self.assertIn("nothing to undo", r.stderr)
+
+    def test_golden_seeds_name_their_card_in_the_written_section(self):
+        # a seed's meaning changes when the cards do: update these with the card set, and the ## Look names its card
+        golden = {0: "look-lido", 1: "look-card-catalogue", 2: "look-archive-ledger", 3: "look-cartographer"}
+        self.assertEqual({s: self.roll("--seed", str(s))["look"] for s in golden}, golden)
+        self.roll("--seed", "3", "--apply")
+        self.assertIn("`look-cartographer` (Cartographer), seed 3", read_text(self.md))
+
+    def undo_files(self, ext=".json"):
+        return glob.glob(os.path.join(self.home, "state", "projects", "*", "design-roll", "*" + ext))
+
+    def test_a_failed_or_half_done_reroll_keeps_the_bytes_before_the_first_roll(self):
+        if os.geteuid() == 0:
+            self.skipTest("root writes into a read-only folder")
+        before = b"# DESIGN.md: mine\n\nkept\n"
+        with open(self.md, "wb") as f:
+            f.write(before)
+        self.roll("--seed", "1", "--apply")
+        os.chmod(self.repo, 0o555)  # the next write of DESIGN.md fails
+        try:
+            r = self.roll("--seed", "2", "--apply", check=False)
+        finally:
+            os.chmod(self.repo, 0o755)
+        self.assertEqual(r.returncode, 2, r)
+        self.roll("--seed", "3", "--apply")
+        (rec_path,) = self.undo_files()
+        with open(rec_path, encoding="utf-8") as f:
+            rec = json.load(f)
+        rec["after"] = None  # a roll that died after its write, before it recorded what it wrote
+        with open(rec_path, "w", encoding="utf-8") as f:
+            json.dump(rec, f)
+        self.roll("--seed", "4", "--apply")
+        self.fm("design", "roll", "--undo")
+        with open(self.md, "rb") as f:
+            self.assertEqual(f.read(), before)
+        self.assertEqual(self.undo_files() + self.undo_files(".orig"), [])
+
+    def test_a_half_done_roll_on_no_file_undoes_quietly_and_an_edited_file_keeps_a_plain_copy(self):
+        self.roll("--seed", "1", "--apply")
+        os.remove(self.md)  # as if the roll died before its write: no file, a record with nothing after it
+        (rec_path,) = self.undo_files()
+        with open(rec_path, encoding="utf-8") as f:
+            rec = json.load(f)
+        rec["after"] = None
+        with open(rec_path, "w", encoding="utf-8") as f:
+            json.dump(rec, f)
+        self.fm("design", "roll", "--undo")
+        self.assertFalse(os.path.exists(self.md))
+        with open(self.md, "wb") as f:
+            f.write(b"original\n")
+        self.roll("--seed", "1", "--apply")
+        (orig,) = self.undo_files(".orig")
+        with open(orig, "rb") as f:
+            self.assertEqual(f.read(), b"original\n", "a plain copy anyone can restore by hand")
+        with open(self.md, "a", encoding="utf-8") as f:
+            f.write("\nedited\n")
+        r = self.fm("design", "roll", "--undo", check=False)
+        self.assertIn(orig, r.stderr)
 
     def test_undo_removes_a_design_md_the_roll_created_and_refuses_one_edited_since(self):
         self.roll("--seed", "1", "--apply")
