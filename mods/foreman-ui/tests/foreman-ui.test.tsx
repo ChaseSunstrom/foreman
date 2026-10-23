@@ -1626,6 +1626,24 @@ test('a motion or palette changed in the settings applies on the next poll, no r
   await live.unmount()
 })
 
+test('a saved palette survives an options change on the next poll (T-1780)', async ($, on) => {
+  const { clock } = world(on, [{ ...CALM, history: HIST, palette_custom: { err: '#123456' } } as never])
+  const opts: Record<string, string> = { palette: 'default', motion: 'full' }
+  configRows(on, opts)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const failedColor = async () => (await ui.find({ type: 'Text', text: 'step 1 failed' }))?.props.color
+  await clock.advance(2000)
+  expect(await failedColor()).toBe(hex(0x123456))
+  opts.motion = 'reduced' // fm ui's view hasn't moved: only the options poll runs
+  await clock.advance(2000)
+  expect(await failedColor()).toBe(hex(0x123456))
+  opts.palette = 'cb' // an explicit palette still wins
+  await clock.advance(2000)
+  expect(await failedColor()).toBe(hex(0xe69f00))
+  await ui.unmount()
+})
+
 test('a palette changed before the first poll applies on it, not only recorded (T-1574 review)', async ($, on) => {
   const { clock } = world(on, [{ ...CALM, history: HIST }])
   configRows(on, { palette: 'cb' }) // the mod started with the default; the setting moved before its first poll
