@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm check playbooks compiles the python blocks marked no-run (they never run, so a syntax slip in one went unseen); the repo's 41 pass (T-1587)
 - The 3D playbook's WebGL context cap is measured, not guessed: Chrome desktop keeps 16 live (HeadlessChrome 153 on Linux, 40 made); the browsers that couldn't be measured here are named as unverified (T-1557)
 - The terminal UI playbook grows from eight rules to 31 a reviewer can mark: colour depth, display width and wide glyphs, resize, bracketed paste, a motion budget, the terminal's lifecycle and CLI product design, with Foreman's own terminal code as the worked example (T-1515)
 - fm code slot integrity: an edit or write that elides code ('# ... rest unchanged', '// … existing code') is refused and re-asked unless the file already says it; an edit whose old text misses only by whitespace is applied where that match is unique and refused as ambiguous otherwise; a fix round names up to five file:line places from the failing check's output (T-1398; the one-field-per-question ladder is T-1765)
