@@ -3145,6 +3145,35 @@ def state_line(sd):
     return " · ".join(parts)
 
 
+def code_line(p):
+    """T-1351: the newest fm code run here as 'code T-0007 closed' (closed, blocked, error, answer; running while an
+    fm code holds its lock; stopped when none does), or ''. One folder listing and one 8 KB read: a status bar polls it."""
+    d = os.path.join(p.dir, "code")
+    try:
+        newest = max((e for e in os.scandir(d) if e.name.endswith(".events.jsonl")), key=lambda e: e.stat().st_mtime)
+        with open(newest.path, "rb") as f:
+            f.seek(max(0, os.fstat(f.fileno()).st_size - 8192))
+            tail = f.read().decode("utf-8", "replace").splitlines()
+    except (OSError, ValueError):  # no folder, no runs (max of nothing)
+        return ""
+    tid = plain(newest.name[:-len(".events.jsonl")])[:16]
+    for line in reversed(tail):
+        try:
+            ev = json.loads(line).get("event")
+        except (ValueError, AttributeError):
+            continue
+        if ev in ("closed", "blocked", "error", "answer"):
+            return f"code {tid} {ev}"
+    try:
+        with open(os.path.join(d, f"{tid}.lock")) as lk:
+            fcntl.flock(lk, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        return f"code {tid} stopped"
+    except FileNotFoundError:
+        return f"code {tid} stopped"
+    except OSError:  # held: a live run
+        return f"code {tid} running"
+
+
 def main_view(p):
     """T-0134: the project as its main checkout sees it: the shared view files (status.json, STATE.md…) and the
     repo's .foreman mirror belong to it, whichever lane wrote last (a lane's own view is fm ui, computed live)."""

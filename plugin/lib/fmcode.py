@@ -58,6 +58,8 @@ READ_LINES, READ_MAX, LINE_MAX, READ_BYTES = 200, 400, 500, 16 << 20
 RUN_TIMEOUT, VERIFY_TIMEOUT, FM_TIMEOUT = 120, 600, 900
 MAX_TOKENS, KEEP_RESULTS, SMALL_CONTEXT = 8192, 6, 32768
 WORKER_TIMEOUT, JUDGE_MAX = 1200, 300  # a worker turn's seconds; changed files the guard judges one by one
+ON_EVENTS = {"closed": ("closed",), "blocked": ("blocked", "needs-you"), "error": ("needs-you",)}  # T-1351: [on]
+HOOK_SECONDS = 30
 # T-1214: each CLI's unattended one-prompt form, none of them free to run shell commands on its own say: Foreman's
 # guard judges a worker's files afterwards, not its commands (security review). claude asks for Bash, which -p can't
 # answer (and Foreman's own hooks guard it); codex keeps its workspace sandbox; gemini edits without asking, shell still
@@ -324,6 +326,34 @@ class Run:
             print(json.dumps(rec), flush=True)
         elif not quiet:
             print(text, flush=True)
+        if event in ON_EVENTS:
+            self.on_event(event, rec)
+
+    def on_event(self, event, rec):
+        """T-1351: code.toml's [on] commands for this event (closed; blocked; needs-you: blocked or error), each run
+        with the event's JSON on stdin, in the project, past Foreman's guard as a Bash command, HOOK_SECONDS at most.
+        A refusal or a failure is a note: a hook never changes how the run ends."""
+        try:
+            on = code_config().get("on")
+        except CodeError:
+            return
+        for key in ON_EVENTS[event]:
+            cmd = on.get(key) if isinstance(on, dict) else None
+            if not isinstance(cmd, str) or not cmd.strip():
+                continue
+            # background: its stdin is fed and its time bounded, so only the session's foreground rules (a stdin read
+            # that never closes, a wait loop) are off; every safety rule still judges it
+            why = self.guard("Bash", {"command": cmd, "run_in_background": True})
+            if why:
+                self.emit("note", f"on {key}: not run: {_one_line(why, 200)}", hook=key)
+                continue
+            try:
+                code, out = run_bounded(cmd, self.root, HOOK_SECONDS, self.env(), stdin=json.dumps(rec))
+            except OSError as e:
+                code, out = 1, str(e)
+            if code != 0:
+                self.emit("note", f"on {key}: {'timed out' if code is None else f'exit {code}'}"
+                                  f"{': ' + _one_line(self.redact(out), 200) if out else ''}", hook=key)
 
     def log(self, **rec):
         if self.journal:
@@ -1038,7 +1068,7 @@ def worker_confinement(root):
 
 
 def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, on_idle=None, on_spawn=None,
-                confine=None):
+                confine=None, stdin=None):
     """(exit code or None on timeout, output cut to head and tail). Memory stays bounded whatever the command prints;
     its whole process group is killed at the end, and with reap (Linux) whatever it started outside that group too
     (setsid, a double fork): this process is their subreaper, so they come back to it, not to init. on_line and
@@ -1047,7 +1077,8 @@ def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, 
     rs, pre = _confining(confine)  # T-1607: built before the subreaper is set, so a refusal leaves nothing behind
     reaping = reap and _subreaper(True)
     try:
-        p = subprocess.Popen(["bash", "-c", cmd], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        p = subprocess.Popen(["bash", "-c", cmd], cwd=cwd,
+                             stdin=subprocess.DEVNULL if stdin is None else subprocess.PIPE, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, start_new_session=True, env=env, preexec_fn=pre,
                              pass_fds=(rs,) if rs is not None else ())
     except BaseException:
@@ -1058,6 +1089,12 @@ def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, 
         if rs is not None:
             os.close(rs)
     _register(p.pid)  # T-1337: a hard kill of this fm code can't reach the group's kill below; the next start does
+    if stdin is not None:  # T-1351: small (an event), so it fits the pipe before anything reads the output
+        try:
+            p.stdin.write(stdin.encode("utf-8", "replace"))
+            p.stdin.close()
+        except OSError:  # the command never read it
+            pass
     if on_spawn:
         on_spawn(p)
     head, tail, total = bytearray(), bytearray(), [0]
@@ -1830,6 +1867,13 @@ def cmd_code(args):
         run.emit("note", f"stopped {len(stopped)} runner(s) a killed fm code left running "
                          f"(pid {', '.join(map(str, stopped))})", stopped=stopped)
 
+    if args.resume is None and not getattr(args, "task", None):  # T-1338: a run a kill left is never forgotten
+        waiting = unfinished(run.jdir)
+        for tid, req in waiting[:3]:
+            run.emit("note", f"unfinished run {tid} ({_one_line(req, 60)}): fm code --resume {tid}", unfinished=tid)
+        if len(waiting) > 3:
+            run.emit("note", f"… and {len(waiting) - 3} more unfinished runs (the app's history lists them)")
+
     def _usage(msg, then):
         e = fmcli.UsageError(msg)
         e.then = then
@@ -2050,6 +2094,42 @@ def _make_task(run, profile):
     _hold(run)
     _journal_start(run, profile)
     run.emit("task", f"task {run.tid} created and focused", task=run.tid)
+
+
+def unfinished(jdir):
+    """T-1338: the runs in jdir that never ended and that no fm code is working now (its task lock is free), newest
+    first: [(task, request)]. Each journal is read at its first line and its last 64 KB, not whole."""
+    import fcntl
+    out = []
+    try:
+        names = [n for n in os.listdir(jdir) if n.endswith(".jsonl") and not n.endswith(".events.jsonl")]
+    except OSError:
+        return out
+    for n in names:
+        path, tid = os.path.join(jdir, n), n[:-len(".jsonl")]
+        try:
+            with open(path, "rb") as f:
+                first = json.loads(f.readline() or b"{}")
+                f.seek(max(0, os.fstat(f.fileno()).st_size - 65536))
+                ended = b'"kind": "end"' in f.read()
+            when = os.path.getmtime(path)
+        except (OSError, ValueError):
+            continue
+        if ended or not isinstance(first, dict) or first.get("kind") != "start":
+            continue
+        try:
+            fd = os.open(os.path.join(jdir, f"{tid}.lock"), os.O_RDONLY)
+        except OSError:
+            fd = None  # never locked: no run holds it
+        if fd is not None:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except OSError:
+                continue  # a live run is working it
+            finally:
+                os.close(fd)
+        out.append((when, tid, str(first.get("request") or "")))
+    return [(t, r) for _, t, r in sorted(out, reverse=True)]
 
 
 def _hold(run):
