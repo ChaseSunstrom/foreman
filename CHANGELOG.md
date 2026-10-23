@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code app: g pressed during a run leaves that run alone and starts the queue when it ends, counting it in the digest; s stops both (T-1783)
 - fm code app: g works the project's queue, one fm code --task run after another, until it is empty, two tasks in a row block, or s stops it; then a digest lands in Activity (what closed, what blocked and why, why it stopped), headed "While you were away" when no key was pressed for five minutes (T-1779, the app part)
 - foreman-ui pane: an option set to a value it can't use (a typo in settings.json) keeps its last good value instead of falling back to the default, says so once as a toast, and a restarted pane takes the last good values it kept, as the fm code app keeps its last good tui.toml (T-1613)
 - fm scene compile --to component --tag NAME names the element (pebble-scene), so two scenes share a page, the module's own comments and box rules naming it too; a name that isn't a valid custom element name is refused. The element's label is watched: a page that changes it renames the canvas, and taking it away hides the canvas so the text twin speaks (T-1706)

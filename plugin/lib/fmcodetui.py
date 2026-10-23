@@ -3099,10 +3099,11 @@ class App:
     def work_queue(self):
         """T-1779: g works the project's queue here, one fm code --task run after another, until it is empty, two
         tasks in a row block, or s stops it; then a digest of the stretch lands in Activity."""
-        if self.running():
-            self.message = "a run is going: g works the queue once it ends"
-            return
         self.queue_run = {"closed": [], "blocked": [], "streak": 0, "since": time.monotonic(), "task": None}
+        if self.running():  # T-1783: the run going is left alone; its end counts and starts the queue
+            self.queue_run["task"] = self.state.task
+            self.message = "the queue starts when this run ends (s stops both)"
+            return
         self._queue_next()
 
     def _queued(self):
