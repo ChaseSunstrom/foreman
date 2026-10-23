@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard: unsetting or overriding CLAUDECODE through any wrapper is refused, since env's own words are read wherever env appears (chrt, taskset and stdbuf -o L before env, unbuffer [-p]); script -c, sh -c and setsid forms were already refused, and each is now a test row (T-1722)
 - fm design check: an a11y gate (the role tokens' contrast pairs, shadcn's --X-foreground on --X too, failing when blocking and no pair could be checked; the lint's reduced-motion, flash and img-alt findings; and a :focus or :focus-visible style that shows wherever there are interactive elements) and a debt gate counting untokened colours, durations and radii per file under a budget from DESIGN.md's Gates line (`- debt: advisory 40`), listing the top files (T-1646)
 - fm page city: the repo as a 3D city at dusk in one file, each tracked file a building as tall as its lines with windows lit by its commits in 180 days ("history unavailable" when git log fails), a district per folder, raw WebGL2 over an isometric SVG poster it starts from; a 4.5 s intro the first drag or key ends, and reduced motion and no WebGL2 keep the poster (T-1653)
 - fm critique URL|FILE: a computed-style census of the page (colours, fonts, sizes, radii, shadows, spacing, with counts; frozen, files and localhost only unless --any-url) critiqued against DESIGN.md's tokens — unnamed values, near-duplicates (ΔE_OK < 0.02, lengths within 7%) and one-off outliers; --why SELECTOR prints the matched rules with their stylesheets and the winning declaration per property (T-1642)
