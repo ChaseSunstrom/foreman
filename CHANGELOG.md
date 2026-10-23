@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The Stop drive and fm next no longer name a queued task whose dependency is still open (held by a builder lane or waiting): they offer free work instead, and the drive's side-work lists skip it too (T-1708)
 - fm playbooks eval NAME --ablate: each ## section (outside code fences) dropped in turn and the lift re-scored; a section's share is the lift it carries alone, and zero share flags a cut candidate (or a section another one repeats). The no-playbook pass runs once; --real's up-front budget estimate counts every ablation (T-1619)
 - Static skill-trigger eval: test_docs ranks every model-invocable skill's description by word overlap against three or more plain requests per skill (plugin/tests/fixtures/skill_triggers.json) and fails on a miss or a tie; a new skill without an entry fails with the exact line to add (T-1704)
 - fm playbooks eval NAME [--briefs FILE] [--real [--model M]]: a playbook's held-out briefs (plugin/evals/playbooks/<stage>/<name>.json, each a task and has/re/not checks) answered with and without it loaded; the lift (pass rate with minus without) is printed and recorded in playbook-evals.jsonl. By default a literal model reads the playbook as the answer, a deterministic text-presence check; --real measures what claude -p does, tool-less, checked against fm budget up front and per call. Brief files are validated (no empty checks, no long or nested-quantifier regexes). verify/tdd-workflow ships the first set (T-1618)
