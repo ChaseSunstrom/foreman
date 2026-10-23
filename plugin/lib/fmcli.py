@@ -6175,6 +6175,8 @@ def _build_parser():
     s.add_argument("--every", type=int, default=250, metavar="MS", help="ms between frames (10 to 10000; default 250)")
     s.add_argument("--frozen", action="store_true", help="fm smoke's frozen profile first: the clock fixed, CSS "
                    "animations and transitions paused")
+    s.add_argument("--profile", choices=["tv", "eink", "car", "wrist"], help="shoot at a surface's width, height and scale")
+    s.add_argument("--reduced-motion", action="store_true", help="emulate prefers-reduced-motion: reduce")
     s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
     s.add_argument("--diff", metavar="BASE", help="compare each viewport shot with BASE/<page>/viewport.png (an earlier "
                    "fm shot --out BASE): exit 1 over the baseline's noise floor (the most its own frames differ) or "
@@ -6203,6 +6205,8 @@ def _build_parser():
             "matrix, one page with a cell per state the JSON chart lists, each reached by fm flow steps and shot in "
             "the headless Chromium fm shot finds; no browser: the states listed, why, and exit 2 (never a pass) (T-1640)")
     s.add_argument("chart", metavar="CHART")
+    s.add_argument("--profile", choices=["tv", "eink", "car", "wrist"], help="shoot every state at a surface's width, height and scale")
+    s.add_argument("--reduced-motion", action="store_true", help="emulate prefers-reduced-motion: reduce")
     s.add_argument("--out", metavar="PATH", help="write here (a .html file that isn't a link, replaced only when fm "
                    "stories wrote it) instead of the project's state stories/<chart>.html")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
