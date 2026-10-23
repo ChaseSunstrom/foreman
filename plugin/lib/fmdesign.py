@@ -1476,7 +1476,14 @@ def _design_tokens(args, fmcli):
                                  **{t: {r: {"oklch": list(x["oklch"]), "hex": x["hex"]} for r, x in pal[t].items()}
                                     for t in ("light", "dark")}}, None)
             else:
-                sys.stdout.write(text)
+                out = getattr(args, "out", None)
+                if out and out != "-":  # T-1714: --out was advertised and ignored
+                    if os.path.islink(out):
+                        raise ValueError(f"{out} is a symbolic link: give the file itself")
+                    fmcli.c.write_atomic(os.path.abspath(out), text)
+                    print(f"palette: written to {out}", file=err)
+                else:
+                    sys.stdout.write(text)
                 print(render_proofs(pal["proofs"]) + f"\npalette: {len(pal['proofs']) - failed} of "
                       f"{len(pal['proofs'])} pairs pass (body text 7:1 in dark)", file=err)
             return 1 if failed else 0
