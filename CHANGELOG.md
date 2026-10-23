@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm scene compile --to component --tag NAME names the element (pebble-scene), so two scenes share a page, the module's own comments and box rules naming it too; a name that isn't a valid custom element name is refused. The element's label is watched: a page that changes it renames the canvas, and taking it away hides the canvas so the text twin speaks (T-1706)
 - Guard: a backslash inside single quotes ('x\') anywhere in a command no longer stops it reading a literal for loop as the commands it runs, which had left an earlier cd uncertain and refused writes in the folder the command had moved to (T-1781)
 - foreman-ui pane: a saved palette (fm design tokens --to pane --save) stays when another option changes; it was dropped until fm ui's view next refreshed, which can be long when nothing moves (T-1780)
 - fm run --runner NAME works the queue through fm code --task on that runner (codex, gemini, a code.toml one) instead of claude -p sessions, with fm run's own loop around it: one task at a time or in lanes, blocked tasks skipped, no progress stops it (T-1773, the first part)
