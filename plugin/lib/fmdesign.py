@@ -9,7 +9,11 @@ a line of its own); it needs the why.
 
 T-1507: design tokens beside it: fm design palette (a light/dark role palette from one seed colour, OKLCH maths by
 hand), fm design contrast (a token file's pairs, WCAG 2.x on the sRGB hex a browser paints) and fm design extract (a
-repo's :root custom properties into DESIGN.md's Tokens section). `python3 fmdesign.py contrast …` runs without fm."""
+repo's :root custom properties into DESIGN.md's Tokens section). `python3 fmdesign.py contrast …` runs without fm.
+
+T-1645/T-1646: fm design check runs the gates DESIGN.md's ## Gates opts into, over this lint's parse: brief (the Knobs
+found in the code), a11y (token contrast, the lint's reduced-motion, flash and img-alt findings, a focus style that
+shows) and debt (untokened colours, durations and radii per file, under a budget)."""
 import bisect
 import colorsys
 import json
@@ -588,7 +592,7 @@ class Run:
             return
         for d in self.decls:
             if not d.in_frames:
-                lit = [v for k, v in _literals(d) if k == "duration"]
+                lit = [v for _, v in _literals(d, ("duration",))]
                 if lit:
                     self.flag("untokened-duration", d.src, d.line, f"{lit[0]} where tokens exist (e.g. "
                                                                    f"{self.dur_tokens[0].prop})")
@@ -654,18 +658,23 @@ DUR_PROPS = ("transition", "animation", "transition-duration", "animation-durati
              "animation-delay")
 
 
-def _literals(d):
-    """(kind, literal) for each colour, duration or radius one declaration writes out rather than through a token: a
-    var() and its fallback are the token's, and a custom property's own value is the token. ponytail: NAMED's few
-    colour names, not CSS's 148; class-string values (bg-[#123]) aren't read."""
-    if d.prop[0] in "-$" or d.prop == "content":
+def _literals(d, kinds=("colour", "duration", "radius")):
+    """(kind, literal) for each colour or duration one declaration writes out rather than through a token, and its
+    radius once when any part is a literal: a var() and its fallback are the token's, a colour function of a var() or
+    an SCSS $variable (hsl(var(--fg))) is tokened, and a custom property's own value (or @property's initial-value)
+    is the token. ponytail: NAMED's few colour names, not CSS's 148; class-string values (bg-[#123]) aren't read."""
+    if d.prop[0] in "-$" or d.prop in ("content", "initial-value"):
         return []
+    tokened = [m.span() for m in re.finditer(r"var\([^)]*\)", d.value)]
     bare = re.sub(r"var\([^)]*\)", "", d.value)
-    out = [("colour", m.group()) for m in COLOUR.finditer(bare)]
-    if d.prop in DUR_PROPS:
+    out = []
+    if "colour" in kinds:
+        out += [("colour", m.group()) for m in COLOUR.finditer(d.value) if "var(" not in m.group() and
+                "$" not in m.group() and not any(a <= m.start() < b for a, b in tokened)]
+    if "duration" in kinds and d.prop in DUR_PROPS:
         out += [("duration", m.group()) for m in TIME.finditer(bare) if _seconds(m.group()) >= .02]  # .01ms resets
-    if "radius" in d.prop:
-        out += [("radius", t) for t in re.split(r"[\s/]+", bare) if (_px(t, d.src.js) or 0) > 0]
+    if "radius" in kinds and "radius" in d.prop and any((_px(t, d.src.js) or 0) > 0 for t in re.split(r"[\s/]+", bare)):
+        out.append(("radius", bare))
     return out
 
 
@@ -1608,9 +1617,48 @@ def cmd_design(args):
 GATES = ("brief", "a11y", "debt")
 MODES = ("advisory", "blocking")
 A11Y_RULES = (("reduced motion", "reduced-motion"), ("no fast flashes", "flash"), ("img alt text", "img-alt"))
-FOCUS = re.compile(r":focus(?:-visible|-within)?(?![\w-])")
-TW_FOCUS = re.compile(r"(?<![\w-])focus(?:-visible|-within)?:(?!(?:outline-none|outline-0|ring-0)(?![\w-]))\S")
-INTERACTIVE = re.compile(r"<(?:a|button|input|select|textarea|summary)(?![\w-])|\btabindex\s*=", re.I)
+FOCUS = re.compile(r":focus(?:-visible)?(?![\w-])")  # :focus-within styles the container, not the focused element
+VISUAL = re.compile(r"(?:outline(?!-offset)|box-shadow|border(?!.*radius)|background|text-decoration)(?:-[\w-]+)?$|"
+                    r"color$")
+TW_FOCUS = re.compile(r"(?<![\w-])focus(?:-visible)?:(?!(?:outline-none|outline-hidden|outline-0|ring-0|shadow-none|"
+                      r"[\w-]*-transparent)(?![\w-]))(?:ring|outline|shadow|border|bg|text|underline|decoration)")
+INTERACTIVE = re.compile(r"<(?:a|button|input|select|textarea|summary)(?=[\s>/])|\btab[iI]ndex\s*=")
+
+
+def _contrast(run, blocking):
+    """([the contrast must] or [], a note): the role pairs the run's tokens define (--text on --surface …, or
+    shadcn's --X-foreground on --X and --foreground on --background; Tailwind's @theme --color-X reads as --X)."""
+    tokens = ({}, {})
+    for s in run.sources:
+        for name, value, dark, _ in _props(s):
+            tokens[dark].setdefault(name, value)
+    for t in tokens:
+        for n, v in list(t.items()):
+            if n.startswith("--color-"):
+                t.setdefault("--" + n[8:], v)
+    base, specs = tokens[0], []
+    want = sum("--" + f in base and "--" + b in base for f, b, *_ in PAIRS)
+    if not want:  # shadcn names: its --accent and --border are surfaces, so only the foreground pairs
+        specs = [f"{n[2:]}/{n[2:-11]}" for n in base if n.endswith("-foreground") and n[:-11] in base]
+        specs += [f"{f}/background" for f in ("foreground", "muted-foreground") if "--" + f in base and
+                  "--background" in base]
+        want = len(specs)
+    try:
+        proofs = check_pairs(tokens, specs, strict=False)[0] if base or tokens[1] else []
+        why = "no pair's colours could be read" if base or tokens[1] else "no :root custom properties"
+    except ValueError as e:
+        proofs, why = [], str(e)
+    if not proofs:
+        return ([{"must": "contrast", "pass": False, "why": f"not checked: {why}"}] if blocking else []), \
+            f"a11y: contrast not checked: {why}"
+    bad = [p for p in proofs if not p["pass"]]
+    low = min(proofs, key=lambda p: p["ratio"] - p["need"])
+    skipped = want * len(_themes(tokens)) - len(proofs)
+    why = "; ".join(f"{p['fg']}/{p['bg']} {p['ratio']:.2f}:1 < {p['need']:g} ({p['theme']})" for p in bad[:3]) + \
+        (f" and {len(bad) - 3} more" if len(bad) > 3 else "") if bad else \
+        f"{len(proofs)} role pair(s) pass; closest {low['fg']}/{low['bg']} {low['ratio']:.2f}:1"
+    return [{"must": "contrast", "pass": not bad, "why": why + (
+        f"; {skipped} pair(s) skipped (a token that can't be read)" if skipped > 0 else "")}], None
 
 
 def _at(hits, n=3):
@@ -1619,28 +1667,12 @@ def _at(hits, n=3):
                                                                        else "")
 
 
-def _a11y(run, found, notes):
-    """Contrast of the role tokens the run defines, the lint's motion, flash and alt findings, and a focus style
-    that shows wherever there are interactive elements."""
-    musts, tokens = [], ({}, {})
-    for s in run.sources:
-        for name, value, dark, _ in _props(s):
-            tokens[dark].setdefault(name, value)
-    try:
-        proofs = check_pairs(tokens, strict=False)[0] if tokens[0] or tokens[1] else []
-    except ValueError as e:
-        proofs, why = [], str(e)
-    else:
-        why = "no role token's colour could be read" if tokens[0] or tokens[1] else "no :root custom properties"
-    if not proofs:
-        notes.append(f"a11y: contrast not checked: {why}")
-    else:
-        bad = [p for p in proofs if not p["pass"]]
-        low = min(proofs, key=lambda p: p["ratio"] - p["need"])
-        musts.append({"must": "contrast", "pass": not bad, "why": "; ".join(
-            f"{p['fg']}/{p['bg']} {p['ratio']:.2f}:1 < {p['need']:g} ({p['theme']})" for p in bad[:3])
-            + (f" and {len(bad) - 3} more" if len(bad) > 3 else "") if bad else
-            f"{len(proofs)} role pair(s) pass; closest {low['fg']}/{low['bg']} {low['ratio']:.2f}:1"})
+def _a11y(run, found, notes, blocking):
+    """Contrast of the role tokens the run defines (blocking fails when no pair could be checked), the lint's
+    motion, flash and alt findings, and a focus style that shows wherever there are interactive elements."""
+    musts, note = _contrast(run, blocking)
+    if note:
+        notes.append(note)
     for label, rule in A11Y_RULES:
         hits = [f for f in found if f["rule"] == rule]
         musts.append({"must": label, "pass": not hits, "why": f"fm design lint {rule}: {_at(hits)}" if hits else
@@ -1648,12 +1680,15 @@ def _a11y(run, found, notes):
     used = next(((s, m) for s in run.sources if not s.css_file for m in [INTERACTIVE.search(s.code)] if m), None)
     sels, shown = {}, None
     for d in run.decls:
-        if d.block < 0 or d.value.lower() in ("none", "0", "0px", "transparent"):  # outline: none shows nothing
-            continue
+        words = set(d.value.lower().replace(",", " ").split())
+        if d.block < 0 or not VISUAL.match(d.prop) or words & {"none", "transparent"} or d.value in ("0", "0px"):
+            continue  # outline: none, z-index or a transparent ring shows nothing
         key = (d.src.path, d.block)
         if key not in sels:
             css = d.src.css
-            sels[key] = css[max(css.rfind(c, 0, d.block) for c in ";{}") + 1:d.block]
+            sel = css[max(css.rfind(c, 0, d.block) for c in ";{}") + 1:d.block]
+            # :focus:not(:focus-visible) is the mouse-focus reset, not a focus style
+            sels[key] = "" if re.search(r":not\(\s*:focus-visible\s*\)", sel) else re.sub(r":not\([^()]*\)", "", sel)
         if FOCUS.search(sels[key]):
             shown = f"{d.src.path}:{d.line}"
             break
@@ -1736,13 +1771,15 @@ def check_gates(root):
         out["notes"].append(f"{os.path.relpath(path)}: {why}")
         return out
     doc = text.split("\n")
-    files, *_ = collect([root])
+    files, skipped, *_ = collect([root])
     bodies = []
     for f in files:
-        body, _ = _read(f)
-        if body is not None:
+        body, why = _read(f)
+        if body is None:
+            skipped.append({"file": f, "why": why})
+        else:
             bodies.append((os.path.relpath(f, root), body))
-    lint = []  # the lint's run and findings, made once for the gates that read them
+    run = found = None  # the lint's run and findings, made once for the gates that read them
     for ln in _section_lines(doc, "Gates"):
         m = re.match(r"\s*[-*]\s*([\w-]+)\s*:\s*([\w-]+)\s*(\S*)", ln)
         if not m:
@@ -1755,18 +1792,19 @@ def check_gates(root):
             out["notes"].append(f"unknown mode '{mode}' for {gate}: read as advisory ({' or '.join(MODES)})")
             mode = "advisory"
         if gate != "brief":
-            if not lint:
+            if run is None:
                 run = Run([Source(rel, body) for rel, body in bodies])
-                lint += [run, run.check()]
+                found = run.check()
             if gate == "a11y":
-                out["gates"].append({"gate": gate, "mode": mode, "musts": _a11y(*lint, out["notes"])})
+                out["gates"].append({"gate": gate, "mode": mode,
+                                     "musts": _a11y(run, found, out["notes"], mode == "blocking")})
             else:
                 budget = m.group(3)
                 if budget and not re.fullmatch(r"\d{1,9}", budget):
                     out["notes"].append(f"debt: can't read the budget '{budget}': read as 0 (write "
                                         "'- debt: advisory 40')")
                     budget = ""
-                musts, top = _debt(lint[0], int(budget or 0))
+                musts, top = _debt(run, int(budget or 0))
                 out["gates"].append({"gate": gate, "mode": mode, "musts": musts, "files": top})
             continue
         musts = []
@@ -1776,6 +1814,10 @@ def check_gates(root):
                           "why": f"in {', '.join(where[:3])}" + (f" and {len(where) - 3} more" if len(where) > 3 else "")
                           if where else f"not in the {len(bodies)} UI file(s) under {os.path.basename(os.path.abspath(root))}"})
         out["gates"].append({"gate": gate, "mode": mode, "musts": musts})
+    if skipped and out["gates"]:  # the gates undercount what they couldn't read
+        out["notes"].append(f"{len(skipped)} file(s) not read, so not checked: " + "; ".join(
+            f"{os.path.relpath(x['file'], root)} ({x['why']})" for x in skipped[:3]) +
+            (f" and {len(skipped) - 3} more" if len(skipped) > 3 else ""))
     out["notes"] = list(dict.fromkeys(out["notes"]))  # a gate listed twice says its note once
     return out
 

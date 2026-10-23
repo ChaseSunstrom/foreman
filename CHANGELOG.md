@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm design check: an a11y gate (the role tokens' contrast pairs, shadcn's --X-foreground on --X too, failing when blocking and no pair could be checked; the lint's reduced-motion, flash and img-alt findings; and a :focus or :focus-visible style that shows wherever there are interactive elements) and a debt gate counting untokened colours, durations and radii per file under a budget from DESIGN.md's Gates line (`- debt: advisory 40`), listing the top files (T-1646)
 - The first UI edit's design-direction note now says "load: Skill foreman:ui-design" (the job skill, which routes to directions) instead of /foreman:directions (T-1715)
 - fm design roll [--seed N] [--apply|--undo]: a seeded pick of one look card (its palette roles, type pair with a non-generic lead face, motion and texture together); --apply writes it as DESIGN.md's ## Look with the card's name beside the seed, keeping the bytes before the first roll (a record and a plain .orig copy) through rerolls and failed or half-done ones, and --undo restores them byte for byte while the file is what the roll wrote; a symlinked DESIGN.md is refused (T-1648)
 - fm design palette SEED --out FILE writes the export to FILE (a symlink is refused); it was advertised and ignored (T-1714)

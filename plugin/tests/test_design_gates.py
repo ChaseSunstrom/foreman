@@ -159,6 +159,66 @@ class Audit(ForemanTestCase):
         by = self.musts(self.project(["a11y: advisory"], {"index.html": tw}), "a11y")
         self.assertTrue(by["focus styles"]["pass"], "a Tailwind focus-visible: variant counts")
 
+    def test_shadcn_tokens_are_roles_and_a_blocking_audit_never_passes_unchecked(self):
+        css = (":root { --background: #ffffff; --foreground: #111111; --primary: #2563eb; "
+               "--primary-foreground: #ffffff; --muted-foreground: #999999; --accent: #f4f4f5; "
+               "--accent-foreground: #18181b; --border: #e4e4e7; }\n")
+        by = self.musts(self.project(["a11y: advisory"], {"tokens.css": css}), "a11y")
+        self.assertFalse(by["contrast"]["pass"])
+        self.assertIn("muted-foreground/background", by["contrast"]["why"])
+        self.assertNotIn("accent/", by["contrast"]["why"], "shadcn's --accent is a surface, not a text colour")
+        self.assertNotIn("border/", by["contrast"]["why"])
+        css = ":root { --text: #111111; --surface: #ffffff; --text-muted: something(1) }\n"
+        by = self.musts(self.project(["a11y: advisory"], {"tokens.css": css}), "a11y")
+        self.assertIn("1 pair(s) skipped", by["contrast"]["why"])
+        root = self.project(["a11y: blocking"], {"tokens.css": "a { color: red; }\n"})
+        by = self.musts(root, "a11y")
+        self.assertFalse(by["contrast"]["pass"], "blocking with no pair checked fails")
+        self.assertIn("not checked", by["contrast"]["why"])
+        p = subprocess.run([sys.executable, FM, "design", "check", root], capture_output=True, text=True, cwd=root)
+        self.assertEqual(p.returncode, 1, p.stdout)
+
+    def test_a_dark_theme_failure_flashes_and_missing_alt_are_musts(self):
+        css = (":root { --text: #111111; --surface: #ffffff; }\n"
+               ".dark { --text: #333333; --surface: #222222; }\n")
+        by = self.musts(self.project(["a11y: advisory"], {"tokens.css": css}), "a11y")
+        self.assertFalse(by["contrast"]["pass"])
+        self.assertIn("(dark)", by["contrast"]["why"])
+        page = ('<img src="a.png">\n<style>@keyframes blink { 50% { opacity: 0; } }\n'
+                ".x { animation: blink .1s infinite; }</style>\n")
+        by = self.musts(self.project(["a11y: advisory"], {"tokens.css": "", "index.html": page}), "a11y")
+        self.assertFalse(by["no fast flashes"]["pass"])
+        self.assertFalse(by["img alt text"]["pass"])
+        self.assertIn("src/index.html:1", by["img alt text"]["why"])
+
+    def test_focus_within_and_not_focus_visible_are_no_focus_style(self):
+        for css in ("form:focus-within { background: #eee; }", ":focus:not(:focus-visible) { color: red; }",
+                    "button:focus { z-index: 2; }", "button:focus-visible { outline: 2px solid transparent; }"):
+            page = f"<button>Book</button>\n<style>{css}</style>\n"
+            by = self.musts(self.project(["a11y: advisory"], {"index.html": page}), "a11y")
+            self.assertFalse(by["focus styles"]["pass"], css)
+        for cls in ("focus:outline-hidden", "focus-visible:shadow-none", "focus:ring-transparent", "focus-within:ring-2"):
+            page = f'<button class="{cls}">Book</button>\n'
+            by = self.musts(self.project(["a11y: advisory"], {"index.html": page}), "a11y")
+            self.assertFalse(by["focus styles"]["pass"], cls)
+        for code in ("const xs: Array<A> = [];\n<Button>Go</Button>\n", "for (i = 0; i<a.length; i++) {}\n"):
+            by = self.musts(self.project(["a11y: advisory"], {"index.html": "", "app.tsx": code}), "a11y")
+            self.assertTrue(by["focus styles"]["pass"], f"no interactive element in {code!r}")
+            self.assertIn("no interactive element", by["focus styles"]["why"])
+
+    def test_tokened_colours_and_one_radius_shorthand_are_not_debt(self):
+        root = self.project(["debt: advisory"], {
+            "a.css": ":root { --fg: 222 47% 11%; --c: 1 2 3; }\n"
+                     ".a { color: hsl(var(--fg)); background: rgb(var(--c) / .5); border-color: rgba($ink, .5); }\n"
+                     "@property --x { syntax: '<color>'; inherits: false; initial-value: #fff; }\n",
+            "b.css": ".b { border-radius: 8px 8px 0 0; }\n"})
+        g, _ = self.gate(root, "debt")
+        self.assertEqual(g["files"], [{"file": "src/b.css", "count": 1, "kinds": {"radius": 1}}])
+        with open(os.path.join(root, "src", "big.css"), "w") as f:
+            f.write(".x { color: #123456; }\n" * 50_000)
+        _, got = self.gate(root, "debt")
+        self.assertIn("1 file(s) not read", " ".join(got["notes"]), "a skipped file is said, the count is short")
+
     def test_the_sweep_counts_untokened_literals_per_file(self):
         root = self.project(["debt: advisory 3"], {
             "a.css": ":root { --ink: #222; --dur: 200ms; }\n"
