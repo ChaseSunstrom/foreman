@@ -2,7 +2,9 @@
 everything a live view draws; the views are pure functions of the state those events build, tested without a terminal."""
 import json
 import os
+import shutil
 import sys
+import tempfile
 import time
 import unittest
 import unittest.mock
@@ -1988,6 +1990,53 @@ class Home(unittest.TestCase):
         T, app = self.app()
         app.key("p")
         self.assertEqual(app.mode, "home")
+
+
+class Reopen(unittest.TestCase):  # T-1338
+    PROJECTS = Home.PROJECTS
+
+    def app(self, place, code_dir=None):
+        T = tui()
+        self.spawned = []
+        app = T.App(T.DEFAULTS, spawn=lambda words, opts: self.spawned.append((words, opts.get("resume"), app.root)),
+                    projects=lambda: [dict(p) for p in self.PROJECTS],
+                    project_state=lambda p: {"code_dir": code_dir}, place=place)
+        return T, app
+
+    def test_an_unfinished_run_shows_its_resume_command_and_r_resumes_it_in_its_project(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        with open(os.path.join(d, "T-0007.events.jsonl"), "w") as f:
+            f.write(json.dumps({"event": "start", "request": "fix add", "ts": 100}) + "\n")
+        T, app = self.app(os.path.join(d, "place.json"), code_dir=d)
+        row = "".join(t for t, _ in T._history_row(T.history(d)[0]))
+        self.assertIn("fm code --resume T-0007", row)
+        app.show_home()
+        app.key("\n")  # opens "new"
+        app.item_index = next(i for i, it in enumerate(app.items) if it.get("kind") == "run")
+        app.key("r")
+        self.assertEqual(self.spawned, [([], "T-0007", "/w/new")])
+        self.assertEqual(app.mode, "main")
+
+    def test_the_app_reopens_the_project_left_last_with_a_welcome_back(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        place = os.path.join(d, "place.json")
+        T, app = self.app(place)
+        app.show_home()
+        app.open_project(next(p for p in app.items if p["project"] == "old"))
+        app.quit()
+        T, again = self.app(place)
+        again.show_home()
+        again.reopen()
+        self.assertEqual((again.mode, again.project["project"]), ("project", "old"))
+        self.assertIn("welcome back", again.message)
+        with open(place, "w") as f:
+            json.dump({"project": "gone"}, f)  # a folder missing since: home stays
+        T, third = self.app(place)
+        third.show_home()
+        third.reopen()
+        self.assertEqual(third.mode, "home")
 
 
 class Width(unittest.TestCase):

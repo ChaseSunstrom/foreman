@@ -1378,8 +1378,9 @@ def _history_row(item):
     chip = {"closed": (" DONE ", "chip_ok"), "blocked": (" STOP ", "chip_bad"), "error": (" STOP ", "chip_bad")}.get(
         item["status"], (" ···· ", "chip_todo"))
     when = time.strftime("%b %d %H:%M", time.localtime(item["ts"])) if item.get("ts") else ""
-    return [chip, ("  " + pad(item["task"] or "—", 8), "strong"), ("  " + pad(when, 12), "dim"),
-            ("  " + item["request"], "text")]
+    again = [(f"  fm code --resume {item['task']}", "accent")] if item["status"] == "stopped" else []  # T-1338
+    return [chip, ("  " + pad(item["task"] or "—", 8), "strong"), ("  " + pad(when, 12), "dim")] + again + [
+        ("  " + item["request"], "text")]
 
 
 def _picker_row(item):
@@ -1778,11 +1779,12 @@ PANEL_HINTS = {"log": "/ search  ↵ open  t thoughts", "files": "d the diff", "
 
 class App:
     def __init__(self, cfg, spawn=None, root=None, opts=None, diff=None, history=None, choices=None, projects=None,
-                 project_state=None, used=None):
+                 project_state=None, used=None, place=None):
         self.line, self.search, self.search_draft, self.files = LineEditor(), "", "", None  # T-1346, T-1313
         self.cfg, self.state = cfg, State()
         self.mode, self.input, self.message, self.done = "main", "", "", False
         self.used_path, self.used = used, set()  # T-1348: the commands ever run here (a JSON list), for the tip
+        self.place_path = place  # T-1338: the project left last, reopened by the next launch from home
         if used:
             try:
                 with open(used, encoding="utf-8") as f:
@@ -2039,6 +2041,25 @@ class App:
                 fmcore.write_atomic(self.used_path, json.dumps(sorted(self.used | {"quit"})))
             except OSError:
                 pass
+        if self.place_path and self.project:
+            import fmcore
+            try:
+                fmcore.write_atomic(self.place_path, json.dumps({"project": self.project.get("project"),
+                                                                 "ts": round(time.time())}))
+            except OSError:
+                pass
+
+    def reopen(self):
+        """T-1338: home opened from no project goes back to the one left last, when its folder is still there."""
+        try:
+            with open(self.place_path or "", encoding="utf-8") as f:
+                name = json.load(f).get("project")
+        except (OSError, ValueError, AttributeError):
+            return
+        hit = next((x for x in self.items if name and x.get("project") == name and x.get("exists") is not False), None)
+        if hit:
+            self.open_project(hit)
+            self.message = f"welcome back to {name}"
 
     def _tip(self):
         """T-1348: one command this person has never run here, named once per launch."""
@@ -2201,6 +2222,10 @@ class App:
         elif self.mode == "project" and item and item.get("kind") == "run" and cmd == "expand":
             self.mode = "main"
             self.replay(item["path"])
+        elif self.mode == "project" and item and item.get("kind") == "run" and cmd == "resume" and \
+                item.get("status") == "stopped" and self._here():  # T-1338: an unfinished run carried on there
+            self.mode = "main"
+            self.start([], resume=item["task"])
         return None
 
     def _here(self):
@@ -3523,13 +3548,16 @@ def main(args, words, home=False):
     root = os.path.realpath(p.root) if p else os.getcwd()
     import fmcore
     app = App(cfg, root=root, opts=opts, history=p and os.path.join(p.dir, "code"),
-              used=os.path.join(fmcore.state_dir(), "code-keys.json"))  # T-1348: the launch tip's memory
+              used=os.path.join(fmcore.state_dir(), "code-keys.json"),  # T-1348: the launch tip's memory
+              place=os.path.join(fmcore.state_dir(), "code-place.json"))
     app.tui = seen  # T-1543: an edit to tui.toml while it runs is read back in
     if home:  # T-1330: inside a project, its view; elsewhere every project
         app.show_home()
         here = next((x for x in app.items if p and x.get("project") == p.slug), None)  # a worktree too
         if here:
             app.open_project(here)
+        else:
+            app.reopen()
         if problems:
             app.message = booted or f"{len(problems)} setting(s) skipped: {problems[0]}"
         run_screen(app)

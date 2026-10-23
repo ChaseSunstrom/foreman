@@ -578,6 +578,56 @@ class TaskRun(CodeCase):
         self.assertIn("another fm code run", r.stderr)
 
 
+class Durable(CodeCase):  # T-1338
+    def start(self, *args):
+        return subprocess.Popen([sys.executable, FM, "code", *args], cwd=self.repo, env=self.env(),
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    def kill_when(self, p, ready):
+        try:
+            for _ in range(600):
+                if ready() or p.poll() is not None:
+                    break
+                time.sleep(0.05)
+            self.assertTrue(ready(), "fm code never reached the point to kill it at")
+        finally:
+            p.kill()
+            p.communicate(timeout=30)
+
+    def test_a_new_run_names_each_unfinished_run_with_its_resume_command(self):
+        first = self.serve("openai", plan(), HANG)
+        self.kill_when(self.start("fix add", "--model", "fake"), first.hung.is_set)
+        self.serve("openai", plan(), plan())
+        r = self.code("fix add again", "--model", "fake", "--dry-plan")
+        self.assertIn("unfinished run T-0001 (fix add): fm code --resume T-0001", r.stdout)
+        events = [json.loads(x) for x in self.code("--dry-plan", "x", "--model", "fake", "--json",
+                                                    check=False).stdout.splitlines() if x.startswith("{")]
+        self.assertIn("T-0001", [e.get("unfinished") for e in events])
+
+    def test_a_kill_while_planning_leaves_nothing_to_resume_and_the_next_run_starts_clean(self):
+        first = self.serve("openai", HANG)
+        self.kill_when(self.start("fix add", "--model", "fake"), first.hung.is_set)
+        self.assertNotEqual(self.fm("task", "show", "T-0001", check=False).returncode, 0, "no task yet")
+        self.assertIn("nothing to resume", self.code("--resume", check=False).stderr)
+        self.serve("openai", plan(), *FIX)
+        self.code("fix add", "--model", "fake")
+        self.assertEqual(self.task()["status"], "done")
+
+    def test_a_kill_during_the_check_resumes_at_the_check_without_redoing_the_step(self):
+        waiting, ok = (os.path.join(self.tmp, n) for n in ("waiting", "ok"))
+        check = (f"if grep -q 'a + b' calc.py && [ ! -f {ok} ]; then touch {waiting}; sleep 30; fi; "  # after the step
+                 "python3 test_calc.py")
+        pl = dict(PLAN, criteria=[{"text": "calc.add adds", "verify": check}])
+        self.serve("openai", plan(pl), *FIX)
+        self.kill_when(self.start("fix add", "--model", "fake"), lambda: os.path.exists(waiting))
+        self.assertEqual(self.task()["status"], "active")
+        open(ok, "w").close()
+        again = self.serve("openai")
+        r = self.code("--resume", "--model", "fake")
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        self.assertEqual(again.seen, [], "the step was done: no model call on resume")
+
+
 class Cost(CodeCase):  # T-1357
     def priced(self, per_m=10000):  # $0.01 a token: a fake call (5 in, 2 out) costs $0.07
         path = os.path.join(self.home, "models.json")
