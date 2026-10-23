@@ -18,15 +18,17 @@
     --graph-dirt: #3b2c26;   /* warm from below */
     --graph-key: #ffd2a8;    /* the key light, low from the west */
     --graph-rim: #7c98d8;
-    /* One colour per status: work in hand burns, waiting work is cool, closed work recedes */
+    /* One colour per status, each at least 3:1 on the ground: work in hand burns, waiting work is cool, closed work
+       recedes. The pairs that share a lightness in hue (blocked/done, planned/captured) are set dark against light,
+       and blocked and done carry a mark besides: a hatched roof, a ringed one. */
     --graph-active: #ffb347;
     --graph-verifying: #f2e27a;
-    --graph-blocked: #ff5d4a;
-    --graph-planned: #6fa8ff;
-    --graph-captured: #b7a6e8;
-    --graph-deferred: #6f7d8c;
-    --graph-done: #4fb38a;
-    --graph-dropped: #4a4f57;
+    --graph-blocked: #e8483a;
+    --graph-planned: #4d8af0;
+    --graph-captured: #d4c8f5;
+    --graph-deferred: #9aa7b5;
+    --graph-done: #8fd9b0;
+    --graph-dropped: #7c828c;
     --ink: #ece6da;
     --muted: #a8a196;
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", P052, "EB Garamond", Garamond, serif;
@@ -47,6 +49,12 @@
   .st-done { --c: var(--graph-done); } .st-dropped { --c: var(--graph-dropped); }
   .poster .roof { fill: var(--c); }
   .poster .side { fill: color-mix(in srgb, var(--c) 55%, var(--graph-bg)); }
+  .poster pattern rect { fill: var(--graph-bg); }
+  .poster .hatch { fill: url(#hatch); }
+  .poster .ring { fill: none; stroke: var(--graph-bg); stroke-width: .07; }
+  /* The poster names the work in hand and the blocked, as the city's names its districts */
+  .poster .tag { fill: var(--ink); font: .5px var(--mono); text-anchor: middle; stroke: var(--graph-bg);
+                 stroke-width: .12px; paint-order: stroke; }
   /* The scroll belongs to the page: vertical swipes scroll, horizontal drags turn the graph. No wheel handler. */
   .stage canvas { opacity: 0; touch-action: pan-y; pointer-events: none; }
   .graph[data-state="live"] canvas { opacity: 1; pointer-events: auto; cursor: grab; transition: opacity 700ms ease-out; }
@@ -68,11 +76,15 @@
   .key { position: absolute; left: 4vw; right: 4vw; bottom: 1.6rem; z-index: 1; display: flex; flex-wrap: wrap;
          gap: .5rem .9rem; align-items: center; margin: 0; font: 12px/1 var(--mono); color: var(--muted);
          pointer-events: none; }
-  .key i { display: inline-block; width: .6rem; height: .6rem; margin-right: .35rem; background: var(--c); }
+  .key i { display: inline-block; width: .6rem; height: .6rem; margin-right: .35rem; background: var(--c);
+           box-sizing: border-box; }
+  .key i.hatch { background: repeating-linear-gradient(45deg, var(--c) 0 2px, var(--graph-bg) 2px 3.5px); }
+  .key i.ring { border: 2px solid var(--c); background: var(--graph-bg); box-shadow: inset 0 0 0 1px var(--c); }
   figcaption { max-width: 46rem; padding: 2.5rem 4vw 4rem; color: var(--muted); }
   figcaption p { margin: 0 0 1rem; color: var(--ink); }
   .tasks { margin: 0; padding-left: 1.4rem; font: 13px/1.8 var(--mono); }
-  @media (max-width: 40rem) { .poster { padding: 11rem 2vw 4rem; } .key { display: none; } }
+  /* A phone keeps the legend, compact: the swatches only */
+  @media (max-width: 40rem) { .poster { padding: 11rem 2vw 5rem; } .key { bottom: .8rem; gap: .35rem .7rem; font-size: 11px; } .key .wide { display: none; } }
   @media (prefers-reduced-motion: reduce) {
     .graph[data-state="live"] canvas, .graph[data-state="live"] .tags { transition: none; }
   }
@@ -90,12 +102,12 @@
     <!-- Named the template's way: role=img and the summary; the script adds tabindex and the key hint once live. -->
     <canvas role="img" aria-label="__LABEL__" aria-describedby="graph-twin"></canvas>
     <div class="tags" aria-hidden="true"></div>
-    <p class="key" aria-hidden="true"><span>height: tier</span><span>left to right: what waits on what</span>
+    <p class="key" aria-hidden="true"><span class="wide">height: tier</span><span class="wide">left to right: what waits on what</span>
       <span class="st-active"><i></i>active</span><span class="st-verifying"><i></i>verifying</span>
-      <span class="st-blocked"><i></i>blocked</span><span class="st-planned"><i></i>planned</span>
+      <span class="st-blocked"><i class="hatch"></i>blocked</span><span class="st-planned"><i></i>planned</span>
       <span class="st-captured"><i></i>captured</span><span class="st-deferred"><i></i>deferred</span>
-      <span class="st-done"><i></i>done</span><span class="st-dropped"><i></i>dropped</span>
-      <span class="turn">drag or arrow keys to turn</span></p>
+      <span class="st-done"><i class="ring"></i>done</span><span class="st-dropped"><i></i>dropped</span>
+      <span class="turn wide">drag or arrow keys to turn</span></p>
   </div>
   <!-- Text twin: every task the graph shows, and what it waits on, also lives here. -->
   <figcaption id="graph-twin">__TWIN__</figcaption>
@@ -125,12 +137,12 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec4 aFoot;    // centre x, z; width; depth
 layout(location = 3) in vec4 aBody;    // height, glow 0-1, rise delay 0-1, kind (0 task, 1 ground)
-layout(location = 4) in vec3 aColour;  // the status colour, linear
+layout(location = 4) in vec4 aColour;  // the status colour, linear; its mark (0 none, 1 hatched roof, 2 ringed)
 uniform mat4 uPV;
 uniform float uRise;                   // seconds into the rise
 out vec3 vN, vWorld, vLocal;
 flat out vec4 vBody;
-flat out vec3 vColour;
+flat out vec4 vColour;
 flat out vec2 vSize;
 void main() {
   float ground = aBody.w, h = aBody.x;
@@ -145,7 +157,7 @@ const BOX_FS = `#version 300 es
 precision highp float;
 in vec3 vN, vWorld, vLocal;
 flat in vec4 vBody;
-flat in vec3 vColour;
+flat in vec4 vColour;
 flat in vec2 vSize;
 uniform vec3 uFloor, uKerb, uSky, uDirt, uKey, uRim;  // linear
 uniform vec3 uBg, uEye;  // uBg in sRGB, as the backdrop draws it
@@ -160,16 +172,18 @@ void main() {
   bool ground = vBody.w > 0.5;
   if (!ground && vWorld.y < -0.001) discard;
   vec3 N = normalize(vN), V = normalize(uEye - vWorld);
-  vec3 albedo = ground ? uFloor : vColour;
-  if (ground && N.y > 0.5) {  // a kerb line round each layer, like a survey plan
-    vec2 e = vSize * 0.5 - abs(vLocal.xz);
-    albedo = mix(uKerb, albedo, smoothstep(0.03, 0.09, min(e.x, e.y)));
-  }
+  vec3 albedo = ground ? uFloor : vColour.rgb;
+  vec2 e = vSize * 0.5 - abs(vLocal.xz);
+  if (ground && N.y > 0.5) albedo = mix(uKerb, albedo, smoothstep(0.03, 0.09, min(e.x, e.y)));  // a kerb, like a survey plan
+  float mark = vColour.a, edge = min(e.x, e.y);
+  // Status isn't colour alone: a blocked roof hatched, a done one ringed
+  if (!ground && N.y > 0.5 && mark == 1.0) albedo *= mix(1.0, 0.25, step(0.5, fract((vLocal.x + vLocal.z) * 5.0)));
+  if (!ground && N.y > 0.5 && mark == 2.0) albedo *= 1.0 - 0.75 * step(0.1, edge) * step(edge, 0.16);
   float d = dot(N, KEY);
   vec3 c = mix(uDirt, uSky, N.y * 0.5 + 0.5) * albedo * 0.3 + uKey * albedo * max((d + 0.1) / 1.1, 0.0) * 0.9;
   c += uRim * pow(1.0 - max(dot(N, V), 0.0), 3.0) * 0.18;
   if (!ground) c *= mix(0.55, 1.0, smoothstep(0.0, 0.5, vWorld.y));  // the floor's shade at its foot
-  vec3 glow = ground ? vec3(0.0) : vColour * vBody.y * uWake * (N.y > 0.5 ? 0.9 : 0.4);
+  vec3 glow = ground ? vec3(0.0) : vColour.rgb * vBody.y * uWake * (N.y > 0.5 ? 0.9 : 0.4);
   vec3 col = toSrgb(aces(c * 1.15 + glow));
   float fog = smoothstep(uFog.x, uFog.y, length(uEye - vWorld)) * 0.75;
   outColor = vec4(mix(col, uBg, fog) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
@@ -274,7 +288,7 @@ function mountGraph(fig, plan) {
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
     gl.bindBuffer(gl.ARRAY_BUFFER, ins); gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
-    for (const [loc, n, at] of [[2, 4, 0], [3, 4, 16], [4, 3, 32]]) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 44, at); gl.vertexAttribDivisor(loc, 1); }
+    for (const at of [0, 16, 32]) { const loc = 2 + at / 16; gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 48, at); gl.vertexAttribDivisor(loc, 1); }
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, box.indices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
     const lvao = gl.createVertexArray(), lbo = gl.createBuffer();
@@ -297,13 +311,13 @@ function mountGraph(fig, plan) {
     probe.clearRect(0, 0, 1, 1); probe.fillRect(0, 0, 1, 1); return [...probe.getImageData(0, 0, 1, 1).data.slice(0, 3)].map(v => v / 255); };
   const linear = c => c.map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
   const NAMES = ["bg", "glow", "link", "floor", "kerb", "sky", "dirt", "key", "rim"];
-  const GLOW = { active: 1, verifying: 0.7, blocked: 0.6 };
+  const GLOW = { active: 1, verifying: 0.7, blocked: 0.6 }, MARK = { blocked: 1, done: 2 };
   const readPalette = () => {
     palette = Object.fromEntries(NAMES.map(k => [k, cssColour(`--graph-${k}`)]));
     const status = plan.s.map(s => linear(cssColour(`--graph-${s}`)));
-    inst = new Float32Array(count * 11);
-    grounds.forEach((g, i) => inst.set([g.x, 0, g.w, g.d, 0.08, 0, 0, 1, 0, 0, 0], i * 11));
-    plan.n.forEach(([x, z, h, s, , delay], i) => inst.set([x, z, 0.6, 0.6, h, GLOW[plan.s[s]] || 0, delay, 0, ...status[s]], (grounds.length + i) * 11));
+    inst = new Float32Array(count * 12);
+    grounds.forEach((g, i) => inst.set([g.x, 0, g.w, g.d, 0.08, 0, 0, 1, 0, 0, 0, 0], i * 12));
+    plan.n.forEach(([x, z, h, s, , delay], i) => inst.set([x, z, 0.6, 0.6, h, GLOW[plan.s[s]] || 0, delay, 0, ...status[s], MARK[plan.s[s]] || 0], (grounds.length + i) * 12));
   };
 
   // Up to six tasks in hand named in the scene, placed each frame over their top.

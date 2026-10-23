@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm page graph: the task graph as one 3D page that loads nothing from another host. Open and linked tasks stand in layers by the longest chain they wait on; a cycle is broken at its own lowest id and named on the page. depends_on are arcs, status is colour (each 3:1 on the ground, blocked hatched and done ringed besides), and tier is height. An SVG poster names the active and blocked work, the text twin holds every task and what it waits on, and a second run refreshes it from fm state. It's held to the city's checks through a shared OneFile test (T-1654)
 - fm critique --stress TEXT pseudo-localises a string (accents, 40% longer, [brackets]; placeholders and HTML entities intact) and --profile tv|eink|car|wrist prints a surface's viewport and contrast preset (T-1643)
 - fm settings serve: the settings as a page on 127.0.0.1 (random port; the printed URL's token works once and becomes an HttpOnly SameSite=Strict cookie; Host and Origin checked, bodies capped, CSP default-src 'none'), each change through fm settings set's own checks and the guard; stops on Ctrl-C, SIGTERM or 30 idle minutes (T-1659)
 - Guard: unsetting or overriding CLAUDECODE through any wrapper is refused, since env's own words are read wherever env appears (chrt, taskset and stdbuf -o L before env, unbuffer [-p]); script -c, sh -c and setsid forms were already refused, and each is now a test row (T-1722)
