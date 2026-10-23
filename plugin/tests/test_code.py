@@ -610,6 +610,31 @@ def run_friction_lines(case):
     return b and [x.split("run friction: ", 1)[1] for x in b.section("Log").splitlines() if "run friction: " in x]
 
 
+class Leases(CodeCase):  # T-1764
+    def test_a_model_runs_leases_end_with_it(self):
+        self.serve("openai", plan(), *FIX)
+        self.code("fix add", "--model", "fake")
+        with open(os.path.join(self.repo, "calc.py"), "w") as f:  # a new size: a .pyc from this second can't pass
+            f.write("def add(a, b):\n    return a - b  # broken again\n")
+        self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
+        r = self.code("fix add again", "--model", "fake", "--json", check=False)
+        self.assertNotIn("is leased by session", r.stdout, "the first run's lease ended with it")
+        self.assertEqual(self.task("T-0002")["status"], "done", r.stdout[-600:])
+
+
+class FirstClose(CodeCase):  # T-1349
+    def test_only_a_projects_first_closed_run_says_so(self):
+        self.serve("openai", plan(), *FIX)
+        first = json.loads(self.code("fix add", "--model", "fake", "--json").stdout.splitlines()[-1])
+        self.assertEqual((first["event"], first.get("first_in")), ("closed", "app"))
+        with open(os.path.join(self.repo, "calc.py"), "w") as f:  # a new size: a .pyc from this second can't pass
+            f.write("def add(a, b):\n    return a - b  # broken again\n")
+        self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
+        again = json.loads(self.code("fix add again", "--model", "fake", "--json").stdout.splitlines()[-1])
+        self.assertEqual(again["event"], "closed")
+        self.assertNotIn("first_in", again)
+
+
 class Why(CodeCase):  # T-1760 (T-1373)
     def test_why_explains_a_closed_run_and_names_the_next_command(self):
         self.serve("openai", plan(), *FIX)
