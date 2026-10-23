@@ -219,3 +219,42 @@ class Fsck(ForemanTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GateLock(ForemanTestCase):
+    """T-1668: one machine-wide gate lock; a second gate run waits, saying who holds it."""
+
+    def test_second_run_waits_and_names_holder(self):
+        import threading
+        said, order, held, release = [], [], threading.Event(), threading.Event()
+
+        def first():
+            with c.gate_lock("release check"):
+                order.append("first in")
+                held.set()
+                release.wait(5)
+                order.append("first out")
+
+        def second():
+            with c.gate_lock("canary", say=said.append):
+                order.append("second in")
+
+        t1 = threading.Thread(target=first)
+        t1.start()
+        held.wait(5)
+        t2 = threading.Thread(target=second)
+        t2.start()
+        time.sleep(0.4)
+        self.assertEqual(order, ["first in"])  # the second still waits
+        self.assertTrue(said and "release check" in said[0] and str(os.getpid()) in said[0])
+        release.set()
+        t1.join(5)
+        t2.join(5)
+        self.assertEqual(order, ["first in", "first out", "second in"])
+
+    def test_nested_run_does_not_deadlock(self):
+        code = "import fmcore as c\nwith c.gate_lock('inner', timeout=1):\n    print('ok')"
+        with c.gate_lock("outer"):
+            r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=20,
+                               env={**os.environ, "PYTHONPATH": os.path.dirname(c.__file__)})
+        self.assertEqual(r.stdout.strip(), "ok", r.stderr)
