@@ -116,11 +116,15 @@ def run(event, raw):
         try:
             payload = json.loads(raw) if raw.strip() else {}
             handler = HANDLERS.get(event)
+            if event == "UserPromptSubmit":
+                _skill_named(payload, payload.get("prompt") if isinstance(payload, dict) else None, typed=True)
             out = handler(payload) if handler else None
             if out is not None:
                 print(json.dumps(out, ensure_ascii=False))
                 _log_inject(event, ((out.get("hookSpecificOutput") or {}) if isinstance(out, dict) else {})
-                            .get("additionalContext"))
+                            .get("additionalContext"), payload)
+                if event in ("Stop", "SubagentStop") and isinstance(out, dict):  # T-1702: the drive's Next line and
+                    _skill_named(payload, out.get("reason"))  # hint reach the model as the block's reason
             if state:
                 _breaker_set(event, None)
         except HookBlock as e:
@@ -173,12 +177,35 @@ def _note_key(text):
     return " ".join(re.findall(r"[A-Za-z][\w-]*", t)[:5]).lower()
 
 
-def _log_inject(event, text):
+def _log_inject(event, text, pl=None):
     """T-0499: what a hook put into the model's context, for the friction digest's note budget."""
     if text:
         import hashlib  # T-0860: h tells the same note from another of its kind
         _event({"kind": "inject", "event": event, "key": _note_key(text), "chars": len(str(text)),
                 "h": hashlib.sha1(str(text).encode("utf-8", "replace")).hexdigest()[:10]})
+        _skill_named(pl, text)
+
+
+_SKILL_NAME = r"foreman:([a-z][a-z-]{0,39})(?![a-z-])"  # a longer name is no skill: never logged
+_TYPED = re.compile(r"\s*(?:<command-name>)?/" + _SKILL_NAME)
+_NAMED = re.compile(r"(?:/|\bSkill )" + _SKILL_NAME)  # /foreman:x, or a hint's "load: Skill foreman:x" (T-1697)
+
+
+def _skill_named(pl, text, typed=False):
+    """T-1702: the foreman:x skills a hook's note names (skill_named), or the one the user typed (slash), as an event
+    fm usage holds against what the session loaded: named and never loaded is offered and ignored. Every note goes
+    through here, so a hook naming a skill needs no call of its own; only text naming one pays for the lookup."""
+    try:
+        if not isinstance(pl, dict) or "foreman:" not in str(text or ""):
+            return
+        m = _TYPED.match(str(text)) if typed else None
+        names = ([m.group(1)] if m else []) if typed else sorted(set(_NAMED.findall(str(text))))
+        if names:
+            p = c.find_project(_cwd(pl))
+            _event({"kind": "slash" if typed else "skill_named", "session_id": pl.get("session_id"),
+                    "project": p.slug if p else None, "skills": names[:20]})
+    except Exception:
+        log_error("skill_named", _tb())
 
 
 def _event(rec):
@@ -1779,7 +1806,7 @@ def _pre_tool_use(raw):
         note = " ".join(_said_once(pl, list(filter(None, [made, saved, slow, warn] + [_each(b) for b in builders]))))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
-            _log_inject("PreToolUse", note)
+            _log_inject("PreToolUse", note, pl)
     except Exception:
         log_error("PreToolUse", _tb())
     return 0
@@ -2586,6 +2613,9 @@ def post_tool_use(pl, ok=True):
            "target": _target(ti)[:120], "ms": pl.get("duration_ms"), "ok": ok, "project": p.slug if p else None}
     if pl.get("agent_type"):
         rec["agent_type"] = pl["agent_type"]
+    book = str(ti.get("file_path") or "") if tool == "Read" and isinstance(ti, dict) else ""
+    if "/skills/playbooks/references/" in book and book.endswith(".md"):  # T-1702: a lane's path outruns the cut
+        rec["book"] = book.rsplit("/skills/playbooks/references/", 1)[1][:-3][:200]  # target, so fm usage lost it
     if not ok:
         rec["error"] = str(pl.get("error") or "").split("\n")[0][:120]
     _event(rec)
@@ -3389,7 +3419,10 @@ def _drive(p, sd, briefs, pl, g):
     waiting += [x for x in capped if x not in waiting]
     # T-1469: a task a builder lane holds is running work: fm focus refuses it ('held by lane')
     held = sorted(b.id for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED)
-    work = next((w for w in ([sd["active"]] if sd["active"] else []) + sd["queue"]
+    # T-1708: a queued task whose dependency is still open (in a lane, or waiting) isn't work yet
+    open_ids, by_id = {b.id for b in briefs if b.status not in c.CLOSED}, {b.id: b for b in briefs}
+    blocked = {i for i, b in by_id.items() if any(d in open_ids for d in c._deps(b))}
+    work = next((w for w in ([sd["active"]] if sd["active"] else []) + [q for q in sd["queue"] if q["id"] not in blocked]
                  if w["id"] not in waiting and w["id"] not in held and (not scope or w["id"] == scope)), None)
     if not work and full and not scope:  # T-0097: in full autonomy the user's captured requests are work too
         work = next((w for w in sd["inbox"] if w["id"] not in waiting and w["id"] not in held), None)
@@ -3481,7 +3514,7 @@ def _drive(p, sd, briefs, pl, g):
         # T-0364: once per running set, work on what doesn't need it instead of idling (357 waits vs 11 pushes)
         d.update(count=d.get("count", 0) + 1, marks=_marks(p))
         # the queue and inbox are the user's own requests, never optional: only side offers wait on pace (review)
-        more = [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"]][:3]
+        more = [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"] and x["id"] not in blocked][:3]
         if not more and full and d.get("drained") != len(briefs):  # T-0415: nothing else queued: find the next
             d["drained"] = len(briefs)  # work rather than wait; once per drain, as below, not once per set of jobs
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}) and nothing else is "
@@ -3501,7 +3534,7 @@ def _drive(p, sd, briefs, pl, g):
         return None  # no progress since the last continuation: let the turn end
     if d.get("count", 0) >= DRIVE_MAX:
         return None
-    more = [x["id"] for x in sd["queue"] if x["id"] != work["id"]]
+    more = [x["id"] for x in sd["queue"] if x["id"] != work["id"] and x["id"] not in blocked]
     what = (f"step {work['step']['n']}/{work['step']['of']} ({work['step']['text'][:80]}) is open" if work.get("step")
             else "is open" if sd["active"] and work["id"] == sd["active"]["id"]
             else "is captured in the inbox (plan it, then work it)" if work.get("status") == "captured"

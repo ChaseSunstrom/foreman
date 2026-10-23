@@ -2031,7 +2031,8 @@ _DESIGN = re.compile(r"(?i)\b(landing page|re-?design\w* (the |a |an |our |my |t
                      r"layout|dashboard|header|footer|menu|form|modal|look)|(visual|web|page|screen|ui) design|"
                      r"design (direction|system|language)|look and feel)\b")
 _UI = re.compile(r"(?i)(?<![\w-])(?<!fm )(ui|ux)(?![\w-]| tests?\b| --)|\b(front-?end|user interface|web interface|"
-                 r"restyl\w*|colou?r (scheme|palette)|typography|dark mode|design tokens)\b")
+                 r"restyl\w*|colou?r (scheme|palette)|typography|dark mode|design tokens|animat\w*|3-?d|webgl|"
+                 r"three\.?js|r3f)\b|(?<!fm )\bmotion\b")  # T-1700: animation, motion and 3D reach the ui-design skill
 
 
 def ui_request(text):
@@ -2199,8 +2200,8 @@ SKILL_FOR = {
     "SECURITY": "load: Skill foreman:playbooks (security)",
     "RESEARCH": "load: Skill foreman:research",
     "verifying": "run: fm playbooks show verification-loop", "auditing": "run: the /foreman:review workflow",
-    "design": "load: Skill foreman:directions, then fm playbooks show ui/INDEX",  # T-1700's ui-design skill, once it exists
-    "ui": "run: fm playbooks show ui/INDEX",
+    "design": "load: Skill foreman:ui-design",  # T-1700: it routes to the directions skill and the ui playbooks
+    "ui": "load: Skill foreman:ui-design, or for a small change fm playbooks show ui/INDEX",
 }
 
 
@@ -2939,8 +2940,11 @@ def _next_for(p, briefs=None):
             waits += (f" · usage ahead of pace ({pace}): the self-improvement pass waits (optional work dropped; "
                       f"required gates still run)")
     # T-0289: waits for the user, never picked; T-1478: nor, in the main checkout, a task a builder lane holds
+    # T-1708: nor a task whose dependency is still open (a lane holds it, or it waits on the user)
+    open_ids = {x.id for x in briefs if x.status not in CLOSED}
     mine = lambda x: not (x.meta.get("confirm") and needs_approval(x)) and not (
-        not p.lane and x.meta.get("builder") and x.status not in CLOSED)
+        not p.lane and x.meta.get("builder") and x.status not in CLOSED) and not any(
+        d in open_ids for d in _deps(x))
     b = active_brief(briefs, p.lane) or next(filter(mine, order_queue(briefs)[0]), None) or \
         next(filter(mine, rank_inbox(briefs)), None)
     if not b:
