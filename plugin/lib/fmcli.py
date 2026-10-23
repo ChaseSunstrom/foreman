@@ -3891,17 +3891,24 @@ _POINT_IN_TIME = re.compile(r"\borigin/|@\{u(?:pstream)?\}|\bls-remote\b")  # T-
 
 def cmd_sentinel(args):
     """Re-run the checks that passed for the last N finished tasks (their [ran] evidence) and report any that fail
-    now: a later change broke what an earlier task proved. Commands with side effects are skipped."""
+    now: a later change broke what an earlier task proved. Commands with side effects are skipped. T-1663: first, the
+    re-verify queue (fmreverify): the checks of closed tasks a commit since touched run ahead of the recent ones, and
+    one that fails captures a FIX naming its task; queued entries the filters or the guard refuse, or whose task is no
+    longer done, are dropped unrun and counted."""
     p = resolve(args)
-    done = sorted((b for b in c.load_briefs(p, include_archive=True) if b.status == "done"),
+    briefs = c.load_briefs(p, include_archive=True)
+    done = sorted((b for b in briefs if b.status == "done"),
                   key=lambda b: str(b.meta.get("updated", "")), reverse=True)[:args.last]
     cmds, skipped, dated = {}, 0, 0
-    import fmreverify  # T-1663: checks of closed tasks a later commit touched, ahead of the recent ones (under --max)
-    queued = {}
+    import hashlib
+    import fmreverify
+    status = {b.id: b.status for b in briefs}
+    queued, unrun = {}, set()
     for e in fmreverify.scan(p):
-        queued.setdefault(e["cmd"], e)
-        if not (_SIDE_EFFECTS.search(e["cmd"]) or _POINT_IN_TIME.search(e["cmd"])):
-            cmds.setdefault(e["cmd"], e.get("task") or "?")
+        if status.get(e.get("task")) != "done" or _SIDE_EFFECTS.search(e["cmd"]) or _POINT_IN_TIME.search(e["cmd"]):
+            unrun.add((e.get("task"), e["cmd"]))
+        elif e["cmd"] not in cmds:
+            queued[e["cmd"]], cmds[e["cmd"]] = e, e["task"]
     for b in done:
         for line in b.evidence():  # criteria checks only: steps record work (pushes, migrations) as well as checks
             if line.startswith("- (ac ") and c._RAN_MARK in line and "` → exit 0" in line:
@@ -3950,26 +3957,35 @@ def cmd_sentinel(args):
                     c.regen_views(p)
     for r in results:  # T-1663: a queued re-verify that fails reopens attention on its task
         e = queued.get(r["cmd"]) if r["exit"] and not r.get("assumption") else None
-        title = e and _title(f"Re-verify failed for {r['task']}: {r['cmd']}")
-        if title and not any(x.title == title for x in c.load_briefs(p) if x.status not in c.CLOSED):
+        if not e:
+            continue
+        safe = lambda s, n: c.defang(c.fit(c.plain(c.redact(str(s or ""))), n))  # noqa: E731 output and subject
+        tag = hashlib.sha1(r["cmd"].encode()).hexdigest()[:6]  # two long commands sharing a prefix stay two FIXes
+        title = _title(f"Re-verify failed for {r['task']} ({tag}): {safe(r['cmd'], 200)}")
+        if not any(x.title == title for x in c.load_briefs(p) if x.status not in c.CLOSED):
             with c.lock(p.dir):
                 nb = _create(p, title, "FIX", "S", "captured", source="discovered", depends=[r["task"]],
-                             raw=f"{title} (now {r['result']}; queued by {e.get('sha', '')[:10]} "
-                                 f"{e.get('subject', '')})")
+                             raw=f"{title} (now {safe(r['result'], 240)}; queued by {safe(e.get('sha'), 10)} "
+                                 f"{safe(e.get('subject'), 120)})")
                 c.log_event(p, "capture", task=nb.id, data={"source": "sentinel reverify", "of": r["task"]})
                 c.regen_views(p)
     later = set(list(cmds)[args.max:])  # cut by --max: the next run takes them
-    fmreverify.drop(p, {(e.get("task"), e["cmd"]) for e in fmreverify.load(p)["queue"]
-                        if e["cmd"] in queued and e["cmd"] not in later})
+    unrun |= {(e.get("task"), e["cmd"]) for e in fmreverify.load(p)["queue"] if e["cmd"] in refused}
+    if queued or unrun:
+        fmreverify.drop(p, unrun | {(e.get("task"), e["cmd"]) for e in fmreverify.load(p)["queue"]
+                                    if e["cmd"] in queued and e["cmd"] not in later})
     failed = [r for r in results if r["exit"]]
     c.log_event(p, "sentinel", data={"ran": len(results), "failed": [(r["task"], r["cmd"][:120]) for r in failed]},
                 session=session())
     culprits = [_bisect(p, r, args.timeout) for r in failed if not r.get("assumption")] if \
         getattr(args, "bisect", False) else []  # T-0458
-    out(args, {"results": results, "failed": len(failed), "skipped": skipped, "culprits": [x for x in culprits if x]},
+    out(args, {"results": results, "failed": len(failed), "skipped": skipped, "culprits": [x for x in culprits if x],
+               "reverify_dropped": len(unrun)},
         f"Sentinel: {len(results)} past check(s) from {len(done)} finished task(s); {len(failed)} failing now"
         + (f"; {skipped} with side effects skipped" if skipped else "")
         + (f"; {dated} point-in-time skipped" if dated else "")
+        + (f"; {len(unrun)} queued re-verify entries dropped (side effects, point-in-time, refused or task not done)"
+           if unrun else "")
         + (f"; {sum(1 for r in results if r.get('flaky'))} flaky (failed, then passed)"
            if any(r.get("flaky") for r in results) else "") + "".join(
             f"\n  ✗ {r['task']}: " + (f"assumption \"{r['assumption']}\": " if r.get("assumption") else "")
