@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm settings serve: the settings as a page on 127.0.0.1 (random port; the printed URL's token works once and becomes an HttpOnly SameSite=Strict cookie; Host and Origin checked, bodies capped, CSP default-src 'none'), each change through fm settings set's own checks and the guard; stops on Ctrl-C, SIGTERM or 30 idle minutes (T-1659)
 - Guard: unsetting or overriding CLAUDECODE through any wrapper is refused, since env's own words are read wherever env appears (chrt, taskset and stdbuf -o L before env, unbuffer [-p]); script -c, sh -c and setsid forms were already refused, and each is now a test row (T-1722)
 - fm design check: an a11y gate (the role tokens' contrast pairs, shadcn's --X-foreground on --X too, failing when blocking and no pair could be checked; the lint's reduced-motion, flash and img-alt findings; and a :focus or :focus-visible style that shows wherever there are interactive elements) and a debt gate counting untokened colours, durations and radii per file under a budget from DESIGN.md's Gates line (`- debt: advisory 40`), listing the top files (T-1646)
 - fm page city: the repo as a 3D city at dusk in one file, each tracked file a building as tall as its lines with windows lit by its commits in 180 days ("history unavailable" when git log fails), a district per folder, raw WebGL2 over an isometric SVG poster it starts from; a 4.5 s intro the first drag or key ends, and reduced motion and no WebGL2 keep the poster (T-1653)
