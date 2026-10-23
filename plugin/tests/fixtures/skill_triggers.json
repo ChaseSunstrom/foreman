@@ -14,6 +14,11 @@
     "Give me six style directions for the new UI and save the pick as DESIGN.md",
     "Build a new UI for the dashboard: which look should I pick, save it as DESIGN.md"
   ],
+  "ui-design": [
+    "Restyle the pricing page and give the hero component some motion",
+    "Build a 3D scene for the landing page with a smooth animation",
+    "Add an animation to this component and set the colour tokens"
+  ],
   "brainstorm": [
     "super improve it",
     "what next? give me scored ideas by lens and turn them into tasks",

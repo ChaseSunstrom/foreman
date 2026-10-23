@@ -3419,7 +3419,10 @@ def _drive(p, sd, briefs, pl, g):
     waiting += [x for x in capped if x not in waiting]
     # T-1469: a task a builder lane holds is running work: fm focus refuses it ('held by lane')
     held = sorted(b.id for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED)
-    work = next((w for w in ([sd["active"]] if sd["active"] else []) + sd["queue"]
+    # T-1708: a queued task whose dependency is still open (in a lane, or waiting) isn't work yet
+    open_ids, by_id = {b.id for b in briefs if b.status not in c.CLOSED}, {b.id: b for b in briefs}
+    blocked = {i for i, b in by_id.items() if any(d in open_ids for d in c._deps(b))}
+    work = next((w for w in ([sd["active"]] if sd["active"] else []) + [q for q in sd["queue"] if q["id"] not in blocked]
                  if w["id"] not in waiting and w["id"] not in held and (not scope or w["id"] == scope)), None)
     if not work and full and not scope:  # T-0097: in full autonomy the user's captured requests are work too
         work = next((w for w in sd["inbox"] if w["id"] not in waiting and w["id"] not in held), None)
@@ -3511,7 +3514,7 @@ def _drive(p, sd, briefs, pl, g):
         # T-0364: once per running set, work on what doesn't need it instead of idling (357 waits vs 11 pushes)
         d.update(count=d.get("count", 0) + 1, marks=_marks(p))
         # the queue and inbox are the user's own requests, never optional: only side offers wait on pace (review)
-        more = [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"]][:3]
+        more = [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"] and x["id"] not in blocked][:3]
         if not more and full and d.get("drained") != len(briefs):  # T-0415: nothing else queued: find the next
             d["drained"] = len(briefs)  # work rather than wait; once per drain, as below, not once per set of jobs
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}) and nothing else is "
@@ -3531,7 +3534,7 @@ def _drive(p, sd, briefs, pl, g):
         return None  # no progress since the last continuation: let the turn end
     if d.get("count", 0) >= DRIVE_MAX:
         return None
-    more = [x["id"] for x in sd["queue"] if x["id"] != work["id"]]
+    more = [x["id"] for x in sd["queue"] if x["id"] != work["id"] and x["id"] not in blocked]
     what = (f"step {work['step']['n']}/{work['step']['of']} ({work['step']['text'][:80]}) is open" if work.get("step")
             else "is open" if sd["active"] and work["id"] == sd["active"]["id"]
             else "is captured in the inbox (plan it, then work it)" if work.get("status") == "captured"
