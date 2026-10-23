@@ -2075,6 +2075,68 @@ class AskBeside(unittest.TestCase):  # T-1770
         self.assertFalse(app.asking, "Esc puts the prompt back as it was")
 
 
+class WorkQueue(unittest.TestCase):  # T-1779
+    def test_g_works_the_queue_until_two_tasks_in_a_row_block_and_ends_with_a_digest(self):
+        T = tui()
+        line = ["T-0001", "T-0002", "T-0003", "T-0004", "T-0005"]
+        started = []
+
+        class Live:
+            pid = 0
+
+            def __init__(self):
+                self.done = False
+
+            def poll(self):
+                return 0 if self.done else None
+
+        def spawn(words, opts):
+            started.append(opts.get("task"))
+            return Live()
+
+        app = T.App(T.DEFAULTS, spawn=spawn, queued=lambda: line[0] if line else None)
+
+        def finish(how, text=""):
+            tid = line.pop(0)
+            app.child.done = True
+            app.feed({"event": "task", "task": tid})
+            if how:
+                app.feed({"event": how, "text": text, "task": tid, "reason": text})
+            app.feed({"event": "exit", "code": 0 if how == "closed" else 1})
+
+        app.key("g")
+        self.assertEqual(started, ["T-0001"])
+        finish("closed", "T-0001 closed")
+        finish("blocked", "needs a key")
+        finish("closed", "T-0003 closed")
+        self.assertEqual(started, ["T-0001", "T-0002", "T-0003", "T-0004"], "a block alone doesn't stop it")
+        finish("blocked", "no network")
+        finish("blocked", "no network")
+        self.assertIsNone(app.queue_run)
+        self.assertEqual(started, ["T-0001", "T-0002", "T-0003", "T-0004", "T-0005"])
+        texts = [T.entry_text(e) for e in app.state.log]
+        digest = next(t for t in texts if "closed" in t and "blocked;" in t)
+        self.assertIn("2 closed (T-0001, T-0003), 3 blocked; stopped: 2 tasks in a row blocked", digest)
+
+    def test_an_empty_queue_says_so_and_a_stop_ends_it(self):
+        T = tui()
+        app = T.App(T.DEFAULTS, spawn=lambda *a: None, queued=lambda: None)
+        app.work_queue()
+        self.assertIn("the queue is empty", app.message)
+        app.queue_run = None
+
+        class Live:
+            pid = 0
+
+            def poll(self):
+                return None
+        app = T.App(T.DEFAULTS, spawn=lambda *a: Live(), queued=lambda: "T-0009")
+        app.work_queue()
+        app.feed({"event": "exit", "code": 143})  # s stopped it
+        self.assertIsNone(app.queue_run)
+        self.assertIn("stopped: T-0009", app.message)
+
+
 class Receipt(unittest.TestCase):  # T-1305
     def test_a_close_adds_a_receipt_and_quit_leaves_the_last_frame_in_the_scrollback(self):
         import io
