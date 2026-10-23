@@ -2421,6 +2421,10 @@ def _load_task(run, tid):
         raise CodeError(f"no task {tid} in this project: {_one_line(out, 200)}")
     if t.get("status") in ("done", "dropped"):
         raise CodeError(f"{tid} is {t['status']}: there's nothing to work")
+    if t.get("confirm") and "confirm" not in (t.get("allow") or []):  # T-1369: before any of its commands runs
+        raise CodeError(f"{tid} waits for your own yes before anything of it runs "
+                        f"({_one_line(str(t.get('confirm_why') or 'its words came from elsewhere'), 160)})",
+                        f"fm ask {tid} confirm")
     crit = [{"text": _printable(cr.get("text")), "verify": cr.get("verify") or ""} for cr in t.get("criteria") or []]
     if not crit:
         raise CodeError(f"{tid} has no criterion with a check to run: fm task ac {tid} add \"<done when>\" --verify CMD")

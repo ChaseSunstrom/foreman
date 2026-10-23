@@ -518,6 +518,29 @@ class TaskRun(CodeCase):
         ev = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
         self.assertEqual([e.get("task") for e in ev if e["event"] == "start"], [tid])
 
+    def test_a_task_waiting_for_the_users_yes_runs_nothing_until_it_is_given(self):  # T-1369
+        import fmcore
+        marker = os.path.join(self.tmp, "ran")
+        tid = self.brief(verify=f"touch {marker}; python3 test_calc.py")
+        p = fmcore.find_project(self.repo)
+        with fmcore.lock(p.dir):
+            b = fmcore.find_brief(p, tid)
+            b.meta.update(confirm=True, confirm_why="it arrived from the repo's .foreman/ (fm sync)")
+            fmcore.save_brief(p, b)
+        self.serve("openai", *FIX)  # a model that would work it: only the refusal stops it
+        r = self.code("--task", tid, "--model", "fake", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("waits for your own yes", r.stderr)
+        self.assertEqual(r.stderr.strip().splitlines()[-1], f"Next: fm ask {tid} confirm")
+        self.assertFalse(os.path.exists(marker), "its verify never ran")
+        with fmcore.lock(p.dir):
+            b = fmcore.find_brief(p, tid)
+            b.meta["allow"] = ["confirm"]  # what the user's yes (fm ask ID confirm) records
+            fmcore.save_brief(p, b)
+        self.serve("openai", *FIX)
+        self.code("--task", tid, "--model", "fake")
+        self.assertEqual(self.task(tid)["status"], "done")
+
     def test_it_refuses_a_task_it_cant_work_and_says_why(self):
         self.serve("openai", call("done", summary="x"))
         no_check = self.brief(verify=None)
