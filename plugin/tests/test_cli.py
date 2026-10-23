@@ -63,6 +63,23 @@ class Init(ForemanTestCase):
         self.assertIn("fm init", p.stderr)
 
 
+class FlagsAmongPaths(unittest.TestCase):  # T-1671
+    def test_a_flag_among_path_words_moves_in_front_and_free_text_is_left_as_typed(self):
+        p = fmcli.build_parser()
+        first = lambda argv: fmcli._options_first(p, argv)  # noqa: E731
+        a = p.parse_args(first(["new", "check", "--run", "x.py"]))
+        self.assertEqual((a.words, a.run), (["check", "x.py"], True))
+        a = p.parse_args(first(["-p", "proj", "img", "diff", "a.png", "--tol", "3", "b.png"]))
+        self.assertEqual((a.paths, a.tol, a.project), (["a.png", "b.png"], 3, "proj"))
+        a = p.parse_args(first(["img", "diff", "a.png", "--tol=3", "b.png"]))
+        self.assertEqual((a.paths, a.tol), (["a.png", "b.png"], 3))
+        for argv in (["new", "check", "--bogus", "x.py"],  # an option it doesn't know: as typed, argparse says so
+                     ["code", "fix", "--json", "it"],  # a request is free text: a flag inside stays an error
+                     ["session", "send", "ID", "please", "--title", "to"],
+                     ["new", "check", "x.py", "--", "--run"]):  # past -- nothing moves
+            self.assertEqual(first(list(argv)), argv)
+
+
 class ParserOnce(unittest.TestCase):
     def test_the_parser_is_built_once_per_process(self):
         # T-1378: the hook queues a prompt's requests with in-process fm calls; each rebuilt the parser twice (its own
