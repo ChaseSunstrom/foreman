@@ -2194,11 +2194,11 @@ def brief_detail(b):
 # "design"/"ui"). Worded as the call to make. The hooks name each once a session (SessionStart re-arms); the body
 # loads only when invoked.
 SKILL_FOR = {
-    "FIX": "load: Skill foreman:intake, then its references/debugging.md; fm playbooks show tdd-workflow",
+    "FIX": "load: Skill foreman:debug-test; fm playbooks show tdd-workflow",  # T-1701: the job skills
     "FEATURE": "load: Skill foreman:intake, then its references/execute.md; fm playbooks show tdd-workflow",
     "CLEAN": "load: Skill foreman:playbooks (clean)", "PERFORMANCE": "load: Skill foreman:playbooks (perf: baseline first)",
     "SECURITY": "load: Skill foreman:playbooks (security)",
-    "RESEARCH": "load: Skill foreman:intake, then its references/delegate.md; fm research add",
+    "RESEARCH": "load: Skill foreman:research",
     "verifying": "run: fm playbooks show verification-loop", "auditing": "run: the /foreman:review workflow",
     "design": "load: Skill foreman:ui-design",  # T-1700: it routes to the directions skill and the ui playbooks
     "ui": "load: Skill foreman:ui-design, or for a small change fm playbooks show ui/INDEX",

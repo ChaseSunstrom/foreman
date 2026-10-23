@@ -3510,7 +3510,7 @@ def _drive(p, sd, briefs, pl, g):
         offer = _side_work(sd, briefs, work, full, offered, p) if len(offered) < OFFERS_MAX and not pace else None
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
             d.update(offered=offered + [offer["id"]], count=d.get("count", 0) + 1, marks=_marks(p))
-            how = _start_how(offer, lanes_free(briefs))
+            how = _start_how(offer, lanes_free(briefs, p))
             _event({"kind": "drive_offer", "session_id": sid, "project": p.slug, "task": work["id"],
                     "offer": offer["id"], "how": how})
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); don't idle on it. "
@@ -3616,7 +3616,7 @@ def _side_work(sd, briefs, work, full, offered, p):
     background jobs run: not the active one, not offered already for this set, not waiting on the active task
     (depends_on or what fm relate inferred), not already briefed for a builder lane."""
     by_id = {b.id: b for b in briefs}
-    lanes = lanes_free(briefs)
+    lanes = lanes_free(briefs, p)
     gated = _gates_running(p)
     for x in sd["queue"] + (sd["inbox"] if full else []):
         b = by_id.get(x["id"])
@@ -3642,10 +3642,11 @@ def _gates_running(p):
         return None
 
 
-def lanes_free(briefs):
-    """T-0700: whether fm lane brief would take another builder (it refuses past fmlanes.BUILDERS)."""
+def lanes_free(briefs, p=None):
+    """T-0700: whether fm lane brief would take another builder (it refuses past the cap; T-1709: fm lane max's)."""
     import fmlanes
-    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < fmlanes.BUILDERS and \
+    cap = fmlanes.builders_cap(p) if p else fmlanes.BUILDERS
+    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < cap and \
         not c.host_strain()  # T-0465: a strained host takes no builder lane
 
 
