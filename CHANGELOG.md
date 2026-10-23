@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm sync import: a task new to this machine that arrives from the repo's .foreman/ waits for the user's yes (confirm), and no pulled brief carries another machine's lane, builder or cost marks; this machine's own marks and confirm stay on updates. fm home import shares the same settling (T-1749)
 - Guard: a move is judged at its sources too (mv, mv -t, rsync --remove-source-files), so moving a protected file out of the plugin cache or core is refused; git -C X clone url dir is judged at X/dir (T-1751: T-1744, T-1745)
 - Load-proof tests: run.py --load N reproduces load flakes beside N busy processes; hook, fm and fm code hang guards stretch with the measured load; the hero, city and graph frame checks are judged by animation time and rest, not wall-clock windows (T-1730: T-1719, T-1721, T-1728)
 - One WCAG contrast formula (fm code's TUI uses fmdesign's), every fm help command its own position, fm doctor flags emoji variation selectors anywhere, and MASTER.md lists every plugin/lib module with a test that keeps it so (T-1736: T-1675, T-1686, T-1687, T-1724)
