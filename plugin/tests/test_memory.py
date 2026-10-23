@@ -11,6 +11,23 @@ import fmcore as c
 import fmrecall
 
 
+class NearestDone(ForemanTestCase):  # T-1303
+    def test_a_near_mark_needs_the_title_or_most_distinctive_words(self):
+        import fmcli
+        import fmrecall
+        self.fm("init")
+        p = c.find_project(self.repo)
+        with c.lock(p.dir):
+            fmcli._create(p, "Tracing panel in the app", "FEATURE", "S", "done",
+                          raw="Add a panel that shows each span, the frame timing and the scheduler's queue, so a slow "
+                              "turn can be traced from the app without opening the logs")
+            for t in ("Add an export button", "Add retries to uploads", "Add a dark theme", "Add a CSV reader"):
+                fmcli._create(p, t, "FEATURE", "S", "done", raw=t)
+        got = fmrecall.nearest_done(p, ["Add a unified frame scheduler", "Tracing panel shows spans"])
+        self.assertNotIn("Add a unified frame scheduler", got, "two words from a long request aren't a match")
+        self.assertEqual(got["Tracing panel shows spans"][1], "Tracing panel in the app")
+
+
 class Memory(ForemanTestCase):
     def setUp(self):
         super().setUp()
