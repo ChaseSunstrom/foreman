@@ -104,5 +104,93 @@ class Brief(ForemanTestCase):
         self.assertIn("unknown gate 'vibes'", p.stdout)
 
 
+class Audit(ForemanTestCase):
+    """T-1646: the a11y gate (contrast pairs, a reduced-motion path, focus styles) and the debt sweep (untokened
+    literals per file under a budget), both over the lint's own parse."""
+
+    def project(self, gates, files):
+        root = os.path.join(self.tmp, "site")
+        os.makedirs(os.path.join(root, "src"), exist_ok=True)
+        with open(os.path.join(root, "DESIGN.md"), "w") as f:
+            f.write("# DESIGN.md\n\n## Gates\n" + "".join(f"- {g}\n" for g in gates))
+        for name, text in files.items():
+            with open(os.path.join(root, "src", name), "w") as f:
+                f.write(text)
+        return root
+
+    def gate(self, root, name):
+        got = fmdesign.check_gates(root)
+        return next(g for g in got["gates"] if g["gate"] == name), got
+
+    def musts(self, root, name):
+        return {m["must"]: m for m in self.gate(root, name)[0]["musts"]}
+
+    def test_the_audit_flags_a_missing_reduced_motion_path(self):
+        moving = ".card { transition: transform 200ms ease-out; }\n"
+        by = self.musts(self.project(["a11y: advisory"], {"app.css": moving}), "a11y")
+        self.assertFalse(by["reduced motion"]["pass"])
+        self.assertIn("src/app.css:1", by["reduced motion"]["why"])
+        still = moving + "@media (prefers-reduced-motion: reduce) { .card { transition: none; } }\n"
+        by = self.musts(self.project(["a11y: advisory"], {"app.css": still}), "a11y")
+        self.assertTrue(by["reduced motion"]["pass"])
+
+    def test_contrast_pairs_come_from_the_project_tokens(self):
+        css = ":root { --text: #777777; --surface: #ffffff; }\n"
+        by = self.musts(self.project(["a11y: blocking"], {"tokens.css": css}), "a11y")
+        self.assertFalse(by["contrast"]["pass"])
+        self.assertIn("text/surface", by["contrast"]["why"])
+        css = ":root { --text: #111111; --surface: #ffffff; }\n"
+        by = self.musts(self.project(["a11y: blocking"], {"tokens.css": css}), "a11y")
+        self.assertTrue(by["contrast"]["pass"], by["contrast"]["why"])
+        _, got = self.gate(self.project(["a11y: advisory"], {"tokens.css": "a { color: red; }\n"}), "a11y")
+        self.assertTrue(any("contrast" in n for n in got["notes"]), "no role tokens: said, not a silent pass")
+
+    def test_interactive_elements_need_a_focus_style(self):
+        page = "<button>Book</button>\n"
+        by = self.musts(self.project(["a11y: advisory"], {"index.html": page}), "a11y")
+        self.assertFalse(by["focus styles"]["pass"])
+        killed = page + "<style>button:focus { outline: none; }</style>\n"
+        by = self.musts(self.project(["a11y: advisory"], {"index.html": killed}), "a11y")
+        self.assertFalse(by["focus styles"]["pass"], "outline: none alone is no focus style")
+        shown = page + "<style>button:focus-visible { outline: 2px solid var(--accent); }</style>\n"
+        by = self.musts(self.project(["a11y: advisory"], {"index.html": shown}), "a11y")
+        self.assertTrue(by["focus styles"]["pass"])
+        tw = '<button class="focus-visible:ring-2">Book</button>\n'
+        by = self.musts(self.project(["a11y: advisory"], {"index.html": tw}), "a11y")
+        self.assertTrue(by["focus styles"]["pass"], "a Tailwind focus-visible: variant counts")
+
+    def test_the_sweep_counts_untokened_literals_per_file(self):
+        root = self.project(["debt: advisory 3"], {
+            "a.css": ":root { --ink: #222; --dur: 200ms; }\n"
+                     ".a { color: #333; background: rgb(1, 2, 3); border-radius: 8px; transition: opacity 150ms; }\n"
+                     ".b { color: var(--ink, #000); transition: opacity var(--dur); border-radius: 0; }\n",
+            "b.css": ".c { border-color: #fff; }\n"})
+        g, _ = self.gate(root, "debt")
+        self.assertEqual(g["files"][0], {"file": "src/a.css", "count": 4,
+                                         "kinds": {"colour": 2, "duration": 1, "radius": 1}})
+        self.assertEqual(g["files"][1]["count"], 1)
+        (m,) = g["musts"]
+        self.assertFalse(m["pass"])
+        self.assertIn("5 untokened", m["why"])
+        self.assertIn("src/a.css 4", m["why"])
+        p = subprocess.run([sys.executable, FM, "design", "check", root], capture_output=True, text=True, cwd=root)
+        self.assertEqual(p.returncode, 0, p.stderr)  # advisory
+        self.assertIn("src/a.css", p.stdout)
+        with open(os.path.join(root, "DESIGN.md"), "w") as f:
+            f.write("## Gates\n- debt: blocking 5\n")
+        self.assertTrue(self.gate(root, "debt")[0]["musts"][0]["pass"], "at the budget passes")
+        with open(os.path.join(root, "DESIGN.md"), "w") as f:
+            f.write("## Gates\n- debt: blocking\n")
+        p = subprocess.run([sys.executable, FM, "design", "check", root, "--json"], capture_output=True, text=True,
+                           cwd=root)
+        self.assertEqual(p.returncode, 1, "no budget is a budget of 0")
+        self.assertEqual(json.loads(p.stdout)["gates"][0]["gate"], "debt")
+        with open(os.path.join(root, "DESIGN.md"), "w") as f:
+            f.write("## Gates\n- debt: advisory 40x\n")
+        g, got = self.gate(root, "debt")
+        self.assertIn("can't read the budget '40x'", " ".join(got["notes"]))
+        self.assertFalse(g["musts"][0]["pass"])
+
+
 if __name__ == "__main__":
     unittest.main()
