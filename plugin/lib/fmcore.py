@@ -2031,7 +2031,8 @@ _DESIGN = re.compile(r"(?i)\b(landing page|re-?design\w* (the |a |an |our |my |t
                      r"layout|dashboard|header|footer|menu|form|modal|look)|(visual|web|page|screen|ui) design|"
                      r"design (direction|system|language)|look and feel)\b")
 _UI = re.compile(r"(?i)(?<![\w-])(?<!fm )(ui|ux)(?![\w-]| tests?\b| --)|\b(front-?end|user interface|web interface|"
-                 r"restyl\w*|colou?r (scheme|palette)|typography|dark mode|design tokens)\b")
+                 r"restyl\w*|colou?r (scheme|palette)|typography|dark mode|design tokens|animat\w*|3-?d|webgl|"
+                 r"three\.?js|r3f)\b|(?<!fm )\bmotion\b")  # T-1700: animation, motion and 3D reach the ui-design skill
 
 
 def ui_request(text):
@@ -2199,8 +2200,8 @@ SKILL_FOR = {
     "SECURITY": "load: Skill foreman:playbooks (security)",
     "RESEARCH": "load: Skill foreman:intake, then its references/delegate.md; fm research add",
     "verifying": "run: fm playbooks show verification-loop", "auditing": "run: the /foreman:review workflow",
-    "design": "load: Skill foreman:directions, then fm playbooks show ui/INDEX",  # T-1700's ui-design skill, once it exists
-    "ui": "run: fm playbooks show ui/INDEX",
+    "design": "load: Skill foreman:ui-design",  # T-1700: it routes to the directions skill and the ui playbooks
+    "ui": "load: Skill foreman:ui-design, or for a small change fm playbooks show ui/INDEX",
 }
 
 
