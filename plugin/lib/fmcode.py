@@ -2068,6 +2068,8 @@ def cmd_code(args):
         return _models(args, fmcli)
     if words == ["runners"]:
         return _runners(args, fmcli)
+    if words == ["config"]:  # T-1359
+        return _config(args, fmcli)
     if words[:1] == ["bench"]:
         import fmcodebench
         return fmcodebench.cmd(args, words[1:])
@@ -2657,6 +2659,93 @@ def _runners(args, fmcli):
                              else "No runner installed that can plan read-only, and no model: install claude, or set one up"))
     fmcli.out(args, {"runners": rows, "models": models, "default": name, "why": why, "problem": problem,
                      "records": records}, "\n".join(lines))
+
+
+CONFIG = {  # T-1359: fm code's settings, what each does and how to change it (fm code config --explain KEY)
+    "runner": ("the coding CLI that plans and works a run given no --worker or --model; auto plans with the first, then "
+               "routes the work by record (fm code runners)",
+               "--worker NAME for one run; fm code runners --use NAME [--here]; code.toml runner = NAME"),
+    "model": ("the model profile that plans and works when no runner does", '--model NAME for one run; models.json '
+                                                                         '"default"'),
+    "lean": ("runners start without your plugins, MCP servers or settings hooks, with Foreman's guard as their only hook",
+             "code.toml lean = false"),
+    "limit_wait": ("seconds a worker's usage limit is waited out before the run stops with its resume command",
+                   "code.toml limit_wait = N"),
+    "chain": ("the runners that take a crashed, timed-out or signed-out runner's turn, in order",
+              'code.toml chain = ["claude", "codex"]'),
+    "on.closed": ("a command run with a closed run's event JSON on stdin, past Foreman's guard",
+                  'code.toml [on] closed = "CMD"'),
+    "on.blocked": ("a command run with a blocked run's event JSON on stdin", 'code.toml [on] blocked = "CMD"'),
+    "on.needs-you": ("a command run when a run stops for you (blocked or an error), its event JSON on stdin",
+                     'code.toml [on] needs-you = "CMD"'),
+    "worker_timeout": ("seconds a worker turn may run before it and all it started are stopped", "--worker-timeout N"),
+    "max_steps": ("model turns a run may take", "--max-steps N (a resume keeps the run's own unless given)"),
+    "max_usd": ("dollars a run may spend (priced calls only); claude turns get --max-budget-usd with what is left",
+                "--max-usd N (a resume keeps the run's own unless given)"),
+    "confine": ("workers run under Landlock where the kernel has it, writing only in the tree, its git folders and "
+                "scratch", "FOREMAN_CONFINE=0 in your own shell turns it off"),
+    "sensitive": ("this repo's code never goes to a model off this machine or to a worker CLI", "fm sensitive on | off"),
+}
+
+
+def config_view(p, args):
+    """T-1359: ([{key, value, source}] for every CONFIG key, problem). The first source that sets a key wins: flag, env,
+    project, code.toml or models.json, then the default. A code.toml that doesn't parse is the problem (its line in
+    the parser's words) and the view shows the defaults; a run still refuses the file (CodeError)."""
+    import fmlandlock
+    problem = None
+    try:
+        conf, rs = code_config(), all_runners()
+    except CodeError as e:
+        conf, rs = {}, {k: dict(v) for k, v in RUNNERS.items()}
+        problem = f"{e}: showing the defaults here; a run refuses the file until it's fixed"
+    try:
+        mdefault = m.configured()[0]
+    except m.ModelError as e:
+        mdefault, problem = None, problem or str(e)
+    meta, on = fmcore.read_meta(p), conf.get("on") if isinstance(conf.get("on"), dict) else {}
+
+    def pick(*found, default=None):
+        return next(((v, src) for src, v in found if v is not None), (default, "default"))
+    ok, why = fmlandlock.available()
+    rows = {
+        "runner": pick(("flag", args.worker), ("project", meta.get("code_runner")), ("code.toml", conf.get("runner")),
+                       default=_first_verified(rs)),
+        "model": pick(("flag", args.model), ("models.json", mdefault)),
+        "lean": pick(("code.toml", conf.get("lean")), default=True),
+        "limit_wait": pick(("code.toml", conf.get("limit_wait")), default=LIMIT_WAIT),
+        "chain": pick(("code.toml", conf.get("chain"))),
+        "on.closed": pick(("code.toml", on.get("closed"))),
+        "on.blocked": pick(("code.toml", on.get("blocked"))),
+        "on.needs-you": pick(("code.toml", on.get("needs-you"))),
+        "worker_timeout": pick(("flag", args.worker_timeout), default=WORKER_TIMEOUT),
+        "max_steps": pick(("flag", args.max_steps), default=40),
+        "max_usd": pick(("flag", getattr(args, "max_usd", None))),
+        "confine": ("off", "env FOREMAN_CONFINE") if os.environ.get("FOREMAN_CONFINE") == "0" else (
+            "on" if ok else f"off ({why})", "default"),
+        "sensitive": pick(("project", meta.get("sensitive") or None), default=False),
+    }
+    return [{"key": k, "value": v, "source": src} for k, (v, src) in rows.items()], problem
+
+
+def _config(args, fmcli):
+    p = fmcli.resolve(args)
+    rows, problem = config_view(p, args)
+    shown = lambda v: "—" if v is None else json.dumps(v) if isinstance(v, (list, bool)) else str(v)  # noqa: E731
+    key = getattr(args, "explain", None)
+    if key:
+        if key not in CONFIG:
+            raise fmcli.UsageError(f"no fm code setting {key!r}: {', '.join(CONFIG)}")
+        row = next(r for r in rows if r["key"] == key)
+        what, change = CONFIG[key]
+        return fmcli.out(args, dict(row, what=what, change=change),
+                         f"{key}: {what}\n  now: {shown(row['value'])} ({row['source']})\n  change: {change}")
+    lines = ["fm code settings (the first that sets one wins: flag, env, project, code.toml or models.json, default; "
+             "fm code config --explain KEY says what one does):"]
+    lines += [f"  {r['key']:<15} {_one_line(shown(r['value']), 60):<28} {r['source']}" for r in rows]
+    if problem:
+        lines.append(f"! {problem}")
+    return fmcli.out(args, {"settings": rows, "problem": problem}, "\n".join(lines))
 
 
 def _set_default_runner(name, fmcli):
