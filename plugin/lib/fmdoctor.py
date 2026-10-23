@@ -305,6 +305,35 @@ def check_frontmatter(plugin=PLUGIN):
     return Result("frontmatter", "FAIL" if bad else "PASS", "; ".join(bad) or "skills and read-only agents valid")
 
 
+UNLOADED_SESSIONS = 5  # T-1703: sessions that named a skill, none loading it, before doctor says so
+IDLE_NAMED = {"next"}  # the idle Next line names /foreman:next every turn, so every session names it
+
+
+def check_unloaded_skills(events=None, plugin=PLUGIN, n=UNLOADED_SESSIONS):
+    """T-1703: a model-invocable skill named in more than `n` sessions in 30 days and loaded in none is mis-described
+    or not needed. Counts like fm usage (fmcost.note_skill), per session so a chatty one counts once. WARN only."""
+    import collections
+    import fmcost
+    skills = os.path.join(plugin, "skills")
+    names = sorted(s for s in os.listdir(skills) if os.path.isfile(os.path.join(skills, s, "SKILL.md"))) \
+        if os.path.isdir(skills) else []
+    if events is None:
+        events = c.global_events(fmcost._since(30))
+    named, loaded = collections.defaultdict(set), collections.defaultdict(set)
+    for e in events:
+        if e.get("kind") in ("skill_named", "slash"):
+            fmcost.note_skill(e, names, named, loaded)
+        elif e.get("kind") == "tool" and e.get("tool") == "Skill":
+            loaded[e.get("session_id")].add(str(e.get("target") or "").split(":")[-1])
+    ever = set().union(*loaded.values()) if loaded else set()
+    missed = collections.Counter(s for ns in named.values() for s in ns)
+    bad = [f"{s} ×{k}" for s, k in missed.most_common() if k > n and s not in ever and s not in IDLE_NAMED
+           and (_frontmatter(os.path.join(skills, s, "SKILL.md")) or {}).get("disable-model-invocation") != "true"]
+    return Result("unloaded skills", "WARN" if bad else "PASS",
+                  f"named in sessions, never loaded in 30 days: {', '.join(bad)}; reword the description or retire it"
+                  if bad else "no model-invocable skill is named often and never loaded")
+
+
 def _strip_generated(text):
     return re.sub(r"(?m)^_Generated .*_$", "", text or "")
 
@@ -1851,8 +1880,8 @@ def check_headless():
         return Result(name, "PASS", f"not available ({path} did not start: {type(e).__name__})")
     if p.returncode:
         last = next((x for x in reversed((p.stderr or p.stdout).splitlines()) if x.strip()), f"exit {p.returncode}")
-        return Result(name, "PASS", f"not available ({path} failed to start: {fmshot._safe(last.strip())[:200]})")
-    ver = fmshot._safe((p.stdout.strip().splitlines() or ["version unknown"])[0])[:80]
+        return Result(name, "PASS", f"not available ({path} failed to start: {fmshot.safe(last.strip())[:200]})")
+    ver = fmshot.safe((p.stdout.strip().splitlines() or ["version unknown"])[0])[:80]
     return Result(name, "PASS", f"available ({path}, {ver})")
 
 
@@ -1903,7 +1932,7 @@ def run_all(full=False, accept_supply=False):
         results += [Result(n, "FAIL", f"bench failed: {e}") for n in ("hook latency", "hook exit codes", "injection budgets")]
     results += [check_hook_errors(), check_hook_slo(), check_hook_writers(settings, home), check_name_collisions(settings),
                 check_footprint(os.path.join(PLUGIN, "rules", "foreman.md"), os.path.join(claude, "CLAUDE.md")),
-                check_frontmatter()]
+                check_frontmatter(), check_unloaded_skills()]
     projects = [p for p, _ in c.all_projects()]
     results.append(check_heartbeats(projects))
     results.append(check_state_size(projects))
