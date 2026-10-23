@@ -263,6 +263,37 @@ class PluginParity(unittest.TestCase):
         self.assertRegex(rules, r"fm which", "the rules point a session at fm which")
 
 
+class CodeExamples(unittest.TestCase):  # T-1353
+    """Every `fm code …` example in README's Foreman Code section parses with fm's own parser to the code verb, so
+    a renamed or removed flag can't linger in the docs."""
+    FILL = ((r"\[NAME\]", "claude"), (r"\bID\b", "T-0001"), (r"\bUSD\b", "1"), (r"\bN\b", "1"))
+
+    def examples(self):
+        text = read_text(os.path.join(os.path.dirname(PLUGIN), "README.md"))
+        section = re.search(r"(?ms)^### Foreman Code.*?(?=^### |\Z)", text).group(0)
+        return sorted(set(re.findall(r"`(fm code[^`]*)`", section)))
+
+    def parse(self, example):
+        import contextlib
+        import io
+        import shlex
+        import fmcli
+        line = example.split(" > ")[0]  # a shell redirect isn't fm's
+        for pat, value in self.FILL:
+            line = re.sub(pat, value, line)
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                return fmcli.build_parser().parse_args(shlex.split(line)[1:])
+        except SystemExit:
+            return None
+
+    def test_every_fm_code_example_parses_to_the_code_verb(self):
+        found = self.examples()
+        self.assertGreater(len(found), 10, found)
+        self.assertEqual([x for x in found if getattr(self.parse(x), "cmd", None) != "code"], [])
+        self.assertIsNone(self.parse("fm code runners --made-up-flag"), "a flag fm doesn't have fails")
+
+
 class Agents(unittest.TestCase):
     def test_agents_are_read_only(self):
         agents = sorted(os.listdir(os.path.join(PLUGIN, "agents")))
