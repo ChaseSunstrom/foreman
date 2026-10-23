@@ -207,18 +207,21 @@ def looks_html(cards):
 
 CITY_TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "city.html")
 CITY_MAX = 4000  # ponytail: the biggest 4000 files stand; a bigger repo's smallest files are left out, and the page says so
-READ_CAP = 2 << 20  # lines are counted in a file's first 2 MB (bigger is generated or data)
+READ_CAP = 2 << 20  # lines are counted in a file's first 2 MB; past that, estimated from its own bytes per line
+READ_BUDGET = 256 << 20  # past 256 MB read in all, each file's head only (the page says how many were estimated)
 
 
 def city_files(root):
-    """T-1653: ([{path, lines, churn}], tracked) for the tracked text files, from fm map's sources (git ls-files, and
-    each file's commits in the last 180 days as fm map's hot list counts them), each with its line count. Only the
-    2 × CITY_MAX biggest by bytes are read, so a huge repo costs a stat per file, not a read. Links, binaries (a NUL in
-    the first 8 KB) and files gone from the disk are left out."""
+    """T-1653: ([{path, lines, churn}], {tracked, history, estimated}) for the tracked text files, from fm map's
+    sources (git ls-files, and each file's commits in the last 180 days as fm map's hot list counts them; --relative,
+    so a project in a repo's subfolder gets its own), each with its line count. Only the 2 × CITY_MAX biggest by bytes
+    are opened; each gives its first 8 KB (a NUL there: a binary, left out) and, while READ_BUDGET lasts, up to
+    READ_CAP; what isn't read is estimated from the bytes per line that was. history is False when git log failed,
+    so no window reads as "no commits"."""
     import collections
     import fmmap
-    log = fmmap._git(root, "log", "--since=180.days", "--name-only", "--pretty=format:")
-    churn = collections.Counter(f for f in log.splitlines() if f)
+    log = fmmap._git(root, "log", "--relative", "--since=180.days", "--name-only", "--pretty=format:", proc=True)
+    churn = collections.Counter(f for f in log.stdout.splitlines() if f) if log.returncode == 0 else {}
     sized = []
     for f in (f for f in fmmap._git(root, "ls-files", "-z").split("\0") if f):
         path = os.path.join(root, f)
@@ -227,21 +230,28 @@ def city_files(root):
                 sized.append((os.path.getsize(path), f))
         except OSError:
             continue
-    out = []
-    for _, f in sorted(sized, key=lambda s: (-s[0], s[1]))[:2 * CITY_MAX]:
+    out, budget, estimated = [], READ_BUDGET, 0
+    for size, f in sorted(sized, key=lambda s: (-s[0], s[1]))[:2 * CITY_MAX]:
         path = os.path.join(root, f)
         try:
             with open(path, "rb") as fh:
                 head = fh.read(8192)
                 if b"\0" in head:
                     continue
-                lines, left, last = head.count(b"\n"), READ_CAP - len(head), head[-1:]
+                lines, done, last = head.count(b"\n"), len(head), head[-1:]
+                left = min(READ_CAP, max(0, budget)) - done
                 while left > 0 and (chunk := fh.read(min(1 << 20, left))):
-                    lines, left, last = lines + chunk.count(b"\n"), left - len(chunk), chunk[-1:]
+                    lines, done, left, last = lines + chunk.count(b"\n"), done + len(chunk), left - len(chunk), chunk[-1:]
+                budget -= done
+                whole = not fh.read(1)
         except OSError:
             continue
-        out.append({"path": f, "lines": lines + (last not in (b"", b"\n")), "churn": churn[f]})  # a last line, no \n
-    return out, len(sized)
+        if whole:
+            lines += last not in (b"", b"\n")  # a last line with no newline
+        else:
+            lines, estimated = lines + round((size - done) * max(lines, 1) / done), estimated + 1
+        out.append({"path": f, "lines": lines, "churn": churn.get(f, 0)})
+    return out, {"tracked": len(sized), "history": log.returncode == 0, "estimated": estimated}
 
 
 def _districts(paths, share=0.35, small=2):
@@ -365,27 +375,36 @@ def _area(d):
     return f"{where} ({d['files']:,} file{'s' * (d['files'] != 1)}, {d['lines']:,} lines)"
 
 
-def city_html(files, name, when=None, tracked=0):
+def city_html(files, name, when=None, tracked=0, history=True, estimated=0):
     """T-1653: the city page, one file: the SVG poster, a canvas named by what the city shows (the biggest districts,
     the most changed files), its text twin, and the plan as JSON for the WebGL2 scene. Raw WebGL2 inlined, as the
     template and the site's hero are: a box per instance needs no three.js, and nothing loads from another host.
-    `tracked`: how many files the repo has, when more than `files` (the twin says how many are left out). Leak when
-    a path is still absolute after redaction."""
+    `tracked`: how many files the repo has, when more than `files` (the twin says how many are left out); `history`
+    False: git log failed, so the label says so rather than "every window is dark"; `estimated`: files whose lines
+    were estimated from their size. Leak, naming the path, when one is still absolute after redaction."""
     left = max(0, max(tracked, len(files)) - min(len(files), CITY_MAX))
-    files = clean([{"path": str(f["path"]), "lines": int(f["lines"]), "churn": int(f["churn"])} for f in sorted(
-        files, key=lambda f: -int(f["lines"]))[:CITY_MAX]], "files")
-    name = clean(str(name), "name")
+    kept = []
+    for f in sorted(files, key=lambda f: -int(f["lines"]))[:CITY_MAX]:
+        try:
+            kept.append({"path": clean(str(f["path"])), "lines": int(f["lines"]), "churn": int(f["churn"])})
+        except Leak:
+            raise Leak(f"the file path {f['path']}") from None
+    files, name = kept, clean(str(name), "name")
     plan = city_layout(files)
     lines = sum(f["lines"] for f in files)
     hottest = [f for f in sorted(files, key=lambda f: (-f["churn"], f["path"])) if f["churn"]][:3]
     label = (f"{name} as a city: {len(files):,} files and {lines:,} lines in {len(plan['d'])} districts, one per "
              f"folder, each file a building as tall as its lines. Biggest: "
              + "; ".join(_area(d) for d in plan["d"][:3]) + ". "
-             + ("Lit windows mark commits in the last 180 days, most in "
+             + ("Commit history unavailable (git log failed): the windows show nothing." if not history else
+                "Lit windows mark commits in the last 180 days, most in "
                 + ", ".join(f"{f['path']} ({f['churn']})" for f in hottest) + "." if hottest
                 else "No file changed in the last 180 days: every window is dark."))
-    twin = (f"<p>{html.escape(label)}" + (f" {left:,} other tracked file{'s' * (left != 1)} (binaries, or past the {CITY_MAX:,} "
-                                                f"biggest) {'are' if left != 1 else 'is'} not drawn." if left else "") + "</p>"
+    notes = ([f"{left:,} other tracked file{'s' * (left != 1)} (binaries, or past the {CITY_MAX:,} biggest) "
+              f"{'are' if left != 1 else 'is'} not drawn."] if left else []) + (
+             [f"{estimated:,} file{'s' * (estimated != 1)}' lines are estimated from their size (each file is read "
+              f"up to {READ_CAP >> 20} MB, {READ_BUDGET >> 20} MB in all)."] if estimated else [])
+    twin = (f"<p>{html.escape(' '.join([label] + notes))}</p>"
             + "<ol class=\"areas\">" + "".join(f"<li>{html.escape(_area(d))}</li>" for d in plan["d"][:12]) + "</ol>")
     fill = {"TITLE": html.escape(name), "EYEBROW": html.escape(f"fm page city · {when or time.strftime('%Y-%m-%d')}"),
             "LEDE": html.escape(f"{len(files):,} files · {lines:,} lines · {len(plan['d'])} districts"),
@@ -400,13 +419,14 @@ def city_page(p, args):
         raise fmcli.UsageError("fm page city takes only --out: the city shows the repository, not a catalogue")
     if not c.git_root(p.root):
         raise fmcli.UsageError("fm page city needs a git repository: its buildings are the tracked files")
-    files, tracked = city_files(p.root)
+    files, info = city_files(p.root)
     if not files:
         raise fmcli.UsageError("fm page city: no tracked text file to build")
     try:
-        page = city_html(files, os.path.basename(p.root.rstrip("/")) or p.slug, tracked=tracked)
+        page = city_html(files, os.path.basename(p.root.rstrip("/")) or p.slug, **info)
     except Leak as e:
-        raise fmcli.UsageError(f"refused: {e} still holds an absolute path after redaction")
+        raise fmcli.UsageError(f"refused: {e} still holds an absolute or home path after redaction; fm page city "
+                               "writes no page that names one")
     path = _out(args, os.path.join(p.dir, "city.html"), "/* fm page city (T-1653):")
     c.write_atomic(path, page)
     return fmcli.out(args, {"path": path, "files": min(len(files), CITY_MAX)},

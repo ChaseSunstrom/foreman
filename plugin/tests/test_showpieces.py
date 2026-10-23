@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import unittest
 
-from helpers import PLUGIN, ForemanTestCase, headless_chrome, read_text
+from helpers import PLUGIN, SPY, ForemanTestCase, devtools, headless_chrome, read_text
 
 import fmcore as c
 import fmpage
@@ -21,7 +21,6 @@ FILES = [  # fixture: what fmpage.city_files reads from a repo (path, lines, com
     {"path": "plugin/tests/test_core.py", "lines": 3100, "churn": 40},
     {"path": "plugin/tests/test_page.py", "lines": 160, "churn": 0},
     {"path": "site/build.py", "lines": 700, "churn": 9},
-    {"path": "site/</script><img src=x onerror=alert(1)>.js", "lines": 12, "churn": 1},
     {"path": "README.md", "lines": 400, "churn": 2},
     {"path": "MASTER.md", "lines": 90, "churn": 0},
 ] + [{"path": f"plugin/skills/library/cards/card{i}.md", "lines": 30 + i, "churn": i % 3} for i in range(24)]
@@ -53,8 +52,49 @@ class City(ForemanTestCase):
         self.assertNotRegex(page, r"<script[^>]*\bsrc=", "inlined: no script file")
         self.assertNotIn("@import", page)
         self.assertNotIn("url(http", page)
-        self.assertEqual(page.count("</script>"), 2, "the data block and the module only: a path can't close a tag")
-        self.assertNotIn("<img src=x", page)
+        self.assertEqual(page.count("</script>"), 2, "the data block and the module only")
+
+    def test_a_hostile_folder_and_file_name_is_escaped_everywhere_it_shows(self):
+        # review: the hostile name sits where it reaches the output: the second-biggest district, the hottest file
+        folder, name = 'evil"><b>dir', 'a"><img src=x onerror=1>.py'
+        page = fmpage.city_html(FILES + [{"path": f"{folder}/{name}", "lines": 5000, "churn": 999},
+                                         {"path": f"{folder}/</script><b>.py", "lines": 4000, "churn": 1}], "Foreman")
+        for raw in ("<img src=x", "<b>dir", "</script><b>"):
+            self.assertNotIn(raw, page)
+        self.assertEqual(page.count("</script>"), 2, "a path can't close a tag")
+        label = re.search(r'<canvas[^>]*aria-label="([^"]*)"', page).group(1)
+        twin = re.search(r"<figcaption[^>]*>(.*?)</figcaption>", page, re.S).group(1)
+        poster = re.search(r'<svg class="poster".*?</svg>', page, re.S).group(0)
+        for where, text in (("label", label), ("twin", twin)):
+            self.assertIn(html.escape(name), text, where)
+            self.assertIn(html.escape(folder), text, where)
+        self.assertIn('<text class="tag" ', poster)
+        self.assertIn(f">{html.escape(folder)}</text>", poster)
+        self.assertIn(folder, [d["name"] for d in data_of(page)["d"]], "the JSON keeps the name, '<' escaped")
+        self.assertIn("evil\\\">\\u003cb>dir", page)
+
+    def test_a_leak_names_the_path(self):
+        with self.assertRaisesRegex(fmpage.Leak, r"/home/someone/x\.py"):
+            fmpage.city_html(FILES + [{"path": "/home/someone/x.py", "lines": 3, "churn": 0}], "x")
+
+    def test_history_unavailable_is_not_every_window_dark(self):
+        page = fmpage.city_html([dict(f, churn=0) for f in FILES], "Foreman", history=False)
+        label = html.unescape(re.search(r'<canvas[^>]*aria-label="([^"]*)"', page).group(1))
+        self.assertIn("history unavailable", label)
+        self.assertNotIn("every window is dark", label)
+
+    def test_estimated_lines_past_the_read_budget_are_said_on_the_page(self):
+        page = fmpage.city_html(FILES, "Foreman", estimated=7)
+        twin = html.unescape(re.search(r"<figcaption[^>]*>(.*?)</figcaption>", page, re.S).group(1))
+        self.assertRegex(twin, r"7 files.*estimated from their size.*256 MB")
+
+    def test_the_intro_is_short_and_any_input_ends_it(self):
+        script = re.search(r'<script type="module">(.*?)</script>', self.page, re.S).group(1)
+        self.assertLessEqual(float(re.search(r"\bPASS = ([\d.]+)", script).group(1)), 5, "WCAG 2.2.2: 5 s or a control")
+        self.assertRegex(script, r"const turn = [^\n]*pass = PASS", "the first drag or key ends the intro")
+        key = re.search(r'<p class="key"[^>]*>(.*?)</p>', self.page, re.S).group(1)
+        self.assertIn("drag or arrow keys", key)
+        self.assertRegex(self.page, r'\.city\[data-state="live"\] canvas \{[^}]*cursor: grab')
 
     def test_the_label_summarises_the_biggest_areas_and_the_text_twin_holds_them(self):
         canvas = re.search(r"<canvas[^>]*>", self.page).group(0)  # the template's way: named, focusable once live
@@ -156,6 +196,45 @@ class City(ForemanTestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(read_text(mine), "<p>mine</p>")
 
+    def _commit(self, path, text, msg):
+        os.makedirs(os.path.dirname(os.path.join(self.repo, path)), exist_ok=True)
+        with open(os.path.join(self.repo, path), "a") as f:
+            f.write(text)
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", msg], check=True)
+
+    def test_a_project_in_a_subfolder_gets_its_own_churn(self):
+        # review: ls-files paths are relative to the project, git log's to the repo root without --relative
+        self._commit("sub/app.py", "x\n", "one")
+        self._commit("sub/app.py", "y\n", "two")
+        self._commit("other.py", "z\n", "three")
+        files, info = fmpage.city_files(os.path.join(self.repo, "sub"))
+        self.assertEqual([(f["path"], f["lines"], f["churn"]) for f in files], [("app.py", 2, 2)])
+        self.assertTrue(info["history"])
+
+    def test_a_failed_git_log_is_history_unavailable(self):
+        from unittest import mock
+        import fmmap
+        self._commit("app.py", "x\n", "one")
+        real = fmmap._git
+        broken = lambda root, *a, **kw: (subprocess.CompletedProcess(a, 124, "", "timed out") if "log" in a
+                                         else real(root, *a, **kw))
+        with mock.patch.object(fmmap, "_git", broken):
+            files, info = fmpage.city_files(self.repo)
+        self.assertFalse(info["history"])
+        self.assertEqual([f["path"] for f in files if f["path"] == "app.py"], ["app.py"])
+
+    def test_past_the_read_budget_lines_are_estimated_from_size(self):
+        from unittest import mock
+        for i in range(3):  # 10, 20 and 30 KB: past the 8 KB head every file gets
+            self._commit(f"f{i}.txt", ("x" * 99 + "\n") * (100 * (i + 1)), f"c{i}")
+        with mock.patch.object(fmpage, "READ_BUDGET", 16000):
+            files, info = fmpage.city_files(self.repo)
+        lines = {f["path"]: f["lines"] for f in files}
+        self.assertEqual(lines["f2.txt"], 300, "read in full: inside the budget")
+        self.assertGreater(info["estimated"], 0)
+        self.assertAlmostEqual(lines["f0.txt"], 100, delta=5, msg="estimated from bytes per line so far")
+
 
 class CityBrowser(unittest.TestCase):
     """The city in a real headless Chromium over DevTools, real time (virtual time never runs frame callbacks)."""
@@ -172,7 +251,6 @@ class CityBrowser(unittest.TestCase):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def spied(self, at, media=(), init="", expr=None):
-        from test_site_hero import SPY, devtools
         browser = headless_chrome()
         if not browser:
             self.skipTest("no headless Chromium (FOREMAN_CHROME, chrome-headless-shell or Playwright's download)")
@@ -183,17 +261,28 @@ class CityBrowser(unittest.TestCase):
             self.skipTest(f"{browser} didn't take DevTools over a pipe: {e!r}")
 
     def test_it_draws_frames_in_real_time_then_rests(self):
-        early, mid, late = self.spied((4, 12, 14))  # the pass is 7 s: slack for a loaded machine's late start
+        early, mid, late = self.spied((3, 10, 12))  # the pass is 4.5 s: slack for a loaded machine's late start
         self.assertEqual(early["state"], "live", early)
         self.assertIn("webgl2", early["contexts"])
-        self.assertGreater(early["raf"], 30, "the rise and the turn draw frames in real time")
+        self.assertGreater(early["raf"], 10, "the rise and the turn draw frames in real time")
         self.assertEqual(mid["raf"], late["raf"], "after its pass the city rests: no frames")
+
+    def test_the_first_key_ends_the_intro(self):
+        # review (WCAG 2.2.2): input stops the auto motion; frames stop once the turn it asked for settles
+        probe = """(() => { const s = window.__spy; s.n = (s.n || 0) + 1;
+          if (s.n === 1) document.querySelector('.city canvas').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+          return s.raf; })()"""
+        # the key at 1.5 s; the step it asks for settles in about a second; the pass, begun at the first frame after
+        # the load, would run past 4.5 s
+        _, settled, later = self.spied((1.5, 3.8, 4.5), expr=probe)
+        self.assertEqual(settled, later, "no frames before the 4.5 s pass would have ended")
 
     def test_reduced_motion_and_no_webgl2_keep_the_poster_still(self):
         still, = self.spied((3,), [("prefers-reduced-motion", "reduce")])
         self.assertEqual((still["state"], still["raf"]), ("still", 0))
         self.assertNotIn("webgl2", still["contexts"], "reduced motion asks for no WebGL context at all")
-        none = "HTMLCanvasElement.prototype.getContext = function (t) { return t === 'webgl2' ? null : null; };"
+        none = """const get = HTMLCanvasElement.prototype.getContext;
+          HTMLCanvasElement.prototype.getContext = function (t, ...r) { return t === "webgl2" ? null : get.call(this, t, ...r); };"""
         flat, = self.spied((3,), init=none)
         self.assertEqual((flat["state"], flat["raf"]), ("no-webgl2", 0))
 
