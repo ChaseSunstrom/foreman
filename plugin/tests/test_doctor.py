@@ -256,6 +256,22 @@ class Checks(unittest.TestCase):
                 self.assertIn(why, r.detail)
                 shutil.rmtree(os.path.join(root, "skills", folder))
 
+    def test_skill_descriptions_are_in_task_terms_and_distinct(self):
+        # T-1698: the model sees only name and description, so Foreman jargon or two near-copies leave a skill unused
+        root = os.path.join(self.t, "plug")
+        pre = "---\nname: %s\ndescription: %s\n%s---\nbody\n"
+        self.write("plug/skills/a/SKILL.md", pre % ("a", "Use whenever you are about to report where work stands", ""))
+        self.assertEqual(d.check_frontmatter(root).status, "PASS")
+        self.write("plug/skills/b/SKILL.md", pre % ("b", "Use when STATE says tidy is overdue", ""))
+        r = d.check_frontmatter(root)
+        self.assertEqual(r.status, "FAIL")
+        self.assertIn("jargon", r.detail)
+        self.write("plug/skills/b/SKILL.md", pre % ("b", "Use whenever you are about to report where all work stands", ""))
+        self.assertIn("overlap", d.check_frontmatter(root).detail)
+        # a user-only skill is never in the model's listing
+        self.write("plug/skills/b/SKILL.md", pre % ("b", "Use when STATUS is asked", "disable-model-invocation: true\n"))
+        self.assertEqual(d.check_frontmatter(root).status, "PASS")
+
     def test_worktree_base(self):
         # T-0803: builder lanes need worktree.baseRef head; the default makes them start from the remote's branch
         self.assertEqual(d.check_worktree_base({"worktree": {"baseRef": "head"}}).status, "PASS")

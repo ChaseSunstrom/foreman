@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-description: Use for an open-ended request ("super improve it", "what next?") or when Foreman's note says so: lens ideas, each grounded, scored and briefed.
+description: Use whenever a request is open-ended ("super improve it", "what next?"): grounded, scored ideas by lens, turned into tasks.
 ---
 
 # Foreman: brainstorm

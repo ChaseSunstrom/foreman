@@ -27,7 +27,8 @@ _GENERIC_TAGS = {"look", "style", "palette"}
 
 
 def looks(folder=LOOKS):
-    """name → {title, line, palette (rgb tuples), tags} for each look card."""
+    """name → {title, line, palette (rgb tuples), tags, body} for each look card; section(body, HEADING) reads one
+    of its ## sections (T-1649: fm page looks reads the rest from here, so the cards have one parser)."""
     out = {}
     for n in sorted(os.listdir(folder)):
         if not (n.startswith("look-") and n.endswith(".md")):
@@ -37,13 +38,18 @@ def looks(folder=LOOKS):
         head, _, body = text.partition("\n---\n")
         title = re.search(r'(?m)^title:\s*"?Look:\s*([^"\n]+)', head)
         tags = re.search(r"(?m)^tags:\s*\[([^\]]*)\]", head)
-        palette = body.split("\n## Palette", 1)[-1].split("\n## ", 1)[0]
         out[n[:-3]] = {"title": title.group(1).strip() if title else n[5:-3],
                        "line": next((x.strip() for x in body.splitlines() if x.strip()), ""),
-                       "palette": [_rgb(h) for h in re.findall(r"\|\s*(#[0-9A-Fa-f]{6})\s*\|", palette)],
+                       "palette": [_rgb(h) for h in re.findall(r"\|\s*(#[0-9A-Fa-f]{6})\s*\|", section(body, "Palette"))],
                        "tags": [t.strip() for t in (tags.group(1) if tags else "").split(",")
-                                if t.strip() and t.strip() not in _GENERIC_TAGS]}
+                                if t.strip() and t.strip() not in _GENERIC_TAGS],
+                       "body": body}
     return out
+
+
+def section(body, heading):
+    """The text under a card's "## heading", up to the next ## (empty when the card has none)."""
+    return (body.split(f"\n## {heading}\n", 1) + [""])[1].split("\n## ", 1)[0].strip()
 
 
 def _rgb(h):

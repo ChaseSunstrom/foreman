@@ -352,13 +352,21 @@ class Run:
             self.emit("say", _cut(self.redact(r["text"].strip()), 1000), quiet=True)
 
     # -- fm and the hook
-    def fm(self, *a, stdin=None, timeout=FM_TIMEOUT):
+    def fm(self, *a, stdin=None, timeout=FM_TIMEOUT, confine=None):
+        rs, pre = _confining(confine)  # T-1607: fm task evidence --run runs the worker's code (its tests)
         try:
             p = subprocess.run([sys.executable, FM, *a], cwd=self.root, input=stdin, capture_output=True, text=True,
-                               timeout=timeout, env=self.env())
+                               timeout=timeout, env=self.env(), preexec_fn=pre, pass_fds=(rs,) if rs is not None else ())
         except subprocess.TimeoutExpired:
             return 124, f"fm {a[0]} {a[1] if len(a) > 1 else ''} took over {timeout} s"
+        finally:
+            if rs is not None:
+                os.close(rs)
         return p.returncode, (p.stdout + p.stderr).strip()
+
+    def confine(self):
+        """T-1607: the writable set for this run's commands, None when they run unconfined."""
+        return worker_confinement(self.root)[0]
 
     def hook(self, event, tool, tool_input, response=None):
         pl = {"session_id": f"fm-code-{self.tid or 'plan'}", "cwd": self.root, "hook_event_name": event, "tool_name": tool,
@@ -549,7 +557,7 @@ class Run:
         why = self.guard("Bash", {"command": cmd})
         if why:
             return f"refused by Foreman's guard: {why}"
-        code, out = run_bounded(cmd, self.root, RUN_TIMEOUT, self.env(), self.cap)
+        code, out = run_bounded(cmd, self.root, RUN_TIMEOUT, self.env(), self.cap, confine=self.confine())
         self.after("Bash", {"command": cmd}, {"stdout": out, "stderr": "", "interrupted": code is None})
         return (f"timed out after {RUN_TIMEOUT} s" if code is None else f"exit {code}") + (f"\n{out}" if out else "")
 
@@ -625,9 +633,17 @@ class Run:
                        DISABLE_AUTOUPDATER="1")
             streams = "stream-json" in (all_runners().get(self.worker, {}).get("work") or "")
             self.unlean = None
-            code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True,
-                                    on_line=self.live_tools(argv[0], "--strict-mcp-config" in argv) if streams else None,
-                                    on_idle=self.live_beat(argv[0]))
+            confine, note = worker_confinement(self.root)
+            if not getattr(self, "_confine_said", False):  # T-1607: said once a run
+                self._confine_said = True
+                self.emit("note", f"  {note}", worker=argv[0])
+                self.log(kind="confine", note=note)
+            try:
+                code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True,
+                                        on_line=self.live_tools(argv[0], "--strict-mcp-config" in argv) if streams
+                                        else None, on_idle=self.live_beat(argv[0]), confine=confine)
+            except ConfineError as e:
+                raise Blocked(str(e))
             if streams:  # the journal keeps its reply, not the stream
                 res = next(filter(None, map(m.stream_result, reversed(out.splitlines()))), None)
                 out = res["result"] if res and isinstance(res.get("result"), str) else out
@@ -837,7 +853,7 @@ class Run:
             if why:
                 raise Blocked(f"fm code: Foreman's guard refused criterion {n}'s verify command: {_one_line(why, 200)}")
             code, out = self.fm("task", "evidence", self.tid, "--ac", str(n), f"--run={cr['verify']}",
-                                timeout=VERIFY_TIMEOUT + 60)
+                                timeout=VERIFY_TIMEOUT + 60, confine=self.confine())
             self.emit("verify", f"{label} {n}: {cr['verify']} → {'pass' if code == 0 else f'exit {code}'}",
                       criterion=n, exit=code, label=label, cmd=cr["verify"],
                       **({"output": _cut(self.redact(out), 1000)} if code else {}))
@@ -930,15 +946,56 @@ def lean_extras(line):
     return [m._shown(str(x))[:80] for x in out]
 
 
-def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, on_idle=None, on_spawn=None):
+class ConfineError(Exception):
+    """T-1607: the confinement a command was to run under couldn't be made; it isn't run unconfined instead."""
+
+
+def _confining(confine):
+    """(ruleset fd, preexec_fn) for confine (a writable set), or (None, None) for none. The ruleset is built here in
+    the parent; the child only locks itself (fmlandlock.enter: two syscalls, nothing loaded after fork)."""
+    if confine is None:
+        return None, None
+    import fmlandlock
+    try:
+        rs = fmlandlock.prepare(confine)
+    except OSError as e:
+        raise ConfineError(f"fm code: worker confinement couldn't be set up ({e}); the command was not run "
+                           "unconfined. FOREMAN_CONFINE=0 in your own shell turns confinement off")
+    return rs, (lambda: fmlandlock.enter(rs))
+
+
+def worker_confinement(root):
+    """T-1607: (writable paths, note) for a worker in root: paths None when it runs unconfined, the note saying why."""
+    import fmlandlock
+    if os.environ.get("FOREMAN_CONFINE") == "0":
+        return None, "worker unconfined: FOREMAN_CONFINE=0"
+    ok, why = fmlandlock.available()
+    if not ok:
+        return None, f"worker unconfined: {why}"
+    return fmlandlock.writable_for(root), (f"worker confined by Landlock ({why}): it writes only in this tree, its git "
+                                           "folders, scratch, Claude Code's folders and tool caches")
+
+
+def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, on_idle=None, on_spawn=None,
+                confine=None):
     """(exit code or None on timeout, output cut to head and tail). Memory stays bounded whatever the command prints;
     its whole process group is killed at the end, and with reap (Linux) whatever it started outside that group too
     (setsid, a double fork): this process is their subreaper, so they come back to it, not to init. on_line and
     on_idle see its output live (fmcore.pump, T-1329); on_spawn(process) as it starts (T-1511: a caller that ends
     first can kill its group)."""
+    rs, pre = _confining(confine)  # T-1607: built before the subreaper is set, so a refusal leaves nothing behind
     reaping = reap and _subreaper(True)
-    p = subprocess.Popen(["bash", "-c", cmd], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT, start_new_session=True, env=env)
+    try:
+        p = subprocess.Popen(["bash", "-c", cmd], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, start_new_session=True, env=env, preexec_fn=pre,
+                             pass_fds=(rs,) if rs is not None else ())
+    except BaseException:
+        if reaping:
+            _subreaper(False)
+        raise
+    finally:
+        if rs is not None:
+            os.close(rs)
     if on_spawn:
         on_spawn(p)
     head, tail, total = bytearray(), bytearray(), [0]
@@ -1828,7 +1885,7 @@ def _plan_problem(run):
     if run.plan["type"] not in ("FIX", "FEATURE"):
         return None
     for n, cr in enumerate(run.plan["criteria"], 1):
-        code, _ = run_bounded(cr["verify"], run.root, VERIFY_TIMEOUT, run.env(), 200)
+        code, _ = run_bounded(cr["verify"], run.root, VERIFY_TIMEOUT, run.env(), 200, confine=run.confine())
         if code == 0:
             return (f"Criterion {n}'s verify `{cr['verify']}` already passes before any work, so it proves nothing: "
                     "give a verify that fails now and passes once the work is done.")

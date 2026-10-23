@@ -116,11 +116,15 @@ def run(event, raw):
         try:
             payload = json.loads(raw) if raw.strip() else {}
             handler = HANDLERS.get(event)
+            if event == "UserPromptSubmit":
+                _skill_named(payload, payload.get("prompt") if isinstance(payload, dict) else None, typed=True)
             out = handler(payload) if handler else None
             if out is not None:
                 print(json.dumps(out, ensure_ascii=False))
                 _log_inject(event, ((out.get("hookSpecificOutput") or {}) if isinstance(out, dict) else {})
-                            .get("additionalContext"))
+                            .get("additionalContext"), payload)
+                if event in ("Stop", "SubagentStop") and isinstance(out, dict):  # T-1702: the drive's Next line and
+                    _skill_named(payload, out.get("reason"))  # hint reach the model as the block's reason
             if state:
                 _breaker_set(event, None)
         except HookBlock as e:
@@ -173,12 +177,35 @@ def _note_key(text):
     return " ".join(re.findall(r"[A-Za-z][\w-]*", t)[:5]).lower()
 
 
-def _log_inject(event, text):
+def _log_inject(event, text, pl=None):
     """T-0499: what a hook put into the model's context, for the friction digest's note budget."""
     if text:
         import hashlib  # T-0860: h tells the same note from another of its kind
         _event({"kind": "inject", "event": event, "key": _note_key(text), "chars": len(str(text)),
                 "h": hashlib.sha1(str(text).encode("utf-8", "replace")).hexdigest()[:10]})
+        _skill_named(pl, text)
+
+
+_SKILL_NAME = r"foreman:([a-z][a-z-]{0,39})(?![a-z-])"  # a longer name is no skill: never logged
+_TYPED = re.compile(r"\s*(?:<command-name>)?/" + _SKILL_NAME)
+_NAMED = re.compile(r"(?:/|\bSkill )" + _SKILL_NAME)  # /foreman:x, or a hint's "load: Skill foreman:x" (T-1697)
+
+
+def _skill_named(pl, text, typed=False):
+    """T-1702: the foreman:x skills a hook's note names (skill_named), or the one the user typed (slash), as an event
+    fm usage holds against what the session loaded: named and never loaded is offered and ignored. Every note goes
+    through here, so a hook naming a skill needs no call of its own; only text naming one pays for the lookup."""
+    try:
+        if not isinstance(pl, dict) or "foreman:" not in str(text or ""):
+            return
+        m = _TYPED.match(str(text)) if typed else None
+        names = ([m.group(1)] if m else []) if typed else sorted(set(_NAMED.findall(str(text))))
+        if names:
+            p = c.find_project(_cwd(pl))
+            _event({"kind": "slash" if typed else "skill_named", "session_id": pl.get("session_id"),
+                    "project": p.slug if p else None, "skills": names[:20]})
+    except Exception:
+        log_error("skill_named", _tb())
 
 
 def _event(rec):
@@ -390,7 +417,7 @@ def session_start(pl):
             fmrelate.spawn(p)
     except Exception:
         log_error("SessionStart", _tb())
-    out = {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note)}
+    out = {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note, sid)}
     if _headless():  # T-1228: an unattended run is judged by its final reply; nobody can ask it what it checked
         layout = None if sd["active"] or sd["queue"] or sd["paused"] else _layout_note(p)
         if layout:  # T-1231: one request, nothing queued: the map, not the queue (and any other session's note)
@@ -512,7 +539,7 @@ def _grants_note(meta):
                          if c.trusted() else ""))
 
 
-def session_context(p, sd, other_note=None):
+def session_context(p, sd, other_note=None, sid=None):
     a = sd["active"]
     head = [f"Foreman project {p.slug} ({p.root}). Drive: {'on' if sd['drive'] else 'off'}"
             + (", paused" if sd["paused"] else "") + "."
@@ -537,7 +564,9 @@ def session_context(p, sd, other_note=None):
     else:
         focus.append("Active: none.")
     try:
-        focus.append("Next: " + c.next_for(p)[2])
+        nb, nst, action = c.next_for(p)
+        hint = _skill_once(sid, c.skill_for(nb, nst))
+        focus.append("Next: " + action + (f" ({hint})" if hint else ""))
     except Exception:  # a malformed brief costs the Next line, not the whole session context
         log_error("SessionStart", _tb())
     q = sd["queue"]
@@ -1042,13 +1071,23 @@ def _last_stop(sid):
     return "no drive note"
 
 
+def _secret_note(text):
+    """T-1606: one note when the user's message holds a key-shaped secret; it names the kind, never the value."""
+    kinds = c.secret_kinds(text)
+    if not kinds:
+        return ""
+    return f"Pasted secret ({kinds[0]}): don't repeat or store it; suggest rotating it"
+
+
 def user_prompt_submit(pl):
     sid = pl.get("session_id")
     p = c.find_project(_cwd(pl), create=not os.environ.get("FOREMAN_WORKER_OF"))  # T-1438: a worker sets up nothing
     if not p:
         return None
     if _oneoff():  # T-0775: the prompt is a question, not intake
-        return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": ONEOFF_NOTE}}
+        secret = _secret_note(pl.get("prompt") or "")
+        return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                                       "additionalContext": ONEOFF_NOTE + (f" {secret}." if secret else "")}}
     text = _PASTED.sub("", pl.get("prompt") or "").strip()
     if text.startswith("<task-notification>"):  # a background agent's result, not the user: no approvals, words, holds
         for tid in re.findall(r"<task-id>([\w-]+)</task-id>", text):
@@ -1120,6 +1159,9 @@ def user_prompt_submit(pl):
                 "Foreman: state was busy (another session or fm held the lock), so this message was not recorded: "
                 "no approval, override word or heartbeat was applied. Pending approvals are unchanged."}}
     parts = list(approvals)
+    secret = _secret_note(pl.get("prompt") or "")  # pasted blocks included: the likeliest place for one
+    if secret:
+        parts.append(secret)
     if r.items:
         tags = ", ".join(i.type + ("!" if i.urgent else "") + ("?" if i.explore else "") for i in r.items)
         n = len(r.items)
@@ -1170,7 +1212,7 @@ def user_prompt_submit(pl):
             c.log_event(p, "lib_named", data={"cards": named}, session=sid)
     except Exception:
         log_error("UserPromptSubmit", _tb())
-    a, state = sd["active"], []
+    a, state, hint = sd["active"], [], ""
     if a:
         state.append(f"Active: {a['id']} {a['type']} " + (f"step {a['step']['n']}/{a['step']['of']}" if a["step"]
                                                         else f"{a['steps_done']}/{a['steps_total']} steps done"))
@@ -1178,7 +1220,9 @@ def user_prompt_submit(pl):
         state.append("No active task" + (f"; {len(sd['queue'])} queued" if sd["queue"] else ""))
     try:
         if a or sd["queue"] or not _headless():  # T-1231: a one-request unattended run has no queue to finish
-            state.append("Next: " + c.next_for(p)[2])
+            nb, nst, action = c.next_for(p)
+            state.append("Next: " + action)
+            hint = c.skill_for(nb, nst)
     except Exception:
         log_error("UserPromptSubmit", _tb())
     if sd["inbox"]:
@@ -1187,9 +1231,28 @@ def user_prompt_submit(pl):
         state.append("Drive paused")
     if sd.get("autonomy") == "full":
         state.append("Autonomy: full")
-    if not _same_note(pl.get("session_id"), " | ".join(state)):  # unchanged state isn't repeated every turn
+    note = " | ".join(state)
+    same = _same_note(sid, note, record=False)  # unchanged state isn't repeated every turn
+    if not same:
         parts += state
+    # T-1697: the skill that fits, once a session each, whole or not at all: the cap cuts the end, so a note that
+    # doesn't fit waits rather than cutting the Next line. A UI request's note first: it isn't asked for again.
+    room = lambda extra: len("Foreman: " + ". ".join(parts) + ".") + extra <= PROMPT_BUDGET
+    ui = c.ui_request(text)
+    ui_note = f"{'Design' if ui == 'design' else 'UI'} request: {c.SKILL_FOR[ui]}" if ui else ""
+    if ui_note and room(len(ui_note) + 2) and _skill_once(sid, c.SKILL_FOR[ui]):
+        parts.append(ui_note)
+    if not same:
         nxt = next((x[6:] for x in state if x.startswith("Next: ")), None)
+        wait = False
+        if nxt and _skill_once(sid, hint, peek=True):
+            if room(len(hint) + 3):
+                _skill_once(sid, hint)
+                parts = [f"{x} ({hint})" if x.startswith("Next: ") else x for x in parts]
+            else:  # no room this turn: leave the state untold so the next turn says it again, if it fits there
+                wait = len(f"Foreman: {'. '.join(state)}.") + len(hint) + 3 <= PROMPT_BUDGET
+        if not wait:
+            _same_note(sid, note)
         if nxt:  # T-0051: fm usage compares it with what ran next
             _event({"kind": "next", "session_id": pl.get("session_id"), "project": p.slug, "action": nxt[:200]})
             try:
@@ -1217,6 +1280,17 @@ def _first_time(sid, key):
         return True
     except OSError:
         return False
+
+
+def _skill_once(sid, hint, peek=False):
+    """T-1697: a SKILL_FOR hint the first time this session (since its last start or compaction) is told it, else "";
+    peek: whether it would be, without marking it told."""
+    if not hint or not sid or not re.fullmatch(r"[\w-]{1,100}", sid):
+        return ""
+    key = "skill-" + hashlib.sha1(hint.encode()).hexdigest()[:10]
+    if peek:
+        return "" if os.path.exists(os.path.join(c.state_dir(), "sessions", f"{sid}.{key}")) else hint
+    return hint if _first_time(sid, key) else ""
 
 
 def _generated_note(pl, path):
@@ -1354,8 +1428,9 @@ def _big_read_note(pl, ti):
             f"line ranges; then Read only the range you need (offset/limit).")
 
 
-def _same_note(sid, text):
-    """Whether this session was last told exactly this state; records it when not (SessionStart clears it)."""
+def _same_note(sid, text, record=True):
+    """Whether this session was last told exactly this state; records it when not, unless record is False
+    (SessionStart clears it)."""
     if not sid or not re.fullmatch(r"[\w-]{1,100}", sid):
         return False
     path = os.path.join(c.state_dir(), "sessions", f"{sid}.note")
@@ -1365,6 +1440,8 @@ def _same_note(sid, text):
                 return True
     except OSError:
         pass
+    if not record:
+        return False
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         c.write_atomic(path, text)
@@ -1729,7 +1806,7 @@ def _pre_tool_use(raw):
         note = " ".join(_said_once(pl, list(filter(None, [made, saved, slow, warn] + [_each(b) for b in builders]))))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
-            _log_inject("PreToolUse", note)
+            _log_inject("PreToolUse", note, pl)
     except Exception:
         log_error("PreToolUse", _tb())
     return 0
@@ -2536,6 +2613,9 @@ def post_tool_use(pl, ok=True):
            "target": _target(ti)[:120], "ms": pl.get("duration_ms"), "ok": ok, "project": p.slug if p else None}
     if pl.get("agent_type"):
         rec["agent_type"] = pl["agent_type"]
+    book = str(ti.get("file_path") or "") if tool == "Read" and isinstance(ti, dict) else ""
+    if "/skills/playbooks/references/" in book and book.endswith(".md"):  # T-1702: a lane's path outruns the cut
+        rec["book"] = book.rsplit("/skills/playbooks/references/", 1)[1][:-3][:200]  # target, so fm usage lost it
     if not ok:
         rec["error"] = str(pl.get("error") or "").split("\n")[0][:120]
     _event(rec)
@@ -3465,7 +3545,9 @@ def _drive(p, sd, briefs, pl, g):
                  ". No question to the user or approval is pending. Drive ends when the queue is empty, "
                  "when a question or approval is needed, or with `fm drive off`."))
     try:
-        reason += " Next: " + c.next_for(p, briefs)[2]
+        nb, nst, action = c.next_for(p, briefs)
+        hint = _skill_once(sid, c.skill_for(nb, nst))  # T-1697
+        reason += " Next: " + action + (f" ({hint})" if hint else "")
         pct, tokens = _context(sid)
         big = pct is not None and (pct >= CONTEXT_NOTE_PCT or tokens >= CONTEXT_NOTE_TOKENS)
         used = f"{pct}%" + (f" ({tokens // 1000}k tokens)" if tokens else "")

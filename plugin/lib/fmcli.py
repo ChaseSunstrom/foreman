@@ -3051,6 +3051,10 @@ def _prompted(p, tid, cats):
                and time.time() - a.get("at", 0) < c.APPROVAL_TTL for a in seen)
 
 
+FATIGUE_ASKS = 3  # T-1606: from the third ask of one kind in a session, suggest batching
+ASK_TALLY_KEEP = 8  # sessions whose counts meta keeps
+
+
 def cmd_ask(args):
     """Record a request only. The grant happens in the UserPromptSubmit hook, on the user's own reply."""
     import fmguard
@@ -3088,15 +3092,25 @@ def cmd_ask(args):
         pend.append(dict({"task": b.id, "allow": cats, "why": why, "session": sid, "at": c.now(),
                           "claude": seen.get("claude")}, **({"pin": args.pin} if args.pin else {})))
         meta["pending_approvals"] = pend
+        tallies = meta.get("ask_tally") if isinstance(meta.get("ask_tally"), dict) else {}
+        tallies = {k: v for k, v in tallies.items() if isinstance(v, dict) and k != "session" and k != "counts"}
+        mine = tallies.pop(sid, {})  # T-1606: per session, side by side; the last few sessions kept
+        for x in cats:
+            mine[x] = int(mine.get(x) or 0) + 1
+        meta["ask_tally"] = dict(list(tallies.items())[-(ASK_TALLY_KEEP - 1):] + [(sid, mine)])
         c.write_meta(p, meta)
         c.log_event(p, "approval_requested", task=b.id, data={"allow": cats, "why": why}, session=sid)
         c.regen_views(p)  # the statusline shows what a yes would grant
     reload = (" The user approved Claude Code's permission dialog, but this session hasn't loaded Foreman's "
               "PermissionRequest hook, so the dialog can't grant it: they should run /reload-plugins.") \
         if seen.get("dialog") else ""
-    out(args, {"task": b.id, "allow": cats, "why": why},
+    n, cat = max((mine[x], x) for x in cats)
+    tired = (f" Approval fatigue: {cat} asked {n} times this session; batch the rest of the work already in the "
+             "plan into one ask" + (" (fm ask ID core --standing covers every task)" if cat == "core" else "")
+             + " rather than one per step.") if n >= FATIGUE_ASKS else ""
+    out(args, {"task": b.id, "allow": cats, "why": why, "asked_this_session": n},
         f"Pending: {b.id} {', '.join(cats)} ({why}).{reload} Ask the user one yes/no question for it now; their next "
-        f"message decides: a reply starting with yes grants it, anything else cancels it.")
+        f"message decides: a reply starting with yes grants it, anything else cancels it.{tired}")
 
 
 # ponytail: words, not meaning; a block whose reason names none of these isn't listed (fm task list shows all blocks)
@@ -4731,9 +4745,10 @@ def cmd_next(args):
         beliefs = [f"A{n} {t.split(' — kill: ')[0]} (dead if {t.split(' — kill: ')[1]})"
                    for n, tag, _, t in b.assumptions() if tag in (None, "assumed") and " — kill: " in t]
         over += f" · open beliefs: {'; '.join(c.fit(x, 120) for x in beliefs[:3])}" if beliefs else ""
-    out(args, {"task": b.id if b else None, "stage": st, "action": action, "usual_minutes": usual},
-        f"Next: {action}" + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else "")
-        + over)
+    skill = c.skill_for(b, st)  # T-1697
+    out(args, {"task": b.id if b else None, "stage": st, "action": action, "usual_minutes": usual, "skill": skill or None},
+        f"Next: {action}" + (f" ({skill})" if skill else "")
+        + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else "") + over)
 
 
 def cmd_autonomy(args):
@@ -5259,8 +5274,15 @@ def _build_parser():
     s = add("playbooks", lazy("fmplaybooks", "cmd_show"), tier=("Finding your way", 382), help="show NAME: a playbook "
             "as the skill loads it, {{fact}}s (test, language, entry…) filled in from fm map and this project's "
             ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
-    s.add_argument("action", choices=["show"])
+    s.add_argument("action", choices=["show", "eval"], help="eval NAME: held-out briefs with and without the playbook "
+                   "loaded, the lift recorded (T-1618)")
     s.add_argument("name", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that name")
+    s.add_argument("--briefs", help="eval: the brief set (default plugin/evals/playbooks/<stage>/<name>.json)")
+    s.add_argument("--real", action="store_true", help="eval: ask a model (claude -p, budgeted) instead of reading "
+                   "the playbook literally")
+    s.add_argument("--model", default="haiku", help="eval --real: the model")
+    s.add_argument("--ablate", action="store_true", help="eval: each ## section's share of the lift, dropped one at "
+                   "a time; zero share is a cut candidate (T-1619)")
     s = add("scout", lazy("fmscout", "cmd_scout"), tier=("Running elsewhere", 1210), help="find work nobody asked for yet: a newer Claude Code, stack cards "
             "your projects lack, doctor failures, stale skill sources, a brainstorm when the queue is dry (T-0950)")
     s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (fm night's)")
@@ -5779,6 +5801,11 @@ def _build_parser():
                    "objects, fallback state); list the rest as left for a person")
     s.add_argument("--accept-supply", action="store_true",
                    help="take the current plugins and MCP servers as the supply-chain baseline (T-0672)")
+    s.add_argument("--wrong", metavar="CMD", help="file a guard false alarm (or, with --should block, a miss) as a "
+                   "labelled case and one FIX task for review; the guard itself is never changed (T-1606)")
+    s.add_argument("--should", choices=["allow", "block"], help="with --wrong: the verdict it should get (default allow)")
+    s.add_argument("--why", default="", help="with --wrong: what went wrong")
+    s.add_argument("--cwd", metavar="DIR", help="with --wrong: the folder it ran in (default: here)")
     s = add("fsck", lazy("fmdoctor", "cmd_fsck"), tier=("Project and settings", 872), help="a deeper read-only check "
             "of Foreman's state: open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, "
             "journals whose last line is torn; exit 1 on any (T-1667)")
@@ -5967,10 +5994,11 @@ def _build_parser():
     s = add("settings", lazy("fmsettings", "cmd_settings"), tier=("Project and settings", 775),
             help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
-                                                                 "bisect"])  # T-1543: the setting the app can't draw
+                                                                 "bisect", "profile"])  # T-1543 bisect, T-1656 profile
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
-                                          "share code fm settings export printed (T-1510); list: a group alone (look, "
-                                          "colors, layout, keys, pane; T-1511)")
+                                          "share code fm settings export printed (T-1510; tui.toml's [profile] tables "
+                                          "aren't in it); list: a group alone (look, colors, layout, keys, pane; "
+                                          "T-1511)")
     s.add_argument("value", nargs="?", help="set: the new value")
     s.add_argument("--surface", choices=["app", "plugin"], help="only the app's tui.toml, or only the pane's options")
 
@@ -6037,9 +6065,23 @@ def _build_parser():
     s.add_argument("--out", metavar="PATH", help="diff: write a PNG of A faded with each changed pixel in red")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
-            "form, with DESIGN.md's tokens resolved (exit 1 on problems)")
-    s.add_argument("action", choices=["check"])
+            "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
+            "score as CSS custom properties and @keyframes, WAAPI options or three.js tween parameters, the same "
+            "durations and easings in each, reduced forms included (T-1625)")
+    s.add_argument("action", choices=["check", "compile"])
     s.add_argument("path", nargs="?", help="the score (default: motion.toml at the repo root)")
+    s.add_argument("--to", choices=["css", "waapi", "three"], help="compile: the target (default css)")
+    s.add_argument("--out", metavar="FILE", help="compile: write here, replacing the file whole, not print it")
+    import fmscene  # T-1633: stdlib only and small; its schema is the help's epilog
+    s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 95), epilog=fmscene.SCHEMA,
+            formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
+            "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
+    s.add_argument("action", choices=["compile"])
+    s.add_argument("path", metavar="FILE", help="the scene.json")
+    s.add_argument("--to", choices=["three", "component"], default="three", help="three: an ES module importing "
+                   "\"three\" (r155+); component: that module plus <fm-scene>, a custom element mounting it in a shadow "
+                   "DOM over its slot=\"poster\" child (T-1634)")
+    s.add_argument("--out", metavar="PATH", help="write the module here, replacing the file whole, not print it")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), tier=("Finding your way", 460), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
@@ -6061,6 +6103,8 @@ def _build_parser():
     s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
     s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
                                                    "in state picks.json; needs --catalogue (T-0962)")
+    s.add_argument("what", nargs="?", choices=["looks"], help="looks: the looks gallery instead, one living specimen "
+                   "per look card in one file that loads nothing from another host (looks.html; T-1649)")
     s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
