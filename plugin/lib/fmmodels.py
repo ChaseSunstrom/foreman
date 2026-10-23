@@ -242,6 +242,12 @@ def _profile(name, d, where):
         bad("context must be a positive whole number")
     if not isinstance(p["tools"], bool):
         bad("tools must be true or false")
+    price = d.get("price")  # T-1357: USD per million tokens, in and out, so fm code can say what a run cost
+    if price is not None:
+        if not (isinstance(price, dict) and set(price) <= {"in", "out"} and all(
+                type(v) in (int, float) and 0 <= v < 1e6 for v in price.values())):
+            bad('price must be {"in": USD, "out": USD} per million tokens')
+        p["price"] = price
     p["base_url"] = p["base_url"].rstrip("/")
     return p
 
@@ -573,6 +579,8 @@ def _cli(profile, messages, timeout):
     prompt = "\n\n".join(f"{msg['role'].upper()}:\n{msg['content']}" for msg in messages
                           if isinstance(msg.get("content"), str))
     argv = [w.replace("{prompt}", prompt) for w in shlex.split(profile["argv"])]
+    if profile.get("max_usd") and os.path.basename(argv[0]) == "claude":  # T-1357: what's left of fm code --max-usd
+        argv += ["--max-budget-usd", f"{profile['max_usd']:.2f}"]
     limit = max(timeout, profile.get("timeout") or 0)
     stream, shown, found, out, stopped = profile.get("stream") == "claude", profile.get("on_line"), [], bytearray(), []
     done = threading.Event()  # set once the call returns: a line a leftover grandchild prints shows nothing
@@ -637,7 +645,7 @@ def _cli(profile, messages, timeout):
     seen = sum(v for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
                if type(v := u.get(k)) is int)  # T-1423: a "10" or null isn't added (Run.usage zeroes the rest)
     return {"text": got["result"], "tool_calls": [], "usage": {"in": seen, "out": u.get("output_tokens") or 0},
-            "stop": "end"}
+            "stop": "end", "usd": got.get("total_cost_usd")}
 
 
 def complete(profile, messages, tools=None, max_tokens=2048, timeout=120):

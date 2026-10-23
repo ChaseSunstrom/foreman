@@ -461,7 +461,8 @@ class Profiles(Base):
         self.assertEqual(m.resolve()["name"], "openai")
 
     def test_bad_profile_fields_name_models_json(self):
-        for bad in ({"kind": "cohere"}, {"tools": "yes"}, {"key_env": 5}, {"context": "big"}):
+        for bad in ({"kind": "cohere"}, {"tools": "yes"}, {"key_env": 5}, {"context": "big"},
+                    {"price": 3}, {"price": {"in": -1}}, {"price": {"in": True}}, {"price": {"per": 1}}):  # T-1357
             self.write_models({"profiles": {"p": dict({"base_url": "http://h/v1", "model": "x"}, **bad)}})
             with self.assertRaises(m.ModelError, msg=bad) as cm:
                 m.resolve("p")

@@ -578,6 +578,58 @@ class TaskRun(CodeCase):
         self.assertIn("another fm code run", r.stderr)
 
 
+class Cost(CodeCase):  # T-1357
+    def priced(self, per_m=10000):  # $0.01 a token: a fake call (5 in, 2 out) costs $0.07
+        path = os.path.join(self.home, "models.json")
+        conf = read_json(path)
+        conf["profiles"]["fake"]["price"] = {"in": per_m, "out": per_m}
+        with open(path, "w") as fh:
+            json.dump(conf, fh)
+
+    def spent(self):
+        path = os.path.join(self.home, "state", "spend.jsonl")
+        if not os.path.exists(path):
+            return []
+        with open(path) as f:
+            return [e for e in map(json.loads, f) if e["feature"] == "fm code"]
+
+    def closed(self, r):
+        return [json.loads(line) for line in r.stdout.splitlines()][-1]
+
+    def test_each_priced_call_goes_to_the_ledger_and_the_close_line_shows_the_total(self):
+        self.serve("openai", plan(), *FIX)
+        self.priced()
+        closed = self.closed(self.code("fix add", "--model", "fake", "--json"))
+        rows = self.spent()
+        self.assertEqual([round(e["usd"], 4) for e in rows], [0.07, 0.07, 0.07])  # the plan, the edit, done
+        self.assertEqual({e["project"] for e in rows}, {self.fm_json("status")["project"]})
+        self.assertEqual((closed["event"], closed["usd"]), ("closed", 0.21))
+        self.assertIn("$0.21", closed["text"])
+
+    def test_an_unpriced_model_records_nothing_and_shows_no_dollars(self):
+        self.serve("openai", plan(), *FIX)
+        closed = self.closed(self.code("fix add", "--model", "fake", "--json"))
+        self.assertEqual(self.spent(), [])
+        self.assertNotIn("$", closed["text"])
+        self.assertIsNone(closed.get("usd"))
+
+    def test_the_cap_stops_a_run_and_a_resume_keeps_its_spend_and_cap(self):
+        self.serve("openai", plan(), call("read", path="calc.py"), call("read", path="calc.py"))
+        self.priced()
+        r = self.code("fix add", "--model", "fake", "--max-usd", "0.15", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("spent $0.21 of its $0.15 cap", r.stderr)
+        self.assertEqual(r.stderr.strip().splitlines()[-1], "Next: fm code --resume T-0001 --max-usd 0.3")
+        self.assertEqual(self.task()["status"], "active")
+        r = self.code("--resume", check=False)  # the cap came back from the journal, and $0.21 is past it
+        self.assertIn("spent $0.21 of its $0.15 cap", r.stderr)
+        self.serve("openai", *FIX)
+        self.priced()  # serve wrote the profile afresh
+        closed = self.closed(self.code("--resume", "--max-usd", "1", "--json"))
+        self.assertEqual(self.task()["status"], "done")
+        self.assertEqual(closed["usd"], 0.35)
+
+
 class Failures(CodeCase):  # T-1754 (T-1334, T-1355)
     def test_every_failure_ends_with_one_next_line(self):
         last = lambda r: r.stderr.strip().splitlines()[-1]  # noqa: E731
