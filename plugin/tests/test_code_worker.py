@@ -830,6 +830,51 @@ class Ping(CodeCase):  # T-1335
         self.assertIn("isn't a runner", self.work("runners", "--ping", "nope", check=False).stderr)
 
 
+class Config(CodeCase):  # T-1359
+    def view(self, *args, env=None):
+        r = self.code("config", "--json", *args, env=env)
+        return {x["key"]: (x["value"], x["source"]) for x in json.loads(r.stdout)["settings"]}, json.loads(r.stdout)
+
+    def test_each_setting_shows_its_value_and_where_it_came_from(self):
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write('lean = false\nlimit_wait = 120\nchain = ["claude", "codex"]\n[on]\nclosed = "true"\n')
+        self.fm("init")
+        self.fm("sensitive", "on")
+        got, _ = self.view("--max-steps", "7", env={"FOREMAN_CONFINE": "0"})
+        self.assertEqual(got["lean"], (False, "code.toml"))
+        self.assertEqual(got["limit_wait"], (120, "code.toml"))
+        self.assertEqual(got["chain"], (["claude", "codex"], "code.toml"))
+        self.assertEqual(got["on.closed"], ("true", "code.toml"))
+        self.assertEqual(got["on.blocked"], (None, "default"))
+        self.assertEqual(got["max_steps"], (7, "flag"))
+        self.assertEqual(got["worker_timeout"], (1200, "default"))
+        self.assertEqual(got["max_usd"], (None, "default"))
+        self.assertEqual(got["confine"], ("off", "env FOREMAN_CONFINE"))
+        self.assertEqual(got["sensitive"], (True, "project"))
+        for key in ("runner", "model"):
+            self.assertIn(key, got)
+        self.assertIn("lean", self.code("config").stdout)
+
+    def test_explain_says_what_a_setting_does_and_how_to_change_it(self):
+        out = self.code("config", "--explain", "limit_wait").stdout
+        self.assertIn("usage limit", out)
+        self.assertIn("code.toml limit_wait", out)
+        r = self.code("config", "--explain", "nope", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("limit_wait", r.stderr)
+
+    def test_a_broken_code_toml_is_named_with_its_line_and_the_view_falls_back(self):
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write("runner = 'claude'\nlean = \n")
+        got, raw = self.view()
+        self.assertIn("line 2", raw["problem"])
+        self.assertEqual(got["lean"], (True, "default"))
+        self.assertIn("line 2", self.code("config").stdout)
+        r = self.code("fix add", check=False)  # a run still refuses it
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("code.toml", r.stderr)
+
+
 class Routing(CodeCase):  # T-1358
     cli, work = Worker.cli, Worker.work
 
