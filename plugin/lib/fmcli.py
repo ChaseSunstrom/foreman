@@ -6223,7 +6223,7 @@ def _build_parser():
             help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496); "
                  "serve: the same as a page on 127.0.0.1, token-locked, changes through set")
     s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
-                                                                 "bisect", "profile", "chords", "serve"])
+                                                                 "bisect", "profile", "chords", "serve", "check"])
     # T-1543 bisect, T-1656 profile, T-1660 chords, T-1659 serve
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
                                           "share code fm settings export printed (T-1510; tui.toml's [profile] tables "

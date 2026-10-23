@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm settings check draws tui.toml every way Foreman does (the app at every layout, a headless snapshot as --snapshot makes it, and --plain's lines) and names the way that can't, with exit 1, so a setting that only breaks the snapshot or a piped run shows before it matters (T-1612)
 - foreman-ui pane: fm design tokens DESIGN.md --to pane --save keeps that palette for the pane, which paints it over its default at the next refresh (cb and riso still win); fm ui carries it checked (known keys, #rrggbb only) and --clear forgets it (T-1717)
 - The hook bench's script case is budgeted as a hook (150 ms) plus the guard's CPU time box for one cold script read (200 ms), read from the guard: its 37 KB script never finishes inside the box, so 300 ms left the hook's own startup about 85 ms, which a loaded machine ate (T-1777)
 - fm dojo: a short drill of commands the guard refuses and why, for people: each round asks allow or refuse, then shows the guard's own live verdict and the reason; off a terminal it prints the drill as a study sheet with the answers (T-1608)

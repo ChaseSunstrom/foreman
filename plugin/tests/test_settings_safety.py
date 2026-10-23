@@ -279,3 +279,19 @@ class Monkey(Case):
         self.assertIn(("border", "double", None), sets, "the :set line was reached")
         self.assertIsNotNone(fmsettings._parses(read_text(self.toml)), "tui.toml still parses")
         self.assertIsNone(fmsettings.render_error(T.load_config()[0]), "and the app can draw with it")
+
+
+class HeadlessCheck(ForemanTestCase):  # T-1612
+    def test_every_way_draws_the_defaults_and_a_snapshot_only_failure_is_named(self):
+        import fmsettings
+        self.assertEqual(fmsettings.check_render(T.DEFAULTS), [])
+        p = self.fm("settings", "check")
+        self.assertIn("✓ tui.toml draws the same", p.stdout)
+        with mock.patch.object(T, "to_svg", side_effect=ValueError("bad colour 'chartreuse'")):
+            self.assertEqual(fmsettings.check_render(T.DEFAULTS),
+                             [("a headless snapshot", "ValueError: bad colour 'chartreuse'")])
+        with mock.patch.object(T, "entry_text", side_effect=KeyError("kind")):
+            self.assertEqual([w for w, _ in fmsettings.check_render(T.DEFAULTS)], ["--plain"])
+        with mock.patch.object(fmsettings, "render_error", return_value=None), \
+                mock.patch.object(T, "App", side_effect=TypeError("bad width")):
+            self.assertEqual(fmsettings.check_render(T.DEFAULTS), [("the sample run", "TypeError: bad width")])
