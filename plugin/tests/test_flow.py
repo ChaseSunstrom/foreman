@@ -270,6 +270,10 @@ class Untrusted(StubCase):
         self.assertEqual(fmflow.target("HTTP://LocalHost:8000/a?q=1#f", self.repo, False),
                          "http://localhost:8000/a?q=1#f")  # rebuilt from its parts
         self.assertEqual(fmflow.target("file://" + self.page, self.repo, False), "file://" + self.page)
+        self.assertEqual(fmflow.target("page.html?state=hover#x", self.repo, False),
+                         "file://" + self.page + "?state=hover#x")  # T-1640: a state by query string
+        for url in ("../secret.txt?x", "nothere.html?x", "?x", "#x"):
+            self.assertRaises(ValueError, fmflow.target, url, self.repo, False)
         self.assertEqual(fmflow.target("https://example.com/", self.repo, True), "https://example.com/")
         for url in ("javascript:alert(1)", "http://evil.com\\@localhost/", "/etc/passwd"):
             self.assertRaises(ValueError, fmflow.target, url, self.repo, True)

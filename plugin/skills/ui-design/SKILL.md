@@ -69,6 +69,7 @@ Work inside a focused task (each step edits files). Per step, read only the play
 - `fm design contrast TOKENS` again after any colour change; `fm motion check` after any motion change.
 - `../playbooks/references/ui/visual-qa.md`: `fm smoke` shoots the frame matrix (360/768/1440, light and dark,
   reduced motion); Read the PNGs and look. Before and after: `fm img diff A.png B.png --out diff.png`.
+- A component's states (default, hover, error, empty, loading): `fm stories CHART` shoots each into one matrix page.
 - Record each as evidence on the task's step; a UI change isn't done on green tests alone.
 
 ## 7. Taste
