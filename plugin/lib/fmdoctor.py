@@ -475,18 +475,50 @@ def check_rules_symlink(plugin=PLUGIN):
     return Result("rules symlink", "PASS" if ok else "FAIL", f"{link} → {os.path.realpath(link)}")
 
 
-def check_fm_link(link=None, target=None, path=None):
-    """T-1324: fm in any shell (T-0853): ~/.local/bin/fm points at this Foreman's plugin/bin/fm, and that folder is on
-    PATH. An install from before T-0853 never made the link, so fm worked only inside Claude Code."""
+def _login_fm(shell=None):
+    """T-1333: the fm a fresh login shell finds (only its profile's PATH, as a new terminal has): its path, '' when it
+    finds none, None when no login shell could be asked."""
+    shell = shell or os.environ.get("SHELL") or "/bin/sh"
+    env = {"HOME": os.path.expanduser("~"), "PATH": "/usr/bin:/bin", "USER": os.environ.get("USER", ""), "TERM": "dumb"}
+    try:
+        r = subprocess.run([shell, "-lc", "command -v fm"], env=env, capture_output=True, text=True, timeout=5,
+                           stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode not in (0, 1):
+        return None
+    found = [ln.strip() for ln in r.stdout.splitlines() if ln.strip().startswith("/")]  # a profile may print first
+    return found[-1] if r.returncode == 0 and found else ""
+
+
+def _profile_fix(shell):
+    name = os.path.basename(shell or "")
+    if name == "fish":
+        return "run fish_add_path ~/.local/bin, then open a new terminal"
+    where = {"bash": "~/.bash_profile (or ~/.profile when there's none)", "zsh": "~/.zprofile"}.get(name, "~/.profile")
+    return f'add export PATH="$HOME/.local/bin:$PATH" to {where}, then open a new terminal'
+
+
+def check_fm_link(link=None, target=None, path=None, shell=None):
+    """T-1324: fm in any shell (T-0853): ~/.local/bin/fm points at this Foreman's plugin/bin/fm, and a new login shell
+    finds it (T-1333: FAIL with the profile line when it doesn't; shell False, or no shell to ask: this process's PATH).
+    An install from before T-0853 never made the link, so fm worked only inside Claude Code; session start makes it now."""
     link = link or os.path.join(os.path.expanduser("~"), ".local", "bin", "fm")
     target = target or os.path.join(PLUGIN, "bin", "fm")
     path = os.environ.get("PATH", "") if path is None else path
     if not os.path.lexists(link):
-        return Result("fm link", "WARN", f"{link} is missing, so fm works only inside Claude Code: fm install-user "
-                                         "makes it")
+        return Result("fm link", "WARN", f"{link} is missing, so fm works only inside Claude Code: the next session "
+                                         "start makes it, or fm install-user")
     if os.path.realpath(link) != os.path.realpath(target):
         return Result("fm link", "WARN", f"{link} → {os.path.realpath(link)}, not this Foreman's {target}: move it "
                                          "aside and run fm install-user")
+    found = None if shell is False else _login_fm(shell)
+    if found is not None:
+        if found and os.path.realpath(found) == os.path.realpath(target):
+            return Result("fm link", "PASS", f"{link} → {target}; a new login shell finds it")
+        return Result("fm link", "FAIL", (f"a new login shell finds {found} first, not {link}" if found else
+                                          "a new login shell doesn't find fm")
+                      + f": {_profile_fix(shell or os.environ.get('SHELL'))}")
     if os.path.dirname(link) not in path.split(os.pathsep):
         return Result("fm link", "WARN", f"{os.path.dirname(link)} isn't on PATH, so a shell doesn't find fm: add it "
                                          "in your shell's profile")

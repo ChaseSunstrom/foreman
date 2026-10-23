@@ -251,6 +251,20 @@ def session(fn, fd_in=None, fd_out=None):
             was, flags["resized"] = flags["resized"], False
             return was
 
+        def outside(self, fn):
+            """T-1341: fn with the terminal handed back (a program the person drives in it), then taken again and
+            redrawn whole."""
+            restore()
+            try:
+                return fn()
+            finally:
+                try:
+                    tty.setcbreak(fd_in)
+                    io.write(ENTER)
+                except (OSError, termios.error):
+                    pass
+                winch()
+
         def widths(self, glyphs):  # T-1512: before the first frame, which clears what the probe drew
             got, typed = probe(fd_in, fd_out, glyphs)
             flags["pending"] += typed  # read with the next keys

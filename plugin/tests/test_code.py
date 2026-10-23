@@ -263,6 +263,25 @@ class Repairs(CodeCase):
         self.assertEqual(r.returncode, 1)
         self.assertEqual(self.task()["status"], "blocked")
 
+    def test_recheck_reruns_a_blocked_runs_checks_through_the_guard(self):  # T-1341
+        self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
+        self.code("fix add", "--model", "fake", check=False)
+        self.assertEqual(self.task()["status"], "blocked")
+        with open(os.path.join(self.repo, "calc.py"), "w") as f:  # a person fixed it in a live CLI
+            f.write("def add(a, b):\n    return a + b\n")
+        r = self.code("--recheck", "T-0001", "--json", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        events = [json.loads(x) for x in r.stdout.splitlines() if x.strip()]
+        self.assertEqual([e["event"] for e in events][:3], ["start", "plan", "task"])
+        self.assertEqual([(e["label"], e["exit"]) for e in events if e["event"] == "verify"], [("recheck", 0)])
+        self.assertIn("fm task finish T-0001", events[-1]["text"])
+        self.assertIn("python3 test_calc.py", self.fm("task", "show", "T-0001").stdout.split("## Verification")[1])
+        with open(os.path.join(self.repo, "calc.py"), "w") as f:
+            f.write("def add(a, b):\n    return a * b\n")
+        r = self.code("--recheck", "T-0001", "--json", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(self.code("--recheck", "T-0099", check=False).returncode, 1)
+
     def test_escalate_takes_over_after_three_failed_rounds(self):
         self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
         strong = self.serve("anthropic", call("edit", file="calc.py", old="a - b", new="a + b"),

@@ -220,9 +220,10 @@ class ForemanTestCase(unittest.TestCase):
         self._env = {k: os.environ.get(k) for k in ("FOREMAN_HOME", "FOREMAN_SESSION_ID", "FOREMAN_PROJECT",
                                                      "FOREMAN_STATE", "XDG_STATE_HOME", "FOREMAN_NO_BACKGROUND",
                                                      "FOREMAN_ONEOFF", "CLAUDE_CODE_ENTRYPOINT", "FOREMAN_DRIVE_TASK",
-                                                     "FOREMAN_GUARD_CASES")}
+                                                     "FOREMAN_GUARD_CASES", "FOREMAN_NO_LINK")}
         os.environ["FOREMAN_HOME"] = self.home
         os.environ["FOREMAN_NO_BACKGROUND"] = "1"  # a detached child writing into a test's folder races its cleanup
+        os.environ["FOREMAN_NO_LINK"] = "1"  # T-1333: a test's session start never makes ~/.local/bin/fm
         # T-1004: a suite run from a one-off or headless session (the UI harness) sees what a working session sees
         for k in ("FOREMAN_SESSION_ID", "FOREMAN_PROJECT", "FOREMAN_STATE", "FOREMAN_ONEOFF", "CLAUDE_CODE_ENTRYPOINT",
                   "FOREMAN_DRIVE_TASK"):

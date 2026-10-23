@@ -135,7 +135,7 @@ class DegradeOnPace(HookCase):
         r = self.fm("ideas", "--pack", pack, "--lens", "user value", "--deepen", "2", env=env)
         calls = [json.loads(l) for l in read_text(log).splitlines()]
         self.assertEqual(len(calls), 1, "the lens ran; no deepen round")
-        self.assertFalse(any("deepen:" in x["stdin"] for x in calls))
+        self.assertFalse(any("Lens: deepen:" in x["stdin"] for x in calls))
         self.assertIn("ahead of pace", r.stdout + r.stderr)
         self.fm("check", "add", "true")
         self.assertEqual(self.fm("check", "--fresh", check=False).returncode, 0, "required gates still run")

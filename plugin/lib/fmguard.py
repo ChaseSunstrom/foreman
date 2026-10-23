@@ -1477,6 +1477,9 @@ def _name(argv):
 # ---------------------------------------------------------------- bash checks
 
 _SHELLS = re.compile(r"^((ba|z|da|k|fi|c|tc)?sh|python[0-9.]*|perl|ruby|node|php|pwsh)$")
+# T-1786: whose -c text is shell, read again as bash (pwsh's rm is close enough). python's -c code is python, read by
+# its own reader (_spawned_commands); perl, ruby and node -c is a syntax check, php -c a config file
+_C_SHELLS = re.compile(r"^((ba|z|da|k|fi|c|tc)?sh|pwsh)$")
 _FETCHERS = {"curl", "wget", "fetch"}
 _FETCH_WORD = re.compile(r"(?<![\w./-])(?:\S*/)?(?:curl|wget|(?<!git )fetch)(?![\w.-])")  # T-0421: a fetcher anywhere; T-0937: not `git fetch`
 _PRINTED_SUBST = re.compile(r"(\$\(|`)\s*((?:(?:command\s+|builtin\s+)?(?:\S*/)?(?:echo|printf))\s[^`)]*?)\s*(?:\)|`)")
@@ -3254,7 +3257,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 base = (base[0] + cwds, base[1] + lost, base[2])
                 rbase = rbase + rd
         here_dirs = _DCWD[depth] = rd  # T-1727 review: where this command may run (and nested text start)
-        for inner in (x for t in _shell_c(args) for x in _readings(t, {**lits, **known})) if _SHELLS.match(name) else ():
+        for inner in (x for t in _shell_c(args) for x in _readings(t, {**lits, **known})) if _C_SHELLS.match(name) else ():
             found += check_bash(inner, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(inner):
                 found.append(("pipe-shell", f"{name} -c runs a downloaded script"))
