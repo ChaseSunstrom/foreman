@@ -169,6 +169,56 @@ class Run(unittest.TestCase):
         self.assertEqual(json.loads(printed), json.loads(line))
 
 
+class Frames(unittest.TestCase):
+    """T-1670: a replayed frame as SVG (PNG with rsvg-convert), and the committed golden frame the kit test checks."""
+
+    def test_a_frame_becomes_an_escaped_monospace_svg(self):
+        import xml.etree.ElementTree as ET
+        svg = load().svg("  demo-1a2b3c\n<b> & co\n\n  T-0007\n", 80, 4)
+        root = ET.fromstring(svg)
+        texts = [t.text for t in root.iter("{http://www.w3.org/2000/svg}text")]
+        self.assertEqual(texts, ["  demo-1a2b3c", "<b> & co", "  T-0007"])
+        self.assertIn("monospace", root.get("font-family"))
+        self.assertEqual(root.find("{http://www.w3.org/2000/svg}g").get("{http://www.w3.org/XML/1998/namespace}space"),
+                         "preserve")
+
+    def test_the_verb_writes_the_svg_of_a_replay(self):
+        tool = load()
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "pane.svg")
+            with mock.patch.object(tool, "drawn", return_value=json.dumps(text("hello pane"))), \
+                    mock.patch.object(sys, "argv", ["pane_replay.py", "svg", FIXTURE, "--out", out]), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(tool.main(), 0)
+            with open(out, encoding="utf-8") as f:
+                self.assertIn(">hello pane</text>", f.read())
+
+    def test_golden_writes_then_compares_and_names_the_drift(self):
+        tool = load()
+        with tempfile.TemporaryDirectory() as tmp:
+            gold = os.path.join(tmp, "golden.ts")
+            with mock.patch.object(tool, "GOLDEN", gold), mock.patch.object(tool, "drawn", return_value='{"a":1}'):
+                self.assertEqual(tool.golden(), (True, []))  # none yet: written
+                self.assertEqual(tool.read_golden(), '{"a":1}')
+                self.assertEqual(tool.golden(), (True, []))
+            with mock.patch.object(tool, "GOLDEN", gold), mock.patch.object(tool, "drawn", return_value='{"a":2}'):
+                same, lines = tool.golden()
+                self.assertFalse(same)
+                self.assertIn('- "a": 1\n', lines)
+                self.assertEqual(tool.read_golden(), '{"a":1}', "a compare never rewrites it")
+                self.assertEqual(tool.golden(update=True), (True, []))
+                self.assertEqual(tool.read_golden(), '{"a":2}')
+
+    def test_the_committed_golden_is_the_kit_tests_and_is_checked(self):
+        tool = load()
+        frame = json.loads(tool.read_golden())
+        self.assertIn('"key":"fm-pane"', json.dumps(frame, separators=(",", ":")))
+        kit = read("tests", "replay.test.tsx")
+        self.assertIn("import GOLDEN from './fixtures/golden'", kit)
+        self.assertIn("expect(drawn).toBe(GOLDEN)", kit)
+        self.assertIn("if (REPLAY.print) return", kit, "a tool's own copy draws another view: no golden there")
+
+
 def alive(pid):
     try:
         with open(f"/proc/{pid}/stat", encoding="utf-8") as f:
