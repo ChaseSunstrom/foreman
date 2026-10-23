@@ -147,6 +147,13 @@ class CommitOwnFiles(HookCase):
         self.assertIn("shared.py", self.shown())
         self.assertNotIn("theirs.py", self.shown())
 
+    def test_a_shared_file_names_the_open_task_whose_edits_it_takes_along(self):
+        # T-1711: T-0001's commit took shared.py whole, T-0002's line too, without a word
+        self.fm("focus", "T-0001")
+        r = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--commit", "First")
+        self.assertIn("shared.py", self.shown())
+        self.assertIn("shared.py was also edited by T-0002 since this task's focus (committed with it)", r.stdout)
+
     def test_a_commit_with_nothing_left_says_so(self):
         self.fm("focus", "T-0001")
         self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--commit", "First")
