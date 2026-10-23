@@ -6587,7 +6587,11 @@ def _build_parser():
                                                     "(T-1403)")
     s.add_argument("--seed-timeout", type=int, metavar="SECONDS", help="fm code bench: each seed's limit (default 600)")
     s.add_argument("--plain", action="store_true", help="one line per event, no screen, even on a terminal (T-1283, T-1343)")
-    s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG")
+    s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG "
+                                                     "(FILE.png: a PNG, with rsvg-convert; T-1546)")
+    s.add_argument("--chaos", type=float, metavar="SECONDS", help="fm code tui: the chaos twin: hostile events, keys "
+                   "and resizes at a headless app for SECONDS; exit 1 on a crash, with the seed to replay (T-1546)")
+    s.add_argument("--seed", type=int, help="fm code tui --chaos: replay a run")
     s.add_argument("--events", metavar="FILE", help="fm code tui --snapshot: a run's events (fm code … --json > FILE)")
     s.add_argument("--size", metavar="WxH", help="fm code tui --snapshot: the screen's columns x rows (default 120x34)")
     s.add_argument("--record", metavar="VIDEO", help="fm code tui: play --events FILE's run into an mp4 or gif (needs "
