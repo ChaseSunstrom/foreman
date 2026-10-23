@@ -6505,6 +6505,8 @@ def _build_parser():
                                                                "defaults with yours over them)")
     s.add_argument("--themes", action="store_true", help="fm code tui: every theme side by side on a sample run "
                                                          "(T-1311); choose one with fm settings set theme NAME")
+    s.add_argument("--recheck", metavar="ID", help="fm code: run task ID's checks again, each through Foreman's guard "
+                                                   "and recorded, after a person worked it (the app's x; T-1341)")
     s.add_argument("--tour", action="store_true", help="fm code tui: a 30-second guided run, a caption naming each "
                                                        "panel; --snapshot FILE.svg writes it as one animated SVG, "
                                                        "--plain as lines (T-1309)")
