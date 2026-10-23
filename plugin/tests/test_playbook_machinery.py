@@ -212,7 +212,9 @@ class Writable(ForemanTestCase):
     def test_a_worker_may_show_a_playbook(self):
         import argparse
         import fmcli
-        self.assertTrue(fmcli._worker_may(argparse.Namespace(verb="playbooks", action="show")))
+        for action in ("show", "route", "blame", "preview"):
+            self.assertTrue(fmcli._worker_may(argparse.Namespace(verb="playbooks", action=action)), action)
+        self.assertFalse(fmcli._worker_may(argparse.Namespace(verb="playbooks", action="eval")))  # --real spends
 
     def test_a_shipped_playbook_names_a_fact(self):
         out = self.fm("playbooks", "show", "verify/verification-loop").stdout
@@ -227,6 +229,69 @@ class Lint(ForemanTestCase):
         got = pb.problems(lib, card_names=set(), run=False)
         self.assertTrue(any("{{nosuch}}" in x for x in got), got)
         self.assertFalse(any("{{test}}" in x or "{{ci}}" in x for x in got), got)
+
+
+class Verbs(ForemanTestCase):
+    """T-1622: route STAGE names the playbooks fmcore.SKILL_FOR sends a stage to; blame NAME maps each line to the
+    task whose commit last changed it; preview NAME lists the checks loading it adds."""
+    def setUp(self):
+        super().setUp()
+        self.lib = os.path.join(self.tmp, "lib")
+        self.git = ["git", "-C", self.lib, "-c", "user.name=t", "-c", "user.email=t@t"]
+
+    def run_fm(self, *words, lib=True):
+        return self.fm("playbooks", *words, check=False, env={"FOREMAN_PLAYBOOKS": self.lib} if lib else None)
+
+    def test_route_names_the_playbooks_of_a_stage(self):
+        got = json.loads(self.run_fm("route", "fix", "--json", lib=False).stdout)
+        self.assertEqual(got["hint"], c.SKILL_FOR["FIX"])
+        self.assertIn("references/verify/tdd-workflow.md", got["playbooks"])
+        clean = json.loads(self.run_fm("route", "CLEAN", "--json", lib=False).stdout)["playbooks"]
+        self.assertIn("references/clean/repo-sweep.md", clean)  # "foreman:playbooks (clean)": the stage's books
+        self.assertEqual(json.loads(self.run_fm("route", "ui", "--json", lib=False).stdout)["playbooks"],
+                         ["references/ui/INDEX.md"])
+        for stage in c.SKILL_FOR:  # every stage routes somewhere real, or says it has no playbook
+            r = self.run_fm("route", stage, lib=False)
+            self.assertEqual(r.returncode, 0, (stage, r.stderr))
+        r = self.run_fm("route", "nosuch", lib=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("verifying", r.stderr)  # the stages it knows
+
+    def test_blame_maps_lines_to_the_tasks_that_wrote_them(self):
+        put(self.lib, "references/fix/alpha.md", "# Alpha\n\nUse when.\n")
+        subprocess.run(["git", "init", "-q", self.lib], check=True)
+        subprocess.run([*self.git, "add", "-A"], check=True)
+        subprocess.run([*self.git, "commit", "-qm", "Alpha playbook (T-0042)\n\nbody"], check=True)
+        put(self.lib, "references/fix/alpha.md", "# Alpha\n\nUse when it breaks.\n1. Go.\n")
+        subprocess.run([*self.git, "commit", "-qam", "tweak wording"], check=True)
+        got = json.loads(self.run_fm("blame", "alpha", "--json").stdout)
+        self.assertEqual([x["task"] for x in got["lines"]], ["T-0042", "T-0042", None, None])
+        self.assertEqual(got["lines"][3]["text"], "1. Go.")
+        out = self.run_fm("blame", "alpha").stdout
+        self.assertIn("1-2", out)
+        self.assertIn("T-0042", out)
+        self.assertIn("no task id", out)  # said, not left blank
+        put(self.lib, "references/fix/alpha.md", "# Alpha\n\nUse when it breaks.\n1. Go.\n2. New.\n")
+        self.assertIn("uncommitted", self.run_fm("blame", "alpha").stdout)
+
+    def test_blame_outside_git_says_so(self):
+        put(self.lib, "references/fix/alpha.md", "# Alpha\n")
+        r = self.run_fm("blame", "alpha")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("git", r.stderr)
+
+    def test_preview_lists_the_checks_a_load_adds(self):
+        put(self.lib, "references/fix/alpha.md", "# Alpha\n\nUse when.\n\n1. Done when it passes :: make probe URL\n"
+            "2. Or (\"done when clean :: node qa/frames.mjs /\").\n\n```python\nassert 1\n```\n\n"
+            "```python no-run\nimport x\n```\n\n```bash\nnpm test\n```\n")
+        got = json.loads(self.run_fm("preview", "alpha", "--json").stdout)
+        self.assertEqual(got["runnable"], [{"line": 8, "code": "assert 1\n"}])  # what fm check playbooks runs
+        self.assertEqual(got["verify"], ["make probe URL", "node qa/frames.mjs /"])
+        out = self.run_fm("preview", "alpha").stdout
+        self.assertIn("assert 1", out)
+        self.assertNotIn("import x", out)
+        put(self.lib, "references/fix/beta.md", "# Beta\n")
+        self.assertIn("no checks", self.run_fm("preview", "beta").stdout)
 
 
 if __name__ == "__main__":

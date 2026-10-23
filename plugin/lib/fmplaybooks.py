@@ -108,6 +108,11 @@ def _blocks(text):
     return blocks, prose
 
 
+def runnable(blocks):
+    """[(line, body)] of the python blocks fm check playbooks runs: every one not marked no-run."""
+    return [(n, body) for n, info, body in blocks if info and info[0].lower() in _PY and "no-run" not in info[1:]]
+
+
 def _shingles(text):
     w = re.findall(r"\w+", text.lower())
     return {tuple(w[i:i + SHINGLE]) for i in range(len(w) - SHINGLE + 1)}
@@ -265,8 +270,7 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
                 if name and not name.startswith("-") and not re.search(r"[A-Z<>{}\[\]]", name) \
                         and name not in cards:  # NAME, <name>: placeholders; --section: an option
                     out.append(f"{rel}:{n}: fm lib show {name}: no such card")
-        snippets += [(rel, n, body) for n, info, body in blocks
-                     if info and info[0].lower() in _PY and "no-run" not in info[1:]]
+        snippets += [(rel, n, body) for n, body in runnable(blocks)]
     books = sorted(shingles)
     for i, a in enumerate(books):
         for b in books[i + 1:]:
@@ -413,17 +417,127 @@ def load(rel, root=ROOT, p=None):
     return text
 
 
+_STAGE = re.compile(r"\bforeman:playbooks \((\w+)")  # SKILL_FOR's "Skill foreman:playbooks (clean)": that stage's books
+_TASK = re.compile(r"\bT-\d{4,}\b")
+_VERIFY = re.compile(r"\s::\s+([^\"\n]+)")  # a criterion's "done when … :: CMD", as fm task new --ac takes it
+
+
+def route(stage, root=ROOT):
+    """(SKILL_FOR key, its hint, [book]) for a stage or task type (any case): the books its hint shows by name, and
+    for 'foreman:playbooks (X)' stage X's INDEX.md, else every playbook under references/X/. None: no such stage."""
+    key = next((k for k in c.SKILL_FOR if k.lower() == stage.strip().lower()), None)
+    if key is None:
+        return None
+    hint, books, got = c.SKILL_FOR[key], listed(root), []
+    for m in _SHOW.finditer(hint):
+        got += resolve(m.group(1), books)[:1]
+    for m in _STAGE.finditer(hint):
+        d = f"references/{m.group(1)}/"
+        got += [d + "INDEX.md"] if d + "INDEX.md" in books else [b for b in _playbooks(root) if b.startswith(d)]
+    return key, hint, list(dict.fromkeys(got))
+
+
+def blame(path):
+    """[{line, task, commit, summary, text}] per line of path from git blame: task is the first T-NNNN in the commit's
+    whole message (None without one), commit None for a line not committed yet. ValueError when git can't blame it."""
+    d, f = os.path.split(path)
+    git = ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-C", d]
+    try:
+        r = subprocess.run([*git, "blame", "--porcelain", "--", f], capture_output=True, text=True, errors="replace",
+                           timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise ValueError(f"git blame failed: {e.__class__.__name__}")
+    if r.returncode:
+        raise ValueError(f"git can't blame it: {c.fit(c.plain(r.stderr.strip()), 160) or 'no reason given'}")
+    rows, sha = [], None
+    for x in r.stdout.split("\n"):
+        if x.startswith("\t"):
+            rows.append((sha, x[1:]))
+        elif m := re.match(r"([0-9a-f]{40}) \d+ \d+", x):
+            sha = m.group(1)
+    shas = sorted({s for s, _ in rows if s.strip("0")})
+    msgs = {}
+    if shas:  # one git call for every commit's whole message: an id can sit below the summary line
+        try:
+            log = subprocess.run([*git, "log", "--no-walk=unsorted", "--stdin", "--format=%H%x00%B%x1e"],
+                                 input="\n".join(shas) + "\n", capture_output=True, text=True, errors="replace",
+                                 timeout=30).stdout
+        except (OSError, subprocess.SubprocessError):
+            log = ""
+        msgs = dict(x.strip("\n").split("\0", 1) for x in log.split("\x1e") if "\0" in x)
+    out = []
+    for n, (s, text) in enumerate(rows, 1):
+        msg = msgs.get(s, "") if s and s.strip("0") else None
+        task = _TASK.search(msg or "")
+        out.append({"line": n, "task": task.group(0) if task else None, "commit": s if msg is not None else None,
+                    "summary": c.fit(c.plain((msg or "").strip().split("\n")[0]), 80), "text": text})
+    return out
+
+
+def preview(text):
+    """{runnable: [{line, code}], verify: [cmd]}: the python blocks fm check playbooks runs, and the criterion
+    verify commands ('… :: CMD') its prose names."""
+    blocks, prose = _blocks(text)
+    verify = [m.group(1).strip().rstrip("`.,;)").strip() for x in prose for m in _VERIFY.finditer(x)]
+    return {"runnable": [{"line": n, "code": b} for n, b in runnable(blocks)],
+            "verify": list(dict.fromkeys(v for v in verify if v))}
+
+
+def _blame_text(rel, rows):
+    """Runs of lines from one commit: '1-12  T-1505  <sha>  <summary>'."""
+    out, i = [rel], 0
+    while i < len(rows):
+        j = i
+        while j + 1 < len(rows) and rows[j + 1]["commit"] == rows[i]["commit"]:
+            j += 1
+        r = rows[i]
+        span = f"{r['line']}" + (f"-{rows[j]['line']}" if j > i else "")
+        who = ("uncommitted" if r["commit"] is None else
+               f"{r['task'] or 'no task id'}  {r['commit'][:10]}  {r['summary']}")
+        out.append(f"  {span:>9}  {who}")
+        i = j + 1
+    return "\n".join(out)
+
+
+def _one(name, books):
+    import fmcli
+    hits = resolve(name, books)
+    if len(hits) != 1:
+        raise fmcli.UsageError(f"{name!r} names {len(hits)} playbooks: {', '.join(hits)}; give its stage too"
+                               if hits else f"no playbook {name!r}: name it as SKILL.md does (fix/sql or "
+                               f"references/fix/sql.md)")
+    return hits[0]
+
+
 def cmd_show(args):
-    """fm playbooks show NAME (T-1621); eval NAME (T-1618)."""
+    """fm playbooks show NAME (T-1621); eval NAME (T-1618); route STAGE, blame NAME, preview NAME (T-1622)."""
     import fmcli
     if args.action == "eval":
         return cmd_eval(args)
+    if args.action == "route":
+        got = route(args.name)
+        if got is None:
+            raise fmcli.UsageError(f"no stage {args.name!r}: one of {', '.join(c.SKILL_FOR)}")
+        key, hint, books = got
+        return fmcli.out(args, {"stage": key, "hint": hint, "playbooks": books},
+                         f"{key}: {hint}\n" + ("\n".join(f"  {b}" for b in books) or "  (no playbook: the hint is "
+                                                                                       "a skill or a verb)")) or 0
     books = listed()
-    hits = resolve(args.name, books)
-    if len(hits) != 1:
-        raise fmcli.UsageError(f"{args.name!r} names {len(hits)} playbooks: {', '.join(hits)}; give its stage too"
-                               if hits else f"no playbook {args.name!r}: name it as SKILL.md does (fix/sql or "
-                               f"references/fix/sql.md)")
+    hits = [_one(args.name, books)]
+    if args.action == "blame":
+        try:
+            rows = blame(os.path.join(ROOT, hits[0]))
+        except ValueError as e:
+            raise fmcli.UsageError(f"fm playbooks blame {hits[0]}: {e}")
+        return fmcli.out(args, {"playbook": hits[0], "lines": rows}, _blame_text(hits[0], rows)) or 0
+    if args.action == "preview":
+        got = preview(_read(os.path.join(ROOT, hits[0])))
+        lines = [f"  line {x['line']}: python block (fm check playbooks runs it)\n"
+                 + textwrap.indent(x["code"].rstrip("\n"), "    ") for x in got["runnable"]]
+        lines += [f"  verify: {v}" for v in got["verify"]]
+        return fmcli.out(args, {"playbook": hits[0], **got}, f"{hits[0]}: " + (
+            f"{len(got['runnable'])} runnable block(s), {len(got['verify'])} verify command(s)\n" + "\n".join(lines)
+            if lines else "no checks: no runnable python block and no named verify command")) or 0
     p = fmcli.resolve(args) if getattr(args, "project", None) else c.find_project(os.getcwd())
     if p and os.path.isdir(os.path.join(p.root, ".foreman", "playbooks")):
         print(f"fm playbooks: .foreman/playbooks/ isn't read; overlays live in {OVERLAYS}/<stage>/<name>.md",

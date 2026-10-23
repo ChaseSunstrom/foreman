@@ -5274,9 +5274,12 @@ def _build_parser():
     s = add("playbooks", lazy("fmplaybooks", "cmd_show"), tier=("Finding your way", 382), help="show NAME: a playbook "
             "as the skill loads it, {{fact}}s (test, language, entry…) filled in from fm map and this project's "
             ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
-    s.add_argument("action", choices=["show", "eval"], help="eval NAME: held-out briefs with and without the playbook "
-                   "loaded, the lift recorded (T-1618)")
-    s.add_argument("name", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that name")
+    s.add_argument("action", choices=["show", "eval", "route", "blame", "preview"], help="eval NAME: held-out briefs "
+                   "with and without the playbook loaded, the lift recorded (T-1618); route STAGE: the playbooks a "
+                   "stage or task type loads; blame NAME: each line's task, from git; preview NAME: the checks a "
+                   "load adds (T-1622)")
+    s.add_argument("name", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that name; route: "
+                   "a stage (verifying) or type (FIX)")
     s.add_argument("--briefs", help="eval: the brief set (default plugin/evals/playbooks/<stage>/<name>.json)")
     s.add_argument("--real", action="store_true", help="eval: ask a model (claude -p, budgeted) instead of reading "
                    "the playbook literally")
@@ -6388,7 +6391,8 @@ def _task_shape(parser, argv):
 WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show", "glance"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
                    "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
-                   "playbooks": ("action", {"show"}),  # T-1621: prints, but can rebuild fm map's map.json cache
+                   "playbooks": ("action", {"show", "route", "blame", "preview"}),  # T-1621: prints, but can rebuild
+                   # fm map's map.json cache; T-1622's three only read
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
                    "design": ("action", {"lint", "palette", "contrast"}),  # T-1506, T-1507: these only read
                    "img": ("out", {None}),  # T-1630: info and diff read; --out writes
