@@ -20,6 +20,7 @@ import re
 import select
 import shutil
 import signal
+import sys
 import tempfile
 import time
 
@@ -27,13 +28,13 @@ import fmcore as c
 import fmimg
 
 SIZE = (1280, 800)
-FRAMES, EVERY_MS = 5, 250  # fm smoke's motion profile: five frames 250 ms apart
 MAX_FRAMES, MIN_EVERY, MAX_EVERY = 60, 10, 10000
 LOAD_S, CALL_S, SETTLE_S = 30, 30, 0.5
 MAX_MSG = 64 << 20  # one DevTools message: a screenshot's base64 is a few MB at most
 LOCK_S = 120
+WATCH = {"Page.loadEventFired"}  # the only events kept (a page can send endless others)
 FROZEN_MS = 1768471200000  # 2026-01-15T10:00:00Z, smoke_web.cjs's NOW
-# smoke_web.cjs's freeze(): CSS animations and transitions held still (test_shot keeps the two in step)
+# smoke_web.cjs's freeze(): CSS animations and transitions held still (test_fmshot keeps the two in step)
 FREEZE_CSS = ("*, *::before, *::after { animation-play-state: paused !important; transition: none !important; "
               "caret-color: transparent !important; scroll-behavior: auto !important }")
 FREEZE = """(() => {
@@ -45,23 +46,31 @@ FREEZE = """(() => {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", put); else put();
 })();""" % (FROZEN_MS, json.dumps(FREEZE_CSS))
 # Headless Chromium keeps running a CSS animation under the paused rule until something recalculates style (even a
-# pause() from a load listener didn't hold it); asked once the page has loaded, getAnimations() does. Each animation,
-# Web Animations too, is held at its start, so a frozen shot is the same on every run.
-HOLD = "document.getAnimations().forEach(a => { a.pause(); a.currentTime = 0; })"
+# pause() from a load listener didn't hold it); asked once the page has loaded, getAnimations() does. A finite
+# animation (Web Animations too) is finished, so a `fadein .6s forwards` hero shows its end state; an endless one is
+# held at its start. Either way a frozen shot is the same on every run.
+HOLD = ("document.getAnimations().forEach(a => { try { const t = a.effect && a.effect.getComputedTiming(); "
+        "if (t && isFinite(t.endTime)) a.finish(); else { a.pause(); a.currentTime = 0; } } catch (e) { a.pause(); } })")
 OURS = re.compile(r"(viewport|poster|frame-\d+)\.png")
+NAMES = ("chrome-headless-shell", "chromium", "chromium-browser", "google-chrome")
 NONE = ("no browser found (looked for FOREMAN_CHROME, chrome-headless-shell, chromium, chromium-browser or "
-        "google-chrome on PATH, and Playwright's download in ~/.cache/ms-playwright); fm shot installs nothing: "
-        "set FOREMAN_CHROME=<a Chromium binary> or install one yourself")
+        "google-chrome on PATH, and Playwright's download in PLAYWRIGHT_BROWSERS_PATH or ~/.cache/ms-playwright); "
+        "fm shot installs nothing: set FOREMAN_CHROME=<a Chromium binary> or install one yourself")
+
+
+def _usable(p):
+    return bool(p) and os.path.isfile(p) and os.access(p, os.X_OK)
 
 
 def chrome():
     """A headless Chromium: FOREMAN_CHROME, one on PATH, or Playwright's newest download; None if absent."""
-    builds = glob.glob(os.path.expanduser(
-        "~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell"))
+    root = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    root = root if root and root != "0" else os.path.expanduser("~/.cache/ms-playwright")  # 0: inside node_modules
+    builds = glob.glob(os.path.join(root, "chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell"))
     build = lambda p: int((re.search(r"chromium_headless_shell-(\d+)/", p) or (0, -1))[1])  # noqa: E731
-    found = [os.environ.get("FOREMAN_CHROME")] + [shutil.which(n) for n in (
-        "chrome-headless-shell", "chromium", "chromium-browser", "google-chrome")] + sorted(builds, key=build, reverse=True)
-    return next((p for p in found if p and os.path.isfile(p) and os.access(p, os.X_OK)), None)
+    found = [os.environ.get("FOREMAN_CHROME")] + [shutil.which(n) for n in NAMES] + sorted(builds, key=build,
+                                                                                         reverse=True)
+    return next((p for p in found if _usable(p)), None)
 
 
 def painted(img):
@@ -70,61 +79,81 @@ def painted(img):
     return len(px) - collections.Counter(px).most_common(1)[0][1] if len(px) else 0
 
 
+def _safe(text):
+    """A URL or path for the terminal: no control characters."""
+    return re.sub(r"[\x00-\x1f\x7f-\x9f]", "?", str(text))
+
+
 class Browser:
     """One headless Chromium over the DevTools pipe; close() kills its whole process group."""
 
     def __init__(self, path, size):
         import fcntl
+        self.pid, self.feed, self.out, fds = None, None, None, []
         self.profile = tempfile.TemporaryDirectory(prefix="fm-shot-")
-        child_in, self.feed = os.pipe()
-        self.out, child_out = os.pipe()
-        high = [fcntl.fcntl(fd, fcntl.F_DUPFD_CLOEXEC, 10) for fd in (child_in, child_out)]
+        self.log = os.path.join(self.profile.name, "fm-shot-stderr.log")
+        self.buf, self.scan, self.n, self.events = bytearray(), 0, 0, set()
         try:
+            child_in, self.feed = os.pipe()
+            fds.append(child_in)
+            self.out, child_out = os.pipe()
+            fds.append(child_out)
+            fds += [fcntl.fcntl(fd, fcntl.F_DUPFD_CLOEXEC, 10) for fd in (child_in, child_out)]
             self.pid = os.posix_spawn(path, [
                 path, "--headless", "--remote-debugging-pipe", "--user-data-dir=" + self.profile.name,
                 "--no-first-run", "--hide-scrollbars", "--mute-audio", "--use-angle=swiftshader",
                 "--enable-unsafe-swiftshader", f"--window-size={size[0]},{size[1]}", "about:blank"], os.environ,
-                setsid=True, file_actions=[(os.POSIX_SPAWN_DUP2, high[0], 3), (os.POSIX_SPAWN_DUP2, high[1], 4),
+                setsid=True, file_actions=[(os.POSIX_SPAWN_DUP2, fds[2], 3), (os.POSIX_SPAWN_DUP2, fds[3], 4),
                                            (os.POSIX_SPAWN_OPEN, 0, os.devnull, os.O_RDONLY, 0),
                                            (os.POSIX_SPAWN_OPEN, 1, os.devnull, os.O_WRONLY, 0),
-                                           (os.POSIX_SPAWN_OPEN, 2, os.devnull, os.O_WRONLY, 0)])
-        except OSError:
-            self._fds()
-            raise
-        finally:
-            for fd in (child_in, child_out, *high):
+                                           (os.POSIX_SPAWN_OPEN, 2, self.log, os.O_WRONLY | os.O_CREAT, 0o600)])
+            for fd in fds:
                 os.close(fd)
-        self.buf, self.n, self.events = b"", 0, []
-        try:
+            fds = []
             tid = self.call("Target.createTarget", url="about:blank")["targetId"]
             self.sid = self.call("Target.attachToTarget", targetId=tid, flatten=True)["sessionId"]
             self.call("Page.enable", self.sid)
             self.call("Emulation.setDeviceMetricsOverride", self.sid, width=size[0], height=size[1],
                       deviceScaleFactor=1, mobile=False)
-        except BaseException:  # never leave a browser running behind a failed start
+        except BaseException as e:  # never leave a browser, a pipe or the profile behind a failed start
+            last = self.last_words()
+            for fd in fds:
+                os.close(fd)
             self.close()
+            if last and isinstance(e, (OSError, RuntimeError, EOFError, ValueError)):
+                raise RuntimeError(f"{e}; its last words: {last}") from e
             raise
 
-    def _fds(self):
-        for fd in (self.feed, self.out):
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-        self.profile.cleanup()
+    def last_words(self):
+        """The browser's last stderr lines (why it didn't start), capped."""
+        try:
+            with open(self.log, "rb") as f:
+                f.seek(max(0, os.fstat(f.fileno()).st_size - 2000))
+                lines = f.read().decode("utf-8", "replace").strip().splitlines()[-3:]
+        except OSError:
+            return ""
+        return _safe(" / ".join(x.strip() for x in lines))[:500]
 
     def _next(self, deadline, what):
-        while b"\0" not in self.buf:
+        """The next message; TimeoutError past `deadline` even while messages keep coming."""
+        while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"no answer to {what} in time")
+            end = self.buf.find(b"\0", self.scan)
+            if end >= 0:
+                line = bytes(self.buf[:end])
+                del self.buf[:end + 1]
+                self.scan = 0
+                return json.loads(line)
+            self.scan = len(self.buf)  # the next search starts where this one stopped
             if len(self.buf) > MAX_MSG:
                 raise RuntimeError(f"an answer over {MAX_MSG >> 20} MB during {what}")
             if not select.select([self.out], [], [], max(0.0, deadline - time.monotonic()))[0]:
-                raise TimeoutError(f"no answer to {what} in {CALL_S} s")
+                continue
             chunk = os.read(self.out, 1 << 16)
             if not chunk:
                 raise EOFError(f"the browser closed during {what}")
             self.buf += chunk
-        line, self.buf = self.buf.split(b"\0", 1)
-        return json.loads(line)
 
     def call(self, method, session=None, **params):
         self.n += 1
@@ -137,17 +166,17 @@ class Browser:
                 if "error" in got:
                     raise RuntimeError(f"{method}: {got['error'].get('message', got['error'])}")
                 return got.get("result") or {}
-            if got.get("method"):
-                self.events.append(got["method"])
+            if got.get("method") in WATCH:
+                self.events.add(got["method"])
 
     def wait(self, event, seconds):
-        """True once `event` has come (since the last wait), False after `seconds`."""
+        """True once `event` has come (since the events were last cleared), False after `seconds`."""
         deadline = time.monotonic() + seconds
         try:
             while event not in self.events:
                 got = self._next(deadline, event)
-                if got.get("method"):
-                    self.events.append(got["method"])
+                if got.get("method") in WATCH:
+                    self.events.add(got["method"])
             return True
         except TimeoutError:
             return False
@@ -158,12 +187,19 @@ class Browser:
         return base64.b64decode(self.call("Page.captureScreenshot", self.sid, format="png")["data"])
 
     def close(self):
-        try:
-            os.killpg(self.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-        os.waitpid(self.pid, 0)
-        self._fds()
+        if self.pid:
+            try:
+                os.killpg(self.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            os.waitpid(self.pid, 0)
+            self.pid = None
+        for fd in (self.feed, self.out):
+            if fd is not None:
+                with contextlib.suppress(OSError):
+                    os.close(fd)
+        self.feed = self.out = None
+        self.profile.cleanup()
 
 
 def _url(target):
@@ -171,14 +207,20 @@ def _url(target):
     if re.match(r"(?i)(https?|file)://", target):
         return target
     if not os.path.isfile(target):  # javascript:, data:, chrome: and the rest are refused here too
-        raise fmcli.UsageError(f"fm shot takes an http(s) or file URL or an existing file: {target!r}")
+        raise fmcli.UsageError(f"fm shot takes an http(s) or file URL or an existing file: {_safe(target)!r}")
     return pathlib.Path(os.path.abspath(target)).as_uri()
 
 
 def _slug(url, taken):
+    """The page's folder name: a file's name without its extension, or host and path; lower case, unique per run."""
     m = re.match(r"(?i)[a-z]+://([^/?#]*)([^?#]*)", url)
-    raw = os.path.basename(m[2]) if url.lower().startswith("file:") else (m[1] + m[2]) if m else url
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip("-.")[:60] or "page"
+    if not m:
+        raw = url
+    elif url.lower().startswith("file:"):
+        raw = os.path.splitext(os.path.basename(m[2]))[0]
+    else:
+        raw = m[1] + os.path.splitext(m[2])[0]
+    slug = re.sub(r"[^a-z0-9._-]+", "-", raw.lower()).strip("-.")[:60] or "page"
     name, i = slug, 1
     while name in taken:
         i += 1
@@ -188,11 +230,11 @@ def _slug(url, taken):
 
 
 def _folder(base, name):
-    import fmcli
+    """The page's folder, the last run's shots cleared; OSError for a link (that page fails, the rest go on)."""
     folder = os.path.join(base, name)
     os.makedirs(folder, exist_ok=True)
     if os.path.islink(folder):
-        raise fmcli.UsageError(f"{folder} is a link: fm shot never writes through one")
+        raise OSError(f"{folder} is a link: fm shot never writes through one")
     for f in os.listdir(folder):  # a rerun leaves none of the last run's frames behind
         if OURS.fullmatch(f):
             os.unlink(os.path.join(folder, f))
@@ -210,6 +252,7 @@ def _write(folder, name, data):
 def shoot(b, url, folder, frames, every, frozen):
     """One page: {url, folder, shots, animated, poster_of, notes}."""
     notes = []
+    b.events.clear()  # the last page's load is not this one's
     nav = b.call("Page.navigate", b.sid, url=url)
     if nav.get("errorText"):
         raise RuntimeError(f"did not load: {nav['errorText']}")
@@ -237,6 +280,32 @@ def shoot(b, url, folder, frames, every, frozen):
             "notes": notes}
 
 
+def _run(path, urls, base, args):
+    """Every page through one browser: (pages, failed)."""
+    pages, failed, taken = [], [], set()
+    try:
+        b = Browser(path, SIZE)
+    except (OSError, RuntimeError, EOFError, ValueError) as e:  # TimeoutError is an OSError
+        return pages, [{"url": ", ".join(urls), "error": f"the browser ({path}) did not start: {e}"}]
+    try:
+        if args.frozen:
+            b.call("Page.addScriptToEvaluateOnNewDocument", b.sid, source=FREEZE)
+        for url in urls:
+            try:
+                pages.append(shoot(b, url, _folder(base, _slug(url, taken)), args.frames, args.every, args.frozen))
+            except (OSError, RuntimeError, EOFError, ValueError) as e:
+                failed.append({"url": url, "error": str(e)})
+                if isinstance(e, (EOFError, TimeoutError)):  # the browser is gone or hung: the rest would wait too
+                    failed += [{"url": u, "error": "not tried: the browser stopped answering"}
+                               for u in urls[urls.index(url) + 1:]]
+                    break
+    except (OSError, RuntimeError, EOFError, ValueError) as e:
+        failed.append({"url": ", ".join(urls), "error": f"the browser ({path}) failed: {e}"})
+    finally:
+        b.close()
+    return pages, failed
+
+
 def cmd_shot(args):
     import fmcli
     if not 0 <= args.frames <= MAX_FRAMES:
@@ -247,43 +316,33 @@ def cmd_shot(args):
     if args.out:
         base = os.path.abspath(args.out)
         if os.path.islink(base):
-            raise fmcli.UsageError(f"--out {base} is a link: name a real folder")
+            raise fmcli.UsageError(f"--out {_safe(base)} is a link: name a real folder")
         if os.path.exists(base) and not os.path.isdir(base):
-            raise fmcli.UsageError(f"--out {base} isn't a folder")
+            raise fmcli.UsageError(f"--out {_safe(base)} isn't a folder")
     else:
         base = os.path.join(fmcli.resolve(args).dir, "shots")
+    env = os.environ.get("FOREMAN_CHROME")
+    bad = f"FOREMAN_CHROME={_safe(env)!r} isn't an executable file" if env and not _usable(env) else None
     path = chrome()
     if not path:
-        return fmcli.out(args, {"skipped": NONE}, f"fm shot: skipped: {NONE}.")
+        why = (bad + "; " if bad else "") + NONE
+        return fmcli.out(args, {"skipped": why}, f"fm shot: skipped: {why}.")
     os.makedirs(base, exist_ok=True)
-    pages, failed, taken = [], [], set()
-    # a second run into Foreman's folder waits for the first; --out is the user's folder: no .lock left in it
-    with contextlib.nullcontext() if args.out else c.lock(base, timeout=LOCK_S):
-        try:
-            b = Browser(path, SIZE)
-        except (OSError, RuntimeError, EOFError, ValueError) as e:  # TimeoutError is an OSError
-            failed.append({"url": ", ".join(urls), "error": f"the browser ({path}) did not start: {e}"})
-            b = None
-        try:
-            if b and args.frozen:
-                b.call("Page.addScriptToEvaluateOnNewDocument", b.sid, source=FREEZE)
-            for url in urls if b else []:
-                try:
-                    pages.append(shoot(b, url, _folder(base, _slug(url, taken)), args.frames, args.every, args.frozen))
-                except (OSError, RuntimeError, EOFError, ValueError) as e:
-                    failed.append({"url": url, "error": str(e)})
-                    if isinstance(e, (EOFError, TimeoutError)):  # the browser is gone or hung: the rest would wait too
-                        break
-        except (OSError, RuntimeError, EOFError, ValueError) as e:
-            failed.append({"url": ", ".join(urls), "error": f"the browser ({path}) failed: {e}"})
-        finally:
-            if b:
-                b.close()
-    lines = []
+
+    def stop(signum, frame):  # killed: unwind, so the browser's group dies and its profile goes
+        raise SystemExit(128 + signum)
+    old = signal.signal(signal.SIGTERM, stop)
+    try:
+        # a second run into Foreman's folder waits for the first; --out is the user's folder: no .lock left in it
+        with contextlib.nullcontext() if args.out else c.lock(base, timeout=LOCK_S):
+            pages, failed = _run(path, urls, base, args)
+    finally:
+        signal.signal(signal.SIGTERM, old)
+    lines = [f"note: {bad}; used {_safe(path)}"] if bad else []
     for pg in pages:
         names = [os.path.basename(s) for s in pg["shots"]]
         frames = [n for n in names if n.startswith("frame-")]
-        lines.append(f"fm shot: {pg['url']} → {pg['folder']}")
+        lines.append(f"fm shot: {_safe(pg['url'])} → {_safe(pg['folder'])}")
         lines.append("  viewport.png")
         if frames:
             lines.append(f"  {frames[0]}" + (f" … {frames[-1]}" if len(frames) > 1 else "")
@@ -294,8 +353,8 @@ def cmd_shot(args):
         elif len(frames) > 1:
             lines.append("  no poster: the page held still")
         lines += [f"  note: {n}" for n in pg["notes"]]
-    lines += [f"✗ {f['url']}: {f['error']}" for f in failed]
+    lines += [f"✗ {_safe(f['url'])}: {_safe(f['error'])}" for f in failed]
     fmcli.out(args, {"browser": path, "pages": pages, "failed": failed}, "\n".join(lines))
     if failed:
-        raise SystemExit(1)
+        sys.exit(1)
     return None
