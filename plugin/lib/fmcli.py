@@ -2842,6 +2842,21 @@ def cmd_focus(args):
         + f"\nDone needs: {', '.join(g for g, _ in gates(target.type, target.tier))} (fm gates)")
 
 
+def _ready_stdin():
+    """T-1766: fm quiet's own stdin when it is a file or a pipe with data or its end waiting now (a heredoc), so
+    `fm quiet -- python3 - <<EOF` runs the script; a terminal, /dev/null or an idle open pipe (an agent's may never
+    close) stays /dev/null."""
+    import select
+    import stat
+    try:
+        mode = os.fstat(0).st_mode
+        if stat.S_ISREG(mode) or stat.S_ISFIFO(mode) and select.select([0], [], [], 0.05)[0]:
+            return 0
+    except (OSError, ValueError):
+        pass
+    return subprocess.DEVNULL
+
+
 def cmd_quiet(args):
     """R3: a noisy command's output costs context on every run; show one line when it passes, the tail when not."""
     import time
@@ -2850,7 +2865,8 @@ def cmd_quiet(args):
         raise UsageError("fm quiet -- <command>")
     t0 = time.monotonic()
     import shlex  # one word is a shell string ("pytest | tail"); several are argv, quoted as given
-    code, output = c.run_command(os.getcwd(), words[0] if len(words) == 1 else shlex.join(words), args.timeout)
+    code, output = c.run_command(os.getcwd(), words[0] if len(words) == 1 else shlex.join(words), args.timeout,
+                                 stdin=_ready_stdin())
     secs = time.monotonic() - t0
     lines = [l for l in output.rstrip().splitlines() if l.strip()]
     if code:

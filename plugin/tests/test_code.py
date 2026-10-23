@@ -223,11 +223,26 @@ class Repairs(CodeCase):
         self.assertIn("return a - b", self.calc())
 
     def test_a_plan_never_repaired_stops_before_any_task(self):
-        self.serve("openai", {"text": "nope"}, {"text": "nope"}, {"text": "nope"})
+        self.serve("openai", *[{"text": "nope"}] * 8)  # three JSON tries, then five field questions (T-1765)
         r = self.code("fix add", "--model", "fake", check=False)
         self.assertEqual(r.returncode, 1)
-        self.assertIn("plan", r.stderr + r.stdout)
+        self.assertIn("no valid plan after 2 repairs, nor field by field", r.stderr + r.stdout)
+        self.assertIn("Next: fm code models", r.stderr + r.stdout)
         self.assertEqual(self.status(), "")
+
+    def test_a_model_that_cant_write_json_gives_its_plan_field_by_field(self):  # T-1765
+        import fmcode
+        f = self.serve("openai", *[{"text": "nope"}] * 3, {"text": "Type: FIX."}, {"text": "S"},
+                       {"text": "Make calc.add add"}, {"text": "- calc.add adds :: `python3 test_calc.py`\nno sep"},
+                       {"text": "```\n1. fix calc.add\n```"})
+        r = self.code("fix add", "--model", "fake", "--dry-plan")
+        self.assertIn("Make calc.add add", r.stdout)
+        self.assertIn("field by field", r.stdout)
+        self.assertEqual(len(f.seen), 8)
+        self.assertIn("one word of FIX", f.said(3))
+        self.assertNotIn("corrected JSON", json.dumps(f.seen[3]["messages"][-1]))
+        self.assertEqual(fmcode._criteria("1. a :: `x`\nno sep"), [{"text": "a", "verify": "x"}])
+        self.assertEqual(fmcode._line(fmcode._unlabel("Why not caught: none: new", "why_not_caught")), "none: new")
 
     def test_failing_verify_goes_back_and_a_second_fix_passes(self):
         # a model without native tools: every action is a JSON object in its text
