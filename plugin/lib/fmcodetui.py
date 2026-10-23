@@ -191,6 +191,8 @@ class State:
         self.__init__()
         self.request, self.model, self.worker = (None if e.get(k) is None else str(e[k])  # the header joins them
                                                  for k in ("request", "model", "worker"))
+        box = e.get("containment") if isinstance(e.get("containment"), dict) else {}
+        self.containment = str(box.get("label") or "")[:40] or None  # T-1402
         self.task = e.get("task")
         self.status = "planning"
 
@@ -1085,7 +1087,8 @@ def _header(cv, st, app):
         cv.put(0, i, ch, rgb(fg=ink, bg=bg, bold=True) if bg else "brand")
     x = len(brand)
     clock = elapsed(st, app)
-    right = "   ".join(v for v in (st.worker and f"worker {st.worker}" or st.model or "", clock and f"⏱ {clock}") if v)
+    right = "   ".join(v for v in (st.worker and f"worker {st.worker}" or st.model or "",
+                                   getattr(st, "containment", None) or "", clock and f"⏱ {clock}") if v)  # T-1402
     right = f"{right}  " if right else ""
     if st.request:
         cv.line(0, x + 2, [(st.request, "header")], cv.w - len(right) - 2)

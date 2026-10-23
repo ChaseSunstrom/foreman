@@ -404,6 +404,13 @@ class Waiting(unittest.TestCase):
         self.assertEqual(tui().title_text(tui().State()), "fm code: idle")
         self.assertEqual(tui().title_text(None), "fm code")
 
+    def test_the_header_names_the_runs_containment(self):  # T-1760 (T-1402)
+        T = tui()
+        app = T.App(T.DEFAULTS, spawn=lambda *a, **k: None)
+        app.feed({"event": "start", "request": "fix add", "worker": "claude", "schema": 1,
+                  "containment": {"kind": "landlock", "label": "Landlock ABI 6"}})
+        self.assertIn("Landlock ABI 6", T.render(app.state, 120, 34, T.DEFAULTS, app, t=100.0).text().splitlines()[0])
+
     def test_a_failure_shows_the_command_to_run_next_under_it(self):  # T-1754 (T-1334)
         st = tui().State()
         st.apply({"event": "error", "text": "fm code: model: refused", "next": "fm code --resume T-0001"})
