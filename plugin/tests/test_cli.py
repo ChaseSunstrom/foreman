@@ -661,6 +661,26 @@ class EditCriterion(ForemanTestCase):
 
 
 class Checks(ForemanTestCase):
+    def test_a_slow_gate_reruns_only_its_failing_tests(self):  # T-1678
+        self.fm("init")
+        with open(os.path.join(self.repo, "run.py"), "w") as f:
+            f.write("import sys\nif sys.argv[1:] == ['test_m.C.test_x']:\n    print('Ran 1 test\\n\\nOK')\n"
+                    "    sys.exit(0)\nprint('FAIL: test_x (test_m.C.test_x)\\nRan 9 tests\\n\\nFAILED (failures=1)')\n"
+                    "sys.exit(1)\n")
+        self.fm("check", "add", "python3 run.py")
+        slow = {"FOREMAN_SLOW_GATE": "0"}  # every gate counts as slow
+        p = self.fm("check", "--fresh", env=slow, check=False)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertIn("passed on a rerun of just them", p.stdout)
+        self.assertEqual(c.load_briefs(c.find_project(self.repo)), [], "no baseline task for a load-spike failure")
+        import fmcli
+        self.assertIsNone(fmcli._narrow_rerun("python3 run.py two", "FAIL: t (m.C.t)\nFAILED (failures=2)\n"),
+                          "a failure the names don't cover: the whole gate stands")
+        self.assertIsNone(fmcli._narrow_rerun("go test ./...", "--- FAIL: TestX\n"))
+        self.assertEqual(fmcli._narrow_rerun("pytest -q", "FAILED a.py::t - x\n=== 1 failed, 3 passed ===\n"),
+                         "pytest -q a.py::t")
+        self.assertIsNone(fmcli._narrow_rerun("pytest -q", "FAILED a.py::t - x\n=== 1 failed, 1 error ===\n"))
+
     def test_a_gate_flaky_again_and_again_fails(self):
         # final review: a racy bug that passes half the time mustn't keep passing as "flaky"
         self.fm("init")

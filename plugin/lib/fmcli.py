@@ -3868,13 +3868,17 @@ def _cmd_check(args):
         guard_stored(p, act, cmd)  # T-0901 review: a stored gate (fm smoke set cmd adds one too)
         t0 = time.monotonic()
         code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=env)
-        if code and time.monotonic() - t0 <= 120:  # a slow gate isn't rerun: its failure costs enough already
-            code2, output2 = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=env)
+        slow = time.monotonic() - t0 > _slow_gate()  # a slow gate isn't rerun whole: its failure costs enough already
+        narrow = _narrow_rerun(cmd, output) if code == 1 and slow and not failure_class(output) else None  # T-1678
+        if code and (not slow or narrow):
+            code2, output2 = c.run_command(p.root, narrow or cmd, args.timeout if args.timeout > 0 else None, env=env)
             if not code2 and _flaky_count(p, cmd) >= 2:  # a racy bug passes half the time: not "flaky" forever
                 notes[cmd] = "flaky again (failed first in 3+ recent runs): treated as a failure; find the race"
             elif not code2:
                 reruns.append((cmd, code, output))  # T-0274 review: the names from the failing first run
-                code, output, notes[cmd] = 0, output2, "flaky: failed, then passed on a rerun"
+                code, output, notes[cmd] = 0, output2, (
+                    f"flaky: its {len(c.failing_tests(output))} failing test(s) passed on a rerun of just them"
+                    if narrow else "flaky: failed, then passed on a rerun")
             elif before.get(cmd):
                 notes[cmd] = "pre-existing: it also failed before this task"
         env = failure_class(output) if code else None
@@ -3946,6 +3950,37 @@ def _cmd_check(args):
                            for cmd, code, _, s in results], "failed": failed, "wrote": wrote, "wrote_paths": wrote_paths, "skipped_tests": skip},
         "\n".join(lines))
     return 1 if failed else 0
+
+
+def _slow_gate():
+    """Seconds after which a failing gate isn't rerun whole (FOREMAN_SLOW_GATE; default 120)."""
+    try:
+        return float(os.environ.get("FOREMAN_SLOW_GATE") or 120)
+    except ValueError:
+        return 120.0
+
+
+def _narrow_rerun(cmd, output):
+    """T-1678: the command that reruns only a slow gate's failing tests, or None unless the output vouches that its
+    names are every failure: unittest's dotted names under a unittest runner (python -m unittest, a run.py) whose
+    FAILED (failures=…, errors=…) totals add up to them, or pytest node ids that are its summary's 'N failed' with no
+    errors. A full suite that failed once in a load spike then costs seconds to clear, not an urgent baseline task
+    (T-1597)."""
+    import shlex
+    names = c.failing_tests(output)
+    if not names or len(names) > 20:
+        return None
+    if all("::" in n for n in names) and re.search(r"\bpytest\b", cmd):
+        summary = re.findall(r"(?m)^=+ (.*\d+ failed.*?) =+$", output)
+        if not summary or re.search(r"\d+ errors?\b", summary[-1]):
+            return None
+        total = int(re.search(r"(\d+) failed", summary[-1]).group(1))
+    elif all("::" not in n and "." in n for n in names) and re.search(r"\bunittest\b|\brun\.py\b", cmd):
+        total = sum(int(a or 0) + int(b or 0) for a, b in
+                    re.findall(r"FAILED \((?:failures=(\d+))?(?:, )?(?:errors=(\d+))?", output))
+    else:
+        return None
+    return f"{cmd} {' '.join(shlex.quote(n) for n in names)}" if total == len(names) else None
 
 
 def _baseline(p, results):
