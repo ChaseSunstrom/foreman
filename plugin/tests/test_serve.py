@@ -217,6 +217,18 @@ class Run(RunCase):
         self.assertEqual(len(sessions), 2)  # 0.30 < 0.5 starts a second; 0.60 >= 0.5 stops the third
         self.assertIn("spend cap reached", out)
 
+    def test_a_runner_works_each_task_through_fm_code(self):  # T-1773
+        import types
+        t = self.task("one")
+        p = c.find_project(self.repo)
+        argv = fmserve._session_cmd(p, c.find_brief(p, t), types.SimpleNamespace(runner="codex"), {})
+        self.assertEqual(argv[1:], [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "code", "--task", t, "--worker", "codex"])
+        before = c.find_brief(p, t).status
+        r = self.run_fm("--runner", "nosuch", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--runner nosuch: not a runner fm code can run", r.stderr)
+        self.assertEqual(c.find_brief(p, t).status, before, "nothing ran")
+
     def test_each_task_runs_in_its_own_fresh_session(self):
         a, b = self.task("one"), self.task("two")
         self.stub("claude", self.finisher)

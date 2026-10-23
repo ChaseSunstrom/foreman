@@ -17,5 +17,14 @@ class Verdict(unittest.TestCase):
         self.assertFalse(ok(wall_p95=400, cpu_p95=200, budget=150, load=4.0), "a real regression shows in CPU time")
 
 
+class ScriptBudget(unittest.TestCase):  # T-1777
+    def test_the_script_case_is_a_hook_plus_the_guards_time_box(self):
+        # the bench's 37 KB script never finishes inside the guard's CPU box (a full read took 124 s), so the case
+        # costs a hook's startup plus that box: a hook's budget plus the box, moving with it
+        import fmguard
+        self.assertEqual(bench_hooks.BUDGET_MS["PreToolUse:Bash:script"],
+                         bench_hooks.BUDGET_MS["default"] + round(fmguard._script_budget() * 1000))
+
+
 if __name__ == "__main__":
     unittest.main()

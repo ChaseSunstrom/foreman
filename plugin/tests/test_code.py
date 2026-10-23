@@ -625,6 +625,68 @@ def run_friction_lines(case):
     return b and [x.split("run friction: ", 1)[1] for x in b.section("Log").splitlines() if "run friction: " in x]
 
 
+class TreeLock(CodeCase):  # T-1342
+    def test_a_second_run_in_the_same_tree_names_the_one_holding_it(self):
+        import fcntl
+        import hashlib
+        jdir = os.path.join(self.home, "state", "projects")
+        self.serve("openai", plan(), *FIX)
+        self.code("fix add", "--model", "fake")  # makes the project's code folder
+        code = next(os.path.join(jdir, d, "code") for d in os.listdir(jdir))
+        path = os.path.join(code, f"tree-{hashlib.sha1(os.fsencode(os.path.realpath(self.repo))).hexdigest()[:12]}.lock")
+        with open(path, "a+") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fh.seek(0)
+            fh.truncate()
+            fh.write(json.dumps({"pid": 4242, "task": "T-0009", "since": "2026-10-23T10:15:00Z"}))
+            fh.flush()
+            self.serve("openai", plan())
+            r = self.code("fix it again", "--model", "fake", check=False)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("another fm code run is working in this tree: T-0009 (pid 4242, since 10:15 UTC)", r.stderr)
+            self.assertIn("Next: fm code tui", r.stderr)
+            self.serve("openai", plan())
+            self.code("fix it again", "--model", "fake", "--dry-plan")  # a dry plan changes nothing: no lock
+
+    def test_close_and_block_reach_fm_notify(self):
+        said = os.path.join(self.tmp, "said.txt")
+        self.fm("notify", f'printf "%s\\n" "$1" >> {said}')
+        self.serve("openai", plan(), *FIX)
+        self.code("fix add", "--model", "fake")
+        with open(said) as f:
+            self.assertIn("fm code T-0001 closed: Make calc.add add", f.read())
+
+
+class AskBeside(CodeCase):  # T-1770
+    def test_ask_answers_beside_a_run_holding_the_tree_and_never_plans_a_change(self):
+        import fcntl
+        import hashlib
+        jdir = os.path.join(self.home, "state", "projects")
+        self.serve("openai", plan(), *FIX)
+        self.code("fix add", "--model", "fake")
+        code = next(os.path.join(jdir, d, "code") for d in os.listdir(jdir))
+        path = os.path.join(code, f"tree-{hashlib.sha1(os.fsencode(os.path.realpath(self.repo))).hexdigest()[:12]}.lock")
+        with open(path, "a+") as fh:  # another run is working in this tree
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fh.seek(0)
+            fh.truncate()
+            fh.write(json.dumps({"pid": 4242, "task": "T-0009", "since": "2026-10-23T10:15:00Z"}))
+            fh.flush()
+            f = self.serve("openai", {"text": json.dumps({"answer": "it adds"})}, call("read", path="calc.py"),
+                           call("done", summary="calc.add returns a + b (calc.py line 2)"))
+            r = self.code("what does calc.add do?", "--ask", "--model", "fake", "--json")
+            answer = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{") and '"answer"' in x]
+            self.assertIn("calc.py line 2", answer[-1]["text"], r.stdout)
+            self.assertIn("plan no change", json.dumps(f.seen[0]), "the planner is told it's a question")
+            self.serve("openai", plan())
+            r = self.code("fix it again", "--ask", "--model", "fake", check=False)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("--ask answers questions only", r.stderr)
+        self.assertNotEqual(self.fm("task", "show", "T-0002", check=False).returncode, 0, "no task from --ask")
+        r = self.code("--ask", "--task", "T-0001", check=False)
+        self.assertIn("--ask answers a question", r.stderr)
+
+
 class FollowUp(CodeCase):  # T-1340
     def test_a_follow_up_carries_the_earlier_runs_request_plan_and_files(self):
         self.serve("openai", plan(), *FIX)

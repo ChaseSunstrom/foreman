@@ -138,6 +138,26 @@ def _marker_default(alt):
         return None
 
 
+PANE_ALL = ("accent", "accent2", "ok", "warn", "err", "edit", "agent", "web", "skill", "dim", "muted", "add", "del",
+            "track", "white")  # the foreman-ui pane's palette keys (kit.ts's C)
+
+
+def pane_palette_path():
+    """T-1717: where fm design tokens --to pane --save keeps the pane's palette."""
+    return os.path.join(state_dir(), "pane-palette.json")
+
+
+def pane_palette():
+    """T-1717: the saved pane palette, checked: known keys with #rrggbb values only; {} when none or unreadable."""
+    try:
+        with open(pane_palette_path(), encoding="utf-8") as f:
+            data = json.loads(f.read(65536))
+    except (OSError, ValueError):
+        return {}
+    return {k: v.lower() for k, v in (data.items() if isinstance(data, dict) else ())
+            if k in PANE_ALL and isinstance(v, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", v)}
+
+
 def state_dir():
     """FOREMAN_STATE, else <foreman home>/state. When that isn't writable (Claude Code's Bash sandbox, claude plugin
     eval, read-only containers) state moves to a per-user fallback, once: existing state is copied across and a marker

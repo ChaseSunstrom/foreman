@@ -150,6 +150,17 @@ class KnownFixes(ForemanTestCase):
         self.ok("python3 -m pytest -q tests")
         self.assertEqual(self.fm_json("fix", "list"), [])
 
+    def test_a_command_that_writes_files_is_a_code_fix_not_a_command_fix(self):  # T-1771
+        for i, fix in enumerate(["sed -i '650s/x/y/' tests/test_a.py && python3 -m pytest -q tests",
+                                 "fm edit < /tmp/edits.txt && python3 -m pytest -q tests",
+                                 "python3 -m pytest -q tests > out.txt"]):
+            self.run_fail("pytest -q tests", err="E   AssertionError: assert 1 == 2", session=f"w{i}")
+            self.ok(fix, session=f"w{i}")
+        self.assertEqual(self.fm_json("fix", "list"), [])
+        self.run_fail("pytest -q tests", err="E   AssertionError: assert 1 == 2", session="w9")
+        self.ok("python3 -m pytest -q tests 2>&1 >/dev/null", session="w9")  # writes nothing: still a command fix
+        self.assertEqual(len(self.fm_json("fix", "list")), 1)
+
     def test_a_sensitive_project_keeps_its_fixes_to_itself(self):
         self.fm("sensitive", "on")
         self.learn()
