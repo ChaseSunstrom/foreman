@@ -1,6 +1,7 @@
 """fm — the only writer of Foreman state.
 
-Exit codes: 0 ok · 1 usage error / not found · 2 refused by policy · 3 lock timeout · 4 state corrupt.
+Exit codes: 0 ok · 1 usage error / not found · 2 refused by policy · 3 lock timeout · 4 state corrupt · 5 fm capture
+refused a near-duplicate (T-1662).
 """
 import argparse
 import collections
@@ -216,18 +217,19 @@ def cmd_capture(args):
     if type_ not in c.TYPES:
         raise UsageError(f"unknown type {args.type!r}; one of {', '.join(c.TYPES)}")
     text, raw = (args.text or "").strip(), args.text
+    near = _near(p, args, text, type_) if text else None  # T-1662 review: before a paste is read and kept
+    if near and near[0] is not None:
+        return near[0]
     if args.from_file:
         attached, first = _attachment(p, args.from_file)
         text = text or first
         raw = (args.text + "\n\n" if args.text else "") + attached
     if not text:
         raise UsageError("fm capture \"<request>\" [--from-file PATH|-]: say what to do, or attach a file that does")
+    near = near or _near(p, args, text, type_)  # titled from the attachment: only now known
+    if near[0] is not None:
+        return near[0]
     with c.lock(p.dir):
-        import fmrecall
-        near, near_done = fmrecall.near_tasks(p, _title(text), _scope_paths(args.scope or ()))
-        if near and not args.anyway:  # T-1662
-            raise UsageError(f"near-duplicate of open {near[0]} ({c.fit(c.plain(near[1]), 80)}): add to it "
-                             f"(fm task log {near[0]} \"…\"), or keep both with fm capture … --anyway")
         b = _create(p, _title(text), type_, args.tier or c.guess_tier(type_, text), "captured",
                     raw=raw, scope=args.scope or (), source=args.source,
                     depends=list(dict.fromkeys(c._REF_RE.findall(args.text or ""))),  # T-0334: as fm intake does
@@ -236,7 +238,33 @@ def cmd_capture(args):
         c.regen_views(p)
     _note_escapes(p, b, args.text)
     out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source})."
-        + _covered_note(p, b.id, text, near_done if type_ == "FEATURE" else None) + _reask_note(p, b.id, text))
+        + near[1](b.id) + _covered_note(p, b.id, text) + _reask_note(p, b.id, text))
+
+
+REFUSED_NEAR = 5  # T-1662: its own exit code (see the module docstring: 3, asked for in review, is a lock timeout)
+
+
+def _near(p, args, text, type_):
+    """T-1662: (exit code, None) when the request is a near-duplicate of an open task of its type and --anyway isn't
+    given, said on stderr (and as JSON under --json); else (None, note(new id)): the similar open task of another
+    type, and for a FEATURE the done task close to it."""
+    import fmrecall
+    same, other, done = fmrecall.near_tasks(p, _title(text), _scope_paths(args.scope or ()), type_)
+    if same and not args.anyway:
+        print(f"fm: near-duplicate of open {same[0]} ({c.fit(c.plain(same[1]), 80)}): add --anyway to keep both, or "
+              f"fm task log {same[0]} '<note>' to add to it", file=sys.stderr)
+        if getattr(args, "json", False):
+            out(args, {"refused": "near-duplicate", "of": same[0], "title": same[1]}, None)
+        return REFUSED_NEAR, None
+    done = done if type_ == "FEATURE" else None
+
+    def note(tid):
+        return "".join([
+            f"\nSimilar open {other[0]} [{other[2]}] ({c.fit(c.plain(other[1]), 80)}): another type, so kept."
+            if other else "",
+            f"\nClose to done work: {done[0]} ({c.fit(c.plain(done[1]), 80)}). If it already does this, drop this: "
+            f"fm task drop {tid} \"done in {done[0]}\"." if done else ""])
+    return None, note
 
 
 EXCERPT_HEAD, EXCERPT_TAIL = 10, 30  # T-0477: a log's start says what ran, its end what broke
@@ -311,20 +339,17 @@ def _reask_note(p, tid, text):
     return ("\n" + "; ".join(notes) + f". If that still holds, drop this: fm task drop {tid} \"<why>\".") if notes else ""
 
 
-def _covered_note(p, tid, text, done=None):
-    """T-0256: the request may already be an fm command; say so before anything is built. T-1662: or done work, the
-    (id, title) of a finished task close to it."""
-    note = (f"\nClose to done work: {done[0]} ({c.fit(c.plain(done[1]), 80)}). If it already does this, drop this: "
-            f"fm task drop {tid} \"done in {done[0]}\".") if done else ""
+def _covered_note(p, tid, text):
+    """T-0256: the request may already be an fm command; say so before anything is built."""
     try:
         import fmrecall
         hits = fmrecall.covered(text)
     except Exception:
-        return note
+        return ""
     if not hits:
-        return note
-    return note + ("\nAlready covered? " + "; ".join(f"fm {name} — {help_}" for name, help_ in hits)
-                   + f". If it is, use it and drop this: fm task drop {tid} \"covered by fm {hits[0][0]}\".")
+        return ""
+    return ("\nAlready covered? " + "; ".join(f"fm {name} — {help_}" for name, help_ in hits)
+            + f". If it is, use it and drop this: fm task drop {tid} \"covered by fm {hits[0][0]}\".")
 
 
 HYPO_STATUS = {"ruled-out": "ruled out", "confirmed": "confirmed", "open": "open"}
@@ -4991,7 +5016,10 @@ def _build_parser():
     s.add_argument("--tier", choices=["S", "M", "L"])
     s.add_argument("--scope", action="append")
     s.add_argument("--urgent", action="store_true")
-    s.add_argument("--anyway", action="store_true", help="keep a near-duplicate of an open task (T-1662)")
+    s.add_argument("--anyway", action="store_true", help="keep a request whose title is close to an open task's of the same type: "
+                                                         "without it fm capture refuses it, exit 5, naming the task "
+                                                         "(only fm capture checks; fm intake, fm task new and fm "
+                                                         "research --from-agent don't)")
     s.add_argument("--self", dest="self_", action="store_true", help="capture into Foreman's own project (self-improvement)")
 
     s = add("ask", cmd_ask, tier=("Every task", 180), help="ask the user to authorize guard categories for a task; their next message decides")
