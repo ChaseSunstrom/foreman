@@ -167,6 +167,11 @@ class Skills(unittest.TestCase):
                 if sub and pos and not sub.isupper():
                     self.assertIn(sub, pos[0].choices)
         self.assertIn("Skill foreman:directions", body)
+        # palette prints to stdout and ignores --out; extract writes DESIGN.md's Tokens section unless --out says else
+        palette = next(line for line in body.splitlines() if "fm design palette" in line)
+        self.assertRegex(palette, r"`fm design palette \S+ > ")
+        self.assertNotIn("--out", palette)
+        self.assertRegex(body, r"`fm design extract SRC`[^.]*DESIGN\.md")
 
     def test_audit_reference_defines_every_lens_fm_requires(self):
         import fmcore as c
