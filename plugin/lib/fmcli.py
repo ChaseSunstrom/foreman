@@ -6078,6 +6078,14 @@ def _build_parser():
     s.add_argument("--frozen", action="store_true", help="fm smoke's frozen profile first: the clock fixed, CSS "
                    "animations and transitions paused")
     s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
+    s = add("flow", lazy("fmflow", "cmd_flow"), tier=("Every task", 93), help="FILE: a user journey, one step a line "
+            "(goto URL|FILE, click SEL, type SEL TEXT, expect SEL [TEXT], wait MS), in the headless Chromium fm shot "
+            "finds, as a verify command: exit 1 names the step that failed, 2 with no browser (never a pass) (T-1639)")
+    s.add_argument("file", metavar="FILE")
+    s.add_argument("--timeout", type=float, default=10, metavar="S",
+                   help="seconds each element step waits for its element (above 0, at most 60; default 10)")
+    s.add_argument("--any-url", action="store_true", help="goto may open any http(s) page, not only localhost, "
+                   "127.0.0.1, [::1] and files")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
