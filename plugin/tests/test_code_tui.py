@@ -504,6 +504,34 @@ class Views(unittest.TestCase):
         self.assertIn(app.state.task, ("T-0001", "T-0002"))
         self.assertIn(app.state.status, ("closed", "blocked"))
 
+    def test_a_replay_steps_through_its_events_with_the_arrows(self):  # T-1307
+        path = os.path.join(tempfile.mkdtemp(), "T-0001.events.jsonl")
+        with open(path, "w") as f:
+            f.write("".join(json.dumps(e) + "\n" for e in RUN))
+        app = self.app()
+        app.replay(path)
+        self.assertEqual(app.state.status, "closed")
+        self.assertIn("←/→ step through its 14 events", app.message)
+        app.key("KEY_LEFT")
+        self.assertNotEqual(app.state.status, "closed", "one event back: before the close")
+        self.assertIn("◂▸ 13/14 verify", app.message)
+        app.key("KEY_HOME")
+        self.assertEqual((app.state.task, app.state.status), (None, "planning"), "the start alone")
+        self.assertIn("◂▸ 1/14 start", app.message)
+        app.key("KEY_RIGHT")
+        app.key("KEY_RIGHT")
+        self.assertEqual(app.state.task, "T-0001")
+        app.key("KEY_END")
+        self.assertEqual(app.state.status, "closed")
+        app.key("KEY_RIGHT")  # past the end: stays
+        self.assertIn("◂▸ 14/14", app.message)
+        live = self.app()
+        for e in RUN[:5]:
+            live.feed(e)
+        before = len(live.state.log)
+        live.key("KEY_LEFT")  # a live run isn't a replay: nothing to step
+        self.assertEqual(len(live.state.log), before)
+
     def test_m_picks_the_model_or_worker_the_next_run_uses(self):
         app = self.app(choices=lambda: [("model", "qwen2.5-coder:32b"), ("worker", "claude"), ("worker", "codex")])
         app.key("m")
@@ -762,6 +790,20 @@ class Motion(unittest.TestCase):
             if i >= 0:
                 return tui().resolve(row[i + offset][1], cfg, cv.bg[y][i + offset])
         self.fail(f"{needle!r} not drawn")
+
+    def test_a_switch_between_views_fades_in_unless_motion_is_off(self):  # T-1307
+        for motion, fades in (("full", True), ("reduced", True), ("off", False)):
+            app, cfg = self.app(RUN, motion)
+            self.frame(app, cfg, 100.0)
+            app.key("h")
+            self.frame(app, cfg, 100.0)
+            mid, end = self.frame(app, cfg, 100.08), self.frame(app, cfg, 101.0)
+            a, b = self.cell(mid, "Past runs", cfg), self.cell(end, "Past runs", cfg)
+            self.assertEqual(a != b, fades, motion)
+            app.key("q")  # back to the run: it fades in too
+            self.frame(app, cfg, 101.0)
+            mid, end = self.frame(app, cfg, 101.08), self.frame(app, cfg, 102.0)
+            self.assertEqual(self.cell(mid, "fix add", cfg) != self.cell(end, "fix add", cfg), fades, motion)
 
     def test_the_station_being_worked_pulses_and_its_spinner_turns(self):
         app, cfg = self.app(RUNNING)
