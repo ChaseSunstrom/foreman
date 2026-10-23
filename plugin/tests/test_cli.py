@@ -3,6 +3,7 @@ import json
 import subprocess
 import os
 import re
+import shutil
 import threading
 import time
 import unittest
@@ -1329,3 +1330,31 @@ class AffectedPairs(ForemanTestCase):
             f.write('{"n": 9}\n')
         _, tests, _ = fmcli.affected(c.find_project(self.repo, create=False))
         self.assertIn("tests/test_wiring.py", tests)
+
+    def test_a_skipped_red_first_module_isnt_named_to_run_py(self):
+        # T-1718: --affected said it skipped another lane's red-first test_red, then named it to run.py, which failed
+        # "no test matches test_red"
+        self.fm("init")
+        os.makedirs(os.path.join(self.repo, "tests"))
+        shutil.copy(os.path.join(os.path.dirname(__file__), "run.py"), os.path.join(self.repo, "tests", "run.py"))
+        green = "import unittest\n\n\nclass G(unittest.TestCase):\n    def test_g(self):\n        pass\n"
+        with open(os.path.join(self.repo, "tests", "test_green.py"), "w") as f:
+            f.write(green)
+        for args in (["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "suite"]):
+            subprocess.run(["git", "-C", self.repo, *args], check=True)
+        self.fm("check", "affected", "python3 tests/run.py {names}")
+        self.fm("task", "new", "A", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s", "--focus")
+        b = self.fm_json("task", "new", "B", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s")["id"]
+        self.fm("focus", b)
+        with open(os.path.join(self.repo, "tests", "test_red.py"), "w") as f:
+            f.write(green.replace("pass", "self.fail('red')"))
+        self.fm("task", "evidence", b, "--step", "1", "--run", "python3 tests/run.py test_red", check=False)
+        self.fm("checkpoint")
+        self.fm("focus", "T-0001")
+        for name in ("test_green.py", "test_red.py"):  # A's edit, and B's (its lane goes on) since A's focus
+            with open(os.path.join(self.repo, "tests", name), "a") as f:
+                f.write("# edited\n")
+        r = self.fm("check", "--affected", check=False)
+        self.assertIn(f"only task {b}'s red-first tests: test_red", r.stdout)
+        self.assertNotIn("no test matches", r.stdout + r.stderr)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
