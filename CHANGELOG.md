@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm bench soak --compact-at TOKENS runs a compaction storm (each session compacts once its context nears TOKENS, every few turns when small; each case counts its compactions), and --sweep 20000,40000,80000 runs the soak once per window with a row each (passes, repeats, compactions, cost), to measure where compaction starts to cost repeats (T-1259)
 - fm motion verify samples the page in fm shot's own browser (a Chromium on PATH, FOREMAN_CHROME or Playwright's download; nothing installed) instead of fm smoke's whole frozen crawl: one page, the frozen clock and paused animations, and the same sampleMotion fm smoke runs (T-1716)
 - fm page looks --cards prints the look cards as trading cards: each in its own palette and type pair (title, an Aa, its line, a palette strip, type and motion), 63 x 88 mm, nine to an A4 page, one file with nothing from another host (T-1650, the cards; the shader sketchbook and the site gallery are their own items)
 - UI playbooks: the UI contract is written down (references/ui/INDEX.md: motion, contrast, keyboard, small screens, states), every UI playbook says how it meets each rule in its own ## UI contract section, and fm check playbooks refuses one that doesn't. fm playbooks coverage prints a heatmap of stages by stack: how many playbooks in each stage name a card of each stack area (T-1623)
