@@ -483,6 +483,8 @@ class Worker(CodeCase):
         e = self.stalled(":")
         self.assertEqual(e["cause"], "launch", e)
         self.assertIn("no output since launch", e["text"])
+        from test_code import run_friction_lines
+        self.assertIn("stalled: launch", run_friction_lines(self), "T-1339: a stall is friction with fm code")
 
     def test_a_turn_waiting_at_a_prompt_names_it(self):
         e = self.stalled("printf '\\033[1mOverwrite calc.py? (y/n) '")
