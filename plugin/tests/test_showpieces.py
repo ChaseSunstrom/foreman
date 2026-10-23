@@ -368,7 +368,10 @@ class Graph(OneFile, ForemanTestCase):
                          "an edge per dependency in the graph, from what's waited on to the waiter")
         spots = [(n[0], n[1]) for n in d["n"]]
         self.assertEqual(len(spots), len(set(spots)), "no two nodes on one spot")
-        self.assertLessEqual(max(abs(n[1]) for n in d["n"]), d["span"], "a big layer wraps instead of a long line")
+        first = [n for n in d["n"] if n[4] == 0]  # 32 tasks wait on nothing: a block, not a line of 32
+        self.assertEqual(len(first), 32)
+        self.assertLessEqual(len({n[1] for n in first}), 12, "a big layer wraps: at most 12 deep")
+        self.assertGreaterEqual(len({n[0] for n in first}), 3, "into columns")
         self.assertEqual(fmpage.graph_html(TASKS, "Foreman", when="2026-10-22"), self.page, "deterministic")
 
     def test_status_is_the_colour_and_tier_the_height(self):
@@ -382,6 +385,48 @@ class Graph(OneFile, ForemanTestCase):
         self.assertEqual(len(re.findall(r'<path class="n ', self.page)), 2 * len(TASKS), "the poster draws each one")
         self.assertIn('class="n side st-active"', self.page)
         self.assertEqual(len(re.findall(r'<path class="e"', self.page)), len(d["e"]), "and each edge")
+
+    def test_status_colours_read_apart_and_against_the_ground(self):
+        # review: graphics need 3:1 on what they stand on; red/green and blue/violet pairs differ in lightness too
+        import fmdesign
+        tok = lambda k: fmdesign.parse_colour(re.search(rf"--graph-{k}: (#[0-9a-f]{{6}});", self.page).group(1))
+        for s in fmpage.GRAPH_STATUSES:
+            for under in ("floor", "bg"):
+                self.assertGreaterEqual(fmdesign.contrast(tok(s), tok(under)), 3, (s, under))
+        for a, b in (("blocked", "done"), ("planned", "captured")):
+            self.assertGreaterEqual(fmdesign.contrast(tok(a), tok(b)), 1.8, f"{a} and {b} differ in lightness")
+
+    def test_blocked_and_done_carry_a_mark_besides_colour(self):
+        d, _ = self.nodes()
+        st = [d["s"][n[3]] for n in d["n"]]
+        self.assertEqual(len(re.findall(r'<path class="mark hatch"', self.page)), st.count("blocked"))
+        self.assertEqual(len(re.findall(r'<path class="mark ring"', self.page)), st.count("done"))
+        self.assertIn('<pattern id="hatch"', self.page)
+        self.assertRegex(self.module(), r"mark == 1\.0", "the scene hatches a blocked roof")
+        self.assertRegex(self.module(), r"mark == 2\.0", "and rings a done one")
+        for s, cls in (("blocked", "hatch"), ("done", "ring")):
+            self.assertRegex(self.page, rf'<span class="st-{s}"><i class="{cls}"></i>{s}</span>', "the legend too")
+
+    def test_the_poster_names_the_active_and_blocked_tasks(self):
+        poster = re.search(r'<svg class="poster".*?</svg>', self.page, re.S).group(0)
+        names = re.findall(r'<text class="tag"[^>]*>([^<]*)</text>', poster)
+        self.assertEqual(sorted(names), ["T-0003", "T-0005"], "the city's poster names its districts; this its work")
+        many = TASKS + [{"id": f"T-{300 + i:04d}", "title": "x", "status": "blocked", "tier": "S", "deps": []}
+                        for i in range(40)]
+        poster = re.search(r'<svg class="poster".*?</svg>', fmpage.graph_html(many, "x"), re.S).group(0)
+        self.assertEqual(len(re.findall(r'<text class="tag"', poster)), fmpage.GRAPH_NAMED, "capped")
+        self.assertIn(">T-0003</text>", poster, "active work named first")
+
+    def test_a_phone_keeps_a_compact_legend(self):
+        self.assertNotRegex(self.page, r"\.key \{ display: none", "the legend shows at every width")
+        self.assertRegex(self.page, r"@media \(max-width: 40rem\) \{[^\n]*\.key \.wide \{ display: none")
+
+    def test_the_survival_block_matches_the_citys(self):
+        # review: graph.html copies city.html's frame loop, budget, survival and input code; neither drifts alone
+        # (the extraction to one shared fill is its own task)
+        block = lambda text: re.sub(r"\b(city|graph)\b", "X", re.search(
+            r"  // Budget: DPR capped.*?turn\(\.\.\.k\); \}\);\n", text, re.S).group(0))
+        self.assertEqual(block(self.module()), block(read_text(os.path.join(PLUGIN, "lib", "city.html"))))
 
     def test_the_label_counts_by_status_and_names_the_active_work_and_the_longest_chain(self):
         label = html.unescape(re.search(r'<canvas[^>]*aria-label="([^"]*)"', self.page).group(1))
@@ -407,6 +452,28 @@ class Graph(OneFile, ForemanTestCase):
         self.assertGreater(at["T-0003"][4], at["T-0002"][4])
         self.assertIn("2 tasks wait on each other in a cycle", html.unescape(page))
 
+    def test_a_cycle_is_broken_at_its_own_lowest_id_not_at_a_waiter(self):
+        # review: T-0001 waits on a cycle (T-0002 <-> T-0003); it must stand after it, not be forced to the front
+        loop = [{"id": "T-0001", "title": "a", "status": "planned", "tier": "S", "deps": ["T-0002"]},
+                {"id": "T-0002", "title": "b", "status": "planned", "tier": "S", "deps": ["T-0003"]},
+                {"id": "T-0003", "title": "c", "status": "planned", "tier": "S", "deps": ["T-0002"]}]
+        page = fmpage.graph_html(loop, "x")
+        _, at = self.nodes(page)
+        self.assertEqual(at["T-0002"][4], 0, "the cycle broken at its lowest id")
+        self.assertGreater(at["T-0003"][4], at["T-0002"][4])
+        self.assertGreater(at["T-0001"][4], at["T-0002"][4], "the waiter stands after what it waits on")
+        self.assertIn("2 tasks wait on each other in a cycle", html.unescape(page))
+
+    def test_a_closed_task_linked_only_to_an_unloaded_one_is_left_out(self):
+        # review: archived briefs aren't loaded; a dep on one draws no edge, so it doesn't keep a closed task
+        rows = [{"id": "T-0900", "status": "done", "deps": ["T-0100"]},
+                {"id": "T-0901", "status": "done", "deps": ["T-0902"]},
+                {"id": "T-0902", "status": "done", "deps": []},
+                {"id": "T-0903", "status": "planned", "deps": ["T-0100"]}]
+        kept = fmpage.graph_keep(rows)
+        self.assertEqual([t["id"] for t in kept], ["T-0901", "T-0902", "T-0903"])
+        self.assertEqual(kept[-1]["deps"], [], "a dep on a task not loaded is dropped")
+
     def test_a_long_chain_lays_out_without_recursion(self):
         chain = [{"id": f"T-{i:04d}", "title": "x", "status": "planned", "type": "FIX", "tier": "S",
                   "deps": [f"T-{i - 1:04d}"] if i else []} for i in range(1500)]
@@ -422,6 +489,20 @@ class Graph(OneFile, ForemanTestCase):
         self.assertIn("T-0129", [t["id"] for t in d["t"]], "the newest kept")
         self.assertIn(f"{len(TASKS) - 10} older tasks are not drawn", html.unescape(page))
 
+    def test_past_the_edge_cap_the_first_are_drawn_and_the_page_says_so(self):
+        from unittest import mock
+        with mock.patch.object(fmpage, "GRAPH_EDGES", 4):
+            page = fmpage.graph_html(TASKS, "Foreman")
+        d, _ = self.nodes(page)
+        ids = [t["id"] for t in d["t"]]
+        self.assertEqual([(ids[a], ids[b]) for a, b in d["e"]], [("T-0001", "T-0002"), ("T-0002", "T-0003"),
+                                                                 ("T-0002", "T-0004"), ("T-0003", "T-0004")])
+        self.assertEqual(len(re.findall(r'<path class="e"', page)), 4)
+        text = html.unescape(page)
+        self.assertIn("2 more dependencies are not drawn", text)
+        self.assertIn("6 dependencies", text, "the count is all of them")
+        self.assertIn("waits on T-0003", text, "the twin still lists every one")
+
     def test_a_hostile_title_is_escaped_everywhere_it_shows(self):
         bad = 'x"><img src=x onerror=1></script><b>'
         page = fmpage.graph_html(TASKS + [{"id": "T-0200", "title": bad, "status": "active", "type": "FIX",
@@ -432,6 +513,11 @@ class Graph(OneFile, ForemanTestCase):
             self.assertNotIn(raw, page)
         self.assertEqual(page.count("</script>"), 2, "a title can't close a tag")
         self.assertIn(bad, [t["title"] for t in data_of(page, "graph")["t"]], "the JSON keeps it, '<' escaped")
+        label = re.search(r'<canvas[^>]*aria-label="([^"]*)"', page).group(1)
+        twin = re.search(r"<figcaption[^>]*>(.*?)</figcaption>", page, re.S).group(1)
+        for where, text in (("label", label), ("twin", twin)):
+            self.assertIn(html.escape(f"T-0200 {bad}"), text, where)
+        self.assertIn(html.escape(f"T-0200 {bad}") + " (active)", twin, "an unknown tier is dropped, not shown")
 
     def test_a_leak_names_the_task(self):
         with self.assertRaisesRegex(fmpage.Leak, r"T-0300"):
@@ -460,6 +546,10 @@ class Graph(OneFile, ForemanTestCase):
         r = self.fm("page", "graph", "--out", mine, check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(read_text(mine), "<p>mine</p>")
+        out = os.path.join(self.tmp, "graph-copy.html")
+        for _ in range(2):  # review: --out over a page fm page graph wrote is replaced, not refused
+            self.assertEqual(self.fm_json("page", "graph", "--out", out)["path"], out)
+        self.assertIn(b, read_text(out))
 
 
 class GraphBrowser(OneFileBrowser, unittest.TestCase):
