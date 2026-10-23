@@ -1626,6 +1626,45 @@ def cmd_design(args):
             return 2
         import fmroll
         return fmroll.cmd_roll(args, fmcli)
+    if args.action == "diverge":  # T-1536: a variant round: N briefs in looks far apart; pick LOOK keeps the winner
+        import fmtaste
+        words = list(args.paths)
+        try:
+            known = fmtaste.looks()
+            if words[:1] == ["pick"]:
+                if len(words) < 2:
+                    raise ValueError("pick LOOK: name the variant's look")
+                e = fmtaste.record("kept", " ".join(words[1:]), why="won a divergence round")
+                fmcli.out(args, e, f"Taste ledger: {e['look']} kept (it won the divergence round).")
+                return 0
+            n = int(words.pop(0)) if words and words[0].isdigit() else 3
+            if not 2 <= n <= 6:
+                raise ValueError(f"{n} variants: 2 to 6")
+            what = " ".join(words) or "the screen"
+            names = fmtaste.spread(n, known)
+            briefs = [fmtaste.variant(k, name, known[name], what) for k, name in enumerate(names, 1)]
+            if args.out:
+                os.makedirs(args.out, exist_ok=True)
+                for k, (name, text) in enumerate(zip(names, briefs), 1):
+                    fmcore.write_atomic(os.path.join(args.out, f"variant-{k}-{name}.md"), text)
+        except (ValueError, OSError) as e:
+            print(f"fm: design diverge: {e}", file=sys.stderr)
+            return 2
+        fmcli.out(args, {"variants": [{"look": n_, "brief": t} for n_, t in zip(names, briefs)], "out": args.out},
+                  (f"wrote {len(briefs)} variant briefs to {args.out}: {', '.join(names)}" if args.out
+                   else "\n\n".join(briefs))
+                  + "\nBuild each in its own lane (fm lane new), then fm design diverge pick LOOK with the winner.")
+        return 0
+    if args.action == "sprint":  # T-1538
+        root = args.paths[0] if args.paths else "."
+        rows = sprint(root)
+        fmcli.out(args, {"root": root, "stages": rows}, sprint_text(root, rows))
+        return 0 if len(rows) == len(SPRINT) and rows[-1]["pass"] else 1
+    if args.action == "vague":  # T-1538: the veto list
+        got = vague(" ".join(args.paths))
+        fmcli.out(args, {"vague": got}, "\n".join(f"{w['word']}: ask {w['ask']}" for w in got)
+                  or "nothing vague: every word says something concrete")
+        return 0
     if args.action == "check":  # T-1645: the gates DESIGN.md opts into
         if len(args.paths) > 1:
             print("fm: design check takes one project root", file=sys.stderr)
@@ -1804,6 +1843,107 @@ def _found(kind, value, text):
         return value.lower() in low
     sec = f"{value / 1000:g}".lstrip("0") if value < 1000 else f"{value / 1000:g}"  # 200 → .2, 1500 → 1.5
     return bool(re.search(rf"(?<![\w.]){value:g}ms\b|(?<![\w.])0?{re.escape(sec)}s\b", low))
+
+
+# T-1538: the veto list: vague, sweeping words in a design request, each with the concrete question to ask instead
+VAGUE = {"modern": "modern like what: name a product, an era or an object it should feel like",
+         "clean": "clean how: less on the screen, more space, or fewer colours?",
+         "pop": "make what stand out, against what: the one thing a visitor must see first",
+         "sleek": "sleek like what: name a product or an object",
+         "premium": "premium to whom: what does this audience pay for elsewhere, and how does it look?",
+         "fresh": "fresh compared with what: the current look, or a rival's?",
+         "beautiful": "beautiful how: name a screen or an object the user finds beautiful",
+         "nice": "nicer how: the one concrete change that would make it better",
+         "professional": "professional to whom: whose trust must it win, and what do they use now?",
+         "intuitive": "intuitive for which task: the first thing a new user must do",
+         "user-friendly": "friendly to which user doing what: name the task and who does it",
+         "elegant": "elegant like what: name a product or an object",
+         "polished": "polished where: which screen or moment feels rough today?",
+         "minimal": "minimal how: fewer elements, fewer colours, or more space?",
+         "bold": "bold how: a big type scale, a loud colour, or an unusual layout?"}
+
+
+def vague(text):
+    """T-1538: each vague, sweeping word in text (once, in VAGUE's order) and the concrete question to ask instead."""
+    low = str(text or "").lower()
+    return [{"word": w, "ask": q} for w, q in VAGUE.items() if re.search(rf"(?<![\w-]){re.escape(w)}(?![\w-])", low)]
+
+
+# T-1538: the ten-minute design sprint: five stages, two minutes each, each done when its check passes
+SPRINT = (("brief", "DESIGN.md's ## Point of view says it in concrete words (no vague ones)"),
+          ("direction", "## Direction names its audacity: safe, bold or wild"),
+          ("tokens", "## Tokens holds the palette as a table of named roles"),
+          ("build", "the UI files under the root pass fm design lint"),
+          ("critique", "the gates DESIGN.md opts into under ## Gates pass"))
+SPRINT_NEXT = {"brief": "write ## Point of view in the user's concrete words (fm design vague TEXT says what to ask)",
+               "direction": "/foreman:directions: six directions, one picked, its audacity named",
+               "tokens": "fm design extract <ui root>, or fm design palette SEED to start one",
+               "build": "fix what fm design lint <ui root> finds",
+               "critique": "fix what fm design check finds, or opt into a gate under ## Gates (brief, a11y, debt)"}
+
+
+def sprint(root):
+    """T-1538: the design sprint over root's DESIGN.md and UI files, stage by stage up to the first that fails (the
+    rest aren't reached): [{stage, done_when, pass, why, next}]."""
+    path = os.path.join(root, "DESIGN.md")
+    text = _read(path)[0] if os.path.isfile(path) else None
+    doc, rows = (text or "").split("\n"), []
+
+    def stage(name, ok, why):
+        rows.append({"stage": name, "done_when": dict(SPRINT)[name], "pass": ok, "why": why,
+                     "next": None if ok else SPRINT_NEXT[name]})
+        return ok
+    pov = "\n".join(_section_lines(doc, "Point of view")).strip()
+    words = vague(pov)
+    if not stage("brief", bool(pov) and not words, "no DESIGN.md" if text is None else "no ## Point of view"
+                 if not pov else f"vague: {', '.join(w['word'] for w in words)}" if words else "concrete"):
+        return rows
+    m = re.search(r"audacity\W+(safe|bold|wild)", "\n".join(_section_lines(doc, "Direction")))
+    if not stage("direction", bool(m), f"audacity {m.group(1)}" if m else "no audacity in ## Direction"):
+        return rows
+    table = [ln for ln in _section_lines(doc, "Tokens") if ln.lstrip().startswith("|")
+             and not set(ln.strip()) <= set("|-: ")]
+    if not stage("tokens", len(table) > 1, f"{len(table) - 1} token row(s)" if len(table) > 1 else
+                 "no ## Tokens table"):
+        return rows
+    files = collect([root])[0]
+    found = lint([root]) if files else []
+    if not stage("build", bool(files) and not found, "no UI files under the root" if not files else
+                 f"{len(found)} lint finding(s)" if found else f"{len(files)} UI file(s), lint clean"):
+        return rows
+    got = check_gates(root)
+    failed = [m["must"] for g in got["gates"] for m in g["musts"] if not m["pass"]]
+    stage("critique", bool(got["gates"]) and not failed, "no gate opted into under ## Gates" if not got["gates"]
+          else f"{len(failed)} must(s) fail" if failed else f"{len(got['gates'])} gate(s) pass")
+    return rows
+
+
+def sprint_text(root, rows):
+    lines = [f"Design sprint, ten minutes, two a stage: {root}"]
+    for k, (name, done_when) in enumerate(SPRINT, 1):
+        r = rows[k - 1] if k <= len(rows) else None
+        mark = "·" if r is None else "✓" if r["pass"] else "✗"
+        lines.append(f"  {mark} {k} {name:<9} {done_when}" + (f": {r['why']}" if r else ""))
+        if r and r["next"]:
+            lines.append(f"      next, two minutes: {r['next']}")
+    return "\n".join(lines)
+
+
+def swatches(root, base, files):
+    """T-1538: the colours and motion a change adds to its UI files, for its receipt: each hex colour, and each
+    duration on a transition, animation, duration or delay line, from the + lines of git diff since base (a new
+    untracked file: all its lines), in order, at most 12 of each."""
+    cols, motion = [], []
+    for f in files if base else ():
+        diff = fmcore._git(root, "diff", base, "--", f, timeout=10)
+        added = [ln[1:] for ln in diff.splitlines() if ln.startswith("+") and not ln.startswith("+++")]
+        if not diff and os.path.isfile(os.path.join(root, f)):
+            added = (_read(os.path.join(root, f))[0] or "").splitlines()
+        for ln in added:
+            cols += [h.lower() for h in re.findall(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b", ln)]
+            if re.search(r"transition|animation|duration|delay", ln, re.I):
+                motion += re.findall(r"(?<![\w.])\d+(?:\.\d+)?m?s\b", ln)
+    return {"colours": list(dict.fromkeys(cols))[:12], "motion": list(dict.fromkeys(motion))[:12]}
 
 
 def check_gates(root):

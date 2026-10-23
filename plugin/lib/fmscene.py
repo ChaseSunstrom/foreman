@@ -6,11 +6,13 @@ references/ui/templates/scene.html: no WebGL keeps the poster, context loss is s
 motion holds one still frame, nothing draws offscreen or hidden, a failure ends at the poster, dispose() frees it all.
 compile_component() (T-1634) is that module whole plus <fm-scene>, a custom element mounting it in its shadow DOM.
 """
+import base64
 import json
 import math
 import os
 import re
 import stat
+import struct
 
 SCHEMA = """scene.json (only camera is required; numbers are finite, colours "#rgb" or "#rrggbb" in sRGB, angles in
 degrees, names a letter then letters, digits, - or _; an unknown key is refused, so a typo never passes silently):
@@ -25,7 +27,8 @@ degrees, names a letter then letters, digits, - or _; an unknown key is refused,
               scale: [1,1,1]}], geometry one of {type: box, size: [1,1,1]}, {type: sphere, radius: 1, segments:
               32}, {type: plane, size: [1,1]} (in XY, facing +Z), {type: vertices, vertices: [[x,y,z], ...], faces:
               [[a,b,c], ...] (indices, counter-clockwise seen from the front)}
-  animations  {name: {target: a mesh's name; property: position | rotation | scale; times: [seconds, rising];
+  animations  {name: {target: a mesh's name, or camera for a camera path (position only: it keeps looking at
+              camera.target, and no mesh may be named camera); property: position | rotation | scale; times: [seconds, rising];
               values: [[x,y,z], ...], one per time; loop: true}}: linear between keys, held outside them; a loop
               restarts at its last time, so its last value should equal its first (or turn a whole 360)
 What a second renderer must not guess (three.js's conventions; world space is right-handed with +Y up):
@@ -188,6 +191,8 @@ def validate(scene):
         name = None if m.get("name") is None else _name(m["name"], f"{w}.name")
         if name and name in names:
             _fail(f"{w}.name", f"{name} names an earlier mesh too")
+        if name == "camera":  # T-1530: an animation's target camera is the camera's path
+            _fail(f"{w}.name", "camera names the camera, which an animation can move: call the mesh something else")
         names.add(name)
         mat = _name(m["material"], f"{w}.material")
         if mat not in materials:
@@ -205,11 +210,14 @@ def validate(scene):
         w = f"animations.{_name(name, 'animations')}"
         _obj(a, w, ["target", "property", "times", "values"], ["loop"])
         target = _name(a["target"], f"{w}.target")
-        if target not in names:
-            _fail(f"{w}.target", f"no mesh named {target}")
+        if target not in names and target != "camera":
+            _fail(f"{w}.target", f"no mesh named {target} (or camera, for a camera path)")
         prop = a["property"]
         if prop not in PROPERTIES:
             _fail(f"{w}.property", f"wants {' | '.join(PROPERTIES)}, not {_show(prop)}")
+        if target == "camera" and prop != "position":  # T-1530: it looks at camera.target, so only its place moves
+            _fail(f"{w}.property", f"a camera path moves the camera's position (it keeps looking at camera.target), "
+                                   f"not its {prop}")
         if (target, prop) in moved:  # two would fight over it, the last one silently winning
             _fail(w, f"{moved[target, prop]} moves {target}'s {prop} already")
         moved[target, prop] = name
@@ -345,7 +353,7 @@ export function mount(fig) {
   };
   // Survival 8: any failure ends at the poster, logged once; the freeing waits until three.js's own call has returned.
   const fail = err => { if (stopped) return; stopped = true; cancelAnimationFrame(raf); raf = 0; console.error("scene: showing the poster", err); setState("failed"); queueMicrotask(free); };
-  const pose = t => { for (const a of anims) { const v = sample(a, t); a.mesh[a.property].set(...(a.property === "rotation" ? v.map(d => d * RAD) : v)); } };
+  const pose = t => { for (const a of anims) { const v = sample(a, t); a.mesh[a.property].set(...(a.property === "rotation" ? v.map(d => d * RAD) : v)); } camera.lookAt(...c.target); };
   try {
     renderer = new THREE.WebGLRenderer({ canvas, context: gl });
     renderer.debug.onShaderError = (g, p) => { if (!g.isContextLost()) fail(new Error(g.getProgramInfoLog(p) || "a shader failed to compile")); };
@@ -363,7 +371,7 @@ export function mount(fig) {
       scene.add(mesh);
     }
     for (const l of SCENE.lights) scene.add(light(l));
-    anims = Object.values(SCENE.animations).map(a => ({ ...a, mesh: named.get(a.target) }));
+    anims = Object.values(SCENE.animations).map(a => ({ ...a, mesh: a.target === "camera" ? camera : named.get(a.target) }));
     pose(0);
     renderer.compile(scene, camera);  // shaders compile before the reveal: no hitch once it shows
   } catch (err) { fail(err); }
@@ -457,32 +465,524 @@ RESERVED_TAGS = {"annotation-xml", "color-profile", "font-face", "font-face-src"
                  "font-face-name", "missing-glyph"}
 
 
-def compile_three(scene, head=HEAD, tail=""):
+# T-1530: fm scene compile --hud adds this dev overlay: the frame rate and what three.js holds, over the canvas, and the
+# same numbers as globalThis.__fmScene for a test or a soak to read. A development build only.
+HUD = """
+// --hud (T-1530): a dev overlay, not for production: the frame rate twice a second, draw calls, triangles, geometries
+// and textures; globalThis.__fmScene holds the same and each render's milliseconds (the last 2,000), for a soak to read.
+function hud(renderer, fig, ms) {
+  const el = hud.el ??= Object.assign(document.createElement("output"), { className: "fm-scene-hud" });
+  if (!el.isConnected) {
+    el.style.cssText = "position:absolute;top:4px;left:4px;z-index:9;font:11px/1.3 ui-monospace,monospace;color:#fff;background:#000b;padding:2px 6px;pointer-events:none;white-space:pre";
+    (fig.shadowRoot?.querySelector(".stage") ?? fig).append(el);
+  }
+  const now = performance.now(), info = renderer.info, times = hud.ms ??= [];
+  times.push(ms); if (times.length > 2000) times.shift();
+  hud.n = (hud.n ?? 0) + 1; hud.t ??= now; hud.frames = (hud.frames ?? 0) + 1;
+  const s = globalThis.__fmScene = { fps: hud.fps ?? 0, frames: hud.frames, calls: info.render.calls,
+    triangles: info.render.triangles, geometries: info.memory.geometries, textures: info.memory.textures, frame_ms: times };
+  if (now - hud.t < 500) return;
+  s.fps = hud.fps = Math.round(hud.n * 1000 / (now - hud.t)); hud.n = 0; hud.t = now;
+  el.textContent = `${s.fps} fps  ${s.calls} calls  ${s.triangles} triangles\\n${s.geometries} geometries  ${s.textures} textures`;
+}
+"""
+RENDER_CALL = "try { renderer.render(scene, camera); }"
+TIMED_CALL = "try { const t0 = performance.now(); renderer.render(scene, camera); hud(renderer, fig, performance.now() - t0); }"
+
+
+def compile_three(scene, head=HEAD, tail="", hud=False):
     """A validated scene → the ES module's text: SCENE (one top-level key a line), then the runtime that builds it.
-    The same scene gives the same bytes, so a second compile changes nothing."""
+    The same scene gives the same bytes, so a second compile changes nothing. hud (T-1530): with the dev overlay."""
     body = ",\n".join(f"  {json.dumps(k)}: {json.dumps(v, separators=(',', ':'))}" for k, v in scene.items())
-    return head + "export const SCENE = {\n" + body + "\n};\n" + RUNTIME + tail
+    runtime = RUNTIME.replace(RENDER_CALL, TIMED_CALL) + HUD \
+        if hud else RUNTIME
+    return head + "export const SCENE = {\n" + body + "\n};\n" + runtime + tail
 
 
-def compile_component(scene, tag="fm-scene"):
+def compile_component(scene, tag="fm-scene", hud=False):
     """A validated scene → compile_three's module, the same SCENE and mount(), with <fm-scene> defined after it, or
     the custom element name tag (T-1706: two scenes on one page, each its own)."""
     if not TAG.fullmatch(tag) or tag in RESERVED_TAGS:
         raise ValueError(f"--tag {tag!r} isn't a custom element name: lowercase ASCII, a letter first, a hyphen in it "
                          "(pebble-scene), and none the HTML spec reserves (font-face, …)")
-    return compile_three(scene, COMPONENT_HEAD.replace("fm-scene", tag), ELEMENT.replace("fm-scene", tag))
+    return compile_three(scene, COMPONENT_HEAD.replace("fm-scene", tag), ELEMENT.replace("fm-scene", tag), hud)
+
+
+# T-1530: offline checks: no browser, no GPU
+def _rot(p, deg):
+    """p turned by Rx * Ry * Rz (three.js's Euler order XYZ: on a point, Z turns first), angles in degrees."""
+    x, y, z = p
+    ax, ay, az = (math.radians(d) for d in deg)
+    x, y = x * math.cos(az) - y * math.sin(az), x * math.sin(az) + y * math.cos(az)
+    x, z = x * math.cos(ay) + z * math.sin(ay), -x * math.sin(ay) + z * math.cos(ay)
+    y, z = y * math.cos(ax) - z * math.sin(ax), y * math.sin(ax) + z * math.cos(ax)
+    return x, y, z
+
+
+def _cross3(a, b):
+    return a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]
+
+
+def _unit(v):
+    n = math.sqrt(sum(a * a for a in v))
+    return tuple(a / n for a in v)
+
+
+def faces(g):
+    """A geometry's triangles in its own space, front faces counter-clockwise seen from outside, as three.js builds
+    them (a sphere's poles drop their empty triangles)."""
+    if g["type"] == "vertices":
+        return [tuple(tuple(g["vertices"][i]) for i in f) for f in g["faces"]]
+    if g["type"] == "plane":
+        w, h = (s / 2 for s in g["size"])
+        q = [(-w, -h, 0), (w, -h, 0), (w, h, 0), (-w, h, 0)]
+        return [(q[0], q[1], q[2]), (q[0], q[2], q[3])]
+    if g["type"] == "box":
+        half, tris = [s / 2 for s in g["size"]], []
+        for i in range(3):
+            j, k = (i + 1) % 3, (i + 2) % 3
+            for s in (1, -1):  # the face whose outward normal is s along axis i: u along j, v along s * k
+                q = []
+                for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                    p = [0.0, 0.0, 0.0]
+                    p[i], p[j], p[k] = s * half[i], a * half[j], s * b * half[k]
+                    q.append(tuple(p))
+                tris += [(q[0], q[1], q[2]), (q[0], q[2], q[3])]
+        return tris
+    r, ws = g["radius"], g["segments"]
+    hs = max(2, ws >> 1)
+    grid = [[(-r * math.cos(2 * math.pi * u / ws) * math.sin(math.pi * v / hs), r * math.cos(math.pi * v / hs),
+              r * math.sin(2 * math.pi * u / ws) * math.sin(math.pi * v / hs)) for u in range(ws + 1)]
+            for v in range(hs + 1)]
+    tris = []
+    for v in range(hs):
+        for u in range(ws):
+            for t in ((grid[v][u], grid[v + 1][u], grid[v + 1][u + 1]), (grid[v][u], grid[v + 1][u + 1], grid[v][u + 1])):
+                n = _cross3([b - a for a, b in zip(t[0], t[1])], [c - a for a, c in zip(t[0], t[2])])
+                if any(abs(x) > 1e-12 for x in n):
+                    out = sum(x * y for x, y in zip(n, (sum(p[i] for p in t) for i in range(3)))) > 0
+                    tris.append(t if out else (t[0], t[2], t[1]))
+    return tris
+
+
+def triangles(scene, turn=0.0, unit=1000):
+    """T-1530: the scene's meshes as fmraster triangles: each mesh's T * R * S, then the world turned `turn` degrees
+    about +Y (a turntable), seen from its camera, in integer units of 1/unit. From three.js's view space the depth is
+    negated and two vertices swapped, as fmraster's docstring says, so its front faces stay front faces."""
+    cam = scene["camera"]
+    eye = cam["position"]
+    f = _unit([t - e for t, e in zip(cam["target"], eye)])
+    r = _unit(_cross3(f, (0, 1, 0)))
+    up = _cross3(r, f)
+    out = []
+    for m in scene["meshes"]:
+        hexc = scene["materials"][m["material"]]["color"]
+        colour = tuple(int(hexc[i:i + 2], 16) for i in (1, 3, 5))
+        for tri in faces(m["geometry"]):
+            pts = []
+            for p in tri:
+                p = _rot([a * s for a, s in zip(p, m["scale"])], m["rotation"])
+                p = _rot([a + b for a, b in zip(p, m["position"])], (0, turn, 0))
+                d = [a - e for a, e in zip(p, eye)]
+                pts.append(tuple(round(sum(x * y for x, y in zip(d, axis)) * unit) for axis in (r, up, f)))
+            out.append((pts[0], pts[2], pts[1], colour))
+    return out
+
+
+def turntable(scene, frames=8, size=(160, 100), cols=4):
+    """T-1530: a contact sheet of the scene turned about +Y in `frames` even steps, drawn by fmraster (flat shading,
+    no browser or GPU): (width, height, RGB bytes), frames left to right then down. ponytail: pure Python, about a
+    second a megapixel; a scene of many thousand triangles takes a while."""
+    import fmraster
+    w, h = size
+    focal = max(1, round(h / 2 / math.tan(math.radians(scene["camera"]["fov"]) / 2)))
+    bg = tuple(int(scene["background"][i:i + 2], 16) for i in (1, 3, 5)) if scene["background"] else (0, 0, 0)
+    tiles = [fmraster.render(triangles(scene, 360 * k / frames), w, h, focal=focal, background=bg)
+             for k in range(frames)]
+    cols = min(cols, frames)
+    rows = -(-frames // cols)
+    sheet = bytearray(bytes(bg) * (w * cols * h * rows))
+    for k, tile in enumerate(tiles):
+        x0, y0 = (k % cols) * w, (k // cols) * h
+        for y in range(h):
+            at = ((y0 + y) * w * cols + x0) * 3
+            sheet[at:at + w * 3] = tile[y * w * 3:(y + 1) * w * 3]
+    return w * cols, h * rows, bytes(sheet)
+
+
+GLSL = re.compile(r"```glsl\n(.*?)```", re.S)
+SHADER_FILES = (".frag", ".vert", ".glsl")
+
+
+def shader_problems(path, validator=None):
+    """T-1530: offline checks of a shader card (looks/shader-*.md) or a .frag/.vert/.glsl file: each GLSL block has a
+    main and compiles under glslangValidator when one is given (its stage from gl_Position: vertex, else fragment),
+    and a card declares exactly the uniforms its ## Uniforms table lists. [problem], empty when it passes."""
+    import subprocess
+    import tempfile
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    blocks = GLSL.findall(text) if path.endswith(".md") else [text]
+    name = os.path.basename(path)
+    if not blocks:  # a guidance card (shader-performance) or an empty file: nothing to compile
+        return [] if path.endswith(".md") else [f"{name}: empty"]
+    problems, declared = [], set()
+    for n, block in enumerate(blocks, 1):
+        where = f"{name} block {n}" if len(blocks) > 1 else name
+        if not re.search(r"\bvoid\s+main\s*\(", block):
+            problems.append(f"{where}: no void main()")
+        for decl in re.findall(r"\buniform\s+\w+\s+([^;{]+);", block):
+            declared |= {re.sub(r"\[.*", "", x).strip() for x in decl.split(",")}
+        if validator:
+            stage = "vert" if "gl_Position" in block else "frag"
+            with tempfile.TemporaryDirectory(prefix="fm-shader-") as tmp:
+                src = os.path.join(tmp, f"shader.{stage}")
+                with open(src, "w", encoding="utf-8") as fh:
+                    fh.write(block)
+                try:
+                    r = subprocess.run([validator, src], capture_output=True, text=True, timeout=30,
+                                       stdin=subprocess.DEVNULL)
+                except (OSError, subprocess.SubprocessError) as e:
+                    problems.append(f"{where}: {validator} didn't run ({e})")
+                    continue
+            if r.returncode:
+                said = [x.strip() for x in (r.stdout + r.stderr).splitlines() if "ERROR" in x]
+                problems.append(f"{where}: doesn't compile as GLSL ({stage}): "
+                                + "; ".join(x.replace(src, "shader") for x in said[:3]))
+    table = re.search(r"(?ms)^## Uniforms\n(.*?)(?=^## |\Z)", text) if path.endswith(".md") else None
+    if table:
+        listed = {x for row in table.group(1).splitlines() if row.startswith("| `")
+                  for x in re.findall(r"`(\w+)`", row.split("|")[1])}
+        problems += [f"{name}: the Uniforms table lists {u}, which no block declares" for u in sorted(listed - declared)]
+        problems += [f"{name}: {u} is declared but not in the Uniforms table" for u in sorted(declared - listed)]
+    return problems
+
+
+def shader_paths(path):
+    """The shader cards and files a path names: itself, or the shader-*.md and GLSL files under a folder."""
+    if not os.path.isdir(path):
+        return [path]
+    return sorted(os.path.join(d, f) for d, _, fs in os.walk(path) for f in fs
+                  if f.endswith(SHADER_FILES) or f.startswith("shader-") and f.endswith(".md"))
+
+
+GLTF_MAX = 256 << 20  # bytes of a .gltf or .glb read at most
+COMPONENT = {5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4}
+WIDTH = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT2": 4, "MAT3": 9, "MAT4": 16}
+
+
+def gltf_problems(path):
+    """T-1530: offline structural checks of a .gltf or .glb: the GLB header and chunks, asset.version 2.x, every index
+    in range (scene nodes, node children and meshes, primitive accessors and materials, accessor views, view buffers),
+    each accessor inside its view, each view inside its buffer, and each buffer as long as it says (a .glb's BIN chunk,
+    a base64 data URI, or a file beside it: a URI leaving the asset's folder is a problem, never read). [problem]"""
+    name = os.path.basename(path)
+    with open(path, "rb") as f:
+        data = f.read(GLTF_MAX + 1)
+    if len(data) > GLTF_MAX:
+        return [f"{name}: over {GLTF_MAX >> 20} MB"]
+    problems, chunk = [], None
+    if data[:4] == b"glTF" or path.lower().endswith(".glb"):
+        if len(data) < 20 or data[:4] != b"glTF":
+            return [f"{name}: not a GLB (no glTF magic)"]
+        version, length = struct.unpack_from("<II", data, 4)
+        if version != 2:
+            problems.append(f"{name}: GLB version {version}, not 2")
+        if length != len(data):
+            problems.append(f"{name}: the header says {length} bytes; the file has {len(data)}")
+        size, kind = struct.unpack_from("<II", data, 12)
+        if kind != 0x4E4F534A:
+            return problems + [f"{name}: the first chunk isn't JSON"]
+        text, at = data[20:20 + size], 20 + size
+        if at + 8 <= len(data) and struct.unpack_from("<II", data, at)[1] == 0x004E4942:
+            chunk = len(data[at + 8:at + 8 + struct.unpack_from("<I", data, at)[0]])
+    else:
+        text = data
+    try:
+        doc = json.loads(text)
+    except (ValueError, RecursionError) as e:
+        return problems + [f"{name}: not JSON ({str(e)[:80]})"]
+    if not isinstance(doc, dict):
+        return problems + [f"{name}: not a glTF object"]
+    version = str((doc.get("asset") or {}).get("version", "")) if isinstance(doc.get("asset"), dict) else ""
+    if not version.startswith("2."):
+        problems.append(f"{name}: asset.version is {version!r}, not 2.x")
+
+    def rows(key):
+        got = doc.get(key, [])
+        return [x if isinstance(x, dict) else {} for x in got] if isinstance(got, list) else []
+
+    def index(where, i, key):
+        n = len(rows(key))
+        if not (isinstance(i, int) and not isinstance(i, bool) and 0 <= i < n):
+            problems.append(f"{name}: {where}: {key} index {i!r} out of range ({f'0-{n - 1}' if n else 'there are none'})")
+            return False
+        return True
+
+    for s, sc in enumerate(rows("scenes")):
+        for i in sc.get("nodes", []):
+            index(f"scenes[{s}].nodes", i, "nodes")
+    for n, node in enumerate(rows("nodes")):
+        for i in node.get("children", []):
+            index(f"nodes[{n}].children", i, "nodes")
+        if "mesh" in node:
+            index(f"nodes[{n}].mesh", node["mesh"], "meshes")
+    for m, mesh in enumerate(rows("meshes")):
+        for k, prim in enumerate(mesh.get("primitives", [])):
+            prim = prim if isinstance(prim, dict) else {}
+            for attr, i in (prim.get("attributes") or {}).items():
+                index(f"meshes[{m}].primitives[{k}].{attr}", i, "accessors")
+            for key, rows_of in (("indices", "accessors"), ("material", "materials")):
+                if key in prim:
+                    index(f"meshes[{m}].primitives[{k}].{key}", prim[key], rows_of)
+    folder, lengths = os.path.dirname(os.path.abspath(path)), []
+    for b, buf in enumerate(rows("buffers")):
+        uri, has = buf.get("uri"), None
+        if uri is None:
+            has = chunk if b == 0 else None
+        elif isinstance(uri, str) and uri.startswith("data:"):
+            try:
+                has = len(base64.b64decode(uri.split(",", 1)[1], validate=True))
+            except (IndexError, ValueError):
+                problems.append(f"{name}: buffers[{b}]: its data URI isn't base64")
+        elif isinstance(uri, str):
+            target = os.path.realpath(os.path.join(folder, uri))
+            if os.path.isabs(uri) or not target.startswith(os.path.realpath(folder) + os.sep):
+                problems.append(f"{name}: buffers[{b}]: {uri} is outside the asset's folder")
+            elif not os.path.isfile(target):
+                problems.append(f"{name}: buffers[{b}]: {uri} isn't there")
+            else:
+                has = os.path.getsize(target)
+        want = buf.get("byteLength")
+        if has is not None and isinstance(want, int) and has < want:
+            problems.append(f"{name}: buffers[{b}] declares {want} bytes, has {has}")
+        lengths.append(want if isinstance(want, int) else 0)
+    views = rows("bufferViews")
+    for v, view in enumerate(views):
+        if index(f"bufferViews[{v}].buffer", view.get("buffer"), "buffers"):
+            end = (view.get("byteOffset") or 0) + (view.get("byteLength") or 0)
+            if end > lengths[view["buffer"]]:
+                problems.append(f"{name}: bufferViews[{v}] ends at byte {end} of buffers[{view['buffer']}], which "
+                                f"has {lengths[view['buffer']]}")
+    for a, acc in enumerate(rows("accessors")):
+        if "bufferView" not in acc or not index(f"accessors[{a}].bufferView", acc["bufferView"], "bufferViews"):
+            continue
+        size = COMPONENT.get(acc.get("componentType"), 0) * WIDTH.get(acc.get("type"), 0)
+        view, count = views[acc["bufferView"]], acc.get("count") or 0
+        if not size:
+            problems.append(f"{name}: accessors[{a}]: componentType {acc.get('componentType')!r} or type "
+                            f"{acc.get('type')!r} isn't glTF's")
+        elif count > 0:
+            need = (acc.get("byteOffset") or 0) + (view.get("byteStride") or size) * (count - 1) + size
+            if need > (view.get("byteLength") or 0):
+                problems.append(f"{name}: accessors[{a}] needs {need} bytes of bufferViews[{acc['bufferView']}], "
+                                f"which has {view.get('byteLength') or 0}")
+    return problems
+
+
+def find_three(*starts):
+    """T-1530: a three.js build for the soak: FOREMAN_THREE (its three.module.js), else node_modules/three/build/ in a
+    start folder or above it; None when there's none."""
+    env = os.environ.get("FOREMAN_THREE")
+    if env:
+        return env if os.path.isfile(env) else None
+    for start in starts:
+        d = os.path.abspath(start)
+        while True:
+            hit = os.path.join(d, "node_modules", "three", "build", "three.module.js")
+            if os.path.isfile(hit):
+                return hit
+            if os.path.dirname(d) == d:
+                break
+            d = os.path.dirname(d)
+    return None
+
+
+SOAK_PAGE = """<!doctype html><meta charset="utf-8"><title>fm scene soak</title>
+<style>html,body{margin:0;background:#000}figure{margin:0;position:relative;width:640px;height:400px}
+canvas{position:absolute;inset:0;width:100%;height:100%}</style>
+<script type="importmap">{"imports": {"three": "./three/three.module.js"}}</script>
+<figure class="scene" data-state="poster"><canvas role="img" aria-label="soak"></canvas></figure>
+<script>
+// The soak's own shim, never the module's: headless Chrome draws WebGL with SwiftShader, which the module's
+// failIfMajorPerformanceCaveat refuses on purpose (a real page keeps its poster rather than draw in software).
+const getContext = HTMLCanvasElement.prototype.getContext;
+HTMLCanvasElement.prototype.getContext = function (kind, attrs) {
+  return getContext.call(this, kind, attrs && { ...attrs, failIfMajorPerformanceCaveat: false });
+};
+import("./scene.js").then(m => { window.__dispose = m.mount(document.querySelector("figure")); },
+                          e => { window.__error = String(e && e.stack || e); });
+</script>
+"""
+SAMPLE = ("JSON.stringify({s: globalThis.__fmScene ? {...globalThis.__fmScene, frame_ms: undefined, "
+          "ms: globalThis.__fmScene.frame_ms.slice()} : null, state: document.querySelector('figure').dataset.state, "
+          "error: window.__error ?? null, heap: performance.memory ? performance.memory.usedJSHeapSize : null})")
+
+
+def _p95(times):
+    return sorted(times)[max(0, -(-len(times) * 95 // 100) - 1)] if times else None
+
+
+def soak_problems(samples, after, budget_ms=None):
+    """T-1530: the soak's verdict from its samples ({state, s: __fmScene or None, error}) and the state after
+    dispose(): it drew, its geometries and textures held steady (growth is a leak), the p95 frame time is within
+    budget_ms when one is given, and dispose() put the poster back."""
+    drawn = [x for x in samples if x.get("s")]
+    if not drawn:
+        last = samples[-1] if samples else {}
+        return [f"it never drew (state {last.get('state')!r}{': ' + str(last.get('error'))[:200] if last.get('error') else ''})"]
+    first, last, problems = drawn[0]["s"], drawn[-1]["s"], []
+    for key in ("geometries", "textures"):
+        if last.get(key, 0) > first.get(key, 0):
+            problems.append(f"{key} grew from {first.get(key, 0)} to {last.get(key, 0)} while it ran: a leak")
+    p95 = _p95(last.get("frame_ms") or last.get("ms") or [])
+    if budget_ms is not None and p95 is not None and p95 > budget_ms:
+        problems.append(f"p95 frame time {p95:g} ms is over the {budget_ms:g} ms budget")
+    if after != "poster":
+        problems.append(f"still {after} after dispose(): it should be back at the poster")
+    return problems
+
+
+def soak(path, three, seconds=10, budget_ms=None):
+    """T-1530: the scene compiled with --hud, mounted in headless Chrome (SwiftShader, through fmshot) from a local
+    server on 127.0.0.1, sampled once a second for `seconds`, then disposed: {frames, p95_ms, geometries, textures,
+    heap, after, problems}, or {skipped: why} with no browser or no three.js build. Optional: nothing is installed."""
+    import functools
+    import http.server
+    import shutil
+    import tempfile
+    import threading
+    import time
+    import fmshot
+    scene = load(path)
+    browser, why = fmshot.find_browser("fm scene soak")
+    if not browser:
+        return {"skipped": why}
+    if not three or not os.path.isfile(three):
+        return {"skipped": "no three.js build: set FOREMAN_THREE to a three.module.js, or install three in "
+                           "node_modules beside the scene"}
+    with tempfile.TemporaryDirectory(prefix="fm-soak-") as tmp:
+        os.makedirs(os.path.join(tmp, "three"))
+        for part in ("three.module.js", "three.core.js"):  # r170+ splits the build in two
+            src = os.path.join(os.path.dirname(three), part)
+            if os.path.isfile(src):
+                shutil.copyfile(src, os.path.join(tmp, "three", part))
+        with open(os.path.join(tmp, "index.html"), "w", encoding="utf-8") as f:
+            f.write(SOAK_PAGE)
+        with open(os.path.join(tmp, "scene.js"), "w", encoding="utf-8") as f:
+            f.write(compile_three(scene, hud=True))
+
+        class Quiet(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=tmp))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        b, samples, after = None, [], None
+        try:
+            b = fmshot.Browser(browser, (640, 400))
+            fmshot.load(b, f"http://127.0.0.1:{server.server_address[1]}/index.html")
+
+            def ask(expr):
+                got = b.call("Runtime.evaluate", b.sid, expression=expr, returnByValue=True)
+                return (got.get("result") or {}).get("value")
+            end = time.monotonic() + seconds
+            while True:
+                samples.append(json.loads(ask(SAMPLE) or "{}"))
+                if time.monotonic() >= end:
+                    break
+                time.sleep(1)
+            after = ask("window.__dispose && window.__dispose(), document.querySelector('figure').dataset.state")
+        finally:
+            if b:
+                b.close()
+            server.shutdown()
+            server.server_close()
+    for x in samples:
+        if x.get("s"):
+            x["s"]["frame_ms"] = x["s"].pop("ms", [])
+    drawn = [x["s"] for x in samples if x.get("s")]
+    p95 = _p95(drawn[-1]["frame_ms"]) if drawn else None
+    return {"frames": drawn[-1]["frames"] if drawn else 0, "p95_ms": None if p95 is None else round(p95, 2),
+            "geometries": [x["geometries"] for x in drawn], "textures": [x["textures"] for x in drawn],
+            "heap": [x.get("heap") for x in samples], "after": after,
+            "problems": soak_problems(samples, after, budget_ms)}
 
 
 def cmd_scene(args):
     import sys
     import fmcli
     import fmcore
+    if args.action == "shader":  # T-1530: GLSL checks with no browser; glslangValidator when it's installed
+        import shutil
+        validator = shutil.which("glslangValidator")
+        paths = shader_paths(args.path)
+        try:
+            found = [p for path in paths for p in shader_problems(path, validator)]
+        except (OSError, UnicodeDecodeError) as e:
+            print(f"fm: scene: {e}", file=sys.stderr)
+            return 2
+        fmcli.out(args, {"checked": paths, "problems": found, "compiled": bool(validator)},
+                  "\n".join([f"✗ {x}" for x in found] + [
+                      f"{'✗' if found else '✓'} {len(paths)} shader file(s), {len(found)} problem(s)"
+                      + ("" if validator else " (glslangValidator not found: compiling skipped, the rest checked)")]))
+        return 1 if found else 0
+    if args.action == "check" and args.path.lower().endswith((".gltf", ".glb")):  # T-1530: a glTF asset, offline
+        try:
+            found = gltf_problems(args.path)
+        except OSError as e:
+            print(f"fm: scene: {e}", file=sys.stderr)
+            return 2
+        fmcli.out(args, {"problems": found}, "\n".join([f"✗ {x}" for x in found] + [
+            f"{'✗' if found else '✓'} {args.path}: {len(found)} problem(s)"]))
+        return 1 if found else 0
+    if args.action == "soak":  # T-1530: a real browser when there is one; skipped with the reason when not
+        if not 1 <= args.seconds <= 600:
+            print(f"fm: scene: soak: --seconds {args.seconds}: 1 to 600", file=sys.stderr)
+            return 2
+        try:
+            got = soak(args.path, find_three(os.path.dirname(os.path.abspath(args.path)), os.getcwd()),
+                       args.seconds, args.budget_ms)
+        except (OSError, ValueError, RuntimeError, TimeoutError) as e:
+            print(f"fm: scene: soak: {e}", file=sys.stderr)
+            return 2
+        if "skipped" in got:
+            fmcli.out(args, got, f"skipped: {got['skipped']}")
+            return 0
+        fmcli.out(args, got, "\n".join([f"✗ {x}" for x in got["problems"]] + [
+            f"{'✗' if got['problems'] else '✓'} soak {args.seconds} s: {got['frames']} frames, p95 "
+            f"{got['p95_ms'] if got['p95_ms'] is not None else '?'} ms, geometries "
+            f"{'→'.join(map(str, sorted(set(got['geometries']), key=got['geometries'].index)))}, after dispose "
+            f"{got['after']}"]))
+        return 1 if got["problems"] else 0
+    if args.action in ("check", "turntable"):  # T-1530
+        try:
+            scene = load(args.path)
+            if args.action == "check":
+                tris = sum(len(faces(m["geometry"])) for m in scene["meshes"])
+                return fmcli.out(args, {"meshes": len(scene["meshes"]), "triangles": tris,
+                                        "lights": len(scene["lights"]), "animations": len(scene["animations"])},
+                                 f"✓ {args.path}: {len(scene['meshes'])} mesh(es), {tris} triangles, "
+                                 f"{len(scene['lights'])} light(s), {len(scene['animations'])} animation(s)") or 0
+            if not args.out:
+                raise ValueError("turntable writes a PNG: give --out PATH")
+            if not 1 <= args.frames <= 36:
+                raise ValueError(f"--frames {args.frames}: 1 to 36")
+            w, h, rgb = turntable(scene, args.frames)
+            import fmimg
+            fmimg.save(args.out, w, h, rgb, "rgb")
+        except (OSError, ValueError) as e:
+            print(f"fm: scene: {e}", file=sys.stderr)
+            return 2
+        return fmcli.out(args, {"out": args.out, "frames": args.frames, "size": [w, h]},
+                         f"wrote {args.out}: {args.frames} turns of {args.path}, {w}x{h}") or 0
     try:
         tag = getattr(args, "tag", None)
         if tag and args.to != "component":
             raise ValueError("--tag names the element: use it with --to component")
         scene = load(args.path)
-        text = compile_component(scene, tag or "fm-scene") if args.to == "component" else compile_three(scene)
+        hud = getattr(args, "hud", False)
+        text = compile_component(scene, tag or "fm-scene", hud) if args.to == "component" else \
+            compile_three(scene, hud=hud)
         out = os.path.abspath(args.out) if args.out else None  # write_atomic makes dirname(path): "" for a bare name
         if out and os.path.exists(out) and os.path.samefile(out, args.path):
             raise ValueError(f"--out {args.out} is the scene it compiles")

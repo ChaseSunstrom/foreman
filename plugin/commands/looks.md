@@ -1,7 +1,7 @@
 ---
 description: Your taste in looks: the twelve looks ranked by what you kept, a 12-pair calibration, or learn from files you name
 disable-model-invocation: true
-argument-hint: "[calibrate | keep LOOK | revert LOOK | not LOOK [why] | learn PATH…]"
+argument-hint: "[calibrate | keep LOOK | revert LOOK | not LOOK [why] | learn PATH… | tournament | opposite LOOK | book]"
 ---
 Foreman's taste ledger for looks, through `fm looks` (the fm code app and a terminal use the same verb).
 
@@ -22,6 +22,13 @@ Arguments (may be empty): $ARGUMENTS
    nothing added; a path holding a quote character is refused the same way. It reads only those local files (a page,
    a stylesheet, a photo when Pillow is installed), read-only and capped, never a URL, a folder or a symlink, and
    keeps only the file's name and the look it matched. Never pass a path the user didn't type.
+
+5. `tournament [LOOK…]`: run `fm looks tournament --json` (or with the looks the user named: 2, 4 or 8). It prints
+   `next`, the matches still to answer, and `then`, the command to continue. Ask each match with AskUserQuestion
+   (options A and B, `title: line` of each look; no Neither), run `then` with their answers appended, and repeat
+   until it names a champion. Denied or stopped early: record nothing, and say so.
+6. `opposite LOOK`: run `fm looks opposite LOOK` and show the three looks farthest from it (opposite day).
+7. `book [LOOK…]`: run `fm looks book --out lookbook.html` (or with the looks named) and say where the page is.
 
 Kept and reverted are never detected on their own: nothing reads DESIGN.md or git history for them. Whenever the user
 keeps a look (picks it, ships it, says it's the one) or reverts or replaces one, in this command or anywhere else,
