@@ -698,7 +698,7 @@ def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1,
                          f"replays run in bypass mode, so they never run without it")
     results = []
     res = {"label": label, "plugin": plugin, "model": model, "at": c.now(), "head": head, "claude": claude_version(),
-           "cases": results,
+           "cases": results, "budget": budget, "runs": runs,  # T-1261: what fm bench repro reruns a row with
            **({"extra": list(extra)} if extra else {}), **({"bare": True} if bare else {}),
            **({"compact_at": compact_at} if compact_at else {}), **({"marathon": marathon} if marathon else {})}
     os.makedirs(_results_dir(p), exist_ok=True)
@@ -1006,6 +1006,48 @@ def _contest(p, args):
     return fmcli.out(args, data, "\n".join(lines + [data["verdict"]]))
 
 
+def _mark(x):
+    if not x:
+        return "not in that run"
+    cost = x.get("cost_usd")
+    return (f"{'✓' if x.get('pass') else '✗'}" + (f" ${cost:.2f}" if isinstance(cost, (int, float)) else "")
+            + (f" {round(x['seconds'])} s" if isinstance(x.get("seconds"), (int, float)) else ""))
+
+
+def repro(p, args):
+    """T-1261: one duel row again, both sides, with the saved run's model, runs, budget, compaction window and
+    marathon, as the benchmarks page's "Where Foreman loses" names it: then and now, side by side."""
+    import fmcli
+    import math
+    if not re.fullmatch(r"duel-none-foreman-[\w.-]+", args.label):
+        raise fmcli.UsageError("fm bench repro takes the Foreman side's label of a duel against Claude Code "
+                               "(duel-none-foreman-<time>), as the benchmarks page names it")
+    folder, runs = _results_dir(p), []
+    for label in (args.label, args.label.replace("-foreman-", "-bare-", 1)):
+        try:
+            with open(os.path.join(folder, label + ".json"), encoding="utf-8") as f:
+                runs.append(json.load(f))
+        except (OSError, ValueError) as e:
+            raise fmcli.UsageError(f"no saved duel side {label}: {e}") from None
+    case = next((x for x in _load_cases(p) if x["id"] == args.case), None)
+    if case is None:
+        raise fmcli.UsageError(f"no bench case {args.case!r} (fm bench list)")
+    fm_, bare = runs
+    budget = args.budget if args.budget is not None else fm_.get("budget") or 3.0
+    if not (math.isfinite(budget) and budget > 0) or args.timeout < 1:
+        raise fmcli.UsageError("--budget must be a positive number and --timeout at least 1")
+    arm = dict(model=fm_.get("model"), budget=budget, timeout=args.timeout, runs=max(1, int(fm_.get("runs") or 1)),
+               quiet=args.json, compact_at=fm_.get("compact_at"), marathon=fm_.get("marathon"))
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    now = [run_arm(p, [case], c.PLUGIN_ROOT, f"repro-{side}-{stamp}", bare=side == "bare", **arm)["cases"][0]
+           for side in ("foreman", "bare")]
+    then = [next((x for x in r.get("cases") or [] if x.get("id") == args.case), None) for r in runs]
+    lines = [f"  {who}: then {_mark(t)}, now {_mark(n)}" for who, t, n in zip(("Foreman", "Claude Code"), then, now)]
+    return fmcli.out(args, {"label": args.label, "case": args.case, "then": then, "now": now},
+                     f"fm bench repro {args.label} {args.case} ({arm['model'] or 'default model'}, ${budget:g} a "
+                     f"session, {arm['runs']} run(s)):\n" + "\n".join(lines))
+
+
 def cmd_bench(args):
     import fmcli
     if args.bench_cmd == "guard":
@@ -1018,6 +1060,8 @@ def cmd_bench(args):
         return seed_review(p, args)
     if args.bench_cmd == "hygiene":
         return hygiene(p, args)
+    if args.bench_cmd == "repro":  # T-1261
+        return repro(p, args)
     if args.bench_cmd == "build":
         if bool(args.commits) != bool(args.verify):
             raise fmcli.UsageError("--commits RANGE and --verify CMD go together (CMD may use {tests})")

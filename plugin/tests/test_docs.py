@@ -525,6 +525,34 @@ class Site(unittest.TestCase):
             self.assertEqual(build.outside_loads(page, ".html"), [], page)
         self.assertEqual(build.outside_loads(".a { marker-end: url(#arrow) } /* https://x.test */", ".css"), [])
 
+    def test_where_foreman_loses_is_generated_with_a_rerun_per_row(self):  # T-1261
+        pages, stats = self._site("pages"), self._site("stats")
+        side = lambda ok, cost, secs: {"pass": ok, "cost": cost, "seconds": secs, "runs": 1, "passed": int(ok)}
+        duels = {"duels": [{"name": "hard", "label": "duel-none-foreman-1", "cases": [
+            {"case": "wrap", "id": "c1", "foreman": side(False, 0.1, 10), "bare": side(True, 0.1, 10)},
+            {"case": "<ini>", "id": "c2", "foreman": side(True, 0.30, 10), "bare": side(True, 0.20, 10)},
+            {"case": "lru", "id": "c3", "foreman": side(True, 0.1, 10), "bare": side(True, 0.1, 10)}]}]}
+        html = pages._loses(duels)
+        self.assertIn("2 row(s) where Foreman did worse", html)
+        self.assertIn("Claude Code passed, Foreman didn&#x27;t", html)  # escaped, as every cell
+        self.assertIn("cost 50% higher", html)
+        self.assertIn("fm bench repro duel-none-foreman-1 c1", html)
+        self.assertIn("&lt;ini&gt;", html)
+        self.assertNotIn(">lru<", html)
+        self.assertIn("lost no row", pages._loses({"duels": [{"name": "q", "cases": [duels["duels"][0]["cases"][2]]}]}))
+        import shutil
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        state = os.path.join(tmp, "state")
+        res = os.path.join(state, "bench", "results")
+        os.makedirs(res)
+        for arm in ("foreman", "bare"):
+            with open(os.path.join(res, f"duel-none-{arm}-20261023.json"), "w") as f:
+                json.dump({"model": "haiku", "cases": [{"id": "c9", "pass": True, "cost_usd": 0.1}]}, f)
+        d = stats.duel(state)
+        self.assertEqual((d["label"], d["cases"][0]["id"]), ("duel-none-foreman-20261023", "c9"))
+
     def test_a_new_duel_keeps_the_saved_ones(self):
         # site review: stats.py --duel long=DIR alone replaced quality, hard and hard-haiku with nothing
         stats = self._site("stats")

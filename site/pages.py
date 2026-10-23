@@ -124,6 +124,34 @@ def _duel(s, name):
                     [(c["case"], round(c["foreman"]["seconds"]), round(c["bare"]["seconds"])) for c in cs], unit=" s"))
 
 
+LOSS = 1.25  # T-1261: Foreman loses a row when Claude Code passes and it doesn't, or it costs or takes 25% more
+
+
+def _loses(s):
+    """T-1261: every duel row where Foreman did worse than Claude Code, generated from the same results as the charts,
+    each with the command that reruns it on both sides (fm bench repro LABEL CASE)."""
+    rows = []
+    for d in s.get("duels") or []:
+        for c in d.get("cases") or []:
+            f, b = c.get("foreman") or {}, c.get("bare") or {}
+            why = ["Claude Code passed, Foreman didn't"] if b.get("pass") and not f.get("pass") else []
+            for what, k in (("cost", "cost"), ("time", "seconds")):
+                if (b.get(k) or 0) > 0 and (f.get(k) or 0) > LOSS * b[k]:
+                    why.append(f"{what} {round((f[k] / b[k] - 1) * 100)}% higher")
+            if why:
+                cmd = f"fm bench repro {d['label']} {c['id']}" if d.get("label") and c.get("id") else ""
+                rows.append(f"<tr><td>{esc(d.get('name') or '')}</td><td>{esc(c.get('case') or '')}</td>"
+                            f"<td>{esc('; '.join(why))}</td><td>"
+                            + (f"<code>{esc(cmd)}</code>" if cmd else "not recorded with this run") + "</td></tr>")
+    if not rows:
+        return ("<p><strong>Foreman lost no row in these runs</strong>: no task Claude Code passed and Foreman failed, "
+                "and none cost or took 25% more.</p>")
+    return (f"<p><strong>{len(rows)} row(s) where Foreman did worse.</strong> Each command reruns that row on both "
+            "sides with its run's model and settings.</p><div class=\"verdicts\"><table><thead><tr><th>Run</th>"
+            "<th>Task</th><th>Where it lost</th><th>Rerun it</th></tr></thead><tbody>" + "".join(rows)
+            + "</tbody></table></div>")
+
+
 def _why(s):
     """T-1246: the Benchmarks page's opening argument, every figure from the data the charts below it draw."""
     safety = s.get("safety") or {}
@@ -498,6 +526,10 @@ PAGES = [
           "on its own stops when the asked work is done. The hidden tests still grade the end state, so work found "
           "later can't quietly break what was asked for.</p>"),
          ("chart", lambda s: _long(s, "marathon")),
+         ("text", "Where Foreman loses", "<p>Generated from the same results as the tables above: every row where "
+          "Claude Code passed and Foreman didn't, or Foreman cost or took 25% more. Each one reruns on its own with "
+          "<code>fm bench repro</code>, both sides, with that run's model and settings.</p>"),
+         ("chart", _loses),
          ("text", "What the duels changed in Foreman", "<p>Reading the sessions turn by turn showed where Foreman's "
           "extra cost went: not into its context (about 2,000 tokens), but into turns spent on its own commands. A "
           "first run on these tasks cost Foreman 8 to 13 turns where Claude Code used 4. The fixes moved Foreman's "

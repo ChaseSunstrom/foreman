@@ -298,6 +298,23 @@ class Soak(_Bench):
         self.assertFalse(res["cases"][0]["pass"])
 
 
+class Repro(_Bench):  # T-1261
+    def test_repro_reruns_one_duel_row_on_both_sides_with_its_saved_settings(self):
+        self.fm("bench", "build", env=self.env)
+        res = json.loads(self.fm("bench", "duel", "--vs", "none", "--ids", self.calc, "--json", env=self.env).stdout)
+        tasks = lambda: [s for s in self.calls()  # noqa: E731  both sides' task sessions (the bare one has no plugin)
+                         if s["args"][:1] == ["-p"] and s["args"][1].startswith("Task:")]
+        before = len(tasks())
+        out = self.fm("bench", "repro", res["without"], self.calc, env=self.env).stdout
+        self.assertIn(f"fm bench repro {res['without']} {self.calc}", out)
+        self.assertRegex(out, r"Foreman: then [✓✗].*, now [✓✗]")
+        self.assertRegex(out, r"Claude Code: then [✓✗].*, now [✓✗]")
+        self.assertEqual(len(tasks()) - before, 2, "one session a side")
+        for bad in ((res["with"], self.calc), (res["without"], "nope"), ("duel-none-foreman-missing", self.calc)):
+            p = self.fm("bench", "repro", *bad, env=self.env, check=False)
+            self.assertNotEqual(p.returncode, 0, bad)
+
+
 class SoakStorm(_Bench):  # T-1259
     def test_a_soak_storm_compacts_early_and_a_sweep_runs_once_per_window(self):
         cfg = os.path.join(self.tmp, "cfg")
