@@ -106,7 +106,10 @@ def crawl(pw, url, out, timeout=240, profile=""):
     found = lambda key: [{"where": _clean(d.get("where", "?")), "what": _clean(d.get("what", "?"))}  # noqa: E731
                          for d in res.get(key) or [] if isinstance(d, dict)]
     return {"views": [_clean(v) for v in res.get("views") or []], "defects": found("defects"),
-            "notes": [_clean(n) for n in res.get("notes") or []], "frame_findings": found("frame_findings")}
+            "notes": [_clean(n) for n in res.get("notes") or []], "frame_findings": found("frame_findings"),
+            # T-1627: the frozen profile's samples, for fm motion verify (which checks them) only
+            "motion": res.get("motion") if isinstance(res.get("motion"), list) else [],
+            "motion_notes": [_clean(n) for n in res.get("motion_notes") or [] if isinstance(n, str)][:20]}
 
 
 def nudge(surfaces, meta):
@@ -207,7 +210,8 @@ def cmd_smoke(args):
                      + f"\nScreenshots: {out}"
                      + (f"\nFrames: {frames} (360, 768 and 1440 wide × light and dark, reduced motion at 360)"
                         if not name and os.path.isdir(frames) else ""))
-        res = dict(res, defects=defects, notes=notes, frame_findings=findings)
+        res = dict({k: v for k, v in res.items() if not k.startswith("motion")}, defects=defects, notes=notes,
+                   frame_findings=findings)  # the motion samples are fm motion verify's, not this gate's
         done.append(dict(res, profile=name, shots=out) if name else dict(res, url=url, shots=out, frames=frames))
     for old in sorted(glob.glob(os.path.join(runs, "*")), key=_mtime)[:-KEEP]:
         shutil.rmtree(old, ignore_errors=True)

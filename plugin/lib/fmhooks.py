@@ -1079,6 +1079,10 @@ def _secret_note(text):
     return f"Pasted secret ({kinds[0]}): don't repeat or store it; suggest rotating it"
 
 
+WHICH_HINT = 'Unsure which skill fits: fm which "<the task>"'  # T-1699
+_NAMES_SKILL = re.compile(r"/[\w-]+:[\w-]+|\bskills?\b|\bplaybooks?\b|\bfm which\b", re.I)  # a request naming its own
+
+
 def user_prompt_submit(pl):
     sid = pl.get("session_id")
     p = c.find_project(_cwd(pl), create=not os.environ.get("FOREMAN_WORKER_OF"))  # T-1438: a worker sets up nothing
@@ -1259,6 +1263,11 @@ def user_prompt_submit(pl):
                 c.hints_shown(p, nxt)  # T-0250: what was shown and not used gets quieter
             except Exception:
                 log_error("UserPromptSubmit", _tb())
+    # T-1699: a task that names no skill, and got none from a note above, hears of fm which once a session; last, so
+    # it never takes the Next hint's room
+    if not ui_note and not r.items and c.is_work_request(text) and not _NAMES_SKILL.search(text) \
+            and room(len(WHICH_HINT) + 2) and _skill_once(sid, WHICH_HINT):
+        parts.append(WHICH_HINT)
     out = {"terminalSequence": _title_seq(sd)}
     if parts:
         out["hookSpecificOutput"] = {"hookEventName": "UserPromptSubmit",
@@ -3501,7 +3510,7 @@ def _drive(p, sd, briefs, pl, g):
         offer = _side_work(sd, briefs, work, full, offered, p) if len(offered) < OFFERS_MAX and not pace else None
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
             d.update(offered=offered + [offer["id"]], count=d.get("count", 0) + 1, marks=_marks(p))
-            how = _start_how(offer, lanes_free(briefs))
+            how = _start_how(offer, lanes_free(briefs, p))
             _event({"kind": "drive_offer", "session_id": sid, "project": p.slug, "task": work["id"],
                     "offer": offer["id"], "how": how})
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); don't idle on it. "
@@ -3607,7 +3616,7 @@ def _side_work(sd, briefs, work, full, offered, p):
     background jobs run: not the active one, not offered already for this set, not waiting on the active task
     (depends_on or what fm relate inferred), not already briefed for a builder lane."""
     by_id = {b.id: b for b in briefs}
-    lanes = lanes_free(briefs)
+    lanes = lanes_free(briefs, p)
     gated = _gates_running(p)
     for x in sd["queue"] + (sd["inbox"] if full else []):
         b = by_id.get(x["id"])
@@ -3633,10 +3642,11 @@ def _gates_running(p):
         return None
 
 
-def lanes_free(briefs):
-    """T-0700: whether fm lane brief would take another builder (it refuses past fmlanes.BUILDERS)."""
+def lanes_free(briefs, p=None):
+    """T-0700: whether fm lane brief would take another builder (it refuses past the cap; T-1709: fm lane max's)."""
     import fmlanes
-    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < fmlanes.BUILDERS and \
+    cap = fmlanes.builders_cap(p) if p else fmlanes.BUILDERS
+    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < cap and \
         not c.host_strain()  # T-0465: a strained host takes no builder lane
 
 
