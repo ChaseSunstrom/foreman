@@ -106,7 +106,8 @@ def crawl(pw, url, out, timeout=240, profile=""):
     found = lambda key: [{"where": _clean(d.get("where", "?")), "what": _clean(d.get("what", "?"))}  # noqa: E731
                          for d in res.get(key) or [] if isinstance(d, dict)]
     return {"views": [_clean(v) for v in res.get("views") or []], "defects": found("defects"),
-            "notes": [_clean(n) for n in res.get("notes") or []], "frame_findings": found("frame_findings")}
+            "notes": [_clean(n) for n in res.get("notes") or []], "frame_findings": found("frame_findings"),
+            "motion": res.get("motion") if isinstance(res.get("motion"), list) else []}  # T-1627: verify checks it
 
 
 def nudge(surfaces, meta):

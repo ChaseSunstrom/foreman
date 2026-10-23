@@ -15,7 +15,10 @@ motion the UI uses, so timing and the reduced-motion path are decided once and c
 check(path) lists its problems; fm motion check [PATH] prints them (exit 1 on any). compile_score(path, to) (T-1625,
 fm motion compile [PATH] --to css|waapi|three [--out FILE]) emits a clean score as CSS custom properties and
 @keyframes, a WAAPI options module or three.js tween parameters: every target carries the score's own durations and
-easings, and each motion's reduced form keeps the three meanings above."""
+easings, and each motion's reduced form keeps the three meanings above. verify(path, samples) (T-1627, fm motion verify
+[PATH] [--samples FILE]) holds values sampled from the page under fm smoke's frozen profile to the score's duration and
+curve (the three target's own ease(p), run in node), and report() names each drift; with no browser it says so and
+checks only the score."""
 import json
 import os
 import re
@@ -432,6 +435,176 @@ def compile_score(path, to):
     return (_css(got["motions"], label) if to == "css" else _module(got["motions"], label, to)), []
 
 
+TOL = 0.02  # a sample may sit this share of its property's travel (from to to) off the score's curve
+MAX_SAMPLES, MAX_AT = 500, 64  # entries a verify reads, points each: the page or the file is outside text
+EASE_RUN = "const motion = {};\n" + THREE_EASE + """
+let s = "";
+process.stdin.on("data", (d) => (s += d)).on("end", () =>
+  console.log(JSON.stringify(JSON.parse(s).map(([c, ps]) => ps.map(ease(c))))));
+"""
+
+
+def _eases(jobs):
+    """[[ease(p) for p in ps] for curve, ps in jobs], by the three target's own ease() run in node (one solver, T-1625):
+    None when there is no node to run it."""
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        return None
+    try:
+        p = subprocess.run([node, "-e", EASE_RUN], input=json.dumps([[curve_data(c), ps] for c, ps in jobs]),
+                           capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        raise ValueError("node took over 30 s to run ease(p)") from None
+    if p.returncode:
+        raise ValueError(f"node could not run ease(p): {p.stderr.strip()[-200:]}")
+    return json.loads(p.stdout)
+
+
+def _nums(v):
+    """A sampled value as a list of numbers (a number alone, or a transform's matrix), else None."""
+    v = [v] if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+    ok = isinstance(v, list) and len(v) <= 16 and all(
+        isinstance(x, (int, float)) and not isinstance(x, bool) and abs(x) < 1e12 for x in v)
+    return [float(x) for x in v] if ok else None
+
+
+def _round(v):
+    out = [round(x, 4) for x in v]
+    return f"{out[0]:g}" if len(out) == 1 else "[" + ", ".join(f"{x:g}" for x in out) + "]"
+
+
+def verify(path, samples, why=None, tol=TOL):
+    """{score, problems, drifts, checked, skipped}: each sample (an entry {motion, property, where, from, to, at:
+    [[ms, value], ...]}, as the frozen crawl returns them) asserted against the score's own duration and curve: a value
+    at t ms is expected at from + (to - from) * ease(t / duration) within tol of the travel. samples None: only the
+    score is checked, and skipped says why (why)."""
+    got = check(path)
+    out = {"score": path, "problems": list(got["problems"]), "drifts": [], "checked": 0,
+           "skipped": None if samples is not None else (why or "no samples")}
+    if samples is None or got["problems"]:
+        return out
+    flag = lambda who, text: out["problems"].append({"motion": who, "problem": text})  # noqa: E731
+    if not isinstance(samples, list):
+        flag(None, "samples must be a list of {motion, property, from, to, at} entries")
+        return out
+    if len(samples) > MAX_SAMPLES:
+        flag(None, f"{len(samples)} samples: only the first {MAX_SAMPLES} were read")
+    score = {m["name"]: m for m in got["motions"]}
+    rows = []
+    for i, s in enumerate(samples[:MAX_SAMPLES], 1):
+        m = score.get(s.get("motion")) if isinstance(s, dict) else None
+        at = s.get("at") if isinstance(s, dict) else None
+        prop = s.get("property") if isinstance(s, dict) else None
+        if not isinstance(s, dict) or not isinstance(s.get("motion"), str) or not isinstance(prop, str) \
+                or not PROP.fullmatch(prop) or not isinstance(at, list) \
+                or not all(isinstance(a, list) and len(a) == 2 for a in at):
+            flag(None, f"sample {i}: not {{motion, property, from, to, at: [[ms, value], …]}}: {_show(s)}")
+            continue
+        if m is None:
+            flag(None, f"sample {i}: motion {_show(s['motion'])} is not in the score")
+            continue
+        who = m["name"]  # the score's own name and a checked property name: safe to print
+        if prop not in m["properties"]:
+            flag(who, f"sample {i} animates {prop}, which the score doesn't list")
+            continue
+        frm, to = _nums(s.get("from")), _nums(s.get("to"))
+        pts = [(a[0], _nums(a[1])) for a in at[:MAX_AT]]
+        if frm is None or to is None or len(frm) != len(to) or not frm or any(
+                not isinstance(t, (int, float)) or isinstance(t, bool) or not 0 <= t <= MAX_MS * 10 or v is None
+                or len(v) != len(frm) for t, v in pts):
+            flag(who, f"sample {i}: {prop}'s values can't be compared (numbers, or lists of one length)")
+            continue
+        rows.append((m, prop, str(s.get("where") or "")[:80], frm, to, pts))
+    eased = _eases([(m["curve"], [min(t / m["ms"], 1) if m["ms"] else 1 for t, _ in pts])
+                    for m, _, _, _, _, pts in rows]) if rows else []
+    if eased is None:
+        out["skipped"] = "no node to run the score's ease(p)"
+        return out
+    for (m, prop, where, frm, to, pts), es in zip(rows, eased):
+        for (t, v), e in zip(pts, es):
+            out["checked"] += 1
+            want = [a + (b - a) * e for a, b in zip(frm, to)]
+            room = [max(tol * abs(b - a), 0.001) for a, b in zip(frm, to)]
+            if any(abs(x - w) > r for x, w, r in zip(v, want, room)):
+                out["drifts"].append({"motion": m["name"], "property": prop, "where": where, "ms": t,
+                                      "expected": want, "sampled": v, "tolerance": room})
+    return out
+
+
+def report(got):
+    """verify's result as text: each problem, each drift naming motion, property, time, expected, sampled and the
+    tolerance, then one summary line."""
+    import fmsmoke
+    label = os.path.basename(got["score"])
+    lines = _report(got["problems"], label)
+    for d in got["drifts"]:
+        room = d["tolerance"]
+        lines.append(f"{d['motion']} {d['property']} at {d['ms']:g} ms" + (f" ({fmsmoke._clean(d['where'])})"
+                                                                          if d["where"] else "")
+                     + f": expected {_round(d['expected'])}, sampled {_round(d['sampled'])} (tolerance ±"
+                     + (f"{room[0]:g}" if len(set(room)) == 1 else _round(room)) + ")")
+    n, k = len(got["problems"]), len(got["drifts"])
+    if got["skipped"]:
+        lines.append(f"motion verify: {got['skipped']}; checked the score only: "
+                     + (f"{n} problem(s)" if n else "clean") + f" ({got['score']})")
+    elif n or k:
+        lines.append(f"motion verify: {k} drift(s), {n} problem(s) in {got['checked']} sample(s) ({got['score']})")
+    elif not got["checked"]:
+        lines.append(f"motion verify: nothing sampled (no motion-NAME animation played on the page); the score is "
+                     f"clean ({got['score']})")
+    else:
+        lines.append(f"motion verify: clean, {got['checked']} sample(s) against the score ({got['score']})")
+    return "\n".join(lines)
+
+
+def sample(url, root):
+    """(samples, None) from the page at url crawled under fm smoke's frozen profile (smoke_web.cjs seeks each paused
+    motion-NAME animation through its own duration), or (None, why) with no browser to do it. Never installs one.
+    ponytail: the whole frozen crawl, every view at two widths; fm shot (T-1636) can take this over once merged."""
+    import tempfile
+    import fmsmoke
+    pw = fmsmoke.playwright(root)
+    if not pw and not fmsmoke._runner():
+        return None, "no browser: no Playwright in this checkout (fm smoke's own; nothing is installed)"
+    with tempfile.TemporaryDirectory() as d:
+        res = fmsmoke.crawl(pw, url, d, profile="frozen")
+    if res.get("skipped"):
+        return None, f"no browser: {res['skipped']}"
+    if not res.get("views"):
+        return None, "the page wasn't sampled: " + "; ".join(x["what"] for x in res.get("defects") or [])[:200]
+    return res.get("motion") or [], None
+
+
+def _cmd_verify(args, path, samples):
+    """fm motion verify: --samples FILE, else a frozen crawl of fm smoke's web URL; exit 1 on a drift or problem."""
+    import fmcli
+    import fmcore
+    why = None
+    if samples:
+        text, err = fmdesign._read(samples, strict=True)
+        if text is None:
+            raise ValueError(f"{samples}: {err}")
+        try:
+            got = json.loads(text)
+        except (ValueError, RecursionError) as e:
+            raise ValueError(f"{samples}: {e or 'nested too deep'}") from None
+    else:
+        try:
+            p = fmcli.resolve(args, create=False)
+        except fmcli.UsageError:
+            if getattr(args, "project", None):
+                raise
+            p = None
+        url = (fmcore.read_meta(p).get("smoke") or {}).get("web") if p else None
+        got, why = sample(url, p.root) if isinstance(url, str) else \
+            (None, "no fm smoke web URL to sample (fm smoke set web <url>)")
+    res = verify(path, got, why)
+    fmcli.out(args, res, report(res))
+    return 1 if res["problems"] or res["drifts"] else 0
+
+
 def _report(problems, label):
     return [f"{p['motion'] or label}: {p['problem']}" for p in problems]
 
@@ -441,9 +614,10 @@ def cmd_motion(args):
     import fmcli
     import fmcore
     act, path = args.action, args.path
-    for flag, v in (("--to", args.to), ("--out", args.out)):
-        if act == "check" and v is not None:
-            print(f"fm: motion check: {flag} is for compile (fm motion compile [PATH] {flag} …)", file=sys.stderr)
+    samples = getattr(args, "samples", None)
+    for flag, v, verb in (("--to", args.to, "compile"), ("--out", args.out, "compile"), ("--samples", samples, "verify")):
+        if act != verb and v is not None:
+            print(f"fm: motion {act}: {flag} is for {verb} (fm motion {verb} [PATH] {flag} …)", file=sys.stderr)
             return 2
     if not path:
         root = fmcore.git_root(os.getcwd()) or os.getcwd()
@@ -453,6 +627,8 @@ def cmd_motion(args):
             return 2
     label = os.path.basename(path)
     try:
+        if act == "verify":
+            return _cmd_verify(args, path, samples)
         if act == "compile":
             to = args.to or "css"
             text, problems = compile_score(path, to)
