@@ -1,6 +1,7 @@
 """fm — the only writer of Foreman state.
 
-Exit codes: 0 ok · 1 usage error / not found · 2 refused by policy · 3 lock timeout · 4 state corrupt.
+Exit codes: 0 ok · 1 usage error / not found · 2 refused by policy · 3 lock timeout · 4 state corrupt · 5 fm capture
+refused a near-duplicate (T-1662).
 """
 import argparse
 import collections
@@ -216,12 +217,18 @@ def cmd_capture(args):
     if type_ not in c.TYPES:
         raise UsageError(f"unknown type {args.type!r}; one of {', '.join(c.TYPES)}")
     text, raw = (args.text or "").strip(), args.text
+    near = _near(p, args, text, type_) if text else None  # T-1662 review: before a paste is read and kept
+    if near and near[0] is not None:
+        return near[0]
     if args.from_file:
         attached, first = _attachment(p, args.from_file)
         text = text or first
         raw = (args.text + "\n\n" if args.text else "") + attached
     if not text:
         raise UsageError("fm capture \"<request>\" [--from-file PATH|-]: say what to do, or attach a file that does")
+    near = near or _near(p, args, text, type_)  # titled from the attachment: only now known
+    if near[0] is not None:
+        return near[0]
     with c.lock(p.dir):
         b = _create(p, _title(text), type_, args.tier or c.guess_tier(type_, text), "captured",
                     raw=raw, scope=args.scope or (), source=args.source,
@@ -231,7 +238,33 @@ def cmd_capture(args):
         c.regen_views(p)
     _note_escapes(p, b, args.text)
     out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source})."
-        + _covered_note(p, b.id, text) + _reask_note(p, b.id, text))
+        + near[1](b.id) + _covered_note(p, b.id, text) + _reask_note(p, b.id, text))
+
+
+REFUSED_NEAR = 5  # T-1662: its own exit code (see the module docstring: 3, asked for in review, is a lock timeout)
+
+
+def _near(p, args, text, type_):
+    """T-1662: (exit code, None) when the request is a near-duplicate of an open task of its type and --anyway isn't
+    given, said on stderr (and as JSON under --json); else (None, note(new id)): the similar open task of another
+    type, and for a FEATURE the done task close to it."""
+    import fmrecall
+    same, other, done = fmrecall.near_tasks(p, _title(text), _scope_paths(args.scope or ()), type_)
+    if same and not args.anyway:
+        print(f"fm: near-duplicate of open {same[0]} ({c.fit(c.plain(same[1]), 80)}): add --anyway to keep both, or "
+              f"fm task log {same[0]} '<note>' to add to it", file=sys.stderr)
+        if getattr(args, "json", False):
+            out(args, {"refused": "near-duplicate", "of": same[0], "title": same[1]}, None)
+        return REFUSED_NEAR, None
+    done = done if type_ == "FEATURE" else None
+
+    def note(tid):
+        return "".join([
+            f"\nSimilar open {other[0]} [{other[2]}] ({c.fit(c.plain(other[1]), 80)}): another type, so kept."
+            if other else "",
+            f"\nClose to done work: {done[0]} ({c.fit(c.plain(done[1]), 80)}). If it already does this, drop this: "
+            f"fm task drop {tid} \"done in {done[0]}\"." if done else ""])
+    return None, note
 
 
 EXCERPT_HEAD, EXCERPT_TAIL = 10, 30  # T-0477: a log's start says what ran, its end what broke
@@ -3630,6 +3663,13 @@ def cmd_pause(args):
 
 def cmd_check(args):
     """The project's gate commands (tests, lint, doctor…), run together; any failure exits 1, so a pipe can't mask it."""
+    if args.action == "run" and not getattr(args, "repeat", 0):  # T-1668: full runs queue on the machine-wide gate lock
+        with c.gate_lock("fm check", say=lambda m: print(m, file=sys.stderr)):
+            return _cmd_check(args)
+    return _cmd_check(args)
+
+
+def _cmd_check(args):
     p = resolve(args)
     if args.action in ("add", "rm"):
         with c.lock(p.dir):  # one read-modify-write, so concurrent adds can't drop each other
@@ -3891,11 +3931,24 @@ _POINT_IN_TIME = re.compile(r"\borigin/|@\{u(?:pstream)?\}|\bls-remote\b")  # T-
 
 def cmd_sentinel(args):
     """Re-run the checks that passed for the last N finished tasks (their [ran] evidence) and report any that fail
-    now: a later change broke what an earlier task proved. Commands with side effects are skipped."""
+    now: a later change broke what an earlier task proved. Commands with side effects are skipped. T-1663: first, the
+    re-verify queue (fmreverify): the checks of closed tasks a commit since touched run ahead of the recent ones, and
+    one that fails captures a FIX naming its task; queued entries the filters or the guard refuse, or whose task is no
+    longer done, are dropped unrun and counted."""
     p = resolve(args)
-    done = sorted((b for b in c.load_briefs(p, include_archive=True) if b.status == "done"),
+    briefs = c.load_briefs(p, include_archive=True)
+    done = sorted((b for b in briefs if b.status == "done"),
                   key=lambda b: str(b.meta.get("updated", "")), reverse=True)[:args.last]
     cmds, skipped, dated = {}, 0, 0
+    import hashlib
+    import fmreverify
+    status = {b.id: b.status for b in briefs}
+    queued, unrun = {}, set()
+    for e in fmreverify.scan(p):
+        if status.get(e.get("task")) != "done" or _SIDE_EFFECTS.search(e["cmd"]) or _POINT_IN_TIME.search(e["cmd"]):
+            unrun.add((e.get("task"), e["cmd"]))
+        elif e["cmd"] not in cmds:
+            queued[e["cmd"]], cmds[e["cmd"]] = e, e["task"]
     for b in done:
         for line in b.evidence():  # criteria checks only: steps record work (pushes, migrations) as well as checks
             if line.startswith("- (ac ") and c._RAN_MARK in line and "` → exit 0" in line:
@@ -3942,15 +3995,37 @@ def cmd_sentinel(args):
                                  source="discovered", depends=[tid])
                     c.log_event(p, "capture", task=nb.id, data={"source": "sentinel", "assumption_of": tid})
                     c.regen_views(p)
+    for r in results:  # T-1663: a queued re-verify that fails reopens attention on its task
+        e = queued.get(r["cmd"]) if r["exit"] and not r.get("assumption") else None
+        if not e:
+            continue
+        safe = lambda s, n: c.defang(c.fit(c.plain(c.redact(str(s or ""))), n))  # noqa: E731 output and subject
+        tag = hashlib.sha1(r["cmd"].encode()).hexdigest()[:6]  # two long commands sharing a prefix stay two FIXes
+        title = _title(f"Re-verify failed for {r['task']} ({tag}): {safe(r['cmd'], 200)}")
+        if not any(x.title == title for x in c.load_briefs(p) if x.status not in c.CLOSED):
+            with c.lock(p.dir):
+                nb = _create(p, title, "FIX", "S", "captured", source="discovered", depends=[r["task"]],
+                             raw=f"{title} (now {safe(r['result'], 240)}; queued by {safe(e.get('sha'), 10)} "
+                                 f"{safe(e.get('subject'), 120)})")
+                c.log_event(p, "capture", task=nb.id, data={"source": "sentinel reverify", "of": r["task"]})
+                c.regen_views(p)
+    later = set(list(cmds)[args.max:])  # cut by --max: the next run takes them
+    unrun |= {(e.get("task"), e["cmd"]) for e in fmreverify.load(p)["queue"] if e["cmd"] in refused}
+    if queued or unrun:
+        fmreverify.drop(p, unrun | {(e.get("task"), e["cmd"]) for e in fmreverify.load(p)["queue"]
+                                    if e["cmd"] in queued and e["cmd"] not in later})
     failed = [r for r in results if r["exit"]]
     c.log_event(p, "sentinel", data={"ran": len(results), "failed": [(r["task"], r["cmd"][:120]) for r in failed]},
                 session=session())
     culprits = [_bisect(p, r, args.timeout) for r in failed if not r.get("assumption")] if \
         getattr(args, "bisect", False) else []  # T-0458
-    out(args, {"results": results, "failed": len(failed), "skipped": skipped, "culprits": [x for x in culprits if x]},
+    out(args, {"results": results, "failed": len(failed), "skipped": skipped, "culprits": [x for x in culprits if x],
+               "reverify_dropped": len(unrun)},
         f"Sentinel: {len(results)} past check(s) from {len(done)} finished task(s); {len(failed)} failing now"
         + (f"; {skipped} with side effects skipped" if skipped else "")
         + (f"; {dated} point-in-time skipped" if dated else "")
+        + (f"; {len(unrun)} queued re-verify entries dropped (side effects, point-in-time, refused or task not done)"
+           if unrun else "")
         + (f"; {sum(1 for r in results if r.get('flaky'))} flaky (failed, then passed)"
            if any(r.get("flaky") for r in results) else "") + "".join(
             f"\n  ✗ {r['task']}: " + (f"assumption \"{r['assumption']}\": " if r.get("assumption") else "")
@@ -4983,6 +5058,10 @@ def _build_parser():
     s.add_argument("--tier", choices=["S", "M", "L"])
     s.add_argument("--scope", action="append")
     s.add_argument("--urgent", action="store_true")
+    s.add_argument("--anyway", action="store_true", help="keep a request whose title is close to an open task's of the same type: "
+                                                         "without it fm capture refuses it, exit 5, naming the task "
+                                                         "(only fm capture checks; fm intake, fm task new and fm "
+                                                         "research --from-agent don't)")
     s.add_argument("--self", dest="self_", action="store_true", help="capture into Foreman's own project (self-improvement)")
 
     s = add("ask", cmd_ask, tier=("Every task", 180), help="ask the user to authorize guard categories for a task; their next message decides")
@@ -6175,10 +6254,12 @@ def _build_parser():
     s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
     s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
                                                    "in state picks.json; needs --catalogue (T-0962)")
-    s.add_argument("what", nargs="?", choices=["looks", "city"], help="looks: the looks gallery instead, one living "
-                   "specimen per look card in one file that loads nothing from another host (looks.html; T-1649); "
-                   "city: the repo as a 3D city, each tracked file a building as tall as its lines, lit windows its "
-                   "commits in 180 days, a district per folder, over an SVG poster (city.html; T-1653)")
+    s.add_argument("what", nargs="?", choices=["looks", "city", "graph"], help="looks: the looks gallery instead, one "
+                   "living specimen per look card in one file that loads nothing from another host (looks.html; "
+                   "T-1649); city: the repo as a 3D city, each tracked file a building as tall as its lines, lit "
+                   "windows its commits in 180 days, a district per folder, over an SVG poster (city.html; T-1653); "
+                   "graph: the task graph in 3D, open and linked tasks in layers by what they wait on, depends_on as "
+                   "edges, status as colour, over an SVG poster; run it again to refresh (graph.html; T-1654)")
     s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
