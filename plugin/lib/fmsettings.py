@@ -649,7 +649,10 @@ def _change(changes, now, s, key, new):
 def _set_key(key, value, surface, p, changes, now, base=None):
     """set_key's writes; each that changed a value is added to `changes` (_change)."""
     done, refused = [], []
-    for e in find(key, surface):
+    found = find(key, surface)
+    if not found:  # T-1723: said, so the fm code app's :set and fm settings serve never fail silently
+        return done, [f"{key}: no such setting{f' in the {surface}' if surface else ''} (fm settings list shows them)"]
+    for e in found:
         s = e["surface"]
         try:
             if s == "app":
