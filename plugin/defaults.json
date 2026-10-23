@@ -1,0 +1,198 @@
+{
+  "app.theme": "night",
+  "app.motion": "full",
+  "app.palette": "default",
+  "app.border": "rounded",
+  "app.colors.screen": {
+    "fg": "#E7ECF4",
+    "bg": "#0D1420"
+  },
+  "app.colors.text": {},
+  "app.colors.strong": {
+    "fg": "#E7ECF4",
+    "bold": true
+  },
+  "app.colors.dim": {
+    "fg": "#8A98AE"
+  },
+  "app.colors.said": {
+    "fg": "#9AA8BC",
+    "italic": true
+  },
+  "app.colors.accent": {
+    "fg": "#86A8FF",
+    "bold": true
+  },
+  "app.colors.ok": {
+    "fg": "#47C98B"
+  },
+  "app.colors.bad": {
+    "fg": "#FF6B6B",
+    "bold": true
+  },
+  "app.colors.warn": {
+    "fg": "#FFC83D"
+  },
+  "app.colors.border": {
+    "fg": "#33445F"
+  },
+  "app.colors.title": {
+    "fg": "#86A8FF",
+    "bold": true
+  },
+  "app.colors.track": {
+    "fg": "#2E3D58"
+  },
+  "app.colors.chart": {
+    "fg": "#86A8FF"
+  },
+  "app.colors.shade": {
+    "fg": "#2A3650"
+  },
+  "app.colors.select": {
+    "fg": "#0D1420",
+    "bg": "#86A8FF"
+  },
+  "app.colors.brand": {
+    "fg": "#0D1420",
+    "bg": "#86A8FF",
+    "bold": true
+  },
+  "app.colors.header": {
+    "fg": "#E7ECF4",
+    "bg": "#131C2B"
+  },
+  "app.colors.header_dim": {
+    "fg": "#8A98AE",
+    "bg": "#131C2B"
+  },
+  "app.colors.bar": {
+    "fg": "#C9D3E3",
+    "bg": "#1B2638"
+  },
+  "app.colors.bar_dim": {
+    "fg": "#8A98AE",
+    "bg": "#1B2638"
+  },
+  "app.colors.key": {
+    "fg": "#FFC83D",
+    "bg": "#1B2638",
+    "bold": true
+  },
+  "app.colors.input": {
+    "fg": "#E7ECF4",
+    "bg": "#1B2638",
+    "bold": true
+  },
+  "app.colors.chip_ok": {
+    "fg": "#0D1420",
+    "bg": "#47C98B",
+    "bold": true
+  },
+  "app.colors.chip_bad": {
+    "fg": "#0D1420",
+    "bg": "#FF6B6B",
+    "bold": true
+  },
+  "app.colors.chip_warn": {
+    "fg": "#0D1420",
+    "bg": "#FFC83D",
+    "bold": true
+  },
+  "app.colors.chip_accent": {
+    "fg": "#0D1420",
+    "bg": "#86A8FF",
+    "bold": true
+  },
+  "app.colors.chip_todo": {
+    "fg": "#8A98AE",
+    "bg": "#1B2638"
+  },
+  "app.colors.accent2": {
+    "fg": "#C792FF"
+  },
+  "app.colors.ok2": {
+    "fg": "#B8F26B"
+  },
+  "app.colors.bad2": {
+    "fg": "#FFA26B"
+  },
+  "app.colors.glow": {
+    "fg": "#FFFFFF"
+  },
+  "app.colors.panel": {
+    "bg": "#111B2B"
+  },
+  "app.layout.top": [
+    "track"
+  ],
+  "app.layout.columns": [
+    [
+      "log"
+    ],
+    [
+      "checks",
+      "files",
+      "time",
+      "tokens"
+    ]
+  ],
+  "app.layout.widths": [
+    58,
+    42
+  ],
+  "app.layout.heights": [
+    [
+      1
+    ],
+    [
+      "auto",
+      "auto",
+      "auto",
+      1
+    ]
+  ],
+  "app.layout.narrow": [
+    "checks",
+    "log"
+  ],
+  "app.layout.narrow_heights": [
+    "auto",
+    1
+  ],
+  "app.layout.narrow_below": 80,
+  "app.keys.q": "quit",
+  "app.keys.n": "new",
+  "app.keys.s": "stop",
+  "app.keys.r": "resume",
+  "app.keys.?": "help",
+  "app.keys.d": "diff",
+  "app.keys.h": "history",
+  "app.keys.m": "model",
+  "app.keys.t": "thoughts",
+  "app.keys.tab": "focus",
+  "app.keys.up": "up",
+  "app.keys.down": "down",
+  "app.keys.k": "up",
+  "app.keys.j": "down",
+  "app.keys.enter": "expand",
+  "app.keys.pgup": "page_up",
+  "app.keys.pgdn": "page_down",
+  "app.keys.G": "follow",
+  "app.keys.p": "projects",
+  "app.keys.,": "settings",
+  "app.keys.z": "hush",
+  "app.keys.L": "looks",
+  "app.keys./": "search",
+  "app.keys.g": "queue",
+  "app.keys.T": "tickets",
+  "app.keys.u": "undo",
+  "app.keys.P": "pr",
+  "app.keys.F": "photo",
+  "plugin.freshAt": 40,
+  "plugin.freshTokens": 200000,
+  "plugin.mascot": "blue",
+  "plugin.motion": "full",
+  "plugin.palette": "default",
+  "plugin.chat": "tree"
+}

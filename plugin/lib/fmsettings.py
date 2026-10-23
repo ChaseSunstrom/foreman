@@ -763,6 +763,25 @@ def diff(problems=None):
             for (s, k), (v, e, ok) in written(problems).items() if not e or not ok or v != e["default"]]
 
 
+SNAPSHOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "defaults.json")  # T-1549
+
+
+def defaults():
+    """T-1549: every setting's default, {surface.key: default} as JSON keeps it: what fm release snapshots to
+    plugin/defaults.json for the next release to compare with."""
+    return {f"{e['surface']}.{e['key']}": json.loads(json.dumps(e["default"], default=str)) for e in schema()}
+
+
+def changed_defaults(old, new=None, mine=None):
+    """T-1549: the defaults that differ from an earlier snapshot, [{key, old, new, yours}]: yours when the user's own
+    files set the key (fm settings diff), so the change doesn't reach them. mine=() skips reading their files (the
+    release notes, written for every reader). A key new since the snapshot is no change."""
+    new = defaults() if new is None else new
+    mine = {f"{r['surface']}.{r['key']}" for r in diff()} if mine is None else set(mine)
+    return [{"key": k, "old": old[k], "new": v, "yours": k in mine} for k, v in sorted(new.items())
+            if k in old and old[k] != v]
+
+
 def share_code(rows=None):
     """The changed settings (not the dead or skipped ones) as one pasteable word: base64url of {surface: {key: value}}
     as JSON."""
@@ -1438,6 +1457,18 @@ def cmd_settings(args):
         return fmcli.out(args, got, _lines(lines) or "no settings found")  # a profile's name is the file's
     if args.action == "profile":  # T-1656
         return _cmd_profile(args)
+    if args.action == "changed":  # T-1549: defaults a release changed, and whether they reach you
+        path = args.key or SNAPSHOT
+        try:
+            with open(path, encoding="utf-8") as f:
+                old = json.load(f)
+        except (OSError, ValueError) as e:
+            raise fmcli.UsageError(f"fm settings changed [SNAPSHOT]: can't read {path}: {e}")
+        got = changed_defaults(old if isinstance(old, dict) else {})
+        return fmcli.out(args, got, "\n".join(
+            f"{m['key']}: {json.dumps(m['old'])} → {json.dumps(m['new'])} · "
+            + ("you set it, so yours stays" if m["yours"] else "you never set it: this changes what you see")
+            for m in got) or f"no default changed since {path}")
     if args.action == "check":  # T-1612: the app, a headless snapshot and --plain must all draw it
         cfg, _ = T.load_config()
         bad = check_render(cfg)
