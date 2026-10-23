@@ -138,6 +138,9 @@ def _panel_problems(path):
         def on(self, event, fn):
             handlers.append((event, fn))
 
+        def setting(self, *a, **k):  # T-1657: API version 2; a declaration is checked when the app loads it
+            pass
+
     try:  # compiled from the source each time: no __pycache__ written beside it, none read back stale
         with open(path, encoding="utf-8") as f:
             code = compile(f.read(), path, "exec")
