@@ -470,8 +470,12 @@ class Run:
 
     def env(self):
         """The environment for everything fm code starts: without the model API keys, so a command the model chose
-        can't print one into its own transcript or the journal; in a worker run, without what worker_env drops too."""
-        return {k: v for k, v in (worker_env() if self.worker else os.environ).items() if k not in self.secret_envs}
+        can't print one into its own transcript or the journal; in a worker run, without what worker_env drops too.
+        T-1407: the pinned toolchain's bin folders first on PATH."""
+        env = {k: v for k, v in (worker_env() if self.worker else os.environ).items() if k not in self.secret_envs}
+        if getattr(self, "tool_dirs", None):
+            env["PATH"] = os.pathsep.join(self.tool_dirs + [env.get("PATH") or os.defpath])
+        return env
 
     def offsite_ok(self, p, profile):
         """A sensitive repo's content never goes to a model off this machine (fm sensitive on, T-0784)."""
@@ -1191,6 +1195,63 @@ def _confining(confine):
         raise ConfineError(f"fm code: worker confinement couldn't be set up ({e}); the command was not run "
                            "unconfined. FOREMAN_CONFINE=0 in your own shell turns confinement off")
     return rs, (lambda: fmlandlock.enter(rs))
+
+
+PIN_FILES = ((".tool-versions", None), (".python-version", "python"), (".node-version", "nodejs"), (".nvmrc", "nodejs"))
+MANAGERS = (("mise", lambda t, v: ["mise", "where", f"{t}@{v}"]), ("asdf", lambda t, v: ["asdf", "where", t, v]),
+            ("pyenv", lambda t, v: ["pyenv", "prefix", v] if t == "python" else None))
+
+
+def pins(root):
+    """T-1407: [(tool, version)] the project pins, read as data: .tool-versions (each line's first version),
+    .python-version, .node-version and .nvmrc. A version number only: 'system', 'ref:…', 'path:…', 'lts/*' and other
+    aliases are left to their manager."""
+    out = {}
+    for name, tool in PIN_FILES:
+        try:
+            with open(os.path.join(root, name), encoding="utf-8") as f:
+                lines = f.read(65536).splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in lines:
+            words = line.split("#", 1)[0].split()
+            if not words:
+                continue
+            t, v = (tool, words[0]) if tool else (words[0], words[1] if len(words) > 1 else "")
+            if re.fullmatch(r"[\w.-]{1,40}", t) and re.fullmatch(r"v?\d+(?:\.\d+){0,3}[\w.+-]{0,20}", v):
+                out.setdefault(t, v[1:] if v.startswith("v") else v)
+            if tool:
+                break
+    return list(out.items())
+
+
+def toolchain(root, env):
+    """T-1407: (bin folders to put first on PATH, a note or None) for the pinned tools, each found by a version manager
+    on PATH (mise, asdf, then pyenv for python) run from / with no stdin, so the repo's own config files, hooks and
+    .envrc never run. A pin no manager has installed is named, never installed."""
+    dirs, got, missing = [], [], []
+    for tool, version in pins(root):
+        for name, argv in MANAGERS:
+            cmd = argv(tool, version)
+            if cmd is None or not shutil.which(name, path=env.get("PATH")):
+                continue
+            try:
+                r = subprocess.run(cmd, cwd="/", env=env, capture_output=True, text=True, timeout=10,
+                                   stdin=subprocess.DEVNULL)
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            where = (r.stdout.strip().splitlines() or [""])[-1].strip() if r.returncode == 0 else ""
+            if os.path.isabs(where) and os.path.isdir(os.path.join(where, "bin")):
+                dirs.append(os.path.join(where, "bin"))
+                got.append(f"{tool} {version} ({name})")
+                break
+        else:
+            missing.append(f"{tool} {version}")
+    note = "; ".join(filter(None, [
+        f"toolchain: {', '.join(got)} first on PATH" if got else "",
+        f"pinned but not installed by mise, asdf or pyenv here: {', '.join(missing)} (checks use PATH's)"
+        if missing else ""]))
+    return dirs, note or None
 
 
 def install_warning():
@@ -2380,6 +2441,9 @@ def cmd_code(args):
         warned = install_warning()  # T-1757
         if warned:
             run.emit("note", warned)
+        run.tool_dirs, pinned = toolchain(root, run.env())  # T-1407
+        if pinned:
+            run.emit("note", pinned)
         if gate:
             run.emit("note", gate)
         if picked:

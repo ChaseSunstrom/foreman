@@ -625,6 +625,43 @@ def run_friction_lines(case):
     return b and [x.split("run friction: ", 1)[1] for x in b.section("Log").splitlines() if "run friction: " in x]
 
 
+class Toolchain(CodeCase):  # T-1407
+    def test_pins_are_read_as_data(self):
+        import fmcode
+        with open(os.path.join(self.repo, ".tool-versions"), "w") as f:
+            f.write("# pinned\npython 3.12.1 3.11.0\nnodejs ref:main\nruby system\n\ngolang 1.22.0 # go\n")
+        with open(os.path.join(self.repo, ".nvmrc"), "w") as f:
+            f.write("lts/*\n")
+        with open(os.path.join(self.repo, ".python-version"), "w") as f:
+            f.write("3.9.0\n")
+        self.assertEqual(fmcode.pins(self.repo), [("python", "3.12.1"), ("golang", "1.22.0")])
+
+    def test_checks_run_on_the_pinned_interpreter_and_an_envrc_never_runs(self):
+        bin_, pin = os.path.join(self.tmp, "fakebin"), os.path.join(self.tmp, "pin", "bin")
+        os.makedirs(bin_)
+        os.makedirs(pin)
+        mark, envrc = os.path.join(self.tmp, "pinned-ran"), os.path.join(self.tmp, "envrc-ran")
+        with open(os.path.join(bin_, "mise"), "w") as f:
+            f.write(f'#!/bin/sh\n[ "$1 $2" = "where python@3.12.1" ] && echo {os.path.dirname(pin)} && exit 0\nexit 1\n')
+        with open(os.path.join(pin, "python3"), "w") as f:
+            f.write(f'#!/bin/sh\ntouch {mark}\nexec {sys.executable} "$@"\n')
+        for x in (os.path.join(bin_, "mise"), os.path.join(pin, "python3")):
+            os.chmod(x, 0o755)
+        with open(os.path.join(self.repo, ".tool-versions"), "w") as f:
+            f.write("python 3.12.1\nnodejs 99.0.0\n")
+        with open(os.path.join(self.repo, ".envrc"), "w") as f:
+            f.write(f"touch {envrc}\n")
+        subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "pins"], check=True)
+        self.serve("openai", plan(), *FIX)
+        r = self.code("fix add", "--model", "fake", env={"PATH": bin_ + os.pathsep + os.environ["PATH"]})
+        self.assertIn("toolchain: python 3.12.1 (mise) first on PATH", r.stdout)
+        self.assertIn("not installed by mise, asdf or pyenv here: nodejs 99.0.0", r.stdout)
+        self.assertTrue(os.path.exists(mark), "the verify ran on the pinned python3")
+        self.assertFalse(os.path.exists(envrc), "a repo's .envrc is never sourced")
+        self.assertEqual(self.task()["status"], "done")
+
+
 class SlotIntegrity(CodeCase):  # T-1398
     def test_elided_code_is_found_only_when_the_old_text_lacks_it(self):
         import fmcode
