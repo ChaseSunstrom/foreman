@@ -21,27 +21,7 @@ class Help(ForemanTestCase):
         self.assertLess(out.index("  next "), out.index("  sentinel "))
         self.assertEqual(self.fm().stdout, out, "fm alone prints it")
 
-    def test_tiers_come_from_registrations(self):
-        # T-1144: each command declares its tier where it is registered; no shared table to conflict on
-        import fmcli
-        sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
-        listed = [w for _, names in fmcli.HELP_TIERS for w in names.split()]
-        self.assertEqual(sorted(listed), sorted(sub.choices))
-        self.assertEqual([t for t, _ in fmcli.HELP_TIERS][0], "Every task")
-        src = open(os.path.join(os.path.dirname(__file__), "..", "lib", "fmcli.py")).read()
-        self.assertNotIn('("Every task", "next', src, "no hand-kept name list")
-
-    def test_each_command_has_its_own_help_position(self):
-        # T-1686: img, shot and critique all took 93; a tie silently falls back to registration order. One position per
-        # registration site: the instruments loop (fminstr.TOOLS) is one site, its tools in the registry's order
-        import fmcli
-        import fminstr
-        sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
-        with open(os.path.join(os.path.dirname(__file__), "..", "lib", "fmcli.py"), encoding="utf-8") as f:
-            sites = re.findall(r'\btier=\("[^"]+", (\d+)\)', f.read())
-        commands = len({id(p) for p in sub.choices.values()})  # an alias (status) is its command's parser
-        self.assertEqual(len(sites), commands - len(fminstr.TOOLS) + 1, "every registration site read")
-        self.assertEqual(sorted({p for p in sites if sites.count(p) > 1}, key=int), [], "positions shared")
+    # the registration checks (tiers, one position each) live in test_cli.HelpRegistrations (T-1776)
 
     def test_help_text_carries_no_ticket_ids(self):
         # T-0873 (round 4): "(T-0594)" in help reads as noise to anyone who isn't Foreman's maintainer

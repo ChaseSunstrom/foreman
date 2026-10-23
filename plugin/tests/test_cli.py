@@ -1,4 +1,5 @@
 """Behavioural tests for the fm CLI (run as a subprocess against an isolated FOREMAN_HOME)."""
+import argparse
 import json
 import subprocess
 import os
@@ -12,6 +13,30 @@ from helpers import ForemanTestCase, read_text, read_json
 
 import fmcore as c
 import fmcli
+
+
+class HelpRegistrations(unittest.TestCase):
+    """fmcli.py's command registrations: here, not in test_help, so every fmcli.py change runs them (T-1776: fm map links
+    tests by name and drops fmcli.py's co-change pairs, so T-1608 never ran test_help and shipped a shared position)."""
+    def test_tiers_come_from_registrations(self):
+        # T-1144: each command declares its tier where it is registered; no shared table to conflict on
+        sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+        listed = [w for _, names in fmcli.HELP_TIERS for w in names.split()]
+        self.assertEqual(sorted(listed), sorted(sub.choices))
+        self.assertEqual([t for t, _ in fmcli.HELP_TIERS][0], "Every task")
+        src = open(os.path.join(os.path.dirname(__file__), "..", "lib", "fmcli.py")).read()
+        self.assertNotIn('("Every task", "next', src, "no hand-kept name list")
+
+    def test_each_command_has_its_own_help_position(self):
+        # T-1686: img, shot and critique all took 93; a tie silently falls back to registration order. One position per
+        # registration site: the instruments loop (fminstr.TOOLS) is one site, its tools in the registry's order
+        import fminstr
+        sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+        with open(os.path.join(os.path.dirname(__file__), "..", "lib", "fmcli.py"), encoding="utf-8") as f:
+            sites = re.findall(r'\btier=\("[^"]+", (\d+)\)', f.read())
+        commands = len({id(p) for p in sub.choices.values()})  # an alias (status) is its command's parser
+        self.assertEqual(len(sites), commands - len(fminstr.TOOLS) + 1, "every registration site read")
+        self.assertEqual(sorted({p for p in sites if sites.count(p) > 1}, key=int), [], "positions shared")
 
 
 class OutJson(unittest.TestCase):
