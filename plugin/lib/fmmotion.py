@@ -583,24 +583,44 @@ def report(got):
     return "\n".join(lines)
 
 
-def sample(url, root):
-    """(samples, None, notes) from the page at url crawled under fm smoke's frozen profile (smoke_web.cjs's sampleMotion
-    seeks each paused motion-NAME animation through one iteration), or (None, why, []) with no browser to do it. Never
-    installs one. ponytail: the whole frozen crawl, every view at two widths. The switch to fm shot (T-1636) is here:
-    fmshot.chrome() finds a browser with no Playwright, and a fmshot.Browser would load url with the frozen CSS, then
-    Runtime.evaluate sampleMotion's source and read its result in place of this crawl."""
-    import tempfile
+def _sampler():
+    """smoke_web.cjs's sampleMotion, as source: the one sampler fm smoke's crawl and fm motion verify both run."""
     import fmsmoke
-    pw = fmsmoke.playwright(root)
-    if not pw and not fmsmoke._runner():
-        return None, "no browser: no Playwright in this checkout (fm smoke's own; nothing is installed)", []
-    with tempfile.TemporaryDirectory() as d:
-        res = fmsmoke.crawl(pw, url, d, profile="frozen")
-    if res.get("skipped"):
-        return None, f"no browser: {res['skipped']}", []
-    if not res.get("views"):
-        return None, "the page wasn't sampled: " + "; ".join(x["what"] for x in res.get("defects") or [])[:200], []
-    return res.get("motion") or [], None, res.get("motion_notes") or []
+    with open(fmsmoke.SCRIPT, encoding="utf-8") as f:
+        m = re.search(r"^function sampleMotion\(where\) \{\n.*?^\}\n", f.read(), re.M | re.S)
+    return m.group(0) if m else None
+
+
+def sample(url, root):
+    """(samples, None, notes) from the page at url, or (None, why, []) when it can't be sampled. T-1716: one page in
+    fm shot's browser (fmshot.find_browser: no Playwright needed, nothing installed) with fm smoke's frozen clock and
+    paused animations, then smoke_web.cjs's sampleMotion run in the page, seeking each paused motion-NAME animation
+    through one iteration. ponytail: one page at one width; the views a crawl walked aren't visited."""
+    import fmshot
+    path, bad = fmshot.find_browser("fm motion verify")
+    if not path:
+        return None, bad, []
+    src = _sampler()
+    if not src:
+        return None, "smoke_web.cjs has no sampleMotion to run", []
+    try:
+        b = fmshot.Browser(path, fmshot.SIZE)
+    except (OSError, RuntimeError, EOFError, ValueError) as e:  # TimeoutError is an OSError
+        return None, f"no browser: {fmshot.safe(path)} did not start: {e}", []
+    try:
+        b.call("Page.addScriptToEvaluateOnNewDocument", b.sid, source=fmshot.FREEZE)
+        notes = fmshot.load(b, url)
+        got = b.call("Runtime.evaluate", b.sid, expression=f"({src})({json.dumps('page')})", returnByValue=True)
+    except (OSError, RuntimeError, EOFError, ValueError) as e:
+        return None, f"the page wasn't sampled: {e}", []
+    finally:
+        b.close()
+    if got.get("exceptionDetails"):
+        return None, f"the page wasn't sampled: {str(got['exceptionDetails'].get('text') or 'the sampler threw')[:200]}", []
+    v = (got.get("result") or {}).get("value")
+    v = v if isinstance(v, dict) else {}
+    return [s for s in v.get("samples") or [] if isinstance(s, dict)], None, notes + [str(n)[:300] for n in
+                                                                                    v.get("notes") or []]
 
 
 def _cmd_verify(args, path, samples):
