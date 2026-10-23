@@ -409,11 +409,14 @@ def _bare_guard(plugin):
     return c.guard_settings(plugin)  # T-1354: shared with fm code's lean claude sessions
 
 
-def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare=False, compact_at=None, marathon=None):
+def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare=False, compact_at=None, marathon=None,
+             ablate=None):
     t0 = time.monotonic()
     with _worktree(p.root, case["base"]) as (tmp, wt):
         state = os.path.join(tmp, "state")
         env = _env(plugin, state)
+        if ablate and not bare:  # T-1375: this arm's Foreman with one hook feature switched off
+            env["FOREMAN_ABLATE"] = ablate
         if compact_at:  # T-1242: both arms compact early, as a long session would; kept to count the compactions
             env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(compact_at)
         if marathon and not bare:  # T-1242: after the asked work, Foreman's drive finds and does more, N passes
@@ -458,9 +461,9 @@ def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare
 
 
 def run_case_n(p, case, plugin, model=None, budget=3.0, timeout=30, runs=1, extra=(), bare=False, compact_at=None,
-               marathon=None):
+               marathon=None, ablate=None):
     """T-0221: a case run `runs` times: pass rate, mean cost, turns and time; the first attempt's details kept."""
-    tries = [run_case(p, case, plugin, model, budget, timeout, extra, bare, compact_at, marathon)
+    tries = [run_case(p, case, plugin, model, budget, timeout, extra, bare, compact_at, marathon, ablate)
              for _ in range(max(1, runs))]
     rate = sum(t["pass"] for t in tries) / len(tries)
 
@@ -691,8 +694,11 @@ def claude_version():
     return found.group(0) if found else (line or None)
 
 
+EQUAL_TRIES = 5  # T-1376: the most fresh attempts a plain session gets to spend what Foreman spent on a case
+
+
 def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1, quiet=False, head=None, extra=(),
-            bare=False, jobs=1, compact_at=None, marathon=None):
+            bare=False, jobs=1, compact_at=None, marathon=None, ablate=None, spend=None):
     """Every case on one plugin (and `extra` plugin dirs beside it), results written after each case (a crash or
     Ctrl-C keeps what was paid for). Refuses a plugin without the guard here, so no caller can skip it (replays run in
     bypass mode). `bare` (T-0963): no plugin loaded, only the plugin's guard as a settings hook."""
@@ -705,13 +711,25 @@ def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1,
     res = {"label": label, "plugin": plugin, "model": model, "at": c.now(), "head": head, "claude": claude_version(),
            "cases": results, "budget": budget, "runs": runs,  # T-1261: what fm bench repro reruns a row with
            **({"extra": list(extra)} if extra else {}), **({"bare": bare} if bare else {}),
-           **({"compact_at": compact_at} if compact_at else {}), **({"marathon": marathon} if marathon else {})}
+           **({"compact_at": compact_at} if compact_at else {}), **({"marathon": marathon} if marathon else {}),
+           **({"ablate": ablate} if ablate else {}), **({"equal_spend": True} if spend is not None else {})}
     os.makedirs(_results_dir(p), exist_ok=True)
     _safe_git(p.root, "worktree", "prune")  # a killed earlier run's worktree
     def one(case):
         print(f"bench {label}: {case['id']} …", flush=True) if not quiet else None
         try:
-            return run_case_n(p, case, plugin, model, budget, timeout, runs, extra, bare, compact_at, marathon)
+            if spend is not None:  # T-1376: fresh attempts until one passes or they've spent what Foreman did
+                tries, total = [], 0.0
+                while len(tries) < EQUAL_TRIES:
+                    tries.append(run_case(p, case, plugin, model, budget, timeout, extra, bare, compact_at, marathon))
+                    total += tries[-1].get("cost_usd") or 0
+                    if tries[-1]["pass"] or total >= (spend.get(case["id"]) or 0):
+                        break
+                best = next((t for t in tries if t["pass"]), tries[-1])
+                return dict(best, cost_usd=round(total, 4), tries=len(tries), spend_to=spend.get(case["id"]),
+                            attempts=[{k: t.get(k) for k in ("pass", "cost_usd", "turns", "seconds", "error")}
+                                      for t in tries])
+            return run_case_n(p, case, plugin, model, budget, timeout, runs, extra, bare, compact_at, marathon, ablate)
         except (OSError, subprocess.SubprocessError, ValueError) as e:  # one case, not the run's paid results
             return {"id": case["id"], "pass": False, "verify": [], "cost_usd": None, "turns": None, "seconds": 0,
                     "error": f"{type(e).__name__}: {c.fit(str(e), 160)}"}
@@ -959,13 +977,41 @@ def _contest(p, args):
                 f"  {'✓' if x['pass'] else '✗'} {x['id']} · score {x.get('score')}/5 · "
                 + next(y["title"] for y in cases if y["id"] == x["id"]) for x in res["cases"]))
             return 0 if all(x["pass"] for x in res["cases"]) else 1
-        if args.bench_cmd == "duel" and args.vs:  # T-0963: Foreman against Claude with no plugins (T-1264: or with
-            if args.plugin:                       # Foreman's rules as one CLAUDE.md)
+        equal = getattr(args, "equal_spend", False)
+        if equal and args.vs != "none":
+            raise fmcli.UsageError("--equal-spend gives Claude with no plugins Foreman's spend: with --vs none")
+        if args.bench_cmd == "duel" and getattr(args, "ablate", None):  # T-1375: what each hook feature is worth
+            if args.plugin or args.vs:
+                raise fmcli.UsageError("--ablate duels Foreman against itself: no rival plugin or --vs")
+            feats = list(c.ABLATABLE) if args.ablate == "all" else [x.strip() for x in args.ablate.split(",") if x.strip()]
+            bad = [x for x in feats if x not in c.ABLATABLE]
+            if bad or not feats:
+                raise fmcli.UsageError(f"--ablate takes features from {', '.join(c.ABLATABLE)} (or all); not "
+                                       f"{', '.join(bad) or 'none'}. The guard is never switched off")
+            full = run_arm(p, cases, plugin, f"duel-ablate-full-{stamp}", **arm)
+            arms, lines = {}, []
+            sf, cf = sum(_rate(x) for x in full["cases"]), sum(x.get("cost_usd") or 0 for x in full["cases"])
+            for f in feats:
+                r = run_arm(p, cases, plugin, f"duel-ablate-{f}-{stamp}", ablate=f, **arm)
+                arms[f] = r["label"]
+                so, co = sum(_rate(x) for x in r["cases"]), sum(x.get("cost_usd") or 0 for x in r["cases"])
+                says = ("it helps: off, fewer passes" if so < sf else "it hurts: off, more passes" if so > sf else
+                        f"no pass changes; off saves {round((1 - co / cf) * 100)}%" if cf and co < cf * 0.95 else
+                        "no difference on these cases")
+                lines.append(f"  {f} off: {so:g}/{len(cases)} passed (full {sf:g}/{len(cases)}) · ${co:.2f} "
+                             f"(full ${cf:.2f}) → {says}")
+            ok, data = True, {"full": full["label"], "arms": arms, "lines": lines,
+                              "verdict": f"{len(feats)} feature(s) switched off one at a time against full Foreman"}
+        elif args.bench_cmd == "duel" and args.vs:  # T-0963: Foreman against Claude with no plugins (T-1264: or
+            if args.plugin:                         # with Foreman's rules as one CLAUDE.md)
                 raise fmcli.UsageError(f"a rival plugin or --vs {args.vs}, not both")
             rival = "Claude with no plugins" if args.vs == "none" else "Claude with Foreman's rules as one CLAUDE.md"
-            a = run_arm(p, cases, plugin, f"duel-{args.vs}-foreman-{stamp}", **arm)
-            b = run_arm(p, cases, plugin, f"duel-{args.vs}-bare-{stamp}", bare=True if args.vs == "none" else "snippet",
-                        **arm)
+            tag = "spend" if equal else args.vs  # T-1376: its own labels, so the benchmarks page keeps them apart
+            if equal:
+                rival += ", given Foreman's spend as more attempts"
+            a = run_arm(p, cases, plugin, f"duel-{tag}-foreman-{stamp}", **arm)
+            b = run_arm(p, cases, plugin, f"duel-{tag}-bare-{stamp}", bare=True if args.vs == "none" else "snippet",
+                        spend={x["id"]: x.get("cost_usd") or 0 for x in a["cases"]} if equal else None, **arm)
             ok, lines = gate(b, a, args.cost_tolerance)  # bare Claude is the reference Foreman has to beat
             sa, sb = (sum(_rate(x) for x in r["cases"]) for r in (a, b))
             why = "; ".join(x[2:] for x in lines if x.startswith("✗ ") and x != "✗ not proposed")

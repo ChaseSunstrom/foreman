@@ -2726,3 +2726,26 @@ class NotificationAndEnd(HookCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Ablate(HookCase):  # T-1375
+    def edit(self, name, env=None):  # the scope note comes once per file: a new file each time
+        r = self.hook("PreToolUse", {"tool_name": "Edit", "tool_input": {
+            "file_path": os.path.join(self.repo, "docs", name), "old_string": "a", "new_string": "b"}}, env=env)
+        return ((parse(r) or {}).get("hookSpecificOutput") or {}).get("additionalContext", "")
+
+    def test_a_named_note_is_switched_off_and_the_guard_never_is(self):
+        self.fm("init")
+        tid = self.task(scope=["src/**"])
+        self.assertIn(f"outside {tid} scope", self.edit("x.md"))
+        self.assertNotIn("scope", self.edit("y.md", {"FOREMAN_ABLATE": "lessons,scope"}), "scope switched off")
+        self.assertIn(f"outside {tid} scope", self.edit("z.md"), "and on again without it")
+        self.assertEqual(c.ablated(), set())
+        os.environ["FOREMAN_ABLATE"] = "scope, guard ,nope"
+        try:
+            self.assertEqual(c.ablated(), {"scope"}, "only named features; the guard isn't one")
+        finally:
+            del os.environ["FOREMAN_ABLATE"]
+        r = self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "rm -rf ~"}},
+                      env={"FOREMAN_ABLATE": "guard"})
+        self.assertIn("deny", r.stdout + r.stderr, "the guard still refuses")

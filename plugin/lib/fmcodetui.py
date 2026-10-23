@@ -102,7 +102,8 @@ DEFAULTS = {
     "keys": {"q": "quit", "n": "new", "s": "stop", "r": "resume", "?": "help", "d": "diff", "h": "history",
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
              "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
-             "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search", "g": "queue"},
+             "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search", "g": "queue", "T": "tickets",
+             "u": "undo", "P": "pr"},
     "ext": {},  # T-1657: each extension's settings ({name: {key: value}}), its declared defaults (API.setting)
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
@@ -644,6 +645,13 @@ def ease_out(k):
 LIVE = ("planning", "running", "fixing")
 VIEW_FADE = 0.25  # T-1307: seconds a view takes to fade in
 SCRUB_KEYS = ("KEY_LEFT", "KEY_RIGHT", "KEY_HOME", "KEY_END")  # T-1307: a replay's steps (fixed: not in tui.toml)
+CIRCLED = "①②③④⑤⑥⑦⑧⑨"  # T-1350: the rail's ticket numbers
+
+
+def _ticket_row(item):
+    i, text, held = item
+    return [(f" {CIRCLED[i] if i < len(CIRCLED) else i + 1} ", "chip_accent"), ("  " + _one_line(text), "text")] + (
+        [("   ↕ moving: arrows, space puts it down", "accent")] if held else [])
 SETUP_KEYS = ("l", "i", "e")  # T-1333: the first-run fixes, where tui.toml binds nothing to them
 
 
@@ -881,6 +889,11 @@ def _track(st, w, h, app):
                 elif x:
                     rows[r][x - 1] = (rows[r][x - 1][0] + ch, style)
                 x += cw_
+    if app is not None and app.tickets:  # T-1350: the rail of tickets that run after this one
+        rail = [("next ", "dim")]
+        for i, t in enumerate(app.tickets[:len(CIRCLED)]):
+            rail += [(f"{CIRCLED[i]} ", "accent"), (fit(_one_line(t), 24) + "   ", "text")]
+        return [_segments(r) for r in rows] + [rail]
     return [_segments(r) for r in rows]
 
 
@@ -1324,7 +1337,8 @@ def render(st, w, h, cfg, app=None, t=None):
     if prompt:  # T-1346: the cursor where the line editor has it, and where Enter sends the request
         shown = lambda s: s.replace("\n", " ↵ ")
         cv.fill(h - 3, "input")
-        cv.line(h - 3, 0, [(" ask › " if app.asking else " request › ", "key"), (shown(app.input[:app.line.cur]),
+        cv.line(h - 3, 0, [(" ask › " if app.asking else " next › " if app.ticketing else " request › ", "key"),
+                           (shown(app.input[:app.line.cur]),
                                                                                  "input"), ("▏", "key"),
                            (shown(app.input[app.line.cur:]), "input")], w)
         cv.line(h - 2, 0, [("   ", "text"), (app.preview(), "dim")], w)
@@ -1338,6 +1352,14 @@ def render(st, w, h, cfg, app=None, t=None):
     if app is not None and app.mode in VIEWS:
         VIEWS[app.mode](cv, st, app, cfg)
     if app is not None:  # T-1307: a switch between the run, its diff and past runs fades in instead of jumping
+        if app.mode == "project" and app.grow and app.grow[0] and _FX.moving:  # T-1345: out of the card it was
+            (y, x, gh, gw), k = app.grow[0], (_FX.t - app.grow[1]) / GROW
+            if 0 <= k < 1:
+                e = ease_out(k)
+                y0, x0 = round(y * (1 - e)), round(x * (1 - e))
+                y1, x1 = round(y + gh + (cv.h - y - gh) * e), round(x + gw + (cv.w - x - gw) * e)
+                cv.cells = [[cell if y0 <= r < y1 and x0 <= c < x1 else (" ", "shade") for c, cell in enumerate(row)]
+                            for r, row in enumerate(cv.cells)]
         k = _FX.since("view", app.mode if app.mode in ("diff", "history") else "main")
         if k < VIEW_FADE:
             e, screen = ease_out(k / VIEW_FADE), col(cfg, "screen", "bg")
@@ -1356,6 +1378,9 @@ COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume"
                   ("looks", "your taste: 12 looks in pairs"),
                   ("hush", "motion: full, reduced, off"),
                   ("queue", "work the queue: each task in turn"),
+                  ("tickets", "tickets: requests that run after this one"),
+                  ("undo", "undo the closed run: a git revert of its commit"),
+                  ("pr", "the closed run's pull request text; Enter posts it"),
                   ("thoughts", "the model's own words"), ("focus", "next panel"), ("up", "up"), ("down", "down"),
                   ("expand", "open a line"), ("follow", "follow the latest"), ("search", "search the Activity"),
                   ("help", "keys"), ("quit", "quit")]
@@ -1542,7 +1567,8 @@ def _list_view(title, note, row, head=None, foot=None, empty="nothing here yet",
 
 
 def _history_row(item):
-    chip = {"closed": (" DONE ", "chip_ok"), "blocked": (" STOP ", "chip_bad"), "error": (" STOP ", "chip_bad")}.get(
+    chip = {"closed": (" DONE ", "chip_ok"), "blocked": (" STOP ", "chip_bad"), "error": (" STOP ", "chip_bad"),
+            "undone": (" UNDONE ", "chip_warn")}.get(  # T-1352
         item["status"], (" ···· ", "chip_todo"))
     when = time.strftime("%b %d %H:%M", time.localtime(item["ts"])) if item.get("ts") else ""
     again = [(f"  fm code --resume {item['task']}", "accent")] if item["status"] == "stopped" else []  # T-1338
@@ -1565,23 +1591,97 @@ def _noticed():
     return fmcode.noticed()
 
 
-def _project_row(p):
-    """T-1330: one Foreman project on the home: what's active, its counts, or why it can't be shown. T-1339: first,
-    a round Foreman queued on itself from runs that went wrong, with their causes."""
-    if p.get("kind") == "noticed":
-        causes = [str(x) for x in p.get("causes") or []]
-        return [(" NOTICED ", "chip_warn"), ("  Foreman noticed", "strong"), (f"  {p.get('task')} ", "dim"),
-                ("  " + ("; ".join(causes[-3:]) if causes else str(p.get("title") or "")), "text")]
-    name = str(p.get("project") or "?")
+HOME_NOTE = "Enter opens · n new request there · , settings · Esc run screen · q quits"
+CARD_W, CARD_H, GROW = 38, 6, 0.25  # T-1345: a project's card on the home, and how long Enter's grow takes
+DECK_STAGE = {"planning": 0, "ready": 0, "executing": 1, "verifying": 2, "auditing": 2, "closing": 3}
+
+
+def _deck_view(cv, st, app, cfg):
+    """T-1345: the home as a deck: a card per project (what Foreman noticed first), as many columns as fit. The focus
+    ring glides from the last card to the selected one (fx.ease: at once with motion reduced or off), which is drawn
+    focused once the ring lands. Each card's place is kept for the keys (deck_cols) and Enter's grow (deck_rects)."""
+    iy, ix, ih, iw = _overlay(cv, cfg, "Foreman projects", HOME_NOTE, cv.w - 2, cv.h - 2)
+    app.deck_rects = {}
+    if ih < 2 or iw < 8:
+        return
+    cols = max(1, min(len(app.items) or 1, (iw + 1) // (CARD_W + 1)))
+    cw, ch = (iw - (cols - 1)) // cols, CARD_H
+    app.deck_cols = cols
+    if not app.items:
+        cv.line(iy, ix, [("no Foreman projects yet: fm init in a repository makes one", "dim")], ix + iw)
+        return
+    rows = max(1, ih // ch)
+    top = max(0, app.item_index // cols - rows + 1)
+    for i in range(top * cols, min(len(app.items), (top + rows) * cols)):
+        r, c = divmod(i, cols)
+        app.deck_rects[i] = (iy + (r - top) * ch, ix + c * (cw + 1), ch, cw)
+        _project_card(cv, app.items[i], *app.deck_rects[i], cfg, focused=False)
+    target = app.deck_rects.get(app.item_index)
+    if target:
+        fx = current()
+        ring = (round(fx.ease("deck_y", target[0], 0.18)), round(fx.ease("deck_x", target[1], 0.18)))
+        app.deck_ring = ring
+        if ring == target[:2]:
+            _project_card(cv, app.items[app.item_index], *target, cfg, focused=True)
+        else:
+            _ring(cv, *ring, ch, cw)
+
+
+def _ring(cv, y, x, h, w):
+    """T-1345: the focus ring on its way between two cards: a border alone, over what's there."""
+    tl, tr, bl, br, hz, vt = BORDERS["rounded"]
+    cv.put(y, x, tl + hz * (w - 2) + tr, "accent")
+    for r in range(y + 1, y + h - 1):
+        cv.put(r, x, vt, "accent")
+        cv.put(r, x + w - 1, vt, "accent")
+    cv.put(y + h - 1, x, bl + hz * (w - 2) + br, "accent")
+
+
+def _printable(s, n):
+    return "".join(ch for ch in str(s) if ch.isprintable())[:n]
+
+
+def _project_card(cv, p, y, x, h, w, cfg, focused):
+    """T-1345: one project's card: its name, its runner, the active task's stations, the task, the badges."""
+    noticed = p.get("kind") == "noticed"
+    runner = _printable(p.get("runner") or "", 20) if isinstance(p.get("runner"), str) else ""
+    note = _printable(p.get("task") or "", 12) if noticed else (f"◆ {runner}" if runner else "")
+    iy, ix, ih, iw = box(cv, y, x, h, w, "Foreman noticed" if noticed else str(p.get("project") or "?"), cfg,
+                         focused=focused, note=note)
+    for r, segs in enumerate(_card_lines(p)[:ih]):
+        cv.line(iy + r, ix, segs, ix + iw)
+
+
+def _card_lines(p):
+    if p.get("kind") == "noticed":  # T-1339: a round Foreman queued on itself, with its newest causes
+        return [[(" NOTICED ", "chip_warn"), ("  " + str(p.get("title") or ""), "dim")]] + [
+            [(str(c), "text")] for c in [str(x) for x in p.get("causes") or []][-2:]]
     if p.get("error"):
-        return [(" ERROR ", "chip_bad"), ("  " + pad(name, 24), "strong"), ("  " + str(p["error"]), "bad")]
+        return [[(" ERROR ", "chip_bad")], [(str(p["error"]), "bad")]]
     if p.get("exists") is False:
-        return [(" GONE  ", "chip_bad"), ("  " + pad(name, 24), "strong"), (f"  folder missing: {p.get('root')}", "dim")]
+        return [[(" GONE ", "chip_bad")], [(f"folder missing: {p.get('root')}", "dim")]]
     a = p.get("active") if isinstance(p.get("active"), dict) else None
-    counts = f"queue {_num(p.get('queue'))}  inbox {_num(p.get('inbox'))}  blocked {_num(p.get('blocked'))}"
-    return [(" ACTIVE " if a else " IDLE   ", "chip_accent" if a else "chip_todo"), ("  " + pad(name, 24), "strong"),
-            (f"  {counts:<34}", "dim"), ("  " + (f"{a.get('id')} {a.get('title') or ''}" if a else "nothing active"),
-                                         "text")]
+    task = [(f"{a.get('id')} ", "strong"), (str(a.get("title") or ""), "text")] if a else [("nothing active", "dim")]
+    badges = []
+    for k, style in (("blocked", "chip_bad"), ("inbox", "chip_todo"), ("queue", "chip_accent")):
+        n = _num(p.get(k))
+        badges += [(f" {k} {n:g} ", style if n else "dim"), (" ", "text")]
+    return [_card_track(a), task, badges]
+
+
+def _card_track(a):
+    """T-1345: the active task's stations (plan, work, checks, close) as a mini track, the one it's at lit."""
+    if not a:
+        return [("○──○──○──○", "track")]
+    at, names = DECK_STAGE.get(a.get("stage"), 1), ("plan", "work", "checks", "close")
+    segs = []
+    for i in range(4):
+        segs.append(("●", "ok") if i < at else ("◉", "accent") if i == at else ("○", "track"))
+        if i < 3:
+            segs.append(("━━", "ok") if i < at else ("──", "track"))
+    done, total = a.get("steps_done"), a.get("steps_total")
+    steps = f" {done}/{total}" if at == 1 and isinstance(total, int) and total else ""
+    return segs + [(f"  {names[at]}{steps}", "dim")]
 
 
 _SECTION = {"active": (" ACTIVE  ", "chip_accent"), "queue": (" QUEUED  ", "chip_todo"),
@@ -1796,9 +1896,9 @@ def _runners_foot(app, iw):
 
 VIEWS = {"help": _help_view, "diff": _diff_view, "history": _list_view("Past runs", "Enter opens one", _history_row),
          "picker": _list_view("Run the next request with", "Enter picks", _picker_row),
-         "home": _list_view("Foreman projects",
-                            "Enter opens · n new request there · , settings · Esc run screen · q quits",
-                            _project_row),
+         "home": lambda cv, st, app, cfg: _deck_view(cv, st, app, cfg),  # T-1345: cards, not rows
+         "tickets": _list_view("Tickets", "space picks up / puts down · ↑↓ move · Delete drops · Esc back", _ticket_row,
+                               empty="no tickets: during a run, n then Tab writes one"),  # T-1350
          "project": _list_view(lambda app: str((app.project or {}).get("project") or "project"),
                                "Enter/r runs a task · Enter replays a run · n new · m runner · , settings · "
                                "Esc projects",
@@ -2006,6 +2106,9 @@ class App:
         self.tour = None  # T-1309: the tour's [when it began, how many of its events are shown]
         self._setup = None  # T-1333: the first-run checks shown on the welcome (None: not asked yet this launch)
         self.handoff = None  # T-1341: (argv, folder, task, CLI) the screen loop runs with the terminal handed over
+        self.deck_cols, self.deck_rects, self.deck_ring, self.grow = 1, {}, None, None  # T-1345: the home's cards
+        self.tickets, self.ticketing, self.ticket_held = [], False, False  # T-1350: requests for after this run
+        self.undone, self.view_post = None, None  # T-1352: the commit undone this launch; the task a PR draft posts
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
@@ -2030,13 +2133,16 @@ class App:
                          "diff": self.show_diff, "history": self.show_history, "model": self.show_picker,
                          "thoughts": self.toggle_thoughts, "projects": self.show_home,
                          "settings": self.show_settings, "hush": self.hush, "looks": self.show_looks,
-                         "queue": self.work_queue}
+                         "queue": self.work_queue, "tickets": self.show_tickets, "undo": self.undo,
+                         "pr": self.draft_pr}
         self.commands.update({name: self._ext_command(name, fn) for name, fn in EXT_COMMANDS.items()})
 
     def fps(self, t):
         """How often to draw: 30 while something eases or flashes, 12 while live work spins and pulses, 1 when the
         screen is still (4 with motion off and a run going, for its clock)."""
         mode = self.cfg.get("motion", "full")
+        if mode == "full" and self.grow and 0 <= t - self.grow[1] < GROW:  # T-1345: the project view growing
+            return 30
         live = self.running() or self.state.status in ("planning", "running", "fixing")
         live = live or bool(self.tour and self.tour[1] < len(TOUR_RUN))  # T-1309: its next event comes on time
         if mode == "off":
@@ -2104,6 +2210,8 @@ class App:
         if (self.mode == "main" and k in SETUP_KEYS and k not in self.cfg["keys"] and self.state.status == "idle"
                 and not self.running() and self.first_run()):  # T-1333: the welcome's fixes
             return self._setup_key(k)
+        if self.mode == "tickets":  # T-1350
+            return self._tickets_key(k)
         if self.mode in ("diff", "history", "picker"):
             return self._view_key(k)
         cmd = self.cfg["keys"].get(k)
@@ -2114,7 +2222,8 @@ class App:
                 self.confirm_key = (cmd, self.clock() + CONFIRM_S)
                 self.message = f"{key_name(k)} again within {CONFIRM_S:g} s to {cmd} the run"
                 return None
-        self.confirm_key = None
+        if not (self.confirm_key and self.confirm_key[0] == cmd):  # T-1352: a second press of the same key confirms
+            self.confirm_key = None
         fn = self.commands.get(cmd)
         if fn:
             self.used.add(cmd)
@@ -2129,6 +2238,14 @@ class App:
         step = {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
         if k in ("\x1b", "q") or cmd == {"diff": "diff", "history": "history", "picker": "model"}[self.mode]:
             self._back()
+        elif cmd == "expand" and self.mode == "diff" and self.view_post:  # T-1352: post the PR draft shown
+            tid = self.view_post
+            try:
+                out = self.fm_output(["pr", tid, "--post"])
+            except (OSError, subprocess.SubprocessError) as e:
+                out = f"couldn't run fm pr {tid} --post: {e}"
+            self._back()
+            self.message = _one_line(out)[:200] or f"posted {tid}'s description"
         elif step and self.mode == "diff":
             self.view_scroll = max(0, self.view_scroll + step)
         elif step:
@@ -2169,6 +2286,11 @@ class App:
                     fn()
                 else:
                     self.message = f"no app command matches {text}"
+            elif text and self.ticketing:  # T-1350: a ticket on the rail, started when this run closes
+                self.ticketing = False
+                self.tickets.append(text)
+                self.message = f"ticket {CIRCLED[min(len(self.tickets), len(CIRCLED)) - 1]} on the rail: it starts " \
+                               "when this run closes (T lists them)"
             elif text and self.asking:  # T-1770: read-only, beside the run, which goes on
                 self.asking = False
                 self.ask(text)
@@ -2176,12 +2298,14 @@ class App:
                 after, self.after = getattr(self, "after", None), None
                 self.start([text], **({"after": after} if after else {}))  # T-1340
         elif k == "\x1b":
-            self.input, self.next_root, self.asking = "", None, False
+            self.input, self.next_root, self.asking, self.ticketing = "", None, False, False
             back, self.prompt_back = self.prompt_back, "main"
             if back == "project" and self.project is not None:
                 self.mode, self.items, self.item_index = "project", self.project_items, self.project_index
             else:
                 self.mode = "main"
+        elif k == "\t" and (self.asking or self.ticketing) and not self.input.startswith("/"):  # T-1350
+            self.asking, self.ticketing = self.ticketing, self.asking
         elif k == "\t":
             self.complete()
         else:
@@ -2293,8 +2417,8 @@ class App:
 
     def new(self):
         if self.running():  # T-1770: a question about the code, answered beside the run
-            self.mode, self.asking, self.after = "prompt", True, None
-            self.message = "a run is going: ask about the code, read-only, beside it (s stops the run)"
+            self.mode, self.asking, self.ticketing, self.after = "prompt", True, False, None
+            self.message = "a run is going: ask about the code beside it, or Tab: a ticket for after it"
         else:
             self.mode, self.after = "prompt", None  # T-1340: n is a fresh request; Enter after a close follows up
 
@@ -2425,6 +2549,66 @@ class App:
             return False
         return True
 
+    def _closed_commit(self):
+        """T-1352: (task, commit) of the run on screen when it closed and committed, else None."""
+        st = self.state
+        m = re.search(r"\bcommitted ([0-9a-f]{7,40})\b", st.closed or "")
+        return (st.task, m.group(1)) if st.status == "closed" and st.task and m and not self.running() else None
+
+    def undo(self):
+        """T-1352: u twice within CONFIRM_S on a closed run: a git revert of its commit (a new commit, nothing lost),
+        and its history file says undone, so past runs show it."""
+        got = self._closed_commit()
+        if not got:
+            self.message = "nothing to undo: u undoes a closed run's commit"
+            return None
+        tid, sha = got
+        if self.undone == sha:
+            self.message = f"{tid} is undone already"
+            return None
+        first = self.confirm_key
+        if not (first and first[0] == "undo" and self.clock() < first[1]):
+            self.confirm_key = ("undo", self.clock() + CONFIRM_S)
+            self.message = f"u again within {CONFIRM_S:g} s to undo {tid} (git revert {sha})"
+            return None
+        self.confirm_key = None
+        git = lambda *a: subprocess.run(["git", "-C", self.root or os.getcwd(), *a], capture_output=True, text=True,  # noqa: E731
+                                        timeout=60, stdin=subprocess.DEVNULL)
+        r = git("revert", "--no-edit", sha)
+        if r.returncode:
+            self.message = f"couldn't undo {tid}: {_one_line(r.stderr or r.stdout)[:160]}"
+            return None
+        new, self.undone = git("rev-parse", "--short", "HEAD").stdout.strip(), sha
+        e = {"event": "undone", "text": f"{tid} undone: reverted by {new}", "task": tid, "revert": new, "ts": time.time()}
+        path = os.path.join(self.history_dir, f"{tid}.events.jsonl") if self.history_dir else None
+        if path and os.path.isfile(path):
+            try:
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(e) + "\n")
+            except OSError:
+                pass
+        self.state.note("note", text=e["text"])
+        self.message = f"undid {tid}: reverted by {new}"
+        return None
+
+    def draft_pr(self):
+        """T-1352: P on a closed run: fm pr's description in the text view; Enter there posts it (fm pr ID --post),
+        which fm pr allows only with the task's publish grant."""
+        got = self._closed_commit()
+        if not got:
+            self.message = "no closed run: P drafts a closed run's pull request text"
+            return None
+        tid = got[0]
+        try:
+            out = self.fm_output(["pr", tid])
+        except (OSError, subprocess.SubprocessError) as e:
+            out = f"couldn't run fm pr {tid}: {e}"
+        self.view_lines, self.view_marks = out.splitlines() or ["(no output)"], {}
+        self.view_title = f"fm pr {tid} · Enter posts it to its PR (needs the publish grant)"
+        self.view_scroll, self.view_opened, self.view_back, self.mode = 0, self.clock(), "main", "diff"
+        self.view_post = tid
+        return None
+
     def run_next(self, nxt):
         """T-1762: a failure's next command, one key away: a resume carries the run on here; a read-only fm command's
         output opens in a view; anything else is named for the user's own shell (it may need their answer)."""
@@ -2523,7 +2707,7 @@ class App:
     # -- the app (T-1330): home over every Foreman project, a project's work and past runs
     def _back(self):
         """Close a view: to the project or home it was opened from, else the run's screen."""
-        back, self.view_back = self.view_back, "main"
+        back, self.view_back, self.view_post = self.view_back, "main", None
         if back == "project" and self.project is not None:
             self.mode, self.items, self.item_index = "project", self.project_items, self.project_index
         elif back == "home" and self.home_items is not None:
@@ -2567,7 +2751,10 @@ class App:
 
     def _home_key(self, k):
         cmd = self._list_cmd(k)
-        step = {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
+        cols = self.deck_cols if self.mode == "home" else 1  # T-1345: up and down move a row of cards
+        step = {"up": -cols, "down": cols, "page_up": -10, "page_down": 10}.get(cmd)
+        if self.mode == "home" and k in ("KEY_LEFT", "KEY_RIGHT"):
+            step = -1 if k == "KEY_LEFT" else 1
         item = self.items[self.item_index] if self.items else None
         if step:
             self.item_index = max(0, min(len(self.items) - 1, self.item_index + step))
@@ -2591,6 +2778,7 @@ class App:
             if target:
                 self.open_project(target)
         elif self.mode == "home" and item and item.get("kind") != "noticed" and cmd in ("expand", "new"):
+            self.grow = (self.deck_rects.get(self.item_index), self.clock())  # T-1345: drawn growing from its card
             self.open_project(item)
             if cmd == "new":
                 self.new_here()
@@ -3289,9 +3477,43 @@ class App:
             self.state.note("error", text=str(x))
         if self.queue_run is not None and isinstance(e, dict) and e.get("event") == "exit":
             self._queue_after()  # T-1779
+        elif self.tickets and isinstance(e, dict) and e.get("event") == "exit":  # T-1350: the rail's next
+            if self.state.status == "closed":
+                text, left = self.tickets[0], len(self.tickets) - 1
+                self.tickets.pop(0)
+                self.start([text])
+                self.state.note("note", text=f"ticket: {text}" + (f" ({left} more on the rail)" if left else ""))
+            else:
+                self.state.note("note", text=f"tickets wait: this run is {self.state.status or 'stopped'}; "
+                                             f"{len(self.tickets)} on the rail (T lists them)")
 
     # -- the queue (T-1779)
     QUEUE_BLOCKS = 2  # blocked tasks in a row that stop it: the queue isn't working, not one task
+
+    def show_tickets(self):
+        """T-1350: the rail as a list: space picks a ticket up and puts it down, arrows move it, Delete drops it."""
+        self.view_back, self.mode, self.item_index, self.ticket_held = self.mode, "tickets", 0, False
+        self._ticket_items()
+
+    def _ticket_items(self):
+        self.items = [(i, t, self.ticket_held and i == self.item_index) for i, t in enumerate(self.tickets)]
+
+    def _tickets_key(self, k):
+        cmd, i, n = self._list_cmd(k), self.item_index, len(self.tickets)
+        if k in ("\x1b", "q") or cmd == "tickets":
+            self.mode, self.ticket_held = "main", False
+        elif k == " " and n:
+            self.ticket_held = not self.ticket_held
+        elif cmd in ("up", "down") and n:
+            j = max(0, min(n - 1, i + (1 if cmd == "down" else -1)))
+            if self.ticket_held and j != i:
+                self.tickets[i], self.tickets[j] = self.tickets[j], self.tickets[i]
+            self.item_index = j
+        elif k in ("KEY_DC", "\x7f", "KEY_BACKSPACE") and n:
+            self.tickets.pop(i)
+            self.item_index, self.ticket_held = max(0, min(i, len(self.tickets) - 1)), False
+        self._ticket_items()
+        return None
 
     def work_queue(self):
         """T-1779: g works the project's queue here, one fm code --task run after another, until it is empty, two
@@ -3404,7 +3626,8 @@ def history(folder):
                 tail = f.read().decode("utf-8", "replace").splitlines()
         except OSError:
             continue
-        last = next((e for e in map(_json_line, reversed(tail)) if e and e.get("event") in ("closed", "blocked", "error")),
+        last = next((e for e in map(_json_line, reversed(tail)) if e and e.get("event") in ("closed", "blocked", "error",
+                                                                                            "undone")),
                     None)
         if first:
             out.append({"path": path, "task": n.split(".")[0], "request": str(first.get("request") or ""),
@@ -3994,6 +4217,8 @@ def run_screen(app, wrapper=None):
     try:
         (wrapper or session)(lambda io: _loop(io, app))
         sys.stdout.write(final_frame(app))  # T-1305: the screen as it was, in the scrollback, once the terminal is back
+        if app.tickets:  # T-1350: tickets are this session's; the ones left are said, not lost silently
+            sys.stdout.write("tickets not run:\n" + "".join(f"  {i}. {t}\n" for i, t in enumerate(app.tickets, 1)))
         sys.stdout.flush()
     finally:
         app.stop()

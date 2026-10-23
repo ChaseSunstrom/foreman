@@ -763,6 +763,7 @@ def projects():
                     "queue": len(sd["queue"]), "inbox": len(sd["inbox"]), "blocked": len(sd["blocked"]),
                     "waits": len(sd["pending"]) + len(sd["asks"]), "drive": bool(sd["drive"]),
                     "autonomy": sd["autonomy"], "sensitive": sd["sensitive"], "updated": updated,
+                    "runner": meta.get("code_runner"),  # T-1345: the app's home card names it
                     # T-0463: the Foreman its last session ran (and on which machine), and the released fixes it lacks
                     "foreman": meta.get("foreman"), "lacks": fmeco.lacks((meta.get("foreman") or {}).get("version"),
                                                                          changes), "next": _next(sd)})

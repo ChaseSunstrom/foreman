@@ -1786,6 +1786,7 @@ class HostileWidth(unittest.TestCase):
                                         {"section": "queue", "task": {"id": s, "type": s, "tier": s, "title": s,
                                                                       "reason": s}}]),
                  "diff": dict(view_lines=["+" + s, "-" + s, "@@ " + s, s]),
+                 "tickets": dict(tickets=[s, s], items=[(0, s, True), (1, s, False)]),  # T-1350
                  "looks": dict(look_answers=[], look_pairs=[(s, s)], items=[(s, s)]),
                  "help": {},
                  "settings": dict(set_rows=[1, 2], set_query=s, set_note=(s, "warn"), items=[
@@ -2493,7 +2494,7 @@ class Width(unittest.TestCase):
                     return i, row
         raise AssertionError(f"{needle!r} not drawn:\n{cv.text()}")
 
-    def test_a_cjk_project_row_keeps_the_later_columns_and_the_border(self):
+    def test_a_cjk_project_card_keeps_its_border_and_cuts_its_title(self):  # T-1345: cards, from rows (T-1330)
         T = tui()
         projects = [{"project": "plain", "root": "/w/p", "exists": True, "active": None, "queue": 1, "inbox": 2,
                      "blocked": 3, "updated": 200.0},
@@ -2506,12 +2507,12 @@ class Width(unittest.TestCase):
             for selected in (0, 1):
                 app.item_index = selected
                 cv = T.render(app.state, w, 30, T.DEFAULTS, app, t=100.0)
-                a, row_a = self.col(cv, "queue 1")
-                b, row_b = self.col(cv, "queue 4")
-                self.assertEqual(a, b, f"the counts line up at {w} columns:\n{cv.text()}")
-                edge = [i for i, (c, _) in enumerate(row_a) if c == "│"][-1]
-                self.assertEqual(row_b[edge][0], "│", f"the right border survives at {w} columns:\n{cv.text()}")
-                self.assertIn("…", "".join(c for c, _ in row_b), "a cut title ends in …")
+                self.assertIn("queue 1", cv.text())
+                self.assertIn("queue 4", cv.text())
+                y, x, h, cw = app.deck_rects[1]
+                _, row = self.col(cv, "T-0009")
+                self.assertEqual(row[x + cw - 1][0], "│", f"the card's right border survives at {w}:\n{cv.text()}")
+                self.assertIn("…", "".join(c for c, _ in row[x:x + cw]), "a cut title ends in …")
         long = dict(projects[1], project="日本語のプロジェクト" * 3)
         app = T.App(T.DEFAULTS, spawn=lambda *a: None, projects=lambda: [dict(long)],
                     project_state=lambda p: {"code_dir": None})
@@ -3598,6 +3599,201 @@ class MotionVisuals(unittest.TestCase):
 if __name__ == "__main__":
     import unittest
     unittest.main()
+
+
+class UndoAndPR(unittest.TestCase):  # T-1352
+    def closed_run(self):
+        import subprocess
+        T = tui()
+        root, hist = tempfile.mkdtemp(), tempfile.mkdtemp()
+        git = lambda *a: subprocess.run(["git", "-C", root, *a], capture_output=True, text=True, check=True).stdout  # noqa: E731
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "t")
+        with open(os.path.join(root, "calc.py"), "w") as f:
+            f.write("def add(a, b):\n    return a - b\n")
+        git("add", ".")
+        git("commit", "-qm", "seed")
+        with open(os.path.join(root, "calc.py"), "w") as f:
+            f.write("def add(a, b):\n    return a + b\n")
+        git("commit", "-qam", "fix add (T-0001)")
+        sha = git("rev-parse", "--short", "HEAD").strip()
+        events = [{"event": "start", "request": "fix add", "schema": 1, "ts": 1760000000},
+                  {"event": "task", "task": "T-0001"},
+                  {"event": "closed", "text": f"T-0001 closed; committed {sha} (tokens: 1 in, 1 out)", "task": "T-0001"}]
+        with open(os.path.join(hist, "T-0001.events.jsonl"), "w") as f:
+            f.write("".join(json.dumps(e) + "\n" for e in events))
+        app = T.App(T.DEFAULTS, spawn=lambda *a: None, root=root, history=hist)
+        for e in events:
+            app.feed(e)
+        return T, app, git, sha, hist
+
+    def test_u_twice_reverts_the_runs_commit_and_marks_its_history_undone(self):
+        T, app, git, sha, hist = self.closed_run()
+        app.key("u")
+        self.assertIn("u again", app.message)
+        self.assertIn(sha, app.message)
+        app.key("u")
+        self.assertIn("a - b", read(os.path.join(app.root, "calc.py")), "the run's change is reverted")
+        self.assertIn("Revert", git("log", "-1", "--format=%s"))
+        self.assertIn("undid T-0001", app.message)
+        self.assertEqual(T.history(hist)[0]["status"], "undone")
+        self.assertIn(" UNDONE ", "".join(t for t, _ in T._history_row(T.history(hist)[0])))
+        app.key("u")
+        app.key("u")
+        self.assertEqual(git("log", "--format=%s").count("Revert"), 1, "undone once")
+
+    def test_p_drafts_the_pr_and_enter_posts_it_through_fm_pr(self):
+        T, app, git, sha, hist = self.closed_run()
+        calls = []
+        app.fm_output = lambda argv: calls.append(argv) or ("## Fix add\nbody" if "--post" not in argv else
+                                                            "refused: T-0001 has no publish grant")
+        app.key("P")
+        self.assertEqual((app.mode, calls[-1]), ("diff", ["pr", "T-0001"]))
+        self.assertIn("## Fix add", app.view_lines)
+        self.assertIn("Enter posts", app.view_title)
+        app.key("\n")
+        self.assertEqual(calls[-1], ["pr", "T-0001", "--post"])
+        self.assertIn("publish grant", app.message)
+
+    def test_neither_acts_without_a_closed_run(self):
+        T = tui()
+        app = T.App(T.DEFAULTS, spawn=lambda *a: None)
+        app.feed({"event": "start", "request": "fix add", "schema": 1})
+        app.fm_output = lambda argv: self.fail("nothing to draft")
+        app.key("u")
+        app.key("u")
+        app.key("P")
+        self.assertEqual(app.mode, "main")
+
+
+class Tickets(unittest.TestCase):  # T-1350
+    def app(self):
+        T = tui()
+        self.started = []
+
+        class Child:
+            code = None
+
+            def poll(self):
+                return self.code
+        app = T.App(T.DEFAULTS, spawn=lambda words, opts: self.started.append(words) or Child())
+        app.start(["fix add"])
+        return T, app
+
+    def type(self, app, text):
+        for ch in text:
+            app.key(ch)
+
+    def test_tab_turns_the_question_box_into_a_ticket_that_runs_when_this_run_closes(self):
+        T, app = self.app()
+        app.key("n")
+        self.assertTrue(app.asking)
+        app.key("\t")
+        self.assertEqual((app.asking, app.ticketing), (False, True))
+        self.assertIn("next ›", T.render(app.state, 120, 34, T.DEFAULTS, app, t=100.0).text())
+        self.type(app, "fix typo")
+        app.key("\n")
+        app.key("n")
+        app.key("\t")
+        self.type(app, "add export")
+        app.key("\n")
+        self.assertEqual(app.tickets, ["fix typo", "add export"])
+        text = T.render(app.state, 120, 34, T.DEFAULTS, app, t=100.0).text()
+        self.assertIn("① fix typo", text)
+        self.assertIn("② add export", text)
+        app.child.code = 0
+        app.feed({"event": "closed", "text": "T-0001 closed", "task": "T-0001"})
+        app.feed({"event": "exit", "code": 0})
+        self.assertEqual((self.started[-1], app.tickets), (["fix typo"], ["add export"]))
+
+    def test_a_blocked_run_holds_the_rail(self):
+        T, app = self.app()
+        app.tickets = ["fix typo"]
+        app.child.code = 1
+        app.feed({"event": "blocked", "text": "T-0001 blocked: x", "reason": "x", "task": "T-0001"})
+        app.feed({"event": "exit", "code": 1})
+        self.assertEqual((self.started, app.tickets), ([["fix add"]], ["fix typo"]))
+        self.assertIn("tickets wait", " ".join(T.entry_text(e) for e in app.state.log))
+
+    def test_the_tickets_view_picks_moves_and_drops(self):
+        T, app = self.app()
+        app.tickets = ["a", "b", "c"]
+        app.key("T")
+        self.assertEqual(app.mode, "tickets")
+        self.assertIn("① a", T.render(app.state, 120, 34, T.DEFAULTS, app, t=100.0).text())
+        app.key(" ")
+        app.key("KEY_DOWN")
+        app.key("KEY_DOWN")
+        app.key(" ")
+        self.assertEqual(app.tickets, ["b", "c", "a"])
+        app.key("KEY_DC")
+        self.assertEqual(app.tickets, ["b", "c"])
+        app.key("\x1b")
+        self.assertEqual(app.mode, "main")
+
+
+class Deck(unittest.TestCase):  # T-1345
+    PROJECTS = [{"project": "alpha", "root": "/w/a", "exists": True, "updated": 300.0, "queue": 2, "inbox": 1,
+                 "blocked": 1, "runner": "claude",
+                 "active": {"id": "T-0007", "title": "fix login", "stage": "executing", "steps_done": 1,
+                            "steps_total": 3}},
+                {"project": "beta", "root": "/w/b", "exists": True, "updated": 200.0, "queue": 0, "inbox": 0,
+                 "blocked": 0, "active": None},
+                {"project": "gamma", "root": "/w/g", "exists": True, "updated": 100.0, "queue": 0, "inbox": 4,
+                 "blocked": 0, "active": None}]
+
+    def app(self, motion="full"):
+        T = tui()
+        app = T.App(dict(T.DEFAULTS, motion=motion), spawn=lambda *a: None,
+                    projects=lambda: [dict(p) for p in self.PROJECTS], project_state=lambda p: {"code_dir": None})
+        app.show_home()
+        return T, app
+
+    def test_each_project_is_a_card_with_its_track_task_badges_and_runner(self):
+        T, app = self.app()
+        cv = T.render(app.state, 120, 34, app.cfg, app, t=100.0)
+        text = cv.text()
+        for want in ("alpha", "beta", "gamma", "claude", "T-0007", "fix login", "work 1/3", "blocked 1", "inbox 4",
+                     "nothing active"):
+            self.assertIn(want, text)
+        self.assertEqual(len(app.deck_rects), 3)
+        (ya, xa, _, _), (yb, xb, _, _), (yg, xg, _, _) = (app.deck_rects[i] for i in range(3))
+        self.assertEqual((ya, yb), (ya, ya), "two cards side by side at 120 columns")
+        self.assertGreater(yg, ya, "the third on the next row")
+        self.assertEqual(app.deck_cols, 2)
+        cv = T.render(app.state, 60, 34, app.cfg, app, t=100.0)
+        self.assertEqual(app.deck_cols, 1, "one column when narrow")
+
+    def test_arrows_move_by_card_in_the_grid(self):
+        T, app = self.app()
+        T.render(app.state, 120, 34, app.cfg, app, t=100.0)
+        app.key("KEY_RIGHT")
+        self.assertEqual(app.item_index, 1)
+        app.key("KEY_LEFT")
+        app.key("KEY_DOWN")
+        self.assertEqual(app.item_index, 2, "down: the card below")
+        app.key("KEY_DOWN")
+        self.assertEqual(app.item_index, 2, "the last row stays")
+        app.key("KEY_UP")
+        self.assertEqual(app.item_index, 0)
+
+    def test_the_ring_glides_and_the_project_view_grows_out_of_its_card_unless_motion_is_off(self):
+        for motion, moves in (("full", True), ("off", False)):
+            T, app = self.app(motion)
+            app.clock = lambda: 100.0
+            T.render(app.state, 120, 34, app.cfg, app, t=100.0)
+            app.key("KEY_RIGHT")
+            mid = T.render(app.state, 120, 34, app.cfg, app, t=100.05)
+            self.assertEqual(app.deck_ring != app.deck_rects[1][:2], moves, f"{motion}: the ring is on its way")
+            T.render(app.state, 120, 34, app.cfg, app, t=101.0)
+            self.assertEqual(app.deck_ring, app.deck_rects[1][:2], f"{motion}: and lands")
+            app.key("\n")
+            self.assertEqual(app.mode, "project", "Enter opens it at once; the grow is drawing only")
+            early = T.render(app.state, 120, 34, app.cfg, app, t=100.05).text()
+            late = T.render(app.state, 120, 34, app.cfg, app, t=101.0).text()
+            self.assertEqual("beta" in late and early != late, moves, f"{motion}: it grows out of the card")
+            del mid
 
 
 class FirstRun(unittest.TestCase):  # T-1333

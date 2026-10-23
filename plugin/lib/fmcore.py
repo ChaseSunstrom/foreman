@@ -2448,6 +2448,17 @@ def reconcile_rewind(p, lane=None, timeout=2):
     return b.id, steps
 
 
+# T-1375: the hook features fm bench duel --ablate can switch off for one session (FOREMAN_ABLATE=a,b): each note the
+# guard hook adds to a tool call, and the Stop hook's drive. The guard is not one of them, and never is.
+ABLATABLE = ("fix", "deps", "veto", "scope", "lessons", "steps", "ambient", "bus", "cards", "test-first", "design",
+             "gate-pipe", "drive")
+
+
+def ablated():
+    """T-1375: the features FOREMAN_ABLATE switches off here (names it doesn't know are ignored)."""
+    return {x.strip() for x in os.environ.get("FOREMAN_ABLATE", "").split(",") if x.strip() in ABLATABLE}
+
+
 def rewind_note(hit):
     tid, steps = hit
     return (f"Foreman: the working files are back to before the proof of {tid} step(s) {', '.join(map(str, steps))} "
