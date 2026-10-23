@@ -259,6 +259,45 @@ def nearest_dropped(p, text, skip=None):
     return best[1:] if best else None
 
 
+NEAR = 0.6  # T-1662: the share of two titles' stems (Jaccard) at which they are one request
+
+
+def _title_tokens(text):
+    """T-1662 review: (tokens, names): a title's stems with its names whole, and the names alone. A name is an
+    identifier (fmcodetui, run_tests, fmcli.py, src/app) or a number: cut to 5 letters, fmcode and fmcodetui are one
+    stem."""
+    out, names = set(), set(re.findall(r"\d+", text or ""))
+    for w in re.findall(r"[\w./]+", (text or "").lower()):
+        w = w.strip("./")
+        if re.search(r"[_\d./]", w) or w.startswith("fm"):
+            names.add(w)
+            out.add(w)
+        else:
+            out.update(_tokens(w))
+    return out, names
+
+
+def near_tasks(p, title, scope=(), type_=None):
+    """T-1662: (same, other, done): the (id, title, type) of the open task of this type, the open task of another
+    type, and the done task whose title is closest to this one, past NEAR and 2 or more shared tokens; None where
+    there is none. Two tasks whose scopes are both set and never meet, or whose titles name other things (T-0001 and
+    T-0002, step 3 and step 4, fmdocs and fmdoctor), are other work."""
+    (q, names), best = _title_tokens(title), {}
+    for b in c.load_briefs(p, include_archive=True) if len(q) >= 2 else ():
+        kind = "done" if b.status == "done" else None if b.status in c.CLOSED else \
+            "same" if b.type == type_ else "other"
+        d, theirs = _title_tokens(b.title)
+        if not kind or len(q & d) < 2 or len(q & d) / len(q | d) < NEAR or theirs != names:
+            continue
+        other = b.meta.get("scope") or []
+        if scope and other and not any(s == o or c.glob_match(s, o) or c.glob_match(o, s) for s in scope for o in other):
+            continue
+        j = len(q & d) / len(q | d)
+        if j > best.get(kind, (0,))[0]:
+            best[kind] = (j, b.id, b.title, b.type)
+    return tuple(best[k][1:] if k in best else None for k in ("same", "other", "done"))
+
+
 def covered(text):
     """T-0256: [(command, help)] for the fm commands whose help the request mostly restates (≥ 3 shared words and
     ≥ 60% of the help's): the best two, so a request for what exists is noticed before it is built."""

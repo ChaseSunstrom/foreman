@@ -529,6 +529,17 @@ class PreviewApp(unittest.TestCase):
         self.assertEqual(read_text(path), mine, "nothing written")
 
 
+class Unknown(unittest.TestCase):
+    """T-1723: set_key refuses a key no surface has, so fm code's :set line and fm settings serve say so."""
+    def test_an_unknown_key_is_refused_by_name(self):
+        done, refused = fmsettings.set_key("no.such.setting", "1")
+        self.assertEqual(done, [])
+        self.assertTrue(refused and "no.such.setting" in refused[0] and "no such setting" in refused[0], refused)
+        done, refused = fmsettings.set_key("motion", "calm", surface="nowhere")
+        self.assertEqual(done, [])
+        self.assertIn("nowhere", refused[0])
+
+
 class PluginSurface(unittest.TestCase):
     """T-1574: /foreman:settings runs fm settings (one implementation); the pane re-reads its options on each poll."""
     ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
