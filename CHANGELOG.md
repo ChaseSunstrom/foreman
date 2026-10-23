@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- MASTER.md: the plugin/lib row (one 22,000-character table line every module shared) is now a list with one line per module, so changes to different modules no longer conflict at merge (T-1713)
 - fm settings chords: press keys and see each as fm code's own decoder reads it, named as [keys] takes it (ctrl+a, f5, up), with Alt chords shown as Esc then the key and sequences fm code doesn't name shown as not delivered, so a binding is known to arrive before it's bound; needs a terminal (in Claude Code: ! fm settings chords) (T-1660)
 - fm flow FILE: a user journey, one step a line (goto URL|FILE, click SEL, type SEL TEXT, expect SEL [TEXT], wait MS), run in the headless Chromium fm shot finds, as a verify command: exit 1 names the step that failed, 2 with no browser or one that won't start (never a pass). The flow is untrusted: five verbs, 200 steps, 2000 characters a word, --timeout at most 60 s a step and 600 s a journey; selectors and text reach the page as JSON data; goto opens only files in the flow's folder or localhost, 127.0.0.1 and [::1] (--any-url: any http(s) page), and every request the page makes is held to the same rule through DevTools' Fetch domain, so a redirect, refresh or clicked link elsewhere is blocked and fails its step. fm shot's browser close no longer waits forever on a process it can't kill (T-1639).
 - The first UI edit's design-direction note now says "load: Skill foreman:ui-design" (the job skill, which routes to directions) instead of /foreman:directions (T-1715)
