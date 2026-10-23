@@ -207,13 +207,15 @@ def guard(b, root, any_url):
     return seen
 
 
-def run(b, steps, timeout, seen):
-    """(done, failed): each step run in turn until one fails or TOTAL_S has passed."""
-    done, end = [], time.monotonic() + TOTAL_S
+def run(b, steps, timeout, seen, end=None):
+    """(done, failed): each step run in turn until one fails or TOTAL_S has passed (or `end`, a caller's deadline:
+    fm stories')."""
+    late = f"the journey ran past {TOTAL_S} s" if end is None else "the time ran out"
+    done, end = [], time.monotonic() + TOTAL_S if end is None else end
     for s in steps:
         seen["doc"], seen["other"] = None, []
         try:
-            why = step(b, s, timeout, end) if time.monotonic() < end else f"the journey ran past {TOTAL_S} s"
+            why = step(b, s, timeout, end) if time.monotonic() < end else late
         except (OSError, RuntimeError, EOFError, ValueError) as e:  # TimeoutError is an OSError: the browser hung
             why = f"the browser failed: {e}"
         except (KeyError, TypeError, AttributeError) as e:  # an answer without the fields DevTools always sends
