@@ -6,6 +6,7 @@ const scrub = atom({ plugin: 'foreman-ui', key: 'scrub' } as const, 0) // T-1081
 import type { FileChurn, FmItem, FmView, LiveAgent, LiveShell, TurnSummary } from '../types'
 import {
   C,
+  cleanDeep,
   setPalette,
   MASCOT_COLORS,
   about,
@@ -55,6 +56,7 @@ import { CHECKPOINT_AT, FRAME_MS, FRESH, IDLE_FRAMES, PANE, QUIET_MS, SHELL_MAX_
 import type { FeedItem } from './state'
 
 const view = atom({ plugin: 'foreman-ui', key: 'view' } as const, null)
+const PANE_MIN = 26 // T-1679: the narrowest pane the layout fits (24 inside the padding); below it, one line
 const error = atom({ plugin: 'foreman-ui', key: 'error' } as const, null)
 const frame = atom({ plugin: 'foreman-ui', key: 'frame' } as const, 0)
 const summaries = atom({ plugin: 'foreman-ui', key: 'summaries' } as const, [])
@@ -224,7 +226,7 @@ async function refresh($: EngineInterface): Promise<boolean> {
   try {
     const r = await run($, ['ui', '--json'])
     if (r.exitCode !== 0) throw new Error(r.stderr.trim().split('\n').at(-1) || `fm ui exited ${r.exitCode}`)
-    const next = JSON.parse(r.stdout) as FmView
+    const next = cleanDeep(JSON.parse(r.stdout)) as FmView // T-1679: no title or name draws a control or bidi override
     const prev = await read($, view)
     const was = prev?.active
     const now = next.active
@@ -1268,6 +1270,8 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
+    if (e.props.bodyColumns < PANE_MIN) // T-1679: below the layout's floor one line says what it needs, never a spill
+      return <Text color={hex(C.dim)} wrap="truncate-end">{`Foreman: ${PANE_MIN}+ columns`}</Text>
     const live = turns.size > 0 || starts.size > 0
     const clockNow = await $.clock.now()
     const moving = live && cfg.motion !== 'off' // T-0912: motion off draws work still
@@ -1281,7 +1285,7 @@ export const register: Register = (on, options) => {
     const blit = term && cfg.motion === 'full' ? motion : undefined
     const a = v.active
     const m = v.mode
-    const W = Math.max(24, e.props.bodyColumns - 2) // inside the panel's padding
+    const W = Math.max(PANE_MIN - 2, e.props.bodyColumns - 2) // inside the panel's padding
     const H = e.props.scroll?.bodyRows ?? 40
     const dim = hex(C.dim)
     const soft = hex(mix(C.dim, C.track, 0.3))
