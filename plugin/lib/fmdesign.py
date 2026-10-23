@@ -55,7 +55,9 @@ NOT_COVERED = ("not read: computed style and the cascade; .js/.ts files; tailwin
                "class/className attributes, cn/clsx/twMerge/cva calls and @apply; side-specific rounded-t-* classes; an "
                "unquoted JSX style value past its line; animation longhands other than name, duration, iteration "
                "count and direction; afterglow matches a state block to a transition by selector text, so a transition set by a "
-               "parent rule, a nested &:hover or the cascade is missed; animations run from JS (the Web Animations API, framer-motion props); Math.random in Vue and Svelte scripts")
+               "parent rule, a nested &:hover or the cascade is missed, and CSS-in-JS state styles (styled templates, "
+               "style objects in .jsx/.tsx) aren't read for it; Tailwind state classes are matched to a transition "
+               "class on the same element only, and Tailwind state classes in @apply aren't read for it; animations run from JS (the Web Animations API, framer-motion props); Math.random in Vue and Svelte scripts")
 
 EXTS = {".css", ".scss", ".html", ".htm", ".jsx", ".tsx", ".vue", ".svelte"}
 MARKUP = {".html", ".htm", ".vue", ".svelte"}
@@ -94,6 +96,13 @@ ALLOW = re.compile(r"design-lint:\s*allow\s+([\w-]+)([^\n]*)")
 TAILWIND = re.compile(r"(?<![\w-])(?:from|via|to)-([a-z]+)-\d{2,3}(?![\w-])")
 STATE = re.compile(r":(?:hover|focus-visible|focus-within|focus|active)\b|\[aria-[^\]]*\]|\.is-[\w-]+")
 AFTERGLOW_PROPS = {"color", "background", "background-color", "transform", "opacity"}
+# T-1689: the same props as Tailwind classes under a state variant, and the classes that make an element move
+TW_STATE = re.compile(r"(?:^|:)(?:group-|peer-)?(?:hover|focus-visible|focus-within|focus|active|aria-[^:\s]+):")
+TW_GLOW = re.compile(r"-?(?:bg-(?!(?:none|fixed|local|scroll|clip|origin|repeat|no-repeat|cover|contain|auto|center|"
+                     r"top|bottom|left|right|gradient|linear|radial|conic|blend)\b)|text-(?!(?:xs|sm|base|lg|xl|\dxl|"
+                     r"left|center|right|justify|start|end|wrap|nowrap|balance|pretty|ellipsis|clip)\b|\[\d)|opacity-|"
+                     r"scale-|translate-|rotate-|skew-)")
+TW_MOVES = re.compile(r"transition(?!-none\b)|duration-(?!0\b)|animate-(?!none\b)")
 REDUCED = re.compile(r"prefers-reduced-motion|useReducedMotion|reducedMotion")
 # the {0,4000} bounds keep an unclosed quote or brace from rescanning the file at every match attempt
 CLASS_ATTR = re.compile(r"(?<![\w:-])(?:class|className)\s*=\s*(?:\"([^\"]{0,4000})\"|'([^']{0,4000})'|"
@@ -645,9 +654,28 @@ class Run:
                           f"'{base(sel)}' in this run (matched by selector text); add one, or silence with "
                           f"design-lint: allow afterglow <why>")
 
+    def afterglow_classes(self):
+        """T-1689: a Tailwind state class (hover:bg-…, focus:scale-…, aria-[…]:text-…) on an element whose classes hold
+        no transition-*, duration-* or animate-*: the same instant jump as a :hover rule with no transition."""
+        for s in self.sources:
+            applied = {m.start(1) for m in re.finditer(r"@apply\s+([^;{}]*)", s.css)}  # its rule's CSS isn't read here
+            for base, text in s.class_strings:
+                if base in applied:
+                    continue
+                toks = [(base + m.start(), m.group()) for m in re.finditer(r"[^\s\"'`]+", text)
+                        if not any(ch in m.group() for ch in "${}")]
+                if any(TW_MOVES.match(t.rsplit(":", 1)[-1]) for _, t in toks):
+                    continue
+                hit = next(((o, t) for o, t in toks if TW_STATE.search(t) and TW_GLOW.match(t.rsplit(":", 1)[-1])),
+                           None)
+                if hit:
+                    self.flag("afterglow", s, s.line(hit[0]), f"{hit[1]} changes the element with no transition-*, "
+                              "duration-* or animate-* class beside it; add one (transition-colors duration-150), or "
+                              "silence with design-lint: allow afterglow <why>")
+
     def check(self):
         for rule in (self.generic_font, self.gradient, self.one_radius, self.same_shadow, self.img_alt, self.motion,
-                     self.flash, self.unseeded_random, self.untokened_duration, self.afterglow):
+                     self.flash, self.unseeded_random, self.untokened_duration, self.afterglow, self.afterglow_classes):
             rule()
         by_path = {s.path: s for s in self.sources}
         kept = [f for f in self.found if f["rule"] not in by_path[f["file"]].allowed.get(f["line"], ())]

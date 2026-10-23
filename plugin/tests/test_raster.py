@@ -214,6 +214,20 @@ class Img(ForemanTestCase):
                 self.assertEqual(fmimg.load(path).rgba, im.convert("RGBA").tobytes())
         self.assertEqual(fmimg.info(os.path.join(self.tmp, "P4.png"))["depth"], 2)
 
+    def test_fm_img_diff_takes_a_per_channel_tolerance(self):  # T-1684
+        a, b = (os.path.join(self.tmp, n) for n in ("ta.png", "tb.png"))
+        fmimg.save(a, 2, 1, bytes([10, 10, 10, 255, 5, 5, 5, 255]))
+        fmimg.save(b, 2, 1, bytes([13, 10, 10, 255, 5, 5, 5, 255]))
+        self.assertEqual(self.fm("img", "diff", a, b, check=False).returncode, 1)
+        p = self.fm("img", "diff", a, b, "--tol", "3")
+        self.assertIn("identical (within 3 a channel)", p.stdout)
+        p = self.fm("img", "diff", a, b, "--tol", "2", "--json", check=False)
+        self.assertEqual((p.returncode, json.loads(p.stdout)["tol"]), (1, 2))
+        for bad in ("-1", "256"):
+            p = self.fm("img", "diff", a, b, "--tol", bad, check=False)
+            self.assertEqual(p.returncode, 2, bad)
+            self.assertIn("0 to 255", p.stderr)
+
     def test_fm_img_info_and_diff(self):
         a, b, c = (os.path.join(self.tmp, n) for n in ("a.png", "b.png", "c.png"))
         px = rgba4x4()
