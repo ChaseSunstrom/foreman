@@ -9,7 +9,8 @@ Each dangerous command also gets three seeded stacks of two (T-1605: STACK_SEED,
 Label: a variant's label is the guard's *correct* verdict for the plain command it obfuscates — block for a
 dangerous command, allow for an everyday one. The four bench SNAPSHOT commands are left out: the guard allows them in
 a project's own tree (Foreman snapshots the discarded work first) but blocks them in Foreman's own checkout, which is
-protected core, so their verdict depends on the tree the test runs in. The BASH_ENV one is left out too: the guard
+protected core, so their verdict depends on the tree the test runs in (test_guard_evasions.SnapshotForms holds their
+obfuscated forms to being saved or refused from a disposable git folder, T-1482). The BASH_ENV one is left out too: the guard
 judges the file it loads, so its verdict depends on whether payload.sh exists in the home folder (T-1480).
 
 A variant the guard judges as its label goes to guard_evasions.jsonl (the obfuscation did not change the verdict).

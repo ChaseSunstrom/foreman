@@ -23,6 +23,7 @@ import signal
 import sys
 import tempfile
 import time
+import unicodedata
 
 import fmcore as c
 import fmimg
@@ -30,8 +31,10 @@ import fmimg
 SIZE = (1280, 800)
 MAX_FRAMES, MIN_EVERY, MAX_EVERY = 60, 10, 10000
 LOAD_S, CALL_S, SETTLE_S = 30, 30, 0.5
+FONTS_S = 10  # the fonts check: its own 5 s wait plus the walk; a slow page leaves fonts unchecked, not the run hung
+NOISY = 0.05  # a baseline floor over this share of the page's pixels: an animated baseline, a loose pass line
 MAX_MSG = 64 << 20  # one DevTools message: a screenshot's base64 is a few MB at most
-LOCK_S = 120
+LOCK_S, CLOSE_S = 120, 5
 WATCH = {"Page.loadEventFired"}  # the only events kept (a page can send endless others)
 FROZEN_MS = 1768471200000  # 2026-01-15T10:00:00Z, smoke_web.cjs's NOW
 # smoke_web.cjs's freeze(): CSS animations and transitions held still (test_fmshot keeps the two in step)
@@ -51,6 +54,27 @@ FREEZE = """(() => {
 # held at its start. Either way a frozen shot is the same on every run.
 HOLD = ("document.getAnimations().forEach(a => { try { const t = a.effect && a.effect.getComputedTiming(); "
         "if (t && isFinite(t.endTime)) a.finish(); else { a.pause(); a.currentTime = 0; } } catch (e) { a.pause(); } })")
+# T-1637: the font families the page drew text in a fallback for, once its fonts settle (5 s at most): a family that
+# visible text names first (its element's own non-blank text, outside script/style, checkVisibility() true; the first
+# 20,000 text nodes) with a face that failed or none loaded. A declared face no visible text uses isn't one, so a
+# canvas page with body{font-family:X} passes. ponytail: a family that's neither declared nor installed, or canvas
+# text in a failed font, falls back unseen (document.fonts lists only @font-face faces).
+FONTS = """Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 5000))]).then(() => {
+  const bare = s => s.trim().replace(/^["']|["']$/g, "").toLowerCase(), used = new Set(), faces = new Map();
+  const walk = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+  for (let n, i = 0; (n = walk.nextNode()) && i < 20000; i++) {
+    const el = n.parentElement;
+    if (!el || !n.data.trim() || /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|TITLE)$/.test(el.tagName)) continue;
+    if (el.checkVisibility ? !el.checkVisibility({visibilityProperty: true}) : !el.getClientRects().length) continue;
+    used.add(bare(getComputedStyle(el).fontFamily.split(",")[0]));
+  }
+  document.fonts.forEach(f => { const k = f.family.trim().replace(/^["']|["']$/g, "");
+    faces.set(k, (faces.get(k) || []).concat(f.status)); });
+  const bad = [];
+  faces.forEach((st, fam) => { if (used.has(bare(fam)) && (st.includes("error") || !st.includes("loaded")))
+    bad.push({family: fam, status: [...new Set(st)].join("/")}); });
+  return bad;
+})"""
 OURS = re.compile(r"(viewport|poster|frame-\d+)\.png")
 NAMES = ("chrome-headless-shell", "chromium", "chromium-browser", "google-chrome")
 NONE = ("no browser found (looked for FOREMAN_CHROME, chrome-headless-shell, chromium, chromium-browser or "
@@ -80,19 +104,44 @@ def painted(img):
 
 
 def _safe(text):
-    """A URL or path for the terminal: no control characters."""
-    return re.sub(r"[\x00-\x1f\x7f-\x9f]", "?", str(text))
+    """A URL or path for the terminal: every control, format (zero-width, bidi, tag, soft hyphen), private-use or
+    surrogate character a ? (T-1642)."""
+    return "".join("?" if unicodedata.category(ch) in ("Cc", "Cf", "Co", "Cs") else ch for ch in str(text))
+
+
+safe, usable = _safe, _usable  # the names other verbs use (fm flow)
+
+
+def find_browser(who):
+    """(path, note) for verb `who`: a browser and a note when FOREMAN_CHROME was set but unusable, or (None, why)."""
+    env = os.environ.get("FOREMAN_CHROME")
+    bad = f"FOREMAN_CHROME={_safe(env)!r} isn't an executable file" if env and not _usable(env) else None
+    path = chrome()
+    return (path, bad) if path else (None, (bad + "; " if bad else "") + NONE.replace("fm shot", who))
+
+
+@contextlib.contextmanager
+def killable():
+    """SIGTERM unwinds (SystemExit) while this holds, so a browser's group dies and its profile goes."""
+    def stop(signum, frame):
+        raise SystemExit(128 + signum)
+    old = signal.signal(signal.SIGTERM, stop)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, old)
 
 
 class Browser:
     """One headless Chromium over the DevTools pipe; close() kills its whole process group."""
 
-    def __init__(self, path, size):
+    def __init__(self, path, size, scale=1, reduced=False):
         import fcntl
         self.pid, self.feed, self.out, fds = None, None, None, []
         self.profile = tempfile.TemporaryDirectory(prefix="fm-shot-")
         self.log = os.path.join(self.profile.name, "fm-shot-stderr.log")
         self.buf, self.scan, self.n, self.events = bytearray(), 0, 0, set()
+        self.on = {}  # event method -> handler(params), run as the event is read (fm flow answers Fetch.requestPaused)
         try:
             child_in, self.feed = os.pipe()
             fds.append(child_in)
@@ -114,7 +163,10 @@ class Browser:
             self.sid = self.call("Target.attachToTarget", targetId=tid, flatten=True)["sessionId"]
             self.call("Page.enable", self.sid)
             self.call("Emulation.setDeviceMetricsOverride", self.sid, width=size[0], height=size[1],
-                      deviceScaleFactor=1, mobile=False)
+                      deviceScaleFactor=scale, mobile=False)
+            if reduced:  # before any navigation: the page's first paint already sees it
+                self.call("Emulation.setEmulatedMedia", self.sid,
+                          features=[{"name": "prefers-reduced-motion", "value": "reduce"}])
         except BaseException as e:  # never leave a browser, a pipe or the profile behind a failed start
             last = self.last_words()
             for fd in fds:
@@ -155,28 +207,37 @@ class Browser:
                 raise EOFError(f"the browser closed during {what}")
             self.buf += chunk
 
-    def call(self, method, session=None, **params):
-        self.n += 1
-        os.write(self.feed, json.dumps({"id": self.n, "method": method, "params": params,
-                                        **({"sessionId": session} if session else {})}).encode() + b"\0")
-        deadline = time.monotonic() + CALL_S
+    def call(self, method, session=None, _within=None, **params):
+        """The answer's result; TimeoutError after _within seconds (CALL_S by default). A late answer is skipped."""
+        mine = self.send(method, session, **params)
+        deadline = time.monotonic() + (CALL_S if _within is None else _within)
         while True:
             got = self._next(deadline, method)
-            if got.get("id") == self.n:
+            if got.get("id") == mine:
                 if "error" in got:
                     raise RuntimeError(f"{method}: {got['error'].get('message', got['error'])}")
                 return got.get("result") or {}
-            if got.get("method") in WATCH:
-                self.events.add(got["method"])
+            self._event(got)
+
+    def send(self, method, session=None, **params):
+        """Ask without waiting for the answer (it is skipped when it comes); its id."""
+        self.n += 1
+        os.write(self.feed, json.dumps({"id": self.n, "method": method, "params": params,
+                                        **({"sessionId": session} if session else {})}).encode() + b"\0")
+        return self.n
+
+    def _event(self, got):
+        if got.get("method") in WATCH:
+            self.events.add(got["method"])
+        if got.get("method") in self.on:
+            self.on[got["method"]](got.get("params") or {})
 
     def wait(self, event, seconds):
         """True once `event` has come (since the events were last cleared), False after `seconds`."""
         deadline = time.monotonic() + seconds
         try:
             while event not in self.events:
-                got = self._next(deadline, event)
-                if got.get("method") in WATCH:
-                    self.events.add(got["method"])
+                self._event(self._next(deadline, event))
             return True
         except TimeoutError:
             return False
@@ -190,9 +251,15 @@ class Browser:
         if self.pid:
             try:
                 os.killpg(self.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
+            except ProcessLookupError:
                 pass
-            os.waitpid(self.pid, 0)
+            except PermissionError:  # the group can't be signalled: the browser itself, at least
+                with contextlib.suppress(OSError):
+                    os.kill(self.pid, signal.SIGKILL)
+            end = time.monotonic() + CLOSE_S  # a browser that can't be killed is left, not waited on forever
+            with contextlib.suppress(ChildProcessError):
+                while not os.waitpid(self.pid, os.WNOHANG)[0] and time.monotonic() < end:
+                    time.sleep(0.02)
             self.pid = None
         for fd in (self.feed, self.out):
             if fd is not None:
@@ -249,16 +316,61 @@ def _write(folder, name, data):
     return path
 
 
-def shoot(b, url, folder, frames, every, frozen):
-    """One page: {url, folder, shots, animated, poster_of, notes}."""
-    notes = []
+def fonts(b):
+    """[{family, status}] the page drew in a fallback font (FONTS), at most 20; None if the page wouldn't say in
+    FONTS_S (a closed browser still raises: the next call would fail anyway)."""
+    try:
+        got = b.call("Runtime.evaluate", b.sid, min(FONTS_S, CALL_S), expression=FONTS, awaitPromise=True,
+                     returnByValue=True)
+    except (RuntimeError, TimeoutError):
+        return None
+    found = (got.get("result") or {}).get("value")
+    if "exceptionDetails" in got or not isinstance(found, list):
+        return None
+    return [{"family": str(f.get("family"))[:100], "status": str(f.get("status"))[:40]}
+            for f in found[:20] if isinstance(f, dict)]
+
+
+def floor(folder):
+    """(the baseline's viewport shot, its noise floor, its frame count): the floor is the most pixels any of its
+    frames differs from that shot, 0 without frames. ponytail: pure-Python diffs, about a second a megapixel each."""
+    view = fmimg.load(os.path.join(folder, "viewport.png"))
+    frames = sorted(f for f in os.listdir(folder) if re.fullmatch(r"frame-\d+\.png", f))
+    return view, max((fmimg.diff(view, fmimg.load(os.path.join(folder, f)))["changed"] for f in frames),
+                     default=0), len(frames)
+
+
+def compare(page, base):
+    """The page's viewport shot against BASE/<its folder's name>/: {baseline, changed, total, floor, frames, bbox,
+    ok}, or {baseline, error, ok: False} when the baseline is missing, unreadable, another size or the page's own
+    folder (through a link)."""
+    ref = os.path.join(base, os.path.basename(page["folder"]))
+    try:
+        if os.path.realpath(ref) == os.path.realpath(page["folder"]):
+            raise ValueError(f"{ref} is this page's own folder (a link): the baseline was cleared before the shot")
+        view, noise, n = floor(ref)
+        d = fmimg.diff(view, fmimg.load(page["shots"][0]))
+    except (OSError, ValueError) as e:
+        return {"baseline": ref, "error": str(e), "ok": False}
+    return {"baseline": ref, "changed": d["changed"], "total": d["total"], "floor": noise, "frames": n,
+            "bbox": d["bbox"], "ok": d["changed"] <= noise}
+
+
+def load(b, url):
+    """Open url and wait for its load event (LOAD_S at most), then SETTLE_S: notes. fm shot and fm critique share it."""
     b.events.clear()  # the last page's load is not this one's
     nav = b.call("Page.navigate", b.sid, url=url)
     if nav.get("errorText"):
         raise RuntimeError(f"did not load: {nav['errorText']}")
-    if not b.wait("Page.loadEventFired", LOAD_S):
-        notes.append(f"still loading after {LOAD_S} s; shot as it stood")
-    time.sleep(SETTLE_S)
+    notes = [] if b.wait("Page.loadEventFired", LOAD_S) else [f"still loading after {LOAD_S} s; taken as it stood"]
+    b.wait("fm-shot.settle", SETTLE_S)  # an event that never comes: held requests are answered meanwhile
+    return notes
+
+
+def shoot(b, url, folder, frames, every, frozen):
+    """One page: {url, folder, shots, animated, poster_of, fallback_fonts, notes}."""
+    notes = load(b, url)
+    fell = fonts(b)
     if frozen:
         b.call("Runtime.evaluate", b.sid, expression=HOLD)
     shots = [_write(folder, "viewport.png", b.png())]
@@ -277,14 +389,22 @@ def shoot(b, url, folder, frames, every, frozen):
             notes.append("still moves with the clock frozen and CSS animations paused (a canvas, video, timer or "
                          "requestAnimationFrame loop)")
     return {"url": url, "folder": folder, "shots": shots, "animated": animated, "poster_of": poster_of,
-            "notes": notes}
+            "fallback_fonts": fell, "notes": notes}
+
+
+def view(args):
+    """(size, scale) for --profile (fm critique's table), else the default viewport."""
+    import fmcritique
+    p = fmcritique.PROFILES.get(getattr(args, "profile", None))
+    return ((p["width"], p["height"]), p["scale"]) if p else (SIZE, 1)
 
 
 def _run(path, urls, base, args):
     """Every page through one browser: (pages, failed)."""
     pages, failed, taken = [], [], set()
     try:
-        b = Browser(path, SIZE)
+        size, scale = view(args)
+        b = Browser(path, size, scale, getattr(args, "reduced_motion", False))
     except (OSError, RuntimeError, EOFError, ValueError) as e:  # TimeoutError is an OSError
         return pages, [{"url": ", ".join(urls), "error": f"the browser ({path}) did not start: {e}"}]
     try:
@@ -293,6 +413,8 @@ def _run(path, urls, base, args):
         for url in urls:
             try:
                 pages.append(shoot(b, url, _folder(base, _slug(url, taken)), args.frames, args.every, args.frozen))
+                if args.diff is not None:
+                    pages[-1]["diff"] = compare(pages[-1], args.diff)
             except (OSError, RuntimeError, EOFError, ValueError) as e:
                 failed.append({"url": url, "error": str(e)})
                 if isinstance(e, (EOFError, TimeoutError)):  # the browser is gone or hung: the rest would wait too
@@ -321,23 +443,25 @@ def cmd_shot(args):
             raise fmcli.UsageError(f"--out {_safe(base)} isn't a folder")
     else:
         base = os.path.join(fmcli.resolve(args).dir, "shots")
-    env = os.environ.get("FOREMAN_CHROME")
-    bad = f"FOREMAN_CHROME={_safe(env)!r} isn't an executable file" if env and not _usable(env) else None
-    path = chrome()
+    if args.diff is not None:  # "" too: a gate given an empty BASE must not pass having compared nothing
+        if not args.diff.strip() or not os.path.isdir(args.diff):
+            raise fmcli.UsageError(f"--diff {_safe(args.diff)!r} isn't a folder: name an earlier fm shot --out")
+        args.diff = os.path.abspath(args.diff)
+        mine, theirs = os.path.realpath(base), os.path.realpath(args.diff)
+        if theirs == mine or theirs.startswith(mine + os.sep):  # a page's folder is cleared before it's shot
+            raise fmcli.UsageError(f"--diff {_safe(args.diff)} is where these shots go and would be cleared: "
+                                   "shoot into another --out")
+    path, bad = find_browser("fm shot")
     if not path:
-        why = (bad + "; " if bad else "") + NONE
-        return fmcli.out(args, {"skipped": why}, f"fm shot: skipped: {why}.")
+        why = bad
+        if args.diff is None:
+            return fmcli.out(args, {"skipped": why}, f"fm shot: skipped: {why}.")
+        fmcli.out(args, {"skipped": why, "compared": False}, f"✗ fm shot --diff: not compared: {why}.")
+        sys.exit(1)
     os.makedirs(base, exist_ok=True)
-
-    def stop(signum, frame):  # killed: unwind, so the browser's group dies and its profile goes
-        raise SystemExit(128 + signum)
-    old = signal.signal(signal.SIGTERM, stop)
-    try:
-        # a second run into Foreman's folder waits for the first; --out is the user's folder: no .lock left in it
-        with contextlib.nullcontext() if args.out else c.lock(base, timeout=LOCK_S):
-            pages, failed = _run(path, urls, base, args)
-    finally:
-        signal.signal(signal.SIGTERM, old)
+    # a second run into Foreman's folder waits for the first; --out is the user's folder: no .lock left in it
+    with killable(), contextlib.nullcontext() if args.out else c.lock(base, timeout=LOCK_S):
+        pages, failed = _run(path, urls, base, args)
     lines = [f"note: {bad}; used {_safe(path)}"] if bad else []
     for pg in pages:
         names = [os.path.basename(s) for s in pg["shots"]]
@@ -353,8 +477,29 @@ def cmd_shot(args):
         elif len(frames) > 1:
             lines.append("  no poster: the page held still")
         lines += [f"  note: {n}" for n in pg["notes"]]
+        mark = "  ✗ " if args.diff else "  note: "  # under --diff a font problem fails the run
+        if pg["fallback_fonts"] is None:
+            lines.append(mark + "fonts couldn't be checked (document.fonts didn't answer in time)")
+        elif pg["fallback_fonts"]:
+            lines.append(mark + "fonts fell back: " + ", ".join(
+                f"{_safe(f['family'])} ({_safe(f['status'])})" for f in pg["fallback_fonts"]))
+        d = pg.get("diff")
+        if d and "error" in d:
+            lines.append(f"  ✗ diff: no usable baseline: {_safe(d['error'])}")
+        elif d and not d["changed"]:
+            lines.append(f"  diff: identical to {_safe(d['baseline'])}")
+        elif d:
+            x0, y0, x1, y1 = d["bbox"]
+            fl = f"floor {d['floor']}, from the baseline's {d['frames']} frames" if d["frames"] else \
+                "floor unmeasured: the baseline has no frames, so any change fails"
+            lines.append(("  diff: " if d["ok"] else "  ✗ diff: ") + f"{d['changed']} pixels changed in "
+                         f"x {x0}-{x1 - 1}, y {y0}-{y1 - 1} ({fl}): " + ("within it" if d["ok"] else "over it"))
+        if d and "error" not in d and d["floor"] > NOISY * d["total"]:
+            lines.append(f"  note: animated baseline: its frames differ by {100 * d['floor'] / d['total']:.0f}% of "
+                         "the page, so the pass line is loose; shoot the baseline and this run with --frozen")
     lines += [f"✗ {_safe(f['url'])}: {_safe(f['error'])}" for f in failed]
     fmcli.out(args, {"browser": path, "pages": pages, "failed": failed}, "\n".join(lines))
-    if failed:
+    if failed or (args.diff is not None and any(not p["diff"]["ok"] or p["fallback_fonts"] is None
+                                                or p["fallback_fonts"] for p in pages)):
         sys.exit(1)
     return None

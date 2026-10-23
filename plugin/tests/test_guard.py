@@ -1058,6 +1058,25 @@ class ClaudeEnv(GuardCase):
             ("export CLAUDECODE=", "self-authorize"),
             ("export -n CLAUDECODE", "self-authorize"),
             ("declare CLAUDE_CODE_ENTRYPOINT=cli", "self-authorize"),
+            # T-1722: a wrapper that runs the command in a new pty or shell still names the variables
+            ("script -qc 'env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT fm settings set motion off' /dev/null",
+             "self-authorize"),
+            ("script -q -c \"unset CLAUDECODE; fm settings list\" /dev/null", "self-authorize"),
+            ("script --command 'CLAUDECODE= fm settings list' /dev/null", "self-authorize"),
+            ("bash -c 'env -u CLAUDECODE fm settings list'", "self-authorize"),
+            ("sh -c \"CLAUDECODE= CLAUDE_CODE_ENTRYPOINT= fm settings list\"", "self-authorize"),
+            ("setsid env -u CLAUDECODE fm settings list", "self-authorize"),
+            ("timeout 5 env -u CLAUDE_CODE_ENTRYPOINT fm settings list", "self-authorize"),
+            ("unbuffer env -u CLAUDECODE fm settings list", "self-authorize"),
+            ("unbuffer -p env -u CLAUDECODE fm settings list", "self-authorize"),
+            # a wrapper the guard doesn't know still leaves env's own words to read
+            ("chrt 0 env -u CLAUDECODE fm settings list", "self-authorize"),
+            ("taskset 1 env -u CLAUDE_CODE_ENTRYPOINT fm settings list", "self-authorize"),
+            ("stdbuf -o L env --unset=CLAUDECODE fm settings list", "self-authorize"),
+            ("chrt 0 env CLAUDECODE= fm settings list", "self-authorize"),
+            ("chrt 0 env -u CLAUDE{{CODE,_CODE_ENTRYPOINT}} fm settings list", "self-authorize"),
+            ("env FOO=1 grep CLAUDECODE notes.txt", None),  # the name as the command's argument, not env's
+            ("script -qc 'fm settings list' /dev/null", None),
             # a whole fresh environment is a clean-env test run, not a hidden Claude (fm settings fails closed off a TTY)
             ("env -i PATH=/usr/bin:/bin HOME=/tmp/h python3 plugin/tests/run.py test_guard", None),
             ("sudo apt-get update && fm doctor", None),
@@ -1995,6 +2014,7 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
             ("fm decide yes --answer 1", "self-authorize", "they can type ! fm decide"),  # T-1064
             ("fm decide yes --ans 1", "self-authorize", "fm decide ANSWER --answer N"),
             ("fm risk set --day 20 --because more", "self-authorize", "fm risk set"),  # T-1080
+            ("fm home import x.tgz", "self-authorize", "fm home import is the user's to run"),  # T-1665
             ("cat list | xargs rm -rf", "rm-outside", "recursive rm with targets from stdin"),
         ]:
             with self.subTest(cmd=cmd):
@@ -2003,7 +2023,7 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
                 self.assertIn(why, str(r.detail))
 
     def test_near_misses_stay_allowed(self):
-        for cmd in ("fm posture", "fm pause on", "fm approve-reads off", "fm rule list", "fm vetoes", "fm vetoes --json", "fm rollback --list", "fm taste compile 1", "eval \"$(echo hi)\"", "dd if=x of=./file.img", "ufw status", "firewall-cmd --list-all",
+        for cmd in ("fm posture", "fm pause on", "fm approve-reads off", "fm rule list", "fm vetoes", "fm vetoes --json", "fm rollback --list", "fm taste compile 1", "fm home export", "eval \"$(echo hi)\"", "dd if=x of=./file.img", "ufw status", "firewall-cmd --list-all",
                     "cryptsetup --version", "git config core.hooksPath", "git config --get core.hooksPath"):
             with self.subTest(cmd=cmd):
                 self.assertIsNone(self.bash(cmd))
@@ -2438,3 +2458,121 @@ class CredentialReadHook(ForemanTestCase):
     def test_the_hooks_credential_markers_follow_the_guards_lists(self):
         import fmhooks
         self.assertEqual((set(fmhooks._CRED_DIRS), set(fmhooks._CRED_FILES)), (set(g._CRED_DIRS), set(g._CRED_FILES)))
+
+
+class ProtectedTouch(GuardCase):
+    """T-1680: touch that makes a file in a protected folder is a write there (a new hooks.json in Claude Code's plugin
+    cache runs as a hook); touch on a file that exists only changes its times."""
+    def test_touch_making_a_file_is_judged_as_a_write(self):
+        cache = "{home}/.claude/plugins/cache/x/hooks"
+        os.makedirs(self.sub(cache), exist_ok=True)
+        old = self.sub(cache + "/old.json")
+        open(old, "w").close()
+        self.run_table([
+            (f"touch {cache}/hooks.json", "plugin"),
+            (f"echo x > {cache}/hooks.json", "plugin"),  # the writes it now matches
+            (f"cp /dev/null {cache}/hooks.json", "plugin"),
+            (f"truncate -s0 {cache}/hooks.json", "plugin"),
+            (f"touch -d 2020-01-01 -a {cache}/hooks.json", "plugin"),
+            (f"touch -- {cache}/hooks.json", "plugin"),
+            (f"cd {cache} && touch hooks.json", "plugin"),
+            (f"D={cache}; touch $D/hooks.json", "plugin"),
+            ("touch {fhome}/plugin/lib/new.py", "core"),
+            (f"touch {old} > {old}", "plugin"),  # the redirect empties it: a write however touch reads
+            (f"touch {old}", None),  # times only
+            (f"touch -c {cache}/hooks.json", None),  # -c makes nothing
+            (f"touch --no-create {cache}/hooks.json", None),
+            (f"touch -ac {cache}/hooks.json", None),
+            ("touch -d 2020-01-01 new.txt", None),  # an ordinary file in the project; the date isn't a file
+            ("touch {repo}/a {repo}/b", None),
+            (f"touch {cache}/hooks.json -c", None),  # GNU reads options after operands too: still -c
+            # review: a file the same command removes or moves away first is made again (existence is read now)
+            (f"unlink {old} && touch {old}", "plugin"),
+            (f"mv {old} /tmp/x; touch {old}", "plugin"),
+            (f"rm -f {old}; touch {old}", "plugin"),
+            # second review: an abbreviated --reference/--date/--time takes the next word, which is no file to make
+            (f"cd {cache} && touch --da 2020-01-01 old.json", None),
+            (f"cd {cache} && touch --ref old.json old.json", None),
+            (f"cd {cache} && touch --ti atime old.json", None),
+            (f"cd {cache} && touch --da=2020-01-01 new.json", "plugin"),
+        ], self.bash)
+
+    def test_a_touched_file_run_after_is_no_script_written_here(self):
+        # review: touch makes an empty file, not one whose content the guard can't read
+        self.run_table([
+            ("touch build.sh && ./build.sh", None),
+            ("touch x.py; python3 x.py", None),
+            ("echo 'rm -rf ~' > build.sh && ./build.sh", "system"),  # a write still is
+        ], self.bash)
+
+
+class GitCAfterC(GuardCase):
+    """T-1727 review: a later -C $D is read both as its own folder and under the -C before it (D may be relative)."""
+    def test_a_variable_folder_after_a_protected_one_stays_refused(self):
+        rows = []
+        for sub in ("reset --hard", "checkout -- f", "clean -fdx"):
+            rows += [(f"D=plugin; git -C {{fhome}} -C $D {sub}", "core"), (f"git -C {{fhome}} -C $D {sub}", "core")]
+        self.run_table(rows, self.bash)
+
+    def test_a_clone_destination_is_read_under_its_c_folder(self):  # T-1745
+        out = os.path.join(os.path.dirname(self.home), "out")
+        self.run_table([
+            ("git -C {fhome} clone https://x/y.git plugin", "core"),
+            ("git -C {fhome}/plugin clone https://x/y.git lib", "core"),
+            (f"git -C {out} clone https://x/y.git y", None),
+            ("git -C /tmp clone https://x/y.git {fhome}/plugin/lib/z", "core"),  # an absolute destination wins
+        ], self.bash)
+
+
+class MoveSource(GuardCase):
+    """T-1744: a move removes its sources, so moving a protected file out is a write where it was."""
+    def test_moving_a_protected_file_out_is_refused(self):
+        cache = "{home}/.claude/plugins/cache/x/hooks"
+        os.makedirs(self.sub(cache), exist_ok=True)
+        open(self.sub(cache + "/hooks.json"), "w").close()
+        out = os.path.join(os.path.dirname(self.home), "out")
+        os.makedirs(out, exist_ok=True)
+        open(os.path.join(out, "a.txt"), "w").close()
+        self.run_table([
+            (f"mv {cache}/hooks.json /tmp/x", "plugin"),
+            (f"mv -t /tmp {cache}/hooks.json", "plugin"),
+            (f"mv --target-directory=/tmp {cache}/hooks.json", "plugin"),
+            (f"mv -f {cache}/hooks.json {out}/a.txt /tmp/", "plugin"),
+            ("mv {fhome}/plugin/lib/fmcore.py /tmp/x", "core"),
+            (f"rsync -a --remove-source-files {cache}/hooks.json /tmp/x", "plugin"),
+            (f"rsync -a {cache}/hooks.json /tmp/x", None),  # a copy leaves the source
+            (f"cp {cache}/hooks.json /tmp/x", None),
+            (f"mv {out}/a.txt /tmp/b.txt", None),
+        ], self.bash)
+
+
+class GitInitTarget(GuardCase):
+    """T-1487: a variable set to a literal path earlier on the line names git init's folder, joined with ; or &&; an
+    absolute value isn't read as a folder under the cwd. One it can't resolve is named in the refusal."""
+    def setUp(self):
+        self.lib = os.path.join(self.fhome, "plugin", "lib")
+        os.makedirs(self.lib, exist_ok=True)
+        self.out = os.path.join(os.path.dirname(self.home), "out")
+
+    def test_a_literal_folder_resolves_across_semicolons_and_ands(self):
+        run = lambda cmd: self.bash(cmd.replace("OUT", self.out), cwd=self.lib)
+        self.run_table([
+            ("D=OUT; mkdir -p $D && git init -q $D && printf x > $D/p.sh", None),
+            ("D=OUT && mkdir -p $D && git init -q $D && printf x > $D/p.sh", None),
+            ("D=OUT; mkdir -p $D; git init -q $D; printf x > $D/p.sh", None),
+            ('D=OUT; git init -q "${{D}}"', None),
+            ("git init -q ~/x", None),
+            ("D=~/x; mkdir -p $D && git init -q $D", None),
+            ("D=~; mkdir -p $D && git init -q $D", "core"),  # home holds Foreman's checkout
+            ("D=~; git -C /tmp init -q $D", "core"),
+            ("git -C OUT init -q ~", "core"),
+            ("git init -q", "core"),  # the cwd, protected core
+            ("git init -q $D", "core"),
+        ], run)
+
+    def test_an_unresolved_folder_is_named(self):
+        r = self.bash("git init -q $D", cwd=self.lib)
+        self.assertBlocked(r, "core")
+        self.assertIn("$D unresolved", r.detail)
+        self.assertNotIn("git init writes its folder", r.detail)
+        self.assertIn("git init writes its folder", self.bash("git init -q", cwd=self.lib).detail)

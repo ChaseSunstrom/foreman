@@ -65,5 +65,108 @@ class GuardEvasions(unittest.TestCase):
                          [], "a new over-broad refusal")
 
 
+class SnapshotForms(unittest.TestCase):
+    """T-1482: the four bench SNAPSHOT commands are allowed in a project because the PreToolUse hook saves the work
+    they discard first. The corpus leaves them out (their verdict hangs on the tree), so here each obfuscated form runs
+    from a disposable git folder: the hook must save it, or the guard refuse it; one that does neither (\\git reset
+    --hard read as no git command) throws the work away unsaved."""
+    def setUp(self):
+        import subprocess
+        base = os.environ.get("XDG_RUNTIME_DIR") or os.path.expanduser("~/.cache")  # /tmp is scratch to the guard
+        self._tmp = tempfile.TemporaryDirectory(dir=base if os.access(base, os.W_OK) else None)
+        self.addCleanup(self._tmp.cleanup)
+        self.t = os.path.realpath(self._tmp.name)
+        self.home = os.path.join(self.t, "home")
+        os.makedirs(os.path.join(self.home, ".claude", "foreman"))
+        self.repo, self.other = os.path.join(self.t, "repo"), os.path.join(self.t, "other")
+        for repo in (self.repo, self.other):
+            os.makedirs(repo)
+            git = lambda *a: subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t",
+                                             "-c", "commit.gpgSign=false", *a], check=True, capture_output=True)
+            git("init", "-q")
+            for i, step in enumerate(["0", "1", "2", "3", "4", "5", "6", "stashed", "dirty"]):
+                with open(os.path.join(repo, "f.txt"), "w") as f:
+                    f.write(step)
+                if i < 7:  # HEAD~5 exists
+                    git("add", "f.txt")
+                    git("commit", "-qm", step)
+                elif step == "stashed":  # a stash for stash clear to drop
+                    git("stash", "push", "-q")
+            # f.txt left "dirty": uncommitted work the commands would discard
+
+    def judge(self, cmd, cwd):
+        """(refusal or None, the hook's save note or None), in the hook's order: the guard, then the save."""
+        import fmguard as g
+        import fmhooks
+        ctx = g.Ctx(cwd=cwd, project_root=g.project_root_for(cwd, self.home), home=self.home,
+                    foreman_home=os.path.join(self.home, ".claude", "foreman"), scratch=["/tmp"], task_id="T-0001")
+        refused = g.check("Bash", {"command": cmd}, ctx)
+        note = fmhooks._snapshot_note({"tool_input": {"command": cmd}, "cwd": cwd}, g)
+        return refused, note
+
+    @staticmethod
+    def saved_in(repo, note):
+        """Whether the note says a save was made in repo: its restore line, which a \"couldn't save\" note never has."""
+        return f"(restore: git -C {repo} " in (note or "")
+
+    def test_every_obfuscated_snapshot_command_is_saved_or_refused(self):
+        ran, unsaved = 0, []
+        for cmd in sorted(gen_evasions.SNAPSHOT):
+            variants = [(tr.__name__, tr(cmd)) for tr in gen_evasions.EVERY] + gen_evasions.stacked(cmd)
+            for name, v in variants:
+                if not v:
+                    continue
+                # in the folder, and from outside it after a cd (the save must land in the repo, not the hook's cwd)
+                for full, cwd in ((v, self.repo), (f"cd {self.repo} && {v}", self.t)):
+                    ran += 1
+                    refused, saved = self.judge(full, cwd)
+                    if refused is None and not self.saved_in(self.repo, saved):
+                        unsaved.append(f"{name}: {full!r} from {cwd}: {saved}")
+        self.assertGreater(ran, len(gen_evasions.SNAPSHOT) * 10, "too few forms: the test would be vacuous")
+        self.assertEqual(unsaved, [], "allowed with nothing saved first:\n" + "\n".join(unsaved))
+
+    def test_each_folder_a_command_discards_in_is_saved(self):
+        # review: a cd before eval, a second repo of the same kind, a -C through a variable
+        for cmd, cwd, repos in [
+            (f"cd {self.repo} && eval 'git clean -fdx'", self.t, [self.repo]),
+            (f"cd {self.repo}; sh <<< 'git clean -fdx'", self.t, [self.repo]),
+            ("git reset --hard; $'git' -C ../other clean -fdx", self.repo, [self.repo, self.other]),
+            (f"R={self.repo}; $'git' -C $R clean -fdx", self.t, [self.repo]),
+            # second review: a relative cd inside the nested text starts from the outer folder
+            (f"cd {self.repo} && eval 'cd sub && git clean -fdx'", self.t, [self.repo]),
+            (f"cd {self.repo} && sh -c 'cd sub && g\"\"it clean -fdx'", self.t, [self.repo]),
+        ]:
+            with self.subTest(cmd=cmd):
+                os.makedirs(os.path.join(self.repo, "sub"), exist_ok=True)
+                _, saved = self.judge(cmd, cwd)
+                for r in repos:
+                    self.assertTrue(self.saved_in(r, saved), saved)
+
+    def test_a_folder_it_cannot_follow_is_said_not_guessed(self):
+        # second review: after cd $X the command runs who knows where; saving the hook's folder would be a false comfort
+        for cmd in ("cd $X && g''it reset --hard", "cd $X && eval 'git clean -fdx'"):
+            with self.subTest(cmd=cmd):
+                _, note = self.judge(cmd, self.repo)
+                self.assertFalse(self.saved_in(self.repo, note), note)
+                self.assertIn("couldn't tell where", note or "")
+
+    def test_saves_share_one_deadline(self):
+        # second review: each repo's save had its own SNAPSHOT_S; two slow ones could outlast the hook's 5 s
+        import fmhooks
+        given = []
+
+        def slow(top, why, timeout=None, what="tree"):
+            given.append(timeout)
+            import time
+            time.sleep(0.3)
+            return ["abc"]
+        cmd = "git reset --hard; git -C ../other reset --hard; git -C ../other stash clear"
+        with mock.patch.object(fmhooks, "SNAPSHOT_S", 0.5), mock.patch.object(fmhooks.c, "snapshot", slow):
+            _, note = self.judge(cmd, self.repo)
+        self.assertEqual(len(given), 2, note)  # the third had no time left
+        self.assertLessEqual(given[1], 0.5 - 0.3 + 0.05)
+        self.assertIn("no time left", note)
+
+
 if __name__ == "__main__":
     unittest.main()

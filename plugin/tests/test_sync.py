@@ -98,6 +98,19 @@ class Sync(ForemanTestCase):
         self.assertNotIn("[tree", b.render())
         self.assertEqual(b.status, "planned", "focus is per machine")
 
+    def test_invisible_characters_inside_marks_dont_save_them(self):
+        # T-1665 review: plain_lines ran last, so a zero-width, word-joiner or bidi mark inside a mark hid it from the subs
+        self.fm("sync", "on")
+        for ch in ("​", "⁠", "‏"):
+            with self.subTest(ch=hex(ord(ch))):
+                self.pulled(lambda t: t + f"\n- (step 1) `x` → exit 0 · ok [ra{ch}n] [tr{ch}ee deadbeef0000] "
+                            f"(2999-01-01T00:00:00Z)\n- (audit self{ch}) `x` → ok (2999-01-01T00:00:00Z)\n")
+                self.fm("sync", "import")
+                b = c.find_brief(c.find_project(self.repo), self.tid)
+                self.assertEqual(b.audits(), [])
+                self.assertNotIn("[ran]", b.render())
+                self.assertNotIn("[tree", b.render())
+
     def test_a_pull_is_never_overwritten_by_the_next_export(self):
         # round-3 edge audit: exports run on every fm change; a pulled change must wait for the import, not be lost
         self.fm("sync", "on")
@@ -171,6 +184,23 @@ class Sync(ForemanTestCase):
         with open(os.path.join(self.repo, ".gitignore"), "a") as f:
             f.write(".*\n")
         self.assertIn("ignored", self.fm("sync", "on").stdout)
+
+    def test_a_new_pulled_brief_waits_for_the_users_yes_and_carries_no_lease(self):  # T-1749
+        self.fm("sync", "on")
+        rel = "tasks/T-0099-planted.md"
+        planted = re.sub(r"(?m)^id: .*$", "id: T-0099", self.exported()).replace("# Add export", "# Planted work")
+        planted = planted.replace("status: planned", "status: active\nlane: /x\nbuilder: b\ncost_cap: 99\n"
+                                  "priority: urgent", 1)
+        self.pulled(lambda _: planted, rel)
+        self.fm("sync", "import")
+        b = c.find_brief(c.find_project(self.repo), "T-0099")
+        self.assertEqual(b.title, "Planted work")
+        self.assertEqual(b.status, "planned")
+        self.assertTrue(b.meta.get("confirm"), "a task that arrived from the repo waits for the user's yes")
+        for k in ("lane", "builder", "cost_cap"):
+            self.assertNotIn(k, b.meta)
+        mine = c.find_brief(c.find_project(self.repo), self.tid)
+        self.assertFalse(mine.meta.get("confirm"), "a task this machine already had keeps its own confirm")
 
     def test_pulled_titles_cannot_carry_terminal_sequences(self):
         # round-4 adversary audit: fm queue printed titles straight from disk

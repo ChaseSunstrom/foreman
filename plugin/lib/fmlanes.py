@@ -570,6 +570,10 @@ def builder_brief(p, b, args, resume_branch=None):
     if skipped:
         parts += ["## Claims", "Not pre-claimed, already held live (ask the holder with `fm bus send`): "
                   + "; ".join(f"{f} by {w}" for f, w in skipped), ""]
+    if b.type == "CLEAN":  # T-1712: the close gate wants the tests run before the first edit; lanes never heard of it
+        parts += ["## Behaviour lock", f"This is a CLEAN task: right after `fm focus {b.id}`, before your first edit, "
+                  f"run `fm check --evidence {b.id} --step 1` (the behaviour lock the close checks; --affected records "
+                  f"no evidence).", ""]
     warns = hot_files(p, b)
     if warns:
         parts += ["## Warning", *warns, ""]

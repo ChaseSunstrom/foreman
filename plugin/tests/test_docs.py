@@ -203,10 +203,9 @@ class Skills(unittest.TestCase):
             self.assertIn(need, named)
         self.assertEqual(fm_mention_problems(body), [])  # T-1701: the checker every skill test shares
         self.assertIn("Skill foreman:directions", body)
-        # palette prints to stdout and ignores --out; extract writes DESIGN.md's Tokens section unless --out says else
+        # T-1714: palette writes --out (it was ignored before); extract writes DESIGN.md's Tokens section unless --out
         palette = next(line for line in body.splitlines() if "fm design palette" in line)
-        self.assertRegex(palette, r"`fm design palette \S+ > ")
-        self.assertNotIn("--out", palette)
+        self.assertRegex(palette, r"`fm design palette \S+ --out \S+`")
         self.assertRegex(body, r"`fm design extract SRC`[^.]*DESIGN\.md")
 
     def test_audit_reference_defines_every_lens_fm_requires(self):
@@ -337,6 +336,17 @@ class PluginFiles(unittest.TestCase):
         for f in ("bin/fm", "hooks/hook", "hooks/statusline", "hooks/subagent-statusline"):
             with self.subTest(f=f):
                 self.assertTrue(os.access(os.path.join(PLUGIN, f), os.X_OK))
+
+    def test_master_lists_every_lib_module_with_its_own_bullet(self):
+        # T-1724: MASTER.md's '### plugin/lib modules' is one bullet per module (T-1713); a new module needs its line
+        text = read_text(os.path.join(os.path.dirname(PLUGIN), "MASTER.md"))
+        self.assertIn("\n### plugin/lib modules\n", text)
+        section = re.split(r"\n#", text.split("\n### plugin/lib modules\n", 1)[1], maxsplit=1)[0]
+        bullets = re.findall(r"^- `(\w+)`", section, re.M)
+        modules = {f[:-3] for f in os.listdir(os.path.join(PLUGIN, "lib")) if f.endswith(".py")}
+        self.assertEqual(sorted(modules - set(bullets)), [], "a module with no bullet")
+        self.assertEqual(sorted(set(bullets) - modules), [], "a bullet for no module")
+        self.assertEqual(sorted({b for b in bullets if bullets.count(b) > 1}), [], "a module with two bullets")
 
 
 class Site(unittest.TestCase):

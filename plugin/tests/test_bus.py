@@ -232,6 +232,31 @@ class Lease(Base):
         self.assertNotEqual(out.get("permissionDecision"), "deny", "the holder edits on")
         self.assertIn("mod.py", self.fm("lease", "list").stdout)
 
+    def test_drop_confirms_what_it_dropped_and_lists_no_other_lease(self):
+        # T-1729: a drop printed another session's lease line as its result, not the caller's own drop
+        a, b = {"CLAUDE_CODE_SESSION_ID": "sess-a"}, {"CLAUDE_CODE_SESSION_ID": "sess-b"}
+        self.fm("lease", "take", "a.py::f", "b.py", env=a)
+        self.fm("lease", "take", "c.py", env=b)
+        out = self.fm("lease", "drop", env=a).stdout
+        self.assertIn("Dropped 2 lease(s)", out)
+        self.assertIn("dropped: a.py::f", out)
+        self.assertIn("dropped: b.py::*", out)
+        self.assertNotIn("c.py", out, "another session's lease isn't the drop's result")
+        self.assertIn("c.py", self.fm("lease", "list").stdout)
+
+    def test_a_long_drop_is_cut_and_a_lanes_claims_still_held_are_said(self):
+        # T-1731 review: one line per lease uncapped; a lane's bare drop said "Dropped 0" with its pre-claims held
+        import fmbus
+        a = {"CLAUDE_CODE_SESSION_ID": "sess-a"}
+        self.fm("lease", "take", *[f"m{i}.py" for i in range(10)], env=a)
+        out = self.fm("lease", "drop", env=a).stdout
+        self.assertIn("Dropped 10 lease(s)", out)
+        self.assertEqual(out.count("dropped: "), 8)
+        self.assertIn("… 2 more", out)
+        fmbus.preclaim(self.project(), "T-0001", ["scope.py"])
+        out = self.fm("lease", "drop", env=a).stdout
+        self.assertIn("still held: 1 lane claim(s) (fm lease list)", out)
+
 
     def test_a_fm_code_workers_edits_lease_as_the_run_so_the_run_and_its_next_worker_edit_on(self):
         """T-1294: each worker turn is its own Claude session; leasing under it made fm code's judge put the
