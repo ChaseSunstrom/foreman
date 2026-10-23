@@ -1254,6 +1254,40 @@ def toolchain(root, env):
     return dirs, note or None
 
 
+OFFER_STOP = {"a", "an", "the", "this", "that", "these", "those", "from", "to", "of", "in", "on", "for", "and", "or",
+              "with", "my", "it", "its", "is", "be", "please", "can", "you", "me", "we", "our", "all", "into", "out"}
+
+
+def skill_offer(request):
+    """T-1397: one line naming the indexed skill (fm lib's sources) the request matches, with its licence class and
+    token cost, or None. Offered, never installed or loaded: fm lib show NAME reads it as data. A match needs a word
+    of the skill's own name, four points in all (a name word 3, a description word 1) and a lead over the next."""
+    import fmlib
+    terms = {w for w in fmlib._words(request or "") if w not in OFFER_STOP}
+    if not terms:
+        return None
+    try:
+        skills = fmlib.source_skills()
+    except Exception:  # an offer is a convenience: a damaged index never stops a run
+        return None
+    scored = []
+    for s in skills:
+        hit = len(terms & set(fmlib._words(s["name"].split(":", 1)[-1])))
+        score = 3 * hit + len(terms & set(fmlib._words(s.get("description") or "")))
+        if hit and score >= 4:
+            scored.append((score, s))
+    scored.sort(key=lambda x: (-x[0], x[1]["name"]))
+    if not scored or len(scored) > 1 and scored[1][0] == scored[0][0]:
+        return None
+    s = scored[0][1]
+    try:
+        cost = f", ~{os.path.getsize(s['path']) // 4:,} tokens"
+    except OSError:
+        cost = ""
+    return (f"skill: {fmcore.plain(s['name'])} matches ({s.get('class') or 'ideas-only'}{cost}); fm lib show "
+            f"{fmcore.plain(s['name'])} reads it as data, and nothing is installed")
+
+
 def install_warning():
     """T-1757: fm doctor's two-installs and duplicate-hook findings as one line for a run's start, each distinct
     finding said once (state/code-warned.json keeps their hashes); None when both pass, or once said."""
@@ -2444,6 +2478,9 @@ def cmd_code(args):
         run.tool_dirs, pinned = toolchain(root, run.env())  # T-1407
         if pinned:
             run.emit("note", pinned)
+        offer = skill_offer(run.request) if args.resume is None and not run.tid else None  # T-1397
+        if offer:
+            run.emit("note", offer)
         if gate:
             run.emit("note", gate)
         if picked:

@@ -48,6 +48,19 @@ class PluginsCase(ForemanTestCase):
         super().tearDown()
 
 
+class Suggest(PluginsCase):  # T-1397
+    def test_three_at_most_each_with_its_reason_from_the_stack(self):
+        with open(os.path.join(self.repo, "Cargo.toml"), "w") as f:
+            f.write('[package]\nname = "x"\nversion = "0.1.0"\n')
+        rows = json.loads(self.fm("plugins", "suggest", "--json").stdout)
+        self.assertLessEqual(len(rows), 3)
+        self.assertEqual(rows[0]["id"], "rust-analyzer-lsp@official")
+        self.assertIn("rust", rows[0]["reason"])
+        self.assertTrue(all(r["reason"] for r in rows))
+        self.assertNotIn("postgres-mcp@official", {r["id"] for r in rows}, "installed ones aren't suggested")
+        self.assertIn("nothing was installed", self.fm("plugins", "suggest").stdout)
+
+
 class Find(PluginsCase):
     def test_ranks_marketplace_plugins_for_a_need(self):
         hits = fmplugins.find("rust language server")
