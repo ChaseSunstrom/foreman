@@ -93,17 +93,18 @@ class SkillUsage(HookCase):
         self.assertRegex(self.fm("usage").stdout, r"named, not loaded: .*\bbrainstorm ×1\b")  # the idle Next names next
 
     def test_a_skill_hint_in_a_note_or_the_drives_stop_reason_is_named(self):
-        # T-1697's hints say "load: Skill foreman:intake", no slash; the drive gives its Next line as a Stop reason
+        # T-1697's hints say "load: Skill foreman:…", no slash; the drive gives its Next line as a Stop reason.
+        # T-1701: a FIX's hint names debug-test
         self.fm("init")
         self.task()
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "carry on", "session_id": "sa"}))
-        self.assertIn("Skill foreman:intake", ctx)
+        self.assertIn("Skill foreman:debug-test", ctx)
         stop = lambda sid: json.loads(self.hook("Stop", {"stop_hook_active": False, "session_id": sid,
                                                          "last_assistant_message": "Continuing next."}).stdout)
-        self.assertIn("Skill foreman:intake", stop("sb")["reason"])
-        self.assertIn("Skill foreman:intake", stop("sc")["reason"])
-        self.hook("PostToolUse", {"tool_name": "Skill", "tool_input": {"skill": "foreman:intake"}, "session_id": "sc"})
-        self.assertEqual(self.fm_json("usage")["named_not_loaded"].get("intake"), 2)
+        self.assertIn("Skill foreman:debug-test", stop("sb")["reason"])
+        self.assertIn("Skill foreman:debug-test", stop("sc")["reason"])
+        self.hook("PostToolUse", {"tool_name": "Skill", "tool_input": {"skill": "foreman:debug-test"}, "session_id": "sc"})
+        self.assertEqual(self.fm_json("usage")["named_not_loaded"].get("debug-test"), 2)
 
     def test_only_real_skills_count_and_a_long_name_is_not_logged(self):
         import fmhooks
