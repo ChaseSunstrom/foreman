@@ -1507,6 +1507,71 @@ def test_runner(name, timeout=RUNNER_TEST_SECONDS, cwd=None, on_spawn=None):
     return {"name": name, "ok": code == 0, "said": said}
 
 
+PING_PROMPT, PING_SECONDS = "Reply with the single word ok and nothing else. Use no tools.", 60
+
+
+def ping_state(code, said):
+    """T-1335: a ping's answer sorted: ok, not logged in, usage limit, flag refused, endpoint down, no answer, or
+    failed (exit N)."""
+    kind, _ = failure_kind(code, said)
+    if kind is None:
+        return "ok" if (said or "").strip() else "no answer"
+    if kind != "crash":
+        return {"timeout": "no answer", "auth": "not logged in", "limit": "usage limit"}[kind]
+    tail = (said or "")[-600:]
+    if re.search(r"(?i)unknown (?:option|flag|argument)|unrecognized (?:option|argument)|unexpected argument|"
+                 r"invalid option", tail):
+        return "flag refused"
+    if re.search(r"(?i)ECONNREFUSED|ENOTFOUND|ETIMEDOUT|connection refused|could not resolve|getaddrinfo|"
+                 r"network is unreachable|\b50[23]\b|overloaded", tail):
+        return "endpoint down"
+    return f"failed (exit {code})"
+
+
+def ping_runner(name, timeout=PING_SECONDS, on_spawn=None):
+    """T-1335: a runner asked one tiny question through its read-only plan command, in a scratch folder, with a
+    worker's environment, bounded: {name, state, ms, version, said}. A runner with no plan command is only asked
+    --version (state 'version only'): a work command could change files. A name that isn't a runner is refused
+    (test_runner's CodeError) and never run. Spends a few tokens."""
+    base = test_runner(name, on_spawn=on_spawn)
+    if not base["ok"]:
+        return {"name": name, "state": "failed", "ms": None, "version": None, "said": base["said"]}
+    r = all_runners()[name]
+    if not r.get("plan"):
+        return {"name": name, "state": "version only", "ms": None, "version": base["said"],
+                "said": "no read-only plan command: asked --version only"}
+    argv = [w.replace("{prompt}", PING_PROMPT) for w in shlex.split(r["plan"])] + lean_args(r, "plan")
+    with tempfile.TemporaryDirectory(prefix="fm-ping-") as d:
+        t0 = time.monotonic()
+        code, out = run_bounded(shlex.join(argv), d, timeout, env=worker_env(), cap=4096, on_spawn=on_spawn)
+        ms = int((time.monotonic() - t0) * 1000)
+    res = next(filter(None, map(m.stream_result, reversed(out.splitlines()))), None)
+    said = res["result"] if res and isinstance(res.get("result"), str) else out
+    state = ping_state(1 if res and res.get("is_error") and code == 0 else code, said)
+    return {"name": name, "state": state, "ms": ms, "version": base["said"], "said": _one_line(said, 160)}
+
+
+def _ping_path():
+    return os.path.join(fmcore.state_dir(), "code-runners-ping.json")
+
+
+def ping_cache(put=None):
+    """T-1335: the last ping of each runner ({name: result with ts}); with put, that result kept first."""
+    try:
+        with open(_ping_path(), encoding="utf-8") as f:
+            got = json.load(f)
+        got = got if isinstance(got, dict) else {}
+    except (OSError, ValueError):
+        got = {}
+    if put:
+        got[put["name"]] = dict(put, ts=round(time.time()))
+        try:
+            fmcore.write_atomic(_ping_path(), json.dumps(got, indent=1))
+        except OSError:
+            pass
+    return got
+
+
 def _git(root, *a):
     """The judge's own git: no fsmonitor or hook runs, whatever config a worker planted."""
     return subprocess.run(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "--literal-pathspecs",
@@ -2457,6 +2522,15 @@ def _runners(args, fmcli):
             elif m.retiring(x["model"]):  # T-1433: announced, within 60 days
                 soon = m.retiring(x["model"])
                 x.update(retiring_on=soon["date"], replacement=soon["replacement"], source=soon["source"])
+    pings = {}
+    if getattr(args, "ping", None) is not None:  # T-1335
+        names = [args.ping] if args.ping else [n for n, r in rs.items() if r.get("work") and _installed(n, r)]
+        for n in names:
+            try:
+                pings[n] = ping_runner(n)
+            except CodeError as e:
+                raise fmcli.UsageError(str(e))
+            ping_cache(pings[n])
     rows = []
     for n, r in rs.items():
         path = _installed(n, r)
@@ -2469,6 +2543,8 @@ def _runners(args, fmcli):
                 row["version"] = ((v.stdout or v.stderr).strip().splitlines() or ["?"])[0][:60]
             except (OSError, subprocess.TimeoutExpired) as e:
                 row["version"] = f"didn't answer --version ({type(e).__name__})"
+        if n in pings:
+            row["ping"] = pings[n]
         rows.append(row)
 
     def can(r):
@@ -2476,8 +2552,12 @@ def _runners(args, fmcli):
             ", plans read-only" + ("" if r["verified"] else " (not verified here)") if r["plans"] else "") + (
             "; Foreman's guard confines its shell" if r["guard"] == "confined" else
             "; Foreman's guard doesn't confine its shell (only the files it changes are judged)")
+    def pinged(x):
+        return f"  ping: {x['state']}" + (f" in {x['ms'] / 1000:.1f} s" if x.get("ms") is not None else "") + (
+            f" ({x['version']})" if x.get("version") else "")
     lines = [f"{'*' if r['default'] else ' '} {r['name']:<13} {'installed' if r['installed'] else '—':<10} {can(r)}"
-             + (f"  [{r['version']}]" if r.get("version") else "") for r in rows]
+             + (f"  [{r['version']}]" if r.get("version") else "") + (pinged(r["ping"]) if r.get("ping") else "")
+             for r in rows]
     lines.append("Models: " + (", ".join(f"{x['name']} ({x['model']})" for x in models) if models else
                                "none set up (fm code models says how)"))
     lines += [f"  {x['name']} ({x['model']}) was retired {x['retired_on']}: use {x['replacement']} "

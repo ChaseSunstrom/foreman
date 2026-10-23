@@ -2750,6 +2750,29 @@ class SettingsPreview(unittest.TestCase):
         self.assertEqual((app.cfg["preset"], app.cfg["motion"]), ("mono", "off"))
 
 
+class RunnerPing(unittest.TestCase):  # T-1335
+    setUp, text = SettingsScreen.setUp, SettingsScreen.text
+
+    def test_the_runners_screen_shows_each_last_ping_and_p_pings_the_selected(self):
+        import fmcode
+        os.makedirs(os.path.join(self.home, "state"), exist_ok=True)
+        with open(os.path.join(self.home, "state", "code-runners-ping.json"), "w") as f:
+            json.dump({"claude": {"state": "not logged in", "ms": 900, "version": "2.1.0"}}, f)
+        app = SettingsScreen.app(self)
+        app.key("r")
+        self.assertIn("not logged in", self.text(app))
+        app.item_index = next(i for i, r in enumerate(app.items) if r["name"] == "claude")
+        answer = {"name": "claude", "state": "ok", "ms": 1200, "version": "2.1.0", "said": "ok"}
+        with unittest.mock.patch.object(fmcode, "ping_runner", return_value=answer) as ping:
+            app.key("p")
+            app.runner_test.join(10)
+        ping.assert_called_once()
+        self.assertTrue(app.poll())
+        text = self.text(app)
+        self.assertIn("ok", text)
+        self.assertIn("1.2 s", text)
+
+
 class Editors(unittest.TestCase):
     """T-1511: three editors inside the settings screen, each writing through fm settings' writer (the guard, the lock,
     the history fm settings undo walks back): b binds a pressed key to the selected key row's command, l moves panels
