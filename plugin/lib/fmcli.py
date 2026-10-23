@@ -1136,8 +1136,9 @@ def _close_affected(p, b, runs, args):
     baseline task owns it). An environment failure, or a runner whose failing tests can't be named, is said, not
     refused; --skip-affected REASON waives it on the record. No affected-tests command, nothing linked, or the same
     command already passed in this finish: nothing to run."""
+    skip = {}
     try:
-        cmd, tests, _ = affected(p, b)
+        cmd, tests, _ = affected(p, b, skipped=skip)
     except UsageError:
         return
     if not cmd or (runs.get(cmd) or (1,))[0] == 0:
@@ -1149,7 +1150,7 @@ def _close_affected(p, b, runs, args):
                {"cmd": c.fit(cmd, 200), "waived": c.fit(waive, 200)})
         return
     guard_stored(p, b, cmd)
-    env, timeout = _skip_env(red_first_tests(p, b, [cmd])), (args.timeout if args.timeout > 0 else None)
+    env, timeout = _skip_env(skip), (args.timeout if args.timeout > 0 else None)
     t0 = time.monotonic()
     code, output = c.run_command(p.root, cmd, timeout, env=env)
     if code and code != 124:
@@ -1249,18 +1250,26 @@ def _ledger_head(p):
     return {k: r[k] for k in ("head", "chained", "broken")}
 
 
-def _theirs(p, b, files):
-    """T-0738: the files only another task edited (while this one was being worked): that task's to commit, even when
-    this task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere). T-0739: from
-    this task's first focus, not its capture: edits made before it started say nothing about its own changes."""
+def _others(p, b):
+    """{file: the other tasks that edited it} since this task's first focus (T-0739: not its capture: edits made before
+    it started say nothing about its own changes)."""
     events = c.ledger_tail(p, c.TASK_WINDOW)
-    mine = set(c.task_touches(p, b.id)) | _claimed(p, b)
     first = next((i for i, e in enumerate(events) if e.get("event") == "focus" and e.get("task") == b.id), None)
     since = str(b.meta.get("created") or "")  # ledger order when its focus is in the window: seconds tie
-    others = {os.path.relpath(f, p.root) for i, e in enumerate(events)
-              if e.get("event") == "touched" and e.get("task") not in (None, b.id)
-              and (i > first if first is not None else str(e.get("ts", "")) >= since)
-              and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/")}
+    out = {}
+    for i, e in enumerate(events):
+        if e.get("event") == "touched" and e.get("task") not in (None, b.id) \
+                and (i > first if first is not None else str(e.get("ts", "")) >= since) \
+                and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/"):
+            out.setdefault(os.path.relpath(f, p.root), set()).add(str(e["task"]))
+    return out
+
+
+def _theirs(p, b, files, others=None):
+    """T-0738: the files only another task edited (while this one was being worked): that task's to commit, even when
+    this task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere)."""
+    others = _others(p, b) if others is None else others
+    mine = set(c.task_touches(p, b.id)) | _claimed(p, b)
     return [f for f in files if f in others and f not in mine]
 
 
@@ -1480,7 +1489,8 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
         out = c._git(p.root, "--literal-pathspecs", "status", "--porcelain", "-z", "-uall", "--no-renames", "--", *touched,
                      timeout=30)
         files += [e[3:] for e in out.split("\0") if len(e) > 3]
-    theirs = _theirs(p, b, files)
+    others = _others(p, b)
+    theirs = _theirs(p, b, files, others)
     files = [f for f in files if f not in theirs]
     if theirs and not dry:
         print(f"{b.id}: left out {len(theirs)} file(s) only other tasks edited: {', '.join(theirs[:8])}")
@@ -1541,6 +1551,11 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
                 c.log_event(p, "index_lock_removed", b.id, {"why": why})
                 r = subprocess.run([*git, *a], capture_output=True, text=True)
         return r
+    shared = {f: others[f] for f in files if f in others}
+    if shared and not dry:  # T-1711: a file another open task edited too goes whole, its edits with it: say whose
+        live = {x.id for x in c.load_briefs(p) if x.status not in c.CLOSED}
+        for f, ts in [(f, sorted(ts & live)) for f, ts in shared.items() if ts & live][:8]:
+            print(f"{b.id}: {f} also holds uncommitted edits of {', '.join(ts)} (committed with it)")
     add = run("add", "-A", "--", *addable) if addable else subprocess.CompletedProcess([], 0, "", "")
     if add.returncode == 0:  # T-0132: nothing that looks like a credential goes into a commit Foreman makes
         import fmsecrets
@@ -4396,9 +4411,10 @@ def _runnable(template, tests):
 HUB_PAIRS = 10  # T-1467: more co-changed tests than this and a file's pairs are noise
 
 
-def affected(p, b=None):
+def affected(p, b=None, skipped=None):
     """(command, tests, changed files) for the tests linked (fm map) to files changed since the task started, with the
-    project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705)."""
+    project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705).
+    Another open task's red-first test files are left out (T-1718); a dict passed as skipped gets them {module: task}."""
     import fmmap
     import shlex
     act = b or c.active_brief(c.load_briefs(p), p.lane)  # T-1117 review: the closing task's base, active or not
@@ -4427,28 +4443,37 @@ def affected(p, b=None):
     every = sorted(set(fmmap.tests_for(m, sorted(changed))) | own | paired)
     fill = lambda tpl, ts: tpl.replace("{tests}", " ".join(shlex.quote(t) for t in ts)).replace(  # noqa: E731
         "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in ts))
-    rest = [x for x in every if not any(x.endswith(e) for e in by)]
-    groups = [("", template, _runnable(template, rest))] if template else []
-    groups += [(e, t, [x for x in every if x.endswith(e)]) for e, t in by.items()]
-    cmds = [fill(t, ts) for _, t, ts in groups if ts]
-    tests = sorted({x for _, _, ts in groups for x in ts})
+
+    def build(every):
+        rest = [x for x in every if not any(x.endswith(e) for e in by)]
+        groups = [("", template, _runnable(template, rest))] if template else []
+        groups += [(e, t, [x for x in every if x.endswith(e)]) for e, t in by.items()]
+        return [fill(t, ts) for _, t, ts in groups if ts], sorted({x for _, _, ts in groups for x in ts})
+    cmds, tests = build(every)
+    skip = red_first_tests(p, act, cmds) if cmds else {}  # T-1101: another open task's red-first test files
+    if skip:  # T-1718: out of the command too: run.py fails "no test matches" on a name it was told to skip
+        cmds, tests = build([x for x in every if os.path.basename(x).rsplit(".", 1)[0] not in skip])
+    if skipped is not None:
+        skipped.update(skip)
     return (" && ".join(cmds) if cmds else None), tests, changed
 
 
 def _check_affected(p, args):
     """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
-    cmd, tests, changed = affected(p)
+    skip = {}  # T-1101: another open task's red-first test files, left out as the full gates leave them out
+    cmd, tests, changed = affected(p, skipped=skip)
     act = c.active_brief(c.load_briefs(p), p.lane)
     if cmd:
         guard_stored(p, act, cmd)  # T-0901: the template is a stored command
     # T-1131: a changed test file is always in `tests` (T-0875) unless the template's runner can't run it: say so
-    odd = sorted(f for f in changed if c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f) and f not in tests)
+    odd = sorted(f for f in changed if c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f) and f not in tests
+                 and os.path.basename(f).rsplit(".", 1)[0] not in skip)
     note = (f"\n! {len(odd)} changed test file(s) this affected command can't run: {', '.join(odd[:5])}"
             f"{' …' if len(odd) > 5 else ''}; run their own suite") if odd else ""
     if not tests:
-        return out(args, {"tests": [], "changed": sorted(changed), "unrunnable": odd},
-                   f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check" + note) or 0
-    skip = red_first_tests(p, act, [cmd])  # T-1101: as the full gates do
+        return out(args, {"tests": [], "changed": sorted(changed), "unrunnable": odd, "skipped_tests": skip},
+                   f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check" + note
+                   + (f"\n! {_left_out(skip)}" if skip else "")) or 0
     code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=_skip_env(skip))
     out(args, {"tests": tests, "exit": code, "changed": sorted(changed), "skipped_tests": skip, "unrunnable": odd},
         f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → {c.run_result(code, output)}"
