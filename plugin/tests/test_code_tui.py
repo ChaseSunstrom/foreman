@@ -2577,6 +2577,17 @@ class Command(CodeCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("missing.jsonl", r.stderr)
 
+    def test_tour_plain_prints_the_captions_and_a_tour_svg_is_written(self):  # T-1309
+        r = self.code("tui", "--tour", "--plain", check=False)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("▶ fm code works one task to proof", r.stdout)
+        self.assertIn("rm -rf ~", r.stdout)
+        self.assertIn("▶ Closed and committed", r.stdout)
+        svg = os.path.join(self.tmp, "tour.svg")
+        r = self.code("tui", "--tour", "--snapshot", svg, check=False)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(os.path.getsize(svg) > 1000)
+
     def test_print_config_and_a_bad_file(self):
         out = self.code("tui", "--print-config").stdout
         self.assertIn('theme = "night"', out)
@@ -3542,3 +3553,52 @@ class MotionVisuals(unittest.TestCase):
 if __name__ == "__main__":
     import unittest
     unittest.main()
+
+
+class Tour(unittest.TestCase):  # T-1309
+    def test_the_tour_feeds_the_sample_run_on_its_clock_and_captions_each_panel(self):
+        now = [10.0]
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
+        app.clock = lambda: now[0]
+        app.start_tour()
+        app.poll()
+        self.assertEqual(len(app.state.log) >= 0 and app.tour[1], 1)
+        self.assertTrue(app.caption.startswith("fm code works one task to proof"), app.caption)
+        self.assertGreaterEqual(app.fps(now[0]), 4, "the next event comes on time")
+        now[0] += tui().TOUR_GAP * 7
+        app.poll()
+        self.assertEqual(app.tour[1], 8)
+        self.assertIn("guard", app.caption)
+        text = tui().render(app.state, 110, 32, tui().DEFAULTS, app, t=now[0]).text()
+        self.assertIn("▶ The guard", text)
+        now[0] += 100
+        app.poll()
+        self.assertEqual(app.state.status, "closed")
+        self.assertTrue(app.caption.startswith("Closed and committed"))
+        text = tui().render(app.state, 110, 32, tui().DEFAULTS, app, t=now[0]).text()
+        captions = " ".join(tui().TOUR.values())
+        for panel in ("Checks", "Activity", "Tokens per call", "Changed", "Time"):
+            self.assertIn(panel, text, "a panel the tour names is drawn")
+            self.assertIn(panel, captions, "and the tour names it")
+        self.assertAlmostEqual(len(tui().TOUR_RUN) * tui().TOUR_GAP + tui().TOUR_HOLD, 30, delta=3)
+
+    def test_the_tour_as_one_looping_smil_svg(self):
+        import xml.etree.ElementTree as ET
+        path = os.path.join(tempfile.mkdtemp(), "tour.svg")
+        tui().tour_svg(path, (100, 30))
+        raw = read(path)
+        self.assertNotIn("<script", raw)
+        root = ET.fromstring(raw)
+        ns = "{http://www.w3.org/2000/svg}"
+        frames = [g for g in root.iter(ns + "g") if g.find(ns + "set") is not None]
+        self.assertEqual(len(frames), len(tui().TOUR_RUN), "a frame per event")
+        self.assertEqual([g.get("visibility") for g in frames].count("visible"), 1, "the last one stands still")
+        clock = next(a for a in root.iter(ns + "animate") if a.get("id") == "tour")
+        self.assertEqual(clock.get("begin"), "0s;tour.end", "it loops")
+        self.assertIn("The guard", raw)
+        self.assertEqual(raw.count("<style>"), 1)
+
+
+def read(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
