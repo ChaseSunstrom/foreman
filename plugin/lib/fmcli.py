@@ -5343,6 +5343,14 @@ def _build_parser():
             "REPL across the repo's tracked text files: a diff first, --apply writes it (T-1554)")
     s.add_argument("words", nargs="*", metavar="rename OLD NEW|sub PATTERN REPL [PATH…]")
     s.add_argument("--apply", action="store_true", help="write the rewrite (without it, only the preview)")
+    s = add("marks", lazy("fmmarks", "cmd_marks"), tier=("Every task", 165), help="a project's marks: icons on one 24 "
+            "grid with one stroke, empty states built from them, a wordmark, the font shelf (T-1555)")
+    s.add_argument("words", nargs="*", metavar="icons|empty|wordmark NAME|fonts")
+    s.add_argument("--out", help="icons, empty: the folder (default icons/, empty-states/); wordmark: the SVG file; "
+                   "fonts --subset: the font file to write")
+    s.add_argument("--stroke", type=float, help="icons, empty: the stroke width in grid units (default 2)")
+    s.add_argument("--subset", metavar="FONT", help="fonts: a subset of this font file for self-hosting (fontTools)")
+    s.add_argument("--text", help="fonts --subset: the characters to keep")
     s = add("new", lazy("fmnew", "cmd_new"), tier=("Finding your way", 385), help="strict-by-default templates: a web "
             "page, a 3D scene, an fm code panel (list; NAME [DIR] copies one; check PATH holds a copy to its rules)")
     s.add_argument("words", nargs="*", metavar="list|NAME [DIR]|check PATH", help="web, scene or panel; a panel lands "
