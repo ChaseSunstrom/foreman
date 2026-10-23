@@ -2493,7 +2493,7 @@ class Width(unittest.TestCase):
                     return i, row
         raise AssertionError(f"{needle!r} not drawn:\n{cv.text()}")
 
-    def test_a_cjk_project_row_keeps_the_later_columns_and_the_border(self):
+    def test_a_cjk_project_card_keeps_its_border_and_cuts_its_title(self):  # T-1345: cards, from rows (T-1330)
         T = tui()
         projects = [{"project": "plain", "root": "/w/p", "exists": True, "active": None, "queue": 1, "inbox": 2,
                      "blocked": 3, "updated": 200.0},
@@ -2506,12 +2506,12 @@ class Width(unittest.TestCase):
             for selected in (0, 1):
                 app.item_index = selected
                 cv = T.render(app.state, w, 30, T.DEFAULTS, app, t=100.0)
-                a, row_a = self.col(cv, "queue 1")
-                b, row_b = self.col(cv, "queue 4")
-                self.assertEqual(a, b, f"the counts line up at {w} columns:\n{cv.text()}")
-                edge = [i for i, (c, _) in enumerate(row_a) if c == "│"][-1]
-                self.assertEqual(row_b[edge][0], "│", f"the right border survives at {w} columns:\n{cv.text()}")
-                self.assertIn("…", "".join(c for c, _ in row_b), "a cut title ends in …")
+                self.assertIn("queue 1", cv.text())
+                self.assertIn("queue 4", cv.text())
+                y, x, h, cw = app.deck_rects[1]
+                _, row = self.col(cv, "T-0009")
+                self.assertEqual(row[x + cw - 1][0], "│", f"the card's right border survives at {w}:\n{cv.text()}")
+                self.assertIn("…", "".join(c for c, _ in row[x:x + cw]), "a cut title ends in …")
         long = dict(projects[1], project="日本語のプロジェクト" * 3)
         app = T.App(T.DEFAULTS, spawn=lambda *a: None, projects=lambda: [dict(long)],
                     project_state=lambda p: {"code_dir": None})
@@ -3598,6 +3598,69 @@ class MotionVisuals(unittest.TestCase):
 if __name__ == "__main__":
     import unittest
     unittest.main()
+
+
+class Deck(unittest.TestCase):  # T-1345
+    PROJECTS = [{"project": "alpha", "root": "/w/a", "exists": True, "updated": 300.0, "queue": 2, "inbox": 1,
+                 "blocked": 1, "runner": "claude",
+                 "active": {"id": "T-0007", "title": "fix login", "stage": "executing", "steps_done": 1,
+                            "steps_total": 3}},
+                {"project": "beta", "root": "/w/b", "exists": True, "updated": 200.0, "queue": 0, "inbox": 0,
+                 "blocked": 0, "active": None},
+                {"project": "gamma", "root": "/w/g", "exists": True, "updated": 100.0, "queue": 0, "inbox": 4,
+                 "blocked": 0, "active": None}]
+
+    def app(self, motion="full"):
+        T = tui()
+        app = T.App(dict(T.DEFAULTS, motion=motion), spawn=lambda *a: None,
+                    projects=lambda: [dict(p) for p in self.PROJECTS], project_state=lambda p: {"code_dir": None})
+        app.show_home()
+        return T, app
+
+    def test_each_project_is_a_card_with_its_track_task_badges_and_runner(self):
+        T, app = self.app()
+        cv = T.render(app.state, 120, 34, app.cfg, app, t=100.0)
+        text = cv.text()
+        for want in ("alpha", "beta", "gamma", "claude", "T-0007", "fix login", "work 1/3", "blocked 1", "inbox 4",
+                     "nothing active"):
+            self.assertIn(want, text)
+        self.assertEqual(len(app.deck_rects), 3)
+        (ya, xa, _, _), (yb, xb, _, _), (yg, xg, _, _) = (app.deck_rects[i] for i in range(3))
+        self.assertEqual((ya, yb), (ya, ya), "two cards side by side at 120 columns")
+        self.assertGreater(yg, ya, "the third on the next row")
+        self.assertEqual(app.deck_cols, 2)
+        cv = T.render(app.state, 60, 34, app.cfg, app, t=100.0)
+        self.assertEqual(app.deck_cols, 1, "one column when narrow")
+
+    def test_arrows_move_by_card_in_the_grid(self):
+        T, app = self.app()
+        T.render(app.state, 120, 34, app.cfg, app, t=100.0)
+        app.key("KEY_RIGHT")
+        self.assertEqual(app.item_index, 1)
+        app.key("KEY_LEFT")
+        app.key("KEY_DOWN")
+        self.assertEqual(app.item_index, 2, "down: the card below")
+        app.key("KEY_DOWN")
+        self.assertEqual(app.item_index, 2, "the last row stays")
+        app.key("KEY_UP")
+        self.assertEqual(app.item_index, 0)
+
+    def test_the_ring_glides_and_the_project_view_grows_out_of_its_card_unless_motion_is_off(self):
+        for motion, moves in (("full", True), ("off", False)):
+            T, app = self.app(motion)
+            app.clock = lambda: 100.0
+            T.render(app.state, 120, 34, app.cfg, app, t=100.0)
+            app.key("KEY_RIGHT")
+            mid = T.render(app.state, 120, 34, app.cfg, app, t=100.05)
+            self.assertEqual(app.deck_ring != app.deck_rects[1][:2], moves, f"{motion}: the ring is on its way")
+            T.render(app.state, 120, 34, app.cfg, app, t=101.0)
+            self.assertEqual(app.deck_ring, app.deck_rects[1][:2], f"{motion}: and lands")
+            app.key("\n")
+            self.assertEqual(app.mode, "project", "Enter opens it at once; the grow is drawing only")
+            early = T.render(app.state, 120, 34, app.cfg, app, t=100.05).text()
+            late = T.render(app.state, 120, 34, app.cfg, app, t=101.0).text()
+            self.assertEqual("beta" in late and early != late, moves, f"{motion}: it grows out of the card")
+            del mid
 
 
 class FirstRun(unittest.TestCase):  # T-1333
