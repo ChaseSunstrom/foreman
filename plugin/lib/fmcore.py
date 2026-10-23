@@ -2275,7 +2275,8 @@ def plan_gaps(b, autonomy="standard"):
     if not b.steps():
         gaps.append("step")
     if needs_approval(b, autonomy):
-        gaps.append(f"the user's yes (fm ask {b.id} confirm: a child found this request in an old session)"
+        why = plain(str(b.meta.get("confirm_why") or ""))[:160] or "a child found this request in an old session"
+        gaps.append(f"the user's yes (fm ask {b.id} confirm: {why})"  # T-1750: why this one waits
                     if b.meta.get("confirm") else
                     f"approval (M tier needs it: plans keep missing or today's risk budget is spent, see fm risk and "
                     f"fm digest; approve "

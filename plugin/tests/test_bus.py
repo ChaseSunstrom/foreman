@@ -244,6 +244,15 @@ class Lease(Base):
         self.assertNotIn("c.py", out, "another session's lease isn't the drop's result")
         self.assertIn("c.py", self.fm("lease", "list").stdout)
 
+    def test_take_confirms_what_it_took_and_lists_no_other_lease(self):  # T-1748
+        a, b = {"CLAUDE_CODE_SESSION_ID": "sess-a"}, {"CLAUDE_CODE_SESSION_ID": "sess-b"}
+        self.fm("lease", "take", "c.py", env=b)
+        out = self.fm("lease", "take", "a.py::f", "b.py", env=a).stdout
+        self.assertIn("Took 2 lease(s)", out)
+        self.assertIn("took: a.py::f", out)
+        self.assertIn("took: b.py::*", out)
+        self.assertNotIn("c.py", out, "another session's lease isn't the take's result")
+
     def test_a_long_drop_is_cut_and_a_lanes_claims_still_held_are_said(self):
         # T-1731 review: one line per lease uncapped; a lane's bare drop said "Dropped 0" with its pre-claims held
         import fmbus

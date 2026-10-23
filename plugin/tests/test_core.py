@@ -501,6 +501,17 @@ class Stages(unittest.TestCase):
         big.meta["approved"] = True
         self.assertEqual(c.plan_gaps(big), [])
 
+    def test_a_confirm_gap_says_why_the_task_waits(self):  # T-1750
+        s = self.brief("S")
+        s.add_ac("works")
+        s.add_step("do it")
+        s.meta["confirm"] = True
+        self.assertIn("a child found this request in an old session", c.plan_gaps(s)[0])  # the default
+        s.meta["confirm_why"] = "it arrived from the repo's .foreman/ (fm sync)\x1b[2J"
+        gap = c.plan_gaps(s)[0]
+        self.assertIn("it arrived from the repo's .foreman/ (fm sync)", gap)
+        self.assertNotIn("\x1b", gap)
+
     def test_stage_and_next_action_follow_the_brief(self):
         b = self.brief("M", status="captured")
         self.assertEqual(c.stage(b), "captured")
