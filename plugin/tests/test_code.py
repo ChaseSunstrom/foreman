@@ -130,9 +130,10 @@ class CodeCase(ForemanTestCase):
         e.pop("CLAUDE_CODE_SESSION_ID", None)
         return e
 
-    def code(self, *args, check=True, env=None):
+    def code(self, *args, check=True, env=None, input=None):
         p = subprocess.run([sys.executable, FM, "code", *args], cwd=self.repo, env=self.env(env), capture_output=True,
-                           text=True, timeout=60 * busy_factor())  # T-1721: a hang guard; six builders' load tripped it
+                           text=True, timeout=60 * busy_factor(),  # T-1721: a hang guard; six builders' load tripped it
+                           **({"input": input} if input is not None else {"stdin": subprocess.DEVNULL}))  # T-1374
         if check and p.returncode:
             raise AssertionError(f"fm code exited {p.returncode}\nstdout:{p.stdout}\nstderr:{p.stderr}")
         return p
@@ -518,6 +519,29 @@ class TaskRun(CodeCase):
         ev = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
         self.assertEqual([e.get("task") for e in ev if e["event"] == "start"], [tid])
 
+    def test_a_task_waiting_for_the_users_yes_runs_nothing_until_it_is_given(self):  # T-1369
+        import fmcore
+        marker = os.path.join(self.tmp, "ran")
+        tid = self.brief(verify=f"touch {marker}; python3 test_calc.py")
+        p = fmcore.find_project(self.repo)
+        with fmcore.lock(p.dir):
+            b = fmcore.find_brief(p, tid)
+            b.meta.update(confirm=True, confirm_why="it arrived from the repo's .foreman/ (fm sync)")
+            fmcore.save_brief(p, b)
+        self.serve("openai", *FIX)  # a model that would work it: only the refusal stops it
+        r = self.code("--task", tid, "--model", "fake", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("waits for your own yes", r.stderr)
+        self.assertEqual(r.stderr.strip().splitlines()[-1], f"Next: fm ask {tid} confirm")
+        self.assertFalse(os.path.exists(marker), "its verify never ran")
+        with fmcore.lock(p.dir):
+            b = fmcore.find_brief(p, tid)
+            b.meta["allow"] = ["confirm"]  # what the user's yes (fm ask ID confirm) records
+            fmcore.save_brief(p, b)
+        self.serve("openai", *FIX)
+        self.code("--task", tid, "--model", "fake")
+        self.assertEqual(self.task(tid)["status"], "done")
+
     def test_it_refuses_a_task_it_cant_work_and_says_why(self):
         self.serve("openai", call("done", summary="x"))
         no_check = self.brief(verify=None)
@@ -584,6 +608,53 @@ def run_friction_lines(case):
     sp = fmcore.find_project(case.home)
     b = sp and next((b for b in fmcore.load_briefs(sp) if b.title.startswith("Improve fm code")), None)
     return b and [x.split("run friction: ", 1)[1] for x in b.section("Log").splitlines() if "run friction: " in x]
+
+
+class Why(CodeCase):  # T-1760 (T-1373)
+    def test_why_explains_a_closed_run_and_names_the_next_command(self):
+        self.serve("openai", plan(), *FIX)
+        self.code("fix add", "--model", "fake")
+        out = self.code("why", "T-0001").stdout
+        self.assertIn("T-0001: closed (fix add)", out)
+        self.assertIn("done: step 1", out)
+        self.assertTrue(out.rstrip().endswith("Next: fm task show T-0001"), out)
+        self.assertEqual(self.code("why").stdout, out, "no ID: the newest run")
+
+    def test_why_explains_a_blocked_run_with_its_reason(self):
+        self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
+        self.code("fix add", "--model", "fake", check=False)
+        out = self.code("why").stdout
+        self.assertIn("T-0001: blocked (fix add)", out)
+        self.assertIn("the verify still fails", out)
+        self.assertIn("Next: fm task show T-0001", out)
+
+    def test_why_explains_a_run_a_kill_stopped(self):
+        first = self.serve("openai", plan(), call("read", path="calc.py"), HANG)
+        p = Durable.start(self, "fix add", "--model", "fake")
+        Durable.kill_when(self, p, first.hung.is_set)
+        out = self.code("why", "T-0001").stdout
+        self.assertIn("T-0001: stopped by a kill or a crash (fix add)", out)
+        self.assertIn("was working on: step 1", out)
+        self.assertIn("Next: fm code --resume T-0001", out)
+
+    def test_why_with_no_such_run_says_so(self):
+        r = self.code("why", "T-0099", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no fm code run T-0099", r.stderr)
+
+
+class PipedContext(CodeCase):  # T-1760 (T-1374)
+    def test_piped_stdin_is_the_requests_context(self):
+        f = self.serve("openai", plan(), *FIX)
+        self.code("fix add", "--model", "fake", input="the add test fails with -1\n")
+        self.assertIn("the add test fails with -1", json.dumps(f.seen[0]), "the plan call sees it")
+        self.assertIn("the add test fails with -1", json.dumps(f.seen[1]), "a work call too")
+        self.assertEqual(self.task()["status"], "done")
+
+    def test_nothing_piped_adds_nothing(self):
+        f = self.serve("openai", plan(), *FIX)
+        self.code("fix add", "--model", "fake")
+        self.assertNotIn("piped on stdin", json.dumps(f.seen[0]))
 
 
 class RunFriction(CodeCase):  # T-1339
@@ -772,6 +843,12 @@ class Failures(CodeCase):  # T-1754 (T-1334, T-1355)
         with open(os.path.join(PLUGIN, ".claude-plugin", "plugin.json")) as f:
             version = json.load(f)["version"]
         self.assertEqual(start["foreman"], {"root": PLUGIN, "version": version})
+
+    def test_the_start_event_names_the_runs_containment(self):  # T-1760 (T-1402)
+        self.serve("openai", plan(), *FIX)
+        start = json.loads(self.code("fix add", "--model", "fake", "--json",
+                                     env={"FOREMAN_CONFINE": "0"}).stdout.splitlines()[0])
+        self.assertEqual(start["containment"], {"kind": "guard", "label": "guard only"})
 
 
 def cmdline(pid):
