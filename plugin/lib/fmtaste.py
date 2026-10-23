@@ -4,6 +4,7 @@ user names (read-only, capped, never the network). It ranks the looks by it; the
 Stored in Foreman's state (state/taste/looks.json), one file for every project: taste is the user's. Stdlib only."""
 import errno
 import json
+import math
 import os
 import re
 import stat
@@ -14,7 +15,8 @@ import fmcore as c
 LOOKS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills", "library", "cards", "looks")
 WEIGHTS = {"kept": 3, "reverted": -3, "not": -2, "learned": 1}  # a calibration pick is +1, the other look -1
 LEARNED_CAP = 3  # a look's learned score at most: a glob of files never outweighs one look the user kept
-VERBS = ("rank", "keep", "revert", "not", "calibrate", "learn")
+VERBS = ("rank", "keep", "revert", "not", "calibrate", "learn", "tournament", "opposite", "book")
+SIZES = (2, 4, 8)  # T-1536: a taste duel, a four-look tournament, eight
 PAIRS = 12
 EVENTS_KEEP = 500  # learned go first, then the oldest; ponytail: a cap, not decay; weigh recent ones if old taste drags
 WHY_CAP = 200
@@ -153,7 +155,7 @@ def scores(events=None):
                     continue
                 learned.add(_learned_key(e))
             bump(e["look"], e["signal"], WEIGHTS[e["signal"]])
-        elif e.get("signal") == "calibration" and isinstance(e.get("pairs"), list):
+        elif e.get("signal") in ("calibration", "tournament") and isinstance(e.get("pairs"), list):
             for pair, ans in zip(e["pairs"], str(e.get("answers") or "")):
                 if isinstance(pair, (list, tuple)) and len(pair) == 2 and all(isinstance(x, str) for x in pair):
                     for i, look in enumerate(pair):
@@ -197,6 +199,95 @@ def calibrate(answers, rnd=None):
     e = {"ts": c.now(), "signal": "calibration", "round": rnd, "pairs": pairs(looks(), rnd), "answers": "".join(got)}
     _append(e)
     return e
+
+
+def bracket(seeds, answers):
+    """T-1536: a single-elimination bracket over seeds (best first: 1 v last, 2 v second-to-last, …) replayed through
+    answers, each a (the first look of its match) or b: (matches played, their answers, the matches still to answer
+    in this round, the champion or None)."""
+    played, got, rnd, left = [], "", list(seeds), list(answers)
+    while len(rnd) > 1:
+        prs, nxt = [(rnd[i], rnd[-1 - i]) for i in range(len(rnd) // 2)], []
+        for k, (a, b) in enumerate(prs):
+            if not left:
+                return played, got, prs[k:], None
+            x = left.pop(0)
+            played.append([a, b])
+            got += x
+            nxt.append(a if x == "a" else b)
+        rnd = nxt
+    if left:
+        raise ValueError(f"{len(played) + len(left)} answers for a bracket of {len(played)} matches")
+    return played, got, [], rnd[0]
+
+
+def distance(a, b):
+    """T-1536: how far apart two looks are, 0 to 2: palette distance (each colour's nearest in the other palette, both
+    ways, as a share of the RGB cube's diagonal) plus tag distance (1 - shared / all); 0.5 each when one has none."""
+    pa, pb, ta, tb = a["palette"], b["palette"], set(a["tags"]), set(b["tags"])
+    near = lambda xs, ys: sum(min(math.dist(p, q) for q in ys) for p in xs) / len(xs)  # noqa: E731
+    pal = (near(pa, pb) + near(pb, pa)) / 2 / math.dist((0, 0, 0), (255, 255, 255)) if pa and pb else 0.5
+    return pal + (1 - len(ta & tb) / len(ta | tb) if ta | tb else 0.5)
+
+
+def opposite(look, known):
+    """T-1536, opposite day: every other look, farthest from LOOK first."""
+    rows = [(round(distance(known[look], x), 3), n) for n, x in known.items() if n != look]
+    return sorted(rows, key=lambda r: (-r[0], r[1]))
+
+
+def spread(n, known, first=None):
+    """T-1536: n looks far apart for a divergence round: the best-ranked (or first), then each time the look whose
+    nearest pick is farthest (farthest-point sampling over distance)."""
+    picked = [first or rank()[0]["look"]]
+    while len(picked) < min(n, len(known)):
+        picked.append(max(sorted(set(known) - set(picked)),
+                          key=lambda x: min(distance(known[x], known[p]) for p in picked)))
+    return picked
+
+
+def variant(k, look, x, what):
+    """T-1536: one variant brief of a divergence round: build `what` in this look, the content the same as the
+    others'."""
+    return (f"# Variant {k}: {x['title']}\n\nBuild {what} in the look {x['title']} (`{look}`): {x['line']}\n\n"
+            f"- Palette: {', '.join('#%02x%02x%02x' % tuple(p) for p in x['palette'])}\n"
+            f"- Tags: {', '.join(x['tags'])}\n"
+            f"- Read it first: `fm lib show {look}` (its type, layout, motion and contrast test).\n"
+            "- The content and behaviour stay the same as the other variants'; only the look differs.\n"
+            "- Done when the screen is built in this look and `fm design lint` passes on its files.\n\n"
+            f"The user picks the winner: `fm design diverge pick {look}` keeps it in the taste ledger.\n")
+
+
+def book(names, known):
+    """T-1536: a lookbook: one offline HTML page (no script, no outside load) with each look's title, its one-line
+    picture, its palette as swatches with their hex codes, and its tags."""
+    import html
+    esc = html.escape
+    cards = []
+    for n in names:
+        x = known[n]
+        swatches = "".join(
+            f'<li style="background:#{r:02x}{g:02x}{b:02x};color:{"#000" if r * 299 + g * 587 + b * 114 > 128000 else "#fff"}">'
+            f"#{r:02x}{g:02x}{b:02x}</li>" for r, g, b in x["palette"])
+        cards.append(f'<section><h2>{esc(x["title"])}</h2><p>{esc(x["line"])}</p><ul class="sw">{swatches}</ul>'
+                     f'<p class="tags">{esc(", ".join(x["tags"]))} · <code>{esc(n)}</code></p></section>')
+    return ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,'
+            'initial-scale=1"><title>Lookbook</title><style>body{margin:0 auto;max-width:72rem;padding:2rem 1rem;'
+            'font:16px/1.5 system-ui,sans-serif;background:#f6f5f2;color:#1a1a1a}main{display:grid;gap:1.5rem;'
+            'grid-template-columns:repeat(auto-fill,minmax(20rem,1fr))}section{background:#fff;border:1px solid #ddd;'
+            'border-radius:8px;padding:1rem}h2{margin:0 0 .25rem;font-size:1.25rem}.sw{display:flex;flex-wrap:wrap;'
+            'gap:4px;list-style:none;margin:.75rem 0;padding:0}.sw li{flex:1 0 4.5rem;padding:1.5rem .4rem .3rem;'
+            'font:12px ui-monospace,monospace;border-radius:4px}.tags{color:#555;font-size:.875rem;margin:0}'
+            '@media (prefers-color-scheme:dark){body{background:#151515;color:#eee}section{background:#202020;'
+            'border-color:#333}.tags{color:#aaa}}</style><h1>Lookbook</h1><main>'
+            + "".join(cards) + "</main></html>\n")
+
+
+def _answers(text):
+    got = [a.strip().lower() for a in (text.split(",") if "," in text else list(text.strip()))] if text else []
+    if any(a not in ("a", "b") for a in got):
+        raise ValueError("a tournament's answers are a (the first look of a match) or b, comma-separated")
+    return got
 
 
 def pick(prs, read_key, write, known=None):
@@ -385,6 +476,41 @@ def cmd_looks(args):
                 raise ValueError(f"fm looks {action} LOOK: name the look (fm looks lists them)")
             e = record({"keep": "kept", "revert": "reverted"}.get(action, action), " ".join(words), why=args.why or "")
             return fmcli.out(args, e, f"Taste ledger: {e['look']} {e['signal']}.")
+        if action == "tournament":  # T-1536: a taste duel (--n 2), a four-look tournament, or eight
+            known = looks()
+            seeds = [name_of(w, known) for w in words] if words else [r["look"] for r in rank()][:args.n or 4]
+            if len(seeds) not in SIZES or len(set(seeds)) != len(seeds):
+                raise ValueError(f"a tournament takes {', '.join(map(str, SIZES))} different looks, not {len(seeds)}")
+            played, got, nxt, champ = bracket(seeds, _answers(args.answers))
+            if champ:
+                _append({"ts": c.now(), "signal": "tournament", "pairs": played, "answers": got})
+                return fmcli.out(args, {"champion": champ, "matches": played, "answers": got},
+                                 f"Champion: {known[champ]['title']} ({champ}). {len(played)} matches recorded: each "
+                                 "winner +1, each loser -1 (fm looks shows the ranking).")
+            rows = [[dict(look=n, title=known[n]["title"], line=known[n]["line"]) for n in pr] for pr in nxt]
+            again = f"fm looks tournament {' '.join(seeds)} --answers {','.join(got) + ',' if got else ''}<" + \
+                    ",".join("a|b" for _ in nxt) + ">"
+            return fmcli.out(args, {"seeds": seeds, "answered": got, "next": rows, "then": again}, "\n".join(
+                [f"Tournament of {len(seeds)}: {len(played)} answered; next, answer each a or b:"]
+                + [f"  a {a['title']}: {a['line']}\n  b {b['title']}: {b['line']}" for a, b in rows]
+                + [f"Then: {again}"]))
+        if action == "opposite":  # T-1536, opposite day
+            known = looks()
+            if not words:
+                raise ValueError("fm looks opposite LOOK: name the look to turn inside out")
+            look = name_of(" ".join(words), known)
+            rows = opposite(look, known)
+            return fmcli.out(args, {"look": look, "opposites": [{"look": n, "distance": d} for d, n in rows]},
+                             f"Farthest from {known[look]['title']}:\n" + "\n".join(
+                                 f"  {d:.2f}  {known[n]['title']} ({n}): {known[n]['line']}" for d, n in rows[:3]))
+        if action == "book":  # T-1536: a lookbook page of N looks, best-ranked first, or the ones named
+            known = looks()
+            if not args.out:
+                raise ValueError("fm looks book writes a page: give --out FILE.html")
+            names = [name_of(w, known) for w in words] if words else [r["look"] for r in rank()][:args.n or 6]
+            c.write_atomic(os.path.abspath(args.out), book(names, known))
+            return fmcli.out(args, {"out": args.out, "looks": names},
+                             f"wrote {args.out}: {len(names)} looks ({', '.join(known[n]['title'] for n in names)})")
         if action == "learn":
             if not words:
                 raise ValueError("fm looks learn PATH…: name the pages, photos or files to learn from")

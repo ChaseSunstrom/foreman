@@ -6325,7 +6325,9 @@ def _build_parser():
             "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into: brief, a11y (contrast, reduced motion, "
             "flashes, alt, focus styles) and debt N (untokened literals under a budget); advisory exits 0, blocking 1; "
             "roll [--seed N] [--apply|--undo]: one look card's palette, type and motion, seeded, into DESIGN.md")
-    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll"])
+    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll", "diverge"],
+                   help="diverge [N] [WHAT] [--out DIR]: N (2-6, default 3) variant briefs for WHAT in looks far "
+                   "apart; diverge pick LOOK: keep the winner in the taste ledger (T-1536)")
     s.add_argument("--seed", type=int, help="roll: the same seed gives the same look (default: a fresh one, printed)")
     s.add_argument("--apply", action="store_true", help="roll: write it as DESIGN.md's ## Look, undoable")
     s.add_argument("--undo", action="store_true", help="roll: put DESIGN.md back as it was before the roll(s)")
@@ -6552,12 +6554,15 @@ def _build_parser():
             help="your taste in looks (T-1537): the twelve ranked by what you kept; keep|revert|not LOOK; calibrate "
                  "(12 A-or-B pairs: a keyboard picker on a terminal, --answers to record); learn PATH… (only files "
                  "you name, read-only, never the network)")
-    s.add_argument("action", nargs="?", metavar="rank|keep|revert|not|calibrate|learn",
+    s.add_argument("action", nargs="?", metavar="rank|keep|revert|not|calibrate|learn|tournament|opposite|book",
                    help="checked by fm looks itself, so a look named here gets the fix (fm looks keep LOOK)")
     s.add_argument("words", nargs="*", metavar="LOOK|PATH")
     s.add_argument("--why", help="keep/revert/not: the user's words")
     s.add_argument("--answers", help="calibrate: 12 answers, a, b or n (neither), comma-separated, in pair order")
     s.add_argument("--round", type=int, help="calibrate: the round the pairs were printed for")
+    s.add_argument("--n", type=int, help="tournament: 2 (a duel), 4 or 8 of the best-ranked looks; book: how many "
+                   "(default 6) (T-1536)")
+    s.add_argument("--out", help="book: the HTML page to write")
     s = add("lane", lazy("fmlanes", "cmd_lane"), tier=("Running elsewhere", 1120), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent; "

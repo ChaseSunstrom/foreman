@@ -58,6 +58,12 @@ keeps or reverts one, run `fm looks keep` or `fm looks revert` yourself (step 5 
    a product's home; wild for games, portfolios and events) unless the user's words move it. Preview pages only when
    asked ("show me", "mock them up") or when the user is torn between two: cards.md's recipe, outside the repo, then
    `fm design lint` over them.
+   **Diverge before you converge** when the user is torn or every card feels alike: a three-variant round (`fm design
+   diverge 3 <the screen> --out DIR`: briefs in looks far apart, each built in its own lane, the winner kept with
+   `fm design diverge pick LOOK`); a taste duel
+   or four-look tournament the user answers (`/foreman:looks tournament`); opposite day (`fm looks opposite LOOK`, the
+   looks farthest from the current one); a lookbook page (`fm looks book --out FILE`); or five historical idioms of
+   one layout (`references/idioms.md`).
 5. **The pick.**
    - Standard autonomy: one AskUserQuestion with two questions. "Which direction?": four options, your
      recommendation first, then the next three; its free-text answer takes any number from 1 to 6, or a blend of two
