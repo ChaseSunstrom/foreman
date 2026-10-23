@@ -7,7 +7,7 @@ import subprocess
 import sys
 import unittest
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, headless_chrome
 
 import fmdesign
 import fmmotion
@@ -199,16 +199,41 @@ class Sample(ForemanTestCase):
         got = fmmotion.verify(self.score, out["samples"])
         self.assertEqual((got["problems"], got["drifts"], got["checked"]), ([], [], 14))
 
-    def test_cli_with_no_url_or_no_playwright_says_so_and_checks_the_score(self):
+    def test_cli_with_no_url_or_no_browser_says_so_and_checks_the_score(self):
         self.fm("init")
-        p = self.fm("motion", "verify", check=False, env={"FOREMAN_PLAYWRIGHT": ""})
+        bare = os.path.join(self.tmp, "bare")  # T-1716: no browser anywhere it looks, git still there
+        os.makedirs(os.path.join(bare, "bin"))
+        os.symlink(shutil.which("git"), os.path.join(bare, "bin", "git"))
+        hidden = {"FOREMAN_CHROME": "", "PATH": os.path.join(bare, "bin"), "PLAYWRIGHT_BROWSERS_PATH": bare}
+        p = self.fm("motion", "verify", check=False, env=hidden)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("no fm smoke web URL", p.stdout)
         self.fm("smoke", "set", "web", "http://127.0.0.1:8199/")
-        p = self.fm("motion", "verify", check=False, env={"FOREMAN_PLAYWRIGHT": ""})
+        p = self.fm("motion", "verify", check=False, env=hidden)
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn("no browser: no Playwright", p.stdout)
+        self.assertIn("no browser found", p.stdout)
         self.assertIn("checked the score only: clean", p.stdout)
+
+    @unittest.skipUnless(headless_chrome(), "no headless Chromium here to sample a page in")
+    def test_cli_samples_one_page_in_fm_shots_browser(self):  # T-1716
+        import http.server
+        import threading
+        site = os.path.join(self.tmp, "site")
+        os.makedirs(site)
+        with open(os.path.join(site, "index.html"), "w") as f:
+            f.write("<!doctype html><style>@keyframes motion-menu-enter { from { opacity: 0 } to { opacity: 1 } }\n"
+                    ".m { animation: motion-menu-enter 200ms linear both }</style><div class=m>menu</div>\n")
+        handler = lambda *a: http.server.SimpleHTTPRequestHandler(*a, directory=site)  # noqa: E731
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        self.fm("init")
+        self.fm("smoke", "set", "web", f"http://127.0.0.1:{server.server_address[1]}/")
+        p = self.fm("motion", "verify", "--json", check=False, env={"FOREMAN_PLAYWRIGHT": ""})
+        got = json.loads(p.stdout)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertGreater(got["checked"], 0, "opacity sampled through one iteration, no Playwright")
+        self.assertEqual((got["problems"], got["drifts"]), ([], []))
 
     @needs_node
     def test_cli_reads_samples_or_the_frozen_crawl(self):
@@ -226,11 +251,8 @@ class Sample(ForemanTestCase):
                     "start'], 'defects': [], 'motion': " + repr([frames("menu-enter", "opacity", 0, 1, [[100, 0.5]])])
                     + ", 'motion_notes': ['desktop start: sampled the first 50 of 70 animations']}))\n")
         env = {"FOREMAN_SMOKE_RUNNER": f"{sys.executable} {runner}"}
-        p = self.fm("motion", "verify", check=False, env=env)
-        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertIn("clean, 1 sample(s)", p.stdout)
-        self.assertIn("sampled the first 50 of 70 animations", p.stdout)
-        # fm smoke's own --json keeps its shape: the samples are verify's, not the gate's
+        # fm smoke's own --json keeps its shape: the samples are verify's, not the gate's (T-1716: verify samples in
+        # fm shot's browser now, so the crawl's motion is fm smoke's alone)
         out = json.loads(self.fm("smoke", "--profile", "frozen", "--json", env=env, check=False).stdout)
         self.assertEqual(out["profiles"][0]["views"], ["desktop start"])
         self.assertNotIn("motion", json.dumps(out))
