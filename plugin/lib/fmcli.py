@@ -5283,6 +5283,9 @@ def _build_parser():
     s.add_argument("--model", default="haiku", help="eval --real: the model")
     s.add_argument("--ablate", action="store_true", help="eval: each ## section's share of the lift, dropped one at "
                    "a time; zero share is a cut candidate (T-1619)")
+    s = add("which", lazy("fmwhich", "cmd"), tier=("Finding your way", 205), help="a task in plain words → the skills, "
+            "playbooks and fm commands that fit, each with the call that loads it (T-1699)")
+    s.add_argument("task", nargs="+", help="the work, e.g. make a 3D hero with motion")
     s = add("scout", lazy("fmscout", "cmd_scout"), tier=("Running elsewhere", 1210), help="find work nobody asked for yet: a newer Claude Code, stack cards "
             "your projects lack, doctor failures, stale skill sources, a brainstorm when the queue is dry (T-0950)")
     s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (fm night's)")
