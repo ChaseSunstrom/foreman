@@ -120,7 +120,7 @@ def _brief(text):
         b = fmsync._from_mirror(text)
     except ValueError:
         return c._unmarked(c.plain_lines(text))  # an archive note without frontmatter
-    return fmsync.settle(b, new=True).render()  # an empty home: every brief is new here
+    return fmsync.settle(b, True, "it came in with fm home import, not from a request here").render()  # all new here
 
 
 def clean(slug, rel, text, incoming):

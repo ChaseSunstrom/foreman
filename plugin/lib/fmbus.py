@@ -627,6 +627,11 @@ def cmd_lease(args):
                          f"Dropped {len(gone)} lease(s)." + "".join(f"\ndropped: {x}" for x in gone[:8])
                          + (f"\n… {len(gone) - 8} more" if len(gone) > 8 else "")
                          + (f"\nstill held: {lane} lane claim(s) (fm lease list)" if lane else ""))
+    if args.action == "take":  # T-1748: what this take claimed, only that (overlaps were warned on stderr)
+        took = [f"{rel}::{sym}" for rel, sym in todo]
+        return fmcli.out(args, {"leases": rows, "took": took},
+                         f"Took {len(took)} lease(s)." + "".join(f"\ntook: {x}" for x in took[:8])
+                         + (f"\n… {len(took) - 8} more" if len(took) > 8 else ""))
     return fmcli.out(args, {"leases": rows}, "\n".join(
         f"{v['file']}::{v['symbol']}  {_who(v)}"
         + f", {int((v['until'] - time.time()) // 60) + 1} min left" for v in rows) or "No leases held.")
