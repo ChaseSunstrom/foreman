@@ -339,7 +339,15 @@ def due(p):
 def run(p, slow=False, dry=False):
     """One scout run; a real one is ledgered with what it captured and each probe that failed.
     ponytail: probes run in-process with no deadline of their own; fm night's job timeout bounds a hung slow run."""
-    found, errors = run_probes(p, SLOW if slow else QUICK, context(slow, dry))
+    import fmmandate
+    m = fmmandate.get(p)
+    if m and m["expired"]:  # T-1400: an ended mandate leaves one decision and nothing more is captured under it
+        found, errors = [fmmandate.lapse_finding(m)], []
+    else:
+        found, errors = run_probes(p, SLOW if slow else QUICK, context(slow, dry))
+        if m:  # T-1400: what's found while it stands says so
+            found = [f._replace(why=f"{f.why} (found under the standing mandate: {c.fit(m['text'], 80)})")
+                     for f in found]
     made = capture(p, found, dry=dry)
     if not dry:
         c.update_meta(p, scout_at=time.time(), **({"scout_slow_at": time.time()} if slow else {}))
