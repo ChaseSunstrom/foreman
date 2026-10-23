@@ -1261,6 +1261,155 @@ def _splice(doc, heads, lines):
         doc[a:b] = lines + [""]
 
 
+# T-1651: fm design tokens compiles the ## Tokens table above to each surface. A token's role comes from its name's
+# words (the first role here that one names; within a role the earlier word, then the shorter name, wins).
+# ponytail: name words only; a DESIGN.md knob naming roles explicitly when a project's names don't say them.
+TOKEN_ROLES = (("border", ("border", "rule")), ("ok", ("success", "ok")), ("bad", ("danger", "error")),
+               ("warn", ("warning", "warn")), ("muted", ("muted", "subtle")), ("raised", ("raised", "panel")),
+               ("accent", ("accent", "primary", "brand")), ("bg", ("bg", "background", "surface", "paper")),
+               ("text", ("text", "ink", "fg", "foreground")))
+APP_STYLES = {  # role -> (fm code style, field): as fmcodetui._theme paints its palette
+    "bg": (("screen", "bg"), ("select", "fg"), ("brand", "fg"), ("chip_ok", "fg"), ("chip_bad", "fg"),
+           ("chip_warn", "fg"), ("chip_accent", "fg")),
+    "text": (("screen", "fg"), ("strong", "fg"), ("header", "fg"), ("input", "fg")),
+    "muted": (("dim", "fg"), ("said", "fg"), ("header_dim", "fg"), ("bar_dim", "fg"), ("chip_todo", "fg")),
+    "accent": (("accent", "fg"), ("title", "fg"), ("chart", "fg"), ("select", "bg"), ("brand", "bg"),
+               ("chip_accent", "bg")),
+    "ok": (("ok", "fg"), ("chip_ok", "bg")), "bad": (("bad", "fg"), ("chip_bad", "bg")),
+    "warn": (("warn", "fg"), ("key", "fg"), ("chip_warn", "bg")), "border": (("border", "fg"),),
+    "raised": (("header", "bg"), ("header_dim", "bg"), ("bar", "bg"), ("bar_dim", "bg"), ("key", "bg"),
+               ("input", "bg"), ("chip_todo", "bg"), ("panel", "bg"))}
+PANE_KEYS = {"accent": "accent", "ok": "ok", "warn": "warn", "err": "bad", "dim": "muted", "muted": "muted",
+             "track": "border", "white": "text"}  # the C object in mods/foreman-ui/hooks/kit.ts, by role
+PANE_ALL = ("accent", "accent2", "ok", "warn", "err", "edit", "agent", "web", "skill", "dim", "muted", "add", "del",
+            "track", "white")
+
+
+def read_design(path):
+    """{name: {kind, light, dark, light_hex, dark_hex}} from the markdown file's ## Tokens table, in table order: the
+    cells as fm design extract's section() writes them (a backquoted value, then a hex). ValueError when it has none."""
+    text, why = _read(path, strict=True)
+    if text is None:
+        raise ValueError(f"{path}: {why}")
+    doc = text.replace("\r\n", "\n").split("\n")
+    heads, _ = headings(doc)
+    at = next((i for i, h in heads if h == "## Tokens"), None)
+    if at is None:
+        raise ValueError(f"{path} has no ## Tokens section: fm design extract PATHS writes it")
+    end = next((j for j, _ in heads if j > at), len(doc))
+    out = {}
+    for ln in doc[at + 1:end]:
+        cells = [c.strip() for c in re.split(r"(?<!\\)\|", ln.strip())[1:-1]]
+        name = re.fullmatch(r"`(--[A-Za-z0-9_-]+)`", cells[0]) if len(cells) == 5 else None
+        if not name or name.group(1) in out:
+            continue
+        row = {"kind": cells[1]}
+        for theme, cell in (("light", cells[2]), ("dark", cells[3])):
+            m = re.fullmatch(r"(?:`(.*)`)?\s*(#[0-9A-Fa-f]{6})?", cell)
+            row[theme] = m and m.group(1) is not None and m.group(1).replace("\\|", "|") or None
+            row[f"{theme}_hex"] = m and m.group(2) or None
+        if row["light"] or row["light_hex"] or row["dark"] or row["dark_hex"]:
+            out[name.group(1)] = row
+    if not out:
+        raise ValueError(f"{path}: its ## Tokens section has no token rows (| `--name` | kind | light | dark | source |)")
+    return out
+
+
+def _css_value(row, theme):
+    """The token's CSS value in that theme, or None: as written (a value the table cut short: its hex), never one that
+    could end the declaration or the block."""
+    v, h = row[theme], row[f"{theme}_hex"]
+    if not v or v.endswith("…") or re.search(r"[;{}]|/\*|\*/", v):
+        v = h.lower() if h else None
+    return v
+
+
+def to_css(tokens):
+    lines = ["/* fm design tokens --to css: DESIGN.md's ## Tokens; dark values under prefers-color-scheme */", ":root {"]
+    dark, left = [], []
+    for name, row in tokens.items():
+        light = _css_value(row, "light") if (row["light"] or row["light_hex"]) else None
+        d = _css_value(row, "dark") if (row["dark"] or row["dark_hex"]) else None
+        if light is None and d is None:
+            left.append(name)
+            continue
+        if light is not None:
+            lines.append(f"  {name}: {light};")
+        if d is not None and d != light:
+            dark.append(f"    {name}: {d};")
+    lines.append("}")
+    if dark:
+        lines += ["@media (prefers-color-scheme: dark) {", "  :root {"] + dark + ["  }", "}"]
+    if left:
+        lines.append(f"/* left out (a value CSS can't hold as one declaration): {', '.join(left)} */")
+    return "\n".join(lines) + "\n"
+
+
+def token_roles(tokens, dark=True):
+    """{role: (token name, #hex)}: the colour each role takes, in the theme asked (a token with one value: that)."""
+    best = {}
+    want, other = ("dark_hex", "light_hex") if dark else ("light_hex", "dark_hex")
+    for i, (name, row) in enumerate(tokens.items()):
+        h = row[want] or row[other]
+        words = re.split(r"[-_]+", name.lower().strip("-"))
+        if not h or "on" in words:  # --on-accent: text on a role's colour, not the role
+            continue
+        for role, names in TOKEN_ROLES:
+            hit = [names.index(w) for w in words if w in names]
+            if hit:
+                rank = (min(hit), len(words), i)
+                if role not in best or rank < best[role][0]:
+                    best[role] = (rank, name, h)
+                break
+    return {r: (n, h) for r, (_, n, h) in best.items()}
+
+
+def to_app(tokens, light=False):
+    """A tui.toml fragment: theme = the preset under it, then [colors] (each style the preset's, with the roles'
+    colours), checked as fm settings checks the file: a style the app would skip (too faint) is left out, and said."""
+    import fmcodetui as T
+    import fmsettings
+    roles = token_roles(tokens, not light)
+    if not roles:
+        raise ValueError("no token's name says its role (" + ", ".join(w for _, ws in TOKEN_ROLES for w in ws) + ")")
+    preset = "paper" if light else "night"
+    base = T.PRESETS[preset]()
+    styles = {}
+    for role, (_, h) in roles.items():
+        for style, field in APP_STYLES[role]:
+            styles.setdefault(style, dict(base[style]))[field] = h
+    styles = {n: styles[n] for n in base if n in styles}  # screen first: the faint check reads its background
+    left = []
+    for _ in range(len(styles) + 1):  # each pass drops at least one style the app refuses
+        text = "\n".join([
+            f"# fm code app theme: DESIGN.md's ## Tokens ({'light' if light else 'dark'} values), for tui.toml",
+            "# roles: " + ", ".join(f"{r} {n}" for r, (n, _) in roles.items()),
+            f"theme = {T._toml(preset)}", "", "[colors]"] +
+            [f"{T._toml_key(n)} = {T._toml(s)}" for n, s in styles.items()] +
+            [f"# not mapped, the {preset} theme's own: {', '.join(n for n in base if n not in styles)}"] +
+            [f"# left out: {x}" for x in left]) + "\n"
+        errors = fmsettings._load(text, "tui.toml")[1]
+        named = [(m.group(1), e) for e in errors for m in [re.match(r"tui\.toml: colors\.(\w+): ", e)] if m]
+        if len(named) < len(errors):
+            raise ValueError("the app can't read the theme: " + "; ".join(errors))
+        if not named:
+            return text
+        for n, e in named:
+            styles.pop(n, None)
+            left.append(e[len("tui.toml: "):])
+    raise ValueError("the app refuses every style: " + "; ".join(left))
+
+
+def to_pane(tokens, light=False):
+    """(JSON text, unmapped keys): the Claude Code pane's palette keys with the roles' colours."""
+    roles = token_roles(tokens, not light)
+    pal = {k: roles[r][1] for k, r in PANE_KEYS.items() if r in roles}
+    if not pal:
+        raise ValueError("no token's name says a role the pane paints (" + ", ".join(sorted(set(PANE_KEYS.values())))
+                         + ")")
+    return json.dumps(pal, indent=2) + "\n", [k for k in PANE_ALL if k not in pal]
+
+
 def _default_out():
     import fmcore
     root = fmcore.git_root(os.getcwd()) or os.getcwd()
@@ -1297,6 +1446,24 @@ def _design_tokens(args, fmcli):
             fmcli.out(args, {"proofs": proofs, "warnings": warnings, "failed": failed},
                       render_proofs(proofs, warnings) + f"\ncontrast: {failed} of {len(proofs)} failed")
             return 1 if failed else 0
+        if act == "tokens":  # T-1651: prints only; the user puts it where the surface reads it
+            if len(args.paths) != 1:
+                raise ValueError("tokens takes one DESIGN.md, e.g. fm design tokens DESIGN.md --to css")
+            to, light = getattr(args, "to", None) or "css", getattr(args, "light", False)
+            tokens, unmapped = read_design(args.paths[0]), []
+            if to == "css":
+                text = to_css(tokens)
+            elif to == "app":
+                text = to_app(tokens, light)
+            else:
+                text, unmapped = to_pane(tokens, light)
+            if getattr(args, "json", False):
+                fmcli.out(args, {"to": to, "text": text, "unmapped": unmapped}, None)
+            else:
+                sys.stdout.write(text)
+                if unmapped:  # JSON has no comments: the keys the pane keeps its own colour for go to stderr
+                    print(f"pane: not mapped, the pane's own: {', '.join(unmapped)}", file=err)
+            return 0
         missing = [p for p in args.paths if not os.path.exists(p)]
         if missing:
             raise ValueError(f"no such file or directory: {', '.join(missing)}")
