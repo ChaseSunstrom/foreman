@@ -125,3 +125,51 @@ class Trust(unittest.TestCase):
             src = f.read()
         self.assertIn("shot.answer_trust(", src)
         self.assertNotIn('"Down")', src)
+
+
+class Doctor(unittest.TestCase):
+    """T-1638: fm doctor says whether headless rendering is available, or why not; never a failure."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
+
+    def probe(self, path, **env):
+        import fmdoctor
+        import fmshot
+        from unittest import mock
+        with mock.patch.object(fmshot, "chrome", return_value=path), mock.patch.dict(os.environ, env):
+            return fmdoctor.check_headless()
+
+    def fake(self, body):
+        import tempfile
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        p = os.path.join(d, "chromium")
+        with open(p, "w") as f:
+            f.write("#!/bin/sh\n" + body + "\n")
+        os.chmod(p, 0o755)
+        return p
+
+    def test_available_names_path_and_version(self):
+        p = self.fake('echo "Chromium 130.0.1 "')
+        r = self.probe(p)
+        self.assertEqual(r.status, "PASS")
+        self.assertIn(p, r.detail)
+        self.assertIn("Chromium 130.0.1", r.detail)
+        self.assertTrue(r.detail.startswith("available ("))
+
+    def test_none_found_is_a_note(self):
+        r = self.probe(None, FOREMAN_CHROME="")
+        self.assertEqual(r.status, "PASS")
+        self.assertIn("no Chromium", r.detail)
+
+    def test_unusable_foreman_chrome_is_named(self):
+        r = self.probe(None, FOREMAN_CHROME="/nope/chrome")
+        self.assertEqual(r.status, "PASS")
+        self.assertIn("FOREMAN_CHROME", r.detail)
+
+    def test_failed_start_gives_the_last_stderr_line(self):
+        r = self.probe(self.fake('echo first >&2; echo "cannot load libnss3" >&2; exit 127'))
+        self.assertEqual(r.status, "PASS")
+        self.assertIn("cannot load libnss3", r.detail)
+        self.assertNotIn("first", r.detail)
