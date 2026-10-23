@@ -255,6 +255,27 @@ class ScoutProbes(ForemanTestCase):
         self.assertEqual(fmscout.probe_friction(p, {}), [])
 
 
+class Mandate(ForemanTestCase):  # T-1400
+    def test_an_ended_mandate_is_one_decision_and_nothing_more_is_captured_under_it(self):
+        import fmmandate
+        self.fm("init")
+        p = c.find_project(self.repo, create=False)
+        self.assertNotEqual(self.fm("mandate", "set", "improve", "everything", "--until", "2000-01-01",
+                                    check=False).returncode, 0, "a date already past is refused")
+        m = fmmandate.put(p, "Super improve the docs and the tests, all of them. And speed up fm check too.",
+                          time.time() - 60)
+        self.assertGreaterEqual(len(m["clauses"]), 2)
+        env = {"FOREMAN_SCOUT_LATEST": "9.9.9", "FOREMAN_SCOUT_INSTALLED": "2.1.301"}  # a find scout would capture
+        found = json.loads(self.fm("scout", "--dry", "--json", env=env).stdout)["found"]
+        self.assertEqual([f["key"] for f in found], [f"mandate:{m['set_at']}"])
+        made = json.loads(self.fm("scout", "--json", env=env).stdout)["captured"]
+        self.assertEqual(len(made), 1)
+        self.assertEqual(json.loads(self.fm("scout", "--json", env=env).stdout)["captured"], [], "once")
+        self.assertIn("ended", self.fm("mandate").stdout)
+        self.fm("mandate", "off")
+        self.assertIn("cc:9.9.9", self.fm("scout", "--dry", "--json", env=env).stdout, "cleared: scout runs again")
+
+
 class ScoutDrive(ForemanTestCase):
     def test_an_idle_stop_in_full_autonomy_runs_scout_and_continues_with_its_find(self):
         self.fm("init")

@@ -6196,6 +6196,14 @@ def _build_parser():
                    "(fm run, the subagent ledger), not an interactive session")
     s.add_argument("--tokens", help="stop after this many tokens (500k, 2M) used by this project's sessions since it began")
 
+    s = add("mandate", lazy("fmmandate", "cmd_mandate"), tier=("Project and settings", 772),
+            help="a sweeping request kept as one standing record with an end date: fm scout and fm night read it; "
+                 "once it ends, one decision and nothing more captured under it (T-1400)")
+    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "off"])
+    s.add_argument("text", nargs="*", help="set: the request, in the user's words")
+    s.add_argument("--until", metavar="YYYY-MM-DD", help="set: the last day it stands")
+    s.add_argument("--usd", type=float, help="set: a spend bound recorded with it (fm contract enforces spend)")
+
     s = add("budget", lazy("fmbudget", "cmd_budget"), tier=("Project and settings", 770), help="spend on child runs and subagents today, and the caps that "
                                                             "bound it (T-0227)")
     s.add_argument("action", nargs="?", default="show", choices=["show", "set"])
