@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm page looks --cards prints the look cards as trading cards: each in its own palette and type pair (title, an Aa, its line, a palette strip, type and motion), 63 x 88 mm, nine to an A4 page, one file with nothing from another host (T-1650, the cards; the shader sketchbook and the site gallery are their own items)
 - UI playbooks: the UI contract is written down (references/ui/INDEX.md: motion, contrast, keyboard, small screens, states), every UI playbook says how it meets each rule in its own ## UI contract section, and fm check playbooks refuses one that doesn't. fm playbooks coverage prints a heatmap of stages by stack: how many playbooks in each stage name a card of each stack area (T-1623)
 - fm run --all-projects works every Foreman project's queue in turn with the same options (--runner NAME too), each under its own run lock, skipping projects with nothing queued, and says how many it worked and how many stopped early (T-1782)
 - fm code app: g pressed during a run leaves that run alone and starts the queue when it ends, counting it in the digest; s stops both (T-1783)

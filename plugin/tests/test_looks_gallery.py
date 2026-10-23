@@ -114,6 +114,36 @@ class Gallery(ForemanTestCase):
         self.assertIn("looks", r.stderr)
 
 
+class Cards(ForemanTestCase):  # T-1650
+    def test_each_look_is_a_card_on_a_print_sheet_with_no_outside_host(self):
+        out = os.path.join(self.tmp, "cards.html")
+        r = self.fm("page", "looks", "--cards", "--out", out)
+        self.assertIn("trading cards", r.stdout)
+        html = read_text(out)
+        self.assertEqual(sorted(re.findall(r'<article class="card" id="c-(look-[\w-]+)"', html)),
+                         sorted(n for n in names() if n.startswith("look-")))
+        self.assertIn("@page { size: A4", html)
+        self.assertIn("63mm", html)
+        self.assertIsNone(OUTSIDE.search(html), "nothing from another host")
+        self.fm("page", "looks", "--cards", "--out", out)  # a second run replaces the sheet it wrote
+        r = self.fm("page", "looks", "--out", out, check=False)  # the gallery never takes the sheet's place
+        self.assertNotEqual(r.returncode, 0)
+
+    def test_card_text_is_escaped_and_colours_are_the_cards_own(self):
+        folder = os.path.join(self.tmp, "looks")
+        os.makedirs(folder)
+        with open(os.path.join(fmtaste.LOOKS, "look-lido.md"), encoding="utf-8") as f:
+            text = (f.read().replace('title: "Look: Lido"', 'title: "Look: Pier </style><script>x()</script>"')
+                    .replace("An open-air public pool:", "A pier <img src=x onerror=y()> &:"))
+        with open(os.path.join(folder, "look-pier.md"), "w", encoding="utf-8") as f:
+            f.write(text.replace("name: look-lido", "name: look-pier"))
+        html = fmpage.cards_html(fmpage.look_cards(folder))
+        for raw in ("<script>x()", "<img src=x"):
+            self.assertNotIn(raw, html)
+        self.assertIn("Pier &lt;/style&gt;", html)
+        self.assertIn("#c-look-pier { --bg: #F0F9FA; --fg: #262D2E; --ac: #076E87", html)
+
+
 class Roll(ForemanTestCase):
     """fm design roll (T-1648): a seeded pick of one look card, written into DESIGN.md as one patch --undo reverses."""
 

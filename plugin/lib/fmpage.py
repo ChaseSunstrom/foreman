@@ -718,11 +718,61 @@ def _out(args, default, mark):
     return path
 
 
+CARDS_MARK = "/* fm page looks --cards (T-1650):"
+CARDS_CSS = CARDS_MARK + """ the look cards as trading cards, 63 x 88 mm, nine to an A4 page */
+@page { size: A4; margin: 10mm; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: Canvas; color: CanvasText; font: 14px/1.4 system-ui, sans-serif; }
+h1 { font-size: 18px; margin: 0 0 12px; }
+.sheet { display: grid; grid-template-columns: repeat(auto-fill, 63mm); gap: 4mm; justify-content: center; }
+.card { width: 63mm; height: 88mm; padding: 4mm; border-radius: 3mm; overflow: hidden; display: flex;
+  flex-direction: column; gap: 2mm; background: var(--bg); color: var(--fg); border: 0.6mm solid var(--ac);
+  break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.card h2 { margin: 0; font: 600 13pt/1.1 var(--f1); }
+.card .aa { margin: 0; font: 34pt/1 var(--f1); color: var(--ac); }
+.card .line { margin: 0; font: 8pt/1.3 var(--f2); flex: 1; overflow: hidden; }
+.card .sw { display: flex; height: 6mm; border-radius: 1mm; overflow: hidden; border: 0.3mm solid var(--fg); }
+.card .sw i { flex: 1; }
+.card dl { margin: 0; font: 7pt/1.3 var(--f2); display: grid; grid-template-columns: auto 1fr; gap: 0 2mm; }
+.card dt { font-weight: 600; }
+.card dd { margin: 0; }
+.card .no { margin: 0; font: 7pt var(--f2); text-align: right; opacity: 0.8; }
+@media print { body { padding: 0; } h1 { display: none; } .sheet { justify-content: start; } }
+"""
+
+
+def cards_html(cards):
+    """T-1650: the look cards as trading cards on a print sheet: each card in its own palette roles and type pair (its
+    title, an Aa, its line, a palette strip, type and motion), 63 x 88 mm, nine to an A4 page. One file, no other host."""
+    styles, items = [], []
+    for i, x in enumerate(cards, 1):
+        n, faces, roles = x["name"], x["faces"] + x["faces"][:1], x["roles"]
+        fg = roles.get("--text", "#111111")
+        styles.append(f"#c-{n} {{ --bg: {roles.get('--surface', '#FFFFFF')}; --fg: {fg}; "
+                      f"--ac: {roles.get('--accent', fg)}; --f1: {FACES[faces[0]]}; --f2: {FACES[faces[1]]} }}")
+        strip = "".join(f'<i style="background: {v}" title="{html.escape(k[2:])} {v}"></i>' for k, v in roles.items())
+        items.append(f'<article class="card" id="c-{n}" aria-labelledby="c-{n}-h"><h2 id="c-{n}-h">'
+                     f'{html.escape(x["title"])}</h2><p class="aa" aria-hidden="true">Aa</p>'
+                     f'<p class="line">{html.escape(x["line"])}</p><div class="sw" aria-hidden="true">{strip}</div>'
+                     f'<dl><dt>Type</dt><dd>{html.escape(" + ".join(x["faces"][:2]))}</dd>'
+                     f'<dt>Motion</dt><dd>{_prose(x["motion"])}</dd></dl><p class="no">{i:02d} / {len(cards):02d}</p>'
+                     f'</article>')
+    return ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\n"
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Look cards</title>\n"
+            f"<style>\n{CARDS_CSS}{chr(10).join(styles)}\n</style></head>\n<body><h1>Look cards: {len(cards)}</h1>\n"
+            f"<main class=\"sheet\">\n{chr(10).join(items)}\n</main></body></html>\n")
+
+
 def looks_page(p, args):
     import fmcli
     if args.catalogue or args.picks or args.url:
         raise fmcli.UsageError("fm page looks takes only --out: the gallery shows the look cards, not a catalogue")
     cards = look_cards()
+    if getattr(args, "cards", False):  # T-1650
+        path = _out(args, os.path.join(p.dir, "look-cards.html"), CARDS_MARK)
+        c.write_atomic(path, cards_html(cards))
+        return fmcli.out(args, {"path": path, "looks": len(cards)},
+                         f"Wrote {path}: {len(cards)} looks as trading cards, nine to an A4 page; print it as it is")
     path = _out(args, os.path.join(p.dir, "looks.html"), "/* fm page looks (T-1649):")
     c.write_atomic(path, looks_html(cards))
     return fmcli.out(args, {"path": path, "looks": len(cards)},
