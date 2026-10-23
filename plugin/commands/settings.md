@@ -1,7 +1,7 @@
 ---
 description: Show Foreman's settings (the fm code app and the foreman-ui pane), set one, diff, share or undo them
 disable-model-invocation: true
-argument-hint: "[KEY [VALUE] | keys | layout | runners | diff | export | import CODE | undo | bisect | profile | chords] [--surface app|plugin]"
+argument-hint: "[KEY [VALUE] | keys | layout | runners | diff | export | import CODE | undo | bisect | profile | chords | serve] [--surface app|plugin]"
 ---
 Foreman settings, through `fm settings` (one implementation for both surfaces).
 
@@ -16,6 +16,7 @@ Arguments (may be empty): $ARGUMENTS
 7. Rules and extensions: a `[[rule]]` table in tui.toml switches the fm code app's layout or a panel while the run's events hold and back after (`when = { verify = true }` with `layout = { columns = [["verify"], ["checks"]] }`, or `when = { failing = true }` with `panels = { log = "verify" }`; events: running, verify, failing, closed); there is no `fm settings` verb for them: say so and show that shape, and `fm settings list` names a rule it passed over. An extension's own settings (each declared by its `api.setting`) list under their group, `fm settings list ext.NAME`, and set as the app's do: `fm settings set ext.NAME.KEY VALUE`.
 8. Any other key alone: run `fm settings get KEY`.
 9. A key and a value: run `fm settings set KEY VALUE`, adding `--surface app` or `--surface plugin` only when the arguments name one. A shared name (motion, palette) sets both surfaces.
-10. Inside Claude Code the guard decides writes to settings.json. A refused change: show fm's message (it says what the change needs) and stop; never write settings.json another way.
+10. `serve`: run `fm settings serve` in the background and give the user the one URL it printed (http://127.0.0.1:PORT/?t=TOKEN): every setting as a form, each change sent through `fm settings set`'s own checks. Loopback only; the URL's token works once (the first visit swaps it for a cookie and drops it from the address bar), so only the browser that opened it first gets in; it stops on Ctrl-C, SIGTERM or 30 idle minutes. Never put the URL anywhere but the reply. A server Claude starts runs inside Claude Code, so the guard is on: a pane (plugin) setting the user clicks may be refused, and the page shows the reason.
+11. Inside Claude Code the guard decides writes to settings.json. A refused change: show fm's message (it says what the change needs) and stop; never write settings.json another way.
 
 Reply in at most 8 lines: what fm printed, then when it takes effect (the pane applies a changed option on its next poll, within a few seconds; fm code reads tui.toml on its next run).

@@ -1383,6 +1383,10 @@ def _strip_wrappers(argv):
             i += 1
             while i < len(argv) and argv[i].startswith("-"):
                 i += 2 if argv[i] in ("-n", "-c", "-p") else 1
+        elif base == "unbuffer":  # expect's unbuffer [-p] CMD… (T-1722): its flags take no value
+            i += 1
+            while i < len(argv) and argv[i].startswith("-"):
+                i += 1
         elif base == "flock":  # flock [opts] FILE CMD…: the command after the lock file (T-0160)
             i += 1
             while i < len(argv) and argv[i].startswith("-"):
@@ -2149,15 +2153,21 @@ def _hides_claude(words):
         return True
     if any("{" in w and "CLAUDE" in w for w in words) and (  # unset CLAUDE{,CODE}: a brace expands to the name
             name in ("unset", "export", "declare", "typeset", "local", "let", "read")
-            or any(os.path.basename(w) == "env" for w in lead)):
+            or any(os.path.basename(w) == "env" for w in words)):
         return True
     if name == "printf" and any(a == "-v" and b in _CC_VARS for a, b in zip(ops, ops[1:])):
         return True
     if name == "export" and named and any(a == "-n" or a.startswith("+") for a in ops):
         return True
-    for i, w in enumerate(lead):
-        if os.path.basename(w) == "env":  # env's own words: options, their values, assignments
-            vals = lead[i + 1:]
+    for i, w in enumerate(words):
+        if os.path.basename(w) == "env":  # env's own words: options, their values, assignments, wherever a wrapper
+            vals, j = [], i + 1           # the guard doesn't know (chrt, taskset…) put it (T-1722)
+            while j < len(words) and (words[j].startswith("-") or "=" in words[j]):
+                vals.append(words[j])
+                if words[j] in ("-u", "-C", "-S", "--unset", "--chdir", "--split-string") and j + 1 < len(words):
+                    vals.append(words[j + 1])
+                    j += 1
+                j += 1
             if any(_CC_NAME.search(o) for o in vals) or any(
                     a in ("-u", "--unset") and re.search(r"[$`]", b) for a, b in zip(vals, vals[1:])):
                 return True
