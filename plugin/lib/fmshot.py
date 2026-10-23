@@ -135,7 +135,7 @@ def killable():
 class Browser:
     """One headless Chromium over the DevTools pipe; close() kills its whole process group."""
 
-    def __init__(self, path, size):
+    def __init__(self, path, size, scale=1, reduced=False):
         import fcntl
         self.pid, self.feed, self.out, fds = None, None, None, []
         self.profile = tempfile.TemporaryDirectory(prefix="fm-shot-")
@@ -163,7 +163,10 @@ class Browser:
             self.sid = self.call("Target.attachToTarget", targetId=tid, flatten=True)["sessionId"]
             self.call("Page.enable", self.sid)
             self.call("Emulation.setDeviceMetricsOverride", self.sid, width=size[0], height=size[1],
-                      deviceScaleFactor=1, mobile=False)
+                      deviceScaleFactor=scale, mobile=False)
+            if reduced:  # before any navigation: the page's first paint already sees it
+                self.call("Emulation.setEmulatedMedia", self.sid,
+                          features=[{"name": "prefers-reduced-motion", "value": "reduce"}])
         except BaseException as e:  # never leave a browser, a pipe or the profile behind a failed start
             last = self.last_words()
             for fd in fds:
@@ -389,11 +392,19 @@ def shoot(b, url, folder, frames, every, frozen):
             "fallback_fonts": fell, "notes": notes}
 
 
+def view(args):
+    """(size, scale) for --profile (fm critique's table), else the default viewport."""
+    import fmcritique
+    p = fmcritique.PROFILES.get(getattr(args, "profile", None))
+    return ((p["width"], p["height"]), p["scale"]) if p else (SIZE, 1)
+
+
 def _run(path, urls, base, args):
     """Every page through one browser: (pages, failed)."""
     pages, failed, taken = [], [], set()
     try:
-        b = Browser(path, SIZE)
+        size, scale = view(args)
+        b = Browser(path, size, scale, getattr(args, "reduced_motion", False))
     except (OSError, RuntimeError, EOFError, ValueError) as e:  # TimeoutError is an OSError
         return pages, [{"url": ", ".join(urls), "error": f"the browser ({path}) did not start: {e}"}]
     try:

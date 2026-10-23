@@ -851,14 +851,17 @@ def lock(directory, timeout=5.0):
 # ---------------------------------------------------------------- redaction
 
 _V = r"""[^\s"',;\\]"""
+_KEYWORDS = (r"api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|auth[_-]?token|token|secret|password|passwd"
+             r"|pwd")
+_SECRET_KEY = re.compile(r"(?i)(?:" + _KEYWORDS + r")$")  # T-1733: a key name that ends in one holds a secret
 _SECRET_RES = [
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"), "[REDACTED PRIVATE KEY]"),
     (re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"), "[REDACTED JWT]"),
     (re.compile(r"\b(?:sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
                 r"|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}|glpat-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{30,})"), "[REDACTED]"),
     (re.compile(r"(?i)(authorization\s*[:=]\s*)(?:(?:bearer|basic|token)\s+)?" + r"""[^\s"'\\]+"""), r"\1[REDACTED]"),
-    (re.compile(r"(?i)((?:api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|auth[_-]?token|token|secret|password|passwd|pwd)"
-                r"\s*[=:]\s*)(\\?[\"']?)" + _V + "{4,}"), r"\1\2[REDACTED]"),
+    (re.compile(r"(?i)((?:" + _KEYWORDS + r")\\?[\"']?\s*[=:]\s*)(\\?[\"']?)" + _V + "{4,}"),  # T-1733: "key": too
+     r"\1\2[REDACTED]"),
     (re.compile(r"(://[^/\s:@]+:)[^@\s/]+@"), r"\1[REDACTED]@"),
 ]
 
@@ -888,8 +891,10 @@ def redact_obj(obj):
         return redact(obj)
     if isinstance(obj, list):
         return [redact_obj(x) for x in obj]
-    if isinstance(obj, dict):
-        return {k: redact_obj(v) for k, v in obj.items()}
+    if isinstance(obj, dict):  # T-1733: a value under a credential-named key is redacted whatever its shape
+        return {k: "[REDACTED]" if isinstance(k, str) and _SECRET_KEY.search(k) and v not in ("", None)
+                and isinstance(v, (str, int, float)) and not isinstance(v, bool) else redact_obj(v)
+                for k, v in obj.items()}
     return obj
 
 

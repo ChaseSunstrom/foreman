@@ -161,10 +161,11 @@ def cmd_stories(args):
     path = fmpage._out(args, default, MARK)
     states = chart["states"]
     browser, note = fmshot.find_browser("fm stories")
+    size, scale = fmshot.view(args)
     if browser:
         with fmshot.killable():
             try:
-                b = fmshot.Browser(browser, fmshot.SIZE)
+                b = fmshot.Browser(browser, size, scale, getattr(args, "reduced_motion", False))
             except (OSError, RuntimeError, EOFError, ValueError) as e:
                 browser, note = None, f"the browser ({fmshot.safe(browser)}) did not start: {fmshot.safe(e)}"
             else:
@@ -179,7 +180,7 @@ def cmd_stories(args):
             s.update(ok=False, error=None, png=None, why="Not shot (see above).")
         head = f"No shots: {note}. Each state lists the fm flow steps that reach it."
     else:
-        head = f"States shot in {fmshot.safe(browser)}, {fmshot.SIZE[0]}x{fmshot.SIZE[1]}" + (
+        head = f"States shot in {fmshot.safe(browser)}, {size[0]}x{size[1]}" + (
             f"; note: {note}" if note else "")
     c.write_atomic(path, page_html(chart, head))
     shot, failed = sum(1 for s in states if s.get("png")), [s for s in states if not s.get("ok")]
