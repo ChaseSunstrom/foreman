@@ -475,13 +475,31 @@ def _round(v):
     return f"{out[0]:g}" if len(out) == 1 else "[" + ", ".join(f"{x:g}" for x in out) + "]"
 
 
+# properties whose computed values move in a straight line from one end to the other, so from + (to - from) * ease(p)
+# predicts them: opacity, lengths, translate and scale. Colours (premultiplied, maybe another space), rotations (a
+# matrix's sines), filters and shadows don't: verify notes those instead of flagging good CSS.
+LINEAR_PROPS = re.compile(r"opacity|fill-opacity|stroke-opacity|translate|scale|transform|(?:min-|max-)?(?:width|height)|"
+                          r"top|right|bottom|left|inset(?:-[a-z-]+)?|(?:margin|padding)(?:-[a-z-]+)?|"
+                          r"(?:row-|column-)?gap|font-size|letter-spacing|word-spacing|flex-basis|"
+                          r"border(?:-[a-z]+)*-radius|border(?:-[a-z]+)?-width|outline-(?:width|offset)|"
+                          r"stroke-(?:width|dashoffset)")
+
+
+def _linear(prop, frm, to):
+    """Whether prop moves linearly from frm to to: a transform only as a 2D matrix with no rotation or skew (b = c = 0
+    at both ends), where scale and translate interpolate linearly."""
+    if not LINEAR_PROPS.fullmatch(prop):
+        return False
+    return prop != "transform" or len(frm) == 6 and all(abs(v[k]) < 1e-9 for v in (frm, to) for k in (1, 2))
+
+
 def verify(path, samples, why=None, tol=TOL):
     """{score, problems, drifts, checked, skipped}: each sample (an entry {motion, property, where, from, to, at:
     [[ms, value], ...]}, as the frozen crawl returns them) asserted against the score's own duration and curve: a value
     at t ms is expected at from + (to - from) * ease(t / duration) within tol of the travel. samples None: only the
     score is checked, and skipped says why (why)."""
     got = check(path)
-    out = {"score": path, "problems": list(got["problems"]), "drifts": [], "checked": 0,
+    out = {"score": path, "problems": list(got["problems"]), "drifts": [], "checked": 0, "notes": [],
            "skipped": None if samples is not None else (why or "no samples")}
     if samples is None or got["problems"]:
         return out
@@ -511,10 +529,15 @@ def verify(path, samples, why=None, tol=TOL):
             continue
         frm, to = _nums(s.get("from")), _nums(s.get("to"))
         pts = [(a[0], _nums(a[1])) for a in at[:MAX_AT]]
-        if frm is None or to is None or len(frm) != len(to) or not frm or any(
-                not isinstance(t, (int, float)) or isinstance(t, bool) or not 0 <= t <= MAX_MS * 10 or v is None
-                or len(v) != len(frm) for t, v in pts):
-            flag(who, f"sample {i}: {prop}'s values can't be compared (numbers, or lists of one length)")
+        if frm is None or to is None or any(not isinstance(t, (int, float)) or isinstance(t, bool)
+                                            or not 0 <= t <= MAX_MS * 10 or v is None for t, v in pts):
+            flag(who, f"sample {i}: {prop}'s values aren't numbers (a number or a list of them at ms 0–{MAX_MS * 10})")
+            continue
+        why = "its values differ in length" if not frm or any(len(v) != len(frm) for v in [to] + [v for _, v in pts]) \
+            else None if _linear(prop, frm, to) else "it doesn't move in a straight line between its ends"
+        if why:
+            if not any(n.startswith(f"{who} {prop}: ") for n in out["notes"]):  # one note per motion and property
+                out["notes"].append(f"{who} {prop}: not comparable ({why}), not checked")
             continue
         rows.append((m, prop, str(s.get("where") or "")[:80], frm, to, pts))
     eased = _eases([(m["curve"], [min(t / m["ms"], 1) if m["ms"] else 1 for t, _ in pts])
@@ -545,6 +568,7 @@ def report(got):
                                                                           if d["where"] else "")
                      + f": expected {_round(d['expected'])}, sampled {_round(d['sampled'])} (tolerance ±"
                      + (f"{room[0]:g}" if len(set(room)) == 1 else _round(room)) + ")")
+    lines += [f"  · {fmsmoke._clean(x)}" for x in got.get("notes") or []]
     n, k = len(got["problems"]), len(got["drifts"])
     if got["skipped"]:
         lines.append(f"motion verify: {got['skipped']}; checked the score only: "
@@ -552,36 +576,38 @@ def report(got):
     elif n or k:
         lines.append(f"motion verify: {k} drift(s), {n} problem(s) in {got['checked']} sample(s) ({got['score']})")
     elif not got["checked"]:
-        lines.append(f"motion verify: nothing sampled (no motion-NAME animation played on the page); the score is "
-                     f"clean ({got['score']})")
+        lines.append(f"motion verify: nothing checked (no motion-NAME animation played on the page, or none could be "
+                     f"compared); the score is clean ({got['score']})")
     else:
         lines.append(f"motion verify: clean, {got['checked']} sample(s) against the score ({got['score']})")
     return "\n".join(lines)
 
 
 def sample(url, root):
-    """(samples, None) from the page at url crawled under fm smoke's frozen profile (smoke_web.cjs seeks each paused
-    motion-NAME animation through its own duration), or (None, why) with no browser to do it. Never installs one.
-    ponytail: the whole frozen crawl, every view at two widths; fm shot (T-1636) can take this over once merged."""
+    """(samples, None, notes) from the page at url crawled under fm smoke's frozen profile (smoke_web.cjs's sampleMotion
+    seeks each paused motion-NAME animation through one iteration), or (None, why, []) with no browser to do it. Never
+    installs one. ponytail: the whole frozen crawl, every view at two widths. The switch to fm shot (T-1636) is here:
+    fmshot.chrome() finds a browser with no Playwright, and a fmshot.Browser would load url with the frozen CSS, then
+    Runtime.evaluate sampleMotion's source and read its result in place of this crawl."""
     import tempfile
     import fmsmoke
     pw = fmsmoke.playwright(root)
     if not pw and not fmsmoke._runner():
-        return None, "no browser: no Playwright in this checkout (fm smoke's own; nothing is installed)"
+        return None, "no browser: no Playwright in this checkout (fm smoke's own; nothing is installed)", []
     with tempfile.TemporaryDirectory() as d:
         res = fmsmoke.crawl(pw, url, d, profile="frozen")
     if res.get("skipped"):
-        return None, f"no browser: {res['skipped']}"
+        return None, f"no browser: {res['skipped']}", []
     if not res.get("views"):
-        return None, "the page wasn't sampled: " + "; ".join(x["what"] for x in res.get("defects") or [])[:200]
-    return res.get("motion") or [], None
+        return None, "the page wasn't sampled: " + "; ".join(x["what"] for x in res.get("defects") or [])[:200], []
+    return res.get("motion") or [], None, res.get("motion_notes") or []
 
 
 def _cmd_verify(args, path, samples):
     """fm motion verify: --samples FILE, else a frozen crawl of fm smoke's web URL; exit 1 on a drift or problem."""
     import fmcli
     import fmcore
-    why = None
+    why, notes = None, []
     if samples:
         text, err = fmdesign._read(samples, strict=True)
         if text is None:
@@ -598,9 +624,10 @@ def _cmd_verify(args, path, samples):
                 raise
             p = None
         url = (fmcore.read_meta(p).get("smoke") or {}).get("web") if p else None
-        got, why = sample(url, p.root) if isinstance(url, str) else \
-            (None, "no fm smoke web URL to sample (fm smoke set web <url>)")
+        got, why, notes = sample(url, p.root) if isinstance(url, str) else \
+            (None, "no fm smoke web URL to sample (fm smoke set web <url>)", [])
     res = verify(path, got, why)
+    res["notes"] = notes + res["notes"]  # the sampler's own (a cap reached, an animation it couldn't read) first
     fmcli.out(args, res, report(res))
     return 1 if res["problems"] or res["drifts"] else 0
 
