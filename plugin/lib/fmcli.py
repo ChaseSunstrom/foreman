@@ -6310,6 +6310,9 @@ def _build_parser():
                    "theme)")
     s.add_argument("--dark", action="store_true", help="tokens --to app|pane: the dark values (app: on the night "
                    "theme; the default picks the theme by the screen colour's lightness)")
+    s.add_argument("--save", action="store_true", help="tokens --to pane: keep it as the foreman-ui pane's palette (it "
+                   "paints over the default one; cb and riso still win), not just print it (T-1717)")
+    s.add_argument("--clear", action="store_true", help="tokens --to pane: forget the saved pane palette (T-1717)")
     s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 91), help="PNG files with no Pillow (T-1630): info "
             "PATH: size and mode; diff A B: the changed-pixel count and box (exit 1 when they differ or sizes do)")
     s.add_argument("action", choices=["info", "diff"])

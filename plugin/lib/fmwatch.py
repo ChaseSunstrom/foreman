@@ -636,6 +636,7 @@ def view(p):
         "watch": [p.dir, os.path.join(p.dir, "tasks"), os.path.join(p.dir, "ledger.jsonl")]
         + ([os.path.join(p.dir, "research", bs["name"])] if bs and bs["running"] else []),  # each lens answer moves it
         "latency": [round(ms) for ms in d["series"]],
+        "palette_custom": _guarded(c.pane_palette) or {},  # T-1717: fm design tokens --to pane --save
         "checks": d["checks"] and {"at": d["checks"].get("ts"), "results": [
             {"cmd": c.plain(str(r.get("cmd")))[:200], "exit": r.get("exit"), "s": r.get("s"), "note": r.get("note")}
             for r in (d["checks"].get("data") or {}).get("results") or []]},

@@ -15,6 +15,26 @@ UI = os.path.join(HERE, "fixtures", "design-tokens", "ui")
 KIT = os.path.join(os.path.dirname(PLUGIN), "mods", "foreman-ui", "hooks", "kit.ts")
 
 
+class PaneSaved(ForemanTestCase):  # T-1717
+    def test_a_saved_pane_palette_reaches_fm_ui_checked_and_clear_forgets_it(self):
+        import fmcore
+        bad = self.fm("design", "tokens", DESIGN, "--to", "css", "--save", check=False)
+        self.assertNotEqual(bad.returncode, 0, "--save keeps a pane palette only: never silently ignored")
+        self.assertFalse(os.path.exists(fmcore.pane_palette_path()))
+        p = self.fm("design", "tokens", DESIGN, "--to", "pane", "--save")
+        self.assertIn("Saved for the foreman-ui pane", p.stderr)
+        self.fm("init")
+        got = json.loads(self.fm("ui", "--json").stdout)["palette_custom"]
+        self.assertTrue(got and all(k in fmcore.PANE_ALL and v.startswith("#") for k, v in got.items()), got)
+        with open(fmcore.pane_palette_path(), "w") as f:
+            json.dump({"accent": "#123456", "evil": "#000000", "ok": "red; x", "err": 7}, f)
+        self.assertEqual(json.loads(self.fm("ui", "--json").stdout)["palette_custom"], {"accent": "#123456"})
+        p = self.fm("design", "tokens", "--to", "pane", "--clear", env={"FOREMAN_WORKER_OF": "run-1"}, check=False)
+        self.assertNotEqual(p.returncode, 0, "a worker never changes the pane's palette")
+        self.assertIn("gone", self.fm("design", "tokens", "--to", "pane", "--clear").stdout)
+        self.assertEqual(json.loads(self.fm("ui", "--json").stdout)["palette_custom"], {})
+
+
 class Tokens(ForemanTestCase):
     def tokens(self, *args, path=DESIGN, check=True):
         return self.fm("design", "tokens", path, *args, check=check)

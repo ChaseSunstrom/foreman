@@ -33,7 +33,7 @@
  "vetoes": [], "revisit": [], "recent": ["  10:15  ✓ T-0042 step 1: pytest tests/test_auth.py"],
  "skills": {"recent": [], "counts": {}, "suggested": [], "unread": []},
  "health": {"hook_p95_ms": 60, "guard_blocks": 0, "hook_errors": 0, "paused_hooks": []},
- "watch": [], "latency": [55, 60, 58],
+ "watch": [], "latency": [55, 60, 58], "palette_custom": {},
  "checks": {"at": "2026-01-01T10:15:00Z", "results": [{"cmd": "pytest", "exit": 1, "s": 2.1, "note": null}]},
  "demo": true
 }
