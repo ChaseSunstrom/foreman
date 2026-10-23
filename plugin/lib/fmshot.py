@@ -23,6 +23,7 @@ import signal
 import sys
 import tempfile
 import time
+import unicodedata
 
 import fmcore as c
 import fmimg
@@ -103,8 +104,9 @@ def painted(img):
 
 
 def _safe(text):
-    """A URL or path for the terminal: no control, zero-width or bidi-override characters."""
-    return re.sub(r"[\x00-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩]", "?", str(text))
+    """A URL or path for the terminal: every control, format (zero-width, bidi, tag, soft hyphen), private-use or
+    surrogate character a ? (T-1642)."""
+    return "".join("?" if unicodedata.category(ch) in ("Cc", "Cf", "Co", "Cs") else ch for ch in str(text))
 
 
 safe, usable = _safe, _usable  # the names other verbs use (fm flow)
@@ -351,16 +353,20 @@ def compare(page, base):
             "bbox": d["bbox"], "ok": d["changed"] <= noise}
 
 
-def shoot(b, url, folder, frames, every, frozen):
-    """One page: {url, folder, shots, animated, poster_of, fallback_fonts, notes}."""
-    notes = []
+def load(b, url):
+    """Open url and wait for its load event (LOAD_S at most), then SETTLE_S: notes. fm shot and fm critique share it."""
     b.events.clear()  # the last page's load is not this one's
     nav = b.call("Page.navigate", b.sid, url=url)
     if nav.get("errorText"):
         raise RuntimeError(f"did not load: {nav['errorText']}")
-    if not b.wait("Page.loadEventFired", LOAD_S):
-        notes.append(f"still loading after {LOAD_S} s; shot as it stood")
-    time.sleep(SETTLE_S)
+    notes = [] if b.wait("Page.loadEventFired", LOAD_S) else [f"still loading after {LOAD_S} s; taken as it stood"]
+    b.wait("fm-shot.settle", SETTLE_S)  # an event that never comes: held requests are answered meanwhile
+    return notes
+
+
+def shoot(b, url, folder, frames, every, frozen):
+    """One page: {url, folder, shots, animated, poster_of, fallback_fonts, notes}."""
+    notes = load(b, url)
     fell = fonts(b)
     if frozen:
         b.call("Runtime.evaluate", b.sid, expression=HOLD)
