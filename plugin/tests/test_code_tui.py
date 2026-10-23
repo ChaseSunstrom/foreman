@@ -3601,6 +3601,72 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class UndoAndPR(unittest.TestCase):  # T-1352
+    def closed_run(self):
+        import subprocess
+        T = tui()
+        root, hist = tempfile.mkdtemp(), tempfile.mkdtemp()
+        git = lambda *a: subprocess.run(["git", "-C", root, *a], capture_output=True, text=True, check=True).stdout  # noqa: E731
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "t")
+        with open(os.path.join(root, "calc.py"), "w") as f:
+            f.write("def add(a, b):\n    return a - b\n")
+        git("add", ".")
+        git("commit", "-qm", "seed")
+        with open(os.path.join(root, "calc.py"), "w") as f:
+            f.write("def add(a, b):\n    return a + b\n")
+        git("commit", "-qam", "fix add (T-0001)")
+        sha = git("rev-parse", "--short", "HEAD").strip()
+        events = [{"event": "start", "request": "fix add", "schema": 1, "ts": 1760000000},
+                  {"event": "task", "task": "T-0001"},
+                  {"event": "closed", "text": f"T-0001 closed; committed {sha} (tokens: 1 in, 1 out)", "task": "T-0001"}]
+        with open(os.path.join(hist, "T-0001.events.jsonl"), "w") as f:
+            f.write("".join(json.dumps(e) + "\n" for e in events))
+        app = T.App(T.DEFAULTS, spawn=lambda *a: None, root=root, history=hist)
+        for e in events:
+            app.feed(e)
+        return T, app, git, sha, hist
+
+    def test_u_twice_reverts_the_runs_commit_and_marks_its_history_undone(self):
+        T, app, git, sha, hist = self.closed_run()
+        app.key("u")
+        self.assertIn("u again", app.message)
+        self.assertIn(sha, app.message)
+        app.key("u")
+        self.assertIn("a - b", read(os.path.join(app.root, "calc.py")), "the run's change is reverted")
+        self.assertIn("Revert", git("log", "-1", "--format=%s"))
+        self.assertIn("undid T-0001", app.message)
+        self.assertEqual(T.history(hist)[0]["status"], "undone")
+        self.assertIn(" UNDONE ", "".join(t for t, _ in T._history_row(T.history(hist)[0])))
+        app.key("u")
+        app.key("u")
+        self.assertEqual(git("log", "--format=%s").count("Revert"), 1, "undone once")
+
+    def test_p_drafts_the_pr_and_enter_posts_it_through_fm_pr(self):
+        T, app, git, sha, hist = self.closed_run()
+        calls = []
+        app.fm_output = lambda argv: calls.append(argv) or ("## Fix add\nbody" if "--post" not in argv else
+                                                            "refused: T-0001 has no publish grant")
+        app.key("P")
+        self.assertEqual((app.mode, calls[-1]), ("diff", ["pr", "T-0001"]))
+        self.assertIn("## Fix add", app.view_lines)
+        self.assertIn("Enter posts", app.view_title)
+        app.key("\n")
+        self.assertEqual(calls[-1], ["pr", "T-0001", "--post"])
+        self.assertIn("publish grant", app.message)
+
+    def test_neither_acts_without_a_closed_run(self):
+        T = tui()
+        app = T.App(T.DEFAULTS, spawn=lambda *a: None)
+        app.feed({"event": "start", "request": "fix add", "schema": 1})
+        app.fm_output = lambda argv: self.fail("nothing to draft")
+        app.key("u")
+        app.key("u")
+        app.key("P")
+        self.assertEqual(app.mode, "main")
+
+
 class Tickets(unittest.TestCase):  # T-1350
     def app(self):
         T = tui()
