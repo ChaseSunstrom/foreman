@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Claude Code plugin parity: the rules point a session at fm which for any verb or skill (fm help lists them all), and a test fails when a user-facing fm verb is neither named in the plugin's rules, commands or skills nor found by fm which (T-1520)
 - fm research add --from-agent: a Noticed line close to an open task (fm capture's near-duplicate rule) is logged onto that task instead of becoming a second one, and the output names where it went (T-1726)
 - Playbooks reach reviewers and recall as fm playbooks show gives them: fm audit prep writes the review checklists the diff's languages call for (code-reviewer always) with this project's {{facts}} and overlays filled in, and names the file in the brief, which the fm-reviewer agent reads first; fm recall points at fm playbooks show NAME, not a file path (T-1681)
 - fm code's TUI: fm code --themes prints every theme side by side on a sample run (plain text under NO_COLOR); the diff view reveals its lines on open (at once with motion reduced or off) and marks the words a changed line changed; at 160 columns or more a third column shows the Plan and Check output panels (T-1742: T-1311, T-1312, T-1347)
