@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Redaction reads key names: "password": "x" in JSON text (escaped JSON and Python reprs too) and {"password": "x"} in logged objects are redacted; token counts and other keys that only contain the words are kept (T-1733)
+- fm check --affected (each builder's own run) no longer queues on the machine-wide gate lock; only a full run does (T-1743)
 - Gate runs share one machine-wide lock: a full fm check and the release canary queue behind each other, a waiter says who holds it, and a stale or stray holder value is ignored (T-1668)
 - fm capture refuses a near-duplicate of an open task of the same type, naming it (exit 5; --json gives {"refused", "of", "title"}; --anyway keeps both), notes a similar open task of another type, and notes a FEATURE close to done work with that task's id; only fm capture checks, not fm intake, fm task new or fm research --from-agent (T-1662)
 - fm ui --json: every string of the view is plain text (escape sequences, control, format and separator characters removed; newlines kept), so no ledger line, signal or hand-edited brief can make Claude Code refuse the pane; paths are kept as they are (T-1674)
