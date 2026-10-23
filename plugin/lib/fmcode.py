@@ -59,6 +59,7 @@ RUN_TIMEOUT, VERIFY_TIMEOUT, FM_TIMEOUT = 120, 600, 900
 MAX_TOKENS, KEEP_RESULTS, SMALL_CONTEXT = 8192, 6, 32768
 WORKER_TIMEOUT, JUDGE_MAX = 1200, 300  # a worker turn's seconds; changed files the guard judges one by one
 ON_EVENTS = {"closed": ("closed",), "blocked": ("blocked", "needs-you"), "error": ("needs-you",)}  # T-1351: [on]
+LIMIT_WAIT, LIMIT_WAITS = 3600, 3  # T-1356: seconds a usage limit is waited out (code.toml limit_wait); waits a turn
 HOOK_SECONDS = 30
 # T-1214: each CLI's unattended one-prompt form, none of them free to run shell commands on its own say: Foreman's
 # guard judges a worker's files afterwards, not its commands (security review). claude asks for Bash, which -p can't
@@ -761,7 +762,50 @@ class Run:
         if lost:
             raise Blocked(f"fm code: the worker changed {', '.join(lost[:5])}, which Foreman refuses, and it can't be "
                           "put back: check it before going on")
+        kind, at = failure_kind(code, out)
+        if kind and self.failover(name, kind, at, argv[0], code):
+            return self.work(name, prompt)
         self.done.add(name)
+
+    def failover(self, name, kind, at, who, code):
+        """T-1356: after a failed worker turn, whether to do it again. A usage limit that resets within code.toml's
+        limit_wait (LIMIT_WAIT) is waited out, LIMIT_WAITS times a turn at most; past that the run stops with its
+        resume command. A crash, timeout or sign-in failure passes the turn to the next runner in code.toml's chain;
+        with none, a sign-in failure stops the run (nothing would work) and the others go on, the verify judging."""
+        conf = code_config()
+        self.log(kind="worker_fail", phase=name, failure=kind, reset=at)
+        if kind == "limit":
+            try:
+                wait = float(conf.get("limit_wait", LIMIT_WAIT))
+            except (TypeError, ValueError):
+                wait = LIMIT_WAIT
+            when = time.strftime("%H:%M", time.localtime(at)) if at else "a time it didn't say"
+            left = (at or 0) - time.time()
+            self.waits = getattr(self, "waits", {})
+            if at and left <= wait and self.waits.get(name, 0) < LIMIT_WAITS:
+                self.waits[name] = self.waits.get(name, 0) + 1
+                self.emit("note", f"  {who}: usage limit; waiting until {when} ({max(int(left), 0)} s), then the turn "
+                                  "again", worker=who)
+                time.sleep(max(left, 0) + 1)
+                return True
+            raise CodeError(f"the worker {who} hit its usage limit, which resets at {when}: past code.toml limit_wait "
+                            f"({wait:g} s)", f"fm code --resume {self.tid}")
+        chain = [x for x in conf.get("chain") or [] if isinstance(x, str)] if isinstance(conf.get("chain"), list) else []
+        tried = getattr(self, "tried", {}).setdefault(name, set())  # a name twice in the chain never loops
+        self.tried = getattr(self, "tried", {name: tried})
+        tried.add(self.worker)
+        nxt = next((x for x in chain[chain.index(self.worker) + 1:] if x not in tried), None) \
+            if self.worker in chain else None
+        what = {"auth": "not signed in", "timeout": "timed out", "crash": f"crash (exit {code})"}[kind]
+        if nxt:
+            self.emit("note", f"  {who}: {what}; {nxt} takes the turn (code.toml chain)", worker=nxt)
+            self.log(kind="failover", phase=name, worker=nxt)
+            self.worker = nxt
+            return True
+        if kind == "auth":
+            raise CodeError(f"the worker {who} isn't signed in (or its key is bad): sign it in, then resume",
+                            f"fm code --resume {self.tid}")
+        return False
         self.log(kind="phase_done", phase=name)
 
     def live_tools(self, who, lean=False):
@@ -1202,6 +1246,43 @@ def stop_survivors():
     return out
 
 
+def failure_kind(code, reply):
+    """T-1356: (kind, reset epoch or None) for a worker turn: (None, None) when it exited 0; timeout when cut off at
+    --worker-timeout; limit (a plan's usage limit, with when it resets if the reply says); auth (signed out, a bad key);
+    else crash."""
+    if code == 0:
+        return None, None
+    if code is None:
+        return "timeout", None
+    text = (reply or "")[-600:]  # the CLI's last words: a test log earlier in the reply may say "Unauthorized"
+    if re.search(r"(?i)usage limit|limit reached|hit your limit", text):
+        return "limit", _reset_at(text)
+    if re.search(r"(?i)invalid api key|please run /login|not logged in|authentication_error|oauth token has expired",
+                 text):
+        return "auth", None
+    return "crash", None
+
+
+def _reset_at(text, now=None):
+    """When a usage limit resets, as an epoch: claude's 'limit reached|<epoch>', or 'resets 3pm' / 'resets at 15:30'
+    as the next such local time. ponytail: a named zone after it is ignored (the machine's own is assumed)."""
+    hit = re.search(r"limit reached\|(\d{9,11})", text)
+    if hit:
+        return int(hit.group(1))
+    hit = re.search(r"(?i)\bresets?(?: at)? (\d{1,2})(?::(\d{2}))?\s*([ap]m)?\b", text)
+    if not hit:
+        return None
+    h, mi, half = int(hit.group(1)), int(hit.group(2) or 0), (hit.group(3) or "").lower()
+    if half:
+        h = h % 12 + (12 if half == "pm" else 0)
+    if h > 23 or mi > 59:
+        return None
+    now = time.time() if now is None else now
+    t = time.localtime(now)
+    at = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, h, mi, 0, 0, 0, -1))
+    return int(at + 86400 if at <= now else at)
+
+
 def _subreaper(on):
     """Linux: make this process the subreaper of its descendants (prctl PR_SET_CHILD_SUBREAPER); False elsewhere."""
     if not sys.platform.startswith("linux"):
@@ -1424,6 +1505,71 @@ def test_runner(name, timeout=RUNNER_TEST_SECONDS, cwd=None, on_spawn=None):
     said = (f"didn't answer --version within {timeout} s" if code is None else
             f"--version exit {code}: {first}" if code else first or "answered --version")
     return {"name": name, "ok": code == 0, "said": said}
+
+
+PING_PROMPT, PING_SECONDS = "Reply with the single word ok and nothing else. Use no tools.", 60
+
+
+def ping_state(code, said):
+    """T-1335: a ping's answer sorted: ok, not logged in, usage limit, flag refused, endpoint down, no answer, or
+    failed (exit N)."""
+    kind, _ = failure_kind(code, said)
+    if kind is None:
+        return "ok" if (said or "").strip() else "no answer"
+    if kind != "crash":
+        return {"timeout": "no answer", "auth": "not logged in", "limit": "usage limit"}[kind]
+    tail = (said or "")[-600:]
+    if re.search(r"(?i)unknown (?:option|flag|argument)|unrecognized (?:option|argument)|unexpected argument|"
+                 r"invalid option", tail):
+        return "flag refused"
+    if re.search(r"(?i)ECONNREFUSED|ENOTFOUND|ETIMEDOUT|connection refused|could not resolve|getaddrinfo|"
+                 r"network is unreachable|\b50[23]\b|overloaded", tail):
+        return "endpoint down"
+    return f"failed (exit {code})"
+
+
+def ping_runner(name, timeout=PING_SECONDS, on_spawn=None):
+    """T-1335: a runner asked one tiny question through its read-only plan command, in a scratch folder, with a
+    worker's environment, bounded: {name, state, ms, version, said}. A runner with no plan command is only asked
+    --version (state 'version only'): a work command could change files. A name that isn't a runner is refused
+    (test_runner's CodeError) and never run. Spends a few tokens."""
+    base = test_runner(name, on_spawn=on_spawn)
+    if not base["ok"]:
+        return {"name": name, "state": "failed", "ms": None, "version": None, "said": base["said"]}
+    r = all_runners()[name]
+    if not r.get("plan"):
+        return {"name": name, "state": "version only", "ms": None, "version": base["said"],
+                "said": "no read-only plan command: asked --version only"}
+    argv = [w.replace("{prompt}", PING_PROMPT) for w in shlex.split(r["plan"])] + lean_args(r, "plan")
+    with tempfile.TemporaryDirectory(prefix="fm-ping-") as d:
+        t0 = time.monotonic()
+        code, out = run_bounded(shlex.join(argv), d, timeout, env=worker_env(), cap=4096, on_spawn=on_spawn)
+        ms = int((time.monotonic() - t0) * 1000)
+    res = next(filter(None, map(m.stream_result, reversed(out.splitlines()))), None)
+    said = res["result"] if res and isinstance(res.get("result"), str) else out
+    state = ping_state(1 if res and res.get("is_error") and code == 0 else code, said)
+    return {"name": name, "state": state, "ms": ms, "version": base["said"], "said": _one_line(said, 160)}
+
+
+def _ping_path():
+    return os.path.join(fmcore.state_dir(), "code-runners-ping.json")
+
+
+def ping_cache(put=None):
+    """T-1335: the last ping of each runner ({name: result with ts}); with put, that result kept first."""
+    try:
+        with open(_ping_path(), encoding="utf-8") as f:
+            got = json.load(f)
+        got = got if isinstance(got, dict) else {}
+    except (OSError, ValueError):
+        got = {}
+    if put:
+        got[put["name"]] = dict(put, ts=round(time.time()))
+        try:
+            fmcore.write_atomic(_ping_path(), json.dumps(got, indent=1))
+        except OSError:
+            pass
+    return got
 
 
 def _git(root, *a):
@@ -2376,6 +2522,15 @@ def _runners(args, fmcli):
             elif m.retiring(x["model"]):  # T-1433: announced, within 60 days
                 soon = m.retiring(x["model"])
                 x.update(retiring_on=soon["date"], replacement=soon["replacement"], source=soon["source"])
+    pings = {}
+    if getattr(args, "ping", None) is not None:  # T-1335
+        names = [args.ping] if args.ping else [n for n, r in rs.items() if r.get("work") and _installed(n, r)]
+        for n in names:
+            try:
+                pings[n] = ping_runner(n)
+            except CodeError as e:
+                raise fmcli.UsageError(str(e))
+            ping_cache(pings[n])
     rows = []
     for n, r in rs.items():
         path = _installed(n, r)
@@ -2388,6 +2543,8 @@ def _runners(args, fmcli):
                 row["version"] = ((v.stdout or v.stderr).strip().splitlines() or ["?"])[0][:60]
             except (OSError, subprocess.TimeoutExpired) as e:
                 row["version"] = f"didn't answer --version ({type(e).__name__})"
+        if n in pings:
+            row["ping"] = pings[n]
         rows.append(row)
 
     def can(r):
@@ -2395,8 +2552,12 @@ def _runners(args, fmcli):
             ", plans read-only" + ("" if r["verified"] else " (not verified here)") if r["plans"] else "") + (
             "; Foreman's guard confines its shell" if r["guard"] == "confined" else
             "; Foreman's guard doesn't confine its shell (only the files it changes are judged)")
+    def pinged(x):
+        return f"  ping: {x['state']}" + (f" in {x['ms'] / 1000:.1f} s" if x.get("ms") is not None else "") + (
+            f" ({x['version']})" if x.get("version") else "")
     lines = [f"{'*' if r['default'] else ' '} {r['name']:<13} {'installed' if r['installed'] else '—':<10} {can(r)}"
-             + (f"  [{r['version']}]" if r.get("version") else "") for r in rows]
+             + (f"  [{r['version']}]" if r.get("version") else "") + (pinged(r["ping"]) if r.get("ping") else "")
+             for r in rows]
     lines.append("Models: " + (", ".join(f"{x['name']} ({x['model']})" for x in models) if models else
                                "none set up (fm code models says how)"))
     lines += [f"  {x['name']} ({x['model']}) was retired {x['retired_on']}: use {x['replacement']} "

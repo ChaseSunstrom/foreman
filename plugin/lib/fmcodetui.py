@@ -1589,14 +1589,27 @@ def _layout_view(cv, st, app, cfg):
 
 
 def _runner_row(r):
-    """T-1511: a runner of the registry or code.toml, and its last test's result."""
-    got = r.get("result")
-    chip = ((" ✓ ", "chip_ok") if got["ok"] else (" ✖ ", "chip_bad")) if got else (" … ", "chip_accent") if \
-        r.get("testing") else ("   ", "chip_todo")
-    what = got["said"] if got else "testing…" if r.get("testing") else "Enter tests it" if r["work"] else \
-        "no command: define [runners.NAME] work in code.toml"
+    """T-1511: a runner of the registry or code.toml, and its last test's result; T-1335: else its last ping (p) as a
+    lamp: ok green, version only plain, anything else red."""
+    got, ping = r.get("result"), r.get("ping")
+    if got or r.get("testing") or not (ping or r.get("pinging")):
+        chip = ((" ✓ ", "chip_ok") if got["ok"] else (" ✖ ", "chip_bad")) if got else (" … ", "chip_accent") if \
+            r.get("testing") else ("   ", "chip_todo")
+        what = got["said"] if got else "testing…" if r.get("testing") else "Enter tests it · p pings it" if \
+            r["work"] else "no command: define [runners.NAME] work in code.toml"
+        bad = bool(got and not got["ok"])
+    elif r.get("pinging"):
+        chip, what, bad = (" … ", "chip_accent"), "pinging (one tiny question)…", False
+    else:
+        state = str(ping.get("state") or "?")
+        chip = (" ● ", "chip_ok") if state == "ok" else (" ● ", "chip_todo") if state == "version only" else \
+            (" ● ", "chip_bad")
+        ms = ping.get("ms")
+        what = state + (f" · {ms / 1000:.1f} s" if isinstance(ms, (int, float)) else "") + (
+            f" · {ping['version']}" if ping.get("version") else "")
+        bad = state not in ("ok", "version only")
     return [chip, ("  " + pad(r["name"], 14), "strong"), (pad("installed" if r["installed"] else "—", 11), "dim"),
-            (what, "bad" if got and not got["ok"] else "text")]
+            (what, "bad" if bad else "text")]
 
 
 def _runners_foot(app, iw):
@@ -1616,7 +1629,8 @@ VIEWS = {"help": _help_view, "diff": _diff_view, "history": _list_view("Past run
          "settings": _list_view("Settings", _settings_note, _setting_row, _settings_head, _settings_foot,
                                 "no setting matches", sized=True),
          "layout": _layout_view,
-         "runners": _list_view("Runners", "Enter tests one (asks its CLI for --version) · Esc back", _runner_row,
+         "runners": _list_view("Runners", "Enter tests one (--version) · p pings one (a tiny question) · Esc back",
+                               _runner_row,
                                foot=_runners_foot),
          "looks": _list_view(lambda app: f"{len(app.look_answers) + 1}/{len(app.look_pairs)} Which is more like you?",
                              "1 · 2 · n neither · Backspace back · Esc stops, nothing kept",
@@ -2637,8 +2651,9 @@ class App:
             rs = fmcode.all_runners()
         except fmcode.CodeError as e:  # the built-ins still list, with what's wrong in code.toml
             rs, note = {n: dict(r) for n, r in fmcode.RUNNERS.items()}, (str(e), "bad")
-        self.items = [{"name": n, "work": bool(r.get("work")), "installed": bool(fmcode._installed(n, r))}
-                      for n, r in rs.items()]
+        pings = fmcode.ping_cache()  # T-1335: each runner's last ping, as its lamp
+        self.items = [{"name": n, "work": bool(r.get("work")), "installed": bool(fmcode._installed(n, r)),
+                       "ping": pings.get(n) if isinstance(pings.get(n), dict) else None} for n, r in rs.items()]
         self.item_index, self.set_note, self.mode = 0, note, "runners"
 
     def _runners_key(self, k):
@@ -2650,24 +2665,32 @@ class App:
             self.item_index = max(0, min(len(self.items) - 1, self.item_index + step))
         elif cmd == "expand" and self.items:
             self._runner_test(self.items[self.item_index])
+        elif k == "p" and self.items:
+            self._runner_test(self.items[self.item_index], ping=True)
 
-    def _runner_test(self, item):
-        """fmcode.test_runner on a thread (it waits up to RUNNER_TEST_SECONDS): the screen keeps drawing, and poll
-        redraws when the result is in. One test at a time."""
+    def _runner_test(self, item, ping=False):
+        """fmcode.test_runner on a thread (it waits up to RUNNER_TEST_SECONDS), or with ping fmcode.ping_runner (up
+        to PING_SECONDS, kept in the ping file): the screen keeps drawing, and poll redraws when the result is in.
+        One at a time."""
         import fmcode
         if self.runner_test is not None and self.runner_test.is_alive():
             self.set_note = ("a test is running: its result comes first", "warn")
             return
 
         def run():
+            spawned = lambda p: setattr(self, "runner_proc", p)  # noqa: E731
             try:
-                got = fmcode.test_runner(item["name"], cwd=self.root,
-                                         on_spawn=lambda p: setattr(self, "runner_proc", p))
+                if ping:
+                    got = fmcode.ping_runner(item["name"], on_spawn=spawned)
+                    fmcode.ping_cache(got)
+                else:
+                    got = fmcode.test_runner(item["name"], cwd=self.root, on_spawn=spawned)
             except Exception as e:  # not a runner with a command (CodeError), or anything else: its result
-                got = {"ok": False, "said": str(e) if isinstance(e, fmcode.CodeError) else f"{type(e).__name__}: {e}"}
-            item.update(result=got, testing=False)
+                why = str(e) if isinstance(e, fmcode.CodeError) else f"{type(e).__name__}: {e}"
+                got = {"name": item["name"], "state": "failed", "said": why} if ping else {"ok": False, "said": why}
+            item.update(**({"ping": got, "pinging": False} if ping else {"result": got, "testing": False}))
             self.runner_done = True
-        item.update(testing=True, result=None)
+        item.update(**({"pinging": True, "result": None} if ping else {"testing": True, "result": None}))
         self.set_note = None
         self.runner_test = threading.Thread(target=run, daemon=True)
         self.runner_test.start()
