@@ -5335,6 +5335,14 @@ def _build_parser():
             "with words, can Foreman do X? answered from the commands' help")
     s.add_argument("--all", action="store_true", help="the same: every command (fm --help: the everyday ones)")
     s.add_argument("words", nargs="*", help="a question in plain words: the commands whose help answers it")
+    s = add("dev", lazy("fmnew", "cmd_dev"), tier=("Every task", 99), help="the contributor's loop: when a tracked file "
+            "changes, fm check --affected runs the tests linked to it; --once runs it now (T-1554)")
+    s.add_argument("--once", action="store_true", help="run fm check --affected once and exit with its code")
+    s.add_argument("--interval", type=float, help="seconds between looks at the files (default 1)")
+    s = add("codemod", lazy("fmcodemod", "cmd_codemod"), tier=("Every task", 160), help="rename OLD NEW or sub PATTERN "
+            "REPL across the repo's tracked text files: a diff first, --apply writes it (T-1554)")
+    s.add_argument("words", nargs="*", metavar="rename OLD NEW|sub PATTERN REPL [PATH…]")
+    s.add_argument("--apply", action="store_true", help="write the rewrite (without it, only the preview)")
     s = add("new", lazy("fmnew", "cmd_new"), tier=("Finding your way", 385), help="strict-by-default templates: a web "
             "page, a 3D scene, an fm code panel (list; NAME [DIR] copies one; check PATH holds a copy to its rules)")
     s.add_argument("words", nargs="*", metavar="list|NAME [DIR]|check PATH", help="web, scene or panel; a panel lands "

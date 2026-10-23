@@ -11,7 +11,8 @@ and formats), `fm lib show changelogs` (writing the notice), `fm lib show featur
 ## The procedure
 
 1. **Find the users.** Grep this repo, and where you can, dependents, logs or telemetry for calls to the old
-   surface. Pass: the brief states the count found and where you looked.
+   surface; for a rename, `fm codemod rename OLD NEW` shows every use as a diff and writes nothing until `--apply`
+   (run it once the replacement ships, step 2). Pass: the brief states the count found and where you looked.
 2. **Ship the replacement first.** The new path works and is documented before the old one warns. Pass: a test
    calls the replacement directly.
 3. **Shim the old path onto the new one.** The old entry point becomes a thin wrapper that converts its
