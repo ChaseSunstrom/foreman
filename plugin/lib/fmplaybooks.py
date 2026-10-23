@@ -271,6 +271,13 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
                         and name not in cards:  # NAME, <name>: placeholders; --section: an option
                     out.append(f"{rel}:{n}: fm lib show {name}: no such card")
         snippets += [(rel, n, body) for n, body in runnable(blocks)]
+        for n, info, body in blocks:  # T-1587: a no-run block never runs, so a syntax slip would never show
+            if info and info[0].lower() in _PY and "no-run" in info[1:]:
+                try:
+                    compile(body, f"{rel}:{n}", "exec")
+                except (SyntaxError, ValueError) as e:  # ValueError: a NUL byte in the block
+                    out.append(f"{rel}:{n}: python no-run block doesn't parse: {getattr(e, 'msg', e)} "
+                               f"(its line {getattr(e, 'lineno', '?')})")
     books = sorted(shingles)
     for i, a in enumerate(books):
         for b in books[i + 1:]:
