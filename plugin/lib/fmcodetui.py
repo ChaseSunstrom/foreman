@@ -102,7 +102,7 @@ DEFAULTS = {
     "keys": {"q": "quit", "n": "new", "s": "stop", "r": "resume", "?": "help", "d": "diff", "h": "history",
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
              "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
-             "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search", "g": "queue"},
+             "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search", "g": "queue", "T": "tickets"},
     "ext": {},  # T-1657: each extension's settings ({name: {key: value}}), its declared defaults (API.setting)
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
@@ -644,6 +644,13 @@ def ease_out(k):
 LIVE = ("planning", "running", "fixing")
 VIEW_FADE = 0.25  # T-1307: seconds a view takes to fade in
 SCRUB_KEYS = ("KEY_LEFT", "KEY_RIGHT", "KEY_HOME", "KEY_END")  # T-1307: a replay's steps (fixed: not in tui.toml)
+CIRCLED = "①②③④⑤⑥⑦⑧⑨"  # T-1350: the rail's ticket numbers
+
+
+def _ticket_row(item):
+    i, text, held = item
+    return [(f" {CIRCLED[i] if i < len(CIRCLED) else i + 1} ", "chip_accent"), ("  " + _one_line(text), "text")] + (
+        [("   ↕ moving: arrows, space puts it down", "accent")] if held else [])
 SETUP_KEYS = ("l", "i", "e")  # T-1333: the first-run fixes, where tui.toml binds nothing to them
 
 
@@ -881,6 +888,11 @@ def _track(st, w, h, app):
                 elif x:
                     rows[r][x - 1] = (rows[r][x - 1][0] + ch, style)
                 x += cw_
+    if app is not None and app.tickets:  # T-1350: the rail of tickets that run after this one
+        rail = [("next ", "dim")]
+        for i, t in enumerate(app.tickets[:len(CIRCLED)]):
+            rail += [(f"{CIRCLED[i]} ", "accent"), (fit(_one_line(t), 24) + "   ", "text")]
+        return [_segments(r) for r in rows] + [rail]
     return [_segments(r) for r in rows]
 
 
@@ -1324,7 +1336,8 @@ def render(st, w, h, cfg, app=None, t=None):
     if prompt:  # T-1346: the cursor where the line editor has it, and where Enter sends the request
         shown = lambda s: s.replace("\n", " ↵ ")
         cv.fill(h - 3, "input")
-        cv.line(h - 3, 0, [(" ask › " if app.asking else " request › ", "key"), (shown(app.input[:app.line.cur]),
+        cv.line(h - 3, 0, [(" ask › " if app.asking else " next › " if app.ticketing else " request › ", "key"),
+                           (shown(app.input[:app.line.cur]),
                                                                                  "input"), ("▏", "key"),
                            (shown(app.input[app.line.cur:]), "input")], w)
         cv.line(h - 2, 0, [("   ", "text"), (app.preview(), "dim")], w)
@@ -1364,6 +1377,7 @@ COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume"
                   ("looks", "your taste: 12 looks in pairs"),
                   ("hush", "motion: full, reduced, off"),
                   ("queue", "work the queue: each task in turn"),
+                  ("tickets", "tickets: requests that run after this one"),
                   ("thoughts", "the model's own words"), ("focus", "next panel"), ("up", "up"), ("down", "down"),
                   ("expand", "open a line"), ("follow", "follow the latest"), ("search", "search the Activity"),
                   ("help", "keys"), ("quit", "quit")]
@@ -1879,6 +1893,8 @@ def _runners_foot(app, iw):
 VIEWS = {"help": _help_view, "diff": _diff_view, "history": _list_view("Past runs", "Enter opens one", _history_row),
          "picker": _list_view("Run the next request with", "Enter picks", _picker_row),
          "home": lambda cv, st, app, cfg: _deck_view(cv, st, app, cfg),  # T-1345: cards, not rows
+         "tickets": _list_view("Tickets", "space picks up / puts down · ↑↓ move · Delete drops · Esc back", _ticket_row,
+                               empty="no tickets: during a run, n then Tab writes one"),  # T-1350
          "project": _list_view(lambda app: str((app.project or {}).get("project") or "project"),
                                "Enter/r runs a task · Enter replays a run · n new · m runner · , settings · "
                                "Esc projects",
@@ -2087,6 +2103,7 @@ class App:
         self._setup = None  # T-1333: the first-run checks shown on the welcome (None: not asked yet this launch)
         self.handoff = None  # T-1341: (argv, folder, task, CLI) the screen loop runs with the terminal handed over
         self.deck_cols, self.deck_rects, self.deck_ring, self.grow = 1, {}, None, None  # T-1345: the home's cards
+        self.tickets, self.ticketing, self.ticket_held = [], False, False  # T-1350: requests for after this run
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
@@ -2111,7 +2128,7 @@ class App:
                          "diff": self.show_diff, "history": self.show_history, "model": self.show_picker,
                          "thoughts": self.toggle_thoughts, "projects": self.show_home,
                          "settings": self.show_settings, "hush": self.hush, "looks": self.show_looks,
-                         "queue": self.work_queue}
+                         "queue": self.work_queue, "tickets": self.show_tickets}
         self.commands.update({name: self._ext_command(name, fn) for name, fn in EXT_COMMANDS.items()})
 
     def fps(self, t):
@@ -2187,6 +2204,8 @@ class App:
         if (self.mode == "main" and k in SETUP_KEYS and k not in self.cfg["keys"] and self.state.status == "idle"
                 and not self.running() and self.first_run()):  # T-1333: the welcome's fixes
             return self._setup_key(k)
+        if self.mode == "tickets":  # T-1350
+            return self._tickets_key(k)
         if self.mode in ("diff", "history", "picker"):
             return self._view_key(k)
         cmd = self.cfg["keys"].get(k)
@@ -2252,6 +2271,11 @@ class App:
                     fn()
                 else:
                     self.message = f"no app command matches {text}"
+            elif text and self.ticketing:  # T-1350: a ticket on the rail, started when this run closes
+                self.ticketing = False
+                self.tickets.append(text)
+                self.message = f"ticket {CIRCLED[min(len(self.tickets), len(CIRCLED)) - 1]} on the rail: it starts " \
+                               "when this run closes (T lists them)"
             elif text and self.asking:  # T-1770: read-only, beside the run, which goes on
                 self.asking = False
                 self.ask(text)
@@ -2259,12 +2283,14 @@ class App:
                 after, self.after = getattr(self, "after", None), None
                 self.start([text], **({"after": after} if after else {}))  # T-1340
         elif k == "\x1b":
-            self.input, self.next_root, self.asking = "", None, False
+            self.input, self.next_root, self.asking, self.ticketing = "", None, False, False
             back, self.prompt_back = self.prompt_back, "main"
             if back == "project" and self.project is not None:
                 self.mode, self.items, self.item_index = "project", self.project_items, self.project_index
             else:
                 self.mode = "main"
+        elif k == "\t" and (self.asking or self.ticketing) and not self.input.startswith("/"):  # T-1350
+            self.asking, self.ticketing = self.ticketing, self.asking
         elif k == "\t":
             self.complete()
         else:
@@ -2376,8 +2402,8 @@ class App:
 
     def new(self):
         if self.running():  # T-1770: a question about the code, answered beside the run
-            self.mode, self.asking, self.after = "prompt", True, None
-            self.message = "a run is going: ask about the code, read-only, beside it (s stops the run)"
+            self.mode, self.asking, self.ticketing, self.after = "prompt", True, False, None
+            self.message = "a run is going: ask about the code beside it, or Tab: a ticket for after it"
         else:
             self.mode, self.after = "prompt", None  # T-1340: n is a fresh request; Enter after a close follows up
 
@@ -3376,9 +3402,43 @@ class App:
             self.state.note("error", text=str(x))
         if self.queue_run is not None and isinstance(e, dict) and e.get("event") == "exit":
             self._queue_after()  # T-1779
+        elif self.tickets and isinstance(e, dict) and e.get("event") == "exit":  # T-1350: the rail's next
+            if self.state.status == "closed":
+                text, left = self.tickets[0], len(self.tickets) - 1
+                self.tickets.pop(0)
+                self.start([text])
+                self.state.note("note", text=f"ticket: {text}" + (f" ({left} more on the rail)" if left else ""))
+            else:
+                self.state.note("note", text=f"tickets wait: this run is {self.state.status or 'stopped'}; "
+                                             f"{len(self.tickets)} on the rail (T lists them)")
 
     # -- the queue (T-1779)
     QUEUE_BLOCKS = 2  # blocked tasks in a row that stop it: the queue isn't working, not one task
+
+    def show_tickets(self):
+        """T-1350: the rail as a list: space picks a ticket up and puts it down, arrows move it, Delete drops it."""
+        self.view_back, self.mode, self.item_index, self.ticket_held = self.mode, "tickets", 0, False
+        self._ticket_items()
+
+    def _ticket_items(self):
+        self.items = [(i, t, self.ticket_held and i == self.item_index) for i, t in enumerate(self.tickets)]
+
+    def _tickets_key(self, k):
+        cmd, i, n = self._list_cmd(k), self.item_index, len(self.tickets)
+        if k in ("\x1b", "q") or cmd == "tickets":
+            self.mode, self.ticket_held = "main", False
+        elif k == " " and n:
+            self.ticket_held = not self.ticket_held
+        elif cmd in ("up", "down") and n:
+            j = max(0, min(n - 1, i + (1 if cmd == "down" else -1)))
+            if self.ticket_held and j != i:
+                self.tickets[i], self.tickets[j] = self.tickets[j], self.tickets[i]
+            self.item_index = j
+        elif k in ("KEY_DC", "\x7f", "KEY_BACKSPACE") and n:
+            self.tickets.pop(i)
+            self.item_index, self.ticket_held = max(0, min(i, len(self.tickets) - 1)), False
+        self._ticket_items()
+        return None
 
     def work_queue(self):
         """T-1779: g works the project's queue here, one fm code --task run after another, until it is empty, two
@@ -4081,6 +4141,8 @@ def run_screen(app, wrapper=None):
     try:
         (wrapper or session)(lambda io: _loop(io, app))
         sys.stdout.write(final_frame(app))  # T-1305: the screen as it was, in the scrollback, once the terminal is back
+        if app.tickets:  # T-1350: tickets are this session's; the ones left are said, not lost silently
+            sys.stdout.write("tickets not run:\n" + "".join(f"  {i}. {t}\n" for i, t in enumerate(app.tickets, 1)))
         sys.stdout.flush()
     finally:
         app.stop()
