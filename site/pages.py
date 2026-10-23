@@ -10,6 +10,14 @@ LIBRARY = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
                        "references")
 
 
+def _sketchbook(s):
+    """T-1784: every shader look card running live with its Sketch preset (fmscene draws the same page)."""
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin", "lib"))
+    import fmscene
+    return fmscene.sketchbook_html(fmscene.sketch_cards(), page=False)
+
+
 def _field_guide(s):
     """T-1525: every playbook in the library by stage, with the line that says when to use it."""
     stages = {}
@@ -623,6 +631,17 @@ PAGES = [
           "draft ID</code> turns a finished task into a draft; <code>mine</code> and <code>counter</code> read the "
           "repo's history for what changes together and what failed.</li></ul>"),
          ("chart", _field_guide)]},
+    {"slug": "shaders", "nav": "Shaders", "title": "Eight shader looks, running",  # T-1784
+     "desc": "Every shader look in the library, live with the preset its card ships; still if you ask for less motion.",
+     "lede": "A shader look is a card: the fragment shader, its uniforms, what it costs, its still frame and what it "
+             "suits. Each one below runs its card's own preset.",
+     "blocks": [
+         ("text", "Using one", "<ul><li><strong>Read the card.</strong> <code>fm lib show shader-aurora-bands</code> "
+          "prints the shader, its uniforms and when not to use it.</li><li><strong>Check it.</strong> <code>fm scene "
+          "shader CARD</code> checks the GLSL with no browser, and with glslangValidator when it's installed.</li>"
+          "<li><strong>See them all.</strong> <code>fm scene sketchbook --out FILE</code> writes this page; each "
+          "thumbnail draws only while on screen, and without WebGL2 it shows the card's description.</li></ul>"),
+         ("chart", _sketchbook)]},
     {"slug": "releases", "nav": "Releases", "title": "Shipped in small, gated releases",
      "desc": "Every release passes the full gates and a release check before it reaches main.",
      "lede": "<code>fm release</code> runs the ritual as nine named steps with a checkpoint after each: gates, version "

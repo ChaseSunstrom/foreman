@@ -658,8 +658,8 @@ def _section(text, name):
 class ShaderLooks(ForemanTestCase):
     """T-1499: eight shader looks, a light-and-material recipe card and an SVG icon system, beside the looks."""
     RECIPES = {"light-and-material", "svg-icon-system"}
-    SECTIONS = ["Shader", "Uniforms", "Cost", "Reduced motion", "Suits", "Verify", "Test first", "Do", "Avoid",
-                "Review"]
+    SECTIONS = ["Shader", "Uniforms", "Cost", "Reduced motion", "Sketch", "Suits", "Verify", "Test first", "Do",
+                "Avoid", "Review"]  # T-1784: Sketch, the sketchbook's preset
     UNIFORM = re.compile(r"(?m)^\s*uniform\s+(?:(?:highp|mediump|lowp)\s+)?\w+\s+([^;]+);")
 
     def shaders(self):
