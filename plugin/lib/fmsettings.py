@@ -477,6 +477,30 @@ def _plan_app(key, value, path, table, name, text=None):
     return new, cfg, errors
 
 
+def check_render(cfg):
+    """T-1612: [(way, why)] for each way Foreman draws this config that fails where the others may not: the app (every
+    layout, wide and narrow: render_error), a headless snapshot (the sample run's frame as SVG, as --snapshot and the
+    docs draw it) and the plain lines --plain prints. [] when every way draws."""
+    import fmcodetui as T
+    out = []
+    why = render_error(cfg)
+    if why:
+        out.append(("the app", why))
+    try:
+        app = T.App(cfg, spawn=lambda *a, **k: None)
+        for e in T.SAMPLE_RUN:
+            app.feed(e)
+    except Exception as e:  # the sample is Foreman's own: a failure here is the config's
+        return out + [("the sample run", f"{type(e).__name__}: {e}")]
+    for way, draw in (("a headless snapshot", lambda: T.to_svg(T.render(app.state, 100, 30, cfg, app), cfg)),
+                      ("--plain", lambda: [T.entry_text(e) for e in app.state.log])):
+        try:
+            draw()
+        except Exception as e:
+            out.append((way, f"{type(e).__name__}: {e}"))
+    return out
+
+
 def render_error(cfg):
     """Why the fm code app can't draw with `cfg` (wide and narrow: both layouts), or None."""
     import fmcodetui as T
@@ -1414,6 +1438,14 @@ def cmd_settings(args):
         return fmcli.out(args, got, _lines(lines) or "no settings found")  # a profile's name is the file's
     if args.action == "profile":  # T-1656
         return _cmd_profile(args)
+    if args.action == "check":  # T-1612: the app, a headless snapshot and --plain must all draw it
+        cfg, _ = T.load_config()
+        bad = check_render(cfg)
+        fmcli.out(args, {"ok": not bad, "failures": [{"way": w, "why": y} for w, y in bad]}, "\n".join(
+            [f"✗ {w} can't draw tui.toml: {_safe(y)}" for w, y in bad]
+            + (["the other ways draw it: fix the setting the error names (fm settings bisect finds it)"] if bad else
+               ["✓ tui.toml draws the same in the app, a headless snapshot and --plain"])))
+        return 1 if bad else 0
     if args.action == "chords":  # T-1660 (keys is the bindings group: fm settings list keys)
         return _cmd_chords(args)
     if args.action in ("diff", "export", "import", "undo", "bisect"):
