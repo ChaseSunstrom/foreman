@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard: a backslash inside single quotes ('x\') anywhere in a command no longer stops it reading a literal for loop as the commands it runs, which had left an earlier cd uncertain and refused writes in the folder the command had moved to (T-1781)
 - foreman-ui pane: a saved palette (fm design tokens --to pane --save) stays when another option changes; it was dropped until fm ui's view next refreshed, which can be long when nothing moves (T-1780)
 - fm run --runner NAME works the queue through fm code --task on that runner (codex, gemini, a code.toml one) instead of claude -p sessions, with fm run's own loop around it: one task at a time or in lanes, blocked tasks skipped, no progress stops it (T-1773, the first part)
 - fm code app: n during a run asks a question about the code beside it, read-only: fm code --ask answers it without a task or the tree's lock (and refuses if the planner plans a change), and the answer lands in Activity while the run goes on; s or q ends an ask still going (T-1770)
