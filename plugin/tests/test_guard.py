@@ -2591,3 +2591,17 @@ class GitInitTarget(GuardCase):
         self.assertIn("$D unresolved", r.detail)
         self.assertNotIn("git init writes its folder", r.detail)
         self.assertIn("git init writes its folder", self.bash("git init -q", cwd=self.lib).detail)
+
+
+class InterpreterCodeIsNotBash(GuardCase):  # T-1786
+    """python's -c code is python, read by its own reader (what it spawns); read as bash, x.get('at') was a subshell
+    running at. perl/ruby/node -c is a syntax check and php -c a config file: none is code to read as bash."""
+    def test_python_c_code_is_python_and_shell_c_text_is_shell(self):
+        self.run_table([
+            ("python3 -c \"x.get('at')\"", None),
+            ("python3 -c \"\nimport json\nd = dict()\nprint(d.get('at'))\n\"", None),  # no braces: bash() formats
+            ("perl -c \"('at')\"", None),
+            ("python3 -c \"import os; os.system('at now')\"", "system"),  # what it spawns is still a command
+            ("bash -c 'at now'", "system"),
+            ("sh -c \"(at now)\"", "system"),
+        ], self.bash)
