@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- foreman-ui 0.19.0: a grant (fm ask) is put to a person. The mod answers the guard's ask for it as its own (tool.check), so Claude Code settles it only through the dialog, a host's callback or a PermissionRequest hook: never auto mode's classifier, bypass mode or a saved rule for all of Bash; where nobody can be asked it is refused (T-1262)
 - Benchmarks page: a generated "Where Foreman loses" section lists every duel row where Claude Code passed and Foreman didn't, or Foreman cost or took 25% more, each with fm bench repro LABEL CASE, which reruns that row on both sides with the run's own model, runs, budget, compaction window and marathon, and prints then and now side by side (T-1261)
 - fm bench soak --compact-at TOKENS runs a compaction storm (each session compacts once its context nears TOKENS, every few turns when small; each case counts its compactions), and --sweep 20000,40000,80000 runs the soak once per window with a row each (passes, repeats, compactions, cost), to measure where compaction starts to cost repeats (T-1259)
 - fm motion verify samples the page in fm shot's own browser (a Chromium on PATH, FOREMAN_CHROME or Playwright's download; nothing installed) instead of fm smoke's whole frozen crawl: one page, the frozen clock and paused animations, and the same sampleMotion fm smoke runs (T-1716)
