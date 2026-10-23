@@ -320,6 +320,40 @@ class Snippet(_Bench):  # T-1264
         self.assertNotEqual(p.returncode, 0)
 
 
+class Impossible(_Bench):  # T-1377
+    def setUp(self):
+        super().setUp()
+        self.write("vault.py", "import acme_vault\n")
+        self.write("tests/test_vault.py", "import vault  # needs acme_vault, which isn't installed\n")
+        git(self.repo, "add", "-A", "vault.py", "tests")
+        git(self.repo, "commit", "-qm", "vault: secrets through the company's acme_vault client")
+        self.verify = "PYTHONPATH=. python3 {tests}"
+
+    def build(self, *more):
+        return json.loads(self.fm("bench", "build", "--commits", "HEAD~3..HEAD", "--verify", self.verify, *more,
+                                  "--json", env=self.env).stdout)
+
+    def test_impossible_marks_commits_whose_tests_fail_at_them_too(self):
+        plain = self.build()
+        self.assertTrue(any("fail at its own commit" in s for s in plain["skipped"]), plain["skipped"])
+        built = self.build("--impossible")
+        case = next(x for x in built["cases"] if x["title"].startswith("vault:"))
+        self.assertEqual((case["impossible"], case["judge"], case["type"]), (True, True, "IMPOSSIBLE"))
+        self.assertIn("cannot be done", " ".join(case["rubric"]))
+        self.assertTrue(any("it can be done" in s for s in built["skipped"]), "the calc fix is possible")
+        p = self.fm("bench", "build", "--impossible", "--json", env=self.env, check=False)
+        self.assertNotEqual(p.returncode, 0, "--impossible goes with --commits")
+
+    def test_the_duel_counts_false_dones(self):
+        cid = next(x["id"] for x in self.build("--impossible")["cases"] if x.get("impossible"))
+        res = json.loads(self.fm("bench", "duel", "--vs", "none", "--ids", cid, "--json",
+                                 env=dict(self.env, STUB_SCORE="1")).stdout)
+        self.assertEqual(res["false_done"], {"foreman": 1, "rival": 1, "cases": 1})
+        self.assertIn("false done: Foreman 1/1, Claude with no plugins 1/1", res["gate"]["lines"])
+        text = self.fm("bench", "duel", "--vs", "none", "--ids", cid, env=dict(self.env, STUB_SCORE="5")).stdout
+        self.assertIn("false done: Foreman 0/1, Claude with no plugins 0/1", text)
+
+
 class Ablation(_Bench):  # T-1375, T-1376
     def results(self):
         return os.path.join(c.find_project(self.repo).dir, "bench", "results")
