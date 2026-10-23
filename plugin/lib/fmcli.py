@@ -6571,6 +6571,8 @@ def _build_parser():
                                                           "session (T-0975); or fm sandbox on")
     s.add_argument("--no-sandbox", action="store_true", help="run sessions without Claude Code's sandbox")
     s.add_argument("--models", help="model per tier, e.g. S=sonnet,M=sonnet,L=opus (default: Claude Code's)")
+    s.add_argument("--runner", metavar="NAME", help="work each task with fm code --task on this runner (fm code "
+                                                   "runners lists them) instead of a claude -p session")
     s.add_argument("--save", action="store_true", help="keep --models for later runs")
     s = add("sandbox", lazy("fmserve", "cmd_sandbox"), tier=("Project and settings", 900), help="fm run's sandbox as a project setting: on, off, allow "
                                                            "DOMAIN, show (T-1086)")
