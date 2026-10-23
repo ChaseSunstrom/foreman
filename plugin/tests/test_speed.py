@@ -2,8 +2,10 @@
 yield, skill size caps."""
 import json
 import os
+import subprocess
+import sys
 
-from helpers import ForemanTestCase
+from helpers import FM, ForemanTestCase
 
 import fmcore as c
 import fmrecall
@@ -47,6 +49,21 @@ class Speed(ForemanTestCase):
         p = self.fm("quiet", "--tail", "3", "--", "bash", "-c", "seq 1 500; exit 4", check=False)
         self.assertEqual(p.returncode, 4)
         self.assertEqual(p.stdout.splitlines()[:3], ["498", "499", "500"])
+
+    def test_quiet_feeds_a_heredoc_to_its_command_and_never_waits_on_an_idle_pipe(self):  # T-1766
+        p = self.fm("quiet", "--", sys.executable, "-", input="print('ran from stdin')\n")
+        self.assertIn("ran from stdin", p.stdout)
+        e = dict(os.environ, FOREMAN_HOME=self.home)
+        e.pop("CLAUDE_CODE_SESSION_ID", None)
+        idle = subprocess.Popen([sys.executable, FM, "quiet", "--", "cat"], cwd=self.repo, env=e, text=True,
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        try:  # its stdin stays open and empty, as an agent's may: cat must get /dev/null and end
+            idle.wait(timeout=20)
+        finally:
+            idle.stdin.close()
+            out = idle.stdout.read()
+            idle.wait(10)
+        self.assertIn("✓ exit 0", out)
 
     def test_gates_list_what_done_needs(self):
         out = self.fm("gates", "fix", "m").stdout
