@@ -6055,15 +6055,24 @@ def _build_parser():
     s = add("design", lazy("fmdesign", "cmd_design"), tier=("Every task", 92), epilog=fmdesign.rules_help(),
             formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
             "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
-            "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs")
-    s.add_argument("action", choices=["lint", "extract", "palette", "contrast"])
-    s.add_argument("paths", nargs="+", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
+            "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs; "
+            "tokens DESIGN.md --to css|app|pane: its Tokens table as CSS variables, an fm code theme or the pane's "
+            "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into (advisory exits 0, blocking 1; T-1645)")
+    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check"])
+    s.add_argument("paths", nargs="*", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
                    "root); palette: a seed colour (hex, rgb(), hsl(), oklch()); contrast: a token file, then pairs "
                    "fg/bg[:need[,dark need]] (default: the known role pairs, body text 7:1 in dark)")
     s.add_argument("--format", choices=["css", "dtcg", "tailwind"], default="css",
                    help="palette: CSS light-dark() roles, DTCG JSON or a Tailwind v4 @theme")
     s.add_argument("--out", metavar="PATH", help="extract: the file to write the Tokens section into (default: "
                                                  "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints)")
+    s.add_argument("--to", choices=["css", "app", "pane"], default="css", help="tokens: CSS custom properties (dark "
+                   "under prefers-color-scheme), a tui.toml [colors] table fm settings accepts, or the pane's palette "
+                   "JSON (T-1651)")
+    s.add_argument("--light", action="store_true", help="tokens --to app|pane: the light values (app: on the paper "
+                   "theme)")
+    s.add_argument("--dark", action="store_true", help="tokens --to app|pane: the dark values (app: on the night "
+                   "theme; the default picks the theme by the screen colour's lightness)")
     s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 93), help="PNG files with no Pillow (T-1630): info "
             "PATH: size and mode; diff A B: the changed-pixel count and box (exit 1 when they differ or sizes do)")
     s.add_argument("action", choices=["info", "diff"])
@@ -6078,7 +6087,10 @@ def _build_parser():
     s.add_argument("--frozen", action="store_true", help="fm smoke's frozen profile first: the clock fixed, CSS "
                    "animations and transitions paused")
     s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
-    s = add("flow", lazy("fmflow", "cmd_flow"), tier=("Every task", 93), help="FILE: a user journey, one step a line "
+    s.add_argument("--diff", metavar="BASE", help="compare each viewport shot with BASE/<page>/viewport.png (an earlier "
+                   "fm shot --out BASE): exit 1 over the baseline's noise floor (the most its own frames differ) or "
+                   "when a font fell back (T-1637)")
+    s = add("flow", lazy("fmflow", "cmd_flow"), tier=("Every task", 96), help="FILE: a user journey, one step a line "
             "(goto URL|FILE, click SEL, type SEL TEXT, expect SEL [TEXT], wait MS), in the headless Chromium fm shot "
             "finds, as a verify command: exit 1 names the step that failed, 2 with no browser (never a pass) (T-1639)")
     s.add_argument("file", metavar="FILE")
@@ -6417,7 +6429,7 @@ WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"s
                    "playbooks": ("action", {"show", "route", "preview"}),  # T-1621: prints, but can rebuild fm
                    # map's map.json cache; not blame (T-1622): git in a FOREMAN_PLAYBOOKS repo runs its filters
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
-                   "design": ("action", {"lint", "palette", "contrast"}),  # T-1506, T-1507: these only read
+                   "design": ("action", {"lint", "palette", "contrast", "tokens"}),  # T-1506, T-1507, T-1651: read
                    "img": ("out", {None}),  # T-1630: info and diff read; --out writes
                    "motion": ("action", {"check"})}
 
