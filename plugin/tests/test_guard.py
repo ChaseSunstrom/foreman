@@ -2457,3 +2457,63 @@ class CredentialReadHook(ForemanTestCase):
     def test_the_hooks_credential_markers_follow_the_guards_lists(self):
         import fmhooks
         self.assertEqual((set(fmhooks._CRED_DIRS), set(fmhooks._CRED_FILES)), (set(g._CRED_DIRS), set(g._CRED_FILES)))
+
+
+class ProtectedTouch(GuardCase):
+    """T-1680: touch that makes a file in a protected folder is a write there (a new hooks.json in Claude Code's plugin
+    cache runs as a hook); touch on a file that exists only changes its times."""
+    def test_touch_making_a_file_is_judged_as_a_write(self):
+        cache = "{home}/.claude/plugins/cache/x/hooks"
+        os.makedirs(self.sub(cache), exist_ok=True)
+        old = self.sub(cache + "/old.json")
+        open(old, "w").close()
+        self.run_table([
+            (f"touch {cache}/hooks.json", "plugin"),
+            (f"echo x > {cache}/hooks.json", "plugin"),  # the writes it now matches
+            (f"cp /dev/null {cache}/hooks.json", "plugin"),
+            (f"truncate -s0 {cache}/hooks.json", "plugin"),
+            (f"touch -d 2020-01-01 -a {cache}/hooks.json", "plugin"),
+            (f"touch -- {cache}/hooks.json", "plugin"),
+            (f"cd {cache} && touch hooks.json", "plugin"),
+            (f"D={cache}; touch $D/hooks.json", "plugin"),
+            ("touch {fhome}/plugin/lib/new.py", "core"),
+            (f"touch {old} > {old}", "plugin"),  # the redirect empties it: a write however touch reads
+            (f"touch {old}", None),  # times only
+            (f"touch -c {cache}/hooks.json", None),  # -c makes nothing
+            (f"touch --no-create {cache}/hooks.json", None),
+            (f"touch -ac {cache}/hooks.json", None),
+            ("touch -d 2020-01-01 new.txt", None),  # an ordinary file in the project; the date isn't a file
+            ("touch {repo}/a {repo}/b", None),
+        ], self.bash)
+
+
+class GitInitTarget(GuardCase):
+    """T-1487: a variable set to a literal path earlier on the line names git init's folder, joined with ; or &&; an
+    absolute value isn't read as a folder under the cwd. One it can't resolve is named in the refusal."""
+    def setUp(self):
+        self.lib = os.path.join(self.fhome, "plugin", "lib")
+        os.makedirs(self.lib, exist_ok=True)
+        self.out = os.path.join(os.path.dirname(self.home), "out")
+
+    def test_a_literal_folder_resolves_across_semicolons_and_ands(self):
+        run = lambda cmd: self.bash(cmd.replace("OUT", self.out), cwd=self.lib)
+        self.run_table([
+            ("D=OUT; mkdir -p $D && git init -q $D && printf x > $D/p.sh", None),
+            ("D=OUT && mkdir -p $D && git init -q $D && printf x > $D/p.sh", None),
+            ("D=OUT; mkdir -p $D; git init -q $D; printf x > $D/p.sh", None),
+            ('D=OUT; git init -q "${{D}}"', None),
+            ("git init -q ~/x", None),
+            ("D=~/x; mkdir -p $D && git init -q $D", None),
+            ("D=~; mkdir -p $D && git init -q $D", "core"),  # home holds Foreman's checkout
+            ("D=~; git -C /tmp init -q $D", "core"),
+            ("git -C OUT init -q ~", "core"),
+            ("git init -q", "core"),  # the cwd, protected core
+            ("git init -q $D", "core"),
+        ], run)
+
+    def test_an_unresolved_folder_is_named(self):
+        r = self.bash("git init -q $D", cwd=self.lib)
+        self.assertBlocked(r, "core")
+        self.assertIn("$D unresolved", r.detail)
+        self.assertNotIn("git init writes its folder", r.detail)
+        self.assertIn("git init writes its folder", self.bash("git init -q", cwd=self.lib).detail)

@@ -2014,10 +2014,15 @@ def _snapshot_note(pl, guard):
     it saved under refs/foreman/snapshots first; Claude Code's rewind covers its file tools, not Bash. The hook has 5 s
     and blocks on a timeout, so the save gets SNAPSHOT_S and says when it couldn't."""
     cmd = str((pl.get("tool_input") or {}).get("command") or "")
-    if "git" not in cmd or not hasattr(guard, "discards_work"):  # the committed fallback guard may predate it
+    if not cmd or not hasattr(guard, "discards_work"):  # the committed fallback guard may predate it
         return None
     saved, failed, why = [], [], c.fit(c.plain(c.redact(cmd)), 200)
-    for where, what in dict.fromkeys(guard.discards_work(cmd, _cwd(pl))):
+    # T-1482: and what the guard's check of this command read, however spelled (g''it, eval, $C): the plain-word reading
+    # first; the guard's adds a kind (the tree, a stash) it missed
+    found = guard.discards_work(cmd, _cwd(pl))
+    kinds = {w.split()[0] for _, w in found}
+    found += [x for x in getattr(guard, "take_discards", list)() if x[1].split()[0] not in kinds]
+    for where, what in dict.fromkeys(found):
         top = c.git_root(where)
         if not top:
             continue
