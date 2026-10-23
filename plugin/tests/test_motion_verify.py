@@ -39,6 +39,26 @@ class Afterglow(ForemanTestCase):
                         ".c { transition: color 0s; }\n.c:hover { color: red; }\n")
             self.assertEqual([x["line"] for x in fmdesign.lint([p]) if x["rule"] == "afterglow"], [4])
 
+    def test_tailwind_state_classes_need_a_transition_class_on_the_same_element(self):  # T-1689
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "t.html")
+            with open(p, "w") as f:
+                f.write('<a class="bg-blue-500 hover:bg-blue-600">jump</a>\n'
+                        '<a class="bg-blue-500 hover:bg-blue-600 transition-colors">eased</a>\n'
+                        '<a class="text-sm hover:text-lg focus:underline">no glow props</a>\n'
+                        '<a class="group-hover:opacity-50 duration-200">a duration alone transitions all</a>\n'
+                        '<a class="focus-visible:scale-105 transition-none">none moves nothing</a>\n'
+                        '<a class="hover:-translate-y-1 animate-pulse">animated</a>\n'
+                        '<a class="aria-[pressed=true]:text-red-600">aria state</a>\n'
+                        '<a class="md:bg-red-500 text-red-600">no state</a>\n'
+                        '<a class="hover:bg-blue-600"><!-- design-lint: allow afterglow brand flash -->x</a>\n')
+            found = [x for x in fmdesign.lint([p]) if x["rule"] == "afterglow"]
+            self.assertEqual([x["line"] for x in found], [1, 5, 7], found)
+            self.assertIn("hover:bg-blue-600", found[0]["detail"])
+            self.assertIn("transition", found[0]["detail"])
+        self.assertIn("Tailwind state classes in @apply", fmdesign.NOT_COVERED)
+
     def test_an_ancestor_or_descendant_state_matches_the_element_that_moves(self):
         # T-1707: the looks gallery's false findings; a transition only on a different element still flags
         import tempfile
