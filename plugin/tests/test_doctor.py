@@ -272,6 +272,26 @@ class Checks(unittest.TestCase):
         self.write("plug/skills/b/SKILL.md", pre % ("b", "Use when STATUS is asked", "disable-model-invocation: true\n"))
         self.assertEqual(d.check_frontmatter(root).status, "PASS")
 
+    def test_named_but_never_loaded_skill_warns(self):
+        # T-1703: a model-invocable skill named in many sessions and loaded in none is mis-described; a report only
+        pre = "---\nname: %s\ndescription: Use whenever you %s\n%s---\nbody\n"
+        for n, extra in (("a", ""), ("b", ""), ("next", ""), ("u", "disable-model-invocation: true\n")):
+            self.write(f"pl/skills/{n}/SKILL.md", pre % (n, "do thing " + n, extra))
+        pl = os.path.join(self.t, "pl")
+
+        def ev(kind, sid, skills):
+            return {"kind": kind, "session_id": sid, "skills": skills}
+        named = [ev("skill_named", f"s{i}", [n]) for i in range(8) for n in ("a", "b", "next", "u")]
+        named += [ev("skill_named", "s0", ["a"])] * 20  # one chatty session is one session, not twenty
+        loaded = [ev("slash", "s1", ["b"])]
+        r = d.check_unloaded_skills(named + loaded, plugin=pl, n=5)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("a ×8", r.detail)
+        for quiet in ("b", "next", "u"):  # loaded once / the idle Next line names it every turn / user-only
+            self.assertNotIn(quiet + " ×", r.detail)
+        self.assertEqual(d.check_unloaded_skills(named[:5 * 4], plugin=pl, n=5).status, "PASS")  # 5 sessions: not more
+        self.assertTrue(os.path.isfile(os.path.join(pl, "skills", "a", "SKILL.md")))
+
     def test_worktree_base(self):
         # T-0803: builder lanes need worktree.baseRef head; the default makes them start from the remote's branch
         self.assertEqual(d.check_worktree_base({"worktree": {"baseRef": "head"}}).status, "PASS")
