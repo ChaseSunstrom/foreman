@@ -202,6 +202,21 @@ class Apply(TidyCase):
         self.assertTrue(all(not e["ts"].startswith("2026-01") for e in kept if e["event"] != "ledger_rolled"))
         self.assertIn("ledger_rolled", [e["event"] for e in kept])
 
+    def test_a_roll_keeps_a_nul_line_byte_for_byte_and_ends_an_unterminated_one(self):  # T-1457
+        ledger = os.path.join(self.p.dir, "ledger.jsonl")
+        old = json.dumps({"ts": "2026-01-15T00:00:00Z", "session_id": None, "project": self.p.slug, "task": None,
+                          "event": "note", "data": {"pad": "y" * 300}}).encode()
+        torn = b"\x00" * 40 + b'{"ts": "2026-01-15T00:00:01Z", "event": "no' + b"\n"  # a crash's NULs, then half a line
+        with open(ledger, "wb") as f:
+            f.write((old + b"\n") * 2000 + torn + (old + b"\n") * 1999 + old)  # all past months; the last unended
+        self.tidy("--apply")
+        with open(os.path.join(self.p.dir, "archive", "ledger-2026-01.jsonl"), "rb") as f:
+            got = f.read()
+        self.assertIn(torn, got, "the NUL line, byte for byte")
+        self.assertTrue(got.endswith(old + b"\n"), "the unended last line is ended in the archive")
+        self.assertEqual(got.count(b"\n"), 4001)
+        self.assertEqual(self.fm("verify-ledger", check=False).returncode, 0)
+
     def test_all_covers_every_registered_project(self):
         other = os.path.join(self.tmp, "other")
         os.makedirs(other)
