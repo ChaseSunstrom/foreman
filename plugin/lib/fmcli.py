@@ -6116,7 +6116,7 @@ def _build_parser():
                    "127.0.0.1, [::1] and files")
     s = add("stories", lazy("fmstories", "cmd_stories"), tier=("Every task", 96), help="CHART: a component's state "
             "matrix, one page with a cell per state the JSON chart lists, each reached by fm flow steps and shot in "
-            "the headless Chromium fm shot finds; no browser: the states listed, and why (T-1640)")
+            "the headless Chromium fm shot finds; no browser: the states listed, why, and exit 2 (never a pass) (T-1640)")
     s.add_argument("chart", metavar="CHART")
     s.add_argument("--out", metavar="PATH", help="write here (a .html file that isn't a link, replaced only when fm "
                    "stories wrote it) instead of the project's state stories/<chart>.html")

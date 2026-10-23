@@ -12,10 +12,11 @@ Each state's steps are fm flow steps (goto, click, type, expect, wait), at most 
 goto starts with `goto PAGE`. The chart is untrusted data: no other keys, capped sizes, and every step held to fm
 flow's rules (its parser, its URL rule and its request blocking). The page (default <project state>/stories/
 <chart>.html, or --out: a .html file that isn't a link, replaced only when fm stories wrote it) is one file with each
-shot inline as a data: PNG and a CSP that loads nothing else. States run in one browser in turn: cookies and storage
-carry over (ponytail: a fresh profile per state if a chart ever needs it). Without a browser it lists the states and how to reach each, and
-says why there are no shots. Exit 0: the page is written and every state's steps held; 1: a malformed chart, or a
-state that failed (its cell names the step)."""
+shot inline as a data: PNG (MAX_TOTAL_PNG in all) and a CSP that loads nothing else. States run in one browser in
+turn, each from about:blank; cookies and storage carry over (ponytail: a fresh profile per state if a chart ever needs
+it). Exit 0: the page is written and every state's steps held; 1: a malformed chart, or a state that failed (its cell
+names the step); 2: no browser, or it did not start: the page lists the states and how to reach each, says why there
+are no shots, and the run is never a pass (as fm flow's)."""
 import base64
 import html
 import json
@@ -30,15 +31,16 @@ import fmflow
 import fmshot
 
 MAX_BYTES, MAX_STATES, MAX_STEPS, MAX_NAME, MAX_TITLE = 64 << 10, 20, 20, 60, 120
-MAX_PNG = 2 << 20  # one shot inline; a component's viewport is well under it
-STEP_S, TOTAL_S = 5, 300  # each element step's wait; the whole run's, checked before each state
+MAX_PNG, MAX_TOTAL_PNG = 2 << 20, 12 << 20  # one shot inline (a viewport is well under it); all, about 16 MB as base64
+STEP_S, TOTAL_S = 5, 300  # each element step's wait; the whole run's, held inside each state's steps too
 KEYS, STATE_KEYS = {"component", "page", "states"}, {"name", "steps"}
 MARK = "<!-- fm stories (T-1640)"
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
 def _text(v, what, cap):
-    if not isinstance(v, str) or not v.strip() or len(v) > cap or re.search(r"[\x00-\x1f\x7f-\x9f]", v):
+    if (not isinstance(v, str) or not v.strip() or len(v) > cap or re.search(r"[\x00-\x1f\x7f-\x9f]", v)
+            or len(v.splitlines()) != 1):  # U+2028 and U+2029 end a line too: no smuggled steps
         raise ValueError(f"{what} is a line of text, 1 to {cap} characters with no control characters")
     return v
 
@@ -88,14 +90,16 @@ def shoot(b, states, root):
     b.call("Page.addScriptToEvaluateOnNewDocument", b.sid, source=fmshot.FREEZE)  # shots that don't move
     gone = None
     for s in states:
+        s.update(ok=False, error=None, png=None)
         if gone or time.monotonic() >= end:
-            s.update(ok=False, error=gone or f"not shot: the run passed {TOTAL_S} s", png=None)
+            s["error"] = gone or f"not shot: the run passed {TOTAL_S} s"
             continue
-        done, failed = fmflow.run(b, s["steps"], STEP_S, seen)
-        s.update(ok=failed is None, error=done[-1]["error"] if failed else None, png=None)
-        if failed:
-            s["error"] = f"step {failed} ({fmflow._show(done[-1])}): {s['error']}"
         try:
+            b.call("Page.navigate", b.sid, url="about:blank")  # a fresh page: a goto to a #fragment doesn't reload
+            done, failed = fmflow.run(b, s["steps"], STEP_S, seen, end)
+            s["ok"] = failed is None
+            if failed:
+                s["error"] = f"step {failed} ({fmflow._show(done[-1])}): {done[-1]['error']}"
             fmflow._pause(b, fmshot.SETTLE_S)
             png = b.png()
             if not png.startswith(PNG_MAGIC) or len(png) > MAX_PNG:
@@ -119,9 +123,12 @@ ol { margin: 8px 0 0; padding-left: 20px; font: 12px/1.5 ui-monospace, monospace
 
 
 def page_html(chart, note):
-    e = html.escape
-    cells = []
+    """The page; a shot past MAX_TOTAL_PNG in all is dropped from its state, with why."""
+    e, cells, total = html.escape, [], 0
     for s in chart["states"]:
+        if s.get("png") and total + len(s["png"]) > MAX_TOTAL_PNG:
+            s.update(png=None, why=f"not inlined: the shots in all passed {MAX_TOTAL_PNG >> 20} MB")
+        total += len(s.get("png") or b"")
         shot = (f'<img src="data:image/png;base64,{base64.b64encode(s["png"]).decode()}" alt="{e(s["name"])} state">'
                 if s.get("png") else "")
         msgs = [f'<p class="bad">{e(s["error"])}</p>' if s.get("error") else "",
@@ -163,32 +170,31 @@ def cmd_stories(args):
             else:
                 try:
                     shoot(b, states, root)
-                except (OSError, RuntimeError, EOFError, ValueError) as e:
-                    note = f"the browser failed: {fmshot.safe(e)}"
-                    for s in states:
-                        s.setdefault("ok", False)
-                        s.setdefault("why", note)
+                except (OSError, RuntimeError, EOFError, ValueError) as e:  # before any state: not run at all
+                    browser, note = None, f"the browser ({fmshot.safe(browser)}) failed: {fmshot.safe(e)}"
                 finally:
                     b.close()
-    shot = sum(1 for s in states if s.get("png"))
-    if not browser:
+    if not browser:  # the listing still helps; a run with no step checked is never a pass (fm flow's exit 2)
         for s in states:
-            s.update(ok=True, why="Not shot (see above).")
+            s.update(ok=False, error=None, png=None, why="Not shot (see above).")
         head = f"No shots: {note}. Each state lists the fm flow steps that reach it."
     else:
-        head = f"{shot} of {len(states)} states shot in {fmshot.safe(browser)}, {fmshot.SIZE[0]}x{fmshot.SIZE[1]}" + (
+        head = f"States shot in {fmshot.safe(browser)}, {fmshot.SIZE[0]}x{fmshot.SIZE[1]}" + (
             f"; note: {note}" if note else "")
     c.write_atomic(path, page_html(chart, head))
-    failed = [s for s in states if not s.get("ok")]
+    shot, failed = sum(1 for s in states if s.get("png")), [s for s in states if not s.get("ok")]
+    data = {"path": path, "browser": browser, "note": note, "ok": bool(browser) and not failed,
+            "states": [{"name": s["name"], "shot": bool(s.get("png")), "ok": bool(s.get("ok")),
+                        "error": s.get("error"), "why": s.get("why")} for s in states]}
     lines = [f"fm stories: wrote {path}: {len(states)} states of {fmshot.safe(chart['title'])}, {shot} shot"]
-    lines += [f"note: {head}"] if not browser else []
+    if not browser:
+        fmcli.out(args, dict(data, skipped=note), "\n".join(lines + [f"fm stories: not run, not a pass: {note}."]))
+        sys.exit(2)
     for s in states:
-        why = s.get("error") or (s.get("why") if browser else None)
-        lines.append(f"  ✗ {fmshot.safe(s['name'])}: {fmshot.safe(why)}" if not s.get("ok") else
-                     f"  ✓ {fmshot.safe(s['name'])}")
-    fmcli.out(args, {"path": path, "browser": browser, "note": note, "ok": not failed,
-                     "states": [{"name": s["name"], "shot": bool(s.get("png")), "ok": bool(s.get("ok")),
-                                 "error": s.get("error"), "why": s.get("why")} for s in states]}, "\n".join(lines))
+        why = s.get("error") or s.get("why")
+        lines.append(f"  ✓ {fmshot.safe(s['name'])}" + (f" ({fmshot.safe(why)})" if why else "") if s["ok"] else
+                     f"  ✗ {fmshot.safe(s['name'])}: {fmshot.safe(why)}")
+    fmcli.out(args, data, "\n".join(lines))
     if failed:
         sys.exit(1)
     return None
