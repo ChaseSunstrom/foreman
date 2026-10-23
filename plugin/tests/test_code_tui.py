@@ -1999,6 +1999,25 @@ class Home(unittest.TestCase):
         self.assertEqual(app.mode, "home")
 
 
+class Delight(unittest.TestCase):  # T-1349
+    def test_a_projects_first_close_is_noted_once_and_a_picked_runner_says_hello(self):
+        import fmcode
+        T = tui()
+        app = T.App(T.DEFAULTS, spawn=lambda *a, **k: None, choices=lambda: [("worker", "claude")])
+        app.feed({"event": "start", "request": "fix add", "schema": 1})
+        app.feed({"event": "closed", "text": "T-0001 closed", "task": "T-0001", "first_in": "calc"})
+        self.assertEqual(T.entry_text(app.state.log[-1]), "✦ first proved change in calc")
+        self.assertTrue(app.state.first)
+        with unittest.mock.patch.object(fmcode, "last_run_of", return_value=("T-0007", "closed", time.time() - 120)):
+            app.show_picker()
+            app.key("\n")
+        self.assertIn("next run: worker claude · last: closed T-0007, 2m", app.message)
+        with unittest.mock.patch.object(fmcode, "last_run_of", return_value=None):
+            app.show_picker()
+            app.key("\n")
+        self.assertIn("no run with it yet", app.message)
+
+
 class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
     def app(self):
         T = tui()
@@ -2516,7 +2535,7 @@ class Command(CodeCase):
         self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
         r = self.code("tui", "--plain", "fix add", "--model", "fake", "--no-commit")
         self.assertIn("edit   calc.py", r.stdout)
-        self.assertIn("closed", r.stdout.splitlines()[-1])
+        self.assertTrue(any("closed" in x for x in r.stdout.splitlines()[-2:]), r.stdout)  # T-1349: a first close's note
         self.assertNotIn('"event"', r.stdout)
 
 

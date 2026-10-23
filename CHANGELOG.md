@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code: a run's edit leases now end with it whether a model or a worker did the work; a model run's leases held the code for 20 more minutes, so the next run on the same function was refused (T-1764)
 - fm code says once at start when fm doctor finds two Foreman installs or Foreman's hook registered twice (each distinct finding once; state/code-warned.json remembers) (T-1757)
 - Security: the supply check hashes the bytes of a plugin's files over 4 MB (streamed, 256 MB a plugin), and past that or past the 4,000-file cap stamps their size, mtime and ctime, so an edit that puts size and mtime back still shows; a baseline from before adopts the new hash without a false alarm (T-1446)
 - fm code app action cards: a failure shows what happened, what Foreman did and the next command (Enter resumes, opens a read-only fm command's output, or names any other for your shell); a live stall shows w wait, k stop, m stop and resume with another runner; the app stops runners a killed run left when it opens, and quitting mid-run prints a stopping … stopped line per runner (T-1762: T-1755, T-1756, T-1761)

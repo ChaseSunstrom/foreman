@@ -2275,7 +2275,7 @@ def cmd_code(args):
         print(f"Next: {then}", file=sys.stderr)
         raise SystemExit(1)
     finally:
-        if run.worker and run.tid:  # T-1294: the run's leases (its workers' edits) end with it
+        if run.tid:  # T-1294: the run's leases end with it; T-1764: a model run's edits take them too, not only a worker's
             try:
                 import fmbus
                 fmbus.drop_session(f"fm-code-{run.tid}")
@@ -2689,10 +2689,57 @@ def _finish(run, profile):
         raise Blocked(f"fm code: fm task finish refused: {_one_line(out, 400)}")
     run.log(kind="end", status="done")
     landed = next((x for x in out.splitlines() if x.startswith(f"{run.tid}: committed")), "")
+    first = None if _closed_before(run.jdir, run.tid) else os.path.basename(run.root)  # T-1349
     run.emit("closed", f"{run.tid} closed{'; ' + landed[len(run.tid) + 2:] if landed else ''} "
                        f"(tokens: {run.tokens[0]} in, {run.tokens[1]} out"
                        f"{f', ${run.usd:.2f}' if run.usd is not None else ''})", task=run.tid, tokens=run.tokens,
-             usd=None if run.usd is None else round(run.usd, 4))
+             usd=None if run.usd is None else round(run.usd, 4), **({"first_in": first} if first else {}))
+
+
+def _closed_before(jdir, tid):
+    """T-1349: whether a run other than tid ever closed here (an events file's last 16 KB holds its closed event)."""
+    for path in glob.glob(os.path.join(jdir, "*.events.jsonl")):
+        if os.path.basename(path) == f"{tid}.events.jsonl":
+            continue
+        try:
+            with open(path, "rb") as f:
+                f.seek(max(0, os.fstat(f.fileno()).st_size - 16384))
+                if b'"event": "closed"' in f.read():
+                    return True
+        except OSError:
+            continue
+    return False
+
+
+def last_run_of(name):
+    """T-1349: a runner's newest finished run in any project: (task, how it ended, ts) or None."""
+    best = None
+    for path in glob.glob(os.path.join(fmcore.state_dir(), "projects", "*", "code", "*.events.jsonl")):
+        try:
+            when = os.path.getmtime(path)
+            if best and when <= best[2]:
+                continue
+            with open(path, "rb") as f:
+                head = f.read(65536)
+                f.seek(max(0, os.fstat(f.fileno()).st_size - 16384))
+                tail = f.read()
+        except OSError:
+            continue
+        evs = [e for e in (_json_or_none(x) for x in head.splitlines()) if isinstance(e, dict)]
+        who = next((e["routed"] for e in evs if isinstance(e.get("routed"), str)), None) or next(
+            (e.get("worker") for e in evs if e.get("event") == "start"), None)
+        end = next((e for e in reversed([_json_or_none(x) for x in tail.splitlines()]) if isinstance(e, dict)
+                    and e.get("event") in ("closed", "blocked", "error")), None)
+        if who == name and end:
+            best = (os.path.basename(path)[:-len(".events.jsonl")], end["event"], when)
+    return best
+
+
+def _json_or_none(raw):
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return None
 
 
 def _load(run, tid):
