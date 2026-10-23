@@ -6505,6 +6505,9 @@ def _build_parser():
                                                                "defaults with yours over them)")
     s.add_argument("--themes", action="store_true", help="fm code tui: every theme side by side on a sample run "
                                                          "(T-1311); choose one with fm settings set theme NAME")
+    s.add_argument("--tour", action="store_true", help="fm code tui: a 30-second guided run, a caption naming each "
+                                                       "panel; --snapshot FILE.svg writes it as one animated SVG, "
+                                                       "--plain as lines (T-1309)")
     s = add("serve", lazy("fmserve", "cmd_serve"), tier=("Running elsewhere", 1140),
             help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop] [PATH]")
     s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")

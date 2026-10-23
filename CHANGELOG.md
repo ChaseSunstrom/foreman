@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code tui --tour: the sample run played over about 30 seconds in the real screen, a caption bar naming each panel as its event lights it (the track, Checks, Activity, the guard, Tokens per call and Time, Changed, the close); --tour --snapshot FILE.svg writes it as one looping animated SVG (SMIL, a frame per event, the last frame the still where SMIL doesn't run; demo/code-tui-tour.svg), --tour --plain prints the captions with the Activity lines (T-1309)
 - fm code tui: a replayed run (--events FILE, or Enter on a past run) steps through its events with ←/→ (Home and End jump to its start and end), the screen rebuilt at each, and the status bar says where (◂▸ 10/14 verify); a switch between the run, its diff and past runs fades in over a quarter second instead of jumping (not with motion off) (T-1307)
 - Guard: python's -c code is no longer also read as bash (x.get('at') read as a subshell running at was refused as scheduling a command); what python code spawns is still checked, and perl, ruby, node and php -c (a syntax check or a config file) aren't read as code; bash, sh and pwsh -c text still is (T-1786)
 - fm ideas sends the pack once per round as the system text every lens child shares (a file, so no argument size limit) with only the lens as the message, and the first lens runs alone for up to 10 s so the rest read the pack from the prompt cache it wrote; the run prints and keeps the cache tokens read and written (T-1265)

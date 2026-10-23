@@ -1222,7 +1222,8 @@ def render(st, w, h, cfg, app=None, t=None):
     cv = Canvas(w, h)
     prompt = app is not None and app.mode == "prompt"
     search = app is not None and app.mode == "search"  # T-1313
-    y0, body_h = 1, h - 2 - (2 if prompt else 1 if search else 0)  # T-1346: the request box and its preview
+    caption = app.caption if app is not None and not (prompt or search) else None  # T-1309: the tour's words
+    y0, body_h = 1, h - 2 - (2 if prompt else 1 if search or caption else 0)  # T-1346: the request box, its preview
     lay = cfg.get("layout") or DEFAULTS["layout"]
     if app is None or app.mode != "layout":  # T-1657: a rule's layout while its events hold; the editor edits the file's
         lay = rule_layout(cfg, st, app)
@@ -1273,6 +1274,9 @@ def render(st, w, h, cfg, app=None, t=None):
                                                                                  "input"), ("▏", "key"),
                            (shown(app.input[app.line.cur:]), "input")], w)
         cv.line(h - 2, 0, [("   ", "text"), (app.preview(), "dim")], w)
+    if caption:
+        cv.fill(h - 2, "select")
+        cv.line(h - 2, 0, [(f" ▶ {caption}", "select")], w)
     if search:
         cv.fill(h - 2, "input")
         cv.line(h - 2, 0, [(" search › ", "key"), (app.search_draft, "input"), ("▏", "key"),
@@ -1942,6 +1946,7 @@ class App:
         self.view_lines, self.view_scroll, self.items, self.item_index = [], 0, [], 0
         self.view_opened, self.view_marks = 0.0, {}  # T-1312: when the diff view opened; its changed-word marks
         self.scrub = None  # T-1307: a replay's [events, how many are shown], stepped with the arrows
+        self.tour = None  # T-1309: the tour's [when it began, how many of its events are shown]
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
@@ -1974,6 +1979,7 @@ class App:
         screen is still (4 with motion off and a run going, for its clock)."""
         mode = self.cfg.get("motion", "full")
         live = self.running() or self.state.status in ("planning", "running", "fixing")
+        live = live or bool(self.tour and self.tour[1] < len(TOUR_RUN))  # T-1309: its next event comes on time
         if mode == "off":
             return 4 if live else 1
         if self.motion.busy(t):
@@ -3012,6 +3018,22 @@ class App:
         self.message = (f"viewing {self.state.task or 'a past run'}"
                         + (f" · ←/→ step through its {len(events)} events" if len(events) > 1 else ""))
 
+    def start_tour(self):
+        """T-1309: the sample run played on this app's clock, a caption over it naming each panel."""
+        self.state, self.motion, self.tour, self.message = State(), Motion(), [self.clock(), 0], "the tour: q leaves"
+
+    def _tour_tick(self):
+        start, fed = self.tour
+        due = min(len(TOUR_RUN), int((self.clock() - start) / TOUR_GAP) + 1)
+        for e in TOUR_RUN[fed:due]:
+            self.feed(e)
+        self.tour[1] = max(fed, due)
+        return due > fed
+
+    @property
+    def caption(self):
+        return tour_caption(self.tour[1]) if self.tour else None
+
     def _scrub_to(self, n):
         """T-1307: the replay as it stood after its first n events (State.apply, the one reducer, from the start)."""
         events = self.scrub[0]
@@ -3081,7 +3103,7 @@ class App:
         return due and self.cfg.get("motion", "full") != "off"
 
     def start(self, words, **extra):
-        self.bell_seen, self.scrub = (0, False), None  # a new run's state counts from nothing
+        self.bell_seen, self.scrub, self.tour = (0, False), None, None  # a new run's state counts from nothing
         self.state, self.selected, self.expanded, self.follow, self.message = State(), None, set(), True, ""
         self.motion = Motion()
         if self.next_root:  # T-1330: a run started from a project's view runs in that project
@@ -3188,6 +3210,8 @@ class App:
         driver redraws)."""
         got = self._settings_expire()
         got = self._watch_tui() or got
+        if self.tour:  # T-1309: the tour's next event, on its clock
+            got = self._tour_tick() or got
         if self.runner_done:  # T-1511: a runner test's result came in
             got, self.runner_done = True, False
         while True:
@@ -3893,6 +3917,70 @@ SAMPLE_RUN = [  # T-1311: a short run every theme draws in the gallery
 ]
 
 
+# T-1309: fm code tui --tour: the sample run and its close, an event every TOUR_GAP seconds, the last held TOUR_HOLD;
+# each caption shows from its event on, naming the panel that event lights
+TOUR_GAP, TOUR_HOLD = 2.0, 3.0
+TOUR_RUN = [dict(e, ts=1760000000.0 + 9 * i) for i, e in enumerate(SAMPLE_RUN + [  # timed, so Time charts it
+    {"event": "closed", "text": "T-0001 closed; committed 4f2a9c1", "task": "T-0001", "tokens": [3300, 220]}])]
+TOUR = {0: "fm code works one task to proof. The header names the request and the model; the bar below, the state.",
+        1: "The track: a station per stage (the plan, each step, the checks, the close), lit as the run gets there.",
+        3: "Checks: each criterion runs its own command. Red before the fix shows the test can fail.",
+        4: "Activity: every action, under the step it serves. Enter opens a line, / searches them.",
+        7: "The guard: rm -rf ~ is refused before it runs, and the run carries on.",
+        9: "Tokens per call: what each model call read and wrote. Time charts the run's clock.",
+        11: "Changed: the files each step touched. d opens the diff, step by step.",
+        12: "Checks again: green after the fix. A run closes only on a passing check.",
+        13: "Closed and committed. n starts your own run, ? lists every key, q leaves the tour."}
+
+
+def tour_caption(fed):
+    """The caption once `fed` of TOUR_RUN's events are on the screen."""
+    shown = [k for k in TOUR if k < fed]
+    return TOUR[max(shown)] if shown else None
+
+
+def tour_plain(out=sys.stdout):
+    """--tour --plain: each caption before the Activity lines its event adds."""
+    app = App(DEFAULTS, spawn=lambda *a, **k: None)
+    for i, e in enumerate(TOUR_RUN):
+        seen = len(app.state.log)
+        app.feed(e)
+        if i in TOUR:
+            print(f"▶ {TOUR[i]}", file=out)
+        for entry in app.state.log[seen:]:
+            print("  " + entry_text(entry), file=out)
+    return 0
+
+
+def tour_svg(path, size=(110, 32), cfg=None):
+    """T-1309: the tour as one animated SVG: a frame per event, drawn once its motion settled, each shown in turn by
+    SMIL off one looping clock; the last frame is the still where SMIL doesn't run. No script, no external tool:
+    GitHub's img plays it."""
+    cfg = cfg or DEFAULTS
+    app, frames, head = App(cfg, spawn=lambda *a, **k: None), [], ""
+    app.tour = [0.0, 0]
+    for i, e in enumerate(TOUR_RUN):
+        app.feed(e)
+        app.tour[1] = i + 1
+        svg = to_svg(render(app.state, size[0], size[1], cfg, app, t=1000.0 + i * TOUR_GAP + 0.9), cfg,
+                     title="fm code tui --tour")
+        head, body = svg.split(">", 1)
+        body = body.rsplit("</svg>", 1)[0]
+        frames.append(body if not frames else re.sub(r"<style>.*?</style>", "", body, flags=re.S))
+    moving = TOUR_GAP * (len(frames) - 1)
+    out = [head + ">", f'<rect width="0" height="0"><animate id="tour" attributeName="x" values="0;0" '
+                       f'dur="{moving + TOUR_GAP + TOUR_HOLD:g}s" begin="0s;tour.end"/></rect>']
+    for i, body in enumerate(frames):
+        last = i == len(frames) - 1
+        timing = (f'<set attributeName="visibility" to="hidden" begin="tour.begin" dur="{moving:g}s"/>' if last else
+                  f'<set attributeName="visibility" to="visible" begin="tour.begin+{i * TOUR_GAP:g}s" '
+                  f'dur="{TOUR_GAP:g}s"/>')
+        out.append(f'<g visibility="{"visible" if last else "hidden"}">{timing}{body}</g>')
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("".join(out) + "</svg>\n")
+    return path
+
+
 def gallery(cols, height=18, depth=None):
     """T-1311: every theme drawn on SAMPLE_RUN, as many side by side as fit `cols`, each named above its tile; ANSI
     colour at the terminal's depth (0: plain text, as NO_COLOR asks)."""
@@ -3945,6 +4033,17 @@ def main(args, words, home=False):
         print(f"fm code tui: {e}", file=sys.stderr)
     if getattr(args, "print_config", False):
         return 2 if errors else 0
+    if getattr(args, "tour", False):  # T-1309: the sample run with captions: on the screen, as lines, or as an SVG
+        if getattr(args, "snapshot", None):
+            w, _, h = (getattr(args, "size", None) or "110x32").partition("x")
+            print(tour_svg(args.snapshot, (int(w), int(h)), cfg))
+            return 0
+        if getattr(args, "plain", False) or not sys.stdout.isatty() or not sys.stdin.isatty():
+            return tour_plain()
+        app = App(cfg, spawn=lambda *a, **k: None)
+        app.start_tour()
+        run_screen(app)
+        return 0
     out = getattr(args, "snapshot", None) or getattr(args, "record", None)
     if out:
         src = getattr(args, "events", None)
