@@ -36,9 +36,10 @@ MANIFEST = "MANIFEST.json"
 MAX_FILE, MAX_TOTAL, MAX_MEMBERS, MAX_HEADER = 256 << 20, 4 << 30, 500_000, 64 << 10
 META_KEYS = ("slug", "path", "created", "last_active", "last_tidy", "next_id", "schema", "sensitive")
 _META_DEFAULTS = {"session": {}, "drive": True, "last_tidy": None}  # as fm init writes a new project
-_SLUG = re.compile(r"^[A-Za-z0-9][\w.-]*$")
-_PROJECT_FILE = re.compile(r"^(?:(?:tasks|archive|research)/(?:[^/]+/)*[^/]+\.md|decisions\.md|ledger\.jsonl|meta\.json)$")
-_CRED_KEY = re.compile(r"(?i)(?:api.?key|secret|token|passw(?:or)?d|pwd|credentials?|cookie|authorization|private.?key)$")
+_SLUG = re.compile(r"[A-Za-z0-9][\w.-]*", re.ASCII)  # fullmatch only: `$` would take a trailing newline
+_PROJECT_FILE = re.compile(r"(?:(?:tasks|archive|research)/(?:[^/]+/)*[^/]+\.md|decisions\.md|ledger\.jsonl|meta\.json)")
+_FORGEABLE = {"check_run", "evidence", "ledger_damage_ack"}  # ledger events a cached gate pass or a run would trust
+_LEASE = ("lane", "lane_branch", "builder", "builder_proc", "cost_cap", "cap_hit")  # this machine's marks on a brief
 _move = os.replace  # one name, so a test can fail the second move
 
 
@@ -50,8 +51,8 @@ def _allowed(name):
     """(slug, path inside the project) for a project file on the allowlist, ("", "tui.toml") for tui.toml, else None."""
     if name == "tui.toml":
         return "", name
-    m = re.match(r"^state/projects/([^/]+)/(.+)$", name)
-    if m and _SLUG.match(m.group(1)) and _PROJECT_FILE.match(m.group(2)):
+    m = re.fullmatch(r"state/projects/([^/]+)/(.+)", name, re.S)
+    if m and name.isprintable() and _SLUG.fullmatch(m.group(1)) and _PROJECT_FILE.fullmatch(m.group(2)):
         return m.group(1), m.group(2)
     return None
 
@@ -59,11 +60,13 @@ def _allowed(name):
 # ---------------------------------------------------------------- what a file may carry
 
 def _blank(obj):
-    """obj with string values under credential-named keys blanked, and whether any was."""
+    """obj with every value under a credential-named key (fmcore._SECRET_KEY) blanked, whatever its shape, and whether
+    any was."""
     if isinstance(obj, dict):
         out, hit = {}, False
         for k, v in obj.items():
-            if isinstance(v, str) and isinstance(k, str) and _CRED_KEY.search(k) and v:
+            if isinstance(k, str) and c._SECRET_KEY.search(k) and v not in ("", None, [], {}) \
+                    and not isinstance(v, bool):
                 out[k], hit = "[REDACTED]", True
             else:
                 out[k], h = _blank(v)
@@ -75,13 +78,15 @@ def _blank(obj):
     return obj, False
 
 
-def _jsonl(text):
+def _jsonl(text, incoming):
     lines = []
     for line in text.split("\n"):
         try:
             obj = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             obj = None  # not JSON: kept as text, the text redaction still applies
+        if incoming and isinstance(obj, dict) and obj.get("event") in _FORGEABLE:
+            continue  # a run or gate pass another machine (or a forger) recorded never counts here
         if isinstance(obj, (dict, list)):
             obj, hit = _blank(obj)
             line = json.dumps(obj, ensure_ascii=False) if hit else line
@@ -95,19 +100,34 @@ def _meta(text, slug):
         raise ValueError("meta.json isn't an object")
     meta = dict(_META_DEFAULTS, **{k: obj[k] for k in META_KEYS if k in obj})
     meta["slug"] = slug  # the folder's name, whatever the file says
-    if not isinstance(meta.get("next_id"), int) or isinstance(meta.get("next_id"), bool):
-        meta.pop("next_id", None)
-    if not isinstance(meta.get("path"), str):
-        meta.pop("path", None)
+    for k in ("created", "last_active", "last_tidy"):  # timestamps: fm sorts and compares them as text
+        if meta.get(k) is not None and not (isinstance(meta[k], str) and meta[k].isprintable()):
+            meta.pop(k)
+    for k, top in (("next_id", 10 ** 9), ("schema", 100)):  # write_meta takes max() of schema: an int or nothing
+        v = meta.get(k)
+        if not (isinstance(v, int) and not isinstance(v, bool) and 0 < v <= top):
+            meta.pop(k, None)
+    path = meta.get("path")  # non-git find_project prefix-matches it, the registry prints it: one plain absolute path
+    if not (isinstance(path, str) and path.isprintable() and os.path.isabs(path) and os.path.normpath(path) != "/"):
+        raise ValueError(f"meta.json's path {path!r} isn't an absolute folder")
     meta["sensitive"] = bool(meta.get("sensitive"))
     return json.dumps(_blank(meta)[0], indent=2, sort_keys=True) + "\n"
 
 
 def _brief(text):
+    """A brief as this machine may take it: no grants, run marks or counted audits (fmsync._from_mirror), not active
+    or leased here, and an open one waits for the user's own yes (fm ask ID confirm)."""
     try:
-        return fmsync._from_mirror(text).render()  # no grants (fmsync.LOCAL_ONLY), run marks or counted audits
+        b = fmsync._from_mirror(text)
     except ValueError:
-        return c.plain_lines(c._unmarked(text))  # an archive note without frontmatter
+        return c._unmarked(c.plain_lines(text))  # an archive note without frontmatter
+    if b.meta.get("status") in ("active", "verifying"):
+        b.meta["status"] = "planned"  # focus is per machine
+    for k in _LEASE:
+        b.meta.pop(k, None)
+    if b.meta.get("status") in c.OPEN:
+        b.meta["confirm"] = True
+    return b.render()
 
 
 def clean(slug, rel, text, incoming):
@@ -115,7 +135,7 @@ def clean(slug, rel, text, incoming):
     if rel == "meta.json":
         text = _meta(text, slug)
     elif rel.endswith(".jsonl"):
-        text = _jsonl(text)
+        text = _jsonl(text, incoming)
     elif incoming and rel.startswith(("tasks/", "archive/")):
         text = _brief(text)
     elif incoming and rel.endswith(".md"):
@@ -140,7 +160,7 @@ def _candidates(state):
     projects = os.path.join(state, "projects")
     for slug in sorted(os.listdir(projects)) if os.path.isdir(projects) else []:
         pdir = os.path.join(projects, slug)
-        if os.path.islink(pdir) or not os.path.isdir(pdir) or not _SLUG.match(slug):
+        if os.path.islink(pdir) or not os.path.isdir(pdir) or not _SLUG.fullmatch(slug):
             left.append((f"state/projects/{slug}", "not a project folder"))
         elif _sensitive(pdir):
             left.append((f"state/projects/{slug}/", "a sensitive project (fm sensitive on)"))
@@ -150,7 +170,7 @@ def _candidates(state):
                 for n in sorted(names):
                     path = os.path.join(d, n)
                     rel = os.path.relpath(path, pdir).replace(os.sep, "/")
-                    if _PROJECT_FILE.match(rel) and os.path.isfile(path) and not os.path.islink(path):
+                    if _allowed(f"state/projects/{slug}/{rel}") and os.path.isfile(path) and not os.path.islink(path):
                         files.append((f"state/projects/{slug}/{rel}", path))
                     else:
                         other += 1
@@ -226,7 +246,7 @@ class _CappedInfo(tarfile.TarInfo):
 
 def _check_name(m):
     n = m.name
-    if not m.isfile():
+    if m.type not in (tarfile.REGTYPE, tarfile.AREGTYPE):  # isfile() takes GNU sparse and contiguous files too
         kind = "link" if m.issym() or m.islnk() else "folder" if m.isdir() else "special file"
         raise Refused(f"{n!r} is a {kind}; only regular files are imported")
     parts = n.split("/")
@@ -280,8 +300,42 @@ def _empty(state, tui):
     return not (tui and os.path.lexists(tui)) and not (os.path.isdir(projects) and os.listdir(projects))
 
 
+def _next_ids(projects):
+    """Each staged project needs its meta.json, and its next_id past every id it brings (fm task new never collides)."""
+    for slug in os.listdir(projects):
+        pdir = os.path.join(projects, slug)
+        meta_path = os.path.join(pdir, "meta.json")
+        if not os.path.isfile(meta_path):
+            raise Refused(f"state/projects/{slug} has no meta.json")
+        top = 0
+        for sub in ("tasks", "archive"):
+            for d, _, names in os.walk(os.path.join(pdir, sub)):
+                for n in names:
+                    with open(os.path.join(d, n), encoding="utf-8") as f:
+                        head = f.read(4096)
+                    for m in re.finditer(r"(?m)(?:\A|^id: )T-(\d{1,9})\b", n + "\n" + head):
+                        top = max(top, int(m.group(1)))
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        if top >= (meta.get("next_id") or 1):
+            meta["next_id"] = top + 1
+            with open(meta_path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(meta, indent=2, sort_keys=True) + "\n")
+
+
+def _rollback(placed):
+    for src, dest in reversed(placed):
+        if src:
+            os.replace(dest, src)  # back into the staging folder, which the caller removes
+        else:
+            os.unlink(dest)
+
+
 def import_(path):
     """(files imported, files in the archive, notes); Refused, with nothing imported, on any problem."""
+    if not callable(getattr(tarfile.TarInfo, "_proc_member", None)):  # the header cap hooks it: no hook, no cap
+        raise Refused("this Python's tarfile has no TarInfo._proc_member, so header records can't be capped: every "
+                      "archive is refused")
     home, state = c.foreman_home(), c.state_dir()
     # tui.toml is core config: only into the home whose state this is (FOREMAN_STATE elsewhere looks empty on its own)
     tui = os.path.join(home, "tui.toml") if os.path.realpath(state) == os.path.realpath(os.path.join(home, "state")) \
@@ -311,13 +365,15 @@ def import_(path):
         if not _empty(state, tui):  # another process filled it while this one checked
             raise Refused(f"{home} stopped being empty during the import")
         staged_tui, staged = os.path.join(stage, "tui.toml"), os.path.join(stage, "state", "projects")
+        if os.path.isdir(staged):
+            _next_ids(staged)
         if os.path.exists(staged_tui) and not tui:
             notes.append("tui.toml stays out: this home's state lives elsewhere (FOREMAN_STATE or a fallback)")
-        placed = []
+        placed = []  # (where it was staged, or None to delete it; where it went): what a failure takes back
         try:
             if os.path.exists(staged_tui) and tui:
                 _move(staged_tui, tui)
-                placed.append(tui)
+                placed.append((None, tui))
                 moved += 1
             if os.path.isdir(staged):
                 projects = os.path.join(state, "projects")
@@ -325,16 +381,17 @@ def import_(path):
                     os.rmdir(projects)  # empty (checked above); fails if it filled since
                 n = sum(len(f) for _, _, f in os.walk(staged))
                 _move(staged, projects)
+                placed.append((staged, projects))
                 moved += n
-        except OSError:
-            for p in placed:
-                os.unlink(p)
+            c.regen_registry()
+        except BaseException:
+            _rollback(placed)
             raise
-        c.regen_registry()
         return moved, len(body), notes
     except Refused:
         raise
-    except (OSError, ValueError, OverflowError, RecursionError, tarfile.TarError, EOFError, zlib.error) as e:
+    except (OSError, ValueError, TypeError, OverflowError, RecursionError, tarfile.TarError, EOFError,
+            zlib.error) as e:
         raise Refused(f"{type(e).__name__}: {e}")
     finally:
         if stage:
@@ -364,7 +421,8 @@ def cmd_home(args):
         print(f"fm home import: refused, nothing imported: {e}")
         return 1
     print(f"Imported {moved} of {total} file(s) into {c.foreman_home()} (every hash matched its manifest; grants, run "
-          f"marks and check commands stripped).")
+          f"marks, recorded runs and check commands stripped; open tasks wait for fm ask ID confirm). A ledger that "
+          f"lost lines no longer verifies its hash chain (fm verify-ledger).")
     for n in notes:
         print(f"  ! {n}")
     return 0

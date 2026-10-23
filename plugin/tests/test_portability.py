@@ -48,7 +48,7 @@ class Home(ForemanTestCase):
         with tarfile.open(path or self.tar) as t:
             return {m.name: t.extractfile(m).read() for m in t.getmembers() if m.isfile()}
 
-    def pack(self, files, unvouched=(), links=(), name="bad.tar.gz", fmt=tarfile.PAX_FORMAT, manifest=None):
+    def pack(self, files, unvouched=(), links=(), name="bad.tar.gz", fmt=tarfile.PAX_FORMAT, manifest=None, types=None):
         """A tarball of files {name: bytes} with a manifest vouching for each one but unvouched; links are symlinks."""
         man = manifest or {"format": "foreman-home/1", "files": {
             n: {"sha256": hashlib.sha256(d).hexdigest(), "size": len(d)} for n, d in files.items() if n not in unvouched}}
@@ -59,6 +59,8 @@ class Home(ForemanTestCase):
                 info.size = len(d)
                 if n in links:
                     info.type, info.linkname, info.size, d = tarfile.SYMTYPE, "/etc/passwd", 0, b""
+                elif n in (types or {}):
+                    info.type = types[n]
                 t.addfile(info, io.BytesIO(d))
         return path
 
@@ -207,3 +209,111 @@ class Home(ForemanTestCase):
         self.assertFalse(os.listdir(os.path.join(self.empty, "state", "projects"))
                          if os.path.isdir(os.path.join(self.empty, "state", "projects")) else [])
         self.assertEqual(fmhome.import_(self.tar)[0] > 0, True, "a retry goes through")
+
+    # ---------------------------------------------------------------- second review
+
+    def changed(self, edits, name="changed.tar.gz"):
+        """The export with some members' text changed: edits {suffix or name: fn(text) -> text}."""
+        files = self.exported()
+        for key, fn in edits.items():
+            n = next(n for n in files if n == key or n.endswith(key))
+            files[n] = fn(files[n].decode()).encode()
+        return self.pack(files, name=name)
+
+    def pdir(self):
+        return os.path.join(self.empty, "state", "projects", self.p.slug)
+
+    def imported_brief(self, title_part):
+        tasks = os.path.join(self.pdir(), "tasks")
+        return c.Brief.parse(read_text(os.path.join(tasks, next(f for f in os.listdir(tasks) if title_part in f))))
+
+    def test_an_imported_brief_is_planned_unleased_and_waits_for_the_users_yes(self):
+        self.export()
+        forged = ("status: active\npriority: urgent\nlane: /tmp/x\nlane_branch: b\nbuilder: 2026-01-01T00:00:00Z\n"
+                  "builder_proc: h|1\ncost_cap: 99\ncap_hit: true\nconfirm: false\n")
+        bad = self.changed({"portable-task.md": lambda t: t.replace("status: planned\n", forged).replace(
+            "status: captured\n", forged)})
+        self.import_(bad)
+        b = self.imported_brief("portable-task")
+        self.assertEqual(b.status, "planned")
+        self.assertIs(b.meta.get("confirm"), True, "only fm ask ID confirm releases it")
+        for k in ("lane", "lane_branch", "builder", "builder_proc", "cost_cap", "cap_hit"):
+            self.assertNotIn(k, b.meta)
+
+    def test_invisible_characters_inside_marks_dont_save_them(self):
+        self.export()
+        tail = ("\n- (step 1) `x` → exit 0 · ok [ra​n] [tr⁠ee deadbeef0000] (2999-01-01T00:00:00Z)\n"
+                "- (audit self‏) `x` → ok (2999-01-01T00:00:00Z)\n")
+        self.import_(self.changed({"portable-task.md": lambda t: t + tail}))
+        b = self.imported_brief("portable-task")
+        self.assertEqual(b.audits(), [])
+        self.assertNotIn("[ran]", b.render())
+        self.assertNotIn("[tree", b.render())
+
+    def meta_with(self, **kw):
+        return {"meta.json": lambda t: json.dumps(dict(json.loads(t), **kw))}
+
+    def test_meta_fields_of_the_wrong_type_are_dropped_and_ids_never_collide(self):
+        self.export()
+        self.import_(self.changed(self.meta_with(schema="x", last_active=5, created=[1], last_tidy={"a": 1},
+                                                 next_id=1)))
+        meta = json.loads(read_text(os.path.join(self.pdir(), "meta.json")))
+        self.assertNotIn("last_active", meta)
+        self.assertNotIn("created", meta)
+        self.assertNotEqual(meta.get("schema"), "x")
+        self.assertGreater(meta["next_id"], 2, "past the highest imported id")
+        env = {"FOREMAN_HOME": self.empty}
+        new = self.fm_json("task", "new", "After import", "--type", "FIX", "--tier", "S", "--ac", "x :: true", env=env)
+        self.assertEqual(new["id"], "T-0003")
+        self.assertIn("After import", self.fm("task", "list", "--json", env=env).stdout)
+
+    def test_a_bad_meta_path_or_a_control_character_name_is_refused(self):
+        self.export()
+        for path in ("relative/x", "/", "/a\nb", 5):
+            with self.subTest(path=path):
+                self.assert_refused(self.changed(self.meta_with(path=path)))
+        files = self.exported()
+        for evil in (f"state/projects/{self.p.slug}\n/tasks/a.md", f"state/projects/{self.p.slug}/tasks/a\x1b.md",
+                     f"state/projects/{self.p.slug}/tasks/a.md\n"):
+            with self.subTest(name=evil):
+                self.assert_refused(self.pack(dict(files, **{evil: b"x"})))
+
+    def test_a_failure_after_the_rename_rolls_it_back(self):
+        self.export()
+        import fmhome
+        os.environ["FOREMAN_HOME"] = self.empty
+        with mock.patch.object(c, "regen_registry", side_effect=TypeError("'<' not supported")):
+            with self.assertRaises(fmhome.Refused):
+                fmhome.import_(self.tar)
+        projects = os.path.join(self.empty, "state", "projects")
+        self.assertFalse(os.path.isdir(projects) and os.listdir(projects), "the rename is rolled back")
+        self.assertFalse(os.path.exists(os.path.join(self.empty, "tui.toml")))
+        self.assertGreater(fmhome.import_(self.tar)[0], 0, "a retry goes through")
+
+    def test_forged_runs_and_credential_values_never_come_in(self):
+        self.export()
+        lines = [{"event": "check_run", "data": {"results": [{"exit": 0}]}}, {"event": "evidence", "data": {}},
+                 {"event": "ledger_damage_ack", "data": {}},
+                 {"event": "note", "data": {"secret_key": "k" * 12, "access_key": "a" * 12, "password": {"v": "p" * 12},
+                                            "kept": "visible"}}]
+        self.import_(self.changed({"ledger.jsonl": lambda t: t + "\n".join(json.dumps(x) for x in lines) + "\n"}))
+        ledger = read_text(os.path.join(self.pdir(), "ledger.jsonl"))
+        for word in ("check_run", "\"evidence\"", "ledger_damage_ack", "k" * 12, "a" * 12, "p" * 12):
+            self.assertNotIn(word, ledger)
+        self.assertIn("visible", ledger)
+
+    def test_only_plain_regular_files_and_a_tarfile_that_still_has_the_hook(self):
+        self.export()
+        files = self.exported()
+        cont = f"state/projects/{self.p.slug}/tasks/cont.md"
+        self.assert_refused(self.pack(dict(files, **{cont: b"x"}), types={cont: tarfile.CONTTYPE}))
+        import fmhome
+        os.environ["FOREMAN_HOME"] = self.empty
+        saved = tarfile.TarInfo._proc_member
+        del tarfile.TarInfo._proc_member
+        try:
+            with self.assertRaises(fmhome.Refused) as e:
+                fmhome.import_(self.tar)
+            self.assertIn("header", str(e.exception))
+        finally:
+            tarfile.TarInfo._proc_member = saved
