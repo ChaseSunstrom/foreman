@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code delight: a project's first closed run says so once (first proved change in <project>, with two brighter, wider close waves in the app), and picking a runner in the app says hello with its newest run's end and age (T-1349)
 - fm code: a run's edit leases now end with it whether a model or a worker did the work; a model run's leases held the code for 20 more minutes, so the next run on the same function was refused (T-1764)
 - fm code says once at start when fm doctor finds two Foreman installs or Foreman's hook registered twice (each distinct finding once; state/code-warned.json remembers) (T-1757)
 - Security: the supply check hashes the bytes of a plugin's files over 4 MB (streamed, 256 MB a plugin), and past that or past the 4,000-file cap stamps their size, mtime and ctime, so an edit that puts size and mtime back still shows; a baseline from before adopts the new hash without a false alarm (T-1446)
