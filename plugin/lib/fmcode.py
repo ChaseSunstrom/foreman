@@ -59,6 +59,7 @@ RUN_TIMEOUT, VERIFY_TIMEOUT, FM_TIMEOUT = 120, 600, 900
 MAX_TOKENS, KEEP_RESULTS, SMALL_CONTEXT = 8192, 6, 32768
 WORKER_TIMEOUT, JUDGE_MAX = 1200, 300  # a worker turn's seconds; changed files the guard judges one by one
 ON_EVENTS = {"closed": ("closed",), "blocked": ("blocked", "needs-you"), "error": ("needs-you",)}  # T-1351: [on]
+LIMIT_WAIT, LIMIT_WAITS = 3600, 3  # T-1356: seconds a usage limit is waited out (code.toml limit_wait); waits a turn
 HOOK_SECONDS = 30
 # T-1214: each CLI's unattended one-prompt form, none of them free to run shell commands on its own say: Foreman's
 # guard judges a worker's files afterwards, not its commands (security review). claude asks for Bash, which -p can't
@@ -761,7 +762,50 @@ class Run:
         if lost:
             raise Blocked(f"fm code: the worker changed {', '.join(lost[:5])}, which Foreman refuses, and it can't be "
                           "put back: check it before going on")
+        kind, at = failure_kind(code, out)
+        if kind and self.failover(name, kind, at, argv[0], code):
+            return self.work(name, prompt)
         self.done.add(name)
+
+    def failover(self, name, kind, at, who, code):
+        """T-1356: after a failed worker turn, whether to do it again. A usage limit that resets within code.toml's
+        limit_wait (LIMIT_WAIT) is waited out, LIMIT_WAITS times a turn at most; past that the run stops with its
+        resume command. A crash, timeout or sign-in failure passes the turn to the next runner in code.toml's chain;
+        with none, a sign-in failure stops the run (nothing would work) and the others go on, the verify judging."""
+        conf = code_config()
+        self.log(kind="worker_fail", phase=name, failure=kind, reset=at)
+        if kind == "limit":
+            try:
+                wait = float(conf.get("limit_wait", LIMIT_WAIT))
+            except (TypeError, ValueError):
+                wait = LIMIT_WAIT
+            when = time.strftime("%H:%M", time.localtime(at)) if at else "a time it didn't say"
+            left = (at or 0) - time.time()
+            self.waits = getattr(self, "waits", {})
+            if at and left <= wait and self.waits.get(name, 0) < LIMIT_WAITS:
+                self.waits[name] = self.waits.get(name, 0) + 1
+                self.emit("note", f"  {who}: usage limit; waiting until {when} ({max(int(left), 0)} s), then the turn "
+                                  "again", worker=who)
+                time.sleep(max(left, 0) + 1)
+                return True
+            raise CodeError(f"the worker {who} hit its usage limit, which resets at {when}: past code.toml limit_wait "
+                            f"({wait:g} s)", f"fm code --resume {self.tid}")
+        chain = [x for x in conf.get("chain") or [] if isinstance(x, str)] if isinstance(conf.get("chain"), list) else []
+        tried = getattr(self, "tried", {}).setdefault(name, set())  # a name twice in the chain never loops
+        self.tried = getattr(self, "tried", {name: tried})
+        tried.add(self.worker)
+        nxt = next((x for x in chain[chain.index(self.worker) + 1:] if x not in tried), None) \
+            if self.worker in chain else None
+        what = {"auth": "not signed in", "timeout": "timed out", "crash": f"crash (exit {code})"}[kind]
+        if nxt:
+            self.emit("note", f"  {who}: {what}; {nxt} takes the turn (code.toml chain)", worker=nxt)
+            self.log(kind="failover", phase=name, worker=nxt)
+            self.worker = nxt
+            return True
+        if kind == "auth":
+            raise CodeError(f"the worker {who} isn't signed in (or its key is bad): sign it in, then resume",
+                            f"fm code --resume {self.tid}")
+        return False
         self.log(kind="phase_done", phase=name)
 
     def live_tools(self, who, lean=False):
@@ -1200,6 +1244,43 @@ def stop_survivors():
             pass
         _unregister(name)
     return out
+
+
+def failure_kind(code, reply):
+    """T-1356: (kind, reset epoch or None) for a worker turn: (None, None) when it exited 0; timeout when cut off at
+    --worker-timeout; limit (a plan's usage limit, with when it resets if the reply says); auth (signed out, a bad key);
+    else crash."""
+    if code == 0:
+        return None, None
+    if code is None:
+        return "timeout", None
+    text = (reply or "")[-600:]  # the CLI's last words: a test log earlier in the reply may say "Unauthorized"
+    if re.search(r"(?i)usage limit|limit reached|hit your limit", text):
+        return "limit", _reset_at(text)
+    if re.search(r"(?i)invalid api key|please run /login|not logged in|authentication_error|oauth token has expired",
+                 text):
+        return "auth", None
+    return "crash", None
+
+
+def _reset_at(text, now=None):
+    """When a usage limit resets, as an epoch: claude's 'limit reached|<epoch>', or 'resets 3pm' / 'resets at 15:30'
+    as the next such local time. ponytail: a named zone after it is ignored (the machine's own is assumed)."""
+    hit = re.search(r"limit reached\|(\d{9,11})", text)
+    if hit:
+        return int(hit.group(1))
+    hit = re.search(r"(?i)\bresets?(?: at)? (\d{1,2})(?::(\d{2}))?\s*([ap]m)?\b", text)
+    if not hit:
+        return None
+    h, mi, half = int(hit.group(1)), int(hit.group(2) or 0), (hit.group(3) or "").lower()
+    if half:
+        h = h % 12 + (12 if half == "pm" else 0)
+    if h > 23 or mi > 59:
+        return None
+    now = time.time() if now is None else now
+    t = time.localtime(now)
+    at = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, h, mi, 0, 0, 0, -1))
+    return int(at + 86400 if at <= now else at)
 
 
 def _subreaper(on):
