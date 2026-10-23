@@ -828,7 +828,8 @@ class Settings(unittest.TestCase):
         self.assertTrue({f"colors.{n}" for n in T.DEFAULTS["theme"]} <= keys)
         self.assertTrue({f"layout.{n}" for n in T.DEFAULTS["layout"]} <= keys)
         self.assertTrue({f"keys.{T.key_name(k)}" for k in T.DEFAULTS["keys"]} <= keys)
-        self.assertEqual(set(T.DEFAULTS) - {"preset", "theme", "layout", "keys"} - set(names), {"palette"})
+        self.assertTrue({f"ext.{n}.{k}" for n, mine in T.DEFAULTS["ext"].items() for k in mine} <= keys)  # T-1657
+        self.assertEqual(set(T.DEFAULTS) - {"preset", "theme", "layout", "keys", "ext"} - set(names), {"palette"})
         self.assertIn("palette", keys)
         for e in fmsettings.app_schema():
             self.assertTrue(e["help"] and e["group"] and e["effect"] in ("now", "next run"), e)
