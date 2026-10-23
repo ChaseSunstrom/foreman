@@ -2,8 +2,8 @@
 installed), as a verify command. One step a line, words split like a shell's (quote a selector or text with spaces);
 blank lines and lines starting with # are skipped:
 
-    goto URL|FILE          a file in the flow's folder (a path relative to it, or a file:// URL), or http(s) on
-                           localhost, 127.0.0.1 or [::1] (--any-url: any http(s) page)
+    goto URL|FILE          a file in the flow's folder (a path relative to it, ?query#fragment kept, or a file:// URL),
+                           or http(s) on localhost, 127.0.0.1 or [::1] (--any-url: any http(s) page)
     click SELECTOR         the first match, once it is there and shown
     type SELECTOR TEXT     focus it, then insert TEXT as typed input after what is there
     expect SELECTOR [TEXT] it is there (and its text or value contains TEXT)
@@ -70,8 +70,9 @@ def target(word, root, any_url):
     any_url); ValueError for anything else."""
     if re.search(r"[\s\x00-\x1f\x7f\\]", word):  # Chrome reads a backslash as a slash; urlsplit doesn't
         raise ValueError(f"no spaces, control characters or backslashes in a URL: {word!r}")
-    if not re.match(r"(?i)[a-z][a-z0-9+.-]*:", word):  # a path: relative to the flow's folder
-        return pathlib.Path(_inside(os.path.join(root, word), root)).as_uri()
+    if not re.match(r"(?i)[a-z][a-z0-9+.-]*:", word):  # a path: relative to the flow's folder, ?query#fragment kept
+        path, tail = re.match(r"([^?#]*)(.*)", word).groups()
+        return pathlib.Path(_inside(os.path.join(root, path), root)).as_uri() + tail
     try:
         u = urllib.parse.urlsplit(word)
         host, port = u.hostname, u.port
@@ -206,13 +207,15 @@ def guard(b, root, any_url):
     return seen
 
 
-def run(b, steps, timeout, seen):
-    """(done, failed): each step run in turn until one fails or TOTAL_S has passed."""
-    done, end = [], time.monotonic() + TOTAL_S
+def run(b, steps, timeout, seen, end=None):
+    """(done, failed): each step run in turn until one fails or TOTAL_S has passed (or `end`, a caller's deadline:
+    fm stories')."""
+    late = f"the journey ran past {TOTAL_S} s" if end is None else "the time ran out"
+    done, end = [], time.monotonic() + TOTAL_S if end is None else end
     for s in steps:
         seen["doc"], seen["other"] = None, []
         try:
-            why = step(b, s, timeout, end) if time.monotonic() < end else f"the journey ran past {TOTAL_S} s"
+            why = step(b, s, timeout, end) if time.monotonic() < end else late
         except (OSError, RuntimeError, EOFError, ValueError) as e:  # TimeoutError is an OSError: the browser hung
             why = f"the browser failed: {e}"
         except (KeyError, TypeError, AttributeError) as e:  # an answer without the fields DevTools always sends

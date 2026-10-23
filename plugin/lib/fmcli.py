@@ -6117,6 +6117,12 @@ def _build_parser():
                    help="seconds each element step waits for its element (above 0, at most 60; default 10)")
     s.add_argument("--any-url", action="store_true", help="goto may open any http(s) page, not only localhost, "
                    "127.0.0.1, [::1] and files")
+    s = add("stories", lazy("fmstories", "cmd_stories"), tier=("Every task", 96), help="CHART: a component's state "
+            "matrix, one page with a cell per state the JSON chart lists, each reached by fm flow steps and shot in "
+            "the headless Chromium fm shot finds; no browser: the states listed, why, and exit 2 (never a pass) (T-1640)")
+    s.add_argument("chart", metavar="CHART")
+    s.add_argument("--out", metavar="PATH", help="write here (a .html file that isn't a link, replaced only when fm "
+                   "stories wrote it) instead of the project's state stories/<chart>.html")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
