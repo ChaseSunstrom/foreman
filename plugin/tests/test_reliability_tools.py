@@ -241,6 +241,35 @@ class GateLock(ForemanTestCase):
                 fmcli.cmd_check(argparse.Namespace(action="run", affected=affected, repeat=repeat))
                 self.assertEqual(took, want, (affected, repeat))
 
+    def test_a_long_held_lock_is_waited_on_only_so_long(self):  # T-1753: a hung check elsewhere held it 40+ min
+        import argparse
+        import threading
+        from unittest import mock
+        import fmcli
+        held, release = threading.Event(), threading.Event()
+
+        def hold():
+            with c.gate_lock("hung check"):
+                held.set()
+                release.wait(10)
+        t = threading.Thread(target=hold)
+        t.start()
+        held.wait(5)
+        err = io.StringIO()
+        try:
+            with mock.patch.dict(os.environ, {"FOREMAN_GATE_WAIT": "0.3"}), mock.patch("sys.stderr", err), \
+                    mock.patch.object(fmcli, "_cmd_check", return_value=0) as run:
+                self.assertEqual(fmcli.cmd_check(argparse.Namespace(action="run", affected=False, repeat=0)), 0)
+            run.assert_called_once()
+            self.assertIn("hung check", err.getvalue())
+            self.assertIn("running beside it", err.getvalue())
+        finally:
+            release.set()
+            t.join()
+        with mock.patch.object(fmcli, "_cmd_check", side_effect=c.LockTimeout("project lock busy")):
+            with self.assertRaises(c.LockTimeout):  # the check's own lock timeout isn't mistaken for the gate's
+                fmcli.cmd_check(argparse.Namespace(action="run", affected=False, repeat=0))
+
     def test_second_run_waits_and_names_holder(self):
         import threading
         said, order, held, release = [], [], threading.Event(), threading.Event()

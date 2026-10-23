@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm check waits for the machine-wide gate lock at most 15 minutes (FOREMAN_GATE_WAIT seconds), then runs beside the holder and says so: a hung check in another project held every check for over 40 minutes (T-1753)
 - fm sync import: a task new to this machine that arrives from the repo's .foreman/ waits for the user's yes (confirm), and no pulled brief carries another machine's lane, builder or cost marks; this machine's own marks and confirm stay on updates. fm home import shares the same settling (T-1749)
 - Guard: a move is judged at its sources too (mv, mv -t, rsync --remove-source-files), so moving a protected file out of the plugin cache or core is refused; git -C X clone url dir is judged at X/dir (T-1751: T-1744, T-1745)
 - Load-proof tests: run.py --load N reproduces load flakes beside N busy processes; hook, fm and fm code hang guards stretch with the measured load; the hero, city and graph frame checks are judged by animation time and rest, not wall-clock windows (T-1730: T-1719, T-1721, T-1728)
