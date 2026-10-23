@@ -594,7 +594,7 @@ class Worker(CodeCase):
         r = self.work("make calc.add add", "--worker", "nosuchcli", "--verify", VERIFY, check=False)
         self.assertEqual(r.returncode, 1)
         self.assertIn("nosuchcli", r.stderr)
-        self.assertEqual(len(r.stderr.strip().splitlines()), 1, r.stderr)
+        self.assertEqual(r.stderr.strip().splitlines()[1:], ["Next: fm code runners"], r.stderr)  # T-1334
         self.assertNotIn("Traceback", r.stderr)
         self.assertNotEqual(self.fm("task", "show", "T-0001", check=False).returncode, 0)
 

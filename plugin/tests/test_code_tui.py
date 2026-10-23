@@ -402,6 +402,13 @@ class Waiting(unittest.TestCase):
         self.assertEqual(tui().title_text(tui().State()), "fm code: idle")
         self.assertEqual(tui().title_text(None), "fm code")
 
+    def test_a_failure_shows_the_command_to_run_next_under_it(self):  # T-1754 (T-1334)
+        st = tui().State()
+        st.apply({"event": "error", "text": "fm code: model: refused", "next": "fm code --resume T-0001"})
+        st.apply({"event": "blocked", "text": "T-0001 blocked: red"})
+        self.assertEqual([x["kind"] for x in st.log], ["error", "next", "blocked"])
+        self.assertEqual(tui().entry_text(st.log[1]), "Next: fm code --resume T-0001")
+
     def test_the_bell_rings_once_per_block_or_refusal_and_not_with_motion_off(self):
         app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
         self.assertFalse(app.bell_due())
@@ -1709,7 +1716,7 @@ class HostileWidth(unittest.TestCase):
              {"event": "action", "action": s, "target": s, "result": s, "detail": s},
              {"event": "verify", "criterion": 1, "label": s, "exit": 1, "cmd": s, "output": s},
              {"event": "changed", "step": 1, "files": [s], "stat": {s: [1, 2]}},
-             {"event": "error", "text": s}, {"event": "blocked", "text": s, "reason": s}]
+             {"event": "error", "text": s, "next": s}, {"event": "blocked", "text": s, "reason": s, "next": s}]
         return e
 
     def screens(self, s):
