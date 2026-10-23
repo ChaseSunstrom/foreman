@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code diagnostics: fm code why [ID] explains a run (how it ended or that a kill stopped it, the steps done, a stall's cause, the next command); text piped on stdin becomes the request's fenced context (a pipe or file only, 256 KB and 5 s at most, so a pipe that never closes can't hang a run); the start event names the run's containment (Landlock with its ABI, or guard only) and the app's header shows it (T-1760: T-1373, T-1374, T-1402)
 - Security: fm code --task (and the app's r on a task) refuses a task still waiting for the user's own yes (a brief pulled by fm sync, imported, or written by a replay) before any of its commands runs, naming why and fm ask ID confirm; the task's verify command could run on one key press (T-1369)
 - fm ideas' "near T-…" marks: an idea is marked near a done task only when half its distinctive words are in that task's title, or three quarters in its title and request together; words in a fifth of the done tasks (three at least) don't count. Two words a long request happened to hold made spurious matches (T-1303)
 - Local models' real context: a local server fm code finds says the context it serves (Ollama's num_ctx from /api/show, else its 4096 default; llama.cpp's n_ctx from /props; vLLM's max_model_len; LM Studio's loaded context), falling back to 8192, and fm code's prompt caps follow it (T-1360)
