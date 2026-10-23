@@ -5777,6 +5777,12 @@ def _build_parser():
     s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
     s.add_argument("--candidate", metavar="REF|FILE", help="score another guard (a git ref of Foreman's repo, or a "
                                                           "fmguard.py file) against the working one (T-0712)")
+    s = add("dojo", lazy("fmdojo", "cmd_dojo"), tier=("Finding your way", 306),
+            help="a short drill of commands the guard refuses and why: allow or refuse, then the guard's own verdict "
+                 "(a study sheet with the answers off a terminal; T-1608)")
+    s.add_argument("--rounds", type=int, default=8, help="how many commands (1 to 40; default 8)")
+    s.add_argument("--seed", type=int, help="the same drill again")
+    s.add_argument("--quiz", action="store_true", help="ask even when stdin isn't a terminal (a or r, a line each)")
     s = add("guard", lazy("fmhooks", "cmd_guard_try"), tier=("Finding your way", 305), help="guard try \"CMD\" [--cwd DIR]: the real guard's "
                                                            "verdict for a command or --tool Edit --path P, as this session would get it; never run (T-1146)")
     s.add_argument("action", help="try | wrong (guard wrong \"CMD\" --should allow|block [--why TEXT]: store a labelled case, T-1162) | "
