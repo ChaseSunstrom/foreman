@@ -52,12 +52,25 @@ NO_TOOLS = ["--setting-sources", "project,local", "--tools", "", "--strict-mcp-c
             "--mcp-config", json.dumps({"mcpServers": {}})]
 
 
-def child_cmd(model, system):
-    """The prompt (lens + pack) goes in on stdin: packs can exceed the per-argument size limit."""
+WARM = 10  # T-1265: seconds the first lens runs alone, so the rest read the pack from the prompt cache it wrote
+
+
+def child_cmd(model, system, system_file=None):
+    """The prompt goes in on stdin and a big system text in a file (system_file): packs can exceed the per-argument
+    size limit."""
     c.refuse_if_paused()  # T-0591: fm relate's child comes through here too
     return ["claude", "-p", "--model", model, "--no-session-persistence", "--output-format", "json", *NO_TOOLS,
             "--max-budget-usd", f"{fmbudget.effective()[0]['run']:g}",  # T-0776: a hard stop at the per-command cap
-            "--append-system-prompt", system]
+            *(["--append-system-prompt-file", system_file] if system_file else ["--append-system-prompt", system])]
+
+
+def _cache_tokens(so):
+    """(read, written) prompt-cache tokens from claude -p's json; (0, 0) when it says nothing."""
+    try:
+        u = json.loads(so).get("usage") or {}
+        return int(u.get("cache_read_input_tokens") or 0), int(u.get("cache_creation_input_tokens") or 0)
+    except (ValueError, TypeError, AttributeError):
+        return 0, 0
 
 
 def _tail(s, n):
@@ -245,15 +258,22 @@ def run_child(feature, system, prompt, model, timeout, project=None, detail="", 
     return text
 
 
-def run_children(jobs, timeout, feature, cwd=None):
+def run_children(jobs, timeout, feature, cwd=None, warm=0, cache=None):
     """T-0295: [(argv, stdin, detail)] run in parallel in one scratch folder under one deadline, each recorded:
     [(text or None, error)]; both set is a partial answer (T-0959). OSError when one can't start (the started ones are
-    stopped). cwd: run there instead (T-1186: reviewers read the project)."""
+    stopped). cwd: run there instead (T-1186: reviewers read the project). warm (T-1265): the first runs alone until it
+    ends or `warm` s pass, so what the jobs share is in the prompt cache for the rest; cache: a dict the prompt-cache
+    tokens read and written are added to."""
     import contextlib
     with (contextlib.nullcontext(cwd) if cwd else _child_cwd(feature)) as cwd:
         procs, started = [], False
         try:
-            for argv, stdin, detail in jobs:
+            for i, (argv, stdin, detail) in enumerate(jobs):
+                if i == 1 and warm > 0:
+                    try:
+                        procs[0][0].wait(timeout=warm)
+                    except subprocess.TimeoutExpired:
+                        pass
                 pr = _popen(argv, timeout, cwd=cwd, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, env=_child_env())
                 procs.append((pr, detail))
@@ -269,6 +289,9 @@ def run_children(jobs, timeout, feature, cwd=None):
                     _forget(pr)
                     text, usd = fmbudget.result(so)  # T-0227: the text, and what it cost
                     fmbudget.record(feature, usd, detail=detail)
+                    if cache is not None:
+                        read, written = _cache_tokens(so)
+                        cache["read"], cache["written"] = cache.get("read", 0) + read, cache.get("written", 0) + written
                     why = f"exit {pr.returncode}: {_tail(se or so, 200)}"
                     # T-0959: text and an error is a partial answer (it printed, then failed): kept, flagged
                     out.append((text, None) if pr.returncode == 0 and text.strip() else
@@ -288,11 +311,16 @@ def run_children(jobs, timeout, feature, cwd=None):
     return out
 
 
-def child_prompt(lens, pack):
-    """The shared pack first, the lens last (T-0267): siblings and later rounds then share a prefix the prompt cache
-    can reuse."""
+def system_text(system, pack):
+    """T-1265: the brainstorm prompt and the pack, the system text every lens of a round shares, so Claude Code's
+    cached system prompt carries the pack once (T-0267 put it first in each message, where no sibling could reuse it)."""
+    return f"{system}\n\nContext pack:\n{pack}"
+
+
+def lens_prompt(lens):
+    """The message: the lens alone, after the shared system text."""
     note = f" — {LENS_NOTES[lens]}" if lens in LENS_NOTES else ""
-    return f"Context pack:\n{pack}\n\nLens: {lens}{note}\n\nReturn 10-15 ideas in the required format, at least 3 of them wild."
+    return f"Lens: {lens}{note}\n\nReturn 10-15 ideas in the required format, at least 3 of them wild."
 
 
 def user_voice(p, n=20):
@@ -675,11 +703,16 @@ def _crossbreed(titles, system, args, p):
     return [c.plain(t).strip() for t in _TITLE.findall(c.redact(text))]
 
 
-def _run_round(lenses, pack, system, args, out_dir, prefix, fmcli):
+def _run_round(lenses, pack, system, args, out_dir, prefix, fmcli, cache=None):
     results = []
     try:
-        answers = run_children([(child_cmd(args.model, system), child_prompt(lens, pack), lens) for lens in lenses],
-                               args.timeout, "ideas")
+        warm = float(os.environ.get("FOREMAN_IDEAS_WARM") or WARM)
+        with tempfile.TemporaryDirectory() as d:  # T-1265: one system text for the round, read by every lens child
+            path = os.path.join(d, "system.md")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(system_text(system, pack))
+            answers = run_children([(child_cmd(args.model, None, path), lens_prompt(lens), lens) for lens in lenses],
+                                   args.timeout, "ideas", warm=warm, cache=cache)
     except OSError as e:
         raise fmcli.UsageError(str(e))
     for i, (lens, (out, why)) in enumerate(zip(lenses, answers), 1):
@@ -747,11 +780,12 @@ def cmd_ideas(args):
                 seen.append(_words(t))
                 titles.append(t)
     known = len(titles)
+    cache = {}  # T-1265: prompt-cache tokens read and written, every child of the run
     for n in range(1, max(1, args.rounds) + 1):
         rounds = n
         prefix = f"r{n}-" if args.rounds > 1 else ""
         got = _run_round(lenses, pack if not titles else later_round_pack(pack, titles, n, coverage(results)[1]),
-                         system, args, out_dir, prefix, fmcli)
+                         system, args, out_dir, prefix, fmcli, cache)
         results += [dict(r, round=n) for r in got]
         new = []
         for r in got:
@@ -775,7 +809,7 @@ def cmd_ideas(args):
         for cat in top:  # one child per category, each with its own pack
             got += [dict(r, round=rounds + 1, category=cat) for r in
                     _run_round([f"deepen: {cat}"], deepen_pack(pack, cat, cats[cat]), system, args, out_dir,
-                               f"deep-{len(got) + 1}-", fmcli)]
+                               f"deep-{len(got) + 1}-", fmcli, cache)]
         results += got
         for r in got:
             new = [t for t in r["titles"] if _is_new(t, seen)]
@@ -813,7 +847,7 @@ def cmd_ideas(args):
                    "kills": kills, "created": c.now()}, f)
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:  # T-0959: what made this run
         json.dump({"pack_sha256": pack_sha, "model": args.model, "lenses": lenses, "seen": args.seen or [],
-                   "rounds": rounds, "created": c.now()}, f)
+                   "rounds": rounds, "created": c.now(), **({"cache": cache} if any(cache.values()) else {})}, f)
     failed = [f"{r['lens']} (round {r['round']})" for r in results if not r["ok"]]
     with c.lock(p.dir):
         c.log_event(p, "ideas", data={"dir": out_dir, "lenses": lenses, "rounds": rounds, "ideas": len(titles) - known,
@@ -822,7 +856,8 @@ def cmd_ideas(args):
               f"Brainstorm ideas in {out_dir} ({len(titles) - known} new distinct over {rounds} round(s); index: ideas.md):\n"
               + "\n".join(f"  {('part' if r['partial'] else 'ok  ') if r['ok'] else 'FAIL'}{'r' + str(r['round']) + ' ' if args.rounds > 1 else ''}"
                           f"{r['lens']}: {r['file'] if r['ok'] else r['error']}" for r in results)
-              + (f"\n  dry after round {rounds}: it added {len(by_round[-1])} new" if rounds < args.rounds else ""))
+              + (f"\n  dry after round {rounds}: it added {len(by_round[-1])} new" if rounds < args.rounds else "")
+              + (f"\n  prompt cache: {cache['read']} tokens read, {cache['written']} written" if any(cache.values()) else ""))
     if failed:
         raise fmcli.UsageError(f"brainstorm lens(es) failed: {', '.join(failed)} (the others are saved)")
 
