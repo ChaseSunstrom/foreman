@@ -185,6 +185,23 @@ class Sync(ForemanTestCase):
             f.write(".*\n")
         self.assertIn("ignored", self.fm("sync", "on").stdout)
 
+    def test_a_new_pulled_brief_waits_for_the_users_yes_and_carries_no_lease(self):  # T-1749
+        self.fm("sync", "on")
+        rel = "tasks/T-0099-planted.md"
+        planted = re.sub(r"(?m)^id: .*$", "id: T-0099", self.exported()).replace("# Add export", "# Planted work")
+        planted = planted.replace("status: planned", "status: active\nlane: /x\nbuilder: b\ncost_cap: 99\n"
+                                  "priority: urgent", 1)
+        self.pulled(lambda _: planted, rel)
+        self.fm("sync", "import")
+        b = c.find_brief(c.find_project(self.repo), "T-0099")
+        self.assertEqual(b.title, "Planted work")
+        self.assertEqual(b.status, "planned")
+        self.assertTrue(b.meta.get("confirm"), "a task that arrived from the repo waits for the user's yes")
+        for k in ("lane", "builder", "cost_cap"):
+            self.assertNotIn(k, b.meta)
+        mine = c.find_brief(c.find_project(self.repo), self.tid)
+        self.assertFalse(mine.meta.get("confirm"), "a task this machine already had keeps its own confirm")
+
     def test_pulled_titles_cannot_carry_terminal_sequences(self):
         # round-4 adversary audit: fm queue printed titles straight from disk
         self.fm("sync", "on")

@@ -39,7 +39,6 @@ _META_DEFAULTS = {"session": {}, "drive": True, "last_tidy": None}  # as fm init
 _SLUG = re.compile(r"[A-Za-z0-9][\w.-]*", re.ASCII)  # fullmatch only: `$` would take a trailing newline
 _PROJECT_FILE = re.compile(r"(?:(?:tasks|archive|research)/(?:[^/]+/)*[^/]+\.md|decisions\.md|ledger\.jsonl|meta\.json)")
 _FORGEABLE = {"check_run", "evidence", "ledger_damage_ack"}  # ledger events a cached gate pass or a run would trust
-_LEASE = ("lane", "lane_branch", "builder", "builder_proc", "cost_cap", "cap_hit")  # this machine's marks on a brief
 _move = os.replace  # one name, so a test can fail the second move
 
 
@@ -121,13 +120,7 @@ def _brief(text):
         b = fmsync._from_mirror(text)
     except ValueError:
         return c._unmarked(c.plain_lines(text))  # an archive note without frontmatter
-    if b.meta.get("status") in ("active", "verifying"):
-        b.meta["status"] = "planned"  # focus is per machine
-    for k in _LEASE:
-        b.meta.pop(k, None)
-    if b.meta.get("status") in c.OPEN:
-        b.meta["confirm"] = True
-    return b.render()
+    return fmsync.settle(b, new=True).render()  # an empty home: every brief is new here
 
 
 def clean(slug, rel, text, incoming):

@@ -22,6 +22,20 @@ import fmcore as c
 
 DIR = ".foreman"
 LOCAL_ONLY = ("allow", "approved", "plugin_pin")
+LEASE_MARKS = ("lane", "lane_branch", "builder", "builder_proc", "cost_cap", "cap_hit")  # one machine's marks on a brief
+
+
+def settle(b, new):
+    """T-1749: a brief that came from elsewhere (fm sync import, fm home import), as this machine takes it: not active
+    or leased here, and, when it is new here and open, waiting for the user's own yes (fm ask ID confirm): a repo's
+    .foreman/ can hold tasks nobody here asked for."""
+    if b.meta.get("status") in ("active", "verifying"):
+        b.meta["status"] = "planned"  # focus is per machine
+    for k in LEASE_MARKS:
+        b.meta.pop(k, None)
+    if new and b.meta.get("status") in c.OPEN:
+        b.meta["confirm"] = True
+    return b
 BRIEFS = ("tasks/", "archive/")
 README = """# .foreman
 
@@ -169,8 +183,10 @@ def import_(p):
                 res["conflicts"].append(f"{rel}: not a brief")
                 continue
             local = mine.get(theirs.id)
-            if theirs.status in ("active", "verifying") and theirs.id not in active:
-                theirs.meta["status"] = "planned"  # focus is per machine
+            keep = theirs.status in ("active", "verifying") and theirs.id in active and theirs.status
+            settle(theirs, local is None)
+            if keep:  # this machine's own focus stays
+                theirs.meta["status"] = keep
             if local is None:
                 _write(dest, theirs.render())
                 res["added"] += 1
@@ -189,7 +205,7 @@ def import_(p):
                                             f"theirs is in {_set_aside(p, rel, cur)}")
                     base[rel] = h
                     continue
-                for k in LOCAL_ONLY:
+                for k in LOCAL_ONLY + LEASE_MARKS + ("confirm",):  # T-1749: this machine's own marks and yes stay
                     if k in local.meta:
                         theirs.meta[k] = local.meta[k]
                 if os.path.abspath(local.path) != os.path.abspath(dest):
