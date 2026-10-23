@@ -6082,11 +6082,14 @@ def _build_parser():
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
             "score as CSS custom properties and @keyframes, WAAPI options or three.js tween parameters, the same "
-            "durations and easings in each, reduced forms included (T-1625)")
-    s.add_argument("action", choices=["check", "compile"])
+            "durations and easings in each, reduced forms included (T-1625); verify [PATH] [--samples FILE]: the page at "
+            "fm smoke's web URL sampled under its frozen profile (or a samples file), each value held to the score's "
+            "duration and curve within tolerance, every drift named; no browser: says so and checks the score (T-1627)")
+    s.add_argument("action", choices=["check", "compile", "verify"])
     s.add_argument("path", nargs="?", help="the score (default: motion.toml at the repo root)")
     s.add_argument("--to", choices=["css", "waapi", "three"], help="compile: the target (default css)")
     s.add_argument("--out", metavar="FILE", help="compile: write here, replacing the file whole, not print it")
+    s.add_argument("--samples", metavar="FILE", help="verify: a JSON list of samples, not a live crawl")
     import fmscene  # T-1633: stdlib only and small; its schema is the help's epilog
     s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 95), epilog=fmscene.SCHEMA,
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
