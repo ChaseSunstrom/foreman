@@ -1836,6 +1836,26 @@ def check_landlock():
                   else f"not available ({why}): fm code workers run unconfined, as before")
 
 
+def check_headless():
+    """T-1638: whether fm shot can render headlessly (a Chromium and its version); a note, never a failure."""
+    import fmshot
+    name = "headless rendering"
+    path = fmshot.chrome()
+    if not path:
+        env = os.environ.get("FOREMAN_CHROME")
+        return Result(name, "PASS", f"not available (FOREMAN_CHROME={env!r} is not an executable file)" if env
+                      else "not available (no Chromium on PATH or in Playwright's download); optional, nothing is installed")
+    try:  # a version probe only, never a page load
+        p = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return Result(name, "PASS", f"not available ({path} did not start: {type(e).__name__})")
+    if p.returncode:
+        last = next((x for x in reversed((p.stderr or p.stdout).splitlines()) if x.strip()), f"exit {p.returncode}")
+        return Result(name, "PASS", f"not available ({path} failed to start: {fmshot._safe(last.strip())[:200]})")
+    ver = fmshot._safe((p.stdout.strip().splitlines() or ["version unknown"])[0])[:80]
+    return Result(name, "PASS", f"available ({path}, {ver})")
+
+
 def cmd_fsck(args):
     here = getattr(args, "project", None) or getattr(c.find_project(os.getcwd()), "slug", None)
     found = fsck(here=here)
@@ -1889,6 +1909,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_state_size(projects))
     results.append(check_fsck(projects))
     results.append(check_landlock())
+    results.append(check_headless())
     brief_results = [check_briefs(p) for p in projects]
     worst = next((s for s in ("FAIL", "WARN") if any(r.status == s for r in brief_results)), "PASS")
     results.append(Result("briefs", worst, "; ".join(r.detail for r in brief_results if r.status != "PASS")
