@@ -252,8 +252,9 @@ def slot(run, profile, messages, check, what):
     for _ in range(REPAIRS + 1):
         before = fmcore.worktree_tree(run.root) if profile.get("kind") == "cli" else None
         run.unlean = None
+        run.check_cap(what)
         try:
-            r = m.complete(profile, messages, max_tokens=MAX_TOKENS)
+            r = m.complete(run.capped(profile), messages, max_tokens=MAX_TOKENS)
         except m.ModelError:
             if run.unlean:  # T-1426: a lean planner stopped at its init line, as a lean worker is
                 raise CodeError(f"{profile['name']}'s claude session started with {', '.join(run.unlean[:5])}, which "
@@ -266,7 +267,7 @@ def slot(run, profile, messages, check, what):
                 gone = os.fsdecode(_git(run.root, "diff", "--name-only", before, after or before).stdout).split()
                 raise CodeError(f"{profile['name']} changed {', '.join(gone[:5]) or 'files'} while planning, which "
                                 "must change nothing: check them (git diff) before going on")
-        run.usage(r)
+        run.usage(r, profile, what)
         check_truncated(profile, messages, r)
         v = m.extract_json(r["text"])
         if v is None and r["tool_calls"]:
@@ -298,6 +299,7 @@ class Run:
         self.read_only, self.summary = False, None  # T-1320: a question's run, and the last done's summary
         self.own_plan = False  # T-1422: the plan is the user's (--task's brief, --verify's), not a planner's
         self.kept = []  # events before the task (and its journal) exists, written once it does
+        self.usd, self.max_usd, self.slug = None, getattr(args, "max_usd", None), None  # T-1357
         self.nonce = secrets.token_hex(6)  # T-1394: the data envelope's tag, which no file can know ahead
 
     def fence(self, text):
@@ -328,6 +330,36 @@ class Run:
             with open(self.journal, "a", encoding="utf-8") as f:
                 f.write(json.dumps(fmcore.redact_obj(dict(rec, ts=time.time()))) + "\n")
 
+    def spend(self, usd, tokens, what):
+        """T-1357: a call's dollars, when known, added to the run's, the budget ledger (fm budget, fm cost) and the
+        journal (a resume keeps them)."""
+        if type(usd) not in (int, float) or not 0 <= usd < 1e6:  # a bool, NaN or nonsense counts as unknown
+            return
+        import fmbudget
+        self.usd = round((self.usd or 0) + usd, 6)
+        try:
+            fmbudget.record("fm code", usd, tokens=tokens or None, project=self.slug, detail=f"{self.tid or 'plan'} {what}")
+        except OSError:  # the ledger is a record: a full disk never fails the run
+            pass
+        self.log(kind="spend", usd=usd)
+
+    def check_cap(self, name):
+        """T-1357: stop before another call once the run has spent its --max-usd."""
+        if self.max_usd is None or (self.usd or 0) < self.max_usd:
+            return
+        more = f"--max-usd {self.max_usd * 2:g}"
+        raise CodeError(f"stopped: the run spent ${self.usd:.2f} of its ${self.max_usd:g} cap (--max-usd) before {name} "
+                        "was done", f"fm code --resume {self.tid} {more}" if self.tid else
+                        f"fm code {shlex.quote(self.request or '')} {more}")
+
+    def left(self):
+        """T-1357: dollars left under --max-usd (a cent at least: claude refuses a zero budget); None with no cap."""
+        return None if self.max_usd is None else max(self.max_usd - (self.usd or 0), 0.01)
+
+    def capped(self, profile):
+        """A profile whose claude CLI is told what's left of the cap (T-1357)."""
+        return profile if self.max_usd is None or not profile else dict(profile, max_usd=self.left())
+
     def redact(self, text):
         """text without the values of the model key variables, then fmcore.redact's patterns."""
         for k in self.secret_envs:
@@ -355,11 +387,19 @@ class Run:
             raise CodeError(f"this repo is marked sensitive (fm sensitive on), so its code can't go to {profile['name']} "
                             "off this machine: use a local model (fm code models), or fm sensitive off")
 
-    def usage(self, r):
+    def usage(self, r, profile=None, what=""):
         got = tuple(v if type(v) is int and v > 0 else 0  # T-1423: a server's "12", null or -1 counts as 0
                     for v in (r["usage"].get("in"), r["usage"].get("out")))
         self.tokens[0] += got[0]
         self.tokens[1] += got[1]
+        price = (profile or {}).get("price")
+        usd = r.get("usd")  # a claude CLI's own total_cost_usd, else tokens times the profile's price per million
+        if usd is None and isinstance(price, dict):
+            try:
+                usd = (got[0] * float(price.get("in") or 0) + got[1] * float(price.get("out") or 0)) / 1e6
+            except (TypeError, ValueError):
+                usd = None
+        self.spend(usd, sum(got), what)
         self.emit("tokens", "", quiet=True, call_in=got[0], call_out=got[1], total_in=self.tokens[0],
                   total_out=self.tokens[1])
         if (r.get("text") or "").strip():  # the model's own words beside its actions (T-1283)
@@ -599,10 +639,11 @@ class Run:
             if self.turns >= self.max_steps:
                 raise CodeError(f"stopped: the model used all {self.max_steps} turns (--max-steps) before {name} was "
                                 f"done; fm code --resume {self.tid} --max-steps N carries on")
+            self.check_cap(name)
             self.turns += 1
             sent = trim(msgs)
-            r = m.complete(profile, sent, tools=tools, max_tokens=MAX_TOKENS)
-            self.usage(r)
+            r = m.complete(self.capped(profile), sent, tools=tools, max_tokens=MAX_TOKENS)
+            self.usage(r, profile, name)
             check_truncated(profile, sent, r)
             calls = r["tool_calls"]
             if r["stop"] == "length":  # a cut-off call may be missing its end: nothing in it runs
@@ -637,7 +678,10 @@ class Run:
         does."""
         if name in self.done:
             return
+        self.check_cap(name)
         argv = worker_argv(self.worker, prompt)
+        if self.max_usd is not None and os.path.basename(argv[0]) == "claude":  # T-1357: claude stops itself there
+            argv += ["--max-budget-usd", f"{self.left():.2f}"]
         before = _snapshot(self.root, self.verify_cmd)
         code, out, ended = None, "", False
         try:
@@ -661,6 +705,9 @@ class Run:
             if streams:  # the journal keeps its reply, not the stream
                 res = next(filter(None, map(m.stream_result, reversed(out.splitlines()))), None)
                 out = res["result"] if res and isinstance(res.get("result"), str) else out
+                if res:  # T-1357: what the turn cost, by claude's own count
+                    u = res.get("usage") if isinstance(res.get("usage"), dict) else {}
+                    self.spend(res.get("total_cost_usd"), sum(v for v in u.values() if type(v) is int), name)
             ended = True
             if self.unlean:  # T-1388: stopped at its first line, before it acted
                 raise Blocked(f"fm code: the worker's claude session started with {', '.join(self.unlean[:5])}, which "
@@ -1775,6 +1822,9 @@ def cmd_code(args):
     p = fmcli.resolve(args)
     root = os.path.realpath(p.root)
     run = Run(args, root, os.path.join(p.dir, "code"))
+    run.slug = p.slug
+    if run.max_usd is not None and not 0 < run.max_usd < 1e6:  # NaN fails both
+        raise fmcli.UsageError("--max-usd is a number of dollars above 0")
     stopped = stop_survivors()
     if stopped:
         run.emit("note", f"stopped {len(stopped)} runner(s) a killed fm code left running "
@@ -2074,7 +2124,9 @@ def _journal_start(run, profile):
             messages=run.plan_msgs,
             options={"no_commit": run.no_commit, "escalate": run.escalate and run.escalate["name"],
                      "max_steps": run.max_steps, "worker": run.worker, "worker_timeout": run.worker_timeout,
-                     "verify": run.verify_cmd, "own_plan": run.own_plan})
+                     "verify": run.verify_cmd, "own_plan": run.own_plan, "max_usd": run.max_usd})
+    if run.usd:  # what planning spent, before there was a journal to say it
+        run.log(kind="spend", usd=run.usd)
 
 
 def _drive(run, profile):
@@ -2147,7 +2199,9 @@ def _finish(run, profile):
     run.log(kind="end", status="done")
     landed = next((x for x in out.splitlines() if x.startswith(f"{run.tid}: committed")), "")
     run.emit("closed", f"{run.tid} closed{'; ' + landed[len(run.tid) + 2:] if landed else ''} "
-                       f"(tokens: {run.tokens[0]} in, {run.tokens[1]} out)", task=run.tid, tokens=run.tokens)
+                       f"(tokens: {run.tokens[0]} in, {run.tokens[1]} out"
+                       f"{f', ${run.usd:.2f}' if run.usd is not None else ''})", task=run.tid, tokens=run.tokens,
+             usd=None if run.usd is None else round(run.usd, 4))
 
 
 def _load(run, tid):
@@ -2183,6 +2237,7 @@ def _load(run, tid):
     run.no_commit = run.no_commit or bool(opts.get("no_commit"))
     run.escalate = run.args.escalate or opts.get("escalate")
     run.max_steps = run.args.max_steps or opts.get("max_steps")
+    run.max_usd = getattr(run.args, "max_usd", None) or opts.get("max_usd")
     run.worker = run.worker or opts.get("worker")  # T-1214
     run.worker_timeout = run.worker_timeout or opts.get("worker_timeout")
     run.verify_cmd = run.verify_cmd or opts.get("verify")
@@ -2198,6 +2253,8 @@ def _load(run, tid):
             run.baseline = r["text"]
         elif k == "close_notes":
             run.close_notes = r["notes"]
+        elif k == "spend" and type(r.get("usd")) in (int, float):  # T-1357: the cap counts the whole run
+            run.usd = round((run.usd or 0) + r["usd"], 6)
 
 
 def _runners(args, fmcli):

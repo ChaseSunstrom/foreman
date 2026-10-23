@@ -339,6 +339,18 @@ class Worker(CodeCase):
         self.assertTrue(any(a == "run" and t.startswith("pwd && git status") for a, t in tools), tools)
         self.assertTrue(all(len(t) <= 200 and "\n" not in t for _, t in tools))
 
+    def test_a_claude_worker_turn_is_priced_and_capped(self):  # T-1357
+        args = os.path.join(self.tmp, "args")
+        self.cli("claude", f'printf "%s\\n" "$@" > {args}\nfix-calc\nsed "s#/work/repo#$PWD#g" {self.STREAM}\n')
+        r = self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, "--json", "--max-usd", "2")
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        argv = read_text(args).splitlines()
+        self.assertEqual(argv[argv.index("--max-budget-usd") + 1], "2.00")
+        self.assertEqual(self.events(r)[-1]["usd"], 0.0059)
+        with open(os.path.join(self.home, "state", "spend.jsonl")) as f:
+            rows = [e for e in map(json.loads, f) if e["feature"] == "fm code"]
+        self.assertEqual([e["usd"] for e in rows], [0.0059])
+
     def test_a_claude_worker_never_updates_itself_mid_turn(self):
         # T-1417: an update rewrites ~/.local/bin/claude, which the judge now holds, and would block a healthy run
         self.cli("claude", f'echo "$DISABLE_AUTOUPDATER" > {self.tmp}/au\nfix-calc\n')
