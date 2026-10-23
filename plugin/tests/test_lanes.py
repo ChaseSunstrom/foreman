@@ -224,6 +224,30 @@ class Lanes(ForemanTestCase):
             agent = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"]
             self.assertIn(f'effort: "{effort}"', agent)
 
+    def test_lane_friction_cap_unused_slot_and_a_gone_worktree(self):
+        # T-1709: the drive compared to the default 2, not fm lane max; an unused brief and a gone worktree said nothing
+        import fmhooks
+        import fmlanes
+        p = c.find_project(self.repo)
+        self.fm("lane", "max", "6")
+        briefs = []
+        for i in range(3):
+            tid = first(self.fm("task", "new", f"S{i}", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                                "--step", "s", "--json").stdout)["id"]
+            out = self.fm("lane", "brief", tid).stdout
+            self.assertIn(f"not launching it? fm lane rm {tid} frees the slot", out)
+            briefs.append(tid)
+        self.assertGreater(fmlanes.builders_cap(p), 3)
+        self.assertTrue(fmhooks.lanes_free(c.load_briefs(p), p), "3 of 6 builders out: a slot is free")
+        tid = briefs[0]
+        path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
+        b = c.find_brief(p, tid)
+        b.meta["lane"] = path + "-gone"
+        c.save_brief(p, b)
+        err = self.fm("lane", "merge", tid, check=False).stderr
+        self.assertIn(f"fm lane new {tid}", err)
+        self.assertIn("--unverified", err)
+
     def stopped_builder(self, proc=None, wip="wip.py"):
         """T-1028: a builder whose launching claude process is gone, with work left in its lane."""
         import fmbus
