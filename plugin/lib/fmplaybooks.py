@@ -586,6 +586,25 @@ SYSTEM = ("You are a senior engineer working a task in a code repository. Answer
           "you would run; be concrete and brief.")
 
 
+REVIEW_BY_EXT = {".py": "review/python", ".ts": "review/typescript", ".tsx": "review/typescript",
+                 ".js": "review/typescript", ".jsx": "review/typescript", ".mjs": "review/typescript",
+                 ".rs": "review/rust", ".c": "review/cpp", ".cc": "review/cpp", ".cpp": "review/cpp", ".h": "review/cpp",
+                 ".hpp": "review/cpp"}  # T-1681: the language checklist a changed file calls for
+
+
+def review_checklists(p, files):
+    """T-1681: the review checklists a diff of `files` calls for (code-reviewer always, one per language changed), each
+    as fm playbooks show gives it for project p (its {{facts}} filled in, its overlay after), under a name line."""
+    names = ["review/code-reviewer"] + sorted({REVIEW_BY_EXT[e] for f in files
+                                               if (e := os.path.splitext(f)[1].lower()) in REVIEW_BY_EXT})
+    books, out = listed(), []
+    for name in names:
+        hits = resolve(name, books)
+        if len(hits) == 1:
+            out.append(f"<!-- {name} (fm playbooks show {name}) -->\n" + load(hits[0], ROOT, p).rstrip("\n"))
+    return "\n\n".join(out) + "\n" if out else ""
+
+
 def load_briefs(path):
     """[{task, checks}] from a brief-set file ({"briefs": [{"task": …, "checks": [{"has"|"re"|"not": text}]}]}):
     ValueError naming what's wrong."""

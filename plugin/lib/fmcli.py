@@ -4766,17 +4766,23 @@ def cmd_audit(args):
     groups = [g for g in ([[x for x in grp if x in by_lens] for grp in SPLIT_GROUPS]
                           + [[x for x in names if not any(x in grp for grp in SPLIT_GROUPS)]]) if g] \
         if args.split and len(names) > 1 else [names] if names else []
-    briefs = []
+    briefs, lists = [], ""
+    import fmplaybooks
+    books = fmplaybooks.review_checklists(p, re.findall(r"(?m)^\+\+\+ b/(.+)$", r.stdout))
+    if books:  # T-1681: the checklists as fm playbooks show gives them (facts filled in, the project's overlays)
+        cl = os.path.join(p.dir, "audits", f"{b.id}.checklists.md")
+        c.write_atomic(cl, books)
+        lists = f"Checklists (this project's facts and overlays filled in; read these, not the plugin's files): {cl}\n"
     for i, grp in enumerate(groups, 1):
         block = (f"=== review ({', '.join(grp)}) ===\n{head}{focus}\n\n" + "\n\n".join(by_lens[x] for x in grp)
                  + f"\n\n{_REVIEW_OUT}")
         blocks.append(block)
         briefs.append(os.path.join(p.dir, "audits", f"{b.id}.review" + (f"-{i}" if len(groups) > 1 else "") + ".md"))
         c.write_atomic(briefs[-1], "\n\n".join([x for x in blocks if x.startswith("=== self")] + [block])
-                       + f"\n\nDiff: {path}\n")
+                       + f"\n\nDiff: {path}\n" + lists)
     if not briefs:
         briefs.append(os.path.join(p.dir, "audits", f"{b.id}.review.md"))
-        c.write_atomic(briefs[0], "\n\n".join(blocks) + f"\n\nDiff: {path}\n")
+        c.write_atomic(briefs[0], "\n\n".join(blocks) + f"\n\nDiff: {path}\n" + lists)
     brief = briefs[0]
     big = b.tier == "L" and len(groups) == 1 and r.stdout.count("\n") > SPLIT_SUGGEST
     how = (f"Run {len(briefs)} foreman:fm-reviewer subagents in parallel, one per brief, each with the prompt \"Read "
