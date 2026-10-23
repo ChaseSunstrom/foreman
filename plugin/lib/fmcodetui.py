@@ -647,6 +647,30 @@ SCRUB_KEYS = ("KEY_LEFT", "KEY_RIGHT", "KEY_HOME", "KEY_END")  # T-1307: a repla
 SETUP_KEYS = ("l", "i", "e")  # T-1333: the first-run fixes, where tui.toml binds nothing to them
 
 
+LIVE_CLI = {"claude": "claude {prompt}", "codex": "codex {prompt}", "gemini": "gemini -i {prompt}"}  # T-1341
+
+
+def live_cli(worker):
+    """T-1341: (name, argv template) of the CLI a person takes a task over in: the run's runner when it has an
+    interactive form and is installed, else claude; None when none is installed."""
+    for name in dict.fromkeys([worker or "claude", "claude"]):
+        t = LIVE_CLI.get(name)
+        if t and shutil.which(shlex.split(t)[0]):
+            return name, t
+    return None
+
+
+def brief_prompt(st):
+    """T-1341: the opening prompt of a live CLI that takes over a stopped run: the task, its plan, its checks, why it
+    stopped, and what happens on exit."""
+    plain = lambda s: " ".join("".join(ch for ch in str(s) if ch.isprintable()).split())  # noqa: E731
+    lines = [f"Foreman task {st.task}: {plain((st.plan or {}).get('title') or st.request or '')}"]
+    lines += [f"- {plain(c.get('text'))} (check: {plain(c.get('verify'))})" for c in st.criteria]
+    lines.append(f"The automatic run stopped: {plain(st.error or st.stall or 'it was stopped')}.")
+    lines.append("Finish the task here. When you exit, Foreman re-runs these checks and records them.")
+    return "\n".join(lines)
+
+
 def _runner_found():
     """T-1333: a run has something to work with: an installed runner CLI, or a model set up."""
     import fmcode
@@ -1432,13 +1456,16 @@ def card(st, app):
                f"stopped; {st.task} stays as it was" if st.task else "stopped before any task: nothing ran")
         kind, rows = "failure", [("what happened", str(st.error)), ("Foreman did", did),
                                  ("next", st.next or "nothing to run")]
-        keys = ("Enter runs it · " if st.next else "") + "Esc hides"
+        cli = live_cli(st.worker) if st.task else None  # T-1341
+        keys = ("Enter runs it · " if st.next else "") + (f"x hands it to {cli[0]} · " if cli else "") + "Esc hides"
         title = "Stopped"
     elif st.stall and st.status in LIVE:
         kind, title = "stall", "Stalled"
+        cli = live_cli(st.worker) if st.task else None  # T-1341
         rows = [("what happened", st.stall), ("Foreman did", "kept the turn going; nothing is lost"),
-                ("next", "w wait · k stop the run · m stop and resume with another runner")]
-        keys = "w · k · m · Esc hides"
+                ("next", "w wait · k stop the run · m stop and resume with another runner"
+                 + (f" · x take it over in {cli[0]}" if cli else ""))]
+        keys = "w · k · m · " + ("x · " if cli else "") + "Esc hides"
     else:
         return None
     if app.card_hidden == (kind, rows[0][1]):
@@ -1978,6 +2005,7 @@ class App:
         self.scrub = None  # T-1307: a replay's [events, how many are shown], stepped with the arrows
         self.tour = None  # T-1309: the tour's [when it began, how many of its events are shown]
         self._setup = None  # T-1333: the first-run checks shown on the welcome (None: not asked yet this launch)
+        self.handoff = None  # T-1341: (argv, folder, task, CLI) the screen loop runs with the terminal handed over
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
@@ -2383,6 +2411,8 @@ class App:
             self.card_hidden, self.message = (kind, rows[0][1]), "waiting: the turn goes on"
         elif kind == "stall" and k == "k":
             self.stop()
+        elif k == "x" and kind in ("failure", "stall") and self.state.task:  # T-1341
+            self.hand_off()
         elif kind == "stall" and k == "m":
             self.stop()
             try:
@@ -3054,6 +3084,49 @@ class App:
 
     def setup_checks(self):
         return setup_checks(self.root)
+
+    @staticmethod
+    def live(argv, cwd):
+        """T-1341: a CLI the person drives, in this terminal; Ctrl-C is its own (the app ignores it meanwhile)."""
+        old = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        try:
+            return subprocess.run(argv, cwd=cwd, preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL)
+                                  ).returncode
+        finally:
+            signal.signal(signal.SIGINT, old)
+
+    def hand_off(self):
+        """T-1341: x on a stall's or a failure's card: the run stops and its task goes to a live CLI with its brief;
+        the screen loop runs it (run_handoff), then the checks run again."""
+        st = self.state
+        cli = live_cli(st.worker or self.opts.get("worker"))
+        if not st.task or not cli:
+            self.message = ("no task to hand over yet" if not st.task else
+                            "no interactive CLI found (claude, codex or gemini on PATH)")
+            return None
+        if self.running() or st.status in LIVE:
+            self.stop()
+            try:
+                self.child.wait(5)
+            except (subprocess.TimeoutExpired, AttributeError):
+                pass
+        name, template = cli
+        prompt = brief_prompt(st)
+        self.handoff = ([prompt if w == "{prompt}" else w for w in shlex.split(template)], self.root or os.getcwd(),
+                        st.task, name)
+        self.message = f"handing {st.task} to {name}"
+        return None
+
+    def run_handoff(self):
+        argv, root, tid, name = self.handoff
+        self.handoff = None
+        try:
+            self.live(argv, root)
+        except OSError as e:
+            self.message = f"couldn't start {name}: {e}"
+            return
+        self.start([], recheck=tid)
+        self.message = f"back from {name}: re-running {tid}'s checks"
 
     def first_run(self):
         """T-1333: the checks the welcome shows before this project's first run; [] once it has a past run."""
@@ -3901,6 +3974,8 @@ def _loop(io, app):
             io.write(frame + ("\a" if app.bell_due() else ""))
             for k in io.keys(1 / app.fps(t)):
                 app.key(k)
+            if app.handoff and hasattr(io, "outside"):  # T-1341: the terminal to a live CLI, then back
+                io.outside(app.run_handoff)
     finally:
         io.write("\x1b[23;0t")
 

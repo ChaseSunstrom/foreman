@@ -2279,6 +2279,51 @@ class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
         app.feed({"event": "tool", "action": "read", "target": "calc.py", "worker": "claude"})
         self.assertNotIn("Stalled", self.text(T, app), "life again: no card")
 
+    def test_x_hands_a_stopped_task_to_a_live_cli_then_rechecks_it(self):  # T-1341
+        T, app = self.app()
+        app.feed({"event": "plan", "plan": {"type": "FIX", "tier": "S", "title": "Make calc.add add",
+                                            "criteria": [{"text": "calc.add adds", "verify": "python3 test_calc.py"}],
+                                            "steps": ["fix it"]}})
+        app.feed({"event": "blocked", "text": "T-0001 blocked: checks never passed", "reason": "checks never passed",
+                  "task": "T-0001", "next": "fm task show T-0001"})
+        with unittest.mock.patch.object(T, "live_cli", return_value=("claude", "claude {prompt}")):
+            self.assertIn("x hands it to claude", self.text(T, app))
+            app.key("x")
+        argv, root, tid, name = app.handoff
+        self.assertEqual((argv[0], len(argv), tid, name), ("claude", 2, "T-0001", "claude"))
+        for want in ("T-0001", "Make calc.add add", "calc.add adds", "python3 test_calc.py", "checks never passed",
+                     "re-runs"):
+            self.assertIn(want, argv[1])
+        ran, rechecks = [], []
+        app.live = lambda argv, cwd: ran.append((argv[0], cwd)) or 0
+        app.spawn = lambda words, opts: rechecks.append((words, opts.get("recheck")))
+        app.run_handoff()
+        self.assertEqual((ran[0][0], app.handoff, rechecks), ("claude", None, [([], "T-0001")]))
+        self.assertIn("re-running T-0001's checks", app.message)
+
+    def test_x_on_a_stall_stops_the_run_and_with_no_cli_says_so(self):  # T-1341
+        T, app = self.app()
+        app.feed({"event": "stalled", "text": "    claude stalled: no output since launch (130 s)", "secs": 130})
+        stopped = []
+        app.stop = lambda: stopped.append(1)
+        with unittest.mock.patch.object(T, "live_cli", return_value=None):
+            app.key("x")
+        self.assertEqual((app.handoff, stopped), (None, []), "nothing to hand to: the run goes on")
+        self.assertIn("no interactive CLI", app.message)
+        with unittest.mock.patch.object(T, "live_cli", return_value=("claude", "claude {prompt}")):
+            app.key("x")
+        self.assertEqual(stopped, [1])
+        self.assertEqual(app.handoff[2], "T-0001")
+
+    def test_the_live_cli_is_the_runs_own_when_interactive_and_installed(self):  # T-1341
+        T = tui()
+        with unittest.mock.patch.object(T.shutil, "which", side_effect=lambda n: f"/bin/{n}" if n != "gemini" else None):
+            self.assertEqual(T.live_cli("codex")[0], "codex")
+            self.assertEqual(T.live_cli("gemini")[0], "claude", "not installed: claude")
+            self.assertEqual(T.live_cli("aider")[0], "claude", "no interactive form: claude")
+        with unittest.mock.patch.object(T.shutil, "which", return_value=None):
+            self.assertIsNone(T.live_cli("claude"))
+
     def test_the_app_sweeps_runners_a_kill_left_when_it_opens(self):
         import fmcode
         T, app = self.app()
