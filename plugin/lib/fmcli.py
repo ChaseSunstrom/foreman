@@ -6056,8 +6056,10 @@ def _build_parser():
             formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
             "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
             "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs; "
+            "tokens DESIGN.md --to css|app|pane: its Tokens table as CSS variables, an fm code theme or the pane's "
+            "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into (advisory exits 0, blocking 1; T-1645); "
             "roll [--seed N] [--apply|--undo]: one look card's palette, type and motion, seeded, into DESIGN.md")
-    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "roll"])
+    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll"])
     s.add_argument("--seed", type=int, help="roll: the same seed gives the same look (default: a fresh one, printed)")
     s.add_argument("--apply", action="store_true", help="roll: write it as DESIGN.md's ## Look, undoable")
     s.add_argument("--undo", action="store_true", help="roll: put DESIGN.md back as it was before the roll(s)")
@@ -6068,6 +6070,13 @@ def _build_parser():
                    help="palette: CSS light-dark() roles, DTCG JSON or a Tailwind v4 @theme")
     s.add_argument("--out", metavar="PATH", help="extract, roll: the file to write the section into (default: "
                                                  "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints)")
+    s.add_argument("--to", choices=["css", "app", "pane"], default="css", help="tokens: CSS custom properties (dark "
+                   "under prefers-color-scheme), a tui.toml [colors] table fm settings accepts, or the pane's palette "
+                   "JSON (T-1651)")
+    s.add_argument("--light", action="store_true", help="tokens --to app|pane: the light values (app: on the paper "
+                   "theme)")
+    s.add_argument("--dark", action="store_true", help="tokens --to app|pane: the dark values (app: on the night "
+                   "theme; the default picks the theme by the screen colour's lightness)")
     s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 93), help="PNG files with no Pillow (T-1630): info "
             "PATH: size and mode; diff A B: the changed-pixel count and box (exit 1 when they differ or sizes do)")
     s.add_argument("action", choices=["info", "diff"])
@@ -6082,6 +6091,9 @@ def _build_parser():
     s.add_argument("--frozen", action="store_true", help="fm smoke's frozen profile first: the clock fixed, CSS "
                    "animations and transitions paused")
     s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
+    s.add_argument("--diff", metavar="BASE", help="compare each viewport shot with BASE/<page>/viewport.png (an earlier "
+                   "fm shot --out BASE): exit 1 over the baseline's noise floor (the most its own frames differ) or "
+                   "when a font fell back (T-1637)")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
@@ -6413,7 +6425,7 @@ WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"s
                    "playbooks": ("action", {"show", "route", "preview"}),  # T-1621: prints, but can rebuild fm
                    # map's map.json cache; not blame (T-1622): git in a FOREMAN_PLAYBOOKS repo runs its filters
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
-                   "design": ("action", {"lint", "palette", "contrast"}),  # T-1506, T-1507: these only read
+                   "design": ("action", {"lint", "palette", "contrast", "tokens"}),  # T-1506, T-1507, T-1651: read
                    "img": ("out", {None}),  # T-1630: info and diff read; --out writes
                    "motion": ("action", {"check"})}
 
