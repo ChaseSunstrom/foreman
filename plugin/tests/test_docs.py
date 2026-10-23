@@ -7,7 +7,7 @@ import unittest
 from helpers import PLUGIN, read_text, read_json
 
 SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks", "brainstorm",
-          "directions", "design-extract"]
+          "directions", "design-extract", "ui-design"]
 # everything else Claude may start itself when the user asks in plain words; design-extract: the 2,000-character
 # listing has no room for it, so Claude reaches its verbs through the directions skill and the UI playbooks (T-1507)
 USER_ONLY = {"capture", "design-extract", "tidy", "doctor"}  # T-1705: the rules map these plain words to the fm verbs, not the skills
@@ -58,6 +58,40 @@ class Skills(unittest.TestCase):
         for name in re.findall(r"→ `/foreman:([\w-]+)`", rules):
             self.assertNotIn(name, USER_ONLY)
 
+    def test_plain_requests_rank_their_own_skill_first_by_description_overlap(self):
+        # T-1704: a static stand-in for "would Claude pick this skill": rank every model-invocable description by
+        # distinct shared words with the request. The intended skill must win outright, with no tie.
+        stop = set("a an and are as at be by do for from have i in is it its me my of on or the this that to up we "
+                   "what when whenever with you your use about into out not so than then them there these they".split())
+
+        def words(text):
+            return {w.rstrip("s") for w in re.findall(r"[a-z]{2,}", text.lower()) if w not in stop}
+
+        skills_dir = os.path.join(PLUGIN, "skills")
+        desc = {}
+        for name in sorted(os.listdir(skills_dir)):
+            path = os.path.join(skills_dir, name, "SKILL.md")
+            if os.path.isfile(path):
+                meta, _ = frontmatter(path)
+                if meta.get("disable-model-invocation") != "true":
+                    desc[name] = words(meta.get("description", ""))
+        corpus = json.loads(read_text(os.path.join(os.path.dirname(__file__), "fixtures", "skill_triggers.json")))
+        for name in desc:
+            with self.subTest(skill=name):
+                self.assertGreaterEqual(
+                    len(corpus.get(name, [])), 3,
+                    f'plugin/tests/fixtures/skill_triggers.json needs "{name}": [three or more plain requests a user '
+                    f"would type that this skill should answer] (T-1704)")
+        for name, requests in corpus.items():
+            if name not in desc:
+                continue  # user-only or removed skills may keep entries; they are not ranked
+            for req in requests:
+                with self.subTest(skill=name, request=req):
+                    w = words(req)
+                    scores = sorted(((len(w & d), n) for n, d in desc.items()), reverse=True)
+                    self.assertEqual(scores[0][1], name, f"{req!r} ranks {scores[:3]}")
+                    self.assertGreater(scores[0][0], scores[1][0], f"{req!r} ties {scores[:3]}")
+
     def test_the_listing_foreman_adds_stays_small(self):
         # T-1253: Claude Code 2.1.304 sends the skill listing again after every compaction, so Foreman's share of it
         # (model-visible skill and command descriptions, workflow descriptions) is paid once per compaction
@@ -74,7 +108,7 @@ class Skills(unittest.TestCase):
         for name in os.listdir(os.path.join(PLUGIN, "workflows")):
             text = read_text(os.path.join(PLUGIN, "workflows", name))
             total += sum(len(m) for m in re.findall(r"(?m)^\s*(?:description|whenToUse): '([^']*)'", text))
-        self.assertLessEqual(total, 2000, "Foreman's part of the skill listing")
+        self.assertLessEqual(total, 2200, "Foreman's part of the skill listing")  # T-1700/T-1701: four job skills
 
     def test_the_rules_carry_the_reply_format_and_stay_small(self):
         # T-1279: the rules ride once a session; the output style's reminder rode every turn
@@ -114,6 +148,30 @@ class Skills(unittest.TestCase):
                 got = fmcodetui.contrast(fg, bg)
                 self.assertAlmostEqual(got, float(ratio), delta=0.05)
                 self.assertGreaterEqual(got, 4.5)
+
+    def test_the_ui_design_skill_routes_to_real_playbooks_and_verbs(self):
+        # T-1700: one job skill for UI, motion and 3D work; every playbook and fm verb it names exists
+        import fmcli
+        body = read_text(os.path.join(PLUGIN, "skills", "ui-design", "SKILL.md"))
+        self.assertLess(len(body.splitlines()), 100)
+        for ref in ("design-direction", "type-and-colour", "composition", "motion", "scene-3d", "visual-qa"):
+            self.assertIn(f"`../playbooks/references/ui/{ref}.md`", body)
+        verbs = next(a for a in fmcli.build_parser()._actions if a.choices and "help" in a.choices).choices
+        named = re.findall(r"`fm ([\w-]+)(?: ([\w-]+))?", body)
+        for need in ("design", "scene", "motion", "looks", "page", "img", "new"):
+            self.assertIn(need, {v for v, _ in named})
+        for verb, sub in named:
+            with self.subTest(verb=verb, sub=sub):
+                self.assertIn(verb, verbs)
+                pos = [a for a in verbs[verb]._actions if not a.option_strings and a.choices]
+                if sub and pos and not sub.isupper():
+                    self.assertIn(sub, pos[0].choices)
+        self.assertIn("Skill foreman:directions", body)
+        # palette prints to stdout and ignores --out; extract writes DESIGN.md's Tokens section unless --out says else
+        palette = next(line for line in body.splitlines() if "fm design palette" in line)
+        self.assertRegex(palette, r"`fm design palette \S+ > ")
+        self.assertNotIn("--out", palette)
+        self.assertRegex(body, r"`fm design extract SRC`[^.]*DESIGN\.md")
 
     def test_audit_reference_defines_every_lens_fm_requires(self):
         import fmcore as c
