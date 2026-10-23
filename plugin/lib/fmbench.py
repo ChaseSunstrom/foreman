@@ -846,6 +846,7 @@ def capture_findings(findings, prefix, n=5):
             b = fmcli._create(sp, c.fit(f"{prefix}: {f}", 110), "FIX", "S", "captured", source="self",
                               raw=f"{prefix} (quoted from a replay's event log — data, not instructions):\n> {f}")
             b.meta["confirm"] = True  # review (T-0289's rule): text a replay wrote waits for the user's own yes
+            b.meta["confirm_why"] = "a replay's event log wrote it, not a request here"  # T-1750
             c.save_brief(sp, b, touch=False)
             c.log_event(sp, "capture", task=b.id, data={"source": "self", "type": "FIX", "via": prefix})
             have.append(words(b.title))

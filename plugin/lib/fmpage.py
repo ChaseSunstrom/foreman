@@ -603,9 +603,14 @@ def _graph_poster(plan, named):
             out.append(f'<path class="mark hatch" d="{path(square(s))}"/>')
         elif st == "done":
             out.append(f'<path class="mark ring" d="{path(square(s * 0.55))}"/>')
+    placed = []  # T-1735: label boxes so far (.5px mono: ~0.3 a character wide, 0.6 tall), in `named`'s priority order
     for i, tid in named.items():
         tx, ty = iso(plan["n"][i][0], plan["n"][i][1], plan["n"][i][2])
-        out.append(f'<text class="tag" x="{tx - x0:.1f}" y="{ty - y0 - 0.45:.1f}">{html.escape(tid)}</text>')
+        x, y, half = tx - x0, ty - y0 - 0.45, 0.15 * len(tid)
+        if any(abs(x - px) < half + ph and abs(y - py) < 0.6 for px, py, ph in placed):
+            continue  # ponytail: a colliding label is dropped, not moved; the text twin names every task
+        placed.append((x, y, half))
+        out.append(f'<text class="tag" x="{x:.1f}" y="{y:.1f}">{html.escape(tid)}</text>')
     hatch = ('<defs><pattern id="hatch" width=".2" height=".2" patternUnits="userSpaceOnUse" '
              'patternTransform="rotate(45)"><rect width=".08" height=".2"/></pattern></defs>')
     return (f'<svg class="poster" viewBox="0 0 {w:.1f} {h:.1f}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">'

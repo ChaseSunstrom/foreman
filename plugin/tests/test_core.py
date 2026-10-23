@@ -471,6 +471,24 @@ class Briefs(unittest.TestCase):
         self.assertNotIn("step 2/3", sec)
 
 
+class BriefLines(unittest.TestCase):
+    """T-1616: step and criterion lines parse in linear time (a lazy scan before \\s*$ was quadratic on a run of
+    spaces: 20,000 took 1.5 s, and a pulled brief can hold one)."""
+
+    def test_a_long_run_of_spaces_parses_fast_with_the_same_groups(self):
+        import time
+        for rx, line in ((c._STEP_RE, "1. [ ] a" + " " * 50000 + "b  <- CURRENT"), (c._AC_RE, "- [ ] a" + " " * 50000 + "b")):
+            t = time.perf_counter()
+            m = rx.match(line)
+            self.assertLess(time.perf_counter() - t, 0.5)
+            self.assertTrue(m.groups()[-2 if rx is c._STEP_RE else -1].endswith("b"))
+        self.assertEqual(c._STEP_RE.match("1. [x] build it  <- CURRENT").groups(), ("1", "x", "build it", "  <- CURRENT"))
+        self.assertEqual(c._STEP_RE.match("3. [X]  <- CURRENT").groups(), ("3", "X", "<- CURRENT", None))  # as before
+        self.assertEqual(c._STEP_RE.match("3. [ ] <- CURRENT x").groups(), ("3", " ", "<- CURRENT x", None))
+        self.assertEqual(c._AC_RE.match("- [x] a  b  ").groups(), ("x", "a  b"))
+        self.assertEqual(c._AC_RE.match("- [ ]  ").groups(), (" ", ""))
+
+
 class Stages(unittest.TestCase):
     """The harness derives stage and the one next required action from the brief itself (T-0012)."""
 
@@ -500,6 +518,17 @@ class Stages(unittest.TestCase):
         self.assertEqual(c.plan_gaps(big, autonomy="full"), [])
         big.meta["approved"] = True
         self.assertEqual(c.plan_gaps(big), [])
+
+    def test_a_confirm_gap_says_why_the_task_waits(self):  # T-1750
+        s = self.brief("S")
+        s.add_ac("works")
+        s.add_step("do it")
+        s.meta["confirm"] = True
+        self.assertIn("a child found this request in an old session", c.plan_gaps(s)[0])  # the default
+        s.meta["confirm_why"] = "it arrived from the repo's .foreman/ (fm sync)\x1b[2J"
+        gap = c.plan_gaps(s)[0]
+        self.assertIn("it arrived from the repo's .foreman/ (fm sync)", gap)
+        self.assertNotIn("\x1b", gap)
 
     def test_stage_and_next_action_follow_the_brief(self):
         b = self.brief("M", status="captured")

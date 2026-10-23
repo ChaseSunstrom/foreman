@@ -25,7 +25,7 @@ LOCAL_ONLY = ("allow", "approved", "plugin_pin")
 LEASE_MARKS = ("lane", "lane_branch", "builder", "builder_proc", "cost_cap", "cap_hit")  # one machine's marks on a brief
 
 
-def settle(b, new):
+def settle(b, new, why="it arrived from the repo's .foreman/ (fm sync), not from a request here"):
     """T-1749: a brief that came from elsewhere (fm sync import, fm home import), as this machine takes it: not active
     or leased here, and, when it is new here and open, waiting for the user's own yes (fm ask ID confirm): a repo's
     .foreman/ can hold tasks nobody here asked for."""
@@ -34,7 +34,7 @@ def settle(b, new):
     for k in LEASE_MARKS:
         b.meta.pop(k, None)
     if new and b.meta.get("status") in c.OPEN:
-        b.meta["confirm"] = True
+        b.meta["confirm"], b.meta["confirm_why"] = True, why  # T-1750: the confirm gap says why it waits
     return b
 BRIEFS = ("tasks/", "archive/")
 README = """# .foreman
@@ -205,8 +205,9 @@ def import_(p):
                                             f"theirs is in {_set_aside(p, rel, cur)}")
                     base[rel] = h
                     continue
-                for k in LOCAL_ONLY + LEASE_MARKS + ("confirm",):  # T-1749: this machine's own marks and yes stay
-                    if k in local.meta:
+                theirs.meta.pop("confirm_why", None)  # T-1750: only this machine says why a task waits
+                for k in LOCAL_ONLY + LEASE_MARKS + ("confirm", "confirm_why"):  # T-1749: this machine's own marks
+                    if k in local.meta:  # and yes stay
                         theirs.meta[k] = local.meta[k]
                 if os.path.abspath(local.path) != os.path.abspath(dest):
                     os.remove(local.path)  # archived (or restored) on the other side

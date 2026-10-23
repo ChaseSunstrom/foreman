@@ -1376,6 +1376,14 @@ class AffectedPairs(ForemanTestCase):
         self.assertIn("echo web/test_red.js", r.stdout)
         self.assertNotIn("run.py test_green test_red", r.stdout)
 
+    def test_an_affected_run_with_evidence_records_it(self):  # T-1747: the builder contract relies on it
+        self.red_lane(["test_green.py"])
+        r = self.fm("check", "--affected", "--evidence", "T-0001", "--step", "1", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        ev = c.find_brief(c.find_project(self.repo), "T-0001").section("Verification evidence")
+        self.assertIn("affected tests only", ev)
+        self.assertIn("test_green", ev)
+
     def test_every_linked_test_skipped_is_said_so(self):
         # T-1731 review: "No tests linked" when the one linked test was another lane's red-first file
         self.red_lane(["test_red.py"])
