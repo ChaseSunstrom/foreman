@@ -590,6 +590,14 @@ const ESC_SEQ =
 export const clean = (t: string) =>
   t.replace(ESC_SEQ, '').replace(/\t/g, '  ').replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '')
 
+/** T-1679: every string in fm ui's view made safe to draw as it arrives (line breaks kept), so no slot can miss it */
+export function cleanDeep<T>(v: T): T {
+  if (typeof v === 'string') return v.split('\n').map(clean).join('\n') as T
+  if (Array.isArray(v)) return v.map(cleanDeep) as T
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, cleanDeep(x)])) as T
+  return v
+}
+
 /** T-1090: a node's narration line in the live tree: the first thing a model step said, one line, markdown marks
  * dropped, at most 200 characters ('' when it said nothing) */
 export function narration(text: string): string {

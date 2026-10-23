@@ -105,6 +105,20 @@ class Recall(ForemanTestCase):
         self.assertEqual(self.finish(s).returncode, 0, "S tasks don't need one")
 
 
+class Tally(ForemanTestCase):  # T-1769
+    def test_a_test_runners_tally_is_never_a_failures_signature(self):
+        import fmrecall
+        out = ("==== test_x.C\nFAIL: test_a (test_x.C.test_a)\nAssertionError: 1 != 2\nRan 3 tests in 0.1s\n\n"
+               "FAILED (1 classes)\n✗ exit 1 (0.3 s; last 9 of 9 lines)")
+        self.assertEqual(fmrecall.failure_signature(out), "assertionerror: 0 != 0")
+        for tally in ("Ran 2 tests in 0.1s\n\nFAILED (failures=2)", "FAILED (errors=1, skipped=2)",
+                      "=================== 2 failed, 3 passed in 0.40s ===================",
+                      "✗ exit 1 (7.6 s; last 26 of 26 lines)"):
+            self.assertEqual(fmrecall.failure_signature(tally), "", tally)
+        self.assertIn("modulenotfounderror", fmrecall.failure_signature(
+            "ModuleNotFoundError: No module named 'yaml'\nFAILED (errors=1)"))
+
+
 class RedGreen(ForemanTestCase):
     """T-0045: a FIX is proven by its regression test failing before and passing after."""
 

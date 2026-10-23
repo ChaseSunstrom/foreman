@@ -2018,6 +2018,48 @@ class Delight(unittest.TestCase):  # T-1349
         self.assertIn("no run with it yet", app.message)
 
 
+class FollowUpKey(unittest.TestCase):  # T-1340
+    def test_enter_after_a_close_opens_a_follow_up_and_n_a_fresh_request(self):
+        T = tui()
+        started = []
+        app = T.App(T.DEFAULTS, spawn=lambda words, opts: started.append((words, opts)) or None)
+        app.feed({"event": "start", "request": "fix add", "schema": 1})
+        app.feed({"event": "task", "task": "T-0001"})
+        app.feed({"event": "closed", "text": "T-0001 closed", "task": "T-0001"})
+        app.key("\n")
+        self.assertEqual(app.mode, "prompt")
+        self.assertIn("follow-up to T-0001", app.message)
+        for ch in "document it\n":
+            app.key(ch)
+        self.assertEqual(started[-1][0], ["document it"])
+        self.assertEqual(started[-1][1].get("after"), "T-0001")
+        app.feed({"event": "closed", "text": "T-0002 closed", "task": "T-0002"})
+        app.new()
+        for ch in "fresh\n":
+            app.key(ch)
+        self.assertNotIn("after", started[-1][1])
+
+
+class Receipt(unittest.TestCase):  # T-1305
+    def test_a_close_adds_a_receipt_and_quit_leaves_the_last_frame_in_the_scrollback(self):
+        import io
+        T = tui()
+        app = T.App(T.DEFAULTS, spawn=lambda *a, **k: None)
+        for e in T.SAMPLE_RUN + [{"event": "changed", "step": 2, "files": ["calc.py"], "stat": {"calc.py": [1, 1]}},
+                                 {"event": "closed", "text": "T-0001 closed; committed 0123abcd9 (1 file)",
+                                  "task": "T-0001", "tokens": [3300, 220], "usd": 0.0123, "ts": 1060}]:
+            app.feed(dict(e, ts=e.get("ts", 1000)))
+        line = T.entry_text(app.state.log[-1])
+        self.assertEqual(line, "▣ receipt  T-0001 · checks 1/1 · 1 file +1 −1 · 3,520 tokens · $0.01 · 1m00s · 0123abc")
+        out = io.StringIO()
+        with unittest.mock.patch("sys.stdout", out):
+            T.run_screen(app, wrapper=lambda fn: None)
+        text = out.getvalue()
+        self.assertIn("receipt", text)
+        self.assertFalse(any(not ch.isprintable() for ch in text.replace("\n", "")), "no escape reaches the scrollback")
+        self.assertLessEqual(len(T.final_frame(app, (40, 12)).splitlines()), 12)
+
+
 class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
     def app(self):
         T = tui()
@@ -2535,7 +2577,9 @@ class Command(CodeCase):
         self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
         r = self.code("tui", "--plain", "fix add", "--model", "fake", "--no-commit")
         self.assertIn("edit   calc.py", r.stdout)
-        self.assertTrue(any("closed" in x for x in r.stdout.splitlines()[-2:]), r.stdout)  # T-1349: a first close's note
+        self.assertTrue(any("closed" in x for x in r.stdout.splitlines()[-3:]), r.stdout)  # T-1349, T-1305: notes after
+        self.assertIn("▣ receipt  T-0001 · checks 1/1 · 1 file", r.stdout)  # T-1305: --plain prints the receipt too
+        self.assertIn("not committed", r.stdout.splitlines()[-2])
         self.assertNotIn('"event"', r.stdout)
 
 

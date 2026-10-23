@@ -625,6 +625,94 @@ def run_friction_lines(case):
     return b and [x.split("run friction: ", 1)[1] for x in b.section("Log").splitlines() if "run friction: " in x]
 
 
+class FollowUp(CodeCase):  # T-1340
+    def test_a_follow_up_carries_the_earlier_runs_request_plan_and_files(self):
+        self.serve("openai", plan(), *FIX)
+        self.code("fix add", "--model", "fake")
+        f = self.serve("openai", plan(dict(PLAN, title="Add a docstring to calc.add")))
+        out = self.code("now document it", "--after", "T-0001", "--model", "fake", "--dry-plan").stdout
+        self.assertIn("Add a docstring", out)
+        sent = json.dumps(f.seen[0])
+        for want in ("follow-up to T-0001 (closed", "Its request: fix add", "Its plan: Make calc.add add",
+                     "Files it changed: calc.py", "now document it"):
+            self.assertIn(want, sent)
+        r = self.code("x", "--after", "T-0099", "--model", "fake", "--dry-plan", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no fm code run of that task", r.stderr)
+
+    def test_the_new_task_names_the_earlier_one(self):
+        self.serve("openai", plan(), *FIX)
+        self.code("fix add", "--model", "fake")
+        with open(os.path.join(self.repo, "calc.py"), "w") as fh:
+            fh.write("def add(a, b):\n    return a - b  # broken again\n")  # a new size: no stale .pyc
+        subprocess.run(["git", "-C", self.repo, "commit", "-qam", "break it again"], check=True)
+        self.serve("openai", plan(), *FIX)
+        self.code("and again", "--after", "T-0001", "--model", "fake")
+        self.assertIn("(a follow-up to T-0001)", self.fm("task", "show", "T-0002").stdout)
+
+
+class SkillOffer(CodeCase):  # T-1397
+    def test_a_matching_indexed_skill_is_offered_once_and_nothing_else_is(self):
+        kit = os.path.join(self.tmp, "kit")
+        for rel, body in {"skills/pdf/SKILL.md": "---\nname: pdf\ndescription: Extract text and tables from PDF "
+                                                  "files, fill forms\n---\n" + "body\n" * 200,
+                          "skills/docx/SKILL.md": "---\nname: docx\ndescription: Word documents and their tables\n---\n",
+                          "LICENSE": "MIT License\n\nCopyright\n"}.items():
+            os.makedirs(os.path.dirname(os.path.join(kit, rel)), exist_ok=True)
+            with open(os.path.join(kit, rel), "w") as f:
+                f.write(body)
+        for a in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "kit"]):
+            subprocess.run(["git", "-C", kit, *a], check=True)
+        p = subprocess.run([sys.executable, FM, "lib", "source", "add", kit, "--name", "kit"], cwd=self.repo,
+                           env=self.env(), capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.serve("openai", plan())
+        out = self.code("extract tables from this pdf", "--model", "fake", "--dry-plan").stdout
+        offers = [x for x in out.splitlines() if "skill: " in x]
+        self.assertEqual(len(offers), 1, out)
+        self.assertIn("skill: kit:pdf matches (open, ~", offers[0])
+        self.assertIn("nothing is installed", out)
+        self.serve("openai", plan())
+        self.assertNotIn("skill:", self.code("fix add", "--model", "fake", "--dry-plan").stdout)
+
+
+class Toolchain(CodeCase):  # T-1407
+    def test_pins_are_read_as_data(self):
+        import fmcode
+        with open(os.path.join(self.repo, ".tool-versions"), "w") as f:
+            f.write("# pinned\npython 3.12.1 3.11.0\nnodejs ref:main\nruby system\n\ngolang 1.22.0 # go\n")
+        with open(os.path.join(self.repo, ".nvmrc"), "w") as f:
+            f.write("lts/*\n")
+        with open(os.path.join(self.repo, ".python-version"), "w") as f:
+            f.write("3.9.0\n")
+        self.assertEqual(fmcode.pins(self.repo), [("python", "3.12.1"), ("golang", "1.22.0")])
+
+    def test_checks_run_on_the_pinned_interpreter_and_an_envrc_never_runs(self):
+        bin_, pin = os.path.join(self.tmp, "fakebin"), os.path.join(self.tmp, "pin", "bin")
+        os.makedirs(bin_)
+        os.makedirs(pin)
+        mark, envrc = os.path.join(self.tmp, "pinned-ran"), os.path.join(self.tmp, "envrc-ran")
+        with open(os.path.join(bin_, "mise"), "w") as f:
+            f.write(f'#!/bin/sh\n[ "$1 $2" = "where python@3.12.1" ] && echo {os.path.dirname(pin)} && exit 0\nexit 1\n')
+        with open(os.path.join(pin, "python3"), "w") as f:
+            f.write(f'#!/bin/sh\ntouch {mark}\nexec {sys.executable} "$@"\n')
+        for x in (os.path.join(bin_, "mise"), os.path.join(pin, "python3")):
+            os.chmod(x, 0o755)
+        with open(os.path.join(self.repo, ".tool-versions"), "w") as f:
+            f.write("python 3.12.1\nnodejs 99.0.0\n")
+        with open(os.path.join(self.repo, ".envrc"), "w") as f:
+            f.write(f"touch {envrc}\n")
+        subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "pins"], check=True)
+        self.serve("openai", plan(), *FIX)
+        r = self.code("fix add", "--model", "fake", env={"PATH": bin_ + os.pathsep + os.environ["PATH"]})
+        self.assertIn("toolchain: python 3.12.1 (mise) first on PATH", r.stdout)
+        self.assertIn("not installed by mise, asdf or pyenv here: nodejs 99.0.0", r.stdout)
+        self.assertTrue(os.path.exists(mark), "the verify ran on the pinned python3")
+        self.assertFalse(os.path.exists(envrc), "a repo's .envrc is never sourced")
+        self.assertEqual(self.task()["status"], "done")
+
+
 class SlotIntegrity(CodeCase):  # T-1398
     def test_elided_code_is_found_only_when_the_old_text_lacks_it(self):
         import fmcode

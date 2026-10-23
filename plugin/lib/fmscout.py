@@ -130,24 +130,58 @@ def probe_doctor(p, ctx):
     return out
 
 
+def _remote_head(url):
+    """T-1391: the sha a source's remote HEAD points at now (git ls-remote, no fetch), or None when it can't tell."""
+    import fmlib
+    try:
+        out = fmlib._git_src(None, "ls-remote", "--", url, "HEAD", timeout=20)
+    except Exception:  # offline, or a remote that won't say: refresh as before
+        return None
+    m = re.match(r"([0-9a-f]{40})\s", out or "")
+    return m.group(1) if m else None
+
+
+def index_delta(old, new):
+    """T-1391: (added, removed, renamed) item names between two indexes of one source; a rename keeps its path."""
+    o = {x.get("path"): str(x["name"]) for x in old or [] if isinstance(x, dict) and x.get("name")}
+    n = {x.get("path"): str(x["name"]) for x in new or [] if isinstance(x, dict) and x.get("name")}
+    return (sorted(n[k] for k in n.keys() - o.keys()), sorted(o[k] for k in o.keys() - n.keys()),
+            sorted(f"{o[k]} → {n[k]}" for k in o.keys() & n.keys() if o[k] != n[k]))
+
+
 def probe_sources(p, ctx):
-    """Skill sources older than a week are refreshed (a read-only data index: no item, no code run)."""
+    """Skill sources older than a week are refreshed (a read-only data index: no code run). T-1391: a source whose
+    remote HEAD is the pinned commit isn't fetched; one that moved and changed its items is one finding listing what
+    was added, removed and renamed, with its licence class (nothing installs)."""
     import calendar
     import fmlib
     if ctx.get("dry"):
         return []
     out = []
-    for meta, _ in fmlib.sources():
+    for meta, index in fmlib.sources():
         added = meta.get("added") or ""
         try:
             age = time.time() - calendar.timegm(time.strptime(added, "%Y-%m-%dT%H:%M:%SZ"))
         except ValueError:
             age = SOURCES_STALE_S
         if age >= SOURCES_STALE_S:
+            if meta.get("commit") and _remote_head(meta["url"]) == meta["commit"]:
+                continue  # T-1391: upstream hasn't moved: no fetch
             try:
                 new = fmlib.source_add(meta["url"], meta["name"], replace=True)
             except Exception:  # offline, or the repo moved: next time
                 continue
+            if isinstance(new, tuple) and meta.get("commit") and new[0].get("commit") != meta.get("commit"):
+                plus, minus, renamed = index_delta(index, new[1])
+                if plus or minus or renamed:
+                    name, sha = c.plain(str(meta["name"])), str(new[0].get("commit", ""))[:8]
+                    lines = [f"{label}: {', '.join(c.plain(x) for x in xs[:10])}{' …' if len(xs) > 10 else ''}"
+                             for label, xs in (("added", plus), ("removed", minus), ("renamed", renamed)) if xs]
+                    out.append(Finding(f"upstream:{name}:{sha}", f"Source {name} moved to {sha}: +{len(plus)} "
+                                       f"−{len(minus)} ~{len(renamed)}", "RESEARCH", "S",
+                                       f"fm lib source {name} ({new[0].get('class') or 'ideas-only'}) moved from "
+                                       f"{str(meta['commit'])[:8]}. {'; '.join(lines)}. Read what changed (fm lib "
+                                       "show NAME) and decide what Foreman takes; nothing was installed."))
             moved = fmlib.class_change(meta, new[0]) if isinstance(new, tuple) else ""
             if moved:  # T-1389: a licence class that moved is one finding, never silent
                 out.append(Finding(f"licence:{new[0].get('name')}:{new[0].get('class')}:"
@@ -157,9 +191,64 @@ def probe_sources(p, ctx):
     return out
 
 
+_OWN = None
+
+
+def _foreman_text():
+    """Foreman's own words, once a run: README, MASTER, CHANGELOG, the rules, the skills and plugin/lib."""
+    global _OWN
+    if _OWN is None:
+        import glob
+        top = os.path.dirname(c.PLUGIN_ROOT)
+        parts = []
+        for pat in ("README.md", "MASTER.md", "CHANGELOG.md", "plugin/rules/*.md", "plugin/skills/*/SKILL.md",
+                    "plugin/lib/*.py", "plugin/hooks/*"):
+            for f in sorted(glob.glob(os.path.join(top, pat))):
+                try:
+                    with open(f, encoding="utf-8", errors="replace") as fh:
+                        parts.append(fh.read(4 << 20))
+                except OSError:
+                    continue
+        _OWN = "\n".join(parts)
+    return _OWN
+
+
+def probe_cc_changelog(p, ctx):
+    """T-1391: each bullet of Claude Code's changelog past CC_TESTED that names something in backticks Foreman's own
+    text never mentions: a finding to decide whether Foreman should use or adapt to it. The changelog is the indexed
+    anthropic-claude-code source's checkout (data, never run); FOREMAN_SCOUT_CHANGELOG names another file (tests)."""
+    import fmlib
+    path = os.environ.get("FOREMAN_SCOUT_CHANGELOG") or os.path.join(fmlib._sources_dir(), "anthropic-claude-code",
+                                                                    "repo", "CHANGELOG.md")
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read(2 << 20)
+    except OSError:
+        return []
+    tested, ver, out, own = _ver(CC_TESTED), None, [], None
+    for line in text.splitlines():
+        h = re.match(r"^#{1,3}\s*\[?v?(\d+\.\d+\.\d+)", line)
+        if h:
+            ver = h.group(1)
+            continue
+        b = re.match(r"^\s*[-*]\s+(.+)", line)
+        if not (b and ver and _ver(ver) and _ver(ver) > tested):
+            continue
+        names = [n for n in re.findall(r"`([^`\n]{2,60})`", b.group(1)) if n.strip()]
+        own = own if own is not None else _foreman_text()
+        if names and not any(n in own for n in names):
+            text_ = c.plain(b.group(1))
+            out.append(Finding(f"ccfeat:{ver}:{hashlib.sha1(text_.encode()).hexdigest()[:10]}",
+                               f"Claude Code {ver}: {c.fit(text_, 100)}", "RESEARCH", "S",
+                               f"Claude Code's changelog for {ver} names {', '.join(c.plain(n) for n in names[:3])}, "
+                               "which nothing in Foreman mentions. Decide whether Foreman should use or adapt to it."))
+    return out
+
+
 QUICK = [("claude-code", probe_claude_code), ("friction", probe_friction), ("brainstorm", probe_brainstorm)]
-SLOW = [("claude-code", probe_claude_code), ("library gaps", probe_lib_gaps), ("doctor", probe_doctor),
-        ("sources", probe_sources), ("friction", probe_friction), ("brainstorm", probe_brainstorm)]
+SLOW = [("claude-code", probe_claude_code), ("cc changelog", probe_cc_changelog), ("library gaps", probe_lib_gaps),
+        ("doctor", probe_doctor), ("sources", probe_sources), ("friction", probe_friction),
+        ("brainstorm", probe_brainstorm)]
 
 
 # ---------------------------------------------------------------- running and capturing
@@ -250,7 +339,15 @@ def due(p):
 def run(p, slow=False, dry=False):
     """One scout run; a real one is ledgered with what it captured and each probe that failed.
     ponytail: probes run in-process with no deadline of their own; fm night's job timeout bounds a hung slow run."""
-    found, errors = run_probes(p, SLOW if slow else QUICK, context(slow, dry))
+    import fmmandate
+    m = fmmandate.get(p)
+    if m and m["expired"]:  # T-1400: an ended mandate leaves one decision and nothing more is captured under it
+        found, errors = [fmmandate.lapse_finding(m)], []
+    else:
+        found, errors = run_probes(p, SLOW if slow else QUICK, context(slow, dry))
+        if m:  # T-1400: what's found while it stands says so
+            found = [f._replace(why=f"{f.why} (found under the standing mandate: {c.fit(m['text'], 80)})")
+                     for f in found]
     made = capture(p, found, dry=dry)
     if not dry:
         c.update_meta(p, scout_at=time.time(), **({"scout_slow_at": time.time()} if slow else {}))

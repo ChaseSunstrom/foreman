@@ -418,11 +418,20 @@ API_MISUSE = re.compile(
 FAILURES_KEEP = 1000  # records; the file is trimmed to this when it passes 1 MB
 
 
+# T-1769: a test runner's tally says that something failed, never what (unittest's FAILED (failures=2), run.py's
+# FAILED (1 classes), pytest's ==== 2 failed … ====, Ran N tests, fm quiet's ✗ exit 1 (…)): as the signature, every red
+# run was one "recurring obstacle", red-first runs included
+_TALLY_LINE = re.compile(r"(?i)^(?:FAILED \([^)]*\)|=+ .*\b\d+ (?:failed|errors?)\b.*=+|Ran \d+ tests? in .*|"
+                         r"✗ exit \d+ \(.*\))$")
+
+
 def failure_signature(text):
     """The telling line of a failure (the last one that names an error), with paths cut to their last part and
-    numbers and hex zeroed, so the same failure matches across files, lines and runs."""
+    numbers and hex zeroed, so the same failure matches across files, lines and runs. A test runner's tally is never
+    it (T-1769): a failure that says only how many failed has no signature."""
     lines = [x.strip() for x in (text or "").splitlines()
-             if x.strip() and not x.startswith("Exit code") and not _USAGE_TAIL.match(x.strip())]
+             if x.strip() and not x.startswith("Exit code") and not _USAGE_TAIL.match(x.strip())
+             and not _TALLY_LINE.match(x.strip())]
     pick = next((x for x in reversed(lines) if _ERROR_LINE.search(x)), lines[-1] if lines else "")
     s = re.sub(r"(?:[\w.~-]*/)+([\w.-]+)", r"\1", pick.lower())
     s = re.sub(r"0x[0-9a-f]+|\b(?=[0-9a-f]*\d)[0-9a-f]{5,}\b|\d+", "0", s)  # T-1109: hex ids (agent-a0bd0ad0edc0)

@@ -3708,6 +3708,9 @@ def cmd_pause(args):
 
 def cmd_check(args):
     """The project's gate commands (tests, lint, doctor…), run together; any failure exits 1, so a pipe can't mask it."""
+    if args.action == "office":  # T-1406: one deliverable's check: no project, no gate lock
+        import fmoffice
+        return fmoffice.cmd(args)
     # T-1668: full runs queue on the machine-wide gate lock; T-1743: --affected runs (each builder's own) don't
     if args.action == "run" and not getattr(args, "repeat", 0) and not getattr(args, "affected", False):
         try:  # T-1753: a hung run elsewhere (another project's) mustn't hold every check for hours
@@ -3868,13 +3871,17 @@ def _cmd_check(args):
         guard_stored(p, act, cmd)  # T-0901 review: a stored gate (fm smoke set cmd adds one too)
         t0 = time.monotonic()
         code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=env)
-        if code and time.monotonic() - t0 <= 120:  # a slow gate isn't rerun: its failure costs enough already
-            code2, output2 = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=env)
+        slow = time.monotonic() - t0 > _slow_gate()  # a slow gate isn't rerun whole: its failure costs enough already
+        narrow = _narrow_rerun(cmd, output) if code == 1 and slow and not failure_class(output) else None  # T-1678
+        if code and (not slow or narrow):
+            code2, output2 = c.run_command(p.root, narrow or cmd, args.timeout if args.timeout > 0 else None, env=env)
             if not code2 and _flaky_count(p, cmd) >= 2:  # a racy bug passes half the time: not "flaky" forever
                 notes[cmd] = "flaky again (failed first in 3+ recent runs): treated as a failure; find the race"
             elif not code2:
                 reruns.append((cmd, code, output))  # T-0274 review: the names from the failing first run
-                code, output, notes[cmd] = 0, output2, "flaky: failed, then passed on a rerun"
+                code, output, notes[cmd] = 0, output2, (
+                    f"flaky: its {len(c.failing_tests(output))} failing test(s) passed on a rerun of just them"
+                    if narrow else "flaky: failed, then passed on a rerun")
             elif before.get(cmd):
                 notes[cmd] = "pre-existing: it also failed before this task"
         env = failure_class(output) if code else None
@@ -3946,6 +3953,37 @@ def _cmd_check(args):
                            for cmd, code, _, s in results], "failed": failed, "wrote": wrote, "wrote_paths": wrote_paths, "skipped_tests": skip},
         "\n".join(lines))
     return 1 if failed else 0
+
+
+def _slow_gate():
+    """Seconds after which a failing gate isn't rerun whole (FOREMAN_SLOW_GATE; default 120)."""
+    try:
+        return float(os.environ.get("FOREMAN_SLOW_GATE") or 120)
+    except ValueError:
+        return 120.0
+
+
+def _narrow_rerun(cmd, output):
+    """T-1678: the command that reruns only a slow gate's failing tests, or None unless the output vouches that its
+    names are every failure: unittest's dotted names under a unittest runner (python -m unittest, a run.py) whose
+    FAILED (failures=…, errors=…) totals add up to them, or pytest node ids that are its summary's 'N failed' with no
+    errors. A full suite that failed once in a load spike then costs seconds to clear, not an urgent baseline task
+    (T-1597)."""
+    import shlex
+    names = c.failing_tests(output)
+    if not names or len(names) > 20:
+        return None
+    if all("::" in n for n in names) and re.search(r"\bpytest\b", cmd):
+        summary = re.findall(r"(?m)^=+ (.*\d+ failed.*?) =+$", output)
+        if not summary or re.search(r"\d+ errors?\b", summary[-1]):
+            return None
+        total = int(re.search(r"(\d+) failed", summary[-1]).group(1))
+    elif all("::" not in n and "." in n for n in names) and re.search(r"\bunittest\b|\brun\.py\b", cmd):
+        total = sum(int(a or 0) + int(b or 0) for a, b in
+                    re.findall(r"FAILED \((?:failures=(\d+))?(?:, )?(?:errors=(\d+))?", output))
+    else:
+        return None
+    return f"{cmd} {' '.join(shlex.quote(n) for n in names)}" if total == len(names) else None
 
 
 def _baseline(p, results):
@@ -5882,14 +5920,20 @@ def _build_parser():
                                                         "a throwaway worktree) and capture it as a FIX (T-0458)")
     s = add("check", cmd_check, tier=("Every task", 80), help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
     s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected",
-                                                                          "ambient", "onwrite", "playbooks"])
+                                                                          "ambient", "onwrite", "playbooks", "office"])
     s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); paths: its number, then "
                                             "the globs it covers (none: always run); affected: a command with {tests} "
                                             "(paths) or {names} (file names without extension); onwrite: GLOB and a "
                                             "command with {file}, run on each matching write (5 s; a failure blocks; "
                                             "GLOB alone removes it; nothing lists them); playbooks: lint the playbook "
                                             "library and name the unread ones, `ratchet` records each one's size "
-                                            "as its new ceiling (T-1505)")
+                                            "as its new ceiling (T-1505); office: FILE (.xlsx, .xlsm, .docx), then its "
+                                            "checks: no error cells or broken fields, and --cell, --sheets, --contains "
+                                            "(a verify command: exit 1 when one fails; T-1406)")
+    s.add_argument("--cell", action="append", metavar="SHEET!REF=VALUE", help="office: a workbook cell's value, "
+                                                                            "e.g. 'Sheet1!B7=42' (repeatable)")
+    s.add_argument("--sheets", type=int, metavar="N", help="office: the workbook's sheet count")
+    s.add_argument("--contains", action="append", metavar="TEXT", help="office: text a docx must hold (repeatable)")
     s.add_argument("--for", dest="for_ext", metavar="EXT", help="affected: the command is for tests with this extension "
                                                                 "(.tsx), run beside the default (T-1135)")
     s.add_argument("--timeout", type=float, default=600, help="seconds per command")
@@ -6152,6 +6196,14 @@ def _build_parser():
                    "(fm run, the subagent ledger), not an interactive session")
     s.add_argument("--tokens", help="stop after this many tokens (500k, 2M) used by this project's sessions since it began")
 
+    s = add("mandate", lazy("fmmandate", "cmd_mandate"), tier=("Project and settings", 772),
+            help="a sweeping request kept as one standing record with an end date: fm scout and fm night read it; "
+                 "once it ends, one decision and nothing more captured under it (T-1400)")
+    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "off"])
+    s.add_argument("text", nargs="*", help="set: the request, in the user's words")
+    s.add_argument("--until", metavar="YYYY-MM-DD", help="set: the last day it stands")
+    s.add_argument("--usd", type=float, help="set: a spend bound recorded with it (fm contract enforces spend)")
+
     s = add("budget", lazy("fmbudget", "cmd_budget"), tier=("Project and settings", 770), help="spend on child runs and subagents today, and the caps that "
                                                             "bound it (T-0227)")
     s.add_argument("action", nargs="?", default="show", choices=["show", "set"])
@@ -6371,6 +6423,9 @@ def _build_parser():
                    "(priced calls only: a claude CLI's own count, or a models.json profile's price); claude turns get "
                    "--max-budget-usd with what is left; a resume keeps the run's own unless given")
     s.add_argument("--dry-plan", action="store_true", help="print the plan and stop: no task, no change")
+    s.add_argument("--after", metavar="ID", help="a follow-up to an earlier run's task: its request, plan, how it "
+                                                 "ended and the files it changed go to the planner as data, and the "
+                                                 "new task's request names it (T-1340)")
     s.add_argument("--resume", nargs="?", const="", metavar="ID", help="carry on a crashed or killed run from its "
                                                                      "journal (default: the newest unfinished one)")
     s.add_argument("--no-commit", action="store_true", help="close the task without committing")
@@ -6398,6 +6453,11 @@ def _build_parser():
                                                    "(it must fail now)")
     s.add_argument("--tui", action="store_true", help=argparse.SUPPRESS)  # what `fm code tui` becomes
     s.add_argument("--seeds", metavar="A,B", help="fm code bench: only these seeds (default: all)")
+    s.add_argument("--variants", metavar="A,B", help="fm code bench: run the seeds once per prompt variant (base, "
+                                                     "evidence) and report each one's closed count (T-1403)")
+    s.add_argument("--probe", metavar="MODEL", help="fm code runners: score a model profile 0-10 on ten small graded "
+                                                    "prompts: JSON only, data stays data, unknown over invented "
+                                                    "(T-1403)")
     s.add_argument("--seed-timeout", type=int, metavar="SECONDS", help="fm code bench: each seed's limit (default 600)")
     s.add_argument("--plain", action="store_true", help="one line per event, no screen, even on a terminal (T-1283, T-1343)")
     s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG")
@@ -6512,7 +6572,8 @@ def _build_parser():
 
     s = add("plugins", lazy("fmplugins", "cmd_plugins"), tier=("Project and settings", 850),
             help="find plugins in the known marketplaces, check enabled ones for conflicts, install after approval")
-    s.add_argument("action", choices=["find", "check", "install", "enable", "disable", "add-marketplace", "forget"])
+    s.add_argument("action", choices=["find", "suggest", "check", "install", "enable", "disable", "add-marketplace",
+                                      "forget"])  # T-1397: suggest lists three for the project's stack
     s.add_argument("words", nargs="*", help="find: what you need; check: one plugin id (default: all enabled); "
                                             "install/enable: one id (either installs it if missing, else enables "
                                             "it); add-marketplace: owner/repo, git URL or path; forget: an id to keep")
@@ -6551,6 +6612,41 @@ def _build_parser():
     return ap
 
 
+PATHLIKE = re.compile(r"PATH|FILE|URL")
+
+
+def _flags_before_paths(parser, argv, k):
+    """T-1671: argparse ends a positional's run at an option, so in `fm new check --run PATH` PATH is left over. For a
+    command whose words are paths (a variadic positional named paths or targets, or whose metavar names PATH, FILE or
+    URL), its own options and their values among the words move in front of them; '--' ends the words. An option it
+    doesn't know, or one taking a variable count, leaves argv as typed, and free text (a request, a message) is never
+    rearranged, so a flag inside one is still an error (T-0332's review)."""
+    sub, i = parser, k
+    while i < len(argv):
+        subs = next((a for a in sub._actions if isinstance(a, argparse._SubParsersAction)), None)
+        if subs is None or argv[i] not in subs.choices:
+            break
+        sub, i = subs.choices[argv[i]], i + 1
+    if sub is parser or not any(not a.option_strings and a.nargs in ("*", "+") and (
+            a.dest in ("paths", "targets") or PATHLIKE.search(a.metavar or "")) for a in sub._actions):
+        return argv
+    end = argv.index("--", i) if "--" in argv[i:] else len(argv)
+    opts, words, j = [], [], i
+    while j < end:
+        t = argv[j]
+        if not t.startswith("-") or t == "-":
+            words.append(t)
+            j += 1
+            continue
+        act = sub._option_string_actions.get(t.split("=", 1)[0])
+        if act is None or not (act.nargs in (None, 0) or isinstance(act.nargs, int)):
+            return argv
+        n = 0 if "=" in t or act.nargs == 0 else 1 if act.nargs is None else act.nargs
+        opts += argv[j:j + 1 + n]
+        j += 1 + n
+    return argv[:i] + opts + words + argv[end:]
+
+
 def _options_first(parser, argv):
     """T-0332: argparse reads a command's positionals in one run, so in `fm session send ID --json -- MSG` the option
     ends that run and MSG is left over. For the commands taking ID then words (session, claude), known options (with
@@ -6559,7 +6655,9 @@ def _options_first(parser, argv):
     k = 2 if argv[:1] in (["-p"], ["--project"]) else 0
     if argv[k:k + 2] == ["code", "tui"]:  # T-1283: so `fm code tui --plain "fix it"` keeps its request after a flag
         return argv[:k + 1] + ["--tui"] + argv[k + 2:]
-    if argv[k:k + 1] not in (["session"], ["claude"]) or "--" not in argv[k + 1:]:
+    if argv[k:k + 1] not in (["session"], ["claude"]):
+        return _flags_before_paths(parser, argv, k)
+    if "--" not in argv[k + 1:]:
         return argv
     sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction)).choices[argv[k]]
     head = argv[k + 1:argv.index("--", k + 1)]
