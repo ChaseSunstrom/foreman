@@ -1786,6 +1786,7 @@ class HostileWidth(unittest.TestCase):
                                         {"section": "queue", "task": {"id": s, "type": s, "tier": s, "title": s,
                                                                       "reason": s}}]),
                  "diff": dict(view_lines=["+" + s, "-" + s, "@@ " + s, s]),
+                 "tickets": dict(tickets=[s, s], items=[(0, s, True), (1, s, False)]),  # T-1350
                  "looks": dict(look_answers=[], look_pairs=[(s, s)], items=[(s, s)]),
                  "help": {},
                  "settings": dict(set_rows=[1, 2], set_query=s, set_note=(s, "warn"), items=[
@@ -3598,6 +3599,72 @@ class MotionVisuals(unittest.TestCase):
 if __name__ == "__main__":
     import unittest
     unittest.main()
+
+
+class Tickets(unittest.TestCase):  # T-1350
+    def app(self):
+        T = tui()
+        self.started = []
+
+        class Child:
+            code = None
+
+            def poll(self):
+                return self.code
+        app = T.App(T.DEFAULTS, spawn=lambda words, opts: self.started.append(words) or Child())
+        app.start(["fix add"])
+        return T, app
+
+    def type(self, app, text):
+        for ch in text:
+            app.key(ch)
+
+    def test_tab_turns_the_question_box_into_a_ticket_that_runs_when_this_run_closes(self):
+        T, app = self.app()
+        app.key("n")
+        self.assertTrue(app.asking)
+        app.key("\t")
+        self.assertEqual((app.asking, app.ticketing), (False, True))
+        self.assertIn("next ›", T.render(app.state, 120, 34, T.DEFAULTS, app, t=100.0).text())
+        self.type(app, "fix typo")
+        app.key("\n")
+        app.key("n")
+        app.key("\t")
+        self.type(app, "add export")
+        app.key("\n")
+        self.assertEqual(app.tickets, ["fix typo", "add export"])
+        text = T.render(app.state, 120, 34, T.DEFAULTS, app, t=100.0).text()
+        self.assertIn("① fix typo", text)
+        self.assertIn("② add export", text)
+        app.child.code = 0
+        app.feed({"event": "closed", "text": "T-0001 closed", "task": "T-0001"})
+        app.feed({"event": "exit", "code": 0})
+        self.assertEqual((self.started[-1], app.tickets), (["fix typo"], ["add export"]))
+
+    def test_a_blocked_run_holds_the_rail(self):
+        T, app = self.app()
+        app.tickets = ["fix typo"]
+        app.child.code = 1
+        app.feed({"event": "blocked", "text": "T-0001 blocked: x", "reason": "x", "task": "T-0001"})
+        app.feed({"event": "exit", "code": 1})
+        self.assertEqual((self.started, app.tickets), ([["fix add"]], ["fix typo"]))
+        self.assertIn("tickets wait", " ".join(T.entry_text(e) for e in app.state.log))
+
+    def test_the_tickets_view_picks_moves_and_drops(self):
+        T, app = self.app()
+        app.tickets = ["a", "b", "c"]
+        app.key("T")
+        self.assertEqual(app.mode, "tickets")
+        self.assertIn("① a", T.render(app.state, 120, 34, T.DEFAULTS, app, t=100.0).text())
+        app.key(" ")
+        app.key("KEY_DOWN")
+        app.key("KEY_DOWN")
+        app.key(" ")
+        self.assertEqual(app.tickets, ["b", "c", "a"])
+        app.key("KEY_DC")
+        self.assertEqual(app.tickets, ["b", "c"])
+        app.key("\x1b")
+        self.assertEqual(app.mode, "main")
 
 
 class Deck(unittest.TestCase):  # T-1345
