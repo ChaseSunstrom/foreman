@@ -1947,10 +1947,10 @@ def _design_note(pl, p, act):
         if text and fmdesign.has_direction(text):
             return None
     _card_mark(p, act.id, ":design-direction")
-    skill = os.path.isfile(os.path.join(c.PLUGIN_ROOT, "skills", "directions", "SKILL.md"))
+    skill = os.path.isfile(os.path.join(c.PLUGIN_ROOT, "skills", "ui-design", "SKILL.md"))  # T-1715: the job skill
     return (f"Foreman: design direction: {act.id} edits UI and no DESIGN.md has a ## Direction. Pick a direction and "
-            f"write it before more UI (playbook ui/design-direction.md{', or /foreman:directions' if skill else ''}). "
-            "A nudge, not a block.")
+            f"write it before more UI (playbook ui/design-direction.md{'; load: Skill foreman:ui-design' if skill else ''}"
+            "). A nudge, not a block.")
 
 
 def _said_once(pl, parts):
@@ -2014,22 +2014,39 @@ def _snapshot_note(pl, guard):
     it saved under refs/foreman/snapshots first; Claude Code's rewind covers its file tools, not Bash. The hook has 5 s
     and blocks on a timeout, so the save gets SNAPSHOT_S and says when it couldn't."""
     cmd = str((pl.get("tool_input") or {}).get("command") or "")
-    if "git" not in cmd or not hasattr(guard, "discards_work"):  # the committed fallback guard may predate it
+    if not cmd or not hasattr(guard, "discards_work"):  # the committed fallback guard may predate it
         return None
     saved, failed, why = [], [], c.fit(c.plain(c.redact(cmd)), 200)
-    for where, what in dict.fromkeys(guard.discards_work(cmd, _cwd(pl))):
+    # T-1482: what the guard's check of this command read, however spelled (g''it, eval, $C, from a cd before them);
+    # the plain-word reading too where the command says git outright, or when the guard didn't read this command
+    read = getattr(guard, "take_discards", None)
+    theirs = read(cmd) if read else None
+    found = (guard.discards_work(cmd, _cwd(pl)) if theirs is None or "git" in cmd else []) + (theirs or [])
+    done, unknown = set(), []  # each repo saved once per kind (review: two repos with the same kind are both saved)
+    deadline = time.monotonic() + SNAPSHOT_S  # T-1727 review: one budget for every save, not SNAPSHOT_S each
+    for where, what in dict.fromkeys(found):
+        if where is None:  # T-1727 review: a cd the guard couldn't follow; the hook's own folder would be a guess
+            unknown.append(what)
+            continue
         top = c.git_root(where)
-        if not top:
+        if not top or (top, what) in done:
+            continue
+        done.add((top, what))
+        left = deadline - time.monotonic()
+        if left <= 0:
+            failed.append(f"{top}: no time left in the hook")
             continue
         try:
-            saved += [f"{sha} (restore: {c.restore_line(top, sha, what)})"
-                      for sha in c.snapshot(top, why, SNAPSHOT_S, what)]
+            saved += [f"{sha} (restore: {c.restore_line(top, sha, what)})" for sha in c.snapshot(top, why, left, what)]
         except RuntimeError as e:
             failed.append(f"{top}: {e}")
     notes = [f"Foreman saved what this command may discard: {'; '.join(saved)}. fm snapshots lists every save."
              ] if saved else []
     notes += [f"Foreman couldn't save the uncommitted work before this command ({'; '.join(failed)}): if it matters, "
               "commit or stash it first."] if failed else []
+    notes += [f"Foreman couldn't tell where this command discards work ({', '.join(dict.fromkeys(unknown))}: after a cd "
+              "it can't follow), so nothing was saved for it: if that work matters, commit or stash it first."
+              ] if unknown else []
     return " ".join(notes) or None
 
 

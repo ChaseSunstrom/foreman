@@ -7,7 +7,7 @@ import subprocess
 import sys
 import threading
 
-from helpers import FM, ForemanTestCase, read_json, read_text, stub_corpus_replay
+from helpers import FM, ForemanTestCase, busy_factor, read_json, read_text, stub_corpus_replay
 
 PLAN = {"type": "FIX", "tier": "S", "title": "Make calc.add add",
         "criteria": [{"text": "calc.add adds", "verify": "python3 test_calc.py"}], "steps": ["fix calc.add"]}
@@ -131,7 +131,7 @@ class CodeCase(ForemanTestCase):
 
     def code(self, *args, check=True, env=None):
         p = subprocess.run([sys.executable, FM, "code", *args], cwd=self.repo, env=self.env(env), capture_output=True,
-                           text=True, timeout=60)
+                           text=True, timeout=60 * busy_factor())  # T-1721: a hang guard; six builders' load tripped it
         if check and p.returncode:
             raise AssertionError(f"fm code exited {p.returncode}\nstdout:{p.stdout}\nstderr:{p.stderr}")
         return p

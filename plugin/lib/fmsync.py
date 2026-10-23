@@ -22,6 +22,20 @@ import fmcore as c
 
 DIR = ".foreman"
 LOCAL_ONLY = ("allow", "approved", "plugin_pin")
+LEASE_MARKS = ("lane", "lane_branch", "builder", "builder_proc", "cost_cap", "cap_hit")  # one machine's marks on a brief
+
+
+def settle(b, new):
+    """T-1749: a brief that came from elsewhere (fm sync import, fm home import), as this machine takes it: not active
+    or leased here, and, when it is new here and open, waiting for the user's own yes (fm ask ID confirm): a repo's
+    .foreman/ can hold tasks nobody here asked for."""
+    if b.meta.get("status") in ("active", "verifying"):
+        b.meta["status"] = "planned"  # focus is per machine
+    for k in LEASE_MARKS:
+        b.meta.pop(k, None)
+    if new and b.meta.get("status") in c.OPEN:
+        b.meta["confirm"] = True
+    return b
 BRIEFS = ("tasks/", "archive/")
 README = """# .foreman
 
@@ -80,8 +94,9 @@ def _for_mirror(text):
 def _from_mirror(text):
     """A mirrored brief as this machine may take it: no grants, no run or worktree marks, audits relabelled so they
     don't count here (this machine's gates need its own runs and audits)."""
-    # a pulled brief is untrusted text that fm task show and other listings print: no terminal sequences
-    b = c.Brief.parse(c.plain_lines(_AUDIT_LINE.sub(r"\1, imported)", c._unmarked(text))))
+    # a pulled brief is untrusted text that fm task show and other listings print: no terminal sequences. Plain first
+    # (T-1665 review): an invisible character inside a mark hid it from the subs, then plain took it out
+    b = c.Brief.parse(_AUDIT_LINE.sub(r"\1, imported)", c._unmarked(c.plain_lines(text))))
     for k in LOCAL_ONLY:
         b.meta.pop(k, None)
     return b
@@ -168,8 +183,10 @@ def import_(p):
                 res["conflicts"].append(f"{rel}: not a brief")
                 continue
             local = mine.get(theirs.id)
-            if theirs.status in ("active", "verifying") and theirs.id not in active:
-                theirs.meta["status"] = "planned"  # focus is per machine
+            keep = theirs.status in ("active", "verifying") and theirs.id in active and theirs.status
+            settle(theirs, local is None)
+            if keep:  # this machine's own focus stays
+                theirs.meta["status"] = keep
             if local is None:
                 _write(dest, theirs.render())
                 res["added"] += 1
@@ -188,7 +205,7 @@ def import_(p):
                                             f"theirs is in {_set_aside(p, rel, cur)}")
                     base[rel] = h
                     continue
-                for k in LOCAL_ONLY:
+                for k in LOCAL_ONLY + LEASE_MARKS + ("confirm",):  # T-1749: this machine's own marks and yes stay
                     if k in local.meta:
                         theirs.meta[k] = local.meta[k]
                 if os.path.abspath(local.path) != os.path.abspath(dest):

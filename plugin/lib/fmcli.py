@@ -1,6 +1,7 @@
 """fm — the only writer of Foreman state.
 
-Exit codes: 0 ok · 1 usage error / not found · 2 refused by policy · 3 lock timeout · 4 state corrupt.
+Exit codes: 0 ok · 1 usage error / not found · 2 refused by policy · 3 lock timeout · 4 state corrupt · 5 fm capture
+refused a near-duplicate (T-1662).
 """
 import argparse
 import collections
@@ -216,12 +217,18 @@ def cmd_capture(args):
     if type_ not in c.TYPES:
         raise UsageError(f"unknown type {args.type!r}; one of {', '.join(c.TYPES)}")
     text, raw = (args.text or "").strip(), args.text
+    near = _near(p, args, text, type_) if text else None  # T-1662 review: before a paste is read and kept
+    if near and near[0] is not None:
+        return near[0]
     if args.from_file:
         attached, first = _attachment(p, args.from_file)
         text = text or first
         raw = (args.text + "\n\n" if args.text else "") + attached
     if not text:
         raise UsageError("fm capture \"<request>\" [--from-file PATH|-]: say what to do, or attach a file that does")
+    near = near or _near(p, args, text, type_)  # titled from the attachment: only now known
+    if near[0] is not None:
+        return near[0]
     with c.lock(p.dir):
         b = _create(p, _title(text), type_, args.tier or c.guess_tier(type_, text), "captured",
                     raw=raw, scope=args.scope or (), source=args.source,
@@ -231,7 +238,33 @@ def cmd_capture(args):
         c.regen_views(p)
     _note_escapes(p, b, args.text)
     out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source})."
-        + _covered_note(p, b.id, text) + _reask_note(p, b.id, text))
+        + near[1](b.id) + _covered_note(p, b.id, text) + _reask_note(p, b.id, text))
+
+
+REFUSED_NEAR = 5  # T-1662: its own exit code (see the module docstring: 3, asked for in review, is a lock timeout)
+
+
+def _near(p, args, text, type_):
+    """T-1662: (exit code, None) when the request is a near-duplicate of an open task of its type and --anyway isn't
+    given, said on stderr (and as JSON under --json); else (None, note(new id)): the similar open task of another
+    type, and for a FEATURE the done task close to it."""
+    import fmrecall
+    same, other, done = fmrecall.near_tasks(p, _title(text), _scope_paths(args.scope or ()), type_)
+    if same and not args.anyway:
+        print(f"fm: near-duplicate of open {same[0]} ({c.fit(c.plain(same[1]), 80)}): add --anyway to keep both, or "
+              f"fm task log {same[0]} '<note>' to add to it", file=sys.stderr)
+        if getattr(args, "json", False):
+            out(args, {"refused": "near-duplicate", "of": same[0], "title": same[1]}, None)
+        return REFUSED_NEAR, None
+    done = done if type_ == "FEATURE" else None
+
+    def note(tid):
+        return "".join([
+            f"\nSimilar open {other[0]} [{other[2]}] ({c.fit(c.plain(other[1]), 80)}): another type, so kept."
+            if other else "",
+            f"\nClose to done work: {done[0]} ({c.fit(c.plain(done[1]), 80)}). If it already does this, drop this: "
+            f"fm task drop {tid} \"done in {done[0]}\"." if done else ""])
+    return None, note
 
 
 EXCERPT_HEAD, EXCERPT_TAIL = 10, 30  # T-0477: a log's start says what ran, its end what broke
@@ -1103,8 +1136,9 @@ def _close_affected(p, b, runs, args):
     baseline task owns it). An environment failure, or a runner whose failing tests can't be named, is said, not
     refused; --skip-affected REASON waives it on the record. No affected-tests command, nothing linked, or the same
     command already passed in this finish: nothing to run."""
+    skip = {}
     try:
-        cmd, tests, _ = affected(p, b)
+        cmd, tests, _ = affected(p, b, skipped=skip)
     except UsageError:
         return
     if not cmd or (runs.get(cmd) or (1,))[0] == 0:
@@ -1116,7 +1150,7 @@ def _close_affected(p, b, runs, args):
                {"cmd": c.fit(cmd, 200), "waived": c.fit(waive, 200)})
         return
     guard_stored(p, b, cmd)
-    env, timeout = _skip_env(red_first_tests(p, b, [cmd])), (args.timeout if args.timeout > 0 else None)
+    env, timeout = _skip_env(skip), (args.timeout if args.timeout > 0 else None)
     t0 = time.monotonic()
     code, output = c.run_command(p.root, cmd, timeout, env=env)
     if code and code != 124:
@@ -1216,18 +1250,26 @@ def _ledger_head(p):
     return {k: r[k] for k in ("head", "chained", "broken")}
 
 
-def _theirs(p, b, files):
-    """T-0738: the files only another task edited (while this one was being worked): that task's to commit, even when
-    this task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere). T-0739: from
-    this task's first focus, not its capture: edits made before it started say nothing about its own changes."""
+def _others(p, b):
+    """{file: the other tasks that edited it} since this task's first focus (T-0739: not its capture: edits made before
+    it started say nothing about its own changes)."""
     events = c.ledger_tail(p, c.TASK_WINDOW)
-    mine = set(c.task_touches(p, b.id)) | _claimed(p, b)
     first = next((i for i, e in enumerate(events) if e.get("event") == "focus" and e.get("task") == b.id), None)
     since = str(b.meta.get("created") or "")  # ledger order when its focus is in the window: seconds tie
-    others = {os.path.relpath(f, p.root) for i, e in enumerate(events)
-              if e.get("event") == "touched" and e.get("task") not in (None, b.id)
-              and (i > first if first is not None else str(e.get("ts", "")) >= since)
-              and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/")}
+    out = {}
+    for i, e in enumerate(events):
+        if e.get("event") == "touched" and e.get("task") not in (None, b.id) \
+                and (i > first if first is not None else str(e.get("ts", "")) >= since) \
+                and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/"):
+            out.setdefault(os.path.relpath(f, p.root), set()).add(str(e["task"]))
+    return out
+
+
+def _theirs(p, b, files, others=None):
+    """T-0738: the files only another task edited (while this one was being worked): that task's to commit, even when
+    this task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere)."""
+    others = _others(p, b) if others is None else others
+    mine = set(c.task_touches(p, b.id)) | _claimed(p, b)
     return [f for f in files if f in others and f not in mine]
 
 
@@ -1447,7 +1489,8 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
         out = c._git(p.root, "--literal-pathspecs", "status", "--porcelain", "-z", "-uall", "--no-renames", "--", *touched,
                      timeout=30)
         files += [e[3:] for e in out.split("\0") if len(e) > 3]
-    theirs = _theirs(p, b, files)
+    others = _others(p, b)
+    theirs = _theirs(p, b, files, others)
     files = [f for f in files if f not in theirs]
     if theirs and not dry:
         print(f"{b.id}: left out {len(theirs)} file(s) only other tasks edited: {', '.join(theirs[:8])}")
@@ -1508,6 +1551,14 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
                 c.log_event(p, "index_lock_removed", b.id, {"why": why})
                 r = subprocess.run([*git, *a], capture_output=True, text=True)
         return r
+    shared = {f: others[f] for f in files if f in others}
+    if shared and not dry:  # T-1711: a file another open task edited too goes whole, its edits with it: say whose
+        live = {x.id for x in c.load_briefs(p) if x.status not in c.CLOSED}
+        hits = [(f, sorted(ts & live)) for f, ts in shared.items() if ts & live]
+        for f, ts in hits[:8]:
+            print(f"{b.id}: {f} was also edited by {', '.join(ts)} since this task's focus (committed with it)")
+        if len(hits) > 8:
+            print(f"{b.id}: … {len(hits) - 8} more shared file(s)")
     add = run("add", "-A", "--", *addable) if addable else subprocess.CompletedProcess([], 0, "", "")
     if add.returncode == 0:  # T-0132: nothing that looks like a credential goes into a commit Foreman makes
         import fmsecrets
@@ -3630,6 +3681,25 @@ def cmd_pause(args):
 
 def cmd_check(args):
     """The project's gate commands (tests, lint, doctor…), run together; any failure exits 1, so a pipe can't mask it."""
+    # T-1668: full runs queue on the machine-wide gate lock; T-1743: --affected runs (each builder's own) don't
+    if args.action == "run" and not getattr(args, "repeat", 0) and not getattr(args, "affected", False):
+        try:  # T-1753: a hung run elsewhere (another project's) mustn't hold every check for hours
+            wait = max(0.0, float(os.environ.get("FOREMAN_GATE_WAIT") or 900))
+        except ValueError:
+            wait = 900.0
+        started = False
+        try:
+            with c.gate_lock("fm check", say=lambda m: print(m, file=sys.stderr), timeout=wait):
+                started = True
+                return _cmd_check(args)
+        except c.LockTimeout:
+            if started:  # the check's own lock, not the gate's
+                raise
+            print(f"gate lock still held after {wait / 60:g} min; running beside it", file=sys.stderr)
+    return _cmd_check(args)
+
+
+def _cmd_check(args):
     p = resolve(args)
     if args.action in ("add", "rm"):
         with c.lock(p.dir):  # one read-modify-write, so concurrent adds can't drop each other
@@ -3891,11 +3961,24 @@ _POINT_IN_TIME = re.compile(r"\borigin/|@\{u(?:pstream)?\}|\bls-remote\b")  # T-
 
 def cmd_sentinel(args):
     """Re-run the checks that passed for the last N finished tasks (their [ran] evidence) and report any that fail
-    now: a later change broke what an earlier task proved. Commands with side effects are skipped."""
+    now: a later change broke what an earlier task proved. Commands with side effects are skipped. T-1663: first, the
+    re-verify queue (fmreverify): the checks of closed tasks a commit since touched run ahead of the recent ones, and
+    one that fails captures a FIX naming its task; queued entries the filters or the guard refuse, or whose task is no
+    longer done, are dropped unrun and counted."""
     p = resolve(args)
-    done = sorted((b for b in c.load_briefs(p, include_archive=True) if b.status == "done"),
+    briefs = c.load_briefs(p, include_archive=True)
+    done = sorted((b for b in briefs if b.status == "done"),
                   key=lambda b: str(b.meta.get("updated", "")), reverse=True)[:args.last]
     cmds, skipped, dated = {}, 0, 0
+    import hashlib
+    import fmreverify
+    status = {b.id: b.status for b in briefs}
+    queued, unrun = {}, set()
+    for e in fmreverify.scan(p):
+        if status.get(e.get("task")) != "done" or _SIDE_EFFECTS.search(e["cmd"]) or _POINT_IN_TIME.search(e["cmd"]):
+            unrun.add((e.get("task"), e["cmd"]))
+        elif e["cmd"] not in cmds:
+            queued[e["cmd"]], cmds[e["cmd"]] = e, e["task"]
     for b in done:
         for line in b.evidence():  # criteria checks only: steps record work (pushes, migrations) as well as checks
             if line.startswith("- (ac ") and c._RAN_MARK in line and "` → exit 0" in line:
@@ -3942,15 +4025,37 @@ def cmd_sentinel(args):
                                  source="discovered", depends=[tid])
                     c.log_event(p, "capture", task=nb.id, data={"source": "sentinel", "assumption_of": tid})
                     c.regen_views(p)
+    for r in results:  # T-1663: a queued re-verify that fails reopens attention on its task
+        e = queued.get(r["cmd"]) if r["exit"] and not r.get("assumption") else None
+        if not e:
+            continue
+        safe = lambda s, n: c.defang(c.fit(c.plain(c.redact(str(s or ""))), n))  # noqa: E731 output and subject
+        tag = hashlib.sha1(r["cmd"].encode()).hexdigest()[:6]  # two long commands sharing a prefix stay two FIXes
+        title = _title(f"Re-verify failed for {r['task']} ({tag}): {safe(r['cmd'], 200)}")
+        if not any(x.title == title for x in c.load_briefs(p) if x.status not in c.CLOSED):
+            with c.lock(p.dir):
+                nb = _create(p, title, "FIX", "S", "captured", source="discovered", depends=[r["task"]],
+                             raw=f"{title} (now {safe(r['result'], 240)}; queued by {safe(e.get('sha'), 10)} "
+                                 f"{safe(e.get('subject'), 120)})")
+                c.log_event(p, "capture", task=nb.id, data={"source": "sentinel reverify", "of": r["task"]})
+                c.regen_views(p)
+    later = set(list(cmds)[args.max:])  # cut by --max: the next run takes them
+    unrun |= {(e.get("task"), e["cmd"]) for e in fmreverify.load(p)["queue"] if e["cmd"] in refused}
+    if queued or unrun:
+        fmreverify.drop(p, unrun | {(e.get("task"), e["cmd"]) for e in fmreverify.load(p)["queue"]
+                                    if e["cmd"] in queued and e["cmd"] not in later})
     failed = [r for r in results if r["exit"]]
     c.log_event(p, "sentinel", data={"ran": len(results), "failed": [(r["task"], r["cmd"][:120]) for r in failed]},
                 session=session())
     culprits = [_bisect(p, r, args.timeout) for r in failed if not r.get("assumption")] if \
         getattr(args, "bisect", False) else []  # T-0458
-    out(args, {"results": results, "failed": len(failed), "skipped": skipped, "culprits": [x for x in culprits if x]},
+    out(args, {"results": results, "failed": len(failed), "skipped": skipped, "culprits": [x for x in culprits if x],
+               "reverify_dropped": len(unrun)},
         f"Sentinel: {len(results)} past check(s) from {len(done)} finished task(s); {len(failed)} failing now"
         + (f"; {skipped} with side effects skipped" if skipped else "")
         + (f"; {dated} point-in-time skipped" if dated else "")
+        + (f"; {len(unrun)} queued re-verify entries dropped (side effects, point-in-time, refused or task not done)"
+           if unrun else "")
         + (f"; {sum(1 for r in results if r.get('flaky'))} flaky (failed, then passed)"
            if any(r.get("flaky") for r in results) else "") + "".join(
             f"\n  ✗ {r['task']}: " + (f"assumption \"{r['assumption']}\": " if r.get("assumption") else "")
@@ -4233,11 +4338,11 @@ def _run_py_names(cmd):
     return (m.group(1), re.findall(r"(?:^|[\s/'\"])(test_\w+)", m.group(2))) if m else None
 
 
-def red_first_tests(p, act, gates):
+def red_first_tests(p, act, gates, paths=None):
     """T-1101: {module: task id} for the test files that are only another open task's red-first tests: its step-1
     run of a gate's own `tests/run.py NAME` (the same folder, inside the repo) failed, no run naming NAME passed since,
     the file is new (not at HEAD), and this task's scope and evidence don't name it. fm check leaves them out of
-    run.py (FOREMAN_SKIP_TESTS) and says so."""
+    run.py (FOREMAN_SKIP_TESTS) and says so. A set passed as paths gets their root-relative files (T-1731)."""
     # ponytail: one skip list for every run.py gate; per-gate lists if two suites ever share module names
     folder = lambda h: os.path.relpath(os.path.join(p.root, h[0]), p.root)  # noqa: E731
     folders = {f for g in gates if (h := _run_py_names(g)) and not (f := folder(h)).startswith("..")}
@@ -4265,7 +4370,10 @@ def red_first_tests(p, act, gates):
     if tracked is None:  # no git, or no commit yet: no telling a new file from a shared one, so nothing is left out
         return {}
     tracked = set(tracked.splitlines())
-    return {n: tid for n, (tid, path) in found.items() if path not in tracked}
+    found = {n: (tid, path) for n, (tid, path) in found.items() if path not in tracked}
+    if paths is not None:
+        paths.update(os.path.normpath(path) for _, path in found.values())
+    return {n: tid for n, (tid, _) in found.items()}
 
 
 def _skip_env(skip):
@@ -4321,9 +4429,10 @@ def _runnable(template, tests):
 HUB_PAIRS = 10  # T-1467: more co-changed tests than this and a file's pairs are noise
 
 
-def affected(p, b=None):
+def affected(p, b=None, skipped=None):
     """(command, tests, changed files) for the tests linked (fm map) to files changed since the task started, with the
-    project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705)."""
+    project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705).
+    Another open task's red-first test files are left out (T-1718); a dict passed as skipped gets them {module: task}."""
     import fmmap
     import shlex
     act = b or c.active_brief(c.load_briefs(p), p.lane)  # T-1117 review: the closing task's base, active or not
@@ -4352,28 +4461,39 @@ def affected(p, b=None):
     every = sorted(set(fmmap.tests_for(m, sorted(changed))) | own | paired)
     fill = lambda tpl, ts: tpl.replace("{tests}", " ".join(shlex.quote(t) for t in ts)).replace(  # noqa: E731
         "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in ts))
-    rest = [x for x in every if not any(x.endswith(e) for e in by)]
-    groups = [("", template, _runnable(template, rest))] if template else []
-    groups += [(e, t, [x for x in every if x.endswith(e)]) for e, t in by.items()]
-    cmds = [fill(t, ts) for _, t, ts in groups if ts]
-    tests = sorted({x for _, _, ts in groups for x in ts})
+
+    def build(every):
+        rest = [x for x in every if not any(x.endswith(e) for e in by)]
+        groups = [("", template, _runnable(template, rest))] if template else []
+        groups += [(e, t, [x for x in every if x.endswith(e)]) for e, t in by.items()]
+        return [fill(t, ts) for _, t, ts in groups if ts], sorted({x for _, _, ts in groups for x in ts})
+    cmds, tests = build(every)
+    red = set()  # T-1101: another open task's red-first test files
+    skip = red_first_tests(p, act, cmds, red) if cmds else {}
+    if skip:  # T-1718: out of the command too: run.py fails "no test matches" on a name it was told to skip
+        cmds, tests = build([x for x in every if os.path.normpath(x) not in red])
+    if skipped is not None:
+        skipped.update(skip)
     return (" && ".join(cmds) if cmds else None), tests, changed
 
 
 def _check_affected(p, args):
     """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
-    cmd, tests, changed = affected(p)
+    skip = {}  # T-1101: another open task's red-first test files, left out as the full gates leave them out
+    cmd, tests, changed = affected(p, skipped=skip)
     act = c.active_brief(c.load_briefs(p), p.lane)
     if cmd:
         guard_stored(p, act, cmd)  # T-0901: the template is a stored command
     # T-1131: a changed test file is always in `tests` (T-0875) unless the template's runner can't run it: say so
-    odd = sorted(f for f in changed if c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f) and f not in tests)
+    odd = sorted(f for f in changed if c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f) and f not in tests
+                 and os.path.basename(f).rsplit(".", 1)[0] not in skip)
     note = (f"\n! {len(odd)} changed test file(s) this affected command can't run: {', '.join(odd[:5])}"
             f"{' …' if len(odd) > 5 else ''}; run their own suite") if odd else ""
     if not tests:
-        return out(args, {"tests": [], "changed": sorted(changed), "unrunnable": odd},
-                   f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check" + note) or 0
-    skip = red_first_tests(p, act, [cmd])  # T-1101: as the full gates do
+        return out(args, {"tests": [], "changed": sorted(changed), "unrunnable": odd, "skipped_tests": skip},
+                   (f"all {len(skip)} linked test module(s) skipped (other lanes' red-first tests); run the full "
+                    f"gates: fm check\n! {_left_out(skip)}" if skip else
+                    f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check") + note) or 0
     code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=_skip_env(skip))
     out(args, {"tests": tests, "exit": code, "changed": sorted(changed), "skipped_tests": skip, "unrunnable": odd},
         f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → {c.run_result(code, output)}"
@@ -4983,6 +5103,10 @@ def _build_parser():
     s.add_argument("--tier", choices=["S", "M", "L"])
     s.add_argument("--scope", action="append")
     s.add_argument("--urgent", action="store_true")
+    s.add_argument("--anyway", action="store_true", help="keep a request whose title is close to an open task's of the same type: "
+                                                         "without it fm capture refuses it, exit 5, naming the task "
+                                                         "(only fm capture checks; fm intake, fm task new and fm "
+                                                         "research --from-agent don't)")
     s.add_argument("--self", dest="self_", action="store_true", help="capture into Foreman's own project (self-improvement)")
 
     s = add("ask", cmd_ask, tier=("Every task", 180), help="ask the user to authorize guard categories for a task; their next message decides")
@@ -5997,16 +6121,25 @@ def _build_parser():
     s.add_argument("--because", help="set: why a cap goes up (recorded as a costly decision)")
     s.add_argument("--days", type=int, default=1, help="show: spend over this many days")
 
-    s = add("settings", lazy("fmsettings", "cmd_settings"), tier=("Project and settings", 775),
-            help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496)")
+    s = add("settings", lambda a: (lazy("fmsettingsserve", "cmd_serve") if a.action == "serve" else  # T-1659
+                                   lazy("fmsettings", "cmd_settings"))(a), tier=("Project and settings", 775),
+            help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496); "
+                 "serve: the same as a page on 127.0.0.1, token-locked, changes through set")
     s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
-                                                                 "bisect", "profile"])  # T-1543 bisect, T-1656 profile
+                                                                 "bisect", "profile", "chords", "serve"])
+    # T-1543 bisect, T-1656 profile, T-1660 chords, T-1659 serve
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
                                           "share code fm settings export printed (T-1510; tui.toml's [profile] tables "
                                           "aren't in it); list: a group alone (look, colors, layout, keys, pane; "
                                           "T-1511)")
     s.add_argument("value", nargs="?", help="set: the new value")
     s.add_argument("--surface", choices=["app", "plugin"], help="only the app's tui.toml, or only the pane's options")
+    s = add("home", lazy("fmhome", "cmd_home"), tier=("Project and settings", 785),  # T-1665
+            help="export: Foreman's state as one tarball, secrets redacted and credential files left out; import FILE: "
+                 "into an empty home, every member's path and hash checked first")
+    s.add_argument("action", choices=["export", "import"])
+    s.add_argument("file", nargs="?", help="import: the tarball fm home export wrote")
+    s.add_argument("--out", metavar="FILE", help="export: where to write it (default: foreman-home-DATE.tar.gz here)")
 
     s = add("evolve", lazy("fmevolve", "cmd_evolve"), tier=("Reports", 1100), help="one bench-gated generation: revise (or --drop) one Foreman "
                                                             "instruction file on an evolve branch, bench both, gate (T-0224)")
@@ -6055,16 +6188,32 @@ def _build_parser():
     s = add("design", lazy("fmdesign", "cmd_design"), tier=("Every task", 92), epilog=fmdesign.rules_help(),
             formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
             "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
-            "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs")
-    s.add_argument("action", choices=["lint", "extract", "palette", "contrast"])
-    s.add_argument("paths", nargs="+", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
+            "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs; "
+            "tokens DESIGN.md --to css|app|pane: its Tokens table as CSS variables, an fm code theme or the pane's "
+            "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into: brief, a11y (contrast, reduced motion, "
+            "flashes, alt, focus styles) and debt N (untokened literals under a budget); advisory exits 0, blocking 1; "
+            "roll [--seed N] [--apply|--undo]: one look card's palette, type and motion, seeded, into DESIGN.md")
+    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll"])
+    s.add_argument("--seed", type=int, help="roll: the same seed gives the same look (default: a fresh one, printed)")
+    s.add_argument("--apply", action="store_true", help="roll: write it as DESIGN.md's ## Look, undoable")
+    s.add_argument("--undo", action="store_true", help="roll: put DESIGN.md back as it was before the roll(s)")
+    s.add_argument("paths", nargs="*", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
                    "root); palette: a seed colour (hex, rgb(), hsl(), oklch()); contrast: a token file, then pairs "
                    "fg/bg[:need[,dark need]] (default: the known role pairs, body text 7:1 in dark)")
     s.add_argument("--format", choices=["css", "dtcg", "tailwind"], default="css",
                    help="palette: CSS light-dark() roles, DTCG JSON or a Tailwind v4 @theme")
-    s.add_argument("--out", metavar="PATH", help="extract: the file to write the Tokens section into (default: "
-                                                 "DESIGN.md at the repo root, or docs/DESIGN.md if that exists; - prints)")
-    s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 93), help="PNG files with no Pillow (T-1630): info "
+    s.add_argument("--out", metavar="PATH", help="extract, roll: the file to write the Tokens or Look section into "
+                                                 "(default: DESIGN.md at the repo root, or docs/DESIGN.md if that "
+                                                 "exists; - prints); palette: the file to write the export to "
+                                                 "(default prints)")
+    s.add_argument("--to", choices=["css", "app", "pane"], default="css", help="tokens: CSS custom properties (dark "
+                   "under prefers-color-scheme), a tui.toml [colors] table fm settings accepts, or the pane's palette "
+                   "JSON (T-1651)")
+    s.add_argument("--light", action="store_true", help="tokens --to app|pane: the light values (app: on the paper "
+                   "theme)")
+    s.add_argument("--dark", action="store_true", help="tokens --to app|pane: the dark values (app: on the night "
+                   "theme; the default picks the theme by the screen colour's lightness)")
+    s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 91), help="PNG files with no Pillow (T-1630): info "
             "PATH: size and mode; diff A B: the changed-pixel count and box (exit 1 when they differ or sizes do)")
     s.add_argument("action", choices=["info", "diff"])
     s.add_argument("paths", nargs="+", metavar="PATH", help="info: one PNG; diff: two, A then B")
@@ -6077,8 +6226,41 @@ def _build_parser():
     s.add_argument("--every", type=int, default=250, metavar="MS", help="ms between frames (10 to 10000; default 250)")
     s.add_argument("--frozen", action="store_true", help="fm smoke's frozen profile first: the clock fixed, CSS "
                    "animations and transitions paused")
+    s.add_argument("--profile", choices=["tv", "eink", "car", "wrist"], help="shoot at a surface's width, height and scale")
+    s.add_argument("--reduced-motion", action="store_true", help="emulate prefers-reduced-motion: reduce")
     s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
-    s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
+    s.add_argument("--diff", metavar="BASE", help="compare each viewport shot with BASE/<page>/viewport.png (an earlier "
+                   "fm shot --out BASE): exit 1 over the baseline's noise floor (the most its own frames differ) or "
+                   "when a font fell back (T-1637)")
+    s = add("critique", lazy("fmcritique", "cmd_critique"), tier=("Every task", 94), help="URL|FILE: a computed-style "
+            "census of the page (colours, fonts, sizes, radii, shadows, spacing, with counts; or a census .json) "
+            "critiqued against DESIGN.md's tokens: unnamed values, near-duplicates, outliers (exit 1 on findings; no "
+            "browser: not run, exit 2); --why SELECTOR: the cascade behind one element (T-1642)")
+    s.add_argument("target", metavar="URL|FILE", nargs="?")
+    s.add_argument("--stress", metavar="TEXT", help="TEXT pseudo-localised: accented, 40%% longer, in [brackets], "
+                   "placeholders ({n}, %%d, ${x}, <b>) intact (T-1643)")
+    s.add_argument("--profile", choices=["tv", "eink", "car", "wrist"], help="a surface's viewport and contrast preset")
+    s.add_argument("--why", metavar="SELECTOR", help="the matched rules and winning declaration per property")
+    s.add_argument("--design", metavar="PATH", help="the DESIGN.md (default: the repo root's, or docs/DESIGN.md)")
+    s.add_argument("--any-url", action="store_true", help="open any http(s) page, not only localhost, 127.0.0.1, "
+                   "[::1] and files")
+    s = add("flow", lazy("fmflow", "cmd_flow"), tier=("Every task", 97), help="FILE: a user journey, one step a line "
+            "(goto URL|FILE, click SEL, type SEL TEXT, expect SEL [TEXT], wait MS), in the headless Chromium fm shot "
+            "finds, as a verify command: exit 1 names the step that failed, 2 with no browser (never a pass) (T-1639)")
+    s.add_argument("file", metavar="FILE")
+    s.add_argument("--timeout", type=float, default=10, metavar="S",
+                   help="seconds each element step waits for its element (above 0, at most 60; default 10)")
+    s.add_argument("--any-url", action="store_true", help="goto may open any http(s) page, not only localhost, "
+                   "127.0.0.1, [::1] and files")
+    s = add("stories", lazy("fmstories", "cmd_stories"), tier=("Every task", 96), help="CHART: a component's state "
+            "matrix, one page with a cell per state the JSON chart lists, each reached by fm flow steps and shot in "
+            "the headless Chromium fm shot finds; no browser: the states listed, why, and exit 2 (never a pass) (T-1640)")
+    s.add_argument("chart", metavar="CHART")
+    s.add_argument("--profile", choices=["tv", "eink", "car", "wrist"], help="shoot every state at a surface's width, height and scale")
+    s.add_argument("--reduced-motion", action="store_true", help="emulate prefers-reduced-motion: reduce")
+    s.add_argument("--out", metavar="PATH", help="write here (a .html file that isn't a link, replaced only when fm "
+                   "stories wrote it) instead of the project's state stories/<chart>.html")
+    s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 95), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
             "score as CSS custom properties and @keyframes, WAAPI options or three.js tween parameters, the same "
@@ -6091,7 +6273,7 @@ def _build_parser():
     s.add_argument("--out", metavar="FILE", help="compile: write here, replacing the file whole, not print it")
     s.add_argument("--samples", metavar="FILE", help="verify: a JSON list of samples, not a live crawl")
     import fmscene  # T-1633: stdlib only and small; its schema is the help's epilog
-    s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 95), epilog=fmscene.SCHEMA,
+    s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 98), epilog=fmscene.SCHEMA,
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
             "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
     s.add_argument("action", choices=["compile"])
@@ -6121,8 +6303,12 @@ def _build_parser():
     s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
     s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
                                                    "in state picks.json; needs --catalogue (T-0962)")
-    s.add_argument("what", nargs="?", choices=["looks"], help="looks: the looks gallery instead, one living specimen "
-                   "per look card in one file that loads nothing from another host (looks.html; T-1649)")
+    s.add_argument("what", nargs="?", choices=["looks", "city", "graph"], help="looks: the looks gallery instead, one "
+                   "living specimen per look card in one file that loads nothing from another host (looks.html; "
+                   "T-1649); city: the repo as a 3D city, each tracked file a building as tall as its lines, lit "
+                   "windows its commits in 180 days, a district per folder, over an SVG poster (city.html; T-1653); "
+                   "graph: the task graph in 3D, open and linked tasks in layers by what they wait on, depends_on as "
+                   "edges, status as colour, over an SVG poster; run it again to refresh (graph.html; T-1654)")
     s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
@@ -6409,7 +6595,7 @@ WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"s
                    "playbooks": ("action", {"show", "route", "preview"}),  # T-1621: prints, but can rebuild fm
                    # map's map.json cache; not blame (T-1622): git in a FOREMAN_PLAYBOOKS repo runs its filters
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
-                   "design": ("action", {"lint", "palette", "contrast"}),  # T-1506, T-1507: these only read
+                   "design": ("action", {"lint", "palette", "contrast", "tokens"}),  # T-1506, T-1507, T-1651: read
                    "img": ("out", {None}),  # T-1630: info and diff read; --out writes
                    "motion": ("action", {"check"})}
 

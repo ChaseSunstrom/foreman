@@ -25,6 +25,24 @@ def ratio_of(proofs, fg, bg, theme):
 
 
 class Palette(ForemanTestCase):
+    def test_palette_out_writes_the_file_and_refuses_a_link(self):
+        # T-1714: --out was advertised and ignored; the export went to stdout only
+        import subprocess
+        import sys
+        fm = os.path.join(PLUGIN, "bin", "fm")
+        out = os.path.join(self.tmp, "tokens.css")
+        p = subprocess.run([sys.executable, fm, "design", "palette", "#3366cc", "--out", out], capture_output=True,
+                           text=True, cwd=self.tmp)
+        self.assertIn(p.returncode, (0, 1), p.stderr)
+        self.assertIn("--", read_text(out))
+        self.assertNotIn(":root", p.stdout, "the export goes to the file, not stdout")
+        link = os.path.join(self.tmp, "link.css")
+        os.symlink(os.path.join(self.tmp, "elsewhere.css"), link)
+        p = subprocess.run([sys.executable, fm, "design", "palette", "#3366cc", "--out", link], capture_output=True,
+                           text=True, cwd=self.tmp)
+        self.assertEqual(p.returncode, 2)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "elsewhere.css")))
+
     def test_oklch_lands_on_the_playbooks_hex(self):
         # type-and-colour.md's worked example lists the sRGB hex each ramp value lands on
         for value, hexed in (("oklch(0.97 0.006 250)", "#F2F5F9"), ("oklch(0.22 0.010 250)", "#171B1F"),

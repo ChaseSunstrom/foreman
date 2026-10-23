@@ -219,3 +219,106 @@ class Fsck(ForemanTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GateLock(ForemanTestCase):
+    """T-1668: one machine-wide gate lock; a second gate run waits, saying who holds it."""
+
+    def test_only_a_full_check_run_takes_the_lock(self):  # T-1743: builders' --affected runs mustn't queue
+        import argparse
+        import contextlib
+        from unittest import mock
+        import fmcli
+        took = []
+
+        @contextlib.contextmanager
+        def lock(label, **kw):
+            took.append(label)
+            yield
+        with mock.patch.object(c, "gate_lock", lock), mock.patch.object(fmcli, "_cmd_check", return_value=0):
+            for affected, repeat, want in ((True, 0, []), (False, 3, []), (False, 0, ["fm check"])):
+                took.clear()
+                fmcli.cmd_check(argparse.Namespace(action="run", affected=affected, repeat=repeat))
+                self.assertEqual(took, want, (affected, repeat))
+
+    def test_a_long_held_lock_is_waited_on_only_so_long(self):  # T-1753: a hung check elsewhere held it 40+ min
+        import argparse
+        import threading
+        from unittest import mock
+        import fmcli
+        held, release = threading.Event(), threading.Event()
+
+        def hold():
+            with c.gate_lock("hung check"):
+                held.set()
+                release.wait(10)
+        t = threading.Thread(target=hold)
+        t.start()
+        held.wait(5)
+        err = io.StringIO()
+        try:
+            with mock.patch.dict(os.environ, {"FOREMAN_GATE_WAIT": "0.3"}), mock.patch("sys.stderr", err), \
+                    mock.patch.object(fmcli, "_cmd_check", return_value=0) as run:
+                self.assertEqual(fmcli.cmd_check(argparse.Namespace(action="run", affected=False, repeat=0)), 0)
+            run.assert_called_once()
+            self.assertIn("hung check", err.getvalue())
+            self.assertIn("running beside it", err.getvalue())
+        finally:
+            release.set()
+            t.join()
+        with mock.patch.object(fmcli, "_cmd_check", side_effect=c.LockTimeout("project lock busy")):
+            with self.assertRaises(c.LockTimeout):  # the check's own lock timeout isn't mistaken for the gate's
+                fmcli.cmd_check(argparse.Namespace(action="run", affected=False, repeat=0))
+
+    def test_second_run_waits_and_names_holder(self):
+        import threading
+        said, order, held, release = [], [], threading.Event(), threading.Event()
+
+        def first():
+            with c.gate_lock("release check"):
+                order.append("first in")
+                held.set()
+                release.wait(5)
+                order.append("first out")
+
+        def second():
+            with c.gate_lock("canary", say=said.append):
+                order.append("second in")
+
+        t1 = threading.Thread(target=first)
+        t1.start()
+        held.wait(5)
+        t2 = threading.Thread(target=second)
+        t2.start()
+        for _ in range(250):  # the waiter says so once it has found the lock busy: no fixed sleep
+            if said:
+                break
+            time.sleep(0.02)
+        self.assertEqual(order, ["first in"])  # the second still waits
+        self.assertTrue(said and "release check" in said[0] and str(os.getpid()) in said[0])
+        release.set()
+        t1.join(5)
+        t2.join(5)
+        self.assertEqual(order, ["first in", "first out", "second in"])
+
+    def test_nested_run_does_not_deadlock(self):
+        code = "import fmcore as c\nwith c.gate_lock('inner', timeout=1):\n    print('ok')"
+        with c.gate_lock("outer"):
+            r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=20,
+                               env={**os.environ, "PYTHONPATH": os.path.dirname(c.__file__)})
+        self.assertEqual(r.stdout.strip(), "ok", r.stderr)
+
+    def test_stale_held_value_takes_the_lock(self):
+        # FOREMAN_GATE_HELD=999999 with no holder: ignored, the lock is really taken, and a second process waits on us
+        code = "import fmcore as c\nwith c.gate_lock('probe', timeout=0.5):\n    print('ok')"
+        env = {**os.environ, "PYTHONPATH": os.path.dirname(c.__file__), "FOREMAN_GATE_HELD": "999999"}
+        os.environ["FOREMAN_GATE_HELD"] = "999999"
+        try:
+            with c.gate_lock("stale"):
+                self.assertEqual(os.environ["FOREMAN_GATE_HELD"], str(os.getpid()))  # overwritten
+                os.environ["FOREMAN_GATE_HELD"] = "999999"  # a child with a wrong value is no child of ours
+                r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=20, env=env)
+        finally:
+            os.environ.pop("FOREMAN_GATE_HELD", None)
+        self.assertNotIn("ok", r.stdout)
+        self.assertIn("LockTimeout", r.stderr)

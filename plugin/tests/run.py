@@ -3,10 +3,11 @@
 test already gets its own FOREMAN_HOME and repo), so the gate waits for the slowest class instead of the sum of all.
 Exit 1 on any failure, with each failing class's report.
 
-  python3 plugin/tests/run.py [-j N] [-k PATTERN] [-p GLOB]
+  python3 plugin/tests/run.py [-j N] [-k PATTERN] [-p GLOB] [--load N]
 """
 import argparse
 import concurrent.futures
+import contextlib
 import os
 import re
 import subprocess
@@ -68,12 +69,30 @@ def run_one(cid, k):
     return cid, p.returncode, p.stderr, int(m.group(1)) if m else 0, time.time() - t0
 
 
+@contextlib.contextmanager
+def burn(n):
+    """T-1730: n busy-loop children for the block's duration (a load flake on demand), killed after; each also stops
+    by itself once its parent is gone (a run killed with SIGKILL leaves no spinner behind)."""
+    procs, spin = [], f"import os\nwhile os.getppid() == {os.getpid()}: pass"
+    try:
+        for _ in range(max(0, n)):
+            procs.append(subprocess.Popen([sys.executable, "-c", spin], stdin=subprocess.DEVNULL))
+        yield procs
+    finally:
+        for p in procs:
+            p.kill()
+        for p in procs:
+            p.wait()
+
+
 def parse(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     ap.add_argument("-k", action="append", default=[], help="only tests whose id contains this (repeatable)")
     ap.add_argument("-p", action="append", help="module glob, as unittest discover's -p (repeatable; default "
                                                 "test*.py)")  # T-0389: a second -p replaced the first
+    ap.add_argument("--load", type=int, default=0, metavar="N",
+                    help="run beside N busy-loop processes (T-1730: reproduce a flake that shows only under load)")
     ap.add_argument("names", nargs="*", help="test module names, each like -k (T-0808: fm check affected's {names})")
     a = ap.parse_intermixed_args(argv)  # names may sit on either side of -k
     a.k += a.names
@@ -93,7 +112,7 @@ def main():
     if missing:  # T-1287: a name that matches nothing (a test file that doesn't exist) fails, not passes unseen
         sys.stderr.write(f"run.py: no test matches {', '.join(missing)}\n")
         return 1
-    with concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
+    with burn(a.load), concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
         results = list(ex.map(lambda c: run_one(c, a.k), todo))
     failed = [r for r in results if r[1] != 0]
     for cid, _, err, _, _ in failed:

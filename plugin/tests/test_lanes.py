@@ -224,6 +224,17 @@ class Lanes(ForemanTestCase):
             agent = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"]
             self.assertIn(f'effort: "{effort}"', agent)
 
+    def test_a_clean_tasks_brief_says_to_record_the_behaviour_lock_first(self):
+        # T-1712: CLEAN lanes failed the close gate: their brief never said to run the tests before the first edit
+        lock = "fm check --evidence {} --step 1"
+        for type_ in ("CLEAN", "FEATURE"):
+            tid = first(self.fm("task", "new", type_, "--type", type_, "--tier", "S", "--ac", "ok :: true",
+                                "--step", "s", "--json").stdout)["id"]
+            with open(json.loads(self.fm("lane", "brief", tid, "--json").stdout)["path"]) as f:
+                text = f.read()
+            (self.assertIn if type_ == "CLEAN" else self.assertNotIn)(lock.format(tid), text)
+            self.fm("lane", "rm", tid)
+
     def test_lane_friction_cap_unused_slot_and_a_gone_worktree(self):
         # T-1709: the drive compared to the default 2, not fm lane max; an unused brief and a gone worktree said nothing
         import fmhooks

@@ -728,6 +728,16 @@ class Config(unittest.TestCase):
             f.write(text)
         return path
 
+    def test_contrast_is_fmdesigns_one_wcag_formula(self):
+        # T-1675: the TUI turns its colours (#rrggbb or a 256-colour index) into sRGB and asks fmdesign; no copy here
+        import inspect
+        import fmdesign
+        T = tui()
+        self.assertFalse("0.03928" in inspect.getsource(T), "one WCAG implementation: fmdesign.contrast")
+        self.assertAlmostEqual(T.contrast("#000000", "#FFFFFF"), 21.0)
+        self.assertAlmostEqual(T.contrast(16, 231), 21.0, msg="256-colour cube black and white")
+        self.assertAlmostEqual(T.contrast("#777777", 0), fmdesign.contrast((0x77 / 255,) * 3, (0, 0, 0)))
+
     def test_a_users_file_sets_theme_colours_layout_and_keys(self):
         cfg, errors = tui().load_config(self.write(
             'theme = "paper"\nborder = "heavy"\n[colors]\nok = "#007A00"\naccent = { fg = 33, bold = false }\n'
@@ -828,7 +838,8 @@ class Settings(unittest.TestCase):
         self.assertTrue({f"colors.{n}" for n in T.DEFAULTS["theme"]} <= keys)
         self.assertTrue({f"layout.{n}" for n in T.DEFAULTS["layout"]} <= keys)
         self.assertTrue({f"keys.{T.key_name(k)}" for k in T.DEFAULTS["keys"]} <= keys)
-        self.assertEqual(set(T.DEFAULTS) - {"preset", "theme", "layout", "keys"} - set(names), {"palette"})
+        self.assertTrue({f"ext.{n}.{k}" for n, mine in T.DEFAULTS["ext"].items() for k in mine} <= keys)  # T-1657
+        self.assertEqual(set(T.DEFAULTS) - {"preset", "theme", "layout", "keys", "ext"} - set(names), {"palette"})
         self.assertIn("palette", keys)
         for e in fmsettings.app_schema():
             self.assertTrue(e["help"] and e["group"] and e["effect"] in ("now", "next run"), e)

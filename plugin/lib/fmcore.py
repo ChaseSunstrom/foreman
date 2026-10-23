@@ -851,14 +851,17 @@ def lock(directory, timeout=5.0):
 # ---------------------------------------------------------------- redaction
 
 _V = r"""[^\s"',;\\]"""
+_KEYWORDS = (r"api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|auth[_-]?token|token|secret|password|passwd"
+             r"|pwd")
+_SECRET_KEY = re.compile(r"(?i)(?:" + _KEYWORDS + r")$")  # T-1733: a key name that ends in one holds a secret
 _SECRET_RES = [
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"), "[REDACTED PRIVATE KEY]"),
     (re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"), "[REDACTED JWT]"),
     (re.compile(r"\b(?:sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
                 r"|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}|glpat-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{30,})"), "[REDACTED]"),
     (re.compile(r"(?i)(authorization\s*[:=]\s*)(?:(?:bearer|basic|token)\s+)?" + r"""[^\s"'\\]+"""), r"\1[REDACTED]"),
-    (re.compile(r"(?i)((?:api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|auth[_-]?token|token|secret|password|passwd|pwd)"
-                r"\s*[=:]\s*)(\\?[\"']?)" + _V + "{4,}"), r"\1\2[REDACTED]"),
+    (re.compile(r"(?i)((?:" + _KEYWORDS + r")\\?[\"']?\s*[=:]\s*)(\\?[\"']?)" + _V + "{4,}"),  # T-1733: "key": too
+     r"\1\2[REDACTED]"),
     (re.compile(r"(://[^/\s:@]+:)[^@\s/]+@"), r"\1[REDACTED]@"),
 ]
 
@@ -888,8 +891,10 @@ def redact_obj(obj):
         return redact(obj)
     if isinstance(obj, list):
         return [redact_obj(x) for x in obj]
-    if isinstance(obj, dict):
-        return {k: redact_obj(v) for k, v in obj.items()}
+    if isinstance(obj, dict):  # T-1733: a value under a credential-named key is redacted whatever its shape
+        return {k: "[REDACTED]" if isinstance(k, str) and _SECRET_KEY.search(k) and v not in ("", None)
+                and isinstance(v, (str, int, float)) and not isinstance(v, bool) else redact_obj(v)
+                for k, v in obj.items()}
     return obj
 
 
@@ -3704,3 +3709,52 @@ def resume_info(p):
     return {"id": b.id, "type": b.type, "tier": b.tier, "title": b.title, "status": b.status, "step": s["step"],
             "steps_done": s["steps_done"], "steps_total": s["steps_total"], "resume": b.section("Resume here").strip(),
             "execution_prompt": b.section("Execution prompt").strip(), "path": b.path, "stale": stale_refs(p, b)}
+
+
+@contextlib.contextmanager
+def gate_lock(label, say=None, timeout=None):
+    """T-1668: one machine-wide gate lock (flock, state/gate.lock): release checks, the canary and full fm check runs
+    queue behind each other instead of overloading the machine. A waiter says (say(text)) who holds it. A child of the
+    holder (FOREMAN_GATE_HELD names the holder's pid) passes: it runs under the lock its parent holds. A dead holder
+    releases the flock itself. timeout None waits for ever; LockTimeout when it runs out."""
+    held = os.environ.get("FOREMAN_GATE_HELD")
+    os.makedirs(state_dir(), exist_ok=True)
+    path = os.path.join(state_dir(), "gate.lock")
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    deadline = None if timeout is None else time.monotonic() + timeout
+    told = False
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # free: a stale FOREMAN_GATE_HELD is ignored
+                break
+            except BlockingIOError:
+                if held and held != str(os.getpid()):  # a pass only while the lock file names that pid right now
+                    try:
+                        child = f"(pid {held})" in os.pread(fd, 200, 0).decode("utf-8", "replace")
+                    except OSError:
+                        child = False
+                    if child:
+                        yield
+                        return
+                if not told and say:
+                    told = True
+                    with contextlib.suppress(OSError):
+                        who = os.pread(fd, 200, 0).decode("utf-8", "replace").strip() or "another gate run"
+                        say(f"gate lock held by {who}; waiting")
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise LockTimeout("gate lock busy")
+                time.sleep(0.1)
+        os.ftruncate(fd, 0)
+        os.pwrite(fd, f"{label} (pid {os.getpid()})".encode(), 0)
+        prev = os.environ.get("FOREMAN_GATE_HELD")
+        os.environ["FOREMAN_GATE_HELD"] = str(os.getpid())
+        try:
+            yield
+        finally:
+            if prev is None:
+                os.environ.pop("FOREMAN_GATE_HELD", None)
+            else:
+                os.environ["FOREMAN_GATE_HELD"] = prev
+    finally:
+        os.close(fd)  # closing the descriptor releases the flock
