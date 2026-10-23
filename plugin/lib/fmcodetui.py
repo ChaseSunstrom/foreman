@@ -2069,7 +2069,8 @@ class App:
                 else:
                     self.message = f"no app command matches {text}"
             elif text:
-                self.start([text])
+                after, self.after = getattr(self, "after", None), None
+                self.start([text], **({"after": after} if after else {}))  # T-1340
         elif k == "\x1b":
             self.input, self.next_root = "", None
             back, self.prompt_back = self.prompt_back, "main"
@@ -2188,7 +2189,7 @@ class App:
         if self.running():
             self.message = "a run is going: s stops it"
         else:
-            self.mode = "prompt"
+            self.mode, self.after = "prompt", None  # T-1340: n is a fresh request; Enter after a close follows up
 
     def help(self):
         self.mode = "help"
@@ -2231,6 +2232,9 @@ class App:
     def expand(self):
         if self.selected is not None:
             self.expanded ^= {self.selected}
+        elif self.state.status == "closed" and self.state.task and not self.running():  # T-1340: Enter after a close
+            self.after, self.mode = self.state.task, "prompt"
+            self.message = f"a follow-up to {self.state.task}: its request, plan and changed files go with it"
 
     def follow_tail(self):
         self.follow, self.selected = True, None

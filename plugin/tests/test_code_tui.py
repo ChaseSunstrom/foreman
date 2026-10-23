@@ -2018,6 +2018,28 @@ class Delight(unittest.TestCase):  # T-1349
         self.assertIn("no run with it yet", app.message)
 
 
+class FollowUpKey(unittest.TestCase):  # T-1340
+    def test_enter_after_a_close_opens_a_follow_up_and_n_a_fresh_request(self):
+        T = tui()
+        started = []
+        app = T.App(T.DEFAULTS, spawn=lambda words, opts: started.append((words, opts)) or None)
+        app.feed({"event": "start", "request": "fix add", "schema": 1})
+        app.feed({"event": "task", "task": "T-0001"})
+        app.feed({"event": "closed", "text": "T-0001 closed", "task": "T-0001"})
+        app.key("\n")
+        self.assertEqual(app.mode, "prompt")
+        self.assertIn("follow-up to T-0001", app.message)
+        for ch in "document it\n":
+            app.key(ch)
+        self.assertEqual(started[-1][0], ["document it"])
+        self.assertEqual(started[-1][1].get("after"), "T-0001")
+        app.feed({"event": "closed", "text": "T-0002 closed", "task": "T-0002"})
+        app.new()
+        for ch in "fresh\n":
+            app.key(ch)
+        self.assertNotIn("after", started[-1][1])
+
+
 class Receipt(unittest.TestCase):  # T-1305
     def test_a_close_adds_a_receipt_and_quit_leaves_the_last_frame_in_the_scrollback(self):
         import io

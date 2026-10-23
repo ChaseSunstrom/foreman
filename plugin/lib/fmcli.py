@@ -6423,6 +6423,9 @@ def _build_parser():
                    "(priced calls only: a claude CLI's own count, or a models.json profile's price); claude turns get "
                    "--max-budget-usd with what is left; a resume keeps the run's own unless given")
     s.add_argument("--dry-plan", action="store_true", help="print the plan and stop: no task, no change")
+    s.add_argument("--after", metavar="ID", help="a follow-up to an earlier run's task: its request, plan, how it "
+                                                 "ended and the files it changed go to the planner as data, and the "
+                                                 "new task's request names it (T-1340)")
     s.add_argument("--resume", nargs="?", const="", metavar="ID", help="carry on a crashed or killed run from its "
                                                                      "journal (default: the newest unfinished one)")
     s.add_argument("--no-commit", action="store_true", help="close the task without committing")
