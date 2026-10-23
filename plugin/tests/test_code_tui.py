@@ -1792,6 +1792,7 @@ class HostileWidth(unittest.TestCase):
                  "tickets": dict(tickets=[s, s], items=[(0, s, True), (1, s, False)]),  # T-1350
                  "looks": dict(look_answers=[], look_pairs=[(s, s)], items=[(s, s)]),
                  "help": {},
+                 "breakout": dict(game=__import__("fmextras").Breakout(), game_t=0.0),  # T-1556
                  "settings": dict(set_rows=[1, 2], set_query=s, set_note=(s, "warn"), items=[
                      {"head": s, "count": 1, "surface": "app"},
                      {"key": s, "value": s, "default": s, "group": "colors", "surface": "app", "help": s, "choices": [s]}]),
