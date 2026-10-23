@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm run --all-projects works every Foreman project's queue in turn with the same options (--runner NAME too), each under its own run lock, skipping projects with nothing queued, and says how many it worked and how many stopped early (T-1782)
 - fm code app: g pressed during a run leaves that run alone and starts the queue when it ends, counting it in the digest; s stops both (T-1783)
 - fm code app: g works the project's queue, one fm code --task run after another, until it is empty, two tasks in a row block, or s stops it; then a digest lands in Activity (what closed, what blocked and why, why it stopped), headed "While you were away" when no key was pressed for five minutes (T-1779, the app part)
 - foreman-ui pane: an option set to a value it can't use (a typo in settings.json) keeps its last good value instead of falling back to the default, says so once as a toast, and a restarted pane takes the last good values it kept, as the fm code app keeps its last good tui.toml (T-1613)
