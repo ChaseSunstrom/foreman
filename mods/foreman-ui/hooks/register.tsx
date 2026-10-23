@@ -291,6 +291,29 @@ async function refresh($: EngineInterface): Promise<boolean> {
 // T-1574: the options the mod started with; the poll applies the engine's current ones over them when they change
 let startOptions: Record<string, unknown> = {}
 let seenOptions = ''
+// T-1613: each option's usable values. One the pane can't use keeps its last good value (kept across restarts in the
+// mod's store) and is said once, as fm code's app keeps its last good tui.toml (T-1543)
+const OPTION_OK: Record<string, (v: unknown) => boolean> = {
+  freshAt: v => typeof v === 'number',
+  freshTokens: v => typeof v === 'number',
+  mascot: v => typeof v === 'string' && (v === 'off' || v in MASCOT_COLORS),
+  motion: v => v === 'full' || v === 'reduced' || v === 'calm' || v === 'off',
+  chat: v => v === 'full' || v === 'tree',
+  palette: v => v === 'default' || v === 'cb' || v === 'riso',
+}
+let goodOptions: Record<string, unknown> = {}
+
+/** T-1613: the options as the pane takes them (each usable value, else the last good one) and the ones it kept */
+export function usable(options: Record<string, unknown>, good: Record<string, unknown>) {
+  const out: Record<string, unknown> = { ...options }, kept: string[] = []
+  for (const [k, ok] of Object.entries(OPTION_OK)) {
+    if (options[k] === undefined || ok(options[k])) continue
+    kept.push(k)
+    if (ok(good[k])) out[k] = good[k]
+    else delete out[k]
+  }
+  return { out, kept }
+}
 let savedPalette: Record<string, unknown> | undefined // T-1780: fm ui's last palette_custom (T-1717)
 
 // T-1574: /config or fm settings set (settings.json) changed an option: it applies on this poll, no restart. The first
@@ -306,7 +329,12 @@ async function pollOptions($: EngineInterface) {
   const seen = JSON.stringify(now)
   if (seen === seenOptions) return
   seenOptions = seen
-  applyOptions({ ...startOptions, ...now })
+  const { out, kept } = usable({ ...startOptions, ...now }, goodOptions)
+  applyOptions(out)
+  for (const k of Object.keys(OPTION_OK)) if (OPTION_OK[k]!(out[k])) goodOptions[k] = out[k]
+  await $.store.set('goodOptions', goodOptions).catch(() => undefined)
+  const show = (v: unknown) => clean(typeof v === 'string' ? `'${v}'` : JSON.stringify(v) ?? '').slice(0, 40)
+  if (kept.length) $.ui.toast(`⚠ foreman-ui: ${kept.map(k => `${k} ${show(now[k] ?? startOptions[k])} isn't a value it can use; kept ${clean(String(out[k] ?? 'the default'))}`).join('; ')} (fm settings list shows the choices)`)
   if (cfg.motion === 'off') sleep() // T-0912: off means no clocks, even mid-work
   else if (cfg.motion === 'reduced') { // the 8 fps frame clock only: the 30 fps blit stops now
     motionClock?.cancel()
@@ -601,6 +629,9 @@ export const register: Register = (on, options) => {
       name: 'fm-trust',
       description: 'Foreman: let Claude edit the guard and Claude Code settings (on | off); works only when you type it',
     })
+    const good = await $.store.get('goodOptions').catch(() => undefined) // T-1613: the last good options, checked
+    goodOptions = good && typeof good === 'object' && !Array.isArray(good) ? usable(good as Record<string, unknown>, {}).out : {}
+    applyOptions(usable(startOptions, goodOptions).out)
     const stored = await $.store.get('sound').catch(() => undefined)
     if (stored === false) await update($, sound, () => false)
     await refresh($)
