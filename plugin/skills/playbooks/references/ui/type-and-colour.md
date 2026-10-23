@@ -264,3 +264,11 @@ Each line is pass or fail on the built screens and the token files.
 ## Library cards
 
 The code side lives in the stack library: `fm lib show typography` (rem sizing, fluid `clamp()`, font loading and fallback metrics), `fm lib show color-contrast` (WCAG pairs, states, forced colours, a contrast unit test), `fm lib show dark-mode` (theme switching without a flash, the stored choice), `fm lib show design-systems` (layered tokens and theming), `fm lib show css-custom-properties` (token plumbing), `fm lib show accessibility-testing` (axe in each theme), `fm lib show visual-regression` (screenshot baselines for both themes).
+
+## UI contract
+
+- motion: n/a: type and colour don't move; a colour change on hover or a theme switch follows motion.md.
+- contrast: the contrast-proof script proves every text and UI pair, on light and on dark.
+- keyboard: the focus ring has its own colour token, passing 3:1 against both surfaces.
+- small screens: the type scale steps down at 360 px, and line length stays readable with no sideways scroll.
+- states: error, warning, success and disabled have their own colour roles, each with a word or icon too.

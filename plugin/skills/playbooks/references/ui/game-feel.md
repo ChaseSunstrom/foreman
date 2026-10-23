@@ -221,3 +221,11 @@ Pass the settings in once: `Shake(seed, scale=0 if reduced else shake_setting)`.
 ## Library cards
 
 `fm lib show game-loop` (fixed step, hit-stop's home), `fm lib show game-physics` (render interpolation, why collision shapes don't squash), `fm lib show phaser`, `fm lib show pygame`, `fm lib show godot`, `fm lib show godot-gdscript`, `fm lib show love2d`, `fm lib show unity`, `fm lib show monogame`, `fm lib show animation` (WAAPI and CSS for playful UI), `fm lib show accessibility`. Add `--section verify` for each card's checks.
+
+## UI contract
+
+- motion: every juice row has its reduced-motion fallback; shake, flashes and hit-stop turn off with it.
+- contrast: flashes and particles never cover text or drop it under 4.5:1; health and damage read by shape or number too, not colour alone.
+- keyboard: every action has a key and can be rebound; menus are a keyboard walk with visible focus.
+- small screens: at 360 px the HUD fits with no sideways scroll and touch controls are at least 44 px.
+- states: loading, paused, game over and a failed asset load each have a designed screen.

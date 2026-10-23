@@ -236,3 +236,11 @@ Every line is pass or fail; run them on the built screens, not on the plan.
 - [ ] No line from "Defaults to avoid" appears unless listed under Allowed exceptions.
 - [ ] The floors hold: contrast measured, focus visible, reduced motion tried, 200% zoom tried.
 - [ ] The cover test passes on the main screen.
+
+## UI contract
+
+- motion: the direction names its motion stance in DESIGN.md, the reduced-motion version included.
+- contrast: DESIGN.md's palette is proven by the contrast script before any screen is built.
+- keyboard: the direction includes its focus style, written in DESIGN.md with the rest of the look.
+- small screens: the direction is sketched at 360 px first, then widened.
+- states: DESIGN.md says how empty, loading, error and done look in this direction.

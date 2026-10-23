@@ -60,3 +60,11 @@ Use when building or reworking UI inside a terminal app or a Claude Code mod (pa
 29. Mount each component on every surface you support, find by text, press by key, and advance a mocked clock to prove animation starts and stops.
 30. Render at several sizes (20×12, 40×16, 80×24, a wide one) and with hostile text (wide glyphs, control characters, very long words) and assert nothing draws past the border; keep a golden snapshot of the main screen and regenerate it on purpose, never by habit.
 31. Drive the real binary in a pseudo-terminal once per release: entry, a resize, a paste, Ctrl-Z, quit, and check the terminal state afterwards.
+
+## UI contract
+
+- motion: the motion budget has an off setting that honours the app's reduced setting: a still screen that says the same.
+- contrast: colour roles pass on dark and light terminals, and every status has a glyph or word too, so NO_COLOR keeps the meaning.
+- keyboard: every action has a key, listed in the help; nothing needs a mouse.
+- small screens: it works at 40 columns and through a resize, with no line wider than the terminal.
+- states: empty, working, error and done each have a designed line or panel, never a raw traceback.

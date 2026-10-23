@@ -69,3 +69,11 @@ the top by a link, can sit above the middle band and never trigger.
 
 `fm lib show animation` (compositor-only motion, reduced motion), `fm lib show d3`, `fm lib show svg-canvas`,
 `fm lib show web-performance`, `fm lib show accessibility`, `fm lib show layout-shift`.
+
+## UI contract
+
+- motion: under reduced motion the sticky graphic becomes stepped images, and nothing hijacks the scroll either way.
+- contrast: step cards keep 4.5:1 over the graphic, and each state change is named in the text, not only drawn.
+- keyboard: the steps are ordinary content, so the keyboard and screen readers walk them in order.
+- small screens: at 360 px the graphic stacks above each step instead of sticking beside it.
+- states: before the first step, between steps and a failed graphic each show something designed.

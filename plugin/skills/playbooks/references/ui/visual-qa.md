@@ -211,3 +211,11 @@ This is a look per task, not a regression suite. When a screen stops changing, t
 ## Library cards
 
 The tooling lives in the stack library: `fm lib show playwright` (contexts, locators, emulation), `fm lib show visual-regression` (committed baselines, masking, pinned rendering), `fm lib show test-fixtures` (scoped seeds with clean-up), `fm lib show dark-mode` (the theme switch the dark frames exercise), `fm lib show animation` (reduced motion in code), `fm lib show responsive-design` (breakpoints the 768 frame tests), `fm lib show accessibility-testing` (what an automated scan adds to the eye), `fm lib show e2e-strategy` (which journeys deserve a test of their own).
+
+## UI contract
+
+- motion: reduced motion is its own column in the frame matrix.
+- contrast: the receipt records a contrast check per frame, not only how it looks.
+- keyboard: a focus-visible frame (Tab pressed once) is part of the matrix.
+- small screens: 360 px is the matrix's first width, and any sideways scroll fails the frame.
+- states: the seeded frames include empty, loading, error and done for each screen.

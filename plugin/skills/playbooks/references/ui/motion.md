@@ -170,3 +170,11 @@ The page must be readable with animation and JS absent. Loading motion decorates
 ## Library cards
 
 The code side lives in the stack library: `fm lib show animation` (CSS, WAAPI, view transitions), `fm lib show framer-motion` (variants, presence, layout), `fm lib show skeleton-loading`, `fm lib show layout-shift`, `fm lib show css-custom-properties` (token plumbing), `fm lib show toasts`, `fm lib show dialogs`, `fm lib show web-performance`, `fm lib show accessibility`. Add `--section verify` for just the checks.
+
+## UI contract
+
+- motion: reduced motion is its own column in the state-to-motion table, designed, not durations set to zero.
+- contrast: nothing rests below 4.5:1 once a fade ends, and motion never carries a meaning that words or shape don't also carry.
+- keyboard: focus moves with the content a transition reveals; nothing focusable sits off screen mid-animation.
+- small screens: distances and durations scale down at 360 px, and no motion pushes content past the edge.
+- states: entering, loading, error and done each have a transition and a still end state.

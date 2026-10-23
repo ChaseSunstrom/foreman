@@ -106,3 +106,11 @@ Confirmations over 300 ms pass this script but fail step 3; keep the cue table's
 `fm lib show python-audio` (loading, resampling and measuring audio in Python), `fm lib show browser-storage`
 (remembering the choice), `fm lib show accessibility` (live regions, never sound alone), `fm lib show toasts` (the
 visual twin).
+
+## UI contract
+
+- motion: n/a: sound doesn't move; each cue's visual twin follows the motion rule.
+- contrast: every cue has a visual twin that meets the contrast rule, so nothing is told by sound alone.
+- keyboard: the sound toggle and volume are keyboard reachable, with visible focus.
+- small screens: the sound controls fit at 360 px, and sound stays off by default at every size.
+- states: muted, playing and a failed audio load each have a designed state; an error never only beeps.
