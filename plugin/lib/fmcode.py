@@ -8,7 +8,8 @@
     fm code bench [--model P | --worker CLI] [--seeds a,b]   grade a model or CLI on seeded tasks (fmcodebench, T-1215)
 
 The model never drives. It fills a PLAN slot ({type, tier S|M, title, criteria: [{text, verify}], steps}), checked
-and repaired at most twice with the error quoted back; then, for each step, it picks one action at a time, as a native
+and repaired at most twice with the error quoted back, then asked one plain-text question a field (T-1765); then, for
+each step, it picks one action at a time, as a native
 tool call when its profile has tools, else a JSON object in its text ({"action": NAME, ...}):
   read {path, start?, lines?}   a file's numbered lines (or a folder's entries), inside the project
   search {pattern, glob?}       git grep -E, bounded
@@ -249,29 +250,79 @@ def check_truncated(profile, messages, r):
                         "sent): use a model with a longer context or a smaller request")
 
 
-def slot(run, profile, messages, check, what):
-    """Ask for one JSON slot; on a bad answer quote the error back, at most REPAIRS times."""
+def _unlabel(text, key):
+    """T-1765: a plain-text answer without code fences or a leading 'key:' label."""
+    text = "\n".join(x for x in (text or "").strip().splitlines() if not x.strip().startswith("```")).strip()
+    label = re.match(r"(?i)\s*" + re.escape(key).replace("_", "[ _]") + r"\s*:\s*", text)
+    return text[label.end():] if label else text
+
+
+def _items(text):
+    """T-1765: one item a line, without list bullets or numbers."""
+    return [re.sub(r"^\s*(?:[-*•]|\d+[.)])\s+", "", x).strip() for x in text.splitlines() if x.strip()]
+
+
+def _word(text):
+    w = text.split()
+    return w[0].strip(".,;:'\"`*").upper() if w else ""
+
+
+def _criteria(text):
+    """T-1765: 'what is true :: the command' lines; a line without '::' is left out."""
+    return [{"text": t.strip(), "verify": v.strip().strip("`").strip()}
+            for t, _, v in (x.partition("::") for x in _items(text) if "::" in x)]
+
+
+def _line(text):
+    return " ".join(_items(text))
+
+
+PLAN_FIELDS = (("type", f"the task's type, one word of {', '.join(TYPES)}", _word),
+               ("tier", "its tier, one letter: S for a small change in one or two files, M for several files or a "
+                        "design choice", _word),
+               ("title", "a one-line title of at most 120 characters", lambda s: (_items(s) or [""])[0]),
+               ("criteria", "its acceptance criteria, one a line, each written as: what is true when it is done :: a "
+                            "shell command that exits 0 only then", _criteria),
+               ("steps", "its steps in order, one short line each", _items))
+CLOSE_FIELDS = (("intent", "the intent note (how the change meets the request), one line", _line),
+                ("adversary", "the adversary note (what input or case could still break it, and why it doesn't), one "
+                              "line", _line),
+                ("docs", "the docs note (the docs updated, or none: why), one line", _line),
+                ("lesson", "the lesson note (what the next similar task should know, or none: why), one line", _line),
+                ("why_not_caught", "the why-not-caught note (the test, gate or guard that would have caught it "
+                                   "earlier, or none: why), one line", _line))
+
+
+def _ask(run, profile, messages, what):
+    """One model call for a slot, under the spend cap; a CLI planner must leave the tree as it found it."""
+    before = fmcore.worktree_tree(run.root) if profile.get("kind") == "cli" else None
+    run.unlean = None
+    run.check_cap(what)
+    try:
+        r = m.complete(run.capped(profile), messages, max_tokens=MAX_TOKENS)
+    except m.ModelError:
+        if run.unlean:  # T-1426: a lean planner stopped at its init line, as a lean worker is
+            raise CodeError(f"{profile['name']}'s claude session started with {', '.join(run.unlean[:5])}, which "
+                            "a lean session never loads (a .mcp.json or .claude settings in the repo?); it was "
+                            "stopped before it read anything: check the repo's Claude Code settings") from None
+        raise
+    if before:  # T-1320: a CLI planner runs with the user's own settings; planning must change nothing
+        after = fmcore.worktree_tree(run.root)
+        if after != before:
+            gone = os.fsdecode(_git(run.root, "diff", "--name-only", before, after or before).stdout).split()
+            raise CodeError(f"{profile['name']} changed {', '.join(gone[:5]) or 'files'} while planning, which "
+                            "must change nothing: check them (git diff) before going on")
+    run.usage(r, profile, what)
+    check_truncated(profile, messages, r)
+    return r
+
+
+def slot(run, profile, messages, check, what, fields=()):
+    """Ask for one JSON slot; on a bad answer quote the error back, at most REPAIRS times. Then (T-1765), given
+    fields, the slot-format ladder: one plain-text question a field, the slot assembled from the answers and checked."""
     err = None
     for _ in range(REPAIRS + 1):
-        before = fmcore.worktree_tree(run.root) if profile.get("kind") == "cli" else None
-        run.unlean = None
-        run.check_cap(what)
-        try:
-            r = m.complete(run.capped(profile), messages, max_tokens=MAX_TOKENS)
-        except m.ModelError:
-            if run.unlean:  # T-1426: a lean planner stopped at its init line, as a lean worker is
-                raise CodeError(f"{profile['name']}'s claude session started with {', '.join(run.unlean[:5])}, which "
-                                "a lean session never loads (a .mcp.json or .claude settings in the repo?); it was "
-                                "stopped before it read anything: check the repo's Claude Code settings") from None
-            raise
-        if before:  # T-1320: a CLI planner runs with the user's own settings; planning must change nothing
-            after = fmcore.worktree_tree(run.root)
-            if after != before:
-                gone = os.fsdecode(_git(run.root, "diff", "--name-only", before, after or before).stdout).split()
-                raise CodeError(f"{profile['name']} changed {', '.join(gone[:5]) or 'files'} while planning, which "
-                                "must change nothing: check them (git diff) before going on")
-        run.usage(r, profile, what)
-        check_truncated(profile, messages, r)
+        r = _ask(run, profile, messages, what)
         v = m.extract_json(r["text"])
         if v is None and r["tool_calls"]:
             v = r["tool_calls"][0]["args"]
@@ -281,7 +332,23 @@ def slot(run, profile, messages, check, what):
             return v
         messages.append({"role": "user", "content": f"That is not a valid {what}: {err}. Reply with only the "
                                                     "corrected JSON object."})
-    raise CodeError(f"the model gave no valid {what} after {REPAIRS} repairs: {err}")
+    if fields:
+        messages.pop()  # a field question takes the last repair's place
+        v = {}
+        for key, question, parse in fields:
+            messages.append({"role": "user", "content": f"Leave the JSON aside. In plain text, reply with only "
+                                                        f"{question}."})
+            r = _ask(run, profile, messages, what)
+            messages.append({"role": "assistant", "content": r["text"]})
+            v[key] = parse(_unlabel(r["text"], key))
+        why = check(v)
+        if not why:
+            run.emit("note", f"the {what} came field by field, after {REPAIRS} failed JSON repairs")
+            return v
+        err = f"{err}; field by field: {why}"
+    raise CodeError(f"the model gave no valid {what} after {REPAIRS} repairs"
+                    f"{', nor field by field' if fields else ''}: {err}",
+                    then=None if run.tid else "fm code models")  # before a task: a stronger model is the way on
 
 
 # ---------------------------------------------------------------- the run
@@ -2366,13 +2433,13 @@ def _plan(run, profile, dry=False):
         return _verify_plan(run, dry)
     msgs = [{"role": "system", "content": PLAN_PROMPT + run.fence(_files(run.root))},
             {"role": "user", "content": run.request + _context_note(run)}]
-    run.plan = slot(run, profile, msgs, check_plan, "plan")
+    run.plan = slot(run, profile, msgs, check_plan, "plan", PLAN_FIELDS)
     if is_answer(run.plan):  # a question: no checks to judge
         return
     why = None if dry else _plan_problem(run)  # --dry-plan runs nothing
     if why:  # one re-plan
         msgs.append({"role": "user", "content": f"{why} Reply with only the corrected plan as a JSON object."})
-        run.plan = slot(run, profile, msgs, check_plan, "plan")
+        run.plan = slot(run, profile, msgs, check_plan, "plan", PLAN_FIELDS)
         why = _plan_problem(run)
         if why and why.startswith("refused"):
             raise CodeError(why)
@@ -2756,7 +2823,8 @@ def _finish(run, profile):
         notes = run.close_notes
         if notes is None:
             notes = slot(run, profile, [{"role": "system", "content": CLOSE_PROMPT},
-                                        {"role": "user", "content": _task_text(run)}], check_close, "set of close notes")
+                                        {"role": "user", "content": _task_text(run)}], check_close, "set of close notes",
+                         CLOSE_FIELDS)
             run.log(kind="close_notes", notes=notes)
         a += [f"--lens=intent: {notes['intent']}", f"--lens=adversary: {notes['adversary']}",
               f"--docs={notes['docs']}", f"--lesson={notes['lesson']}"]
