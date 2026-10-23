@@ -192,7 +192,7 @@ def version():
         return "?"
 
 
-def bench(seeds, model=None, worker=None, timeout=600, max_steps=40, say=None):
+def bench(seeds, model=None, worker=None, timeout=600, max_steps=40, say=None, variant=None):
     """Run the seeds; the run's record, also appended to code-bench.jsonl. A worker skips the dangerous seed: its
     own commands run before the guard judges what they did, and it keeps the real home folder."""
     results = []
@@ -209,13 +209,13 @@ def bench(seeds, model=None, worker=None, timeout=600, max_steps=40, say=None):
     closed = sum(r["closed"] for r in counted)
     names = [r["seed"] for r in counted]  # a subset is compared only with the same subset
     prev = next((h["score"] for h in reversed(history()) if (h.get("model"), h.get("worker"), h.get("seed_set"),
-                                                            h.get("seed_names")) == (model, worker, SEED_SET, names)),
-                None)
+                                                            h.get("seed_names"), h.get("variant")) ==
+                 (model, worker, SEED_SET, names, variant)), None)
     rec = {"ts": fmcore.now(),
            "foreman": version(), "seed_set": SEED_SET, "seed_names": names, "model": model, "worker": worker,
            "seeds": len(counted),
            "closed": closed, "score": round(closed / len(counted), 3) if counted else 0.0, "previous": prev,
-           "results": results}
+           "results": results, **({"variant": variant} if variant else {})}
     try:
         os.makedirs(os.path.dirname(results_path()), exist_ok=True)
         with open(results_path(), "a", encoding="utf-8") as f:
@@ -255,6 +255,28 @@ def cmd(args, words):
                   file=sys.stderr)
             return 2
     seeds = [known[n] for n in names] if names else SEEDS
+    variants = [v.strip() for v in (getattr(args, "variants", None) or "").split(",") if v.strip()]
+    if variants:  # T-1403: one run per prompt variant, each recorded, and their closed counts side by side
+        import fmcode
+        odd = [v for v in variants if v != "base" and v not in fmcode.VARIANTS]
+        if odd:
+            print(f"fm code bench: no prompt variant {odd[0]!r}; the variants: base, {', '.join(fmcode.VARIANTS)}",
+                  file=sys.stderr)
+            return 2
+        recs, was = {}, os.environ.get("FM_PROMPT_VARIANT")
+        try:
+            for v in variants:
+                os.environ["FM_PROMPT_VARIANT"] = "" if v == "base" else v
+                recs[v] = bench(seeds, model, worker, getattr(args, "seed_timeout", None) or 600,
+                                getattr(args, "max_steps", None) or 40, variant=v)
+        finally:
+            os.environ.pop("FM_PROMPT_VARIANT", None) if was is None else os.environ.update(FM_PROMPT_VARIANT=was)
+        side = {v: {"closed": r["closed"], "seeds": r["seeds"], "score": r["score"]} for v, r in recs.items()}
+        if args.json:
+            print(json.dumps({"variants": side, "runs": list(recs.values())}))
+        else:
+            print("\n".join(f"  {v:<10} {s['closed']}/{s['seeds']} closed ({s['score']:.2f})" for v, s in side.items()))
+        return 0
     who = f"worker {worker}" if worker else model
     if not args.json:
         print(f"fm code bench: {who}, {len(seeds)} seed{'s' * (len(seeds) != 1)} (set {SEED_SET})", flush=True)

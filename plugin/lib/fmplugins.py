@@ -825,8 +825,36 @@ def _runs_line(needs):
     return f"\n    runs: {runs or 'nothing on its own'}" + (f"\n    adds: {adds}" if adds else "")
 
 
+def suggest(root, n=3):
+    """T-1397: up to n marketplace plugins not installed that fit the project's own stack: for each card fm lib
+    detects here (strongest first), the best find() hit for its name, with the card and its evidence as the reason.
+    Listed only: installing still needs fm ask ID plugin and fm plugins install."""
+    import fmlib
+    out, seen = [], set()
+    for card in fmlib.suggest(root, n=12):
+        area = card.get("area") if card.get("area") not in (None, "lang") else ""  # cargo's area is rust; lang says nothing
+        for h in find(f"{card['name']} {area}", n=3):
+            if h["installed"] or h["id"] in seen:
+                continue
+            why = ", ".join(str(w) for w in (card.get("why") or [])[:2])
+            out.append({"id": h["id"], "description": h["description"], "tokens": h["tokens"], "trusted": h["trusted"],
+                        "reason": f"the project uses {card['name']}" + (f", {area}" if area else "")
+                                  + (f" ({why})" if why else "")})
+            seen.add(h["id"])
+            break
+        if len(out) >= n:
+            break
+    return out
+
+
 def cmd_plugins(args):
     import fmcli
+    if args.action == "suggest":  # T-1397
+        rows = suggest(os.getcwd())
+        size = lambda r: f"~{r['tokens']:,} tokens" if r["tokens"] else "size known once installed"  # noqa: E731
+        return fmcli.out(args, rows, "\n".join(
+            [f"{r['id']} — {c.plain(r['reason'])} ({size(r)}): {c.plain(r['description'])[:100]}" for r in rows] +["Install one only after fm ask ID plugin --pin ID (nothing was installed)." if rows else
+                               "No marketplace plugin fits this project's stack beyond what's installed."]))
     if args.action in ("add-marketplace", "forget") and not args.words:
         raise fmcli.UsageError(f"fm plugins {args.action} needs " + (
             "a source (owner/repo, git URL or path)" if args.action == "add-marketplace" else "an id"))

@@ -63,6 +63,23 @@ class Init(ForemanTestCase):
         self.assertIn("fm init", p.stderr)
 
 
+class FlagsAmongPaths(unittest.TestCase):  # T-1671
+    def test_a_flag_among_path_words_moves_in_front_and_free_text_is_left_as_typed(self):
+        p = fmcli.build_parser()
+        first = lambda argv: fmcli._options_first(p, argv)  # noqa: E731
+        a = p.parse_args(first(["new", "check", "--run", "x.py"]))
+        self.assertEqual((a.words, a.run), (["check", "x.py"], True))
+        a = p.parse_args(first(["-p", "proj", "img", "diff", "a.png", "--tol", "3", "b.png"]))
+        self.assertEqual((a.paths, a.tol, a.project), (["a.png", "b.png"], 3, "proj"))
+        a = p.parse_args(first(["img", "diff", "a.png", "--tol=3", "b.png"]))
+        self.assertEqual((a.paths, a.tol), (["a.png", "b.png"], 3))
+        for argv in (["new", "check", "--bogus", "x.py"],  # an option it doesn't know: as typed, argparse says so
+                     ["code", "fix", "--json", "it"],  # a request is free text: a flag inside stays an error
+                     ["session", "send", "ID", "please", "--title", "to"],
+                     ["new", "check", "x.py", "--", "--run"]):  # past -- nothing moves
+            self.assertEqual(first(list(argv)), argv)
+
+
 class ParserOnce(unittest.TestCase):
     def test_the_parser_is_built_once_per_process(self):
         # T-1378: the hook queues a prompt's requests with in-process fm calls; each rebuilt the parser twice (its own
@@ -644,6 +661,26 @@ class EditCriterion(ForemanTestCase):
 
 
 class Checks(ForemanTestCase):
+    def test_a_slow_gate_reruns_only_its_failing_tests(self):  # T-1678
+        self.fm("init")
+        with open(os.path.join(self.repo, "run.py"), "w") as f:
+            f.write("import sys\nif sys.argv[1:] == ['test_m.C.test_x']:\n    print('Ran 1 test\\n\\nOK')\n"
+                    "    sys.exit(0)\nprint('FAIL: test_x (test_m.C.test_x)\\nRan 9 tests\\n\\nFAILED (failures=1)')\n"
+                    "sys.exit(1)\n")
+        self.fm("check", "add", "python3 run.py")
+        slow = {"FOREMAN_SLOW_GATE": "0"}  # every gate counts as slow
+        p = self.fm("check", "--fresh", env=slow, check=False)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertIn("passed on a rerun of just them", p.stdout)
+        self.assertEqual(c.load_briefs(c.find_project(self.repo)), [], "no baseline task for a load-spike failure")
+        import fmcli
+        self.assertIsNone(fmcli._narrow_rerun("python3 run.py two", "FAIL: t (m.C.t)\nFAILED (failures=2)\n"),
+                          "a failure the names don't cover: the whole gate stands")
+        self.assertIsNone(fmcli._narrow_rerun("go test ./...", "--- FAIL: TestX\n"))
+        self.assertEqual(fmcli._narrow_rerun("pytest -q", "FAILED a.py::t - x\n=== 1 failed, 3 passed ===\n"),
+                         "pytest -q a.py::t")
+        self.assertIsNone(fmcli._narrow_rerun("pytest -q", "FAILED a.py::t - x\n=== 1 failed, 1 error ===\n"))
+
     def test_a_gate_flaky_again_and_again_fails(self):
         # final review: a racy bug that passes half the time mustn't keep passing as "flaky"
         self.fm("init")

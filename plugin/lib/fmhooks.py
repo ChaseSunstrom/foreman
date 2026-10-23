@@ -1811,7 +1811,8 @@ def _pre_tool_use(raw):
         builders = (lambda: _fix_note(pl, p), lambda: _dep_note(pl, p), lambda: _veto_note(pl, p),
                     lambda: _scope_note(pl, p, act), lambda: _tripwire_note(pl, p, act), lambda: _step_note(pl, p, act),
                     lambda: _ambient_note(p), lambda: _bus_note(pl), lambda: _card_note(pl, p, act),
-                    lambda: _test_first_note(pl, p, act), lambda: _design_note(pl, p, act))
+                    lambda: _test_first_note(pl, p, act), lambda: _design_note(pl, p, act),
+                    lambda: _gate_pipe_note(pl))
         note = " ".join(_said_once(pl, list(filter(None, [made, saved, slow, warn] + [_each(b) for b in builders]))))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
@@ -2051,6 +2052,20 @@ def _snapshot_note(pl, guard):
 
 
 SNAPSHOT_S = 3.0  # of the PreToolUse hook's 5 s
+
+
+_GATE_PIPE = re.compile(r"(?m)(?:^\s*|[;&|(]\s*)(?:\w+=\S*\s+)*fm\s+(?:quiet\s+(?:--\s+)?fm\s+)?check\b(?![-\w])"
+                        r"(?:[^|;&\n]|>&)*\|(?!\|)")  # a command's first word; 2>&1 before the pipe
+
+
+def _gate_pipe_note(pl):
+    """T-1759: `fm check … | tail` exits with tail's status, so a red gate reads green: T-1758 reached main that way."""
+    ti = pl.get("tool_input") or {}
+    cmd = re.sub(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"", "''", ti.get("command") or "")  # T-1768: quoted text isn't a command
+    if pl.get("tool_name") != "Bash" or "pipefail" in cmd or not _GATE_PIPE.search(cmd):
+        return None
+    return ("Foreman: fm check is piped here, so this call's exit status is the last program's, not the gates': read "
+            "its ✓/✗ line before you push or close (or drop the pipe: fm check prints a short summary already).")
 
 
 def _bus_note(pl):

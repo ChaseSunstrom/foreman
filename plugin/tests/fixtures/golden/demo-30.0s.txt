@@ -19,7 +19,7 @@
 │    PASS   check 1                                                 ││ step 1       ▆▆▆▆▆▆▆▆▆▆▆▆▆                  35s │  ⟨370c53efc7⟩
 │    PASS   check 2                                                 ││ step 2                    ▆▆▆▆▆▆▆▆▆▆        27s │  ⟨680b786d17⟩
 │  DONE   T-0042 closed; committed 4e1b9c2 (3 files)                ││ step 3                             ▆▆▆▆      8s │  ⟨53887e3f8c⟩
-│                                                                   ││ checks                                ▆▆▆▆   9s │  ⟨677e0cafde⟩
+│   ▣ receipt  T-0042 · checks 2/2 · 3 files +56 −3 · 20,398 token… ││ checks                                ▆▆▆▆   9s │  ⟨1023abad11⟩
 │                                                                   │╰─────────────────────────────────────────────────╯  ⟨5d03f2b087⟩
 │                                                                   │╭─ Tokens per call ───────────────────── 5 calls ─╮  ⟨dd978fc0a9⟩
 │                                                                   ││                      ██████                     │  ⟨9274cd91a8⟩

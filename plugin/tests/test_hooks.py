@@ -18,6 +18,22 @@ def parse(proc):
     return json.loads(out) if out.startswith("{") else None
 
 
+class GatePipe(unittest.TestCase):  # T-1759
+    def test_a_piped_fm_check_is_told_its_exit_is_the_last_programs(self):
+        import fmhooks
+        note = lambda cmd, **ti: fmhooks._gate_pipe_note({"tool_name": "Bash", "tool_input": dict(command=cmd, **ti)})  # noqa: E731
+        for cmd in ("fm check 2>&1 | tail -5", "FOREMAN_GATE_WAIT=600 fm quiet -- fm check | tail -3",
+                    "cd x && fm check --evidence T-1 --step 2 | grep ✓"):
+            self.assertIn("✓/✗ line", note(cmd) or "", cmd)
+        self.assertIn("✓/✗ line", note("fm check | tail", run_in_background=True) or "", "a background gate too")
+        for cmd in ("fm check", "set -o pipefail; fm check | tail -5", "fm check || echo red", "fm checkpoint | tail",
+                    "fm quiet -- fm check", "echo fm check | wc",
+                    'grep -n "fm check playbooks\\|fm check onwrite" README.md | cut -c1-80',  # T-1768: quoted text
+                    "grep 'x|fm check y' f | wc"):
+            self.assertIsNone(note(cmd), cmd)
+        self.assertIsNone(fmhooks._gate_pipe_note({"tool_name": "Read", "tool_input": {"command": "fm check | tail"}}))
+
+
 class HookCase(ForemanTestCase):
     def setUp(self):
         super().setUp()

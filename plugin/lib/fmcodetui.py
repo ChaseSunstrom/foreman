@@ -273,9 +273,27 @@ class State:
         for s in self.steps:
             s["state"] = "done"
         self.note("closed", text=e.get("text", ""))
+        self.note("receipt", text=self.receipt(e))  # T-1305
         if isinstance(e.get("first_in"), str) and e["first_in"]:  # T-1349: once a project, a brighter close
             self.first = True
             self.note("first", text=f"first proved change in {e['first_in'][:60]}")
+
+    def receipt(self, e):
+        """T-1305: the closed run in one line: task, checks passed, files and lines, tokens, cost, time, commit."""
+        files = sorted({f for fs in self.files.values() for f in fs})
+        add, rm = (sum(v[i] for v in self.stat.values()) for i in (0, 1))
+        commit = re.search(r"committed ([0-9a-f]{7,40})", str(e.get("text") or ""))
+        usd = e.get("usd")
+        end = e.get("ts") if isinstance(e.get("ts"), (int, float)) else self.last_ts  # apply() sets last_ts after
+        secs = (end - self.first_ts) if self.first_ts is not None and end is not None else None
+        parts = [str(self.task or e.get("task") or "the run"),
+                 f"checks {sum(c['state'] == 'pass' for c in self.criteria)}/{len(self.criteria)}",
+                 f"{len(files)} file{'s' * (len(files) != 1)}" + (f" +{add} −{rm}" if self.stat else ""),
+                 f"{sum(self.tokens):,} tokens"]
+        parts += [f"${usd:.2f}"] if isinstance(usd, (int, float)) and not isinstance(usd, bool) else []
+        parts += [duration(max(0.0, secs))] if secs is not None else []
+        parts += [commit.group(1)[:7]] if commit else ["not committed"]
+        return " · ".join(parts)
 
     def _on_note(self, e):  # T-1328: which runner the run uses and why, or a caution about it
         self.note("note", text=str(e.get("text", "")))
@@ -921,6 +939,8 @@ def entry_segments(e, w, thoughts=True):
     k = e.get("kind")
     if k == "first":  # T-1349
         return [("  ✦ ", "accent"), (e.get("text", ""), "strong")]
+    if k == "receipt":  # T-1305
+        return [("  ▣ ", "accent"), ("receipt  ", "dim"), (e.get("text", ""), "text")]
     if k == "step":
         head = f" {e['n']} "
         return [("──", "border"), (head, "chip_accent"), (" " + e["text"] + " ", "strong"),
@@ -2049,7 +2069,8 @@ class App:
                 else:
                     self.message = f"no app command matches {text}"
             elif text:
-                self.start([text])
+                after, self.after = getattr(self, "after", None), None
+                self.start([text], **({"after": after} if after else {}))  # T-1340
         elif k == "\x1b":
             self.input, self.next_root = "", None
             back, self.prompt_back = self.prompt_back, "main"
@@ -2168,7 +2189,7 @@ class App:
         if self.running():
             self.message = "a run is going: s stops it"
         else:
-            self.mode = "prompt"
+            self.mode, self.after = "prompt", None  # T-1340: n is a fresh request; Enter after a close follows up
 
     def help(self):
         self.mode = "help"
@@ -2211,6 +2232,9 @@ class App:
     def expand(self):
         if self.selected is not None:
             self.expanded ^= {self.selected}
+        elif self.state.status == "closed" and self.state.task and not self.running():  # T-1340: Enter after a close
+            self.after, self.mode = self.state.task, "prompt"
+            self.message = f"a follow-up to {self.state.task}: its request, plan and changed files go with it"
 
     def follow_tail(self):
         self.follow, self.selected = True, None
@@ -3646,10 +3670,26 @@ def run_screen(app, wrapper=None):
             pass
     try:
         (wrapper or session)(lambda io: _loop(io, app))
+        sys.stdout.write(final_frame(app))  # T-1305: the screen as it was, in the scrollback, once the terminal is back
+        sys.stdout.flush()
     finally:
         app.stop()
         for name, handler in old.items():
             signal.signal(getattr(signal, name), handler)
+
+
+def final_frame(app, size=None):
+    """T-1305: the last screen as plain text (no colour, no control character, trailing spaces trimmed), for the
+    scrollback after the alternate screen closes, so a run stays readable after q."""
+    w, h = size or shutil.get_terminal_size((100, 30))
+    try:
+        text = render(app.state, w, h, app.cfg, app).text()
+    except Exception:  # the scrollback copy never turns a clean quit into a crash
+        return ""
+    lines = ["".join(c if c.isprintable() else " " for c in line).rstrip() for line in text.split("\n")]
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines) + "\n" if lines else ""
 
 
 def record(events, path, size=(120, 34), fps=20, seconds=None, cfg=None, hold=2.5):
