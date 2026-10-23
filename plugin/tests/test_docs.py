@@ -31,6 +31,25 @@ def frontmatter(path):
     return meta, m.group(2)
 
 
+def fm_mention_problems(text):
+    """T-1701: each `fm VERB [word]` in backticks that names no command, or a lowercase word that isn't one of the
+    verb's subcommands or its first positional's choices. The one checker every skill test shares."""
+    import fmcli
+
+    def first_positional_choices(parser):
+        pos = next((a for a in parser._actions if not a.option_strings), None)
+        return pos.choices if pos is not None else None
+
+    verbs, bad = first_positional_choices(fmcli.build_parser()), []
+    for verb, word in re.findall(r"`fm ([\w-]+)((?: [a-z][\w-]*)?)", text):
+        inner = first_positional_choices(verbs[verb]) if verb in verbs else None
+        if verb not in verbs:
+            bad.append(f"fm {verb}")
+        elif inner and word and word.strip() not in inner:
+            bad.append(f"fm {verb}{word}")
+    return bad
+
+
 def rel(path):
     return os.path.relpath(path, PLUGIN)
 
@@ -92,10 +111,9 @@ class Skills(unittest.TestCase):
 
     def test_the_job_skills_are_short_and_name_only_real_playbooks_and_verbs(self):
         # T-1701: debug-test, release and research wrap playbooks and fm verbs that exist, and fire on task words
-        import argparse
-        import fmcli
         import fmdoctor
-        verbs = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction)).choices
+        self.assertEqual(fm_mention_problems("`fm nosuch` `fm lane nosuch ID` `fm lane brief ID` `fm task hypo ID add`"),
+                         ["fm nosuch", "fm lane nosuch"], "the checker itself")
         jobs, chars = ("debug-test", "release", "research"), 0
         for name in jobs:
             with self.subTest(skill=name):
@@ -109,13 +127,8 @@ class Skills(unittest.TestCase):
                 self.assertTrue(refs, "wraps at least one playbook")
                 for ref in refs:
                     self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)), ref)
-                named = re.findall(r"`fm ([\w-]+)((?: [a-z][\w-]*)?)", body)
-                self.assertTrue(named, "wraps at least one fm verb")
-                for verb, word in named:
-                    self.assertIn(verb, verbs, f"fm {verb}")
-                    inner = [a for a in verbs[verb]._actions if isinstance(a, argparse._SubParsersAction)]
-                    if inner and word:
-                        self.assertIn(word.strip(), inner[0].choices, f"fm {verb}{word}")
+                self.assertIn("`fm ", body, "wraps at least one fm verb")
+                self.assertEqual(fm_mention_problems(body), [])
         self.assertLessEqual(chars, 360, "three of the 2,200-character listing's job-skill room")
         self.assertEqual([p for p in fmdoctor._description_problems(os.path.join(PLUGIN, "skills"))
                           if any(j in p for j in jobs)], [])
