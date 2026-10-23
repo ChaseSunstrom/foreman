@@ -5481,12 +5481,16 @@ def _build_parser():
             "as the skill loads it, {{fact}}s (test, language, entry…) filled in from fm map and this project's "
             ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
     s.add_argument("action", choices=["show", "eval", "route", "blame", "preview", "coverage", "draft", "mine",
-                                      "counter"], help="eval NAME: "
+                                      "counter", "score", "kata", "lesson"], help="eval NAME: "
                    "held-out briefs with and without the playbook loaded, the lift recorded (T-1618); route STAGE: the "
                    "playbooks a stage or task type loads; blame NAME: each line's task, from git; preview NAME: the "
                    "checks a load adds (T-1622); coverage: a heatmap of stages by stack, the playbooks naming each "
                    "stack's cards; draft ID: a playbook draft from a done task; mine: files this repo changes together; "
-                   "counter: what failed here, reverted commits and blocked tasks (T-1523)")
+                   "counter: what failed here, reverted commits and blocked tasks (T-1523); score NAME --task ID: the "
+                   "steps a done task's run followed; kata NAME [--answer FILE]: its held-out briefs as practice; "
+                   "lesson [RANGE]: a five-minute lesson from a diff (T-1525)")
+    s.add_argument("--task", help="score: the task whose run is scored")
+    s.add_argument("--answer", help="kata: a file holding your answer, scored against every kata's checks")
     s.add_argument("name", nargs="?", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that "
                    "name; route: a stage (verifying) or type (FIX); coverage takes none")
     s.add_argument("--briefs", help="eval: the brief set (default plugin/evals/playbooks/<stage>/<name>.json)")

@@ -78,6 +78,35 @@ class FromThisRepo(ForemanTestCase):
         self.assertEqual([(x["n"], x["words"]) for x in got["look_first"]], [(2, ["cache", "invalidation"])])
         self.assertTrue(got["text"].startswith("Look here first"), got["text"][:200])
 
+    def test_score_marks_the_steps_a_run_followed(self):  # T-1525
+        tid = self.task("Speed up start", "profile the parser warmup", "add the cache")
+        got = json.loads(self.run_fm("score", "cache", "--task", tid, "--json").stdout)
+        self.assertEqual([(x["n"], x["followed"]) for x in got["steps"]], [(1, True), (2, False), (3, False)])
+        self.assertIn(f"{tid} followed 1 of 3 steps", self.run_fm("score", "cache", "--task", tid).stdout)
+        self.assertNotEqual(self.run_fm("score", "cache").returncode, 0, "which task's run")
+
+    def test_kata_lists_practice_briefs_and_scores_an_answer(self):  # T-1525
+        listed = json.loads(self.fm("playbooks", "kata", "verify/tdd-workflow", "--json").stdout)["katas"]
+        self.assertGreaterEqual(len(listed), 3)
+        put(self.tmp, "answer.md", "I'd write a failing test first, then fix it.\n")
+        got = json.loads(self.fm("playbooks", "kata", "verify/tdd-workflow", "--answer",
+                                 os.path.join(self.tmp, "answer.md"), "--json").stdout)["katas"]
+        self.assertTrue(got[0]["pass"])
+        self.assertFalse(all(x["pass"] for x in got))
+        self.assertNotEqual(self.run_fm("kata", "cache").returncode, 0, "no held-out briefs for it")
+
+    def test_lesson_reads_a_diff_with_its_tasks_lessons(self):  # T-1525
+        tid = self.task("Cache the parser", "do it")
+        self.fm("task", "set", tid, "--section", "Lessons", "--text", "- Measure before you cache")
+        self.commit(f"cache the parser ({tid})", **{"src/app.py": "cache = {}\n"})
+        got = json.loads(self.run_fm("lesson", "--json").stdout)
+        self.assertEqual(got["commits"][0][1], f"cache the parser ({tid})")
+        self.assertEqual(got["folders"], [["src", ["app.py"]]])
+        self.assertIn("review/python", got["checklists"])
+        text = self.run_fm("lesson", "HEAD").stdout
+        self.assertIn(f"{tid} Cache the parser: Measure before you cache", text)
+        self.assertNotEqual(self.run_fm("lesson", "--", "-x").returncode, 0, "a range never reads as an option")
+
 
 if __name__ == "__main__":
     unittest.main()
