@@ -6069,7 +6069,10 @@ def _build_parser():
     s.add_argument("--to", choices=["css", "app", "pane"], default="css", help="tokens: CSS custom properties (dark "
                    "under prefers-color-scheme), a tui.toml [colors] table fm settings accepts, or the pane's palette "
                    "JSON (T-1651)")
-    s.add_argument("--light", action="store_true", help="tokens --to app|pane: the light values (default: dark)")
+    s.add_argument("--light", action="store_true", help="tokens --to app|pane: the light values (app: on the paper "
+                   "theme)")
+    s.add_argument("--dark", action="store_true", help="tokens --to app|pane: the dark values (app: on the night "
+                   "theme; the default picks the theme by the screen colour's lightness)")
     s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 93), help="PNG files with no Pillow (T-1630): info "
             "PATH: size and mode; diff A B: the changed-pixel count and box (exit 1 when they differ or sizes do)")
     s.add_argument("action", choices=["info", "diff"])
