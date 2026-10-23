@@ -625,6 +625,32 @@ def run_friction_lines(case):
     return b and [x.split("run friction: ", 1)[1] for x in b.section("Log").splitlines() if "run friction: " in x]
 
 
+class FollowUp(CodeCase):  # T-1340
+    def test_a_follow_up_carries_the_earlier_runs_request_plan_and_files(self):
+        self.serve("openai", plan(), *FIX)
+        self.code("fix add", "--model", "fake")
+        f = self.serve("openai", plan(dict(PLAN, title="Add a docstring to calc.add")))
+        out = self.code("now document it", "--after", "T-0001", "--model", "fake", "--dry-plan").stdout
+        self.assertIn("Add a docstring", out)
+        sent = json.dumps(f.seen[0])
+        for want in ("follow-up to T-0001 (closed", "Its request: fix add", "Its plan: Make calc.add add",
+                     "Files it changed: calc.py", "now document it"):
+            self.assertIn(want, sent)
+        r = self.code("x", "--after", "T-0099", "--model", "fake", "--dry-plan", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no fm code run of that task", r.stderr)
+
+    def test_the_new_task_names_the_earlier_one(self):
+        self.serve("openai", plan(), *FIX)
+        self.code("fix add", "--model", "fake")
+        with open(os.path.join(self.repo, "calc.py"), "w") as fh:
+            fh.write("def add(a, b):\n    return a - b  # broken again\n")  # a new size: no stale .pyc
+        subprocess.run(["git", "-C", self.repo, "commit", "-qam", "break it again"], check=True)
+        self.serve("openai", plan(), *FIX)
+        self.code("and again", "--after", "T-0001", "--model", "fake")
+        self.assertIn("(a follow-up to T-0001)", self.fm("task", "show", "T-0002").stdout)
+
+
 class SkillOffer(CodeCase):  # T-1397
     def test_a_matching_indexed_skill_is_offered_once_and_nothing_else_is(self):
         kit = os.path.join(self.tmp, "kit")

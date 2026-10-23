@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code --after T-ID "<follow-up>" plans a new task that carries the earlier run's request, plan, end and changed files (as data) and names it; in the app, Enter after a close opens that follow-up prompt (n stays a fresh request) (T-1340)
 - fm mandate keeps a sweeping request as one standing record (its text, its clauses, an end date): fm scout and fm night read it, and once it ends scout captures one decision (renew or let it lapse) and nothing more under it (T-1400)
 - fm scout watches upstream: a skill source whose remote hasn't moved isn't fetched (git ls-remote), one that moved is one finding listing the skills added, removed and renamed with its licence class, and each Claude Code changelog line past the tested version naming something Foreman never mentions becomes a finding; nothing installs (T-1391)
 - fm code says in one line when an indexed skill from fm lib's sources clearly matches the request (its name, licence class and token cost; fm lib show reads it), and installs nothing; fm plugins suggest lists up to three marketplace plugins that fit the project's own stack, each with its reason (T-1397)
