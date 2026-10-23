@@ -50,6 +50,27 @@ def paths():
             "manifest": os.path.join(c.state_dir(), "install-manifest.json"), "backups": os.path.join(fh, "backups")}
 
 
+def ensure_fm_link(link=None, target=None):
+    """T-1333: ~/.local/bin/fm → this Foreman's bin/fm when nothing is there, or when the link there is Foreman's (its
+    target a .../plugin/bin/fm with foreman in the path) and that target is gone: a plugin update removed the version it
+    named. Anything else stays: a file, another program's link, a working link to another Foreman checkout. The link
+    made, or None."""
+    link = link or paths()["fm_link"]
+    target = target or os.path.join(c.PLUGIN_ROOT, "bin", "fm")
+    try:
+        if os.path.islink(link):
+            if os.path.exists(link) or not re.search(r"foreman.*/plugin/bin/fm$", os.readlink(link)):
+                return None
+            os.remove(link)
+        elif os.path.lexists(link):
+            return None
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        os.symlink(target, link)
+    except OSError:  # a race, or a home this user can't write: the doctor says what's missing
+        return None
+    return link
+
+
 def _load(path, default):
     try:
         with open(path, encoding="utf-8") as f:

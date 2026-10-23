@@ -3555,6 +3555,42 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class FirstRun(unittest.TestCase):  # T-1333
+    CHECKS = [("fm on PATH", False, "l", "link it"), ("a runner", True, "m", "pick one"),
+              ("this folder is a project", False, "i", "make it one")]
+
+    def app(self, past=False):
+        hist = tempfile.mkdtemp()
+        if past:
+            with open(os.path.join(hist, "T-0001.events.jsonl"), "w") as f:
+                f.write(json.dumps(RUN[0]) + "\n")
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None, history=hist, root=tempfile.mkdtemp())
+        app.setup_checks = lambda: list(self.CHECKS)
+        return app
+
+    def test_the_welcome_before_a_first_run_shows_three_chips_and_their_fixes(self):
+        app = self.app()
+        text = tui().render(app.state, 110, 30, tui().DEFAULTS, app).text()
+        for what in ("fm on PATH", "a runner", "this folder is a project", "l  link it", "i  make it one",
+                     "e  ask: explain this repo"):
+            self.assertIn(what, text)
+        self.assertNotIn("m  pick one", text, "a check that passes needs no fix")
+        fixed = []
+        app._link_fm = lambda: fixed.append("l") or "linked"
+        app._init_project = lambda: fixed.append("i") or "made"
+        app.key("l")
+        app.key("i")
+        self.assertEqual(fixed, ["l", "i"])
+        app.key("e")
+        self.assertEqual((app.mode, app.asking, app.input), ("prompt", True, "explain this repo"))
+
+    def test_a_project_with_a_past_run_shows_the_usual_welcome(self):
+        app = self.app(past=True)
+        text = tui().render(app.state, 110, 30, tui().DEFAULTS, app).text()
+        self.assertNotIn("fm on PATH", text)
+        self.assertIn("new request", text)
+
+
 class Tour(unittest.TestCase):  # T-1309
     def test_the_tour_feeds_the_sample_run_on_its_clock_and_captions_each_panel(self):
         now = [10.0]

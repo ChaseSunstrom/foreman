@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from helpers import FM, read_text, read_json
+from helpers import FM, ForemanTestCase, read_text, read_json
 
 import fmsetup
 
@@ -16,6 +16,49 @@ ORIGINAL = {
     "env": {"KEEP": "1"},
     "theme": "dark",
 }
+
+
+class FmLink(unittest.TestCase):  # T-1333
+    def test_the_link_is_made_or_repaired_only_when_it_is_foremans(self):
+        import shutil
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        link = os.path.join(d, "bin", "fm")
+
+        def plugin(name):
+            path = os.path.join(d, name, "plugin", "bin", "fm")
+            os.makedirs(os.path.dirname(path))
+            with open(path, "w") as f:
+                f.write("#!/bin/sh\n")
+            return path
+        target, other = plugin("foreman"), plugin("foreman-dev")
+        self.assertEqual(fmsetup.ensure_fm_link(link, target), link, "absent: made, its folder too")
+        self.assertEqual(os.readlink(link), target)
+        self.assertIsNone(fmsetup.ensure_fm_link(link, target), "already right")
+        os.remove(link)
+        os.symlink(other, link)
+        self.assertIsNone(fmsetup.ensure_fm_link(link, target), "a working Foreman link to another checkout stays")
+        os.remove(link)
+        os.symlink(os.path.join(d, "cache", "foreman", "0.9.1", "plugin", "bin", "fm"), link)
+        self.assertEqual(fmsetup.ensure_fm_link(link, target), link, "a Foreman link whose version is gone: re-pointed")
+        self.assertEqual(os.readlink(link), target)
+        os.remove(link)
+        os.symlink("/nonexistent/other-tool/bin/fm", link)
+        self.assertIsNone(fmsetup.ensure_fm_link(link, target), "someone else's broken link stays")
+        os.remove(link)
+        with open(link, "w") as f:
+            f.write("#!/bin/sh\n")
+        self.assertIsNone(fmsetup.ensure_fm_link(link, target), "a file stays")
+
+
+class SessionLink(ForemanTestCase):  # T-1333
+    def test_session_start_makes_the_link_unless_told_not_to(self):
+        link = os.path.join(self.tmp, ".local", "bin", "fm")
+        self.hook("SessionStart", {"source": "startup"}, env={"HOME": self.tmp})
+        self.assertFalse(os.path.lexists(link), "FOREMAN_NO_LINK (every test) keeps it from the home")
+        self.hook("SessionStart", {"source": "startup"}, env={"HOME": self.tmp, "FOREMAN_NO_LINK": ""})
+        self.assertTrue(os.path.islink(link))
+        self.assertTrue(os.readlink(link).endswith(os.path.join("plugin", "bin", "fm")))
 
 
 class SetupCase(unittest.TestCase):
