@@ -1213,8 +1213,8 @@ def has_direction(text):
     return any(h == "## Direction" for _, h in headings(text.split("\n"))[0])
 
 
-def write_section(path, lines, title):
-    """Put the section into the markdown file at path (through a symlink, under a lock): replace its own (## Tokens up
+def write_section(path, lines, title, heading="## Tokens"):
+    """Put the section into the markdown file at path (through a symlink, under a lock): replace its own (heading up
     to the next heading, fenced code aside), else insert it after ## Knobs, else append it; a missing file starts with
     a DESIGN.md title. Every other section is kept byte for byte, CRLF line ends included; a file that isn't UTF-8 is
     refused, never rewritten."""
@@ -1235,16 +1235,16 @@ def write_section(path, lines, title):
         heads, fence = headings(doc)
         if fence:  # the section would land inside it, and every run would add another
             raise ValueError(f"{path}: a {fence} code fence is never closed; close it and run again")
-        _splice(doc, heads, lines)
+        _splice(doc, heads, lines, heading)
         out = "\n".join(doc)
         fmcore.write_atomic(path, out.replace("\n", "\r\n") if crlf else out)
 
 
-def _splice(doc, heads, lines):
-    """doc (a list of lines) with lines as its ## Tokens section, in place."""
+def _splice(doc, heads, lines, heading="## Tokens"):
+    """doc (a list of lines) with lines as its heading section (## Tokens; ## Look for fm design roll), in place."""
     def end_of(i):
         return next((j for j, _ in heads if j > i), None)
-    own = next((i for i, h in heads if h == "## Tokens"), None)
+    own = next((i for i, h in heads if h == heading), None)
     knobs = next((i for i, h in heads if h == "## Knobs"), None)
     if own is not None:
         a, b = own, end_of(own)
@@ -1324,6 +1324,12 @@ def _design_tokens(args, fmcli):
 def cmd_design(args):
     import sys
     import fmcli
+    if (args.action == "roll") == bool(args.paths):
+        print(f"fm: design {args.action}: " + ("takes no paths" if args.paths else "needs its paths"), file=sys.stderr)
+        return 2
+    if args.action == "roll":  # T-1648
+        import fmroll
+        return fmroll.cmd_roll(args, fmcli)
     if args.action != "lint":
         return _design_tokens(args, fmcli)
     missing = [p for p in args.paths if not os.path.exists(p)]
