@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code app: n during a run asks a question about the code beside it, read-only: fm code --ask answers it without a task or the tree's lock (and refuses if the planner plans a change), and the answer lands in Activity while the run goes on; s or q ends an ask still going (T-1770)
 - The checks that each fm command has its own help position and that tiers come from registrations moved from test_help to test_cli, which every fmcli.py change runs: fm map links tests by name, so T-1608 never ran test_help and shipped a shared position (T-1776)
 - The guard reads a script a command runs about 6x faster with the same verdicts, so more real scripts are read whole inside its 0.2 s CPU box (182 of 200 public system shell scripts, was 145) instead of falling back to the literal scan: a script read no longer guesses where an unknown target lands (it dropped every such finding), a line is joined to the next or read for a heredoc only when it ends in \ or holds <<, and one command's comments and words are worked out once, not by each check (T-1778)
 - fm settings check draws tui.toml every way Foreman does (the app at every layout, a headless snapshot as --snapshot makes it, and --plain's lines) and names the way that can't, with exit 1, so a setting that only breaks the snapshot or a piped run shows before it matters (T-1612)

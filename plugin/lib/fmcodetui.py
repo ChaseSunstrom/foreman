@@ -310,6 +310,15 @@ class State:
         self.stall = str(e.get("text") or "stalled").strip()  # T-1762: its card, until the turn shows life
         self.heard = _secs(e.get("secs"))
 
+    def _on_aside(self, e):  # T-1770: a question asked beside the run (fm code --ask): its answer; the run unchanged
+        q = _printable_line(e.get("question"))
+        if e.get("text"):
+            self.note("aside", text=f"? {q}")
+            for line in str(e["text"]).splitlines() or [""]:
+                self.note("answer", text="".join(ch for ch in line if ch.isprintable() or ch == "\t"))
+        else:
+            self.note("aside", text=f"? {q}: no answer ({_printable_line(e.get('error')) or 'it ended without one'})")
+
     def _on_answer(self, e):  # T-1320: a question answered: no task, nothing changed
         self.status = "answered"
         for line in str(e.get("text", "")).splitlines() or [""]:
@@ -984,11 +993,18 @@ def entry_segments(e, w, thoughts=True):
         return [(" DONE ", "chip_ok"), ("  " + e["text"], "ok")]
     if k == "answer":
         return [("  ", "text"), (e.get("text", ""), "text")]
+    if k == "aside":  # T-1770
+        return [("  ", "text"), (e.get("text", ""), "accent")]
     if k in ("blocked", "error"):
         return [(" STOP ", "chip_bad"), ("  " + e["text"], "bad")]
     if k == "next":
         return [("  Next: ", "dim"), (e["text"], "accent")]
     return [("  ", "text"), (e.get("text", ""), "dim")]
+
+
+def _printable_line(v, n=300):
+    """T-1770: one line of text from another process, printable only."""
+    return "".join(ch for ch in str(v or "").replace("\n", " ") if ch.isprintable())[:n]
 
 
 def entry_text(e):
@@ -1251,7 +1267,8 @@ def render(st, w, h, cfg, app=None, t=None):
     if prompt:  # T-1346: the cursor where the line editor has it, and where Enter sends the request
         shown = lambda s: s.replace("\n", " ↵ ")
         cv.fill(h - 3, "input")
-        cv.line(h - 3, 0, [(" request › ", "key"), (shown(app.input[:app.line.cur]), "input"), ("▏", "key"),
+        cv.line(h - 3, 0, [(" ask › " if app.asking else " request › ", "key"), (shown(app.input[:app.line.cur]),
+                                                                                 "input"), ("▏", "key"),
                            (shown(app.input[app.line.cur:]), "input")], w)
         cv.line(h - 2, 0, [("   ", "text"), (app.preview(), "dim")], w)
     if search:
@@ -1883,7 +1900,7 @@ PANEL_HINTS = {"log": "/ search  ↵ open  t thoughts", "files": "d the diff", "
 
 class App:
     def __init__(self, cfg, spawn=None, root=None, opts=None, diff=None, history=None, choices=None, projects=None,
-                 project_state=None, used=None, place=None, noticed=None):
+                 project_state=None, used=None, place=None, noticed=None, asker=None):
         self.line, self.search, self.search_draft, self.files = LineEditor(), "", "", None  # T-1346, T-1313
         self.cfg, self.state = cfg, State()
         self.mode, self.input, self.message, self.done = "main", "", "", False
@@ -1902,6 +1919,7 @@ class App:
                 pass
             self.message = self._tip()
         self.spawn = spawn or self._spawn
+        self.asker, self.asking, self.side = asker or self._ask_side, False, []  # T-1770: questions beside a run
         self.root, self.opts = root or os.getcwd(), dict(opts or {})
         self.diff_source, self.history_dir = diff or self._git_diff, history
         self.choices_source = choices or self._choices
@@ -2068,11 +2086,14 @@ class App:
                     fn()
                 else:
                     self.message = f"no app command matches {text}"
+            elif text and self.asking:  # T-1770: read-only, beside the run, which goes on
+                self.asking = False
+                self.ask(text)
             elif text:
                 after, self.after = getattr(self, "after", None), None
                 self.start([text], **({"after": after} if after else {}))  # T-1340
         elif k == "\x1b":
-            self.input, self.next_root = "", None
+            self.input, self.next_root, self.asking = "", None, False
             back, self.prompt_back = self.prompt_back, "main"
             if back == "project" and self.project is not None:
                 self.mode, self.items, self.item_index = "project", self.project_items, self.project_index
@@ -2126,6 +2147,8 @@ class App:
         if part is not None:
             hits = [f for f in self.tracked() if f.startswith(part)][:3]
             return "Tab completes: " + ", ".join(hits) if hits else "no tracked file starts " + part
+        if self.asking:  # T-1770
+            return "Enter asks it beside the run, read-only (fm code --ask): the answer lands in Activity"
         runner = self.opts.get("model") or self.opts.get("worker") or "the default runner"
         return f"Enter starts a run in {os.path.basename(self.root.rstrip(os.sep)) or self.root} with {runner}"
 
@@ -2186,8 +2209,9 @@ class App:
         return ""
 
     def new(self):
-        if self.running():
-            self.message = "a run is going: s stops it"
+        if self.running():  # T-1770: a question about the code, answered beside the run
+            self.mode, self.asking, self.after = "prompt", True, None
+            self.message = "a run is going: ask about the code, read-only, beside it (s stops the run)"
         else:
             self.mode, self.after = "prompt", None  # T-1340: n is a fresh request; Enter after a close follows up
 
@@ -2239,13 +2263,46 @@ class App:
     def follow_tail(self):
         self.follow, self.selected = True, None
 
+    def ask(self, question):
+        """T-1770: fm code --ask beside the run; its answer arrives as one aside event."""
+        try:
+            self.side.append(self.asker(question))
+            self.message = "asking beside the run: the answer lands in Activity"
+        except OSError as e:
+            self.message = f"couldn't ask: {e}"
+
+    def _ask_side(self, question):
+        argv = [sys.executable, FM, "code", question, "--ask", "--json"]
+        for k in ("model", "worker"):
+            if self.opts.get(k):
+                argv += [f"--{k}", str(self.opts[k])]
+        p = subprocess.Popen(argv, cwd=self.root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True, start_new_session=True,
+                             env=dict(os.environ, FOREMAN_CODE_ATTENDED="1"))
+
+        def read():  # only its answer reaches the app: the run's own events stay the run's
+            answer = None
+            for line in p.stdout:
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(e, dict) and e.get("event") == "answer":
+                    answer = str(e.get("text") or "")
+            err = p.stderr.read()
+            p.wait()
+            self.events.put({"event": "aside", "question": question, "text": answer} if answer else
+                            {"event": "aside", "question": question, "error": (err.strip().splitlines() or [""])[-1]})
+        threading.Thread(target=read, daemon=True).start()
+        return p
+
     def stop(self):
-        p = self.runner_proc  # T-1511: a runner test's CLI (its own session) ends with the app: q, a crash, a hangup
-        if p is not None and p.poll() is None:
-            try:
-                os.killpg(p.pid, signal.SIGKILL)
-            except OSError:
-                pass
+        for p in [self.runner_proc, *self.side]:  # T-1511: a runner test's CLI and T-1770's asks (each its own
+            if p is not None and getattr(p, "poll", lambda: 0)() is None:  # session) end with the app
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except OSError:
+                    pass
         if self.running():
             self.stopping = self._runners_of_child()  # T-1756: named on the way out
             try:

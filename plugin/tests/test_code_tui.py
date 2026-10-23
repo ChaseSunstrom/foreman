@@ -2040,6 +2040,41 @@ class FollowUpKey(unittest.TestCase):  # T-1340
         self.assertNotIn("after", started[-1][1])
 
 
+class AskBeside(unittest.TestCase):  # T-1770
+    def test_n_during_a_run_asks_beside_it_and_the_answer_lands_without_touching_the_run(self):
+        T = tui()
+        asked, started = [], []
+
+        class Live:
+            pid = 0
+
+            def poll(self):
+                return None
+        app = T.App(T.DEFAULTS, spawn=lambda words, opts: started.append(words) or Live(),
+                    asker=lambda q: asked.append(q) or Live())
+        app.start(["fix add"])
+        app.feed({"event": "start", "request": "fix add", "schema": 1})
+        app.feed({"event": "task", "task": "T-0001"})
+        app.new()
+        self.assertEqual((app.mode, app.asking), ("prompt", True))
+        self.assertIn("beside the run", app.preview())
+        for ch in "where is add?\n":
+            app.key(ch)
+        self.assertEqual((asked, started), (["where is add?"], [["fix add"]]), "asked, no second run")
+        app.feed({"event": "aside", "question": "where is add?", "text": "calc.py line 2\n\x1b[2Jdef add"})
+        texts = [T.entry_text(e) for e in app.state.log]
+        self.assertIn("? where is add?", texts)
+        self.assertIn("calc.py line 2", texts)
+        self.assertNotIn("\x1b", "".join(texts), "an answer never drives the terminal")
+        self.assertEqual(app.state.task, "T-0001")
+        self.assertNotEqual(app.state.status, "answered", "the run goes on")
+        app.feed({"event": "aside", "question": "and sub?", "error": "fm code: --ask answers questions only"})
+        self.assertIn("? and sub?: no answer (fm code: --ask answers questions only)", [T.entry_text(e) for e in app.state.log])
+        app.new()
+        app.key("\x1b")
+        self.assertFalse(app.asking, "Esc puts the prompt back as it was")
+
+
 class Receipt(unittest.TestCase):  # T-1305
     def test_a_close_adds_a_receipt_and_quit_leaves_the_last_frame_in_the_scrollback(self):
         import io

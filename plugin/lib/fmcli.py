@@ -6435,6 +6435,8 @@ def _build_parser():
     s.add_argument("--after", metavar="ID", help="a follow-up to an earlier run's task: its request, plan, how it "
                                                  "ended and the files it changed go to the planner as data, and the "
                                                  "new task's request names it (T-1340)")
+    s.add_argument("--ask", action="store_true", help="answer the request as a question about the code: read-only, no "
+                   "task, and beside a run already working in this tree (the app's n during a run)")
     s.add_argument("--resume", nargs="?", const="", metavar="ID", help="carry on a crashed or killed run from its "
                                                                      "journal (default: the newest unfinished one)")
     s.add_argument("--no-commit", action="store_true", help="close the task without committing")
