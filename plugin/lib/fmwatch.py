@@ -1,6 +1,7 @@
 """fm watch: live Foreman dashboard (curses) and its plain-text twin (--once). Stdlib only, read-only."""
 import json
 import os
+import re
 import statistics
 import sys
 import time
@@ -358,6 +359,22 @@ def _learned_line(p):
     return line
 
 
+_PATHS = ("watch", "trust_file", "root")  # paths a surface stats or writes: kept as they are
+_ESCAPES = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b.")  # CSI, OSC, ESC x
+
+
+def _shown(x, key=None):
+    """T-1674: every string of the view as plain text (newlines kept): Claude Code refuses the whole pane when a text
+    child holds a control character, and a task title or step can hold anything."""
+    if key in _PATHS:
+        return x
+    if isinstance(x, dict):
+        return {k: _shown(v, k) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_shown(v, key) for v in x]
+    return c.plain_lines(_ESCAPES.sub("", x)) if isinstance(x, str) else x
+
+
 def _guarded(fn):
     """A pane section that fails is left out, never the whole view (the mod renders what it gets)."""
     try:
@@ -577,7 +594,7 @@ def view(p):
     bs = brainstorm(p)
     resume = meta.get("resume_after_reload") or None
     resume_age = c.age_days(resume.get("at")) if isinstance(resume, dict) else None
-    return {
+    return _shown({
         "v": 1, "project": p.slug, "root": p.root,
         "mode": {"autonomy": autonomy, "drive": bool(sd["drive"]), "sensitive": bool(sd["sensitive"]),
                  "trust": bool(c.trusted()), "standing": sorted(meta.get("standing") or {})},
@@ -622,7 +639,7 @@ def view(p):
         "checks": d["checks"] and {"at": d["checks"].get("ts"), "results": [
             {"cmd": c.plain(str(r.get("cmd")))[:200], "exit": r.get("exit"), "s": r.get("s"), "note": r.get("note")}
             for r in (d["checks"].get("data") or {}).get("results") or []]},
-    }
+    })
 
 
 def _closes_since(p, first):
