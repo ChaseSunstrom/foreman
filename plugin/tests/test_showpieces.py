@@ -1,6 +1,7 @@
 """T-1653: showpieces, one-file 3D pages built on the scene template's survival contract. fm page city: the repo as a
 city from fm map's data, each file a building (height by lines, lit windows by churn) on a district per folder."""
 import html
+import itertools
 import json
 import os
 import re
@@ -9,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 
-from helpers import PLUGIN, SPY, ForemanTestCase, devtools, headless_chrome, read_text
+from helpers import PLUGIN, SPY, ForemanTestCase, anim_time, at_rest, devtools, headless_chrome, polls, read_text
 
 import fmcore as c
 import fmpage
@@ -271,48 +272,66 @@ class OneFileBrowser:
     def tearDownClass(cls):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def spied(self, at, media=(), init="", expr=None):
+    def spied(self, until, media=(), init="", expr=None):
+        """T-1728: polled until `until` holds, not read at fixed seconds a loaded machine's slow frames outran."""
         browser = headless_chrome()
         if not browser:
             self.skipTest("no headless Chromium (FOREMAN_CHROME, chrome-headless-shell or Playwright's download)")
         try:
-            return devtools(browser, "file://" + self.path, tempfile.mkdtemp(dir=self.tmp), SPY + init, media, at,
-                            expr or f"({{ ...window.__spy, state: document.querySelector('.{self.FIG}').dataset.state }})")
+            return devtools(browser, "file://" + self.path, tempfile.mkdtemp(dir=self.tmp), SPY + init, media, polls(),
+                            expr or f"({{ ...window.__spy, state: document.querySelector('.{self.FIG}').dataset.state }})",
+                            until=until)
         except (EOFError, BrokenPipeError, FileNotFoundError, PermissionError) as e:  # a root sandbox, no libs
             self.skipTest(f"{browser} didn't take DevTools over a pipe: {e!r}")
 
+    def settled(self, media=(), init=""):
+        """The last poll once the page has left its poster for two polls in a row."""
+        return self.spied(lambda g: len(g) >= 2 and all(s and s["state"] != "poster" for s in g[-2:]), media, init)[-1]
+
     def test_it_draws_frames_in_real_time_then_rests(self):
-        early, mid, late = self.spied((3, 10, 12))  # the pass is 4.5 s: slack for a loaded machine's late start
-        self.assertEqual(early["state"], "live", early)
-        self.assertIn("webgl2", early["contexts"])
-        self.assertGreater(early["raf"], 10, "the rise and the turn draw frames in real time")
-        self.assertEqual(mid["raf"], late["raf"], "after its pass the scene rests: no frames")
+        got = self.spied(at_rest)
+        end = got[-1]
+        self.assertTrue(at_rest(got), f"the frames never stopped: {len(got)} polls, last {end and end['raf']} frames")
+        self.assertEqual(end["state"], "live", end)
+        self.assertIn("webgl2", end["contexts"])
+        self.assertGreater(end["raf"], 10, "the rise and the turn draw frames in real time")
+        stamps = end["stamps"]
+        self.assertGreaterEqual(stamps[-1] - stamps[0], 4500, "the 4.5 s pass ran out in real time before the rest")
 
     def test_the_first_key_ends_the_intro(self):
-        # review (WCAG 2.2.2): input stops the auto motion; frames stop once the turn it asked for settles
-        probe = f"""(() => {{ const s = window.__spy; s.n = (s.n || 0) + 1;
-          if (s.n === 1) document.querySelector('.{self.FIG} canvas').dispatchEvent(new KeyboardEvent('keydown', {{ key: 'ArrowRight' }}));
-          return s.raf; }})()"""
-        # the key at 1.5 s; the step it asks for settles in about a second; the pass, begun at the first frame after
-        # the load, would run past 4.5 s
-        _, settled, later = self.spied((1.5, 3.8, 4.5), expr=probe)
-        self.assertEqual(settled, later, "no frames before the 4.5 s pass would have ended")
+        # review (WCAG 2.2.2): input stops the auto motion; frames stop once the turn it asked for settles.
+        # T-1728: the key goes in at the first poll that finds the scene live, and the turn is judged in the page's
+        # animation time (each frame's step capped at 0.1 s), which a loaded machine's slow frames don't stretch
+        probe = f"""(() => {{ const f = document.querySelector('.{self.FIG}'), s = window.__spy;
+          if (f.dataset.state === 'live' && !s.keyAt) {{ s.keyAt = performance.now();
+            f.querySelector('canvas').dispatchEvent(new KeyboardEvent('keydown', {{ key: 'ArrowRight' }})); }}
+          return {{ ...s, state: f.dataset.state }}; }})()"""
+        got = self.spied(lambda g: bool(g[-1] and g[-1].get("keyAt")) and at_rest(g) and "keyAt" in g[-3], expr=probe)
+        end = got[-1]
+        self.assertTrue(end and end.get("keyAt"), "the scene never went live to take the key")
+        self.assertTrue(at_rest(got), f"the frames never stopped after the key: {end['raf']} frames")
+        # the step settles in about 1 s of animation time; the intro, had the key not ended it, runs 4.5 s
+        self.assertLess(anim_time(end["stamps"], since=end["keyAt"]), 2.0, "no frames past the turn the key asked for")
 
     def test_reduced_motion_and_no_webgl2_keep_the_poster_still(self):
-        still, = self.spied((3,), [("prefers-reduced-motion", "reduce")])
+        still = self.settled([("prefers-reduced-motion", "reduce")])
         self.assertEqual((still["state"], still["raf"]), ("still", 0))
         self.assertNotIn("webgl2", still["contexts"], "reduced motion asks for no WebGL context at all")
         none = """const get = HTMLCanvasElement.prototype.getContext;
           HTMLCanvasElement.prototype.getContext = function (t, ...r) { return t === "webgl2" ? null : get.call(this, t, ...r); };"""
-        flat, = self.spied((3,), init=none)
+        flat = self.settled(init=none)
         self.assertEqual((flat["state"], flat["raf"]), ("no-webgl2", 0))
 
     def test_a_lost_context_shows_the_poster_and_comes_back(self):
-        probe = f"""(() => {{ const f = document.querySelector('.{self.FIG}'), s = window.__spy; s.n = (s.n || 0) + 1;
-          s.ext = s.ext || f.querySelector('canvas').getContext('webgl2').getExtension('WEBGL_lose_context');
-          const was = f.dataset.state; if (s.n === 1) s.ext.loseContext(); if (s.n === 2) s.ext.restoreContext();
+        # T-1728: lost once the scene is live, restored once it shows lost, read until it is live again
+        probe = f"""(() => {{ const f = document.querySelector('.{self.FIG}'), s = window.__spy, was = f.dataset.state;
+          if (was === 'live' && !s.lost) {{ s.lost = 1;  // kept: a lost context hands out no extension
+            s.ext = f.querySelector('canvas').getContext('webgl2').getExtension('WEBGL_lose_context'); s.ext.loseContext(); }}
+          else if (was === 'lost' && s.lost === 1) {{ s.lost = 2; s.ext.restoreContext(); }}
           return was; }})()"""
-        self.assertEqual(self.spied((5, 6.5, 9), expr=probe), ["live", "lost", "live"])
+        seq = lambda g: [k for k, _ in itertools.groupby(g) if k not in (None, "poster")]
+        got = self.spied(lambda g: seq(g)[-3:] == ["live", "lost", "live"], expr=probe)
+        self.assertEqual(seq(got), ["live", "lost", "live"], got)
 
 
 class CityBrowser(OneFileBrowser, unittest.TestCase):
