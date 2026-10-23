@@ -1,5 +1,6 @@
 """fm doctor: Foreman self-check (BUILD_PROMPT §12). Each check returns a Result; FAIL makes the command exit 1."""
 import glob
+import hashlib
 import json
 import os
 import re
@@ -1413,7 +1414,25 @@ def _stand_named(root, rels, stand, budget):
         stand(os.fsencode(rel) + b"\0=" + data.encode() + b"\0")
 
 
-def _tree_hash(root, h, cap=4000, skipped=None, deps=None, budget=None):
+LARGE_BYTES = 256 << 20  # T-1446: bytes of large files one plugin's check reads (streamed); past it, their stat
+
+
+def _large_stand(full, rel, large, budget):
+    """T-1446: a file sha only names (over 4 MB, or past its file cap) into the large hash: its bytes, streamed, while
+    the plugin's LARGE_BYTES last; then its size, mtime and ctime (ctime can't be set back, so an edit shows)."""
+    st = os.stat(full)
+    if budget.setdefault("large", LARGE_BYTES) >= st.st_size:
+        budget["large"] -= st.st_size
+        digest = hashlib.sha256()
+        with open(full, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                digest.update(chunk)
+        large.update(rel + b"\0=" + digest.digest())
+    else:
+        large.update(rel + f"\0{st.st_size} {st.st_mtime_ns} {st.st_ctime_ns}\0".encode())
+
+
+def _tree_hash(root, h, cap=4000, skipped=None, deps=None, budget=None, large=None):
     """Every file under an install dir (its hooks, scripts and code, not just its manifest), path and bytes, in order.
     T-1434: what h only names goes into skipped by a cheap stand-in: a symlink's target path (a linked folder's too,
     which the walk never enters) and a large file's size and mtime. A separate hash, so a baseline recorded before it
@@ -1447,6 +1466,8 @@ def _tree_hash(root, h, cap=4000, skipped=None, deps=None, budget=None):
                     elif n <= cap and os.path.isfile(full):
                         st = os.stat(full)
                         stand(rel + f"\0{st.st_size} {st.st_mtime_ns}\0".encode())
+                    if large is not None and not os.path.islink(full) and os.path.isfile(full):
+                        _large_stand(full, rel, large, budget)
                     continue
                 with open(full, "rb") as fh:
                     h.update(rel + b"\0" + fh.read())
@@ -1470,11 +1491,12 @@ def _supply(claude):
     plugins = plugins.get("plugins") if isinstance(plugins, dict) else None
     for pid, installs in sorted((plugins if isinstance(plugins, dict) else {}).items()):
         h, skipped, deps, caps, budget = hashlib.sha256(), hashlib.sha256(), hashlib.sha256(), {}, _budget()
+        large = hashlib.sha256()  # T-1446
         try:
             for inst in installs if isinstance(installs, list) else [installs]:
                 root = inst.get("installPath") if isinstance(inst, dict) else None
                 if isinstance(root, str) and root and os.path.isdir(root):  # review: never "" (the cwd)
-                    _tree_hash(root, h, skipped=skipped, deps=deps, budget=budget)
+                    _tree_hash(root, h, skipped=skipped, deps=deps, budget=budget, large=large)
                     got = fmplugins.capabilities(root)
                     # T-1459: what runs from a skipped folder, by content
                     _stand_named(root, [s for s in got.get("scripts", []) if set(s.split(os.sep)) & _SUPPLY_SKIP],
@@ -1486,7 +1508,9 @@ def _supply(claude):
             continue
         # T-1434: skipped, the stand-ins for what sha only names, beside it (an older entry lacks it, see _check_supply)
         # T-1459: deps, the stand-ins for the folders sha skips (node_modules, .venv, …), likewise
-        out[pid] = {"sha": h.hexdigest(), "skipped": skipped.hexdigest(), "deps": deps.hexdigest(), "caps": caps}
+        # T-1446: large, the bytes of the files sha only names for their size (or past its cap: their stat), likewise
+        out[pid] = {"sha": h.hexdigest(), "skipped": skipped.hexdigest(), "deps": deps.hexdigest(), "caps": caps,
+                    "large": large.hexdigest()}
     conf = _load_json(os.path.join(os.path.dirname(claude), ".claude.json"))
     conf = conf if isinstance(conf, dict) else {}
     scopes = [("", conf.get("mcpServers"))] + [(f"{k}:", v.get("mcpServers")) for k, v in
@@ -1524,10 +1548,12 @@ def _check_supply(claude, accept):
     caps = lambda v: v.get("caps") if isinstance(v, dict) else None
     skip = lambda v: v.get("skipped") if isinstance(v, dict) else None  # T-1434: None in an entry recorded before it
     dep = lambda v: v.get("deps") if isinstance(v, dict) else None  # T-1459: likewise
+    big = lambda v: v.get("large") if isinstance(v, dict) else None  # T-1446: likewise
     changed, added, held, upgraded = [], [], [], False
     for k in sorted(set(now) - set(errors)):
         was, cur = seen.get(k), now[k]
-        if k in seen and sha(was) == sha(cur) and skip(was) in (None, skip(cur)) and dep(was) in (None, dep(cur)):
+        if k in seen and sha(was) == sha(cur) and skip(was) in (None, skip(cur)) and dep(was) in (None, dep(cur)) \
+                and big(was) in (None, big(cur)):
             if was == cur:
                 continue
             old, new = caps(was), caps(cur)
