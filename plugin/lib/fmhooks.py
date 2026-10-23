@@ -1947,10 +1947,10 @@ def _design_note(pl, p, act):
         if text and fmdesign.has_direction(text):
             return None
     _card_mark(p, act.id, ":design-direction")
-    skill = os.path.isfile(os.path.join(c.PLUGIN_ROOT, "skills", "directions", "SKILL.md"))
+    skill = os.path.isfile(os.path.join(c.PLUGIN_ROOT, "skills", "ui-design", "SKILL.md"))  # T-1715: the job skill
     return (f"Foreman: design direction: {act.id} edits UI and no DESIGN.md has a ## Direction. Pick a direction and "
-            f"write it before more UI (playbook ui/design-direction.md{', or /foreman:directions' if skill else ''}). "
-            "A nudge, not a block.")
+            f"write it before more UI (playbook ui/design-direction.md{'; load: Skill foreman:ui-design' if skill else ''}"
+            "). A nudge, not a block.")
 
 
 def _said_once(pl, parts):
