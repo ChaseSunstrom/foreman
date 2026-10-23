@@ -6006,10 +6006,13 @@ def _build_parser():
     s.add_argument("--because", help="set: why a cap goes up (recorded as a costly decision)")
     s.add_argument("--days", type=int, default=1, help="show: spend over this many days")
 
-    s = add("settings", lazy("fmsettings", "cmd_settings"), tier=("Project and settings", 775),
-            help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496)")
+    s = add("settings", lambda a: (lazy("fmsettingsserve", "cmd_serve") if a.action == "serve" else  # T-1659
+                                   lazy("fmsettings", "cmd_settings"))(a), tier=("Project and settings", 775),
+            help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496); "
+                 "serve: the same as a page on 127.0.0.1, token-locked, changes through set")
     s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
-                                                                 "bisect", "profile", "chords"])  # T-1543, T-1656, T-1660
+                                                                 "bisect", "profile", "chords", "serve"])
+    # T-1543 bisect, T-1656 profile, T-1660 chords, T-1659 serve
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
                                           "share code fm settings export printed (T-1510; tui.toml's [profile] tables "
                                           "aren't in it); list: a group alone (look, colors, layout, keys, pane; "
@@ -6110,7 +6113,10 @@ def _build_parser():
             "census of the page (colours, fonts, sizes, radii, shadows, spacing, with counts; or a census .json) "
             "critiqued against DESIGN.md's tokens: unnamed values, near-duplicates, outliers (exit 1 on findings; no "
             "browser: not run, exit 2); --why SELECTOR: the cascade behind one element (T-1642)")
-    s.add_argument("target", metavar="URL|FILE")
+    s.add_argument("target", metavar="URL|FILE", nargs="?")
+    s.add_argument("--stress", metavar="TEXT", help="TEXT pseudo-localised: accented, 40%% longer, in [brackets], "
+                   "placeholders ({n}, %%d, ${x}, <b>) intact (T-1643)")
+    s.add_argument("--profile", choices=["tv", "eink", "car", "wrist"], help="a surface's viewport and contrast preset")
     s.add_argument("--why", metavar="SELECTOR", help="the matched rules and winning declaration per property")
     s.add_argument("--design", metavar="PATH", help="the DESIGN.md (default: the repo root's, or docs/DESIGN.md)")
     s.add_argument("--any-url", action="store_true", help="open any http(s) page, not only localhost, 127.0.0.1, "
@@ -6123,6 +6129,12 @@ def _build_parser():
                    help="seconds each element step waits for its element (above 0, at most 60; default 10)")
     s.add_argument("--any-url", action="store_true", help="goto may open any http(s) page, not only localhost, "
                    "127.0.0.1, [::1] and files")
+    s = add("stories", lazy("fmstories", "cmd_stories"), tier=("Every task", 96), help="CHART: a component's state "
+            "matrix, one page with a cell per state the JSON chart lists, each reached by fm flow steps and shot in "
+            "the headless Chromium fm shot finds; no browser: the states listed, why, and exit 2 (never a pass) (T-1640)")
+    s.add_argument("chart", metavar="CHART")
+    s.add_argument("--out", metavar="PATH", help="write here (a .html file that isn't a link, replaced only when fm "
+                   "stories wrote it) instead of the project's state stories/<chart>.html")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
