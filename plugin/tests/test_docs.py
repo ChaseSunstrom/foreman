@@ -7,7 +7,7 @@ import unittest
 from helpers import PLUGIN, read_text, read_json
 
 SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks", "brainstorm",
-          "directions", "design-extract"]
+          "directions", "design-extract", "ui-design"]
 # everything else Claude may start itself when the user asks in plain words; design-extract: the 2,000-character
 # listing has no room for it, so Claude reaches its verbs through the directions skill and the UI playbooks (T-1507)
 USER_ONLY = {"capture", "design-extract", "tidy", "doctor"}  # T-1705: the rules map these plain words to the fm verbs, not the skills
@@ -108,7 +108,7 @@ class Skills(unittest.TestCase):
         for name in os.listdir(os.path.join(PLUGIN, "workflows")):
             text = read_text(os.path.join(PLUGIN, "workflows", name))
             total += sum(len(m) for m in re.findall(r"(?m)^\s*(?:description|whenToUse): '([^']*)'", text))
-        self.assertLessEqual(total, 2000, "Foreman's part of the skill listing")
+        self.assertLessEqual(total, 2200, "Foreman's part of the skill listing")  # T-1700/T-1701: four job skills
 
     def test_the_rules_carry_the_reply_format_and_stay_small(self):
         # T-1279: the rules ride once a session; the output style's reminder rode every turn
@@ -148,6 +148,30 @@ class Skills(unittest.TestCase):
                 got = fmcodetui.contrast(fg, bg)
                 self.assertAlmostEqual(got, float(ratio), delta=0.05)
                 self.assertGreaterEqual(got, 4.5)
+
+    def test_the_ui_design_skill_routes_to_real_playbooks_and_verbs(self):
+        # T-1700: one job skill for UI, motion and 3D work; every playbook and fm verb it names exists
+        import fmcli
+        body = read_text(os.path.join(PLUGIN, "skills", "ui-design", "SKILL.md"))
+        self.assertLess(len(body.splitlines()), 100)
+        for ref in ("design-direction", "type-and-colour", "composition", "motion", "scene-3d", "visual-qa"):
+            self.assertIn(f"`../playbooks/references/ui/{ref}.md`", body)
+        verbs = next(a for a in fmcli.build_parser()._actions if a.choices and "help" in a.choices).choices
+        named = re.findall(r"`fm ([\w-]+)(?: ([\w-]+))?", body)
+        for need in ("design", "scene", "motion", "looks", "page", "img", "new"):
+            self.assertIn(need, {v for v, _ in named})
+        for verb, sub in named:
+            with self.subTest(verb=verb, sub=sub):
+                self.assertIn(verb, verbs)
+                pos = [a for a in verbs[verb]._actions if not a.option_strings and a.choices]
+                if sub and pos and not sub.isupper():
+                    self.assertIn(sub, pos[0].choices)
+        self.assertIn("Skill foreman:directions", body)
+        # palette prints to stdout and ignores --out; extract writes DESIGN.md's Tokens section unless --out says else
+        palette = next(line for line in body.splitlines() if "fm design palette" in line)
+        self.assertRegex(palette, r"`fm design palette \S+ > ")
+        self.assertNotIn("--out", palette)
+        self.assertRegex(body, r"`fm design extract SRC`[^.]*DESIGN\.md")
 
     def test_audit_reference_defines_every_lens_fm_requires(self):
         import fmcore as c
