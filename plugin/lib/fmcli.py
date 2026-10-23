@@ -6123,6 +6123,12 @@ def _build_parser():
                                           "T-1511)")
     s.add_argument("value", nargs="?", help="set: the new value")
     s.add_argument("--surface", choices=["app", "plugin"], help="only the app's tui.toml, or only the pane's options")
+    s = add("home", lazy("fmhome", "cmd_home"), tier=("Project and settings", 785),  # T-1665
+            help="export: Foreman's state as one tarball, secrets redacted and credential files left out; import FILE: "
+                 "into an empty home, every member's path and hash checked first")
+    s.add_argument("action", choices=["export", "import"])
+    s.add_argument("file", nargs="?", help="import: the tarball fm home export wrote")
+    s.add_argument("--out", metavar="FILE", help="export: where to write it (default: foreman-home-DATE.tar.gz here)")
 
     s = add("evolve", lazy("fmevolve", "cmd_evolve"), tier=("Reports", 1100), help="one bench-gated generation: revise (or --drop) one Foreman "
                                                             "instruction file on an evolve branch, bench both, gate (T-0224)")
