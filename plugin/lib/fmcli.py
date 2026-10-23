@@ -6000,7 +6000,7 @@ def _build_parser():
     s = add("settings", lazy("fmsettings", "cmd_settings"), tier=("Project and settings", 775),
             help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
-                                                                 "bisect", "profile"])  # T-1543 bisect, T-1656 profile
+                                                                 "bisect", "profile", "chords"])  # T-1543, T-1656, T-1660
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
                                           "share code fm settings export printed (T-1510; tui.toml's [profile] tables "
                                           "aren't in it); list: a group alone (look, colors, layout, keys, pane; "
@@ -6057,7 +6057,8 @@ def _build_parser():
             "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
             "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs; "
             "tokens DESIGN.md --to css|app|pane: its Tokens table as CSS variables, an fm code theme or the pane's "
-            "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into (advisory exits 0, blocking 1; T-1645); "
+            "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into: brief, a11y (contrast, reduced motion, "
+            "flashes, alt, focus styles) and debt N (untokened literals under a budget); advisory exits 0, blocking 1; "
             "roll [--seed N] [--apply|--undo]: one look card's palette, type and motion, seeded, into DESIGN.md")
     s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll"])
     s.add_argument("--seed", type=int, help="roll: the same seed gives the same look (default: a fresh one, printed)")
@@ -6096,6 +6097,15 @@ def _build_parser():
     s.add_argument("--diff", metavar="BASE", help="compare each viewport shot with BASE/<page>/viewport.png (an earlier "
                    "fm shot --out BASE): exit 1 over the baseline's noise floor (the most its own frames differ) or "
                    "when a font fell back (T-1637)")
+    s = add("critique", lazy("fmcritique", "cmd_critique"), tier=("Every task", 93), help="URL|FILE: a computed-style "
+            "census of the page (colours, fonts, sizes, radii, shadows, spacing, with counts; or a census .json) "
+            "critiqued against DESIGN.md's tokens: unnamed values, near-duplicates, outliers (exit 1 on findings; no "
+            "browser: not run, exit 2); --why SELECTOR: the cascade behind one element (T-1642)")
+    s.add_argument("target", metavar="URL|FILE")
+    s.add_argument("--why", metavar="SELECTOR", help="the matched rules and winning declaration per property")
+    s.add_argument("--design", metavar="PATH", help="the DESIGN.md (default: the repo root's, or docs/DESIGN.md)")
+    s.add_argument("--any-url", action="store_true", help="open any http(s) page, not only localhost, 127.0.0.1, "
+                   "[::1] and files")
     s = add("flow", lazy("fmflow", "cmd_flow"), tier=("Every task", 96), help="FILE: a user journey, one step a line "
             "(goto URL|FILE, click SEL, type SEL TEXT, expect SEL [TEXT], wait MS), in the headless Chromium fm shot "
             "finds, as a verify command: exit 1 names the step that failed, 2 with no browser (never a pass) (T-1639)")
@@ -6153,8 +6163,10 @@ def _build_parser():
     s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
     s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
                                                    "in state picks.json; needs --catalogue (T-0962)")
-    s.add_argument("what", nargs="?", choices=["looks"], help="looks: the looks gallery instead, one living specimen "
-                   "per look card in one file that loads nothing from another host (looks.html; T-1649)")
+    s.add_argument("what", nargs="?", choices=["looks", "city"], help="looks: the looks gallery instead, one living "
+                   "specimen per look card in one file that loads nothing from another host (looks.html; T-1649); "
+                   "city: the repo as a 3D city, each tracked file a building as tall as its lines, lit windows its "
+                   "commits in 180 days, a district per folder, over an SVG poster (city.html; T-1653)")
     s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "

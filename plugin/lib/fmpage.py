@@ -205,6 +205,235 @@ def looks_html(cards):
     return re.sub(r"__([A-Z]+)__", lambda m: fill.get(m.group(1), m.group(0)), PLATE.sub("", page))
 
 
+CITY_TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "city.html")
+CITY_MAX = 4000  # ponytail: the biggest 4000 files stand; a bigger repo's smallest files are left out, and the page says so
+READ_CAP = 2 << 20  # lines are counted in a file's first 2 MB; past that, estimated from its own bytes per line
+READ_BUDGET = 256 << 20  # past 256 MB read in all, each file's head only (the page says how many were estimated)
+
+
+def city_files(root):
+    """T-1653: ([{path, lines, churn}], {tracked, history, estimated}) for the tracked text files, from fm map's
+    sources (git ls-files, and each file's commits in the last 180 days as fm map's hot list counts them; --relative,
+    so a project in a repo's subfolder gets its own), each with its line count. Only the 2 × CITY_MAX biggest by bytes
+    are opened; each gives its first 8 KB (a NUL there: a binary, left out) and, while READ_BUDGET lasts, up to
+    READ_CAP; what isn't read is estimated from the bytes per line that was. history is False when git log failed,
+    so no window reads as "no commits"."""
+    import collections
+    import fmmap
+    log = fmmap._git(root, "log", "--relative", "--since=180.days", "--name-only", "--pretty=format:", proc=True)
+    churn = collections.Counter(f for f in log.stdout.splitlines() if f) if log.returncode == 0 else {}
+    sized = []
+    for f in (f for f in fmmap._git(root, "ls-files", "-z").split("\0") if f):
+        path = os.path.join(root, f)
+        try:
+            if not os.path.islink(path) and os.path.isfile(path):
+                sized.append((os.path.getsize(path), f))
+        except OSError:
+            continue
+    out, budget, estimated = [], READ_BUDGET, 0
+    for size, f in sorted(sized, key=lambda s: (-s[0], s[1]))[:2 * CITY_MAX]:
+        path = os.path.join(root, f)
+        try:
+            with open(path, "rb") as fh:
+                head = fh.read(8192)
+                if b"\0" in head:
+                    continue
+                lines, done, last = head.count(b"\n"), len(head), head[-1:]
+                left = min(READ_CAP, max(0, budget)) - done
+                while left > 0 and (chunk := fh.read(min(1 << 20, left))):
+                    lines, done, left, last = lines + chunk.count(b"\n"), done + len(chunk), left - len(chunk), chunk[-1:]
+                budget -= done
+                whole = not fh.read(1)
+        except OSError:
+            continue
+        if whole:
+            lines += last not in (b"", b"\n")  # a last line with no newline
+        else:
+            lines, estimated = lines + round((size - done) * max(lines, 1) / done), estimated + 1
+        out.append({"path": f, "lines": lines, "churn": churn.get(f, 0)})
+    return out, {"tracked": len(sized), "history": log.returncode == 0, "estimated": estimated}
+
+
+def _districts(paths, share=0.35, small=2):
+    """{path: district}: one per top folder ('.' for the root's files). As fm map's layout opens a folder that holds
+    most of the repo, a district holding over `share` of the files opens into its subfolders, each of fewer than
+    `small` files staying with it, until none does."""
+    import collections
+    of = {f: f.split("/", 1)[0] if "/" in f else "." for f in paths}
+    tried = set()
+    while True:
+        big = next((d for d, n in collections.Counter(of.values()).most_common()
+                    if d != "." and d not in tried and n > share * len(paths)), None)
+        if big is None:
+            return of
+        tried.add(big)
+        k = big.count("/") + 1
+        sub = {f: "/".join(f.split("/")[:k + 1]) for f, d in of.items() if d == big and f.count("/") > k}
+        sizes = collections.Counter(sub.values())
+        of.update({f: s for f, s in sub.items() if sizes[s] >= small})
+
+
+def city_layout(files):
+    """T-1653: the city's plan from [{path, lines, churn}]: districts as plates packed in shelves with roads between,
+    each file a square building on its district's grid, the biggest at the centre. Buildings come biggest first as
+    [x, z, width, height, heat 0-1, rise delay 0-1, district index]; height and width by lines (square root), heat by
+    commits (log). Districts {name, x, z, w, d, files, lines}, most lines first."""
+    import collections
+    import math
+    import zlib
+    files = sorted(files, key=lambda f: (-f["lines"], f["path"]))
+    of = _districts([f["path"] for f in files])
+    groups = collections.defaultdict(list)
+    for f in files:
+        groups[of[f["path"]]].append(f)
+    names = sorted(groups, key=lambda d: (-sum(f["lines"] for f in groups[d]), d))
+    top, hot = max([f["lines"] for f in files] + [1]), max([f["churn"] for f in files] + [0])
+    grid = {d: (math.ceil(math.sqrt(len(groups[d]))), math.ceil(len(groups[d]) / math.ceil(math.sqrt(len(groups[d])))))
+            for d in names}
+    road, rim = 1.4, 0.2
+    shelf = max(max(c for c, _ in grid.values()) + 2 * rim,
+                1.15 * math.sqrt(sum((c + 2 * rim + road) * (r + 2 * rim + road) for c, r in grid.values())))
+    size = lambda d: (grid[d][0] + 2 * rim, grid[d][1] + 2 * rim)
+    shelves, x = [[]], 0.0
+    for d in sorted(names, key=lambda d: (-grid[d][1], -grid[d][0], d)):  # shelf packing: deepest first
+        if shelves[-1] and x + size(d)[0] > shelf:
+            shelves.append([])
+            x = 0.0
+        shelves[-1].append(d)
+        x += size(d)[0] + road
+
+    def centre_out(seq):  # the first in the middle, the rest alternating out: downtown at the centre
+        return seq[::2][::-1] + seq[1::2]
+    plates, z = {}, 0.0
+    for row in centre_out(shelves):
+        row, deep = centre_out(row), max(size(d)[1] for d in row)
+        x = -(sum(size(d)[0] for d in row) + road * (len(row) - 1)) / 2
+        for d in row:
+            plates[d] = [x + size(d)[0] / 2, z + deep / 2, *size(d)]
+            x += size(d)[0] + road
+        z += deep + road
+    cx = (min(p[0] - p[2] / 2 for p in plates.values()) + max(p[0] + p[2] / 2 for p in plates.values())) / 2
+    cz = (min(p[1] - p[3] / 2 for p in plates.values()) + max(p[1] + p[3] / 2 for p in plates.values())) / 2
+    for p in plates.values():
+        p[0], p[1] = p[0] - cx, p[1] - cz
+    span = max([max(abs(p[0]) + p[2] / 2, abs(p[1]) + p[3] / 2) for p in plates.values()] + [1]) * 2
+    hmax = min(max(span * 0.24, 3.0), 22.0)
+    reach = span / math.sqrt(2) or 1
+    rank = {f["path"]: n for n, f in enumerate(files)}
+    buildings = []
+    for i, d in enumerate(names):
+        (cols, rows), (px, pz, _, _) = grid[d], plates[d]
+        cells = sorted(((r, c) for r in range(rows) for c in range(cols)),
+                       key=lambda rc: ((rc[0] - (rows - 1) / 2) ** 2 + (rc[1] - (cols - 1) / 2) ** 2, rc))
+        for f, (r, c) in zip(groups[d], cells):
+            size = math.sqrt(f["lines"] / top)
+            bx, bz = px - cols / 2 + c + 0.5, pz - rows / 2 + r + 0.5
+            jitter = zlib.crc32(f["path"].encode()) % 1000 / 1000
+            buildings.append([rank[f["path"]], round(bx, 2), round(bz, 2), round(0.5 + 0.3 * size, 2), round(max(hmax * size, 0.12), 2),
+                              round(math.log1p(f["churn"]) / math.log1p(hot), 3) if hot else 0.0,
+                              round(min(1.0, 0.8 * math.hypot(bx, bz) / reach + 0.2 * jitter), 3), i])
+    return {"b": [b[1:] for b in sorted(buildings)], "hmax": round(hmax, 2), "span": round(span, 2),
+            "d": [{"name": d, "x": round(plates[d][0], 2), "z": round(plates[d][1], 2), "w": round(plates[d][2], 2),
+                   "d": round(plates[d][3], 2), "files": len(groups[d]), "lines": sum(f["lines"] for f in groups[d])}
+                  for d in names]}
+
+
+def _poster(plan):
+    """The first paint: the same plan drawn isometric in SVG, plates then buildings back to front, each building its
+    two lit sides (one path, a hard-stop gradient per heat step: the front edge sits mid-box on a square footprint)
+    and its roof; the six biggest districts named."""
+    import math
+    cos, sin = math.cos(math.pi / 6), math.sin(math.pi / 6)
+    iso = lambda x, z, y=0.0: ((x - z) * cos, (x + z) * sin - y)
+    pts = [iso(p["x"] + sx * p["w"] / 2, p["z"] + sz * p["d"] / 2) for p in plan["d"] for sx in (-1, 1) for sz in (-1, 1)]
+    pts += [iso(b[0], b[1], b[3]) for b in plan["b"]]
+    x0, y0 = min(p[0] for p in pts) - 2, min(p[1] for p in pts) - 2
+    w, h = max(p[0] for p in pts) + 2 - x0, max(p[1] for p in pts) + 2 - y0
+    path = lambda corners: "M" + "L".join(f"{x - x0:.1f} {y - y0:.1f}" for x, y in corners) + "Z"
+    out = []
+    for p in plan["d"]:
+        hx, hz = p["w"] / 2, p["d"] / 2
+        out.append(f'<path class="plate" d="{path([iso(p["x"] + a, p["z"] + b) for a, b in ((-hx, -hz), (hx, -hz), (hx, hz), (-hx, hz))])}"/>')
+    for b in sorted(plan["b"], key=lambda b: (b[0] + b[1], b[0])):
+        x, z, s, y = b[0], b[1], b[2] / 2, b[3]
+        step = min(4, int(b[4] * 5))
+        sides = [iso(x - s, z + s), iso(x + s, z + s), iso(x + s, z - s), iso(x + s, z - s, y), iso(x + s, z + s, y),
+                 iso(x - s, z + s, y)]
+        roof = [iso(x - s, z - s, y), iso(x + s, z - s, y), iso(x + s, z + s, y), iso(x - s, z + s, y)]
+        out.append(f'<path class="b" fill="url(#h{step})" d="{path(sides)}"/><path class="b roof r{step}" d="{path(roof)}"/>')
+    for p in plan["d"][:6]:
+        tx, ty = iso(p["x"] - p["w"] / 2, p["z"] + p["d"] / 2)
+        out.append(f'<text class="tag" x="{tx - x0:.1f}" y="{ty - y0 + 1.6:.1f}">{html.escape(p["name"])}</text>')
+    stops = "".join(f'<linearGradient id="h{i}"><stop offset=".5" style="stop-color:var(--side-l{i})"/>'
+                    f'<stop offset=".5" style="stop-color:var(--side-r{i})"/></linearGradient>' for i in range(5))
+    return (f'<svg class="poster" viewBox="0 0 {w:.1f} {h:.1f}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">'
+            f"<defs>{stops}</defs>" + "".join(out) + "</svg>")
+
+
+def _area(d):
+    where = "the root" if d["name"] == "." else d["name"]
+    return f"{where} ({d['files']:,} file{'s' * (d['files'] != 1)}, {d['lines']:,} lines)"
+
+
+def city_html(files, name, when=None, tracked=0, history=True, estimated=0):
+    """T-1653: the city page, one file: the SVG poster, a canvas named by what the city shows (the biggest districts,
+    the most changed files), its text twin, and the plan as JSON for the WebGL2 scene. Raw WebGL2 inlined, as the
+    template and the site's hero are: a box per instance needs no three.js, and nothing loads from another host.
+    `tracked`: how many files the repo has, when more than `files` (the twin says how many are left out); `history`
+    False: git log failed, so the label says so rather than "every window is dark"; `estimated`: files whose lines
+    were estimated from their size. Leak, naming the path, when one is still absolute after redaction."""
+    left = max(0, max(tracked, len(files)) - min(len(files), CITY_MAX))
+    kept = []
+    for f in sorted(files, key=lambda f: -int(f["lines"]))[:CITY_MAX]:
+        try:
+            kept.append({"path": clean(str(f["path"])), "lines": int(f["lines"]), "churn": int(f["churn"])})
+        except Leak:
+            raise Leak(f"the file path {f['path']}") from None
+    files, name = kept, clean(str(name), "name")
+    plan = city_layout(files)
+    lines = sum(f["lines"] for f in files)
+    hottest = [f for f in sorted(files, key=lambda f: (-f["churn"], f["path"])) if f["churn"]][:3]
+    label = (f"{name} as a city: {len(files):,} files and {lines:,} lines in {len(plan['d'])} districts, one per "
+             f"folder, each file a building as tall as its lines. Biggest: "
+             + "; ".join(_area(d) for d in plan["d"][:3]) + ". "
+             + ("Commit history unavailable (git log failed): the windows show nothing." if not history else
+                "Lit windows mark commits in the last 180 days, most in "
+                + ", ".join(f"{f['path']} ({f['churn']})" for f in hottest) + "." if hottest
+                else "No file changed in the last 180 days: every window is dark."))
+    notes = ([f"{left:,} other tracked file{'s' * (left != 1)} (binaries, or past the {CITY_MAX:,} biggest) "
+              f"{'are' if left != 1 else 'is'} not drawn."] if left else []) + (
+             [f"{estimated:,} file{'s' * (estimated != 1)}' lines are estimated from their size (each file is read "
+              f"up to {READ_CAP >> 20} MB, {READ_BUDGET >> 20} MB in all)."] if estimated else [])
+    twin = (f"<p>{html.escape(' '.join([label] + notes))}</p>"
+            + "<ol class=\"areas\">" + "".join(f"<li>{html.escape(_area(d))}</li>" for d in plan["d"][:12]) + "</ol>")
+    fill = {"TITLE": html.escape(name), "EYEBROW": html.escape(f"fm page city · {when or time.strftime('%Y-%m-%d')}"),
+            "LEDE": html.escape(f"{len(files):,} files · {lines:,} lines · {len(plan['d'])} districts"),
+            "LABEL": html.escape(label), "TWIN": twin, "POSTER": _poster(plan), "DATA": embed(plan)}
+    with open(CITY_TEMPLATE, encoding="utf-8") as f:
+        return re.sub(r"__([A-Z]+)__", lambda m: fill.get(m.group(1), m.group(0)), f.read())
+
+
+def city_page(p, args):
+    import fmcli
+    if args.catalogue or args.picks or args.url:
+        raise fmcli.UsageError("fm page city takes only --out: the city shows the repository, not a catalogue")
+    if not c.git_root(p.root):
+        raise fmcli.UsageError("fm page city needs a git repository: its buildings are the tracked files")
+    files, info = city_files(p.root)
+    if not files:
+        raise fmcli.UsageError("fm page city: no tracked text file to build")
+    try:
+        page = city_html(files, os.path.basename(p.root.rstrip("/")) or p.slug, **info)
+    except Leak as e:
+        raise fmcli.UsageError(f"refused: {e} still holds an absolute or home path after redaction; fm page city "
+                               "writes no page that names one")
+    path = _out(args, os.path.join(p.dir, "city.html"), "/* fm page city (T-1653):")
+    c.write_atomic(path, page)
+    return fmcli.out(args, {"path": path, "files": min(len(files), CITY_MAX)},
+                     f"Wrote {path}: {min(len(files), CITY_MAX):,} files as buildings; one file that loads nothing "
+                     "from another host (fm shot it to see it)")
+
+
 def _out(args, default, mark):
     """Where the page goes. Review of T-1649: an --out that already exists is replaced only when it holds mark, the
     template's own opening comment, so the user's own page is never overwritten (the default path is Foreman's)."""
@@ -240,6 +469,8 @@ def cmd_page(args):
     p = fmcli.resolve(args)
     if getattr(args, "what", None) == "looks":
         return looks_page(p, args)
+    if getattr(args, "what", None) == "city":
+        return city_page(p, args)
     meta = c.read_meta(p)
     if args.url:
         if not re.fullmatch(r"https://claude\.ai/(?:code/)?artifact/[\w-]{6,80}", args.url):
