@@ -6055,9 +6055,10 @@ def _build_parser():
     s = add("design", lazy("fmdesign", "cmd_design"), tier=("Every task", 92), epilog=fmdesign.rules_help(),
             formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
             "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
-            "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs")
-    s.add_argument("action", choices=["lint", "extract", "palette", "contrast"])
-    s.add_argument("paths", nargs="+", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
+            "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs; "
+            "check [ROOT]: the gates DESIGN.md's ## Gates opts into (advisory exits 0, blocking 1; T-1645)")
+    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "check"])
+    s.add_argument("paths", nargs="*", metavar="ARG", help="lint, extract: files or directories (one run: the UI's "
                    "root); palette: a seed colour (hex, rgb(), hsl(), oklch()); contrast: a token file, then pairs "
                    "fg/bg[:need[,dark need]] (default: the known role pairs, body text 7:1 in dark)")
     s.add_argument("--format", choices=["css", "dtcg", "tailwind"], default="css",
