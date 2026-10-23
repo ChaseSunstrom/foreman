@@ -2061,7 +2061,7 @@ _GATE_PIPE = re.compile(r"(?m)(?:^\s*|[;&|(]\s*)(?:\w+=\S*\s+)*fm\s+(?:quiet\s+(
 def _gate_pipe_note(pl):
     """T-1759: `fm check … | tail` exits with tail's status, so a red gate reads green: T-1758 reached main that way."""
     ti = pl.get("tool_input") or {}
-    cmd = ti.get("command") or ""
+    cmd = re.sub(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"", "''", ti.get("command") or "")  # T-1768: quoted text isn't a command
     if pl.get("tool_name") != "Bash" or "pipefail" in cmd or not _GATE_PIPE.search(cmd):
         return None
     return ("Foreman: fm check is piped here, so this call's exit status is the last program's, not the gates': read "

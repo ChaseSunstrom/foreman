@@ -27,7 +27,9 @@ class GatePipe(unittest.TestCase):  # T-1759
             self.assertIn("✓/✗ line", note(cmd) or "", cmd)
         self.assertIn("✓/✗ line", note("fm check | tail", run_in_background=True) or "", "a background gate too")
         for cmd in ("fm check", "set -o pipefail; fm check | tail -5", "fm check || echo red", "fm checkpoint | tail",
-                    "fm quiet -- fm check", "echo fm check | wc"):
+                    "fm quiet -- fm check", "echo fm check | wc",
+                    'grep -n "fm check playbooks\\|fm check onwrite" README.md | cut -c1-80',  # T-1768: quoted text
+                    "grep 'x|fm check y' f | wc"):
             self.assertIsNone(note(cmd), cmd)
         self.assertIsNone(fmhooks._gate_pipe_note({"tool_name": "Read", "tool_input": {"command": "fm check | tail"}}))
 
