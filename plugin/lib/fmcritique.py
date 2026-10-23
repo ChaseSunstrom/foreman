@@ -437,8 +437,8 @@ def why_report(res, url, selector, notes):
 
 # ---------------------------------------------------------------- stress strings and surface profiles (T-1643)
 
-MAX_STRESS = 2000  # characters taken from a string; the rest is cut (a note says so)
-PLACEHOLDER = re.compile(r"\{\{|\}\}|\{[\w.]*\}|%\([\w.]+\)[-+ #0]*\d*[sdfr]|%[-+ #0]*\d*[sdfr@]|\$\{[\w.]+\}|</?\w[^<>]*>")
+MAX_STRESS = 2000  # characters taken from a string; the rest is cut
+PLACEHOLDER = re.compile(r"&(?:\w+|#\d+|#[xX][0-9a-fA-F]+);|\{\{|\}\}|\{[\w.]*\}|%\([\w.]+\)[-+ #0]*\d*[sdfr]|%[-+ #0]*\d*[sdfr@]|\$\{[\w.]+\}|</?\w[^<>]*>")
 ACCENTS = str.maketrans("aeiouyAEIOUYcnsCNS", "àéîöüýÀÉÎÖÜÝçñšÇÑŠ")
 # viewport and contrast presets for fm shot and the smoke harness: the surface's logical pixels, its device scale and
 # the contrast it needs (a ratio the text must reach; WCAG AA is 4.5)

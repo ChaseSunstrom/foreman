@@ -174,13 +174,17 @@ class Census(Case):
 
 class Pseudo(unittest.TestCase):
     def test_longer_bracketed_and_placeholders_kept(self):
-        for s in ("Save changes", "Hello {name}, you have %d items", "Delete %(n)s files <b>now</b> ${x}", "{0} of {1}"):
+        for s in ("Save changes", "Hello {name}, you have %d items", "Delete %(n)s files <b>now</b> ${x}", "{0} of {1}",
+                  "Terms &amp; conditions&nbsp;&#169; &#x2014;"):  # entities stay entities
             p = fmcritique.pseudo(s)
             self.assertGreaterEqual(len(p), len(s) * 1.3, s)
             self.assertTrue(p.startswith("[") and p.endswith("]"), p)
             for ph in fmcritique.PLACEHOLDER.findall(s):
                 self.assertIn(ph, p)
         self.assertNotIn("Save", fmcritique.pseudo("Save changes"))
+        p = fmcritique.pseudo("Terms &amp; conditions&nbsp;&#169; &#x2014;")
+        for ent in ("&amp;", "&nbsp;", "&#169;", "&#x2014;"):
+            self.assertIn(ent, p)
 
     def test_empty_and_huge(self):
         self.assertEqual(fmcritique.pseudo(""), "")
