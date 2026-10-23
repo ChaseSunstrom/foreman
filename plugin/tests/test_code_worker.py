@@ -830,6 +830,116 @@ class Ping(CodeCase):  # T-1335
         self.assertIn("isn't a runner", self.work("runners", "--ping", "nope", check=False).stderr)
 
 
+class Config(CodeCase):  # T-1359
+    def view(self, *args, env=None):
+        r = self.code("config", "--json", *args, env=env)
+        return {x["key"]: (x["value"], x["source"]) for x in json.loads(r.stdout)["settings"]}, json.loads(r.stdout)
+
+    def test_each_setting_shows_its_value_and_where_it_came_from(self):
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write('lean = false\nlimit_wait = 120\nchain = ["claude", "codex"]\n[on]\nclosed = "true"\n')
+        self.fm("init")
+        self.fm("sensitive", "on")
+        got, _ = self.view("--max-steps", "7", env={"FOREMAN_CONFINE": "0"})
+        self.assertEqual(got["lean"], (False, "code.toml"))
+        self.assertEqual(got["limit_wait"], (120, "code.toml"))
+        self.assertEqual(got["chain"], (["claude", "codex"], "code.toml"))
+        self.assertEqual(got["on.closed"], ("true", "code.toml"))
+        self.assertEqual(got["on.blocked"], (None, "default"))
+        self.assertEqual(got["max_steps"], (7, "flag"))
+        self.assertEqual(got["worker_timeout"], (1200, "default"))
+        self.assertEqual(got["max_usd"], (None, "default"))
+        self.assertEqual(got["confine"], ("off", "env FOREMAN_CONFINE"))
+        self.assertEqual(got["sensitive"], (True, "project"))
+        for key in ("runner", "model"):
+            self.assertIn(key, got)
+        self.assertIn("lean", self.code("config").stdout)
+
+    def test_explain_says_what_a_setting_does_and_how_to_change_it(self):
+        out = self.code("config", "--explain", "limit_wait").stdout
+        self.assertIn("usage limit", out)
+        self.assertIn("code.toml limit_wait", out)
+        r = self.code("config", "--explain", "nope", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("limit_wait", r.stderr)
+
+    def test_a_broken_code_toml_is_named_with_its_line_and_the_view_falls_back(self):
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write("runner = 'claude'\nlean = \n")
+        got, raw = self.view()
+        self.assertIn("line 2", raw["problem"])
+        self.assertEqual(got["lean"], (True, "default"))
+        self.assertIn("line 2", self.code("config").stdout)
+        r = self.code("fix add", check=False)  # a run still refuses it
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("code.toml", r.stderr)
+
+
+class Routing(CodeCase):  # T-1358
+    cli, work = Worker.cli, Worker.work
+
+    def setUp(self):
+        super().setUp()
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        self.cli("fix-calc", "exec python3 -c 'import pathlib; p = pathlib.Path(\"calc.py\"); "
+                             "p.write_text(p.read_text().replace(\"a - b\", \"a + b\"))'\n")
+        self.fm("init")
+
+    def past(self, worker, kind, end, usd=None, n=1, project="elsewhere"):
+        d = os.path.join(self.home, "state", "projects", project, "code")
+        os.makedirs(d, exist_ok=True)
+        for _ in range(n):
+            self.seq = getattr(self, "seq", 0) + 1
+            evs = [{"event": "start", "worker": worker}, {"event": "tool", "worker": worker},
+                   {"event": "plan", "plan": {"type": kind}}, {"event": end, **({"usd": usd} if usd is not None else {})}]
+            with open(os.path.join(d, f"T-{self.seq:04d}.events.jsonl"), "w") as f:
+                f.write("".join(json.dumps(e) + "\n" for e in evs))
+
+    def test_runners_shows_each_runners_record_per_kind(self):
+        self.past("claude", "FIX", "closed", 0.5, n=2)
+        self.past("claude", "FIX", "blocked")
+        self.past("claude", "FEATURE", "closed")
+        d = os.path.join(self.home, "state", "projects", "elsewhere", "code")
+        with open(os.path.join(d, "T-0099.events.jsonl"), "w") as f:  # still running: no verdict, not counted
+            f.write(json.dumps({"event": "start", "worker": "claude"}) + "\n" + json.dumps(
+                {"event": "plan", "plan": {"type": "FIX"}}) + "\n")
+        r = self.work("runners", "--json")
+        self.assertEqual(json.loads(r.stdout)["records"]["claude"],
+                         {"FIX": {"runs": 3, "closed": 2, "priced": 2, "usd": 1.0},
+                          "FEATURE": {"runs": 1, "closed": 1, "priced": 0, "usd": None}})
+        self.assertIn("claude: FIX 3 runs, 2 closed, $0.50 a closed run; FEATURE 1 run, 1 closed",
+                      self.work("runners").stdout)
+
+    def test_auto_hands_the_work_to_the_cheapest_runner_green_on_the_kind(self):
+        self.cli("claude", "exit 2\n")  # the planner (no plan needed with --verify); it must never work
+        self.cli("spare", "fix-calc\n")
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write('runner = "auto"\n[runners.spare]\nwork = "spare {prompt}"\n')
+        self.past("claude", "FIX", "closed", 0.5, n=3)
+        self.past("spare", "FIX", "closed", 0.1, n=3)
+        self.past("spare", "FEATURE", "blocked", n=3)
+        r = self.work("FIX: make calc.add add", "--verify", VERIFY, "--json")
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        notes = [e["text"] for e in map(json.loads, r.stdout.splitlines()) if e["event"] == "note"]
+        self.assertIn("auto: spare works this FIX (3 runs, 3 closed, $0.10 a closed run; the cheapest green one)", notes)
+        self.assertEqual(runner_records_for(self, "spare")["FIX"]["runs"], 4, "this run counts for spare")
+
+    def test_auto_with_no_green_runner_keeps_the_planning_runner(self):
+        self.cli("claude", "fix-calc\n")
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write('runner = "auto"\n')
+        self.past("claude", "FIX", "blocked", n=3)
+        r = self.work("FIX: make calc.add add", "--verify", VERIFY)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        self.assertIn("auto: no runner has 3 runs of FIX with two thirds closed yet; claude keeps it", r.stdout)
+
+
+def runner_records_for(case, name):
+    r = case.work("runners", "--json")
+    return json.loads(r.stdout)["records"][name]
+
+
 class Failover(CodeCase):  # T-1356 (not a Worker subclass: its tests would run twice)
     cli, work = Worker.cli, Worker.work
 
