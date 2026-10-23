@@ -726,8 +726,37 @@ def _inhibit():
                dict(os.environ, FOREMAN_INHIBITED="1"))
 
 
+def _run_all(args):
+    """T-1782: fm run in each project with queued work, one after another, with the same options. Each takes its own
+    run lock, so one already being worked says so and the next goes on."""
+    import fmcli
+    if getattr(args, "project", None):
+        raise fmcli.UsageError("--all-projects works every project: drop -p")
+    at = sys.argv.index("run") + 1 if "run" in sys.argv else len(sys.argv)
+    rest = [a for a in sys.argv[at:] if a != "--all-projects"]  # the options, as typed
+    ran = stopped = 0
+    for p, _ in c.all_projects():
+        if not os.path.isdir(p.root):
+            continue
+        try:
+            queued = c.order_queue(c.load_briefs(p))[0]
+        except (OSError, ValueError):
+            continue
+        if not queued:
+            continue
+        print(f"== {p.slug}: {len(queued)} queued", flush=True)
+        r = subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "run", *rest, "-p", p.slug],
+                           cwd=p.root)
+        ran, stopped = ran + 1, stopped + (r.returncode != 0)
+    print(f"fm run --all-projects: {ran} project(s) worked, {stopped} stopped early" if ran else
+          "fm run --all-projects: nothing queued in any project")
+    return 1 if stopped else 0
+
+
 def cmd_run(args):
     import fmcli
+    if getattr(args, "all_projects", False):  # T-1782
+        return _run_all(args)
     if args.sandbox and args.no_sandbox:
         raise fmcli.UsageError("--sandbox and --no-sandbox contradict each other: pick one")
     if getattr(args, "runner", None):  # T-1773: each task through fm code --task on this runner
