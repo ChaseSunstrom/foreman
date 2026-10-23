@@ -188,6 +188,10 @@ class Snippets(Fixture):
         self.snippet("raise SystemExit(3)", info="python no-run")
         self.assertEqual(self.problems(), [])
 
+    def test_a_no_run_block_that_doesnt_parse_names_its_line(self):  # T-1587
+        self.snippet("def f(:\n    pass", info="python no-run")
+        self.assertFlags("references/fix/alpha.md:11: python no-run block doesn't parse")
+
     def child(self, then):
         self.pidfile = os.path.join(self.tmp, "child.pid")
         self.snippet("import subprocess, time\n"
