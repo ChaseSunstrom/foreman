@@ -35,6 +35,13 @@ class LibraryCards(ForemanTestCase):
         self.assertGreaterEqual(len(fmlib.cards()), 400)
         self.assertIn("cards", self.fm("lib", "check").stdout)
 
+    def test_lint_notes_carry_their_kind(self):  # T-1604
+        _, notes = fmlib.lint()
+        self.assertTrue(all(getattr(x, "kind", None) in ("related", "stale") for x in notes), notes[:5])
+        odd = fmlib.Note("x: verified 2020-01-01: related 'y' was here", "stale")  # its words say related; its kind doesn't
+        self.assertEqual(fmlib.related_notes([odd, fmlib.Note("a: related 'b' has no card", "related")]),
+                         ["a: related 'b' has no card"])
+
     def test_the_lint_names_what_a_bad_card_gets_wrong(self):
         d = os.path.join(self.tmp, "cards", "web")
         os.makedirs(d)

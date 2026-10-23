@@ -150,10 +150,26 @@ def lint(root=CARDS):
         problems += [f"{rel}: {why}" for why in _card_problems(path, x)]
     names, stale = set(seen), datetime.date.today() - datetime.timedelta(days=VERIFIED_DAYS)
     for x in parsed.values():
-        notes += [f"{x['name']}: related {r!r} has no card" for r in x.get("related") or [] if r not in names]
+        notes += [Note(f"{x['name']}: related {r!r} has no card", "related") for r in x.get("related") or []
+                  if r not in names]
         if (_verified(x) or stale) < stale:
-            notes.append(f"{x['name']}: verified {x['verified']}, over a year ago: run its Verify commands again")
+            notes.append(Note(f"{x['name']}: verified {x['verified']}, over a year ago: run its Verify commands again",
+                              "stale"))
     return problems, notes
+
+
+class Note(str):
+    """T-1604: a lint note's text with its kind (related, stale) as a field, so fm lib check sorts notes by kind,
+    never by their wording."""
+    def __new__(cls, text, kind):
+        note = super().__new__(cls, text)
+        note.kind = kind
+        return note
+
+
+def related_notes(notes):
+    """The notes about related names with no card yet."""
+    return [x for x in notes if getattr(x, "kind", None) == "related"]
 
 
 def _verified(x):
@@ -1233,7 +1249,7 @@ def cmd_lib(args):
     if args.action == "check":
         problems, notes = lint()
         found = cards()
-        n, dated, related = len(found), sum(1 for x in found if _verified(x)), [x for x in notes if ": related " in x]
+        n, dated, related = len(found), sum(1 for x in found if _verified(x)), related_notes(notes)
         fmcli.out(args, {"cards": n, "verified": dated, "problems": problems, "notes": notes},
                   "\n".join(problems) if problems else f"{n} cards, all well-formed, {dated} with a verified: date"
                   + (f" ({len(related)} related names have no card yet)" if related else "") + "."
