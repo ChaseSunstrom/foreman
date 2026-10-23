@@ -99,7 +99,7 @@ DEFAULTS = {
     "keys": {"q": "quit", "n": "new", "s": "stop", "r": "resume", "?": "help", "d": "diff", "h": "history",
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
              "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
-             "p": "projects", ",": "settings", "z": "hush", "L": "looks"},
+             "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search"},
     "ext": {},  # T-1657: each extension's settings ({name: {key: value}}), its declared defaults (API.setting)
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
@@ -965,6 +965,8 @@ def _log(st, w, h, app):
         segs = None if e.get("kind") in LOG_HIDES else entry_segments(e, w, thoughts)
         if segs is None:
             continue
+        if app is not None and app.search and app.search.lower() not in "".join(t for t, _ in segs).lower():
+            continue  # T-1313: / keeps only the lines that match
         arrived = fx.since(f"log:{i}", e.get("kind"))
         if arrived < 0.6:
             segs = [(t, faded(style, ease_out(arrived / 0.6), fx.cfg, under)) for t, style in segs]
@@ -1132,7 +1134,13 @@ def _draw(name, st, w, h, app):
 
 def _panel(cv, st, app, cfg, name, y, x, h, w, lines):
     title, note = _title(st, name)
-    iy, ix, ih, iw = box(cv, y, x, h, w, title, cfg, app is not None and app.focused() == name, note)
+    if name == "log" and app is not None and app.search:  # T-1313: the filter and what it kept
+        note = f"{len(lines)} matching {fit(app.search, 24)}"
+    focused = app is not None and app.focused() == name
+    iy, ix, ih, iw = box(cv, y, x, h, w, title, cfg, focused, note)
+    hint = PANEL_HINTS.get(name) if focused else None
+    if hint and w > width(hint) + 8:  # T-1313: the focused panel's own keys, in its bottom edge
+        cv.put(y + h - 1, x + 2, f" {hint} ", "dim")
     follow = name == "log" and (app is None or app.follow)
     top = max(0, len(lines) - ih) if follow else min(app.scroll if app else 0, max(0, len(lines) - ih))
     for r, segs in enumerate(lines[top:top + ih]):
@@ -1149,7 +1157,8 @@ def render(st, w, h, cfg, app=None, t=None):
     _FX = FX(cfg, app, t or 0.0, st)
     cv = Canvas(w, h)
     prompt = app is not None and app.mode == "prompt"
-    y0, body_h = 1, h - 2 - (1 if prompt else 0)
+    search = app is not None and app.mode == "search"  # T-1313
+    y0, body_h = 1, h - 2 - (2 if prompt else 1 if search else 0)  # T-1346: the request box and its preview
     lay = cfg.get("layout") or DEFAULTS["layout"]
     if app is None or app.mode != "layout":  # T-1657: a rule's layout while its events hold; the editor edits the file's
         lay = rule_layout(cfg, st, app)
@@ -1188,9 +1197,16 @@ def render(st, w, h, cfg, app=None, t=None):
         app.order = order
     _header(cv, st, app)
     _status(cv, st, app)
-    if prompt:
+    if prompt:  # T-1346: the cursor where the line editor has it, and where Enter sends the request
+        shown = lambda s: s.replace("\n", " ↵ ")
+        cv.fill(h - 3, "input")
+        cv.line(h - 3, 0, [(" request › ", "key"), (shown(app.input[:app.line.cur]), "input"), ("▏", "key"),
+                           (shown(app.input[app.line.cur:]), "input")], w)
+        cv.line(h - 2, 0, [("   ", "text"), (app.preview(), "dim")], w)
+    if search:
         cv.fill(h - 2, "input")
-        cv.line(h - 2, 0, [(" request › ", "key"), (app.input.replace("\n", " ↵ "), "input"), ("▏", "key")], w)
+        cv.line(h - 2, 0, [(" search › ", "key"), (app.search_draft, "input"), ("▏", "key"),
+                           ("   Enter keeps it, Esc clears", "dim")], w)
     if app is not None and app.mode in VIEWS:
         VIEWS[app.mode](cv, st, app, cfg)
     return cv
@@ -1206,7 +1222,8 @@ COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume"
                   ("looks", "your taste: 12 looks in pairs"),
                   ("hush", "motion: full, reduced, off"),
                   ("thoughts", "the model's own words"), ("focus", "next panel"), ("up", "up"), ("down", "down"),
-                  ("expand", "open a line"), ("follow", "follow the latest"), ("help", "keys"), ("quit", "quit")]
+                  ("expand", "open a line"), ("follow", "follow the latest"), ("search", "search the Activity"),
+                  ("help", "keys"), ("quit", "quit")]
 
 
 def _overlay(cv, cfg, title, note, w=None, h=None):
@@ -1225,7 +1242,7 @@ CONFIRM_S = 2.0  # T-1348: q or s during a live run waits this long for the seco
 TIP_SKIP = {"stop", "up", "down", "focus", "expand", "follow", "help", "quit"}  # too plain to need a tip
 POSTER = (("run", ("new", "stop", "resume", "model")),  # T-1512: the keys poster's groups; extensions' go under more
           ("see", ("diff", "history", "projects", "thoughts", "settings", "hush", "looks")),
-          ("move", ("focus", "up", "down", "expand", "follow")), ("app", ("help", "quit")))
+          ("move", ("focus", "up", "down", "expand", "follow", "search")), ("app", ("help", "quit")))
 
 
 def _help_view(cv, st, app, cfg):
@@ -1643,9 +1660,72 @@ def to_svg(cv, cfg, title="fm code tui"):
 
 # ---------------------------------------------------------------- the app: keys, commands, views, the child
 
+class LineEditor:
+    """T-1346: the request box: text, a cursor and this launch's requests (Up/Down), with the keys a shell's line
+    editor has (arrows, Home/End, Ctrl-A/E/W/U/K, Delete)."""
+
+    def __init__(self, history=()):
+        self.text, self.cur, self.history, self.at, self.draft = "", 0, list(history), None, ""
+
+    def set(self, text):
+        self.text, self.cur, self.at = text, len(text), None
+
+    def insert(self, s):
+        self.text, self.cur = self.text[:self.cur] + s + self.text[self.cur:], self.cur + len(s)
+
+    def remember(self, text):
+        if text and (not self.history or self.history[-1] != text):
+            self.history.append(text)
+
+    def key(self, k):
+        """Whether k was an editing key (and done)."""
+        t, i = self.text, self.cur
+        if k in ("KEY_LEFT", "\x02"):
+            self.cur = max(0, i - 1)
+        elif k in ("KEY_RIGHT", "\x06"):
+            self.cur = min(len(t), i + 1)
+        elif k in ("KEY_HOME", "\x01"):
+            self.cur = 0
+        elif k in ("KEY_END", "\x05"):
+            self.cur = len(t)
+        elif k in ("KEY_BACKSPACE", "\x7f", "\b"):
+            if i:
+                self.text, self.cur = t[:i - 1] + t[i:], i - 1
+        elif k in ("KEY_DC", "\x04"):
+            self.text = t[:i] + t[i + 1:]
+        elif k == "\x15":  # Ctrl-U: what's before the cursor
+            self.text, self.cur = t[i:], 0
+        elif k == "\x0b":  # Ctrl-K: what's after it
+            self.text = t[:i]
+        elif k == "\x17":  # Ctrl-W: the word before it
+            j = t.rfind(" ", 0, len(t[:i].rstrip())) + 1
+            self.text, self.cur = t[:j] + t[i:], j
+        elif k in ("KEY_UP", "KEY_DOWN") and self.history:
+            if self.at is None:
+                if k == "KEY_DOWN":
+                    return True
+                self.draft, self.at = t, len(self.history)
+            self.at = max(0, self.at - 1) if k == "KEY_UP" else self.at + 1
+            if self.at >= len(self.history):
+                self.text, self.at = self.draft, None
+            else:
+                self.text = self.history[self.at]
+            self.cur = len(self.text)
+        elif len(k) == 1 and k.isprintable():
+            self.insert(k)
+        else:
+            return False
+        return True
+
+
+PANEL_HINTS = {"log": "/ search  ↵ open  t thoughts", "files": "d the diff", "track": "j k scroll",
+               "checks": "j k scroll"}  # T-1313: the focused panel's own keys, in its bottom edge
+
+
 class App:
     def __init__(self, cfg, spawn=None, root=None, opts=None, diff=None, history=None, choices=None, projects=None,
                  project_state=None, used=None):
+        self.line, self.search, self.search_draft, self.files = LineEditor(), "", "", None  # T-1346, T-1313
         self.cfg, self.state = cfg, State()
         self.mode, self.input, self.message, self.done = "main", "", "", False
         self.used_path, self.used = used, set()  # T-1348: the commands ever run here (a JSON list), for the tip
@@ -1684,6 +1764,7 @@ class App:
         self.tui = None  # T-1543: tui.toml as the app last read it ({path, text}, fmsettings.boot): watched for edits
         self.home_items, self.home_index = None, 0  # the home list a view over it goes back to
         self.commands = {"quit": self.quit, "new": self.new, "stop": self.stop, "resume": self.resume,
+                         "search": self.open_search,  # T-1313
                          "help": self.help, "focus": self.next_focus, "up": lambda: self.move(-1),
                          "down": lambda: self.move(1), "page_up": lambda: self.move(-10),
                          "page_down": lambda: self.move(10), "expand": self.expand, "follow": self.follow_tail,
@@ -1727,7 +1808,7 @@ class App:
         if isinstance(k, tuple):  # T-1316: a paste: the prompt takes it whole, newlines kept; anywhere else nothing
             if self.mode == "prompt" and k[0] == "paste":
                 text = "".join(c for c in k[1].replace("\t", " ") if c == "\n" or c.isprintable())
-                self.input = (self.input + text)[:PASTE_CAP]
+                self.line.insert(text[:max(0, PASTE_CAP - len(self.input))])  # T-1346: at the cursor
             elif self.mode == "settings" and self.set_typing == "bind":  # T-1511: a paste is no key to bind
                 self._settings_bind(k)
             elif self.mode == "settings" and self.set_typing and k[0] == "paste":  # a colour, a list: one line
@@ -1737,6 +1818,8 @@ class App:
             return None
         if self.mode == "prompt":
             return self._prompt_key(k)
+        if self.mode == "search":
+            return self._search_key(k)
         if self.mode == "settings":
             return self._settings_key(k)
         if self.mode == "layout":
@@ -1793,10 +1876,28 @@ class App:
                 self.opts.update(model=name if kind == "model" else None, worker=name if kind == "worker" else None)
                 self.message = f"next run: {kind} {name}"
 
+    @property
+    def input(self):  # T-1346: the request box's text, kept by its line editor
+        return self.line.text
+
+    @input.setter
+    def input(self, text):
+        self.line.set(text)
+
     def _prompt_key(self, k):
         if k in ("\n", "\r", "KEY_ENTER"):
-            text, self.mode, self.input, self.prompt_back = self.input.strip(), "main", "", "main"
-            if text:
+            text, self.mode, self.prompt_back = self.input.strip(), "main", "main"
+            self.line.remember(text)
+            self.input = ""
+            if text.startswith("/"):  # T-1346: an app command, not a run
+                hit = self.palette(text)
+                fn = self.commands.get(hit[0][0]) if hit else None
+                if fn:
+                    self.used.add(hit[0][0])
+                    fn()
+                else:
+                    self.message = f"no app command matches {text}"
+            elif text:
                 self.start([text])
         elif k == "\x1b":
             self.input, self.next_root = "", None
@@ -1805,10 +1906,70 @@ class App:
                 self.mode, self.items, self.item_index = "project", self.project_items, self.project_index
             else:
                 self.mode = "main"
+        elif k == "\t":
+            self.complete()
+        else:
+            self.line.key(k)
+
+    def palette(self, text):
+        """T-1346: [(command, label)] whose name starts with what follows the /, or whose label holds it."""
+        q = text[1:].strip().lower()
+        return [(cmd, label) for cmd, label in COMMAND_LABELS if cmd in self.commands
+                and (cmd.startswith(q) or q and q in label.lower())]
+
+    def tracked(self):
+        """T-1346: the project's tracked files, read once (git ls-files, 20,000 at most) for @ completion."""
+        if self.files is None:
+            try:
+                out = subprocess.run(["git", "-C", self.root, "ls-files"], capture_output=True, text=True, timeout=2)
+                self.files = out.stdout.splitlines()[:20000] if out.returncode == 0 else []
+            except (OSError, subprocess.SubprocessError):
+                self.files = []
+        return self.files
+
+    def at_word(self):
+        """The @word the cursor ends, or None."""
+        word = self.input[:self.line.cur].rsplit(" ", 1)[-1]
+        return word[1:] if word.startswith("@") else None
+
+    def complete(self):
+        """T-1346: Tab after @: the tracked file it starts (or what all the matches share)."""
+        part = self.at_word()
+        if part is None:
+            return
+        hits = [f for f in self.tracked() if f.startswith(part)]
+        if not hits:
+            self.message = f"no tracked file starts {part}"
+            return
+        done = hits[0] + " " if len(hits) == 1 else os.path.commonprefix(hits)
+        self.line.insert(done[len(part):])
+
+    def preview(self):
+        """T-1346: the line under the request box: where Enter sends it."""
+        if self.input.startswith("/"):
+            hits = self.palette(self.input)
+            return ("Enter runs: " + ", ".join(f"/{c} ({label})" for c, label in hits[:3])) if hits else \
+                "no app command matches"
+        part = self.at_word()
+        if part is not None:
+            hits = [f for f in self.tracked() if f.startswith(part)][:3]
+            return "Tab completes: " + ", ".join(hits) if hits else "no tracked file starts " + part
+        runner = self.opts.get("model") or self.opts.get("worker") or "the default runner"
+        return f"Enter starts a run in {os.path.basename(self.root.rstrip(os.sep)) or self.root} with {runner}"
+
+    def open_search(self):
+        """T-1313: / types a filter for the Activity log."""
+        self.mode, self.search_draft = "search", self.search
+
+    def _search_key(self, k):
+        if k in ("\n", "\r", "KEY_ENTER"):
+            self.mode, self.search = "main", self.search_draft.strip()
+        elif k == "\x1b":
+            self.mode, self.search, self.search_draft = "main", "", ""
         elif k in ("KEY_BACKSPACE", "\x7f", "\b"):
-            self.input = self.input[:-1]
+            self.search_draft = self.search_draft[:-1]
         elif len(k) == 1 and k.isprintable():
-            self.input += k
+            self.search_draft = (self.search_draft + k)[:80]
 
     def focused(self):
         return self.order[self.focus % len(self.order)] if self.order else "log"  # the first frame too
