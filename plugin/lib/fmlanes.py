@@ -603,7 +603,7 @@ def builder_brief(p, b, args, resume_branch=None):
                      f"{b.id}: builder brief {path}\n  launch: {agent}\n  then: review its branch (one fm-reviewer on "
                      f"git diff HEAD...<branch>), fm lane merge {b.id}, fm lane rm {b.id} (takes it back), "
                      f"fm focus {b.id} here, re-run its criteria, fm task finish {b.id} "
-                     f"(skills/intake/references/delegate.md)")
+                     f"(skills/intake/references/delegate.md)\n  not launching it? fm lane rm {b.id} frees the slot")
 
 
 # what a build or test run leaves and rebuilds, never anyone's work (T-0377: python's; T-0408: the test, lint, package
@@ -640,7 +640,9 @@ def _verify(b):
                                f"verify commands first (fm task ac {b.id} add \"…\" --verify \"<cmd>\")")
     wt = b.meta.get("lane")
     if not wt or not os.path.isdir(wt):
-        raise fmcli.UsageError(f"{b.id}: its lane worktree is gone, so its criteria can't be re-run there")
+        raise fmcli.UsageError(f"{b.id}: its lane worktree is gone, so its criteria can't be re-run there: fm lane "
+                               f"new {b.id} re-attaches its kept branch {b.meta.get('lane_branch') or ''}, or fm lane "
+                               f"merge {b.id} --unverified \"<why>\" merges it as it stands (logged)")
     for n, cmd in cmds:
         code, out = c.run_command(wt, cmd, 600)
         if code:

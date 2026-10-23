@@ -31,6 +31,25 @@ def frontmatter(path):
     return meta, m.group(2)
 
 
+def fm_mention_problems(text):
+    """T-1701: each `fm VERB [word]` in backticks that names no command, or a lowercase word that isn't one of the
+    verb's subcommands or its first positional's choices. The one checker every skill test shares."""
+    import fmcli
+
+    def first_positional_choices(parser):
+        pos = next((a for a in parser._actions if not a.option_strings), None)
+        return pos.choices if pos is not None else None
+
+    verbs, bad = first_positional_choices(fmcli.build_parser()), []
+    for verb, word in re.findall(r"`fm ([\w-]+)((?: [a-z][\w-]*)?)", text):
+        inner = first_positional_choices(verbs[verb]) if verb in verbs else None
+        if verb not in verbs:
+            bad.append(f"fm {verb}")
+        elif inner and word and word.strip() not in inner:
+            bad.append(f"fm {verb}{word}")
+    return bad
+
+
 def rel(path):
     return os.path.relpath(path, PLUGIN)
 
@@ -124,6 +143,30 @@ class Skills(unittest.TestCase):
                 with self.subTest(skill=name, ref=ref):
                     self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)))
 
+    def test_the_job_skills_are_short_and_name_only_real_playbooks_and_verbs(self):
+        # T-1701: debug-test, release and research wrap playbooks and fm verbs that exist, and fire on task words
+        import fmdoctor
+        self.assertEqual(fm_mention_problems("`fm nosuch` `fm lane nosuch ID` `fm lane brief ID` `fm task hypo ID add`"),
+                         ["fm nosuch", "fm lane nosuch"], "the checker itself")
+        jobs, chars = ("debug-test", "release", "research"), 0
+        for name in jobs:
+            with self.subTest(skill=name):
+                meta, body = frontmatter(os.path.join(PLUGIN, "skills", name, "SKILL.md"))
+                self.assertEqual(meta.get("name"), name)
+                self.assertTrue(meta.get("description", "").startswith("Use whenever "), "task words, not Foreman's")
+                self.assertNotEqual(meta.get("disable-model-invocation"), "true")
+                chars += len(meta["description"])
+                self.assertLess(len(body.splitlines()), 60)
+                refs = re.findall(r"`((?:\.\./[\w-]+/)?references/[\w./-]+\.md)`", body)
+                self.assertTrue(refs, "wraps at least one playbook")
+                for ref in refs:
+                    self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)), ref)
+                self.assertIn("`fm ", body, "wraps at least one fm verb")
+                self.assertEqual(fm_mention_problems(body), [])
+        self.assertLessEqual(chars, 360, "three of the 2,200-character listing's job-skill room")
+        self.assertEqual([p for p in fmdoctor._description_problems(os.path.join(PLUGIN, "skills"))
+                          if any(j in p for j in jobs)], [])
+
     def test_the_directions_skill_offers_six_measured_cards_and_saves_the_pick(self):
         # T-1508: one sentence in, six distinct one-screen directions out, the pick saved as DESIGN.md with an
         # audacity level; the worked example is held to the card format and its stated contrasts are measured
@@ -151,21 +194,14 @@ class Skills(unittest.TestCase):
 
     def test_the_ui_design_skill_routes_to_real_playbooks_and_verbs(self):
         # T-1700: one job skill for UI, motion and 3D work; every playbook and fm verb it names exists
-        import fmcli
         body = read_text(os.path.join(PLUGIN, "skills", "ui-design", "SKILL.md"))
         self.assertLess(len(body.splitlines()), 100)
         for ref in ("design-direction", "type-and-colour", "composition", "motion", "scene-3d", "visual-qa"):
             self.assertIn(f"`../playbooks/references/ui/{ref}.md`", body)
-        verbs = next(a for a in fmcli.build_parser()._actions if a.choices and "help" in a.choices).choices
-        named = re.findall(r"`fm ([\w-]+)(?: ([\w-]+))?", body)
+        named = set(re.findall(r"`fm ([\w-]+)", body))
         for need in ("design", "scene", "motion", "looks", "page", "img", "new"):
-            self.assertIn(need, {v for v, _ in named})
-        for verb, sub in named:
-            with self.subTest(verb=verb, sub=sub):
-                self.assertIn(verb, verbs)
-                pos = [a for a in verbs[verb]._actions if not a.option_strings and a.choices]
-                if sub and pos and not sub.isupper():
-                    self.assertIn(sub, pos[0].choices)
+            self.assertIn(need, named)
+        self.assertEqual(fm_mention_problems(body), [])  # T-1701: the checker every skill test shares
         self.assertIn("Skill foreman:directions", body)
         # palette prints to stdout and ignores --out; extract writes DESIGN.md's Tokens section unless --out says else
         palette = next(line for line in body.splitlines() if "fm design palette" in line)
