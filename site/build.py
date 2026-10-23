@@ -420,7 +420,40 @@ def example_html(name, label, ex):
             + (f'<div class="ex-answer"><p><b>{end}</b></p>{"".join(f"<p>{esc(x)}</p>" for x in ex["end_text"].split(chr(10)) if x.strip())}</div>'
                if ex["end"] == "answer" else f'<p class="ex-end"><b>{end}</b> {esc(ex["end_text"])}</p>')
             + f'<p class="ex-meta">{esc(" · ".join(x for x in facts if x))} · replay it: '
-              f'<code>fm code tui --events demo/examples/{name}.jsonl</code></p></div></div></article>')
+              f'<code>fm code tui --events demo/examples/{name}.jsonl</code> · '
+              f'<a href="../stories/{name}.html">the case study</a></p></div></div></article>')
+
+
+STEP_KINDS = {"before": "before", "verify": "check"}
+
+
+def case_study_html(name, label, ex):
+    """T-1541: one recorded run as a case study: its card, then every event in order at the time it came: the checks
+    failing before the work, each step and what it changed, the checks after, and how it ended."""
+    ev = ex["events"]
+    t0 = next((e["ts"] for e in ev if isinstance(e.get("ts"), (int, float))), 0)
+    rows = []
+    for e in ev:
+        kind, at = e.get("event"), e.get("ts")
+        when = (_took(round(at - t0)) or "0s") if isinstance(at, (int, float)) else ""
+        if kind == "verify":
+            ok = e.get("exit") == 0
+            rows.append((when, "before" if e.get("label") == "before" else "check",
+                         f"{'passes' if ok else 'fails'}: <code>{esc(str(e.get('cmd') or ''))}</code>",
+                         "pass" if ok else "fail"))
+        elif kind == "step":
+            rows.append((when, "step", esc(str(e.get("text") or f"step {e.get('step')}")), ""))
+        elif kind == "changed":
+            rows.append((when, "changed", ", ".join(f"<code>{esc(str(f))}</code>" for f in e.get("files") or []), ""))
+        elif kind in ("closed", "blocked", "error", "answer"):
+            rows.append((when, kind, esc(str(e.get("text") or "")), "pass" if kind == "closed" else ""))
+    timeline = "".join(f'<li class="{cls}"><span class="at">{w}</span> <b>{esc(k)}</b> {txt}</li>'
+                       for w, k, txt, cls in rows)
+    title = ex["plan"].get("title") or ex["request"]
+    return (f'<p class="kicker">Case study · {esc(label)}</p><h1>{esc(title)}</h1><p class="lede">{esc(ex["request"])}'
+            f'</p>{example_html(name, label, ex)}<section><h2>The run, event by event</h2>'
+            f'<ol class="timeline">{timeline}</ol></section>'
+            '<p class="next"><a href="../features/code.html">Back to fm code</a></p>')
 
 
 def examples_html(folder=None):
@@ -493,6 +526,14 @@ def build(out):
         if os.path.isfile(src):
             fmcodetui.snapshot(load_example(src)["events"], os.path.join(out, "assets", "examples", name + ".svg"),
                                (120, 34))
+    os.makedirs(os.path.join(out, "stories"), exist_ok=True)  # T-1541: each recorded run as a case study
+    for name, label in EXAMPLES:
+        src = os.path.join(ROOT, "demo", "examples", name + ".jsonl")
+        if os.path.isfile(src):
+            ex = load_example(src)
+            with open(os.path.join(out, "stories", name + ".html"), "w", encoding="utf-8") as f:
+                f.write(layout(f"Case study: {ex['plan'].get('title') or label}", ex["request"][:150],
+                               case_study_html(name, label, ex), P.PAGES, None))
     os.makedirs(os.path.join(out, "features"), exist_ok=True)
     for p in P.PAGES:
         with open(os.path.join(out, "features", p["slug"] + ".html"), "w", encoding="utf-8") as f:

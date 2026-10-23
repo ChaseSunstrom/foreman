@@ -423,8 +423,11 @@ def send(sid, text):
 
 
 def stop(sid):
-    meta = read_meta(sid)
+    # T-1789: the marker first, then the pid. A runner sets its pid before it looks for the marker, so it either sees
+    # the marker and ends its turn, or set its pid before this reads it and is killed below; read first, a runner
+    # starting in between was neither, ran on, and its writes put the status back to running.
     c.write_atomic(os.path.join(_dir(sid), "stopped"), c.now())  # a runner that hasn't started its turn yet sees this
+    meta = read_meta(sid)
     for name in _pending(sid):
         try:
             os.remove(os.path.join(_dir(sid), "pending", name))

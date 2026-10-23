@@ -103,7 +103,7 @@ DEFAULTS = {
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
              "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
              "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search", "g": "queue", "T": "tickets",
-             "u": "undo", "P": "pr"},
+             "u": "undo", "P": "pr", "F": "photo"},
     "ext": {},  # T-1657: each extension's settings ({name: {key: value}}), its declared defaults (API.setting)
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
@@ -1381,6 +1381,7 @@ COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume"
                   ("tickets", "tickets: requests that run after this one"),
                   ("undo", "undo the closed run: a git revert of its commit"),
                   ("pr", "the closed run's pull request text; Enter posts it"),
+                  ("photo", "photo booth: this frame as SVG and PNG"),
                   ("thoughts", "the model's own words"), ("focus", "next panel"), ("up", "up"), ("down", "down"),
                   ("expand", "open a line"), ("follow", "follow the latest"), ("search", "search the Activity"),
                   ("help", "keys"), ("quit", "quit")]
@@ -2134,7 +2135,8 @@ class App:
                          "thoughts": self.toggle_thoughts, "projects": self.show_home,
                          "settings": self.show_settings, "hush": self.hush, "looks": self.show_looks,
                          "queue": self.work_queue, "tickets": self.show_tickets, "undo": self.undo,
-                         "pr": self.draft_pr}
+                         "pr": self.draft_pr, "photo": self.take_photo}
+        self.size = None  # T-1546: the screen's size as last drawn, for the photo booth
         self.commands.update({name: self._ext_command(name, fn) for name, fn in EXT_COMMANDS.items()})
 
     def fps(self, t):
@@ -2548,6 +2550,19 @@ class App:
         else:
             return False
         return True
+
+    def take_photo(self):
+        """T-1546, the photo booth: F writes the frame on screen to Foreman's photos folder, as an SVG and (with
+        rsvg-convert installed) a PNG."""
+        import fmcore
+        try:
+            svg, png, note = photo(self, os.path.join(fmcore.foreman_home(), "photos"), self.size or (120, 34),
+                                   self.clock())
+        except OSError as e:
+            self.message = f"no photo: {e.strerror or e}"
+            return None
+        self.message = f"photo: {svg}" + (f" and .png" if png else f" ({note})")
+        return None
 
     def _closed_commit(self):
         """T-1352: (task, commit) of the run on screen when it closed and committed, else None."""
@@ -4189,7 +4204,7 @@ def _loop(io, app):
                 w, h = io.size()
                 term.prev = None
                 io.write("\x1b[2J")
-            t = app.clock()
+            t, app.size = app.clock(), (w, h)
             frame = term.frame(render(app.state, w, h, app.cfg, app, t=t), app.cfg)
             title = title_text(app.state)
             if title != shown:  # T-1310: the run's state in the title, so another window shows it
@@ -4376,16 +4391,116 @@ def gallery(cols, height=18, depth=None):
 
 
 def snapshot(events, path, size=(120, 34), cfg=None, mode="main"):
-    """The screen after these events, as an SVG at path (README pictures, the site, a bug report)."""
+    """The screen after these events, as an SVG at path (README pictures, the site, a bug report); a path ending .png
+    is the PNG of it (T-1546: needs rsvg-convert)."""
     cfg = cfg or DEFAULTS
     import fmcore
     app = App(cfg, spawn=lambda *a, **k: None)
     for e in fmcore.redact_obj(list(events)):  # T-1302: a shared file never holds a token a worker printed
         app.feed(e)
     app.mode = mode
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(to_svg(render(app.state, size[0], size[1], cfg, app), cfg))
+    svg = path[:-4] + ".svg" if path.lower().endswith(".png") else path
+    with open(svg, "w", encoding="utf-8") as f:  # T-1541: at t=0, never the wall clock, so a build is byte-for-byte
+        f.write(to_svg(render(app.state, size[0], size[1], cfg, app, t=0.0), cfg))
+    if svg != path:
+        _png(svg, path)
     return path
+
+
+def _png(svg, png):
+    """T-1546: svg drawn to png by rsvg-convert; RuntimeError when it isn't installed or fails."""
+    tool = shutil.which("rsvg-convert")
+    if not tool:
+        raise RuntimeError("a PNG needs rsvg-convert (librsvg), which isn't installed; the SVG is written")
+    r = subprocess.run([tool, "-o", png, svg], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    if r.returncode:
+        raise RuntimeError(f"rsvg-convert failed: {(r.stderr or '').strip()[:200]}")
+
+
+def photo(app, folder, size, t=None):
+    """T-1546, the photo booth: the screen as it stands, as frame-<time>.svg in folder and its PNG beside it when
+    rsvg-convert is installed: (svg, png or None, why there's no png)."""
+    os.makedirs(folder, exist_ok=True)
+    base = os.path.join(folder, "frame-" + time.strftime("%Y%m%d-%H%M%S"))
+    k, svg = 1, base + ".svg"
+    while os.path.exists(svg):
+        k, svg = k + 1, f"{base}-{k}.svg"
+    with open(svg, "w", encoding="utf-8") as f:
+        f.write(to_svg(render(app.state, size[0], size[1], app.cfg, app, t=t), app.cfg))
+    try:
+        _png(svg, svg[:-4] + ".png")
+    except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+        return svg, None, str(e)
+    return svg, svg[:-4] + ".png", ""
+
+
+# T-1546, the chaos twin: what a session might throw at the app, faster than any person
+CHAOS_COMMANDS = ("up", "down", "page_up", "page_down", "expand", "follow", "focus", "help", "diff", "history",
+                  "thoughts", "search", "new", "projects")  # read-only: none writes a file, runs a command or records
+HOSTILE = ["", "x" * 300, "é" * 20 + "́", "表" * 40, "‮abc", "a\tb\nc", "\x1b[31mred\x1b[0m", "🙂" * 30,
+           "  ", "​" * 10, "\r\n" * 5, "%s{}{0}", "-" * 1000]
+
+
+def _chaos_event(rng):
+    s = rng.choice(HOSTILE) + rng.choice(["", str(rng.randint(0, 10 ** 9))])
+    n = rng.randint
+    return rng.choice([
+        {"event": "say", "text": s}, {"event": "step", "step": n(-1, 9), "text": s},
+        {"event": "plan", "plan": {"type": s, "tier": s, "title": s, "steps": [s] * n(0, 9),
+                                   "criteria": [{"text": s, "verify": s}] * n(0, 5)}},
+        {"event": "verify", "criterion": n(-1, 6), "label": rng.choice(["before", "verify", s]),
+         "exit": rng.choice([0, 1, None, -9]), "cmd": s, "output": s},
+        {"event": "changed", "step": n(0, 5), "files": [s] * n(0, 6), "stat": {s: [n(0, 999), n(0, 999)]}},
+        {"event": "tokens", "total_in": n(0, 10 ** 7), "total_out": n(0, 10 ** 6), "call_in": n(0, 10 ** 6),
+         "call_out": n(0, 10 ** 5)},
+        {"event": "action", "action": s, "target": s, "result": s, "detail": s}, {"event": "worker", "text": s},
+        {"event": "error", "text": s, "next": s}, {"event": "blocked", "text": s, "reason": s},
+        {"event": "task", "task": s}, {"event": rng.choice(["", s, "unknown"]), "text": s}])
+
+
+def chaos(seconds=10.0, seed=None, clock=time.monotonic):
+    """T-1546, the chaos twin: a headless app fed floods of hostile events, random keys (read-only commands, text in
+    the prompt and search, Esc) and random sizes for `seconds`, drawing a frame after each:
+    {seed, frames, keys, events, resizes, crash}, crash None or {step, size, mode, error, trace}. The seed replays it;
+    the app's root and history are an empty temp folder and every source it would read is stubbed."""
+    import random
+    import tempfile
+    import traceback
+    seed = random.randrange(1 << 30) if seed is None else seed
+    rng, n = random.Random(seed), {"frames": 0, "keys": 0, "events": 0, "resizes": 0}
+    keys = [k for k, cmd in DEFAULTS["keys"].items() if cmd in CHAOS_COMMANDS] + ["\x1b", "\x1b", "KEY_LEFT"]
+    w, h, step, end = 80, 24, 0, clock() + seconds
+    with tempfile.TemporaryDirectory(prefix="fm-chaos-") as tmp:
+        none = lambda *a, **k: None  # noqa: E731
+        app = App(DEFAULTS, spawn=none, root=tmp, diff=lambda *a, **k: "", history=tmp, choices=lambda *a, **k: [],
+                  projects=lambda *a, **k: [], project_state=lambda *a, **k: {}, noticed=lambda *a, **k: [],
+                  asker=none, queued=lambda *a, **k: [])
+        try:
+            while clock() < end:
+                step += 1
+                roll = rng.random()
+                if roll < 0.35:
+                    for _ in range(rng.randint(1, 40)):
+                        app.feed(_chaos_event(rng))
+                        n["events"] += 1
+                elif roll < 0.8:
+                    typing = app.mode in ("prompt", "search")
+                    k = rng.choice("ab Z表🙂-\x7f") if typing and rng.random() < 0.7 else rng.choice(keys)
+                    if typing and k in ("\n", "KEY_ENTER"):
+                        k = "\x1b"  # a typed request is never sent
+                    app.key(k)
+                    n["keys"] += 1
+                else:
+                    w, h = rng.randint(1, 220), rng.randint(1, 70)
+                    n["resizes"] += 1
+                app.done = False
+                render(app.state, w, h, app.cfg, app, t=step * 0.05)
+                n["frames"] += 1
+        except Exception as e:
+            return dict(n, seed=seed, crash={"step": step, "size": [w, h], "mode": app.mode,
+                                             "error": f"{type(e).__name__}: {e}"[:300],
+                                             "trace": traceback.format_exc()[-1500:]})
+    return dict(n, seed=seed, crash=None)
 
 
 def main(args, words, home=False):
@@ -4404,6 +4519,15 @@ def main(args, words, home=False):
         print(f"fm code tui: {e}", file=sys.stderr)
     if getattr(args, "print_config", False):
         return 2 if errors else 0
+    if getattr(args, "chaos", None) is not None:  # T-1546: the chaos twin, headless
+        got = chaos(args.chaos, getattr(args, "seed", None))
+        crash = got["crash"]
+        print(f"chaos: {got['frames']} frames, {got['keys']} keys, {got['events']} events, {got['resizes']} resizes "
+              f"in {args.chaos:g} s (seed {got['seed']}): "
+              + ("no crash" if not crash else f"crashed at step {crash['step']} in {crash['mode']} at "
+                 f"{crash['size'][0]}x{crash['size'][1]}: {crash['error']}\n{crash['trace']}\nreplay: fm code tui "
+                 f"--chaos {args.chaos:g} --seed {got['seed']}"))
+        return 1 if crash else 0
     if getattr(args, "tour", False):  # T-1309: the sample run with captions: on the screen, as lines, or as an SVG
         if getattr(args, "snapshot", None):
             w, _, h = (getattr(args, "size", None) or "110x32").partition("x")
@@ -4426,7 +4550,11 @@ def main(args, words, home=False):
             events = [json.loads(line) for line in f if line.strip()]
         w, _, h = (getattr(args, "size", None) or "120x34").partition("x")
         if getattr(args, "snapshot", None):
-            print(snapshot(events, out, (int(w), int(h)), cfg))
+            try:
+                print(snapshot(events, out, (int(w), int(h)), cfg))
+            except RuntimeError as e:  # T-1546: a .png with no rsvg-convert
+                print(f"fm code tui: {e}", file=sys.stderr)
+                return 2
             return 0
         try:
             print(record(events, out, (int(w), int(h)), cfg=cfg))

@@ -557,6 +557,13 @@ def cmd_task(args):
             return print(json.dumps(dict(c.brief_detail(b), meta=b.meta, blockers=b.done_blockers()), indent=2))
         import fmcost
         return print(b.render() + (f"\n{line}\n" if (line := fmcost.cost_line(p, b)) else ""), end="")  # T-1083
+    if sub == "card":  # T-1541: a proved task's title card
+        b = need_brief(p, args.id)
+        if not b.red_green():
+            raise UsageError(f"{b.id} has no proof (a command fm ran that failed, then passed): a title card is for a "
+                             "task proved red then green")
+        path = write_card(p, b, os.path.abspath(args.out) if args.out else None)
+        return out(args, {"id": b.id, "card": path}, f"{b.id}: title card {path}")
     if sub == "receipt":  # T-1518: what a reviewer reads, in order, and the before/after numbers
         import fmmap
         b = need_brief(p, args.id)
@@ -1129,8 +1136,53 @@ def task_finish(p, args):
     if not rc and not getattr(args, "json", False):
         if started == "started":
             print("Full gates: running in the background (a red result becomes an urgent baseline task)")
+        done = c.find_brief(p, b.id)
+        if done and done.status == "done" and done.red_green():  # T-1541: a close proved red then green
+            try:
+                print(f"Title card: {write_card(p, done)}")
+            except OSError as e:
+                print(f"fm: warning: no title card ({e.strerror or e})", file=sys.stderr)
         print(_landed(p, b))  # T-0956: the close's last line
     return rc
+
+
+HAND = "Caveat, 'Patrick Hand', 'Segoe Print', 'Bradley Hand', 'Comic Neue', cursive"  # the first one installed
+
+
+def title_card(b):
+    """T-1541: a task's title card, an SVG at 1200x630 (a social card's size): its title large in a hand-lettered face
+    (the first of HAND installed where it's viewed, cursive at worst: nothing is embedded or fetched), its id, type,
+    size and day, and the command that failed before the work and passed after."""
+    import html
+    esc = html.escape
+    lines, line = [], ""
+    for w in b.title.split():
+        if len(line) + len(w) + 1 > 23 and line:
+            lines.append(line)
+            line = w
+        else:
+            line = f"{line} {w}".strip()
+    lines = (lines + [line])[:3] if len(lines) < 3 else lines[:2] + [lines[2] + " …"]
+    hue = sum(map(ord, b.id)) * 37 % 360
+    cmd = c.fit(b.red_green_cmd() or "", 46)
+    day = str(b.meta.get("updated") or "")[:10]
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" '
+            f'aria-label="{esc(b.id)}: {esc(b.title)}, proved"><rect width="1200" height="630" fill="hsl({hue} 32% 13%)"/>'
+            f'<rect x="40" y="40" width="1120" height="550" rx="20" fill="none" stroke="hsl({hue} 60% 72%)" '
+            f'stroke-width="3" stroke-dasharray="1 11" stroke-linecap="round"/>'
+            f'<text x="88" y="118" font-family="ui-monospace,monospace" font-size="28" fill="hsl({hue} 60% 76%)">'
+            f'{esc(b.id)} · {esc(b.type)} {esc(b.tier)} · {esc(day)}</text>'
+            + "".join(f'<text x="84" y="{230 + i * 86}" font-family="{esc(HAND)}" font-size="72" fill="#fbf6ec">'
+                      f'{esc(t)}</text>' for i, t in enumerate(lines))
+            + f'<text x="88" y="548" font-family="ui-monospace,monospace" font-size="24" fill="#efe5d1">'
+              f'✗ before · ✓ after: {esc(cmd)}</text></svg>\n')
+
+
+def write_card(p, b, path=None):
+    """T-1541: write b's title card to path, or to the project's cards/<id>.svg; the path."""
+    path = path or os.path.join(p.dir, "cards", f"{b.id}.svg")
+    c.write_atomic(path, title_card(b))
+    return path
 
 
 def _known_flaky(p):
@@ -5329,6 +5381,11 @@ def _build_parser():
     t.add_argument("id")
     t.add_argument("--story", action="store_true", help="the ledger as chapters (plan, steps, evidence, reviews, "
                                                         "close) with their times")
+    t = tadd("card")  # T-1541
+    t.description = ("A proved task's title card: an SVG with its title hand-lettered, its type, size and day, and the "
+                     "command that failed before the work and passed after (written by fm task finish too).")
+    t.add_argument("id")
+    t.add_argument("--out", help="the SVG to write (default: the project's cards/<id>.svg)")
     t = tadd("receipt")  # T-1518
     t.description = ("The task's changed files in reading order (the code they build on, styles, components, entry "
                      "points, tests, docs; UI files marked), then its before/after: the task's own Measurements "
@@ -6530,7 +6587,11 @@ def _build_parser():
                                                     "(T-1403)")
     s.add_argument("--seed-timeout", type=int, metavar="SECONDS", help="fm code bench: each seed's limit (default 600)")
     s.add_argument("--plain", action="store_true", help="one line per event, no screen, even on a terminal (T-1283, T-1343)")
-    s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG")
+    s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG "
+                                                     "(FILE.png: a PNG, with rsvg-convert; T-1546)")
+    s.add_argument("--chaos", type=float, metavar="SECONDS", help="fm code tui: the chaos twin: hostile events, keys "
+                   "and resizes at a headless app for SECONDS; exit 1 on a crash, with the seed to replay (T-1546)")
+    s.add_argument("--seed", type=int, help="fm code tui --chaos: replay a run")
     s.add_argument("--events", metavar="FILE", help="fm code tui --snapshot: a run's events (fm code … --json > FILE)")
     s.add_argument("--size", metavar="WxH", help="fm code tui --snapshot: the screen's columns x rows (default 120x34)")
     s.add_argument("--record", metavar="VIDEO", help="fm code tui: play --events FILE's run into an mp4 or gif (needs "
