@@ -1261,6 +1261,195 @@ def _splice(doc, heads, lines, heading="## Tokens"):
         doc[a:b] = lines + [""]
 
 
+# T-1651: fm design tokens compiles the ## Tokens table above to each surface. A token's role comes from its name's
+# words (the first role here that one names; within a role the earlier word, then the shorter name, wins).
+# ponytail: name words only; a DESIGN.md knob naming roles explicitly when a project's names don't say them.
+TOKEN_ROLES = (("border", ("border", "rule")), ("ok", ("success", "ok")), ("bad", ("danger", "error", "destructive")),
+               ("warn", ("warning", "warn")), ("muted", ("muted", "subtle")), ("raised", ("raised", "panel", "card")),
+               ("accent", ("primary", "accent", "brand")), ("bg", ("bg", "background", "surface", "paper")),
+               ("text", ("text", "ink", "fg", "foreground")))
+APP_STYLES = {  # role -> (fm code style, field): as fmcodetui._theme paints its palette
+    "bg": (("screen", "bg"), ("select", "fg"), ("brand", "fg"), ("chip_ok", "fg"), ("chip_bad", "fg"),
+           ("chip_warn", "fg"), ("chip_accent", "fg")),
+    "text": (("screen", "fg"), ("strong", "fg"), ("header", "fg"), ("input", "fg")),
+    "muted": (("dim", "fg"), ("said", "fg"), ("header_dim", "fg"), ("bar_dim", "fg"), ("chip_todo", "fg")),
+    "accent": (("accent", "fg"), ("title", "fg"), ("chart", "fg"), ("select", "bg"), ("brand", "bg"),
+               ("chip_accent", "bg")),
+    "ok": (("ok", "fg"), ("chip_ok", "bg")), "bad": (("bad", "fg"), ("chip_bad", "bg")),
+    "warn": (("warn", "fg"), ("key", "fg"), ("chip_warn", "bg")), "border": (("border", "fg"),),
+    "raised": (("header", "bg"), ("header_dim", "bg"), ("bar", "bg"), ("bar_dim", "bg"), ("key", "bg"),
+               ("input", "bg"), ("chip_todo", "bg"), ("panel", "bg"))}
+PANE_KEYS = {"accent": "accent", "ok": "ok", "warn": "warn", "err": "bad", "dim": "muted", "muted": "muted",
+             "track": "border", "white": "text"}  # the C object in mods/foreman-ui/hooks/kit.ts, by role
+PANE_ALL = ("accent", "accent2", "ok", "warn", "err", "edit", "agent", "web", "skill", "dim", "muted", "add", "del",
+            "track", "white")
+
+
+def read_design(path):
+    """{name: {kind, light, dark, light_hex, dark_hex}} from the markdown file's ## Tokens table, in table order: the
+    cells as fm design extract's section() writes them (a backquoted value, then a hex). ValueError when it has none."""
+    text, why = _read(path, strict=True)
+    if text is None:
+        raise ValueError(f"{path}: {why}")
+    doc = text.replace("\r\n", "\n").split("\n")
+    heads, _ = headings(doc)
+    at = next((i for i, h in heads if h == "## Tokens"), None)
+    if at is None:
+        raise ValueError(f"{path} has no ## Tokens section: fm design extract PATHS writes it")
+    end = next((j for j, _ in heads if j > at), len(doc))
+    out, col = {}, None
+    for ln in doc[at + 1:end]:
+        cells = [c.strip() for c in re.split(r"(?<!\\)\|", ln.strip())[1:-1]]
+        if col is None:  # the columns by the header's names, wherever they stand
+            low = [c.lower() for c in cells]
+            if {"token", "light", "dark"} <= set(low):
+                col = {k: low.index(k) for k in ("token", "kind", "light", "dark") if k in low}
+            continue
+        name = re.fullmatch(r"`(--[A-Za-z0-9_-]+)`", cells[col["token"]]) if len(cells) > max(col.values()) else None
+        if not name or name.group(1) in out:
+            continue
+        row = {"kind": cells[col["kind"]] if "kind" in col else ""}
+        for theme in ("light", "dark"):
+            cell = cells[col[theme]]
+            m = re.fullmatch(r"(?:`(.*)`)?\s*(#[0-9A-Fa-f]{6})?", cell)
+            row[theme] = m and m.group(1) is not None and m.group(1).replace("\\|", "|") or None
+            row[f"{theme}_hex"] = m and m.group(2) or None
+        if row["light"] or row["light_hex"] or row["dark"] or row["dark_hex"]:
+            out[name.group(1)] = row
+    if not out:
+        raise ValueError(f"{path}: its ## Tokens section has no token rows under a | Token | Kind | Light | Dark | "
+                         "Source | header")
+    return out
+
+
+def _safe_css(v):
+    """The value can't end its declaration, its block or the sheet: no ; { } < \\ @ url( or comment, every bracket
+    and quote closed."""
+    if re.search(r"[;{}<\\@]|/\*|\*/|url\(", v, re.I):
+        return False
+    stack, q = [], None
+    for ch in v:
+        if q:
+            q = None if ch == q else q
+        elif ch in "\"'":
+            q = ch
+        elif ch in "([":
+            stack.append(")" if ch == "(" else "]")
+        elif ch in ")]" and (not stack or stack.pop() != ch):
+            return False
+    return not stack and not q
+
+
+def _css_value(row, theme):
+    """The token's CSS value in that theme, or None: as written when that is safe (_safe_css) and whole, else its hex."""
+    v, h = row[theme], row[f"{theme}_hex"]
+    if not v or v.endswith("…") or not _safe_css(v):
+        v = h.lower() if h else None
+    return v
+
+
+def to_css(tokens):
+    lines = ["/* fm design tokens --to css: DESIGN.md's ## Tokens; dark values under prefers-color-scheme, .dark and "
+             "[data-theme=\"dark\"] */", ":root {"]
+    dark, left = [], []
+    for name, row in tokens.items():
+        got = {}
+        for theme in ("light", "dark"):
+            if row[theme] or row[f"{theme}_hex"]:
+                got[theme] = _css_value(row, theme)
+                if got[theme] is None:
+                    left.append(f"{name} ({theme})")
+        if got.get("light") is not None:
+            lines.append(f"  {name}: {got['light']};")
+        if got.get("dark") is not None and got["dark"] != got.get("light"):
+            dark.append(f"{name}: {got['dark']};")
+    lines.append("}")
+    if dark:
+        lines += ["@media (prefers-color-scheme: dark) {", "  :root {"] + [f"    {d}" for d in dark] + ["  }", "}"]
+        lines += ['.dark, [data-theme="dark"] {'] + [f"  {d}" for d in dark] + ["}"]
+    if left:
+        lines.append(f"/* left out (a value CSS can't hold as one declaration, and no hex): {', '.join(left)} */")
+    return "\n".join(lines) + "\n"
+
+
+def token_roles(tokens, dark=True):
+    """{role: (token name, #hex)}: the colour each role takes, in the theme asked (a token with one value: that)."""
+    best = {}
+    want, other = ("dark_hex", "light_hex") if dark else ("light_hex", "dark_hex")
+    texty = {"text", "ink", "fg", "foreground"}
+    for i, (name, row) in enumerate(tokens.items()):
+        h = row[want] or row[other]
+        words = re.split(r"[-_]+", name.lower().strip("-"))
+        if not h or "on" in words:  # --on-accent: text on a role's colour, not the role
+            continue
+        for role, names in TOKEN_ROLES:
+            if role not in ("text", "muted") and {"fg", "foreground"} & set(words):
+                continue  # shadcn's --primary-foreground: text on the role's colour; it may still be text
+            hit = [names.index(w) for w in words if w in names]
+            if hit:  # muted: --text-muted, --muted-foreground are text; --surface-muted, shadcn's --muted surfaces
+                rank = (role == "muted" and not texty & set(words), min(hit), len(words), i)
+                if role not in best or rank < best[role][0]:
+                    best[role] = (rank, name, h)
+                break
+    return {r: (n, h) for r, (_, n, h) in best.items()}
+
+
+def to_app(tokens, theme=None):
+    """A tui.toml fragment: theme = the preset under it (theme light: paper, dark: night, None: the dark values on the
+    preset that fits their screen's lightness), then [colors] (each style the preset's, with the roles' colours),
+    checked as fm settings checks the file: a style the app would skip (too faint) is left out, and said; a preset
+    style never written that is too faint on the new screen is named too."""
+    import fmcodetui as T
+    import fmsettings
+    light = theme == "light"
+    roles = token_roles(tokens, not light)
+    if not roles:
+        raise ValueError("no token's name says its role (" + ", ".join(w for _, ws in TOKEN_ROLES for w in ws) + ")")
+    bg = roles.get("bg", (None, None))[1]
+    pale = bool(bg) and T.contrast(bg, "#000000") > T.contrast(bg, "#FFFFFF")
+    preset = "paper" if light or (theme is None and pale) else "night"
+    base = T.PRESETS[preset]()
+    styles = {}
+    for role, (_, h) in roles.items():
+        for style, field in APP_STYLES[role]:
+            styles.setdefault(style, dict(base[style]))[field] = h
+    styles = {n: styles[n] for n in base if n in styles}  # screen first: the faint check reads its background
+    left = []
+    for _ in range(len(styles) + 1):  # each pass drops at least one style the app refuses
+        now = dict(base, **styles)  # what the app draws: the faint check of the styles left as the preset's own
+        faint = [f"{n} ({why})" for n in base if n not in styles and n not in ("screen", "panel", "border", "track",
+                 "shade", "glow") for why in [T._faint(base[n], now)] if why]  # glow: a flash's mix colour, not text
+        text = "\n".join([
+            f"# fm code app theme: DESIGN.md's ## Tokens ({'light' if light else 'dark'} values), for tui.toml",
+            "# roles: " + ", ".join(f"{r} {n}" for r, (n, _) in roles.items()),
+            f"theme = {T._toml(preset)}", "", "[colors]"] +
+            [f"{T._toml_key(n)} = {T._toml(s)}" for n, s in styles.items()] +
+            [f"# not mapped, the {preset} theme's own: {', '.join(n for n in base if n not in styles)}"] +
+            [f"# left out: {x}" for x in left] +
+            ([f"# too faint on this screen, the {preset} theme's own (set them under [colors]): {', '.join(faint)}"]
+             if faint else [])) + "\n"
+        errors = fmsettings._load(text, "tui.toml")[1]
+        named = [(m.group(1), e) for e in errors for m in [re.match(r"tui\.toml: colors\.(\w+): ", e)] if m]
+        if len(named) < len(errors):
+            raise ValueError("the app can't read the theme: " + "; ".join(errors))
+        if not named:
+            return text
+        for n, e in named:
+            styles.pop(n, None)
+            left.append(e[len("tui.toml: "):])
+    raise ValueError("the app refuses every style: " + "; ".join(left))
+
+
+def to_pane(tokens, theme=None):
+    """(JSON text, unmapped keys): the Claude Code pane's palette keys with the roles' colours (dark unless light)."""
+    roles = token_roles(tokens, theme != "light")
+    pal = {k: roles[r][1] for k, r in PANE_KEYS.items() if r in roles}
+    if not pal:
+        raise ValueError("no token's name says a role the pane paints (" + ", ".join(sorted(set(PANE_KEYS.values())))
+                         + ")")
+    return json.dumps(pal, indent=2) + "\n", [k for k in PANE_ALL if k not in pal]
+
+
 def _default_out():
     import fmcore
     root = fmcore.git_root(os.getcwd()) or os.getcwd()
@@ -1297,6 +1486,30 @@ def _design_tokens(args, fmcli):
             fmcli.out(args, {"proofs": proofs, "warnings": warnings, "failed": failed},
                       render_proofs(proofs, warnings) + f"\ncontrast: {failed} of {len(proofs)} failed")
             return 1 if failed else 0
+        if act == "tokens":  # T-1651: prints only; the user puts it where the surface reads it
+            if len(args.paths) != 1:
+                raise ValueError("tokens takes one DESIGN.md, e.g. fm design tokens DESIGN.md --to css")
+            to = getattr(args, "to", None) or "css"
+            light, dark = getattr(args, "light", False), getattr(args, "dark", False)
+            if light and dark:
+                raise ValueError("--light or --dark, not both")
+            theme = "light" if light else "dark" if dark else None
+            tokens, unmapped = read_design(args.paths[0]), []
+            if to == "css":
+                if theme:
+                    print(f"design tokens: --{theme} ignored: --to css carries both themes", file=err)
+                text = to_css(tokens)
+            elif to == "app":
+                text = to_app(tokens, theme)
+            else:
+                text, unmapped = to_pane(tokens, theme)
+            if getattr(args, "json", False):
+                fmcli.out(args, {"to": to, "text": text, "unmapped": unmapped}, None)
+            else:
+                sys.stdout.write(text)
+                if unmapped:  # JSON has no comments: the keys the pane keeps its own colour for go to stderr
+                    print(f"pane: not mapped, the pane's own: {', '.join(unmapped)}", file=err)
+            return 0
         missing = [p for p in args.paths if not os.path.exists(p)]
         if missing:
             raise ValueError(f"no such file or directory: {', '.join(missing)}")
@@ -1324,12 +1537,23 @@ def _design_tokens(args, fmcli):
 def cmd_design(args):
     import sys
     import fmcli
-    if (args.action == "roll") == bool(args.paths):
-        print(f"fm: design {args.action}: " + ("takes no paths" if args.paths else "needs its paths"), file=sys.stderr)
-        return 2
     if args.action == "roll":  # T-1648
+        if args.paths:
+            print("fm: design roll takes no paths", file=sys.stderr)
+            return 2
         import fmroll
         return fmroll.cmd_roll(args, fmcli)
+    if args.action == "check":  # T-1645: the gates DESIGN.md opts into
+        if len(args.paths) > 1:
+            print("fm: design check takes one project root", file=sys.stderr)
+            return 2
+        got = check_gates(args.paths[0] if args.paths else ".")
+        fmcli.out(args, got, render_gates(got))
+        return 1 if any(g["mode"] == "blocking" and not all(m["pass"] for m in g["musts"])
+                        for g in got["gates"]) else 0
+    if not args.paths:  # only check defaults its argument (the project root)
+        print(f"fm: design {args.action}: needs an argument (fm design -h)", file=sys.stderr)
+        return 2
     if args.action != "lint":
         return _design_tokens(args, fmcli)
     missing = [p for p in args.paths if not os.path.exists(p)]
@@ -1348,6 +1572,105 @@ def cmd_design(args):
         text += "\nskipped: " + "; ".join(f"{x['file']} ({x['why']})" for x in skipped)
     fmcli.out(args, {"findings": found, "files": n, "skipped": skipped}, text)
     return 1 if found else 0
+
+
+# T-1645: design gates a project opts into in DESIGN.md's ## Gates section ("- brief: advisory" or "blocking")
+GATES = ("brief",)
+MODES = ("advisory", "blocking")
+
+
+def _section_lines(doc, name):
+    """The lines of DESIGN.md's ## name section (outside code fences), [] when it has none."""
+    heads, _ = headings(doc)
+    for k, (i, h) in enumerate(heads):
+        if h == f"## {name}":
+            return doc[i + 1:heads[k + 1][0] if k + 1 < len(heads) else len(doc)]
+    return []
+
+
+def brief_musts(doc):
+    """What the brief promises the code holds, as (label, kind, value): each hex in the Colour knob, each quoted or
+    backticked family in the Type knob, each duration in the Motion knob, and each "- must: TEXT" in Direction."""
+    musts = []
+    for ln in _section_lines(doc, "Knobs"):
+        m = re.match(r"\s*[-*]\s*(Type|Colou?r|Motion)\s*:(.*)", ln)
+        if not m:
+            continue
+        kind, rest = m.group(1).lower(), m.group(2)
+        if kind == "type":
+            musts += [(f"font {f.strip()}", "font", f.strip()) for f in re.findall(r'["`“]([^"`”\n]{1,60})["`”]', rest)]
+        elif kind.startswith("colo"):
+            musts += [(f"colour {h.upper()}", "colour", h.lower()) for h in re.findall(r"#[0-9A-Fa-f]{6}\b", rest)]
+        else:
+            for n, unit in re.findall(r"(?<![\w.])(\d+(?:\.\d+)?)\s*(ms|s)\b", rest):
+                ms = float(n) * (1000 if unit == "s" else 1)
+                musts.append((f"duration {ms:g}ms", "duration", ms))
+    for ln in _section_lines(doc, "Direction"):
+        m = re.match(r"\s*[-*]\s*must\s*:\s*(.{1,200}?)\s*$", ln, re.I)
+        if m:
+            musts.append((f"has {m.group(1)}", "has", m.group(1)))
+    return list({x[0]: x for x in musts}.values())
+
+
+def _found(kind, value, text):
+    """Whether one UI file's text holds the promise, case-blind."""
+    low = text.lower()
+    if kind in ("colour", "font", "has"):
+        return value.lower() in low
+    sec = f"{value / 1000:g}".lstrip("0") if value < 1000 else f"{value / 1000:g}"  # 200 → .2, 1500 → 1.5
+    return bool(re.search(rf"(?<![\w.]){value:g}ms\b|(?<![\w.])0?{re.escape(sec)}s\b", low))
+
+
+def check_gates(root):
+    """{design, gates: [{gate, mode, musts: [{must, pass, why}]}], notes}: the gates DESIGN.md under root opts into,
+    each run over the UI files under root. Nothing opted in: no gates."""
+    path = os.path.join(root, "DESIGN.md")
+    text, why = _read(path) if os.path.isfile(path) else (None, "no DESIGN.md")
+    out = {"design": path, "gates": [], "notes": []}
+    if text is None:
+        out["notes"].append(f"{os.path.relpath(path)}: {why}")
+        return out
+    doc = text.split("\n")
+    files, *_ = collect([root])
+    bodies = []
+    for f in files:
+        body, _ = _read(f)
+        if body is not None:
+            bodies.append((os.path.relpath(f, root), body))
+    for ln in _section_lines(doc, "Gates"):
+        m = re.match(r"\s*[-*]\s*([\w-]+)\s*:\s*([\w-]+)", ln)
+        if not m:
+            continue
+        gate, mode = m.group(1).lower(), m.group(2).lower()
+        if gate not in GATES:
+            out["notes"].append(f"unknown gate '{gate}' (known: {', '.join(GATES)})")
+            continue
+        if mode not in MODES:
+            out["notes"].append(f"unknown mode '{mode}' for {gate}: read as advisory ({' or '.join(MODES)})")
+            mode = "advisory"
+        musts = []
+        for label, kind, value in brief_musts(doc):
+            where = [rel for rel, body in bodies if _found(kind, value, body)]
+            musts.append({"must": label, "pass": bool(where),
+                          "why": f"in {', '.join(where[:3])}" + (f" and {len(where) - 3} more" if len(where) > 3 else "")
+                          if where else f"not in the {len(bodies)} UI file(s) under {os.path.basename(os.path.abspath(root))}"})
+        out["gates"].append({"gate": gate, "mode": mode, "musts": musts})
+    return out
+
+
+def render_gates(got):
+    """The gates as text; DESIGN.md's words (labels, file names) reach the terminal with control and bidi
+    characters replaced."""
+    safe = lambda s: re.sub(r"[\x00-\x1f\x7f-\x9f​-‏ -‮⁦-⁩]", "?", s)  # noqa: E731
+    if not got["gates"]:
+        return "\n".join([safe(n) for n in got["notes"]]
+                         + ["no design gates opted in (DESIGN.md's ## Gates: '- brief: advisory')"])
+    lines = []
+    for g in got["gates"]:
+        ok = sum(m["pass"] for m in g["musts"])
+        lines.append(f"{g['gate']} ({g['mode']}): {ok} of {len(g['musts'])} must-have(s) found")
+        lines += [f"  {'✓' if m['pass'] else '✗'} {safe(m['must'])}: {safe(m['why'])}" for m in g["musts"]]
+    return "\n".join(lines + [safe(n) for n in got["notes"]])
 
 
 if __name__ == "__main__":  # T-1507: a CI without Foreman copies this file (stdlib only) and runs the proof
