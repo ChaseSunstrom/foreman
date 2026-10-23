@@ -5475,12 +5475,13 @@ def _build_parser():
     s = add("playbooks", lazy("fmplaybooks", "cmd_show"), tier=("Finding your way", 382), help="show NAME: a playbook "
             "as the skill loads it, {{fact}}s (test, language, entry…) filled in from fm map and this project's "
             ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
-    s.add_argument("action", choices=["show", "eval", "route", "blame", "preview"], help="eval NAME: held-out briefs "
-                   "with and without the playbook loaded, the lift recorded (T-1618); route STAGE: the playbooks a "
-                   "stage or task type loads; blame NAME: each line's task, from git; preview NAME: the checks a "
-                   "load adds (T-1622)")
-    s.add_argument("name", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that name; route: "
-                   "a stage (verifying) or type (FIX)")
+    s.add_argument("action", choices=["show", "eval", "route", "blame", "preview", "coverage"], help="eval NAME: "
+                   "held-out briefs with and without the playbook loaded, the lift recorded (T-1618); route STAGE: the "
+                   "playbooks a stage or task type loads; blame NAME: each line's task, from git; preview NAME: the "
+                   "checks a load adds (T-1622); coverage: a heatmap of stages by stack, the playbooks naming each "
+                   "stack's cards")
+    s.add_argument("name", nargs="?", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that "
+                   "name; route: a stage (verifying) or type (FIX); coverage takes none")
     s.add_argument("--briefs", help="eval: the brief set (default plugin/evals/playbooks/<stage>/<name>.json)")
     s.add_argument("--real", action="store_true", help="eval: ask a model (claude -p, budgeted) instead of reading "
                    "the playbook literally")

@@ -134,3 +134,11 @@ Run the first probe first: it halves the search.
 - [ ] The budget table's numbers were measured on the target devices and recorded in the task's evidence.
 - [ ] All nine survival clauses have their probe run, ideally as browser tests (null context, lose and restore, reduced motion, blocked asset, mount/unmount memory).
 - [ ] The poster is rendered from the current scene, not a stale one.
+
+## UI contract
+
+- motion: the scene holds a still frame under reduced motion, or the poster stands in.
+- contrast: text over the scene sits on a scrim at 4.5:1, and the text twin carries what the scene shows.
+- keyboard: any control the scene adds is a real button, reachable and focusable; the canvas never traps focus.
+- small screens: at 360 px the scene fits its box with no sideways scroll, or shows the poster.
+- states: poster, live, lost and failed each have a designed look (the survival contract).
