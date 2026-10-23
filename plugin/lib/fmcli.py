@@ -6170,6 +6170,11 @@ def _build_parser():
             b.add_argument("--ids", nargs="+", help="only these case ids")
         if name == "soak":
             b.add_argument("--turns", type=int, default=3, help="the user's replies at most")
+            b.add_argument("--compact-at", type=int, metavar="TOKENS", help="a compaction storm: each session "
+                           "compacts once its context nears TOKENS (CLAUDE_CODE_AUTO_COMPACT_WINDOW), every few turns "
+                           "when small; each case counts its compactions (T-1259)")
+            b.add_argument("--sweep", metavar="T1,T2", help="the soak once per compaction window (20000,40000,80000), "
+                           "a row each: passes, repeats, compactions and cost (T-1259)")
         b.add_argument("--max", type=int, default=1 if name == "soak" else 3 if name != "court" else 8,
                        help="cases to run")
         b.add_argument("--model")

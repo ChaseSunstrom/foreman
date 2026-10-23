@@ -298,6 +298,28 @@ class Soak(_Bench):
         self.assertFalse(res["cases"][0]["pass"])
 
 
+class SoakStorm(_Bench):  # T-1259
+    def test_a_soak_storm_compacts_early_and_a_sweep_runs_once_per_window(self):
+        cfg = os.path.join(self.tmp, "cfg")
+        env = dict(self.env, CLAUDE_CONFIG_DIR=cfg)
+        self.fm("bench", "build", env=env)
+        res = json.loads(self.fm("bench", "soak", "--ids", self.calc, "--turns", "1", "--compact-at", "20000",
+                                 "--json", env=env).stdout)
+        self.assertEqual((res["cases"][0]["compactions"], res["compact_at"]), (2, 20000))
+        self.assertEqual({s["window"] for s in self.sessions()}, {"20000"}, "every soak session compacts early")
+        self.assertFalse(os.path.exists(os.path.join(cfg, "projects", "-tmp-replay")), "the kept session is removed")
+        out = json.loads(self.fm("bench", "soak", "--ids", self.calc, "--turns", "1", "--sweep", "20000,40000",
+                                 "--json", env=env).stdout)
+        self.assertEqual([w["compact_at"] for w in out["windows"]], [20000, 40000])
+        self.assertTrue(all(w["cases"][0]["compactions"] == 2 for w in out["windows"]))
+        text = self.fm("bench", "soak", "--ids", self.calc, "--turns", "1", "--sweep", "30000", env=env).stdout
+        self.assertRegex(text, r"window 30000: \d/1 passed · \d+ repeat\(s\) · 2 compaction\(s\)")
+        for bad in (["--sweep", "10"], ["--sweep", "a,b"], ["--compact-at", "20000", "--sweep", "30000"],
+                    ["--compact-at", "0"]):
+            p = self.fm("bench", "soak", "--ids", self.calc, *bad, env=env, check=False)
+            self.assertNotEqual(p.returncode, 0, bad)
+
+
 class Marathon(_Bench):
     """T-1242: a long session measured as one: both arms forced to compact early, the compactions counted."""
 
