@@ -132,7 +132,7 @@ def _documents(p, skip=None):
             except OSError:
                 continue
             title = next((x[2:].strip() for x in text.splitlines() if x.startswith("# ")), n[:-3])
-            yield "playbook", f"playbook {title} (skills/playbooks/references/{rel})", \
+            yield "playbook", f"playbook {title} (fm playbooks show {rel[:-3]})", \
                 f"{rel[:-3].replace('-', ' ').replace('/', ' ')} {text}", None, {"age": 0.0}
 
 
