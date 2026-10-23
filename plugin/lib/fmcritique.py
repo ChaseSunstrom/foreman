@@ -1,44 +1,53 @@
 """fm critique (T-1642): what a page really uses, held to DESIGN.md. fm critique URL|FILE loads the page in a headless
 Chromium already here (fm shot's, T-1636; nothing is installed) and takes a computed-style census: every colour,
-font family, font size, radius, shadow and spacing value its visible elements use, with counts. A .json FILE is a
+font family, font size, radius, shadow and spacing value its visible elements use, with counts, read under fm shot's
+frozen profile. Like fm flow it opens files and localhost only unless --any-url, and every request the page makes is
+held to that rule (T-1639); a request blocked or a page that ends up at another URL is noted. A .json FILE is a
 census already taken (fm critique URL --json writes one under "census"). The census is critiqued against DESIGN.md's
 ## Tokens table (fm design extract writes it): values no token names, near-duplicates (colours under NEAR_DE apart in
-OKLab, lengths within NEAR_PX) and outliers (a value no token names, used once or twice). Exit 1 on any finding, 0
-clean, 2 when it couldn't run (no browser: "not run").
+OKLab, lengths within NEAR_REL of each other) and outliers (a value no token names, used once or twice). Exit 1 on
+any finding, 0 clean, 2 when it couldn't run (no browser: "not run") or --design can't be read. With no tokens to
+hold the census to, the last line says it wasn't checked against DESIGN.md.
 
 fm critique URL --why SELECTOR prints the cascade behind the first element the selector matches: its matched rules,
 winner first, and the winning declaration per property (inherited ones from the nearest ancestor that sets them), with
-the computed value where it differs.
+each rule's stylesheet and the computed value where it differs; WHY_RULES rules and WHY_WINNERS declarations at most.
 
-Page text is untrusted: every value is stripped of control and bidi characters and capped before it is printed."""
+Page text is untrusted: every value has its Cc/Cf/Co/Cs characters replaced (fmshot.safe) and is capped before it is
+printed."""
+import functools
 import json
 import math
 import os
 import re
-import signal
 import sys
-import time
+import urllib.parse
+import urllib.request
 
 import fmdesign
+import fmflow
 import fmshot
 
 KINDS = ("colour", "font", "size", "radius", "shadow", "spacing")
 NEAR_DE = 0.02  # OKLab distance: about one just-noticeable difference
-NEAR_PX = 1.0
+NEAR_REL = 0.07  # lengths: 15px and 16px are near, 1px and 2px aren't
 MAX_ELEMENTS, MAX_VALUES, MAX_TEXT, MAX_NEAR, SHOW = 5000, 300, 80, 100, 20
+WHY_RULES, WHY_WINNERS = 20, 60
 REM = 16  # ponytail: rem tokens taken at the browser default; a page that sets html's font-size reads them wrong
-UNSAFE = re.compile(r"[\x00-\x1f\x7f-\x9f​-‏ -‮⁦-⁩]")
 SHAPE = "a census is {url, elements, values: {kind: {value: count}}} with kinds " + ", ".join(KINDS)
-# Runs in the page with one JSON argument {max, values, text}; returns {elements, capped, values}. Fixed: no page or
-# user text is ever spliced into it.
+# Runs in the page with one JSON argument {max, values, text}; returns {elements, capped, values, dropped}. Fixed: no
+# page or user text is ever spliced into it.
 CENSUS_JS = r"""(function (opt) {
-  const out = {}, seen = {};
-  for (const k of ["colour", "font", "size", "radius", "shadow", "spacing"]) { out[k] = Object.create(null); seen[k] = 0; }
+  const out = {}, seen = {}, dropped = {};
+  for (const k of ["colour", "font", "size", "radius", "shadow", "spacing"]) {
+    out[k] = Object.create(null); seen[k] = 0; dropped[k] = 0;
+  }
   const add = (k, v) => {
     if (!v) return;
     v = String(v).slice(0, opt.text);
     if (v in out[k]) out[k][v]++;
     else if (seen[k] < opt.values) { out[k][v] = 1; seen[k]++; }
+    else dropped[k]++;
   };
   const all = document.querySelectorAll("*");
   let n = 0;
@@ -50,7 +59,8 @@ CENSUS_JS = r"""(function (opt) {
     if ([...el.childNodes].some(c => c.nodeType === 3 && c.data.trim())) {
       own.colour.add(s.color); add("font", s.fontFamily); add("size", s.fontSize);
     }
-    if (!/^transparent$|,\s*0\)$|\/\s*0\)$/.test(s.backgroundColor)) own.colour.add(s.backgroundColor);
+    if (!/^transparent$|^rgba\(.*,\s*0\)$|\/\s*0\)$/.test(s.backgroundColor))  // rgb(0, 255, 0) is green
+      own.colour.add(s.backgroundColor);
     for (const side of ["Top", "Right", "Bottom", "Left"]) {
       if (parseFloat(s["border" + side + "Width"]) > 0 && s["border" + side + "Style"] !== "none")
         own.colour.add(s["border" + side + "Color"]);
@@ -62,7 +72,7 @@ CENSUS_JS = r"""(function (opt) {
     for (const sh of [s.boxShadow, s.textShadow]) if (sh && sh !== "none") own.shadow.add(sh);
     for (const k in own) for (const v of own[k]) add(k, v);
   }
-  return {elements: n, capped: n < all.length && n >= opt.max, values: out};
+  return {elements: n, capped: n < all.length && n >= opt.max, values: out, dropped: dropped};
 })"""
 INHERITS = {"color", "cursor", "direction", "letter-spacing", "line-height", "list-style", "list-style-type",
             "list-style-position", "list-style-image", "quotes", "text-align", "text-indent", "text-transform",
@@ -73,8 +83,8 @@ LENGTH_WORDS = (("radius", {"radius", "rounded", "round", "corner"}), ("size", {
 
 
 def clean(v, n=MAX_TEXT):
-    """Page text for the terminal: one line, no control or bidi characters, at most n characters."""
-    s = " ".join(UNSAFE.sub("?", str(v)).split())
+    """Page text for the terminal: one line, every Cc/Cf/Co/Cs character a ? (fmshot.safe), at most n characters."""
+    s = fmshot.safe(" ".join(str(v).split()))
     return s if len(s) <= n else s[:n - 1] + "…"
 
 
@@ -179,11 +189,14 @@ def load(data):
         top = sorted(merged.items(), key=lambda kv: (-kv[1], kv[0]))
         dropped += max(0, len(top) - MAX_VALUES)
         values[kind] = dict(top[:MAX_VALUES])
-    el = data.get("elements")
+    el, gone = data.get("elements"), data.get("dropped")
+    page = sum(n for n in gone.values() if isinstance(n, int) and not isinstance(n, bool) and n > 0) \
+        if isinstance(gone, dict) else 0
     return {"url": clean(data.get("url") or "", 200), "elements": el if isinstance(el, int) else None,
-            "capped": data.get("capped") is True, "dropped": dropped, "values": values}
+            "capped": data.get("capped") is True, "dropped": dropped, "page_dropped": page, "values": values}
 
 
+@functools.lru_cache(maxsize=4096)
 def _oklab(hexed):
     L, C, h = fmdesign.oklch_of(fmdesign.parse_colour(hexed))
     return L, C * math.cos(math.radians(h)), C * math.sin(math.radians(h))
@@ -198,15 +211,16 @@ def _near(kind, a, b):
         d = math.dist(_oklab(ha), _oklab(hb))
         return round(d, 4) if d < NEAR_DE else None
     if kind in ("size", "radius", "spacing") and _px(a) is not None and _px(b) is not None:  # not "8px 4px"
-        d = abs(_px(a) - _px(b))
-        return d if 0 < d <= NEAR_PX else None
+        x, y = abs(_px(a)), abs(_px(b))
+        d = abs(x - y) / max(x, y, 1e-9)
+        return round(d, 3) if 0 < d <= NEAR_REL else None
     return None
 
 
 def critique(census, tokens=None):
     """{census, tokens, named, unnamed, near, outliers}: tokens is read_design's dict, or None (no naming)."""
     idx = token_index(tokens) if tokens else None
-    named, unnamed, near, outliers = {}, [], [], []
+    named, unnamed, near, outliers, total = {}, [], [], [], 0
     for kind in KINDS:
         vals = census["values"][kind]
         # a negative margin is its token's value negated
@@ -223,11 +237,13 @@ def critique(census, tokens=None):
             for b, nb in items[i + 1:]:
                 if names[a] and names[b]:
                     continue  # two tokens: the scale's own choice
-                d = _near(kind, a, b)
-                if d is not None and len(near) < MAX_NEAR:
-                    near.append({"kind": kind, "a": a, "a_count": na, "b": b, "b_count": nb, "distance": d})
+                d = _near(kind, a, b)  # at most MAX_VALUES² / 2 pairs a kind, each colour's OKLab memoised
+                if d is not None:
+                    total += 1
+                    if len(near) < MAX_NEAR:
+                        near.append({"kind": kind, "a": a, "a_count": na, "b": b, "b_count": nb, "distance": d})
     return {"census": census, "tokens": len(tokens or {}), "named": named, "unnamed": unnamed, "near": near,
-            "outliers": outliers}
+            "near_total": total, "outliers": outliers}
 
 
 def _list(title, rows, fmt):
@@ -251,43 +267,54 @@ def report(res, notes):
                                                                                if len(vals) > 10 else ""))
     lines += _list("Not named by DESIGN.md", res["unnamed"], lambda r: f"{r['kind']} {r['value']} ×{r['count']}"
                    + (" (outlier)" if r["count"] <= 2 else ""))  # the outliers, marked, not listed twice
-    lines += _list(f"Near-duplicates (colours under ΔE_OK {NEAR_DE:g}, lengths within {NEAR_PX:g}px)", res["near"],
-                   lambda r: f"{r['kind']} {r['a']} ×{r['a_count']} ≈ {r['b']} ×{r['b_count']} ({r['distance']:g})")
+    near = _list(f"Near-duplicates (colours under ΔE_OK {NEAR_DE:g}, lengths within {NEAR_REL:.0%})", res["near"],
+                 lambda r: f"{r['kind']} {r['a']} ×{r['a_count']} ≈ {r['b']} ×{r['b_count']} ({r['distance']:g})")
+    if near and res["near_total"] > len(res["near"]):
+        near[1] = near[1].replace(f"({len(res['near'])}):", f"({res['near_total']}, the first {len(res['near'])} "
+                                                             "kept):")
+    lines += near
     if not res["tokens"]:
         lines += _list("Outliers (used once or twice)", res["outliers"],
                        lambda r: f"{r['kind']} {r['value']} ×{r['count']}")
-    found = (len(res["unnamed"]), len(res["near"]), len(res["outliers"]))
-    lines += ["", f"critique: {found[0]} unnamed, {found[1]} near-duplicate pair(s), {found[2]} outlier(s)"
-              if any(found) else f"critique: clean, {sum(map(len, c['values'].values()))} values"]
+    found = (len(res["unnamed"]), res["near_total"], len(res["outliers"]))
+    last = f"critique: {found[0]} unnamed, {found[1]} near-duplicate pair(s), {found[2]} outlier(s)" if any(found) \
+        else f"critique: clean, {sum(map(len, c['values'].values()))} values"
+    lines += ["", last + ("" if res["tokens"] else "; not checked against DESIGN.md (no tokens)")]
     return "\n".join(lines)
 
 
 # ---------------------------------------------------------------- the browser side
 
 
-def _open(b, url):
-    """Load url in the browser (fm shot's way); notes."""
-    b.events.clear()
-    nav = b.call("Page.navigate", b.sid, url=url)
-    if nav.get("errorText"):
-        raise RuntimeError(f"did not load: {nav['errorText']}")
-    notes = [] if b.wait("Page.loadEventFired", fmshot.LOAD_S) else \
-        [f"still loading after {fmshot.LOAD_S} s; read as it stood"]
-    time.sleep(fmshot.SETTLE_S)
-    return notes
-
-
 def _eval(b, expression):
     got = b.call("Runtime.evaluate", b.sid, expression=expression, returnByValue=True)
     if got.get("exceptionDetails"):
-        raise RuntimeError("the census script failed: " + clean((got["exceptionDetails"].get("exception") or {})
-                                                                .get("description") or "an exception", 200))
+        raise RuntimeError("the page script failed: " + clean((got["exceptionDetails"].get("exception") or {})
+                                                              .get("description") or "an exception", 200))
     return (got.get("result") or {}).get("value")
 
 
-def take(b, url):
-    """(census as load() takes it, notes) for the page at url."""
-    notes = _open(b, url)
+def _page(b, url, root, any_url):
+    """Open url (fm shot's load) with every request it makes held to fm flow's rule: notes (what was blocked, a page
+    that ended up elsewhere); RuntimeError when the page itself left the allowed pages."""
+    seen = fmflow.guard(b, root, any_url)
+    notes = fmshot.load(b, url)
+    if seen["doc"]:
+        raise RuntimeError(f"the page went outside the allowed pages, to {clean(seen['doc'], 200)} (blocked; "
+                           "--any-url opens any http(s) page)")
+    notes += [f"blocked {clean(u, 200)}: outside the allowed pages" for u in seen["other"]]
+    href = _eval(b, "location.href")
+    if isinstance(href, str) and href != url:
+        notes.append(f"the page is at {clean(href, 200)}, not the URL asked for")
+    return notes
+
+
+def take(b, url, root, any_url):
+    """(census as load() takes it, notes) for the page at url, under fm shot's frozen profile (clock fixed, finite
+    animations finished, endless ones held at their start), so a census reads the same on every run."""
+    b.call("Page.addScriptToEvaluateOnNewDocument", b.sid, source=fmshot.FREEZE)
+    notes = _page(b, url, root, any_url)
+    _eval(b, fmshot.HOLD)
     opt = {"max": MAX_ELEMENTS, "values": MAX_VALUES * 2, "text": 400}
     raw = _eval(b, f"({CENSUS_JS})({json.dumps(opt)})")
     if not isinstance(raw, dict):
@@ -297,7 +324,17 @@ def take(b, url):
     return dict(raw, url=url), notes
 
 
-def _rules(block, inherited):
+def _source(style, line, sheets):
+    """name:line of the rule's stylesheet (its URL's last part; an inline <style>: the page's line), or None."""
+    h = (sheets or {}).get(style.get("styleSheetId"))
+    if not isinstance(h, dict) or not isinstance(line, int):
+        return None
+    name = re.sub(r"[?#].*", "", str(h.get("sourceURL") or "")).rstrip("/").rsplit("/", 1)[-1] or "page"
+    start = h.get("startLine") if h.get("isInline") and isinstance(h.get("startLine"), int) else 0
+    return f"{name}:{start + line + 1}"
+
+
+def _rules(block, inherited, sheets=None):
     """A matched-styles block's rules, lowest precedence first, its inline style last."""
     out = []
     for m in block.get("matchedCSSRules") or []:
@@ -308,10 +345,12 @@ def _rules(block, inherited):
         line = (style.get("range") or {}).get("startLine")
         out.append({"selector": ", ".join(sels[i] for i in at) or ", ".join(sels), "origin": rule.get("origin") or
                     "regular", "line": line + 1 if isinstance(line, int) else None,
+                    "source": _source(style, line, sheets), "layered": bool(rule.get("layers")),
                     "decls": style.get("cssProperties") or [], "inherited": inherited})
     if (block.get("inlineStyle") or {}).get("cssProperties"):  # every element has one, mostly empty
-        out.append({"selector": "style attribute", "origin": "inline", "line": None,
-                    "decls": block["inlineStyle"].get("cssProperties") or [], "inherited": inherited})
+        out.append({"selector": "style attribute", "origin": "inline", "line": None, "source": None,
+                    "layered": False, "decls": block["inlineStyle"].get("cssProperties") or [],
+                    "inherited": inherited})
     return out
 
 
@@ -331,51 +370,69 @@ def _winners(rules):
     return {n: (d, r) for n, (_, d, r) in best.items()}
 
 
-def cascade(matched, computed=None):
-    """{rules, winners} from CSS.getMatchedStylesForNode's answer: the element's rules winner first, and per property
-    the winning declaration (inherited properties from the nearest ancestor setting them)."""
-    own = _rules(matched, False)
-    win = _winners(own)
+def cascade(matched, computed=None, sheets=None):
+    """{rules, winners, notes} from CSS.getMatchedStylesForNode's answer: the element's rules winner first, and per
+    property the winning declaration (inherited properties from the nearest ancestor setting them). sheets: {id:
+    CSS.styleSheetAdded's header}, for each rule's source."""
+    own = _rules(matched, False, sheets)
+    win, layered = _winners(own), any(r["layered"] for r in own)
     for block in matched.get("inherited") or []:  # nearest ancestor first
-        for name, dr in _winners(_rules(block, True)).items():
+        rules = _rules(block, True, sheets)
+        layered = layered or any(r["layered"] for r in rules)
+        for name, dr in _winners(rules).items():
             if name not in win and (name in INHERITS or name.startswith(("font", "--"))):
                 win[name] = dr
     comp = {c.get("name"): c.get("value") for c in computed or [] if isinstance(c, dict)}
-    pick = ("selector", "origin", "line", "inherited")
+    pick = ("selector", "origin", "line", "source", "inherited")
     return {"rules": [{k: r[k] for k in pick} for r in reversed(own)],
             "winners": [dict({k: r[k] for k in pick}, property=n,  # DevTools' value keeps an !important in it
                              value=re.sub(r"\s*!\s*important\s*$", "", str(d.get("value", "")), flags=re.I),
                              important=bool(d.get("important")), computed=comp.get(n))
-                        for n, (d, r) in sorted(win.items())]}
+                        for n, (d, r) in sorted(win.items())],
+            "notes": ["some matched rules sit in an @layer: the reversed layer order of !important declarations "
+                      "isn't modelled, so an !important winner may be another"] if layered else []}
 
 
-def why(b, url, selector):
+def why(b, url, selector, root, any_url):
     """(cascade, notes) for the first element selector matches, or (None, notes) when it matches none."""
-    notes = _open(b, url)
+    sheets = {}
+
+    def added(p):  # each stylesheet's URL, for the rules' sources; capped, a page can add endless sheets
+        h = p.get("header") or {}
+        if len(sheets) < 5000 and isinstance(h, dict):
+            sheets[h.get("styleSheetId")] = {k: h.get(k) for k in ("sourceURL", "isInline", "startLine")}
+    b.on["CSS.styleSheetAdded"] = added
+    notes = _page(b, url, root, any_url)
     b.call("DOM.enable", b.sid)
-    b.call("CSS.enable", b.sid)
-    root = b.call("DOM.getDocument", b.sid, depth=0)["root"]["nodeId"]
-    node = b.call("DOM.querySelector", b.sid, nodeId=root, selector=selector).get("nodeId")
+    b.call("CSS.enable", b.sid)  # sends styleSheetAdded for every sheet already there
+    top = b.call("DOM.getDocument", b.sid, depth=0)["root"]["nodeId"]
+    node = b.call("DOM.querySelector", b.sid, nodeId=top, selector=selector).get("nodeId")
     if not node:
         return None, notes
     matched = b.call("CSS.getMatchedStylesForNode", b.sid, nodeId=node)
     computed = b.call("CSS.getComputedStyleForNode", b.sid, nodeId=node).get("computedStyle")
-    return cascade(matched, computed), notes
+    return cascade(matched, computed, sheets), notes
+
+
+def _more(rows, cap):
+    return [f"  … {len(rows) - cap} more (--json)"] if len(rows) > cap else []
 
 
 def why_report(res, url, selector, notes):
     def where(r):
-        return (f" (line {r['line']})" if r["line"] else "") + (f" [{r['origin']}]" if r["origin"] not in
-                                                                ("regular", "inline") else "")
-    lines = [f"fm critique --why {clean(selector, 200)}: {clean(url, 200)}"] + [f"note: {clean(n, 300)}" for n in notes]
-    lines += ["Matched rules, winner first:"] + [f"  {clean(r['selector'], 200)}{where(r)}" for r in res["rules"]]
+        return (f" ({clean(r['source'], 120)})" if r.get("source") else f" (line {r['line']})" if r["line"] else "") \
+            + (f" [{r['origin']}]" if r["origin"] not in ("regular", "inline") else "")
+    lines = [f"fm critique --why {clean(selector, 200)}: {clean(url, 200)}"]
+    lines += [f"note: {clean(n, 300)}" for n in notes + res.get("notes", [])]
+    lines += ["Matched rules, winner first:"] + [f"  {clean(r['selector'], 200)}{where(r)}"
+                                                 for r in res["rules"][:WHY_RULES]] + _more(res["rules"], WHY_RULES)
     lines.append("Winning declarations:")
-    for w in res["winners"]:
+    for w in res["winners"][:WHY_WINNERS]:
         val = clean(w["value"], 200) + (" !important" if w["important"] else "")
         comp = w["computed"] is not None and clean(w["computed"], 200)
         lines.append(f"  {clean(w['property'])}: {val}  ← {clean(w['selector'], 120)}{where(w)}"
                      + (" (inherited)" if w["inherited"] else "") + (f"  = {comp}" if comp and comp != val else ""))
-    return "\n".join(lines)
+    return "\n".join(lines + _more(res["winners"], WHY_WINNERS))
 
 
 # ---------------------------------------------------------------- the command
@@ -387,15 +444,27 @@ def _fail(msg):
 
 
 def _tokens(design):
-    """(tokens or None, notes) from DESIGN.md: --design, else the one fm motion finds from here."""
+    """(tokens or None, notes) from DESIGN.md: --design (ValueError when it can't be read or has no tokens), else the
+    one fm motion finds from here (a note when there is none or it has no tokens)."""
     import fmmotion
-    path = design or fmmotion.design_path(os.path.join(os.getcwd(), "DESIGN.md"))
+    if design:
+        return fmdesign.read_design(design), []
+    path = fmmotion.design_path(os.path.join(os.getcwd(), "DESIGN.md"))
     if not path:
         return None, [fmmotion.NO_DESIGN + ": nothing to name the values against"]
     try:
         return fmdesign.read_design(path), []
     except ValueError as e:
         return None, [str(e)]
+
+
+def _root(word):
+    """The folder a page's own files may come from: a file's folder (for a URL on the web: here)."""
+    if re.match(r"(?i)file:", word):
+        return os.path.dirname(urllib.request.url2pathname(urllib.parse.urlsplit(word).path))
+    if re.match(r"(?i)[a-z][a-z0-9+.-]*:", word):
+        return os.getcwd()
+    return os.path.dirname(os.path.abspath(word))
 
 
 def cmd_critique(args):
@@ -406,6 +475,12 @@ def cmd_critique(args):
         return _fail("--why needs a page (a URL or an HTML file), not a census")
     if selector is not None and not 0 < len(selector) <= 500:
         return _fail("--why takes a CSS selector of 1 to 500 characters")
+    tokens, more = None, []
+    if selector is None:  # a mistyped --design fails before any browser starts
+        try:
+            tokens, more = _tokens(args.design)
+        except ValueError as e:
+            return _fail(f"--design: {clean(e, 300)}")
     if census:
         text, err = fmdesign._read(target, strict=True)
         try:
@@ -413,45 +488,49 @@ def cmd_critique(args):
                 raise ValueError(err)
             data, notes = load(json.loads(text)), []
         except (ValueError, RecursionError) as e:
-            return _fail(f"{fmshot._safe(target)}: not a census: {e or 'nested too deep'} ({SHAPE})")
+            return _fail(f"{clean(target, 200)}: not a census: {e or 'nested too deep'} ({SHAPE})")
     else:
+        root = _root(target)
         try:
-            url = fmshot._url(target)
-        except fmcli.UsageError:
-            return _fail(f"takes an http(s) or file URL, an HTML file or a census .json: {fmshot._safe(target)!r}")
-        path = fmshot.chrome()
+            url = fmflow.target(target, root, args.any_url)
+        except ValueError as e:  # fm flow's own words for the rule itself are about goto: said here instead
+            why_not = "" if str(e).startswith("goto opens") else f": {clean(e, 300)}"
+            return _fail(f"opens an HTML file, or http(s) on localhost, 127.0.0.1 or [::1] (--any-url: any http(s) "
+                         f"page), or reads a census .json; not {clean(target, 200)}{why_not}")
+        path, note = fmshot.find_browser("fm critique")
         if not path:
-            fmcli.out(args, {"skipped": fmshot.NONE}, "fm critique: not run: " + fmshot.NONE.replace("fm shot",
-                                                                                                    "fm critique"))
+            fmcli.out(args, {"skipped": note}, f"fm critique: not run: {note}")
             return 2
-        try:
-            b = fmshot.Browser(path, fmshot.SIZE)
-        except (OSError, RuntimeError, EOFError, ValueError) as e:
-            fmcli.out(args, {"skipped": str(e)}, f"fm critique: not run: the browser ({fmshot._safe(path)}) did not "
-                                                 f"start: {clean(e, 300)}")
-            return 2
-        def stop(signum, frame):  # killed: unwind, so the browser's process group dies (as fm shot does)
-            raise SystemExit(128 + signum)
-        old = signal.signal(signal.SIGTERM, stop)
-        try:
-            if selector is not None:
-                res, notes = why(b, url, selector)
-                if res is None:
-                    fmcli.out(args, {"url": url, "selector": selector, "matched": None},
-                              f"fm critique --why: {clean(selector, 200)} matches nothing on {clean(url, 200)}")
-                    return 1
-                fmcli.out(args, dict(res, url=url, selector=selector, notes=notes),
-                          why_report(res, url, selector, notes))
-                return 0
-            raw, notes = take(b, url)
-            data = load(raw)
-        except (OSError, RuntimeError, EOFError, ValueError) as e:  # TimeoutError is an OSError
-            return _fail(f"not run: {clean(e, 300)}")
-        finally:
-            b.close()
-            signal.signal(signal.SIGTERM, old)
-    tokens, more = _tokens(args.design)
+        with fmshot.killable():  # SIGTERM unwinds, so the browser's process group dies
+            try:
+                b = fmshot.Browser(path, fmshot.SIZE)
+            except (OSError, RuntimeError, EOFError, ValueError) as e:
+                why_not = f"the browser ({fmshot.safe(path)}) did not start: {clean(e, 300)}"
+                fmcli.out(args, {"skipped": why_not}, f"fm critique: not run: {why_not}")
+                return 2
+            try:
+                if selector is not None:
+                    res, notes = why(b, url, selector, root, args.any_url)
+                    notes = ([note] if note else []) + notes
+                    if res is None:
+                        fmcli.out(args, {"url": url, "selector": selector, "matched": None, "notes": notes},
+                                  f"fm critique --why: {clean(selector, 200)} matches nothing on {clean(url, 200)}")
+                        return 1
+                    fmcli.out(args, dict(res, url=url, selector=selector, notes=notes + res["notes"]),
+                              why_report(res, url, selector, notes))
+                    return 0
+                raw, notes = take(b, url, root, args.any_url)
+                notes = ([note] if note else []) + notes
+                data = load(raw)
+            except (OSError, RuntimeError, EOFError, ValueError) as e:  # TimeoutError is an OSError
+                return _fail(f"not run: {clean(e, 300)}")
+            except (KeyError, TypeError, AttributeError) as e:  # an answer without the fields DevTools always sends
+                return _fail(f"not run: the browser answered oddly: {type(e).__name__} {clean(e, 200)}")
+            finally:
+                b.close()
     notes += more + ([f"{data['dropped']} rarer value(s) past {MAX_VALUES} a kind left out"] if data["dropped"] else [])
+    if data["page_dropped"]:
+        notes.append(f"the page had {data['page_dropped']} more value(s) past {MAX_VALUES * 2} a kind, not counted")
     res = critique(data, tokens)
     res["notes"] = notes
     fmcli.out(args, res, report(res, notes))
