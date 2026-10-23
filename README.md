@@ -339,6 +339,7 @@ Anything you'd ask a coding agent, in plain words. With no model or API key set 
 - **Native Windows.** Foreman needs Linux, macOS or WSL.
 - **When you want to approve every command yourself.** Foreman is built for bypass mode with its guard as the brake. It works in the default mode too, but its unattended drive will keep stopping at prompts.
 - **Tight token budgets.** Brainstorms, second plans and audits run extra model sessions (capped by `fm budget`). Turn them down, or skip Foreman for budget-critical work.
+- **When you won't install a plugin.** [`plugin/templates/CLAUDE.lite.md`](plugin/templates/CLAUDE.lite.md) is the discipline in under 40 lines for a project's CLAUDE.md (`curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/plugin/templates/CLAUDE.lite.md >> CLAUDE.md`): the brief, test first, evidence, one task at a time and a review, with nothing to enforce them. `fm bench duel --vs snippet` measures what they're worth next to the full plugin.
 - **Code that must not leave the machine.** Mark the repo sensitive (`fm sensitive on`) so outward tools are refused, or don't use cloud-facing features there at all.
 
 ## Does it improve itself?

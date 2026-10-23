@@ -2,8 +2,12 @@
 made every assertion in its class pass, because assertions raise through self.fail."""
 import ast
 import builtins
+import collections
 import glob
 import os
+import re
+import shutil
+import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -58,6 +62,53 @@ class SuiteHygiene(unittest.TestCase):
                 found += [f"{os.path.relpath(path, HERE)}:{fn.lineno} {cls.name}.{fn.name}" for fn in cls.body
                           if isinstance(fn, ast.FunctionDef) and fn.name in inherited]
         self.assertEqual(found, [])
+
+
+# T-1264: files whose functions are called by a name built at run time: the prefix, and the file and code that build it
+DISPATCHED = {"fmcodetui.py": ("_on_", "fmcodetui.py", 'f"_on_{kind}"'),
+              "fminstr.py": ("cmd_", "fmcli.py", 'lazy("fminstr", "cmd_" + name)'),
+              "fmoutcomes.py": ("_", "fmoutcomes.py", 'globals()["_" + flag]')}
+
+
+def dead(lib, words):
+    """T-1264: "file:line name" for each function in lib/*.py that no word in `words` names besides its own def."""
+    found = []
+    for path in sorted(glob.glob(f"{lib}/*.py")):
+        name = os.path.basename(path)
+        with open(path, encoding="utf-8") as f:
+            src = f.read()
+        prefix, where, how = DISPATCHED.get(name, (None, None, None))
+        if where:
+            with open(os.path.join(lib, where), encoding="utf-8") as f:
+                prefix = prefix if how in f.read() else None  # the exemption ends with the dispatch
+        defs = [n for n in ast.walk(ast.parse(src)) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        count = collections.Counter(n.name for n in defs)
+        for n in defs:
+            if n.name.startswith("__") or words[n.name] > count[n.name]:
+                continue
+            if prefix and n.name.startswith(prefix) and words[n.name[len(prefix):]]:
+                continue
+            found.append(f"{name}:{n.lineno} {n.name}")
+    return found
+
+
+class DeadFunctions(unittest.TestCase):
+    def test_every_lib_function_is_named_somewhere_besides_its_def(self):
+        # T-1264: a function nothing calls, tests, documents or dispatches to is dead weight every reader pays for
+        repo, words = os.path.dirname(os.path.dirname(HERE)), collections.Counter()
+        for top in ("plugin", "mods", "site"):
+            for d, dirs, files in os.walk(os.path.join(repo, top)):
+                dirs[:] = [x for x in dirs if x not in ("node_modules", "__pycache__", ".git")]
+                for f in files:
+                    if f.endswith((".py", ".ts", ".tsx", ".md", ".json", ".toml", ".sh", ".cjs", ".js")) or "." not in f:
+                        with open(os.path.join(d, f), encoding="utf-8", errors="ignore") as fh:
+                            words.update(re.findall(r"\w+", fh.read()))
+        self.assertEqual(dead(os.path.join(repo, "plugin", "lib"), words), [])
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        with open(os.path.join(tmp, "fmx.py"), "w") as f:
+            f.write("def used():\n    pass\n\ndef _gone():\n    pass\n")
+        self.assertEqual(dead(tmp, collections.Counter(["used", "used", "_gone"])), ["fmx.py:4 _gone"])
 
 
 class UndefinedNames(unittest.TestCase):

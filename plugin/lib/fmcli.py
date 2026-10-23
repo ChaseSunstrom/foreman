@@ -6167,8 +6167,10 @@ def _build_parser():
         b.add_argument("-p", "--project", default=argparse.SUPPRESS)
         if name == "duel":
             b.add_argument("plugin", nargs="?", help="a plugin folder, or an installed plugin's id")
-            b.add_argument("--vs", choices=["none"], help="none: Foreman against Claude with no plugins (only the "
-                                                          "guard, as a settings hook) instead of a rival (T-0963)")
+            b.add_argument("--vs", choices=["none", "snippet"], help="none: Foreman against Claude with no plugins "
+                           "(only the guard, as a settings hook) instead of a rival (T-0963); snippet: against Claude "
+                           "with no plugins reading Foreman's rules as one CLAUDE.md, plugin/templates/CLAUDE.lite.md "
+                           "(T-1264)")
         if name == "versions":
             b.add_argument("rev", help="the earlier Foreman revision (a commit, tag or HEAD~N)")
             b.add_argument("--source", help="the Foreman checkout REV is in (default: the running one's repo)")

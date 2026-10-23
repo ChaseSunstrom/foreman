@@ -420,6 +420,11 @@ def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare
             env["FOREMAN_MARATHON"] = str(marathon)
         if bare:  # no fm on PATH, no Foreman project, only the guard
             env.update(FOREMAN_QUIET="1", PATH=os.environ.get("PATH", ""))
+            if bare == "snippet":  # T-1264: Foreman's rules as one CLAUDE.md, what the rules alone are worth
+                with open(os.path.join(plugin, "templates", "CLAUDE.lite.md"), encoding="utf-8") as f:
+                    rules = f.read()
+                with open(os.path.join(wt, "CLAUDE.md"), "a", encoding="utf-8") as f:
+                    f.write("\n" + rules)
             prompt = (f"Task: {case['prompt']}\n\n(Unattended benchmark run: the user is away; finish the work, "
                       f"deciding with your defaults.)")
             res, error = _session(wt, env, [], prompt, model, budget, timeout, settings=_bare_guard(plugin),
@@ -699,7 +704,7 @@ def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1,
     results = []
     res = {"label": label, "plugin": plugin, "model": model, "at": c.now(), "head": head, "claude": claude_version(),
            "cases": results, "budget": budget, "runs": runs,  # T-1261: what fm bench repro reruns a row with
-           **({"extra": list(extra)} if extra else {}), **({"bare": True} if bare else {}),
+           **({"extra": list(extra)} if extra else {}), **({"bare": bare} if bare else {}),
            **({"compact_at": compact_at} if compact_at else {}), **({"marathon": marathon} if marathon else {})}
     os.makedirs(_results_dir(p), exist_ok=True)
     _safe_git(p.root, "worktree", "prune")  # a killed earlier run's worktree
@@ -954,19 +959,21 @@ def _contest(p, args):
                 f"  {'✓' if x['pass'] else '✗'} {x['id']} · score {x.get('score')}/5 · "
                 + next(y["title"] for y in cases if y["id"] == x["id"]) for x in res["cases"]))
             return 0 if all(x["pass"] for x in res["cases"]) else 1
-        if args.bench_cmd == "duel" and args.vs == "none":  # T-0963: Foreman against Claude with no plugins
-            if args.plugin:
-                raise fmcli.UsageError("a rival plugin or --vs none, not both")
-            a = run_arm(p, cases, plugin, f"duel-none-foreman-{stamp}", **arm)
-            b = run_arm(p, cases, plugin, f"duel-none-bare-{stamp}", bare=True, **arm)
+        if args.bench_cmd == "duel" and args.vs:  # T-0963: Foreman against Claude with no plugins (T-1264: or with
+            if args.plugin:                       # Foreman's rules as one CLAUDE.md)
+                raise fmcli.UsageError(f"a rival plugin or --vs {args.vs}, not both")
+            rival = "Claude with no plugins" if args.vs == "none" else "Claude with Foreman's rules as one CLAUDE.md"
+            a = run_arm(p, cases, plugin, f"duel-{args.vs}-foreman-{stamp}", **arm)
+            b = run_arm(p, cases, plugin, f"duel-{args.vs}-bare-{stamp}", bare=True if args.vs == "none" else "snippet",
+                        **arm)
             ok, lines = gate(b, a, args.cost_tolerance)  # bare Claude is the reference Foreman has to beat
             sa, sb = (sum(_rate(x) for x in r["cases"]) for r in (a, b))
             why = "; ".join(x[2:] for x in lines if x.startswith("✗ ") and x != "✗ not proposed")
             cost_only = all("cost" in x for x in lines if x.startswith("✗ ") and x != "✗ not proposed")
-            verdict = ("Foreman helps: more passes than Claude with no plugins" if ok and sa > sb else
-                       "no difference on these cases: Claude with no plugins does as well" if ok else
+            verdict = (f"Foreman helps: more passes than {rival}" if ok and sa > sb else
+                       f"no difference on these cases: {rival} does as well" if ok else
                        f"Foreman passes more, at a cost: {why}" if sa > sb and cost_only else
-                       f"Foreman hurts here against Claude with no plugins: {why}")
+                       f"Foreman hurts here against {rival}: {why}")
             data = {"without": a["label"], "with": b["label"], "gate": {"ok": ok, "lines": lines}, "verdict": verdict}
         elif args.bench_cmd == "duel":
             if not args.plugin:
