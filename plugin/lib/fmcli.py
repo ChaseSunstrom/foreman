@@ -6453,6 +6453,11 @@ def _build_parser():
                                                    "(it must fail now)")
     s.add_argument("--tui", action="store_true", help=argparse.SUPPRESS)  # what `fm code tui` becomes
     s.add_argument("--seeds", metavar="A,B", help="fm code bench: only these seeds (default: all)")
+    s.add_argument("--variants", metavar="A,B", help="fm code bench: run the seeds once per prompt variant (base, "
+                                                     "evidence) and report each one's closed count (T-1403)")
+    s.add_argument("--probe", metavar="MODEL", help="fm code runners: score a model profile 0-10 on ten small graded "
+                                                    "prompts: JSON only, data stays data, unknown over invented "
+                                                    "(T-1403)")
     s.add_argument("--seed-timeout", type=int, metavar="SECONDS", help="fm code bench: each seed's limit (default 600)")
     s.add_argument("--plain", action="store_true", help="one line per event, no screen, even on a terminal (T-1283, T-1343)")
     s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG")

@@ -23,6 +23,32 @@ def orphans():
     return out
 
 
+class Variants(CodeCase):  # T-1403
+    def test_each_prompt_variant_is_run_and_its_closed_count_reported(self):
+        f = self.serve("openai", *FIX, *FIX)
+        r = self.code("bench", "--model", "fake", "--seeds", "operator", "--variants", "base,evidence", "--json",
+                      check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        got = json.loads(r.stdout.strip().splitlines()[-1])
+        self.assertEqual({v: s["closed"] for v, s in got["variants"].items()}, {"base": 1, "evidence": 1})
+        self.assertEqual([x.get("variant") for x in got["runs"]], ["base", "evidence"])
+        self.assertNotIn("say unknown", json.dumps(f.seen[0]))
+        self.assertIn("say unknown", json.dumps(f.seen[3]), "the evidence run's planner hears the variant")
+        self.assertEqual(self.code("bench", "--model", "fake", "--variants", "nope", check=False).returncode, 2)
+
+    def test_the_literacy_probe_scores_a_model(self):
+        import fmcode
+        self.serve("openai", *[{"text": "Sure! Here you go."}] * 10)
+        r = self.code("runners", "--probe", "fake", "--json")
+        self.assertLess(json.loads(r.stdout)["score"], 3, "a model that ignores the format scores under 3")
+        good = ['{"ok": true}', '{"a": 2, "b": "yes"}', '["red", "green", "blue"]', '{"path": "C:\\\\temp\\\\x"}',
+                "6", "8123", "unknown", "unknown.", "Cold", "51"]
+        self.assertEqual(len(good), len(fmcode.PROBES))
+        self.serve("openai", *[{"text": t} for t in good])
+        got = json.loads(self.code("runners", "--probe", "fake", "--json").stdout)
+        self.assertEqual(got["score"], 10, got)
+
+
 class Bench(CodeCase):
     def bench(self, *args, env=None):
         r = self.code("bench", *args, "--json", check=False, env=env)
