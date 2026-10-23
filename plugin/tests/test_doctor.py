@@ -708,8 +708,14 @@ class BoardDoctor(unittest.TestCase):  # T-0954
                     f.write("ok\n" + hidden + "\n")
                 self.assertEqual(d.check_invisible_text([bad]).status, "WARN", repr(hidden))
             with open(clean, "w", encoding="utf-8") as f:
-                f.write("﻿# BOM first\nfamily 👨‍👩‍👧 and ❤️\n")
+                f.write("﻿# BOM first\nfamily 👨‍👩‍👧 and ❤\n")
             self.assertEqual(d.check_invisible_text([clean]).status, "PASS")
+            import fmcore  # T-1687: VS15/16 are invisible wherever they sit; fmcore.plain drops them, doctor flags them
+            for hidden in ("❤️", "é︎", "☺︎ plain"):
+                self.assertNotEqual(fmcore.plain(hidden), hidden)
+                with open(bad, "w", encoding="utf-8") as f:
+                    f.write("ok\n" + hidden + "\n")
+                self.assertEqual(d.check_invisible_text([bad]).status, "WARN", repr(hidden))
 
     def test_the_shipped_instruction_files_are_clean(self):
         files = [f for f in d.instruction_files() if f.startswith(PLUGIN)]

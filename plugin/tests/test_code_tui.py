@@ -728,6 +728,16 @@ class Config(unittest.TestCase):
             f.write(text)
         return path
 
+    def test_contrast_is_fmdesigns_one_wcag_formula(self):
+        # T-1675: the TUI turns its colours (#rrggbb or a 256-colour index) into sRGB and asks fmdesign; no copy here
+        import inspect
+        import fmdesign
+        T = tui()
+        self.assertFalse("0.03928" in inspect.getsource(T), "one WCAG implementation: fmdesign.contrast")
+        self.assertAlmostEqual(T.contrast("#000000", "#FFFFFF"), 21.0)
+        self.assertAlmostEqual(T.contrast(16, 231), 21.0, msg="256-colour cube black and white")
+        self.assertAlmostEqual(T.contrast("#777777", 0), fmdesign.contrast((0x77 / 255,) * 3, (0, 0, 0)))
+
     def test_a_users_file_sets_theme_colours_layout_and_keys(self):
         cfg, errors = tui().load_config(self.write(
             'theme = "paper"\nborder = "heavy"\n[colors]\nok = "#007A00"\naccent = { fg = 33, bold = false }\n'

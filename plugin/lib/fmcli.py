@@ -6196,7 +6196,7 @@ def _build_parser():
                    "theme)")
     s.add_argument("--dark", action="store_true", help="tokens --to app|pane: the dark values (app: on the night "
                    "theme; the default picks the theme by the screen colour's lightness)")
-    s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 93), help="PNG files with no Pillow (T-1630): info "
+    s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 91), help="PNG files with no Pillow (T-1630): info "
             "PATH: size and mode; diff A B: the changed-pixel count and box (exit 1 when they differ or sizes do)")
     s.add_argument("action", choices=["info", "diff"])
     s.add_argument("paths", nargs="+", metavar="PATH", help="info: one PNG; diff: two, A then B")
@@ -6215,7 +6215,7 @@ def _build_parser():
     s.add_argument("--diff", metavar="BASE", help="compare each viewport shot with BASE/<page>/viewport.png (an earlier "
                    "fm shot --out BASE): exit 1 over the baseline's noise floor (the most its own frames differ) or "
                    "when a font fell back (T-1637)")
-    s = add("critique", lazy("fmcritique", "cmd_critique"), tier=("Every task", 93), help="URL|FILE: a computed-style "
+    s = add("critique", lazy("fmcritique", "cmd_critique"), tier=("Every task", 94), help="URL|FILE: a computed-style "
             "census of the page (colours, fonts, sizes, radii, shadows, spacing, with counts; or a census .json) "
             "critiqued against DESIGN.md's tokens: unnamed values, near-duplicates, outliers (exit 1 on findings; no "
             "browser: not run, exit 2); --why SELECTOR: the cascade behind one element (T-1642)")
@@ -6227,7 +6227,7 @@ def _build_parser():
     s.add_argument("--design", metavar="PATH", help="the DESIGN.md (default: the repo root's, or docs/DESIGN.md)")
     s.add_argument("--any-url", action="store_true", help="open any http(s) page, not only localhost, 127.0.0.1, "
                    "[::1] and files")
-    s = add("flow", lazy("fmflow", "cmd_flow"), tier=("Every task", 96), help="FILE: a user journey, one step a line "
+    s = add("flow", lazy("fmflow", "cmd_flow"), tier=("Every task", 97), help="FILE: a user journey, one step a line "
             "(goto URL|FILE, click SEL, type SEL TEXT, expect SEL [TEXT], wait MS), in the headless Chromium fm shot "
             "finds, as a verify command: exit 1 names the step that failed, 2 with no browser (never a pass) (T-1639)")
     s.add_argument("file", metavar="FILE")
@@ -6243,7 +6243,7 @@ def _build_parser():
     s.add_argument("--reduced-motion", action="store_true", help="emulate prefers-reduced-motion: reduce")
     s.add_argument("--out", metavar="PATH", help="write here (a .html file that isn't a link, replaced only when fm "
                    "stories wrote it) instead of the project's state stories/<chart>.html")
-    s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
+    s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 95), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
             "score as CSS custom properties and @keyframes, WAAPI options or three.js tween parameters, the same "
@@ -6256,7 +6256,7 @@ def _build_parser():
     s.add_argument("--out", metavar="FILE", help="compile: write here, replacing the file whole, not print it")
     s.add_argument("--samples", metavar="FILE", help="verify: a JSON list of samples, not a live crawl")
     import fmscene  # T-1633: stdlib only and small; its schema is the help's epilog
-    s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 95), epilog=fmscene.SCHEMA,
+    s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 98), epilog=fmscene.SCHEMA,
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
             "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
     s.add_argument("action", choices=["compile"])
