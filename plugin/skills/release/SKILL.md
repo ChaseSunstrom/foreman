@@ -12,7 +12,7 @@ The procedure is `../playbooks/references/release/release-and-changelog.md`; thi
 1. **Clean tree, green gate** on the exact commit you'll tag: `fm check` (no `--affected`), nothing uncommitted. Red → fix first (`/foreman:debug-test`), never "fix after tagging".
 2. **Version** by the project's scheme (semver: breaking → major, feature → minor, fix → patch); bump every place that carries it in one commit. A dependency bump in the same release → `../playbooks/references/release/dependency-upgrade.md`, one per task.
 3. **Changelog:** move Unreleased under the new version with today's date; one user-facing line per change, task ids linked; breaking changes get a before → after migration note.
-4. **Tag and publish** only with the task's publish grant: `fm ask ID publish --why "<what goes where>"` asks the user; a standing yes they gave for releases is recorded with `fm task set ID --allow publish`. No grant → stop after the local tag and say what's left.
+4. **Push, tag and publish** only with the task's publish grant (pushing the release commit is outward too): `fm ask ID publish --why "<what goes where>"` asks the user; a standing yes they gave for releases is recorded with `fm task set ID --allow publish`. No grant → stop at the local commit and tag, and say what's left.
 5. **After the push:** `fm ci-watch` follows the CI run (a failure becomes a FIX brief); install the published artifact from scratch and record that as evidence. A demo or release video → `../playbooks/references/release/demo-production.md`.
 
 ## Foreman's own repo

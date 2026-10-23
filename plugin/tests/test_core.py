@@ -2,6 +2,7 @@
 import json
 import multiprocessing
 import os
+import re
 import subprocess
 import time
 import unittest
@@ -493,9 +494,8 @@ class Stages(unittest.TestCase):
         self.assertEqual(c.stage(b), "executing")
         nxt = c.next_action(b)
         self.assertIn("step 1/1", nxt)
-        self.assertIn("Skill foreman:intake, then its references/debugging.md", c.skill_for(b, c.stage(b)),
-                      "FIX names its procedure")
-        self.assertNotIn("debugging.md", nxt, "once a stage through the hooks, not on every step's line (T-1697)")
+        self.assertIn("Skill foreman:debug-test", c.skill_for(b, c.stage(b)), "FIX names its procedure (T-1701)")
+        self.assertNotIn("debug-test", nxt, "once a stage through the hooks, not on every step's line (T-1697)")
         b.add_evidence("pytest -k slow", "1 failed as expected", step=1, ts="2026-01-01T10:00:00Z")
         b.mark_step(1)
         self.assertEqual(c.stage(b), "verifying")
@@ -511,6 +511,17 @@ class Stages(unittest.TestCase):
         b.add_audit("edge", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
         self.assertEqual(c.stage(b), "closing")
         self.assertIn("fm task done T-0001", c.next_action(b))
+
+    def test_every_skill_a_hint_loads_exists_and_the_model_may_load_it(self):
+        # T-1701: FIX and RESEARCH name the job skills; a hint naming a missing or user-only skill sends Claude nowhere
+        self.assertIn("Skill foreman:research", c.SKILL_FOR["RESEARCH"])
+        for key, hint in c.SKILL_FOR.items():
+            for name in re.findall(r"Skill foreman:([\w-]+)", hint):
+                with self.subTest(key=key, skill=name):
+                    path = os.path.join(c.PLUGIN_ROOT, "skills", name, "SKILL.md")
+                    self.assertTrue(os.path.isfile(path))
+                    with open(path, encoding="utf-8") as f:
+                        self.assertNotIn("\ndisable-model-invocation: true", f.read())
 
 
     def test_next_moves_past_a_step_with_evidence_and_ends_at_finish(self):
