@@ -435,6 +435,48 @@ def why_report(res, url, selector, notes):
     return "\n".join(lines + _more(res["winners"], WHY_WINNERS))
 
 
+# ---------------------------------------------------------------- stress strings and surface profiles (T-1643)
+
+MAX_STRESS = 2000  # characters taken from a string; the rest is cut (a note says so)
+PLACEHOLDER = re.compile(r"\{\{|\}\}|\{[\w.]*\}|%\([\w.]+\)[-+ #0]*\d*[sdfr]|%[-+ #0]*\d*[sdfr@]|\$\{[\w.]+\}|</?\w[^<>]*>")
+ACCENTS = str.maketrans("aeiouyAEIOUYcnsCNS", "àéîöüýÀÉÎÖÜÝçñšÇÑŠ")
+# viewport and contrast presets for fm shot and the smoke harness: the surface's logical pixels, its device scale and
+# the contrast it needs (a ratio the text must reach; WCAG AA is 4.5)
+PROFILES = {
+    "tv": {"width": 1920, "height": 1080, "scale": 1.0, "contrast": 4.5, "note": "10 feet away: text 24px or more, overscan safe area"},
+    "eink": {"width": 800, "height": 600, "scale": 1.0, "contrast": 7.0, "note": "greyscale, slow refresh: no animation, no thin greys"},
+    "car": {"width": 1280, "height": 720, "scale": 1.0, "contrast": 7.0, "note": "glanced at: large touch targets, daylight glare"},
+    "wrist": {"width": 396, "height": 484, "scale": 2.0, "contrast": 7.0, "note": "tiny screen: one thing at a time"},
+}
+
+
+def pseudo(s):
+    """s pseudo-localised: accented, padded to at least 40% longer, in [brackets] so truncation shows; placeholders
+    ({name}, %d, %(n)s, ${x}, <b>) pass through untouched."""
+    s = str(s)[:MAX_STRESS]
+    if not s:
+        return ""
+    out, pos = [], 0
+    for m in PLACEHOLDER.finditer(s):
+        out.append(s[pos:m.start()].translate(ACCENTS))
+        out.append(m.group())
+        pos = m.end()
+    out.append(s[pos:].translate(ACCENTS))
+    body = "".join(out)
+    need = -(-len(s) * 14 // 10)  # ceil(1.4 x)
+    return "[" + body + "~" * max(0, need - len(body)) + "]"
+
+
+def stress_report(text, profile):
+    lines = []
+    if text is not None:
+        lines.append(pseudo(text))
+    if profile:
+        p = PROFILES[profile]
+        lines.append(f"{profile}: {p['width']}x{p['height']} @{p['scale']:g}x, contrast {p['contrast']:g}:1 ({p['note']})")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------- the command
 
 
@@ -469,6 +511,15 @@ def _root(word):
 
 def cmd_critique(args):
     import fmcli
+    if args.stress is not None or args.profile:
+        if args.target or args.why is not None:
+            return _fail("--stress and --profile stand alone, with no page or --why")
+        res = {"stress": pseudo(args.stress) if args.stress is not None else None,
+               "profile": dict(PROFILES[args.profile], name=args.profile) if args.profile else None}
+        fmcli.out(args, res, stress_report(args.stress, args.profile))
+        return 0
+    if not args.target:
+        return _fail("needs a URL or FILE (or --stress TEXT, --profile NAME)")
     target, selector = args.target, args.why
     census = target.lower().endswith(".json") and os.path.isfile(target)
     if census and selector is not None:

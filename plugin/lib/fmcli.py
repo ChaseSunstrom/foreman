@@ -6104,7 +6104,10 @@ def _build_parser():
             "census of the page (colours, fonts, sizes, radii, shadows, spacing, with counts; or a census .json) "
             "critiqued against DESIGN.md's tokens: unnamed values, near-duplicates, outliers (exit 1 on findings; no "
             "browser: not run, exit 2); --why SELECTOR: the cascade behind one element (T-1642)")
-    s.add_argument("target", metavar="URL|FILE")
+    s.add_argument("target", metavar="URL|FILE", nargs="?")
+    s.add_argument("--stress", metavar="TEXT", help="TEXT pseudo-localised: accented, 40%% longer, in [brackets], "
+                   "placeholders ({n}, %%d, ${x}, <b>) intact (T-1643)")
+    s.add_argument("--profile", choices=["tv", "eink", "car", "wrist"], help="a surface's viewport and contrast preset")
     s.add_argument("--why", metavar="SELECTOR", help="the matched rules and winning declaration per property")
     s.add_argument("--design", metavar="PATH", help="the DESIGN.md (default: the repo root's, or docs/DESIGN.md)")
     s.add_argument("--any-url", action="store_true", help="open any http(s) page, not only localhost, 127.0.0.1, "
