@@ -2822,13 +2822,30 @@ def _single_quoted(text, i):
     return q == "'"
 
 
+def _escapes(cmd):
+    """T-1781: whether cmd holds a backslash bash may read as an escape: any outside '…' (in "…" too). A quote inside
+    "…" opens nothing; text this scan can't follow ($( … ) quoting inside "…") counts as an escape."""
+    q = None
+    for ch in cmd:
+        if q == "'":
+            q = None if ch == "'" else q
+        elif ch == "\\":
+            return True
+        elif ch == '"':
+            q = None if q == '"' else '"'
+        elif ch == "'" and q is None:
+            q = "'"
+    return False
+
+
 def _expand_literal_loops(cmd):
     """T-0411: a top-level `for V in w1 w2; do BODY; done` whose words are plain literals runs BODY once per word, so
     it is read as `BODY[w1]; BODY[w2]; V=w2`. Only when the body has no nested loop, case, heredoc or way to set V
     (an assignment, read, eval, source …), and no $V bash leaves unexpanded ('…'); break and continue only make bash
     do less than what is checked. Anything else is left as written (V stays unknown, as before)."""
-    # IFS: bash splits the word it substitutes; a backslash: an escaped ; or & separates nothing
-    if "for" not in cmd or "$'" in cmd or "<<" in cmd or "IFS" in cmd or "\\" in cmd:
+    # IFS: bash splits the word it substitutes; a backslash: an escaped ; or & separates nothing (T-1781: one inside
+    # '…' is a character, so `echo 'a\'` later in the command no longer leaves every loop unread)
+    if "for" not in cmd or "$'" in cmd or "<<" in cmd or "IFS" in cmd or _escapes(cmd):
         return cmd
     masked = _mask_quotes(cmd)
     if masked == cmd and re.search(r"['\"]", cmd):  # quoting the guard can't read: leave it

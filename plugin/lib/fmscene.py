@@ -425,25 +425,36 @@ const SHADOW = `<style>
 <\/style><div class="stage" part="stage"><slot name="poster"><\/slot><canvas role="img"><\/canvas><\/div><slot><\/slot>`;
 
 export class FmScene extends HTMLElement {
+  static observedAttributes = ["label"];
   #dispose = null;
   connectedCallback() {
     // A root the page declared (<template shadowrootmode>) is kept, filled in if it has no canvas.
     const root = this.shadowRoot ?? this.attachShadow({ mode: "open" });
     if (!root.querySelector("canvas")) root.innerHTML = SHADOW;
-    // label="..." names the canvas (an id reference can't cross the shadow boundary); with none, the twin speaks.
-    const canvas = root.querySelector("canvas"), label = this.getAttribute("label");
-    if (label) { canvas.setAttribute("aria-label", label); canvas.removeAttribute("aria-hidden"); }
-    else canvas.setAttribute("aria-hidden", "true");
+    this.#label();
     this.dataset.state = "poster";
     this.#dispose = mount(this);
+  }
+  // label="..." names the canvas (an id reference can't cross the shadow boundary); with none, the twin speaks. It is
+  // watched (T-1706): a page that changes it, or takes it away, is heard.
+  attributeChangedCallback() { this.#label(); }
+  #label() {
+    const canvas = this.shadowRoot?.querySelector("canvas"), label = this.getAttribute("label");
+    if (!canvas) return;  // not connected yet: connectedCallback names it
+    if (label) { canvas.setAttribute("aria-label", label); canvas.removeAttribute("aria-hidden"); }
+    else { canvas.removeAttribute("aria-label"); canvas.setAttribute("aria-hidden", "true"); }
   }
   // Out of the page: all mount() made is freed and the context released; put back, it mounts on a fresh canvas.
   disconnectedCallback() { this.#dispose?.(); this.#dispose = null; }
 }
 // Two scenes on one page: the second finds fm-scene taken and needs a name of its own, in its markup too.
 if (!customElements.get("fm-scene")) customElements.define("fm-scene", FmScene);
-else console.warn('scene: <fm-scene> is taken; name this one: customElements.define("fm-scene-2", FmScene)');
+else console.warn("scene: <fm-scene> is taken; compile this one with fm scene compile --to component --tag NAME");
 """
+# T-1706: a valid custom element name (ASCII: a lowercase letter first, a hyphen in it), none the HTML spec reserves
+TAG = re.compile(r"[a-z][a-z0-9._]*-[a-z0-9._-]*")
+RESERVED_TAGS = {"annotation-xml", "color-profile", "font-face", "font-face-src", "font-face-uri", "font-face-format",
+                 "font-face-name", "missing-glyph"}
 
 
 def compile_three(scene, head=HEAD, tail=""):
@@ -453,9 +464,13 @@ def compile_three(scene, head=HEAD, tail=""):
     return head + "export const SCENE = {\n" + body + "\n};\n" + RUNTIME + tail
 
 
-def compile_component(scene):
-    """A validated scene → compile_three's module, the same SCENE and mount(), with <fm-scene> defined after it."""
-    return compile_three(scene, COMPONENT_HEAD, ELEMENT)
+def compile_component(scene, tag="fm-scene"):
+    """A validated scene → compile_three's module, the same SCENE and mount(), with <fm-scene> defined after it, or
+    the custom element name tag (T-1706: two scenes on one page, each its own)."""
+    if not TAG.fullmatch(tag) or tag in RESERVED_TAGS:
+        raise ValueError(f"--tag {tag!r} isn't a custom element name: lowercase ASCII, a letter first, a hyphen in it "
+                         "(pebble-scene), and none the HTML spec reserves (font-face, …)")
+    return compile_three(scene, COMPONENT_HEAD.replace("fm-scene", tag), ELEMENT.replace("fm-scene", tag))
 
 
 def cmd_scene(args):
@@ -463,7 +478,11 @@ def cmd_scene(args):
     import fmcli
     import fmcore
     try:
-        text = (compile_component if args.to == "component" else compile_three)(load(args.path))
+        tag = getattr(args, "tag", None)
+        if tag and args.to != "component":
+            raise ValueError("--tag names the element: use it with --to component")
+        scene = load(args.path)
+        text = compile_component(scene, tag or "fm-scene") if args.to == "component" else compile_three(scene)
         out = os.path.abspath(args.out) if args.out else None  # write_atomic makes dirname(path): "" for a bare name
         if out and os.path.exists(out) and os.path.samefile(out, args.path):
             raise ValueError(f"--out {args.out} is the scene it compiles")
