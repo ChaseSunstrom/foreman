@@ -566,14 +566,20 @@ def cmd_task(args):
         timed = [f"`{c.fit(m.group(1), 80)}`: {m.group(2).strip()}" for line in b.evidence()  # --repeat's runs
                  if c._RAN_MARK in line and (m := re.search(r"`([^`]*)` → [^·]*· (×\d+[^·]*)", line))]
         measured = "\n".join(x for x in [b.section("Measurements").strip(), *timed] if x)
+        import fmdesign  # T-1538: the colours and motion the change adds to its UI files
+        strip = fmdesign.swatches(c.git_root(p.root) or p.root, b.meta.get("base"), [f["path"] for f in files
+                                                                                      if f["ui"] and not f["deleted"]])
         text = (f"{b.id} receipt: {b.title} ({b.type} {b.tier}, {b.status})"
                 + (f" · UI: {len(ui)} of {len(files)} files" if ui else "")
                 + ("\nReading order (what it builds on, styles, components, entry points, tests, docs):\n"
                    + "\n".join(f"  {i}. {f['path']}  +{f['add']} −{f['del']}" + ("  [UI]" if f["ui"] else "")
                                + ("  (deleted)" if f["deleted"] else "") for i, f in enumerate(files, 1))
                    if files else "\nNo changed files since it was focused.")
-                + (f"\nBefore/after:\n{measured}" if measured else ""))
-        return out(args, {"id": b.id, "files": files, "before_after": measured}, c.plain_lines(text))
+                + (f"\nBefore/after:\n{measured}" if measured else "")
+                + (f"\nSwatches: {' '.join(strip['colours']) or 'no new colour'} · motion: "
+                   f"{' '.join(strip['motion']) or 'none'}" if strip["colours"] or strip["motion"] else ""))
+        return out(args, {"id": b.id, "files": files, "before_after": measured, "swatches": strip},
+                   c.plain_lines(text))
     if sub == "set":
         return task_set(p, args)
     if sub == "step":
@@ -6325,9 +6331,12 @@ def _build_parser():
             "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into: brief, a11y (contrast, reduced motion, "
             "flashes, alt, focus styles) and debt N (untokened literals under a budget); advisory exits 0, blocking 1; "
             "roll [--seed N] [--apply|--undo]: one look card's palette, type and motion, seeded, into DESIGN.md")
-    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll", "diverge"],
+    s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll", "diverge",
+                                      "sprint", "vague"],
                    help="diverge [N] [WHAT] [--out DIR]: N (2-6, default 3) variant briefs for WHAT in looks far "
-                   "apart; diverge pick LOOK: keep the winner in the taste ledger (T-1536)")
+                   "apart; diverge pick LOOK: keep the winner in the taste ledger (T-1536); sprint [ROOT]: the "
+                   "ten-minute design sprint, five stages each with a check, the next step of the first that fails; "
+                   "vague TEXT: the vague words in a request and what to ask instead (T-1538)")
     s.add_argument("--seed", type=int, help="roll: the same seed gives the same look (default: a fresh one, printed)")
     s.add_argument("--apply", action="store_true", help="roll: write it as DESIGN.md's ## Look, undoable")
     s.add_argument("--undo", action="store_true", help="roll: put DESIGN.md back as it was before the roll(s)")
