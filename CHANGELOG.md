@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code routing by record: fm code runners shows each runner's record per kind from every project's past runs (runs, closed, dollars a closed run), and runner = auto gives the work to the cheapest runner green on the plan's kind (3+ runs, two thirds closed), saying why, or keeps the planning runner when none is (T-1358)
 - fm code runner pings: fm code runners --ping [NAME] asks each installed runner one tiny question through its read-only plan command in a scratch folder and sorts the answer (ok, not logged in, usage limit, flag refused, endpoint down, no answer) with latency and version, kept for the app, whose runners screen shows a lamp per runner and pings the selected one with p (T-1335)
 - fm code limits and failover: a worker turn's failure is sorted (usage limit with its reset time, sign-in, crash, timeout); a limit resetting within code.toml limit_wait (default an hour) is waited out and the turn done again, past it the run stops with its resume command; code.toml chain = [...] hands a crashed, timed-out or signed-out runner's turn to the next (T-1356)
 - fm code run-event hooks: code.toml [on] closed, blocked and needs-you commands get the event's JSON on stdin, past Foreman's guard, 30 s at most (a refusal or a failure is a note, never the run's end); fm state --line ends with the newest fm code run, running, stopped or how it ended (T-1351)
