@@ -2647,6 +2647,15 @@ def _outside(shell, cmds, ctx, fixed=None):
             and v and not re.search(r"[\s*?\[]", v) and not v.startswith("~")}, bare
 
 
+def _cd_from(tgt, here, ctx):
+    """T-1727 review: where `cd tgt` from here lands, for recording discards; None when the guard can't tell (an
+    unresolved name, $OLDPWD, a relative cd from an unknown folder)."""
+    if _unresolvable(tgt):
+        return None
+    t = _expand(tgt, ctx)
+    return os.path.normpath(t) if os.path.isabs(t) else _resolve(t, here) if here else None
+
+
 def _moved(cwds, lost, tgt, sure, cdpath, ctx):
     """T-0175 review: the places the shell may be after a cd: cwds, the ones the guard can name, and lost, the paths
     below a folder it can't name (a cd to a target it can't resolve, or a relative one CDPATH may send elsewhere). When
@@ -3127,8 +3136,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     live = [x for t in _live_heredocs(cmd) for x in ([t, _unescape_ticks(t)] if "\\`" in t else [t])]  # T-0669: in
     cmds = _split(_tokens(_lines(shell)))
     _DCWD[depth] = list(dict.fromkeys(starts + [  # text read before the walk below (`…`, sh <<<): any folder a cd names
-        _resolve(_expand(x.argv[1], ctx), s) for x in cmds if x.argv[:1] == ["cd"] and x.argv[1:2]
-        and not _unresolvable(x.argv[1]) for s in starts]))
+        _cd_from(x.argv[1], s, ctx) for x in cmds if x.argv[:1] == ["cd"] and x.argv[1:2] for s in starts]))
     for body in _subst_bodies(shell, tails) + [b for t in live for b in _subst_bodies(t, tails)]:  # `…` a \` is a `
         found += check_bash(body, ctx, depth + 1, tails=False)
     lits = _line_literals(shell)  # T-0587: literal values a computed name, eval or sh -c text may use
@@ -3144,6 +3152,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     env = {k: v for k, v in outside.items() if k == "HOME"} if raw is not None and len(raw) == len(cmds) else None
     (straight, and_chain, mixed), cwds, lost, made = _top(shell), [ctx.cwd], [], set()  # where it may be (T-0175)
     base = None  # T-0339: (cwds, lost, made) where the current &&-segment of a mixed list began, and its folders
+    # T-1727 review: the same walk for recording discards only (verdicts use cwds): from the caller's folders, None for
+    # one a cd makes unknown; rbase is base's twin
+    rd, rbase = list(starts), None
     cdpath = bare is None or "CDPATH" in shell or bool(os.environ.get("CDPATH"))
     fixed = pre if env is None and bare is not None else {}  # T-0183: set once before the
     outside = {**outside, **fixed}                                                  # branches, known in them
@@ -3157,9 +3168,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             if base:
                 cwds, lost = list(dict.fromkeys(base[0] + cwds)), list(dict.fromkeys(base[1] + lost))
                 made = base[2]
+                rd = list(dict.fromkeys(rbase + rd))
             ops = [x.op for x in cmds[idx + 1:]]
             seg = ops[:next((i for i, o in enumerate(ops) if o not in ("&&", "|", "|&")), len(ops))]
             base = (cwds, lost, set(made)) if "&&" in seg else None
+            rbase = list(rd) if base else None
         if env is not None:
             env = _track_vars(raw[idx], env, tilde)
         known = outside if env is None else {**outside, **env}
@@ -3186,20 +3199,24 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                     os.path.isdir(d) and os.access(d, os.X_OK))))  # fails with too many arguments
                 certain = not piped and (and_chain or in_chain or ((straight or mixed) and not can_fail))
                 cwds, lost = _moved(cwds, lost, tgt, certain, cdpath, ctx)
+                new = [_cd_from(tgt, r, ctx) for r in rd]
+                rd = list(dict.fromkeys(new if certain else rd + new))
                 if base and c.op not in ("&&", "|", "|&") and not piped and not can_fail:
                     base = (list(cwds), list(lost), base[2])  # T-0384: a head cd that can't fail: the chain stops after
+                    rbase = list(rd)
                 elif base:  # the chain may stop after any cd in it: every folder it reaches stays possible (its review)
                     base = (base[0] + cwds, base[1] + lost, base[2])
+                    rbase = rbase + rd
         moves, places = (_moves_shell(name, args, cwds, ctx, shell) if name in ("eval", "source", ".", "trap",
                                                                                "mapfile", "readarray") else (0, []))
         if moves:  # T-0384: it may cd here: anywhere, or any folder it names after a cd
             for d in ["$OLDPWD"] + places:
                 cwds, lost = _moved(cwds, lost, d, False, cdpath, ctx)
+            rd = list(dict.fromkeys(rd + [_cd_from(d, r, ctx) for d in places for r in rd]))  # cd - aside
             if base:
                 base = (base[0] + cwds, base[1] + lost, base[2])
-        # T-1727 review: the folders this command may run in, as the caller sees them (what nested text starts in)
-        here_dirs = _DCWD[depth] = list(dict.fromkeys(x for d in cwds for x in (starts if d == ctx.cwd else [d])
-                                                      if os.path.isabs(x))) or starts
+                rbase = rbase + rd
+        here_dirs = _DCWD[depth] = rd  # T-1727 review: where this command may run (and nested text start)
         for inner in (x for t in _shell_c(args) for x in _readings(t, {**lits, **known})) if _SHELLS.match(name) else ():
             found += check_bash(inner, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(inner):
@@ -3408,7 +3425,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             found += _check_git(nm, args, cwd, ctx)
             if nm == "git":  # T-1482: what the hook saves, in each folder it may run in, through known names
                 wargs = [_with_vars(a, known) for a in args]
-                _DISCARDS.extend(x for d in here_dirs for x in _git_discards(wargs, d))
+                _DISCARDS.extend((d and w, x) for d in here_dirs for w, x in _git_discards(wargs, d or "/"))  # d None:
+                # the folder is unknown, and the hook says so rather than saving its own
             found += _check_system(nm, args)
             found += _check_claude_config(nm, args, cmd if c.piped or "<<" in cmd else "")
             found += _check_publish(nm, args)
@@ -4500,7 +4518,8 @@ def _write_targets(name, args):
             flags = re.fullmatch(r"-([afhmc]*)([rdt]?)", a)  # a short cluster; r, d and t take the next word
             if a.startswith("--no-c") and "--no-create".startswith(a) or flags and "c" in flags[1]:
                 return []  # makes nothing
-            i += 2 if a in ("--reference", "--date") or flags and flags[2] else 1
+            valued = len(a) > 2 and "=" not in a and any(w.startswith(a) for w in ("--reference", "--date", "--time"))
+            i += 2 if valued or flags and flags[2] else 1  # GNU takes a long option's unambiguous prefix (--da)
             out += [] if a.startswith("-") else [a]  # - is its stdout
         return out
     if name == "curl":

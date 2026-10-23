@@ -2489,6 +2489,11 @@ class ProtectedTouch(GuardCase):
             (f"unlink {old} && touch {old}", "plugin"),
             (f"mv {old} /tmp/x; touch {old}", "plugin"),
             (f"rm -f {old}; touch {old}", "plugin"),
+            # second review: an abbreviated --reference/--date/--time takes the next word, which is no file to make
+            (f"cd {cache} && touch --da 2020-01-01 old.json", None),
+            (f"cd {cache} && touch --ref old.json old.json", None),
+            (f"cd {cache} && touch --ti atime old.json", None),
+            (f"cd {cache} && touch --da=2020-01-01 new.json", "plugin"),
         ], self.bash)
 
     def test_a_touched_file_run_after_is_no_script_written_here(self):

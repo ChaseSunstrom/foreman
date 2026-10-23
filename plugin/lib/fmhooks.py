@@ -2022,21 +2022,31 @@ def _snapshot_note(pl, guard):
     read = getattr(guard, "take_discards", None)
     theirs = read(cmd) if read else None
     found = (guard.discards_work(cmd, _cwd(pl)) if theirs is None or "git" in cmd else []) + (theirs or [])
-    done = set()  # each repo saved once per kind (review: two repos with the same kind are both saved)
+    done, unknown = set(), []  # each repo saved once per kind (review: two repos with the same kind are both saved)
+    deadline = time.monotonic() + SNAPSHOT_S  # T-1727 review: one budget for every save, not SNAPSHOT_S each
     for where, what in dict.fromkeys(found):
+        if where is None:  # T-1727 review: a cd the guard couldn't follow; the hook's own folder would be a guess
+            unknown.append(what)
+            continue
         top = c.git_root(where)
         if not top or (top, what) in done:
             continue
         done.add((top, what))
+        left = deadline - time.monotonic()
+        if left <= 0:
+            failed.append(f"{top}: no time left in the hook")
+            continue
         try:
-            saved += [f"{sha} (restore: {c.restore_line(top, sha, what)})"
-                      for sha in c.snapshot(top, why, SNAPSHOT_S, what)]
+            saved += [f"{sha} (restore: {c.restore_line(top, sha, what)})" for sha in c.snapshot(top, why, left, what)]
         except RuntimeError as e:
             failed.append(f"{top}: {e}")
     notes = [f"Foreman saved what this command may discard: {'; '.join(saved)}. fm snapshots lists every save."
              ] if saved else []
     notes += [f"Foreman couldn't save the uncommitted work before this command ({'; '.join(failed)}): if it matters, "
               "commit or stash it first."] if failed else []
+    notes += [f"Foreman couldn't tell where this command discards work ({', '.join(dict.fromkeys(unknown))}: after a cd "
+              "it can't follow), so nothing was saved for it: if that work matters, commit or stash it first."
+              ] if unknown else []
     return " ".join(notes) or None
 
 
