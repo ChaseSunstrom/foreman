@@ -37,6 +37,17 @@
       }
     });
   }, { threshold: 0.35 });
+  // T-1615: each chart draws itself once, the first time it comes into view (CSS does the motion; seen still, it's whole)
+  var charts = new IntersectionObserver(function (es) {
+    es.forEach(function (e) {
+      if (e.isIntersecting) { e.target.classList.add("drawn"); charts.unobserve(e.target); }
+    });
+  }, { threshold: 0.3 });
+  document.querySelectorAll(".viz.grow-x, .viz.grow-y, .viz.draw").forEach(function (v) {
+    v.querySelectorAll(".m").forEach(function (m, i) { m.style.transitionDelay = Math.min(i, 24) * 40 + "ms"; });
+    v.classList.add("armed");
+    charts.observe(v);
+  });
   if (reel) io.observe(reel);
   var st = document.getElementById("stations");
   if (st) io.observe(st);

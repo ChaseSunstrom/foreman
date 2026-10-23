@@ -5899,6 +5899,13 @@ def _build_parser():
     s.add_argument("--sub", metavar="a,b", help="new: the subcommands a caller may pick (an enum)")
     s.add_argument("--dir", help="new: the folder to write (default: ./NAME)")
     s.add_argument("--force", action="store_true", help="new: write into a folder that isn't empty")
+    s = add("desk", lazy("fmintegrations", "cmd_desk"), tier=("Running elsewhere", 1233), help="the glance as a desk "
+            "card for an e-paper panel or an old phone: SVG, .png (rsvg-convert) or .html that reloads; never a port "
+            "(T-1615)")
+    s.add_argument("--out", metavar="FILE", help="where to write it (.svg, .png, .html); without it the SVG prints")
+    s.add_argument("--size", metavar="WxH", help="the panel's pixels (default 800x480, the common 7.5-inch e-paper)")
+    s.add_argument("--every", type=int, metavar="S", help="rewrite it every S seconds (10 or more) until Ctrl-C, for "
+                   "a synced folder the device reads")
     add("glance", lazy("fmintegrations", "cmd_glance"), tier=("Running elsewhere", 1232),
         help="the status as one JSON line for a shell prompt or status bar (waybar's text, tooltip and class); "
              "never creates a project (T-1551)")
