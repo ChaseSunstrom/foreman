@@ -39,6 +39,22 @@ class LaneHeld(HookCase):
         self.assertIn(free, out)
 
 
+    def test_a_task_waiting_on_an_open_dependency_is_not_offered(self):
+        # T-1708: T-1637 depends on T-1636, which a lane held; the Stop drive and fm next named T-1637 every Stop
+        self.fm("init")
+        self.fm("autonomy", "full")
+        dep = self.task("Lane work", focus=False)
+        waits = self.task("Waits on it", focus=False)
+        free = self.task("Free work", focus=False)
+        self.fm("task", "set", waits, f"depends_on=[{dep}]")
+        import fmcli
+        fmcli.mutate(self.project(), dep, lambda x: x.meta.__setitem__("builder", c.now()), "lane_builder", {})
+        out = self.stop()
+        self.assertNotIn(f"fm focus {waits}", out)
+        self.assertIn(free, out)
+        self.assertNotIn(f"fm focus {waits}", self.fm("next").stdout)
+
+
 class DriveSide(HookCase):
     def stop(self, msg):
         return self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": msg, "session_id": "sess-1"})

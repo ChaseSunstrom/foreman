@@ -309,7 +309,7 @@ class UserPromptSubmit(HookCase):
         tid = self.task()
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "carry on"}))
         self.assertIn(f"Next: {tid} step 1/2", ctx)
-        self.assertIn("debugging.md", ctx, "the harness names the FIX procedure")
+        self.assertIn("foreman:debug-test", ctx, "the harness names the FIX procedure")
         self.assertLessEqual(len(ctx), 400)
 
     def test_unchanged_state_is_not_repeated_every_turn(self):
@@ -330,14 +330,14 @@ class UserPromptSubmit(HookCase):
         ups = lambda prompt, sid="sess-1": self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt, "session_id": sid}))
         fix = self.task(tier="M")
         ctx = ups("carry on")
-        hint = "(load: Skill foreman:intake, then its references/debugging.md; fm playbooks show tdd-workflow)"
+        hint = "(load: Skill foreman:debug-test; fm playbooks show tdd-workflow)"  # T-1701: the job skill
         self.assertIn(hint, ctx, "named whole, worded as the call to make")
         self.assertGreater(ctx.index(hint), ctx.index("Next: "), "on the Next line")
         self.assertLessEqual(len(ctx), 400)
         self.fm("task", "step", fix, "add", "another step")
         ctx = ups("carry on")
         self.assertIn("Next: ", ctx, "a new step restates the state")
-        self.assertNotIn("foreman:intake", ctx, "the same stage: named once")
+        self.assertNotIn("foreman:debug-test", ctx, "the same stage: named once")
         feat = self.task("Add export", type_="FEATURE", tier="M")
         self.assertIn("(load: Skill foreman:intake, then its references/execute.md", ups("go on"))
         self.assertEqual(json.loads(self.fm("next", "--json").stdout)["skill"], c.SKILL_FOR["FEATURE"], "fm next: always")
@@ -359,29 +359,34 @@ class UserPromptSubmit(HookCase):
         self.task(tier="M", steps=("reproduce the login timeout on a throttled connection, then record it",))
         ctx = ups("fix the login timeout when wifi is slow")
         self.assertIn('--run "<verify cmd>"', ctx, "the Next line whole")
-        self.assertNotIn("foreman:intake, then", ctx, "no room: held back, never cut")
+        self.assertNotIn("foreman:debug-test", ctx, "no room: held back, never cut")
         self.assertLessEqual(len(ctx), 400)
         ctx = ups("carry on")
         self.assertIn("Next: ", ctx, "the state wasn't recorded as told: said again")
-        self.assertIn("(load: Skill foreman:intake, then its references/debugging.md", ctx)
+        self.assertIn("(load: Skill foreman:debug-test;", ctx)
         self.assertNotIn("Next: ", ups("carry on"), "told now: the usual quiet")
 
     def test_a_ui_request_names_the_design_skill_or_the_ui_playbooks(self):
-        # T-1697: a request for a new look gets the directions skill (it writes DESIGN.md); a smaller UI change gets
-        # the ui playbooks; each once a session, and never at the cost of the Next line
+        # T-1697: a request for a new look gets the ui-design skill (T-1700: it routes to directions and the ui
+        # playbooks); a smaller UI change, an animation or a 3D scene gets it too, with the ui playbooks' index; each
+        # once a session, never at the cost of the Next line
         self.fm("init")
         ups = lambda prompt, sid: self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt, "session_id": sid}))
         ctx = ups("redesign the settings page", "sess-2")
-        self.assertIn("Skill foreman:directions", ctx)
-        self.assertIn("fm playbooks show ui/INDEX", ctx)
-        self.assertNotIn("foreman:directions", ups("redesign the landing page", "sess-2"), "said once a session")
-        for prompt in ("restyle the header", "give the UI a dark mode", "the frontend needs a colour palette"):
-            ctx = ups(prompt, "sess-4" + str(len(prompt)))
+        self.assertIn("Design request: load: Skill foreman:ui-design", ctx)
+        self.assertNotIn("foreman:ui-design", ups("redesign the landing page", "sess-2"), "said once a session")
+        for i, prompt in enumerate(("restyle the header", "give the UI a dark mode", "the frontend needs a colour palette",
+                                    "animate the hero on scroll", "add a 3D globe with three.js",
+                                    "the WebGL scene renders black", "add motion to the cards")):
+            ctx = ups(prompt, f"sess-4-{i}")
+            self.assertIn("UI request: load: Skill foreman:ui-design", ctx, prompt)
             self.assertIn("fm playbooks show ui/INDEX", ctx, prompt)
-            self.assertNotIn("foreman:directions", ctx, prompt)
         for prompt in ("design the database schema", "redesign the cache layer", "redesign how the app handles retries",
-                       "fix the fm ui --json crash", "the foreman-ui pane flickers", "the ui test fails", "fix the build"):
-            self.assertNotIn("ui/INDEX", ups(prompt, "sess-3"), prompt)
+                       "fix the fm ui --json crash", "the foreman-ui pane flickers", "the ui test fails", "fix the build",
+                       "fm motion check crashes on an empty file"):
+            ctx = ups(prompt, "sess-3")
+            self.assertNotIn("ui/INDEX", ctx, prompt)
+            self.assertNotIn("foreman:ui-design", ctx, prompt)
         self.task()
         ctx = ups("make the UI faster", "sess-5")  # a work request, a UI note, Active and Next: the Next line is never cut
         self.assertIn('--run "<verify cmd>"', ctx)
@@ -2070,10 +2075,10 @@ class Stop(HookCase):
         self.fm("init")
         self.task()
         first = parse(self.stop("Continuing with the retry helper next."))["reason"]
-        self.assertIn("(load: Skill foreman:intake, then its references/debugging.md", first)
+        self.assertIn("(load: Skill foreman:debug-test;", first)
         again = parse(self.stop("Continuing with the retry helper next."))["reason"]
         self.assertIn("Next: ", again)
-        self.assertNotIn("foreman:intake", again)
+        self.assertNotIn("foreman:debug-test", again)
 
     def test_drive_does_not_push_an_unapproved_m_task_while_plans_keep_missing(self):
         # T-1061: under "slow" fm focus refuses the M task, so the drive pushing it spun the model

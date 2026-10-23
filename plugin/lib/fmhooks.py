@@ -1079,6 +1079,10 @@ def _secret_note(text):
     return f"Pasted secret ({kinds[0]}): don't repeat or store it; suggest rotating it"
 
 
+WHICH_HINT = 'Unsure which skill fits: fm which "<the task>"'  # T-1699
+_NAMES_SKILL = re.compile(r"/[\w-]+:[\w-]+|\bskills?\b|\bplaybooks?\b|\bfm which\b", re.I)  # a request naming its own
+
+
 def user_prompt_submit(pl):
     sid = pl.get("session_id")
     p = c.find_project(_cwd(pl), create=not os.environ.get("FOREMAN_WORKER_OF"))  # T-1438: a worker sets up nothing
@@ -1259,6 +1263,11 @@ def user_prompt_submit(pl):
                 c.hints_shown(p, nxt)  # T-0250: what was shown and not used gets quieter
             except Exception:
                 log_error("UserPromptSubmit", _tb())
+    # T-1699: a task that names no skill, and got none from a note above, hears of fm which once a session; last, so
+    # it never takes the Next hint's room
+    if not ui_note and not r.items and c.is_work_request(text) and not _NAMES_SKILL.search(text) \
+            and room(len(WHICH_HINT) + 2) and _skill_once(sid, WHICH_HINT):
+        parts.append(WHICH_HINT)
     out = {"terminalSequence": _title_seq(sd)}
     if parts:
         out["hookSpecificOutput"] = {"hookEventName": "UserPromptSubmit",
@@ -3419,7 +3428,10 @@ def _drive(p, sd, briefs, pl, g):
     waiting += [x for x in capped if x not in waiting]
     # T-1469: a task a builder lane holds is running work: fm focus refuses it ('held by lane')
     held = sorted(b.id for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED)
-    work = next((w for w in ([sd["active"]] if sd["active"] else []) + sd["queue"]
+    # T-1708: a queued task whose dependency is still open (in a lane, or waiting) isn't work yet
+    open_ids, by_id = {b.id for b in briefs if b.status not in c.CLOSED}, {b.id: b for b in briefs}
+    blocked = {i for i, b in by_id.items() if any(d in open_ids for d in c._deps(b))}
+    work = next((w for w in ([sd["active"]] if sd["active"] else []) + [q for q in sd["queue"] if q["id"] not in blocked]
                  if w["id"] not in waiting and w["id"] not in held and (not scope or w["id"] == scope)), None)
     if not work and full and not scope:  # T-0097: in full autonomy the user's captured requests are work too
         work = next((w for w in sd["inbox"] if w["id"] not in waiting and w["id"] not in held), None)
@@ -3498,7 +3510,7 @@ def _drive(p, sd, briefs, pl, g):
         offer = _side_work(sd, briefs, work, full, offered, p) if len(offered) < OFFERS_MAX and not pace else None
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
             d.update(offered=offered + [offer["id"]], count=d.get("count", 0) + 1, marks=_marks(p))
-            how = _start_how(offer, lanes_free(briefs))
+            how = _start_how(offer, lanes_free(briefs, p))
             _event({"kind": "drive_offer", "session_id": sid, "project": p.slug, "task": work["id"],
                     "offer": offer["id"], "how": how})
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); don't idle on it. "
@@ -3511,7 +3523,7 @@ def _drive(p, sd, briefs, pl, g):
         # T-0364: once per running set, work on what doesn't need it instead of idling (357 waits vs 11 pushes)
         d.update(count=d.get("count", 0) + 1, marks=_marks(p))
         # the queue and inbox are the user's own requests, never optional: only side offers wait on pace (review)
-        more = [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"]][:3]
+        more = [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"] and x["id"] not in blocked][:3]
         if not more and full and d.get("drained") != len(briefs):  # T-0415: nothing else queued: find the next
             d["drained"] = len(briefs)  # work rather than wait; once per drain, as below, not once per set of jobs
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}) and nothing else is "
@@ -3531,7 +3543,7 @@ def _drive(p, sd, briefs, pl, g):
         return None  # no progress since the last continuation: let the turn end
     if d.get("count", 0) >= DRIVE_MAX:
         return None
-    more = [x["id"] for x in sd["queue"] if x["id"] != work["id"]]
+    more = [x["id"] for x in sd["queue"] if x["id"] != work["id"] and x["id"] not in blocked]
     what = (f"step {work['step']['n']}/{work['step']['of']} ({work['step']['text'][:80]}) is open" if work.get("step")
             else "is open" if sd["active"] and work["id"] == sd["active"]["id"]
             else "is captured in the inbox (plan it, then work it)" if work.get("status") == "captured"
@@ -3604,7 +3616,7 @@ def _side_work(sd, briefs, work, full, offered, p):
     background jobs run: not the active one, not offered already for this set, not waiting on the active task
     (depends_on or what fm relate inferred), not already briefed for a builder lane."""
     by_id = {b.id: b for b in briefs}
-    lanes = lanes_free(briefs)
+    lanes = lanes_free(briefs, p)
     gated = _gates_running(p)
     for x in sd["queue"] + (sd["inbox"] if full else []):
         b = by_id.get(x["id"])
@@ -3630,10 +3642,11 @@ def _gates_running(p):
         return None
 
 
-def lanes_free(briefs):
-    """T-0700: whether fm lane brief would take another builder (it refuses past fmlanes.BUILDERS)."""
+def lanes_free(briefs, p=None):
+    """T-0700: whether fm lane brief would take another builder (it refuses past the cap; T-1709: fm lane max's)."""
     import fmlanes
-    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < fmlanes.BUILDERS and \
+    cap = fmlanes.builders_cap(p) if p else fmlanes.BUILDERS
+    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < cap and \
         not c.host_strain()  # T-0465: a strained host takes no builder lane
 
 
