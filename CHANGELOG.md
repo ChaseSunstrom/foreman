@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm img diff --tol N counts a pixel within N on every channel as unchanged (0 to 255), so an anti-aliasing shimmer needn't fail a screenshot check; the JSON says the tolerance used (T-1684)
 - fm quiet hands its command its own stdin when that is a file or a pipe with data waiting, so `fm quiet -- python3 - <<EOF` runs the script; it ran nothing and reported ✓ exit 0 before. A terminal, /dev/null or an idle open pipe still gets /dev/null, so nothing waits on an agent's stdin (T-1766)
 - fm code's slot-format ladder: when a model's plan or close notes fail JSON repair twice, it is asked one plain-text question a field (type, tier, title, criteria as 'what is true :: command' lines, steps; each close note), and the answers are assembled and checked as before, so a local model that can't hold a JSON shape still plans; a run that fails both stops with Next: fm code models (T-1765)
 - fm lib check counts related names with no card by each lint note's kind (related or stale), not by matching ': related ' in its words, so a stale note that quotes that phrase is no longer counted (T-1604)

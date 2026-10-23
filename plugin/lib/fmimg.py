@@ -292,6 +292,10 @@ def cmd_img(args):
         if len(args.paths) != 2:
             print("fm: img diff takes two paths, A and B", file=sys.stderr)
             return 2
+        tol = getattr(args, "tol", 0) or 0
+        if not 0 <= tol <= 255:
+            print(f"fm: img diff --tol is 0 to 255, not {tol}", file=sys.stderr)
+            return 2
         a, b = (load(p) for p in args.paths)
         if args.out and os.path.exists(args.out) and any(os.path.samefile(args.out, p) for p in args.paths):
             raise ValueError(f"--out {args.out} is one of the images it compares")
@@ -303,7 +307,7 @@ def cmd_img(args):
                   f"sizes differ: {a.width}x{a.height} vs {b.width}x{b.height}"
                   + ("; no diff image written" if args.out else ""))
         return 1
-    d = diff(a, b, image=bool(args.out))
+    d = diff(a, b, tol=tol, image=bool(args.out))
     if args.out:
         try:
             save(args.out, a.width, a.height, d.pop("image"))
@@ -313,5 +317,6 @@ def cmd_img(args):
     text = "identical" if not d["changed"] else \
         f"{d['changed']} of {d['total']} pixels changed ({100 * d['changed'] / d['total']:.2f}%) in " \
         f"x {d['bbox'][0]}-{d['bbox'][2] - 1}, y {d['bbox'][1]}-{d['bbox'][3] - 1}"
-    fmcli.out(args, dict(d, out=args.out), text + (f"; diff image: {args.out}" if args.out else ""))
+    within = f" (within {tol} a channel)" if tol else ""
+    fmcli.out(args, dict(d, out=args.out, tol=tol), text + within + (f"; diff image: {args.out}" if args.out else ""))
     return 1 if d["changed"] else 0
