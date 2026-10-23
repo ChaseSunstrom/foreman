@@ -37,6 +37,20 @@ class Noticed(ForemanTestCase):
         self.assertTrue(any("BOM" in t for t in titles), titles)
         self.assertTrue(any("empty export" in t for t in titles), titles)
 
+    def test_a_noticed_line_close_to_an_open_task_is_logged_onto_it(self):  # T-1726
+        self.fm("init")
+        tid = self.fm_json("capture", "fm lease take prints every lease in the project", "--type", "FIX")["id"]
+        report = os.path.join(self.tmp, "report.md")
+        with open(report, "w") as f:
+            f.write("Noticed: fm lease take prints every lease in the project, not just its own\n"
+                    "Noticed: the CSV parser drops a BOM line\n")
+        out = self.fm("research", "add", "T-review", "--from-agent", report).stdout
+        self.assertIn("1 noticed item(s) captured", out)
+        self.assertIn(f"1 logged onto open tasks: {tid}", out)
+        p = c.find_project(self.repo)
+        self.assertEqual(sum("lease take" in b.title for b in c.load_briefs(p)), 1, "no second task")
+        self.assertIn("not just its own", c.find_brief(p, tid).section("Log"))
+
 
 REVIEWER = r'''#!/usr/bin/env python3
 import re, sys

@@ -226,6 +226,168 @@ class Keys(unittest.TestCase):
             self.assertIn(cli, text)
 
 
+class WideLayout(unittest.TestCase):
+    """T-1347: 160 columns or more add a third column with the Plan and Check output panels."""
+
+    def test_a_wide_terminal_adds_plan_and_check_output(self):
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
+        for e in RUN:
+            app.feed(e)
+        wide = tui().render(app.state, 170, 44, tui().DEFAULTS, app).text()
+        self.assertIn("╭─ Plan ", wide)
+        self.assertIn("╭─ Check output ", wide)
+        self.assertIn("Activity", wide)
+        narrow = tui().render(app.state, 150, 44, tui().DEFAULTS, app).text()
+        self.assertNotIn("╭─ Plan ", narrow)
+
+
+class DiffView(unittest.TestCase):
+    """T-1312: the diff view reveals its lines on open (all at once with motion reduced or off) and marks the words a
+    changed line changed."""
+
+    def test_changed_words_are_marked_on_a_paired_line(self):
+        marks = tui().intraline(["@@ -1 +1 @@", "-    return upload_done()", "+    return upload_done(files)", " x"])
+        self.assertEqual(set(marks), {2}, "the removed line lost nothing; the added one gained files")
+        line = "+    return upload_done(files)"
+        self.assertEqual(["".join(line[1:][a:b] for a, b in marks[2])], ["files"])
+        marks = tui().intraline(["-a = old_name(1)", "+a = new_name(1)"])
+        self.assertEqual(("-a = old_name(1)"[1:][slice(*marks[0][0])], "+a = new_name(1)"[1:][slice(*marks[1][0])]),
+                         ("old_name", "new_name"))
+
+    def test_lines_reveal_over_time_and_at_once_without_motion(self):
+        lines = [f"+line {i}" for i in range(60)]
+        for motion, first in (("full", True), ("off", False)):
+            app = tui().App(dict(tui().DEFAULTS, motion=motion), spawn=lambda *a, **k: None, diff=lambda: "\n".join(lines))
+            now = [10.0]
+            app.clock = lambda: now[0]
+            app.key("d")
+            text = tui().render(app.state, 120, 40, app.cfg, app).text()
+            self.assertEqual("+line 20" not in text, first, motion)
+            now[0] += 2
+            self.assertIn("+line 20", tui().render(app.state, 120, 40, app.cfg, app).text())
+
+
+class Themes(unittest.TestCase):
+    """T-1311: every theme side by side on a sample run."""
+
+    def test_the_gallery_shows_every_theme(self):
+        out = tui().gallery(130, 18, depth=24)
+        for name in tui().PRESETS:
+            self.assertIn(name, out)
+        self.assertIn("\x1b[", out, "in colour")
+        plain = tui().gallery(130, 18, depth=0)
+        self.assertNotIn("\x1b[", plain)
+        self.assertTrue(all(len(line) <= 130 for line in plain.splitlines()), "fits the width it was given")
+
+
+class Navigation(unittest.TestCase):
+    """T-1313: / filters the Activity log; the bottom bar's hints follow the focused panel."""
+
+    def app(self):
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
+        for e in RUN:
+            app.feed(e)
+        return app
+
+    def test_slash_filters_the_activity_log_and_esc_clears_it(self):
+        app = self.app()
+        app.key("/")
+        self.assertEqual(app.mode, "search")
+        for ch in "calc":
+            app.key(ch)
+        app.key("\n")
+        self.assertEqual((app.mode, app.search), ("main", "calc"))
+        text = tui().render(app.state, 140, 44, tui().DEFAULTS, app).text()
+        self.assertIn("matching calc", text)
+        self.assertNotIn("Reading calc.py first", text.replace("calc.py", "CALC"), "only lines that match stay")
+        self.assertNotIn("rm -rf ~", text)
+        app.key("/")
+        app.key("\x1b")
+        self.assertEqual((app.mode, app.search), ("main", ""))
+        self.assertIn("rm -rf ~", tui().render(app.state, 140, 44, tui().DEFAULTS, app).text())
+
+    def test_the_hints_name_the_focused_panels_keys(self):
+        app = self.app()
+        tui().render(app.state, 140, 44, tui().DEFAULTS, app)  # the first frame sets the panel order
+        app.focus = app.order.index("log")
+        self.assertIn("/ search  ↵ open", tui().render(app.state, 140, 44, tui().DEFAULTS, app).text())
+        app.focus = app.order.index("files")
+        text = tui().render(app.state, 140, 44, tui().DEFAULTS, app).text()
+        self.assertIn("d the diff", text)
+        self.assertNotIn("/ search  ↵ open", text, "only the focused panel shows its keys")
+
+
+class LineEditor(unittest.TestCase):
+    """T-1346: the request box is a line editor; / names an app command; Tab after @ completes a tracked file; a
+    preview line says where the request goes."""
+
+    def ed(self, *keys, text=""):
+        e = tui().LineEditor(history=["first ask", "second ask"])
+        e.insert(text)
+        for k in keys:
+            e.key(k)
+        return e
+
+    def test_the_readline_keys(self):
+        e = self.ed("\x01", "X", text="abc")  # Ctrl-A, then type at the start
+        self.assertEqual((e.text, e.cur), ("Xabc", 1))
+        e = self.ed("KEY_LEFT", "KEY_LEFT", "\x0b", text="hello")  # Ctrl-K kills to the end
+        self.assertEqual(e.text, "hel")
+        e = self.ed("\x17", text="fix the add")  # Ctrl-W: the word before the cursor
+        self.assertEqual(e.text, "fix the ")
+        e = self.ed("KEY_LEFT", "\x15", text="abc")  # Ctrl-U: everything before the cursor
+        self.assertEqual((e.text, e.cur), ("c", 0))
+        e = self.ed("\x01", "\x05", "!", text="ab")  # Ctrl-E
+        self.assertEqual(e.text, "ab!")
+        e = self.ed("KEY_HOME", "KEY_DC", text="ab")
+        self.assertEqual(e.text, "b")
+
+    def test_history_walks_up_and_back_to_the_draft(self):
+        e = self.ed("KEY_UP", text="draft")
+        self.assertEqual(e.text, "second ask")
+        e.key("KEY_UP")
+        self.assertEqual(e.text, "first ask")
+        e.key("KEY_UP")
+        self.assertEqual(e.text, "first ask", "stays at the oldest")
+        e.key("KEY_DOWN")
+        e.key("KEY_DOWN")
+        self.assertEqual((e.text, e.cur), ("draft", 5))
+
+    def test_the_app_prompt_uses_it_and_remembers_requests(self):
+        started = []
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
+        app.start = lambda words, **kw: started.append(words)
+        app.key("n")
+        for k in ["a", "d", "d", "KEY_HOME", "f", "i", "x", " ", "\n"]:
+            app.key(k)
+        self.assertEqual(started, [["fix add"]])
+        app.key("n")
+        app.key("KEY_UP")
+        self.assertEqual(app.input, "fix add")
+
+    def test_a_slash_request_runs_an_app_command(self):
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None)
+        app.start = lambda *a, **k: self.fail("a /command is not a run")
+        app.key("n")
+        for k in "/sett":
+            app.key(k)
+        self.assertIn("settings", tui().render(app.state, 120, 30, tui().DEFAULTS, app).text())
+        app.key("\n")
+        self.assertEqual(app.mode, "settings")
+
+    def test_tab_after_at_completes_a_tracked_file_and_the_preview_names_the_runner(self):
+        app = tui().App(tui().DEFAULTS, spawn=lambda *a, **k: None, opts={"model": "fake"})
+        app.tracked = lambda: ["plugin/lib/fmcore.py", "plugin/lib/fmcli.py", "README.md"]
+        app.key("n")
+        for k in "fix @plugin/lib/fmco":
+            app.key(k)
+        app.key("\t")
+        self.assertEqual(app.input, "fix @plugin/lib/fmcore.py ")
+        app.key("x")
+        self.assertIn("Enter starts a run in", tui().render(app.state, 120, 30, tui().DEFAULTS, app).text())
+        self.assertIn("with fake", tui().render(app.state, 120, 30, tui().DEFAULTS, app).text())
+
+
 class Waiting(unittest.TestCase):
     """T-1310: the terminal title names the run's state, a bell rings once when the run is blocked or the guard
     refuses, and a model silent past 10 s is named as what the run waits on."""
@@ -298,6 +460,7 @@ class Views(unittest.TestCase):
             app.feed(e)
         app.key("d")
         self.assertEqual(app.mode, "diff")
+        app.view_opened -= 10  # T-1312: the reveal on open is over
         cv = tui().render(app.state, 100, 30, tui().DEFAULTS, app)
         self.assertEqual(cv.style_of("+    if args.dry_run:"), "ok")
         self.assertEqual(cv.style_of("-    return upload_done()"), "bad")

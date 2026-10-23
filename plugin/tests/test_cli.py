@@ -811,6 +811,28 @@ class NewTaskCriteria(ForemanTestCase):
 class AuditPrep(ForemanTestCase):
     """T-0026: the diff since the task started, frozen, plus one ready reviewer brief per lens."""
 
+    def test_the_brief_names_the_review_checklists_resolved_for_this_project(self):
+        # T-1681: the reviewer read playbooks by path, skipping {{fact}} fill-ins and the project's overlays
+        self.fm("init")
+        self.fm("task", "new", "Edit", "--type", "FIX", "--tier", "S", "--ac", "works :: true", "--step", "do it",
+                "--focus")
+        overlay = os.path.join(self.repo, ".claude", "playbooks", "review")
+        os.makedirs(overlay)
+        with open(os.path.join(overlay, "python.md"), "w") as f:
+            f.write("Our rule: no bare except in handlers.\n")
+        with open(os.path.join(self.repo, "app.py"), "w") as f:
+            f.write("X = 1\n")
+        self.fm("audit", "prep", "T-0001", "--lens", "adversary")
+        p = c.find_project(self.repo)
+        brief = read_text(os.path.join(p.dir, "audits", "T-0001.review.md"))
+        m = re.search(r"(?m)^Checklists[^:]*: (\S+)$", brief)
+        self.assertTrue(m, brief[-400:])
+        text = read_text(m.group(1))
+        self.assertIn("review/code-reviewer", text)
+        self.assertIn("review/python", text)
+        self.assertIn("Our rule: no bare except in handlers.", text, "the project's overlay")
+        self.assertNotIn("review/rust", text, "only what the diff's languages call for")
+
     def test_split_writes_parallel_briefs_by_lens_group(self):
         # T-0216: an L review in up to three fresh contexts (claudekit-style), opt-in for usage
         self.fm("init")

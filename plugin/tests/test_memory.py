@@ -43,7 +43,7 @@ class Memory(ForemanTestCase):
     def test_recall_can_point_at_a_playbook(self):
         out = self.fm("recall", "benchmark", "optimization", "loop", "latency", "throughput", "variants").stdout
         self.assertEqual(out.count("playbook "), 1, out)
-        self.assertIn("skills/playbooks/references/perf/", out)
+        self.assertIn("fm playbooks show perf/", out)  # T-1681: as the skill loads it, facts and overlays filled in
 
     def test_editing_a_file_a_finished_task_left_a_lesson_about_says_it_once(self):
         self.finished("speed up the price cache", ["shop/cache.py"], lesson="invalidate on currency change")
