@@ -233,14 +233,19 @@ def recall(p, query, skip=None, n=HITS, cover=0.0):
 def nearest_done(p, titles):
     """T-0208: {title: (id, title)} of the finished brief that shares at least half a title's words (2 or more), from
     one pass over the briefs for many titles at once (fm ideas marks ideas that may already be built)."""
-    done = [(set(_tokens(" ".join([b.title, b.section("Raw request"), b.section("Interpretation")]))), b.id, b.title)
-            for b in c.load_briefs(p, include_archive=True) if b.status == "done"]
+    done = [(set(_tokens(b.title)), set(_tokens(" ".join([b.title, b.section("Raw request"), b.section("Interpretation")]))),
+             b.id, b.title) for b in c.load_briefs(p, include_archive=True) if b.status == "done"]
+    seen = collections.Counter(w for _, words, _, _ in done for w in words)
+    common = {w for w, n in seen.items() if n >= max(3, len(done) / 5)}  # T-1303: in a fifth of them, 3 at least
     out = {}
     for t in titles:
-        q = set(_tokens(t))
-        best = max(((len(q & words), bid, title) for words, bid, title in done), default=None)
-        if best and best[0] >= max(2, (len(q) + 1) // 2):
-            out[t] = best[1:]
+        q = set(_tokens(t)) - common
+        # T-1303: half the idea's distinctive words in a done title, or three quarters of them in its title and
+        # request together: two words a long request happens to hold aren't a match
+        hits = [(len(q & title_w), bid, title) for title_w, words, bid, title in done
+                if len(q & title_w) >= max(2, (len(q) + 1) // 2) or len(q & words) >= max(3, -(-3 * len(q) // 4))]
+        if hits:
+            out[t] = max(hits)[1:]
     return out
 
 

@@ -43,6 +43,7 @@ import ipaddress
 import itertools
 import json
 import os
+import re
 import shlex
 import socket
 import subprocess
@@ -285,8 +286,45 @@ def _probe(name, base_url):
     except (ModelError, *_TRANSPORT, ValueError, AttributeError, TypeError, RecursionError):
         return None
     ids = [i for i in ids if isinstance(i, str) and i]
-    return ids and {"name": name, "kind": "openai", "base_url": base_url, "model": ids[0], "key_env": None,
-                    "context": LOCAL_CONTEXT, "tools": False}  # small local models: extract_json, not native tools
+    if not ids:
+        return []
+    row = next(x for x in data["data"] if isinstance(x, dict) and x.get("id") == ids[0])
+    return {"name": name, "kind": "openai", "base_url": base_url, "model": ids[0], "key_env": None,
+            "context": _local_context(name, base_url, ids[0], row), "tools": False}  # small local models: extract_json
+
+
+OLLAMA_CONTEXT = 4096  # T-1360: what Ollama serves a model with when no num_ctx is set, whatever the model could take
+
+
+def _local_context(name, base_url, model, row):
+    """T-1360: the context a local server really serves `model` with, as it says: Ollama POST /api/show (num_ctx in
+    its parameters, else OLLAMA_CONTEXT), llama.cpp GET /props (n_ctx), vLLM's /models row (max_model_len), LM Studio
+    GET /api/v0/models/ID (loaded_context_length); LOCAL_CONTEXT when it says nothing usable. ponytail: Ollama's
+    server-wide OLLAMA_CONTEXT_LENGTH isn't in /api/show, so such a server reads as OLLAMA_CONTEXT."""
+    root = base_url[:-3] if base_url.endswith("/v1") else base_url
+
+    def ask(path, body=None):
+        req = urllib.request.Request(root + path, data=None if body is None else json.dumps(body).encode(),
+                                     headers={} if body is None else {"Content-Type": "application/json"})
+        with _LOCAL_OPENER.open(req, timeout=1.0) as r:
+            got = json.loads(r.read(1 << 20))
+        return got if isinstance(got, dict) else {}
+    try:
+        if name == "vllm":
+            n = row.get("max_model_len")
+        elif name == "ollama":
+            hit = re.search(r"(?m)^\s*num_ctx\s+(\d+)", str(ask("/api/show", {"model": model}).get("parameters") or ""))
+            n = int(hit.group(1)) if hit else OLLAMA_CONTEXT
+        elif name == "llamacpp":
+            d = ask("/props")
+            n = (d.get("default_generation_settings") or {}).get("n_ctx") or d.get("n_ctx")
+        elif name == "lmstudio":
+            n = ask(f"/api/v0/models/{urllib.parse.quote(model, safe='')}").get("loaded_context_length")
+        else:
+            n = None
+    except (ModelError, *_TRANSPORT, ValueError, AttributeError, TypeError, RecursionError):
+        n = None
+    return n if type(n) is int and 512 <= n <= 10_000_000 else LOCAL_CONTEXT
 
 
 def _local(name=None):

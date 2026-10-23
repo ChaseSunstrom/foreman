@@ -385,6 +385,29 @@ class ExtractJson(unittest.TestCase):
         self.assertIsNone(m.extract_json("[" * 50000))
 
 
+class LocalContext(Base):  # T-1360
+    def test_each_local_server_says_the_context_it_serves(self):
+        listed = (200, {"data": [{"id": "qwen"}]}, None)
+        cases = [
+            ("ollama", [listed, (200, {"parameters": "temperature 0.2\nnum_ctx 16384", "model_info": {
+                "qwen2.context_length": 32768}}, None)], 16384, ("POST", "/api/show")),
+            ("ollama", [listed, (200, {"model_info": {"qwen2.context_length": 32768}}, None)], 4096, ("POST", "/api/show")),
+            ("llamacpp", [listed, (200, {"default_generation_settings": {"n_ctx": 12288}}, None)], 12288, ("GET", "/props")),
+            ("vllm", [(200, {"data": [{"id": "q", "max_model_len": 65536}]}, None)], 65536, None),
+            ("lmstudio", [listed, (200, {"loaded_context_length": 20000, "max_context_length": 131072}, None)], 20000,
+             ("GET", "/api/v0/models/qwen")),
+            ("llamacpp", [listed, (500, {"error": "no"}, None)], m.LOCAL_CONTEXT, ("GET", "/props")),
+            ("ollama", [listed, (200, {"parameters": "num_ctx 9999999999"}, None)], m.LOCAL_CONTEXT, ("POST", "/api/show")),
+        ]
+        for name, script, want, call in cases:
+            f = self.fake(*script)
+            m.LOCAL = [(name, f.url)]
+            self.assertEqual(m.resolve()["context"], want, (name, script[-1]))
+            if call:
+                self.assertEqual(f.seen[1][:2], call, name)
+        self.assertEqual(f.seen[1][3], {"model": "qwen"}, "Ollama is asked about the model it listed")
+
+
 class Profiles(Base):
     def write_models(self, data):
         with open(os.path.join(self._tmp.name, "models.json"), "w") as f:
