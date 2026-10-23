@@ -613,6 +613,22 @@ class Run:
             return why
         if crlf:  # the model reads lines without their '\r', so its old and new text are LF
             old, new = self.endings(old, True), self.endings(new, True)
+        mark = elided(new, old)  # T-1398
+        if mark:
+            return f"refused: the new text elides code ({mark!r}): give the whole text it stands for; nothing changed"
+        near = ""
+        try:
+            with open(full, encoding="utf-8", newline="") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError):
+            text = None
+        if text is not None and old not in text:  # T-1398: a near miss (whitespace only) applies where it's unique
+            at = near_anchor(text, old)
+            if at == "ambiguous":
+                return ("refused: old matches nowhere exactly, and more than one place once whitespace is evened out: "
+                        "give more of the surrounding lines; nothing changed")
+            if at:
+                old, near = text[at[0]:at[1]], " (applied at a near match: only whitespace differed)"
         ti = {"file_path": full, "old_string": old, "new_string": new}
         why = self.guard("Edit", ti)
         if why:
@@ -621,7 +637,7 @@ class Run:
         if code:
             return f"error: {out}"
         self.after("Edit", ti, {"filePath": full})
-        return out or "edited"
+        return (out or "edited") + near
 
     def write(self, rel, content):
         full = self.path(rel)
@@ -630,6 +646,14 @@ class Run:
             return why
         if crlf is not None:  # an existing file keeps its line endings; a new one gets what the model wrote
             content = self.endings(content, crlf)
+        try:
+            with open(full, encoding="utf-8", newline="") as fh:
+                have = fh.read()
+        except (OSError, UnicodeDecodeError):
+            have = ""
+        mark = elided(content, have)  # T-1398
+        if mark:
+            return f"refused: the content elides code ({mark!r}): write the whole file; nothing changed"
         ti = {"file_path": full, "content": content}
         why = self.guard("Write", ti)
         if why:
@@ -2061,6 +2085,60 @@ def _files(root):
     return "\n".join(names[:200]) + (f"\n… {len(names) - 200} more" if len(names) > 200 else "")
 
 
+ELIDED = re.compile(r"(?im)^[ \t]*(?:#|//|/\*|<!--|--)[ \t]*(?:\.\.\.|…)"  # T-1398: '# ...', '// …'
+                    r"|(?:\.\.\.|…)[ \t]*\(?(?:rest|remaining|existing|other|previous)\b"  # '... rest unchanged'
+                    r"|\b(?:rest|remainder) of (?:the )?(?:file|code|function|class|method|module)\b[^\n]{0,40}?"
+                    r"\b(?:unchanged|the same|as (?:before|is))\b")
+
+
+def elided(new, have=""):
+    """T-1398: the elision marker a model's new text holds ('# ... rest unchanged', '// … existing code', 'rest of the
+    file unchanged') that the text it replaces doesn't: the marker, or None. A bare '...' line is Python's Ellipsis,
+    which is code."""
+    for hit in ELIDED.finditer(new or ""):
+        if hit.group(0).strip() not in (have or ""):
+            return hit.group(0).strip()
+    return None
+
+
+def near_anchor(text, old):
+    """T-1398: where old meets text once whitespace is evened out (each line's ends stripped, inner runs one space),
+    line for line: (start, end) of the one such span, "ambiguous" for more than one, None for none."""
+    even = lambda s: " ".join(s.split())  # noqa: E731
+    want = [even(x) for x in old.strip("\r\n").split("\n")]
+    if not any(want):
+        return None
+    lines, starts, at = text.split("\n"), [], 0
+    for line in lines:
+        starts.append(at)
+        at += len(line) + 1
+    hits = [i for i in range(len(lines) - len(want) + 1)
+            if all(even(lines[i + j]) == w for j, w in enumerate(want))]
+    if len(hits) != 1:
+        return "ambiguous" if hits else None
+    last = hits[0] + len(want) - 1
+    return starts[hits[0]], starts[last] + len(lines[last].rstrip("\r"))
+
+
+_PLACES = (re.compile(r'File "([^"]+)", line (\d+)'), re.compile(r"(?m)^\s*([\w./\\-]+\.\w+):(\d+)\b"),
+           re.compile(r"([\w./\\-]+\.\w+)\((\d+)\)"))
+
+
+def places(output, root, n=5):
+    """T-1398: up to n file:line places a failing check's output names (a Python traceback's frames, file:line[:col],
+    file(line)), in the order they appear, relative to root; a file outside it (the standard library) is left out."""
+    found = []
+    for hit in sorted((h for pat in _PLACES for h in pat.finditer(output or "")), key=lambda h: h.start()):
+        full = os.path.realpath(os.path.join(root, hit.group(1)))
+        if full.startswith(root + os.sep) and os.path.isfile(full):
+            place = f"{os.path.relpath(full, root)}:{hit.group(2)}"
+            if place not in found:
+                found.append(place)
+        if len(found) >= n:
+            break
+    return found
+
+
 PIPE_MAX, PIPE_FIRST, PIPE_SECONDS = 256 << 10, 1.0, 5.0  # T-1374: piped context: bytes; s to the first byte; s in all
 
 
@@ -2653,8 +2731,10 @@ def _drive(run, profile):
         if f"fix:{rounds}" not in run.done:
             run.emit("fix", f"fix round {rounds} ({_who(run, None if by_worker else model)}): {len(failed)} criteria "
                             "fail", round=rounds)
+        where = places(_failures(failed), run.root)  # T-1398
         text = (f"{_task_text(run)}\n\nEvery step is done, but these verify commands fail (fix round {rounds}):\n\n"
-                f"{run.fence(_failures(failed))}\n\nFix the work (not the verify commands)")
+                f"{run.fence(_failures(failed))}" + (f"\n\nWhere it fails: {', '.join(where)}" if where else "")
+                + "\n\nFix the work (not the verify commands)")
         if by_worker:
             run.work(f"fix:{rounds}", f"{text}.\n\n{DATA_NOTE}")
         else:

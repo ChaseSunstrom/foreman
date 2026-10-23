@@ -610,6 +610,51 @@ def run_friction_lines(case):
     return b and [x.split("run friction: ", 1)[1] for x in b.section("Log").splitlines() if "run friction: " in x]
 
 
+class SlotIntegrity(CodeCase):  # T-1398
+    def test_elided_code_is_found_only_when_the_old_text_lacks_it(self):
+        import fmcode
+        self.assertEqual(fmcode.elided("def f():\n    # ... rest unchanged\n    return 1\n"), "# ...")
+        self.assertIsNotNone(fmcode.elided("x = 1\n// ... existing code ...\n"))
+        self.assertIsNotNone(fmcode.elided("the rest of the file is unchanged"))
+        self.assertIsNone(fmcode.elided("class P(Protocol):\n    def f(self): ...\n    ...\n"), "an Ellipsis is code")
+        self.assertIsNone(fmcode.elided("# ... rest unchanged\n", have="x\n# ... rest unchanged\n"), "already there")
+
+    def test_an_edit_or_write_that_elides_code_is_refused_and_re_asked(self):
+        f = self.serve("openai", plan(),
+                       call("edit", file="calc.py", old="def add(a, b):\n    return a - b",
+                            new="def add(a, b):\n    # ... rest unchanged\n    return a + b"),
+                       call("write", file="calc.py", content="def add(a, b):\n    return a + b\n# ... existing code ...\n"),
+                       *FIX)
+        self.code("fix add", "--model", "fake")
+        self.assertIn("elides code", f.said(2))
+        self.assertIn("elides code", f.said(3))
+        self.assertNotIn("...", self.calc())
+        self.assertEqual(self.task()["status"], "done")
+
+    def test_a_near_miss_anchor_is_applied_once_and_an_ambiguous_one_refused(self):
+        import fmcode
+        text = "def a():\n    x = 1\n\ndef b():\n  x  =  1\n"
+        self.assertEqual(fmcode.near_anchor("def add(a, b):\n    return a - b\n", "def add(a, b):\n  return a - b"),
+                         (0, 31))
+        self.assertEqual(fmcode.near_anchor(text, "x = 1"), "ambiguous")
+        self.assertIsNone(fmcode.near_anchor(text, "y = 2"))
+        f = self.serve("openai", plan(), call("edit", file="calc.py", old="def add(a, b):\n  return a - b",
+                                              new="def add(a, b):\n    return a + b"), call("done", summary="x"))
+        self.code("fix add", "--model", "fake")
+        self.assertIn("near match", f.said(2))
+        self.assertIn("return a + b", self.calc())
+
+    def test_a_fix_round_names_where_the_check_fails(self):
+        import fmcode
+        out = ('Traceback (most recent call last):\n  File "/usr/lib/python3/x.py", line 9, in f\n'
+               f'  File "{os.path.join(self.repo, "test_calc.py")}", line 2, in <module>\n'
+               'calc.py:2:5: E999 x\ncalc.py(2): error\n')
+        self.assertEqual(fmcode.places(out, os.path.realpath(self.repo)), ["test_calc.py:2", "calc.py:2"])
+        f = self.serve("openai", plan(), call("done", summary="nothing yet"), *FIX)
+        self.code("fix add", "--model", "fake")
+        self.assertIn("Where it fails: test_calc.py:2", json.dumps(f.seen[2]))
+
+
 class Leases(CodeCase):  # T-1764
     def test_a_model_runs_leases_end_with_it(self):
         self.serve("openai", plan(), *FIX)
