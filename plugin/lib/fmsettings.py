@@ -1179,6 +1179,59 @@ def profiles(path=None, env=None):
             "problems": problems + [p["problem"] for p in got if p["problem"]]}
 
 
+# ---------------------------------------------------------------- T-1660: which chords this terminal delivers
+PROBE_IDLE = 30  # seconds with no key before the probe ends on its own
+
+
+def describe_press(chunk):
+    """One key press (the bytes one read brought) as fm code reads it: the tui.toml name of the key, or why it can't
+    be bound as one chord (Alt arrives as Esc then the key; a sequence fm code doesn't name is dropped)."""
+    import fmcodeterm
+    import fmcodetui as T
+    keys = [k for k in fmcodeterm.parse_keys(chunk) if not isinstance(k, tuple)]
+    raw = chunk.encode("unicode_escape").decode("ascii")[:40]
+    if not keys:
+        return f"not delivered: fm code doesn't name {raw} (bind something else)"
+    names = [T.key_name(k) for k in keys]  # parse_keys already gives the app's form (^R, KEY_F(5))
+    if len(keys) == 2 and keys[0] == "\x1b":
+        return f"esc then {names[1]}: two keys to fm code (Alt chords can't be bound as one)"
+    return " then ".join(_safe(n) for n in names)
+
+
+def key_probe(read, say):
+    """Say each press until q (or the idle limit, when read returns None)."""
+    say("press keys to see how fm code reads them (q stops; tui.toml names, as [keys] takes them)")
+    while True:
+        chunk = read()
+        if chunk is None or chunk == "q":
+            return
+        say("  " + describe_press(chunk))
+
+
+def _cmd_chords(args):
+    import select
+    import sys
+    import termios
+    import tty
+    fd = sys.stdin.fileno() if sys.stdin else -1
+    if fd < 0 or not os.isatty(fd):
+        print("fm settings chords: needs a terminal (it reads key presses); in Claude Code type ! fm settings chords",
+              file=sys.stderr)
+        return 2
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+
+        def read():
+            if not select.select([fd], [], [], PROBE_IDLE)[0]:
+                return None
+            return os.read(fd, 64).decode("utf-8", "replace")
+        key_probe(read, lambda s: sys.stdout.write(s + "\r\n") and sys.stdout.flush())
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    return 0
+
+
 def _cmd_profile(args):
     import fmcli
     import fmcodetui as T
@@ -1284,6 +1337,8 @@ def cmd_settings(args):
         return fmcli.out(args, got, _lines(lines) or "no settings found")  # a profile's name is the file's
     if args.action == "profile":  # T-1656
         return _cmd_profile(args)
+    if args.action == "chords":  # T-1660 (keys is the bindings group: fm settings list keys)
+        return _cmd_chords(args)
     if args.action in ("diff", "export", "import", "undo", "bisect"):
         try:
             return _cmd_bisect(args) if args.action == "bisect" else _cmd_history(args)
