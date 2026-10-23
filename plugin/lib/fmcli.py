@@ -3708,6 +3708,9 @@ def cmd_pause(args):
 
 def cmd_check(args):
     """The project's gate commands (tests, lint, doctor…), run together; any failure exits 1, so a pipe can't mask it."""
+    if args.action == "office":  # T-1406: one deliverable's check: no project, no gate lock
+        import fmoffice
+        return fmoffice.cmd(args)
     # T-1668: full runs queue on the machine-wide gate lock; T-1743: --affected runs (each builder's own) don't
     if args.action == "run" and not getattr(args, "repeat", 0) and not getattr(args, "affected", False):
         try:  # T-1753: a hung run elsewhere (another project's) mustn't hold every check for hours
@@ -5917,14 +5920,20 @@ def _build_parser():
                                                         "a throwaway worktree) and capture it as a FIX (T-0458)")
     s = add("check", cmd_check, tier=("Every task", 80), help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
     s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected",
-                                                                          "ambient", "onwrite", "playbooks"])
+                                                                          "ambient", "onwrite", "playbooks", "office"])
     s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); paths: its number, then "
                                             "the globs it covers (none: always run); affected: a command with {tests} "
                                             "(paths) or {names} (file names without extension); onwrite: GLOB and a "
                                             "command with {file}, run on each matching write (5 s; a failure blocks; "
                                             "GLOB alone removes it; nothing lists them); playbooks: lint the playbook "
                                             "library and name the unread ones, `ratchet` records each one's size "
-                                            "as its new ceiling (T-1505)")
+                                            "as its new ceiling (T-1505); office: FILE (.xlsx, .xlsm, .docx), then its "
+                                            "checks: no error cells or broken fields, and --cell, --sheets, --contains "
+                                            "(a verify command: exit 1 when one fails; T-1406)")
+    s.add_argument("--cell", action="append", metavar="SHEET!REF=VALUE", help="office: a workbook cell's value, "
+                                                                            "e.g. 'Sheet1!B7=42' (repeatable)")
+    s.add_argument("--sheets", type=int, metavar="N", help="office: the workbook's sheet count")
+    s.add_argument("--contains", action="append", metavar="TEXT", help="office: text a docx must hold (repeatable)")
     s.add_argument("--for", dest="for_ext", metavar="EXT", help="affected: the command is for tests with this extension "
                                                                 "(.tsx), run beside the default (T-1135)")
     s.add_argument("--timeout", type=float, default=600, help="seconds per command")
