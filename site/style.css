@@ -248,6 +248,16 @@ footer .fine { flex-basis: 100%; }
 .viz .budget { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 3 3; }
 .viz .m, .viz .dot { transition: opacity .15s; }
 .viz .m:hover, .viz .dot:hover { opacity: .8; }
+@media (prefers-reduced-motion: no-preference) { /* T-1615: armed by site.js; without it (or seen still) a chart is whole */
+  .viz.armed .m { transform-box: fill-box; transition: transform .7s cubic-bezier(.2, .7, .2, 1), opacity .15s; }
+  .viz.grow-x.armed .m { transform-origin: left center; transform: scaleX(0); }
+  .viz.grow-y.armed .m { transform-origin: center bottom; transform: scaleY(0); }
+  .viz.armed.drawn .m { transform: none; }
+  .viz.draw.armed .ln { stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 1.2s ease-out; }
+  .viz.draw.armed .dot { opacity: 0; transition: opacity .3s 1s; }
+  .viz.draw.armed.drawn .ln { stroke-dashoffset: 0; }
+  .viz.draw.armed.drawn .dot { opacity: 1; }
+}
 .viz .ln { stroke: var(--s1); stroke-width: 2; fill: none !important; } /* site review: .viz .s1's fill made a wedge */
 .viz .dot { fill: var(--s1); stroke: var(--panel); stroke-width: 2; }
 .viz .s1 { fill: var(--s1); } .viz .s2 { fill: var(--s2); } .viz .s3 { fill: var(--s3); }
