@@ -75,9 +75,16 @@ class Settings(ForemanTestCase):
         got = json.loads(self.fm("settings", "changed", path, "--json").stdout)
         self.assertTrue(got[0]["yours"])
 
-    def test_the_snapshot_ships_with_every_default(self):
+    def test_the_snapshot_is_last_releases_settings(self):
+        """T-1790: the snapshot is the last release's defaults, so a default added since is allowed and no change;
+        a snapshot that isn't settings at all still fails."""
         with open(fmsettings.SNAPSHOT) as f:
-            self.assertEqual(set(json.load(f)), set(fmsettings.defaults()))
+            snap = json.load(f)
+        now = fmsettings.defaults()
+        self.assertGreater(len(set(snap) & set(now)), len(now) // 2, "the snapshot is settings")
+        added = {"a.default.added.since": 1}
+        self.assertEqual(fmsettings.changed_defaults(snap, dict(now, **added), mine=()),
+                         fmsettings.changed_defaults(snap, now, mine=()))
 
 
 class Say(ForemanTestCase):
