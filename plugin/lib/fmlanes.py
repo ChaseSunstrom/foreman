@@ -597,9 +597,9 @@ def builder_brief(p, b, args, resume_branch=None):
             x.meta.pop("builder_proc", None)
         x.append_log(f"builder brief: {path}")
     fmcli.mutate(p, b.id, mark, "lane_builder", {"path": path})
-    # T-0373: an S task's builder runs on Sonnet; an M task's keeps the main model (the main thread reviews either)
-    # T-0779: and its effort follows the tier too: medium for small well-specified diffs, high for M
-    model = (', model: "sonnet"' if b.tier == "S" else "") + f', effort: "{"medium" if b.tier == "S" else "high"}"'
+    # T-1796: every builder runs on Sonnet (Opus M lanes were 22% of a week's usage); the main thread reviews either
+    # T-0779: and its effort follows the tier: medium for small well-specified diffs, high for M
+    model = f', model: "sonnet", effort: "{"medium" if b.tier == "S" else "high"}"'
     agent = (f'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"{model}, prompt: "Read {path} and work '
              f'the task it describes."')
     return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id], "warnings": warns},

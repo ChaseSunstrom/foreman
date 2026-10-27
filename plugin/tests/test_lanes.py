@@ -223,6 +223,7 @@ class Lanes(ForemanTestCase):
                                 "--step", "s", *extra, "--json").stdout)["id"]
             agent = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"]
             self.assertIn(f'effort: "{effort}"', agent)
+            self.assertIn('model: "sonnet"', agent, "T-1796: every builder runs on Sonnet; Opus M lanes were 22% of usage")
 
     def test_a_clean_tasks_brief_says_to_record_the_behaviour_lock_first(self):
         # T-1712: CLEAN lanes failed the close gate: their brief never said to run the tests before the first edit
