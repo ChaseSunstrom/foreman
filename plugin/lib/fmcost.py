@@ -736,6 +736,28 @@ def cmd_digest(args):
     fmcli.out(args, {"learned": learn, "done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review, "decided": decided,
                      "blocked": [b.id for b in blocked], "stale_plans": stale, "deferred_triage": triage, "failures": dict(fails.most_common(5)), "tokens": tokens},
               "\n".join(lines))
+    if getattr(args, "say", False):  # T-1549: the digest read aloud, when a speech program is installed
+        say("\n".join(lines))
+
+
+def say(text, most=4000):
+    """T-1549: text spoken by the first of say, spd-say, espeak-ng or espeak on PATH (ids, dashes and symbols read as
+    words would be noise, so only letters, digits and plain punctuation go); a note on stderr when none is."""
+    import shutil
+    import subprocess
+    import sys
+    tool = next((t for t in ("say", "spd-say", "espeak-ng", "espeak") if shutil.which(t)), None)
+    if not tool:
+        print("fm digest --say: no speech program (say, spd-say, espeak-ng or espeak) is installed", file=sys.stderr)
+        return False
+    words = re.sub(r"[^\w\s.,;:!?'%-]+", " ", text.replace("(s)", "s").replace("\n", ". "))[:most]
+    try:
+        subprocess.run([tool, *(["-w"] if tool == "spd-say" else []), "--", words], stdin=subprocess.DEVNULL,
+                       capture_output=True, timeout=600)
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"fm digest --say: {tool} didn't run ({e})", file=sys.stderr)
+        return False
+    return True
 
 
 def learned(p, days, closed):

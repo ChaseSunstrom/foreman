@@ -88,11 +88,11 @@ class Brief(_Tasks):
         self.assertIn("final report", brief)
 
     def test_builder_model_follows_the_tier(self):
-        # T-0373: "not everything needs to be opus if opus orchestrates": an S task's builder runs on Sonnet, an M
-        # task's on the main model; the main thread still reviews, merges and re-verifies
+        # T-0373: "not everything needs to be opus if opus orchestrates"; T-1796: M builders too (Opus M lanes were
+        # 22% of a week's usage); the main thread still reviews, merges and re-verifies
         small, mid = self.task("Small one"), self.task("Mid one", tier="M")
-        self.assertIn('model: "sonnet"', json.loads(self.fm("lane", "brief", small, "--json").stdout)["agent"])
-        self.assertNotIn("model:", json.loads(self.fm("lane", "brief", mid, "--json").stdout)["agent"])
+        for tid in (small, mid):
+            self.assertIn('model: "sonnet"', json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"])
 
     def test_l_tasks_held_tasks_and_a_third_builder_are_refused(self):
         big = self.task("Rewrite the engine", tier="L")
