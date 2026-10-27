@@ -104,6 +104,7 @@ class Install(SetupCase):
         self.assertEqual(s["env"]["KEEP"], "1")
         self.assertEqual(s["env"]["CLAUDE_CODE_STOP_HOOK_BLOCK_CAP"], fmsetup.STOP_CAP)
         self.assertEqual(s["env"]["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "70", "compact earlier: Foreman state makes it cheap")
+        self.assertEqual(s["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "200k", "T-1796: a 1M window re-read every reply")
         self.assertEqual((s["theme"], s["permissions"]["defaultMode"]), ("dark", "bypassPermissions"))
         md = read_text(self.claude_md)
         self.assertTrue(md.startswith("# graphify\n- keep me\n"))
