@@ -29,6 +29,11 @@ atexit.register(shutil.rmtree, _LOCKOUT, True)
 # T-0744: every test sees a calm host unless it says otherwise; the machine's real load (a full run beside other work)
 # turned lanes and ambient runs off and failed tests only then
 os.environ.setdefault("FOREMAN_HOST", "load=0.1,cpus=8,mem_mb=8192")
+# T-1791: the Claude Code env fm install-user sets (T-1796's 200k compact window) belongs to the running session, not a
+# test: the bench stub read an inherited window as a soak and 10 tests failed in every installed session
+import fmsetup  # noqa: E402
+for _k in fmsetup.ENV:
+    os.environ.pop(_k, None)
 
 
 def busy_factor(cap=8.0):
