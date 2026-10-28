@@ -5837,6 +5837,7 @@ def _build_parser():
                    "pace so far (T-0973)")
     s.add_argument("--task", metavar="ID", help="one task: spent, its cap and the forecast from similar tasks (T-1083)")
     s.add_argument("--refresh-cache", action="store_true", help=argparse.SUPPRESS)  # the Stop hook's detached refresh
+    s.add_argument("--sweep", action="store_true", help=argparse.SUPPRESS)  # T-1810: the Stop hook's detached sweep
     s.add_argument("--sessions", action="store_true",
                    help="per session: turns, context per turn, the cache read/write/output split and cache busts")
     s = add("burden", lazy("fmcost", "cmd_burden"), tier=("Reports", 1000), help="Foreman's own cost on real sessions per version: bookkeeping "

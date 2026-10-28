@@ -596,17 +596,19 @@ def session_context(p, sd, other_note=None, sid=None):
               + (f" (+{len(q) - 5} more)" if len(q) > 5 else "") + ".") if q else "Queue: empty."]
     inbox = sd["inbox"]
     tail = [f"Inbox: {len(inbox)}" + (" — " + "; ".join(f"{x['id']} {x['title'][:40]}" for x in inbox[:3]) if inbox else "") + "."]
-    if sd["blocked"]:
-        tail.append(f"Blocked: {len(sd['blocked'])} ({', '.join(x['id'] for x in sd['blocked'][:5])}).")
-    try:  # T-1800: usage burn from the last cached scan, named with its fix
+    try:  # T-1800/T-1810: problems nobody raised, from caches only, each with its action
         import fmcost
-        burn = fmcost.burn_line()
-        if burn:
-            tail.append(burn)
+        import fmforesight
+        parts = (lambda: fmforesight.lines(p), lambda: [x for x in [fmcost.burn_line()] if x],
+                 lambda: fmforesight.pile_lines(sd))
     except Exception:
         log_error("SessionStart", _tb())
-    if sd["tidy_overdue_days"]:
-        tail.append(f"Tidy overdue: last tidy {sd['last_tidy'] or 'never'} ({sd['tidy_overdue_days']} days).")
+        parts = ()
+    for part in parts:  # one bad cache costs only its own line
+        try:
+            tail += part()
+        except Exception:
+            log_error("SessionStart", _tb())
     if sd["cycles"]:
         tail.append("Dependency cycles: " + "; ".join("↔".join(x) for x in sd["cycles"])[:150] + ".")
     if sd["sensitive"]:
@@ -3148,6 +3150,11 @@ def stop(pl):
     p = c.find_project(_cwd(pl))
     if not p:
         return None
+    try:  # T-1810: the session-start sweep's caches (CI, setup, usage burn), refreshed detached for every project
+        import fmcost
+        fmcost.sweep_detached(p)
+    except Exception:
+        log_error("Stop", _tb())
     briefs = c.load_briefs(p)
     act = c.active_brief(briefs, p.lane)
     if act:
