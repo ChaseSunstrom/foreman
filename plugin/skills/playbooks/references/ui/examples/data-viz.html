@@ -169,7 +169,7 @@
       [0, 300, 600, 900, 1200].forEach(function (v) { svg.appendChild(el("line", { x1: L, x2: w - R, y1: y(v), y2: y(v), class: v ? "grid" : "axis" })); svg.appendChild(el("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end", class: "tick" }, fmt.format(v))); });
       M.forEach(function (m, i) { if (!narrow || i % 2 === 0) svg.appendChild(el("text", { x: x(i), y: h - 8, "text-anchor": "middle", class: "tick" }, narrow ? m[0] : m)); });
       if (!one) {
-        svg.appendChild(el("line", { x1: x(2), x2: x(2), y1: T, y2: h - B, class: "mark" })); svg.appendChild(el("text", { x: x(2) + 5, y: T + 10, class: "tick" }, "Bridge opens"));
+        svg.appendChild(el("line", { x1: x(2), x2: x(2), y1: T, y2: h - B, class: "mark" })); svg.appendChild(el("text", { x: x(2) + 5, y: h - B - 6, class: "tick" }, "Bridge opens"));
         svg.appendChild(el("polyline", { points: prev.map(function (v, i) { return x(i) + "," + y(v); }).join(" "), class: "s-prev" }));
         svg.appendChild(el("text", { x: x(11) + 6, y: y(prev[11]) + 4, class: "lab t-prev" }, "2025"));
         svg.appendChild(el("polyline", { points: now.map(function (v, i) { return x(i) + "," + y(v); }).join(" "), class: "s-now" }));
