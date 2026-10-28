@@ -1407,9 +1407,10 @@ def _pyc_of_source(p, st, budget):
         # marshal's ref flags follow refcounts, which differ between processes, so both bodies go through loads then
         # dumps in this process: equal means the same object graph (filename, names, consts, code), nothing trailing
         # (marshal.load builds objects only, never runs code; a hostile pyc raises, is capped at 8 MB, and stays flagged)
+        # T-1799: both sides are dumped as temporaries: a held reference sets other ref flags on 3.12
         body = io.BytesIO(got[16:])
-        mine = marshal.load(body)
-        return body.tell() == len(got) - 16 and marshal.dumps(mine) == marshal.dumps(marshal.loads(marshal.dumps(code)))
+        mine = marshal.dumps(marshal.load(body))
+        return body.tell() == len(got) - 16 and mine == marshal.dumps(marshal.loads(marshal.dumps(code)))
     except (OSError, ValueError, EOFError, TypeError, SyntaxError, MemoryError, RecursionError):
         return False
 
@@ -1748,6 +1749,16 @@ def check_enforce(p, days=7):
                   + f", cards named {named}, cards read {read}")
 
 
+def check_usage_burn(found=None):
+    """T-1800: why usage burns, named with its fix (fmcost.burn_findings), so nobody has to notice it first."""
+    if found is None:
+        import fmcost
+        found = fmcost.burn_findings()
+        fmcost.write_burn(found)
+    return Result("usage burn", "WARN" if found else "PASS",
+                  "; ".join(f"{a} → {b}" for a, b in found) if found else "no sign of usage burn in the last 2 days")
+
+
 def check_idle_stops(p, days=7):
     """T-0957: stops with open work that nothing kept going (the drive was off, paused or done nudging). Information:
     many of them mean the drive gave up early or the user keeps stopping it."""
@@ -2069,6 +2080,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_product(here))
     results.append(check_enforce(here))
     results.append(check_idle_stops(here))
+    results.append(check_usage_burn())
     results.append(check_version_skew(c.all_projects()))
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),

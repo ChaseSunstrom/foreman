@@ -832,9 +832,16 @@ def cmd_task(args):
             if not args.until:
                 raise UsageError("--until \"installed NAME\" takes a plain program name; \"exists PATH\" a path inside "
                                  "the project or your home folder")
-        elif until and not re.fullmatch(r"\d{4}-\d\d-\d\d", until):
-            raise UsageError("--until takes a date, YYYY-MM-DD, \"when PATH changes\", \"installed NAME\" or "
-                             "\"exists PATH\"")
+        elif until == "reset":  # T-1802: the weekly usage reset, kept as a local time (statusline reading)
+            import datetime
+            import fmbudget
+            at = fmbudget.forecast().get("seven_day", {}).get("resets_at")
+            if not at:
+                raise UsageError("--until reset: no usage reading with a reset time yet (the statusline writes one)")
+            args.until = datetime.datetime.fromtimestamp(at + 59).strftime("%Y-%m-%dT%H:%M")  # never a minute early
+        elif until and not re.fullmatch(r"\d{4}-\d\d-\d\d(T([01]\d|2[0-3]):[0-5]\d)?", until):
+            raise UsageError("--until takes a date, YYYY-MM-DD[THH:MM], reset, \"when PATH changes\", "
+                             "\"installed NAME\" or \"exists PATH\"")
         cur = need_brief(p, args.id)
         if cur.status in c.CLOSED and status not in c.TRANSITIONS[cur.status]:  # T-0679 chaos test: dropped → blocked
             raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (fm task set {cur.id} status=planned)")
@@ -5668,8 +5675,9 @@ def _build_parser():
     t = tadd("defer")
     t.add_argument("id")
     t.add_argument("reason", nargs="?")
-    t.add_argument("--until", help="YYYY-MM-DD: fm next names it again from that day (T-0450); \"when PATH changes\": "
-                                   "once that file changes (T-0958); \"installed NAME\" / \"exists PATH\" (T-1183)")
+    t.add_argument("--until", help="YYYY-MM-DD[THH:MM]: fm next names it again from that day or local minute (T-0450); "
+                                   "reset: the weekly usage reset (T-1802); \"when PATH changes\": once that file "
+                                   "changes (T-0958); \"installed NAME\" / \"exists PATH\" (T-1183)")
 
     s = add("map", lazy("fmmap", "cmd_map"), tier=("Finding your way", 370), help="project map: gates, layout, entry points, hot files, test links")
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")

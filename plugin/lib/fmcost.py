@@ -156,6 +156,69 @@ def scan(folder, since, share=None):
     return list(msgs.values()), tools
 
 
+BURN_CONTEXT = 150_000  # T-1800: a session averaging more context than this per reply compacts too late
+
+
+def burn_findings(folder=None, days=2, forecast=None):
+    """T-1800: why usage burns, as [(finding, fix)], from every project's transcripts (usage is account-wide) and the
+    statusline's usage reading. Each cause comes with its fix, so nobody has to ask."""
+    folder = folder or os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "projects")
+    ctx, by, hours, seen = [], collections.Counter(), collections.defaultdict(set), set()
+    for path, e in _entries(folder, _since(days)):
+        m = e.get("message")
+        if e.get("type") != "assistant" or not isinstance(m, dict) or not isinstance(m.get("usage"), dict) \
+                or m.get("id") in seen:
+            continue
+        seen.add(m.get("id"))
+        u = m["usage"]
+        size = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+        sub = f"{os.sep}subagents{os.sep}" in path
+        if not sub:
+            ctx.append(size)
+            hours[str(e.get("timestamp"))[:13]].add(e.get("sessionId"))
+        by[("subagent " if sub else "") + ("opus" if "opus" in str(m.get("model")) else "other")] += size
+    out = []
+    if len(ctx) >= 20 and sum(ctx) / len(ctx) > BURN_CONTEXT:
+        out.append((f"context per reply averages {_human(sum(ctx) / len(ctx))} over {len(ctx)} replies",
+                    "sessions compact late: fm install-user sets Foreman's 200k compact window; /compact long ones"))
+    peak = max(map(len, hours.values()), default=0)
+    if peak >= 3:
+        out.append((f"{peak} sessions replied in the same hour", "each one multiplies usage: fm drive off in the "
+                    "ones nobody watches, or fm run one queue headless"))
+    total = sum(by.values())
+    if total and by["subagent opus"] / total > 0.2:
+        out.append((f"Opus subagents used {by['subagent opus'] * 100 // total}% of the tokens",
+                    "subagents on Sonnet or Haiku (model: in the agent's frontmatter, or Agent model=)"))
+    week = (forecast if forecast is not None else __import__("fmbudget").forecast()).get("seven_day") or {}
+    if week.get("full_at") and week.get("resets_at"):
+        out.append((f"weekly usage is on pace to run out {(week['resets_at'] - week['full_at']) / 3600:.0f} h before "
+                    "its reset", "optional work already waits; fewer sessions, or the causes above"))
+    return out
+
+
+def _burn_path():
+    return os.path.join(c.state_dir(), "burn.json")
+
+
+def write_burn(found):
+    try:
+        c.write_atomic(_burn_path(), json.dumps({"ts": time.time(), "found": found}))
+    except OSError:
+        pass
+
+
+def burn_line(max_age=86400):
+    """The session-start line from the last cached scan (the Stop hook's detached refresh writes it): never a scan."""
+    try:
+        with open(_burn_path(), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return ""
+    if not d.get("found") or time.time() - d.get("ts", 0) > max_age:
+        return ""
+    return "Usage burn: " + "; ".join(f"{a} → {b}" for a, b in d["found"]) + "."
+
+
 IDLE_S = 600  # a gap longer than this between two entries is time away, not work
 
 
@@ -477,6 +540,12 @@ def cmd_cost(args):
         os.makedirs(os.path.dirname(_cache_path(p)), exist_ok=True)
         size, costs = _transcripts_size(p), task_costs(p, 90)
         c.write_atomic(_cache_path(p), json.dumps({"size": size, "ts": time.time(), "costs": dict(costs)}))
+        try:  # T-1800: what session start says about usage burn; the account-wide scan at most every 10 min, not per refresh
+            fresh = time.time() - os.path.getmtime(_burn_path()) < 600
+        except OSError:
+            fresh = False
+        if not fresh:
+            write_burn(burn_findings())
         return 0
     if getattr(args, "task", None):
         return _task(args, p, fmcli)
@@ -733,8 +802,11 @@ def cmd_digest(args):
         for e in nights[-5:]] if nights else []
     learn = learned(p, args.days, len(done))
     lines += [learn["line"]]
+    burn = burn_findings()  # T-1800: why usage burns, named with its fix
+    lines += ["Usage burn:"] + [f"- {a} → {b}" for a, b in burn] if burn else []
     fmcli.out(args, {"learned": learn, "done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review, "decided": decided,
-                     "blocked": [b.id for b in blocked], "stale_plans": stale, "deferred_triage": triage, "failures": dict(fails.most_common(5)), "tokens": tokens},
+                     "blocked": [b.id for b in blocked], "stale_plans": stale, "deferred_triage": triage, "failures": dict(fails.most_common(5)), "tokens": tokens,
+                     "burn": burn},
               "\n".join(lines))
     if getattr(args, "say", False):  # T-1549: the digest read aloud, when a speech program is installed
         say("\n".join(lines))
