@@ -4,9 +4,11 @@ pane's palette (the C object in mods/foreman-ui/hooks/kit.ts)."""
 import json
 import os
 import re
+import unittest
 
-from helpers import PLUGIN, ForemanTestCase, read_text
+from helpers import PLUGIN, ForemanTestCase, headless_chrome, read_text
 
+import fmdesign
 import fmsettings
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -35,7 +37,7 @@ class PaneSaved(ForemanTestCase):  # T-1717
         self.assertEqual(json.loads(self.fm("ui", "--json").stdout)["palette_custom"], {})
 
 
-class Tokens(ForemanTestCase):
+class TokenCase(ForemanTestCase):
     def tokens(self, *args, path=DESIGN, check=True):
         return self.fm("design", "tokens", path, *args, check=check)
 
@@ -58,6 +60,9 @@ class Tokens(ForemanTestCase):
         self.assertEqual(unread, [], text)
         self.assertEqual([p for p in problems if p[0] == "app"], [], text)
         return colors
+
+
+class Tokens(TokenCase):
 
     def test_css_variables_light_in_root_dark_in_the_media_query(self):
         css = self.tokens("--to", "css").stdout
@@ -231,3 +236,182 @@ class Tokens(ForemanTestCase):
     def test_a_worker_of_fm_code_may_compile(self):
         p = self.fm("design", "tokens", DESIGN, "--to", "pane", env={"FOREMAN_WORKER_OF": "run-1"})
         self.assertIn('"accent"', p.stdout)
+
+    def test_a_worker_may_not_write_with_out(self):  # T-1652 review: --out writes past the run's own write guard
+        for args in (("tokens", DESIGN, "--to", "brand", "--out", os.path.join(self.tmp, "b")),
+                     ("tokens", DESIGN, "--to", "md", "--out", os.path.join(self.tmp, "t.md")),
+                     ("palette", "#3366cc", "--out", os.path.join(self.tmp, "p.md"))):
+            r = self.fm("design", *args, env={"FOREMAN_WORKER_OF": "run-1"}, check=False)
+            self.assertEqual(r.returncode, 2, args)
+            self.assertIn("worker", r.stderr)
+            self.assertFalse(os.path.exists(args[-1]), args)
+
+    def test_md_out_onto_its_own_source_is_refused(self):  # T-1652 review: it would drop extract's own lines
+        md = self.copy("# DESIGN.md", "# DESIGN.md")
+        before = read_text(md)
+        self.assertEqual(self.tokens("--to", "md", "--out", md, path=md, check=False).returncode, 2)
+        self.assertEqual(read_text(md), before)
+
+
+class Brand(TokenCase):  # T-1652
+    def test_brand_draws_a_favicon_and_a_card_in_the_accent_bg_and_text_roles(self):
+        out = os.path.join(self.tmp, "brand")
+        self.tokens("--to", "brand", "--out", out)
+        fav, card = (read_text(os.path.join(out, n)) for n in ("favicon.svg", "card.svg"))
+        self.assertIn("#83ADEA", fav.upper())  # the dark accent unless --light
+        self.assertIn('width="1200" height="630"', card)
+        self.assertTrue(all(h in card.upper() for h in ("#0E1216", "#E4E8ED", "#83ADEA")), card)  # bg, text, accent
+        self.assertIn(">design-surfaces fixture<", card)  # the H1, without its "DESIGN.md:" prefix
+        self.tokens("--to", "brand", "--out", out, "--light")
+        self.assertIn("#21539C", read_text(os.path.join(out, "favicon.svg")).upper())
+        evil = self.copy("# DESIGN.md: design-surfaces fixture", '# <b onload="x">&co')
+        self.tokens("--to", "brand", "--out", out, path=evil)
+        card = read_text(os.path.join(out, "card.svg"))
+        self.assertIn("&lt;b onload=", card)
+        self.assertNotIn("<b ", card)
+        self.assertEqual(self.tokens("--to", "brand", check=False).returncode, 2, "--to brand needs --out DIR")
+
+
+DTCG = {"light": {"color": {"accent": {"$type": "color", "$value": "#21539c"},
+                            "paper": {"$type": "color", "$value": {"colorSpace": "srgb", "components": [1, 1, 1],
+                                                                   "hex": "#ffffff"}},
+                            "link": {"$value": "{color.accent}"}},
+                  "space": {"$type": "dimension", "s|m`": {"$value": {"value": 4, "unit": "px"}}}},
+        "dark": {"color": {"accent": {"$type": "color", "$value": "#83adea"}}}}
+FIGMA = {"meta": {"variableCollections": {"c1": {"defaultModeId": "m1", "modes": [{"modeId": "m1", "name": "Light"},
+                                                                                  {"modeId": "m2", "name": "Dark"}]}},
+                  "variables": {
+                      "v1": {"name": "brand/accent", "resolvedType": "COLOR", "variableCollectionId": "c1",
+                             "valuesByMode": {"m1": {"r": 0.129, "g": 0.325, "b": 0.612, "a": 1},
+                                              "m2": {"r": 0.514, "g": 0.678, "b": 0.918, "a": 1}}},
+                      "v2": {"name": "brand/link", "resolvedType": "COLOR", "variableCollectionId": "c1",
+                             "valuesByMode": {"m1": {"type": "VARIABLE_ALIAS", "id": "v1"}}},
+                      "v3": {"name": "radius/md", "resolvedType": "FLOAT", "variableCollectionId": "c1",
+                             "valuesByMode": {"m1": 8, "m2": 8}}}}}
+
+
+class Imported(TokenCase):  # T-1652: a DTCG or Figma variables export read as tokens
+    def put(self, name, data):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(data if isinstance(data, str) else json.dumps(data))
+        return path
+
+    def back(self, path):
+        """What read_design makes of the ## Tokens table --to md prints for path."""
+        md = self.put("DESIGN.md", "# Imported\n\n" + self.tokens("--to", "md", path=path).stdout)
+        return fmdesign.read_design(md)
+
+    def test_dtcg_reads_as_tokens_and_md_reads_back(self):
+        path = self.put("tokens.json", DTCG)
+        got = self.back(path)
+        self.assertEqual((got["--color-accent"]["light_hex"].upper(), got["--color-accent"]["dark_hex"].upper()),
+                         ("#21539C", "#83ADEA"))
+        self.assertEqual(got["--color-paper"]["light_hex"].upper(), "#FFFFFF")
+        self.assertEqual(got["--color-link"]["light_hex"].upper(), "#21539C", "an alias reads as what it names")
+        self.assertEqual(got["--space-s-m"]["light"], "4px", "a name keeps only letters, digits, - and _")
+        self.assertIn("--color-accent: #21539c;", self.tokens("--to", "css", path=path).stdout.lower())
+
+    def test_figma_variables_read_by_mode(self):
+        got = self.back(self.put("figma.json", FIGMA))
+        self.assertEqual((got["--brand-accent"]["light_hex"].upper(), got["--brand-accent"]["dark_hex"].upper()),
+                         ("#21539C", "#83ADEA"))
+        self.assertEqual(got["--brand-link"]["light_hex"].upper(), "#21539C")
+        self.assertEqual(got["--radius-md"]["light"], "8")
+
+    def test_md_out_writes_the_tokens_section_into_a_design_file(self):
+        md = self.put("DESIGN.md", "# Mine\n\n## Direction\n\nkeep me\n")
+        self.tokens("--to", "md", "--out", md, path=self.put("tokens.json", DTCG))
+        self.assertIn("keep me", read_text(md))
+        self.assertIn("--color-accent", fmdesign.read_design(md))
+
+    def test_groups_beside_light_and_dark_are_shared_and_skips_are_named(self):  # T-1652 review: Tokens Studio
+        path = self.put("studio.json", {
+            "global": {"blue": {"$type": "color", "$value": "#00f"}, "lift": {"$type": "shadow", "$value": {"x": 1}}},
+            "light": {"bg": {"$type": "color", "$value": "{global.blue}"}},
+            "dark": {"bg": {"$type": "color", "$value": "#000"}}})
+        got = self.back(path)
+        self.assertEqual((got["--bg"]["light_hex"].upper(), got["--bg"]["dark_hex"].upper()), ("#0000FF", "#000000"))
+        self.assertEqual(got["--global-blue"]["light_hex"].upper(), "#0000FF")
+        self.assertIn("1 token(s) skipped", self.tokens("--to", "css", path=path).stderr)
+
+    def test_brand_without_its_colour_roles_exits_2(self):
+        path = self.put("bare.json", {"x": {"$type": "dimension", "$value": "4px"}})
+        r = self.tokens("--to", "brand", "--out", os.path.join(self.tmp, "b"), path=path, check=False)
+        self.assertEqual(r.returncode, 2, r.stdout)
+
+    def test_a_file_that_is_not_tokens_exits_2(self):
+        for name, data in (("none.json", {"x": 1}), ("bad.json", "{not json"), ("deep.json", "[" * 5000)):
+            r = self.tokens("--to", "css", path=self.put(name, data), check=False)
+            self.assertEqual(r.returncode, 2, (name, r.stdout, r.stderr))
+
+
+class Infer(ForemanTestCase):  # T-1652
+    def test_literals_used_twice_become_proposed_rows_or_point_at_their_token(self):
+        ui = os.path.join(self.tmp, "ui")
+        os.makedirs(ui)
+        with open(os.path.join(ui, "app.css"), "w") as f:
+            f.write(":root { --brand: #3366cc; }\n"
+                    ".a { color: #3366cc; background: #ff0000; transition: opacity 250ms; border-radius: 6px; }\n"
+                    ".b { color: #3366CC; background: #f00; transition: opacity 250ms; border-radius: 6px; }\n"
+                    ".c { color: #00ff00; }\n")
+        r = self.fm("design", "infer", ui)
+        self.assertIn("var(--brand)", r.stdout)  # a token already holds it: use that
+        md = os.path.join(self.tmp, "DESIGN.md")
+        with open(md, "w") as f:
+            f.write("# X\n\n" + r.stdout)
+        got = fmdesign.read_design(md)
+        colours = [row["light_hex"].upper() for row in got.values() if row["light_hex"]]
+        self.assertEqual(colours, ["#FF0000"], "#3366cc has a token; #00ff00 is used once")
+        self.assertEqual(sorted(row["kind"] for row in got.values()), ["colour", "duration", "radius"])
+        self.assertEqual(self.fm("design", "infer", os.path.join(self.tmp, "nope"), check=False).returncode, 2)
+        got = json.loads(self.fm("design", "infer", ui, "--json").stdout)
+        self.assertEqual((sorted(got), got["files"]), (["files", "proposed", "skipped", "use_token"], 1))
+
+
+class XrayArgs(ForemanTestCase):  # T-1652 review: no browser needed to refuse these
+    def test_out_must_name_a_png(self):
+        page = os.path.join(self.tmp, "page.html")
+        with open(page, "w") as f:
+            f.write("<p>x</p>")
+        r = self.fm("design", "xray", page, "--tokens", DESIGN, "--out", page, check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertEqual(read_text(page), "<p>x</p>")
+
+
+@unittest.skipUnless(headless_chrome(), "no headless Chromium here")
+class Xray(ForemanTestCase):  # T-1652
+    def test_xray_outlines_on_and_off_token_elements_and_prints_coverage(self):
+        page = os.path.join(self.tmp, "page.html")
+        with open(page, "w") as f:
+            f.write('<!doctype html><html><body style="margin:0;background:#f2f5f9;color:#171b1f">'
+                    '<p>on token</p><p style="color:#ff0000">off token</p></body></html>')
+        shot = os.path.join(self.tmp, "x.png")
+        r = self.fm("design", "xray", page, "--tokens", DESIGN, "--out", shot, "--json", check=False)
+        self.assertEqual(r.returncode, 1, r.stderr)  # an off-token element
+        got = json.loads(r.stdout)
+        self.assertEqual((got["on"], got["off"], got["off_colours"]), (2, 1, {"#FF0000": 1}), got)
+        with open(shot, "rb") as f:
+            self.assertEqual(f.read(8), b"\x89PNG\r\n\x1a\n")
+        self.assertIn("2 of 3", self.fm("design", "xray", page, "--tokens", DESIGN, check=False).stdout)
+        with open(page, "w") as f:
+            f.write("<!doctype html><title>t</title>")
+        r = self.fm("design", "xray", page, "--tokens", DESIGN, check=False)
+        self.assertEqual(r.returncode, 2, "nothing painted is not 100% on token")
+        self.assertIn("nothing painted", r.stderr)
+
+
+class DesignPlugin(unittest.TestCase):  # T-1652: the design skills as an optional plugin
+    def test_the_foreman_design_entry_resolves(self):
+        root = os.path.dirname(PLUGIN)
+        mk = json.loads(read_text(os.path.join(root, ".claude-plugin", "marketplace.json")))
+        entry = next(p for p in mk["plugins"] if p["name"] == "foreman-design")
+        base = os.path.normpath(os.path.join(root, entry["source"]))
+        self.assertEqual(json.loads(read_text(os.path.join(base, ".claude-plugin", "plugin.json")))["name"],
+                         "foreman-design")
+        skills = sorted(os.listdir(os.path.join(base, "skills")))
+        self.assertEqual(skills, ["design-extract", "directions", "ui-design"])
+        for s in skills:
+            link = os.path.join(base, "skills", s)
+            self.assertTrue(os.path.islink(link) and os.path.isfile(os.path.join(link, "SKILL.md")), s)
+            self.assertTrue(os.path.realpath(link).startswith(os.path.join(os.path.realpath(PLUGIN), "skills")), s)

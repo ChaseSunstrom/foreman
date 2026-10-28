@@ -61,8 +61,11 @@ class ReleaseCase(ForemanTestCase):
         put(self.repo, "CHANGELOG.md", "# Changelog\n\n## Unreleased\n- a thing\n\n## 1.0.0 — 2026-01-01\n- first\n")
         put(self.repo, "mods/foreman-ui/.claude-plugin/plugin.json", '{\n  "name": "foreman-ui",\n  "version": "0.1.0"\n}\n')
         put(self.repo, "mods/foreman-ui/hooks/a.tsx", "a\n")
+        put(self.repo, "plugins/foreman-design/.claude-plugin/plugin.json",
+            '{\n  "name": "foreman-design",\n  "version": "1.0.0"\n}\n')
         self.market = {"name": "foreman", "metadata": {"version": "1.0.0"}, "plugins": [
-            {"name": "foreman", "version": "1.0.0"}, {"name": "foreman-ui", "version": "0.1.0"}]}
+            {"name": "foreman", "version": "1.0.0"}, {"name": "foreman-ui", "version": "0.1.0"},
+            {"name": "foreman-design", "version": "1.0.0"}]}
         put(self.repo, ".claude-plugin/marketplace.json", json.dumps(self.market))
         self.fm("init")
         if self.replayed:
@@ -128,6 +131,9 @@ class Release(ReleaseCase):
         self.assertEqual(self.subject(), "Foreman 9.9.9")
         self.assertEqual(read_json(mk)["plugins"][0]["version"], "9.9.9")
         self.assertEqual(read_json(mk)["plugins"][1]["version"], "0.1.0", "the UI didn't change")
+        design = os.path.join(self.repo, "plugins/foreman-design/.claude-plugin/plugin.json")  # T-1652: its skills
+        self.assertEqual((read_json(mk)["plugins"][2]["version"], read_json(design)["version"]), ("9.9.9", "9.9.9"))
+        self.assertEqual(sh(self.repo, "status", "--porcelain", "--", "plugins"), "", "committed with the release")
         self.assertIn("## 9.9.9 — ", read_text(os.path.join(self.repo, "CHANGELOG.md")))
         self.assertIn("round-1", sh(self.repo, "tag", "--list"))
         self.assertIn("already released", self.rel("9.9.9", "--resume").stdout)
