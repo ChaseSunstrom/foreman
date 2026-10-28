@@ -1271,7 +1271,8 @@ def user_prompt_submit(pl):
         state.append(f"Active: {a['id']} {a['type']} " + (f"step {a['step']['n']}/{a['step']['of']}" if a["step"]
                                                         else f"{a['steps_done']}/{a['steps_total']} steps done"))
     else:
-        state.append("No active task" + (f"; {len(sd['queue'])} queued" if sd["queue"] else ""))
+        state.append("No active task" + (f"; {len(sd['queue'])} queued" if sd["queue"] else "")
+                     + "".join(f"; {c.stranded_note(s)}" for s in sd.get("stranded", ())))
     try:
         if a or sd["queue"] or not _headless():  # T-1231: a one-request unattended run has no queue to finish
             nb, nst, action = c.next_for(p)
