@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<script>(function(){var q=new URLSearchParams(location.search),h=document.documentElement,t=q.get("theme");if(t==="light"||t==="dark")h.dataset.theme=t;if(q.get("motion")==="reduce")h.dataset.motion="reduce"})()</script>
+<title>Smash The Crate</title>
+<meta name="description" content="A one-button crate-smashing toy that shows capped game feel: hit-stop, trauma shake, squash, sparks and a flash gate, each with a reduced-motion twin.">
+<style>
+  :root {
+    --paper: #fff3d1; --raised: #fffaf0; --ink: #2b1a10; --muted: #644730; --rule: #e0c88f; --accent: #b82e19; --on-accent: #fff7ee; --tint: #f9e2a8; --stage: #1d1410; --field: #7a5a3e;
+    --font-display: Rockwell, "Rockwell Nova", "Roboto Slab", Arvo, "Courier New", serif;
+    --font-body: "Trebuchet MS", "Fira Sans", Ubuntu, Calibri, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --space-1: .25rem; --space-2: .5rem; --space-3: 1rem; --space-4: 1.5rem; --space-5: 3rem;
+    --radius-control: 8px; --radius-card: 20px; --radius-stage: 12px;
+    --lift-1: 0 2px 0 rgb(43 26 16 / .18); --lift-2: 0 6px 0 rgb(43 26 16 / .28);
+    --dur-tap: 90ms; --dur-small: 150ms; --dur-exit: 150ms; --dur-enter: 220ms; --ease-enter: cubic-bezier(.05, .7, .1, 1); --ease-exit: cubic-bezier(.3, 0, .8, .15);
+    --pop: .96;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --paper: #1a1210; --raised: #251a16; --ink: #fbeedd; --muted: #cdb09a; --rule: #4a352b; --accent: #ff8a5c; --on-accent: #2a1008; --tint: #3a2a20; --field: #b79a82;
+      --lift-1: 0 2px 0 rgb(0 0 0 / .5); --lift-2: 0 6px 0 rgb(0 0 0 / .6); }
+  }
+  :root[data-theme="dark"] { --paper: #1a1210; --raised: #251a16; --ink: #fbeedd; --muted: #cdb09a; --rule: #4a352b; --accent: #ff8a5c; --on-accent: #2a1008; --tint: #3a2a20; --field: #b79a82;
+    --lift-1: 0 2px 0 rgb(0 0 0 / .5); --lift-2: 0 6px 0 rgb(0 0 0 / .6); }
+  /* Reduced motion: the UI press stops scaling. The in-world effects read one settings object in the script (reduced()), not a media query each. */
+  @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) { --pop: 1; } }
+  :root[data-motion="reduce"] { --pop: 1; }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 1.0625rem/1.55 var(--font-body); }
+  h1, h2 { font-family: var(--font-display); line-height: 1.1; margin: 0 0 var(--space-2); }
+  h1 { font-size: clamp(2.2rem, 1.5rem + 3.4vw, 3.8rem); max-width: 12ch; }
+  h2 { font-size: 1.35rem; }
+  p { margin: 0 0 var(--space-3); max-width: 62ch; }
+  code { font-family: var(--font-mono); font-size: .88em; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-control); }
+  .wrap { max-width: 70rem; margin: 0 auto; padding: 0 var(--space-3); }
+  .skip { position: absolute; left: var(--space-3); top: -5rem; background: var(--ink); color: var(--paper); padding: var(--space-2) var(--space-3); border-radius: var(--radius-control); z-index: 9; }
+  .skip:focus { top: var(--space-3); }
+  .kicker { font: 700 .8rem/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: var(--space-5) 0 var(--space-3); }
+  .grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); gap: var(--space-4); align-items: start; padding-bottom: var(--space-5); }
+  .card { background: var(--raised); border: 2px solid var(--ink); border-radius: var(--radius-card); box-shadow: var(--lift-2); padding: var(--space-3); min-width: 0; }
+  .card.side { box-shadow: var(--lift-1); }
+  .full { grid-column: 1 / -1; }
+
+  .hud { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); align-items: center; margin-bottom: var(--space-2); font-family: var(--font-mono); font-size: .95rem; }
+  .hp { display: flex; align-items: center; gap: var(--space-2); flex: 1 1 11rem; }
+  .meter { flex: 1; height: 14px; border: 2px solid var(--ink); border-radius: 99px; overflow: hidden; background: var(--paper); }
+  .fill { height: 100%; background: var(--accent); transform-origin: left; transition: transform var(--dur-small) var(--ease-enter); }
+  .stage { position: relative; aspect-ratio: 8 / 5; overflow: hidden; background: var(--stage); border-radius: var(--radius-stage); }
+  .world { position: absolute; inset: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .crate { position: absolute; left: 50%; top: 50%; width: 34%; margin: -17% 0 0 -17%; transform-origin: 50% 100%; transition: opacity var(--dur-exit) var(--ease-exit); --crate: #c88a4a; }
+  .crate.tint { --crate: #fff; }
+  .crate.gone { opacity: 0; }
+  .crate .body { fill: var(--crate); stroke: #f4d9a6; stroke-width: 3; }
+  .crate .plank { stroke: #3b2412; stroke-width: 3; fill: none; }
+  .crate .crack { stroke: #1d1410; stroke-width: 4; fill: none; stroke-linecap: round; opacity: 0; }
+  .crate .crack.on { opacity: 1; }
+  .fx { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity var(--dur-small) var(--ease-exit); }
+  #flash { background: #fff; }
+  #edge { border: 8px solid #ff8a5c; }
+  .over { position: absolute; inset: 0; z-index: 2; display: grid; place-content: center; gap: var(--space-2); text-align: center; background: rgb(29 20 16 / .86); color: #fff4e0; padding: var(--space-3); }
+  .over[hidden] { display: none; }
+  .over h2 { margin: 0; }
+  .over p { margin: 0 auto; }
+  .row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin-top: var(--space-3); }
+  .btn { font: 700 1.05rem/1 var(--font-body); min-height: 52px; min-width: 44px; padding: 0 var(--space-4); border-radius: var(--radius-control); border: 2px solid var(--ink); background: var(--accent); color: var(--on-accent); cursor: pointer; box-shadow: var(--lift-1);
+         transition: transform var(--dur-tap) var(--ease-enter), background-color var(--dur-small) var(--ease-enter), color var(--dur-small) var(--ease-enter); }
+  .btn.quiet { background: var(--raised); color: var(--ink); }
+  .btn:hover { background: var(--ink); color: var(--paper); }
+  .btn:active { transform: translateY(2px) scale(var(--pop)); }
+  .btn[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+  .over .btn { background: #ff8a5c; color: #2a1008; }
+  .field { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; font-weight: 700; }
+  .field input[type="checkbox"] { width: 24px; height: 24px; accent-color: var(--accent); flex: none; }
+  .field input[type="range"] { flex: 1; min-width: 0; height: 44px; accent-color: var(--accent); }
+  .note { margin: var(--space-2) 0 0; padding: var(--space-2) var(--space-3); border-left: 5px solid var(--accent); background: var(--tint); border-radius: 4px; font-size: .92rem; }
+  .note[hidden] { display: none; }
+  dl { display: grid; grid-template-columns: 1fr auto; gap: var(--space-1) var(--space-2); margin: 0; font-family: var(--font-mono); font-size: .88rem; }
+  dd { margin: 0; text-align: right; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; display: block; overflow-x: auto; }  /* a wide table scrolls in its own box */
+  th, td { text-align: left; padding: var(--space-2); border-bottom: 2px solid var(--rule); vertical-align: top; min-width: 8rem; }
+  th { font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .shows { margin: 0; padding-left: 1.2rem; display: grid; gap: var(--space-2); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  @media (max-width: 52rem) { .grid { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the game</a>
+<header class="wrap">
+  <p class="kicker">Game-feel playbook · worked example</p>
+  <h1>Smash the crate. Politely.</h1>
+  <p>Eight strikes break it. Every hit gets juice, and every kind of juice has a hard ceiling and a calm twin. Open the Effects panel and watch the caps hold even when you mash.</p>
+</header>
+<main id="main" class="wrap grid">
+  <section class="card" aria-labelledby="game-h">
+    <h2 id="game-h">The crate</h2>
+    <div class="hud" aria-label="Status">
+      <div class="hp"><span id="hptxt">Crate 8 / 8</span><div class="meter" aria-hidden="true"><div class="fill" id="fill"></div></div></div>
+      <span>Coins <strong id="coins">0</strong></span>
+      <span>Cue <strong id="cue">none yet</strong></span>
+    </div>
+    <div class="stage" id="stage">
+      <div class="world" id="world">
+        <svg class="crate" id="crate" viewBox="0 0 120 120" aria-hidden="true">
+          <rect class="body" x="6" y="6" width="108" height="108" rx="6"/>
+          <path class="plank" d="M6 40h108M6 80h108M6 6l108 108M114 6L6 114"/>
+          <path class="crack" data-n="6" d="M60 6l-8 26 14 14-10 22"/>
+          <path class="crack" data-n="4" d="M114 60l-30 8-8 20 22 12"/>
+          <path class="crack" data-n="2" d="M6 70l26-4 10 18-12 22"/>
+        </svg>
+        <canvas id="cv" width="640" height="400"></canvas>
+      </div>
+      <div class="fx" id="flash"></div><div class="fx" id="edge"></div>
+      <div class="over" id="over" hidden><h2 id="over-h" tabindex="-1">Crate smashed!</h2><p>+10 coins. That took 8 strikes.</p><button class="btn" id="again" type="button">Play again</button></div>
+      <div class="over" id="paused" hidden><h2>Paused</h2><p>Nothing moves until you resume.</p></div>
+    </div>
+    <div class="row">
+      <button class="btn" id="strike" type="button">Strike</button>
+      <button class="btn quiet" id="pause" type="button">Pause</button>
+    </div>
+    <p class="hint" style="margin: var(--space-2) 0 0; color: var(--muted); font-size: .9rem">Tab to Strike, then press Space or Enter as fast as you like.</p>
+    <div class="sr" id="live" role="status" aria-live="polite"></div>
+  </section>
+
+  <aside class="card side" aria-labelledby="fx-h">
+    <h2 id="fx-h">Effects</h2>
+    <button class="btn quiet" id="mo" type="button">Motion: full</button>
+    <label class="field" for="shk">Screen shake <input id="shk" type="range" min="0" max="100" value="100"></label>
+    <label class="field"><input id="fl" type="checkbox" checked> Flashing</label>
+    <label class="field"><input id="snd" type="checkbox"> Sound (off until you ask)</label>
+    <p class="note" id="snote" role="status" hidden></p>
+    <h2 style="margin-top: var(--space-3)">Caps, live</h2>
+    <dl>
+      <dt>Shake offset</dt><dd id="m-shake">0 / 8 px</dd>
+      <dt>Flashes in 1 s</dt><dd id="m-flash">0 / 2</dd>
+      <dt>Hit-stop in 1 s</dt><dd id="m-stop">0 / 200 ms</dd>
+      <dt>Particles alive</dt><dd id="m-part">0 / 400</dd>
+    </dl>
+  </aside>
+
+  <section class="card full" aria-labelledby="jt-h">
+    <h2 id="jt-h">The juice table</h2>
+    <table>
+      <thead><tr><th>Event (cause)</th><th>Techniques and amounts</th><th>Sound cue</th><th>Reduced motion</th></tr></thead>
+      <tbody>
+        <tr><td>You strike the crate</td><td>hit-stop 60 ms; trauma +0.25; squash 0.8 × 1.25 for 100 ms; 12 sparks; one flash</td><td><code>hit_light</code></td><td>hit-stop kept; crate tints white, then cracks; one mark fades in place; no shake</td></tr>
+        <tr><td>Last strike</td><td>hit-stop 120 ms; trauma +0.4; 24 sparks; the counter ticks up</td><td><code>hit_light</code></td><td>same stop; counter changes in place; crate fades out</td></tr>
+        <tr><td>Flash refused by the gate</td><td>no flash; the rest still plays</td><td>none</td><td>unchanged</td></tr>
+      </tbody>
+    </table>
+  </section>
+  <section class="card full" aria-labelledby="ws-h">
+    <h2 id="ws-h">What this shows</h2>
+    <ul class="shows">
+      <li><strong>The juice table first.</strong> Every effect above is a row with its cause, amount and reduced twin; anything not in it was cut.</li>
+      <li><strong>Hard caps.</strong> Shake stays under 2% of the stage's short side, one run under a second, then a rest. Flashes: two a second, counted together. Hit-stop: 200 ms a second. Sparks: 48 a burst, pooled, seeded. The panel above counts them live.</li>
+      <li><strong>Hit-stop freezes the simulation, not the picture.</strong> Strikes during a freeze are buffered, never dropped. The HUD sits outside the shaking world.</li>
+      <li><strong>Reduced motion keeps meaning.</strong> One settings object turns shake, squash and spark travel off; cracks, the HP number and a tint say the same thing. Gameplay is identical either way.</li>
+      <li><strong>Sound is off by default</strong>, starts only after you ask, retriggers at most once per 50 ms, and every cue has a visual twin (the Cue readout, the flash, the cracks).</li>
+      <li><strong>States.</strong> Playing, paused, smashed, and a sound failure each have a designed look. Controls are 44 px or larger and reachable by keyboard at 360 px.</li>
+    </ul>
+  </section>
+</main>
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); }, root = document.documentElement;
+  var mulberry = function (a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
+  var reduced = function () { return root.dataset.motion ? root.dataset.motion === "reduce" : matchMedia("(prefers-reduced-motion: reduce)").matches; };
+  var S = { shake: 1, flash: true, sound: false };                               // the Effects settings: one object, one place
+  try { S.sound = localStorage.getItem("gf-sound") === "1"; } catch (e) {}
+  $("#snd").checked = S.sound;
+
+  /* The capped primitives, ported from juice.py. */
+  var noise = function (x) { var i = Math.floor(x), a = mulberry(i)() * 2 - 1, b = mulberry(i + 1)() * 2 - 1, w = (1 - Math.cos((x - i) * Math.PI)) / 2; return a + (b - a) * w; };
+  var shake = { trauma: 0, run: 0, rest: .25, t: 0, ph: [1, 2, 3].map(function (k) { return mulberry(k)() * 1000; }),
+    add: function (a) { if (this.run < .5 && (this.trauma > 0 || this.rest >= .25)) this.trauma = Math.min(1, this.trauma + Math.max(0, a)); },
+    step: function (dt) { this.t += dt; if (this.trauma > 0) { this.run += dt; this.rest = 0; this.trauma = Math.max(0, this.trauma - 2 * dt); } else { this.rest += dt; if (this.rest >= .25) this.run = 0; } },
+    off: function (side, scale) { var k = this.trauma * this.trauma * scale, me = this, n = this.ph.map(function (p) { return noise(p + me.t * 20); }), a = .02 * side * k; return [a * n[0], a * n[1], 2 * k * n[2]]; } };
+  var flashes = [], stops = [];
+  var flashOk = function (now) { flashes = flashes.filter(function (t) { return now - t < 1; }); if (flashes.length >= 2) return false; flashes.push(now); return true; };
+  var stopFor = function (now, s) { stops = stops.filter(function (g) { return now - g[0] < 1; }); var used = stops.reduce(function (a, g) { return a + g[1]; }, 0), give = Math.max(0, Math.min(s, .12, .2 - used)); if (give) stops.push([now, give]); return give; };
+
+  /* Sparks: a pool of 64, their own seeded RNG (never the simulation's), drawn under the HUD. */
+  // prefers-reduced-motion exception: a canvas loop is not CSS, so it reads reduced() itself.
+  var rnd = mulberry(7), pool = [], cv = $("#cv"), cx = cv.getContext("2d");
+  for (var i = 0; i < 64; i++) pool.push({ on: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1, c: "#ffd23f" });
+  function burst(n, colour) {
+    var still = reduced(); n = still ? 1 : Math.min(n, 48);
+    pool.forEach(function (p) {
+      if (p.on || n <= 0) return; n--;
+      var a = rnd() * 6.283, v = 120 + rnd() * 160;
+      p.on = true; p.x = 320 + (still ? 0 : (rnd() - .5) * 60); p.y = 200 + (still ? 0 : (rnd() - .5) * 60); p.vx = still ? 0 : Math.cos(a) * v; p.vy = still ? 0 : Math.sin(a) * v - 60;
+      p.max = p.life = still ? .15 : .4 + rnd() * .4; p.c = colour;         // a mark that fades in place, or sparks that live under 0.8 s
+    });
+  }
+
+  /* The game. */
+  var g = { hp: 8, coins: 0, shown: 0, over: false, paused: false }, frozenUntil = 0, buffered = 0, squash = 0, last = performance.now() / 1000, ac, lastCue = 0, crng = mulberry(99);
+  var say = function (t) { $("#live").textContent = t; };
+  function hud() {
+    $("#hptxt").textContent = "Crate " + g.hp + " / 8"; $("#fill").style.transform = "scaleX(" + g.hp / 8 + ")";
+    [].forEach.call(document.querySelectorAll(".crack"), function (c) { c.classList.toggle("on", g.hp <= +c.dataset.n); });   // damage shown by shape, not colour
+  }
+  function flash(now) {
+    if (!flashOk(now)) return;                                                 // a refused flash simply doesn't happen
+    var el = $(S.flash ? "#flash" : "#edge"); el.style.transition = "none"; el.style.opacity = S.flash ? .3 : .7;
+    void el.offsetWidth; el.style.transition = ""; el.style.opacity = 0;
+  }
+  function cue(now) {
+    var snd = S.sound && !$("#snd").dataset.fail; $("#cue").textContent = "hit_light" + (snd ? "" : " (sound off)");
+    if (!snd || now - lastCue < .05) return; lastCue = now;
+    try {
+      ac = ac || new AudioContext(); var o = ac.createOscillator(), v = ac.createGain(), f = 220 * (1 + (crng() - .5) * .1), t = ac.currentTime;
+      o.type = "triangle"; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f / 2, t + .08);
+      v.gain.setValueAtTime(0, t); v.gain.linearRampToValueAtTime(.25, t + .006); v.gain.linearRampToValueAtTime(0, t + .09);    // peak 0.25 = -12 dBFS, faded in and out
+      o.connect(v); v.connect(ac.destination); o.start(t); o.stop(t + .1);
+    } catch (e) { fail(); }
+  }
+  function fail() { S.sound = false; $("#snd").checked = false; $("#snd").dataset.fail = "1"; note("Sound isn't available in this browser. Every cue still shows on screen."); }
+  function note(t) { $("#snote").hidden = !t; $("#snote").textContent = t || ""; }
+  function hit(now) {
+    var lastHit = g.hp === 1; g.hp--; shake.add(lastHit ? .4 : .25);
+    frozenUntil = Math.max(frozenUntil, now + stopFor(now, lastHit ? .12 : .06));
+    if (reduced()) { $("#crate").classList.add("tint"); setTimeout(function () { $("#crate").classList.remove("tint"); }, 100); } else squash = .1;
+    burst(lastHit ? 24 : 12, "#ffd23f"); flash(now); cue(now); hud();
+    if (g.hp <= 0) smash();
+  }
+  function smash() {
+    g.over = true; g.coins += 10; $("#crate").classList.add("gone"); burst(24, "#5fe0c8");
+    $("#over").hidden = false; $("#over-h").focus(); say("Crate smashed. 10 coins.");
+  }
+  $("#strike").onclick = function () {
+    if (g.over || g.paused) return;
+    var now = performance.now() / 1000;
+    if (now < frozenUntil) buffered = Math.min(buffered + 1, 3); else hit(now);   // input is buffered during a freeze, never dropped
+  };
+  $("#again").onclick = function () { g.hp = 8; g.over = false; g.coins = g.coins; $("#over").hidden = true; $("#crate").classList.remove("gone"); hud(); $("#strike").focus(); say("New crate. 8 strikes to break it."); };
+  function setPause(p) {
+    g.paused = p; $("#paused").hidden = !p; $("#pause").textContent = p ? "Resume" : "Pause";
+    $("#strike").setAttribute("aria-disabled", p ? "true" : "false"); last = performance.now() / 1000;
+  }
+  $("#pause").onclick = function () { setPause(!g.paused); };
+  document.addEventListener("visibilitychange", function () { if (document.hidden && !g.paused) setPause(true); });
+
+  function frame() {
+    var now = performance.now() / 1000, dt = Math.min(now - last, .05); last = now;
+    if (!g.paused && now >= frozenUntil) {                                      // hit-stop skips the simulation steps, the drawing goes on
+      if (buffered && !g.over) { buffered--; hit(now); }
+      shake.step(dt); squash = Math.max(0, squash - dt);
+      pool.forEach(function (p) { if (p.on) { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 300 * dt; if (p.life <= 0) p.on = false; } });
+      g.shown = Math.min(g.coins, g.shown + 30 * dt); $("#coins").textContent = Math.floor(g.shown);
+    }
+    var side = Math.min($("#stage").clientWidth, $("#stage").clientHeight), o = shake.off(side, reduced() ? 0 : S.shake);
+    $("#world").style.transform = "translate(" + o[0].toFixed(2) + "px," + o[1].toFixed(2) + "px) rotate(" + o[2].toFixed(2) + "deg)";
+    var k = squash / .1;                                                        // 0.8 x 1.25 keeps the area, back at rest in 100 ms
+    $("#crate").style.transform = k ? "scale(" + (1 - .2 * k).toFixed(3) + "," + (1 + .25 * k).toFixed(3) + ")" : "";
+    cx.clearRect(0, 0, 640, 400); var alive = 0;
+    pool.forEach(function (p) { if (!p.on) return; alive++; cx.globalAlpha = Math.min(.9, p.life / p.max); cx.fillStyle = p.c; cx.fillRect(p.x - 4, p.y - 4, 8, 8); });
+    $("#m-shake").textContent = Math.round(Math.max(Math.abs(o[0]), Math.abs(o[1])) * 10) / 10 + " / " + (.02 * side).toFixed(1) + " px";
+    $("#m-flash").textContent = flashes.filter(function (t) { return now - t < 1; }).length + " / 2";
+    $("#m-stop").textContent = Math.round(stops.filter(function (s) { return now - s[0] < 1; }).reduce(function (a, s) { return a + s[1]; }, 0) * 1000) + " / 200 ms";
+    $("#m-part").textContent = alive + " / 400";
+    requestAnimationFrame(frame);
+  }
+  $("#mo").onclick = function () { var m = reduced() ? "full" : "reduce"; root.dataset.motion = m; $("#mo").textContent = "Motion: " + (m === "reduce" ? "reduced" : "full"); };
+  $("#mo").textContent = "Motion: " + (reduced() ? "reduced" : "full");
+  $("#shk").oninput = function () { S.shake = this.value / 100; };
+  $("#fl").onchange = function () { S.flash = this.checked; };
+  $("#snd").onchange = function () {
+    S.sound = this.checked; try { localStorage.setItem("gf-sound", S.sound ? "1" : "0"); } catch (e) {}
+    if (!S.sound) return note("");
+    try { ac = ac || new AudioContext(); ac.resume(); note("Sound is on. It plays only when you strike."); } catch (e) { fail(); }   // created inside the gesture
+  };
+  hud(); requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
