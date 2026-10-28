@@ -6752,6 +6752,9 @@ def _build_parser():
     s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
     s.add_argument("--cards", action="store_true", help="looks: the look cards as trading cards on a print sheet "
                    "(63 x 88 mm, nine to an A4 page) instead of the gallery")
+    s.add_argument("--cells", action="store_true", help="graph: print it in the terminal as 24-bit half blocks "
+                   "(fm scene cells) with a key of status counts, writing no page; needs a truecolor terminal (T-1655)")
+    s.add_argument("--cols", type=int, default=64, help="--cells: how many columns wide, 2-400")
     s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
                                                    "in state picks.json; needs --catalogue (T-0962)")
     s.add_argument("what", nargs="?", choices=["looks", "city", "graph"], help="looks: the looks gallery instead, one "

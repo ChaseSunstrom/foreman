@@ -554,6 +554,48 @@ class Graph(OneFile, ForemanTestCase):
             fmpage.graph_html(TASKS + [{"id": "T-0300", "title": "see /home/someone/x.py", "status": "planned",
                                         "type": "FIX", "tier": "S", "deps": []}], "x")
 
+    def test_graph_scene_is_a_box_per_task_in_the_pages_colours(self):  # T-1655
+        plan = fmpage.graph_layout(TASKS)
+        scene = fmpage.graph_scene(plan)
+        boxes = [m for m in scene["meshes"] if m["material"] != "floor"]
+        self.assertEqual(len(boxes), len(TASKS))
+        self.assertEqual(len(scene["meshes"]) - len(boxes), len(plan["layers"]))
+        tpl = read_text(fmpage.GRAPH_TEMPLATE)
+        for name, mat in scene["materials"].items():
+            self.assertIn(f"--graph-{name}: {mat['color']};", tpl, "every status reads the page's token")
+        self.assertIn(f"--graph-bg: {scene['background']};", tpl)
+        tall = {m["geometry"]["size"][1] for m in boxes}
+        self.assertEqual(tall, set(fmpage.TIER_HEIGHT.values()), "height by tier")
+        lines = fmpage.graph_cells(TASKS, cols=48)
+        self.assertTrue(all(ln.count("▀") == 48 for ln in lines[:-1]))
+        self.assertGreater(len(set(re.findall(r"\d+;\d+;\d+", "".join(lines[:-1])))), 4, "the boxes are drawn")
+        key = re.sub(r"\x1b\[[0-9;]*m", "", lines[-1])
+        for words in ("2 done", "1 active", "1 blocked", "31 planned", "1 dropped"):
+            self.assertIn(words, key, "status is named, not colour alone")
+        self.assertEqual(lines, fmpage.graph_cells(TASKS, cols=48))
+        with self.assertRaises(ValueError):
+            fmpage.graph_cells(TASKS, cols=1)
+        chain = [{"id": f"T-{i + 1:04d}", "title": "", "status": "planned", "tier": "M",
+                  "deps": [f"T-{i:04d}"] if i else []} for i in range(12)]  # 40 layers in 64 columns: sub-pixel boxes
+        bg = "13;16;19"
+        cols = [{j for j, c in enumerate(re.findall(r"38;2;(\d+;\d+;\d+)m", ln)) if c != bg}
+                for ln in fmpage.graph_cells(chain, cols=64)[:-1]]
+        drawn = set().union(*cols)
+        self.assertTrue(drawn and 0 not in drawn and 63 not in drawn, "a 12-layer chain is framed, not cropped")
+        self.assertGreater(max(drawn) - min(drawn), 32, "and fills the width")
+        many = [dict(t, id=f"T-{i:05d}", deps=[]) for i, t in enumerate(TASKS * 45)]
+        self.assertIn(f"({len(many) - fmpage.GRAPH_MAX:,} older not drawn)", fmpage.graph_cells(many, cols=8)[-1])
+
+    def test_fm_page_graph_cells_prints_and_writes_nothing(self):  # T-1655
+        self.fm("init")
+        self.fm_json("task", "new", "Base work", "--type", "FEATURE", "--tier", "S", "--ac", "x :: true")
+        out = self.fm("page", "graph", "--cells", "--cols", "30").stdout
+        self.assertEqual(out.count("▀"), 30 * 9)
+        self.assertIn("1 planned", re.sub(r"\x1b\[[0-9;]*m", "", out))
+        self.assertFalse(os.path.exists(os.path.join(c.find_project(self.repo).dir, "graph.html")))
+        self.assertNotEqual(self.fm("page", "graph", "--cells", "--cols", "500", check=False).returncode, 0)
+        self.assertNotEqual(self.fm("page", "city", "--cells", check=False).returncode, 0, "only the graph")
+
     def test_fm_page_graph_reads_fm_state_and_never_overwrites_a_foreign_file(self):
         self.fm("init")
         a = self.fm_json("task", "new", "Base work", "--type", "FEATURE", "--tier", "S", "--ac", "x :: true")["id"]
