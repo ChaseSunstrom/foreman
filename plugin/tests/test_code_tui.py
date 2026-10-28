@@ -796,6 +796,36 @@ class Motion(unittest.TestCase):
                 return tui().resolve(row[i + offset][1], cfg, cv.bg[y][i + offset])
         self.fail(f"{needle!r} not drawn")
 
+    def test_the_projects_motion_score_sets_how_long_values_roll(self):  # T-1626
+        score = ('[[motion]]\nname = "fm-code-counts"\nduration = 2000\neasing = "linear"\nproperties = ["opacity"]\n'
+                 'reduced = "fade"\n[[motion]]\nname = "fm-code-deck"\nduration = 0\neasing = "linear"\n'
+                 'properties = ["opacity"]\nreduced = "instant"\n')
+        score += "".join(f'[[motion]]\nname = "fm-code-{n}"\nduration = {ms}\neasing = "linear"\nproperties = ["opacity"]\n'
+                         'reduced = "fade"\n' for n, ms in (("bars", 300), ("columns", 500)))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(tui().score_durations(d), {})  # no score: fm code keeps its own
+            with open(os.path.join(d, "motion.toml"), "w") as f:
+                f.write(score)
+            got = tui().score_durations(d)
+            self.assertEqual(got, {"n": 2.0, "tok": 2.0, "deck": 0.001, "bar": 0.3, "col": 0.5})  # 0 ms is 1 ms: no divide by zero
+            cfg = dict(tui().DEFAULTS, motion="full")
+            self.assertEqual(tui().App(cfg, spawn=lambda *a, **k: None, root=d).motion.score, got)
+            with open(os.path.join(d, "motion.toml"), "w") as f:
+                f.write("[[motion]\n")  # unreadable: ignored, not a crash
+            self.assertEqual(tui().score_durations(d), {})
+        for score, mid in (({}, 100), ({"n": 2.0}, None)):
+            m = tui().Motion(score)
+            m.frames = 5  # past the first frame: a new value rolls up from 0
+            m.eased("n+:a.py", 100, 10.0)
+            shown = m.eased("n+:a.py", 100, 11.0)
+            self.assertEqual(shown, 100) if mid else self.assertLess(shown, 100)
+            self.assertEqual(m.eased("bar+:a.py", 7, 10.0), 0)  # another family keeps the default dur
+            self.assertEqual(m.eased("bar+:a.py", 7, 10.8), 7)
+        m = tui().Motion({"deck": 0.001})
+        m.frames = 5
+        m.eased("deck_y", 3, 10.0)
+        self.assertEqual(m.eased("deck_y", 3, 10.01), 3)  # 1 ms: there at once, no ZeroDivisionError
+
     def test_a_switch_between_views_fades_in_unless_motion_is_off(self):  # T-1307
         for motion, fades in (("full", True), ("reduced", True), ("off", False)):
             app, cfg = self.app(RUN, motion)

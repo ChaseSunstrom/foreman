@@ -48,7 +48,7 @@ Work inside a focused task (each step edits files). Per step, read only the play
 - `../playbooks/references/ui/motion.md`: timing tokens, a state-to-motion table, storyboards, reduced motion as its
   own path.
 - Write the Motion Score (`motion.toml` at the repo root), then `fm motion check` (a missing reduced form, an unknown
-  easing, a token DESIGN.md lacks) and `fm motion compile --to css|waapi|three --out FILE` to emit the code.
+  easing, a token DESIGN.md lacks) and `fm motion compile --to css|waapi|three|lab --out FILE` to emit the code.
 - Games and playful UI: `../playbooks/references/ui/game-feel.md`. Sound: `../playbooks/references/ui/sound-design.md`.
 
 ## 5. 3D: a scene that never breaks the page

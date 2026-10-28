@@ -6696,14 +6696,14 @@ def _build_parser():
                    "stories wrote it) instead of the project's state stories/<chart>.html")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 95), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
-            "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
+            "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three|lab: a clean "
             "score as CSS custom properties and @keyframes, WAAPI options or three.js tween parameters, the same "
             "durations and easings in each, reduced forms included (T-1625); verify [PATH] [--samples FILE]: the page at "
             "fm smoke's web URL sampled under its frozen profile (or a samples file), each value held to the score's "
             "duration and curve within tolerance, every drift named; no browser: says so and checks the score (T-1627)")
     s.add_argument("action", choices=["check", "compile", "verify"])
     s.add_argument("path", nargs="?", help="the score (default: motion.toml at the repo root)")
-    s.add_argument("--to", choices=["css", "waapi", "three"], help="compile: the target (default css)")
+    s.add_argument("--to", choices=["css", "waapi", "three", "lab"], help="compile: the target (default css; lab: a page to play, scrub and edit each motion, T-1626)")
     s.add_argument("--out", metavar="FILE", help="compile: write here, replacing the file whole, not print it")
     s.add_argument("--samples", metavar="FILE", help="verify: a JSON list of samples, not a live crawl")
     import fmscene  # T-1633: stdlib only and small; its schema is the help's epilog
