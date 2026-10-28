@@ -6357,7 +6357,7 @@ def _build_parser():
                                                        "issues (read-only) into briefs, their text kept as untrusted data")
     s.add_argument("source", nargs="?", choices=["gh", "spec", "first", "swipe", "pick", "prefer", "ticket"],
                    help="a source to capture from (spec FILE: each unchecked `- [ ]` item, once; ticket FILE|-|KEY: a "
-                        "pasted ticket or error as one planned brief, T-1664, or a Jira or Linear issue fetched by key or URL, T-1859); first: ready S items with why; swipe: "
+                        "pasted ticket or error as one planned brief, T-1664, or a Jira, Linear or GitHub issue fetched by key or URL (gh:OWNER/REPO#N or '#N'), T-1859, T-1869; a changed one rewrites its unstarted brief); first: ready S items with why; swipe: "
                         "the deferred pile (--apply ID:revive|drop|keep,…); pick: close pairs to choose between; "
                         "prefer WINNER LOSER: record a choice the inbox order learns from (--reset forgets them); "
                         "none lists the inbox")
