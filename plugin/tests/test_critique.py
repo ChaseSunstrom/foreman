@@ -4,6 +4,7 @@ DESIGN.md's tokens: values no token names, near-duplicates and outliers. --why S
 element's look. Census and Cascade run on canned data; InABrowser on a real one when there is one."""
 import json
 import os
+import pathlib
 import unittest
 
 from helpers import ForemanTestCase, headless_chrome
@@ -258,8 +259,158 @@ class Cascade(unittest.TestCase):
         self.assertLess(len(text.splitlines()), fmcritique.WHY_RULES + fmcritique.WHY_WINNERS + 10)
 
 
+SLOP = {"url": "slop.html", "elements": 200, "values": {
+    "colour": {"rgb(17, 24, 39)": 60, "rgb(255, 255, 255)": 40, "rgb(99, 102, 241)": 12, "rgb(107, 114, 128)": 9,
+               "rgb(229, 231, 235)": 8, "rgb(243, 244, 246)": 6},
+    "font": {"Inter, sans-serif": 120},
+    "size": {"16px": 90, "14px": 20, "18px": 6},
+    "radius": {"8px": 30, "9999px": 2},
+    "shadow": {"rgba(0, 0, 0, 0.1) 0px 1px 3px 0px": 14},
+    "spacing": {"16px": 40, "8px": 12, "24px": 8}}}
+VARIED = {"url": "varied.html", "elements": 90, "values": {
+    "colour": {"rgb(40, 30, 20)": 50, "rgb(250, 244, 230)": 30, "rgb(196, 80, 30)": 8},
+    "font": {"Fraunces, serif": 60, "\"IBM Plex Mono\", monospace": 10},
+    "size": {"13px": 20, "16px": 40, "24px": 8, "40px": 2},
+    "radius": {"2px": 6, "12px": 4},
+    "shadow": {},
+    "spacing": {"4px": 10, "12px": 9, "20px": 8, "32px": 6}}}
+
+
+class Bingo(Case):
+    def test_a_templated_census_scores_a_line_and_a_varied_one_none(self):
+        res = fmcritique.bingo(fmcritique.load(SLOP))
+        self.assertEqual({t for t, why in res["tells"].items() if why},
+                         {"generic-font", "violet-accent", "stock-greys", "one-radius", "same-shadow", "one-gap",
+                          "flat-scale"})
+        self.assertIn(["generic-font", "violet-accent", "stock-greys"], res["lines"])
+        self.assertIn(["stock-greys", "same-shadow", "flat-scale"], res["lines"])  # the anti-diagonal
+        r = self.fm("critique", self.census_file(SLOP), "--bingo", check=False)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("■ generic-font (inter)", r.stdout)
+        self.assertIn("BINGO: generic-font + violet-accent + stock-greys", r.stdout)
+        r = self.fm("critique", self.census_file(VARIED), "--bingo", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("no bingo: 0 of 9 tells", r.stdout)
+
+    def test_sprawl_and_drift(self):
+        many = dict(SLOP, values=dict(SLOP["values"], size={f"{10 + 3 * i}px": 5 for i in range(10)},
+                                      colour={"rgb(10, 10, 10)": 9, "rgb(11, 10, 10)": 3, "rgb(10, 11, 10)": 2,
+                                              "rgb(10, 10, 11)": 2}))
+        t = fmcritique.bingo(fmcritique.load(many))["tells"]
+        self.assertEqual((bool(t["size-sprawl"]), bool(t["flat-scale"]), bool(t["near-drift"])), (True, False, True))
+
+
+def png(path, w, h, paint):
+    """A w×h PNG, white but where paint(x, y) gives an (r, g, b)."""
+    import fmimg
+    px = bytearray()
+    for y in range(h):
+        for x in range(w):
+            px += bytes(paint(x, y) or (255, 255, 255)) + b"\xff"
+    fmimg.save(path, w, h, bytes(px))
+    return fmimg.load(path)
+
+
+def ring(x0, y0, x1, y1, rgb=(200, 30, 30)):
+    """paint(x, y) for a 2-pixel rectangle outline from (x0, y0) to (x1, y1)."""
+    def paint(x, y):
+        inside = x0 <= x <= x1 and y0 <= y <= y1
+        edge = x - x0 < 2 or x1 - x < 2 or y - y0 < 2 or y1 - y < 2
+        return rgb if inside and edge else None
+    return paint
+
+
+class Marks(Case):
+    def test_strokes_red_only_on_the_marked_shot_become_boxes_in_reading_order(self):
+        loop = ring(40, 20, 91, 50)
+        dot = lambda x, y: (220, 0, 0) if 10 <= x <= 12 and 70 <= y <= 72 else None  # noqa: E731
+        page_red = lambda x, y: (230, 20, 20) if 100 <= x <= 110 and 5 <= y <= 15 else None  # noqa: E731
+        fresh = png(os.path.join(self.tmp, "f.png"), 128, 96, page_red)
+        marked = png(os.path.join(self.tmp, "m.png"), 128, 96, lambda x, y: loop(x, y) or dot(x, y) or page_red(x, y)
+                     or ((210, 0, 0) if (x, y) == (5, 5) else None))
+        boxes = fmcritique.find_marks(marked, fresh)
+        # the page's own red block and a 1-pixel speck are not marks; the ring is one mark
+        self.assertEqual([(b["x"], b["y"], b["w"], b["h"]) for b in boxes], [(40, 20, 52, 31), (10, 70, 3, 3)])
+
+    def test_a_marks_file_is_checked_before_any_browser(self):
+        bad = os.path.join(self.tmp, "m.json")
+        for body in ("[{\"x\": 1}]", "{", "[]", "[{\"x\": 1, \"y\": 1, \"w\": 0, \"h\": 2}]"):
+            with open(bad, "w") as f:
+                f.write(body)
+            r = self.fm("critique", os.path.join(self.repo, "nope.html"), "--marks", bad, check=False)
+            self.assertEqual((r.returncode, "--marks" in r.stderr), (2, True), body + r.stdout + r.stderr)
+        r = self.fm("critique", os.path.join(self.repo, "nope.html"), "--marks", "missing.png", check=False)
+        self.assertEqual(r.returncode, 2, r.stderr)
+        r = self.fm("critique", self.census_file(), "--marks", bad, check=False)
+        self.assertEqual((r.returncode, "needs a page" in r.stderr), (2, True), r.stderr)
+        for flags, said in ((["--bingo", "--why", "p"], "one at a time"), (["--note", "x"], "--note goes with"),
+                            (["--marks", bad, "--note", "x"], "--note goes with")):
+            r = self.fm("critique", self.census_file(), *flags, check=False)
+            self.assertEqual((r.returncode, said in r.stderr), (2, True), r.stderr)
+        r = self.fm("critique", "--stress", "x", "--bingo", check=False)
+        self.assertEqual(r.returncode, 2, r.stderr)
+
+
+class Brief(Case):
+    def test_quoted_phrases_from_the_brief_less_its_verify_commands(self):
+        import fmcore as c
+        self.fm("task", "new", "Add the export menu", "--type", "FEATURE", "--tier", "S",
+                "--ac", "the menu says \"Export as CSV\" and “Copy link” :: fm critique p.html --brief \"x y\"",
+                "--step", "build", "--focus")
+        b = c.find_brief(c.find_project(self.repo), "T-0001")
+        self.assertEqual(fmcritique.phrases(b), ["Export as CSV", "Copy link"])
+        self.assertEqual(fmcritique.built("Menu\n  export   AS csv", ["Export as CSV", "Copy link"]),
+                         [{"phrase": "Export as CSV", "found": True}, {"phrase": "Copy link", "found": False}])
+        self.fm("task", "new", "Tidy the code", "--type", "CLEAN", "--tier", "S", "--ac", "clean :: true",
+                "--step", "x")
+        r = self.fm("critique", os.path.join(self.repo, "p.html"), "--brief", "T-0002", check=False)
+        self.assertEqual((r.returncode, "quotes no phrases" in r.stderr), (2, True), r.stderr)
+        r = self.fm("critique", os.path.join(self.repo, "p.html"), "--brief", "T-0099", check=False)
+        self.assertEqual((r.returncode, "no task T-0099" in r.stderr), (2, True), r.stderr)
+
+
 @unittest.skipUnless(headless_chrome(), "no headless Chromium here")
 class InABrowser(Case):
+    def test_marks_brief_and_bingo_on_a_real_page(self):
+        import fmcore as c
+        import fmimg
+        page = os.path.join(self.repo, "m.html")
+        with open(page, "w") as f:
+            f.write("<style>body{margin:0;font:16px Inter,sans-serif;background:#fff} button{position:absolute;"
+                    "left:100px;top:100px;width:120px;height:40px}</style><input placeholder='Search rows'>"
+                    "<button id=go aria-label='Export as CSV'>Export</button>")
+        path, _ = fmshot.find_browser("test")
+        b = fmshot.Browser(path, (320, 200))
+        try:
+            fmcritique._open(b, pathlib.Path(page).as_uri(), self.repo, False)
+            shot = fmimg.decode(b.png())
+        finally:
+            b.close()
+        loop, px = ring(95, 95, 225, 145), bytearray(shot.rgba)
+        for y in range(shot.height):
+            for x in range(shot.width):
+                if loop(x, y):
+                    px[(y * shot.width + x) * 4:(y * shot.width + x) * 4 + 3] = bytes((200, 30, 30))
+        marked = os.path.join(self.tmp, "marked.png")
+        fmimg.save(marked, shot.width, shot.height, bytes(px))
+        self.fm("task", "new", "Build the toolbar", "--type", "FEATURE", "--tier", "S", "--ac",
+                "it has \"Search rows\" and \"Undo\" :: true", "--step", "x", "--focus")
+        data = json.loads(self.fm("critique", page, "--marks", marked, "--note", "Make it bigger", "--json").stdout)
+        (m,) = data["marks"]
+        self.assertEqual((m["selector"], m["new"]), ("#go", True), data)
+        t = c.find_brief(c.find_project(self.repo), m["task"])
+        self.assertEqual((t.type, t.meta.get("scope")), ("FIX", ["m.html"]))
+        self.assertIn("Make it bigger (#go on m.html)", t.title)
+        again = json.loads(self.fm("critique", page, "--marks", marked, "--note", "Make it bigger", "--json").stdout)
+        self.assertEqual((again["marks"][0]["task"], again["marks"][0]["new"]), (m["task"], False))
+        r = self.fm("critique", page, "--brief", check=False)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("✓ \"Search rows\"", r.stdout)
+        self.assertIn("✗ \"Undo\": not on the page", r.stdout)
+        r = self.fm("critique", page, "--bingo", check=False)
+        self.assertIn("■ generic-font (", r.stdout, r.stderr)  # Inter, or the button's and input's own system font
+        self.assertEqual((r.returncode, "no bingo:" in r.stdout), (0, True), r.stdout)
+
     def test_a_real_page_census_and_why(self):
         page = os.path.join(self.repo, "p.html")
         with open(page, "w") as f:
