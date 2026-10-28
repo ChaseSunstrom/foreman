@@ -98,8 +98,8 @@ class IndexLock(HookCase):
 
     def tearDown(self):
         for pr in self.procs:
-            pr.kill()
-            pr.wait()
+            with pr:  # closes its pipes and waits
+                pr.kill()
         super().tearDown()
 
     def make_lock(self, age):
@@ -110,9 +110,12 @@ class IndexLock(HookCase):
     def live_git(self, cwd=None):
         git = os.path.join(self.tmp, "bin", "git")  # a process whose comm is git, with the repo as its cwd
         os.makedirs(os.path.dirname(git), exist_ok=True)
-        shutil.copy("/bin/sleep", git)
-        # T-1799: argv[0] stays sleep: a multi-call coreutils (Ubuntu 26's uutils) picks its tool by it; comm is the file's name
-        pr = subprocess.Popen(["sleep", "30"], executable=git, cwd=cwd or self.repo)
+        # T-1807: a script, not a copied sleep (Ubuntu 26's uutils sleep, copied, exits at once: a zombie with no cwd);
+        # comm is the script's name, and read blocks on the pipe with no child process
+        with open(git, "w") as f:
+            f.write("#!/bin/sh\nread x\n")
+        os.chmod(git, 0o755)
+        pr = subprocess.Popen([git], cwd=cwd or self.repo, stdin=subprocess.PIPE)
         self.procs.append(pr)
         return pr
 
