@@ -49,6 +49,11 @@ class Foresight(ForemanTestCase):
         line = "\n".join(fs.lines(self.p))
         self.assertIn("CI on main is red at abc1234 (test)", line)
         self.assertIn(caught[0].id, line)
+        caught[0].meta["status"] = "dropped"  # its fix went into another task, not yet green on CI
+        c.save_brief(self.p, caught[0])
+        line = "\n".join(fs.lines(self.p))
+        self.assertNotIn("fix it first", line)  # it pointed at a dropped task
+        self.assertIn(f"{caught[0].id} is dropped", line)
 
     def test_green_ci_or_no_network_says_nothing(self):
         with mock.patch.object(fs, "github_repo", return_value="o/r"), \
