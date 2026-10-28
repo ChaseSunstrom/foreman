@@ -1320,6 +1320,58 @@ def churn(root, days):
     return [per[k] for k in names], names
 
 
+AIRLOCK = ("#e0569a", "#f08a5d", "#f2c14e", "#e8685a", "#d4a373", "#c9708f")
+
+
+def airlock(held, through):
+    """T-1849: the guard as a gate. Before it a box per category it held, past it one green box for the tool calls it
+    let through; heights log-scaled to the largest, so 3 blocks still show beside 3,000 calls."""
+    import collections
+    if through < 0 or any(v < 0 for v in held.values()):
+        raise ValueError("counts can't be negative")
+    gate, named = {"pillar-l", "pillar-r", "lintel", "through", "floor", "camera"}, collections.Counter()
+    for k, v in held.items():  # a name a mesh can't carry, or one the gate uses, joins other
+        if v:
+            named[k if re.fullmatch(r"[a-z][a-z0-9-]{0,40}", str(k)) and k not in gate else "other"] += v
+    top = max([math.log1p(v) for v in named.values()] + [math.log1p(through)]) or 1
+
+    def box(name, material, size, x, z, y=None):
+        return {"name": name, "material": material, "geometry": {"type": "box", "size": size},
+                "position": [x, size[1] / 2 if y is None else y, z]}
+
+    def h(v):
+        return round(0.1 + 2 * math.log1p(v) / top, 6)
+    materials = {"gate": {"color": "#9aa5b1", "roughness": 0.5}, "through": {"color": "#6cc58a", "roughness": 0.6},
+                 "floor": {"color": "#1b1e26", "roughness": 0.9}}
+    meshes = [box("pillar-l", "gate", [0.5, 3, 0.5], 0, -2.2), box("pillar-r", "gate", [0.5, 3, 0.5], 0, 2.2),
+              box("lintel", "gate", [0.7, 0.4, 4.9], 0, 0, 3.2), box("through", "through", [1.6, h(through), 1.6], 2.4, 0)]
+    for j, (k, v) in enumerate(sorted(named.items(), key=lambda kv: (-kv[1], kv[0]))):  # rows of 3 back from the gate
+        materials[f"held{j}"] = {"color": AIRLOCK[j % len(AIRLOCK)], "roughness": 0.6}
+        meshes.append(box(k, f"held{j}", [1, h(v), 1], -2 - (j // 3) * 1.3, (j % 3 - 1) * 1.3))
+    meshes.append({"name": "floor", "material": "floor", "geometry": {"type": "plane", "size": [20, 12]},
+                   "rotation": [-90, 0, 0]})
+    return validate({
+        "background": "#101218", "materials": materials, "meshes": meshes,
+        "camera": {"fov": 40, "position": [5, 6, 11], "target": [-1, 1, 0], "far": 100},
+        "lights": [{"type": "hemisphere", "sky": "#dfe8ff", "ground": "#2a221a", "intensity": 0.7},
+                   {"type": "directional", "position": [-4, 8, 6], "intensity": 1.4},
+                   {"type": "directional", "position": [6, 3, -4], "color": "#7aa2ff", "intensity": 0.4}]})
+
+
+def guard_counts(p, days):
+    """T-1849: ({category: blocks}, tool calls run) for project p over the last `days` days: blocks from its ledger,
+    calls (clean or failed, both got past the guard) from the global events."""
+    import collections
+    import time
+    import fmcore
+    since = fmcore.iso(time.time() - days * 86400)
+    held = collections.Counter(str((e.get("data") or {}).get("category"))
+                               for e in fmcore.ledger_events(p, ["guard_block"], since))
+    through = sum(1 for e in fmcore.global_events(since)
+                  if e.get("kind") in ("tool", "tool_fail") and e.get("project") == p.slug)
+    return dict(held), through
+
+
 def _write_out(args, text, what="FILE"):
     """--out's absolute path with text written there, never over args.path; None when there's no --out."""
     import fmcore
@@ -1334,7 +1386,7 @@ def _write_out(args, text, what="FILE"):
 def cmd_scene(args):
     import sys
     import fmcli
-    if args.action in ("metaballs", "terrain"):  # T-1848 a seeded blob, T-1851 the repo's churn: made here, no FILE
+    if args.action in ("metaballs", "terrain", "airlock"):  # T-1848 a blob, T-1851 churn, T-1849 the guard: no FILE
         if args.path:
             print(f"fm: scene: {args.action} takes no FILE (got {args.path}); write it with --out", file=sys.stderr)
             return 2
@@ -1342,10 +1394,20 @@ def cmd_scene(args):
             if args.action == "metaballs":
                 scene, what = metaballs(args.balls, args.grid, args.seed), f"a blob of {args.balls} ball(s)"
             else:
-                if not 1 <= args.days <= 3650:
-                    raise ValueError(f"--days {args.days}: 1 to 3650")
-                rows, names = churn(os.getcwd(), args.days)
-                scene, what = terrain(rows, names), f"{len(names)} path(s) over {args.days} days"
+                days = args.days if args.days is not None else 90 if args.action == "terrain" else 30
+                if not 1 <= days <= 3650:
+                    raise ValueError(f"--days {days}: 1 to 3650")
+                if args.action == "terrain":
+                    rows, names = churn(os.getcwd(), days)
+                    scene, what = terrain(rows, names), f"{len(names)} path(s) over {days} days"
+                else:
+                    import fmcore
+                    p = fmcore.find_project(os.getcwd())
+                    if not p:
+                        raise ValueError("not in a Foreman project: the guard's record is per project")
+                    held, through = guard_counts(p, days)
+                    scene = airlock(held, through)
+                    what = f"{sum(held.values())} held in {len(held)} categories, {through} through over {days} days"
             text = json.dumps(scene, indent=2) + "\n"
             out = _write_out(args, text)
         except (OSError, ValueError) as e:
@@ -1354,9 +1416,9 @@ def cmd_scene(args):
         if not out:
             return fmcli.out(args, {"scene": scene}, text.rstrip("\n")) or 0
         gs = [m["geometry"] for m in scene["meshes"] if m["name"] != "floor"]
-        tris = sum(len(g["faces"]) for g in gs)
-        return fmcli.out(args, {"out": args.out, "vertices": sum(len(g["vertices"]) for g in gs), "triangles": tris},
-                         f"wrote {args.out}: {what}, {tris} triangles") or 0
+        tris = sum(len(g.get("faces", ())) for g in gs)  # boxes count none: three.js makes their triangles
+        return fmcli.out(args, {"out": args.out, "vertices": sum(len(g.get("vertices", ())) for g in gs),
+                                "triangles": tris}, f"wrote {args.out}: {what}" + f", {tris} triangles" * bool(tris)) or 0
     if not args.path:
         print(f"fm: scene: {args.action} needs FILE", file=sys.stderr)
         return 2
