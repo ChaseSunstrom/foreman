@@ -3891,7 +3891,17 @@ def cmd_pause(args):
     """T-0436: one flag for every project. It grants nothing, and lifting it only lets back what ran before, so
     either way it's no consent to guard."""
     on = args.state == "on"
-    c.set_panic(on)
+    if args.now and not on:
+        raise UsageError("--now goes with fm pause on: fm pause off lifts both")
+    c.set_panic(on, hard=args.now)
+    if on and args.now:  # T-1821
+        import fmserve
+        r = fmserve.panic_stop()
+        return out(args, {"paused": True, "hard": True, **r},
+                   f"Stopped now: {len(r['sessions'])} fm session(s), {len(r['serve'])} fm serve unit(s), "
+                   f"{r['leases']} lease(s) freed; a running fm run or night stops its session within 2 s. Interactive "
+                   "Claude Code sessions and subagents finish their turn. Record: state/stops.jsonl. fm pause off lifts it."
+                   + "".join(f"\n  ✗ {e}" for e in r.get("errors", [])))
     out(args, {"paused": on}, "Paused everywhere: no drive, fm run, serve, night or lane launches, and autonomy reads "
         "standard; a session already running finishes its turn. fm pause off lifts it." if on else
         "Pause lifted: the drive and the launchers run again, under each project's own autonomy.")
@@ -6158,6 +6168,8 @@ def _build_parser():
 
     s = add("pause", cmd_pause, tier=("Project and settings", 720), help="stop everything Foreman runs unattended, in every project (fm pause off lifts it)")
     s.add_argument("state", nargs="?", choices=["on", "off"], default="on")
+    s.add_argument("--now", action="store_true", help="also stop what runs now: fm sessions, serve units, fm run's "
+                   "session, leases (T-1821)")
 
     add("next", cmd_next, tier=("Every task", 10), help="the one next required action (derived from the briefs)")
 

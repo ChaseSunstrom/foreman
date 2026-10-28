@@ -369,10 +369,18 @@ def trusted():
 PAUSED = "paused (fm pause): nothing unattended starts until the user runs fm pause off"
 
 
-def panicked():
+def panicked(hard=False):
     """T-0436: fm pause's flag. While it's there nothing Foreman runs unattended starts (the drive, fm run, serve, night,
-    lane new) and autonomy reads as standard everywhere; a claude child already running keeps going."""
-    return os.path.exists(os.path.join(state_dir(), "PANIC"))
+    lane new) and autonomy reads as standard everywhere; a claude child already running keeps going. hard: fm pause --now
+    (T-1821), under which fm run also stops the session it's running."""
+    path = os.path.join(state_dir(), "PANIC")
+    if not hard:
+        return os.path.exists(path)
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().split()[1:2] == ["hard"]
+    except OSError:
+        return False
 
 
 def host_load():
@@ -413,12 +421,10 @@ def refuse_if_paused():
         raise PolicyError(PAUSED)
 
 
-def set_panic(on):
+def set_panic(on, hard=False):
     path = os.path.join(state_dir(), "PANIC")
     if on:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(now() + "\n")
+        write_atomic(path, now() + (" hard" if hard else "") + "\n")
     elif os.path.exists(path):
         os.remove(path)
 

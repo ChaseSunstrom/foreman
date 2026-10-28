@@ -160,13 +160,7 @@ def _linger():
 
 def stop(slug):
     """Stop and remove one unit and put the project's autonomy and drive back. Returns what it did."""
-    done = []
-    path = units().get(slug)
-    if path:
-        _systemctl("disable", "--now", unit_name(slug), check=False)
-        os.remove(path)
-        _systemctl("daemon-reload", check=False)
-        done.append(f"stopped and removed {unit_name(slug)}")
+    done = []  # settings back first: a caller inside the unit stops with it (T-1821)
     p = c.project_by_slug(slug)
     if p:
         with c.lock(p.dir):
@@ -178,11 +172,58 @@ def stop(slug):
                 c.log_event(p, "serve_stop", data={"unit": unit_name(slug)})
                 c.regen_views(p)
                 done.append(f"{slug}: autonomy {meta['autonomy']}, drive {'on' if meta['drive'] else 'off'} again")
+    path = units().get(slug)
+    if path:
+        _systemctl("disable", "--now", unit_name(slug), check=False)
+        os.remove(path)
+        _systemctl("daemon-reload", check=False)
+        done.append(f"stopped and removed {unit_name(slug)}")
     return done
 
 
 def stop_all():
     return [line for slug in units() for line in stop(slug)]
+
+
+def panic_stop():
+    """T-1821: fm pause --now stops what runs, not only what would start: every fm session runner (its process group),
+    every fm serve unit and every lease; a running fm run (fm night runs it) stops its session within 2 s. Interactive
+    Claude Code sessions and subagents finish their turn. Locks are flocks: they free as their holders exit.
+    The caller may sit inside what it stops (an fm session's agent, a fm serve unit): everything else first, then the
+    record, its own session and unit last. One failed stop doesn't end the sweep: it lands in the record's errors."""
+    import fmbus
+    import fmsession
+    sessions = [m for m in fmsession.sessions() if m.get("status") in ("starting", "running")]
+    pgid = os.getpgid(0)
+    own_unit = re.search(r"foreman-serve-(.+?)\.service", _read("/proc/self/cgroup") or "")
+    own_unit = own_unit and own_unit.group(1)
+    slugs = sorted(units())
+    rec, errors = {"at": c.now(), "sessions": [m["id"] for m in sessions], "serve": slugs}, []
+
+    def safe(fn, arg):
+        try:
+            fn(arg)
+        except Exception as e:  # noqa: BLE001 — the next stop still runs
+            errors.append(f"{arg}: {e}")
+    for m in sessions:
+        if m.get("pid") != pgid:
+            safe(fmsession.stop, m["id"])
+    for slug in slugs:
+        if slug != own_unit:
+            safe(stop, slug)
+    with c.lock(fmbus._dir()):
+        rec["leases"] = len(fmbus._leases())
+        fmbus._write_leases({})
+    if errors:
+        rec["errors"] = errors
+    with open(os.path.join(c.state_dir(), "stops.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
+    for m in sessions:
+        if m.get("pid") == pgid:
+            safe(fmsession.stop, m["id"])
+    if own_unit in slugs:
+        safe(stop, own_unit)
+    return rec
 
 
 def states():
@@ -494,6 +535,8 @@ def _run_lanes(p, batch, args, models, log):
             code, why = _watch(proc, path, deadline, getattr(args, "stall", 20) * 60)
             if code is None:
                 _stop(proc, signal)  # the whole process group: tools the session started go too
+                if why == "paused":  # the handler below stops the other lanes and keeps any with work
+                    sys.exit(f"fm run: {tid}: stopped by fm pause --now; {c.PAUSED}")
                 if why == "stalled":  # T-0447
                     c.log_event(p, "run_stalled", task=tid, data={"minutes": args.stall, "lane": path})
             out.seek(0)
@@ -529,17 +572,22 @@ def _transcript_mark(cwd, since):
 
 def _watch(proc, cwd, deadline, stall_s):
     """(exit code, None) when the session ends; (None, "timeout") at the deadline (monotonic); (None, "stalled") once
-    its transcript stops moving for stall_s seconds."""
-    since, mark, moved = time.time() - 1, None, time.monotonic()
+    its transcript stops moving for stall_s seconds; (None, "paused") within 2 s of fm pause --now (T-1821)."""
+    since, mark, moved, looked = time.time() - 1, None, time.monotonic(), 0.0
     poll = max(0.5, min(30.0, stall_s / 3))
     while True:
         try:
-            return proc.wait(timeout=max(0.1, min(poll, deadline - time.monotonic()))), None
+            return proc.wait(timeout=max(0.1, min(2.0, poll, deadline - time.monotonic()))), None
         except subprocess.TimeoutExpired:
             pass
         now = time.monotonic()
         if now >= deadline:
             return None, "timeout"
+        if c.panicked(hard=True):  # one small read every 2 s; the transcript scan keeps its own pace
+            return None, "paused"
+        if now - looked < poll:
+            continue
+        looked = now
         m = _transcript_mark(cwd, since)
         if m is not None and m != mark:
             mark, moved = m, now
@@ -904,6 +952,8 @@ def cmd_run(args):
             c.log_event(p, "run_stalled", task=b.id, data={"minutes": args.stall})
             print(f"{b.id}: stalled (its transcript didn't move for {args.stall:g} min); stopped it", flush=True)
             code = 0
+        elif why == "paused":
+            fail(f"{b.id}: stopped by fm pause --now; {c.PAUSED}")
         elif code is None:
             fail(f"{b.id}: the session hit the {args.timeout}-minute limit; stopping")
         last = (streams[1].strip() or streams[0].strip()).splitlines()[-1:]  # a crash's own error wins over model text
