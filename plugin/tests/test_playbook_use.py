@@ -108,6 +108,13 @@ class Use(ForemanTestCase):
         self.assertTrue(29 <= got["covers"] <= 31, got["covers"])
         self.assertIn("covers only", self.run_fm("coverage", "--unused").stdout)
 
+    def test_a_book_route_text_named_is_not_unused(self):  # T-1833 x T-1834: a route TEXT hit counts as use
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": c.iso(time.time()), "kind": "playbook", "action": "route",
+                                "paths": ["references/perf/delta.md", "references/nope.md"]}) + "\n")
+        self.assertNotIn("references/perf/delta.md", pb.unused(self.lib)[0])
+        self.assertEqual(pb.reach(self.lib, days=60)["routed"], {"references/perf/delta.md": 1})
+
     def test_a_window_under_a_day_is_refused(self):
         for days in ("0", "-5"):
             got = self.run_fm("coverage", "--unused", "--days", days)
