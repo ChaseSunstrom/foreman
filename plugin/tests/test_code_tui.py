@@ -1823,6 +1823,7 @@ class HostileWidth(unittest.TestCase):
                  "diff": dict(view_lines=["+" + s, "-" + s, "@@ " + s, s]),
                  "tickets": dict(tickets=[s, s], items=[(0, s, True), (1, s, False)]),  # T-1350
                  "looks": dict(look_answers=[], look_pairs=[(s, s)], items=[(s, s)]),
+                 "backlog": dict(items=[{"id": s, "title": s, "why": s}, {"id": s, "title": s, "why": ""}]),  # T-1856
                  "help": {},
                  "breakout": dict(game=__import__("fmextras").Breakout(), game_t=0.0),  # T-1556
                  "settings": dict(set_rows=[1, 2], set_query=s, set_note=(s, "warn"), items=[
