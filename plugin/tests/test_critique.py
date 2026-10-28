@@ -197,6 +197,18 @@ class Pseudo(unittest.TestCase):
         self.assertEqual(set(fmcritique.PROFILES), {"tv", "eink", "car", "wrist"})
 
 
+class Url(unittest.TestCase):  # T-1652: a page path with a folder in it was opened under that folder twice
+    def test_a_relative_page_path_opens_that_page(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            page = os.path.join(d, "sub", "page.html")
+            os.makedirs(os.path.dirname(page))
+            open(page, "w").close()
+            url, root = fmcritique._url(os.path.relpath(page) + "?a=1/../2#x", False)
+            self.assertEqual(url, pathlib.Path(os.path.realpath(page)).as_uri() + "?a=1/../2#x")
+            self.assertEqual(os.path.realpath(root), os.path.realpath(os.path.dirname(page)))
+
+
 class Clean(unittest.TestCase):
     def test_format_and_private_characters_are_stripped(self):
         for ch in ("\U000E0041", "⁠", "⁤", "﻿", "­", "؜", "", "‮", "\x1b", "\x85"):

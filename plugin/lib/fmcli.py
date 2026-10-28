@@ -6624,13 +6624,16 @@ def _build_parser():
             formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
             "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
             "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs; "
-            "tokens DESIGN.md --to css|app|pane: its Tokens table as CSS variables, an fm code theme or the pane's "
-            "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into: brief, a11y (contrast, reduced motion, "
+            "tokens DESIGN.md --to css|app|pane|brand|md: its Tokens table as CSS variables, an fm code theme, the "
+            "pane's palette, a favicon and social card (--out DIR) or a ## Tokens section (a DTCG or Figma variables "
+            ".json reads too); infer PATHS: the repeated literal colours, durations and radii as proposed tokens; "
+            "xray PAGE: each element outlined on- or off-token in a shot (exit 1 on any off); "
+            "check [ROOT]: the gates DESIGN.md's ## Gates opts into: brief, a11y (contrast, reduced motion, "
             "flashes, alt, focus styles) and debt N (untokened literals under a budget); advisory exits 0, blocking 1, trial counts would-blocks "
             "and blocks once they prove right (--wrong GATE marks one); "
             "roll [--seed N] [--apply|--undo]: one look card's palette, type and motion, seeded, into DESIGN.md")
     s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll", "diverge",
-                                      "sprint", "vague"],
+                                      "sprint", "vague", "infer", "xray"],
                    help="diverge [N] [WHAT] [--out DIR]: N (2-6, default 3) variant briefs for WHAT in looks far "
                    "apart; diverge pick LOOK: keep the winner in the taste ledger (T-1536); sprint [ROOT]: the "
                    "ten-minute design sprint, five stages each with a check, the next step of the first that fails; "
@@ -6646,14 +6649,19 @@ def _build_parser():
     s.add_argument("--out", metavar="PATH", help="extract, roll: the file to write the Tokens or Look section into "
                                                  "(default: DESIGN.md at the repo root, or docs/DESIGN.md if that "
                                                  "exists; - prints); palette: the file to write the export to "
-                                                 "(default prints)")
-    s.add_argument("--to", choices=["css", "app", "pane"], default="css", help="tokens: CSS custom properties (dark "
-                   "under prefers-color-scheme), a tui.toml [colors] table fm settings accepts, or the pane's palette "
-                   "JSON (T-1651)")
-    s.add_argument("--light", action="store_true", help="tokens --to app|pane: the light values (app: on the paper "
-                   "theme)")
-    s.add_argument("--dark", action="store_true", help="tokens --to app|pane: the dark values (app: on the night "
-                   "theme; the default picks the theme by the screen colour's lightness)")
+                                                 "(default prints); tokens --to brand: the folder for favicon.svg and "
+                                                 "card.svg; tokens --to md: the file to write ## Tokens into (default "
+                                                 "prints); xray: the outlined shot's PNG")
+    s.add_argument("--to", choices=["css", "app", "pane", "brand", "md"], default="css", help="tokens: CSS custom "
+                   "properties (dark under prefers-color-scheme), a tui.toml [colors] table fm settings accepts, the "
+                   "pane's palette JSON (T-1651), favicon.svg and a 1200x630 card.svg in the accent, bg and text "
+                   "roles, or a ## Tokens section (T-1652)")
+    s.add_argument("--tokens", metavar="FILE", help="xray: the DESIGN.md (or tokens .json) whose colours count as "
+                   "on-token (default: the one fm motion finds)")
+    s.add_argument("--light", action="store_true", help="tokens --to app|pane|brand: the light values (app: on the "
+                   "paper theme)")
+    s.add_argument("--dark", action="store_true", help="tokens --to app|pane|brand: the dark values (app: on the "
+                   "night theme; the default picks the theme by the screen colour's lightness)")
     s.add_argument("--save", action="store_true", help="tokens --to pane: keep it as the foreman-ui pane's palette (it "
                    "paints over the default one; cb and riso still win), not just print it (T-1717)")
     s.add_argument("--clear", action="store_true", help="tokens --to pane: forget the saved pane palette (T-1717)")
@@ -7171,7 +7179,7 @@ WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"s
                    "playbooks": ("action", {"show", "route", "preview"}),  # T-1621: prints, but can rebuild fm
                    # map's map.json cache; route (T-1833) also writes the playbook index in state and one event; not blame (T-1622): git in a FOREMAN_PLAYBOOKS repo runs its filters
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
-                   "design": ("action", {"lint", "palette", "contrast", "tokens"}),  # T-1506, T-1507, T-1651: read
+                   "design": ("action", {"lint", "palette", "contrast", "tokens", "infer"}),  # T-1506..T-1652: read
                    "img": ("out", {None}),  # T-1630: info and diff read; --out writes
                    "motion": ("action", {"check"})}
 
