@@ -6711,7 +6711,7 @@ def _build_parser():
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
             "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
     s.add_argument("action", choices=["compile", "check", "turntable", "shader", "soak", "cells", "import", "metaballs",
-                                       "terrain"],
+                                       "terrain", "airlock"],
                    help="compile: the module; "
                    "check: validate and count (a .gltf or .glb: its structure, offline); turntable: a contact sheet of "
                    "the scene turned about +Y, drawn by fmraster with no browser or GPU (--out PNG); shader: GLSL "
@@ -6721,13 +6721,15 @@ def _build_parser():
                    "(T-1635); import: three.js JSON (Object3D.toJSON) to scene.json, printed or --out, what it can't "
                    "carry named (T-1847); metaballs: a seeded blob scene, made by marching tetrahedra, printed or "
                    "--out, no FILE (T-1848); terrain: the repo's churn per busiest top-level path as ridges over "
-                   "--days, printed or --out, no FILE (T-1851)")
+                   "--days, printed or --out, no FILE (T-1851); airlock: what the guard held and let through over "
+                   "--days as boxes either side of a gate, no FILE (T-1849)")
     s.add_argument("path", metavar="FILE", nargs="?", help="the scene.json (shader: a card, a GLSL file or a folder "
-                   "of them; import: the three.js JSON; metaballs, terrain: none)")
+                   "of them; import: the three.js JSON; metaballs, terrain, airlock: none)")
     s.add_argument("--balls", type=int, default=5, help="metaballs: how many balls, 1-12 (T-1848)")
     s.add_argument("--grid", type=int, default=32, help="metaballs: cubes along each side of the box, 8-48")
     s.add_argument("--seed", type=int, default=0, help="metaballs: the same seed draws the same blob")
-    s.add_argument("--days", type=int, default=90, help="terrain: how far back the git log goes, 1-3650 (T-1851)")
+    s.add_argument("--days", type=int, help="terrain: how far back the git log goes, 1-3650, 90 by default "
+                   "(T-1851); airlock: the guard's record, 30 by default (T-1849)")
     s.add_argument("--hud", action="store_true", help="compile: add a dev overlay (frame rate, draw calls, triangles, "
                    "geometries, textures; globalThis.__fmScene); not for production (T-1530)")
     s.add_argument("--frames", type=int, default=8, help="turntable: how many turns, 1-36")
