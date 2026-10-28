@@ -48,12 +48,12 @@ class DiffGates(ForemanTestCase):
         self.assertNotIn("src/app.py", p.stderr)
         self.fm("task", "log", "T-0001", "scope: the build config names the new module")
         time.sleep(1.1)  # one-second timestamps: the next edit comes after the reason
-        self.touch("Makefile")
+        self.touch("tox.ini")
         p = self.fm("task", "done", "T-0001", check=False)
-        self.assertIn("Makefile", p.stderr, "an earlier reason doesn't cover a later out-of-scope edit")
-        self.assertIn("after your last edit of Makefile", p.stderr)  # T-0168: and it says so
-        self.fm("task", "log", "T-0001", "scope: the Makefile builds it")
-        self.fm("task", "audit", "T-0001", "self", "rechecked after the Makefile edit", "ok")
+        self.assertIn("tox.ini", p.stderr, "an earlier reason doesn't cover a later out-of-scope edit")
+        self.assertIn("after your last edit of tox.ini", p.stderr)  # T-0168: and it says so
+        self.fm("task", "log", "T-0001", "scope: the tox.ini builds it")
+        self.fm("task", "audit", "T-0001", "self", "rechecked after the tox.ini edit", "ok")
         self.assertEqual(self.fm("task", "done", "T-0001", check=False).returncode, 0)
 
     def test_security_sensitive_change_needs_the_adversary_lens(self):

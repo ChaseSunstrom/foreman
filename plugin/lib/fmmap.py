@@ -350,10 +350,6 @@ def tour(p, b, since=None):
     return rows
 
 
-_RUNS_ELSEWHERE = re.compile(r"(^|/)(\.github/workflows/|\.gitlab-ci\.yml$|install[^/]*\.sh$|Dockerfile|Makefile$|"
-                             r"setup\.py$)")
-
-
 def _risk(p, m, f, add, rm, gone, changed, diff):
     """T-0885: (review | glance | skim, [reasons]) for one changed file, from signals Foreman already keeps."""
     if c.TESTISH.search(f):
@@ -367,8 +363,8 @@ def _risk(p, m, f, add, rm, gone, changed, diff):
     if hit:
         why.append(f"security-sensitive ({', '.join(hit[:3])})")
         score += 3
-    if _RUNS_ELSEWHERE.search(f) or c._MANIFEST.search(f):
-        why.append("runs in CI, on install or brings dependencies")
+    if c._RUNS_ELSEWHERE.search(f) or c._MANIFEST.search(f):
+        why.append("runs in CI, on install, as a hook or brings dependencies")
         score += 2
     if add + rm > 50:
         why.append(f"{add + rm} lines")
