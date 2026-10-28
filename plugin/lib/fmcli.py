@@ -6684,12 +6684,22 @@ def _build_parser():
     s = add("critique", lazy("fmcritique", "cmd_critique"), tier=("Every task", 94), help="URL|FILE: a computed-style "
             "census of the page (colours, fonts, sizes, radii, shadows, spacing, with counts; or a census .json) "
             "critiqued against DESIGN.md's tokens: unnamed values, near-duplicates, outliers (exit 1 on findings; no "
-            "browser: not run, exit 2); --why SELECTOR: the cascade behind one element (T-1642)")
+            "browser: not run, exit 2); --why SELECTOR: the cascade behind one element (T-1642); --bingo, --marks "
+            "FILE, --brief [ID] (T-1644)")
     s.add_argument("target", metavar="URL|FILE", nargs="?")
     s.add_argument("--stress", metavar="TEXT", help="TEXT pseudo-localised: accented, 40%% longer, in [brackets], "
                    "placeholders ({n}, %%d, ${x}, <b>) intact (T-1643)")
     s.add_argument("--profile", choices=["tv", "eink", "car", "wrist"], help="a surface's viewport and contrast preset")
     s.add_argument("--why", metavar="SELECTOR", help="the matched rules and winning declaration per property")
+    s.add_argument("--bingo", action="store_true", help="slop bingo: nine tells of a templated look on a 3x3 card "
+                   "(exit 1 on a full row, column or diagonal); a census .json works too")
+    s.add_argument("--marks", metavar="FILE", help="red-pencil marks become captured FIX tasks, one per marked "
+                   "element: a screenshot of the page with pencil-red strokes on it (.png), or [{x,y,w,h,note}] (.json)")
+    s.add_argument("--note", action="append", metavar="TEXT", help="with --marks .png: what a mark asks, one per "
+                   "mark in reading order")
+    s.add_argument("--brief", nargs="?", const="", metavar="ID", help="the phrases a brief quotes (\"…\") looked "
+                   "for in the page's text: exit 1 naming the missing ones (default: the active task; after the "
+                   "page, or it's read as the ID)")
     s.add_argument("--design", metavar="PATH", help="the DESIGN.md (default: the repo root's, or docs/DESIGN.md)")
     s.add_argument("--any-url", action="store_true", help="open any http(s) page, not only localhost, 127.0.0.1, "
                    "[::1] and files")
