@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Paperwasp Zine Club</title>
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search), t = q.get("theme"), r = document.documentElement;
+    if (t === "light" || t === "dark") r.setAttribute("data-theme", t);
+    if (q.get("motion") === "reduce") r.setAttribute("data-motion", "reduce");
+  })();
+</script>
+<style>
+  /* Direction: Riso zine, audacity bold. Two spot inks on off-white paper; the pink is a fill, never text. */
+  :root {
+    color-scheme: light dark;
+    --paper: #F6F1E4; --ink: #14121A; --muted: #4A4655; --link: #005C99; --pink: #FF48B0; --blue: #0078BF;
+    --pink-tint: #FFD3EA; --blue-tint: #CFE8F8; --on-spot: #14121A; --error: #A3001F;
+    --font-display: "Bahnschrift", "DIN Condensed", "Franklin Gothic Medium", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
+    --font-body: "American Typewriter", "Courier Prime", "Courier New", Courier, monospace;
+    --step-0: 1rem; --step-1: 1.25rem; --step-2: clamp(1.9rem, 1.5rem + 2vw, 3rem); --step-5: clamp(3.4rem, 2rem + 8vw, 8rem);
+    --space-1: .25rem; --space-2: .5rem; --space-3: 1rem; --space-4: 1.5rem; --space-5: 3rem; --space-6: 5rem;
+    --radius-control: 0; --radius-card: 0;
+    --lift-1: 3px 3px 0 var(--ink); --lift-2: 6px 6px 0 var(--ink);
+    --dur-step: 160ms; --ease-step: steps(2, end);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #15121F; --ink: #F3EEDF; --muted: #C2BBCD; --link: #6DBFFF; --pink: #FF6EC0; --blue: #4DB3FF;
+      --pink-tint: #3D1832; --blue-tint: #11304A; --error: #FF8A9A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #15121F; --ink: #F3EEDF; --muted: #C2BBCD; --link: #6DBFFF; --pink: #FF6EC0; --blue: #4DB3FF;
+    --pink-tint: #3D1832; --blue-tint: #11304A; --error: #FF8A9A;
+  }
+  @media (prefers-reduced-motion: reduce) { :root { --dur-step: 0s; } }
+  :root[data-motion="reduce"] { --dur-step: 0s; }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 var(--step-0)/1.6 var(--font-body); }
+  h1, h2, h3, p, ul, dl, dd, pre { margin: 0; padding: 0; }
+  h1, h2, h3 { font-family: var(--font-display); font-stretch: condensed; font-weight: 800; text-transform: uppercase; line-height: .95; letter-spacing: -.01em; text-wrap: balance; }
+  h1 { font-size: var(--step-5); text-shadow: 3px 2px 0 var(--blue); max-width: 10ch; }
+  h2 { font-size: var(--step-2); margin-bottom: var(--space-3); }
+  h3 { font-size: var(--step-1); }
+  p { max-width: 60ch; }
+  ul { list-style: none; }
+  a { color: var(--link); text-underline-offset: .2em; text-decoration-thickness: 2px; }
+  :focus-visible { outline: 3px solid var(--link); outline-offset: 3px; }
+  .skip { position: absolute; left: var(--space-3); top: calc(-1 * var(--space-6)); background: var(--ink); color: var(--paper); padding: var(--space-2) var(--space-3); }
+  .skip:focus { top: var(--space-2); }
+  .wrap { max-width: 68rem; margin: 0 auto; padding-inline: var(--space-3); }
+  .top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-2) var(--space-4); padding-block: var(--space-3); border-bottom: 3px solid var(--ink); }
+  .top b { font: 800 1.5rem/1 var(--font-display); text-transform: uppercase; }
+  .top ul { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); }
+  .top a { display: inline-flex; align-items: center; min-height: 2.75rem; }
+  section { padding-block: var(--space-5); }
+  .kick { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
+
+  .hero { display: grid; gap: var(--space-4); position: relative; }
+  .lede { font-size: var(--step-1); }
+  .join { display: grid; gap: var(--space-2); max-width: 30rem; }
+  .row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  input[type="email"] { flex: 1 1 12rem; min-width: 0; min-height: 2.75rem; padding: 0 var(--space-3); border: 2px solid var(--ink); border-radius: var(--radius-control); background: var(--paper); color: var(--ink); font: inherit; }
+  .btn { min-height: 2.75rem; min-width: 2.75rem; padding: 0 var(--space-4); border: 2px solid var(--ink); border-radius: var(--radius-control); background: var(--pink); color: var(--on-spot);
+         font: 800 1rem/1 var(--font-display); text-transform: uppercase; letter-spacing: .04em; cursor: pointer; box-shadow: var(--lift-1);
+         transition: transform var(--dur-step) var(--ease-step); }
+  .btn:hover { transform: translate(2px, 2px); }
+  .btn:active { transform: translate(3px, 3px); }
+  .btn[disabled] { cursor: progress; }
+  .field-msg { min-height: 1.6em; font-weight: 700; }
+  .field-msg.err { color: var(--error); } .field-msg.ok { color: var(--ink); }
+  .sticker { justify-self: start; padding: var(--space-2) var(--space-3); background: var(--blue-tint); border: 2px solid var(--ink); box-shadow: var(--lift-1); transform: rotate(-3deg); font-weight: 700; transition: transform var(--dur-step) var(--ease-step); }
+  .pieces { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--space-4); margin-top: var(--space-4); }
+  .piece { padding: var(--space-3); border: 2px solid var(--ink); background: var(--pink-tint); box-shadow: var(--lift-1); transition: transform var(--dur-step) var(--ease-step); }
+  .piece:nth-child(1) { transform: rotate(-2deg); } .piece:nth-child(2) { transform: rotate(1.5deg); background: var(--blue-tint); } .piece:nth-child(3) { transform: rotate(-1deg); }
+  .piece:hover, .sticker:hover { transform: rotate(0); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0; margin-bottom: var(--space-3); }
+  .chip { min-height: 2.75rem; min-width: 2.75rem; padding: 0 var(--space-3); border: 2px solid var(--ink); border-radius: var(--radius-control); background: var(--paper); color: var(--ink); font: 700 1rem/1 var(--font-body); cursor: pointer; transition: transform var(--dur-step) var(--ease-step); }
+  .chip:hover { transform: translateY(-2px); }
+  .chip[aria-pressed="true"] { background: var(--pink); color: var(--on-spot); }
+  .chip[aria-pressed="true"]::before { content: "✓ "; }
+  .chip.empty { border-style: dashed; }
+  .readout { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: var(--space-4); }
+  .card { border: 2px solid var(--ink); padding: var(--space-3); background: var(--paper); box-shadow: var(--lift-1); display: grid; gap: var(--space-2); }
+  .card dt { font-size: .8rem; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
+  .card dd { margin-bottom: var(--space-2); overflow-wrap: anywhere; }
+  .notice { border-left: 6px solid var(--blue); padding: var(--space-3); background: var(--blue-tint); max-width: 60ch; margin-bottom: var(--space-3); }
+  .notice.err { border-left-color: var(--error); }
+  [hidden] { display: none; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .95rem; padding: var(--space-4); border: 2px solid var(--ink); background: var(--pink-tint); box-shadow: var(--lift-2); }
+  .shows { display: grid; gap: var(--space-2); padding-left: var(--space-4); list-style: square; max-width: 60ch; }
+  footer { border-top: 3px solid var(--ink); padding-block: var(--space-4) var(--space-5); font-size: .9rem; color: var(--muted); }
+  @media (min-width: 52rem) { .hero { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); column-gap: var(--space-5); align-items: end; } .hero > * { grid-column: 1; } .hero .sticker { grid-column: 2; grid-row: 1; align-self: start; transform: rotate(4deg); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="wrap top">
+  <b>Paperwasp Zine Club</b>
+  <nav aria-label="Main"><ul><li><a href="#translate">Taste words</a></li><li><a href="#design">DESIGN.md</a></li></ul></nav>
+</header>
+<main id="main" class="wrap">
+  <section class="hero" aria-labelledby="t">
+    <p class="kick">A zine in your post, once a month</p>
+    <h1 id="t">Small zines, posted monthly.</h1>
+    <p class="lede">Issue 07 is field notes from a canal towpath: 24 pages, A5, printed in two inks by a hand-fed press in Leeds.</p>
+    <form class="join" id="join" novalidate>
+      <label for="email" class="kick">Your email, for the next issue</label>
+      <div class="row"><input id="email" type="email" autocomplete="email" aria-describedby="jm"><button class="btn" type="submit" id="go">Join the next issue</button></div>
+      <p class="field-msg" id="jm" role="status"></p>
+    </form>
+    <p class="sticker">No. 07 · two inks · 24 pp</p>
+  </section>
+  <ul class="pieces" aria-label="Recent issues">
+    <li class="piece"><h3>Issue 05</h3><p>Allotment diaries. Sold out; a second print is pencilled for spring.</p></li>
+    <li class="piece"><h3>Issue 06</h3><p>Night buses, drawn from memory. 61 readers wrote back.</p></li>
+    <li class="piece"><h3>Issue 07</h3><p>A canal towpath, mile by mile, in pink and blue.</p></li>
+  </ul>
+
+  <section aria-labelledby="translate">
+    <h2 id="translate">Taste words to knobs</h2>
+    <p class="kick">Pick one or two words. Dashed ones are empty words.</p>
+    <ul class="chips" id="chips" aria-label="Taste words"></ul>
+    <p class="notice" id="msg" role="status"></p>
+    <div class="readout" id="out"></div>
+  </section>
+
+  <section aria-labelledby="design">
+    <h2 id="design">DESIGN.md, written before the first component</h2>
+<pre>
+# DESIGN.md: Paperwasp Zine Club
+
+## Point of view
+It should feel like a two-colour risograph print, for readers
+opening a newsletter on the bus. It must never be mistaken for
+a subscription-box app. (assumed)
+
+## Direction
+Riso zine, audacity bold.
+Runner-up: Broadsheet, rejected: its rules and serifs read as
+news, not as something made by hand.
+Taste words: loud, handmade -> loud owns type and colour,
+handmade gets motion.
+
+## Knobs
+- Type: condensed bold display, typewriter text; base 1rem; ratio 1.5.
+- Colour: paper #F6F1E4, ink #14121A (16.5:1 on paper), spot pink
+  #FF48B0 as fill only (ink on it 6.0:1), spot blue #0078BF for large
+  type and borders (4.2:1), link #005C99 (6.2:1).
+- Density: 8 px unit; section padding 48 px.
+- Shape: radius 0; 2 px ink borders; hard 3 px offset shadow.
+- Motion: two-frame steps, 160 ms; instant under reduced motion.
+
+## Signature moves
+1. Misregistration: the headline repeated in blue, offset 2 px.
+2. Pieces rotated up to 3 degrees that straighten on hover.
+
+## Banned
+- Defaults to avoid 1, 3, 4, 7 and 12; gradients of any kind.
+</pre>
+  </section>
+
+  <section aria-labelledby="what">
+    <h2 id="what">What this shows</h2>
+    <ul class="shows">
+      <li><strong>Interview and taste words:</strong> the translator turns a word into five knobs, and refuses empty words.</li>
+      <li><strong>Direction bank:</strong> one row picked, a runner-up rejected in writing, audacity set to bold.</li>
+      <li><strong>Signature moves:</strong> the blue misregistered headline and the tilted pieces are visible above.</li>
+      <li><strong>Floors:</strong> pink is only ever a fill, so text keeps 4.5:1; focus, reduced motion and 360 px hold.</li>
+    </ul>
+  </section>
+</main>
+<footer class="wrap">Paperwasp is invented. A worked example of the design-direction playbook.</footer>
+<script>
+  (function () {
+    var $ = function (id) { return document.getElementById(id); };
+    var K = { premium: ["Fine-weight display or high-contrast serif, ratio at least 1.333", "Near-monochrome plus one muted accent", "Sparse, sections 96 px or more", "Slow fades, 300 to 500 ms", "0 to 4 px"],
+      playful: ["Rounded display, weight 700 to 900", "3 to 5 saturated hues as fills", "Medium", "Spring with overshoot, 200 to 350 ms", "16 px or a full pill"],
+      calm: ["Humanist sans, ratio 1.2, leading 1.6", "Low-saturation tints", "Airy, gaps 24 px or more", "200 to 300 ms, opacity and small moves", "8 to 12 px"],
+      trustworthy: ["Sturdy sans, two weights only", "One deep ink plus neutrals", "Medium", "150 ms or less, functional", "4 to 6 px"],
+      technical: ["Grotesk, mono for every number", "Neutral base, colour only for state", "Dense, 4 px unit", "120 ms or less, state changes", "2 to 4 px"],
+      bold: ["Condensed or black display, 4 to 8 times body", "Two colours at full saturation", "Dense blocks beside huge type", "150 to 250 ms, hard cuts allowed", "0 or a full pill"],
+      friendly: ["Rounded sans, ratio 1.25", "Warm accent on warm neutrals", "Medium", "200 to 300 ms ease-out", "10 to 16 px"],
+      editorial: ["Serif text, real italics, 60 to 70ch", "Ink, paper and one accent", "Text-led, asymmetric columns", "Almost none", "0"],
+      futuristic: ["Extended sans or mono, uppercase labels", "Dark base, one luminous accent", "Medium-dense", "Staggered reveals, 150 to 250 ms", "0 to 2 px or chamfered"] };
+    var EMPTY = ["modern", "clean", "minimal"], LABELS = ["Type", "Colour", "Density", "Motion", "Radius"], on = [], msg = $("msg"), out = $("out");
+    Object.keys(K).concat(EMPTY).forEach(function (w) {
+      var li = document.createElement("li"), b = document.createElement("button");
+      b.type = "button"; b.className = "chip" + (EMPTY.indexOf(w) > -1 ? " empty" : ""); b.textContent = w; b.setAttribute("aria-pressed", "false");
+      b.addEventListener("click", function () { toggle(w, b); }); li.appendChild(b); $("chips").appendChild(li);
+    });
+    function say(t, err) { msg.textContent = t; msg.className = "notice" + (err ? " err" : ""); }
+    function toggle(w, b) {
+      var i = on.indexOf(w);
+      if (i > -1) on.splice(i, 1);
+      else if (K[w] && on.filter(function (x) { return K[x]; }).length >= 2) { say("Two words at most: blend two, never three. Deselect one first.", true); return; }
+      else on.push(w);
+      b.setAttribute("aria-pressed", String(on.indexOf(w) > -1)); draw();
+    }
+    function draw() {
+      var real = on.filter(function (x) { return K[x]; }), dud = on.filter(function (x) { return !K[x]; }); out.textContent = "";
+      real.forEach(function (w) {
+        var c = document.createElement("dl"); c.className = "card"; var h = document.createElement("h3"); h.textContent = w; c.appendChild(h);
+        K[w].forEach(function (v, i) { var dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = LABELS[i]; dd.textContent = v; c.appendChild(dt); c.appendChild(dd); });
+        out.appendChild(c);
+      });
+      if (dud.length) say("“" + dud.join("”, “") + "” sets no knob. Run the interview instead: who opens this, what physical thing should it feel like, and what must it never be mistaken for?", true);
+      else if (real.length === 2) say("“" + real[0] + "” owns type and colour; “" + real[1] + "” gets motion and one signature move.");
+      else if (real.length === 1) say("One word sets all five knobs. Add a second for motion and a signature move.");
+      else say("No words picked yet. Pick one: each sets type, colour, density, motion and radius.");
+    }
+    draw();
+    var f = $("join"), jm = $("jm"), em = $("email"), go = $("go");
+    f.addEventListener("submit", function (e) {
+      e.preventDefault(); jm.className = "field-msg";
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em.value)) { jm.textContent = "That doesn't look like an email address: it needs an @ and a domain."; jm.className = "field-msg err"; em.setAttribute("aria-invalid", "true"); em.focus(); return; }
+      em.removeAttribute("aria-invalid"); go.disabled = true; go.textContent = "Joining…"; jm.textContent = "Sending your name to the press…";
+      setTimeout(function () { go.disabled = false; go.textContent = "Join the next issue"; jm.className = "field-msg ok"; jm.textContent = "✓ You're on the list for issue 08. Check your inbox."; }, 900);
+    });
+  })();
+</script>
+</body>
+</html>
