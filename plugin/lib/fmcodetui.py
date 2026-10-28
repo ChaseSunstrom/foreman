@@ -1757,8 +1757,8 @@ def _fm_json(*args):
 _GROUPS = {"look": "Look", "colors": "Colours", "layout": "Layout", "keys": "Keys", "pane": "Claude Code pane"}
 _WHERE = {"app": "this app · tui.toml · applies now", "plugin": "the foreman-ui pane · Claude Code's settings.json · "
                                                                 "applies within seconds"}
-_SET_HINTS = (("/", "search"), ("m", "changed only"), (":", "set"), ("Enter", "edit"), ("b", "bind a key"),
-              ("l", "layout"), ("r", "runners"), ("Esc", "close"))
+_SET_HINTS = (("/", "search"), ("m", "changed only"), (":", "set"), ("Enter", "edit"), ("[ ]", "turn"),
+              ("b", "bind a key"), ("l", "layout"), ("r", "runners"), ("Esc", "close"))
 # T-1511: keys b never binds: the ones the app keeps for itself, and what each does; a key tui.toml moved one of KEPT
 # to is kept too, and the last key for one of LAST isn't bound away
 RESERVED = {"q": "quit", "\x1b": "back", "^C": "quit", "?": "help", "z": "hush"}
@@ -1864,8 +1864,17 @@ def _settings_foot(app, iw):
         text = tail(app.set_query if app.set_typing == "search" else app.set_line, max(1, iw - 4))
         last = [(" /" if app.set_typing == "search" else " :", "key"), (text, "input"), ("▏", "key"),
                 (" " * max(0, iw - 3 - width(text)), "input")]
-    else:
-        last = [seg for k, word in _SET_HINTS for seg in ((f" {k} ", "key"), (f" {word}  ", "dim"))]
+    else:  # hints too wide for one line take the note's spare second line (a long note keeps it: they clip)
+        rows = [[]]
+        for k, word in _SET_HINTS:
+            pair = [(f" {k} ", "key"), (f" {word}  ", "dim")]
+            if rows[-1] and sum(width(s) for s, _ in rows[-1] + pair) > iw and len(rows) < 2:
+                rows.append([])
+            rows[-1] += pair
+        notes = (wrap(note, iw) + [""])[:2]
+        if len(rows) > 1 and not notes[1]:
+            return [[("─" * iw, "border")], about, [(notes[0], style)]] + rows
+        last = sum(rows, [])
     return [[("─" * iw, "border")], about] + [[(x, style)] for x in (wrap(note, iw) + [""])[:2]] + [last]
 
 
@@ -3070,6 +3079,14 @@ class App:
             self.set_note, self.lay_at, self.mode = None, (0, 0), "layout"
         elif k == "r":
             self.show_runners()
+        elif k in ("[", "]") and r:  # T-1661: the selected number turned one detent, through :set (scope, pins)
+            import fmsettings
+            try:
+                new = fmsettings.detent(r, r["value"], 1 if k == "]" else -1)
+            except fmsettings.SettingError as e:
+                self.set_note = (str(e), "bad")
+                return None
+            return self._settings_set(f"set --surface {r['surface']} {r['key']} {new}")
         elif cmd == "expand" and r:  # the :set line for this setting, its value ready to change
             both = sum(x["key"] == r["key"] for x in self.set_rows) > 1
             where = "--surface " + r["surface"] + " " if both else ""
@@ -3309,21 +3326,14 @@ class App:
         """The panel at column c, row i moved; layout.columns and layout.heights (each panel keeps its own) written as
         one change, so one fm settings undo puts the move back. A column keeps one panel at least."""
         import fmsettings
-        lay = self.cfg["layout"]
-        cols = [list(x) for x in lay["columns"]]
-        hts = [((list(lay["heights"][n]) if n < len(lay["heights"]) else []) + [1] * len(x))[:len(x)]
-               for n, x in enumerate(cols)]  # as render reads them: a missing height is 1
-        to, at = c + dc, i + di
-        if not 0 <= to < len(cols) or not dc and not 0 <= at < len(cols[c]):
-            return None  # the edge: nowhere to go
-        if dc and len(cols[c]) == 1:
-            self.set_note = (f"{cols[c][0]} is its column's only panel: a column keeps one (:set layout.columns to "
-                             "drop a column)", "bad")
+        try:
+            got = fmsettings.layout_moved(self.cfg["layout"], c, i, dc, di)
+        except fmsettings.SettingError as e:  # a column's only panel
+            self.set_note = (str(e).replace("(set ", "(:set "), "bad")
             return None
-        at = min(i, len(cols[to])) if dc else at  # across: to the same row there, or its end
-        name = cols[c].pop(i)
-        cols[to].insert(at, name)
-        hts[to].insert(at, hts[c].pop(i))
+        if got is None:
+            return None  # the edge: nowhere to go
+        cols, hts, name, to, at = got
         try:  # one write: both or neither
             done = fmsettings.set_apps([("layout.columns", cols), ("layout.heights", hts)], base=self._base())
             self.lay_at = (to, at)
