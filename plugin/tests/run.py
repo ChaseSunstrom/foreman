@@ -143,10 +143,18 @@ def parse(argv=None):
     ap.add_argument("--deadline", type=int, metavar="S",
                     help="end the whole run after S seconds: running classes are killed with their stacks, unstarted "
                          "ones fail (T-1809: set it below a CI job's cap, so the run names what was slow)")
+    ap.add_argument("--shard", metavar="K/N",
+                    help="run only the Kth of N interleaved slices of the classes (T-1842: CI splits the suite "
+                         "across N jobs; biggest-first order keeps the slices even)")
     ap.add_argument("names", nargs="*", help="test module names, each like -k (T-0808: fm check affected's {names})")
     a = ap.parse_intermixed_args(argv)  # names may sit on either side of -k
     if a.deadline is not None and a.deadline < 1:  # review: 0 is falsy and turned the deadline off
         ap.error("--deadline takes a number of seconds, 1 or more")
+    if a.shard is not None:
+        k, _, n = a.shard.partition("/")
+        if not (k.isdigit() and n.isdigit() and 1 <= int(k) <= int(n)):
+            ap.error("--shard takes K/N with 1 <= K <= N, like 1/2")
+        a.shard = int(k), int(n)
     a.k += a.names
     a.error = ap.error
     return a
@@ -164,6 +172,8 @@ def main():
     if missing:  # T-1287: a name that matches nothing (a test file that doesn't exist) fails, not passes unseen
         sys.stderr.write(f"run.py: no test matches {', '.join(missing)}\n")
         return 1
+    if a.shard:
+        todo = todo[a.shard[0] - 1::a.shard[1]]
     with burn(a.load), concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
         end = t0 + a.deadline if a.deadline is not None else None
         results = list(ex.map(lambda c: run_one(c, a.k, a.timeout, end), todo))
