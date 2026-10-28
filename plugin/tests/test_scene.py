@@ -708,5 +708,52 @@ class Import(ForemanTestCase):
         self.assertIn("vertices", str(e.exception))
 
 
+def vol6(v, f):
+    return sum(fmscene._cross3(v[j], v[k])[0] * v[i][0] + fmscene._cross3(v[j], v[k])[1] * v[i][1]
+               + fmscene._cross3(v[j], v[k])[2] * v[i][2] for i, j, k in f)
+
+
+class Metaballs(ForemanTestCase):
+    """T-1848: fm scene metaballs, a seeded blob polygonised by marching tetrahedra."""
+
+    def blob(self, scene):
+        g = next(m for m in scene["meshes"] if m["name"] == "blob")["geometry"]
+        return g["vertices"], g["faces"]
+
+    def test_the_blob_is_closed_wound_outward_and_seeded(self):
+        import collections
+        a = fmscene.metaballs(balls=4, grid=16, seed=3)
+        self.assertEqual(fmscene.validate(a), a)
+        v, f = self.blob(a)
+        directed = collections.Counter((t[i], t[(i + 1) % 3]) for t in f for i in range(3))
+        self.assertEqual(max(directed.values()), 1)  # no edge twice the same way: wound alike
+        self.assertTrue(all((y, x) in directed for x, y in directed))  # every edge has its twin: closed
+        self.assertGreater(vol6(v, f), 0)  # counter-clockwise seen from outside
+        self.assertEqual(fmscene.metaballs(balls=4, grid=16, seed=3), a)
+        self.assertNotEqual(fmscene.metaballs(balls=4, grid=16, seed=4), a)
+        self.assertGreater(len(fmscene.metaballs(4, 32, 3)["meshes"][0]["geometry"]["faces"]), len(f))
+        for bad in ({"balls": 0}, {"balls": 13}, {"grid": 7}, {"grid": 49}):
+            with self.assertRaises(ValueError):
+                fmscene.metaballs(**bad)
+
+    def test_one_ball_is_a_sphere_of_its_radius(self):
+        v, f = self.blob(fmscene.metaballs(balls=1, grid=32, seed=5))
+        mid = [(min(p[i] for p in v) + max(p[i] for p in v)) / 2 for i in range(3)]
+        d = [math.dist(p, mid) for p in v]
+        self.assertLess(max(d) / min(d), 1.04)
+        self.assertAlmostEqual(vol6(v, f) / 6, 4 / 3 * math.pi * (sum(d) / len(d)) ** 3, delta=0.05 * vol6(v, f) / 6)
+
+    def test_fm_scene_metaballs_prints_or_writes_a_scene_fm_scene_checks(self):
+        out = os.path.join(self.tmp, "blob.json")
+        flags = ("--balls", "3", "--grid", "12", "--seed", "1")
+        self.assertIn("wrote", self.fm("scene", "metaballs", *flags, "--out", out).stdout)
+        self.assertEqual(self.fm("scene", "check", out).returncode, 0)
+        self.assertEqual(fmscene.loads(self.fm("scene", "metaballs", *flags).stdout), fmscene.load(out))
+        self.assertNotEqual(self.fm("scene", "metaballs", "--grid", "4", check=False).returncode, 0)
+        for action in ("check", "shader", "soak", "compile", "metaballs"):  # the others need FILE; metaballs takes none
+            r = self.fm("scene", action, *(["x.json"] if action == "metaballs" else []), check=False)
+            self.assertEqual((r.returncode, "Traceback" in r.stderr), (2, False), r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
