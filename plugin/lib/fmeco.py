@@ -354,8 +354,9 @@ def inbox_first(p, limit=5):
             for b in c.rank_inbox(briefs) if b.tier == "S" and not any(d in open_ids for d in c._deps(b))][:limit]
 
 
-def swipe_apply(p, spec):
-    """T-1664: verdicts on deferred items (ID:revive|drop|keep,…), all checked before any is applied."""
+def swipe_apply(p, spec, undo=None):
+    """T-1664: verdicts on deferred items (ID:revive|drop|keep,…), all checked before any is applied. T-1871: undo, a
+    list, gets what swipe_undo needs to take each back."""
     import fmcli
     pairs = []
     for part in filter(None, (x.strip() for x in str(spec).split(","))):
@@ -381,7 +382,40 @@ def swipe_apply(p, spec):
         b, _ = fmcli.mutate(p, tid, change, "inbox_swipe", {"verdict": verdict})
         if verdict == "drop" and b.meta.get("batch"):  # T-0257: a dropped batch hands its members back
             fmcli._settle_batch(p, b, done=False)
+    if undo is not None:
+        undo += [(t, v, by_id[t].meta.get("revisit")) for t, v in pairs]
     return [f"{t} {said[v]}" for t, v in pairs]
+
+
+def swipe_undo(p, undo, seen=None):
+    """T-1871: take back the last answer said here (undo: (id, verdict, revisit), newest last): a revive or drop goes
+    back to deferred with its revisit date, a keep or skip puts its card back; (ok, what was said). An item changed
+    elsewhere since, or a dropped batch (its members went back), is left as it is."""
+    import fmcli
+    if not undo:
+        return False, "nothing to undo"
+    tid, verdict, revisit = undo.pop()
+
+    def back(b):
+        if b.status != {"revive": "captured", "drop": "dropped"}[verdict]:
+            raise fmcli.UsageError(f"{tid} is {b.status} now: nothing undone")
+        if b.meta.get("batch"):
+            raise fmcli.UsageError(f"{tid} is a batch: its members went back when it was dropped; nothing undone")
+        b.meta["status"] = "deferred"
+        if revisit:
+            b.meta["revisit"] = revisit
+        b.append_log("swept: undone (fm inbox swipe)")
+    if verdict in ("revive", "drop"):
+        try:
+            fmcli.mutate(p, tid, back, "inbox_swipe", {"verdict": "undo"})
+        except fmcli.UsageError as e:
+            return False, str(e)
+        except Exception as e:  # a busy lock: nothing changed, so the answer stays undoable
+            undo.append((tid, verdict, revisit))
+            return False, f"nothing undone: {e}"
+    if seen is not None:
+        seen.discard(tid)
+    return True, f"{tid} back in the deck"
 
 
 def swipe_list(p):
@@ -400,13 +434,19 @@ SWIPE_KEYS = {"r": "revive", "k": "keep", "d": "drop"}
 
 def swipe_loop(p):
     """T-1857: the deferred pile one item at a time in a terminal, each verdict applied as it is said (Ctrl-C or q
-    keeps what was said); what was applied, in order. A verdict is its letter or its word, nothing else ("dunno" asks
-    again); an item changed elsewhere since the list was read is said and passed."""
+    keeps what was said); what was applied, in order, or None when nothing is deferred. A verdict is its letter or its
+    word, nothing else ("dunno" asks again); an item changed elsewhere since the list was read is said and passed.
+    T-1871: u takes back the last answer (a skip too) and shows its card again; each card says how many are left."""
     import fmcli
-    items, said = swipe_list(p), []
-    print(f"{len(items)} deferred · r revive · k keep · d drop · s skip · q stop" if items else "Nothing is deferred.")
-    for n, x in enumerate(items, 1):
-        print(f"{n}/{len(items)} {x['id']} {c.plain(x['title'])}" + (f" — {c.plain(x['why'])}" if x["why"] else ""))
+    items, said, undo, i, keys = swipe_list(p), [], [], 0, "r revive · k keep · d drop · s skip · u undo · q stop"
+    if not items:
+        return None
+    ids = [x["id"] for x in items]
+    print(f"{len(items)} deferred · {keys}")
+    while i < len(items):
+        x = items[i]
+        print(f"{len(items) - i} left · {x['id']} {c.plain(x['title'])}"
+              + (f" — {c.plain(x['why'])}" if x["why"] else ""))
         while True:
             try:
                 k = input("> ").strip().lower()
@@ -415,35 +455,47 @@ def swipe_loop(p):
             k = {w: key for key, w in SWIPE_KEYS.items()}.get(k, k)
             if k in ("q", "quit"):
                 return said
-            if k in SWIPE_KEYS:
+            if k in ("u", "undo"):
+                last = undo[-1] if undo else None
+                ok, msg = swipe_undo(p, undo)
+                print(msg)
+                if ok:  # a keep or skip changed nothing, so nothing was applied to take back
+                    said += [f"{last[0]} undone"] if last[1] in ("revive", "drop") else []
+                    i = ids.index(last[0])
+                    break
+            elif k in ("s", "skip"):
+                undo.append((x["id"], "skip", None))
+                i += 1
+                break
+            elif k in SWIPE_KEYS:
                 try:
-                    got = swipe_apply(p, f"{x['id']}:{SWIPE_KEYS[k]}")
+                    got = swipe_apply(p, f"{x['id']}:{SWIPE_KEYS[k]}", undo)
                     said += got
                     print(got[0])
                 except fmcli.UsageError as e:
                     print(e)
-            if k in SWIPE_KEYS or k in ("s", "skip"):
+                i += 1
                 break
-            print("r revive · k keep · d drop · s skip · q stop")
+            else:
+                print(keys)
     return said
 
 
 SWIPE_VERDICTS = (*SWIPE_KEYS.values(), "skip")  # each first letter is its access key: keep them unique
-SWIPE_STYLE = ("body{font:16px system-ui,sans-serif;margin:2em auto;padding:0 16px;max-width:36em;color:#222;"
-               "background:#fff}.card{border:1px solid #888;border-radius:8px;padding:1em 1.2em}.why{color:#666}"
-               "button{font:inherit;padding:.4em 1em;margin:.6em .4em 0 0}.msg{padding:.5em;border:1px solid #888}"
-               ".bad{border-color:#c33;color:#900}@media(prefers-color-scheme:dark){body{background:#111;color:#ddd}"
-               ".why{color:#999}.bad{color:#f88}}")
+SWIPE_STYLE = ("body{font:16px system-ui,sans-serif;margin:2em auto;padding:0 16px;max-width:36em}"
+               ".card{border:1px solid #888;border-radius:8px;padding:1em 1.2em}.why{color:#666}"
+               "button{font:inherit;padding:.4em 1em;margin:.6em .4em 0 0}")
 
 
-def swipe_page(p, seen, nonce, msg="", bad=False):
+def swipe_page(p, seen, nonce, msg="", bad=False, undo=()):
     """T-1858: the first deferred item not yet kept or skipped here, as a card with its four answers (access keys
-    r k d s); no script."""
+    r k d s); no script. T-1871: an undo button (u) while there is an answer to take back."""
     import html
+    import fmsettingsserve
     e, left = html.escape, [x for x in swipe_list(p) if x["id"] not in seen]
     out = ['<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" '
            f'content="width=device-width,initial-scale=1"><title>Foreman backlog</title><style nonce="{nonce}">'
-           f'{SWIPE_STYLE}</style></head><body><h1>Backlog</h1>']
+           f'{SWIPE_STYLE}{fmsettingsserve.BASE_STYLE}</style></head><body><h1>Backlog</h1>']
     if msg:
         out.append(f'<p class="msg{" bad" if bad else ""}">{e(msg)}</p>')
     if not left:
@@ -455,23 +507,31 @@ def swipe_page(p, seen, nonce, msg="", bad=False):
                    + f'<form method="post" action="/swipe"><input type="hidden" name="id" value="{e(x["id"])}">'
                    + "".join(f'<button name="verdict" value="{v}" accesskey="{v[0]}">{v} ({v[0]})</button>'
                              for v in SWIPE_VERDICTS) + "</form></div>")
+    if undo:  # names the answer it takes back: a reload that re-posts it finds the page out of date
+        out.append(f'<form method="post" action="/swipe"><input type="hidden" name="id" value="{e(undo[-1][0])}">'
+                   '<button name="verdict" value="undo" accesskey="u">undo (u)</button></form>')
     return "".join(out + ["</body></html>"])
 
 
-def swipe_post(p, seen, fields):
-    """T-1858: one answer posted from the page, for the item it names: (ok, what was said)."""
+def swipe_post(p, seen, fields, undo):
+    """T-1858: one answer posted from the page, for the item it names: (ok, what was said). T-1871: undo takes back
+    the last answer, when it was for that item."""
     import fmcli
     tid, verdict = fields.get("id", ""), fields.get("verdict", "")
-    if not re.fullmatch(r"T-\d+", tid) or verdict not in SWIPE_VERDICTS:
-        return False, "one task id (T-NNNN) and a verdict: revive, keep, drop or skip"
-    if verdict == "keep" and tid in seen:  # a reload re-posts it: kept once, logged once
-        return True, f"{tid} kept"
+    if not re.fullmatch(r"T-\d+", tid) or verdict not in (*SWIPE_VERDICTS, "undo"):
+        return False, "one task id (T-NNNN) and a verdict: revive, keep, drop, skip or undo"
+    if verdict == "undo":
+        return swipe_undo(p, undo, seen) if undo and undo[-1][0] == tid else (False, "nothing to undo: the page was "
+                                                                                     "out of date")
+    if verdict in ("keep", "skip") and tid in seen:  # a reload re-posts it: said once, logged and undoable once
+        return True, f"{tid} {'kept' if verdict == 'keep' else 'skipped'}"
     if verdict in ("keep", "skip"):  # passed over on this page: the next card
         seen.add(tid)
     if verdict == "skip":
+        undo.append((tid, "skip", None))
         return True, f"{tid} skipped"
     try:
-        return True, swipe_apply(p, f"{tid}:{verdict}")[0]
+        return True, swipe_apply(p, f"{tid}:{verdict}", undo)[0]
     except fmcli.UsageError as x:  # changed elsewhere since the page was drawn
         return False, str(x)
 
@@ -485,12 +545,12 @@ def swipe_server(p):
         CMD, PATHS = "fm inbox swipe --serve", ("/swipe",)
 
         def draw(self, nonce, msg, bad):
-            return swipe_page(self.server.project, self.server.seen, nonce, msg, bad)
+            return swipe_page(self.server.project, self.server.seen, nonce, msg, bad, self.server.undo)
 
         def act(self, path, fields):
-            return swipe_post(self.server.project, self.server.seen, fields)
+            return swipe_post(self.server.project, self.server.seen, fields, self.server.undo)
     server, token = fmsettingsserve.make(p, Swipe)
-    server.seen = set()
+    server.seen, server.undo = set(), []
     return server, token
 
 
@@ -849,8 +909,9 @@ def cmd_inbox(args):
         done = swipe_apply(p, args.apply)
         return fmcli.out(args, {"applied": done}, "; ".join(done) + "." if done else "No verdicts given.")
     if args.source == "swipe" and not args.json and _tty():  # T-1857: a terminal swipes; a pipe or --json lists
-        done = swipe_loop(p)
-        return fmcli.out(args, {"applied": done}, "Swept: " + "; ".join(done) + "." if done else "Nothing applied.")
+        done = swipe_loop(p)  # T-1871: an empty deck says so in one line
+        return fmcli.out(args, {"applied": done or []}, "Nothing is deferred." if done is None else
+                         "Swept: " + "; ".join(done) + "." if done else "Nothing applied.")
     if args.source == "swipe":
         d = swipe_list(p)
         return fmcli.out(args, {"deferred": d}, "\n".join(f"{x['id']} {x['title']} — {x['why']}" for x in d)

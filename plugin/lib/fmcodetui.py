@@ -1971,7 +1971,7 @@ VIEWS = {"breakout": _breakout_view, "help": _help_view, "diff": _diff_view, "hi
          "runners": _list_view("Runners", "Enter tests one (--version) · p pings one (a tiny question) · Esc back",
                                _runner_row,
                                foot=_runners_foot),
-         "backlog": _list_view("Backlog: the deferred pile", "r revive · space keep · d drop · ↑↓ move · Esc back",
+         "backlog": _list_view("Backlog: the deferred pile", "r revive · space keep · d drop · u undo · ↑↓ move · Esc back",
                                _backlog_row, empty="nothing is deferred"),  # T-1856
          "looks": _list_view(lambda app: f"{len(app.look_answers) + 1}/{len(app.look_pairs)} Which is more like you?",
                              "1 · 2 · n neither · Backspace back · Esc stops, nothing kept",
@@ -2989,6 +2989,7 @@ class App:
             self.message = "backlog: this folder is not a Foreman project (fm init makes it one)"
             return
         self.items, self.item_index, self.mode = fmeco.swipe_list(self.backlog_p), 0, "backlog"
+        self.backlog_undo, self.backlog_kept = [], set()  # T-1871: u takes back the newest answer given in this view
 
     def _backlog_key(self, k):
         import fmeco
@@ -2998,9 +2999,17 @@ class App:
             self.mode = "main"
         elif step:
             self.item_index = max(0, min(len(self.items) - 1, self.item_index + step))
+        elif k == "u":
+            last = self.backlog_undo[-1] if self.backlog_undo else None
+            ok, said = fmeco.swipe_undo(self.backlog_p, self.backlog_undo, self.backlog_kept)
+            self.message = f"backlog: {said}"
+            if ok:  # the pile read again less the cards kept here, the card taken back selected
+                self.items = [x for x in fmeco.swipe_list(self.backlog_p) if x["id"] not in self.backlog_kept]
+                self.item_index = next((i for i, x in enumerate(self.items) if x["id"] == last[0]), 0)
         elif verdict and self.items:
             try:
-                said = fmeco.swipe_apply(self.backlog_p, f"{self.items[self.item_index]['id']}:{verdict}")
+                said = fmeco.swipe_apply(self.backlog_p, f"{self.items[self.item_index]['id']}:{verdict}",
+                                         self.backlog_undo)
             except Exception as e:  # changed elsewhere since the list was read, a busy lock: said, the app stays up
                 import fmcli
                 self.message = f"backlog: {e}"
@@ -3009,6 +3018,8 @@ class App:
                     self.item_index = max(0, min(self.item_index, len(self.items) - 1))
                 return None
             self.message = f"backlog: {said[0]}"
+            if verdict == "keep":
+                self.backlog_kept.add(self.items[self.item_index]["id"])
             del self.items[self.item_index]
             self.item_index = max(0, min(self.item_index, len(self.items) - 1))
         return None

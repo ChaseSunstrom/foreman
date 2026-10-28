@@ -27,12 +27,14 @@ BODY_MAX = 16_384  # bytes of a POST: one setting's key and value (a layout list
 IDLE = 1800  # seconds without an authenticated request before the server stops
 TIMEOUT = 10  # seconds each read or write on a connection may wait
 
-STYLE = ("body{font:14px system-ui,sans-serif;margin:2em;max-width:60em;color:#222}"
+BASE_STYLE = (":root{color-scheme:light dark}.msg{padding:.5em;border:1px solid #888;white-space:pre-wrap}"
+              ".bad{border-color:#c33;color:#900}@media(prefers-color-scheme:dark){.bad{color:#f88}small,.why{"
+              "color:#999}}")  # T-1871: every served page's, after its own rules (the dark ones must win)
+STYLE = ("body{font:14px system-ui,sans-serif;margin:2em;max-width:60em}"
          "h2{margin-top:1.5em}form{display:grid;grid-template-columns:14em 1fr 4em;gap:.5em;align-items:center;"
          "margin:.3em 0}input,select{font:inherit}small{grid-column:1/-1;color:#666;margin-top:-.3em}"
-         ".msg{padding:.5em;border:1px solid #888;white-space:pre-wrap}.bad{border-color:#c33;color:#900}"
          ".grid{display:flex;gap:1em}.grid>div{flex:1}.panel{border:1px solid #888;padding:.4em;margin:.3em 0}"
-         ".panel form{display:inline}")
+         ".panel form{display:inline}") + BASE_STYLE
 ARROWS = ((-1, 0, "←", "left"), (0, -1, "↑", "up"), (0, 1, "↓", "down"), (1, 0, "→", "right"))
 
 
