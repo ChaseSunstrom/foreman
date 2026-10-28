@@ -2525,6 +2525,15 @@ _HARD = re.compile(r"(?i)\b(deploy|release|publish|push|migrat(?:e|ion)|delete|d
 _UNKNOWN = re.compile(r"(?i)\b(spike|probe|prototype|investigate|measure|find out|unknown)\w*")
 
 
+def spike_note(b):
+    """T-1664: an L FEATURE finds its riskiest unknown in a throwaway spike before building on it; a note at first
+    focus, not a gate, and none once a step spikes, probes or prototypes."""
+    if b.type != "FEATURE" or b.tier != "L" or any(re.search(r"(?i)\b(spike|probe|prototyp)", s.text) for s in b.steps()):
+        return ""
+    return (f"Spike first: an L feature's riskiest unknown is cheapest to find in a throwaway lane (fm lane new {b.id} "
+            f"--spike) before step 1; then fm task step {b.id} add 'spike: <the unknown>' so the brief records it.")
+
+
 def step_order(b):
     """T-0623: a step that explores an unknown placed after one that's hard to undo (a fixed vocabulary; a hint)."""
     steps = b.steps()
@@ -3027,6 +3036,7 @@ def cmd_focus(args):
                                           fmoutcomes.caution(p, target.meta.get("scope") or []),  # T-0620
                                           step_order(target), step_contracts(p, target),  # T-0623, T-0666
                                           _preflight(p, target) if first_focus else "",  # T-0633
+                                          spike_note(target) if first_focus else "",  # T-1664
                                           __import__("fmcost").cost_line(p, target)]))  # T-1083
     except Exception:  # a report: it never stops a focus
         record = ""
@@ -6340,11 +6350,16 @@ def _build_parser():
                                                           "note and known fixes")
     s = add("inbox", lazy("fmeco", "cmd_inbox"), tier=("Project and settings", 670), help="captured requests waiting; fm inbox gh reads the repo's open "
                                                        "issues (read-only) into briefs, their text kept as untrusted data")
-    s.add_argument("source", nargs="?", choices=["gh", "spec"], help="a source to capture from (spec FILE: each unchecked "
-                                                                     "`- [ ]` item, once); none lists the inbox")
-    s.add_argument("file", nargs="?", help="with spec: the markdown checklist")
+    s.add_argument("source", nargs="?", choices=["gh", "spec", "first", "swipe", "pick", "prefer", "ticket"],
+                   help="a source to capture from (spec FILE: each unchecked `- [ ]` item, once; ticket FILE|-: a "
+                        "pasted ticket or error as one planned brief, T-1664); first: ready S items with why; swipe: "
+                        "the deferred pile (--apply ID:revive|drop|keep,…); pick: close pairs to choose between; "
+                        "prefer WINNER LOSER: record a choice the inbox order learns from; none lists the inbox")
+    s.add_argument("file", nargs="?", help="with spec or ticket: the file; with prefer: the winner")
+    s.add_argument("loser", nargs="?", help="with prefer: the item it beat")
+    s.add_argument("--apply", metavar="ID:VERDICT,…", help="with swipe: revive, drop or keep each deferred item named")
     s.add_argument("--repo", metavar="OWNER/REPO", help="default: the repo gh finds here")
-    s.add_argument("--limit", type=int, default=30)
+    s.add_argument("--limit", type=int, help="with gh (default 30), first (5) or pick (4 pairs)")
     s = add("ci-watch", lazy("fmci", "cmd_ci_watch"), tier=("Project and settings", 930), help="after a push, poll the branch's latest CI run through gh; a "
                                                            "failure's log tail becomes a FIX brief (data), up to --max-retries; it can run "
                                                            "max-polls x interval: use run_in_background, or let fm next or a Monitor wake you")
