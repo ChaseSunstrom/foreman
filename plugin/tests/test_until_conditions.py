@@ -1,9 +1,13 @@
 """T-1183: fm task block/defer --until "installed NAME" | "exists PATH": fm next names the task again once it holds.
 Conditions are structured, never shell commands."""
+import datetime
+import json
 import os
+import time
 import unittest
 
 from helpers import ForemanTestCase
+import fmcore as c
 
 
 class UntilConditions(ForemanTestCase):
@@ -47,6 +51,28 @@ class UntilConditions(ForemanTestCase):
         self.assertNotIn(tid, self._next())
         open(os.path.join(self.repo, "login.ok"), "w").close()
         self.assertIn(tid, self._next())
+
+    def test_defer_to_a_time_waits_for_that_minute_not_midnight(self):
+        tid = self._task()  # T-1802: the weekly usage reset is 02:00, a date alone came back two hours early
+        today = datetime.date.today().isoformat()
+        self.fm("task", "defer", tid, "after the reset", "--until", f"{today}T23:59")
+        if datetime.datetime.now().strftime("%H:%M") < "23:59":
+            self.assertNotIn(tid, self._next())
+        self.fm("task", "defer", tid, "after the reset", "--until", f"{today}T00:00")
+        self.assertIn(tid, self._next())
+        self.assertNotEqual(self.fm("task", "defer", tid, "x", "--until", f"{today}T25:00", check=False).returncode, 0)
+
+    def test_defer_until_reset_stores_the_weekly_reset_as_local_time(self):
+        tid = self._task()
+        d = os.path.join(c.state_dir(), "sessions")
+        os.makedirs(d, exist_ok=True)
+        at = time.time() + 3 * 3600
+        with open(os.path.join(d, "s1.json"), "w") as f:
+            json.dump({"rate_limits": {"seven_day": {"used_percentage": 95, "resets_at": at}}}, f)
+        self.fm("task", "defer", tid, "after the reset", "--until", "reset")
+        want = datetime.datetime.fromtimestamp(at + 59).strftime("%Y-%m-%dT%H:%M")
+        self.assertIn(f"revisit: {want}", self.fm("task", "show", tid).stdout)
+        self.assertNotIn(tid, self._next())
 
     def test_shell_looking_and_outside_conditions_are_refused(self):
         tid = self._task()

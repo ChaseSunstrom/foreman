@@ -299,6 +299,8 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
             if share > DUP:
                 out.append(f"{b}: shares {share:.0%} of its wording with {a}: merge them or cut one")
     for rel, n, body in snippets if run else ():
+        if sys.version_info < (3, 14) and "__future__" not in body:  # T-1799: 3.14's lazy annotations, on 3.12 too
+            body = "from __future__ import annotations\n" + body
         why = _run(body, timeout, _limits())
         if why:
             out.append(f"{rel}:{n}: {why} (mark it ```python no-run if it isn't a self-check)")

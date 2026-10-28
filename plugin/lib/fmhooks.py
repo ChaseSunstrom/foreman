@@ -598,6 +598,13 @@ def session_context(p, sd, other_note=None, sid=None):
     tail = [f"Inbox: {len(inbox)}" + (" — " + "; ".join(f"{x['id']} {x['title'][:40]}" for x in inbox[:3]) if inbox else "") + "."]
     if sd["blocked"]:
         tail.append(f"Blocked: {len(sd['blocked'])} ({', '.join(x['id'] for x in sd['blocked'][:5])}).")
+    try:  # T-1800: usage burn from the last cached scan, named with its fix
+        import fmcost
+        burn = fmcost.burn_line()
+        if burn:
+            tail.append(burn)
+    except Exception:
+        log_error("SessionStart", _tb())
     if sd["tidy_overdue_days"]:
         tail.append(f"Tidy overdue: last tidy {sd['last_tidy'] or 'never'} ({sd['tidy_overdue_days']} days).")
     if sd["cycles"]:

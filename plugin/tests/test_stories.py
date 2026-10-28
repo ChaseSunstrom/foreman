@@ -13,7 +13,7 @@ import time
 import unittest
 from unittest import mock
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, headless_chrome
 
 import fmshot
 import fmstories
@@ -239,7 +239,7 @@ class Untrusted(StubCase):
         self.assertIn("not a PNG", self.page())
 
 
-@unittest.skipUnless(fmshot.chrome(), "no headless Chromium here")
+@unittest.skipUnless(headless_chrome(), "no headless Chromium here")
 class InABrowser(ForemanTestCase):
     def test_three_states_in_a_real_browser_are_three_different_shots(self):
         self.fm("init")

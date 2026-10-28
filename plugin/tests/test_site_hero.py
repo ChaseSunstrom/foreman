@@ -216,7 +216,8 @@ class Scene(unittest.TestCase):
                 with open(os.path.join(d, "chrome-headless-shell"), "w") as f:
                     f.write("#!/bin/sh\n")
                 os.chmod(os.path.join(d, "chrome-headless-shell"), 0o755)
-            with mock.patch.dict(os.environ, {"HOME": home, "PATH": home, "FOREMAN_CHROME": ""}):
+            with mock.patch.dict(os.environ, {"HOME": home, "PATH": home, "FOREMAN_CHROME": ""}), \
+                    mock.patch("helpers._starts", return_value=True):  # the fakes can't start; the order is under test
                 self.assertIn("chromium_headless_shell-1243", headless_chrome())
 
     def browse(self, *flags, page=None, shot=None, budget=12000):

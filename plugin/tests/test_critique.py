@@ -6,7 +6,7 @@ import json
 import os
 import unittest
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, headless_chrome
 
 import fmcritique
 import fmshot
@@ -258,7 +258,7 @@ class Cascade(unittest.TestCase):
         self.assertLess(len(text.splitlines()), fmcritique.WHY_RULES + fmcritique.WHY_WINNERS + 10)
 
 
-@unittest.skipUnless(fmshot.chrome(), "no headless Chromium here")
+@unittest.skipUnless(headless_chrome(), "no headless Chromium here")
 class InABrowser(Case):
     def test_a_real_page_census_and_why(self):
         page = os.path.join(self.repo, "p.html")
