@@ -7095,7 +7095,7 @@ WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "sh
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
                    "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
                    "playbooks": ("action", {"show", "route", "preview"}),  # T-1621: prints, but can rebuild fm
-                   # map's map.json cache; not blame (T-1622): git in a FOREMAN_PLAYBOOKS repo runs its filters
+                   # map's map.json cache; route (T-1833) also writes the playbook index in state and one event; not blame (T-1622): git in a FOREMAN_PLAYBOOKS repo runs its filters
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
                    "design": ("action", {"lint", "palette", "contrast", "tokens"}),  # T-1506, T-1507, T-1651: read
                    "img": ("out", {None}),  # T-1630: info and diff read; --out writes

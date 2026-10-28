@@ -351,18 +351,20 @@ def coverage_text(cov):
 
 
 def reach(root=ROOT, days=REACH_DAYS):
-    """{days, covers, read: {path: reads}, unread: [path]}: Read events of each playbook in the window, from every
-    project; covers is the days the event log actually spans, when that is fewer."""
-    books, read, oldest = _playbooks(root), {}, None
+    """{days, covers, read: {path: reads}, routed: {path: routes}, unread: [path]}: Read events of each playbook in the
+    window, from every project; routed counts the books `fm playbooks route` named (not reads); covers is the days
+    the event log actually spans, when that is fewer."""
+    books, read, routed, oldest = _playbooks(root), {}, {}, None
     known = set(books)
     since = c.iso(time.time() - days * 86400)
     for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
         ts = str(e.get("ts") or "")
         oldest = ts if ts and (oldest is None or ts < oldest) else oldest
         target = str(e.get("target") or "")
-        if ts >= since and e.get("kind") == "playbook":  # T-1833: fm playbooks route named these
-            for hit in {x for x in e.get("paths") or () if isinstance(x, str) and x in known}:
-                read[hit] = read.get(hit, 0) + 1
+        if ts >= since and e.get("kind") == "playbook":  # T-1833: fm playbooks route named these, no read of them
+            if e.get("action") == "route":
+                for hit in {x for x in e.get("paths") or () if isinstance(x, str) and x in known}:
+                    routed[hit] = routed.get(hit, 0) + 1
             continue
         if ts < since or e.get("kind") != "tool":
             continue
@@ -379,7 +381,7 @@ def reach(root=ROOT, days=REACH_DAYS):
     ts = c.parse_ts(oldest) if oldest and oldest > since else None
     covers = 0 if oldest is None else round((time.time() - ts.timestamp()) / 86400, 1) if ts else days
     return {"days": days, "covers": covers,
-            "read": read, "unread": [b for b in books if b not in read]}
+            "read": read, "routed": routed, "unread": [b for b in books if b not in read]}
 
 
 def listed(root=ROOT):
@@ -519,8 +521,9 @@ INDEX_VERSION = 1
 
 
 def _entries(root, dirs):
-    """Every playbook's DirEntry (what _playbooks lists) under root; dirs gets each folder's (path, mtime_ns). Symlinks
-    and FIFOs are skipped: nothing here follows a link out of the library or blocks on a pipe."""
+    """Every playbook's DirEntry (what _playbooks lists) under root; dirs gets each folder's (path, mtime_ns). The same
+    rule as that walk: a link to a regular file counts, a linked folder isn't entered; a FIFO or device is skipped,
+    since reading one could block."""
     todo = [os.path.join(os.path.abspath(root), "references")]
     while todo:
         d = todo.pop()
@@ -534,7 +537,7 @@ def _entries(root, dirs):
                 n = e.name
                 try:
                     if n.endswith(".md"):
-                        if n != "INDEX.md" and e.is_file(follow_symlinks=False):
+                        if n != "INDEX.md" and e.is_file():  # as _playbooks' walk: a link to a regular file counts
                             yield e
                     elif n != "templates" and e.is_dir(follow_symlinks=False):
                         todo.append(e.path)
@@ -547,7 +550,7 @@ def _stat_tree(root):
     cut, out = len(os.path.abspath(root)) + 1, set()
     for e in _entries(root, []):
         try:
-            st = e.stat(follow_symlinks=False)
+            st = e.stat()
         except OSError:
             continue
         out.add((e.path[cut:], st.st_mtime_ns, st.st_size))
@@ -563,7 +566,7 @@ def _signature(root):
     dirs = []
     for e in _entries(root, dirs):
         try:
-            st = e.stat(follow_symlinks=False)
+            st = e.stat()
         except OSError:
             continue
         n += 1
@@ -599,12 +602,44 @@ def _index_file(root):
     return os.path.join(folder, f"index-v{INDEX_VERSION}-{key}.db")
 
 
+def _drop_index(path):
+    for suffix in ("", "-journal", "-wal", "-shm"):
+        with contextlib.suppress(OSError):
+            os.remove(path + suffix)
+
+
+def _prune(mine):
+    """Drops the other indexes whose library (recorded in their meta row) is gone: a plugin update runs from a new
+    cache folder, and its index starts again beside the old one's."""
+    import pathlib
+    import sqlite3
+    for f in os.listdir(os.path.dirname(mine)):
+        path = os.path.join(os.path.dirname(mine), f)
+        if not (f.startswith("index-") and f.endswith(".db")) or path == mine:
+            continue
+        try:
+            con = sqlite3.connect(pathlib.Path(path).as_uri() + "?mode=ro", uri=True, timeout=1)
+            try:
+                row = con.execute("select root from meta").fetchone()
+            finally:
+                con.close()
+        except sqlite3.Error:
+            continue
+        if row and not os.path.isdir(row[0]):
+            _drop_index(path)
+
+
 def _index(root):
     """The open, refreshed index of root: raises sqlite3.Error (no FTS5, a broken file) for the caller to handle."""
     import sqlite3
-    con = sqlite3.connect(_index_file(root), timeout=10, isolation_level=None)
+    # 60 s: a first build of 20k books by one process is not a reason for a second to scan every file instead
+    con = sqlite3.connect(_index_file(root), timeout=60, isolation_level=None)
     try:
         con.execute("pragma synchronous=off")  # rebuildable: a torn file is dropped and built again
+        con.execute("create table if not exists meta(root text)")
+        if con.execute("select 1 from meta").fetchone() is None:  # a new index: say whose, and tidy the dead ones
+            con.execute("insert into meta values(?)", (os.path.realpath(root),))
+            _prune(_index_file(root))
         con.execute("create table if not exists files(path text primary key, mtime_ns int, size int)")
         con.execute("create virtual table if not exists books using fts5(path unindexed, title, use, heads, body, "
                     "tokenize='porter unicode61')")
@@ -641,22 +676,20 @@ def _index(root):
 
 def _fts_find(root, terms, k):
     import sqlite3
+    q = " OR ".join('"' + t + '"' for t in terms)
     for attempt in (0, 1):
         try:
             con = _index(root)
-            break
+            try:  # the query too: a corrupt FTS table passes the refresh when the signature matches
+                return [{"path": p, "score": round(-s, 2), "use": u} for p, u, s in con.execute(
+                    "select path, use, bm25(books, ?, ?, ?, ?, ?) as s from books where books match ? order by s limit ?",
+                    (*WEIGHTS, q, k))]
+            finally:
+                con.close()
         except sqlite3.DatabaseError as e:
-            if attempt or "fts5" in str(e).lower() or "locked" in str(e).lower():
+            if attempt or "no such module" in str(e).lower() or "locked" in str(e).lower():
                 raise
-            with contextlib.suppress(OSError):  # a torn file: drop this root's index and build it again
-                os.remove(_index_file(root))
-    try:
-        q = " OR ".join('"' + t + '"' for t in terms)
-        return [{"path": p, "score": round(-s, 2), "use": u} for p, u, s in con.execute(
-            "select path, use, bm25(books, ?, ?, ?, ?, ?) as s from books where books match ? order by s limit ?",
-            (*WEIGHTS, q, k))]
-    finally:
-        con.close()
+            _drop_index(_index_file(root))  # a torn or corrupt file: build it again, once
 
 
 def find(text, k=5, root=ROOT):
@@ -697,6 +730,8 @@ def cmd_route(args):
         text = args.name
     k = max(1, min(args.k, 50))
     mode, got = find(text, k)
+    if not got and not args.task and len(text.split()) == 1:  # one word: most likely a stage key mistyped
+        raise fmcli.UsageError(f"no stage or book fits {text!r}; stages: {', '.join(c.SKILL_FOR)}")
     if got:
         import fmhooks
         fmhooks._event({"kind": "playbook", "action": "route", "paths": [x["path"] for x in got]})  # the text stays out
@@ -909,7 +944,7 @@ def _one(name, books):
 
 
 def cmd_show(args):
-    """fm playbooks show NAME (T-1621); eval NAME (T-1618); route STAGE, blame NAME, preview NAME (T-1622)."""
+    """fm playbooks show NAME (T-1621); eval NAME (T-1618); route STAGE|TEXT|--task ID, blame NAME, preview NAME (T-1622)."""
     import fmcli
     if args.action == "coverage":  # T-1623
         cov = coverage()
