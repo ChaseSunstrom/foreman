@@ -1589,6 +1589,29 @@ class PreToolUse(HookCase):
         poll = 'for i in $(seq 1 110); do grep -q "^EXIT" f.log && break; sleep 5; done; tail f.log'
         self.assertEqual(self.pre("Bash", {"command": poll}).returncode, 2)
 
+    def test_a_process_match_on_its_own_command_is_refused(self):
+        # T-1839 (2026-10-28, idle for hours; the user: "fix that so it doesn't happen"): a background
+        # `while pgrep -f "plugin/bin/fm check"; do sleep 20; done` found its own shell, whose command line holds the
+        # pattern, so it never ended and no notification came; `pkill -f "while pgrep -f"` then killed its own shell
+        self.fm("init")
+        self.task()
+        for bad in ({"command": 'while pgrep -f "plugin/bin/fm check" >/dev/null; do sleep 20; done',
+                     "run_in_background": True},
+                    {"command": 'pkill -f "while pgrep -f"; fm status'},
+                    {"command": "until ! pgrep -af fm.check; do sleep 30; done", "run_in_background": True},
+                    {"command": "pgrep --full 'npm run dev'"}, {"command": "cd /x\npgrep -f 'cd /x'"}):
+            with self.subTest(cmd=bad["command"]):
+                p = self.pre("Bash", bad)
+                self.assertEqual(p.returncode, 2, p.stdout)
+                self.assertIn("kill -0", p.stdout)
+        for ok in ('while pgrep -f "[f]m check" >/dev/null; do sleep 20; done',  # the bracket can't match itself
+                   "pgrep -fx 'python3 serve.py'",  # -x: the whole command line must equal it
+                   "pgrep -x node", "while kill -0 4242 2>/dev/null; do sleep 20; done", "ps -eo pid,args | grep fm",
+                   "git commit -m \"refuse a pgrep -f 'fm check' that matches itself\"",  # a mention runs nothing
+                   "pgrep -af 'git push' | grep -v pgrep | head", "pgrep -af 'fm check' | grep -v -e pgrep -e while"):
+            with self.subTest(cmd=ok):
+                self.assertEqual(self.pre("Bash", {"command": ok, "run_in_background": True}).returncode, 0, ok)
+
     def test_every_refusal_names_its_fix(self):
         # T-0440: a refusal that names no allowed form costs a guess; every category names the next action
         import types
