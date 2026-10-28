@@ -67,7 +67,7 @@ Work inside a focused task (each step edits files). Per step, read only the play
 - `fm design lint SRC`: generic-design tells and craft slips; fix each or say why it stays.
 - `fm design check`: DESIGN.md's opted-in gates (`## Gates`, `- brief: advisory|blocking`): the Knobs' colours, type families and durations, found in the code; `- a11y: …`: token contrast pairs, a reduced-motion path, no fast flashes, img alt and a focus style that shows; `- debt: advisory 40`: untokened colours, durations and radii per file, under the budget.
 - `fm design contrast TOKENS` again after any colour change; `fm motion check` after any motion change.
-- `fm critique URL`: the styles the page really uses against DESIGN.md's tokens (unnamed, near-duplicate, one-off); `--why SELECTOR` shows which rule won.
+- `fm critique URL`: the styles the page really uses against DESIGN.md's tokens (unnamed, near-duplicate, one-off); `--why SELECTOR` shows which rule won. `--bingo` scores nine tells of a templated look (exit 1 on a full line); `--marks shot.png` turns pencil-red strokes drawn on a screenshot into one captured FIX per marked element (`--note` says what each asks); `--brief [ID]` checks that the phrases the brief quotes are on the page.
 - `../playbooks/references/ui/visual-qa.md`: `fm smoke` shoots the frame matrix (360/768/1440, light and dark,
   reduced motion); Read the PNGs and look. Before and after: `fm img diff A.png B.png --out diff.png`.
 - A component's states (default, hover, error, empty, loading): `fm stories CHART` shoots each into one matrix page. `fm shot` and `fm stories` take `--profile tv|eink|car|wrist` (that surface's size and scale) and `--reduced-motion` (prefers-reduced-motion: reduce, for posters and still states).
