@@ -12,6 +12,7 @@ import time
 import fmcore as c
 
 WEIGHTS = {"input_tokens": 1, "cache_creation_input_tokens": 1.25, "cache_read_input_tokens": 0.1, "output_tokens": 5}
+WRITE_1H = 2.0  # T-1820: a 1 h cache write costs 2× base input; WEIGHTS' 1.25 is the 5 min cache's price
 SHORT = {"input_tokens": "input", "cache_creation_input_tokens": "cache writes", "cache_read_input_tokens":
          "cache reads", "output_tokens": "output"}
 
@@ -35,6 +36,18 @@ def transcripts_dir(root):
 
 def _since(days):
     return (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def one_hour(u):
+    """A usage row's 1 h cache writes (Claude Code logs them under cache_creation)."""
+    cc = u.get("cache_creation")
+    return (cc.get("ephemeral_1h_input_tokens") or 0) if isinstance(cc, dict) else 0
+
+
+def weighted(u):
+    """A usage row in input-equivalent tokens."""
+    return (sum((u.get(k) or 0) * w for k, w in WEIGHTS.items())
+            + one_hour(u) * (WRITE_1H - WEIGHTS["cache_creation_input_tokens"]))
 
 
 def _human(n):
@@ -319,7 +332,7 @@ def unexplained(msgs, events, gap=UNEXPLAINED_GAP_S):
     total = lost = 0.0
     sessions = collections.Counter()
     for ts, sid, usage in msgs:
-        w = sum((usage.get(k) or 0) * wt for k, wt in WEIGHTS.items())
+        w = weighted(usage)
         t, near = _epoch(ts), times.get(sid)
         if t is None:  # no usable time: neither explained nor not, and left out of the total
             continue
@@ -373,7 +386,7 @@ def task_costs(p, days):
         return collections.Counter()
     lines, out = _timelines(p, days), collections.Counter()
     for ts, sid, usage in scan(folder, _since(days))[0]:
-        out[_task_for(lines, sid, ts[:19]) or "(no task)"] += sum((usage.get(k) or 0) * w for k, w in WEIGHTS.items())
+        out[_task_for(lines, sid, ts[:19]) or "(no task)"] += weighted(usage)
     return out
 
 
@@ -604,11 +617,9 @@ def cmd_cost(args):
     totals, by_task, by_session = collections.Counter(), collections.Counter(), collections.Counter()
     lines = _timelines(p, args.days)  # T-1083 review: each turn to its own session's task
     for ts, sid, usage in msgs:
-        w = 0.0
-        for k, weight in WEIGHTS.items():
-            v = usage.get(k) or 0
-            totals[k] += v
-            w += v * weight
+        for k in WEIGHTS:
+            totals[k] += usage.get(k) or 0
+        w = weighted(usage)
         by_task[_task_for(lines, sid, ts[:19]) or "(no task)"] += w
         by_session[sid] += w
     if not msgs:  # R3 canary: transcripts are Claude Code's internal format and may change under us
@@ -643,7 +654,7 @@ def cmd_cost(args):
                                     if k == "Bash" and shell_s else "") for k, v in tool_s.most_common(5))) if active else ""
     text = (f"Tokens, last {args.days} day(s), {len(by_session)} session(s), {len(msgs)} replies: "
             + " · ".join(f"{SHORT[k]} {_human(totals[k])}" for k in WEIGHTS)
-            + f" ≈ {_human(total)} input-equivalent (cache reads ×0.1, writes ×1.25, output ×5)"
+            + f" ≈ {_human(total)} input-equivalent (cache reads ×0.1, writes ×1.25 or ×2 on the 1 h cache, output ×5)"
             + "\nBy task: " + " · ".join(f"{t} {_human(v)} ({100 * v / total:.0f}%)" for t, v in by_task.most_common(8))
             + ("\n" + unex_line if unex_line else "")
             + "\nTool results (what filled the context): " + " · ".join(
@@ -659,7 +670,7 @@ BUST_MIN = 30000  # a turn re-writing over half of a context this big lost its c
 # T-1797: Foreman's compact window (T-1796): a session averaging past it compacted late. BURN_CONTEXT (150k) is the
 # account-wide early warning; this is the per-session regression line.
 SESSION_OVER = 200_000
-CACHE_TTL_S = 300  # the prompt cache's default lifetime: a bust after a longer gap is the ttl, else a context edit
+CACHE_TTL_S, CACHE_TTL_1H_S = 300, 3600  # the prompt cache's default lifetime: a bust after a longer gap is the ttl, else a context edit
 
 
 def _epoch(ts):
@@ -679,23 +690,32 @@ def _sessions(msgs, args, fmcli):
     rows = {}
     for ts, sid, u in sorted(msgs, key=lambda x: x[0]):
         r = rows.setdefault(sid, {"session": sid, "turns": 0, "busts": 0, "ctx": 0, "prev": 0, "prev_t": None,
-                                  "causes": collections.Counter(), "tokens": collections.Counter()})
+                                  "causes": collections.Counter(), "tokens": collections.Counter(), "h1": 0,
+                                  "bust_cost": 0.0, "ttl": None})
         ctx = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
         w = u.get("cache_creation_input_tokens") or 0
-        t = _epoch(ts)
+        t, h = _epoch(ts), one_hour(u)
         if r["prev"] > BUST_MIN and ctx > BUST_MIN and w > ctx / 2:  # T-0959: the cache expired, or the prefix changed
             r["busts"] += 1
-            r["causes"]["ttl" if t and r["prev_t"] and t - r["prev_t"] > CACHE_TTL_S else "context edit"] += 1
+            ttl = r["ttl"] or (CACHE_TTL_1H_S if h else CACHE_TTL_S)  # T-1820: the lifetime its last write chose
+            r["causes"]["ttl" if t and r["prev_t"] and t - r["prev_t"] > ttl else "context edit"] += 1
+            r["bust_cost"] += weighted({"cache_creation_input_tokens": w, "cache_creation": u.get("cache_creation")}) \
+                - w * WEIGHTS["cache_read_input_tokens"]  # re-written instead of read
+        r["h1"] += h
+        if w:
+            r["ttl"] = CACHE_TTL_1H_S if h else CACHE_TTL_S
         r["turns"], r["ctx"], r["prev"], r["prev_t"] = r["turns"] + 1, r["ctx"] + ctx, ctx, t
         for k in WEIGHTS:
             r["tokens"][k] += u.get(k) or 0
     out = []
     for r in rows.values():
         spend = {k: r["tokens"][k] * WEIGHTS[k] for k in WEIGHTS}
+        spend["cache_creation_input_tokens"] += r["h1"] * (WRITE_1H - WEIGHTS["cache_creation_input_tokens"])
         out.append({"session": r["session"], "turns": r["turns"], "avg_context": r["ctx"] // r["turns"],
                     "over": r["ctx"] // r["turns"] > SESSION_OVER,
-                    "busts": r["busts"], "bust_causes": dict(sorted(r["causes"].items())), "tokens": dict(r["tokens"]), "input_equivalent": round(sum(spend.values())),
-                    "split": {SPLIT[k]: round(100 * v / (sum(spend.values()) or 1)) for k, v in sorted(spend.items(), key=lambda kv: list(SPLIT).index(kv[0]))}})
+                    "busts": r["busts"], "bust_causes": dict(sorted(r["causes"].items())), "tokens": dict(r["tokens"]),
+                    "input_equivalent": round(sum(spend.values())), "bust_cost": round(r["bust_cost"]),
+                    "split": {name: round(100 * spend[k] / (sum(spend.values()) or 1)) for k, name in SPLIT.items()}})
     out.sort(key=lambda s: -s["input_equivalent"])
     over = sum(s["over"] for s in out)
     text = (f"Sessions, last {args.days:g} day(s), costliest first, main thread only (the context a turn re-reads is "
@@ -704,10 +724,14 @@ def _sessions(msgs, args, fmcli):
                         f"≈ {_human(s['input_equivalent'])} input-equivalent (" + ", ".join(
                             f"{k} {v}%"
                             for k, v in s["split"].items()) + f"), {s['busts']} bust{'s' * (s['busts'] != 1)}"
-                        + (" (" + ", ".join(f"{n} {k}" for k, n in s["bust_causes"].items()) + ")" if s["busts"] else "")
+                        + (" (" + ", ".join(f"{n} {k}" for k, n in s["bust_causes"].items())
+                           + f") ≈ {_human(s['bust_cost'])} lost" if s["busts"] else "")
                         + (" ⚠ over 200k a reply: compacted late (one started after fm install-user and a restart "
                            "shouldn't)" if s["over"] else "")
                         for s in out[:15]) + (f"\n  {over} session(s) average over 200k a reply" if over else "")
+            + ("\n  Busts: a ttl one outlasted the cache (5 min, or 1 h when the session writes 1 h): fewer long idle "
+               "gaps. A context edit changed the prefix: CLAUDE.md, rules, tools or MCP servers edited mid-session, "
+               "or a model switch." if any(s["busts"] for s in out[:15]) else "")
             if out else f"No token usage in the last {args.days:g} day(s).")
     return fmcli.out(args, {"days": args.days, "sessions": out}, text)
 
@@ -801,7 +825,7 @@ def cmd_digest(args):
     tokens, unex = None, ""
     if os.path.isdir(transcripts_dir(p.root)):
         msgs, _ = scan(transcripts_dir(p.root), since)
-        tokens = sum((u.get(k) or 0) * w for _, _, u in msgs for k, w in WEIGHTS.items())
+        tokens = sum(weighted(u) for _, _, u in msgs)
         unex = unexplained_line(unexplained_spend(p, msgs, args.days))
     lines = [f"Last {args.days:g} day(s) in {p.slug}: {len(done)} task(s) done — "
              + (", ".join(f"{v} {k}" for k, v in grades.most_common()) or "none")
