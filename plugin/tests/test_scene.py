@@ -2,6 +2,7 @@
 ES module that builds the scene with three.js and keeps templates/scene.html's survival clauses."""
 import copy
 import json
+import math
 import os
 import re
 import shutil
@@ -535,6 +536,176 @@ class Offline(ForemanTestCase):
         p = self.fm("scene", "shader", folder, check=False)
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("2 shader file(s)", p.stdout)
+
+
+
+def m4(pos=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1)):
+    """three.js's Matrix4.compose: T * Rx * Ry * Rz * S, column-major as toJSON writes it."""
+    import math
+    x, y, z = (math.radians(a) for a in rot)
+    rx = [[1, 0, 0], [0, math.cos(x), -math.sin(x)], [0, math.sin(x), math.cos(x)]]
+    ry = [[math.cos(y), 0, math.sin(y)], [0, 1, 0], [-math.sin(y), 0, math.cos(y)]]
+    rz = [[math.cos(z), -math.sin(z), 0], [math.sin(z), math.cos(z), 0], [0, 0, 1]]
+    mul = lambda a, b: [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+    r = mul(mul(rx, ry), rz)
+    return [v for j in range(3) for v in [r[i][j] * scale[j] for i in range(3)] + [0]] + [*pos, 1]
+
+
+def three_doc():
+    """A scene as three.js's Object3D.toJSON() writes it (format 4)."""
+    tri = {"itemSize": 3, "type": "Float32Array", "array": [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], "normalized": False}
+    return {
+        "metadata": {"version": 4.6, "type": "Object", "generator": "Object3D.toJSON"},
+        "geometries": [
+            {"uuid": "g-box", "type": "BoxGeometry", "width": 2, "height": 1, "depth": 0.5},
+            {"uuid": "g-ball", "type": "SphereGeometry", "radius": 0.5, "widthSegments": 16, "heightSegments": 8},
+            {"uuid": "g-floor", "type": "PlaneGeometry", "width": 10, "height": 6},
+            {"uuid": "g-quad", "type": "BufferGeometry",
+             "data": {"attributes": {"position": tri}, "index": {"type": "Uint16Array", "array": [0, 1, 2, 2, 1, 3]}}},
+            {"uuid": "g-soup", "type": "BufferGeometry", "data": {"attributes": {"position": dict(tri, array=tri["array"][:9])}}},
+            {"uuid": "g-knot", "type": "TorusKnotGeometry", "radius": 1},
+        ],
+        "materials": [
+            {"uuid": "m-red", "type": "MeshStandardMaterial", "name": "red", "color": 0xFF0000, "roughness": 0.4,
+             "metalness": 0.2, "emissive": 0x110000, "emissiveIntensity": 2},
+            {"uuid": "m-flat", "type": "MeshBasicMaterial", "color": 0x336699},
+        ],
+        "object": {"uuid": "s", "type": "Scene", "background": 0x101418, "matrix": m4(), "children": [
+            {"uuid": "grp", "type": "Group", "matrix": m4((1, 0, 0)), "children": [
+                {"uuid": "crate", "type": "Mesh", "name": "crate", "geometry": "g-box", "material": "m-red",
+                 "matrix": m4((1, 0, 0), (0, 90, 0))}]},
+            {"uuid": "ball", "type": "Mesh", "name": "crate", "geometry": "g-ball", "material": "m-flat",
+             "matrix": m4((0, 1, 0), scale=(2, 2, 2))},  # a second "crate": renamed, names are unique
+            {"uuid": "floor", "type": "Mesh", "geometry": "g-floor", "material": "m-flat", "matrix": m4(rot=(-90, 0, 0))},
+            {"uuid": "quad", "type": "Mesh", "geometry": "g-quad", "material": "m-red", "matrix": m4()},
+            {"uuid": "soup", "type": "Mesh", "geometry": "g-soup", "material": ["m-red", "m-flat"], "matrix": m4()},
+            {"uuid": "knot", "type": "Mesh", "geometry": "g-knot", "material": "m-red", "matrix": m4()},
+            {"uuid": "wire", "type": "Line", "geometry": "g-soup", "material": "m-red", "matrix": m4()},
+            {"uuid": "amb", "type": "AmbientLight", "color": 0xFFFFFF, "intensity": 0.5, "matrix": m4()},
+            {"uuid": "sun", "type": "DirectionalLight", "color": 0xFFEEDD, "intensity": 2, "matrix": m4((3, 4, 5)),
+             "target": "t"},
+            {"uuid": "cam", "type": "PerspectiveCamera", "fov": 40, "zoom": 1, "near": 0.1, "far": 50, "aspect": 1.5,
+             "matrix": m4((0, 0, 8))},
+        ]}}
+
+
+class Import(ForemanTestCase):
+    """T-1847: fm scene import, a three.js Object3D.toJSON() scene to scene.json."""
+
+    def near(self, a, b):
+        self.assertEqual(len(a), len(b))
+        for x, y in zip(a, b):
+            self.assertAlmostEqual(x, y, places=4)
+
+    def test_from_three_carries_what_scene_json_holds_and_names_the_rest(self):
+        scene, left = fmscene.from_three(three_doc())
+        self.assertEqual(fmscene.validate(scene), scene, "the import is a valid scene.json")
+        m = {x["name"]: x for x in scene["meshes"]}
+        crate = m["crate"]
+        self.near(crate["position"], [2, 0, 0])  # the group's move composed with its own
+        self.near(crate["rotation"], [0, 90, 0])
+        self.assertEqual(crate["geometry"], {"type": "box", "size": [2, 1, 0.5]})
+        self.assertEqual(scene["materials"][crate["material"]],
+                         {"color": "#ff0000", "roughness": 0.4, "metalness": 0.2, "emissive": "#110000",
+                          "emissiveIntensity": 2})
+        ball = next(x for x in scene["meshes"] if x["geometry"]["type"] == "sphere")
+        self.assertNotEqual(ball["name"], "crate")
+        self.near(ball["scale"], [2, 2, 2])
+        self.assertEqual(ball["geometry"], {"type": "sphere", "radius": 0.5, "segments": 16})
+        floor = next(x for x in scene["meshes"] if x["geometry"]["type"] == "plane")
+        self.near(floor["rotation"], [-90, 0, 0])
+        self.assertEqual(floor["geometry"]["size"], [10, 6])
+        quad, soup = [x["geometry"] for x in scene["meshes"] if x["geometry"]["type"] == "vertices"]
+        self.assertEqual(quad["faces"], [[0, 1, 2], [2, 1, 3]])
+        self.assertEqual(soup["faces"], [[0, 1, 2]], "no index: each three vertices a triangle")
+        self.assertEqual(scene["background"], "#101418")
+        self.assertEqual([lt["type"] for lt in scene["lights"]], ["ambient", "directional"])
+        self.near(scene["lights"][1]["position"], [3, 4, 5])
+        self.assertEqual(scene["camera"]["fov"], 40)
+        self.near(scene["camera"]["position"], [0, 0, 8])
+        self.near(scene["camera"]["target"], [0, 0, 0])
+        joined = " ".join(left)
+        for word in ("TorusKnotGeometry", "Line", "second material"):
+            self.assertIn(word, joined)
+
+    def test_rotations_survive_the_matrix(self):
+        for rot in ((30, 45, 60), (-120, 10, 170), (0, -90, 0)):
+            doc = {"metadata": {"version": 4.6}, "geometries": [{"uuid": "g", "type": "BoxGeometry"}],
+                   "materials": [{"uuid": "m", "type": "MeshStandardMaterial", "color": 0}],
+                   "object": {"type": "Scene", "matrix": m4(), "children": [
+                       {"type": "Mesh", "geometry": "g", "material": "m", "matrix": m4((1, 2, 3), rot, (1, 2, 3))}]}}
+            scene, _ = fmscene.from_three(doc)
+            got = fmscene.triangles(scene)
+            want = fmscene.triangles(dict(scene, meshes=[dict(scene["meshes"][0], rotation=list(rot),
+                                                               position=[1, 2, 3], scale=[1, 2, 3])]))
+            self.assertEqual(got, want, rot)
+            self.near(scene["camera"]["position"], [0, 0, 5])  # no camera in the file: three's default
+
+    def test_fm_scene_import_writes_a_scene_fm_scene_checks(self):
+        src, out = os.path.join(self.tmp, "three.json"), os.path.join(self.tmp, "scene.json")
+        with open(src, "w") as f:
+            json.dump(three_doc(), f)
+        r = self.fm("scene", "import", src, "--out", out)
+        self.assertIn("left out", r.stdout)
+        self.assertEqual(self.fm("scene", "check", out).returncode, 0)
+        printed = self.fm("scene", "import", src).stdout
+        self.assertEqual(fmscene.loads(printed), fmscene.load(out))
+        with open(src, "w") as f:
+            f.write('{"metadata": {"version": 4.6}, "object": {"type": "Mesh"}}')
+        self.assertNotEqual(self.fm("scene", "import", src, check=False).returncode, 0)
+
+    def test_a_top_down_camera_and_a_mesh_named_camera_still_validate(self):
+        doc = three_doc()
+        kids = doc["object"]["children"]
+        kids[1]["name"] = "camera"  # scene.json keeps that name for a camera path
+        next(k for k in kids if k["type"] == "PerspectiveCamera")["matrix"] = m4((0, 8, 0), (-90, 0, 0))
+        scene, left = fmscene.from_three(doc)
+        self.assertNotIn("camera", [x["name"] for x in scene["meshes"]])
+        self.near(scene["camera"]["position"], [0, 8, 0])
+        self.assertLess(scene["camera"]["target"][1], 1)
+        self.assertIn("straight down", " ".join(left))
+
+
+    def test_odd_input_is_a_note_or_a_value_error_never_a_crash(self):
+        doc = three_doc()
+        kids = doc["object"]["children"]
+        kids.append({"type": "\x1b[2J", "matrix": m4()})  # a terminal escape as a type: shown escaped
+        kids.append({"type": "Mesh", "geometry": "g-box", "material": "m-red", "visible": False, "matrix": m4()})
+        kids.append({"type": "Mesh", "name": "mirror", "geometry": "g-box", "material": "m-red",
+                     "matrix": m4((0, 0, 1), (0, 30, 0), (-1, 1, 1))})
+        kids.append({"type": "Mesh", "name": "Cube.001", "geometry": "g-box", "material": "m-red", "matrix": m4()})
+        kids += [{"type": "DirectionalLight", "matrix": m4((i + 1, 1, 0))} for i in range(3)]  # a 4th direct light
+        kids.append({"type": "DirectionalLight", "matrix": m4()})  # at the origin: refused, so a note
+        cam = next(k for k in kids if k["type"] == "PerspectiveCamera")
+        cam.update(zoom=2, far=5000, matrix=m4((0, 0, 8), (0, 0, 20)))  # rolled 20 degrees
+        scene, left = fmscene.from_three(doc)
+        joined = " ".join(left)
+        self.assertNotIn("\x1b", joined)
+        self.assertIn("\\x1b[2J", joined)
+        for word in ("hidden", "past the third", "roll", "MeshBasicMaterial", "renamed", "far 5000"):
+            self.assertIn(word, joined)
+        m = {x["name"]: x for x in scene["meshes"]}
+        self.assertEqual(len(scene["meshes"]), 7, "the hidden mesh isn't drawn")
+        got = fmscene.triangles(dict(scene, meshes=[m["mirror"]]))
+        want = fmscene.triangles(dict(scene, meshes=[dict(m["mirror"], position=[0, 0, 1], rotation=[0, 30, 0],
+                                                          scale=[-1, 1, 1])]))
+        self.assertEqual(got, want, "a mirrored matrix round-trips")
+        self.assertAlmostEqual(scene["camera"]["fov"], 2 * math.degrees(math.atan(math.tan(math.radians(20)) / 2)),
+                               places=4)
+        self.assertEqual(scene["camera"]["far"], 1000)
+        for bad in ({"fov": "50"}, {"color": None}):  # a field of the wrong kind: ValueError, not a traceback
+            d = three_doc()
+            target = next(k for k in d["object"]["children"] if k["type"] == "PerspectiveCamera") \
+                if "fov" in bad else d["materials"][0]
+            target.update(bad)
+            with self.assertRaises(ValueError):
+                fmscene.from_three(d)
+        d = three_doc()  # one big geometry shared by many meshes: bounded, not multiplied
+        d["geometries"][3]["data"]["attributes"]["position"]["array"] = [0.0] * 3 * 30000
+        d["object"]["children"] += [{"type": "Mesh", "geometry": "g-quad", "material": "m-red", "matrix": m4()}] * 40
+        with self.assertRaises(ValueError) as e:
+            fmscene.from_three(d)
+        self.assertIn("vertices", str(e.exception))
 
 
 if __name__ == "__main__":

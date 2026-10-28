@@ -129,6 +129,8 @@ Run the first probe first: it halves the search.
 
 Preview without a browser (T-1635): `fm scene cells scene.json [--cols 64] [--turn DEG]` prints the scene drawn by fmraster as 24-bit upper half blocks, two pixels to a cell, with no GPU. It needs a truecolor terminal; `fm scene turntable` writes the same frames as a PNG.
 
+Bring a scene in from three.js (T-1847): `fm scene import three.json --out scene.json` reads what `Object3D.toJSON()` writes (format 4). Each mesh's matrix is composed with its groups' and split into position, rotation (Euler XYZ) and scale; a mirrored or sheared matrix loses its shear. Box, sphere, plane and BufferGeometry carry, as do material colour, roughness, metalness and emissive, the four light types (at most three direct), the first PerspectiveCamera (its target placed along its view) and the background colour. The rest is listed as left out, never dropped silently.
+
 ## Done when
 
 - [ ] The scene's job is one sentence, and a still image couldn't do it.

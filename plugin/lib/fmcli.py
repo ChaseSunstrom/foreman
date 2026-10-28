@@ -6710,14 +6710,17 @@ def _build_parser():
     s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 98), epilog=fmscene.SCHEMA,
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
             "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
-    s.add_argument("action", choices=["compile", "check", "turntable", "shader", "soak", "cells"], help="compile: the module; "
+    s.add_argument("action", choices=["compile", "check", "turntable", "shader", "soak", "cells", "import"],
+                   help="compile: the module; "
                    "check: validate and count (a .gltf or .glb: its structure, offline); turntable: a contact sheet of "
                    "the scene turned about +Y, drawn by fmraster with no browser or GPU (--out PNG); shader: GLSL "
                    "checks of a shader card, file or folder; soak: the --hud build in headless Chrome for --seconds, "
                    "leaks and the frame budget, skipped with the reason when there's no browser or three.js (T-1530); cells: the "
                    "scene in the terminal, drawn by fmraster as 24-bit half blocks, no browser; needs a truecolor terminal "
-                   "(T-1635)")
-    s.add_argument("path", metavar="FILE", help="the scene.json (shader: a card, a GLSL file or a folder of them)")
+                   "(T-1635); import: three.js JSON (Object3D.toJSON) to scene.json, printed or --out, what it can't "
+                   "carry named (T-1847)")
+    s.add_argument("path", metavar="FILE", help="the scene.json (shader: a card, a GLSL file or a folder of them; "
+                   "import: the three.js JSON)")
     s.add_argument("--hud", action="store_true", help="compile: add a dev overlay (frame rate, draw calls, triangles, "
                    "geometries, textures; globalThis.__fmScene); not for production (T-1530)")
     s.add_argument("--frames", type=int, default=8, help="turntable: how many turns, 1-36")
