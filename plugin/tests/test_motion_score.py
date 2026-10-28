@@ -253,7 +253,8 @@ class Compile(ForemanTestCase):
                     self.assertEqual((d["duration"], d["easing"], d["properties"]), (m["ms"], m["curve"], m["properties"]))
         for to, text in got.items():
             with self.subTest(to=to):
-                self.assertTrue(text.isascii() and "</" not in text and "\x1b" not in text, to)
+                # a code target goes inline in a page, so no </ at all; the lab is the page (Lab checks its one </script>)
+                self.assertTrue(text.isascii() and (to == "lab" or "</" not in text) and "\x1b" not in text, to)
 
     def test_reduced_forms_keep_their_meanings_in_every_target(self):
         got = self.targets()
@@ -395,6 +396,49 @@ console.log(JSON.stringify({{ full, reduce, app: run(), table }}));
                 p = self.fm("motion", "check", *flag, check=False)
                 self.assertEqual(p.returncode, 2)
                 self.assertIn(f"{flag[0]} is for compile", p.stderr)
+
+
+class Lab(ForemanTestCase):
+    """T-1626: fm motion compile --to lab is one self-contained page that plays each motion, scrubs it by drag and
+    edits its duration and bezier handles into score lines to paste back."""
+    score = Format.score
+
+    def page(self, text=GOOD):
+        page, problems = fmmotion.compile_score(self.score(text), "lab")
+        self.assertEqual(problems, [])
+        return page
+
+    def test_the_page_carries_every_motion_as_the_score_resolves_it(self):
+        page = self.page()
+        self.assertTrue(page.startswith("<!doctype html>"))
+        self.assertNotIn("<script src", page)  # self-contained: opens from a file, offline
+        data = json.loads(re.search(r"const MOTIONS = (.*);\n", page).group(1))
+        want = fmmotion.check(os.path.join(self.repo, "motion.toml"))["motions"]
+        self.assertEqual([(m["name"], m["ms"], m["curve"], m["reduced"]) for m in data],
+                         [(m["name"], m["ms"], m["curve"], m["reduced"]) for m in want])
+        self.assertEqual(data[1]["bezier"], [0.45, 0, 0.2, 1])  # handles to drag
+        for hook in ("pointerdown", "currentTime", "cubic-bezier(", "prefers-reduced-motion", "duration = "):
+            self.assertIn(hook, page)
+
+    def test_steps_and_linear_curves_get_no_handles_and_the_script_parses(self):
+        page = self.page(GOOD.replace('"cubic-bezier(0.45, 0, 0.2, 1)"', '"steps(4, end)"'))
+        data = json.loads(re.search(r"const MOTIONS = (.*);\n", page).group(1))
+        self.assertIsNone(data[1]["bezier"])
+        self.assertEqual(page.count("</script>"), 1)
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("no node to parse the page's script")
+        js = os.path.join(self.repo, "lab.js")
+        with open(js, "w") as f:
+            f.write(re.search(r"<script>(.*)</script>", page, re.S).group(1))
+        p = subprocess.run([node, "--check", js], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_the_cli_writes_the_page_with_out(self):
+        self.score(GOOD)
+        self.fm("motion", "compile", "--to", "lab", "--out", "lab.html")
+        with open(os.path.join(self.repo, "lab.html")) as f:
+            self.assertIn("menu-enter", f.read())
 
 
 class Cli(ForemanTestCase):
