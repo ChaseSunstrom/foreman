@@ -30,3 +30,5 @@ jobs:
         run: git config --global user.name CI && git config --global user.email ci@example.invalid
       - name: suite (no claude needed; the e2e roundtrip and hook bench stay local)
         run: python3 plugin/tests/run.py
+        env:
+          FOREMAN_CHROME: none  # the runner's chromium crashes under the parallel suite; local gates run the browser tests

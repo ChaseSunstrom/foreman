@@ -87,7 +87,10 @@ def _usable(p):
 
 
 def chrome():
-    """A headless Chromium: FOREMAN_CHROME, one on PATH, or Playwright's newest download; None if absent."""
+    """A headless Chromium: FOREMAN_CHROME, one on PATH, or Playwright's newest download; None if absent or
+    FOREMAN_CHROME=none (a browser that starts, then crashes: T-1806)."""
+    if os.environ.get("FOREMAN_CHROME") == "none":
+        return None
     root = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
     root = root if root and root != "0" else os.path.expanduser("~/.cache/ms-playwright")  # 0: inside node_modules
     builds = glob.glob(os.path.join(root, "chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell"))
