@@ -60,7 +60,7 @@ class Swipe(_Inbox):
         said, out = self.loop("r", "maybe", "dunno", "drop", "s", "k")
         self.assertEqual(said, ["T-0001 revived", "T-0002 dropped", "T-0004 kept"])
         self.assertIn("T-0002 dropped\n", out, "each verdict said as it lands")
-        self.assertIn("r revive · k keep · d drop · s skip · q stop", out)
+        self.assertIn("r revive · k keep · d drop · s skip · u undo · q stop", out)
         self.assertIn("later", out, "each item shows why it was deferred")
         self.assertEqual([self.status()[t] for t in ("T-0001", "T-0002", "T-0003", "T-0004")],
                          ["captured", "dropped", "deferred", "deferred"])
@@ -79,6 +79,49 @@ class Swipe(_Inbox):
             said, out = self.loop("k", "d")
         self.assertEqual(said, ["T-0002 dropped"])
         self.assertIn("T-0001 is not deferred", out)
+
+    def test_u_takes_back_the_last_answer_and_shows_its_card_again(self):
+        self.deferred("Port the CLI to Windows", "Add a plugin marketplace page", "Support YAML config files")
+        self.fm("task", "defer", "T-0001", "later", "--until", "2099-01-01")
+        revisit = c.find_brief(self.p, "T-0001").meta.get("revisit")
+        self.assertTrue(revisit)
+        said, out = self.loop("u", "r", "u")
+        self.assertIn("nothing to undo", out)
+        self.assertEqual(said, ["T-0001 revived", "T-0001 undone"])
+        b = c.find_brief(self.p, "T-0001")
+        self.assertEqual((b.status, b.meta.get("revisit")), ("deferred", revisit), "deferred again, its date with it")
+        said, out = self.loop("d", "s", "u", "u", "k", "k", "d")
+        self.assertEqual(said, ["T-0001 dropped", "T-0001 undone", "T-0001 kept", "T-0002 kept", "T-0003 dropped"])
+        self.assertIn("T-0002 back in the deck", out)
+        self.assertEqual(out.count("3 left · T-0001"), 2, "the undone card comes round again")
+        self.assertEqual([self.status()[t] for t in ("T-0001", "T-0002", "T-0003")], ["deferred", "deferred", "dropped"])
+
+    def test_an_undo_leaves_an_item_changed_elsewhere_or_a_dropped_batch_alone(self):
+        self.deferred("Port the CLI to Windows", "Add a plugin marketplace page")
+        undo = []
+        fmeco.swipe_apply(self.p, "T-0001:revive", undo)
+        self.fm("task", "drop", "T-0001", "not wanted")  # another session, since
+        self.assertFalse(fmeco.swipe_undo(self.p, undo, set())[0])
+        self.assertEqual((self.status()["T-0001"], undo), ("dropped", []))
+        fmcli.mutate(self.p, "T-0002", lambda b: b.meta.update(batch=["T-0009"]), "test")
+        fmeco.swipe_apply(self.p, "T-0002:drop", undo)
+        ok, said = fmeco.swipe_undo(self.p, undo, set())
+        self.assertEqual((ok, self.status()["T-0002"]), (False, "dropped"))
+        self.assertIn("batch", said)
+
+    def test_a_re_posted_skip_is_undone_with_one_press(self):  # T-1871 review
+        self.deferred("Port the CLI to Windows")
+        seen, undo = set(), []
+        for _ in range(2):
+            self.assertEqual(fmeco.swipe_post(self.p, seen, {"id": "T-0001", "verdict": "skip"}, undo),
+                             (True, "T-0001 skipped"))
+        self.assertEqual(undo, [("T-0001", "skip", None)])
+
+    def test_an_empty_deck_ends_with_one_line(self):
+        with mock.patch.object(fmeco, "_tty", return_value=True), mock.patch.object(fmcli, "resolve", return_value=self.p), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            fmeco.cmd_inbox(fmcli.build_parser().parse_args(["inbox", "swipe"]))
+        self.assertEqual(out.getvalue(), "Nothing is deferred.\n")
 
     def test_a_terminal_gets_the_loop_and_a_pipe_or_json_the_list(self):
         self.deferred("Port the CLI to Windows")
@@ -182,6 +225,21 @@ class Served(_Inbox):
         self.assertEqual(self.swipe("T-0001", "drop")[0], 422, "dropped already: said, nothing changed")
         self.assertIn("T-0002 kept", self.swipe("T-0002", "keep")[1], "a reload re-posts a keep: kept once")
         self.assertEqual(c.find_brief(self.p, "T-0002").render().count("swept: kept"), 1)
+
+    def test_undo_on_the_page_takes_back_the_last_answer_once(self):
+        self.assertNotIn('value="undo"', self.req()[1], "nothing to undo yet")
+        self.swipe("T-0001", "drop")
+        body = self.swipe("T-0002", "skip")[1]
+        self.assertIn('accesskey="u"', body)
+        self.assertIn("prefers-color-scheme", body, "the served pages' shared stylesheet")
+        status, body, _ = self.swipe("T-0002", "undo")
+        self.assertEqual(status, 200)
+        self.assertIn("T-0002 back in the deck", body)
+        self.assertIn("2 left", body)
+        self.assertEqual(self.swipe("T-0002", "undo")[0], 422, "a reload re-posts it: undone once")
+        self.assertIn("T-0001 back in the deck", self.swipe("T-0001", "undo")[1])
+        self.assertEqual(self.status()["T-0001"], "deferred")
+        self.assertIn("3 left", self.req()[1])
 
     def test_revive_from_the_page(self):
         self.assertIn("T-0001 revived", self.swipe("T-0001", "revive")[1])
@@ -315,6 +373,34 @@ class App(_Inbox):
         self.assertEqual(app.items, [])
         app.key("\x1b")
         self.assertEqual(app.mode, "main")
+
+    def test_u_in_the_app_takes_back_the_last_answer(self):  # T-1871
+        self.deferred("Port the CLI to Windows", "Add a plugin marketplace page")
+        app = self.app(self.repo)
+        app.key("I")
+        app.key("u")
+        self.assertIn("nothing to undo", app.message)
+        app.key("d")
+        app.key(" ")
+        app.key("u")
+        self.assertIn("T-0002 back in the deck", app.message)
+        app.key("u")
+        self.assertIn("T-0001 back in the deck", app.message)
+        self.assertEqual([x["id"] for x in app.items], ["T-0001", "T-0002"])
+        self.assertEqual(app.items[app.item_index]["id"], "T-0001")
+        self.assertEqual(self.status()["T-0001"], "deferred")
+        self.assertIn("u undo", T.render(app.state, 120, 40, app.cfg, app).text())
+        app.key(" ")
+        app.key(" ")
+        app.key("u")
+        self.assertEqual([x["id"] for x in app.items], ["T-0002"], "a card kept here stays passed over")
+        app.key("d")
+        with mock.patch.object(fmcli, "mutate", side_effect=c.LockTimeout("busy")):
+            app.key("u")
+        self.assertIn("nothing undone", app.message)
+        self.assertEqual(app.backlog_undo[-1][:2], ("T-0002", "drop"), "a busy lock keeps the answer undoable")
+        app.key("u")
+        self.assertEqual((self.status()["T-0002"], app.message), ("deferred", "backlog: T-0002 back in the deck"))
 
     def test_a_row_changed_elsewhere_goes_with_its_error_said(self):
         self.deferred("Port the CLI to Windows", "Add a plugin marketplace page")
