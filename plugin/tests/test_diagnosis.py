@@ -37,6 +37,20 @@ class Prove(Base):
         self.assertRegex(out.lower(), r"red|fail")
         self.assertTrue(c.find_brief(self.p, "T-0001").red_green())
 
+    def test_a_vacuous_prove_names_a_changed_runner_it_copied_from_the_tests_folder(self):
+        # T-1845: T-1842 changed plugin/tests/run.py; prove copied it onto the start tree with the tests, so it passed there
+        os.makedirs(os.path.join(self.repo, "tests"))
+        self.write("tests/run.py", "import sys\nsys.exit(0 if '--shard' in sys.argv else 2)\n")
+        self.commit("runner")
+        self.fm("task", "new", "Shard", "--type", "FIX", "--tier", "S", "--ac", "s :: true", "--step", "s", "--focus")
+        self.write("tests/run.py", "import sys\nsys.exit(0)\n")
+        self.write("tests/test_run.py", "pass\n")
+        r = self.fm("task", "prove", "T-0001", "--run", "python3 tests/run.py", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("tests/run.py", r.stdout)
+        self.assertIn("Regression test", r.stdout)
+        self.assertNotIn("tests/test_run.py,", r.stdout)
+
 
 class WhyNotCaught(Base):
     def test_a_fix_says_why_it_was_not_caught_and_the_answer_becomes_a_followup(self):
