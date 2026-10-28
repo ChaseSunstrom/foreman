@@ -103,7 +103,7 @@ DEFAULTS = {
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
              "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
              "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search", "g": "queue", "T": "tickets",
-             "u": "undo", "P": "pr", "F": "photo", "B": "breakout"},
+             "u": "undo", "P": "pr", "F": "photo", "B": "breakout", "I": "backlog"},
     "ext": {},  # T-1657: each extension's settings ({name: {key: value}}), its declared defaults (API.setting)
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
@@ -1403,6 +1403,7 @@ COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume"
                   ("diff", "the run's changes"), ("history", "past runs"), ("projects", "every Foreman project"),
                   ("model", "model or worker"), ("settings", "settings: look, layout, keys"),
                   ("looks", "your taste: 12 looks in pairs"),
+                  ("backlog", "the deferred pile: revive, keep or drop each"),
                   ("hush", "motion: full, reduced, off"),
                   ("queue", "work the queue: each task in turn"),
                   ("tickets", "tickets: requests that run after this one"),
@@ -1431,7 +1432,7 @@ CONFIRM_S = 2.0  # T-1348: q or s during a live run waits this long for the seco
 WIDE_ABOVE, WIDE_COLUMN = 160, ["plan", "verify"]  # T-1347: a third column's panels, from this many columns
 TIP_SKIP = {"stop", "up", "down", "focus", "expand", "follow", "help", "quit"}  # too plain to need a tip
 POSTER = (("run", ("new", "stop", "resume", "model")),  # T-1512: the keys poster's groups; extensions' go under more
-          ("see", ("diff", "history", "projects", "thoughts", "settings", "hush", "looks")),
+          ("see", ("diff", "history", "projects", "thoughts", "settings", "hush", "looks", "backlog")),
           ("move", ("focus", "up", "down", "expand", "follow", "search")), ("app", ("help", "quit")))
 
 
@@ -1593,6 +1594,13 @@ def _list_view(title, note, row, head=None, foot=None, empty="nothing here yet",
         for r, segs in enumerate(bottom):
             cv.line(iy + ih - len(bottom) + r, ix, segs, ix + iw)
     return view
+
+
+def _backlog_row(item):
+    """T-1856: one deferred item and why it was deferred."""
+    import fmcore
+    return [(f" {item['id']} ", "chip_todo"), ("  " + _one_line(fmcore.plain(item["title"])), "text")] + (
+        [("  — " + _one_line(fmcore.plain(item["why"])), "dim")] if item["why"] else [])
 
 
 def _history_row(item):
@@ -1963,6 +1971,8 @@ VIEWS = {"breakout": _breakout_view, "help": _help_view, "diff": _diff_view, "hi
          "runners": _list_view("Runners", "Enter tests one (--version) · p pings one (a tiny question) · Esc back",
                                _runner_row,
                                foot=_runners_foot),
+         "backlog": _list_view("Backlog: the deferred pile", "r revive · space keep · d drop · ↑↓ move · Esc back",
+                               _backlog_row, empty="nothing is deferred"),  # T-1856
          "looks": _list_view(lambda app: f"{len(app.look_answers) + 1}/{len(app.look_pairs)} Which is more like you?",
                              "1 · 2 · n neither · Backspace back · Esc stops, nothing kept",
                              lambda item: [(item[0], "text")])}
@@ -2189,6 +2199,7 @@ class App:
                          "diff": self.show_diff, "history": self.show_history, "model": self.show_picker,
                          "thoughts": self.toggle_thoughts, "projects": self.show_home,
                          "settings": self.show_settings, "hush": self.hush, "looks": self.show_looks,
+                         "backlog": self.show_backlog,
                          "queue": self.work_queue, "tickets": self.show_tickets, "undo": self.undo,
                          "pr": self.draft_pr, "photo": self.take_photo, "breakout": self.open_breakout}
         self.size = None  # T-1546: the screen's size as last drawn, for the photo booth
@@ -2255,6 +2266,8 @@ class App:
             return self._runners_key(k)
         if self.mode == "looks":
             return self._looks_key(k)
+        if self.mode == "backlog":
+            return self._backlog_key(k)
         if self.mode == "breakout":  # T-1556: the game plays its own keys; any other closes it and does its usual thing
             if self._game_key(k):
                 return None
@@ -2965,6 +2978,39 @@ class App:
                 self.message = f"taste: {len(self.look_answers)} answers recorded (fm looks shows the ranking)"
             except Exception as e:  # a busy lock, a full disk: said in the status bar, the app stays up
                 self.message = f"taste: not recorded: {e}"
+        return None
+
+    # -- backlog (T-1856): fm inbox swipe's deferred pile; each verdict is applied the moment its key is pressed
+    def show_backlog(self):
+        import fmcore
+        import fmeco
+        self.backlog_p = fmcore.find_project(self.root)
+        if not self.backlog_p:
+            self.message = "backlog: this folder is not a Foreman project (fm init makes it one)"
+            return
+        self.items, self.item_index, self.mode = fmeco.swipe_list(self.backlog_p), 0, "backlog"
+
+    def _backlog_key(self, k):
+        import fmeco
+        step = {"up": -1, "down": 1}.get(self._list_cmd(k))
+        verdict = {"r": "revive", " ": "keep", "d": "drop"}.get(k)
+        if k in ("\x1b", "q"):
+            self.mode = "main"
+        elif step:
+            self.item_index = max(0, min(len(self.items) - 1, self.item_index + step))
+        elif verdict and self.items:
+            try:
+                said = fmeco.swipe_apply(self.backlog_p, f"{self.items[self.item_index]['id']}:{verdict}")
+            except Exception as e:  # changed elsewhere since the list was read, a busy lock: said, the app stays up
+                import fmcli
+                self.message = f"backlog: {e}"
+                if isinstance(e, fmcli.UsageError):  # not deferred now: the stale row goes, a busy lock keeps it
+                    del self.items[self.item_index]
+                    self.item_index = max(0, min(self.item_index, len(self.items) - 1))
+                return None
+            self.message = f"backlog: {said[0]}"
+            del self.items[self.item_index]
+            self.item_index = max(0, min(self.item_index, len(self.items) - 1))
         return None
 
     def show_picker(self):

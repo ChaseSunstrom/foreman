@@ -13,7 +13,8 @@ CC_BUILTINS = {"/model", "ctrl+o", "Esc"}  # Claude Code's own: the model picker
 # each fm code command's route in Claude Code; a new command needs one here or an APP_ONLY reason
 PLUGIN_ROUTES = {"new": "/foreman:intake", "stop": "Esc", "resume": "/foreman:resume", "diff": "git diff",
                  "history": "fm digest", "projects": "fm projects", "model": "/model", "settings": "/foreman:settings",
-                 "looks": "/foreman:looks", "hush": "fm settings set motion off", "queue": "/foreman:next",
+                 "looks": "/foreman:looks", "backlog": "/foreman:backlog", "hush": "fm settings set motion off",
+                 "queue": "/foreman:next",
                  "tickets": "/foreman:capture", "undo": "fm task revert", "pr": "fm pr", "thoughts": "ctrl+o"}
 APP_ONLY = {"photo": "the app's own frame; Claude Code draws none to shoot", "breakout": "a game in the app while checks run",
             **dict.fromkeys(("focus", "up", "down", "expand", "follow", "search", "help", "quit"),
