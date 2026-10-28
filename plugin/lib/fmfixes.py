@@ -268,9 +268,11 @@ def best(p, sig, st=None):
     """The fix to offer for a failure's signature: an exact match first, then a stored signature found inside it (a
     hand-written one, 'cargo: command not found'); this project's before others; never one that keeps missing."""
     st = _load(_stats_path()) if st is None else st
-    fixes = [f for f in known(p, st) if not _losing(st, f["id"])]
+    # T-1865: a signature with under two words ('assertionerror: 0') tells no failure from another: never offered
+    fixes = [f for f in known(p, st) if not _losing(st, f["id"]) and len(re.findall(r"[a-z]{3,}", f["sig"], re.I)) >= 2]
     exact = [f for f in fixes if f["sig"] == sig]
-    inside = [f for f in fixes if f["trusted"] and len(f["sig"]) >= 12 and f["sig"] in sig]  # a repo's: exact only
+    # inside: hand-taught only; a learned one (it has `failed`) is a whole failure's text, so whole or nothing
+    inside = [f for f in fixes if f["trusted"] and not f.get("failed") and len(f["sig"]) >= 12 and f["sig"] in sig]
     exact.sort(key=lambda f: not f["trusted"])  # stable: a learned fix before a repo's hint, this project's first within each
     return (exact or inside or [None])[0]
 

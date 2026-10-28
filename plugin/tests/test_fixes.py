@@ -183,3 +183,24 @@ class KnownFixes(ForemanTestCase):
         self.assertEqual((d["fixes_new"], d["worked"], d["missed"]), (1, 2, 1))
         self.assertEqual(d["interventions_per_task"], 2.0)
         self.assertIn("per closed task", self.fm("digest").stdout)
+
+
+class Vague(ForemanTestCase):
+    """T-1865: a learned fix carried from another project ('assertionerror: 0', do `git stash`) was offered for an
+    unrelated failure, because its short signature sat inside the new one."""
+    def test_a_learned_fix_matches_whole_and_a_vague_signature_never(self):
+        import unittest.mock as mock
+
+        import fmfixes
+        learned = {"id": "a", "sig": "assertionerror: 0", "do": "git stash", "cmd": "git stash", "failed": "cargo test",
+                   "from": "volt", "trusted": True, "store": "machine"}
+        long_learned = {"id": "l", "sig": "error: linker cc not found", "do": "x", "cmd": "y", "failed": "z",
+                        "trusted": True, "store": "machine"}
+        taught = {"id": "b", "sig": "cargo: command not found", "do": "install rust", "trusted": True, "store": "machine"}
+        with mock.patch.object(fmfixes, "known", return_value=[learned, long_learned, taught]):
+            best = lambda sig: (fmfixes.best(None, sig, {}) or {}).get("id")  # noqa: E731
+            self.assertIsNone(best("assertionerror: 0 != 0 : fm: too few to bisect"), "never inside")
+            self.assertIsNone(best("assertionerror: 0"), "too vague even whole")
+            self.assertIsNone(best("note: error: linker cc not found in path"), "a learned one matches whole only")
+            self.assertEqual(best("error: linker cc not found"), "l")
+            self.assertEqual(best("sh: line 0: cargo: command not found"), "b", "a taught one still inside")
