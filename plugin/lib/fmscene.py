@@ -250,15 +250,20 @@ def _constant(name):
     raise ValueError(f"{name} is not a number JSON allows")
 
 
-def loads(text):
-    """scene.json's text → the validated scene (a leading byte-order mark is fine)."""
+def _json(text):
+    """JSON text → its value: a leading byte-order mark is fine; a repeated key, NaN or deep nesting isn't."""
     text = text.removeprefix("﻿")
     if _depth(text) > MAX_DEPTH:  # T-1799: json's own limit is the C stack's, so it differs by platform and Python
         raise ValueError("nested too deeply")
     try:
-        return validate(json.loads(text, object_pairs_hook=_pairs, parse_constant=_constant))
+        return json.loads(text, object_pairs_hook=_pairs, parse_constant=_constant)
     except RecursionError:
         raise ValueError("nested too deeply") from None
+
+
+def loads(text):
+    """scene.json's text → the validated scene."""
+    return validate(_json(text))
 
 
 MAX_DEPTH = 256
@@ -277,8 +282,9 @@ def _depth(text):
     return top
 
 
-def load(path):
-    """A scene.json file → the validated scene; ValueError for a file that isn't regular, is too big or is wrong."""
+def load(path, parse=loads):
+    """A scene.json file → the validated scene (or parse(its text)); ValueError for a file that isn't regular, is too
+    big or is wrong."""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)  # a plain open() of a FIFO waits for a writer
         if not stat.S_ISREG(os.fstat(fd).st_mode):
@@ -288,7 +294,7 @@ def load(path):
             data = f.read(MAX_FILE + 1)
         if len(data) > MAX_FILE:
             raise ValueError(f"too large a file (over {MAX_FILE >> 20} MB)")
-        return loads(data.decode("utf-8"))
+        return parse(data.decode("utf-8"))
     except ValueError as e:
         raise ValueError(f"{path}: {e}") from None
 
@@ -654,6 +660,216 @@ def cells(scene, cols=64, turn=0.0):
     return lines
 
 
+THREE_LIGHTS = {"AmbientLight": "ambient", "HemisphereLight": "hemisphere", "DirectionalLight": "directional",
+                "PointLight": "point"}
+IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+IMPORT_VERTICES = 1 << 20  # MAX_FILE's million vertices: meshes sharing one geometry can't multiply past it
+MATERIAL_DROPS = ("opacity", "transparent", "wireframe", "side", "flatShading", "vertexColors", "alphaTest")
+
+
+def _hex(n):
+    return "#%06x" % (int(n) & 0xFFFFFF)
+
+
+def _tidy(vs):
+    return [round(v, 6) + 0.0 for v in vs]  # + 0.0: no -0.0 in the file
+
+
+def _mat4mul(a, b):
+    """Column-major 4x4 matrices, as three.js keeps them: a * b."""
+    return [sum(a[k * 4 + r] * b[c * 4 + k] for k in range(4)) for c in range(4) for r in range(4)]
+
+
+def _decompose(m):
+    """A column-major matrix → position, rotation (degrees, Euler XYZ), scale and whether it shears, as three's
+    Matrix4.decompose and Euler.setFromRotationMatrix: a mirrored matrix negates scale x; a shear is lost."""
+    cols = [m[0:3], m[4:7], m[8:11]]
+    s = [math.sqrt(sum(v * v for v in col)) for col in cols]
+    if sum(a * b for a, b in zip(cols[0], _cross3(cols[1], cols[2]))) < 0:
+        s[0] = -s[0]
+    r = [[cols[j][i] / s[j] if s[j] else 0.0 for j in range(3)] for i in range(3)]  # r[row][col]
+    shear = any(abs(sum(r[k][i] * r[k][j] for k in range(3))) > 1e-6 for i, j in ((0, 1), (0, 2), (1, 2)))
+    y = math.asin(max(-1.0, min(1.0, r[0][2])))
+    if abs(r[0][2]) < 0.9999999:
+        x, z = math.atan2(-r[1][2], r[2][2]), math.atan2(-r[0][1], r[0][0])
+    else:
+        x, z = math.atan2(r[2][1], r[1][1]), 0.0
+    return _tidy(m[12:15]), _tidy(math.degrees(a) for a in (x, y, z)), _tidy(s), shear
+
+
+def from_three(doc):
+    """T-1847: three.js JSON (Object3D.toJSON / ObjectLoader, format 4) → (the scene.json dict, validated; notes on
+    what it couldn't carry). Each object's matrix is composed with its parents' (Groups, Object3Ds), then split into
+    position, rotation and scale. Box, Sphere, Plane and BufferGeometry (position, optional index) become box,
+    sphere, plane and vertices; a mesh material's color, roughness, metalness and emissive carry, textures don't;
+    Ambient, Hemisphere, Directional and Point lights (at most 3 of the last two); the first PerspectiveCamera looks
+    along its -Z, its target as far off as it stands from the origin (none: three's usual fov 50 at [0, 0, 5]).
+    Whatever scene.json refuses is left out with a note, never a failed import; ValueError when the document isn't
+    three.js JSON or holds no mesh scene.json can draw."""
+    try:
+        return _from_three(doc)
+    except (TypeError, AttributeError, ArithmeticError) as e:  # a field of the wrong kind: "50" for a fov, a null
+        raise ValueError(f"not three.js JSON as Object3D.toJSON writes it ({type(e).__name__}: {e})") from None
+
+
+def _from_three(doc):
+    import collections
+    if not isinstance(doc, dict) or not isinstance(doc.get("object"), dict):
+        raise ValueError("not three.js JSON: no object (Object3D.toJSON writes metadata, geometries, materials, object)")
+    geos = {g.get("uuid"): g for g in doc.get("geometries") or [] if isinstance(g, dict)}
+    mats = {m.get("uuid"): m for m in doc.get("materials") or [] if isinstance(m, dict)}
+    notes, meshes, lights, materials, matname, taken = [], [], [], {}, {}, {"camera"}  # camera: a path's target
+    camera, seen, targets, count = None, set(), [], [0]
+    fallback = {"fov": 50, "position": [0, 0, 5]}
+
+    def refused(part, what):
+        try:
+            validate(dict({"camera": fallback}, **part))
+            return False
+        except ValueError as e:
+            notes.append(f"{what} scene.json refuses ({e})")
+            return True
+
+    def name(want, prefix, used):
+        n, i = want if isinstance(want, str) and NAME.fullmatch(want) and want not in used else None, 0
+        if n is None and want not in (None, ""):
+            notes.append(f"a {prefix} name scene.json can't take or a repeat (renamed {prefix}N)")
+        while n is None or n in used:
+            i += 1
+            n = f"{prefix}{i}"
+        used.add(n)
+        return n
+
+    def geometry(g):
+        t = str(g.get("type", "")).removesuffix("BufferGeometry").removesuffix("Geometry") or "Buffer"
+        if t == "Box":
+            return {"type": "box", "size": [g.get("width", 1), g.get("height", 1), g.get("depth", 1)]}
+        if t == "Sphere":
+            return {"type": "sphere", "radius": g.get("radius", 1), "segments": g.get("widthSegments", 32)}
+        if t == "Plane":
+            return {"type": "plane", "size": [g.get("width", 1), g.get("height", 1)]}
+        if t == "Buffer":
+            data = g.get("data") or {}
+            pos = (data.get("attributes") or {}).get("position") or {}
+            a = pos.get("array") or []
+            if pos.get("itemSize", 3) != 3 or len(a) % 3 or not a:
+                return None
+            verts = [a[i:i + 3] for i in range(0, len(a), 3)]
+            idx = (data.get("index") or {}).get("array") or list(range(len(verts) // 3 * 3))
+            return {"type": "vertices", "vertices": verts, "faces": [idx[i:i + 3] for i in range(0, len(idx) // 3 * 3, 3)]}
+        return None
+
+    def material(ref):
+        if isinstance(ref, list):
+            if len(ref) > 1:
+                notes.append("a second material on a mesh (its first is kept)")
+            ref = ref[0] if ref else None
+        m = mats.get(ref) if isinstance(ref, str) else None
+        if m is None:
+            return None
+        if ref not in matname:
+            out = {"color": _hex(m.get("color", 0xFFFFFF))}
+            for k in ("roughness", "metalness", "emissiveIntensity"):
+                if isinstance(m.get(k), (int, float)):
+                    out[k] = m[k]
+            if "roughness" in out:
+                out["roughness"] = min(1, max(out["roughness"], 0.001))  # scene.json's roughness is above 0
+            if "metalness" in out:
+                out["metalness"] = min(1, max(out["metalness"], 0))
+            if "emissive" in m:
+                out["emissive"] = _hex(m["emissive"])
+            if m.get("type") not in ("MeshStandardMaterial", "MeshPhysicalMaterial", None):
+                notes.append(f"a {_show(m.get('type'))} (drawn as a lit standard material)")
+            notes.extend(f"a material's {k}" for k in MATERIAL_DROPS if k in m)
+            if any(k.lower().endswith("map") for k in m):
+                notes.append("a texture")
+            matname[ref] = name(m.get("name"), "material", set(materials))
+            materials[matname[ref]] = out
+        return matname[ref]
+
+    def walk(o, parent):
+        nonlocal camera
+        t, m = o.get("type"), o.get("matrix", IDENTITY)
+        if not (isinstance(m, list) and len(m) == 16 and all(isinstance(v, (int, float)) for v in m)):
+            raise ValueError(f"{_show(t)} {_show(o.get('uuid', ''))}: matrix isn't 16 numbers")
+        seen.add(o.get("uuid"))
+        if o.get("visible") is False:
+            notes.append("a hidden object (with its children)")
+            return
+        world = _mat4mul(parent, m)
+        if t == "Mesh":
+            g = geos.get(o.get("geometry"))
+            geo, mat = geometry(g) if g else None, material(o.get("material"))
+            if geo is None or mat is None:
+                notes.append(f"a {_show(g.get('type')) if g else 'geometry-less'} mesh" if geo is None
+                             else "a mesh with no material")
+            else:
+                p, r, s, shear = _decompose(world)
+                mesh = {"name": name(o.get("name"), "mesh", taken), "material": mat, "geometry": geo,
+                        "position": p, "rotation": r, "scale": s}
+                if shear:
+                    notes.append("a sheared transform (the shear is lost)")
+                if not refused({"materials": {mat: materials[mat]}, "meshes": [mesh]}, f"a mesh {mesh['name']}"):
+                    count[0] += len(geo.get("vertices", ()))
+                    if count[0] > IMPORT_VERTICES:
+                        raise ValueError(f"over {IMPORT_VERTICES:,} vertices (a geometry shared by many meshes?)")
+                    meshes.append(mesh)
+        elif t in THREE_LIGHTS:
+            lt = {"type": THREE_LIGHTS[t], "intensity": o.get("intensity", 1)}
+            if t == "HemisphereLight":
+                lt.update(sky=_hex(o.get("color", 0xFFFFFF)), ground=_hex(o.get("groundColor", 0x444444)))
+            else:
+                lt["color"] = _hex(o.get("color", 0xFFFFFF))
+            if t in ("DirectionalLight", "PointLight"):
+                lt["position"] = _tidy(world[12:15])
+            if t == "DirectionalLight" and o.get("target"):
+                targets.append(o["target"])
+            if t == "PointLight" and (o.get("distance", 0) or o.get("decay", 2) != 2):
+                notes.append("a point light's distance or decay (scene.json's falls off as 1/d^2)")
+            if t in ("DirectionalLight", "PointLight") and sum(x["type"] in ("directional", "point") for x in lights) >= 3:
+                notes.append(f"a {t} past the third")
+            elif not refused({"lights": [lt]}, f"a {t}"):
+                lights.append(lt)
+        elif t == "PerspectiveCamera" and camera is None:
+            p, fwd = world[12:15], _unit([-world[8], -world[9], -world[10]])
+            d = max(1.0, math.sqrt(sum(v * v for v in p)))
+            if math.hypot(fwd[0], fwd[2]) < 1e-6:  # straight down or up, along scene.json's fixed up: lean it a hair
+                fwd = _unit([0, fwd[1], -1e-3])
+                notes.append("a camera looking straight down or up (tilted 0.06 degrees)")
+            elif abs(world[1]) > 1e-6 * math.hypot(*world[0:3]):  # its x axis tilts out of level: rolled
+                notes.append("a camera's roll (scene.json's camera keeps +Y up)")
+            fov = math.degrees(2 * math.atan(math.tan(math.radians(o.get("fov", 50)) / 2) / (o.get("zoom") or 1)))
+            near, far = o.get("near", 0.1), o.get("far", 2000)
+            if far > near * 10000:
+                notes.append(f"the camera's far {far} (clipped to 10,000 x near)")
+            cam = {"fov": min(179, max(1, round(fov, 6))), "near": near, "far": min(far, near * 10000),
+                   "position": _tidy(p), "target": _tidy(a + b * d for a, b in zip(p, fwd))}
+            camera = None if refused({"camera": cam}, "the camera") else cam
+        elif t not in ("Scene", "Group", "Object3D"):
+            notes.append(f"a {_show(t)}")
+        for ch in o.get("children") or []:
+            if isinstance(ch, dict):
+                walk(ch, world)
+
+    root = doc["object"]
+    walk(root, IDENTITY)
+    if not meshes:
+        raise ValueError("no mesh scene.json can draw" + (f" (left out: {', '.join(notes[:20])})" if notes else ""))
+    scene = {"camera": camera or fallback, "materials": {k: v for k, v in materials.items() if k in {m["material"] for m in meshes}},
+             "meshes": meshes, "lights": lights}
+    if isinstance(root.get("background"), int):
+        scene["background"] = _hex(root["background"])
+    elif root.get("background") is not None:
+        notes.append("a background texture")
+    notes += ["fog"] * bool(root.get("fog")) + ["animations"] * bool(doc.get("animations"))
+    notes += ["a directional light's target (scene.json's shines toward the origin)"] * any(u in seen for u in targets)
+    if camera is None:
+        notes.append("the camera (none in the file: three's usual fov 50 at [0, 0, 5])")
+    counts = collections.Counter(notes)
+    left = [w if n == 1 else f"{w} (x{n})" for w, n in counts.items()]
+    return validate(scene), left if len(left) <= 20 else left[:20] + [f"{len(left) - 20} more kinds"]
+
+
 GLSL = re.compile(r"```glsl\n(.*?)```", re.S)
 SHADER_FILES = (".frag", ".vert", ".glsl")
 
@@ -952,10 +1168,20 @@ def soak(path, three, seconds=10, budget_ms=None):
             "problems": soak_problems(samples, after, budget_ms)}
 
 
+def _write_out(args, text, what):
+    """--out's absolute path with text written there, never over args.path; None when there's no --out."""
+    import fmcore
+    out = os.path.abspath(args.out) if args.out else None  # write_atomic makes dirname(path): "" for a bare name
+    if out and os.path.exists(out) and os.path.samefile(out, args.path):
+        raise ValueError(f"--out {args.out} is {what}")
+    if out:
+        fmcore.write_atomic(out, text)  # through a temp file: a symlink at out is replaced, never written through
+    return out
+
+
 def cmd_scene(args):
     import sys
     import fmcli
-    import fmcore
     if args.action == "shader":  # T-1530: GLSL checks with no browser; glslangValidator when it's installed
         import shutil
         validator = shutil.which("glslangValidator")
@@ -998,6 +1224,20 @@ def cmd_scene(args):
             f"{'→'.join(map(str, sorted(set(got['geometries']), key=got['geometries'].index)))}, after dispose "
             f"{got['after']}"]))
         return 1 if got["problems"] else 0
+    if args.action == "import":  # T-1847: three.js JSON in, a checked scene.json out; what didn't carry, named
+        try:
+            scene, left = load(args.path, lambda text: from_three(_json(text)))
+            text = json.dumps(scene, indent=2) + "\n"
+            out = _write_out(args, text, "the file it imports")
+        except (OSError, ValueError) as e:
+            print(f"fm: scene: import: {e}", file=sys.stderr)
+            return 2
+        note = f"left out: {'; '.join(left)}" if left else "nothing left out"
+        if not out:  # stdout is the scene, so the note goes to stderr
+            print(note, file=sys.stderr)
+            return fmcli.out(args, {"scene": scene, "left_out": left}, text.rstrip("\n")) or 0
+        return fmcli.out(args, {"out": args.out, "meshes": len(scene["meshes"]), "left_out": left},
+                         f"wrote {args.out}: {len(scene['meshes'])} mesh(es); {note}") or 0
     if args.action in ("check", "turntable", "cells"):  # T-1530, T-1635
         try:
             scene = load(args.path)
@@ -1030,11 +1270,7 @@ def cmd_scene(args):
         hud = getattr(args, "hud", False)
         text = compile_component(scene, tag or "fm-scene", hud) if args.to == "component" else \
             compile_three(scene, hud=hud)
-        out = os.path.abspath(args.out) if args.out else None  # write_atomic makes dirname(path): "" for a bare name
-        if out and os.path.exists(out) and os.path.samefile(out, args.path):
-            raise ValueError(f"--out {args.out} is the scene it compiles")
-        if out:
-            fmcore.write_atomic(out, text)  # through a temp file: a symlink at out is replaced, never written through
+        out = _write_out(args, text, "the scene it compiles")
     except (OSError, ValueError) as e:
         print(f"fm: scene: {e}", file=sys.stderr)
         return 2
