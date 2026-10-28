@@ -738,7 +738,7 @@ def detect_sensitive(root):
 
 def read_meta(p):
     path = os.path.join(p.dir, "meta.json")
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:  # T-1879: not the locale's; binary bytes are CorruptState below
         try:
             return json.load(f)
         except ValueError as e:  # T-1669: raised, never read as {}: update_meta would write the loss back
@@ -3389,12 +3389,24 @@ def regen_views(p, briefs=None, mirror=True):
     p = main_view(p)
     sd = state_dict(p, briefs)
     ts = now()
-    write_atomic(os.path.join(p.dir, "STATE.md"), render_state(sd, ts))
-    write_atomic(os.path.join(p.dir, "INBOX.md"), render_inbox(sd, ts))
-    write_atomic(os.path.join(p.dir, "state.line"), state_line(sd) + "\n")
-    write_atomic(os.path.join(p.dir, "badge.txt"), badge_text(sd) + "\n")
-    write_atomic(os.path.join(p.dir, "progress.line"), progress_line(sd) + "\n")
-    write_atomic(os.path.join(p.dir, "status.json"), json.dumps(status_dict(sd)) + "\n")
+
+    def put(name, text):  # T-1879: unchanged but for line 2's "_Generated <ts>" is unchanged: no rewrite, no fsync
+        path = os.path.join(p.dir, name)
+        try:
+            with open(path, encoding="utf-8") as f:
+                old = f.read().split("\n")
+        except (OSError, ValueError):
+            old = None
+        new = text.split("\n")
+        if old != new and not (old and len(old) == len(new) > 1 and old[0] == new[0] and old[2:] == new[2:]
+                               and old[1].startswith("_Generated ")):
+            write_atomic(path, text)
+    put("STATE.md", render_state(sd, ts))
+    put("INBOX.md", render_inbox(sd, ts))
+    put("state.line", state_line(sd) + "\n")
+    put("badge.txt", badge_text(sd) + "\n")
+    put("progress.line", progress_line(sd) + "\n")
+    put("status.json", json.dumps(status_dict(sd)) + "\n")
     if mirror and read_meta(p).get("sync"):  # fm sync: keep the repo's mirror current with every change
         import fmsync
         try:
