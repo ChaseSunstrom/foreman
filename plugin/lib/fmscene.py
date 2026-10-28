@@ -1398,6 +1398,50 @@ def bench(runs):
                    {"type": "directional", "position": [6, 3, -4], "color": "#7aa2ff", "intensity": 0.4}]})
 
 
+def lookbook(names, known):
+    """T-1852: the look cards hung in a gallery, best first: a dark frame per look on a U of walls (four along the
+    back wall's lower row, centre out, then the side walls' back halves, then a row above the first), its palette as
+    colour-field bands top to bottom. Every frame is in the camera's view. known: fmtaste.looks()."""
+    if not 1 <= len(names) <= 12:
+        raise ValueError(f"{len(names)} looks: 1 to 12 hang")
+
+    def back(y):  # (centre, along, out of the wall); 5.95: a frame's back on the wall's inner face
+        return [((x, y, -5.95), (1, 0, 0), (0, 0, 1)) for x in (-1.4, 1.4, -4.2, 4.2)]
+    sides = [s for z in (-4.2, -1.4) for s in (((-5.95, 1.6, z), (0, 0, 1), (1, 0, 0)),
+                                              ((5.95, 1.6, z), (0, 0, -1), (-1, 0, 0)))]
+    slots = back(1.6) + sides + back(3.7)
+
+    def box(name, material, size, at):
+        return {"name": name, "material": material, "geometry": {"type": "box", "size": [round(v, 6) for v in size]},
+                "position": [round(v, 6) for v in at]}
+    materials = {"frame": {"color": "#2a2d36", "roughness": 0.5}, "wall": {"color": "#e9e4da", "roughness": 0.95},
+                 "floor": {"color": "#6b5a48", "roughness": 0.8}}
+    meshes = [box("wall-back", "wall", [12.4, 5, 0.2], [0, 2.5, -6.1]),
+              box("wall-left", "wall", [0.2, 5, 12.2], [-6.1, 2.5, 0]),
+              box("wall-right", "wall", [0.2, 5, 12.2], [6.1, 2.5, 0]),
+              {"name": "floor", "material": "floor", "geometry": {"type": "plane", "size": [12.2, 12.2]},
+               "rotation": [-90, 0, 0]}]
+    for n, ((cx, cy, cz), a, o) in zip(names, slots):
+        def at(along, up, out):
+            return [cx + a[0] * along + o[0] * out, cy + up, cz + a[2] * along + o[2] * out]
+
+        def size(along, up, out):
+            return [abs(a[0]) * along + abs(o[0]) * out, up, abs(a[2]) * along + abs(o[2]) * out]
+        meshes.append(box(n, "frame", size(2.4, 1.8, 0.1), at(0, 0, 0)))
+        pal = known[n]["palette"]
+        for j, (r, g, b) in enumerate(pal):
+            c = f"{r:02x}{g:02x}{b:02x}"
+            materials.setdefault("c" + c, {"color": "#" + c, "roughness": 0.7})
+            meshes.append(box(f"{n}-{j + 1}", "c" + c, size(2.1, 1.5 / len(pal), 0.04),
+                              at(0, 0.75 - (j + 0.5) * 1.5 / len(pal), 0.07)))
+    return validate({
+        "background": "#101218", "materials": materials, "meshes": meshes,
+        "camera": {"fov": 60, "position": [0, 2.6, 7.5], "target": [0, 2.6, -6], "far": 100},
+        "lights": [{"type": "hemisphere", "sky": "#fff6e8", "ground": "#3a2e22", "intensity": 0.8},
+                   {"type": "directional", "position": [2, 8, 10], "intensity": 1.2},
+                   {"type": "point", "position": [0, 4, 0], "color": "#ffd9a0", "intensity": 0.6}]})
+
+
 def guard_counts(p, days):
     """T-1849: ({category: blocks}, tool calls run) for project p over the last `days` days: blocks from its ledger,
     calls (clean or failed, both got past the guard) from the global events."""
@@ -1426,13 +1470,19 @@ def _write_out(args, text, what="FILE"):
 def cmd_scene(args):
     import sys
     import fmcli
-    if args.action in ("metaballs", "terrain", "airlock", "bench"):  # T-1848 blob, T-1851 churn, T-1849 guard, T-1850
+    if args.action in ("metaballs", "terrain", "airlock", "bench", "lookbook"):  # T-1848, T-1851, T-1849, T-1850, T-1852
         if args.path:
             print(f"fm: scene: {args.action} takes no FILE (got {args.path}); write it with --out", file=sys.stderr)
             return 2
         try:
             if args.action == "metaballs":
                 scene, what = metaballs(args.balls, args.grid, args.seed), f"a blob of {args.balls} ball(s)"
+            elif args.action == "lookbook":
+                import fmtaste
+                if not 1 <= args.count <= 12:
+                    raise ValueError(f"--count {args.count}: 1 to 12")
+                names = [r["look"] for r in fmtaste.rank()][:args.count]
+                scene, what = lookbook(names, fmtaste.looks()), f"{len(names)} look(s), best ranked first"
             elif args.action == "bench":
                 import fmcodebench
                 runs = fmcodebench.history()

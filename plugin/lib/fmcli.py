@@ -6711,7 +6711,7 @@ def _build_parser():
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
             "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
     s.add_argument("action", choices=["compile", "check", "turntable", "shader", "soak", "cells", "import", "metaballs",
-                                       "terrain", "airlock", "bench"],
+                                       "terrain", "airlock", "bench", "lookbook"],
                    help="compile: the module; "
                    "check: validate and count (a .gltf or .glb: its structure, offline); turntable: a contact sheet of "
                    "the scene turned about +Y, drawn by fmraster with no browser or GPU (--out PNG); shader: GLSL "
@@ -6723,11 +6723,13 @@ def _build_parser():
                    "--out, no FILE (T-1848); terrain: the repo's churn per busiest top-level path as ridges over "
                    "--days, printed or --out, no FILE (T-1851); airlock: what the guard held and let through over "
                    "--days as boxes either side of a gate, no FILE (T-1849); bench: fm code bench's last 12 runs, a "
-                   "box per seed, no FILE (T-1850)")
+                   "box per seed, no FILE (T-1850); lookbook: the look cards hung in a gallery, best ranked first, "
+                   "--count of them, no FILE (T-1852)")
     s.add_argument("path", metavar="FILE", nargs="?", help="the scene.json (shader: a card, a GLSL file or a folder "
-                   "of them; import: the three.js JSON; metaballs, terrain, airlock, bench: none)")
+                   "of them; import: the three.js JSON; metaballs, terrain, airlock, bench, lookbook: none)")
     s.add_argument("--balls", type=int, default=5, help="metaballs: how many balls, 1-12 (T-1848)")
     s.add_argument("--grid", type=int, default=32, help="metaballs: cubes along each side of the box, 8-48")
+    s.add_argument("--count", type=int, default=8, help="lookbook: how many looks hang, 1-12 (T-1852)")
     s.add_argument("--seed", type=int, default=0, help="metaballs: the same seed draws the same blob")
     s.add_argument("--days", type=int, help="terrain: how far back the git log goes, 1-3650, 90 by default "
                    "(T-1851); airlock: the guard's record, 30 by default (T-1849)")
