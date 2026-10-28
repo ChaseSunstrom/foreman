@@ -379,14 +379,44 @@ def _task_for(lines, sid, ts):
     return _task_at(by.get(sid) or every, ts)
 
 
-def task_costs(p, days):
-    """T-1083: input-equivalent tokens per task over the window (what fm cost's by-task table sums)."""
+def retry_windows(p, days):
+    """T-1824: {task: [(from, to)]}, each span from a step's failing evidence to its next passing one; a step still
+    failing runs on ("~" sorts after every timestamp). Evidence on a later step drops an earlier step's open failure:
+    the red run of red→green (a failing test, then the work) or a failure the task moved past isn't a retry."""
+    failing, spans = {}, collections.defaultdict(list)
+    for e in c.ledger_events(p, since=_since(days + 2)):
+        if e.get("event") == "evidence" and e.get("task"):
+            d, ts = e.get("data") or {}, str(e.get("ts", ""))[:19]
+            key, step = (e["task"], d.get("step")), d.get("step")
+            if isinstance(step, int):
+                for k in [k for k in failing if k[0] == e["task"] and isinstance(k[1], int) and k[1] < step]:
+                    del failing[k]
+            if str(d.get("result", "")).startswith("✗"):
+                failing.setdefault(key, ts)
+            elif key in failing:
+                spans[e["task"]].append((failing.pop(key), ts))
+    for (task, _), ts in failing.items():
+        spans[task].append((ts, "~"))
+    return spans
+
+
+def _retrying(spans, task, ts):
+    return any(a <= ts < b for a, b in spans.get(task, ()))
+
+
+def task_costs(p, days, retry=None):
+    """T-1083: input-equivalent tokens per task over the window (what fm cost's by-task table sums). A `retry` Counter
+    gets each task's share spent inside its retry windows (T-1824)."""
     folder = transcripts_dir(p.root)
     if not os.path.isdir(folder):
         return collections.Counter()
     lines, out = _timelines(p, days), collections.Counter()
+    spans = retry_windows(p, days) if retry is not None else {}
     for ts, sid, usage in scan(folder, _since(days))[0]:
-        out[_task_for(lines, sid, ts[:19]) or "(no task)"] += weighted(usage)
+        task, w = _task_for(lines, sid, ts[:19]) or "(no task)", weighted(usage)
+        out[task] += w
+        if _retrying(spans, task, ts[:19]):
+            retry[task] += w
     return out
 
 
@@ -562,12 +592,16 @@ def cost_line(p, b):
 
 def _task(args, p, fmcli):
     b = fmcli.need_brief(p, args.task)
-    costs = task_costs(p, 90)
+    retry = collections.Counter()
+    costs = task_costs(p, 90, retry)
     spent, fc, cap = costs[b.id], forecast_task(p, b, costs), parse_tokens(b.meta.get("cost_cap"))
-    text = (f"{b.id} [{b.type} {b.tier}]: spent {_human(spent)}" + (f", cap {_human(cap)}" if cap else "")
+    text = (f"{b.id} [{b.type} {b.tier}]: spent {_human(spent)}"
+            + (f", retry {_human(retry[b.id])} ({100 * retry[b.id] / spent:.0f}%: fixing failed steps)"
+               if retry[b.id] else "") + (f", cap {_human(cap)}" if cap else "")
             + (f", forecast {_human(fc[0])} (median of {fc[1]} finished {b.type} {b.tier} tasks)" if fc
                else ", no forecast (needs two finished tasks of the same type and tier)"))
-    return fmcli.out(args, {"task": b.id, "spent": round(spent), "cap": cap, "forecast": fc and fc[0]}, text)
+    return fmcli.out(args, {"task": b.id, "spent": round(spent), "retry": round(retry[b.id]), "cap": cap,
+                            "forecast": fc and fc[0]}, text)
 
 
 def _share_line(share):
@@ -616,11 +650,14 @@ def cmd_cost(args):
     msgs, tools = scan(folder, _since(args.days), share)
     totals, by_task, by_session = collections.Counter(), collections.Counter(), collections.Counter()
     lines = _timelines(p, args.days)  # T-1083 review: each turn to its own session's task
+    spans, retry = retry_windows(p, args.days), collections.Counter()
     for ts, sid, usage in msgs:
         for k in WEIGHTS:
             totals[k] += usage.get(k) or 0
-        w = weighted(usage)
-        by_task[_task_for(lines, sid, ts[:19]) or "(no task)"] += w
+        w, task = weighted(usage), _task_for(lines, sid, ts[:19]) or "(no task)"
+        by_task[task] += w
+        if _retrying(spans, task, ts[:19]):
+            retry[task] += w
         by_session[sid] += w
     if not msgs:  # R3 canary: transcripts are Claude Code's internal format and may change under us
         return fmcli.out(args, {"days": args.days, "messages": 0},
@@ -639,7 +676,7 @@ def cmd_cost(args):
     unex_line = unexplained_line(unex)
     data = {"days": args.days, "messages": len(msgs), "tokens": dict(totals), "input_equivalent": round(total),
             "unexplained": unex,
-            "by_task": dict(by_task.most_common()), "by_session": dict(by_session.most_common()),
+            "by_task": dict(by_task.most_common()), "retry_by_task": dict(retry), "by_session": dict(by_session.most_common()),
             "tool_result_chars": dict(tools.most_common()), "session_start_context": base,
             "foreman_share": {"all": share["all"], "chars": {k: v for k, v in share.most_common()
                                                              if k != "all" and not k.startswith("fm:")},
@@ -655,7 +692,9 @@ def cmd_cost(args):
     text = (f"Tokens, last {args.days} day(s), {len(by_session)} session(s), {len(msgs)} replies: "
             + " · ".join(f"{SHORT[k]} {_human(totals[k])}" for k in WEIGHTS)
             + f" ≈ {_human(total)} input-equivalent (cache reads ×0.1, writes ×1.25 or ×2 on the 1 h cache, output ×5)"
-            + "\nBy task: " + " · ".join(f"{t} {_human(v)} ({100 * v / total:.0f}%)" for t, v in by_task.most_common(8))
+            + "\nBy task: " + " · ".join(f"{t} {_human(v)} ({100 * v / total:.0f}%"
+                                      + (f", retry {_human(retry[t])}" if retry[t] else "") + ")"
+                                      for t, v in by_task.most_common(8))
             + ("\n" + unex_line if unex_line else "")
             + "\nTool results (what filled the context): " + " · ".join(
                 f"{t} {100 * v / tool_total:.0f}%" for t, v in tools.most_common(6))
