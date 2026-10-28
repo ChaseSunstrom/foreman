@@ -1,0 +1,11 @@
+[
+  {"goal": "square the borders",
+   "steps": [{"see": ":  set", "keys": ":border square\n"}],
+   "done": {"border": "square"}},
+  {"goal": "keep the wide layout down to a 100-column terminal",
+   "steps": [{"see": "/  search", "keys": "/narrow_below\n"}, {"see": "[ ]  turn", "keys": "]"}],
+   "done": {"layout.narrow_below": 100}},
+  {"goal": "move the files panel under the log",
+   "steps": [{"see": "l  layout", "keys": "l"}, {"see": "H J K L move it", "keys": "\u001b[CjH"}],
+   "done": {"layout.columns": [["log", "files"], ["checks", "time", "tokens"]]}}
+]
