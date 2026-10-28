@@ -237,6 +237,8 @@ Every line is pass or fail; run them on the built screens, not on the plan.
 - [ ] The floors hold: contrast measured, focus visible, reduced motion tried, 200% zoom tried.
 - [ ] The cover test passes on the main screen.
 
+Example: `references/ui/examples/design-direction.html`: a DESIGN.md (interview answers, taste words, the chosen direction and its knobs) shown beside the screen it produced. The site's Gallery shows it.
+
 ## UI contract
 
 - motion: the direction names its motion stance in DESIGN.md, the reduced-motion version included.

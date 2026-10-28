@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- Foreman's own example page (written for Foreman, not ported) for references/ui/terminal-ui.md. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -64,6 +65,7 @@
   button:hover { background: var(--rule); }
   button[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
   button[aria-pressed="true"]::before { content: "● "; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   /* the terminal: its own colour roles (<= 7), per depth and per light/dark terminal */
   .term { --t-bg: #14161a; --t-text: #e6e1d6; --t-dim: #98a2ab; --t-acc: #62c9d9; --t-ok: #7fd18b; --t-warn: #f0b24a;
@@ -104,6 +106,7 @@
   </div>
   <span class="probe" id="probe">0000000000</span>
   <p class="info" id="info"></p>
+  <p class="sr" id="say" role="status"></p>
 
   <div class="controls" role="group" aria-label="Terminal settings">
     <div class="group" data-k="st"><span>State</span><button data-v="empty">1 Empty</button><button data-v="working">2 Working</button><button data-v="error">3 Error</button><button data-v="done">4 Done</button></div>
@@ -122,7 +125,7 @@
       <li><b>Resize and small:</b> every frame is laid out from state at the current width; under 56 columns a one-column form, under 28 a "too small" line naming the size needed.</li>
       <li><b>Motion budget:</b> the spinner runs at 10 fps only while work runs, a frame is written only when the picture changed, and reduced motion stops it.</li>
       <li><b>Quiet by default:</b> passed checks fold to one line, a failure keeps the command it ran and ends with <code>Next:</code>; lists cap with "+N more".</li>
-      <li><b>Keys:</b> every action has a key, listed on the last row of the screen.</li>
+      <li><b>Keys:</b> every action has a key, listed on the last row of the screen; the keys work only while the screen or a control has focus, so typing elsewhere is never caught.</li>
     </ul>
   </section>
 </main>
@@ -134,7 +137,8 @@
   var OPT = { st: ['empty', 'working', 'error', 'done'], depth: ['truecolor', '8', 'none'], want: ['fit', '40', '24'], tt: ['dark', 'light'] };
   var S = { st: 'working', depth: 'truecolor', want: 'fit', tt: 'dark' };
   var GRAD = { dark: [[127, 209, 139], [98, 201, 217]], light: [[26, 127, 55], [11, 111, 131]] };
-  var f = 0, timer = 0, frames = 0, last = '', FLOOR = 28, NARROW = 56;
+  var f = 0, timer = 0, frames = 0, last = '', FLOOR = 28, NARROW = 56, said = S.st;
+  var SAY = { empty: 'No deploys yet.', working: 'Deploy running.', error: 'Deploy failed at migrate db. Next: shipit retry migrate.', done: 'Deployed 4 steps.' };
 
   // display width: Wide and Fullwidth take two columns, control characters none (a test row of CJK keeps its border)
   var wide = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦\u{1f300}-\u{1faff}]/u;
@@ -210,7 +214,8 @@
     document.querySelectorAll('.group[data-k]').forEach(function (g) {
       g.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(S[g.dataset.k] === b.dataset.v)); });
     });
-    $('#motion').setAttribute('aria-pressed', String(root.dataset.motion === 'reduce'));
+    $('#motion').setAttribute('aria-pressed', String(reduced()));
+    if (said !== S.st) { said = S.st; $('#say').textContent = SAY[S.st]; } // the screen redraws 10 times a second; this speaks once
     draw();
   }
   function set(k, v) { S[k] = v; sync(); }
@@ -221,12 +226,14 @@
     b.addEventListener('click', function () { set(b.closest('.group').dataset.k, b.dataset.v); });
   });
   $('#motion').addEventListener('click', motion);
-  document.addEventListener('keydown', function (e) {
+  function key(e) { // single-key shortcuts only inside the screen and its controls (WCAG 2.1.4)
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     var n = '1234'.indexOf(e.key);
     if (n >= 0) set('st', OPT.st[n]); else if (e.key === 'c') cycle('depth'); else if (e.key === 'w') cycle('want');
     else if (e.key === 't') cycle('tt'); else if (e.key === 'm') motion();
-  });
+  }
+  $('#pre').addEventListener('keydown', key);
+  $('.controls').addEventListener('keydown', key);
   if (window.ResizeObserver) new ResizeObserver(draw).observe($('#screen')); // a resize is an event
   matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', sync);
   sync();

@@ -61,6 +61,8 @@ Use when building or reworking UI inside a terminal app or a Claude Code mod (pa
 30. Render at several sizes (20×12, 40×16, 80×24, a wide one) and with hostile text (wide glyphs, control characters, very long words) and assert nothing draws past the border; keep a golden snapshot of the main screen and regenerate it on purpose, never by habit.
 31. Drive the real binary in a pseudo-terminal once per release: entry, a resize, a paste, Ctrl-Z, quit, and check the terminal state afterwards.
 
+Example: `references/ui/examples/terminal-ui.html`: one panel drawn at 80 and at 40 columns: hierarchy, colour roles, wide glyphs and truncation that keep the meaning. The site's Gallery shows it.
+
 ## UI contract
 
 - motion: the motion budget has an off setting that honours the app's reduced setting: a still screen that says the same.

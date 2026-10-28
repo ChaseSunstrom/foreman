@@ -222,6 +222,8 @@ Pass the settings in once: `Shake(seed, scale=0 if reduced else shake_setting)`.
 
 `fm lib show game-loop` (fixed step, hit-stop's home), `fm lib show game-physics` (render interpolation, why collision shapes don't squash), `fm lib show phaser`, `fm lib show pygame`, `fm lib show godot`, `fm lib show godot-gdscript`, `fm lib show love2d`, `fm lib show unity`, `fm lib show monogame`, `fm lib show animation` (WAAPI and CSS for playful UI), `fm lib show accessibility`. Add `--section verify` for each card's checks.
 
+Example: `references/ui/examples/game-feel.html`: a small toy whose events follow a juice table, under the hard caps, with its reduced-motion fallback and sound off by default. The site's Gallery shows it.
+
 ## UI contract
 
 - motion: every juice row has its reduced-motion fallback; shake, flashes and hit-stop turn off with it.
