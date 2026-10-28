@@ -78,6 +78,22 @@ class Which(ForemanTestCase):
         self.assertNotIn("zebra", text)
         self.assertLessEqual(len(text), fmwhich.HEADER_MAX + 20)
 
+    def test_a_big_library_reads_only_the_headers_the_index_returns(self):
+        # T-1835: past BIG books, fm which takes its candidates from fmplaybooks.find, not a read of every header
+        from unittest import mock
+        import fmplaybooks
+        import fmwhich
+        from test_playbook_machinery import put
+        root = os.path.join(self.tmp, "books")
+        for i in range(12):
+            put(root, f"references/misc/b{i}.md", f"# Book {i}\n\nUse when the gizmo{i} breaks.\n\n## Steps\n\n1. x\n")
+        put(root, "references/fix/kiln.md", "# Kiln repair\n\nUse when the pottery kiln overheats.\n\n## Steps\n\n1. x\n")
+        with mock.patch.object(fmplaybooks, "ROOT", root), mock.patch.object(fmwhich, "BIG", 10), \
+                mock.patch.object(fmwhich, "_head", wraps=fmwhich._head) as head:
+            got = fmwhich.rank("repair the pottery kiln", {"playbooks": fmwhich.playbooks("repair the pottery kiln")})
+        self.assertEqual([x["name"] for x in got["playbooks"]], ["fix/kiln"])
+        self.assertEqual(head.call_count, 1, "only the index's hit is read")
+
     def test_the_stemmer_is_fmrecalls_and_collapses_doubled_consonants(self):
         import fmrecall
         import fmwhich
