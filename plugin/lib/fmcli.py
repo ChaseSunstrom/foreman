@@ -6363,6 +6363,8 @@ def _build_parser():
     s.add_argument("--epsilon", metavar="P", help="with pick: how often (0-1, default 0.1) an item meets a farther one "
                                                   "of its kind instead of its neighbour (T-1860)")
     s.add_argument("--reset", action="store_true", default=None, help="with prefer: forget the learned weights (T-1861)")
+    s.add_argument("--serve", action="store_true", default=None, help="with swipe: the pile as a page in the browser, "
+                   "loopback only, its URL good once (T-1858)")
     s.add_argument("--repo", metavar="OWNER/REPO", help="default: the repo gh finds here")
     s.add_argument("--limit", type=int, help="with gh (default 30), first (5) or pick (4 pairs)")
     s = add("ci-watch", lazy("fmci", "cmd_ci_watch"), tier=("Project and settings", 930), help="after a push, poll the branch's latest CI run through gh; a "
