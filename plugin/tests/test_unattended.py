@@ -138,3 +138,36 @@ class Unattended(ForemanTestCase):
         c.write_atomic(os.path.join(self.p.dir, "meta.json"), json.dumps(dict(meta, schema=99)))
         import fmdoctor
         self.assertEqual(fmdoctor.check_briefs(self.p).status, "FAIL")
+
+
+class RunRepeatSkip(ServeCase):
+    """T-1825: fm run doesn't pay for a session that would repeat the last one: when a session leaves the files and the
+    failing check as it found them, the task is blocked with that diagnosis instead of being given another."""
+
+    def session(self, extra=""):
+        fm = f"{sys.executable} {FM}"
+        self.stub("claude", f"t=$FOREMAN_DRIVE_TASK\n{extra}{fm} task evidence $t --step 1 --run \"sh -c 'echo broken; exit 1'\"\nexit 0\n")
+
+    def task(self, title):
+        return json.loads(self.fm("task", "new", title, "--type", "FIX", "--tier", "S", "--ac", "a", "--step", "s",
+                                  "--json").stdout)["id"]
+
+    def sessions(self):
+        return self.called().count("claude ")
+
+    def test_a_session_that_changed_nothing_but_its_failing_run_is_not_repeated(self):
+        self.session()
+        tid = self.task("Stuck")
+        r = self.fm("run", env=self.env(), check=False)
+        self.assertEqual(self.sessions(), 2, r.stdout + r.stderr)  # the first finds the failure, the second repeats it
+        b = c.find_brief(c.find_project(self.repo), tid)
+        self.assertEqual(b.status, "blocked")
+        text = read_text(b.path)
+        self.assertIn("echo broken", text)
+        self.assertIn("unchanged", text)
+
+    def test_a_session_that_changes_files_keeps_its_sessions(self):
+        self.session(extra='date +%s%N >> work.txt\n')
+        self.task("Moving")
+        self.fm("run", env=self.env(), check=False)
+        self.assertEqual(self.sessions(), 3)  # SESSIONS_PER_TASK: each session changed the files

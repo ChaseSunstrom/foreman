@@ -300,7 +300,16 @@ def cmd_serve(args):
 
 def _fingerprint(b):
     return (b.status, sum(s.done for s in b.steps()), sum(a.checked for a in b.acceptance()), len(b.audits()),
-            b.section("Verification evidence").count("\n- "))
+            sum(l.startswith("- ") for l in b.section("Verification evidence").splitlines()))  # T-1825: the first too
+
+
+def _repeat_key(p, b):
+    """T-1825: what a session finds when its task's newest evidence is a failed run: the files (worktree id), that line
+    (its timestamp aside) and the steps and criteria done. None when the newest run passed, there is none, or no git."""
+    ev, tree = b.evidence(), None
+    if ev and "` → ✗ exit" in ev[-1]:
+        tree = c.worktree_id(p.root)
+    return (tree, re.sub(r" \([^()]*\)$", "", ev[-1]), _fingerprint(b)[1:3]) if tree else None
 
 
 def _next_runnable(p, skip, told, fit=False):
@@ -916,7 +925,7 @@ def cmd_run(args):
                 args.parallel = 1  # one at a time from here, which waits a usage limit out
                 print("usage limit hit: no more lanes this run; one task at a time from here", flush=True)
             continue
-        before = _fingerprint(b)
+        before, found = _fingerprint(b), _repeat_key(p, b)
         model = models.get(b.tier)
         cmd = _session_cmd(p, b, args, models)
         started, t0 = c.now(), time.monotonic()
@@ -990,6 +999,12 @@ def cmd_run(args):
             _notify(p, f"{b.id} {after.status}: {b.title[:80]}")
         elif _fingerprint(after) == before:
             fail(f"{b.id}: no progress in a fresh session; stopping", quarantine=b.id)
+        elif found and _repeat_key(p, after) == found:  # T-1825: the next session would start where this one did
+            skip.add(b.id)
+            block(b.id, f"its session left the files and the failing check unchanged ({found[1][2:240]}); another "
+                        "session would repeat it: change the approach or the check first")
+            print(f"{b.id} blocked: its session left the files and the failing check unchanged{how}", flush=True)
+            _notify(p, f"{b.id} blocked (a session would repeat the last): {b.title[:80]}")
         else:
             sessions[b.id] = sessions.get(b.id, 0) + 1
             if sessions[b.id] >= SESSIONS_PER_TASK:
