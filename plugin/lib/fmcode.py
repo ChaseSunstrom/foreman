@@ -387,8 +387,8 @@ class Run:
         self.kept.append(fmcore.redact_obj(rec))
         if self.journal:
             try:
-                with open(self.journal[:-len(".jsonl")] + ".events.jsonl", "a", encoding="utf-8") as f:
-                    f.write("".join(json.dumps(r) + "\n" for r in self.kept))
+                fmcore.append_line(self.journal[:-len(".jsonl")] + ".events.jsonl",
+                                   "".join(json.dumps(r) + "\n" for r in self.kept))
                 self.kept = []
             except OSError:
                 pass
@@ -427,8 +427,7 @@ class Run:
 
     def log(self, **rec):
         if self.journal:
-            with open(self.journal, "a", encoding="utf-8") as f:
-                f.write(json.dumps(fmcore.redact_obj(dict(rec, ts=time.time()))) + "\n")
+            fmcore.append_line(self.journal, json.dumps(fmcore.redact_obj(dict(rec, ts=time.time()))) + "\n")
 
     def spend(self, usd, tokens, what):
         """T-1357: a call's dollars, when known, added to the run's, the budget ledger (fm budget, fm cost) and the

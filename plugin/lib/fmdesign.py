@@ -16,11 +16,13 @@ found in the code), a11y (token contrast, the lint's reduced-motion, flash and i
 shows) and debt (untokened colours, durations and radii per file, under a budget)."""
 import bisect
 import colorsys
+import hashlib
 import json
 import math
 import os
 import re
 import stat
+import sys
 
 import fmcore
 
@@ -1669,10 +1671,14 @@ def cmd_design(args):
         if len(args.paths) > 1:
             print("fm: design check takes one project root", file=sys.stderr)
             return 2
-        got = check_gates(args.paths[0] if args.paths else ".")
+        root = args.paths[0] if args.paths else "."
+        try:
+            got = trial(root, check_gates(root), getattr(args, "wrong", None), getattr(args, "why", None))
+        except ValueError as e:
+            print(f"fm: design check: {e}", file=sys.stderr)
+            return 1
         fmcli.out(args, got, render_gates(got))
-        return 1 if any(g["mode"] == "blocking" and not all(m["pass"] for m in g["musts"])
-                        for g in got["gates"]) else 0
+        return 1 if blocks(got) else 0
     if not args.paths and not (args.action == "tokens" and getattr(args, "clear", False)):  # check's defaults to the
         # project root; tokens --clear forgets the saved pane palette and names no file (T-1717)
         print(f"fm: design {args.action}: needs an argument (fm design -h)", file=sys.stderr)
@@ -1699,8 +1705,11 @@ def cmd_design(args):
 
 # T-1645: design gates a project opts into in DESIGN.md's ## Gates section ("- brief: advisory" or "blocking");
 # T-1646: a11y and debt ("- debt: advisory 40": its budget of untokened literals)
+# T-1669: trial runs advisory and logs each would-block; it blocks once TRIAL_MIN are logged with under TRIAL_RATE of
+# the last TRIAL_WINDOW marked wrong (fm design check --wrong GATE), and the same rule demotes it
 GATES = ("brief", "a11y", "debt")
-MODES = ("advisory", "blocking")
+MODES = ("advisory", "blocking", "trial")
+TRIAL_MIN, TRIAL_RATE, TRIAL_WINDOW = 10, 0.10, 20
 A11Y_RULES = (("reduced motion", "reduced-motion"), ("no fast flashes", "flash"), ("img alt text", "img-alt"))
 FOCUS = re.compile(r":focus(?:-visible)?(?![\w-])")  # :focus-within styles the container, not the focused element
 VISUAL = re.compile(r"(?:outline(?!-offset)|box-shadow|border(?!.*radius)|background|text-decoration)(?:-[\w-]+)?$|"
@@ -1983,7 +1992,7 @@ def check_gates(root):
                 found = run.check()
             if gate == "a11y":
                 out["gates"].append({"gate": gate, "mode": mode,
-                                     "musts": _a11y(run, found, out["notes"], mode == "blocking")})
+                                     "musts": _a11y(run, found, out["notes"], mode in ("blocking", "trial"))})
             else:
                 budget = m.group(3)
                 if budget and not re.fullmatch(r"\d{1,9}", budget):
@@ -2005,7 +2014,59 @@ def check_gates(root):
             f"{os.path.relpath(x['file'], root)} ({x['why']})" for x in skipped[:3]) +
             (f" and {len(skipped) - 3} more" if len(skipped) > 3 else ""))
     out["notes"] = list(dict.fromkeys(out["notes"]))  # a gate listed twice says its note once
+    out["digest"] = hashlib.sha1("\0".join(f"{r}\0{b}" for r, b in bodies).encode("utf-8", "replace")).hexdigest()
     return out
+
+
+def trial(root, got, wrong=None, why=None):
+    """T-1669: count the trial gates' would-blocks in the project's design-trials.jsonl (one per new failing UI state;
+    a rerun on the same code adds none), mark the latest one wrong for --wrong GATE, and set each trial gate's
+    trial = {acts, n, overridden}: blocking once TRIAL_MIN are logged with under TRIAL_RATE overridden. Outside a
+    Foreman project nothing is counted and it reads as advisory. Raises ValueError for --wrong with nothing to mark."""
+    p = fmcore.find_project(root)
+    gates = [g for g in got["gates"] if g["mode"] == "trial"]
+    if wrong and wrong not in {g["gate"] for g in gates}:
+        raise ValueError(f"{wrong} isn't on trial in DESIGN.md's ## Gates ('- {wrong}: trial')")
+    if not p:
+        if wrong:
+            raise ValueError("no Foreman project here, so there are no would-blocks to mark wrong")
+        for g in gates:
+            g["mode"] = "advisory"
+        if gates:
+            got["notes"].append("trial: no Foreman project here, so nothing is counted; read as advisory")
+        return got
+    path = os.path.join(p.dir, "design-trials.jsonl")
+    recs = fmcore.tail_jsonl(path, 2000) if os.path.exists(path) else []
+    for g in gates:
+        failing = [m["must"] for m in g["musts"] if not m["pass"]]
+        mine = [r for r in recs if r.get("gate") == g["gate"]]
+        hits = [r for r in mine if r.get("key")]
+        if failing:
+            key = hashlib.sha1(json.dumps([g["gate"], failing, got.get("digest")]).encode()).hexdigest()[:16]
+            if not hits or hits[-1]["key"] != key:
+                rec = {"ts": fmcore.now(), "gate": g["gate"], "key": key, "failing": failing}
+                fmcore.append_line(path, json.dumps(rec) + "\n")
+                mine.append(rec)
+                hits.append(rec)
+        marked = {r.get("of") for r in mine if r.get("wrong")}
+        if wrong == g["gate"]:
+            left = [r for r in hits if r["key"] not in marked]
+            if not left:
+                raise ValueError(f"no would-block of {wrong} to mark wrong: it hasn't blocked anything unmarked")
+            fmcore.append_line(path, json.dumps({"ts": fmcore.now(), "gate": wrong, "wrong": True, "of": left[-1]["key"],
+                                                 "why": why or ""}) + "\n")
+            marked.add(left[-1]["key"])
+        window = hits[-TRIAL_WINDOW:]
+        n, w = len(window), sum(r["key"] in marked for r in window)
+        g["trial"] = {"acts": "blocking" if n >= TRIAL_MIN and w / n < TRIAL_RATE else "advisory", "n": n,
+                      "overridden": w}
+    return got
+
+
+def blocks(got):
+    """T-1669: whether the check exits 1: a blocking gate, or a trial acting as one, with a failing must."""
+    return any((g["mode"] == "blocking" or (g.get("trial") or {}).get("acts") == "blocking")
+               and not all(m["pass"] for m in g["musts"]) for g in got["gates"])
 
 
 def render_gates(got):
@@ -2018,7 +2079,10 @@ def render_gates(got):
     lines = []
     for g in got["gates"]:
         ok = sum(m["pass"] for m in g["musts"])
-        lines.append(f"{g['gate']} ({g['mode']}): {ok} of {len(g['musts'])} "
+        t = g.get("trial")
+        mode = (f"trial: {t['acts']}; {t['n']} would-block{'' if t['n'] == 1 else 's'}, {t['overridden']} overridden; "
+                f"blocks after {TRIAL_MIN} at under {TRIAL_RATE:.0%}") if t else g["mode"]
+        lines.append(f"{g['gate']} ({mode}): {ok} of {len(g['musts'])} "
                      + ("must-have(s) found" if g["gate"] == "brief" else "check(s) pass"))
         lines += [f"  {'✓' if m['pass'] else '✗'} {safe(m['must'])}: {safe(m['why'])}" for m in g["musts"]]
         lines += [f"    {safe(r['file'])} {r['count']} (" + ", ".join(f"{k} {n}" for k, n in r["kinds"].items()) + ")"

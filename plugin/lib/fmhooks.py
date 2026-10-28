@@ -34,9 +34,22 @@ UNTIMED = {"MessageDisplay", "PostToolUse", "PostToolUseFailure", "SubagentStart
 
 
 def _tb():
-    """The current exception's traceback; imported only when something failed (traceback costs ~15 ms per hook)."""
+    """The current exception's traceback; imported only when something failed (traceback costs ~15 ms per hook).
+    T-1669: a corrupt or unreadable state file is one line naming it, not a traceback."""
+    why = _state_error(sys.exc_info()[1])
+    if why:
+        return f"state error: {why}"
     import traceback
     return traceback.format_exc()
+
+
+def _state_error(e):
+    """T-1669: why Foreman can't run here when a state file is corrupt or unreadable (one line naming it), else None."""
+    if isinstance(e, c.CorruptState):
+        return str(e)
+    if isinstance(e, PermissionError) and e.filename and c.in_state(e.filename):
+        return f"{e.filename} can't be opened: permission denied; restore its permissions (fm fsck lists it)"
+    return None
 
 
 class HookBlock(Exception):
@@ -132,8 +145,14 @@ def run(event, raw):
                 _breaker_set(event, None)  # it ran: a block isn't a failure
             print(str(e), file=sys.stderr)
             code = 2
-        except Exception:
+        except Exception as e:
             log_error(event, _tb())
+            why = _state_error(e)
+            if why:  # T-1669: say it where the model reads it; a broken file isn't a failing hook, so no breaker
+                if event in ("UserPromptSubmit", "SessionStart"):
+                    print(json.dumps({"hookSpecificOutput": {"hookEventName": event,
+                                                             "additionalContext": f"Foreman can't run here: {why}"}}))
+                return code
             fails = state.get("fails", 0) + 1  # after a pause one more failure pauses it again
             until = time.time() + BREAKER_PAUSE_S if fails >= BREAKER_FAILS and event not in UNBREAKABLE else 0
             if _breaker_set(event, {"fails": fails, "until": until}) and until:
@@ -164,8 +183,7 @@ def log_error(event, text):
     try:
         path = os.path.join(c.state_dir(), "logs", "hooks.log")
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(f"{c.now()} {event} {c.redact(text).rstrip()}\n")
+        c.append_line(path, f"{c.now()} {event} {c.redact(text).rstrip()}\n")
     except OSError:
         pass
 
@@ -212,8 +230,8 @@ def _event(rec):
     try:
         rec = dict({"ts": c.now()}, **rec)
         os.makedirs(c.state_dir(), exist_ok=True)
-        with open(os.path.join(c.state_dir(), "events.jsonl"), "a", encoding="utf-8") as f:
-            f.write(json.dumps(c.redact_obj(rec), ensure_ascii=False) + "\n")
+        c.append_line(os.path.join(c.state_dir(), "events.jsonl"),
+                      json.dumps(c.redact_obj(rec), ensure_ascii=False) + "\n")
     except OSError:
         pass
 
@@ -1725,7 +1743,8 @@ def _pre_tool_use(raw):
                 block = guard.Block("plugin", problem)
     except Exception as e:
         log_error("PreToolUse", _tb())
-        print(f"Foreman guard internal error ({type(e).__name__}); the tool call was blocked (fail-closed). "
+        why = _state_error(e)
+        print(f"Foreman guard internal error ({why or type(e).__name__}); the tool call was blocked (fail-closed). "
               f"Details: {os.path.join(c.state_dir(), 'logs', 'hooks.log')}. "
               f"If this persists: claude plugin disable foreman@foreman", file=sys.stderr)
         return 2
@@ -1735,12 +1754,13 @@ def _pre_tool_use(raw):
             made = _first_brief(p, pl.get("session_id"), pl.get("transcript_path"))
             if made is not None:  # the whole guard again, with the task active: the edit goes ahead if nothing stops it
                 ctx, p, act, found, block = _guard_decision(pl, guard)
-        except Exception:
+        except Exception as e:
             log_error("PreToolUse", _tb())
+            why = _state_error(e)
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                      "permissionDecisionReason": (
                 "Foreman: making this session's task failed partway, so a task may exist now: check fm status, then "
-                "retry the edit (or start one: fm task new … --focus).")}}))
+                "retry the edit (or start one: fm task new … --focus)." + (f" Cause: {why}" if why else ""))}}))
             return 0
     if block:
         reason = guard.message(block, ctx)
