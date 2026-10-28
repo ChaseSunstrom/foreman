@@ -5739,10 +5739,12 @@ def _build_parser():
                    "counter: what failed here, reverted commits and blocked tasks (T-1523); score NAME --task ID: the "
                    "steps a done task's run followed; kata NAME [--answer FILE]: its held-out briefs as practice; "
                    "lesson [RANGE]: a five-minute lesson from a diff (T-1525)")
-    s.add_argument("--task", help="score: the task whose run is scored")
+    s.add_argument("--task", help="score: the task whose run is scored; route: the books fitting its title, "
+                   "interpretation and criteria (T-1833)")
+    s.add_argument("-k", type=int, default=5, help="route TEXT|--task ID: how many books (default 5)")
     s.add_argument("--answer", help="kata: a file holding your answer, scored against every kata's checks")
     s.add_argument("name", nargs="?", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that "
-                   "name; route: a stage (verifying) or type (FIX); coverage takes none")
+                   "name; route: a stage (verifying) or type (FIX), else the words to rank books by; coverage takes none")
     s.add_argument("--briefs", help="eval: the brief set (default plugin/evals/playbooks/<stage>/<name>.json)")
     s.add_argument("--real", action="store_true", help="eval: ask a model (claude -p, budgeted) instead of reading "
                    "the playbook literally")

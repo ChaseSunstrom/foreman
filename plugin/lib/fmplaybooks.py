@@ -25,6 +25,8 @@ the checkout (no link anywhere under it), cut at OVERLAY_MAX, control characters
 alone, and shown as one blockquote under a provenance line, marked (uncommitted) when it differs from HEAD: text an
 injected session planted can't pass for Foreman's. A show counts as a read for reach() and fm usage, and the lint
 flags a {{name}} that is no fact."""
+import contextlib
+import hashlib
 import json
 import os
 import re
@@ -352,11 +354,16 @@ def reach(root=ROOT, days=REACH_DAYS):
     """{days, covers, read: {path: reads}, unread: [path]}: Read events of each playbook in the window, from every
     project; covers is the days the event log actually spans, when that is fewer."""
     books, read, oldest = _playbooks(root), {}, None
+    known = set(books)
     since = c.iso(time.time() - days * 86400)
     for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
         ts = str(e.get("ts") or "")
         oldest = ts if ts and (oldest is None or ts < oldest) else oldest
         target = str(e.get("target") or "")
+        if ts >= since and e.get("kind") == "playbook":  # T-1833: fm playbooks route named these
+            for hit in {x for x in e.get("paths") or () if isinstance(x, str) and x in known}:
+                read[hit] = read.get(hit, 0) + 1
+            continue
         if ts < since or e.get("kind") != "tool":
             continue
         if e.get("tool") == "Bash" and (hit := shown(target, books)):
@@ -500,6 +507,203 @@ def route(stage, root=ROOT):
         d = f"references/{m.group(1)}/"
         got += [d + "INDEX.md"] if d + "INDEX.md" in books else [b for b in _playbooks(root) if b.startswith(d)]
     return key, hint, list(dict.fromkeys(got))
+
+
+# T-1833: routing by meaning. An FTS5 index of the library in Foreman's state (the plugin tree may be read-only),
+# refreshed from one stat pass: only a book whose mtime or size changed is read again. Costs nothing until a query.
+BODY_MAX = 4096  # characters of a book indexed: 20k books stay a few tens of MB
+READ_MAX = 8192  # bytes of a book read to index it
+TERMS_MAX = 40  # query words kept: a task's whole brief is a query, not a phrase book
+WEIGHTS = (0, 10, 5, 2, 1)  # bm25 per column: path (unindexed), title, use line, headings, body
+INDEX_VERSION = 1
+
+
+def _entries(root, dirs):
+    """Every playbook's DirEntry (what _playbooks lists) under root; dirs gets each folder's (path, mtime_ns). Symlinks
+    and FIFOs are skipped: nothing here follows a link out of the library or blocks on a pipe."""
+    todo = [os.path.join(os.path.abspath(root), "references")]
+    while todo:
+        d = todo.pop()
+        try:
+            dirs.append((d, os.stat(d).st_mtime_ns))
+            it = os.scandir(d)
+        except OSError:
+            continue
+        with it:
+            for e in it:
+                n = e.name
+                try:
+                    if n.endswith(".md"):
+                        if n != "INDEX.md" and e.is_file(follow_symlinks=False):
+                            yield e
+                    elif n != "templates" and e.is_dir(follow_symlinks=False):
+                        todo.append(e.path)
+                except OSError:
+                    continue  # gone since the listing
+
+
+def _stat_tree(root):
+    """{(rel, mtime_ns, size)} for every playbook, one stat each."""
+    cut, out = len(os.path.abspath(root)) + 1, set()
+    for e in _entries(root, []):
+        try:
+            st = e.stat(follow_symlinks=False)
+        except OSError:
+            continue
+        out.add((e.path[cut:], st.st_mtime_ns, st.st_size))
+    return out
+
+
+def _signature(root):
+    """A string that changes when a book is added, removed, renamed or edited, for one stat per book and no more: the
+    count and the sums of mtimes and sizes, and every folder's mtime (an add, remove or rename touches one). The stat
+    per file is what a call costs at 20k books, so a call that finds this unchanged reads nothing else.
+    ponytail: two edits whose mtimes move opposite ways by the same ns cancel in the sum; the next edit shows them."""
+    n = m = z = 0
+    dirs = []
+    for e in _entries(root, dirs):
+        try:
+            st = e.stat(follow_symlinks=False)
+        except OSError:
+            continue
+        n += 1
+        m += st.st_mtime_ns
+        z += st.st_size
+    return f"{n} {m} {z} {sorted(dirs)}"
+
+
+def _doc(root, rel):
+    """(title, use line, headings, body) of a book; empty ones when it can't be read (it is read again once its mtime
+    or size changes)."""
+    try:
+        with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as f:
+            text = f.read(READ_MAX)
+    except OSError:
+        return ("", "", "", "")
+    lines = text.splitlines()
+    return (next((x[2:].strip() for x in lines if x.startswith("# ")), ""),
+            next((x.strip() for x in lines[:40] if _USE.search(x)), ""),
+            " ".join(x[3:].strip() for x in lines if x.startswith("## ")), text[:BODY_MAX])
+
+
+def _terms(text):
+    """The words a query keeps: 5+ letters, not common, each once, TERMS_MAX at most."""
+    return list(dict.fromkeys(w for w in _WORD.findall(text.lower()) if w not in _COMMON))[:TERMS_MAX]
+
+
+def _index_file(root):
+    """Where root's index lives: in the state folder, named by a hash of the library's real path."""
+    folder = os.path.join(c.state_dir(), "playbooks")
+    os.makedirs(folder, exist_ok=True)
+    key = hashlib.sha1(os.path.realpath(root).encode("utf-8", "replace")).hexdigest()[:12]
+    return os.path.join(folder, f"index-v{INDEX_VERSION}-{key}.db")
+
+
+def _index(root):
+    """The open, refreshed index of root: raises sqlite3.Error (no FTS5, a broken file) for the caller to handle."""
+    import sqlite3
+    con = sqlite3.connect(_index_file(root), timeout=10, isolation_level=None)
+    try:
+        con.execute("pragma synchronous=off")  # rebuildable: a torn file is dropped and built again
+        con.execute("create table if not exists files(path text primary key, mtime_ns int, size int)")
+        con.execute("create virtual table if not exists books using fts5(path unindexed, title, use, heads, body, "
+                    "tokenize='porter unicode61')")
+        con.execute("create table if not exists seen(sig text)")
+        sig = _signature(root)  # before the books are read: an edit after it shows as a change next call
+        if (con.execute("select sig from seen").fetchone() or (None,))[0] != sig:
+            now = _stat_tree(root)
+            con.execute("begin immediate")  # another fm may have refreshed since: read the table again under the lock
+            have = {p: (m, s, i) for p, m, s, i in con.execute("select path, mtime_ns, size, rowid from files")}
+            paths = {p for p, _, _ in now}
+            for p, (_, _, i) in have.items():
+                if p not in paths:
+                    con.execute("delete from books where rowid=?", (i,))
+                    con.execute("delete from files where rowid=?", (i,))
+            for p, *ms in now:
+                if p in have and list(have[p][:2]) == ms:
+                    continue
+                doc = _doc(root, p)
+                if p in have:
+                    con.execute("delete from books where rowid=?", (have[p][2],))
+                    con.execute("update files set mtime_ns=?, size=? where rowid=?", (*ms, have[p][2]))
+                    rid = have[p][2]
+                else:
+                    rid = con.execute("insert into files values(?,?,?)", (p, *ms)).lastrowid
+                con.execute("insert into books(rowid, path, title, use, heads, body) values(?,?,?,?,?,?)", (rid, p, *doc))
+            con.execute("delete from seen")
+            con.execute("insert into seen values(?)", (sig,))
+            con.execute("commit")
+        return con
+    except BaseException:
+        con.close()
+        raise
+
+
+def _fts_find(root, terms, k):
+    import sqlite3
+    for attempt in (0, 1):
+        try:
+            con = _index(root)
+            break
+        except sqlite3.DatabaseError as e:
+            if attempt or "fts5" in str(e).lower() or "locked" in str(e).lower():
+                raise
+            with contextlib.suppress(OSError):  # a torn file: drop this root's index and build it again
+                os.remove(_index_file(root))
+    try:
+        q = " OR ".join('"' + t + '"' for t in terms)
+        return [{"path": p, "score": round(-s, 2), "use": u} for p, u, s in con.execute(
+            "select path, use, bm25(books, ?, ?, ?, ?, ?) as s from books where books match ? order by s limit ?",
+            (*WEIGHTS, q, k))]
+    finally:
+        con.close()
+
+
+def find(text, k=5, root=ROOT):
+    """(mode, [{path, score, use}]): the k books that best fit text, best first; mode fts5, or scan when this
+    Python's sqlite has no FTS5 (or the index can't be had): books whose title and use line share the most words."""
+    import sqlite3
+    terms = _terms(text)
+    if not terms:
+        return "fts5", []
+    try:
+        return "fts5", _fts_find(root, terms, k)
+    except sqlite3.Error:
+        pass
+    got = []
+    for rel, *_ in _stat_tree(root):
+        doc = _doc(root, rel)
+        n = len(set(terms) & set(_WORD.findall(f"{doc[0]} {doc[1]}".lower())))
+        if n:
+            got.append({"path": rel, "score": float(n), "use": doc[1]})
+    return "scan", sorted(got, key=lambda x: (-x["score"], x["path"]))[:k]
+
+
+def task_text(b):
+    """What a task asks for, as a query: its title, interpretation and criteria (without their verify commands)."""
+    crit = "\n".join(x.split("::")[0] for x in b.section("Acceptance criteria").splitlines())
+    return f"{b.title}\n{b.section('Interpretation')}\n{crit}"
+
+
+def cmd_route(args):
+    """fm playbooks route TEXT|--task ID [-k N]: the top books by relevance, with score and Use-when line."""
+    import fmcli
+    if args.task:
+        b = c.find_brief(fmcli.resolve(args), args.task)
+        if not b:
+            raise fmcli.UsageError(f"no task {args.task}")
+        text = task_text(b)
+    else:
+        text = args.name
+    k = max(1, min(args.k, 50))
+    mode, got = find(text, k)
+    if got:
+        import fmhooks
+        fmhooks._event({"kind": "playbook", "action": "route", "paths": [x["path"] for x in got]})  # the text stays out
+    return fmcli.out(args, {"mode": mode, "playbooks": got}, "\n".join(
+        f"  {x['score']:>6}  {x['path']} — {c.fit(x['use'], 100)}" for x in got) if got else
+        "no playbook fits: no word of 5 letters or more matches a title, Use-when line, heading or body "
+        f"(a stage routes by its key: {', '.join(c.SKILL_FOR)})") or 0
 
 
 def blame(path):
@@ -737,8 +941,10 @@ def cmd_show(args):
         return fmcli.out(args, {"failures": got}, ("What failed here (don't repeat it)\n" + "\n".join(
             f"  ✗ {x['what']} ({x['kind']}: {x['why']})" for x in got[:40])
             if got else "nothing failed here: no reverted commit and no task blocked with a reason")) or 0
+    if args.action == "route" and (args.task or (args.name and route(args.name) is None)):  # T-1833: by meaning
+        return cmd_route(args)
     if args.name is None:  # left out (coverage takes none); an empty one still says no playbook
-        raise fmcli.UsageError(f"fm playbooks {args.action} NAME")
+        raise fmcli.UsageError(f"fm playbooks {args.action} NAME" + (" (or --task ID)" if args.action == "route" else ""))
     if args.action == "eval":
         return cmd_eval(args)
     if args.action == "draft":  # T-1523
