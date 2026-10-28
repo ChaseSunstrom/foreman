@@ -5,6 +5,7 @@ into briefs (T-0481), fm canary checks Foreman against a new Claude Code (T-0482
 import hashlib
 import json
 import os
+import random
 import re
 import subprocess
 import sys
@@ -364,16 +365,67 @@ def swipe_apply(p, spec):
     return [f"{t} {said[v]}" for t, v in pairs]
 
 
-def inbox_pick(p, limit=4):
-    """T-1664: two-way choices worth asking: neighbours in inbox order of one type and urgency, no item twice."""
-    ranked, pairs, i = c.rank_inbox(c.load_briefs(p)), [], 0
-    while i + 1 < len(ranked) and len(pairs) < limit:
-        a, b = ranked[i], ranked[i + 1]
-        if (a.type, a.priority) == (b.type, b.priority):
-            pairs.append({"a": {"id": a.id, "title": a.title}, "b": {"id": b.id, "title": b.title}})
-            i += 2
-        else:
-            i += 1
+def swipe_list(p):
+    """T-1664: the deferred pile, each with why it was deferred (a keep's own log line hides no reason)."""
+    return [{"id": b.id, "title": b.title, "why": c.fit(next((re.sub(r"^- \S+\s*", "", x) for x in reversed(
+        b.section("Log").splitlines()) if x.startswith("- ") and " swept: " not in x), ""), 120)}
+            for b in c.load_briefs(p) if b.status == "deferred"]
+
+
+def _tty():
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+SWIPE_KEYS = {"r": "revive", "k": "keep", "d": "drop"}
+
+
+def swipe_loop(p):
+    """T-1857: the deferred pile one item at a time in a terminal, each verdict applied as it is said (Ctrl-C or q
+    keeps what was said); what was applied, in order. A verdict is its letter or its word, nothing else ("dunno" asks
+    again); an item changed elsewhere since the list was read is said and passed."""
+    import fmcli
+    items, said = swipe_list(p), []
+    print(f"{len(items)} deferred · r revive · k keep · d drop · s skip · q stop" if items else "Nothing is deferred.")
+    for n, x in enumerate(items, 1):
+        print(f"{n}/{len(items)} {x['id']} {c.plain(x['title'])}" + (f" — {c.plain(x['why'])}" if x["why"] else ""))
+        while True:
+            try:
+                k = input("> ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                return said
+            k = {w: key for key, w in SWIPE_KEYS.items()}.get(k, k)
+            if k in ("q", "quit"):
+                return said
+            if k in SWIPE_KEYS:
+                try:
+                    got = swipe_apply(p, f"{x['id']}:{SWIPE_KEYS[k]}")
+                    said += got
+                    print(got[0])
+                except fmcli.UsageError as e:
+                    print(e)
+            if k in SWIPE_KEYS or k in ("s", "skip"):
+                break
+            print("r revive · k keep · d drop · s skip · q stop")
+    return said
+
+
+def inbox_pick(p, limit=4, epsilon=0.1, rng=random):
+    """T-1664: two-way choices worth asking: neighbours in inbox order of one type and urgency, no item twice.
+    T-1860: an item waiting on an open one isn't offered, and with probability epsilon an item meets a farther one of
+    its kind instead (the order then learns beyond its neighbours)."""
+    briefs = c.load_briefs(p)
+    open_ids = {b.id for b in briefs if b.status not in c.CLOSED}
+    ranked = [b for b in c.rank_inbox(briefs) if not any(d in open_ids for d in c._deps(b))]
+    pairs, used = [], set()
+    for i, a in enumerate(ranked):
+        if len(pairs) >= limit:
+            break
+        kin = [b for b in ranked[i + 1:] if b.id not in used and (b.type, b.priority) == (a.type, a.priority)]
+        if a.id in used or not kin:
+            continue
+        b = rng.choice(kin[1:]) if len(kin) > 1 and rng.random() < epsilon else kin[0]
+        used |= {a.id, b.id}
+        pairs.append({"a": {"id": a.id, "title": a.title}, "b": {"id": b.id, "title": b.title}})
     return pairs
 
 
@@ -392,6 +444,21 @@ def prefer(p, win, lose):
             c.write_atomic(os.path.join(p.dir, "prefer.json"), json.dumps(weights, sort_keys=True))
             c.log_event(p, "prefer", data={"win": a.id, "lose": b.id}, session=c.session_id())
     return a, b, len(wa ^ wb)
+
+
+def prefer_reset(p):
+    """T-1861: forget the learned title-word weights: (how many there were, whether a prefer.json was removed; one
+    that couldn't be read holds none)."""
+    with c.lock(p.dir):
+        n = len(c.learned_weights(p.dir))
+        try:
+            os.remove(os.path.join(p.dir, "prefer.json"))
+            removed = True
+        except FileNotFoundError:
+            removed = False
+        if removed:
+            c.log_event(p, "prefer_reset", data={"weights": n}, session=c.session_id())
+    return n, removed
 
 
 _TRACE = re.compile(r'File "([^"\n]+)", line \d+|([\w./-]+\.[A-Za-z]\w*):\d+')
@@ -452,8 +519,8 @@ def cmd_inbox(args):
     if not args.source:  # what fm --help promises: the captured requests waiting, ranked as STATE ranks them
         sd = c.state_dict(fmcli.resolve(args))
         return fmcli.out(args, {"inbox": sd["inbox"]}, c.render_inbox(sd).split("\n", 2)[2].strip())
-    for flag, used in (("apply", ("swipe",)), ("loser", ("prefer",)), ("repo", ("gh",)),
-                       ("limit", ("gh", "first", "pick")), ("file", ("spec", "ticket", "prefer"))):
+    for flag, used in (("apply", ("swipe",)), ("loser", ("prefer",)), ("repo", ("gh",)), ("epsilon", ("pick",)),
+                       ("reset", ("prefer",)), ("limit", ("gh", "first", "pick")), ("file", ("spec", "ticket", "prefer"))):
         if getattr(args, flag) is not None and args.source not in used:  # T-1855's rule: no flag silently unread
             name = "a second item" if flag == "loser" else "FILE" if flag == "file" else f"--{flag}"
             raise fmcli.UsageError(f"fm inbox {args.source}: {name} goes with {' or '.join(used)} only")
@@ -465,16 +532,30 @@ def cmd_inbox(args):
     if args.source == "swipe" and args.apply:
         done = swipe_apply(p, args.apply)
         return fmcli.out(args, {"applied": done}, "; ".join(done) + "." if done else "No verdicts given.")
+    if args.source == "swipe" and not args.json and _tty():  # T-1857: a terminal swipes; a pipe or --json lists
+        done = swipe_loop(p)
+        return fmcli.out(args, {"applied": done}, "Swept: " + "; ".join(done) + "." if done else "Nothing applied.")
     if args.source == "swipe":
-        d = [{"id": b.id, "title": b.title, "why": c.fit(next((re.sub(r"^- \S+\s*", "", x) for x in reversed(
-            b.section("Log").splitlines()) if x.startswith("- ") and " swept: " not in x), ""), 120)}
-             for b in c.load_briefs(p) if b.status == "deferred"]  # a keep's own log line hides no reason
+        d = swipe_list(p)
         return fmcli.out(args, {"deferred": d}, "\n".join(f"{x['id']} {x['title']} — {x['why']}" for x in d)
                          or "Nothing is deferred.")
     if args.source == "pick":
-        d = inbox_pick(p, args.limit or 4)
+        try:
+            eps = 0.1 if args.epsilon is None else float(args.epsilon)
+        except ValueError:
+            eps = -1.0
+        if not 0 <= eps <= 1:  # nan fails both
+            raise fmcli.UsageError(f"fm inbox pick --epsilon {c.fit(c.plain(args.epsilon), 20)}: a number from 0 to 1")
+        d = inbox_pick(p, args.limit or 4, eps)
         return fmcli.out(args, {"pairs": d}, "\n".join(f"{x['a']['id']} {x['a']['title']}  or  {x['b']['id']} "
                                                        f"{x['b']['title']}" for x in d) or "No close pair to choose.")
+    if args.source == "prefer" and args.reset:
+        if args.file or args.loser:
+            raise fmcli.UsageError("fm inbox prefer --reset takes no items")
+        n, removed = prefer_reset(p)
+        return fmcli.out(args, {"reset": n}, f"Forgot {n} learned title-word weight{'s' * (n != 1)}: the inbox order "
+                         "is back to its default." if n else "Removed an unreadable prefer.json: the inbox order is "
+                         "back to its default." if removed else "There was nothing learned to forget.")
     if args.source == "prefer":
         a, b, n = prefer(p, args.file or "", args.loser)
         return fmcli.out(args, {"win": a.id, "lose": b.id, "words": n}, f"Noted: {a.id} over {b.id}; the inbox order "
