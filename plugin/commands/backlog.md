@@ -1,7 +1,7 @@
 ---
 description: Your backlog: small items ready to start, a sweep of the deferred pile, which-first choices the inbox learns from, or a pasted ticket planned as one brief
 disable-model-invocation: true
-argument-hint: "[first | swipe | serve | pick | reset | ticket [PATH | KEY | URL]]"
+argument-hint: "[first | swipe | serve | pick | reset | ticket [PATH | KEY | #N | URL]]"
 ---
 Foreman's backlog tools, through `fm inbox` (the fm code app and a terminal use the same verb).
 
@@ -28,6 +28,9 @@ Arguments (may be empty): $ARGUMENTS
    scripts and pipes). A Jira or Linear key (`PROJ-12`, `jira:KEY`, `linear:KEY`) or issue URL is fetched the same
    way, quoted the same way: Jira needs `JIRA_URL` and `JIRA_API_TOKEN` (plus `JIRA_EMAIL` on Jira Cloud), Linear
    `LINEAR_API_KEY`; if fm says none is set, tell the user which variables to export, never ask for the token here.
+   A GitHub issue (`gh:OWNER/REPO#N`, `'#N'` quoted for this repo, or its github.com URL) is fetched through the user's own
+   `gh`; if fm says gh failed or isn't logged in, tell the user to type `! gh auth login`. Fetching a ticket again
+   after it changed rewrites the brief it made while that brief is unstarted; a started one keeps its own.
 5. `reset`: run `fm inbox prefer --reset` (it forgets every choice `pick` taught the inbox order) and show what it
    printed.
 6. `serve`: run `fm inbox swipe --serve` in the background, read its first line once for the URL and give the user

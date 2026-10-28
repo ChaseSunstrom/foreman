@@ -63,7 +63,7 @@ class Robustness(ForemanTestCase):
             for n in files:
                 if n.endswith((".md", ".json")) and "logs" not in root:
                     with open(os.path.join(root, n), "rb") as f:
-                        data = re.sub(rb'"last_tidy": "[^"]*"|Last tidy: \S+', b"", f.read())
+                        data = re.sub(rb'"last_tidy": "[^"]*"|Last tidy: \S+|_Generated \S+', b"", f.read())
                     out[os.path.relpath(os.path.join(root, n), self.p.dir)] = hashlib.sha1(data).hexdigest()
         return out
 
