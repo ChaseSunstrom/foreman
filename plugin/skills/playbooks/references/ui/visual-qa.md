@@ -212,6 +212,8 @@ This is a look per task, not a regression suite. When a screen stops changing, t
 
 The tooling lives in the stack library: `fm lib show playwright` (contexts, locators, emulation), `fm lib show visual-regression` (committed baselines, masking, pinned rendering), `fm lib show test-fixtures` (scoped seeds with clean-up), `fm lib show dark-mode` (the theme switch the dark frames exercise), `fm lib show animation` (reduced motion in code), `fm lib show responsive-design` (breakpoints the 768 frame tests), `fm lib show accessibility-testing` (what an automated scan adds to the eye), `fm lib show e2e-strategy` (which journeys deserve a test of their own).
 
+Example: `references/ui/examples/visual-qa.html`: a frame matrix of the other examples at 360, 768 and 1440 px in light, dark and reduced motion, with its receipt. The site's Gallery shows it.
+
 ## UI contract
 
 - motion: reduced motion is its own column in the frame matrix.

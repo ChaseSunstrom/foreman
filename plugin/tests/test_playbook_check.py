@@ -72,6 +72,15 @@ class Index(Fixture):
                                              "- `references/ui/templates/DESIGN.md` — the template.\n")
         self.assertEqual(self.problems(), [])
 
+    def test_an_index_line_naming_a_folder_covers_its_files(self):  # T-1785: the worked examples
+        self.write("references/ui/examples/beta.html", "<!doctype html>\n")
+        self.assertFlags("references/ui/examples/beta.html: in no index")
+        self.write("references/ui/INDEX.md", "# UI\n\n- `references/ui/beta.md` — beta.\n"
+                                             "- `references/ui/examples/` — one page per playbook.\n")
+        self.assertEqual(self.problems(), [])
+        self.write("references/fix/examples/x.html", "<!doctype html>\n")
+        self.assertFlags("references/fix/examples/x.html: in no index")  # only the folder it names
+
     def test_a_dead_index_line(self):
         self.write("references/ui/INDEX.md", "# UI\n\n- `references/ui/beta.md` — beta.\n"
                                              "- `references/ui/gone.md` — gone.\n")

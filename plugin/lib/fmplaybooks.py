@@ -243,9 +243,11 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
                 named.setdefault(path, set()).add(name)
                 if not os.path.exists(os.path.join(root, path)):
                     out.append(f"{name}:{n}: {path} doesn't exist")
+    folders = [(d, s) for d, s in named.items() if d.endswith("/")]  # T-1785: a line naming a folder covers its files
     for f in files:
         stage = "/".join(f.split("/")[:2]) + "/INDEX.md"
-        if not named.get(f, set()) & {"SKILL.md", stage}:
+        by = named.get(f, set()).union(*(s for d, s in folders if f.startswith(d)))
+        if not by & {"SKILL.md", stage}:
             out.append(f"{f}: in no index (SKILL.md, or {stage} named in SKILL.md)")
     record, bad = _record(root)
     if bad:

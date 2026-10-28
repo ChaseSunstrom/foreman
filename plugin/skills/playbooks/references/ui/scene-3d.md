@@ -135,6 +135,8 @@ Run the first probe first: it halves the search.
 - [ ] All nine survival clauses have their probe run, ideally as browser tests (null context, lose and restore, reduced motion, blocked asset, mount/unmount memory).
 - [ ] The poster is rendered from the current scene, not a stale one.
 
+Example: `references/ui/templates/scene.html`: the strict 3D template itself (fm new scene): poster first, a text twin, every survival clause. The site's Gallery shows it.
+
 ## UI contract
 
 - motion: the scene holds a still frame under reduced motion, or the poster stands in.
