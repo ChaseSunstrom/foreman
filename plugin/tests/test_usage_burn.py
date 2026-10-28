@@ -46,6 +46,7 @@ class UsageBurn(ForemanTestCase):
         fmcost.write_burn([("context per reply averages 300k", "sessions compact late")])
         import fmdoctor
         self.assertEqual(fmdoctor.check_usage_burn([("x", "y")]).status, "WARN")
+        self.assertIn("/usage", fmdoctor.check_usage_burn([("x", "y")]).detail)  # T-1797: CC 2.1.311 f applies fixes
         self.assertEqual(fmdoctor.check_usage_burn([]).status, "PASS")
         self.assertIn("averages 300k", fmcost.burn_line())
 

@@ -256,12 +256,24 @@ class Checks(unittest.TestCase):
         self.write("plug/skills/y/SKILL.md", "no frontmatter here\n")
         self.assertIn("y", d.check_frontmatter(root).detail)
         # T-0768: Claude Code ignores a mistyped effort, maxTurns or omitClaudeMd, so the saving silently never happens
-        for field in ("effort: lo", "maxTurns: 0", "omitClaudeMd: yes"):
+        for field in ("effort: lo", "maxTurns: 0", "omitClaudeMd: yes", "autoCompactWindow: 150k",
+                      "autoCompactWindow: ²"):  # isdigit() but int() raises
             self.write("plug/agents/a.md", f"---\nname: a\ndescription: agent\ntools: Read\n{field}\n---\nbody\n")
             self.assertIn(field.split(":")[0], d.check_frontmatter(root).detail, field)
         self.write("plug/agents/a.md", "---\nname: a\ndescription: agent\ntools: Read\neffort: low\nmaxTurns: 20\n"
-                                       "omitClaudeMd: true\n---\nbody\n")
+                                       "omitClaudeMd: true\nautoCompactWindow: 150000\n---\nbody\n")
         self.assertNotIn("a.md", d.check_frontmatter(root).detail)
+
+    def test_every_sonnet_agent_compacts_before_foremans_200k_window(self):
+        # T-1797: from CC 2.1.312 a subagent's autoCompactWindow lowers CLAUDE_CODE_AUTO_COMPACT_WINDOW (200k, T-1796);
+        # a 40-turn Sonnet reviewer otherwise re-reads up to 200k a reply. Haiku's 20-turn scout never gets there.
+        folder = os.path.join(d.PLUGIN, "agents")
+        for f in sorted(os.listdir(folder)):
+            with open(os.path.join(folder, f), encoding="utf-8") as fh:
+                head = fh.read().split("\n---", 1)[0]
+            if "model: haiku" not in head:
+                self.assertRegex(head, r"(?m)^autoCompactWindow: 150000$", f)
+        self.assertIn("agent autoCompactWindow", [x[0] for x in d.CC_FEATURES if x[1] == (2, 1, 312)])
 
     def test_a_skill_that_breaks_the_agent_skills_spec_fails(self):
         # T-1396: name 1-64 lowercase letters, digits and single hyphens, equal to its folder; description 1-1024
