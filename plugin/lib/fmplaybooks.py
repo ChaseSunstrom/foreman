@@ -25,6 +25,8 @@ the checkout (no link anywhere under it), cut at OVERLAY_MAX, control characters
 alone, and shown as one blockquote under a provenance line, marked (uncommitted) when it differs from HEAD: text an
 injected session planted can't pass for Foreman's. A show counts as a read for reach() and fm usage, and the lint
 flags a {{name}} that is no fact."""
+import hashlib
+import math
 import json
 import os
 import re
@@ -36,6 +38,7 @@ import sys
 import tempfile
 import textwrap
 import time
+from array import array
 
 import fmcore as c
 
@@ -254,7 +257,7 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
     if bad:
         out.append(bad)
     cards = card_names if card_names is not None else _cards()
-    titles, shingles, snippets = {}, {}, []
+    titles, snippets = {}, []
     for rel in _playbooks(root):
         text = _read(os.path.join(root, rel))
         blocks, prose = _blocks(text)
@@ -262,7 +265,6 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
         if title in titles:
             out.append(f"{rel}: same title as {titles[title]} ({title!r})")
         titles.setdefault(title, rel)
-        shingles[rel] = _shingles(text)
         head = prose[:next((i for i, x in enumerate(prose) if x.startswith("## ")), len(prose))]
         if not any(_USE.search(x) for x in head):
             out.append(f"{rel}: no Use-when line above its first section ('Use when …')")
@@ -295,13 +297,9 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
                 except (SyntaxError, ValueError) as e:  # ValueError: a NUL byte in the block
                     out.append(f"{rel}:{n}: python no-run block doesn't parse: {getattr(e, 'msg', e)} "
                                f"(its line {getattr(e, 'lineno', '?')})")
-    books = sorted(shingles)
-    for i, a in enumerate(books):
-        for b in books[i + 1:]:
-            union = len(shingles[a] | shingles[b])
-            share = len(shingles[a] & shingles[b]) / union if union else 0
-            if share > DUP:
-                out.append(f"{b}: shares {share:.0%} of its wording with {a}: merge them or cut one")
+    for a, b, share in similar(root, DUP):  # T-1834: same-stage books sharing a title word, not every pair
+        if share > DUP:
+            out.append(f"{b}: shares {share:.0%} of its wording with {a}: merge them or cut one")
     for rel, n, body in snippets if run else ():
         if sys.version_info < (3, 14) and "__future__" not in body:  # T-1799: 3.14's lazy annotations, on 3.12 too
             body = "from __future__ import annotations\n" + body
@@ -351,20 +349,34 @@ def coverage_text(cov):
     return "\n".join(head + rows + ["", "playbooks in a stage naming a card of that stack: · none  ░ 1  ▒ 2  ▓ 3  █ 4+"])
 
 
+def _scan(root, days, routes=False):
+    """One pass over the event logs (the rotated ones too): ({book: reads}, {book routed to}, days covered) in the
+    window, from every project. T-1834: reach() and unused() share it, so a report reads the logs once."""
+    books, read, routed, stages, oldest = _playbooks(root), {}, set(), {}, None
+    since = c.iso(time.time() - days * 86400)
+    for e in c.global_events(""):
+        ts = str(e.get("ts") or "")
+        oldest = ts if ts and (oldest is None or ts < oldest) else oldest
+        if ts < since:
+            continue
+        if hit := _book_of(e, books):
+            read[hit] = read.get(hit, 0) + 1
+        m = _ROUTE.search(str(e.get("target") or "")) if routes and e.get("tool") == "Bash" else None
+        if m:  # route() walks the library: once per stage, not per event
+            if m.group(1) not in stages:
+                stages[m.group(1)] = (route(m.group(1), root) or (0, 0, []))[2]
+            routed.update(stages[m.group(1)])
+    ts = c.parse_ts(oldest) if oldest and oldest > since else None
+    covers = 0 if oldest is None else round((time.time() - ts.timestamp()) / 86400, 1) if ts else days
+    return read, routed, covers
+
+
 def reach(root=ROOT, days=REACH_DAYS):
     """{days, covers, read: {path: reads}, unread: [path]}: Read events of each playbook in the window, from every
     project; covers is the days the event log actually spans, when that is fewer."""
-    books, read, oldest = _playbooks(root), {}, None
-    since = c.iso(time.time() - days * 86400)
-    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
-        ts = str(e.get("ts") or "")
-        oldest = ts if ts and (oldest is None or ts < oldest) else oldest
-        if ts >= since and (hit := _book_of(e, books)):
-            read[hit] = read.get(hit, 0) + 1
-    ts = c.parse_ts(oldest) if oldest and oldest > since else None
-    covers = 0 if oldest is None else round((time.time() - ts.timestamp()) / 86400, 1) if ts else days
+    read, _, covers = _scan(root, days)
     return {"days": days, "covers": covers,
-            "read": read, "unread": [b for b in books if b not in read]}
+            "read": read, "unread": [b for b in _playbooks(root) if b not in read]}
 
 
 def _book_of(e, books):
@@ -374,6 +386,9 @@ def _book_of(e, books):
         return None
     if e.get("tool") == "Bash":
         return shown(target, books)
+    if e.get("tool") == "Read" and e.get("book"):  # T-1702: the hook keeps the book's name when the target is cut
+        key = f"references/{e['book']}.md"
+        return key if key in books else None
     if e.get("tool") != "Read" or _MARK not in target:
         return None
     key = "references/" + target.split(_MARK, 1)[1]
@@ -385,10 +400,11 @@ def _book_of(e, books):
 def followed(p, b, root=ROOT):
     """T-1834: [{playbook, followed, steps}] for each playbook this task loaded since its first focus (this project's
     tool events), with score()'s share of its steps the run followed. Empty when it loaded none: no scoring then."""
-    start = min((e["ts"] for e in c.ledger_tail(p, c.TASK_WINDOW) if e.get("task") == b.id and e.get("event") == "focus"
+    start = min((e["ts"] for e in c.ledger_tail(p, 5000) if e.get("task") == b.id and e.get("event") == "focus"
                  and e.get("ts")), default=str(b.meta.get("created") or ""))
     books, loaded = listed(root), []  # an index loads too, and score() counts words over all of them
-    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
+    # ponytail: the live log's last 50,000 events; a task that outlives a rotation or that many events loses its early loads
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 50000):
         if str(e.get("ts") or "") >= start and e.get("project") == p.slug and (hit := _book_of(e, books)):
             if hit not in loaded:
                 loaded.append(hit)
@@ -402,27 +418,26 @@ def followed(p, b, root=ROOT):
 
 
 def record_use(p, b, root=ROOT):
-    """T-1834: one playbook_use ledger event for a closed task: the books it loaded and the share it followed. Called
-    from the close's derived-index step, which warns instead of failing the close."""
-    got = followed(p, b, root)
-    if got:
-        c.log_event(p, "playbook_use", task=b.id, data={"books": got})
+    """T-1834: one playbook_use ledger event for a closed task: the books it loaded and the share it followed. Never
+    fails the close: a problem is a warning."""
+    try:
+        got = followed(p, b, root)
+        if got:
+            c.log_event(p, "playbook_use", task=b.id, data={"books": got})
+    except Exception as e:
+        print(f"fm: warning: playbook use not recorded: {e}", file=sys.stderr)
 
 
 def unused(root=ROOT, days=REACH_DAYS, p=None):
-    """T-1834: drop candidates, the playbooks with no read, route hit or followed record (this project's ledger) in the
-    window. ponytail: the event log is every project's but the followed records are this one's; only ever names."""
+    """T-1834: (drop candidates, days the logs cover): the playbooks with no read, route hit or followed record (this
+    project's ledger) in the window. ponytail: the event log is every project's but the followed records are this
+    one's; only ever names."""
     since = c.iso(time.time() - days * 86400)
-    used, stages = set(reach(root, days)["read"]), {}
-    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
-        m = _ROUTE.search(str(e.get("target") or "")) if e.get("tool") == "Bash" and str(e.get("ts") or "") >= since else None
-        if m:  # route() walks the library: once per stage, not per event
-            if m.group(1) not in stages:
-                stages[m.group(1)] = (route(m.group(1), root) or (0, 0, []))[2]
-            used.update(stages[m.group(1)])
+    used, routed, covers = _scan(root, days, routes=True)
+    used = set(used) | routed
     for e in c.ledger_events(p, ("playbook_use",), since=since) if p else ():
         used.update(x.get("playbook") for x in (e.get("data") or {}).get("books") or [])
-    return [b for b in _playbooks(root) if b not in used]
+    return [b for b in _playbooks(root) if b not in used], covers
 
 
 def overlap(a, b):
@@ -432,26 +447,31 @@ def overlap(a, b):
 
 
 def similar(root=ROOT, least=NEAR):
-    """T-1834: merge candidates, [(a, b, jaccard)] with a < b, overlap at least `least`. Only books of one stage that
-    share a title word are compared, and sets whose sizes differ by more than 2x can't reach 0.5 (skipped), so
-    20,000 books don't make 200M pairs. ponytail: a stage's books sharing a very common title word still compare
-    pairwise; cap or index by shingle if one bucket passes a few thousand."""
-    bucket, sh = {}, {}
+    """T-1834: merge candidates, [(a, b, jaccard)] with a < b, overlap at least `least`. Exact, not sampled: a pair at
+    Jaccard >= least must share one of the first n - ceil(least*n) + 1 shingle hashes (in hash order) of the smaller
+    book (prefix filtering), so only books meeting on such a hash are compared, each pair once, and sets whose sizes
+    differ by more than 1/least can't reach it (skipped). A book is its sorted shingle hashes (8 bytes each) and only
+    pairs at `least` are kept. ponytail: boilerplate shared by thousands of books fills a posting list; skip those
+    hashes by document frequency if a library ever does that."""
+    sh, post = {}, {}
     for rel in _playbooks(root):
-        text = _read(os.path.join(root, rel))
-        sh[rel] = _shingles(text)
-        title = next((x[2:] for x in text.splitlines() if x.startswith("# ")), "").lower()
-        for w in set(re.findall(r"[a-z]{4,}", title)):
-            bucket.setdefault((rel.split("/")[1], w), []).append(rel)
-    out = {}
-    for rels in bucket.values():
+        sh[rel] = array("q", sorted({hash(t) for t in _shingles(_read(os.path.join(root, rel)))}))
+        n = len(sh[rel])
+        for t in sh[rel][:n - math.ceil(least * n) + 1]:
+            post.setdefault(t, []).append(rel)
+    seen, out = set(), []
+    for rels in post.values():
         for i, a in enumerate(rels):
             for b in rels[i + 1:]:
                 x, y = sorted((a, b))
-                if (x, y) in out or min(len(sh[x]), len(sh[y])) < least * max(len(sh[x]), len(sh[y])):
+                if (x, y) in seen:
                     continue
-                out[x, y] = overlap(sh[x], sh[y])
-    return sorted((a, b, round(j, 2)) for (a, b), j in out.items() if j >= least)
+                seen.add((x, y))
+                if min(len(sh[x]), len(sh[y])) < least * max(len(sh[x]), len(sh[y])):
+                    continue
+                if (j := overlap(set(sh[x]), set(sh[y]))) >= least:
+                    out.append((x, y, j))
+    return sorted(out)
 
 
 def nearest(text, root=ROOT):
@@ -716,11 +736,34 @@ def look_first(text, b):
 
 
 def _doc_freq(books, root=ROOT):
-    """{word: playbooks using it} over these books."""
+    """{word: playbooks using it} over these books. T-1834: kept under the state dir while no book's size or mtime
+    changes, so a close opens only the books it loaded, not the library (20,000 opens). ponytail: one edited book
+    counts everything again; per-book word sets would recount only it."""
+    stats = []
+    for rel in books:
+        try:
+            st = os.stat(os.path.join(root, rel))
+            stats.append((rel, st.st_size, st.st_mtime_ns))
+        except OSError:
+            stats.append((rel, 0, 0))
+    sig = hashlib.sha1(json.dumps([root, stats]).encode()).hexdigest()
+    path = os.path.join(c.state_dir(), "playbook_df.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            kept = json.load(f)
+        if isinstance(kept, dict) and kept.get("sig") == sig and isinstance(kept.get("df"), dict):
+            return kept["df"]
+    except (OSError, ValueError):
+        pass
     seen = {}
     for rel in books:
         for w in set(_WORD.findall(_read(os.path.join(root, rel)).lower())):
             seen[w] = seen.get(w, 0) + 1
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        c.write_atomic(path, json.dumps({"sig": sig, "df": seen}))
+    except OSError:
+        pass  # a read-only state dir only costs the next close the recount
     return seen
 
 
@@ -804,10 +847,14 @@ def cmd_show(args):
     import fmcli
     if args.action == "coverage" and args.unused:  # T-1834: who earns a place; only ever names, never deletes
         p = fmcli.resolve(args, create=False) if getattr(args, "project", None) else c.find_project(os.getcwd())
-        days = args.days or REACH_DAYS
-        drop, merge = unused(ROOT, days, p), similar(ROOT)
-        return fmcli.out(args, {"days": days, "unused": drop, "similar": merge}, (
-            f"Drop candidates: no read, route hit or followed record in {days} days ({len(drop)})"
+        days = REACH_DAYS if args.days is None else args.days
+        if days < 1:
+            raise fmcli.UsageError("fm playbooks coverage --unused --days takes a whole number of days, 1 or more")
+        (drop, covers), merge = unused(ROOT, days, p), [(a, b, round(j, 2)) for a, b, j in similar(ROOT)]
+        return fmcli.out(args, {"days": days, "covers": covers, "unused": drop, "similar": merge}, (
+            (f"Note: the event log covers only {covers:g} of the {days} days, so a book read earlier shows as unused\n"
+             if covers < days else "")
+            + f"Drop candidates: no read, route hit or followed record in {days} days ({len(drop)})"
             + "".join(f"\n  {x}" for x in drop[:SHOWN]) + (f"\n  … and {len(drop) - SHOWN} more (--json lists them all)"
                                                            if len(drop) > SHOWN else "")
             + f"\nMerge candidates: {int(NEAR * 100)}%+ of their wording shared ({len(merge)})"

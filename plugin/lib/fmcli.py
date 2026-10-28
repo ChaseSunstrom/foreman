@@ -771,6 +771,11 @@ def cmd_task(args):
                                                         b.section("Lessons").splitlines() if x.strip()), ""))
         except Exception as e:  # the task is done already; a derived index must not make that look failed
             print(f"fm: warning: tripwires not updated: {e}", file=sys.stderr)
+        try:
+            import fmplaybooks
+            fmplaybooks.record_use(p, b)  # T-1834: the books this task loaded, with the share followed
+        except Exception as e:
+            print(f"fm: warning: playbook use not recorded: {e}", file=sys.stderr)
         warns = _close_warnings(p, b, files)  # T-0672: seen, never a refusal
         if warns:  # T-0956: the verdict first, then the details
             kinds = dict.fromkeys(_warning_kind(w) for w in warns)

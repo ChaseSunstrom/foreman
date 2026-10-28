@@ -8,7 +8,6 @@ import math
 import os
 import re
 import subprocess
-import sys
 import time
 
 import fmcore as c
@@ -904,14 +903,7 @@ def _me(p):
 
 
 def share_lesson(p, b, lesson):
-    """Add a finished task's lesson to the shared file when this project opted in (fm share on). T-1834: the close's
-    one derived-index call also records which playbooks the task loaded (ponytail: it rides here so fmcli.py stays
-    untouched; give it its own call at the close when that file is quiet)."""
-    try:
-        import fmplaybooks
-        fmplaybooks.record_use(p, b)
-    except Exception as e:  # the lesson below still lands
-        print(f"fm: warning: playbook use not recorded: {e}", file=sys.stderr)
+    """Add a finished task's lesson to the shared file when this project opted in (fm share on)."""
     if not c.read_meta(p).get("share_lessons") or not lesson or lesson.lower().startswith("none"):
         return
     rec = {"lesson": c.fit(private(lesson, p), 300), "title": c.fit(private(b.title, p), 120), "type": b.type,

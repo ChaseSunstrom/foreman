@@ -5,6 +5,7 @@ import json
 import os
 import time
 import unittest
+from unittest import mock
 
 from helpers import ForemanTestCase
 from test_playbook_machinery import put
@@ -72,6 +73,52 @@ class Use(ForemanTestCase):
         rows = got[0]["data"]["books"]
         self.assertEqual([r["playbook"] for r in rows], ["references/perf/delta.md"])
         self.assertEqual((rows[0]["followed"], rows[0]["steps"]), (1, 1))
+
+    def test_a_close_reads_only_the_books_it_loaded(self):
+        tid = self.close("Fix the slow table", "check the missing index on the slow table")
+        self.event("fm playbooks show perf/delta")
+        b = c.find_brief(self.p, tid)
+        pb.followed(self.p, b, self.lib)  # cold: the word counts of the whole library, kept under the state dir
+        reads = []
+        real = pb._read
+        with mock.patch.object(pb, "_read", lambda path, *a: (reads.append(os.path.basename(path)), real(path, *a))[1]):
+            got = pb.followed(self.p, b, self.lib)
+            self.assertEqual((reads, got[0]["followed"]), (["delta.md"], 1))
+            put(self.lib, "references/clean/gamma.md", "# Gamma\n\nUse when x.\n\n1. Other.\n")  # a library edit
+            reads.clear()
+            pb.followed(self.p, b, self.lib)
+        self.assertEqual(len(reads), 5, "a changed library counts its words again")
+
+    def test_a_read_event_names_its_book_when_the_target_was_cut(self):
+        os.makedirs(c.state_dir(), exist_ok=True)
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": c.iso(time.time()), "kind": "tool", "tool": "Read", "project": "any",
+                                "target": "/home/u/lanes/agent-1/plugin/skills/playbooks/refe", "book": "perf/delta"}) + "\n")
+        self.assertEqual(pb.reach(self.lib, days=60)["read"], {"references/perf/delta.md": 1})
+
+    def test_unused_reads_rotated_logs_and_says_when_the_log_is_short(self):
+        logs = os.path.join(c.state_dir(), "logs")
+        os.makedirs(logs)
+        with open(os.path.join(logs, "events-20260101.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": c.iso(time.time() - 30 * 86400), "kind": "tool", "tool": "Bash", "project": "x",
+                                "session_id": "s", "target": "fm playbooks show delta"}) + "\n")
+        self.event("fm playbooks show gamma", ts=time.time() - 86400)
+        got = json.loads(self.run_fm("coverage", "--unused", "--json").stdout)
+        self.assertNotIn("references/perf/delta.md", got["unused"])
+        self.assertTrue(29 <= got["covers"] <= 31, got["covers"])
+        self.assertIn("covers only", self.run_fm("coverage", "--unused").stdout)
+
+    def test_a_window_under_a_day_is_refused(self):
+        for days in ("0", "-5"):
+            got = self.run_fm("coverage", "--unused", "--days", days)
+            self.assertNotEqual(got.returncode, 0, days)
+            self.assertIn("--days", got.stderr)
+
+    def test_a_pair_sharing_several_title_words_is_compared_once(self):
+        with mock.patch.object(pb, "overlap", wraps=pb.overlap) as m:
+            got = pb.similar(self.lib)
+        self.assertEqual(m.call_count, 1)
+        self.assertEqual([(a, b) for a, b, _ in got], [("references/fix/alpha-copy.md", "references/fix/alpha.md")])
 
     def test_close_without_a_playbook_records_nothing(self):
         tid = self.close("Fix it", "profile the parser warmup")
