@@ -1467,9 +1467,20 @@ def _write_out(args, text, what="FILE"):
     return out
 
 
+_READS = {"--balls": "metaballs", "--grid": "metaballs", "--seed": "metaballs", "--count": "lookbook",
+          "--days": "terrain airlock", "--hud": "compile", "--to": "compile", "--tag": "compile", "--frames": "turntable",
+          "--cols": "cells", "--turn": "cells", "--seconds": "soak", "--budget-ms": "soak", "--size": "shade",
+          "--time": "shade", "--set": "shade"}  # T-1855: which actions read each flag; --out is everyone's
+
+
 def cmd_scene(args):
     import sys
     import fmcli
+    for flag in sorted({t.partition("=")[0] for t in fmcli._ARGV} & set(_READS)):
+        if args.action not in _READS[flag].split():
+            print(f"fm: scene: {args.action} doesn't read {flag} (only {', '.join(_READS[flag].split())} do)",
+                  file=sys.stderr)
+            return 2
     if args.action in ("metaballs", "terrain", "airlock", "bench", "lookbook"):  # T-1848, T-1851, T-1849, T-1850, T-1852
         if args.path:
             print(f"fm: scene: {args.action} takes no FILE (got {args.path}); write it with --out", file=sys.stderr)

@@ -754,6 +754,13 @@ class Metaballs(ForemanTestCase):
             r = self.fm("scene", action, *(["x.json"] if action == "metaballs" else []), check=False)
             self.assertEqual((r.returncode, "Traceback" in r.stderr), (2, False), r.stderr)
 
+    def test_a_flag_the_action_does_not_read_is_refused_naming_who_reads_it(self):
+        # T-1855: metaballs --days used to run and drop --days without a word
+        for args, said in ((["metaballs", "--days", "5"], "terrain, airlock"), (["terrain", "--balls=3"], "metaballs"),
+                           (["compile", "x.json", "--size", "2x2"], "shade")):
+            r = self.fm("scene", *args, check=False)
+            self.assertEqual((r.returncode, said in r.stderr), (2, True), r.stderr)
+
 
 class Airlock(ForemanTestCase):
     """T-1849: fm scene airlock, what the guard held and let through as boxes either side of a gate."""
