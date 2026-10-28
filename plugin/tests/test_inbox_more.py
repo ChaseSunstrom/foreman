@@ -7,6 +7,7 @@ import http.client
 import io
 import json
 import os
+import subprocess
 import threading
 import urllib.parse
 from unittest import mock
@@ -245,7 +246,8 @@ class Ticket(_Inbox):
         (b2, new), _ = self.fetch("https://acme.atlassian.net/browse/PROJ-12", JIRA, issue)
         self.assertEqual((b2.id, new), (b.id, False), "the same issue again: the brief it already made")
         edited = {"fields": {**issue["fields"], "summary": "Export crashes on empty and huge reports"}}
-        self.assertTrue(self.fetch("PROJ-12", JIRA, edited)[0][1], "an edited ticket: a new brief")
+        (b4, how), _ = self.fetch("PROJ-12", JIRA, edited)  # T-1869: its unstarted brief, rewritten
+        self.assertEqual((b4.id, how, b4.title), (b.id, "refreshed", "PROJ-12 Export crashes on empty and huge reports"))
         sent = []
         with self.assertRaises(fmcli.UsageError) as e, mock.patch.object(fmmodels._OPENER, "open", sent.append):
             with mock.patch.dict(os.environ, {**JIRA, "JIRA_URL": "https://u:pw@acme.atlassian.net/"}):  # pragma: allowlist secret
@@ -332,3 +334,97 @@ class App(_Inbox):
     def test_claude_code_has_the_reset(self):
         with open(os.path.join(os.path.dirname(fmeco.__file__), "..", "commands", "backlog.md")) as f:
             self.assertIn("fm inbox prefer --reset", f.read())
+
+
+GH = {"number": 7, "title": "Export drops the header row", "body": "- [ ] the CSV keeps its header",
+      "labels": [{"name": "bug"}], "url": "https://github.com/acme/app/issues/7"}
+
+
+class GitHubTicket(_Inbox):
+    """T-1869: a GitHub issue (gh:OWNER/REPO#N, its URL, or #N in this repo) is asked of the user's own gh, and a
+    changed issue rewrites the brief it made while that brief is unstarted."""
+    def gh(self, ref, answer, code=0, fn=fmeco.inbox_ticket):
+        calls = []
+
+        def run(cmd, **kw):
+            calls.append((cmd, kw))
+            if isinstance(answer, Exception):
+                raise answer
+            return subprocess.CompletedProcess(cmd, code, answer if isinstance(answer, str) else json.dumps(answer),
+                                               "HTTP 404: no such issue")
+        with mock.patch.object(fmeco.subprocess, "run", run):
+            return fn(self.p, ref), calls
+
+    def ticket(self, ref, answer, *flags):
+        with mock.patch.object(fmeco.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
+                cmd, 0, json.dumps(answer), "")), mock.patch.object(fmcli, "resolve", return_value=self.p), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            fmeco.cmd_inbox(fmcli.build_parser().parse_args(["inbox", "ticket", *ref, *flags]))
+        return out.getvalue()
+
+    def test_each_form_asks_gh_and_one_issue_is_one_brief(self):
+        (b, new), calls = self.gh("gh:acme/app#7", GH)
+        cmd, kw = calls[0]
+        self.assertEqual((cmd[:4], cmd[-1], kw["cwd"]), (["gh", "issue", "view", "7"], "--repo=acme/app", self.p.root))
+        self.assertEqual((new, b.type, b.title, len(b.acceptance())), (True, "FIX", "GitHub acme/app#7 Export drops the header row", 1))
+        self.assertIn("ticket github acme/app#7 ", b.section("Raw request"))
+        for ref in ("https://github.com/acme/app/issues/7", "#7"):
+            (b2, new), calls = self.gh(ref, GH)
+            self.assertEqual((b2.id, new), (b.id, False), ref)
+        self.assertFalse([x for x in calls[0][0] if x.startswith("--repo")], "#7: this repo's GitHub, as gh finds it")
+        self.assertIsNone(fmeco.ticket_ref("gh:-x/app#7"))
+        self.assertEqual(len(c.load_briefs(self.p)), 1)
+
+    def test_one_issue_is_one_brief_whichever_of_fm_inbox_gh_and_ticket_came_first(self):
+        d, _ = self.gh("acme/app", [GH], fn=fmeco.inbox_gh)
+        (b, new), _ = self.gh("#7", {**GH, "body": "edited since"})
+        self.assertEqual((b.id, new), (d["captured"][0], False), "fm inbox gh's brief, kept as it is")
+        other = {**GH, "number": 8, "url": "https://github.com/acme/app/issues/8"}
+        (b8, new), calls = self.gh("https://github.com/acme/app/issues/8#issuecomment-1", other)
+        self.assertEqual((new, calls[0][0][3]), (True, "8"), "a comment link names its issue")
+        d, _ = self.gh("acme/app", [GH, other], fn=fmeco.inbox_gh)
+        self.assertEqual((d["captured"], sorted(d["existing"])), ([], sorted([b.id, b8.id])))
+        self.assertEqual(len(c.load_briefs(self.p)), 2)
+
+    def test_the_text_already_held_is_that_brief_not_a_sibling_rewritten(self):
+        (a, _), _ = self.gh("#7", GH)
+        fmcli.mutate(self.p, a.id, lambda x: x.meta.update(status="active"), "test")
+        (b, new), _ = self.gh("#7", {**GH, "title": "Export drops rows"})
+        fmcli.mutate(self.p, a.id, lambda x: x.meta.update(status="planned"), "test")  # un-started since
+        (b2, how), _ = self.gh("#7", {**GH, "title": "Export drops rows"})
+        self.assertEqual((new, b2.id, how), (True, b.id, False))
+        self.assertIn("header row", c.find_brief(self.p, a.id).title, "the sibling keeps its own text")
+
+    def test_a_changed_issue_rewrites_an_unstarted_brief_and_a_started_one_gets_a_new_one(self):
+        (b, _), _ = self.gh("#7", GH)
+        edited = {**GH, "title": "Export drops header and footer", "body": "- [ ] header kept\n- [ ] footer kept"}
+        (b2, how), _ = self.gh("#7", edited)
+        self.assertEqual((b2.id, how, b2.title, len(b2.acceptance())), (b.id, "refreshed", "GitHub acme/app#7 Export drops header and footer", 2))
+        self.assertNotIn("keeps its header", b2.section("Raw request"))
+        fmcli.mutate(self.p, b.id, lambda x: x.meta.update(status="planned"), "test")
+        (b3, how), _ = self.gh("#7", {**edited, "title": "Export drops rows", "body": "- [ ] rows kept"})
+        self.assertEqual((b3.id, how, b3.title, len(b3.acceptance())), (b.id, "refreshed", "GitHub acme/app#7 Export drops rows", 2))
+        self.assertIn("the plan stays", b3.section("Log"))
+        fmcli.mutate(self.p, b.id, lambda x: x.meta.update(status="active"), "test")
+        out = self.ticket(["#7"], {**GH, "title": "Export drops everything"})
+        self.assertIn("Ticket captured", out, "a started brief keeps its own; the change is a new one")
+        new = c.load_briefs(self.p)[-1]
+        self.assertIn("Ticket refreshed", self.ticket(["#7"], {**GH, "title": "Export drops it all"}))
+        d = json.loads(self.ticket(["#7"], {**GH, "title": "Export drops it all"}, "--json"))
+        self.assertEqual((d["id"], d["new"], d["refreshed"]), (new.id, False, False), "new stays a yes/no")
+        for x in (b.id, new.id):
+            fmcli.mutate(self.p, x, lambda x: x.meta.update(status="done"), "test")
+        self.assertIn("Ticket captured", self.ticket(["#7"], {**GH, "title": "Export drops it again"}), "closed too")
+        self.assertEqual(len(c.load_briefs(self.p, include_archive=True)), 3)
+        with self.assertRaises(fmcli.UsageError) as e, mock.patch.object(fmcli, "resolve", return_value=self.p):
+            fmeco.cmd_inbox(fmcli.build_parser().parse_args(["inbox", "ticket"]))  # bash ate an unquoted #7
+        self.assertIn("'#7'", str(e.exception))
+
+    def test_each_gh_failure_is_said_and_nothing_is_made(self):
+        for answer, code, said in ((FileNotFoundError(), 0, "gh isn't installed"),
+                                   (subprocess.TimeoutExpired("gh", 60), 0, "timed out"),
+                                   ("", 1, "gh issue view failed: HTTP 404"), ("<html>", 0, "didn't return JSON")):
+            with self.assertRaises(fmcli.UsageError, msg=said) as e:
+                self.gh("gh:acme/app#7", answer, code)
+            self.assertIn(said, str(e.exception))
+        self.assertEqual(c.load_briefs(self.p), [])
