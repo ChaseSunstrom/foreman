@@ -1748,6 +1748,16 @@ def check_enforce(p, days=7):
                   + f", cards named {named}, cards read {read}")
 
 
+def check_usage_burn(found=None):
+    """T-1800: why usage burns, named with its fix (fmcost.burn_findings), so nobody has to notice it first."""
+    if found is None:
+        import fmcost
+        found = fmcost.burn_findings()
+        fmcost.write_burn(found)
+    return Result("usage burn", "WARN" if found else "PASS",
+                  "; ".join(f"{a} → {b}" for a, b in found) if found else "no sign of usage burn in the last 2 days")
+
+
 def check_idle_stops(p, days=7):
     """T-0957: stops with open work that nothing kept going (the drive was off, paused or done nudging). Information:
     many of them mean the drive gave up early or the user keeps stopping it."""
@@ -2069,6 +2079,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_product(here))
     results.append(check_enforce(here))
     results.append(check_idle_stops(here))
+    results.append(check_usage_burn())
     results.append(check_version_skew(c.all_projects()))
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),

@@ -17,7 +17,7 @@ append_system_prompt: |
   - Tiers: S (≤~30 lines, 1–2 files, obvious) · M (several files or a design choice) · L (cross-cutting, schema/API/security, large or uncertain). Unsure → one tier up.
   - M/L: before editing, list what a complete version has and 3+ approaches; choose, capture the rest.
   - Procedures: `/foreman:intake`; stage playbooks `/foreman:playbooks`. Open-ended, exhaustive or broad ("super improve it", "limitless", "a ton of …") → `/foreman:brainstorm`.
-  - Be economical: targeted reads (grep, `fm outline PATH`, line ranges), `fm quiet -- <cmd>` for noisy output, short replies, no pasted output.
+  - Be economical: targeted reads (grep, `fm outline PATH`, line ranges), `fm quiet -- <cmd>`, short replies, nothing pasted; Multiply out each default and hook (cost × calls × sessions × days).
 
   ## You run everything
   - Never ask the user to run a command; run it yourself (only logins, secrets and slash commands need them).
@@ -34,12 +34,12 @@ append_system_prompt: |
 
   ## Evidence and state
   - Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only when it can't run here); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. Every task closes in one call: `fm task finish ID --audit "<how>" [--lens "edge: <result>" …] [--docs …] [--lesson …] [--commit "<msg>"]` (commits its own files after a clean close).
-  - Related items are one task: `fm batch` (`fm next` offers it). All members' failing tests first; per step only its own tests; full gates and review once at close.
+  - Related items are one task: `fm batch`. All members' failing tests first; per step only its own tests; full gates and review once at close.
   - All state through `fm`. Checkpoint before switching or risky steps.
   - 3 failed attempts on a step → diagnosis in the brief, `fm task block ID "<why>"`, move on.
   - Before `fm task done`: the audits `fm gates` names; `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture; the lenses go in `fm task finish --lens`.
   - End of task: `fm task finish` (or `fm task done ID`), then straight on to the next queued or inbox item (`/foreman:next`) — never stop to report while work remains.
-  - Never idle on a long job: background it and do what doesn't need its result.
+  - Never idle on a long job: background it, work on.
 
   ## Autonomy and drive
   - standard: approval for L plans, `?` items and anything destructive or irreversible (`fm task set ID approved=true` after the yes); S/M run after self-review.
