@@ -3517,12 +3517,16 @@ _REGEX_EXEC = re.compile(r"/(?:\\.|[^/\n])+/[a-z]*\.exec\(")  # T-0118: a JS reg
 _MANIFEST = re.compile(r"(^|/)(package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|requirements[^/]*\.txt|pyproject\.toml|"
                        r"poetry\.lock|uv\.lock|Pipfile(\.lock)?|Cargo\.(toml|lock)|go\.(mod|sum)|Gemfile(\.lock)?|"
                        r"composer\.(json|lock)|pom\.xml|build\.gradle(\.kts)?)$")  # supply chain: new code runs here
+# T-0885, T-1818: code that runs outside this diff's tests: CI (with its secrets), installs, builds, every tool call
+_RUNS_ELSEWHERE = re.compile(r"(^|/)(\.github/workflows/|\.gitlab-ci\.yml$|install[^/]*\.sh$|Dockerfile|Makefile$|"
+                             r"setup\.py$|hooks/hooks\.json$|\.claude/settings[^/]*\.json$|\.pre-commit-config\.yaml$|"
+                             r"\.husky/)")
 
 
 def sensitive(files, diff=""):
     """Why a change needs the adversary lens whatever its tier (T-0049): auth, crypto, secrets, exec or
     deserialization in the paths it touched or the lines it added. [] when none."""
-    why = [f for f in files if _sensitive_path(f) or _MANIFEST.search(f)][:5]
+    why = [f for f in files if _sensitive_path(f) or _MANIFEST.search(f) or _RUNS_ELSEWHERE.search(f)][:5]
     blocks = re.split(r"(?m)^(?=diff --git )", diff)
     if any(b.startswith("diff --git ") for b in blocks):  # docs that name a pattern aren't code (T-0287); all else is
         blocks = [b for b in blocks if not re.search(r"(?i)\.(md|markdown|rst|txt|adoc)$", (
