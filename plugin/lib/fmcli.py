@@ -1168,6 +1168,11 @@ def task_finish(p, args):
                 print(f"Title card: {write_card(p, done)}")
             except OSError as e:
                 print(f"fm: warning: no title card ({e.strerror or e})", file=sys.stderr)
+        import fmeco
+        src = done and done.status == "done" and fmeco.closing_sha(done) and fmeco.ticket_source(done)
+        if src:  # T-1870: outward, so named here and never done unasked
+            print(f"Post it back (outward, only when wanted, once pushed): fm inbox ticket --post {b.id} — one "
+                  f"comment on {src[0]} {src[1]}")
         print(_landed(p, b))  # T-0956: the close's last line
     return rc
 
@@ -6372,6 +6377,8 @@ def _build_parser():
                    "loopback only, its URL good once (T-1858)")
     s.add_argument("--repo", metavar="OWNER/REPO", help="default: the repo gh finds here")
     s.add_argument("--limit", type=int, help="with gh (default 30), first (5) or pick (4 pairs)")
+    s.add_argument("--post", metavar="ID", help="with ticket: post done task ID's closing commit to the issue it came "
+                                                "from, as one comment (outward: only when asked, once, T-1870)")
     s = add("ci-watch", lazy("fmci", "cmd_ci_watch"), tier=("Project and settings", 930), help="after a push, poll the branch's latest CI run through gh; a "
                                                            "failure's log tail becomes a FIX brief (data), up to --max-retries; it can run "
                                                            "max-polls x interval: use run_in_background, or let fm next or a Monitor wake you")
