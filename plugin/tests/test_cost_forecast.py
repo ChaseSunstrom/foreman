@@ -159,3 +159,38 @@ class TaskCostCap(HookCase):
         self.fm("task", "set", t, "cost_cap=2M")
         self.assertIn("cost_cap 200000 → 2000000", c.find_brief(self.project(), t).section("Log"))
         self.assertRegex(self.fm("digest").stdout, rf"Cost caps raised: {t} 200k → 2\.0M")
+
+    # T-1824: fm cost names the retry tax: what a task spent between a step's failing evidence and its next pass
+    def at(self, hour):
+        return time.strftime("%Y-%m-%dT", time.gmtime(time.time() - 86400)) + f"{hour:02d}:00:00Z"
+
+    def test_retry_counts_only_turns_between_a_steps_fail_and_its_next_pass(self):
+        self.fm("init")
+        t = self.task("Current", type_="FEATURE", tier="M")
+        p = self.project()
+        ev = lambda h, step, result: {"ts": self.at(h), "task": t, "event": "evidence",  # noqa: E731
+                                      "data": {"step": step, "result": result}}
+        events = [{"ts": self.at(9), "task": t, "event": "touched"}, ev(10, 1, "✗ exit 1 · FAILED"),  # the red run
+                  ev(11, 2, "✗ exit 1 · FAILED"), ev(13, 2, "exit 0 · OK"), ev(15, 3, "✗ exit 1 · FAILED")]
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            f.writelines(json.dumps(e) + "\n" for e in events)
+        folder = fmcost.transcripts_dir(p.root)
+        os.makedirs(folder, exist_ok=True)
+        turns = [(10, 100000), (12, 50000), (14, 30000), (16, 20000)]  # 10 h: red→green's work, not a retry; 12 h: step 2's retry; 16 h: step 3's, still open
+        with open(os.path.join(folder, "s.jsonl"), "w") as f:
+            f.writelines(json.dumps({"type": "assistant", "timestamp": self.at(h).replace(":00:00", ":30:00"),
+                                     "sessionId": "s", "message": {"id": f"m{h}", "usage": {"input_tokens": n},
+                                                                   "content": []}}) + "\n" for h, n in turns)
+        d = self.fm_json("cost", "--task", t)
+        self.assertAlmostEqual(d["spent"], 200000, delta=5000)
+        self.assertAlmostEqual(d["retry"], 70000, delta=5000)
+        self.assertIn("retry 70k (35%", self.fm("cost", "--task", t).stdout)
+        self.assertIn("retry", self.fm("cost").stdout)
+        self.assertAlmostEqual(self.fm_json("cost")["retry_by_task"][t], 70000, delta=5000)
+
+    def test_a_task_that_never_failed_says_no_retry(self):
+        self.fm("init")
+        t = self.task("Current", type_="FEATURE", tier="M")
+        self.history(t)
+        self.assertEqual(self.fm_json("cost", "--task", t)["retry"], 0)
+        self.assertNotIn("retry", self.fm("cost", "--task", t).stdout)
