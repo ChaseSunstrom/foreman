@@ -127,6 +127,8 @@ Run the first probe first: it halves the search.
 | Black only in screenshot tests | headless browser without a GPU, or the capture runs before the first frame or after the buffer was cleared | run headless with a software GL backend; wait for a "first frame drawn" flag; capture with `preserveDrawingBuffer` in tests only |
 | Washed out or too dark, not black | color space mismatch | check output color space and each texture's color space against the pipeline in Light and material |
 
+Preview without a browser (T-1635): `fm scene cells scene.json [--cols 64] [--turn DEG]` prints the scene drawn by fmraster as 24-bit upper half blocks, two pixels to a cell, with no GPU. It needs a truecolor terminal; `fm scene turntable` writes the same frames as a PNG.
+
 ## Done when
 
 - [ ] The scene's job is one sentence, and a still image couldn't do it.

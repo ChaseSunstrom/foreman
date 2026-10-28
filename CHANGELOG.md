@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm scene cells scene.json` previews a scene in the terminal: fmraster draws it, and each cell shows two pixels as a 24-bit half block, so no browser or GPU is needed. `--cols` sets the width and `--turn` turns it about +Y (T-1635).
 - `fm motion compile --to lab` writes a page that plays, scrubs and edits each motion in the Motion Score (T-1626). Drag a curve's handles or use the arrow keys, change a duration, and copy the score lines under it. `fm code` takes how long its bars, counts, columns and card ring settle from the score's `fm-code-*` motions, and keeps its own timing without them. The foreman-ui pane has no duration knob to take it, so it keeps its own feed and settle timers.
 - `fm task finish` re-runs the failed command of a step whose last run was red, and closes the step if it now passes (T-1844). Before, it refused until a passing run was recorded by hand. A command stored with a secret redacted is still refused, not re-run.
 - `fm task prove` names any changed non-test file in a tests folder (a runner, a helper) that it copied onto the start tree, if the check then passes there (T-1845). If that file is the code under change, the red run goes in the Regression test section instead.
