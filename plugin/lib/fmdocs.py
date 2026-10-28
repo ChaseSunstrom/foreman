@@ -11,6 +11,9 @@ from fmtidy import dead_paths, stale_commands
 
 SKIP_DIRS = {"node_modules", "vendor", "dist", "build", "target", "venv", "__pycache__"}
 _FENCE = re.compile(r"```.*?```", re.S)
+# T-1817: paths in other trees: a stack card's are the detected project's (./gradlew), a changelog's files as they were
+_FRONT = re.compile(r"---\n(.*?)\n---\n", re.S)
+_HISTORY = re.compile(r"(?i)(changelog|changes|history|news)(\.\w+)?\.md")
 
 
 def _markdown(root):
@@ -75,6 +78,9 @@ def scan(root):
             with open(md, encoding="utf-8", errors="replace") as f:
                 text = _FENCE.sub("", f.read())
         except OSError:
+            continue
+        front = _FRONT.match(text)
+        if front and re.search(r"(?m)^detect:", front.group(1)) or _HISTORY.fullmatch(os.path.basename(md)):
             continue
         rel, here = os.path.relpath(md, root), os.path.dirname(md)
         missing = [t for t in dead_paths(text, here) if _anchored(t, root, here, tops)
