@@ -254,9 +254,12 @@ class Verbs(ForemanTestCase):
         for stage in c.SKILL_FOR:  # every stage routes somewhere real, or says it has no playbook
             r = self.run_fm("route", stage, lib=False)
             self.assertEqual(r.returncode, 0, (stage, r.stderr))
-        r = self.run_fm("route", "nosuch", lib=False)
+        r = self.run_fm("route", "nosuch", lib=False)  # T-1833: one word, no stage and no book: a typo of a stage
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("verifying", r.stderr)  # the stages it knows
+        r = self.run_fm("route", "nosuch word", lib=False)  # several words are a query: no hit is an answer
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("no playbook fits", r.stdout)
 
     def test_blame_maps_lines_to_the_tasks_that_wrote_them(self):
         put(self.lib, "references/fix/alpha.md", "# Alpha\n\nUse when.\n")
