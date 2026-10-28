@@ -486,6 +486,30 @@ class Offline(ForemanTestCase):
         p = self.fm("scene", "turntable", path, check=False)
         self.assertNotEqual(p.returncode, 0, "it writes a PNG: --out")
 
+    def test_cells_draw_the_scene_as_half_blocks(self):  # T-1635
+        lines = fmscene.cells(plate(type="plane", size=[2, 1]), cols=40)
+        self.assertEqual(len(lines), 12)  # 40 x 25 pixels, rounded down to even: 24 rows of pixels, 12 of cells
+        for ln in lines:
+            self.assertEqual(ln.count("▀"), 40)
+            self.assertTrue(ln.endswith("\x1b[0m"))
+        text = "".join(lines)
+        self.assertIn("\x1b[38;2;", text)
+        self.assertNotEqual(text.count("48;2;0;0;0m"), 40 * 12, "the plate is drawn, not only background")
+        self.assertEqual(lines, fmscene.cells(plate(type="plane", size=[2, 1]), cols=40))  # integer raster: same bytes
+        back = "".join(fmscene.cells(plate(type="plane", size=[2, 1]), cols=40, turn=180))
+        self.assertEqual(set(re.findall(r"[34]8;2;([0-9;]+)m", back)), {"0;0;0"})  # its back, culled
+        self.assertEqual(len(fmscene.cells(plate(type="plane", size=[2, 1]), cols=2)), 1)  # never under one row
+        with self.assertRaises(ValueError):
+            fmscene.cells(plate(type="plane", size=[2, 1]), cols=1)
+
+    def test_fm_scene_cells(self):  # T-1635
+        path = os.path.join(self.tmp, "scene.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(SCENE, f)
+        out = self.fm("scene", "cells", path, "--cols", "30").stdout
+        self.assertEqual(out.count("▀"), 30 * 9)
+        self.assertNotEqual(self.fm("scene", "cells", path, "--cols", "500", check=False).returncode, 0)
+
     def test_the_shipped_shader_cards_pass(self):
         paths = fmscene.shader_paths(CARDS)
         self.assertGreaterEqual(len(paths), 8)
