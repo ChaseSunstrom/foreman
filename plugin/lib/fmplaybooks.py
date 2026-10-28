@@ -55,7 +55,7 @@ _RULE = re.compile(r"^- ([a-z][a-z ]*?):[ \t]*\S", re.M)
 SHINGLE = 5
 NEAR = 0.5  # T-1834: shingle Jaccard from which two playbooks are merge candidates and a draft repeats a book
 RECORD_MAX = 20  # playbooks one close records
-_ROUTE = re.compile(r"\bfm\s+playbooks\s+route\s+['\"]?([\w-]+)")
+_ROUTE = re.compile(r"""\bfm\s+playbooks\s+route\s+(['"]?)([\w-]+)\1(?=\s*(?:$|[;&|)\n]|-))""")  # a bare stage only
 TIMEOUT = 20  # seconds per python block
 REACH_DAYS = 60
 SHOWN = 30  # findings printed before "and N more"; --json lists them all
@@ -371,9 +371,9 @@ def _scan(root, days, routes=False):
             read[hit] = read.get(hit, 0) + 1
         m = _ROUTE.search(str(e.get("target") or "")) if routes and e.get("tool") == "Bash" else None
         if m:  # route() walks the library: once per stage, not per event
-            if m.group(1) not in stages:
-                stages[m.group(1)] = (route(m.group(1), root) or (0, 0, []))[2]
-            for x in stages[m.group(1)]:
+            if m.group(2) not in stages:
+                stages[m.group(2)] = (route(m.group(2), root) or (0, 0, []))[2]
+            for x in stages[m.group(2)]:
                 routed[x] = routed.get(x, 0) + 1
     ts = c.parse_ts(oldest) if oldest and oldest > since else None
     covers = 0 if oldest is None else round((time.time() - ts.timestamp()) / 86400, 1) if ts else days
@@ -382,7 +382,8 @@ def _scan(root, days, routes=False):
 
 def reach(root=ROOT, days=REACH_DAYS):
     """{days, covers, read: {path: reads}, routed: {path: routes}, unread: [path]}: Read events of each playbook in the
-    window, from every project; routed counts the books `fm playbooks route` named (T-1833, not reads); covers is the
+    window, from every project; routed counts the books `fm playbooks route TEXT` named (T-1833, not reads; stage
+    routes count only in unused()); covers is the
     days the event log actually spans, when that is fewer."""
     read, routed, covers = _scan(root, days)
     return {"days": days, "covers": covers,
