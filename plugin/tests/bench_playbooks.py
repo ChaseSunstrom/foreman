@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """T-1833: fm playbooks route over a synthetic library: builds one in a temp dir, then reports the index build, one
-edit's refresh and the route's wall and CPU p50/p95. Exits 1 when the warm route's CPU p95 passes 50 ms, a refresh
+edit's refresh and the route's wall and CPU p50/p95. Exits 1 when the warm route's CPU p95 passes 50 ms (75 ms above 0.5 load per core), a refresh
 passes 2 s, or fewer than 95% of the planted books are the top hit for their query.
 
 Usage: bench_playbooks.py [--books N] [--runs N] [--json]. Also imported by test_playbook_route (make_library).
@@ -14,10 +14,13 @@ import sys
 import tempfile
 import time
 
+from bench_hooks import load_per_core
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "lib"))
 
 ROUTE_CPU_P95_MS = 50
+BUSY = 0.5  # 1-min load per core above this widens the CPU limit 1.5x (T-1836: a parallel suite is no regression)
 REFRESH_S = 2.0
 ACCURACY = 0.95
 STAGES = 50
@@ -78,6 +81,11 @@ def timed(fn):
     return time.perf_counter() - w, time.process_time() - c0, got
 
 
+def route_cpu_limit(load):
+    """The warm route's CPU p95 limit in ms at this load per core."""
+    return ROUTE_CPU_P95_MS * 3 // 2 if load > BUSY else ROUTE_CPU_P95_MS
+
+
 def run(books, runs=30):
     import fmplaybooks as pb
     with tempfile.TemporaryDirectory() as tmp:
@@ -107,8 +115,10 @@ def run(books, runs=30):
          "refresh_s": round(refresh[0], 3), "accuracy": round(hits / len(asked), 3),
          "route_wall_ms": {"p50": round(statistics.median(walls) * 1000, 1), "p95": round(pct(walls, 0.95) * 1000, 1)},
          "route_cpu_ms": {"p50": round(statistics.median(cpus) * 1000, 1), "p95": round(pct(cpus, 0.95) * 1000, 1)}}
-    r["problems"] = ([f"warm route CPU p95 {r['route_cpu_ms']['p95']} ms over {ROUTE_CPU_P95_MS}"]
-                     if r["route_cpu_ms"]["p95"] > ROUTE_CPU_P95_MS else []) \
+    r["load"] = round(load_per_core(), 2)
+    r["route_cpu_limit_ms"] = lim = route_cpu_limit(r["load"])
+    r["problems"] = ([f"warm route CPU p95 {r['route_cpu_ms']['p95']} ms over {lim} (load {r['load']}/core)"]
+                     if r["route_cpu_ms"]["p95"] > lim else []) \
         + ([f"refresh {r['refresh_s']} s over {REFRESH_S}"] if r["refresh_s"] > REFRESH_S else []) \
         + ([f"planted accuracy {r['accuracy']} under {ACCURACY}"] if r["accuracy"] < ACCURACY else [])
     return r
@@ -125,7 +135,7 @@ def main():
         print(json.dumps(r))
     else:
         print(f"{r['books']} books ({r['mode']}): library {r['library_s']} s, index build {r['build_s']} s, one-edit "
-              f"refresh {r['refresh_s']} s, accuracy {r['accuracy']:.0%}")
+              f"refresh {r['refresh_s']} s, accuracy {r['accuracy']:.0%}, load {r['load']}/core")
         for k in ("route_wall_ms", "route_cpu_ms"):
             print(f"  {k[:-3]}: p50 {r[k]['p50']} ms, p95 {r[k]['p95']} ms")
         for x in r["problems"]:

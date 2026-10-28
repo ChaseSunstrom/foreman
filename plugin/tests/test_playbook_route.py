@@ -223,6 +223,12 @@ class Cli(ForemanTestCase):
         self.assertEqual(r.returncode, 0)
         self.assertIn("no playbook", r.stdout)
 
+    def test_a_busy_machine_widens_the_warm_route_cpu_limit(self):  # T-1836: a parallel suite's load is no regression
+        self.assertEqual([bench.route_cpu_limit(x) for x in (0.0, 0.5, 0.51, 3.0)], [50, 50, 75, 75])
+        with mock.patch.object(bench, "load_per_core", return_value=2.0):
+            r = bench.run(300, runs=3)
+        self.assertEqual((r["load"], r["route_cpu_limit_ms"]), (2.0, 75))
+
 
 if __name__ == "__main__":
     unittest.main()
