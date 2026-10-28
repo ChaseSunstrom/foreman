@@ -657,8 +657,11 @@ class SupplyDelta(ForemanTestCase):
         before = fmdoctor._supply(self.claude)[0]["p@m"]
         for sub in (b"hooks", b"bin", b"node_modules"):  # T-1459 review: an odd name raised, keeping the old baseline
             os.makedirs(os.path.join(os.fsencode(self.plugin), sub), exist_ok=True)
-            with open(os.path.join(os.fsencode(self.plugin), sub, b"bad\xff.js"), "wb") as f:
-                f.write(b"x")
+            try:
+                with open(os.path.join(os.fsencode(self.plugin), sub, b"bad\xff.js"), "wb") as f:
+                    f.write(b"x")
+            except OSError:
+                self.skipTest("this filesystem refuses a name that isn't UTF-8 (APFS)")  # T-1828
         now, errors = fmdoctor._supply(self.claude)
         self.assertEqual(errors, {})
         self.assertNotEqual(now["p@m"]["sha"], before["sha"], "the odd file itself is named")

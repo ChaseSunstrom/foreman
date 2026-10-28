@@ -26,9 +26,10 @@ class Load(unittest.TestCase):
             self.assertEqual(len(procs), 2)
             time.sleep(0.3)
             self.assertTrue(all(p.poll() is None for p in procs))
-            from helpers import read_text
-            cpu = [float(read_text(f"/proc/{p.pid}/stat").rsplit(")", 1)[1].split()[11]) for p in procs]
-            self.assertTrue(all(t > 0 for t in cpu), "each child spins")
+            if os.path.isdir("/proc"):  # T-1828: macOS has no /proc; the children running is checked above
+                from helpers import read_text
+                cpu = [float(read_text(f"/proc/{p.pid}/stat").rsplit(")", 1)[1].split()[11]) for p in procs]
+                self.assertTrue(all(t > 0 for t in cpu), "each child spins")
         self.assertTrue(all(p.poll() is not None for p in procs), "none outlives the run")
 
     def test_hang_guards_stretch_with_the_load_and_stay_bounded(self):

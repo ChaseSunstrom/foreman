@@ -223,7 +223,9 @@ class Snippets(Fixture):
         self.assertEqual(self.problems(), [])
 
     def test_a_block_runs_under_memory_and_process_limits(self):
-        self.snippet("import resource\nfor r in (resource.RLIMIT_AS, resource.RLIMIT_NPROC, resource.RLIMIT_FSIZE):\n"
+        # T-1828: macOS ignores RLIMIT_AS and fm adds NPROC only with /proc, so there only FSIZE is checked
+        self.snippet("import resource, sys\nrs = (resource.RLIMIT_FSIZE,) + ((resource.RLIMIT_AS, resource.RLIMIT_NPROC) "
+                     "if sys.platform.startswith('linux') else ())\nfor r in rs:\n"
                      "    assert resource.getrlimit(r)[0] != resource.RLIM_INFINITY, r")
         self.assertEqual(self.problems(), [])
 

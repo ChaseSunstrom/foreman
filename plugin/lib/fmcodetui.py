@@ -2724,6 +2724,7 @@ class App:
     def _runners_of_child(self):
         """T-1756: (name, pid) of each runner the running fm code registered (fmcode's code-procs entries it owns)."""
         import fmcode
+        import fmideas
         out, owner = [], str(getattr(self.child, "pid", ""))
         try:
             names = [n for n in os.listdir(fmcode._registry()) if n.isdigit()]
@@ -2734,8 +2735,7 @@ class App:
                 with open(fmcode._registry(n)) as f:
                     if f.read().split()[1] != owner:
                         continue
-                with open(f"/proc/{n}/cmdline", "rb") as f:
-                    name = os.path.basename(os.fsdecode(f.read().split(b"\0")[0])) or "runner"
+                name = os.path.basename(os.fsdecode(fmideas._cmdline(n)[0])) or "runner"  # T-1828: ps without /proc
             except (OSError, IndexError):
                 continue
             out.append((name, int(n)))
