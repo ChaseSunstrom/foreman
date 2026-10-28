@@ -72,6 +72,84 @@ class Panic(ServeCase):
         self.assertEqual(self.claude_runs(), 1, "the second task never starts")
         self.assertIn("fm pause off", r.stderr)
 
+    def test_pause_now_stops_what_runs_frees_leases_and_writes_a_record(self):
+        # T-1821: fm pause only stopped new starts; --now stops a running fm session's group and frees every lease
+        import subprocess
+        import fmbus
+        sid = "20261028-090000-abcd"
+        runner = subprocess.Popen(["sh", "-c", "sleep 60; true", sid], start_new_session=True)
+        self.addCleanup(lambda: runner.poll() is None and runner.kill())
+        d = os.path.join(c.state_dir(), "agent-sessions", sid)
+        os.makedirs(d)
+        with open(os.path.join(d, "meta.json"), "w") as f:
+            json.dump({"id": sid, "status": "running", "pid": runner.pid, "turns": 1}, f)
+        fmbus._write_leases({"src/a.py": {"session": "s9", "task": "T-0001", "until": 9e12}})
+        self.serve()  # a serve unit (systemctl is a stub)
+        self.assertTrue(os.path.exists(self.unit))
+        out = self.fm("pause", "--now", env=self.env()).stdout
+        self.assertEqual(runner.wait(timeout=10), -15)  # SIGTERM to its group
+        self.assertFalse(os.path.exists(self.unit))
+        self.assertIn(f"systemctl --user disable --now foreman-serve-{self.slug}", self.called())
+        self.assertTrue(c.panicked(hard=True))
+        with open(os.path.join(c.state_dir(), "bus", "leases.json")) as f:
+            self.assertEqual(json.load(f), {})
+        with open(os.path.join(c.state_dir(), "stops.jsonl")) as f:
+            rec = json.loads(f.read().splitlines()[-1])
+        self.assertEqual((rec["sessions"], rec["serve"], rec["leases"]), ([sid], [self.slug], 1))
+        self.assertNotIn("errors", rec)
+        self.assertIn("1 fm session", out)
+        self.assertIn("1 fm serve unit", out)
+        self.assertIn("finish their turn", out)
+        self.fm("pause")  # a plain pause after it stays soft
+        self.assertFalse(c.panicked(hard=True))
+        self.assertTrue(c.panicked())
+
+    def test_pause_now_run_inside_an_fm_session_writes_its_record_before_stopping_its_own_session(self):
+        # T-1821 review: an fm session's agent running fm pause --now is in the group it stops: everything else
+        # first, then the record, and its own session last
+        import subprocess
+        import time
+        import fmbus
+        sid, other = "20261028-090000-aaaa", "20261028-090000-bbbb"
+        go = os.path.join(self.tmp, "go")
+        fm = f"{sys.executable} {FM}"
+        env = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_INHIBITED="1", **self.env())
+        env.pop("CLAUDE_CODE_SESSION_ID", None)
+        mine = subprocess.Popen(["sh", "-c", f"while [ ! -f {go} ]; do sleep 0.05; done; cd {self.repo}; "
+                                 f"{fm} pause --now; sleep 60; true", sid], start_new_session=True, env=env)
+        theirs = subprocess.Popen(["sh", "-c", "sleep 60; true", other], start_new_session=True)
+        for p in (mine, theirs):
+            self.addCleanup(lambda p=p: p.poll() is None and p.kill())
+        for s, p in ((sid, mine), (other, theirs)):
+            os.makedirs(os.path.join(c.state_dir(), "agent-sessions", s))
+            with open(os.path.join(c.state_dir(), "agent-sessions", s, "meta.json"), "w") as f:
+                json.dump({"id": s, "status": "running", "pid": p.pid, "turns": 1}, f)
+        fmbus._write_leases({"src/a.py": {"session": "s9", "task": "T-0001", "until": 9e12}})
+        open(go, "w").close()
+        self.assertEqual(theirs.wait(timeout=20), -15)
+        self.assertIn(mine.wait(timeout=20), (-15, -9))
+        with open(os.path.join(c.state_dir(), "stops.jsonl")) as f:
+            rec = json.loads(f.read().splitlines()[-1])
+        self.assertEqual((sorted(rec["sessions"]), rec["leases"]), (sorted([sid, other]), 1))
+        with open(os.path.join(c.state_dir(), "bus", "leases.json")) as f:
+            self.assertEqual(json.load(f), {})
+
+    def test_pause_off_now_is_refused(self):
+        r = self.fm("pause", "off", "--now", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--now", r.stderr)
+
+    def test_pause_now_stops_a_running_fm_run_session(self):
+        import time
+        fm = f"{sys.executable} {FM}"
+        self.stub("claude", f"{fm} pause --now\nexec sleep 60\n")
+        t0 = time.monotonic()
+        r = self.fm("run", check=False, env=self.env())
+        self.assertLess(time.monotonic() - t0, 30, "the session's group was stopped, not waited out")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("fm pause --now", r.stderr)
+        self.assertEqual(self.claude_runs(), 1)
+
     def test_panic_resume(self):
         self.fm("pause")
         self.fm("pause", "off")
