@@ -2018,6 +2018,10 @@ def task_prove(p, args):
     verdict = ("proved: fails without the change, passes with it" if proved else
                "not proved: it passes without the change too, so it doesn't test the fix" if not red[0] else
                "not proved: it fails on the current tree")
+    helpers = [f for f in tests if not re.search(r"(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$", f)]
+    if helpers and not red[0]:  # T-1845: a changed runner or helper in a tests folder went onto the start tree too
+        verdict += (f"\n  the start tree also got {', '.join(helpers[:5])} (in a tests folder, not test-named): if that "
+                    f"is the code under change, record its red run in the Regression test section instead")
     out(args, {"proved": proved, "red": red[0], "green": green[0], "tests": tests},
         f"{b.id}: {verdict}\n  start tree + {len(tests)} test file(s): {c.run_result(*red)}\n  current tree: "
         f"{c.run_result(*green)}")
