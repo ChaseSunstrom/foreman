@@ -173,7 +173,15 @@ def apply(fields, p=None):
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
+    """T-1858: a page served this way overrides CMD (named in a refusal), PATHS (what it posts to), draw and act."""
     timeout = TIMEOUT
+    CMD, PATHS = "fm settings serve", ("/set", "/move")
+
+    def draw(self, nonce, msg, bad):
+        return page(nonce, msg, bad)
+
+    def act(self, path, fields):
+        return (move if path == "/move" else apply)(fields, self.server.project)
 
     def log_message(self, *a):  # the first request line holds the token: nothing is logged
         pass
@@ -229,18 +237,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send(303, "", extra=(("Location", "/"), ("Set-Cookie", f"{cookie_name(self.server.server_address[1])}"
                                            f"={self.server.session}; HttpOnly; SameSite=Strict; Path=/")))
                 return None
-        self._send(403, "refused: open the URL fm settings serve printed (it works once, in one browser)")
+        self._send(403, f"refused: open the URL {self.CMD} printed (it works once, in one browser)")
         return None
 
     def _render(self, status, msg="", bad=False):
         nonce = secrets.token_urlsafe(16)
-        self._send(status, page(nonce, msg, bad), nonce)
+        self._send(status, self.draw(nonce, msg, bad), nonce)
 
     def do_GET(self):
         path = self._allowed()
         if path is None:
             return
-        if path not in ("/", "/set", "/move"):  # the page reloaded after a change
+        if path not in ("/",) + self.PATHS:  # the page reloaded after a change
             return self._send(404, "not found")
         self._render(200)
 
@@ -250,7 +258,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if (self.headers.get("Origin") or "").lower() not in [f"http://{h}" for h in self._mine()]:
             return self._send(403, "refused: not posted from this page")
-        if path not in ("/set", "/move"):
+        if path not in self.PATHS:
             return self._send(404, "not found")
         size = self.headers.get("Content-Length") or ""
         if self.headers.get("Transfer-Encoding") or not (size.isascii() and size.isdigit()):
@@ -266,7 +274,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if len(fields) != len(pairs):
             return self._send(400, "a field given twice")
         try:
-            ok, msg = (move if path == "/move" else apply)(fields, self.server.project)
+            ok, msg = self.act(path, fields)
         except Exception as x:  # whatever the setter raised: said, nothing more (it writes nothing on a failure)
             return self._render(500, f"{type(x).__name__}: {x}", True)
         self._render(200 if ok else 422, msg, not ok)
@@ -282,9 +290,9 @@ class Server(http.server.ThreadingHTTPServer):
     block_on_close = False
 
 
-def make(p=None):
+def make(p=None, handler=Handler):
     """A server bound to 127.0.0.1 on a random port, not yet serving: (server, the URL's one-time token)."""
-    server = Server(("127.0.0.1", 0), Handler)
+    server = Server(("127.0.0.1", 0), handler)
     server.token, server.session = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     server.once, server.project, server.last = threading.Lock(), p, time.monotonic()
     return server, server.token
@@ -307,10 +315,13 @@ def cmd_serve(args):
     import fmcli
     if args.key or args.value or args.surface:
         raise fmcli.UsageError("fm settings serve: takes no key, value or --surface (the page has every setting)")
-    server, token = make(fmsettings._project(args))
+    return run(*make(fmsettings._project(args)), "Foreman settings")
+
+
+def run(server, token, label):
+    """Print the URL once, serve until Ctrl-C, SIGTERM or IDLE seconds idle (fm inbox swipe --serve too)."""
     url = f"http://127.0.0.1:{server.server_address[1]}/?t={token}"
-    print(f"Foreman settings: {url}\n(open it once, in one browser; Ctrl-C stops it, so do {IDLE // 60} idle "
-          "minutes)", flush=True)
+    print(f"{label}: {url}\n(open it once, in one browser; Ctrl-C or {IDLE // 60} idle minutes stop it)", flush=True)
     old = signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
     try:
         serve(server)
