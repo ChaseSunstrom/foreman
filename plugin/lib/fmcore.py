@@ -1499,6 +1499,16 @@ class Brief:
         if step is not None and not inconclusive:
             self.track_step(step)  # T-0406: every writer of step evidence moves the band and fm next with it
 
+    def failed_cmd(self, step):
+        """T-1844: the step's newest run's command when that run failed, so fm task finish can re-run it; None when it
+        passed, or its stored form had a secret redacted (not the command that ran)."""
+        runs = [l for l in self.evidence() if _RAN_MARK in l and (m := _EV_RE.match(l))
+                and (m.group(1), int(m.group(2))) == ("step", step)]
+        if not runs or "` → ✗ exit" not in runs[-1] or runs[-1].count("`") < 2:
+            return None
+        cmd = runs[-1].split("`")[1]
+        return None if "[REDACTED" in cmd else cmd
+
     def _refuse_failed_run(self, step=None, ac=None):
         """Once fm has run a check for this step/criterion, only a passing run clears a failed one."""
         want = ("step", step) if step is not None else ("ac", ac)
