@@ -247,8 +247,8 @@ def run_child(feature, system, prompt, model, timeout, project=None, detail="", 
             so, se = pr.communicate(prompt, timeout=timeout)
         except BaseException as e:  # a timeout or ^C: the whole group goes (subprocess.run killed only the leader)
             _reap(pr)
-            if isinstance(e, subprocess.TimeoutExpired):
-                raise ValueError(f"the {feature} child didn't run: {e} (is `claude` on PATH and logged in?)")
+            if isinstance(e, subprocess.TimeoutExpired):  # never str(e): it holds the argv, the whole system prompt
+                raise ValueError(f"the {feature} child timed out after {timeout} s (is `claude` logged in?)")
             raise
         _forget(pr)
     text, usd = fmbudget.result(so)
