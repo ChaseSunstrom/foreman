@@ -3,9 +3,12 @@
 pile as its backlog view; fm inbox pick skips items waiting on an open one and now and then pairs an item with a far
 one of its kind (--epsilon); fm inbox prefer --reset forgets the learned title-word weights."""
 import contextlib
+import http.client
 import io
 import json
 import os
+import threading
+import urllib.parse
 from unittest import mock
 
 from helpers import ForemanTestCase
@@ -13,6 +16,7 @@ from helpers import ForemanTestCase
 import fmcodetui as T
 import fmcore as c
 import fmeco
+import fmsettingsserve
 
 
 class _Inbox(ForemanTestCase):
@@ -123,6 +127,85 @@ class Prefer(_Inbox):
         with open(os.path.join(self.p.dir, "prefer.json"), "w") as f:
             f.write("{not json")
         self.assertIn("unreadable", self.fm("inbox", "prefer", "--reset").stdout)
+
+
+class Served(_Inbox):
+    """T-1858: fm inbox swipe --serve: the pile as a card at a time in the browser, on fm settings serve's server."""
+    def setUp(self):
+        super().setUp()
+        self.deferred("Port the CLI to Windows", "Add a plugin marketplace page", "Support <i>YAML</i> config files")
+        self.server, token = fmeco.swipe_server(self.p)
+        self.port, self.cookie, self.stop = self.server.server_address[1], None, threading.Event()
+        self.thread = threading.Thread(target=fmsettingsserve.serve, args=(self.server, 30, self.stop), daemon=True)
+        self.thread.start()
+        status, _, h = self.req(f"/?t={token}")
+        self.assertEqual(status, 303)
+        self.cookie = h["Set-Cookie"].split(";")[0]
+
+    def tearDown(self):
+        self.stop.set()
+        self.thread.join(5)
+        super().tearDown()
+
+    def req(self, path="/", form=None, origin=True):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        h = {"Host": f"127.0.0.1:{self.port}", **({"Cookie": self.cookie} if self.cookie else {})}
+        if form is not None:
+            h["Content-Type"] = "application/x-www-form-urlencoded"
+            h.update({"Origin": f"http://127.0.0.1:{self.port}"} if origin else {})
+        conn.request("GET" if form is None else "POST", path, urllib.parse.urlencode(form or {}) or None, h)
+        r = conn.getresponse()
+        out = r.status, r.read().decode(), dict(r.getheaders())
+        conn.close()
+        return out
+
+    def swipe(self, tid, verdict, **kw):
+        return self.req("/swipe", {"id": tid, "verdict": verdict}, **kw)
+
+    def test_a_card_at_a_time_each_answer_applied_at_once(self):
+        status, body, h = self.req()
+        self.assertEqual(status, 200)
+        self.assertIn("T-0001", body)
+        self.assertIn("3 left", body)
+        self.assertIn('accesskey="d"', body)
+        self.assertIn("default-src 'none'", h["Content-Security-Policy"], "no script runs")
+        self.assertIn("T-0001 dropped", self.swipe("T-0001", "drop")[1])
+        status, body, _ = self.swipe("T-0002", "keep")
+        self.assertIn("T-0002 kept", body)
+        self.assertIn("1 left", body, "a kept item doesn't come round again")
+        self.assertIn("&lt;i&gt;YAML", body, "a title is escaped")
+        self.assertIn("Nothing left", self.swipe("T-0003", "skip")[1])
+        self.assertEqual([self.status()[t] for t in ("T-0001", "T-0002", "T-0003")], ["dropped", "deferred", "deferred"])
+        self.assertEqual(self.swipe("T-0001", "drop")[0], 422, "dropped already: said, nothing changed")
+        self.assertIn("T-0002 kept", self.swipe("T-0002", "keep")[1], "a reload re-posts a keep: kept once")
+        self.assertEqual(c.find_brief(self.p, "T-0002").render().count("swept: kept"), 1)
+
+    def test_revive_from_the_page(self):
+        self.assertIn("T-0001 revived", self.swipe("T-0001", "revive")[1])
+        self.assertEqual(self.status()["T-0001"], "captured")
+
+    def test_one_id_one_known_verdict_from_this_page_only(self):
+        self.assertEqual(self.swipe("T-0001:drop,T-0002", "drop")[0], 422)
+        self.assertEqual(self.swipe("T-0001", "burn")[0], 422)
+        self.assertEqual(self.swipe("T-0001", "drop", origin=False)[0], 403)
+        self.cookie = None
+        status, body, _ = self.req()
+        self.assertEqual(status, 403)
+        self.assertIn("fm inbox swipe --serve", body)
+        self.assertEqual(set(self.status().values()), {"deferred"})
+
+    def test_serve_goes_with_swipe_alone(self):
+        self.assertEqual(self.fm("inbox", "first", "--serve", check=False).returncode, 1)
+        self.assertEqual(self.fm("inbox", "swipe", "--serve", "--apply", "T-0001:drop", check=False).returncode, 1)
+        self.assertEqual(self.fm("inbox", "swipe", "--serve", "--json", check=False).returncode, 1)
+        with mock.patch.object(fmsettingsserve, "serve") as served, \
+                mock.patch.object(fmsettingsserve.signal, "signal"), contextlib.redirect_stdout(io.StringIO()) as out:
+            import fmcli
+            with mock.patch.object(fmcli, "resolve", return_value=self.p):
+                fmeco.cmd_inbox(fmcli.build_parser().parse_args(["inbox", "swipe", "--serve"]))
+        self.assertEqual(served.call_count, 1)
+        served.call_args.args[0].server_close()
+        self.assertIn("Foreman backlog: http://127.0.0.1:", out.getvalue())
 
 
 class App(_Inbox):
