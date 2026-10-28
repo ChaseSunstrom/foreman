@@ -12,6 +12,29 @@ class Args(unittest.TestCase):
         self.assertEqual(sorted(run.parse(["test_lanes", "-k", "Stop", "test_cli"]).k), ["Stop", "test_cli", "test_lanes"])
         self.assertEqual(run.parse([]).k, [])
 
+    def test_shards_split_the_classes_disjointly_and_cover_them_all(self):  # T-1842: one CI job ran out of time
+        import contextlib
+        import io
+        from unittest import mock
+        self.assertEqual(run.parse(["--shard", "2/3"]).shard, (2, 3))
+        self.assertIsNone(run.parse([]).shard)
+        for bad in ("0/2", "3/2", "2", "a/b", "1/0"):
+            with self.assertRaises(SystemExit, msg=bad), contextlib.redirect_stderr(io.StringIO()):
+                run.parse(["--shard", bad])
+        ids = [f"test_m.C{i}" for i in range(7)]
+        got = []
+        for k in (1, 2):
+            ran = []
+            with mock.patch.object(run, "classes", return_value=list(ids)), \
+                    mock.patch.object(run, "run_one", lambda c, *a: ran.append(c) or (c, 0, "", 1, 0.0)), \
+                    mock.patch.object(sys, "argv", ["run.py", "--shard", f"{k}/2"]), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(run.main(), 0)
+            got.append(ran)
+        self.assertEqual(sorted(got[0] + got[1]), sorted(ids))
+        self.assertFalse(set(got[0]) & set(got[1]))
+        self.assertLessEqual(abs(len(got[0]) - len(got[1])), 1)
+
 
 class Load(unittest.TestCase):
     """T-1730: --load N runs the tests beside N busy processes, the way a load flake reproduces on demand."""
