@@ -133,3 +133,48 @@ class Hang(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("still running after 2s", err)
         self.assertIn("test_s", err)  # where it hung
+
+    def test_the_run_deadline_kills_a_running_class_and_skips_unstarted_ones(self):
+        # T-1809: macOS hit its 35 min job cap with no annotation at all; the run now ends itself first
+        import tempfile
+        import time
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "test_slow.py"), "w") as f:
+                f.write("import time, unittest\nclass S(unittest.TestCase):\n    def test_s(self):\n"
+                        "        time.sleep(60)\n")
+            t0 = time.time()
+            with mock.patch.object(run, "HERE", d):
+                _, code, err, _, _ = run.run_one("test_slow.S", [], timeout=480, deadline=time.time() + 2)
+                self.assertLess(time.time() - t0, 30)
+                self.assertNotEqual(code, 0)
+                self.assertRegex(err, r"still running at the run's deadline \([12]s in\)")  # review: not the 480 s cap
+                self.assertIn("test_s", err)  # the stack
+                for late in (time.time() - 1, time.time() + 0.4):  # review: under 1 s left is too late to start
+                    _, code, err, ran, _ = run.run_one("test_slow.S", [], deadline=late)
+                    self.assertEqual((code, ran, err), (1, 0, run.NOT_STARTED))
+        self.assertEqual(run.parse(["--deadline", "60"]).deadline, 60)
+        self.assertIsNone(run.parse([]).deadline)
+
+    def test_main_names_unstarted_classes_and_ci_gets_the_notes(self):
+        # review: main's exit code, the not-started line (outside CI too) and the CI-only notes had no test
+        import contextlib
+        import io
+        import tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "test_late.py"), "w") as f:
+                f.write("import unittest\nclass L(unittest.TestCase):\n    def test_l(self):\n        pass\n")
+            out, err = io.StringIO(), io.StringIO()
+            clock = iter([100.0])  # the run starts at 100; every later reading is past its 60 s deadline
+            with mock.patch.object(run, "HERE", d), mock.patch.object(run, "skipped", return_value=set()), \
+                    mock.patch.object(run.time, "time", side_effect=lambda: next(clock, 200.0)), \
+                    mock.patch.object(sys, "argv", ["run.py", "--deadline", "60", "-p", "test_late.py"]), \
+                    mock.patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}), \
+                    contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = run.main()
+        self.assertEqual(code, 1)
+        self.assertIn("not started (the run's 60s deadline): test_late.L", err.getvalue())
+        self.assertIn("::error title=run.py::1 classes never started", out.getvalue())
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            run.parse(["--deadline", "0"])  # review: 0 read as falsy turned the deadline off
