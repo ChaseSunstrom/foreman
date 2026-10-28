@@ -1358,6 +1358,46 @@ def airlock(held, through):
                    {"type": "directional", "position": [6, 3, -4], "color": "#7aa2ff", "intensity": 0.4}]})
 
 
+def bench(runs):
+    """T-1850: fm code bench's last 12 runs as a diorama, a box per seed per run: runs left to right, seeds front to
+    back, height log-scaled to the slowest, green when the seed closed, red when it didn't. Skipped seeds have no box."""
+    runs = runs[-12:]
+
+    def secs(v):  # a hand-edited history: a list, inf, nan or 10**400 reads as 0, not a crash
+        return v if isinstance(v, (int, float)) and 0 <= v <= 1e6 else 0
+    cells = [(i, str(r.get("seed")), bool(r.get("closed")), secs(r.get("seconds")))
+             for i, run in enumerate(runs) for r in (run.get("results") if isinstance(run.get("results"), list) else ())
+             if isinstance(r, dict) and not r.get("skipped")]
+    if not cells:
+        raise ValueError("no fm code bench results to draw: fm code bench makes them")
+    seeds = sorted({c[1] for c in cells})
+    top = max(math.log1p(c[3]) for c in cells) or 1
+    meshes, taken = [], {"floor", "camera"}
+    for i, seed, closed, secs in cells:
+        base = re.sub(r"[^A-Za-z0-9_-]", "-", seed)[:48]
+        n = first = (base if base[:1].isalpha() else "s" + base) + f"-{i + 1}"
+        k = 2
+        while n in taken:  # a seed twice in one run, or two seeds that clean to the same name
+            n, k = f"{first[:58]}_{k}", k + 1
+        taken.add(n)
+        h = round(0.1 + 2 * math.log1p(secs) / top, 6)
+        meshes.append({"name": n, "material": "closed" if closed else "open", "geometry": {"type": "box",
+                       "size": [0.8, h, 0.8]}, "position": [round((i - (len(runs) - 1) / 2) * 1.2, 6), h / 2,
+                                                           round((seeds.index(seed) - (len(seeds) - 1) / 2) * 1.2, 6)]})
+    w, d = len(runs) * 1.2 + 4, len(seeds) * 1.2 + 4
+    meshes.append({"name": "floor", "material": "floor", "geometry": {"type": "plane", "size": [w, d]},
+                   "rotation": [-90, 0, 0]})
+    return validate({
+        "background": "#101218", "meshes": meshes,
+        "materials": {"closed": {"color": "#6cc58a", "roughness": 0.6}, "open": {"color": "#e8685a", "roughness": 0.6},
+                      "floor": {"color": "#1b1e26", "roughness": 0.9}},
+        "camera": {"fov": 40, "position": [round(w * 0.3, 3), round(3 + w * 0.3, 3), round(d / 2 + w * 0.7, 3)],
+                   "target": [0, 0.8, 0], "far": 200},
+        "lights": [{"type": "hemisphere", "sky": "#dfe8ff", "ground": "#2a221a", "intensity": 0.7},
+                   {"type": "directional", "position": [-4, 8, 6], "intensity": 1.4},
+                   {"type": "directional", "position": [6, 3, -4], "color": "#7aa2ff", "intensity": 0.4}]})
+
+
 def guard_counts(p, days):
     """T-1849: ({category: blocks}, tool calls run) for project p over the last `days` days: blocks from its ledger,
     calls (clean or failed, both got past the guard) from the global events."""
@@ -1386,13 +1426,17 @@ def _write_out(args, text, what="FILE"):
 def cmd_scene(args):
     import sys
     import fmcli
-    if args.action in ("metaballs", "terrain", "airlock"):  # T-1848 a blob, T-1851 churn, T-1849 the guard: no FILE
+    if args.action in ("metaballs", "terrain", "airlock", "bench"):  # T-1848 blob, T-1851 churn, T-1849 guard, T-1850
         if args.path:
             print(f"fm: scene: {args.action} takes no FILE (got {args.path}); write it with --out", file=sys.stderr)
             return 2
         try:
             if args.action == "metaballs":
                 scene, what = metaballs(args.balls, args.grid, args.seed), f"a blob of {args.balls} ball(s)"
+            elif args.action == "bench":
+                import fmcodebench
+                runs = fmcodebench.history()
+                scene, what = bench(runs), f"the last {min(len(runs), 12)} of {len(runs)} bench run(s)"
             else:
                 days = args.days if args.days is not None else 90 if args.action == "terrain" else 30
                 if not 1 <= days <= 3650:

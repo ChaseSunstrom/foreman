@@ -799,6 +799,49 @@ class Airlock(ForemanTestCase):
         self.assertEqual((r.returncode, "not in a Foreman project" in r.stderr), (2, True), r.stderr)
 
 
+class BenchScene(ForemanTestCase):
+    """T-1850: fm scene bench, fm code bench's runs as a diorama."""
+
+    def test_bench_stands_a_box_per_run_and_seed(self):
+        runs = [{"results": [{"seed": "operator", "closed": True, "seconds": 20}]},
+                {"results": [{"seed": "operator", "closed": False, "seconds": 400},
+                             {"seed": "fix-bug", "closed": True, "seconds": 0}]}]
+        s = fmscene.bench(runs)
+        self.assertEqual(fmscene.validate(s), s)
+        box = {m["name"]: m for m in s["meshes"] if m["name"] != "floor"}
+        self.assertEqual(set(box), {"operator-1", "operator-2", "fix-bug-2"})
+        colour = {n: s["materials"][m["material"]]["color"] for n, m in box.items()}
+        self.assertEqual(colour["operator-1"], colour["fix-bug-2"])  # closed
+        self.assertNotEqual(colour["operator-1"], colour["operator-2"])  # not closed
+        h = {n: m["geometry"]["size"][1] for n, m in box.items()}
+        self.assertAlmostEqual(h["operator-2"], 2.1)  # the slowest stands tallest
+        self.assertAlmostEqual(h["fix-bug-2"], 0.1)
+        self.assertLess(box["operator-1"]["position"][0], box["operator-2"]["position"][0])  # runs left to right
+        self.assertNotEqual(box["operator-2"]["position"][2], box["fix-bug-2"]["position"][2])  # seeds front to back
+        self.assertEqual(sum(m["name"].startswith("operator-") for m in fmscene.bench(runs * 10)["meshes"]), 12)
+        skip = [{"results": [{"seed": "rm-rf", "closed": False, "skipped": True}]}]
+        self.assertNotIn("rm-rf-3", {m["name"] for m in fmscene.bench(runs + skip)["meshes"]})  # skipped: no box
+        for empty in ([], skip):
+            with self.assertRaises(ValueError):
+                fmscene.bench(empty)
+        odd = [{"results": [{"seed": "a b", "closed": True, "seconds": 10 ** 400},
+                            {"seed": "a-b", "closed": True, "seconds": [1]},
+                            {"seed": "9lives", "closed": True, "seconds": float("inf")}, "x"]}, {"results": 5}]
+        self.assertEqual({m["name"] for m in fmscene.bench(odd)["meshes"]},  # a hand-edited history: drawn, no crash
+                         {"a-b-1", "a-b-1_2", "s9lives-1", "floor"})
+
+    def test_fm_scene_bench_reads_the_bench_history(self):
+        import fmcore as c
+        r = self.fm("scene", "bench", check=False)  # no runs yet: a refusal, not a traceback
+        self.assertEqual((r.returncode, "no fm code bench results" in r.stderr), (2, True), r.stderr)
+        os.makedirs(c.state_dir(), exist_ok=True)
+        with open(os.path.join(c.state_dir(), "code-bench.jsonl"), "w") as f:
+            f.write(json.dumps({"score": 1.0, "results": [{"seed": "operator", "closed": True, "seconds": 22.2}]}) + "\n")
+        out = os.path.join(self.tmp, "bench.json")
+        self.assertIn("wrote", self.fm("scene", "bench", "--out", out).stdout)
+        self.assertEqual(self.fm("scene", "check", out).returncode, 0)
+
+
 class Terrain(ForemanTestCase):
     """T-1851: fm scene terrain, the repo's churn as a ribbon per busiest path."""
 
