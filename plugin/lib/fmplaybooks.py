@@ -49,6 +49,9 @@ UI_CONTRACT = ("motion", "contrast", "keyboard", "small screens", "states")
 _CONTRACT = re.compile(r"^## UI contract[ \t]*$(.*?)(?=^## |\Z)", re.M | re.S)
 _RULE = re.compile(r"^- ([a-z][a-z ]*?):[ \t]*\S", re.M)
 SHINGLE = 5
+NEAR = 0.5  # T-1834: shingle Jaccard from which two playbooks are merge candidates and a draft repeats a book
+RECORD_MAX = 20  # playbooks one close records
+_ROUTE = re.compile(r"\bfm\s+playbooks\s+route\s+['\"]?([\w-]+)")
 TIMEOUT = 20  # seconds per python block
 REACH_DAYS = 60
 SHOWN = 30  # findings printed before "and N more"; --json lists them all
@@ -356,23 +359,108 @@ def reach(root=ROOT, days=REACH_DAYS):
     for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
         ts = str(e.get("ts") or "")
         oldest = ts if ts and (oldest is None or ts < oldest) else oldest
-        target = str(e.get("target") or "")
-        if ts < since or e.get("kind") != "tool":
-            continue
-        if e.get("tool") == "Bash" and (hit := shown(target, books)):
+        if ts >= since and (hit := _book_of(e, books)):
             read[hit] = read.get(hit, 0) + 1
-            continue
-        if e.get("tool") != "Read" or _MARK not in target:
-            continue
-        key = "references/" + target.split(_MARK, 1)[1]
-        # fmhooks keeps 120 characters of a target: a cut path still names one playbook by its prefix
-        hit = [b for b in books if b == key] or ([] if key.endswith(".md") else [b for b in books if b.startswith(key)])
-        if len(hit) == 1:
-            read[hit[0]] = read.get(hit[0], 0) + 1
     ts = c.parse_ts(oldest) if oldest and oldest > since else None
     covers = 0 if oldest is None else round((time.time() - ts.timestamp()) / 86400, 1) if ts else days
     return {"days": days, "covers": covers,
             "read": read, "unread": [b for b in books if b not in read]}
+
+
+def _book_of(e, books):
+    """The playbook a tool event loaded (fm playbooks show in a shell, or a Read of the skill's file), or None."""
+    target = str(e.get("target") or "")
+    if e.get("kind") != "tool":
+        return None
+    if e.get("tool") == "Bash":
+        return shown(target, books)
+    if e.get("tool") != "Read" or _MARK not in target:
+        return None
+    key = "references/" + target.split(_MARK, 1)[1]
+    # fmhooks keeps 120 characters of a target: a cut path still names one playbook by its prefix
+    hit = [b for b in books if b == key] or ([] if key.endswith(".md") else [b for b in books if b.startswith(key)])
+    return hit[0] if len(hit) == 1 else None
+
+
+def followed(p, b, root=ROOT):
+    """T-1834: [{playbook, followed, steps}] for each playbook this task loaded since its first focus (this project's
+    tool events), with score()'s share of its steps the run followed. Empty when it loaded none: no scoring then."""
+    start = min((e["ts"] for e in c.ledger_tail(p, c.TASK_WINDOW) if e.get("task") == b.id and e.get("event") == "focus"
+                 and e.get("ts")), default=str(b.meta.get("created") or ""))
+    books, loaded = listed(root), []  # an index loads too, and score() counts words over all of them
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
+        if str(e.get("ts") or "") >= start and e.get("project") == p.slug and (hit := _book_of(e, books)):
+            if hit not in loaded:
+                loaded.append(hit)
+    if not loaded:
+        return []
+    seen, out = _doc_freq(books, root), []
+    for rel in loaded[:RECORD_MAX]:
+        rows = score(_read(os.path.join(root, rel)), b, seen=seen, total=len(books))
+        out.append({"playbook": rel, "followed": sum(x["followed"] for x in rows), "steps": len(rows)})
+    return out
+
+
+def record_use(p, b, root=ROOT):
+    """T-1834: one playbook_use ledger event for a closed task: the books it loaded and the share it followed. Called
+    from the close's derived-index step, which warns instead of failing the close."""
+    got = followed(p, b, root)
+    if got:
+        c.log_event(p, "playbook_use", task=b.id, data={"books": got})
+
+
+def unused(root=ROOT, days=REACH_DAYS, p=None):
+    """T-1834: drop candidates, the playbooks with no read, route hit or followed record (this project's ledger) in the
+    window. ponytail: the event log is every project's but the followed records are this one's; only ever names."""
+    since = c.iso(time.time() - days * 86400)
+    used, stages = set(reach(root, days)["read"]), {}
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
+        m = _ROUTE.search(str(e.get("target") or "")) if e.get("tool") == "Bash" and str(e.get("ts") or "") >= since else None
+        if m:  # route() walks the library: once per stage, not per event
+            if m.group(1) not in stages:
+                stages[m.group(1)] = (route(m.group(1), root) or (0, 0, []))[2]
+            used.update(stages[m.group(1)])
+    for e in c.ledger_events(p, ("playbook_use",), since=since) if p else ():
+        used.update(x.get("playbook") for x in (e.get("data") or {}).get("books") or [])
+    return [b for b in _playbooks(root) if b not in used]
+
+
+def overlap(a, b):
+    """Shingle Jaccard of two shingle sets (what problems() calls sharing wording)."""
+    union = len(a | b)
+    return len(a & b) / union if union else 0.0
+
+
+def similar(root=ROOT, least=NEAR):
+    """T-1834: merge candidates, [(a, b, jaccard)] with a < b, overlap at least `least`. Only books of one stage that
+    share a title word are compared, and sets whose sizes differ by more than 2x can't reach 0.5 (skipped), so
+    20,000 books don't make 200M pairs. ponytail: a stage's books sharing a very common title word still compare
+    pairwise; cap or index by shingle if one bucket passes a few thousand."""
+    bucket, sh = {}, {}
+    for rel in _playbooks(root):
+        text = _read(os.path.join(root, rel))
+        sh[rel] = _shingles(text)
+        title = next((x[2:] for x in text.splitlines() if x.startswith("# ")), "").lower()
+        for w in set(re.findall(r"[a-z]{4,}", title)):
+            bucket.setdefault((rel.split("/")[1], w), []).append(rel)
+    out = {}
+    for rels in bucket.values():
+        for i, a in enumerate(rels):
+            for b in rels[i + 1:]:
+                x, y = sorted((a, b))
+                if (x, y) in out or min(len(sh[x]), len(sh[y])) < least * max(len(sh[x]), len(sh[y])):
+                    continue
+                out[x, y] = overlap(sh[x], sh[y])
+    return sorted((a, b, round(j, 2)) for (a, b), j in out.items() if j >= least)
+
+
+def nearest(text, root=ROOT):
+    """(book, jaccard) of the playbook sharing the most wording with text, or (None, 0)."""
+    mine, best = _shingles(text), (None, 0.0)
+    for rel in _playbooks(root):
+        j = overlap(mine, _shingles(_read(os.path.join(root, rel))))
+        best = (rel, j) if j > best[1] else best
+    return best
 
 
 def listed(root=ROOT):
@@ -627,16 +715,23 @@ def look_first(text, b):
     return sorted(hits, key=lambda x: (-len(x["words"]), x["n"]))[:3]
 
 
-def score(text, b):
-    """T-1525, the dojo: each of a playbook's numbered steps, followed when the task's run (its steps, evidence, approach
-    and log) shares two or more of its telling words: ones at most an eighth of the library's playbooks use, so 'files'
-    or 'evidence' never make a match."""
-    books = listed()
+def _doc_freq(books, root=ROOT):
+    """{word: playbooks using it} over these books."""
     seen = {}
     for rel in books:
-        for w in set(_WORD.findall(_read(os.path.join(ROOT, rel)).lower())):
+        for w in set(_WORD.findall(_read(os.path.join(root, rel)).lower())):
             seen[w] = seen.get(w, 0) + 1
-    limit = max(1, len(books) // 8)
+    return seen
+
+
+def score(text, b, seen=None, total=None):
+    """T-1525, the dojo: each of a playbook's numbered steps, followed when the task's run (its steps, evidence, approach
+    and log) shares two or more of its telling words: ones at most an eighth of the library's playbooks use, so 'files'
+    or 'evidence' never make a match. T-1834: a caller scoring several books passes the word counts once."""
+    if seen is None:
+        books = listed()
+        seen, total = _doc_freq(books), len(books)
+    limit = max(1, total // 8)
     run = [s.text for s in b.steps()] + b.evidence() + [b.section("Approach (options → choice → why)"), b.section("Log")]
     rows = [dict(x, words=[w for w in x["words"] if seen.get(w, 0) <= limit]) for x in _sharing(text, run)]
     return [dict(x, followed=len(x["words"]) >= 2) for x in rows]
@@ -707,6 +802,18 @@ def _one(name, books):
 def cmd_show(args):
     """fm playbooks show NAME (T-1621); eval NAME (T-1618); route STAGE, blame NAME, preview NAME (T-1622)."""
     import fmcli
+    if args.action == "coverage" and args.unused:  # T-1834: who earns a place; only ever names, never deletes
+        p = fmcli.resolve(args, create=False) if getattr(args, "project", None) else c.find_project(os.getcwd())
+        days = args.days or REACH_DAYS
+        drop, merge = unused(ROOT, days, p), similar(ROOT)
+        return fmcli.out(args, {"days": days, "unused": drop, "similar": merge}, (
+            f"Drop candidates: no read, route hit or followed record in {days} days ({len(drop)})"
+            + "".join(f"\n  {x}" for x in drop[:SHOWN]) + (f"\n  … and {len(drop) - SHOWN} more (--json lists them all)"
+                                                           if len(drop) > SHOWN else "")
+            + f"\nMerge candidates: {int(NEAR * 100)}%+ of their wording shared ({len(merge)})"
+            + "".join(f"\n  {a} ~ {b} ({j:.0%})" for a, b, j in merge[:SHOWN])
+            + (f"\n  … and {len(merge) - SHOWN} more" if len(merge) > SHOWN else "")
+            + "\nThis names books; it never deletes one.")) or 0
     if args.action == "coverage":  # T-1623
         cov = coverage()
         return fmcli.out(args, cov, coverage_text(cov)) or 0
@@ -749,7 +856,19 @@ def cmd_show(args):
         if b.status != "done":
             raise fmcli.UsageError(f"{b.id} is {b.status}: a draft comes from a done task, whose steps were proved")
         text = draft(b)
-        return fmcli.out(args, {"task": b.id, "text": text}, text.rstrip("\n")) or 0
+        near, share = nearest(text)  # T-1834: a draft that says what a book says is a merge, not a new book
+        dup = near is not None and share >= NEAR
+        if near and share:
+            print(f"nearest: {near} ({share:.0%} of its wording shared)", file=sys.stderr)
+        if dup and not args.force:
+            if getattr(args, "json", False):
+                fmcli.out(args, {"task": b.id, "refused": True, "nearest": near, "overlap": round(share, 2)}, None)
+            else:
+                print(f"fm playbooks draft: {near} already says this ({share:.0%} shared wording): edit that book, or "
+                      f"--force to draft anyway", file=sys.stderr)
+            return 1
+        return fmcli.out(args, {"task": b.id, "text": text, "nearest": near, "overlap": round(share, 2)},
+                         text.rstrip("\n")) or 0
     if args.action == "route":
         got = route(args.name)
         if got is None:
