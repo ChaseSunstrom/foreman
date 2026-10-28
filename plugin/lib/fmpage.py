@@ -572,6 +572,59 @@ def graph_layout(tasks):
             "chain": chain[::-1], "cyclic": cyclic, "hmax": max(TIER_HEIGHT.values())}
 
 
+def _graph_newest(tasks):
+    """The newest GRAPH_MAX tasks by id, oldest first, and how many older ones are left out."""
+    tasks = sorted(tasks, key=lambda t: (c.id_num(t["id"]), str(t["id"])))
+    left = max(0, len(tasks) - GRAPH_MAX)
+    return tasks[left:], left
+
+
+def graph_scene(plan):
+    """T-1655: graph_layout's plan as a scene.json dict (fmscene): a box per task as tall as its tier, coloured by its
+    status from graph.html's --graph-* tokens (so the page and the terminal can't drift), a ground slab per layer, the
+    camera above and to the south looking at the middle, framed for fmscene.cells' 8:5 picture."""
+    import math
+    import fmscene
+    with open(GRAPH_TEMPLATE, encoding="utf-8") as f:
+        tokens = dict(re.findall(r"--graph-([a-z]+): (#[0-9a-f]{6});", f.read()))
+    meshes = [{"name": f"g{i}", "material": "floor", "geometry": {"type": "box", "size": [g["w"], 0.05, g["d"]]},
+               "position": [g["x"], -0.025, 0]} for i, g in enumerate(plan["layers"])]
+    meshes += [{"name": f"t{i}", "material": GRAPH_STATUSES[nd[3]], "geometry": {"type": "box", "size": [0.8, nd[2], 0.8]},
+                "position": [nd[0], nd[2] / 2, nd[1]]} for i, nd in enumerate(plan["n"])]
+    wide = max((abs(nd[0]) for nd in plan["n"]), default=0) + 1
+    deep = max((abs(nd[1]) for nd in plan["n"]), default=0) + 1
+    tan = math.tan(math.radians(35 / 2))
+    dist = 1.1 * max(wide / (tan * 1.6), (deep * 0.6 + plan["hmax"]) / tan) + deep
+    far = max(100, round(dist * 3))
+    return fmscene.validate({
+        "background": tokens["bg"], "meshes": meshes,
+        "materials": {s: {"color": tokens[s]} for s in GRAPH_STATUSES + ["floor"]},
+        "camera": {"fov": 35, "target": [0, 0.4, 0], "near": max(0.1, far / 5000), "far": far,
+                   "position": [0, round(dist * math.sin(math.radians(35)), 2), round(dist * math.cos(math.radians(35)), 2)]}})
+
+
+def graph_cells(tasks, cols=64):
+    """T-1655: the task graph in the terminal: graph_scene drawn by fmscene.cells as 24-bit half blocks, then a key
+    naming each status's count in its colour (status isn't colour alone), and how many older tasks aren't drawn.
+    ValueError for cols outside 2-400, before any drawing."""
+    import collections
+    import fmscene
+    if not 2 <= cols <= 400:
+        raise ValueError(f"--cols {cols}: 2 to 400")
+    tasks, left = _graph_newest(tasks)
+    plan = graph_layout(tasks)
+    scene = graph_scene(plan)
+    counts = collections.Counter(GRAPH_STATUSES[nd[3]] for nd in plan["n"])
+    key = []
+    for s in GRAPH_STATUSES:
+        if counts[s]:
+            rgb = ";".join(str(int(scene["materials"][s]["color"][i:i + 2], 16)) for i in (1, 3, 5))
+            key.append(f"\x1b[38;2;{rgb}m■\x1b[0m {counts[s]} {s}")
+    if left:
+        key.append(f"({left:,} older not drawn)")
+    return fmscene.cells(scene, cols) + ["  ".join(key)]
+
+
 def _graph_poster(plan, named):
     """The first paint: the same plan drawn isometric in SVG, each layer's ground, the edges as arcs, then each task
     back to front as its two sides and its roof, coloured by status, a blocked roof hatched and a done one ringed
@@ -623,10 +676,9 @@ def graph_html(tasks, name, when=None):
     and what it waits on, and the plan as JSON for the WebGL2 scene. Leak, naming the task, when a string is still
     absolute after redaction."""
     import collections
-    tasks = sorted(tasks, key=lambda t: (c.id_num(t["id"]), str(t["id"])))
-    left = max(0, len(tasks) - GRAPH_MAX)
+    tasks, left = _graph_newest(tasks)
     kept = []
-    for t in tasks[left:]:
+    for t in tasks:
         try:
             kept.append({"id": clean(str(t["id"])), "title": clean(str(t.get("title") or "")),
                          "status": str(t.get("status") or ""),
@@ -686,6 +738,15 @@ def graph_page(p, args):
     tasks = graph_tasks(p)
     if not tasks:
         raise fmcli.UsageError("fm page graph: no open or linked task to draw")
+    if args.cells:
+        if args.out:
+            raise fmcli.UsageError("fm page graph --cells prints to the terminal; it takes no --out")
+        try:
+            lines = graph_cells(tasks, args.cols)
+        except ValueError as e:
+            raise fmcli.UsageError(f"fm page graph {e}") from None
+        return fmcli.out(args, {"cols": args.cols, "tasks": min(len(tasks), GRAPH_MAX), "lines": lines},
+                         "\n".join(lines)) or 0
     try:
         page = graph_html(tasks, os.path.basename(p.root.rstrip("/")) or p.slug)
     except Leak as e:
@@ -782,6 +843,8 @@ def looks_page(p, args):
 def cmd_page(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "cells", False) and args.what != "graph":
+        raise fmcli.UsageError("--cells draws only fm page graph in the terminal")
     if getattr(args, "what", None) == "looks":
         return looks_page(p, args)
     if getattr(args, "what", None) == "city":
