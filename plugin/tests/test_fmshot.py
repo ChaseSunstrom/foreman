@@ -14,7 +14,7 @@ import time
 import unittest
 from unittest import mock
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, headless_chrome
 
 import fmimg
 import fmshot
@@ -409,7 +409,7 @@ class Diff(StubCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("not compared", r.stdout)
 
-    @unittest.skipUnless(fmshot.chrome(), "no headless Chromium here")
+    @unittest.skipUnless(headless_chrome(), "no headless Chromium here")
     def test_in_a_browser_a_font_that_fails_to_load_is_caught(self):
         page = os.path.join(self.repo, "font.html")
         with open(page, "w") as f:
@@ -440,7 +440,7 @@ def _png(n):
     return base64.b64encode(fmimg.encode(8, 8, bytes(px)))
 
 
-@unittest.skipUnless(fmshot.chrome(), "no headless Chromium here")
+@unittest.skipUnless(headless_chrome(), "no headless Chromium here")
 class InABrowser(ForemanTestCase):
     def test_an_animated_page_gets_a_poster_and_frozen_holds_it_still(self):
         self.fm("init")

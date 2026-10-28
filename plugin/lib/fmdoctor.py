@@ -1407,9 +1407,10 @@ def _pyc_of_source(p, st, budget):
         # marshal's ref flags follow refcounts, which differ between processes, so both bodies go through loads then
         # dumps in this process: equal means the same object graph (filename, names, consts, code), nothing trailing
         # (marshal.load builds objects only, never runs code; a hostile pyc raises, is capped at 8 MB, and stays flagged)
+        # T-1799: both sides are dumped as temporaries: a held reference sets other ref flags on 3.12
         body = io.BytesIO(got[16:])
-        mine = marshal.load(body)
-        return body.tell() == len(got) - 16 and marshal.dumps(mine) == marshal.dumps(marshal.loads(marshal.dumps(code)))
+        mine = marshal.dumps(marshal.load(body))
+        return body.tell() == len(got) - 16 and mine == marshal.dumps(marshal.loads(marshal.dumps(code)))
     except (OSError, ValueError, EOFError, TypeError, SyntaxError, MemoryError, RecursionError):
         return False
 

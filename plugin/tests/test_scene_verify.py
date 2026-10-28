@@ -8,7 +8,7 @@ import pwd
 import struct
 import unittest
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, headless_chrome
 
 import fmscene
 import fmshot
@@ -103,7 +103,7 @@ class Soak(ForemanTestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("skipped:", out.stdout)
 
-    @unittest.skipUnless(fmshot.chrome() and three(), "needs headless Chrome and a three.js build")
+    @unittest.skipUnless(headless_chrome() and three(), "needs headless Chrome and a three.js build")
     def test_a_moving_scene_soaks_in_a_real_browser(self):
         path = os.path.join(self.tmp, "scene.json")
         with open(path, "w") as f:

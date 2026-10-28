@@ -111,7 +111,8 @@ class IndexLock(HookCase):
         git = os.path.join(self.tmp, "bin", "git")  # a process whose comm is git, with the repo as its cwd
         os.makedirs(os.path.dirname(git), exist_ok=True)
         shutil.copy("/bin/sleep", git)
-        pr = subprocess.Popen([git, "30"], cwd=cwd or self.repo)
+        # T-1799: argv[0] stays sleep: a multi-call coreutils (Ubuntu 26's uutils) picks its tool by it; comm is the file's name
+        pr = subprocess.Popen(["sleep", "30"], executable=git, cwd=cwd or self.repo)
         self.procs.append(pr)
         return pr
 
