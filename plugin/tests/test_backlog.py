@@ -317,7 +317,7 @@ class Extras(ForemanTestCase):
             self.fm("capture", t, "--tier", "M")
         rank = lambda: [b.id for b in c.rank_inbox(c.load_briefs(self.p))]
         self.assertEqual(rank(), ["T-0001", "T-0002", "T-0003", "T-0004"])
-        d = json.loads(self.fm("inbox", "pick", "--json").stdout)
+        d = json.loads(self.fm("inbox", "pick", "--epsilon", "0", "--json").stdout)  # T-1860: no exploring here
         self.assertEqual([[x["a"]["id"], x["b"]["id"]] for x in d["pairs"]], [["T-0001", "T-0002"], ["T-0003", "T-0004"]])
         self.fm("inbox", "prefer", "T-0002", "T-0001")  # onboarding over search
         self.assertEqual(rank(), ["T-0002", "T-0004", "T-0003", "T-0001"])

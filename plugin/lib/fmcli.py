@@ -6354,10 +6354,15 @@ def _build_parser():
                    help="a source to capture from (spec FILE: each unchecked `- [ ]` item, once; ticket FILE|-: a "
                         "pasted ticket or error as one planned brief, T-1664); first: ready S items with why; swipe: "
                         "the deferred pile (--apply ID:revive|drop|keep,…); pick: close pairs to choose between; "
-                        "prefer WINNER LOSER: record a choice the inbox order learns from; none lists the inbox")
+                        "prefer WINNER LOSER: record a choice the inbox order learns from (--reset forgets them); "
+                        "none lists the inbox")
     s.add_argument("file", nargs="?", help="with spec or ticket: the file; with prefer: the winner")
     s.add_argument("loser", nargs="?", help="with prefer: the item it beat")
-    s.add_argument("--apply", metavar="ID:VERDICT,…", help="with swipe: revive, drop or keep each deferred item named")
+    s.add_argument("--apply", metavar="ID:VERDICT,…", help="with swipe: revive, drop or keep each deferred item named "
+                                                          "(without it a terminal asks one item at a time, T-1857)")
+    s.add_argument("--epsilon", metavar="P", help="with pick: how often (0-1, default 0.1) an item meets a farther one "
+                                                  "of its kind instead of its neighbour (T-1860)")
+    s.add_argument("--reset", action="store_true", default=None, help="with prefer: forget the learned weights (T-1861)")
     s.add_argument("--repo", metavar="OWNER/REPO", help="default: the repo gh finds here")
     s.add_argument("--limit", type=int, help="with gh (default 30), first (5) or pick (4 pairs)")
     s = add("ci-watch", lazy("fmci", "cmd_ci_watch"), tier=("Project and settings", 930), help="after a push, poll the branch's latest CI run through gh; a "
