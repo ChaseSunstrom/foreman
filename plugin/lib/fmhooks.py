@@ -1820,7 +1820,7 @@ def _pre_tool_use(raw):
             return 2
     try:
         _record_asks(pl, p, guard)
-        decision = _ask_prompt(pl, p, guard) or (_taint_check(pl, p) if tool == "Bash" else None) or _wait_loop(pl) or _stdin_hang(pl)
+        decision = _ask_prompt(pl, p, guard) or (_taint_check(pl, p) if tool == "Bash" else None) or _wait_loop(pl) or _self_match(pl) or _stdin_hang(pl)
     except Exception:
         log_error("PreToolUse", _tb())
         decision = None
@@ -2263,6 +2263,33 @@ def _wait_loop(pl):
     return ("deny", "Foreman: a foreground wait loop holds this session idle until it ends. Run it with "
                     "run_in_background (its completion notification wakes you) or as a Monitor, and do other work "
                     "meanwhile: the next step, another task, a builder lane.")
+
+
+_PGREP = re.compile(r"""(?:^|[;&|(`!{]|\b(?:while|until|if|then|do|else|sudo|exec|nohup|timeout\s+\S+))\s*"""
+                    r"""p(?:grep|kill)((?:\s+-{1,2}[\w=-]+)*)\s+(?:'([^']*)'|"([^"]*)"|([^\s;&|)]+))""", re.M)
+_SELF_DROP = re.compile(r"""[^;&|\n]*\|\s*grep\s+(?:-\w+\s+)*-\w*v\w*(?:\s+-e)?\s+['"]?[^|;\n]*(?:pgrep|pkill|bash|while)""")
+
+
+def _self_match(pl):
+    """T-1839 (a background `while pgrep -f "fm check"` waited on its own shell for hours; `pkill -f` killed its own
+    shell): pgrep/pkill -f match whole command lines, and the shell running this text holds the pattern."""
+    cmd = str((pl.get("tool_input") or {}).get("command") or "") if pl.get("tool_name") == "Bash" else ""
+    for m in _PGREP.finditer(cmd):
+        flags, pat = m.group(1).split(), next(g for g in m.group(2, 3, 4) if g is not None)
+        short = "".join(f[1:] for f in flags if not f.startswith("--"))
+        if not ("f" in short or "--full" in flags) or "x" in short or "--exact" in flags or _SELF_DROP.match(
+                cmd, m.end()):  # `| grep -v pgrep` drops its own shell's line
+            continue
+        try:
+            hit = re.search(pat, cmd)
+        except re.error:
+            hit = pat in cmd
+        if hit:
+            return ("deny", f"Foreman: `{m.group(0).strip()}` matches this command's own shell (its command line holds "
+                            "the pattern), so a wait on it never ends and a kill hits itself. Wait on the PID "
+                            "(`while kill -0 PID`), bracket one letter (`pgrep -f '[f]m check'`), or run the job itself "
+                            "with run_in_background.")
+    return None
 
 
 _COMPOUND = {"while", "until", "for", "do", "done", "{", "}", "select", "if", "then", "case"}
