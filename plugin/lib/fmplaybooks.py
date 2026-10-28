@@ -194,6 +194,7 @@ def _run(code, timeout, limits=(), argv=(sys.executable, "-I", "-c"), env=None, 
                 pass  # a platform without that limit
     with tempfile.TemporaryDirectory(prefix="fm-playbook-", ignore_cleanup_errors=True) as d, \
             tempfile.TemporaryFile() as err:
+        d = os.path.realpath(d)  # T-1828: macOS /var is /private/var; a fence's $PWD is the real path
         env = dict({"PATH": os.environ.get("PATH") or os.defpath, "HOME": d}, **(env(d) if env else {}))
         try:
             proc = subprocess.Popen([*argv, code], cwd=d, env=env, stdin=subprocess.DEVNULL,
