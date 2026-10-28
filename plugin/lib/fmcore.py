@@ -3039,7 +3039,10 @@ def next_for(p, briefs=None):
     rung = stuck_rung(b) if b is not None and b.status == "active" else None
     if rung:  # T-0611: the escalation ladder, from this step's failed runs and open hypotheses
         action += f" · {rung}"
-    raised = andons(briefs if briefs is not None else load_briefs(p))  # T-0648: a lane stopped to ask
+    briefs = briefs if briefs is not None else load_briefs(p)
+    if b is None or b.status not in ("active", "verifying"):  # T-1841: its lane folder went; it's still active there
+        action = "".join(stranded_note(s) + " · " for s in stranded(briefs, p.lane)) + action
+    raised = andons(briefs)  # T-0648: a lane stopped to ask
     if raised:
         tid, text = raised[0]
         action += (f" · andon from {tid}'s lane: {text[:160]} — answer it (fm bus send, or edit its brief), then delete "
@@ -3183,6 +3186,17 @@ def active_brief_fast(p, lane=None):
     return active_brief(hits, lane)
 
 
+def stranded(briefs, lane=None):
+    """T-1841: tasks active in another lane whose folder is gone: no checkout can carry on with them."""
+    return [dict(brief_summary(b), lane=b.meta["lane"]) for b in briefs if b.status in ("active", "verifying")
+            and isinstance(b.meta.get("lane"), str) and b.meta["lane"] and b.meta["lane"] != lane
+            and not os.path.isdir(b.meta["lane"])]
+
+
+def stranded_note(s):
+    return f"{s['id']} is active in lane {s['lane']}, whose folder is gone: fm lane rm {s['id']} frees it"
+
+
 def held_elsewhere(b, lane=None):
     """T-0134: the task belongs to another lane (given to it, or active there), or, seen from a lane, is active in
     the main checkout: this side's next, queue and focus leave it alone."""
@@ -3215,6 +3229,7 @@ def state_dict(p, briefs=None):
     return {
         "project": p.slug, "root": p.root,
         "active": active,
+        "stranded": [] if act else stranded(everything, p.lane),
         "queue": [brief_summary(b) for b in queue if b is not act],
         "lanes": [dict(brief_summary(b), lane=b.meta.get("lane") or "main") for b in everything
                   if held_elsewhere(b, p.lane) and b.status not in ("done", "dropped")],
@@ -3251,7 +3266,7 @@ def render_state(sd, ts=None):
         else:
             out.append(f"Steps: {a['steps_done']}/{a['steps_total']} done")
     else:
-        out.append("No active task.")
+        out.append("No active task." + "".join(f" {stranded_note(s)}." for s in sd.get("stranded", ())))
     out += ["", f"## Queue ({len(sd['queue'])})"]
     out += [f"{i}. {q['id']} {q['type']} {q['tier']}{' !' if q['priority'] == 'urgent' else ''} — {q['title'][:70]}"
             for i, q in enumerate(sd["queue"][:10], 1)] + _more(len(sd["queue"]), 10)
