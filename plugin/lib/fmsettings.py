@@ -210,6 +210,51 @@ def ext_value(e, value):
     return _check(e, value)
 
 
+_LADDER = sorted({0} | {m * 10 ** k for m in (1, 2, 5) for k in range(-3, 16)})  # 1-2-5: a dial's detents
+
+
+def detent(e, value, n):
+    """T-1661: `value` turned one detent (n > 0 up, else down): a closed range on its 1-2-5 step nearest a twentieth of
+    the span, an open one to the next 1-2-5 value (whole ones from a whole value); clamped to the range. SettingError
+    for a setting that isn't a number."""
+    if e["type"] not in ("int", "number"):
+        raise SettingError(f"{e['key']} isn't a number: [ and ] turn numbers")
+    v, (lo, hi) = _check(e, value), e["range"] or (None, None)
+    if lo is not None and hi is not None:
+        step = max([x for x in _LADDER if 0 < x <= (hi - lo) / 20 and (x >= 1 or e["type"] != "int")] or [1])
+        k = round(v / step, 9)  # 0.3 / 0.05 is 5.999…: floored, ] would never move
+        new = (math.floor(k) + 1) * step if n > 0 else (math.ceil(k) - 1) * step
+    else:
+        ladder = [x for x in _LADDER if not float(v).is_integer() or x == int(x)]
+        new = (next((x for x in ladder if x > v), v + 1) if n > 0 else
+               next((x for x in reversed(ladder) if x < v), v - 1))
+    new = max(new, lo) if lo is not None else new
+    new = round(min(new, hi) if hi is not None else new, 9)
+    return int(new) if e["type"] == "int" or float(new).is_integer() else new
+
+
+def layout_moved(lay, c, i, dc, di):
+    """T-1661: the panel at column c, row i of layout `lay` moved one step (dc across, di within its column): (columns,
+    heights, its name, its column, its row), each panel keeping its height; None at an edge or for no such panel.
+    SettingError for more than one step, or for a column's only panel moved across (a column keeps one)."""
+    if (abs(dc), abs(di)) not in ((1, 0), (0, 1)):
+        raise SettingError("a move is one step: across or within a column")
+    cols = [list(x) for x in lay["columns"]]
+    hts = [((list(lay["heights"][n]) if n < len(lay["heights"]) else []) + [1] * len(x))[:len(x)]
+           for n, x in enumerate(cols)]  # as render reads them: a missing height is 1
+    to, at = c + dc, i + di
+    if not (0 <= c < len(cols) and 0 <= i < len(cols[c]) and 0 <= to < len(cols)) or not dc and not 0 <= at < len(cols[c]):
+        return None
+    if dc and len(cols[c]) == 1:
+        raise SettingError(f"{cols[c][0]} is its column's only panel: a column keeps one (set layout.columns to drop a "
+                           "column)")
+    at = min(i, len(cols[to])) if dc else at  # across: to the same row there, or its end
+    name = cols[c].pop(i)
+    cols[to].insert(at, name)
+    hts[to].insert(at, hts[c].pop(i))
+    return cols, hts, name, to, at
+
+
 # ---------------------------------------------------------------- tui.toml in place
 
 _PART = r'(?:"(?:[^"\\]|\\.)*"|\'[^\']*\'|[A-Za-z0-9_-]+)'
@@ -1210,6 +1255,125 @@ def words(text, model="haiku", p=None):
     return ok, dropped
 
 
+NEWCOMER_GOALS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "evals", "settings",
+                              "newcomer.json")
+NEWCOMER_MODES = ("settings", "layout")  # the screens a newcomer plays; one that leaves them stops (no run, no runner)
+
+
+def _goals(path):
+    """A newcomer goals file: [{goal, steps: [{see, keys}], done: {key: value or null}}], or SettingError."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            got = json.load(f)
+    except (OSError, ValueError) as e:
+        raise SettingError(f"{path}: {e}") from None
+    ok = isinstance(got, list) and all(
+        isinstance(g, dict) and isinstance(g.get("goal"), str) and isinstance(g.get("done"), dict)
+        and isinstance(g.get("steps", []), list)
+        and all(isinstance(s, dict) and isinstance(s.get("see"), str) and isinstance(s.get("keys"), str)
+                for s in g.get("steps", [])) for g in got)
+    if not ok:
+        raise SettingError(f'{path}: a list of {{"goal", "steps": [{{"see", "keys"}}], "done": {{setting: value}}}}')
+    return got
+
+
+def newcomer(goals=None, real=False, model="haiku", turns=6, size=(120, 40)):
+    """T-1661: a first-time user played through the fm code app's settings screen with only what it shows, on the
+    defaults, in a sandbox (tui.toml, state and Claude Code's settings in a temp folder; a write anywhere else is
+    refused): [{goal, done, step, missing}]. Scripted: each step's keys pressed once its `see` text is on screen, else
+    stuck there. real: a tool-less claude -p child is shown the goal and the screen and replies with the keys, up to
+    `turns` times."""
+    import unittest.mock as mock
+    import fmcodeterm
+    import fmcodetui as T
+    import fmcore
+    import fmideas
+    goals = _goals(NEWCOMER_GOALS) if goals is None else goals
+    system = ("You are using a terminal app's settings screen for the first time and see only its screen as text. "
+              'Reply with one JSON object, {"keys": "..."}: the keys to press next (\\n is Enter, \\u001b Escape, '
+              "\\u001b[A \\u001b[B \\u001b[C \\u001b[D the arrows), and nothing else.")
+    out, write = [], fmcore.write_atomic
+    outer = {k: os.environ.get(k) for k in ("FOREMAN_HOME", "FOREMAN_STATE")}
+
+    def ask(prompt, detail):  # the model call is the real world's: the real budget, spend and state record it
+        with mock.patch.dict(os.environ, {k: v for k, v in outer.items() if v is not None}), \
+                mock.patch.object(fmcore, "write_atomic", write):
+            for k in [k for k, v in outer.items() if v is None]:
+                os.environ.pop(k, None)
+            return fmideas.run_child("settings newcomer", system, prompt, model, 120, detail=detail)
+    for g in goals:
+        with tempfile.TemporaryDirectory(prefix="fm-newcomer-") as tmp, contextlib.ExitStack() as stack:
+            cs = os.path.join(tmp, "settings.json")
+
+            def cs_read():  # Claude Code's settings.json, the sandbox's own
+                try:
+                    with open(cs, encoding="utf-8") as f:
+                        return cs, json.load(f)
+                except FileNotFoundError:
+                    return cs, {}
+
+            def boxed(path, *a, **k):  # the backstop: nothing outside the sandbox, whatever the screen did
+                if not os.path.realpath(path).startswith(os.path.realpath(tmp) + os.sep):
+                    raise SettingError(f"the newcomer writes nothing outside its sandbox ({path})")
+                return write(path, *a, **k)
+            for x in (mock.patch.dict(os.environ, {"FOREMAN_HOME": tmp, "FOREMAN_STATE": os.path.join(tmp, "state")}),
+                      mock.patch.object(fmcore, "write_atomic", boxed),
+                      mock.patch(__name__ + ".in_claude_code", return_value=False),  # the guard is for real files
+                      mock.patch(__name__ + ".claude_settings", cs_read)):
+                stack.enter_context(x)
+            none = lambda *a, **k: None  # noqa: E731
+            cfg = T.load_config()[0]
+            app = T.App(cfg, spawn=none, root=tmp, diff=lambda *a, **k: "", history=tmp, choices=lambda *a, **k: [],
+                        projects=lambda *a, **k: [], project_state=lambda *a, **k: {}, noticed=lambda *a, **k: [],
+                        asker=none, queued=lambda *a, **k: [])
+            app.show_settings()
+            screen = lambda: T.render(app.state, *size, app.cfg, app).text()  # noqa: E731
+
+            def press(keys):
+                for k in fmcodeterm.parse_keys(keys[:500]):
+                    if app.mode not in NEWCOMER_MODES:
+                        return False
+                    app.key(k)
+                return True
+
+            def reached():
+                now = {}
+                for r in rows():
+                    now.setdefault(r["key"], r)
+                return all(k in now and (now[k]["value"] != now[k]["default"] if v is None else
+                                         now[k]["value"] == v or str(now[k]["value"]) == str(v))
+                           for k, v in g["done"].items())
+            got = {"goal": g["goal"], "done": False, "step": None, "missing": None}
+            if real:
+                for n in range(1, turns + 1):
+                    if reached():
+                        break
+                    try:
+                        reply = ask(f"Goal: {g['goal']}\n\nThe screen:\n{screen()}", g["goal"][:60])
+                    except ValueError as e:  # timed out, logged out, the budget spent: this goal stops, the rest play
+                        got.update(step=n, missing=f"the model failed: {_safe(str(e))[:160]}")
+                        break
+                    try:
+                        keys = json.JSONDecoder().raw_decode(reply, reply.index("{"))[0]["keys"]
+                    except (ValueError, KeyError, TypeError):
+                        got.update(step=n, missing=f"no keys came back: {_safe(reply[:120])}")
+                        break
+                    if not press(str(keys)):
+                        got.update(step=n, missing="left the settings screen")
+                        break
+            else:
+                for n, s in enumerate(g.get("steps") or [], 1):
+                    if s["see"] not in screen():
+                        got.update(step=n, missing=s["see"])
+                        break
+                    if not press(s["keys"]):
+                        got.update(step=n, missing="left the settings screen")
+                        break
+            got["done"] = reached()
+            out.append(got)
+    return out
+
+
 def _said(args, done, refused, data=None, lines=()):
     """A set's output (set, macro, words --apply): each value written, then each refused; PolicyError for those."""
     import fmcli
@@ -1281,6 +1445,17 @@ def _cmd_extras(args):
                          else f"nothing breaks with {said} (nothing written: fm settings set does it)")
         fmcli.out(args, got, _safe("\n".join(lines)))
         return 1 if bad else 0
+    if args.action == "newcomer":  # T-1661
+        if args.real and not shutil.which("claude"):
+            raise SettingError("fm settings newcomer --real asks a model through claude (Claude Code's CLI), not on "
+                               "PATH; without --real a scripted newcomer plays")
+        got = newcomer(_goals(args.goals) if args.goals else None, args.real, args.model)
+        hint = lambda m: m if args.real or m == "left the settings screen" else f'the screen never showed "{m}"'  # noqa: E731
+        lines = [f"✓ {g['goal']}" if g["done"] else f"✗ {g['goal']}: stuck at step {g['step']}: {hint(g['missing'])}"
+                 if g["step"] else f"✗ {g['goal']}: not reached" for g in got]
+        fmcli.out(args, got, _safe("\n".join(lines + ["nothing written (a sandbox: its own tui.toml, state and Claude "
+                                                      "Code settings)"])))
+        return 1 if any(not g["done"] for g in got) else 0
     if not args.key:
         raise SettingError('fm settings words "what you want" [--apply]: the change, said in words')
     if not shutil.which("claude"):
@@ -1834,9 +2009,10 @@ def cmd_settings(args):
         return 1 if bad else 0
     if args.action == "chords":  # T-1660 (keys is the bindings group: fm settings list keys)
         return _cmd_chords(args)
-    if args.action in ("diff", "export", "import", "undo", "bisect", "log", "macro", "duel", "replay", "words"):
+    if args.action in ("diff", "export", "import", "undo", "bisect", "log", "macro", "duel", "replay", "words",
+                       "newcomer"):
         try:
-            if args.action in ("log", "macro", "duel", "replay", "words"):  # T-1658
+            if args.action in ("log", "macro", "duel", "replay", "words", "newcomer"):  # T-1658, T-1661
                 return _cmd_extras(args)
             return _cmd_bisect(args) if args.action == "bisect" else _cmd_history(args)
         except SettingError as e:
