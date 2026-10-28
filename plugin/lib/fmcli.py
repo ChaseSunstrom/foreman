@@ -1057,10 +1057,10 @@ def task_finish(p, args):
         return b.has_evidence(step=n)
     evidenced = [s.n for s in b.steps() if not s.done and closes(s.n)]
     # T-1231: a small task's criteria prove its steps; a step with no evidence at all closes on their run (one whose
-    # own run failed still needs a passing run of its own)
+    # own run failed still needs a passing run of its own: T-1844 re-runs that command here)
     proves = args.run or next((cmd for _, cmd in b.verify_cmds() if cmd), None) if b.tier == "S" else args.run
     todo = [("ac", n, cmd or args.run) for n, cmd in b.verify_cmds(unchecked=True)] + [
-        ("step", s.n, args.run if b.has_evidence(step=s.n) else proves) for s in b.steps()
+        ("step", s.n, (args.run or b.failed_cmd(s.n)) if b.has_evidence(step=s.n) else proves) for s in b.steps()
         if not s.done and s.n not in evidenced]
     def named(kind, n):
         return f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
