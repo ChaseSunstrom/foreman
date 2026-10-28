@@ -1246,6 +1246,80 @@ def metaballs(balls=5, grid=32, seed=0):
                                 "values": [[0, 0, 0], [0, 360, 0]]}}})
 
 
+TERRAIN = ("#e0569a", "#5aa9e6", "#f2c14e", "#6cc58a", "#b07cf0", "#f08a5d", "#4fd1c5", "#e8e8e8", "#9aa5b1", "#d4a373")
+
+
+def terrain(rows, names):
+    """T-1851: churn as terrain: rows[i][t], the lines changed under names[i] in column t → a scene.json with a ribbon
+    per row (its own colour, a mesh named after its path), log1p(lines) high with the tallest at 1.5, its front
+    dropped to the floor so it reads as a ridge. ValueError for no rows, over 10 rows, under 2 or over 40 columns,
+    rows of unequal length or a negative count."""
+    if not 1 <= len(rows) <= 10 or len(rows) != len(names):
+        raise ValueError(f"1 to 10 rows, one name each, not {len(rows)} rows and {len(names)} names")
+    cols = len(rows[0])
+    if not 2 <= cols <= 40 or any(len(r) != cols for r in rows) or any(v < 0 for r in rows for v in r):
+        raise ValueError("rows of 2 to 40 counts each, all the same length, none negative")
+    top = max(math.log1p(v) for r in rows for v in r) or 1
+    meshes, materials, taken = [], {"floor": {"color": "#1b1e26", "roughness": 0.9}}, {"floor", "camera"}
+    for i, (r, path) in enumerate(zip(rows, names)):
+        n = re.sub(r"[^A-Za-z0-9_-]", "-", path)[:60]
+        n = n if n[:1].isalpha() else f"p-{n}"
+        base, k = n[:56], i + 1
+        while n in taken:  # T-1851 review: the renamed one may be taken too
+            n, k = f"{base}-{k}", k + 1
+        taken.add(n)
+        z, verts = (i - (len(rows) - 1) / 2) * 1.2, []
+        for t, v in enumerate(r):  # per column: the top's back and front edge, the front's foot
+            x, y = round(16 * t / (cols - 1) - 8, 6), round(0.02 + 1.5 * math.log1p(v) / top, 6)
+            verts += [[x, y, z - 0.4], [x, y, z + 0.4], [x, 0, z + 0.4]]
+        tris = [f for t in range(cols - 1) for a in (3 * t,) for f in
+                ([a, a + 1, a + 4], [a, a + 4, a + 3], [a + 2, a + 5, a + 4], [a + 2, a + 4, a + 1])]  # up, toward +z
+        materials[f"row{i}"] = {"color": TERRAIN[i], "roughness": 0.6}
+        meshes.append({"name": n, "material": f"row{i}", "geometry": {"type": "vertices", "vertices": verts,
+                                                                      "faces": tris}})
+    meshes.append({"name": "floor", "material": "floor", "geometry": {"type": "plane", "size": [20, 16]},
+                   "rotation": [-90, 0, 0]})
+    return validate({
+        "background": "#101218", "materials": materials, "meshes": meshes,
+        "camera": {"fov": 40, "position": [0, 9, 15], "target": [0, 0.4, 0], "far": 100},
+        "lights": [{"type": "hemisphere", "sky": "#dfe8ff", "ground": "#2a221a", "intensity": 0.7},
+                   {"type": "directional", "position": [-4, 8, 6], "intensity": 1.4},
+                   {"type": "directional", "position": [6, 3, -4], "color": "#7aa2ff", "intensity": 0.4}]})
+
+
+def churn(root, days):
+    """T-1851: (rows, names) for terrain: lines added and deleted per top-level path in root's git log over the last
+    `days` days, a column per day from the oldest commit in range (at most 40), the 10 busiest paths first.
+    ValueError outside git or with nothing in range."""
+    import collections
+    import subprocess
+    import time
+    try:  # quotepath off: café/ arrives as café/, not "caf\303\251/"
+        r = subprocess.run(["git", "-C", root, "-c", "core.quotepath=false", "log", f"--since={days}.days", "--numstat",
+                            "--no-renames", "--format=@%ct"], capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        raise ValueError("git log took over 60 s: try fewer --days") from None
+    if r.returncode:
+        raise ValueError(f"git log: {r.stderr.strip() or 'failed'}")
+    rec, when = [], None
+    for line in r.stdout.splitlines():
+        parts = line.split("\t")
+        if line.startswith("@"):
+            when = int(line[1:])
+        elif len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit() and when:  # "-": a binary file
+            rec.append((when, parts[2].split("/")[0], int(parts[0]) + int(parts[1])))
+    if not rec:
+        raise ValueError(f"no lines changed in the last {days} days")
+    start = min(w for w, _, _ in rec)  # from the oldest commit in range: a young repo fills the floor
+    span = max(time.time() - start, 1)
+    cols = min(40, max(2, math.ceil(span / 86400)))
+    per = collections.defaultdict(lambda: [0] * cols)
+    for w, path, n in rec:
+        per[path][min(cols - 1, int((w - start) / span * cols))] += n
+    names = sorted(per, key=lambda k: (-sum(per[k]), k))[:10]
+    return [per[k] for k in names], names
+
+
 def _write_out(args, text, what="FILE"):
     """--out's absolute path with text written there, never over args.path; None when there's no --out."""
     import fmcore
@@ -1260,22 +1334,29 @@ def _write_out(args, text, what="FILE"):
 def cmd_scene(args):
     import sys
     import fmcli
-    if args.action == "metaballs":  # T-1848: a seeded blob, polygonised here, for cells, compile or turntable
+    if args.action in ("metaballs", "terrain"):  # T-1848 a seeded blob, T-1851 the repo's churn: made here, no FILE
         if args.path:
-            print(f"fm: scene: metaballs takes no FILE (got {args.path}); write it with --out", file=sys.stderr)
+            print(f"fm: scene: {args.action} takes no FILE (got {args.path}); write it with --out", file=sys.stderr)
             return 2
         try:
-            scene = metaballs(args.balls, args.grid, args.seed)
+            if args.action == "metaballs":
+                scene, what = metaballs(args.balls, args.grid, args.seed), f"a blob of {args.balls} ball(s)"
+            else:
+                if not 1 <= args.days <= 3650:
+                    raise ValueError(f"--days {args.days}: 1 to 3650")
+                rows, names = churn(os.getcwd(), args.days)
+                scene, what = terrain(rows, names), f"{len(names)} path(s) over {args.days} days"
             text = json.dumps(scene, indent=2) + "\n"
             out = _write_out(args, text)
         except (OSError, ValueError) as e:
-            print(f"fm: scene: metaballs: {e}", file=sys.stderr)
+            print(f"fm: scene: {args.action}: {e}", file=sys.stderr)
             return 2
         if not out:
             return fmcli.out(args, {"scene": scene}, text.rstrip("\n")) or 0
-        g = scene["meshes"][0]["geometry"]
-        return fmcli.out(args, {"out": args.out, "vertices": len(g["vertices"]), "triangles": len(g["faces"])},
-                         f"wrote {args.out}: a blob of {args.balls} ball(s), {len(g['faces'])} triangles") or 0
+        gs = [m["geometry"] for m in scene["meshes"] if m["name"] != "floor"]
+        tris = sum(len(g["faces"]) for g in gs)
+        return fmcli.out(args, {"out": args.out, "vertices": sum(len(g["vertices"]) for g in gs), "triangles": tris},
+                         f"wrote {args.out}: {what}, {tris} triangles") or 0
     if not args.path:
         print(f"fm: scene: {args.action} needs FILE", file=sys.stderr)
         return 2

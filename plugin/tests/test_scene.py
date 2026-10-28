@@ -755,5 +755,56 @@ class Metaballs(ForemanTestCase):
             self.assertEqual((r.returncode, "Traceback" in r.stderr), (2, False), r.stderr)
 
 
+class Terrain(ForemanTestCase):
+    """T-1851: fm scene terrain, the repo's churn as a ribbon per busiest path."""
+
+    def test_terrain_draws_a_ribbon_per_row_as_tall_as_its_churn(self):
+        s = fmscene.terrain([[0, 0, 0], [1, 100, 0], [3, 0, 0]], ["plugin", ".github", "README.md"])
+        self.assertEqual(fmscene.validate(s), s)
+        ribbons = [m for m in s["meshes"] if m["name"] != "floor"]
+        self.assertEqual([m["name"] for m in ribbons], ["plugin", "p--github", "README-md"])
+        top = [max(v[1] for v in m["geometry"]["vertices"]) for m in ribbons]
+        self.assertAlmostEqual(top[0], 0.02)  # no churn: flat on the floor
+        self.assertAlmostEqual(top[1], 1.52)  # the busiest day is the tallest
+        self.assertTrue(0.02 < top[2] < top[1])
+        self.assertEqual(len({s["materials"][m["material"]]["color"] for m in ribbons}), 3)
+        for bad in (([], []), ([[1]], ["a"]), ([[1, 2], [1]], ["a", "b"]), ([[1, -1]], ["a"]),
+                    ([[1, 2]] * 11, [f"p{i}" for i in range(11)]), ([[1] * 41], ["a"])):
+            with self.assertRaises(ValueError):
+                fmscene.terrain(*bad)
+        for m in ribbons:  # tops face up, fronts face the camera
+            vs = m["geometry"]["vertices"]
+            for f in m["geometry"]["faces"]:
+                a, b, c = (vs[k] for k in f)
+                u, w = [b[k] - a[k] for k in range(3)], [c[k] - a[k] for k in range(3)]
+                ny, nz = u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]
+                self.assertTrue(ny >= 0 and nz >= 0 and ny + nz > 0, (m["name"], f))
+        names = [m["name"] for m in fmscene.terrain([[1, 2]] * 5, ["floor", "camera", "a-b", "a-b-5", "a.b"])["meshes"]]
+        self.assertEqual(len(set(names)), 6, names)  # renamed clear of the reserved and of each other
+
+    def test_churn_reads_lines_changed_per_top_level_path(self):
+        for path, n in (("a/x.py", 10), ("b/y.py", 2), ("café/z.py", 1)):
+            os.makedirs(os.path.join(self.repo, os.path.dirname(path)), exist_ok=True)
+            with open(os.path.join(self.repo, path), "w") as f:
+                f.write("x\n" * n)
+        subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "two"], check=True)
+        rows, names = fmscene.churn(self.repo, 30)
+        self.assertEqual(names, ["a", "b", "README.md", "café"])  # not git's quoted "caf\303\251"
+        self.assertEqual([sum(r) for r in rows], [10, 2, 1, 1])
+        self.assertEqual(len(rows[0]), 2)  # columns run from the oldest commit in range, not from 30 days back
+        with self.assertRaises(ValueError):
+            fmscene.churn(self.tmp, 30)  # not a repository
+
+    def test_fm_scene_terrain_prints_a_scene_fm_scene_checks(self):
+        out = os.path.join(self.tmp, "terrain.json")
+        self.assertIn("wrote", self.fm("scene", "terrain", "--days", "7", "--out", out).stdout)
+        self.assertEqual(self.fm("scene", "check", out).returncode, 0)
+        self.assertEqual(fmscene.loads(self.fm("scene", "terrain", "--days", "7").stdout), fmscene.load(out))
+        self.assertNotEqual(self.fm("scene", "terrain", cwd=self.tmp, check=False).returncode, 0)
+        self.assertIn("wrote", self.fm("scene", "terrain", "--days", "1", "--out", out).stdout)
+        self.assertNotEqual(self.fm("scene", "terrain", "--days", "0", check=False).returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -6710,7 +6710,8 @@ def _build_parser():
     s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 98), epilog=fmscene.SCHEMA,
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
             "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
-    s.add_argument("action", choices=["compile", "check", "turntable", "shader", "soak", "cells", "import", "metaballs"],
+    s.add_argument("action", choices=["compile", "check", "turntable", "shader", "soak", "cells", "import", "metaballs",
+                                       "terrain"],
                    help="compile: the module; "
                    "check: validate and count (a .gltf or .glb: its structure, offline); turntable: a contact sheet of "
                    "the scene turned about +Y, drawn by fmraster with no browser or GPU (--out PNG); shader: GLSL "
@@ -6719,12 +6720,14 @@ def _build_parser():
                    "scene in the terminal, drawn by fmraster as 24-bit half blocks, no browser; needs a truecolor terminal "
                    "(T-1635); import: three.js JSON (Object3D.toJSON) to scene.json, printed or --out, what it can't "
                    "carry named (T-1847); metaballs: a seeded blob scene, made by marching tetrahedra, printed or "
-                   "--out, no FILE (T-1848)")
+                   "--out, no FILE (T-1848); terrain: the repo's churn per busiest top-level path as ridges over "
+                   "--days, printed or --out, no FILE (T-1851)")
     s.add_argument("path", metavar="FILE", nargs="?", help="the scene.json (shader: a card, a GLSL file or a folder "
-                   "of them; import: the three.js JSON; metaballs: none)")
+                   "of them; import: the three.js JSON; metaballs, terrain: none)")
     s.add_argument("--balls", type=int, default=5, help="metaballs: how many balls, 1-12 (T-1848)")
     s.add_argument("--grid", type=int, default=32, help="metaballs: cubes along each side of the box, 8-48")
     s.add_argument("--seed", type=int, default=0, help="metaballs: the same seed draws the same blob")
+    s.add_argument("--days", type=int, default=90, help="terrain: how far back the git log goes, 1-3650 (T-1851)")
     s.add_argument("--hud", action="store_true", help="compile: add a dev overlay (frame rate, draw calls, triangles, "
                    "geometries, textures; globalThis.__fmScene); not for production (T-1530)")
     s.add_argument("--frames", type=int, default=8, help="turntable: how many turns, 1-36")
