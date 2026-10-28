@@ -1943,13 +1943,38 @@ def rank_inbox(briefs):
 
     def key(b):  # whole days waited: a float age read at each call would order same-second captures by the clock
         value = SOURCE_VALUE.get(b.meta.get("source"), 1) + 2 * wanted[b.id] + min(int(age_days(b.meta.get("created")) or 0) / 7, 2)
+        value += title_tilt(learned, b.title)  # T-1664: fm inbox prefer's choices, at most 2 either way
         return (0 if b.priority == "urgent" else 1, RANK.get(b.type, 99), -value / TIER_EFFORT.get(b.tier, 2), id_num(b.id))
     by_id = {b.id: b for b in briefs}
     pending = {b.id: b for b in briefs if b.status == "captured" and not batched(b, by_id)}
+    first = next((b for b in pending.values() if b.path), None)  # a brief lives in <project dir>/tasks/
+    learned = learned_weights(os.path.dirname(os.path.dirname(first.path))) if first else {}
     order, _ = _topo(list(pending), {i: [d for d in deps[i] if d in pending] for i in pending},
                      {i: key(b) for i, b in pending.items()}, {i: b.meta.get("group") for i, b in pending.items()},
                      1, brk=True)  # a cycle: as ranked
     return [pending[i] for i in order]
+
+
+_PREF_WORD, _PREF_STOP = re.compile(r"[a-z][a-z0-9]{2,}"), {"the", "and", "for", "with", "from", "into", "add", "fix"}
+
+
+def pref_words(title):
+    return set(_PREF_WORD.findall(str(title).lower())) - _PREF_STOP
+
+
+def learned_weights(pdir):
+    """T-1664: title-word weights from fm inbox prefer's two-way choices ({} before the first)."""
+    try:
+        with open(os.path.join(pdir, "prefer.json")) as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in d.items() if isinstance(v, (int, float))} if isinstance(d, dict) else {}
+
+
+def title_tilt(weights, title):
+    """At most 2 either way: a learned taste reorders close items, never urgency or type, which rank first."""
+    return max(-2, min(2, sum(weights.get(w, 0) for w in pref_words(title)) / 2))
 
 
 def order_queue(briefs):
