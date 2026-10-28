@@ -438,6 +438,47 @@ def cached_costs(p, compute=True, refresh=False):
     return costs
 
 
+def sweep(p):
+    """T-1810: the Stop hook's detached sweep, for every project (no cap or contract needed): CI on the default branch
+    and a changed setup (fmforesight), then usage burn (T-1800), whose account-wide scan runs at most every 10 min
+    unless the setup just changed."""
+    try:
+        import fmforesight
+        changed = fmforesight.refresh(p)
+    except Exception:
+        changed = False
+    try:
+        fresh = not changed and time.time() - os.path.getmtime(_burn_path()) < 600
+    except OSError:
+        fresh = False
+    if not fresh:
+        write_burn(burn_findings())
+
+
+def sweep_detached(p):
+    """Spawn fm cost --sweep at most every SWEEP_EVERY per project: one stat per Stop hook otherwise."""
+    import fmforesight
+    stamp = os.path.join(p.dir, "sweep.spawned")
+    try:
+        if time.time() - os.path.getmtime(stamp) < fmforesight.SWEEP_EVERY:
+            return
+    except OSError:
+        pass
+    try:
+        open(stamp, "w").close()
+    except OSError:
+        return  # no stamp, no spawn: never one per turn
+    if os.environ.get("FOREMAN_NO_BACKGROUND"):
+        return  # tests: no detached child racing a test folder's cleanup; sweep() is tested directly
+    import subprocess
+    try:
+        subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "cost", "--sweep"], cwd=p.root,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except OSError:
+        pass
+
+
 def _refresh_detached(p):
     if os.environ.get("FOREMAN_NO_BACKGROUND"):  # tests: inline, so the figure is there for the next call
         cached_costs(p)
@@ -540,12 +581,9 @@ def cmd_cost(args):
         os.makedirs(os.path.dirname(_cache_path(p)), exist_ok=True)
         size, costs = _transcripts_size(p), task_costs(p, 90)
         c.write_atomic(_cache_path(p), json.dumps({"size": size, "ts": time.time(), "costs": dict(costs)}))
-        try:  # T-1800: what session start says about usage burn; the account-wide scan at most every 10 min, not per refresh
-            fresh = time.time() - os.path.getmtime(_burn_path()) < 600
-        except OSError:
-            fresh = False
-        if not fresh:
-            write_burn(burn_findings())
+        return 0
+    if getattr(args, "sweep", False):
+        sweep(p)
         return 0
     if getattr(args, "task", None):
         return _task(args, p, fmcli)
