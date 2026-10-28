@@ -1,0 +1,251 @@
+<!doctype html>
+<!-- Foreman's own example page (written for Foreman, not ported) for references/ui/interaction.md. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<script>(function(){var q=new URLSearchParams(location.search),h=document.documentElement,t=q.get("theme");if(t==="light"||t==="dark")h.dataset.theme=t;if(q.get("motion")==="reduce")h.dataset.motion="reduce"})()</script>
+<title>Send Invoice Form</title>
+<meta name="description" content="An invoice form that answers every press: late, kind validation, one press one action, plain failure messages and a verb ledger.">
+<style>
+  :root {
+    --paper: #f3f5f1; --raised: #ffffff; --ink: #1b231e; --muted: #4b5850; --rule: #c4cec3; --accent: #1d5a3a; --on-accent: #ffffff;
+    --danger: #a4231b; --tint: #e3eee6; --field: #5f6e64;
+    --font-display: Charter, "Bitstream Charter", "Sitka Text", Cambria, "Noto Serif", serif;
+    --font-body: Seravek, "Gill Sans Nova", Ubuntu, Calibri, "DejaVu Sans", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --space-1: .25rem; --space-2: .5rem; --space-3: 1rem; --space-4: 1.5rem; --space-5: 3rem;
+    --radius-control: 4px; --radius-card: 18px; --radius-pill: 999px;
+    --lift-1: 0 1px 2px rgb(27 35 30 / .1); --lift-2: 0 16px 34px -16px rgb(27 35 30 / .4);
+    --dur-tap: 90ms; --dur-small: 150ms; --dur-enter: 220ms; --dur-move: 300ms; --ease-enter: cubic-bezier(.05, .7, .1, 1);
+    --shift: 8px; --pop: .97;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #121815; --raised: #1a221e; --ink: #e9efe9; --muted: #a6b4aa; --rule: #34423a; --accent: #7bd29d; --on-accent: #0c1710;
+      --danger: #ff958b; --tint: #22362a; --field: #8a9a8f; --lift-1: 0 1px 2px rgb(0 0 0 / .5); --lift-2: 0 16px 34px -16px rgb(0 0 0 / .8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #121815; --raised: #1a221e; --ink: #e9efe9; --muted: #a6b4aa; --rule: #34423a; --accent: #7bd29d; --on-accent: #0c1710;
+    --danger: #ff958b; --tint: #22362a; --field: #8a9a8f; --lift-1: 0 1px 2px rgb(0 0 0 / .5); --lift-2: 0 16px 34px -16px rgb(0 0 0 / .8);
+  }
+  /* Feedback that moves (the press, the error nudge) keeps its meaning without travel: a tint and the words stay. */
+  @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) { --shift: 0px; --pop: 1; } }
+  :root[data-motion="reduce"] { --shift: 0px; --pop: 1; }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 1.0625rem/1.55 var(--font-body); }
+  h1, h2, h3 { font-family: var(--font-display); line-height: 1.15; margin: 0 0 var(--space-2); }
+  h1 { font-size: clamp(2rem, 1.4rem + 3vw, 3.2rem); max-width: 15ch; }
+  h2 { font-size: 1.35rem; }
+  h3 { font-size: 1.05rem; }
+  p { margin: 0 0 var(--space-3); max-width: 62ch; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-control); }
+  .wrap { max-width: 68rem; margin: 0 auto; padding: 0 var(--space-3); }
+  .skip { position: absolute; left: var(--space-3); top: -5rem; background: var(--ink); color: var(--paper); padding: var(--space-2) var(--space-3); border-radius: var(--radius-control); z-index: 5; }
+  .skip:focus { top: var(--space-3); }
+  .kicker { font: 600 .8rem/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: var(--space-5) 0 var(--space-3); }
+  .grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--space-4); align-items: start; padding-bottom: var(--space-5); }
+  .stack { display: grid; gap: var(--space-4); min-width: 0; }
+  .card { background: var(--raised); border: 1px solid var(--rule); border-radius: var(--radius-card); box-shadow: var(--lift-1); padding: var(--space-4) var(--space-3); min-width: 0; }
+  .card.main { box-shadow: var(--lift-2); }
+  .full { grid-column: 1 / -1; }
+
+  .field { margin-bottom: var(--space-3); }
+  label, .lbl { display: block; font-weight: 700; margin-bottom: 2px; }
+  .opt { font-weight: 400; color: var(--muted); }
+  .hint { font-size: .9rem; color: var(--muted); margin: 0 0 var(--space-1); }
+  input[type="email"], input[type="text"], input[type="date"] { width: 100%; min-height: 48px; padding: 0 var(--space-2); font: inherit; font-size: 1rem; color: var(--ink); background: var(--paper);
+         border: 2px solid var(--field); border-radius: var(--radius-control); }
+  input { transition: border-color var(--dur-small) var(--ease-enter), background-color var(--dur-small) var(--ease-enter); }
+  input[type="text"].short { max-width: 11rem; }
+  input[aria-invalid="true"] { border-color: var(--danger); background: var(--raised); }
+  .chk { display: flex; gap: var(--space-2); align-items: center; min-height: 44px; font-weight: 400; }
+  .chk input { width: 24px; height: 24px; accent-color: var(--accent); flex: none; }
+  .err { display: flex; gap: var(--space-2); color: var(--danger); font-size: .95rem; margin: var(--space-1) 0 0; }
+  .err[hidden], [hidden] { display: none; }
+  svg { width: 1.1em; height: 1.1em; flex: none; margin-top: .2em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .btn { font: 700 1rem/1 var(--font-body); min-height: 48px; min-width: 44px; padding: 0 var(--space-4); border-radius: var(--radius-control); border: 2px solid var(--accent); background: var(--accent); color: var(--on-accent); cursor: pointer;
+         transition: transform var(--dur-tap) var(--ease-enter), background-color var(--dur-small) var(--ease-enter), color var(--dur-small) var(--ease-enter); }
+  .btn.quiet { background: transparent; color: var(--accent); }
+  .btn:hover { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .btn:active { transform: scale(var(--pop)); background: var(--ink); }
+  .btn[aria-disabled="true"] { cursor: progress; opacity: .75; }
+  .row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+  .status { margin: var(--space-3) 0 0; padding: var(--space-2) var(--space-3); border-left: 5px solid var(--accent); background: var(--tint); border-radius: var(--radius-control); display: flex; gap: var(--space-2); }
+  .status.bad { border-left-color: var(--danger); }
+  .summary { border: 2px solid var(--danger); border-radius: var(--radius-control); padding: var(--space-3); margin-bottom: var(--space-3); animation: nudge var(--dur-move) var(--ease-enter); }
+  .summary:focus { outline-offset: 4px; }
+  .summary ul { margin: 0; padding-left: 1.2rem; }
+  .summary a { color: var(--danger); display: inline-block; padding-block: 10px; }
+  @keyframes nudge { 25% { transform: translateX(var(--shift)); } 75% { transform: translateX(calc(var(--shift) * -1)); } }
+  .done { animation: arrive var(--dur-enter) var(--ease-enter) backwards; }
+  @keyframes arrive { from { opacity: 0; transform: translateY(var(--shift)); } }
+  .hist { margin: var(--space-2) 0 0; padding-left: 1.2rem; }
+  .hist li { margin-bottom: var(--space-1); }
+  .empty { color: var(--muted); margin: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; display: block; overflow-x: auto; }  /* a wide table scrolls in its own box */
+  th, td { text-align: left; padding: var(--space-2); border-bottom: 1px solid var(--rule); vertical-align: top; min-width: 7rem; }
+  th { font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .shows { margin: 0; padding-left: 1.2rem; display: grid; gap: var(--space-2); }
+  @media (max-width: 52rem) { .grid { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the invoice form</a>
+<header class="wrap">
+  <p class="kicker">Interaction playbook · worked example</p>
+  <h1>Press once. Hear back.</h1>
+  <p>A small invoice screen with two verbs, <em>send invoice</em> and <em>mark as paid</em>. Try the form empty, then wrong, then right. Switch on "offline" to see a failure that says what to do next.</p>
+</header>
+<main id="main" class="wrap grid">
+  <section class="card main" aria-labelledby="form-h">
+    <div id="compose">
+      <h2 id="form-h">New invoice</h2>
+      <p class="hint">All three fields are needed. Nothing you type is lost if sending fails.</p>
+      <div class="summary" id="summary" tabindex="-1" hidden><h3 id="sum-h"></h3><ul id="sum-list"></ul></div>
+      <form id="f" novalidate>
+        <div class="field">
+          <label for="email">Customer email</label>
+          <p class="hint" id="h-email">We send the invoice here.</p>
+          <input id="email" type="email" inputmode="email" autocomplete="email" spellcheck="false" aria-describedby="h-email e-email">
+          <p class="err" id="e-email" hidden></p>
+        </div>
+        <div class="field">
+          <label for="amount">Amount in dollars</label>
+          <p class="hint" id="h-amount">Commas and a dollar sign are fine.</p>
+          <input id="amount" class="short" type="text" inputmode="decimal" autocomplete="off" aria-describedby="h-amount e-amount">
+          <p class="err" id="e-amount" hidden></p>
+        </div>
+        <div class="field">
+          <label for="due">Due date</label>
+          <p class="hint" id="h-due">Today or later.</p>
+          <input id="due" type="date" autocomplete="off" aria-describedby="h-due e-due">
+          <p class="err" id="e-due" hidden></p>
+        </div>
+        <label class="chk"><input type="checkbox" id="offline"> Pretend I'm offline</label>
+        <div class="row"><button class="btn" id="send" type="submit">Send invoice</button></div>
+        <div class="status bad" id="fail" role="status" hidden></div>
+        <p class="hint" id="sr-busy" role="status"></p>
+      </form>
+    </div>
+    <div id="sent" class="done" hidden>
+      <h2 id="sent-h" tabindex="-1">Invoice sent</h2>
+      <p id="sent-msg"></p>
+      <div class="row">
+        <button class="btn" id="pay" type="button">Mark as paid</button>
+        <button class="btn quiet" id="again" type="button">Send another invoice</button>
+      </div>
+      <div class="status" id="paid" role="status" hidden></div>
+    </div>
+  </section>
+
+  <div class="stack">
+    <section class="card" aria-labelledby="led-h">
+      <h2 id="led-h">The verb ledger</h2>
+      <p class="hint">One stem per row, so the button, the busy label and the message use the same word.</p>
+      <table>
+        <thead><tr><th>Verb</th><th>Button</th><th>Busy</th><th>Done</th><th>Failed</th></tr></thead>
+        <tbody>
+          <tr><td>send invoice</td><td>Send invoice</td><td>Sending…</td><td>Sent to acme@example.com</td><td>Couldn't send: you're offline. Nothing was lost; press Send invoice again.</td></tr>
+          <tr><td>mark paid</td><td>Mark as paid</td><td>(instant)</td><td>Marked as paid · Undo</td><td>Couldn't mark as paid. Try again.</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section class="card" aria-labelledby="hist-h">
+      <h2 id="hist-h">History</h2>
+      <p class="empty" id="hist-empty">No history yet. Send the invoice to start it.</p>
+      <ol class="hist" id="hist"></ol>
+      <p class="hint" style="margin-top: var(--space-3)">Requests sent this session: <strong id="writes">0</strong>. Press Send twice, fast: it stays at 1.</p>
+    </section>
+  </div>
+
+  <section class="card full" aria-labelledby="ws-h">
+    <h2 id="ws-h">What this shows</h2>
+    <ul class="shows">
+      <li><strong>Feedback.</strong> The button looks pressed in the same frame, shows its busy label at once, and the result appears beside it, not in a corner.</li>
+      <li><strong>One press, one action.</strong> While sending, a second press does nothing; the counter proves it.</li>
+      <li><strong>Forms.</strong> Labels above, hints before typing, one column. A field is checked when you leave it with something in it, never while you type the first time, and an error clears as soon as the value is good.</li>
+      <li><strong>Errors say what to do.</strong> "Enter an email address like name@example.com", never "Invalid". Each error has an icon and the word "Error", not red alone, and the submit button is never disabled to hint at them.</li>
+      <li><strong>Keyboard.</strong> Tab follows the page, Enter submits, a skip link comes first, and the error summary takes focus with a link to each field.</li>
+      <li><strong>Phone.</strong> At 360 px every control is 44 px or taller, text is 16 px, and the main button follows the last field. Under reduced motion the press and the nudge become a tint.</li>
+    </ul>
+  </section>
+</main>
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); }, busy = false, writes = 0, undoT, paidAt;
+  var ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5h.01"/></svg>';
+  var today = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+  var F = {
+    email: { label: "Email", check: function (v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) ? "" : "Enter an email address like name@example.com"; } },
+    amount: { label: "Amount", check: function (v) {
+      var n = Number(v.replace(/[\s,$]/g, ""));
+      return n > 0 && n < 1e6 ? "" : "Enter an amount between 0.01 and 999,999.99, like 1,250.00"; } },
+    due: { label: "Due date", check: function (v) { return v >= today ? "" : "Choose a due date of today or later"; } }
+  };
+  var el = function (k) { return $("#" + k); };
+  function show(k, m) {
+    var e = $("#e-" + k); e.hidden = !m; e.innerHTML = m ? ICON + "<span><strong>Error:</strong> " + m + "</span>" : "";
+    if (m) el(k).setAttribute("aria-invalid", "true"); else el(k).removeAttribute("aria-invalid");
+  }
+  Object.keys(F).forEach(function (k) {
+    el(k).addEventListener("blur", function () { if (el(k).value.trim()) show(k, F[k].check(el(k).value)); });     // leaving an empty field says nothing
+    el(k).addEventListener("input", function () { if (el(k).getAttribute("aria-invalid")) show(k, F[k].check(el(k).value)); }); // the error clears the moment it is good
+  });
+  var say = function (t) { $("#sr-busy").textContent = t; };
+
+  $("#f").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    if (busy) return;                                            // one press, one action
+    var bad = Object.keys(F).filter(function (k) { var m = F[k].check(el(k).value); show(k, m); return m; });
+    var sum = $("#summary"); sum.hidden = !bad.length; $("#fail").hidden = true;
+    if (bad.length) {
+      $("#sum-h").textContent = bad.length === 1 ? "1 thing to fix" : bad.length + " things to fix";
+      $("#sum-list").innerHTML = "";
+      bad.forEach(function (k) {
+        var li = document.createElement("li"), a = document.createElement("a");
+        a.href = "#" + k; a.textContent = F[k].label + ": " + $("#e-" + k).textContent.replace("Error: ", "");
+        a.onclick = function (e) { e.preventDefault(); el(k).focus(); };
+        li.appendChild(a); $("#sum-list").appendChild(li);
+      });
+      sum.style.animation = "none"; void sum.offsetWidth; sum.style.animation = "";   // play the nudge again
+      sum.focus(); return;
+    }
+    busy = true; writes++; $("#writes").textContent = writes;
+    var b = $("#send"); b.textContent = "Sending…"; b.setAttribute("aria-disabled", "true"); say("Sending the invoice.");
+    setTimeout(function () {
+      busy = false; b.textContent = "Send invoice"; b.removeAttribute("aria-disabled"); say("");
+      if ($("#offline").checked) {
+        var f = $("#fail"); f.hidden = false;
+        f.innerHTML = ICON + "<span><strong>Error.</strong> Couldn't send: you're offline. Nothing you typed was lost. Reconnect, then press Send invoice again.</span>";
+        return;
+      }
+      var to = el("email").value.trim().toLowerCase();
+      $("#compose").hidden = true; $("#sent").hidden = false; $("#paid").hidden = true; $("#pay").hidden = false;
+      $("#sent-msg").textContent = "Sent to " + to + " for $" + Number(el("amount").value.replace(/[\s,$]/g, "")).toLocaleString("en-US", { minimumFractionDigits: 2 }) + ", due " + el("due").value + ".";
+      history("Sent by Ana Ruiz to " + to); $("#sent-h").focus();
+    }, 1500);
+  });
+
+  function history(t) { $("#hist-empty").hidden = true; var li = document.createElement("li"); li.textContent = t; $("#hist").appendChild(li); return li; }
+  $("#pay").onclick = function () {
+    $("#pay").hidden = true; paidAt = history("Marked as paid by Ana Ruiz");
+    var p = $("#paid"); p.hidden = false; p.className = "status";
+    p.innerHTML = "<span>Marked as paid.</span> <button class=\"btn quiet\" id=\"undo\" type=\"button\">Undo</button>";   // reversible: no confirm, an Undo that waits 6 s
+    $("#undo").onclick = function () { clearTimeout(undoT); paidAt.remove(); p.hidden = true; $("#pay").hidden = false; $("#pay").focus(); };
+    clearTimeout(undoT); undoT = setTimeout(function () { p.innerHTML = "<span>Marked as paid.</span>"; }, 6000);
+  };
+  $("#again").onclick = function () {
+    $("#sent").hidden = true; $("#compose").hidden = false; $("#f").reset(); $("#summary").hidden = true;
+    Object.keys(F).forEach(function (k) { show(k, ""); }); el("email").focus();
+  };
+  el("due").min = today;
+})();
+</script>
+</body>
+</html>

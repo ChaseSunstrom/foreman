@@ -771,6 +771,11 @@ def cmd_task(args):
                                                         b.section("Lessons").splitlines() if x.strip()), ""))
         except Exception as e:  # the task is done already; a derived index must not make that look failed
             print(f"fm: warning: tripwires not updated: {e}", file=sys.stderr)
+        try:
+            import fmplaybooks
+            fmplaybooks.record_use(p, b)  # T-1834: the books this task loaded, with the share followed
+        except Exception as e:
+            print(f"fm: warning: playbook use not recorded: {e}", file=sys.stderr)
         warns = _close_warnings(p, b, files)  # T-0672: seen, never a refusal
         if warns:  # T-0956: the verdict first, then the details
             kinds = dict.fromkeys(_warning_kind(w) for w in warns)
@@ -5742,6 +5747,10 @@ def _build_parser():
     s.add_argument("--task", help="score: the task whose run is scored; route: the books fitting its title, "
                    "interpretation and criteria (T-1833)")
     s.add_argument("-k", type=int, default=5, help="route TEXT|--task ID: how many books (default 5)")
+    s.add_argument("--unused", action="store_true", help="coverage: drop candidates (no read, route hit or followed "
+                   "record in --days, default 60) and merge candidates (50%%+ shared wording); names, never deletes (T-1834)")
+    s.add_argument("--days", type=int, help="coverage --unused: the window in days (default 60)")
+    s.add_argument("--force", action="store_true", help="draft: write it though an existing playbook says the same (T-1834)")
     s.add_argument("--answer", help="kata: a file holding your answer, scored against every kata's checks")
     s.add_argument("name", nargs="?", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that "
                    "name; route: a stage (verifying) or type (FIX), else the words to rank books by; coverage takes none")

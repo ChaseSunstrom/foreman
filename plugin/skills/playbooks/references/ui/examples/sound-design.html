@@ -1,0 +1,224 @@
+<!doctype html>
+<!-- Foreman's own example page (written for Foreman, not ported) for references/ui/sound-design.md. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<script>(function(){var q=new URLSearchParams(location.search),h=document.documentElement,t=q.get("theme");if(t==="light"||t==="dark")h.dataset.theme=t;if(q.get("motion")==="reduce")h.dataset.motion="reduce"})()</script>
+<title>Five Quiet Cues</title>
+<meta name="description" content="Five synthesised UI cues, off by default, each with a visual twin, plus a sound check that measures peak, loudness spread and length.">
+<style>
+  :root {
+    --paper: #e8edf0; --raised: #f8fafb; --ink: #10202b; --muted: #435568; --rule: #b9c6d0; --accent: #0b5c7c; --on-accent: #f4fbff; --alert: #a3330c; --tint: #d3e3ec;
+    --font-display: Bahnschrift, "DIN Alternate", "Franklin Gothic Medium", "Arial Narrow", sans-serif;
+    --font-body: "Gill Sans", "Gill Sans MT", Optima, Candara, "Trebuchet MS", sans-serif;
+    --font-mono: "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+    --space-1: .25rem; --space-2: .5rem; --space-3: 1rem; --space-4: 1.5rem; --space-5: 3rem;
+    --radius-control: 6px; --radius-card: 2px; --radius-lamp: 50%;
+    --dur-tap: 90ms; --dur-small: 150ms; --dur-enter: 220ms; --ease-enter: cubic-bezier(.05, .7, .1, 1);
+    --grow: 1.12;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --paper: #0c1419; --raised: #142029; --ink: #e5eef3; --muted: #a6b9c8; --rule: #2c4151; --accent: #5ec2e8; --on-accent: #07202c; --alert: #ff9a73; --tint: #1d3140; }
+  }
+  :root[data-theme="dark"] { --paper: #0c1419; --raised: #142029; --ink: #e5eef3; --muted: #a6b9c8; --rule: #2c4151; --accent: #5ec2e8; --on-accent: #07202c; --alert: #ff9a73; --tint: #1d3140; }
+  /* Reduced motion: the lamp stops growing and only changes brightness. Sound is NOT muted by it. */
+  @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) { --grow: 1; } }
+  :root[data-motion="reduce"] { --grow: 1; }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 1.0625rem/1.55 var(--font-body); }
+  h1, h2, h3 { font-family: var(--font-display); line-height: 1.1; margin: 0 0 var(--space-2); letter-spacing: .01em; }
+  h1 { font-size: clamp(2.3rem, 1.4rem + 4vw, 4.2rem); text-transform: uppercase; max-width: 14ch; }
+  h2 { font-size: 1.4rem; text-transform: uppercase; }
+  h3 { font-size: 1.1rem; margin: 0; }
+  p { margin: 0 0 var(--space-3); max-width: 64ch; }
+  code { font-family: var(--font-mono); font-size: .88em; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  .wrap { max-width: 68rem; margin: 0 auto; padding: 0 var(--space-3); }
+  .skip { position: absolute; left: var(--space-3); top: -5rem; background: var(--ink); color: var(--paper); padding: var(--space-2) var(--space-3); z-index: 9; }
+  .skip:focus { top: var(--space-3); }
+  .kicker { font: 700 .8rem/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin: var(--space-5) 0 var(--space-3); }
+  .panel { background: var(--raised); border: 1px solid var(--ink); border-top-width: 6px; border-radius: var(--radius-card); padding: var(--space-3); margin-bottom: var(--space-4); }
+  .bar { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-4); align-items: center; }
+  .btn { font: 700 1rem/1 var(--font-body); min-height: 48px; min-width: 44px; padding: 0 var(--space-3); border-radius: var(--radius-control); border: 2px solid var(--ink); background: var(--accent); color: var(--on-accent); cursor: pointer;
+         transition: transform var(--dur-tap) var(--ease-enter), background-color var(--dur-small) var(--ease-enter), color var(--dur-small) var(--ease-enter); }
+  .btn.quiet { background: var(--raised); color: var(--ink); }
+  .btn:hover { background: var(--ink); color: var(--paper); }
+  .btn:active { transform: translateY(1px); }
+  .btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .btn[aria-disabled="true"] { opacity: .6; cursor: progress; }
+  .vol { display: flex; align-items: center; gap: var(--space-2); font-weight: 700; flex: 1 1 14rem; min-height: 44px; }
+  .vol input { flex: 1; min-width: 0; height: 44px; accent-color: var(--accent); }
+  output { font-family: var(--font-mono); min-width: 3.5ch; }
+  .state { font-family: var(--font-mono); font-size: .9rem; margin: var(--space-3) 0 0; padding: var(--space-2) var(--space-3); border-left: 6px solid var(--accent); background: var(--tint); }
+  .state.err { border-left-color: var(--alert); }
+  .state::before { content: "Status: "; font-weight: 700; }
+  .state.err::before { content: "Problem: "; color: var(--alert); }
+  .cues { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-3); list-style: none; margin: 0; padding: 0; }
+  .cue { border: 1px solid var(--rule); padding: var(--space-3); display: grid; gap: var(--space-2); align-content: start; background: var(--paper); border-radius: var(--radius-card); }
+  .cue p { margin: 0; font-size: .92rem; color: var(--muted); }
+  .head { display: flex; align-items: center; gap: var(--space-2); }
+  .lamp { width: 22px; height: 22px; flex: none; border-radius: var(--radius-lamp); border: 3px solid var(--ink); background: var(--raised); display: grid; place-content: center; font: 700 .7rem/1 var(--font-mono); color: var(--ink);
+          transition: transform var(--dur-small) var(--ease-enter), background-color var(--dur-small) var(--ease-enter), opacity var(--dur-small) var(--ease-enter); }
+  .lamp.on { background: var(--accent); transform: scale(var(--grow)); }
+  .lamp.on.alert { background: var(--alert); }
+  .lamp.on { color: var(--paper); }
+  .lamp.on::after { content: "♪"; }                                         /* a glyph, so the lamp is not told by colour alone */
+  .lamp.on.alert::after { content: "!"; }
+  .contour { font-family: var(--font-mono); font-size: .8rem; color: var(--muted); }
+  .log { font-family: var(--font-mono); font-size: .88rem; min-height: 2.6em; margin: var(--space-3) 0 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; display: block; overflow-x: auto; }
+  th, td { text-align: left; padding: var(--space-2); border-bottom: 1px solid var(--rule); vertical-align: top; min-width: 5.5rem; }
+  th { font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  td.num { font-family: var(--font-mono); text-align: right; }
+  .pass { font-weight: 700; } .pass::before { content: "pass "; } .fail { font-weight: 700; color: var(--alert); } .fail::before { content: "FAIL "; }
+  .empty { color: var(--muted); font-style: italic; margin: 0; }
+  .empty[hidden], [hidden] { display: none; }
+  .shows { margin: 0; padding-left: 1.2rem; display: grid; gap: var(--space-2); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the cues</a>
+<header class="wrap">
+  <p class="kicker">Sound-design playbook · worked example</p>
+  <h1>Five cues. Off by default.</h1>
+  <p>Every cue here is built in the page from a triangle wave, a contour and a short envelope. Nothing is downloaded. Sound stays silent until you switch it on, and each cue answers on screen whether or not you can hear it.</p>
+</header>
+<main id="main" class="wrap">
+  <section class="panel" aria-labelledby="play-h">
+    <h2 id="play-h">Play the cues</h2>
+    <div class="bar">
+      <button class="btn" id="on" type="button" aria-pressed="false">Sound: off</button>
+      <label class="vol" for="vol">Volume <input id="vol" type="range" min="0" max="100" value="50"> <output id="volo" for="vol">50%</output></label>
+      <button class="btn quiet" id="mo" type="button">Motion: full</button>
+    </div>
+    <p class="state" id="status" role="status">Sound is off. The lamps and the log below still answer every cue.</p>
+    <ul class="cues" id="cues"></ul>
+    <p class="log" id="log" aria-hidden="true">No cue played yet.</p>
+    <div class="sr" id="live" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="chk-h">
+    <h2 id="chk-h">Sound check</h2>
+    <p>Renders each cue offline, then measures it. The limits come from the playbook: peak at or under -6 dBFS, loudness within 6 dB across cues, confirmations at most 300 ms, alerts at most 1 s, and fades of at least 5 ms.</p>
+    <div class="bar"><button class="btn" id="run" type="button">Run sound check</button></div>
+    <p class="empty" id="chk-empty">No check run yet. Nothing is measured until you press the button.</p>
+    <p class="state" id="chk-load" hidden>Rendering five cues…</p>
+    <p class="state err" id="chk-err" hidden></p>
+    <table id="chk" hidden>
+      <thead><tr><th>Cue</th><th>Length</th><th>Peak dBFS</th><th>RMS dBFS</th><th>Fades</th><th>Size at 22 kHz</th><th>Result</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="state" id="chk-done" hidden></p>
+  </section>
+
+  <section class="panel" aria-labelledby="ws-h">
+    <h2 id="ws-h">What this shows</h2>
+    <ul class="shows">
+      <li><strong>Five cues, one voice.</strong> Same triangle timbre throughout. Meaning rides on contour: rising is good news, falling is a step back, repeated is a warning.</li>
+      <li><strong>Off by default, started by a gesture.</strong> The audio context is created inside the click on "Sound: off". Volume starts at 50%. Autoplay refusals and missing audio get a plain message instead of silence.</li>
+      <li><strong>Limits enforced in code.</strong> A 50 ms retrigger guard, at most 8 voices, seeded pitch jitter of 5% on the tap, peaks of -8 dBFS before the volume slider, and fades of 6 ms or more.</li>
+      <li><strong>Every cue has a twin.</strong> A lamp with a glyph (not just colour), a log line and a polite live region. Reduced motion stops the lamp growing; it does not mute anything.</li>
+      <li><strong>Measured, not assumed.</strong> The sound check reads the rendered samples and shows the numbers. A failing row says FAIL in words.</li>
+    </ul>
+  </section>
+</main>
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); }, root = document.documentElement;
+  var mulberry = function (a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
+  var rng = mulberry(5), PEAK = .4;                                               // 0.4 = -8 dBFS, under the -6 dBFS ceiling
+  /* The cue sheet: name, kind, meaning, notes as [start s, length s, from Hz, to Hz]. */
+  var CUES = [
+    { id: "tap",   kind: "confirm", len: .08,  say: "A press registered.",           notes: [[0, .07, 440, 330]], jitter: true },
+    { id: "done",  kind: "confirm", len: .28,  say: "The task finished.",            notes: [[0, .12, 523, 523], [.12, .16, 784, 784]] },
+    { id: "undo",  kind: "confirm", len: .2,   say: "Your action was reversed.",     notes: [[0, .2, 392, 262]] },
+    { id: "warn",  kind: "alert",   len: .6,   say: "Something needs a look.",       notes: [[0, .2, 330, 330], [.3, .3, 330, 247]] },
+    { id: "alert", kind: "alert",   len: .95,  say: "Action failed. Nothing saved.", notes: [[0, .25, 659, 659], [.3, .25, 494, 494], [.6, .35, 659, 392]] }
+  ];
+  var contour = function (c) { return c.notes.map(function (n) { return n[2] + (n[3] !== n[2] ? "→" + n[3] : ""); }).join(" · ") + " Hz"; };
+
+  /* One builder serves the live context and the offline check, so the check measures what you hear. */
+  function build(ctx, dest, cue, t0, jit) {
+    cue.notes.forEach(function (n) {
+      var o = ctx.createOscillator(), g = ctx.createGain(), s = t0 + n[0], e = s + n[1], k = jit ? 1 + (rng() - .5) * .1 : 1, rel = Math.min(.04, n[1] * .4);
+      o.type = "triangle"; o.frequency.setValueAtTime(n[2] * k, s); o.frequency.linearRampToValueAtTime(n[3] * k, e);
+      g.gain.setValueAtTime(0, s); g.gain.linearRampToValueAtTime(PEAK, s + .006); g.gain.setValueAtTime(PEAK, e - rel); g.gain.linearRampToValueAtTime(0, e);   // fade in 6 ms, out up to 40 ms
+      o.connect(g); g.connect(dest); o.start(s); o.stop(e + .01);
+    });
+  }
+
+  /* Live playback. */
+  var st = { on: false, ctx: null, master: null, last: {}, voices: 0 };
+  var log = function (t) { $("#log").textContent = t; $("#live").textContent = t; };
+  var status = function (t, bad) { var el = $("#status"); el.textContent = t; el.classList.toggle("err", !!bad); };
+  function play(cue) {
+    var now = performance.now(), lamp = $("#lamp-" + cue.id);
+    if (now - (st.last[cue.id] || -1e9) < 50) return;                              // retrigger guard: one cue per 50 ms
+    st.last[cue.id] = now;
+    lamp.classList.add("on"); setTimeout(function () { lamp.classList.remove("on"); }, Math.max(cue.len * 1000, 250));
+    log("Cue " + cue.id + ": " + cue.say + (st.on ? "" : " (sound is off)"));
+    if (!st.on || !st.ctx || st.voices + cue.notes.length > 8) return;             // voice cap
+    st.voices += cue.notes.length; build(st.ctx, st.master, cue, st.ctx.currentTime, cue.jitter);
+    setTimeout(function () { st.voices -= cue.notes.length; }, cue.len * 1000 + 50);
+  }
+  $("#cues").innerHTML = CUES.map(function (c) {
+    return '<li class="cue"><div class="head"><span class="lamp' + (c.kind === "alert" ? " alert" : "") + '" id="lamp-' + c.id + '" aria-hidden="true"></span><h3>' + c.id + '</h3></div>' +
+      '<p>' + c.say + '</p><span class="contour">' + c.kind + ' · ' + Math.round(c.len * 1000) + ' ms · ' + contour(c) + '</span>' +
+      '<button class="btn quiet" type="button" data-cue="' + c.id + '">Play ' + c.id + '</button></li>';
+  }).join("");
+  $("#cues").addEventListener("click", function (e) { var b = e.target.closest("button"); if (b) play(CUES.filter(function (c) { return c.id === b.dataset.cue; })[0]); });
+
+  function setVol() { var v = +$("#vol").value; $("#volo").textContent = v + "%"; if (st.master) st.master.gain.value = v / 100; }
+  $("#vol").oninput = setVol;
+  $("#on").onclick = function () {
+    if (st.on) { st.on = false; $("#on").setAttribute("aria-pressed", "false"); $("#on").textContent = "Sound: off"; return status("Sound is off. The lamps and the log below still answer every cue."); }
+    try {                                                                           // the context is created here, inside the click
+      var AC = window.AudioContext || window.webkitAudioContext; if (!AC) throw new Error("none");
+      if (!st.ctx) { st.ctx = new AC(); st.master = st.ctx.createGain(); st.master.connect(st.ctx.destination); setVol(); }
+      st.ctx.resume(); st.on = true; $("#on").setAttribute("aria-pressed", "true"); $("#on").textContent = "Sound: on";
+      status("Sound is on at " + $("#vol").value + "%. Press any cue to hear it.");
+    } catch (e) { status("This browser can't play audio. Every cue still shows on screen.", true); }
+  };
+  var reduced = function () { return root.dataset.motion ? root.dataset.motion === "reduce" : matchMedia("(prefers-reduced-motion: reduce)").matches; };
+  $("#mo").onclick = function () { root.dataset.motion = reduced() ? "full" : "reduce"; $("#mo").textContent = "Motion: " + (reduced() ? "reduced" : "full"); };
+  $("#mo").textContent = "Motion: " + (reduced() ? "reduced" : "full");
+
+  /* The sound check: render each cue at 22.05 kHz offline and read the samples. */
+  var db = function (x) { return x > 0 ? 20 * Math.log10(x) : -Infinity; }, fix = function (x) { return isFinite(x) ? x.toFixed(1) : "-inf"; };
+  $("#run").onclick = function () {
+    var btn = $("#run"); if (btn.getAttribute("aria-disabled") === "true") return;
+    var OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    ["#chk-empty", "#chk", "#chk-done", "#chk-err"].forEach(function (s) { $(s).hidden = true; }); $("#chk-load").hidden = false; btn.setAttribute("aria-disabled", "true");
+    var fail = function (m) { $("#chk-load").hidden = true; btn.removeAttribute("aria-disabled"); $("#chk-err").hidden = false; $("#chk-err").textContent = m; };
+    if (!OAC) return fail("This browser can't render audio offline, so the check can't run. The cues above are unchanged.");
+    var SR = 22050;
+    Promise.all(CUES.map(function (c) {
+      var oc = new OAC(1, Math.ceil(c.len * SR), SR); build(oc, oc.destination, c, 0, false);
+      return oc.startRendering().then(function (buf) {
+        var d = buf.getChannelData(0), n = d.length, pk = 0, sq = 0, i;
+        for (i = 0; i < d.length; i++) pk = Math.max(pk, Math.abs(d[i]));
+        for (i = 0; i < n; i++) sq += d[i] * d[i];
+        return { c: c, pk: db(pk), rms: db(Math.sqrt(sq / n)), bytes: d.length * 2, fadeIn: Math.abs(d[0]) < .01, fadeOut: Math.abs(d[n - 1]) < .01 };
+      });
+    })).then(function (rows) {
+      var lo = Math.min.apply(0, rows.map(function (r) { return r.rms; })), hi = Math.max.apply(0, rows.map(function (r) { return r.rms; })), total = 0, bad = 0;
+      $("#chk tbody").innerHTML = rows.map(function (r) {
+        var lim = r.c.kind === "confirm" ? .3 : 1, ok = r.pk <= -6 && r.c.len <= lim && r.fadeIn && r.fadeOut; total += r.bytes; if (!ok) bad++;
+        return "<tr><td>" + r.c.id + "</td><td class='num'>" + Math.round(r.c.len * 1000) + " ms</td><td class='num'>" + fix(r.pk) + "</td><td class='num'>" + fix(r.rms) + "</td><td>" + (r.fadeIn && r.fadeOut ? "in and out" : "missing") + "</td><td class='num'>" + (r.bytes / 1024).toFixed(1) + " KB</td><td><span class='" + (ok ? "pass" : "fail") + "'>" + (ok ? "ok" : "check limits") + "</span></td></tr>";
+      }).join("");
+      var spread = hi - lo, sok = spread <= 6, tok = total <= 102400;
+      $("#chk").hidden = false; $("#chk-load").hidden = true; btn.removeAttribute("aria-disabled");
+      $("#chk-done").hidden = false; $("#chk-done").classList.toggle("err", bad > 0 || !sok || !tok);
+      $("#chk-done").textContent = "Done. Loudness spread " + spread.toFixed(1) + " dB (" + (sok ? "within" : "over") + " 6 dB). Total " + (total / 1024).toFixed(1) + " KB if exported (" + (tok ? "within" : "over") + " 100 KB). " + (bad ? bad + " cue(s) need attention." : "All five pass.");
+      $("#live").textContent = $("#chk-done").textContent;
+    }, function () { fail("Rendering failed. Nothing was measured; try again."); });
+  };
+})();
+</script>
+</body>
+</html>
