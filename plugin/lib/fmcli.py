@@ -2723,8 +2723,8 @@ def task_new(p, args):
     with c.lock(p.dir):
         if args.from_id:
             b = need_brief(p, args.from_id)
-            if b.status != "captured":
-                raise UsageError(f"{b.id} is {b.status}, not captured")
+            if b.status != "captured" and not (b.status == "planned" and not b.meta.get("base")):  # T-1862: never focused
+                raise UsageError(f"{b.id} is {b.status}, not captured or planned and never started")
             b.meta.update(type=type_, tier=args.tier, status="planned")
             if args.scope:
                 b.meta["scope"] = _scope_paths(args.scope)
