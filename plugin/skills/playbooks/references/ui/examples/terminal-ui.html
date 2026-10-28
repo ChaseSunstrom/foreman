@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Terminal Deploy Screen</title>
+<script>
+(function () { // QA flags: ?theme=light|dark and ?motion=reduce
+  var d = document.documentElement, q = new URLSearchParams(location.search), t = q.get('theme');
+  if (t === 'light' || t === 'dark') d.dataset.theme = t;
+  if (q.get('motion') === 'reduce') d.dataset.motion = 'reduce';
+})();
+</script>
+<style>
+  :root {
+    --paper: #eceae4; --ink: #1c1d1f; --muted: #4b5058; --rule: #b9b5aa; --accent: #8a4b00; --raised: #f8f6f1; --on-ink: #f8f6f1;
+    --font-display: "Futura", "Century Gothic", "Trebuchet MS", "Gill Sans", sans-serif;
+    --font-body: "Franklin Gothic Book", "Libre Franklin", Corbel, "Trebuchet MS", sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+    --step-0: clamp(1rem, .97rem + .15vw, 1.1rem); --step-2: clamp(1.5rem, 1.3rem + 1vw, 2.1rem);
+    --step-3: clamp(2rem, 1.6rem + 2vw, 3.2rem);
+    --space-1: .25rem; --space-2: .5rem; --space-3: 1rem; --space-4: 1.5rem; --space-5: 3rem;
+    --radius-control: 4px; --radius-card: 12px;
+    --lift-1: 0 1px 2px rgb(28 29 31 / .12); --lift-2: 0 14px 30px -14px rgb(28 29 31 / .45);
+    --dur-quick: 120ms; --ease-out: cubic-bezier(.2, .7, .2, 1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #101215; --ink: #e8e4da; --muted: #a2a9b1; --rule: #343a42; --accent: #f0b24a; --raised: #191c20; --on-ink: #101215;
+      --lift-1: 0 1px 2px rgb(0 0 0 / .5); --lift-2: 0 14px 30px -14px rgb(0 0 0 / .85);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #101215; --ink: #e8e4da; --muted: #a2a9b1; --rule: #343a42; --accent: #f0b24a; --raised: #191c20; --on-ink: #101215;
+    --lift-1: 0 1px 2px rgb(0 0 0 / .5); --lift-2: 0 14px 30px -14px rgb(0 0 0 / .85);
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+  @media (prefers-reduced-motion: reduce) { :root { --dur-quick: 0s; } }
+  :root[data-motion="reduce"] { --dur-quick: 0s; }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 var(--step-0)/1.55 var(--font-body); }
+  h1, h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.1; margin: 0 0 var(--space-3); }
+  h1 { font-size: var(--step-3); letter-spacing: -.01em; }
+  h2 { font-size: 1.25rem; }
+  p { margin: 0 0 var(--space-3); max-width: 60ch; }
+  code, kbd { font-family: var(--font-mono); font-size: .9em; }
+  kbd { border: 1px solid var(--rule); border-radius: var(--radius-control); padding: 0 .35em; background: var(--raised); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-control); }
+  .skip { position: absolute; left: var(--space-3); top: -6rem; background: var(--ink); color: var(--paper); padding: var(--space-2) var(--space-3); }
+  .skip:focus { top: var(--space-3); }
+  .wrap { max-width: 64rem; margin: 0 auto; padding: 0 var(--space-4); }
+  .kicker { font: 700 .8rem/1 var(--font-body); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: var(--space-5) 0 var(--space-3); }
+
+  .controls { display: grid; gap: var(--space-3); margin-block: var(--space-4); }
+  .group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .group > span { min-width: 6.5rem; font-weight: 700; }
+  button { min-height: 44px; min-width: 44px; padding: 0 var(--space-3); font: 600 .95rem var(--font-body); color: var(--ink);
+           background: var(--raised); border: 1px solid var(--rule); border-radius: var(--radius-control); cursor: pointer;
+           transition: background-color var(--dur-quick) var(--ease-out), color var(--dur-quick) var(--ease-out); }
+  button:hover { background: var(--rule); }
+  button[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
+  button[aria-pressed="true"]::before { content: "● "; }
+
+  /* the terminal: its own colour roles (<= 7), per depth and per light/dark terminal */
+  .term { --t-bg: #14161a; --t-text: #e6e1d6; --t-dim: #98a2ab; --t-acc: #62c9d9; --t-ok: #7fd18b; --t-warn: #f0b24a;
+          --t-err: #ff8b83; --t-track: #6b7580;
+          background: var(--t-bg); color: var(--t-text); border: 1px solid var(--rule); border-radius: var(--radius-card); box-shadow: var(--lift-2); padding: var(--space-3); }
+  .term[data-tt="light"] { --t-bg: #fbf8f1; --t-text: #1f2328; --t-dim: #5c6670; --t-acc: #0b6f83; --t-ok: #1a7f37;
+          --t-warn: #8a5a00; --t-err: #b42318; --t-track: #7d8791; }
+  .term[data-depth="8"] { --t-dim: #9a9a9a; --t-acc: #55d6e0; --t-ok: #5fd75f; --t-warn: #e5e55a; --t-err: #ff7676; --t-track: #777777; }
+  .term[data-depth="8"][data-tt="light"] { --t-dim: #595959; --t-acc: #006878; --t-ok: #0a720a; --t-warn: #7a5c00; --t-err: #b00000; --t-track: #767676; }
+  .term[data-depth="none"] { --t-dim: var(--t-text); --t-acc: var(--t-text); --t-ok: var(--t-text); --t-warn: var(--t-text);
+          --t-err: var(--t-text); --t-track: var(--t-text); }
+  .bar { display: flex; justify-content: space-between; color: var(--t-dim); font: 600 .8rem var(--font-body); margin-bottom: var(--space-2); }
+  .screen { overflow: hidden; }
+  pre { margin: 0; font: 400 .85rem/1.35 var(--font-mono); white-space: pre; width: max-content; max-width: 100%; }
+  .r-dim { color: var(--t-dim); } .r-acc { color: var(--t-acc); font-weight: 700; } .r-ok { color: var(--t-ok); }
+  .r-warn { color: var(--t-warn); } .r-err { color: var(--t-err); font-weight: 700; } .r-track { color: var(--t-track); }
+  .probe { position: absolute; visibility: hidden; font: 400 .85rem/1.35 var(--font-mono); white-space: pre; }
+  .info { margin: var(--space-3) 0 0; color: var(--muted); font-size: .95rem; }
+
+  .shows { background: var(--raised); border-radius: var(--radius-card); box-shadow: var(--lift-1); padding: var(--space-4); margin-block: var(--space-5); }
+  .shows li { margin-bottom: var(--space-2); max-width: 64ch; }
+  noscript p { border: 2px solid var(--accent); padding: var(--space-3); border-radius: var(--radius-control); }
+  footer { border-top: 1px solid var(--rule); padding-block: var(--space-4); color: var(--muted); font-size: .9rem; }
+  @media (max-width: 40rem) { .group > span { flex-basis: 100%; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<main id="main" class="wrap">
+  <p class="kicker">A CLI screen drawn the playbook's way</p>
+  <h1>shipit deploy, in four states</h1>
+  <p>A made-up deploy tool, drawn from state on every frame, in columns not characters. Resize the window, change the
+     colour depth below, or use the keys on the screen's last row: nothing here needs a mouse.</p>
+
+  <div class="term" id="term" data-depth="truecolor" data-tt="dark">
+    <div class="bar"><span>shipit — terminal</span><span id="size"></span></div>
+    <div class="screen" id="screen"><pre id="pre" tabindex="0" aria-label="Terminal screen, shipit deploy">Loading the screen…</pre></div>
+  </div>
+  <span class="probe" id="probe">0000000000</span>
+  <p class="info" id="info"></p>
+
+  <div class="controls" role="group" aria-label="Terminal settings">
+    <div class="group" data-k="st"><span>State</span><button data-v="empty">1 Empty</button><button data-v="working">2 Working</button><button data-v="error">3 Error</button><button data-v="done">4 Done</button></div>
+    <div class="group" data-k="depth"><span>Colour <kbd>c</kbd></span><button data-v="truecolor">24-bit</button><button data-v="8">8 colours</button><button data-v="none">NO_COLOR</button></div>
+    <div class="group" data-k="want"><span>Width <kbd>w</kbd></span><button data-v="fit">Fit window</button><button data-v="40">40 cols</button><button data-v="24">24 cols</button></div>
+    <div class="group" data-k="tt"><span>Terminal <kbd>t</kbd></span><button data-v="dark">Dark</button><button data-v="light">Light</button><button id="motion" aria-pressed="false">Reduce motion <kbd>m</kbd></button></div>
+  </div>
+  <noscript><p>This screen is drawn by a small script, so it stays empty without one. In short: empty says "No deploys yet. Next: shipit deploy web"; working shows checks folded, one task running with a bar; error keeps the failed command and ends with "Next: shipit retry migrate"; done lists recent deploys, "+2 more".</p></noscript>
+
+  <section class="shows" aria-labelledby="shows">
+    <h2 id="shows">What this shows (terminal-ui playbook)</h2>
+    <ul>
+      <li><b>Hierarchy and roles:</b> one primary fact per row, seven colour roles, and a glyph for every status (✓ ✗ ▸ ○), so 8-colour and NO_COLOR keep the meaning.</li>
+      <li><b>Colour depth:</b> the bar is a gradient only in 24-bit; flat in 8 colours; plain glyphs <code>█</code> and <code>░</code> with NO_COLOR.</li>
+      <li><b>Columns, not characters:</b> the task name carries CJK text and a stray escape code; widths are measured in columns, the cut ends in <code>…</code> and the control byte is shown as <code>·</code>.</li>
+      <li><b>Resize and small:</b> every frame is laid out from state at the current width; under 56 columns a one-column form, under 28 a "too small" line naming the size needed.</li>
+      <li><b>Motion budget:</b> the spinner runs at 10 fps only while work runs, a frame is written only when the picture changed, and reduced motion stops it.</li>
+      <li><b>Quiet by default:</b> passed checks fold to one line, a failure keeps the command it ran and ends with <code>Next:</code>; lists cap with "+N more".</li>
+      <li><b>Keys:</b> every action has a key, listed on the last row of the screen.</li>
+    </ul>
+  </section>
+</main>
+<footer class="wrap"><p>An example page for Foreman's terminal-ui playbook. The deploy is made up.</p></footer>
+
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); }, root = document.documentElement, term = $('#term');
+  var OPT = { st: ['empty', 'working', 'error', 'done'], depth: ['truecolor', '8', 'none'], want: ['fit', '40', '24'], tt: ['dark', 'light'] };
+  var S = { st: 'working', depth: 'truecolor', want: 'fit', tt: 'dark' };
+  var GRAD = { dark: [[127, 209, 139], [98, 201, 217]], light: [[26, 127, 55], [11, 111, 131]] };
+  var f = 0, timer = 0, frames = 0, last = '', FLOOR = 28, NARROW = 56;
+
+  // display width: Wide and Fullwidth take two columns, control characters none (a test row of CJK keeps its border)
+  var wide = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦\u{1f300}-\u{1faff}]/u;
+  var cw = function (s) { var n = 0; for (var c of s) n += wide.test(c) ? 2 : 1; return n; };
+  var clean = function (s) { return s.replace(/[\u0000-\u001f\u007f-\u009f]/g, '·'); }; // text from files and subprocesses
+  function cut(s, n) { // by columns, never half a wide glyph; the mark takes its own column
+    if (n < 1) return ''; if (cw(s) <= n) return s;
+    var o = '', w = 0; for (var c of s) { var k = wide.test(c) ? 2 : 1; if (w + k > n - 1) break; o += c; w += k; }
+    return o + '…';
+  }
+  function row(L, R, c) { // left cut at the end to fit, right kept whole, padded to the column
+    var rw = R.reduce(function (n, s) { return n + cw(clean(s[1])); }, 0), room = c - rw - (rw ? 1 : 0), used = 0, out = [];
+    for (var s of L) {
+      var t = cut(clean(s[1]), room - used); if (!t) break;
+      out.push([s[0], t, s[2]]); used += cw(t); if (t !== clean(s[1])) break;
+    }
+    out.push(['', ' '.repeat(Math.max(0, c - used - rw))]);
+    return out.concat(R.map(function (s) { return [s[0], clean(s[1])]; }));
+  }
+  function bar(n, total) {
+    var out = [], g = GRAD[S.tt];
+    for (var i = 0; i < total; i++) {
+      var t = total > 1 ? i / (total - 1) : 0;
+      out.push(i < n ? ['ok', '█', S.depth === 'truecolor' ? 'rgb(' + g[0].map(function (v, k) { return Math.round(v + (g[1][k] - v) * t); }) + ')' : 0] : ['track', '░']);
+    }
+    return out;
+  }
+  function reduced() { return root.dataset.motion === 'reduce' || matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+  function build(c) { // the whole screen from state, width and time: nothing cached between frames
+    if (c < FLOOR) return [row([['err', 'Too small']], [], c), row([['dim', 'need ' + FLOOR + ' columns']], [], c)];
+    var wideForm = c >= NARROW, R = [], pct = reduced() ? 62 : Math.min(92, 20 + Math.round(f * 1.5));
+    R.push(row([['acc', 'shipit deploy'], ['', ' prod']], wideForm ? [['dim', 'v2.3.1']] : [], c));
+    R.push(row([['dim', '─'.repeat(c)]], [], c));
+    if (S.st === 'empty') {
+      R.push(row([['dim', '○ '], ['', 'No deploys yet.']], [], c), row([['dim', 'Next: '], ['acc', 'shipit deploy web']], [], c));
+    } else if (S.st === 'working') {
+      var bw = Math.max(8, Math.min(30, c - 12)), spin = reduced() ? '▸' : '▖▘▝▗'[f % 4];
+      R.push(row([['ok', '✓ '], ['', '4 checks passed']], wideForm ? [['dim', '3.1 s']] : [], c));
+      R.push(row([['acc', spin + ' '], ['', '部署 api-\u001b[2J網關-edge-eu-west']], [['dim', pct + '%']], c));
+      R.push(row([['', '  ']].concat(bar(Math.round(pct / 100 * bw), bw)), [], c));
+      R.push(row([['dim', '○ migrate db']], [], c), row([['dim', '○ warm cache']], [], c));
+    } else if (S.st === 'error') {
+      R.push(row([['ok', '✓ '], ['', '4 checks passed']], [], c), row([['err', '✗ migrate db']], wideForm ? [['dim', '30.0 s']] : [], c));
+      R.push(row([['warn', '  lock timeout on table "users"']], [], c), row([['dim', '  ran  psql -f 0042_add_index.sql']], [], c));
+      R.push(row([['dim', 'Next: '], ['acc', 'shipit retry migrate']], [], c));
+    } else {
+      R.push(row([['ok', '✓ '], ['', 'Deployed 4 steps']], [['dim', '41 s']], c));
+      ['v2.3.1 prod', 'v2.3.0 prod', 'v2.2.9 stage', 'v2.2.8 prod'].forEach(function (d, i) { R.push(row([['dim', '  ' + d]], [['dim', (i + 1) + 'd ago']], c)); });
+      R.push(row([['dim', '  +2 more']], [], c), row([['dim', 'Next: '], ['acc', 'shipit open prod']], [], c));
+    }
+    R.push(row([['dim', wideForm ? '1-4 view  c colour  w width  t theme  m motion' : '1-4 view  c  w  t  m']], [], c));
+    return R;
+  }
+
+  function draw() {
+    var fit = Math.floor($('#screen').clientWidth / (($('#probe').getBoundingClientRect().width / 10) || 8)), c = Math.min(80, fit);
+    if (S.want !== 'fit') c = Math.min(+S.want, fit);
+    var rows = build(c), key = S.depth + S.tt + JSON.stringify(rows);
+    $('#size').textContent = c + ' × ' + rows.length;
+    $('#info').textContent = c + ' columns (the window fits ' + fit + ') · frames written: ' + frames + ' · clock: ' + (timer ? 'running, 10 fps' : 'stopped, an idle screen writes 0 bytes');
+    if (key === last) return; last = key; frames++;
+    var pre = $('#pre'); pre.textContent = '';
+    rows.forEach(function (r) {
+      r.forEach(function (s) { var e = document.createElement('span'); e.textContent = s[1]; if (s[0]) e.className = 'r-' + s[0]; if (s[2]) e.style.color = s[2]; pre.appendChild(e); });
+      pre.appendChild(document.createTextNode('\n'));
+    });
+  }
+  function sync() { // only live work owns a clock
+    clearInterval(timer); timer = 0; f = 0;
+    if (S.st === 'working' && !reduced()) timer = setInterval(function () { f++; draw(); }, 100);
+    term.dataset.depth = S.depth; term.dataset.tt = S.tt;
+    document.querySelectorAll('.group[data-k]').forEach(function (g) {
+      g.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(S[g.dataset.k] === b.dataset.v)); });
+    });
+    $('#motion').setAttribute('aria-pressed', String(root.dataset.motion === 'reduce'));
+    draw();
+  }
+  function set(k, v) { S[k] = v; sync(); }
+  function cycle(k) { var o = OPT[k]; set(k, o[(o.indexOf(S[k]) + 1) % o.length]); }
+  function motion() { if (root.dataset.motion === 'reduce') delete root.dataset.motion; else root.dataset.motion = 'reduce'; sync(); }
+
+  document.querySelectorAll('.group[data-k] button[data-v]').forEach(function (b) {
+    b.addEventListener('click', function () { set(b.closest('.group').dataset.k, b.dataset.v); });
+  });
+  $('#motion').addEventListener('click', motion);
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var n = '1234'.indexOf(e.key);
+    if (n >= 0) set('st', OPT.st[n]); else if (e.key === 'c') cycle('depth'); else if (e.key === 'w') cycle('want');
+    else if (e.key === 't') cycle('tt'); else if (e.key === 'm') motion();
+  });
+  if (window.ResizeObserver) new ResizeObserver(draw).observe($('#screen')); // a resize is an event
+  matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', sync);
+  sync();
+})();
+</script>
+</body>
+</html>
