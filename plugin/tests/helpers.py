@@ -109,6 +109,28 @@ SPY = """(() => {
 })();"""
 
 
+def pty_reader(master):
+    """T-1828: a thread reading a pty's master until its other end closes (EIO on Linux, b'' on macOS): .join(), then
+    .out. macOS drops what was written once the writer closes, and stalls the writer (and tcdrain) while the master
+    goes unread, so a test keeps this reading from before the writer starts."""
+    import threading
+    out = bytearray()
+
+    def run():
+        while True:
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:
+                return
+            if not chunk:
+                return
+            out.extend(chunk)
+    t = threading.Thread(target=run, daemon=True)
+    t.out = out
+    t.start()
+    return t
+
+
 def polls(upto=30, every=0.5):
     """T-1728: the seconds to sample a page at until `until` holds: every `every` s for `upto` s of a quiet machine,
     stretched by busy_factor."""
