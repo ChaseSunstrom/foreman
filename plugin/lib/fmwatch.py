@@ -613,6 +613,7 @@ def view(p):
         "fleet": _guarded(_fleet) or [],  # T-0711
         "today_done": today_done,
         "learned": _guarded(lambda: _learned_line(p)),  # T-1045
+        "look": _guarded(lambda: __import__("fmtaste").roll_line()),  # T-1672: the look of the day, once taste exists
         "done_days": done_days,
         "trust_file": c.trust_path(),  # where /fm-trust on writes (the mod, never a tool call)
         # T-0145: a driven turn ended so a session's mod could reload; that mod starts the next turn (fresh ones only)
