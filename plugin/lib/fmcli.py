@@ -6351,8 +6351,8 @@ def _build_parser():
     s = add("inbox", lazy("fmeco", "cmd_inbox"), tier=("Project and settings", 670), help="captured requests waiting; fm inbox gh reads the repo's open "
                                                        "issues (read-only) into briefs, their text kept as untrusted data")
     s.add_argument("source", nargs="?", choices=["gh", "spec", "first", "swipe", "pick", "prefer", "ticket"],
-                   help="a source to capture from (spec FILE: each unchecked `- [ ]` item, once; ticket FILE|-: a "
-                        "pasted ticket or error as one planned brief, T-1664); first: ready S items with why; swipe: "
+                   help="a source to capture from (spec FILE: each unchecked `- [ ]` item, once; ticket FILE|-|KEY: a "
+                        "pasted ticket or error as one planned brief, T-1664, or a Jira or Linear issue fetched by key or URL, T-1859); first: ready S items with why; swipe: "
                         "the deferred pile (--apply ID:revive|drop|keep,…); pick: close pairs to choose between; "
                         "prefer WINNER LOSER: record a choice the inbox order learns from (--reset forgets them); "
                         "none lists the inbox")
