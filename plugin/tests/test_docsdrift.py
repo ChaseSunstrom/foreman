@@ -59,6 +59,17 @@ class DocsDrift(ForemanTestCase):
             f.write("Audit note: `src/gone-long-ago.py:12` was the bug.\n")
         self.assertNotIn("local/notes.md", {f["file"] for f in fmdocs.scan(self.repo)})
 
+    def test_stack_cards_and_changelogs_name_other_trees(self):
+        # T-1817: a card's paths are the detected project's (./gradlew); a changelog's, files as they were then
+        os.makedirs(os.path.join(self.repo, "cards"), exist_ok=True)
+        with open(os.path.join(self.repo, "cards", "gradle.md"), "w") as f:
+            f.write("---\nname: gradle\ndetect: [file:gradlew]\n---\nRun `./gradlew build`; see `src/gone.py`.\n")
+        with open(os.path.join(self.repo, "CHANGELOG.md"), "w") as f:
+            f.write("## 1.0\n- `src/removed.py` is gone; `./gradlew` too.\n")
+        found = {f["file"] for f in fmdocs.scan(self.repo)}
+        self.assertFalse(found & {"cards/gradle.md", "CHANGELOG.md"}, found)
+        self.assertIn("README.md", found)  # drift elsewhere still reports
+
     def test_cli(self):
         p = self.fm("docs", "--json", cwd=self.repo)
         self.assertEqual(len(json.loads(p.stdout)["findings"]), 5)
