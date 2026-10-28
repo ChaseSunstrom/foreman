@@ -131,7 +131,7 @@ Preview without a browser (T-1635): `fm scene cells scene.json [--cols 64] [--tu
 
 Bring a scene in from three.js (T-1847): `fm scene import three.json --out scene.json` reads what `Object3D.toJSON()` writes (format 4). Each mesh's matrix is composed with its groups' and split into position, rotation (Euler XYZ) and scale; a mirrored or sheared matrix loses its shear. Box, sphere, plane and BufferGeometry carry, as do material colour, roughness, metalness and emissive, the four light types (at most three direct), the first PerspectiveCamera (its target placed along its view) and the background colour. The rest is listed as left out, never dropped silently.
 
-Showpieces, no FILE (`--out PATH`): `fm scene metaballs --seed 2` (T-1848), a blob by marching tetrahedra (`--grid` 8-48); `terrain` (T-1851), git churn as a ridge per top-level path; `airlock` (T-1849), guard blocks before a gate, calls let through past it.
+Showpieces, no FILE (`--out PATH`): `fm scene metaballs --seed 2` (T-1848), a marching-tetrahedra blob; `terrain` (T-1851), git churn as a ridge per top-level path; `airlock` (T-1849), guard blocks before a gate, calls let through past it; `bench` (T-1850), code-bench runs as boxes.
 
 ## Done when
 
