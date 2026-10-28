@@ -83,11 +83,24 @@ class FinishGaps(HookCase):
         self.assertNotEqual(e.returncode, 0, e.stdout + e.stderr)
         r = self.fm("task", "finish", tid, "--audit", "self review", check=False)
         out = r.stderr + r.stdout
-        self.assertIn("step 1", out)
-        self.assertIn("its last run failed", out)
-        self.assertIn(f"fm task evidence {tid} --step 1 --run", out)
+        self.assertNotIn("its last run failed", out)  # T-1844: the close re-runs it, so it's no gap
         self.assertIn("step 2 (wire it) has no verify command or evidence of its own", out)
         self.assertNotIn("step 1 (build it) has no verify", out)
+
+    def test_a_red_step_is_re_run_at_close_and_closes_once_its_command_passes(self):
+        # T-1844: a test-first step's deliberate red run refused the close until it was re-recorded (T-1669, T-1841)
+        self.fm("init")
+        self.fm("task", "new", "t", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "red first", "--focus")
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "test -f ok", check=False)
+        self.fm("task", "set", "T-0001", "--section", "Regression test", "--text", "none: a test of the close itself")
+        close = ["task", "finish", "T-0001", "--audit", "self", "--lens", "intent: ok"]
+        r = self.fm(*close, check=False)
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertIn("test -f ok", r.stdout + r.stderr)  # it ran, still red, and says so
+        open(os.path.join(self.repo, "ok"), "w").close()
+        r = self.fm(*close, check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(c.find_brief(c.find_project(self.repo), "T-0001").status, "done")
 
 
 class Reproduce(ForemanTestCase):
