@@ -184,6 +184,10 @@ def lines(p):
                    "for the new per-call cost; fm doctor for CC features to adopt and settings to redo.")
     ci = _load(_mine(p))
     if ci.get("failed") and ci.get("sha"):
+        b = c.find_brief(p, str(ci.get("task") or ""))
+        status = b.status if b else "closed"  # an archived task is closed too
+        act = (f"{ci.get('task')} is {status}: push its fix if it isn't on {ci.get('branch') or 'main'}, else the "
+               "newest run is still going" if status in c.CLOSED | {"closed"} else f"fix it first: {ci.get('task')}")
         out.append(f"CI on {ci.get('branch') or 'main'} is red at {str(ci['sha'])[:7]} ({', '.join(map(str, ci['failed']))})"
-                   f" → fix it first: {ci.get('task')}.")
+                   f" → {act}.")
     return out
