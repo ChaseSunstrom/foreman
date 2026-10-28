@@ -6559,7 +6559,8 @@ def _build_parser():
                  "serve: the same as a page on 127.0.0.1, token-locked, changes through set")
     s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
                                                                  "bisect", "profile", "chords", "serve", "check",
-                                                                 "changed"])  # T-1549 changed [SNAPSHOT]
+                                                                 "changed", "log", "macro", "duel", "replay", "words"])
+    # T-1549 changed [SNAPSHOT]; T-1658 log [KEY], macro [NAME], duel A B, replay, words TEXT
     # T-1543 bisect, T-1656 profile, T-1660 chords, T-1659 serve
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
                                           "share code fm settings export printed (T-1510; tui.toml's [profile] tables "
@@ -6569,6 +6570,13 @@ def _build_parser():
     s.add_argument("--surface", choices=["app", "plugin"], help="only the app's tui.toml, or only the pane's options")
     s.add_argument("--scope", choices=["everywhere", "project"], help="set: an app setting for every project "
                    "(tui.toml, the default) or for this project alone, under the repo's policy pins (T-1611)")
+    s.add_argument("--set", dest="pairs", action="append", metavar="KEY=VALUE", help="macro NAME: what it sets (saved, "
+                   "not run); replay: draw the runs with it set, nothing written, to see what it breaks (T-1658)")
+    s.add_argument("--events", action="append", metavar="FILE", help="replay: an fm code .events.jsonl to play too; "
+                   "duel: the run to draw (default: the sample run)")
+    s.add_argument("--runs", type=int, default=5, help="replay: this project's last N fm code runs (default 5)")
+    s.add_argument("--apply", action="store_true", help="words: set what it proposes (one undo puts it back)")
+    s.add_argument("--model", default="haiku", help="words: the model that reads the words (default haiku)")
     s = add("home", lazy("fmhome", "cmd_home"), tier=("Project and settings", 785),  # T-1665
             help="export: Foreman's state as one tarball, secrets redacted and credential files left out; import FILE: "
                  "into an empty home, every member's path and hash checked first")
