@@ -611,12 +611,9 @@ def turntable(scene, frames=8, size=(160, 100), cols=4):
     """T-1530: a contact sheet of the scene turned about +Y in `frames` even steps, drawn by fmraster (flat shading,
     no browser or GPU): (width, height, RGB bytes), frames left to right then down. ponytail: pure Python, about a
     second a megapixel; a scene of many thousand triangles takes a while."""
-    import fmraster
     w, h = size
-    focal = max(1, round(h / 2 / math.tan(math.radians(scene["camera"]["fov"]) / 2)))
-    bg = tuple(int(scene["background"][i:i + 2], 16) for i in (1, 3, 5)) if scene["background"] else (0, 0, 0)
-    tiles = [fmraster.render(triangles(scene, 360 * k / frames), w, h, focal=focal, background=bg)
-             for k in range(frames)]
+    bg = _background(scene)
+    tiles = [_frame(scene, 360 * k / frames, w, h) for k in range(frames)]
     cols = min(cols, frames)
     rows = -(-frames // cols)
     sheet = bytearray(bytes(bg) * (w * cols * h * rows))
@@ -626,6 +623,35 @@ def turntable(scene, frames=8, size=(160, 100), cols=4):
             at = ((y0 + y) * w * cols + x0) * 3
             sheet[at:at + w * 3] = tile[y * w * 3:(y + 1) * w * 3]
     return w * cols, h * rows, bytes(sheet)
+
+
+def _background(scene):
+    return tuple(int(scene["background"][i:i + 2], 16) for i in (1, 3, 5)) if scene["background"] else (0, 0, 0)
+
+
+def _frame(scene, turn, w, h):
+    """One w x h RGB frame of the scene turned `turn` degrees about +Y, drawn by fmraster from its camera."""
+    import fmraster
+    focal = max(1, round(h / 2 / math.tan(math.radians(scene["camera"]["fov"]) / 2)))
+    return fmraster.render(triangles(scene, turn), w, h, focal=focal, background=_background(scene))
+
+
+def cells(scene, cols=64, turn=0.0):
+    """T-1635: the scene as terminal text: cols x (cols * 5/8, down to even) pixels from fmraster, two to a cell as
+    an upper half block, the top pixel its 24-bit foreground and the bottom its background; one string per row of
+    cells, each ending in a reset. ponytail: every cell carries both colours, about 40 bytes; truecolor only."""
+    if not 2 <= cols <= 400:
+        raise ValueError(f"--cols {cols}: 2 to 400")
+    h = max(2, cols * 5 // 8 // 2 * 2)
+    rgb = _frame(scene, turn, cols, h)
+    lines = []
+    for y in range(0, h, 2):
+        row = []
+        for x in range(cols):
+            a, b = 3 * (y * cols + x), 3 * ((y + 1) * cols + x)
+            row.append("\x1b[38;2;%d;%d;%dm\x1b[48;2;%d;%d;%dm\u2580" % (*rgb[a:a + 3], *rgb[b:b + 3]))
+        lines.append("".join(row) + "\x1b[0m")
+    return lines
 
 
 GLSL = re.compile(r"```glsl\n(.*?)```", re.S)
@@ -972,9 +998,12 @@ def cmd_scene(args):
             f"{'→'.join(map(str, sorted(set(got['geometries']), key=got['geometries'].index)))}, after dispose "
             f"{got['after']}"]))
         return 1 if got["problems"] else 0
-    if args.action in ("check", "turntable"):  # T-1530
+    if args.action in ("check", "turntable", "cells"):  # T-1530, T-1635
         try:
             scene = load(args.path)
+            if args.action == "cells":
+                lines = cells(scene, args.cols, args.turn)
+                return fmcli.out(args, {"cols": args.cols, "rows": len(lines), "lines": lines}, "\n".join(lines)) or 0
             if args.action == "check":
                 tris = sum(len(faces(m["geometry"])) for m in scene["meshes"])
                 return fmcli.out(args, {"meshes": len(scene["meshes"]), "triangles": tris,
