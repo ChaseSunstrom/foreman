@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The site has a Gallery (T-1785): one worked page per design playbook (motion, interaction, game feel, sound, type and colour, composition, design direction, data viz, scrollytelling, terminal UI, visual QA, and the 3D template), each a small real screen that applies its playbook and passes `fm new check`. Each playbook names its page on an `Example:` line, under `references/ui/examples/`, so you can open it from disk too.
 - `fm check --python oldest` (or `--python 3.12`) runs the gates under the oldest Python Foreman supports, as `python3` (T-1805): run it once before a push to main or a release to catch a break only that version has, which CI found days late before. Every other `fm check` stays as fast as before.
 - On macOS, quitting the `fm code` app now names and stops each runner its fm code started (T-1828): it read runner names from /proc, which macOS lacks. Playbook code blocks there run in the resolved temp folder, and the macOS CI job no longer hangs on terminal tests that read output after the program closed it.
 - `fm run` no longer pays for a session that would repeat the last one (T-1825): when a session leaves the files and the failing check exactly as it found them, the task is blocked with that check named and the run moves on. A session's first recorded check now counts as progress (it was missed, so such a session read as no progress).

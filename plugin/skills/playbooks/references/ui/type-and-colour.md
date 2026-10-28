@@ -265,6 +265,8 @@ Each line is pass or fail on the built screens and the token files.
 
 The code side lives in the stack library: `fm lib show typography` (rem sizing, fluid `clamp()`, font loading and fallback metrics), `fm lib show color-contrast` (WCAG pairs, states, forced colours, a contrast unit test), `fm lib show dark-mode` (theme switching without a flash, the stored choice), `fm lib show design-systems` (layered tokens and theming), `fm lib show css-custom-properties` (token plumbing), `fm lib show accessibility-testing` (axe in each theme), `fm lib show visual-regression` (screenshot baselines for both themes).
 
+Example: `references/ui/examples/type-and-colour.html`: a type scale and an OKLCH palette by role, each pair's contrast computed on the page, light and dark as their own steps. The site's Gallery shows it.
+
 ## UI contract
 
 - motion: n/a: type and colour don't move; a colour change on hover or a theme switch follows motion.md.

@@ -171,6 +171,8 @@ The page must be readable with animation and JS absent. Loading motion decorates
 
 The code side lives in the stack library: `fm lib show animation` (CSS, WAAPI, view transitions), `fm lib show framer-motion` (variants, presence, layout), `fm lib show skeleton-loading`, `fm lib show layout-shift`, `fm lib show css-custom-properties` (token plumbing), `fm lib show toasts`, `fm lib show dialogs`, `fm lib show web-performance`, `fm lib show accessibility`. Add `--section verify` for just the checks.
 
+Example: `references/ui/examples/motion.html`: a menu, a toast and a list reorder driven by the timing tokens, interruptible, with reduced motion as its own path. The site's Gallery shows it.
+
 ## UI contract
 
 - motion: reduced motion is its own column in the state-to-motion table, designed, not durations set to zero.

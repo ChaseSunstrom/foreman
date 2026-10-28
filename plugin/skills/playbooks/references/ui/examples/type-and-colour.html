@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- Foreman's own example page (written for Foreman, not ported) for references/ui/type-and-colour.md. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -37,7 +38,7 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --surface: #0E1217; --surface-raised: #171B20; --surface-sunken: #23272C;
-      --text: #E3E8F0; --text-muted: #8E939A; --border: #6D7279; --hairline: #2E343A;
+      --text: #E3E8F0; --text-muted: #B0B5BC; --border: #6D7279; --hairline: #2E343A;
       --accent: #75A0DF; --on-accent: #0E1217; --accent-subtle: #1A2E4C; --on-subtle: #9FC0F0;
       --error: #F07F77; --warning: #EEB154; --success: #6FC884;
       --lift-1: 0 1px 2px rgb(0 0 0 / .5); --lift-2: 0 10px 28px -10px rgb(0 0 0 / .8);
@@ -45,7 +46,7 @@
   }
   :root[data-theme="dark"] {
     --surface: #0E1217; --surface-raised: #171B20; --surface-sunken: #23272C;
-    --text: #E3E8F0; --text-muted: #8E939A; --border: #6D7279; --hairline: #2E343A;
+    --text: #E3E8F0; --text-muted: #B0B5BC; --border: #6D7279; --hairline: #2E343A;
     --accent: #75A0DF; --on-accent: #0E1217; --accent-subtle: #1A2E4C; --on-subtle: #9FC0F0;
     --error: #F07F77; --warning: #EEB154; --success: #6FC884;
     --lift-1: 0 1px 2px rgb(0 0 0 / .5); --lift-2: 0 10px 28px -10px rgb(0 0 0 / .8);
@@ -76,7 +77,8 @@
   .btn:active { transform: translateY(1px); }
   .btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); box-shadow: var(--lift-1); }
   .btn[aria-pressed="true"] { background: var(--accent-subtle); color: var(--on-subtle); border-color: var(--accent); }
-  .btn[disabled] { opacity: .6; cursor: progress; }
+  .btn[data-f][aria-pressed="true"]::before { content: "✓ "; }
+  .btn[aria-disabled="true"] { opacity: .6; cursor: progress; }
 
   .hero { padding-block: var(--space-5) var(--space-3); display: grid; gap: var(--space-3); }
   .hero p { color: var(--text-muted); font-size: var(--step-1); line-height: 1.4; }
@@ -115,7 +117,7 @@
 <a class="skip" href="#main">Skip to the content</a>
 <header class="wrap">
   <span class="mark">Tallyhouse</span>
-  <button class="btn" id="theme" type="button" aria-pressed="false">Theme: auto</button>
+  <button class="btn" id="theme" type="button">Theme: auto</button>
 </header>
 <main id="main" class="wrap">
   <section class="hero" aria-labelledby="t">
@@ -139,13 +141,13 @@
 
   <section aria-labelledby="proof">
     <h2 id="proof">The proof, on the worst surface</h2>
-    <p>Each text role is measured on <code>--surface-sunken</code>, where muted text fails first. Switch the theme and the numbers change; dark body text needs 7:1.</p>
+    <p>Each text role is measured on <code>--surface-sunken</code>, where muted text fails first. Switch the theme and the numbers change; in the dark theme body and muted text need 7:1.</p>
     <div class="panel tablewrap" tabindex="0" role="region" aria-label="Contrast table">
       <table>
         <thead><tr><th scope="col">Role</th><th scope="col" class="r">Hex</th><th scope="col" class="r">Ratio</th><th scope="col">Needs</th><th scope="col">Result</th></tr></thead>
         <tbody id="rows">
-          <tr data-fg="text" data-need="7"><th scope="row"><span class="sw" style="background:var(--text)"></span>text</th><td class="r num">—</td><td class="r num">—</td><td class="num">4.5</td><td>—</td></tr>
-          <tr data-fg="text-muted" data-need="4.5"><th scope="row"><span class="sw" style="background:var(--text-muted)"></span>text-muted</th><td class="r num">—</td><td class="r num">—</td><td class="num">4.5</td><td>—</td></tr>
+          <tr data-fg="text" data-need="4.5" data-dark="7"><th scope="row"><span class="sw" style="background:var(--text)"></span>text</th><td class="r num">—</td><td class="r num">—</td><td class="num">4.5</td><td>—</td></tr>
+          <tr data-fg="text-muted" data-need="4.5" data-dark="7"><th scope="row"><span class="sw" style="background:var(--text-muted)"></span>text-muted</th><td class="r num">—</td><td class="r num">—</td><td class="num">4.5</td><td>—</td></tr>
           <tr data-fg="accent" data-need="4.5"><th scope="row"><span class="sw" style="background:var(--accent)"></span>accent (links)</th><td class="r num">—</td><td class="r num">—</td><td class="num">4.5</td><td>—</td></tr>
           <tr data-fg="border" data-need="3"><th scope="row"><span class="sw" style="background:var(--border)"></span>border</th><td class="r num">—</td><td class="r num">—</td><td class="num">3</td><td>—</td></tr>
           <tr data-fg="error" data-need="4.5"><th scope="row"><span class="sw" style="background:var(--error)"></span>error</th><td class="r num">—</td><td class="r num">—</td><td class="num">4.5</td><td>—</td></tr>
@@ -173,13 +175,13 @@
           <thead><tr><th scope="col">Customer</th><th scope="col">Status</th><th scope="col" class="r">Amount (£)</th></tr></thead>
           <tbody id="ledger">
             <tr data-s="overdue"><th scope="row">Harbour Joinery</th><td><span class="tag bad"><span aria-hidden="true">▲</span> Overdue 12 days</span></td><td class="r num">2,480.00</td></tr>
-            <tr data-s="overdue"><th scope="row">Penhallow &amp; Daughters Upholstery</th><td><span class="tag warn"><span aria-hidden="true">●</span> Due Friday</span></td><td class="r num">860.50</td></tr>
+            <tr data-s="due"><th scope="row">Penhallow &amp; Daughters Upholstery</th><td><span class="tag warn"><span aria-hidden="true">●</span> Due Friday</span></td><td class="r num">860.50</td></tr>
             <tr data-s="paid"><th scope="row">Mill Lane Ceramics</th><td><span class="tag ok"><span aria-hidden="true">✓</span> Paid</span></td><td class="r num">12,075.00</td></tr>
             <tr data-s="paid"><th scope="row">Ketterick Forge</th><td><span class="tag ok"><span aria-hidden="true">✓</span> Paid</span></td><td class="r num">9.95</td></tr>
           </tbody>
         </table>
       </div>
-      <p class="note" id="ledgerstate" role="status" hidden></p>
+      <div role="status"><p class="note" id="ledgerstate" hidden></p></div>
       <p class="label" style="margin-top:var(--space-3)">Demo: the first reload fails on purpose, the second works.</p>
     </div>
   </section>
@@ -208,7 +210,7 @@
       var bg = lum(rgb("var(--surface-sunken)")), bad = 0;
       document.querySelectorAll("#rows tr").forEach(function (tr) {
         var c = rgb("var(--" + tr.dataset.fg + ")"), l = lum(c), r = (Math.max(l, bg) + .05) / (Math.min(l, bg) + .05);
-        var need = tr.dataset.fg === "text" ? (dark() ? 7 : 4.5) : +tr.dataset.need, pass = r >= need, cells = tr.children;
+        var need = dark() && tr.dataset.dark ? +tr.dataset.dark : +tr.dataset.need, pass = r >= need, cells = tr.children;
         cells[1].textContent = hex(c); cells[2].textContent = r.toFixed(2); cells[3].textContent = need;
         cells[4].innerHTML = pass ? '<span class="tag ok"><span aria-hidden="true">✓</span> Pass</span>' : '<span class="tag bad"><span aria-hidden="true">✗</span> Fail</span>';
         if (!pass) bad++;
@@ -217,7 +219,7 @@
     }
     var modes = ["auto", "light", "dark"], i = modes.indexOf(root.getAttribute("data-theme") || "auto"), tb = document.getElementById("theme");
     function setTheme() { var m = modes[i]; if (m === "auto") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", m);
-      tb.textContent = "Theme: " + m; tb.setAttribute("aria-pressed", m === "dark" ? "true" : "false"); measure(); }
+      tb.textContent = "Theme: " + m; measure(); }
     tb.addEventListener("click", function () { i = (i + 1) % 3; setTheme(); });
     setTheme();
 
@@ -233,8 +235,9 @@
     });
     var rl = document.getElementById("reload");
     rl.addEventListener("click", function () {
-      rl.disabled = true; rl.textContent = "Reloading…"; say("Reloading the ledger…");
-      setTimeout(function () { rl.disabled = false; rl.textContent = "Reload ledger"; tries++;
+      if (rl.getAttribute("aria-disabled") === "true") return; // aria-disabled keeps focus on the button
+      rl.setAttribute("aria-disabled", "true"); rl.textContent = "Reloading…"; say("Reloading the ledger…");
+      setTimeout(function () { rl.removeAttribute("aria-disabled"); rl.textContent = "Reload ledger"; tries++;
         if (tries % 2) say("The ledger didn't load: the bank feed timed out. Your filter is kept. Press Reload ledger to try again.", "err");
         else { say("Ledger up to date, 4 invoices.", "done"); }
       }, 900);
