@@ -37,6 +37,8 @@ def safe_out(out):
 
 
 OWN_HOSTS = {"chasesunstrom.github.io"}  # the site itself
+# T-1785: XML namespace URIs in script or CSS text are names, never fetched; in a src or href they still count
+NAMESPACES = {"http://www.w3.org/2000/svg", "http://www.w3.org/1999/xlink", "http://www.w3.org/1999/xhtml"}
 ABSOLUTE = re.compile(r"""(?i)\bhttps?:[/\\]{2}[^\s'"`)<>]+""")  # any http(s) URL in a stylesheet or script
 CSS_SHORT = re.compile(r"""(?i)(?:url\(\s*|@import\s+)['"]?([/\\]{2}[^\s'")]+)""")  # url(//host/x), @import "//host"
 
@@ -52,7 +54,7 @@ def _outside(url):
 
 def _text_urls(text):
     text = re.sub(r"(?s)/\*.*?\*/", "", text)
-    return ABSOLUTE.findall(text) + CSS_SHORT.findall(text)
+    return [u for u in ABSOLUTE.findall(text) if u not in NAMESPACES] + CSS_SHORT.findall(text)
 
 
 class _Loads(html.parser.HTMLParser):
@@ -534,6 +536,11 @@ def build(out):
             with open(os.path.join(out, "stories", name + ".html"), "w", encoding="utf-8") as f:
                 f.write(layout(f"Case study: {ex['plan'].get('title') or label}", ex["request"][:150],
                                case_study_html(name, label, ex), P.PAGES, None))
+    os.makedirs(os.path.join(out, "gallery"), exist_ok=True)  # T-1785: each UI playbook's worked example
+    for name, _, _, src in P.gallery():
+        if not os.path.isfile(src):
+            raise SystemExit(f"build.py: ui/{name}.md's Example: line names a file that doesn't exist: {src}")
+        shutil.copy2(src, os.path.join(out, "gallery", name + ".html"))
     os.makedirs(os.path.join(out, "features"), exist_ok=True)
     for p in P.PAGES:
         with open(os.path.join(out, "features", p["slug"] + ".html"), "w", encoding="utf-8") as f:
