@@ -2,6 +2,7 @@
 Foreman's state (never the plugin tree); a stage key routes as before; without FTS5 a title/use-line scan answers."""
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import time
@@ -94,6 +95,55 @@ class Rank(ForemanTestCase):
                         h.write(b"not a database" * 100)
         self.assertEqual(self.top("alpha widget"), ["references/fix/alpha.md"])
 
+    def dbs(self):
+        return [os.path.join(d, f) for d, _, fs in os.walk(os.environ["FOREMAN_STATE"]) for f in fs if f.endswith(".db")]
+
+    def test_a_corrupt_fts_table_is_rebuilt_not_scanned_forever(self):  # the signature still matches
+        put(self.root, "references/fix/alpha.md", "Alpha", "Use when the alpha widget misbehaves.")
+        put(self.root, "references/fix/beta.md", "Beta", "Use when the beta widget misbehaves.")
+        self.assertEqual(pb.find("alpha widget", 5, self.root)[0], "fts5")
+        [db] = self.dbs()
+        with open(db + "-journal", "wb") as f:
+            f.write(b"stale")
+        con = sqlite3.connect(db)
+        con.execute("update books_data set block=x'0102030405060708' where id>1")
+        con.execute("update books_idx set segid=segid+7")
+        con.commit()
+        con.close()
+        mode, got = pb.find("alpha widget", 5, self.root)
+        self.assertEqual((mode, got[0]["path"]), ("fts5", "references/fix/alpha.md"))
+        self.assertEqual(pb.find("beta widget", 5, self.root)[0], "fts5")  # healthy since: no scan on every call
+        self.assertFalse(os.path.exists(db + "-journal"))
+
+    def test_an_index_of_a_library_that_is_gone_is_dropped_when_another_is_built(self):
+        old = os.path.join(self.tmp, "cache-1.0")
+        put(old, "references/fix/alpha.md", "Alpha", "Use when the alpha widget misbehaves.")
+        pb.find("alpha widget", 5, old)
+        self.assertEqual(len(self.dbs()), 1)
+        keep = os.path.join(self.tmp, "other")
+        put(keep, "references/fix/beta.md", "Beta", "Use when the beta widget misbehaves.")
+        pb.find("beta widget", 5, keep)
+        self.assertEqual(len(self.dbs()), 2)  # both libraries exist: both kept
+        shutil.rmtree(old)
+        put(self.root, "references/fix/gamma.md", "Gamma", "Use when the gamma widget misbehaves.")
+        pb.find("gamma widget", 5, self.root)
+        self.assertEqual(len(self.dbs()), 2)  # old's index is gone, the new one is in
+
+    def test_the_routed_books_are_the_ones_the_lint_walks(self):
+        put(self.root, "references/fix/alpha.md", "Alpha", "Use when kumquat.")
+        put(self.root, "references/ui/INDEX.md", "UI", "Use when kumquat.")
+        put(self.root, "references/ui/templates/DESIGN.md", "D", "Use when kumquat.")
+        put(self.root, "references/ui/deep/er/beta.md", "Beta", "Use when kumquat.")
+        put(self.root, "elsewhere/gamma.md", "Gamma", "Use when kumquat.")
+        with open(os.path.join(self.root, "references/ui/notes.txt"), "w") as f:
+            f.write("x")
+        os.symlink(os.path.join(self.root, "references/fix/alpha.md"), os.path.join(self.root, "references/fix/link.md"))
+        os.symlink(os.path.join(self.root, "references/ui"), os.path.join(self.root, "references/dirlink"))
+        os.mkfifo(os.path.join(self.root, "references/fix/pipe.md"))  # the walk lists it; reading it would block
+        want = set(pb._playbooks(self.root)) - {"references/fix/pipe.md"}
+        self.assertEqual({rel for rel, *_ in pb._stat_tree(self.root)}, want)
+        self.assertEqual(set(self.top("kumquat", 50)), want)
+
     def test_query_syntax_in_the_text_is_only_words(self):
         put(self.root, "references/fix/alpha.md", "Alpha", "Use when the alpha widget misbehaves.")
         for text in ('"alpha" OR NEAR(widget', "alpha* AND - widget:", "(((", "", "a b c", "alpha\x00widget"):
@@ -151,7 +201,16 @@ class Cli(ForemanTestCase):
         self.assertEqual(got[0]["action"], "route")
         self.assertEqual(got[0]["paths"], ["references/fix/kumquat.md"])
         self.assertNotIn("harvesting", json.dumps(got[0]))  # the text stays out of the log
-        self.assertEqual(pb.reach(self.lib)["read"].get("references/fix/kumquat.md"), 1)
+        got = pb.reach(self.lib)
+        self.assertEqual(got["routed"], {"references/fix/kumquat.md": 1})
+        self.assertNotIn("references/fix/kumquat.md", got["read"])  # named by a ranking is not read
+        self.assertIn("references/fix/kumquat.md", got["unread"])
+
+    def test_one_word_that_is_no_stage_and_fits_nothing_is_a_usage_error(self):
+        r = self.route("verifing", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("verifying", r.stderr)  # the stages it knows
+        self.assertEqual(self.route("kumquat").returncode, 0)  # one word that fits is a query
 
     def test_k_limits_the_list(self):
         for i in range(4):
