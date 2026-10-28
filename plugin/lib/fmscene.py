@@ -1516,6 +1516,35 @@ def cmd_scene(args):
     if not args.path:
         print(f"fm: scene: {args.action} needs FILE", file=sys.stderr)
         return 2
+    if args.action == "shade":  # T-1846: a fragment shader run per pixel on the CPU, no browser or GPU
+        import re
+        import fmimg
+        import fmshade
+        try:
+            m = re.fullmatch(r"(\d+)x(\d+)", args.size)
+            w, h = (int(m[1]), int(m[2])) if m else (0, 0)
+            if not (0 < w <= 512 and 0 < h <= 512):
+                raise ValueError(f"--size WxH: 1 to 512 each (got {args.size})")
+            sets = {}
+            for s in args.set or ():
+                name, eq, vals = s.partition("=")
+                if not eq or not name:
+                    raise ValueError(f"--set NAME=V[,V…] (got {s})")
+                sets[name.strip()] = [float(v) for v in vals.split(",")]
+            if not args.out:
+                raise ValueError("shade writes a PNG: give --out PATH")
+            if os.path.exists(args.out) and os.path.samefile(args.out, args.path):
+                raise ValueError(f"--out {args.out} is FILE")
+            src, first = fmshade.source(args.path)
+            rgb, notes = fmshade.render(src, w, h, sets, args.time, first)
+            fmimg.save(args.out, w, h, rgb, "rgb")
+        except (OSError, ValueError) as e:
+            print(f"fm: scene: {e}", file=sys.stderr)
+            return 2
+        said = f"wrote {args.out}: {w}x{h} of {args.path}"
+        said += f"; preview defaults for {', '.join(notes['defaulted'])}" * bool(notes["defaulted"])
+        said += f"; {notes['undefined']} pixel(s) undefined, drawn black" * bool(notes["undefined"])
+        return fmcli.out(args, {"out": args.out, "size": [w, h], **notes}, said) or 0
     if args.action == "shader":  # T-1530: GLSL checks with no browser; glslangValidator when it's installed
         import shutil
         validator = shutil.which("glslangValidator")
