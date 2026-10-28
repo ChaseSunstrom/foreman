@@ -6711,7 +6711,7 @@ def _build_parser():
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
             "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
     s.add_argument("action", choices=["compile", "check", "turntable", "shader", "soak", "cells", "import", "metaballs",
-                                       "terrain", "airlock", "bench", "lookbook"],
+                                       "terrain", "airlock", "bench", "lookbook", "shade"],
                    help="compile: the module; "
                    "check: validate and count (a .gltf or .glb: its structure, offline); turntable: a contact sheet of "
                    "the scene turned about +Y, drawn by fmraster with no browser or GPU (--out PNG); shader: GLSL "
@@ -6724,7 +6724,8 @@ def _build_parser():
                    "--days, printed or --out, no FILE (T-1851); airlock: what the guard held and let through over "
                    "--days as boxes either side of a gate, no FILE (T-1849); bench: fm code bench's last 12 runs, a "
                    "box per seed, no FILE (T-1850); lookbook: the look cards hung in a gallery, best ranked first, "
-                   "--count of them, no FILE (T-1852)")
+                   "--count of them, no FILE (T-1852); shade: a fragment shader (a card, a .frag) run per pixel on the "
+                   "CPU, a GLSL ES subset, written as a PNG to --out (T-1846)")
     s.add_argument("path", metavar="FILE", nargs="?", help="the scene.json (shader: a card, a GLSL file or a folder "
                    "of them; import: the three.js JSON; metaballs, terrain, airlock, bench, lookbook: none)")
     s.add_argument("--balls", type=int, default=5, help="metaballs: how many balls, 1-12 (T-1848)")
@@ -6738,6 +6739,10 @@ def _build_parser():
     s.add_argument("--frames", type=int, default=8, help="turntable: how many turns, 1-36")
     s.add_argument("--cols", type=int, default=64, help="cells: how many columns wide, 2-400 (T-1635)")
     s.add_argument("--turn", type=float, default=0.0, help="cells: degrees the scene turns about +Y first")
+    s.add_argument("--size", default="160x100", help="shade: the image's WxH in pixels, 1-512 each (T-1846)")
+    s.add_argument("--time", type=float, default=0.0, help="shade: iTime/uTime in seconds")
+    s.add_argument("--set", action="append", metavar="NAME=V[,V…]", help="shade: a uniform's value; unset ones "
+                   "take preview defaults")
     s.add_argument("--seconds", type=int, default=10, help="soak: how long it runs")
     s.add_argument("--budget-ms", type=float, help="soak: fail when the p95 render time is over this")
     s.add_argument("--to", choices=["three", "component"], default="three", help="three: an ES module importing "
