@@ -6829,6 +6829,8 @@ def _build_parser():
                                                      "files would go (T-1028); the reason is logged")
     s.add_argument("--unverified", metavar="REASON", help="merge: merge although the criteria's re-run is red, with the "
                                                           "reason on the ledger (main thread only, T-0948)")
+    s.add_argument("--why", metavar="REASON", help="rm: drop the builder's work (its branch is kept, a locked worktree "
+                                                   "goes); the next fm lane brief starts from this (T-1823)")
     s = add("session", lazy("fmsession", "cmd_session"), tier=("Running elsewhere", 1160), help="agent sessions on this device (claude, codex, gemini, "
                                                                 "opencode), detached: start MESSAGE, list, tail ID, "
                                                                 "send ID MESSAGE, stop ID, rm ID, agents")

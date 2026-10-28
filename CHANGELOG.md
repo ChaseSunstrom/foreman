@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A builder's work can be dropped and redone from what went wrong (T-1823): `fm lane rm ID --why "…"` keeps its branch and the reason, and the next builder brief starts with the reason, the branch and the check that was red.
 - `fm cost` shows each task's retry tax (T-1824): the tokens spent between a step's failed check and its next pass. `fm cost --task ID` puts it beside spent with its share; the by-task line names it too. A test-first step's deliberate red run doesn't count.
 - Every `fm code` app command now has a route in Claude Code, checked by a test (T-1822): a `/foreman:` skill or command, an `fm` verb (each subcommand checked), git, or a Claude Code key, or it's named app-only with a reason (moving around panels, the photo booth, Breakout). A new app command without one fails CI.
 - `fm pause --now` stops what runs, not only what would start (T-1821): every fm session and the tools it started, every fm serve unit, every file lease, and a running `fm run` or `fm night` stops its session within 2 seconds (lanes with work are kept). Each `fm pause --now` writes one record to `state/stops.jsonl`, also when it runs inside a session or serve unit it stops. Interactive Claude Code sessions and subagents still finish their turn. `fm pause off` lifts it as before.
