@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm playbooks route` ranks real tasks better (T-1838): tuned on 24 real task titles, the use line weighs as much as the title, the query keeps a task's first 8 words, and `--task` prefers its type's folder (fix, perf, security, clean, ground) 1.5x; 17 of 24 land in the top 3, from 15.
 - A `pgrep -f` or `pkill -f` whose pattern matches its own command line is refused before it runs, foreground or background: it found its own shell, so a wait never ended and a kill hit itself; the refusal names `kill -0 PID`, a bracketed letter, or run_in_background (T-1839)
 - `fm playbooks route TEXT|--task ID [-k N]` ranks the playbooks by relevance over an incremental FTS5 index in the state folder (rebuilt if corrupt, pruned when its library is gone), with a title/use-line scan without FTS5; a mistyped one-word stage is a usage error; fm playbooks reach counts routes apart from reads, and a routed book is not a drop candidate; bench_playbooks.py times it at 20k (T-1833)
 - Playbook use: a close records the books it loaded and the share followed; `fm playbooks coverage --unused` names drop and merge candidates; a draft repeating a book is refused (`--force`); the skill list is capped (T-1834)
