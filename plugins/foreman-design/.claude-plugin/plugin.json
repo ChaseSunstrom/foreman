@@ -1,0 +1,8 @@
+{
+  "name": "foreman-design",
+  "version": "1.2.50",
+  "description": "Foreman's design skills on their own: ui-design (direction, tokens, motion, QA), directions (six looks, the pick saved as DESIGN.md) and design-extract. Their commands run fm, so install the foreman plugin too.",
+  "author": {
+    "name": "ChaseSunstrom"
+  }
+}

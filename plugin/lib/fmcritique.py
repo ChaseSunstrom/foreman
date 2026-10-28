@@ -512,7 +512,17 @@ def _root(word):
         return os.path.dirname(urllib.request.url2pathname(urllib.parse.urlsplit(word).path))
     if re.match(r"(?i)[a-z][a-z0-9+.-]*:", word):
         return os.getcwd()
-    return os.path.dirname(os.path.abspath(word))
+    return os.path.dirname(os.path.abspath(re.match(r"[^?#]*", word).group()))
+
+
+def _url(word, any_url):
+    """(the URL a page opens at, its root): fm flow reads a path under root, so it gets the path's name there (T-1652:
+    site/index.html opened site/site/index.html). ValueError as fmflow.target."""
+    root = _root(word)
+    if not re.match(r"(?i)[a-z][a-z0-9+.-]*:", word):
+        path, tail = re.match(r"([^?#]*)(.*)", word).groups()
+        word = os.path.basename(path) + tail
+    return fmflow.target(word, root, any_url), root
 
 
 def mark_run(b, url, root, any_url, marks, extra):
@@ -596,9 +606,8 @@ def cmd_critique(args):
         except (ValueError, RecursionError) as e:
             return _fail(f"{clean(target, 200)}: not a census: {e or 'nested too deep'} ({SHAPE})")
     else:
-        root = _root(target)
         try:
-            url = fmflow.target(target, root, args.any_url)
+            url, root = _url(target, args.any_url)
         except ValueError as e:  # fm flow's own words for the rule itself are about goto: said here instead
             why_not = "" if str(e).startswith("goto opens") else f": {clean(e, 300)}"
             return _fail(f"opens an HTML file, or http(s) on localhost, 127.0.0.1 or [::1] (--any-url: any http(s) "

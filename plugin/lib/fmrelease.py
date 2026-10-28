@@ -53,6 +53,9 @@ def _dump(path, data):
     c.write_atomic(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
+DESIGN_PJ = "plugins/foreman-design/.claude-plugin/plugin.json"  # T-1652: links to plugin/skills, so foreman's version
+
+
 def _setver(path, v):
     with open(path, encoding="utf-8") as f:
         text = f.read()
@@ -116,6 +119,7 @@ def _bump(ctx):
     pj = os.path.join(root, "plugin", ".claude-plugin", "plugin.json")
     mk = os.path.join(root, ".claude-plugin", "marketplace.json")
     uj = os.path.join(root, "mods", "foreman-ui", ".claude-plugin", "plugin.json")
+    dj = os.path.join(root, DESIGN_PJ)
     data = _json(mk)  # everything read before anything is written
     if ui and not os.path.isfile(uj):
         _err("no mods/foreman-ui to give --ui to")
@@ -123,11 +127,13 @@ def _bump(ctx):
     if meta.get("version") == old:  # only what is at the old version moves, as release.py always did
         meta["version"] = v
     for e in data.get("plugins", []):
-        if e.get("name") == "foreman" and e.get("version") == old:
+        if e.get("name") in ("foreman", "foreman-design") and e.get("version") == old:  # T-1652: design's skills
             e["version"] = v
         elif e.get("name") == "foreman-ui" and ui:
             e["version"] = ui
     _setver(pj, v)
+    if os.path.isfile(dj):
+        _setver(dj, v)
     _dump(mk, data)
     if ui:
         _setver(uj, ui)
@@ -162,6 +168,8 @@ def _commit(ctx):
                  "plugin/defaults.json"]  # T-1549: the defaults this release ships, for the next one to compare
         if ctx["ui"]:
             files.append("mods/foreman-ui/.claude-plugin/plugin.json")
+        if os.path.isfile(os.path.join(root, DESIGN_PJ)):
+            files.append(DESIGN_PJ)
         b = c.active_brief_fast(ctx["p"], ctx["p"].lane)
         if os.path.isfile(os.path.join(root, "plugin", "defaults.json")):
             _git(root, "add", "--", "plugin/defaults.json")  # the first snapshot is a new file: commit -- needs it known

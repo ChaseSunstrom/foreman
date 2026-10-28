@@ -31,7 +31,10 @@ Work inside a focused task (each step edits files). Per step, read only the play
 - Existing CSS: `fm design extract SRC` writes the token table from its custom properties into DESIGN.md's
   `## Tokens` section (`--out -` prints it instead). From nothing:
   `fm design palette SEED --out tokens.css` makes a light and dark palette from one colour (`--format css|dtcg|tailwind`);
-  it prints to stdout, so redirect with >.
+  it prints to stdout, so redirect with >. Tokens from Figma or a DTCG `.json`:
+  `fm design tokens tokens.json --to md --out DESIGN.md`. Hardcoded values: `fm design infer SRC` proposes tokens.
+- Brand assets: `fm design tokens DESIGN.md --to brand --out public/` writes favicon.svg and card.svg.
+- Token drift: `fm design xray PAGE --out xray.png` outlines each element green (token colour) or red.
 - Prove it before building on it: `fm design contrast TOKENS` checks the role pairs (body text 7:1 in dark).
 
 ## 3. Build: layout and behaviour
