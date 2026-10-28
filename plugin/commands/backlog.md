@@ -31,6 +31,8 @@ Arguments (may be empty): $ARGUMENTS
    A GitHub issue (`gh:OWNER/REPO#N`, `'#N'` quoted for this repo, or its github.com URL) is fetched through the user's own
    `gh`; if fm says gh failed or isn't logged in, tell the user to type `! gh auth login`. Fetching a ticket again
    after it changed rewrites the brief it made while that brief is unstarted; a started one keeps its own.
+   `fm inbox ticket --post ID` posts a done task's closing commit to its source issue as one comment: outward, so
+   run it only when the user asks for it (fm task finish names it; never run it on your own).
 5. `reset`: run `fm inbox prefer --reset` (it forgets every choice `pick` taught the inbox order) and show what it
    printed.
 6. `serve`: run `fm inbox swipe --serve` in the background, read its first line once for the URL and give the user
