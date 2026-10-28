@@ -755,6 +755,50 @@ class Metaballs(ForemanTestCase):
             self.assertEqual((r.returncode, "Traceback" in r.stderr), (2, False), r.stderr)
 
 
+class Airlock(ForemanTestCase):
+    """T-1849: fm scene airlock, what the guard held and let through as boxes either side of a gate."""
+
+    def test_airlock_stands_a_box_per_held_category_beside_a_gate(self):
+        s = fmscene.airlock({"core": 100, "brief": 1, "rm-outside": 0, "Bad name!": 3, "floor": 2}, 50)
+        self.assertEqual(fmscene.validate(s), s)
+        box = {m["name"]: m for m in s["meshes"] if m["geometry"]["type"] == "box"}
+        self.assertEqual(set(box), {"pillar-l", "pillar-r", "lintel", "through", "core", "brief", "other"})
+        h = {n: m["geometry"]["size"][1] for n, m in box.items()}
+        self.assertAlmostEqual(h["core"], 2.1)  # the most held stands tallest; nothing held, no box
+        self.assertTrue(0.1 < h["brief"] < h["other"] < h["through"] < h["core"])  # other: Bad name! and floor
+        self.assertTrue(all(box[n]["position"][0] < 0 < box["through"]["position"][0] for n in ("core", "brief")))
+        self.assertAlmostEqual(box["core"]["position"][1], h["core"] / 2)  # standing on the floor
+        for bad in (({"core": -1}, 0), ({}, -1)):
+            with self.assertRaises(ValueError):
+                fmscene.airlock(*bad)
+
+    def test_guard_counts_reads_this_projects_blocks_and_tool_calls(self):
+        import fmcore as c
+        p = c.find_project(self.repo, create=True)
+        for cat in ("core", "core", "brief"):
+            c.log_event(p, "guard_block", data={"category": cat})
+        os.makedirs(c.state_dir(), exist_ok=True)
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            for ts, kind, proj in ((c.now(), "tool", p.slug), (c.now(), "tool_fail", p.slug),
+                                   (c.now(), "tool", "elsewhere"), ("2020-01-01T00:00:00Z", "tool", p.slug),
+                                   (c.now(), "stop", p.slug)):
+                f.write(json.dumps({"ts": ts, "kind": kind, "project": proj}) + "\n")
+        self.assertEqual(fmscene.guard_counts(p, 30), ({"core": 2, "brief": 1}, 2))
+
+    def test_fm_scene_airlock_prints_a_scene_fm_scene_checks(self):
+        import fmcore as c
+        c.find_project(self.repo, create=True)
+        out = os.path.join(self.tmp, "airlock.json")
+        self.assertIn("wrote", self.fm("scene", "airlock", "--days", "7", "--out", out).stdout)
+        self.assertEqual(self.fm("scene", "check", out).returncode, 0)
+        r = self.fm("scene", "airlock", "--days", "0", check=False)  # a refusal, not a traceback
+        self.assertEqual((r.returncode, "1 to 3650" in r.stderr), (2, True), r.stderr)
+        other = os.path.join(self.tmp, "plain")
+        os.makedirs(other)
+        r = self.fm("scene", "airlock", cwd=other, check=False)
+        self.assertEqual((r.returncode, "not in a Foreman project" in r.stderr), (2, True), r.stderr)
+
+
 class Terrain(ForemanTestCase):
     """T-1851: fm scene terrain, the repo's churn as a ribbon per busiest path."""
 
