@@ -115,6 +115,13 @@ class Use(ForemanTestCase):
         self.assertNotIn("references/perf/delta.md", pb.unused(self.lib)[0])
         self.assertEqual(pb.reach(self.lib, days=60)["routed"], {"references/perf/delta.md": 1})
 
+    def test_route_text_that_opens_with_a_stage_word_credits_no_stage(self):
+        # T-1803 review: `route "performance of the login form"` read as the PERFORMANCE stage hid its unused books
+        self.event('fm playbooks route "performance of the login form" -k 3')
+        self.assertIn("references/perf/delta.md", pb.unused(self.lib)[0])
+        self.event("fm playbooks route 'PERFORMANCE' -k 2; echo")  # a bare stage still credits its books
+        self.assertNotIn("references/perf/delta.md", pb.unused(self.lib)[0])
+
     def test_a_window_under_a_day_is_refused(self):
         for days in ("0", "-5"):
             got = self.run_fm("coverage", "--unused", "--days", days)
