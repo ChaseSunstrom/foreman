@@ -409,6 +409,72 @@ def swipe_loop(p):
     return said
 
 
+SWIPE_VERDICTS = (*SWIPE_KEYS.values(), "skip")  # each first letter is its access key: keep them unique
+SWIPE_STYLE = ("body{font:16px system-ui,sans-serif;margin:2em auto;padding:0 16px;max-width:36em;color:#222;"
+               "background:#fff}.card{border:1px solid #888;border-radius:8px;padding:1em 1.2em}.why{color:#666}"
+               "button{font:inherit;padding:.4em 1em;margin:.6em .4em 0 0}.msg{padding:.5em;border:1px solid #888}"
+               ".bad{border-color:#c33;color:#900}@media(prefers-color-scheme:dark){body{background:#111;color:#ddd}"
+               ".why{color:#999}.bad{color:#f88}}")
+
+
+def swipe_page(p, seen, nonce, msg="", bad=False):
+    """T-1858: the first deferred item not yet kept or skipped here, as a card with its four answers (access keys
+    r k d s); no script."""
+    import html
+    e, left = html.escape, [x for x in swipe_list(p) if x["id"] not in seen]
+    out = ['<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" '
+           f'content="width=device-width,initial-scale=1"><title>Foreman backlog</title><style nonce="{nonce}">'
+           f'{SWIPE_STYLE}</style></head><body><h1>Backlog</h1>']
+    if msg:
+        out.append(f'<p class="msg{" bad" if bad else ""}">{e(msg)}</p>')
+    if not left:
+        out.append("<p>Nothing left to sort: close this tab (Ctrl-C stops the server, as does being idle).</p>")
+    else:
+        x = left[0]
+        out.append(f'<p>{len(left)} left</p><div class="card"><b>{e(x["id"])}</b> {e(c.plain(x["title"]))}'
+                   + (f'<p class="why">{e(c.plain(x["why"]))}</p>' if x["why"] else "")
+                   + f'<form method="post" action="/swipe"><input type="hidden" name="id" value="{e(x["id"])}">'
+                   + "".join(f'<button name="verdict" value="{v}" accesskey="{v[0]}">{v} ({v[0]})</button>'
+                             for v in SWIPE_VERDICTS) + "</form></div>")
+    return "".join(out + ["</body></html>"])
+
+
+def swipe_post(p, seen, fields):
+    """T-1858: one answer posted from the page, for the item it names: (ok, what was said)."""
+    import fmcli
+    tid, verdict = fields.get("id", ""), fields.get("verdict", "")
+    if not re.fullmatch(r"T-\d+", tid) or verdict not in SWIPE_VERDICTS:
+        return False, "one task id (T-NNNN) and a verdict: revive, keep, drop or skip"
+    if verdict == "keep" and tid in seen:  # a reload re-posts it: kept once, logged once
+        return True, f"{tid} kept"
+    if verdict in ("keep", "skip"):  # passed over on this page: the next card
+        seen.add(tid)
+    if verdict == "skip":
+        return True, f"{tid} skipped"
+    try:
+        return True, swipe_apply(p, f"{tid}:{verdict}")[0]
+    except fmcli.UsageError as x:  # changed elsewhere since the page was drawn
+        return False, str(x)
+
+
+def swipe_server(p):
+    """T-1858: fm settings serve's loopback server (one-use URL token, cookie, Host and Origin checks, no script)
+    with the swipe page: (server, token)."""
+    import fmsettingsserve
+
+    class Swipe(fmsettingsserve.Handler):
+        CMD, PATHS = "fm inbox swipe --serve", ("/swipe",)
+
+        def draw(self, nonce, msg, bad):
+            return swipe_page(self.server.project, self.server.seen, nonce, msg, bad)
+
+        def act(self, path, fields):
+            return swipe_post(self.server.project, self.server.seen, fields)
+    server, token = fmsettingsserve.make(p, Swipe)
+    server.seen = set()
+    return server, token
+
+
 def inbox_pick(p, limit=4, epsilon=0.1, rng=random):
     """T-1664: two-way choices worth asking: neighbours in inbox order of one type and urgency, no item twice.
     T-1860: an item waiting on an open one isn't offered, and with probability epsilon an item meets a farther one of
@@ -519,7 +585,7 @@ def cmd_inbox(args):
     if not args.source:  # what fm --help promises: the captured requests waiting, ranked as STATE ranks them
         sd = c.state_dict(fmcli.resolve(args))
         return fmcli.out(args, {"inbox": sd["inbox"]}, c.render_inbox(sd).split("\n", 2)[2].strip())
-    for flag, used in (("apply", ("swipe",)), ("loser", ("prefer",)), ("repo", ("gh",)), ("epsilon", ("pick",)),
+    for flag, used in (("apply", ("swipe",)), ("serve", ("swipe",)), ("loser", ("prefer",)), ("repo", ("gh",)), ("epsilon", ("pick",)),
                        ("reset", ("prefer",)), ("limit", ("gh", "first", "pick")), ("file", ("spec", "ticket", "prefer"))):
         if getattr(args, flag) is not None and args.source not in used:  # T-1855's rule: no flag silently unread
             name = "a second item" if flag == "loser" else "FILE" if flag == "file" else f"--{flag}"
@@ -529,6 +595,11 @@ def cmd_inbox(args):
         d = inbox_first(p, args.limit or 5)
         return fmcli.out(args, {"first": d}, "\n".join(f"{x['id']} {x['title']} — {x['why']}" for x in d)
                          or "No small item is ready: nothing at tier S waits on nothing open.")
+    if args.serve and (args.apply or args.json):
+        raise fmcli.UsageError("fm inbox swipe --serve: a page, so no --apply and no --json")
+    if args.serve:
+        import fmsettingsserve
+        return fmsettingsserve.run(*swipe_server(p), "Foreman backlog")
     if args.source == "swipe" and args.apply:
         done = swipe_apply(p, args.apply)
         return fmcli.out(args, {"applied": done}, "; ".join(done) + "." if done else "No verdicts given.")
