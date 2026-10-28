@@ -114,3 +114,22 @@ class UnknownNames(unittest.TestCase):
 
     def test_names_that_all_match_still_pass(self):
         self.assertEqual(self.run_py("test_run.Args").returncode, 0)
+
+
+class Hang(unittest.TestCase):
+    def test_a_class_that_hangs_is_killed_and_named_with_its_stack(self):  # T-1808: CI's job cap hid where
+        import tempfile
+        import time
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "test_stuck.py"), "w") as f:
+                f.write("import subprocess, time, unittest\nclass S(unittest.TestCase):\n    def test_s(self):\n"
+                        "        subprocess.Popen(['sleep', '60'])  # a child holding the pipes\n"
+                        "        time.sleep(60)\n")
+            t0 = time.time()
+            with mock.patch.object(run, "HERE", d):
+                cid, code, err, _, _ = run.run_one("test_stuck.S", [], timeout=2)
+        self.assertLess(time.time() - t0, 30)
+        self.assertNotEqual(code, 0)
+        self.assertIn("still running after 2s", err)
+        self.assertIn("test_s", err)  # where it hung

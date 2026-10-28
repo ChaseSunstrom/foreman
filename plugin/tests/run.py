@@ -10,6 +10,7 @@ import concurrent.futures
 import contextlib
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -60,13 +61,28 @@ def annotations(cid, err):
     return out
 
 
-def run_one(cid, k):
+def run_one(cid, k, timeout=480):
+    """T-1808: a class still running after timeout s is killed and fails by name, with every thread's stack
+    (faulthandler on SIGABRT); its own session, so a child holding the pipes dies with it."""
     t0 = time.time()
     extra = [a for x in k for a in ("-k", x)]
-    p = subprocess.run([sys.executable, "-m", "unittest", "-q", cid, *extra], cwd=HERE, capture_output=True,
-                       text=True, stdin=subprocess.DEVNULL)
-    m = re.search(r"Ran (\d+) tests?", p.stderr)
-    return cid, p.returncode, p.stderr, int(m.group(1)) if m else 0, time.time() - t0
+    p = subprocess.Popen([sys.executable, "-X", "faulthandler", "-m", "unittest", "-q", cid, *extra], cwd=HERE,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL,
+                         start_new_session=True)
+    try:
+        _, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        p.send_signal(signal.SIGABRT)  # the stack, to stderr
+        try:
+            p.wait(5)
+        except subprocess.TimeoutExpired:
+            pass
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(p.pid, signal.SIGKILL)
+        _, err = p.communicate()
+        err += f"\nrun.py: {cid} still running after {timeout}s: killed (T-1808)\n"
+    m = re.search(r"Ran (\d+) tests?", err)
+    return cid, p.returncode, err, int(m.group(1)) if m else 0, time.time() - t0  # killed: negative
 
 
 @contextlib.contextmanager
@@ -93,6 +109,8 @@ def parse(argv=None):
                                                 "test*.py)")  # T-0389: a second -p replaced the first
     ap.add_argument("--load", type=int, default=0, metavar="N",
                     help="run beside N busy-loop processes (T-1730: reproduce a flake that shows only under load)")
+    ap.add_argument("--timeout", type=int, default=480, metavar="S",
+                    help="kill a test class still running after S seconds and fail it with its stack (T-1808)")
     ap.add_argument("names", nargs="*", help="test module names, each like -k (T-0808: fm check affected's {names})")
     a = ap.parse_intermixed_args(argv)  # names may sit on either side of -k
     a.k += a.names
@@ -113,7 +131,7 @@ def main():
         sys.stderr.write(f"run.py: no test matches {', '.join(missing)}\n")
         return 1
     with burn(a.load), concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
-        results = list(ex.map(lambda c: run_one(c, a.k), todo))
+        results = list(ex.map(lambda c: run_one(c, a.k, a.timeout), todo))
     failed = [r for r in results if r[1] != 0]
     for cid, _, err, _, _ in failed:
         sys.stderr.write(f"\n==== {cid}\n{err}")
