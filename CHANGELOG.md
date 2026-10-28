@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- CI runs the suite in 2 shards per Python version (T-1842): `run.py --shard K/N` runs every Nth class, biggest first, so each job takes about half the time. One job had been running out of time at 92–100% of its deadline.
 - A task active in a lane whose folder was deleted is named instead of "no active task" (T-1841): `fm status`, `fm next` and the prompt hook say which task, which lane, and that `fm lane rm ID` frees it.
 - `fm drill` rehearses a bad day (T-1669): a scripted day of Foreman verbs and hooks in a temp home, with 3 to 6 faults planted mid-day (torn ledger or journal, stale lock, broken lane, a state file that isn't JSON, an unreadable file). It passes only when `fm fsck` or `fm verify-ledger` finds each fault or the day heals it, nothing crashed, and the day's task survives the repair; `--seed` replays a day. A corrupt or unreadable state file now ends a verb with one line naming it (exit 4), and hooks say so instead of failing with a traceback; journals no longer glue a new line onto a torn one. `fm fsck` names state files that aren't JSON.
 - A design gate can be on `trial` (T-1669): it runs advisory, counts each new would-block, and starts blocking once 10 are logged with under 10% marked wrong (`fm design check --wrong GATE --why …`); enough wrong marks demote it again.
