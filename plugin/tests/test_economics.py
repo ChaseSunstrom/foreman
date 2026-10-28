@@ -37,6 +37,38 @@ class SessionCost(ForemanTestCase):
         s = data["sessions"][0]
         self.assertEqual((s["turns"], s["busts"]), (4, 1))
         self.assertEqual(s["avg_context"], (40000 + 42000 + 43000 + 61000) // 4)
+        self.assertFalse(s["over"])
+        self.assertNotIn("over 200k", out)
+
+    def test_a_session_averaging_over_200k_a_reply_is_flagged(self):
+        # T-1797: the T-1796 regression check: with the 200k compact window no session should average past it
+        self.fm("init")
+        cfg = os.path.join(self.tmp, "cfg")
+        folder = os.path.join(cfg, "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(self.repo)))
+        os.makedirs(folder)
+        with open(os.path.join(folder, "sess-a.jsonl"), "w") as f:
+            for n in range(3):
+                f.write(json.dumps(usage(n, 380000, 1000)) + "\n")
+        env = {"CLAUDE_CONFIG_DIR": cfg}
+        out = self.fm("cost", "--sessions", env=env).stdout
+        self.assertIn("over 200k", out)
+        self.assertIn("fm install-user", out)
+        self.assertIn("1 session(s) average over 200k a reply", out)  # past the top 15 rows too
+        self.assertTrue(json.loads(self.fm("cost", "--sessions", "--json", env=env).stdout)["sessions"][0]["over"])
+
+    def test_subagent_replies_stay_out_of_their_parents_average(self):
+        # a subagent transcript carries its parent's sessionId; its own context isn't the parent's per-turn figure
+        self.fm("init")
+        cfg = os.path.join(self.tmp, "cfg")
+        folder = os.path.join(cfg, "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(self.repo)))
+        os.makedirs(os.path.join(folder, "sess-a", "subagents"))
+        with open(os.path.join(folder, "sess-a.jsonl"), "w") as f:
+            f.write(json.dumps(usage(0, 40000, 1000)) + "\n")
+        with open(os.path.join(folder, "sess-a", "subagents", "agent-1.jsonl"), "w") as f:
+            for n in range(1, 4):
+                f.write(json.dumps(usage(n, 380000, 1000)) + "\n")
+        s = json.loads(self.fm("cost", "--sessions", "--json", env={"CLAUDE_CONFIG_DIR": cfg}).stdout)["sessions"][0]
+        self.assertEqual((s["turns"], s["avg_context"], s["over"]), (1, 41000, False))
 
 
 class BoundaryTokens(HookCase):

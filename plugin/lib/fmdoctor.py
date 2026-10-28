@@ -300,7 +300,9 @@ def check_frontmatter(plugin=PLUGIN):
             bad.append(f"agent {f}: not read-only ({', '.join(sorted(tools - READ_ONLY_TOOLS - EDITING_AGENTS.get(f, set())))})")
         # T-0768: Claude Code ignores a value it doesn't know, so a typo silently undoes the saving
         for key, ok in (("effort", {"low", "medium", "high", "xhigh", "max"}.__contains__),
-                        ("maxTurns", lambda v: v.isdigit() and int(v) > 0), ("omitClaudeMd", {"true", "false"}.__contains__)):
+                        ("maxTurns", lambda v: v.isascii() and v.isdigit() and int(v) > 0),
+                        ("omitClaudeMd", {"true", "false"}.__contains__),
+                        ("autoCompactWindow", lambda v: v.isascii() and v.isdigit() and int(v) > 0)):  # "²".isdigit()
             if key in meta and not ok(meta[key]):
                 bad.append(f"agent {f}: {key}: {meta[key]!r} isn't a value Claude Code knows")
     return Result("frontmatter", "FAIL" if bad else "PASS", "; ".join(bad) or "skills and read-only agents valid")
@@ -625,6 +627,8 @@ def check_python(v=sys.version_info[:3], refresh=None, child=False):
 CC_FEATURES = [
     ("hook onFailure", (2, 1, 295), ["hooks/*.json"], r'"onFailure"'),
     ("agent omitClaudeMd", (2, 1, 271), ["agents/*.md"], r"(?m)^omitClaudeMd:"),
+    # read from 2.1.296, but below Foreman's CLAUDE_CODE_AUTO_COMPACT_WINDOW (T-1796) it only lowers it from 2.1.312
+    ("agent autoCompactWindow", (2, 1, 312), ["agents/*.md"], r"(?m)^autoCompactWindow:"),
     ("agent effort/maxTurns", (2, 1, 78), ["agents/*.md"], r"(?m)^(effort|maxTurns):"),
     ("hook if", (2, 1, 85), ["hooks/*.json"], r'"if"\s*:'),
     ("plugin monitors", (2, 1, 105), ["monitors/monitors.json"], r"."),
@@ -1756,7 +1760,8 @@ def check_usage_burn(found=None):
         found = fmcost.burn_findings()
         fmcost.write_burn(found)
     return Result("usage burn", "WARN" if found else "PASS",
-                  "; ".join(f"{a} → {b}" for a, b in found) if found else "no sign of usage burn in the last 2 days")
+                  "; ".join(f"{a} → {b}" for a, b in found) + "; /usage names Claude Code's own causes, f applies them"
+                  if found else "no sign of usage burn in the last 2 days")
 
 
 def check_idle_stops(p, days=7):

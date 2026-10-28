@@ -3,6 +3,7 @@ name: fm-reproducer
 description: Foreman reproducer for a FIX before any fix is written, launched only with isolation "worktree" from the brief `fm lane brief ID` writes: commits only the smallest failing test and returns the command for fm task prove. Never fixes or merges.
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
+autoCompactWindow: 150000
 color: yellow
 effort: medium
 maxTurns: 40
