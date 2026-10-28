@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm run` no longer pays for a session that would repeat the last one (T-1825): when a session leaves the files and the failing check exactly as it found them, the task is blocked with that check named and the run moves on. A session's first recorded check now counts as progress (it was missed, so such a session read as no progress).
 - A builder's work can be dropped and redone from what went wrong (T-1823): `fm lane rm ID --why "…"` keeps its branch and the reason, and the next builder brief starts with the reason, the branch and the check that was red.
 - `fm cost` shows each task's retry tax (T-1824): the tokens spent between a step's failed check and its next pass. `fm cost --task ID` puts it beside spent with its share; the by-task line names it too. A test-first step's deliberate red run doesn't count.
 - Every `fm code` app command now has a route in Claude Code, checked by a test (T-1822): a `/foreman:` skill or command, an `fm` verb (each subcommand checked), git, or a Claude Code key, or it's named app-only with a reason (moving around panels, the photo booth, Breakout). A new app command without one fails CI.
