@@ -3912,6 +3912,25 @@ def cmd_check(args):
     if args.action == "office":  # T-1406: one deliverable's check: no project, no gate lock
         import fmoffice
         return fmoffice.cmd(args)
+    if getattr(args, "python", None):  # T-1805: the gates under another interpreter, first on PATH as python3/python
+        import shutil
+        import tempfile
+        import fmpy
+        v = fmpy.NAMES[-1][len("python"):] if args.python == "oldest" else args.python
+        exe = fmpy.find((f"python{v}",), f"python{v}") if re.fullmatch(r"3\.\d+", v) else None
+        if not exe:
+            raise UsageError(f"no supported python{v} on PATH, in ~/.local/bin or uv's (uv python install {v})")
+        print(f"gates under {exe}", file=sys.stderr, flush=True)  # stderr: --json stays one document
+        shim = tempfile.mkdtemp(prefix="fm-python-")
+        for name in ("python3", "python"):
+            os.symlink(exe, os.path.join(shim, name))
+        old = os.environ.get("PATH", "")
+        os.environ["PATH"] = shim + os.pathsep + old  # env_id keys the gate cache on PATH: its own cached pass
+        try:
+            return cmd_check(argparse.Namespace(**dict(vars(args), python=None)))
+        finally:
+            os.environ["PATH"] = old
+            shutil.rmtree(shim, ignore_errors=True)
     # T-1668: full runs queue on the machine-wide gate lock; T-1743: --affected runs (each builder's own) don't
     if args.action == "run" and not getattr(args, "repeat", 0) and not getattr(args, "affected", False):
         try:  # T-1753: a hung run elsewhere (another project's) mustn't hold every check for hours
@@ -6197,6 +6216,9 @@ def _build_parser():
     s.add_argument("--contains", action="append", metavar="TEXT", help="office: text a docx must hold (repeatable)")
     s.add_argument("--for", dest="for_ext", metavar="EXT", help="affected: the command is for tests with this extension "
                                                                 "(.tsx), run beside the default (T-1135)")
+    s.add_argument("--python", metavar="VER", help="run the gates with python VER (3.12) or 'oldest' (the lowest Foreman "
+                                                   "supports) as python3: once before a push to main or a release "
+                                                   "(T-1805)")
     s.add_argument("--timeout", type=float, default=600, help="seconds per command")
     s.add_argument("--fresh", action="store_true", help="run even if the gates passed on this exact tree already")
     s.add_argument("--repeat", type=int, default=0, help="run each gate N times and report its pass rate (an "

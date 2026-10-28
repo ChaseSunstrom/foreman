@@ -34,12 +34,13 @@ def _read():
         return None
 
 
-def find():
-    """A supported interpreter on this machine, or None: versioned names on PATH and in ~/.local/bin, then uv's."""
+def find(names=NAMES, uv="python3.1[2-9]"):
+    """A supported interpreter on this machine, or None: versioned names on PATH and in ~/.local/bin, then uv's.
+    names, uv: only these (T-1805: fm check --python 3.12 passes ("python3.12",), "python3.12")."""
     dirs = os.environ.get("PATH", "").split(os.pathsep) + [os.path.join(os.path.expanduser("~"), ".local", "bin")]
-    cands = [os.path.join(d, n) for n in NAMES for d in dirs if d]
+    cands = [os.path.join(d, n) for n in names for d in dirs if d]
     cands += sorted(glob.glob(os.path.join(os.path.expanduser("~"), ".local", "share", "uv", "python",
-                                           "cpython-3.1[2-9]*", "bin", "python3.1[2-9]")), reverse=True)
+                                           "cpython-3.1[2-9]*", "bin", uv)), reverse=True)
     seen = set()
     for exe in cands:
         real = os.path.realpath(exe)
