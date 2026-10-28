@@ -495,8 +495,7 @@ def add_case(cmd, should, cwd="", why=""):
                     raise fmcli.UsageError(f"already stored as should {k['should']}: edit {path} to change a label")
                 return k
     os.makedirs(os.path.dirname(cases_path()), exist_ok=True)
-    with open(cases_path(), "a", encoding="utf-8") as f:
-        f.write(json.dumps(case) + "\n")
+    c.append_line(cases_path(), json.dumps(case) + "\n")
     return case
 
 
