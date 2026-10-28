@@ -6559,7 +6559,8 @@ def _build_parser():
                  "serve: the same as a page on 127.0.0.1, token-locked, changes through set")
     s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
                                                                  "bisect", "profile", "chords", "serve", "check",
-                                                                 "changed", "log", "macro", "duel", "replay", "words"])
+                                                                 "changed", "log", "macro", "duel", "replay", "words",
+                                                                 "newcomer"])
     # T-1549 changed [SNAPSHOT]; T-1658 log [KEY], macro [NAME], duel A B, replay, words TEXT
     # T-1543 bisect, T-1656 profile, T-1660 chords, T-1659 serve
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
@@ -6576,7 +6577,10 @@ def _build_parser():
                    "duel: the run to draw (default: the sample run)")
     s.add_argument("--runs", type=int, default=5, help="replay: this project's last N fm code runs (default 5)")
     s.add_argument("--apply", action="store_true", help="words: set what it proposes (one undo puts it back)")
-    s.add_argument("--model", default="haiku", help="words: the model that reads the words (default haiku)")
+    s.add_argument("--model", default="haiku", help="words, newcomer --real: the model (default haiku)")
+    s.add_argument("--goals", metavar="FILE", help="newcomer: the goals to play (default plugin/evals/settings/"
+                   "newcomer.json; T-1661)")
+    s.add_argument("--real", action="store_true", help="newcomer: a model plays, shown only the screen")
     s = add("home", lazy("fmhome", "cmd_home"), tier=("Project and settings", 785),  # T-1665
             help="export: Foreman's state as one tarball, secrets redacted and credential files left out; import FILE: "
                  "into an empty home, every member's path and hash checked first")
