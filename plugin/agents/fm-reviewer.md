@@ -3,6 +3,7 @@ name: fm-reviewer
 description: Independent read-only reviewer for Foreman audits and L-tier review: runs one audit lens (intent, adversary, edge, operator, maintainer, and design for a UI diff) or a full review over a named diff and returns verified findings only. Never edits.
 tools: Read, Grep, Glob
 model: sonnet
+autoCompactWindow: 150000
 color: yellow
 effort: high
 maxTurns: 40

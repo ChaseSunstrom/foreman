@@ -121,12 +121,15 @@ def _share(a, share):
         share["all"] += len(json.dumps(a))
 
 
-def scan(folder, since, share=None):
+def scan(folder, since, share=None, sidechains=True):
     """(assistant messages [(ts, session, usage)], tool result chars by tool name) since the cutoff. A message's usage
     repeats on each of its content blocks: counted once per message id. A `share` Counter gets what entered the
-    context: "all", and Foreman's part by source (T-1257)."""
+    context: "all", and Foreman's part by source (T-1257). A subagent's replies carry its parent's session id:
+    `sidechains=False` leaves them out (T-1797)."""
     msgs, tools, names, fm_ids = {}, collections.Counter(), {}, {}
     for path, e in _entries(folder, since):
+        if not sidechains and f"{os.sep}subagents{os.sep}" in path:
+            continue
         n = os.path.basename(path)
         ts = str(e.get("timestamp") or "")
         if share is not None and isinstance(e.get("attachment"), dict) and ts[:19] >= since:
@@ -595,9 +598,9 @@ def cmd_cost(args):
     if not os.path.isdir(folder):
         raise fmcli.UsageError(f"no Claude Code transcripts for this project at {folder}")
     share = collections.Counter()
+    if getattr(args, "sessions", False):  # a subagent's own context isn't its parent's per-turn figure
+        return _sessions(scan(folder, _since(args.days), sidechains=False)[0], args, fmcli)
     msgs, tools = scan(folder, _since(args.days), share)
-    if getattr(args, "sessions", False):
-        return _sessions(msgs, args, fmcli)
     totals, by_task, by_session = collections.Counter(), collections.Counter(), collections.Counter()
     lines = _timelines(p, args.days)  # T-1083 review: each turn to its own session's task
     for ts, sid, usage in msgs:
@@ -653,6 +656,9 @@ def cmd_cost(args):
 
 
 BUST_MIN = 30000  # a turn re-writing over half of a context this big lost its cache (T-0703)
+# T-1797: Foreman's compact window (T-1796): a session averaging past it compacted late. BURN_CONTEXT (150k) is the
+# account-wide early warning; this is the per-session regression line.
+SESSION_OVER = 200_000
 CACHE_TTL_S = 300  # the prompt cache's default lifetime: a bust after a longer gap is the ttl, else a context edit
 
 
@@ -687,16 +693,22 @@ def _sessions(msgs, args, fmcli):
     for r in rows.values():
         spend = {k: r["tokens"][k] * WEIGHTS[k] for k in WEIGHTS}
         out.append({"session": r["session"], "turns": r["turns"], "avg_context": r["ctx"] // r["turns"],
+                    "over": r["ctx"] // r["turns"] > SESSION_OVER,
                     "busts": r["busts"], "bust_causes": dict(sorted(r["causes"].items())), "tokens": dict(r["tokens"]), "input_equivalent": round(sum(spend.values())),
                     "split": {SPLIT[k]: round(100 * v / (sum(spend.values()) or 1)) for k, v in sorted(spend.items(), key=lambda kv: list(SPLIT).index(kv[0]))}})
     out.sort(key=lambda s: -s["input_equivalent"])
-    text = (f"Sessions, last {args.days:g} day(s), costliest first (the context a turn re-reads is most of the cost):\n"
+    over = sum(s["over"] for s in out)
+    text = (f"Sessions, last {args.days:g} day(s), costliest first, main thread only (the context a turn re-reads is "
+            "most of the cost):\n"
             + "\n".join(f"  {s['session'][:12]}: {s['turns']} turns, {_human(s['avg_context'])} context per turn, "
                         f"≈ {_human(s['input_equivalent'])} input-equivalent (" + ", ".join(
                             f"{k} {v}%"
                             for k, v in s["split"].items()) + f"), {s['busts']} bust{'s' * (s['busts'] != 1)}"
                         + (" (" + ", ".join(f"{n} {k}" for k, n in s["bust_causes"].items()) + ")" if s["busts"] else "")
-                        for s in out[:15]) if out else f"No token usage in the last {args.days:g} day(s).")
+                        + (" ⚠ over 200k a reply: compacted late (one started after fm install-user and a restart "
+                           "shouldn't)" if s["over"] else "")
+                        for s in out[:15]) + (f"\n  {over} session(s) average over 200k a reply" if over else "")
+            if out else f"No token usage in the last {args.days:g} day(s).")
     return fmcli.out(args, {"days": args.days, "sessions": out}, text)
 
 
