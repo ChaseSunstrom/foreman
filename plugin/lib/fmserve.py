@@ -641,7 +641,7 @@ def _session_tokens(p, since):
     try:
         import fmcost
         msgs, _ = fmcost.scan(fmcost.transcripts_dir(p.root), since[:19])
-        return round(sum((u.get(k) or 0) * w for _, _, u in msgs for k, w in fmcost.WEIGHTS.items()))
+        return round(sum(fmcost.weighted(u) for _, _, u in msgs))
     except (OSError, ValueError):
         return 0
 
