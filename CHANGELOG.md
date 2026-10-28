@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm playbooks route TEXT|--task ID [-k N]` ranks the playbooks by relevance over an incremental FTS5 index in the state folder (rebuilt if corrupt, pruned when its library is gone), with a title/use-line scan without FTS5; a mistyped one-word stage is a usage error; fm playbooks reach counts routes apart from reads, and a routed book is not a drop candidate; bench_playbooks.py times it at 20k (T-1833)
 - Playbook use: a close records the books it loaded and the share followed; `fm playbooks coverage --unused` names drop and merge candidates; a draft repeating a book is refused (`--force`); the skill list is capped (T-1834)
 - The site has a Gallery (T-1785): one worked page per design playbook (motion, interaction, game feel, sound, type and colour, composition, design direction, data viz, scrollytelling, terminal UI, visual QA, and the 3D template), each a small real screen that applies its playbook and passes `fm new check`. Each playbook names its page on an `Example:` line, under `references/ui/examples/`, so you can open it from disk too.
 - `fm check --python oldest` (or `--python 3.12`) runs the gates under the oldest Python Foreman supports, as `python3` (T-1805): run it once before a push to main or a release to catch a break only that version has, which CI found days late before. Every other `fm check` stays as fast as before.
