@@ -244,9 +244,9 @@ def _repro(body):
     return c.fit(c.plain(m.group(1).strip()), 200) if m else None
 
 
-def _gh_json(p, args, timeout=120):
-    """gh ARGS, read-only, in p's root (the user's own gh: its login, its host): the JSON it answers, or a UsageError
-    saying what failed."""
+def _gh(p, args, timeout=120):
+    """gh ARGS in p's root (the user's own gh: its login, its host): what it prints, or a UsageError saying what
+    failed."""
     from fmcli import UsageError
     what = "gh " + " ".join(args[:2])
     try:
@@ -258,10 +258,16 @@ def _gh_json(p, args, timeout=120):
         raise UsageError(f"{what} timed out")
     if r.returncode:
         raise UsageError(f"{what} failed: {c.fit(c.redact(c.plain(r.stderr.strip())), 200)}")
+    return r.stdout
+
+
+def _gh_json(p, args, timeout=120):
+    """gh ARGS, read-only: the JSON it answers."""
+    from fmcli import UsageError
     try:
-        return json.loads(r.stdout)
+        return json.loads(_gh(p, args, timeout))
     except ValueError:
-        raise UsageError(f"{what} didn't return JSON")
+        raise UsageError(f"gh {' '.join(args[:2])} didn't return JSON")
 
 
 def inbox_gh(p, repo=None, limit=30):
@@ -581,9 +587,9 @@ def ticket_ref(s):
     return have[0], m.group(2)
 
 
-def fetch_ticket(service, key):
-    """T-1859: a Jira (REST v2) or Linear (GraphQL) issue as the text a paste of it would be: its key and title, a
-    labels line (Jira's issue type first) and its description."""
+def _tracker(service, key, post=None):
+    """One call to Jira (REST v2) or Linear (GraphQL) with the environment's token: the JSON answer, a dict. post None
+    reads issue key; else Jira's is a comment body to post on it, Linear's the (query, variables) to send."""
     import base64
     import http.client
     import fmcli
@@ -597,14 +603,17 @@ def fetch_ticket(service, key):
             raise fmcli.UsageError("fm inbox ticket: Jira needs JIRA_URL (https://…) and JIRA_API_TOKEN (and JIRA_EMAIL "
                                    "on Jira Cloud)")
         auth = "Basic " + base64.b64encode(f"{email}:{token}".encode()).decode() if email else f"Bearer {token}"
-        req = urllib.request.Request(f"{base.rstrip('/')}/rest/api/2/issue/{key}?fields=summary,description,labels,"
-                                     "issuetype", headers={"Authorization": auth, "Accept": "application/json"})
+        url, h = f"{base.rstrip('/')}/rest/api/2/issue/{key}", {"Authorization": auth, "Accept": "application/json"}
+        req = urllib.request.Request(url + "?fields=summary,description,labels,issuetype", headers=h) if post is None \
+            else urllib.request.Request(url + "/comment", json.dumps({"body": post}).encode(),
+                                        headers={**h, "Content-Type": "application/json"})  # T-1870
     else:
         token = env.get("LINEAR_API_KEY", "")
         if not token:
             raise fmcli.UsageError("fm inbox ticket: Linear needs LINEAR_API_KEY")
-        q = "query($id: String!) { issue(id: $id) { title description labels { nodes { name } } } }"
-        req = urllib.request.Request("https://api.linear.app/graphql", json.dumps({"query": q, "variables": {"id": key}})
+        q, v = post or ("query($id: String!) { issue(id: $id) { title description labels { nodes { name } } } }",
+                        {"id": key})
+        req = urllib.request.Request("https://api.linear.app/graphql", json.dumps({"query": q, "variables": v})
                                      .encode(), headers={"Authorization": token, "Content-Type": "application/json"})
     try:
         with fmmodels._OPENER.open(req, timeout=20) as r:  # never follows a 3xx: the token stays on its host
@@ -615,7 +624,14 @@ def fetch_ticket(service, key):
                                    e.code, c.fit(c.plain(str(e.reason)), 60)) + ")")
     except (OSError, ValueError, http.client.HTTPException) as e:  # no network, a timeout, an answer not JSON
         raise fmcli.UsageError(f"{service} {key}: no usable answer ({c.fit(c.plain(str(e)), 80)})")
-    d = d if isinstance(d, dict) else {}
+    return d if isinstance(d, dict) else {}
+
+
+def fetch_ticket(service, key):
+    """T-1859: a Jira (REST v2) or Linear (GraphQL) issue as the text a paste of it would be: its key and title, a
+    labels line (Jira's issue type first) and its description."""
+    import fmcli
+    d = _tracker(service, key)
     if service == "jira":
         f = d.get("fields") if isinstance(d.get("fields"), dict) else {}
         title, body = f.get("summary"), f.get("description")
@@ -644,6 +660,79 @@ def fetch_gh(p, key):
     head = f"GitHub {key} {i.get('title') or 'untitled'}"  # "#7 …" first would lose its # as a heading's
     return "\n".join([head] + ([f"labels: {labels}"] if labels else [])
                      + ["", str(i.get("body") or "")]), ("github", key)
+
+
+def ticket_source(b):
+    """T-1870: (service, key) of the issue brief b came from, read from the CONTEXT line fm inbox ticket or fm inbox gh
+    writes second (the first is the ticket's own title, the rest is quoted behind "| ": neither can name one)."""
+    said = [x[2:] if x.startswith("> ") else x for x in b.section("Raw request").splitlines()]
+    line = said[1] if len(said) > 1 else ""
+    m = re.fullmatch(r"CONTEXT: ticket (jira|linear|github) (\S+) [0-9a-f]{12}, fetched by fm inbox ticket", line)
+    if m and re.fullmatch(r"(?:\w[\w-]*/[\w.-]+)?#\d+" if m[1] == "github" else _TICKET_KEY, m[2]):
+        return m[1], m[2]
+    m = re.match(r"CONTEXT: https://github\.com/(\w[\w-]*/[\w.-]+)/issues/(\d+), ", line)
+    return ("github", f"{m[1]}#{m[2]}") if m else None
+
+
+def closing_sha(b):
+    """The last commit fm task finish logged for brief b, or None."""
+    shas = re.findall(r"(?m)^- \S+ committed ([0-9a-f]{7,40}) ", b.section("Log"))
+    return shas[-1] if shas else None
+
+
+_POSTED = re.compile(r"(?m)^- \S+ (posting the close|posted the close|the post failed)\b")
+
+
+def post_ticket(p, tid):
+    """T-1870: one comment on brief tid's source issue naming the commit that closed it (through gh, or the Jira or
+    Linear token). Outward, so only on fm inbox ticket --post, and once: a claim under the project lock comes first,
+    and only a failed post frees a retry. The commit must be pushed (the issue's readers can't see it otherwise). No
+    ticket text goes back out, only the commit and the task id."""
+    import fmcli
+    b = fmcli.need_brief(p, tid)
+    src, sha = ticket_source(b), closing_sha(b)
+    why = ("it came from no fetched ticket" if not src else f"it is {b.status}, not done" if b.status != "done" else
+           "no commit closed it" if not sha else f"commit {sha} is on no remote branch yet: push it first"
+           if not c._git(p.root, "branch", "-r", "--contains", sha, timeout=30).strip() else None)
+    if why:
+        raise fmcli.UsageError(f"fm inbox ticket --post {b.id}: nothing posted: {why}")
+    (svc, key), body = src, f"Closed in commit {sha} (Foreman {b.id})."
+
+    def claim(x):  # under the lock: two runs at once post once
+        marks = _POSTED.findall(x.section("Log"))
+        if marks and marks[-1] != "the post failed":
+            raise fmcli.UsageError(f"fm inbox ticket --post {b.id}: nothing posted: already posted")
+        x.append_log(f"posting the close to {svc} {key}")
+    fmcli.mutate(p, b.id, claim, "ticket_post", {"to": key})
+    try:
+        _post(svc, key, body, p)
+    except Exception as e:
+        fmcli.mutate(p, b.id, lambda x: x.append_log(f"the post failed: {c.fit(str(e), 120)}"), "ticket_post",
+                     {"to": key, "failed": True})
+        if isinstance(e, fmcli.UsageError) and "timed out" in str(e):  # the tracker may have taken it anyway
+            raise fmcli.UsageError(f"{e}; it may have landed: check {svc} {key} before posting again") from None
+        raise
+    fmcli.mutate(p, b.id, lambda x: x.append_log(f"posted the close to {svc} {key}"), "ticket_post", {"to": key})
+    return f"{svc} {key}"
+
+
+def _post(svc, key, body, p):
+    import fmcli
+    if svc == "github":
+        repo, n = key.split("#")
+        _gh(p, ["issue", "comment", n, f"--body={body}"] + ([f"--repo={repo}"] if repo else []), 60)
+    elif svc == "jira":
+        _tracker(svc, key, body)
+    else:  # Linear comments on the issue's id, which the key looks up
+        def ask(q, v):
+            d = _tracker(svc, key, (q, v)).get("data")
+            return d if isinstance(d, dict) else {}
+        i = ask("query($id: String!) { issue(id: $id) { id } }", {"id": key}).get("issue")
+        uid = i.get("id") if isinstance(i, dict) else None
+        r = uid and ask("mutation($id: String!, $body: String!) { commentCreate(input: {issueId: $id, body: $body}) "
+                        "{ success } }", {"id": uid, "body": body}).get("commentCreate")
+        if not (isinstance(r, dict) and r.get("success") is True):
+            raise fmcli.UsageError(f"linear {key}: the comment wasn't posted")
 
 
 _TRACE = re.compile(r'File "([^"\n]+)", line \d+|([\w./-]+\.[A-Za-z]\w*):\d+')
@@ -741,7 +830,8 @@ def cmd_inbox(args):
         sd = c.state_dict(fmcli.resolve(args))
         return fmcli.out(args, {"inbox": sd["inbox"]}, c.render_inbox(sd).split("\n", 2)[2].strip())
     for flag, used in (("apply", ("swipe",)), ("serve", ("swipe",)), ("loser", ("prefer",)), ("repo", ("gh",)), ("epsilon", ("pick",)),
-                       ("reset", ("prefer",)), ("limit", ("gh", "first", "pick")), ("file", ("spec", "ticket", "prefer"))):
+                       ("reset", ("prefer",)), ("limit", ("gh", "first", "pick")), ("file", ("spec", "ticket", "prefer")),
+                       ("post", ("ticket",))):
         if getattr(args, flag) is not None and args.source not in used:  # T-1855's rule: no flag silently unread
             name = "a second item" if flag == "loser" else "FILE" if flag == "file" else f"--{flag}"
             raise fmcli.UsageError(f"fm inbox {args.source}: {name} goes with {' or '.join(used)} only")
@@ -786,6 +876,11 @@ def cmd_inbox(args):
         a, b, n = prefer(p, args.file or "", args.loser)
         return fmcli.out(args, {"win": a.id, "lose": b.id, "words": n}, f"Noted: {a.id} over {b.id}; the inbox order "
                          "learns from it." if n else f"{a.id} and {b.id} share every title word: nothing learned.")
+    if args.source == "ticket" and args.post:  # T-1870: outward, only on this explicit flag
+        if args.file:
+            raise fmcli.UsageError("fm inbox ticket --post ID posts a done brief's commit: no FILE or KEY with it")
+        to = post_ticket(p, args.post)
+        return fmcli.out(args, {"id": args.post.upper(), "posted": to}, f"Posted the close of {args.post.upper()} to {to}.")
     if args.source == "ticket":
         if not args.file:
             raise fmcli.UsageError("fm inbox ticket FILE|-|KEY: which file (- reads a paste on stdin; a Jira, Linear "
