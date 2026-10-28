@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm task finish` re-runs the failed command of a step whose last run was red, and closes the step if it now passes (T-1844). Before, it refused until a passing run was recorded by hand. A command stored with a secret redacted is still refused, not re-run.
 - `fm task prove` names any changed non-test file in a tests folder (a runner, a helper) that it copied onto the start tree, if the check then passes there (T-1845). If that file is the code under change, the red run goes in the Regression test section instead.
 - CI runs the suite in 2 shards per Python version (T-1842): `run.py --shard K/N` runs every Nth class, biggest first, so each job takes about half the time. One job had been running out of time at 92–100% of its deadline.
 - A task active in a lane whose folder was deleted is named instead of "no active task" (T-1841): `fm status`, `fm next` and the prompt hook say which task, which lane, and that `fm lane rm ID` frees it.
