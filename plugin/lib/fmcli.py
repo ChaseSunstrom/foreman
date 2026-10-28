@@ -512,8 +512,7 @@ def cmd_surprise(args):
     task = need_brief(p, args.task).id if args.task else getattr(c.active_brief(c.load_briefs(p), p.lane), "id", None)
     rec = {"at": c.now(), "task": task, "text": text[:500]}
     with c.lock(p.dir):
-        with open(os.path.join(p.dir, "surprises.jsonl"), "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec) + "\n")
+        c.append_line(os.path.join(p.dir, "surprises.jsonl"), json.dumps(rec) + "\n")
     c.log_event(p, "surprise", task=task, data={"text": text[:300]})
     flag_replan(p, task, "surprise: " + c.fit(text, 160))
     return out(args, rec, f"Surprise logged{f' on {task}' if task else ''}: fm friction and fm recall will bring it back.")
@@ -6315,9 +6314,15 @@ def _build_parser():
     s.add_argument("--cwd", metavar="DIR", help="with --wrong: the folder it ran in (default: here)")
     s = add("fsck", lazy("fmdoctor", "cmd_fsck"), tier=("Project and settings", 872), help="a deeper read-only check "
             "of Foreman's state: open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, "
-            "journals whose last line is torn; exit 1 on any (T-1667)")
+            "journals whose last line is torn, state files that aren't JSON; exit 1 on any (T-1667, T-1669)")
     s.add_argument("--fix", action="store_true", help="remove only the stale locks; a broken lane or a torn journal "
                    "is left for a person")
+    s = add("drill", lazy("fmdrill", "cmd_drill"), tier=("Project and settings", 873), help="a scripted day in a temp "
+            "home with faults planted mid-day (torn ledger and journal, stale lock, broken lane, corrupt state file, "
+            "unreadable file); passes only when fm fsck or fm verify-ledger finds each or the day heals it, and "
+            "nothing crashed. Your own home is never touched (T-1669)")
+    s.add_argument("--seed", type=int, help="replay this plan (default: from the clock; the report names it)")
+    s.add_argument("--faults", type=int, default=3, help="how many kinds to plant at once, 3 to 6 (default 3)")
 
     s = add("sweep", lazy("fmeco", "cmd_sweep"), tier=("Running elsewhere", 1260), help="ask every other project about a fix: where a pattern is (or what "
                                                        "recall relates), a brief in its inbox; edits nothing there")
@@ -6602,7 +6607,8 @@ def _build_parser():
             "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs; "
             "tokens DESIGN.md --to css|app|pane: its Tokens table as CSS variables, an fm code theme or the pane's "
             "palette; check [ROOT]: the gates DESIGN.md's ## Gates opts into: brief, a11y (contrast, reduced motion, "
-            "flashes, alt, focus styles) and debt N (untokened literals under a budget); advisory exits 0, blocking 1; "
+            "flashes, alt, focus styles) and debt N (untokened literals under a budget); advisory exits 0, blocking 1, trial counts would-blocks "
+            "and blocks once they prove right (--wrong GATE marks one); "
             "roll [--seed N] [--apply|--undo]: one look card's palette, type and motion, seeded, into DESIGN.md")
     s.add_argument("action", choices=["lint", "extract", "palette", "contrast", "tokens", "check", "roll", "diverge",
                                       "sprint", "vague"],
@@ -6632,6 +6638,9 @@ def _build_parser():
     s.add_argument("--save", action="store_true", help="tokens --to pane: keep it as the foreman-ui pane's palette (it "
                    "paints over the default one; cb and riso still win), not just print it (T-1717)")
     s.add_argument("--clear", action="store_true", help="tokens --to pane: forget the saved pane palette (T-1717)")
+    s.add_argument("--wrong", metavar="GATE", help="check: mark the trial gate's latest would-block wrong; a trial "
+                   "blocks once 10 are logged with under 10%% marked wrong (T-1669)")
+    s.add_argument("--why", help="check --wrong: what the gate got wrong, kept with the mark")
     s = add("img", lazy("fmimg", "cmd_img"), tier=("Every task", 91), help="PNG files with no Pillow (T-1630): info "
             "PATH: size and mode; diff A B: the changed-pixel count and box (exit 1 when they differ or sizes do)")
     s.add_argument("action", choices=["info", "diff"])
@@ -7203,11 +7212,18 @@ def main(argv=None):
     except (FileNotFoundError, IsADirectoryError, PermissionError) as e:
         if not any(a == e.filename or a.endswith(f"={e.filename}") for a in argv):  # T-1189: only a file named on
             # the command line (--file X or --file=X) is the caller's mistake; any other is a real error
+            if isinstance(e, PermissionError) and e.filename and c.in_state(e.filename):  # T-1669: a state file's mode, not a bug: named
+                print(f"fm: can't open {e.filename}: permission denied; restore its permissions (fm fsck lists "
+                      "unreadable state)", file=sys.stderr)
+                return 4
             raise
         print(f"fm: can't read {e.filename}: {e.strerror.lower()}", file=sys.stderr)
         return 1
+    except c.CorruptState as e:
+        print(f"fm: {e}", file=sys.stderr)
+        return 4
     except ValueError as e:
-        print(f"fm: state looks corrupt: {e} (run fm doctor)", file=sys.stderr)
+        print(f"fm: state looks corrupt: {e} (fm fsck names corrupt state files)", file=sys.stderr)
         return 4
     finally:
         if stop:

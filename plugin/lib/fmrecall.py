@@ -459,10 +459,9 @@ def note_failure(p, task, text):
             mine = [r for r in recs if task and r.get("task") == task and r.get("sig") == sig]
             first = not any(r.get("sig") == sig and r.get("task") == task for r in recs)  # with or without a task
             same, hinted = 1 + sum(not r.get("hinted") for r in mine), any(r.get("hinted") for r in mine)
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"sig": sig, "task": task, "at": c.now()}) + "\n")
-                if task and same >= REPEATS and not hinted:
-                    f.write(json.dumps({"sig": sig, "task": task, "at": c.now(), "hinted": True}) + "\n")
+            rows = [{"sig": sig, "task": task, "at": c.now()}] + (
+                [{"sig": sig, "task": task, "at": c.now(), "hinted": True}] if task and same >= REPEATS and not hinted else [])
+            c.append_line(path, "".join(json.dumps(r) + "\n" for r in rows))
     except (OSError, c.LockTimeout):
         pass
     api = API_MISUSE.search(text or "")
@@ -913,8 +912,7 @@ def share_lesson(p, b, lesson):
         if os.path.exists(shared_path()) and os.path.getsize(shared_path()) > 1_000_000:
             keep = c.tail_jsonl(shared_path(), SHARED_KEEP)
             c.write_atomic(shared_path(), "".join(json.dumps(r) + "\n" for r in keep))
-        with open(shared_path(), "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec) + "\n")
+        c.append_line(shared_path(), json.dumps(rec) + "\n")
 
 
 def _shared_docs(p):
