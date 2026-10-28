@@ -1792,7 +1792,8 @@ FSCK_SKIP = {"lib-sources", "lib-drafts", "quarantine", "snapshots", "outputs", 
 FSCK_TAIL = 65536  # bytes of a journal read: its last line is judged, never the whole file
 FSCK_LOCK_AGE = 3600  # s: a pid file is judged only once this old. A holder in another PID namespace (Claude Code's
 # sandbox) looks dead to os.kill, and fmcli._sentinel already counts an hour-old sentinel.pid as no run (review)
-FSCK_KINDS = ("broken lane", "stale lock", "torn journal", "unreadable")
+FSCK_KINDS = ("broken lane", "stale lock", "torn journal", "corrupt state", "unreadable")
+FSCK_JSON_MAX = 1 << 20  # bytes: a state *.json bigger than this isn't parsed (T-1669)
 PID_NS = "/proc/self/ns/pid"
 INIT_PID_NS = "pid:[4026531836]"  # the kernel's fixed inode of the initial PID namespace (PROC_PID_INIT_INO); a user
 # can't read /proc/1/ns/pid to compare with
@@ -1911,7 +1912,8 @@ def _broken_lanes(projects, here=None):
 def fsck(projects=None, state=None, here=None):
     """T-1667: what a crash or a hand edit left broken in Foreman's own state, as {kind, path, detail, project[, task]}:
     open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, journals (*.jsonl) whose last
-    line is torn, and locks or journals it can't read. project is None for state no project owns. Reads only."""
+    line is torn, state *.json that doesn't parse (T-1669), and files it can't read. project is None for state no
+    project owns. Reads only."""
     state = state or c.state_dir()
     found = _broken_lanes([p for p, _ in c.all_projects()] if projects is None else projects, here)
     pdir, now = os.path.join(state, "projects"), time.time()
@@ -1919,16 +1921,34 @@ def fsck(projects=None, state=None, here=None):
         dirs[:] = sorted(x for x in dirs if root != state or x not in FSCK_SKIP)
         for n in sorted(names):
             path, lock = os.path.join(root, n), n.endswith(".pid")
+            state_json = n.endswith(".json") and (root == state or os.path.dirname(root) == pdir)  # T-1669: meta,
+            # gate, status: the files fm reads whole; a session's or an audit's own files aren't judged
             try:
-                why = _stale_pid(path, now) if lock else _torn(path) if n.endswith(".jsonl") else ""
-                kind = "stale lock" if lock else "torn journal"
+                if state_json:
+                    why, kind = _corrupt_json(path), "corrupt state"
+                else:
+                    why = _stale_pid(path, now) if lock else _torn(path) if n.endswith(".jsonl") else ""
+                    kind = "stale lock" if lock else "torn journal"
             except PermissionError:
-                why, kind = f"permission denied: fsck can't check this {'lock' if lock else 'journal'}", "unreadable"
+                what = "lock" if lock else "state file" if state_json else "journal"
+                why, kind = f"permission denied: fsck can't check this {what}", "unreadable"
             if why:
                 rel = os.path.relpath(path, pdir)
                 found.append({"kind": kind, "path": path, "detail": why,
                               "project": None if rel.startswith("..") else rel.split(os.sep)[0]})
     return found
+
+
+def _corrupt_json(path):
+    """T-1669: why a state *.json doesn't parse ("" when it does, or is too big to judge)."""
+    if os.path.getsize(path) > FSCK_JSON_MAX:
+        return ""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        try:
+            json.load(f)
+        except ValueError as e:
+            return f"isn't valid JSON ({e}); Foreman can't read it: fix it by hand or restore it"
+    return ""
 
 
 def _pid_ns_doubt():
@@ -1983,7 +2003,7 @@ def check_fsck(projects=None):
     except Exception as e:  # the scan failing is a finding, not a crash of doctor
         return Result("fsck", "WARN", f"not run: {e}")
     return Result("fsck", "WARN", f"{_fsck_counts(found)}: fm fsck lists them (--fix removes only the stale locks)") \
-        if found else Result("fsck", "PASS", "no broken lanes, stale locks or torn journals")
+        if found else Result("fsck", "PASS", "no broken lanes, stale locks, torn journals or corrupt state")
 
 
 def check_landlock():
@@ -2030,8 +2050,8 @@ def cmd_fsck(args):
     hints = (["fm fsck --fix removes the stale locks"] if any(f["kind"] == "stale lock" for f in left) else []) + (
         ["the rest is left for a person (fm lane list in its project; a torn ledger: fm verify-ledger)"]
         if any(f["kind"] != "stale lock" for f in left) else [])
-    print(("\n" if fixed or left else "") + "fm fsck: " + (f"{_fsck_counts(left)}; " + "; ".join(hints) if left else
-                                                           "OK: no broken lanes, stale locks or torn journals"))
+    ok = "OK: no broken lanes, stale locks, torn journals or corrupt state"
+    print(("\n" if fixed or left else "") + "fm fsck: " + (f"{_fsck_counts(left)}; " + "; ".join(hints) if left else ok))
     return 1 if left else 0
 
 

@@ -63,8 +63,7 @@ def record(feature, usd=None, runs=1, tokens=None, project=None, detail=""):
     e = {"ts": c.now(), "day": _today(), "feature": feature, "usd": round(usd, 4) if usd is not None else None,
          "runs": runs, "tokens": tokens, "project": project, "detail": c.fit(str(detail), 120)}
     os.makedirs(c.state_dir(), exist_ok=True)
-    with open(_path("spend.jsonl"), "a", encoding="utf-8") as f:
-        f.write(json.dumps(e) + "\n")
+    c.append_line(_path("spend.jsonl"), json.dumps(e) + "\n")
     return e
 
 

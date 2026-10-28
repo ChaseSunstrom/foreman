@@ -63,6 +63,10 @@ class LockTimeout(Exception):
     """Another process holds the project lock. Exit code 3."""
 
 
+class CorruptState(ValueError):
+    """T-1669: a state file that doesn't parse, named in one line (fm and the hooks print it, never a traceback)."""
+
+
 def now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -156,6 +160,11 @@ def pane_palette():
         return {}
     return {k: v.lower() for k, v in (data.items() if isinstance(data, dict) else ())
             if k in PANE_ALL and isinstance(v, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", v)}
+
+
+def in_state(path):
+    """T-1669: path lies in Foreman's state folder (a PermissionError there is a mode to restore, not a bug)."""
+    return os.path.realpath(path).startswith(os.path.realpath(state_dir()) + os.sep)
 
 
 def state_dir():
@@ -728,8 +737,13 @@ def detect_sensitive(root):
 
 
 def read_meta(p):
-    with open(os.path.join(p.dir, "meta.json")) as f:
-        return json.load(f)
+    path = os.path.join(p.dir, "meta.json")
+    with open(path) as f:
+        try:
+            return json.load(f)
+        except ValueError as e:  # T-1669: raised, never read as {}: update_meta would write the loss back
+            raise CorruptState(f"{path} isn't valid JSON ({e}); Foreman can't read this project until it's fixed by "
+                               "hand or restored (fm fsck lists it)") from None
 
 
 STATE_SCHEMA = 1  # meta.json's layout; bump with a migration when it changes shape (fm doctor flags newer state)
@@ -832,6 +846,19 @@ def regen_registry():
 
 
 # ---------------------------------------------------------------- writes and locks
+
+def append_line(path, text):
+    """T-1669: append whole lines in one write; a tail cut short (a crash, a hand edit) gets its newline first, so the
+    cut line stays its own and the new record isn't glued to it."""
+    data = text.encode("utf-8")
+    with open(path, "a+b") as f:
+        size = f.seek(0, os.SEEK_END)
+        if size:
+            f.seek(size - 1)
+            if f.read(1) != b"\n":
+                data = b"\n" + data
+        f.write(data)
+
 
 def write_atomic(path, text):
     d = os.path.dirname(path)

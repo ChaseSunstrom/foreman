@@ -2651,8 +2651,8 @@ class App:
         path = os.path.join(self.history_dir, f"{tid}.events.jsonl") if self.history_dir else None
         if path and os.path.isfile(path):
             try:
-                with open(path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(e) + "\n")
+                import fmcore
+                fmcore.append_line(path, json.dumps(e) + "\n")
             except OSError:
                 pass
         self.state.note("note", text=e["text"])

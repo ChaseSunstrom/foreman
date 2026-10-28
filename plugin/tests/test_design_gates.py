@@ -104,6 +104,73 @@ class Brief(ForemanTestCase):
         self.assertIn("unknown gate 'vibes'", p.stdout)
 
 
+class Trial(ForemanTestCase):
+    """T-1669: a gate on trial runs advisory and counts its would-blocks; it blocks once 10 are logged with under 10%
+    marked wrong (fm design check --wrong GATE), and the same rule puts it back."""
+    TAIL = "brief (trial: {acts}; {n} would-block{s}, {w} overridden; blocks after 10 at under 10%)"
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.n = 0
+        with open(os.path.join(self.repo, "DESIGN.md"), "w") as f:
+            f.write(DESIGN.format(mode="trial"))
+        self.change()
+
+    def change(self):
+        """New UI code that still misses the iron colour: a new would-block."""
+        self.n += 1
+        os.makedirs(os.path.join(self.repo, "src"), exist_ok=True)
+        with open(os.path.join(self.repo, "src", "app.css"), "w") as f:
+            f.write(CSS + f"/* edit {self.n} */\n")
+
+    def check(self, *a):
+        return self.fm("design", "check", self.repo, *a, check=False)
+
+    def line(self, acts, n, w):
+        return self.TAIL.format(acts=acts, n=n, s="" if n == 1 else "s", w=w)
+
+    def test_a_trial_gate_is_advisory_and_shows_its_rate(self):
+        p = self.check()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn(self.line("advisory", 1, 0), p.stdout)
+        self.assertIn("✗ colour #8C3B23", p.stdout)
+        self.assertIn(self.line("advisory", 1, 0), self.check().stdout, "an unchanged rerun adds no would-block")
+
+    def test_ten_would_blocks_block_and_a_wrong_one_demotes(self):
+        for _ in range(9):
+            self.assertEqual(self.check().returncode, 0)
+            self.change()
+        p = self.check()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn(self.line("blocking", 10, 0), p.stdout)
+        p = self.check("--wrong", "brief", "--why", "iron is for errors; there are none yet")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("advisory", p.stdout)
+        p = self.check()
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertIn(self.line("advisory", 10, 1), p.stdout)
+
+    def test_wrong_needs_a_would_block_to_mark(self):
+        with open(os.path.join(self.repo, "src", "app.css"), "a") as f:
+            f.write(".err { color: #8c3b23; }\n")
+        self.assertEqual(self.check().returncode, 0)
+        p = self.check("--wrong", "brief")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("no would-block", p.stderr)
+
+    def test_outside_a_project_a_trial_stays_advisory_and_says_so(self):
+        root = os.path.join(self.tmp, "site")
+        os.makedirs(os.path.join(root, "src"))
+        with open(os.path.join(root, "DESIGN.md"), "w") as f:
+            f.write(DESIGN.format(mode="trial"))
+        with open(os.path.join(root, "src", "app.css"), "w") as f:
+            f.write(CSS)
+        p = self.fm("design", "check", root, check=False, cwd=root)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("no Foreman project", p.stdout)
+
+
 class Audit(ForemanTestCase):
     """T-1646: the a11y gate (contrast pairs, a reduced-motion path, focus styles) and the debt sweep (untokened
     literals per file under a budget), both over the lint's own parse."""

@@ -216,8 +216,7 @@ def panic_stop():
         fmbus._write_leases({})
     if errors:
         rec["errors"] = errors
-    with open(os.path.join(c.state_dir(), "stops.jsonl"), "a", encoding="utf-8") as f:
-        f.write(json.dumps(rec) + "\n")
+    c.append_line(os.path.join(c.state_dir(), "stops.jsonl"), json.dumps(rec) + "\n")
     for m in sessions:
         if m.get("pid") == pgid:
             safe(fmsession.stop, m["id"])

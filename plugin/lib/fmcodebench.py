@@ -218,8 +218,7 @@ def bench(seeds, model=None, worker=None, timeout=600, max_steps=40, say=None, v
            "results": results, **({"variant": variant} if variant else {})}
     try:
         os.makedirs(os.path.dirname(results_path()), exist_ok=True)
-        with open(results_path(), "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec) + "\n")
+        fmcore.append_line(results_path(), json.dumps(rec) + "\n")
     except OSError as e:
         print(f"fm code bench: couldn't keep the result: {e}", file=sys.stderr)
     return rec

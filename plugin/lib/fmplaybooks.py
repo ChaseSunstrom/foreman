@@ -1420,8 +1420,7 @@ def cmd_eval(args):
     row = {"ts": c.now(), "playbook": name, "briefs": os.path.abspath(path), "model": model.name, **r,
            **({"ablate": cuts} if cuts is not None else {})}
     os.makedirs(c.state_dir(), exist_ok=True)
-    with open(os.path.join(c.state_dir(), "playbook-evals.jsonl"), "a", encoding="utf-8") as f:
-        f.write(json.dumps(row) + "\n")
+    c.append_line(os.path.join(c.state_dir(), "playbook-evals.jsonl"), json.dumps(row) + "\n")
     n = r["n"]
     fmcli.out(args, row, f"{name}: lift {r['lift']:+.2f} (with {r['with']}/{n}, without {r['without']}/{n}) on {n} "
               f"held-out brief(s), {model.name} model"
