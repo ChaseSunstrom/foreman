@@ -626,7 +626,8 @@ def cmd_lease(args):
         return fmcli.out(args, {"leases": rows, "dropped": len(gone), "released": gone, "lane_claims": lane},
                          f"Dropped {len(gone)} lease(s)." + "".join(f"\ndropped: {x}" for x in gone[:8])
                          + (f"\n… {len(gone) - 8} more" if len(gone) > 8 else "")
-                         + (f"\nstill held: {lane} lane claim(s) (fm lease list)" if lane else ""))
+                         + (f"\nstill held: {lane} lane claim(s) of {act.id}, freed when its lane merges or is removed "
+                            "(fm lease list)" if lane else ""))  # T-1837: a bare count read as unfinished work
     if args.action == "take":  # T-1748: what this take claimed, only that (overlaps were warned on stderr)
         took = [f"{rel}::{sym}" for rel, sym in todo]
         return fmcli.out(args, {"leases": rows, "took": took},
