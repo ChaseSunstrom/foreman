@@ -2862,7 +2862,10 @@ def deferral_due(root, revisit, today):
         return bool(shutil.which(arg)) if kind == "installed" else os.path.exists(_until_path(root, arg) or "")
     m = _REVISIT_TAG.fullmatch(f"[revisit: {revisit}]") if revisit else None
     if not m or m.group(1):
-        return str(revisit or "9999") <= today
+        rv = str(revisit or "9999")
+        if rv[10:11] == "T" and rv[:10] == today:  # T-1802: a local time on today's date waits for that minute
+            return rv[11:16] <= datetime.datetime.now().strftime("%H:%M")
+        return rv <= today
     top = os.path.realpath(root)
     path = os.path.realpath(os.path.join(top, m.group(2)))
     if not path.startswith(top + os.sep):
