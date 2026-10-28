@@ -122,6 +122,12 @@ class Capture(StubCase):
                                           "PLAYWRIGHT_BROWSERS_PATH": os.path.join(self.tmp, "pw")}):
             self.assertEqual(fmshot.chrome(), os.path.join(build, "chrome-headless-shell"))
 
+    def test_foreman_chrome_none_turns_the_browser_off(self):  # T-1806: CI's chromium crashes under load
+        import helpers
+        with mock.patch.dict(os.environ, {"FOREMAN_CHROME": "none", "PATH": os.path.dirname(self.stub)}):
+            self.assertIsNone(fmshot.chrome())
+            self.assertIsNone(helpers.headless_chrome())
+
     def test_a_stub_browser_lists_the_viewport_frames_and_poster(self):
         data = json.loads(self.shot(self.page, "--frames", "4", "--every", "20", "--json", paint="0,1,4,9,2").stdout)
         [page] = data["pages"]

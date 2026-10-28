@@ -67,7 +67,9 @@ def read_json(path):
 
 def headless_chrome():
     """A headless Chromium (T-1499, T-1610): FOREMAN_CHROME, one on PATH, or Playwright's newest download; None if
-    absent."""
+    absent. FOREMAN_CHROME=none: no browser (CI: a runner's snap chromium starts, then crashes under load; T-1806)."""
+    if os.environ.get("FOREMAN_CHROME") == "none":
+        return None
     import glob
     import re
     builds = glob.glob(os.path.expanduser(
