@@ -1,7 +1,7 @@
 ---
 description: Your backlog: small items ready to start, a sweep of the deferred pile, which-first choices the inbox learns from, or a pasted ticket planned as one brief
 disable-model-invocation: true
-argument-hint: "[first | swipe | serve | pick | reset | ticket [PATH]]"
+argument-hint: "[first | swipe | serve | pick | reset | ticket [PATH | KEY | URL]]"
 ---
 Foreman's backlog tools, through `fm inbox` (the fm code app and a terminal use the same verb).
 
@@ -25,7 +25,9 @@ Arguments (may be empty): $ARGUMENTS
    a quote character is refused in one line and nothing runs. `ticket` with no path, and a ticket or error pasted in
    the conversation: save the pasted text unchanged with the Write tool to a new file in your scratchpad, then run
    `fm inbox ticket` on that file. Never pass the ticket's text through the shell (`fm inbox ticket -` reads stdin, for
-   scripts and pipes).
+   scripts and pipes). A Jira or Linear key (`PROJ-12`, `jira:KEY`, `linear:KEY`) or issue URL is fetched the same
+   way, quoted the same way: Jira needs `JIRA_URL` and `JIRA_API_TOKEN` (plus `JIRA_EMAIL` on Jira Cloud), Linear
+   `LINEAR_API_KEY`; if fm says none is set, tell the user which variables to export, never ask for the token here.
 5. `reset`: run `fm inbox prefer --reset` (it forgets every choice `pick` taught the inbox order) and show what it
    printed.
 6. `serve`: run `fm inbox swipe --serve` in the background, read its first line once for the URL and give the user
