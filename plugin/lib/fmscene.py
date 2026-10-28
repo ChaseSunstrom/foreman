@@ -1168,11 +1168,89 @@ def soak(path, three, seconds=10, budget_ms=None):
             "problems": soak_problems(samples, after, budget_ms)}
 
 
-def _write_out(args, text, what):
+TETS = ((1, 3), (1, 5), (2, 3), (2, 6), (4, 5), (4, 6))  # corner 0 → a → b → 7: six tets that agree on shared faces
+
+
+def metaballs(balls=5, grid=32, seed=0):
+    """T-1848: a scene.json of a metaball blob: the field sum r²/d² of `balls` seeded balls, polygonised where it is 1
+    by marching tetrahedra on a grid³ box (each cube cut into six tets round its diagonal, so neighbours share their
+    cuts and the surface closes), one vertices mesh wound counter-clockwise seen from outside, over a floor, turning.
+    The box grows until the field is under 0.9 on all of it, so the blob never touches its sides. ValueError for
+    balls outside 1-12 or grid outside 8-48."""
+    import random
+    if not 1 <= balls <= 12:
+        raise ValueError(f"--balls {balls}: 1 to 12")
+    if not 8 <= grid <= 48:
+        raise ValueError(f"--grid {grid}: 8 to 48")
+    rnd = random.Random(seed)
+    bs = [([rnd.uniform(-0.8, 0.8) for _ in range(3)], rnd.uniform(0.35, 0.6)) for _ in range(balls)]
+    half = max(max(map(abs, c)) + r for c, r in bs)
+    while sum(r * r / (half - max(map(abs, c))) ** 2 for c, r in bs) >= 0.9:  # a box point is that far from a ball
+        half *= 1.1
+    n, step = grid + 1, 2 * half / grid
+    pts = [(-half + i * step, -half + j * step, -half + k * step) for k in range(n) for j in range(n) for i in range(n)]
+    val = [sum(r * r / ((x - c[0]) ** 2 + (y - c[1]) ** 2 + (z - c[2]) ** 2 + 1e-12) for c, r in bs) for x, y, z in pts]
+    verts, index, tris = [], {}, []
+
+    def vertex(a, b):  # where the surface crosses grid edge a-b, made once and shared by every tet on that edge
+        key = (a, b) if a < b else (b, a)
+        if key not in index:
+            t = (1 - val[a]) / (val[b] - val[a])
+            index[key] = len(verts)
+            verts.append([p + t * (q - p) for p, q in zip(pts[a], pts[b])])
+        return index[key]
+
+    def det(o, p, q, s):  # the sign of the tet's volume: which way round its faces go
+        u, v, w = ([pts[x][i] - pts[o][i] for i in range(3)] for x in (p, q, s))
+        return sum(a * b for a, b in zip(u, _cross3(v, w)))
+
+    corner = [0, 1, n, n + 1, n * n, n * n + 1, n * n + n, n * n + n + 1]  # bit 1: +x, 2: +y, 4: +z
+    for k in range(grid):
+        for j in range(grid):
+            for i in range(grid):
+                cube = [i + j * n + k * n * n + d for d in corner]
+                inside = sum(val[p] > 1 for p in cube)
+                if inside in (0, 8):
+                    continue
+                for a, b in TETS:
+                    tet = (cube[0], cube[a], cube[b], cube[7])
+                    inn, out = [p for p in tet if val[p] > 1], [p for p in tet if val[p] <= 1]
+                    if len(inn) in (1, 3):  # one corner apart: a triangle round it, facing away from the inside
+                        one, rest = (inn[0], out) if len(inn) == 1 else (out[0], inn)
+                        t = [vertex(one, p) for p in rest]
+                        if (det(one, *rest) > 0) != (len(inn) == 1):
+                            t.reverse()
+                        tris.append(t)
+                    elif len(inn) == 2:  # two and two: a quad between the inside edge and the outside one
+                        (p, q), (r, s) = inn, out
+                        quad = [vertex(p, r), vertex(p, s), vertex(q, s), vertex(q, r)]
+                        if det(p, q, r, s) < 0:
+                            quad.reverse()
+                        tris += [quad[:3], [quad[0], quad[2], quad[3]]]
+    if not verts:
+        raise ValueError(f"--grid {grid} is too coarse to catch any ball: raise it")
+    floor = min(v[1] for v in verts) - 0.02
+    return validate({
+        "background": "#101218",
+        "camera": {"fov": 40, "position": [0, round(half, 3), round(half * 3.2, 3)], "target": [0, 0, 0], "far": 100},
+        "lights": [{"type": "hemisphere", "sky": "#dfe8ff", "ground": "#2a221a", "intensity": 0.6},
+                   {"type": "directional", "position": [3, 5, 4], "intensity": 1.6},
+                   {"type": "directional", "position": [-4, 2, -3], "color": "#7aa2ff", "intensity": 0.5}],
+        "materials": {"blob": {"color": "#e0569a", "roughness": 0.25, "metalness": 0.1},
+                      "floor": {"color": "#22252e", "roughness": 0.9}},
+        "meshes": [{"name": "blob", "material": "blob",
+                    "geometry": {"type": "vertices", "vertices": [_tidy(v) for v in verts], "faces": tris}},
+                   {"name": "floor", "material": "floor", "geometry": {"type": "plane", "size": [half * 6, half * 6]},
+                    "position": [0, round(floor, 6), 0], "rotation": [-90, 0, 0]}],
+        "animations": {"spin": {"target": "blob", "property": "rotation", "times": [0, 12],
+                                "values": [[0, 0, 0], [0, 360, 0]]}}})
+
+
+def _write_out(args, text, what="FILE"):
     """--out's absolute path with text written there, never over args.path; None when there's no --out."""
     import fmcore
     out = os.path.abspath(args.out) if args.out else None  # write_atomic makes dirname(path): "" for a bare name
-    if out and os.path.exists(out) and os.path.samefile(out, args.path):
+    if out and args.path and os.path.exists(out) and os.path.samefile(out, args.path):
         raise ValueError(f"--out {args.out} is {what}")
     if out:
         fmcore.write_atomic(out, text)  # through a temp file: a symlink at out is replaced, never written through
@@ -1182,6 +1260,25 @@ def _write_out(args, text, what):
 def cmd_scene(args):
     import sys
     import fmcli
+    if args.action == "metaballs":  # T-1848: a seeded blob, polygonised here, for cells, compile or turntable
+        if args.path:
+            print(f"fm: scene: metaballs takes no FILE (got {args.path}); write it with --out", file=sys.stderr)
+            return 2
+        try:
+            scene = metaballs(args.balls, args.grid, args.seed)
+            text = json.dumps(scene, indent=2) + "\n"
+            out = _write_out(args, text)
+        except (OSError, ValueError) as e:
+            print(f"fm: scene: metaballs: {e}", file=sys.stderr)
+            return 2
+        if not out:
+            return fmcli.out(args, {"scene": scene}, text.rstrip("\n")) or 0
+        g = scene["meshes"][0]["geometry"]
+        return fmcli.out(args, {"out": args.out, "vertices": len(g["vertices"]), "triangles": len(g["faces"])},
+                         f"wrote {args.out}: a blob of {args.balls} ball(s), {len(g['faces'])} triangles") or 0
+    if not args.path:
+        print(f"fm: scene: {args.action} needs FILE", file=sys.stderr)
+        return 2
     if args.action == "shader":  # T-1530: GLSL checks with no browser; glslangValidator when it's installed
         import shutil
         validator = shutil.which("glslangValidator")
