@@ -150,6 +150,90 @@ class Rank(ForemanTestCase):
             self.top(text)  # none raises
         self.assertEqual(self.top('"alpha" OR NEAR(widget'), ["references/fix/alpha.md"])
 
+    def test_real_task_titles_route_to_their_book(self):
+        # T-1838: real task titles, verbatim (type, title, the books that fit) against the shipped library; tuned on the first 16,
+        # the last 8 held out
+        labelled = [
+            ("FIX", "Flaky under load: test_code.Review.test_tool_results_and_the_journal_are_redacted and test",
+             "fix/flaky-tests"),
+            ("FIX", "Flaky under load: test_site_hero.Scene frame counts (133 != 198) and test_showpieces.CityB",
+             "fix/flaky-tests"),
+            ("FEATURE", "Profile fm ui gather (the pane polls it every 2 s) and memoize what's slow; skip if it's u",
+             "perf/profiling"),
+            ("FIX", "The hook benchmark judges by CPU time when the machine is busy, so load alone never fails the gate",
+             "perf/benchmark-loop perf/latency-critical"),
+            ("CLEAN", "CHANGELOG: Unreleased entries for the 2026-10-14 rounds (CC integration, compact output, fm page, review fixes)",
+             "release/release-and-changelog"),
+            ("FEATURE", "Dependency-install check in the guard: a new npm/pip/cargo package named in an install get",
+             "release/dependency-admission"),
+            ("FIX", "Compact output caps the saved full text (keeps head and tail, marks the cut) so a runaway output can't fill the disk",
+             "context/context-budget"),
+            ("FIX", "Fm edit silently drops a second <<< === >>> block written under the same @@ file header (o",
+             "review/silent-failures"),
+            ("FIX", "Fmsettings.set_key accepts an unknown key silently; only cmd_settings and apply check firs",
+             "review/silent-failures"),
+            ("FIX", "Stop hook still judges the turn when the project lock is busy",
+             "review/silent-failures"),
+            ("SECURITY", "fm approve-reads: exec-capable and abbreviated flags are not reads",
+             "security/security-review review/security"),
+            ("FIX", "Round-2 review fixes: lane rm keeps secrets inside build dirs, step pointer ignores extensionless names, broken pipe exits 141, tidy prune race-safe and keeps read marks, compact survives lone surrogates",
+             "security/security-review review/security"),
+            ("FEATURE", "foreman-ui motion setting: full (30 fps charts) · calm (8 fps, no blit) · off (still: no clocks, static glyphs)",
+             "ui/motion ui/data-viz"),
+            ("FEATURE", "Integrations desk card and animated SVG charts (T-1551 step 4): needs a decision on an HTT",
+             "ui/data-viz"),
+            ("FEATURE", "3D template: a zero-dependency single-file WebGL2 scene",
+             "ui/scene-3d"),
+            ("FEATURE", "Later from T-0760: Terminal UI polish: clickable ids, progress bar, spinner, motion, palet",
+             "ui/terminal-ui"),
+            ("PERFORMANCE", "Fm cost takes 6.8 s on the real state: fmcost._task_at is a linear scan per turn (11,993 c",
+             "perf/profiling"),
+            ("PERFORMANCE", "Bench_hooks.py has no 'bash <script>' payload: a PreToolUse slowdown from reading scripts",
+             "perf/benchmark-loop perf/latency-critical"),
+            ("FIX", "test_parallel mid-batch test waits for the slow session's pid instead of racing it",
+             "fix/flaky-tests"),
+            ("FIX", "fm code's write and edit keep a file's line endings and refuse a non-UTF-8 target; option-shaped paths are refused cleanly",
+             "fix/text-time-bytes"),
+            ("FEATURE", "Pane: no gaps, everything visual — sections sized to what they hold, the charts stretch to fill the dock exactly; Live shows tool lanes when quiet; every More line gets a bar or meter",
+             "ui/data-viz"),
+            ("FEATURE", "Test-first at edit time: the first edit of a non-test file in a FIX/FEATURE task with no t",
+             "verify/tdd-workflow verify/tdd-guide"),
+            ("FEATURE", "Static trigger eval: phrased requests per skill must match that skill's description best, with no tie",
+             "evals/eval-harness"),
+            ("FEATURE", "Knowledge out: lessons as native rules, decisions as ADRs, deferrals that wake when a file changes",
+             "reflect/architecture-decision-records"),
+        ]
+        for _, _, want in labelled:  # a renamed or dropped book fails here, by name, not as a lower count
+            for w in want.split():
+                self.assertTrue(os.path.isfile(os.path.join(pb.ROOT, "references", w + ".md")), w)
+        if pb.find("verify", 1, pb.ROOT)[0] != "fts5":
+            self.skipTest("no FTS5: the scan fallback has no weights")
+        # before the tuning: tuned 12 in the top 3 and 7 at the top, held out 3 and 0
+        for part, (want3, want1) in ((labelled[:16], (13, 8)), (labelled[16:], (4, 1))):
+            top1 = top3 = 0
+            missed = []
+            for kind, title, want in part:
+                got = [x["path"][len("references/"):-3] for x in pb.find(title, 3, pb.ROOT, kind=kind)[1]]
+                top1 += bool(got) and got[0] in want.split()
+                hit = any(g in want.split() for g in got)
+                top3 += hit
+                missed += [] if hit else [f"{title[:40]} -> {got}"]
+            self.assertTrue(top3 >= want3 and top1 >= want1,
+                            f"{top3} of {len(part)} in the top 3, {top1} at the top; missed: {missed}")
+
+    def test_a_task_type_prefers_its_folder(self):  # T-1838
+        put(self.root, "references/perf/kiln.md", "Kiln", "Use when the kiln heats slowly.")
+        put(self.root, "references/ui/kiln.md", "Kiln", "Use when the kiln heats slowly.")
+        for i in range(3):  # bm25 is 0 for a word in half the books or more
+            put(self.root, f"references/ui/other{i}.md", "Other", "Use when the widget misbehaves.")
+        same = pb.find("slowly heating kiln", 2, self.root)[1]
+        self.assertEqual(same[0]["score"], same[1]["score"], "the same book in two folders")
+        got = pb.find("slowly heating kiln", 2, self.root, kind="PERFORMANCE")[1]
+        self.assertEqual(got[0]["path"], "references/perf/kiln.md")
+        self.assertGreater(got[0]["score"], got[1]["score"])
+        self.assertEqual(pb.find("slowly heating kiln", 2, self.root, kind="FEATURE")[1][0]["score"], got[1]["score"],
+                         "a type with no folder boosts nothing")
+
     def test_a_long_text_and_k_are_bounded(self):
         for i in range(8):
             put(self.root, f"references/fix/b{i}.md", f"Book {i}", "Use when kumquat harvesting stalls.")
@@ -191,6 +275,23 @@ class Cli(ForemanTestCase):
         self.assertIn("references/fix/kumquat.md", r.stdout)
         self.assertNotIn("other.md", r.stdout)
         self.assertNotEqual(self.route("--task", "T-9999", check=False).returncode, 0)
+
+    def test_a_task_of_a_hand_edited_lowercase_type_prefers_its_folder(self):  # T-1838 review
+        put(self.lib, "references/perf/kumquat.md", "Kumquat", "Use when kumquat harvesting stalls.")
+        for i in range(2):  # kumquat in under half the books: bm25 above 0
+            put(self.lib, f"references/ui/filler{i}.md", "Filler", "Use when the widget misbehaves.")
+        out = self.fm("task", "new", "Kumquat harvesting stalls", "--type", "PERFORMANCE", "--tier", "S",
+                      "--ac", "it runs :: true", "--step", "look").stdout
+        tid = next(w for w in out.split() if w.startswith("T-")).rstrip(":.,")
+        [brief] = [os.path.join(d, f) for d, _, fs in os.walk(self.home) for f in fs
+                   if f.startswith(tid + "-") and f.endswith(".md")]
+        with open(brief) as f:
+            text = f.read()
+        with open(brief, "w") as f:
+            f.write(text.replace("type: PERFORMANCE", "type: performance", 1))
+        got = json.loads(self.route("--task", tid, "--json").stdout)["playbooks"]
+        self.assertEqual(got[0]["path"], "references/perf/kumquat.md")
+        self.assertGreater(got[0]["score"], got[1]["score"], "the same book in fix/ scores lower")
 
     def test_a_route_is_one_event_reach_counts(self):
         self.route("kumquat harvesting")
