@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm page graph --cells` prints the task graph in the terminal: a box per task, coloured by status and as tall as its tier, drawn as 24-bit half blocks by `fm scene cells`, then a line naming each status's count. `--cols` sets the width; no page is written (T-1655).
 - `fm scene cells scene.json` previews a scene in the terminal: fmraster draws it, and each cell shows two pixels as a 24-bit half block, so no browser or GPU is needed. `--cols` sets the width and `--turn` turns it about +Y (T-1635).
 - `fm motion compile --to lab` writes a page that plays, scrubs and edits each motion in the Motion Score (T-1626). Drag a curve's handles or use the arrow keys, change a duration, and copy the score lines under it. `fm code` takes how long its bars, counts, columns and card ring settle from the score's `fm-code-*` motions, and keeps its own timing without them. The foreman-ui pane has no duration knob to take it, so it keeps its own feed and settle timers.
 - `fm task finish` re-runs the failed command of a step whose last run was red, and closes the step if it now passes (T-1844). Before, it refused until a passing run was recorded by hand. A command stored with a secret redacted is still refused, not re-run.
