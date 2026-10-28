@@ -42,7 +42,7 @@ def classes(patterns, k, hit=None):
                 cid = f"{type(t).__module__}.{type(t).__name__}"
                 counts[cid] = counts.get(cid, 0) + 1
     for pattern in dict.fromkeys(patterns):
-        walk(unittest.defaultTestLoader.discover(HERE, pattern=pattern))
+        walk(unittest.TestLoader().discover(HERE, pattern=pattern))  # not the shared one: unittest -k filters it
     return sorted(counts, key=lambda c: -counts[c])
 
 
@@ -61,10 +61,21 @@ def annotations(cid, err):
     return out
 
 
-def run_one(cid, k, timeout=480):
+NOT_STARTED = "run.py: not started: the run reached its --deadline (T-1809)\n"
+
+
+def run_one(cid, k, timeout=480, deadline=None):
     """T-1808: a class still running after timeout s is killed and fails by name, with every thread's stack
-    (faulthandler on SIGABRT); its own session, so a child holding the pipes dies with it."""
+    (faulthandler on SIGABRT); its own session, so a child holding the pipes dies with it. T-1809: the run's deadline
+    (an epoch) shortens that, and a class not started by then fails as NOT_STARTED."""
     t0 = time.time()
+    why = f"still running after {timeout}s: killed (T-1808)"
+    if deadline is not None:
+        if deadline - t0 < 1:  # review: round() of under 0.5 s left would start the class and kill it at once
+            return cid, 1, NOT_STARTED, 0, 0.0
+        if deadline - t0 < timeout:  # review: said apart from the per-class cap
+            timeout = round(deadline - t0)
+            why = f"still running at the run's deadline ({timeout}s in): killed (T-1809)"
     extra = [a for x in k for a in ("-k", x)]
     p = subprocess.Popen([sys.executable, "-X", "faulthandler", "-m", "unittest", "-q", cid, *extra], cwd=HERE,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL,
@@ -80,9 +91,27 @@ def run_one(cid, k, timeout=480):
         with contextlib.suppress(ProcessLookupError):
             os.killpg(p.pid, signal.SIGKILL)
         _, err = p.communicate()
-        err += f"\nrun.py: {cid} still running after {timeout}s: killed (T-1808)\n"
+        err += f"\nrun.py: {cid} {why}\n"
     m = re.search(r"Ran (\d+) tests?", err)
     return cid, p.returncode, err, int(m.group(1)) if m else 0, time.time() - t0  # killed: negative
+
+
+def slowest(results, n):
+    return ", ".join(f"{c.split('.')[-1]} {s:.0f}s" for c, _, _, _, s in sorted(results, key=lambda r: -r[4])[:n])
+
+
+def summary_notes(results, elapsed, deadline):
+    """T-1809: the run's time and five slowest classes as a public ::notice, a ::warning past 75% of the deadline,
+    and one ::error for the classes the deadline left unstarted."""
+    notes = [f"::notice title=run.py::Ran {sum(r[3] for r in results)} tests in {elapsed:.0f}s; "
+             f"slowest: {slowest(results, 5)}"]
+    if deadline and elapsed > 0.75 * deadline:
+        notes.append(f"::warning title=run.py::the suite took {elapsed:.0f}s, {100 * elapsed / deadline:.0f}% of its "
+                     f"{deadline}s deadline: speed up the slowest classes or raise the job's timeout")
+    unstarted = sum(r[2] == NOT_STARTED for r in results)
+    if unstarted:
+        notes.append(f"::error title=run.py::{unstarted} classes never started: the run reached its {deadline}s deadline")
+    return notes
 
 
 @contextlib.contextmanager
@@ -111,8 +140,13 @@ def parse(argv=None):
                     help="run beside N busy-loop processes (T-1730: reproduce a flake that shows only under load)")
     ap.add_argument("--timeout", type=int, default=480, metavar="S",
                     help="kill a test class still running after S seconds and fail it with its stack (T-1808)")
+    ap.add_argument("--deadline", type=int, metavar="S",
+                    help="end the whole run after S seconds: running classes are killed with their stacks, unstarted "
+                         "ones fail (T-1809: set it below a CI job's cap, so the run names what was slow)")
     ap.add_argument("names", nargs="*", help="test module names, each like -k (T-0808: fm check affected's {names})")
     a = ap.parse_intermixed_args(argv)  # names may sit on either side of -k
+    if a.deadline is not None and a.deadline < 1:  # review: 0 is falsy and turned the deadline off
+        ap.error("--deadline takes a number of seconds, 1 or more")
     a.k += a.names
     a.error = ap.error
     return a
@@ -131,14 +165,23 @@ def main():
         sys.stderr.write(f"run.py: no test matches {', '.join(missing)}\n")
         return 1
     with burn(a.load), concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
-        results = list(ex.map(lambda c: run_one(c, a.k, a.timeout), todo))
+        end = t0 + a.deadline if a.deadline is not None else None
+        results = list(ex.map(lambda c: run_one(c, a.k, a.timeout, end), todo))
     failed = [r for r in results if r[1] != 0]
+    ci = os.environ.get("GITHUB_ACTIONS")  # T-1223: a run's log needs a login; its annotations are public
     for cid, _, err, _, _ in failed:
+        if err == NOT_STARTED:
+            continue  # one line for all of them, below
         sys.stderr.write(f"\n==== {cid}\n{err}")
-        if os.environ.get("GITHUB_ACTIONS"):  # T-1223: a run's log needs a login; its annotations are public
+        if ci:
             print("\n".join(annotations(cid, err)), flush=True)
+    late = [r[0] for r in failed if r[2] == NOT_STARTED]
+    if late:  # review: outside CI too, which classes the deadline left out
+        sys.stderr.write(f"\nrun.py: not started (the run's {a.deadline}s deadline): {', '.join(late)}\n")
+    if ci:
+        print("\n".join(summary_notes(results, time.time() - t0, a.deadline)), flush=True)
     total = sum(r[3] for r in results)
-    slow = ", ".join(f"{c.split('.')[-1]} {s:.0f}s" for c, _, _, _, s in sorted(results, key=lambda r: -r[4])[:3])
+    slow = slowest(results, 3)
     if skipped():
         sys.stderr.write(f"\nleft out (FOREMAN_SKIP_TESTS): {', '.join(sorted(skipped()))}")
     sys.stderr.write(f"\nRan {total} tests in {time.time() - t0:.1f}s ({len(todo)} classes, {a.j} at a time; "
