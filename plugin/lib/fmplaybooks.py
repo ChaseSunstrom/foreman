@@ -625,8 +625,10 @@ def route(stage, root=ROOT):
 # refreshed from one stat pass: only a book whose mtime or size changed is read again. Costs nothing until a query.
 BODY_MAX = 4096  # characters of a book indexed: 20k books stay a few tens of MB
 READ_MAX = 8192  # bytes of a book read to index it
-TERMS_MAX = 40  # query words kept: a task's whole brief is a query, not a phrase book
-WEIGHTS = (0, 10, 5, 2, 1)  # bm25 per column: path (unindexed), title, use line, headings, body
+TERMS_MAX = 8  # query words kept: the first ones (a task's title) route real tasks best, more dilute them (T-1838)
+WEIGHTS = (0, 10, 10, 2, 0.25)  # bm25 per column: path (unindexed), title, use line, headings, body (T-1838)
+FOLDER = {"FIX": "fix", "PERFORMANCE": "perf", "SECURITY": "security", "CLEAN": "clean", "RESEARCH": "ground"}
+PREFER = 1.5  # T-1838: a task type's folder (FOLDER) scores this many times higher
 INDEX_VERSION = 1
 
 
@@ -784,16 +786,17 @@ def _index(root):
         raise
 
 
-def _fts_find(root, terms, k):
+def _fts_find(root, terms, k, kind=None):
     import sqlite3
     q = " OR ".join('"' + t + '"' for t in terms)
+    near = (f"references/{FOLDER[kind]}/%", PREFER) if kind in FOLDER else ("", 1)
     for attempt in (0, 1):
         try:
             con = _index(root)
             try:  # the query too: a corrupt FTS table passes the refresh when the signature matches
                 return [{"path": p, "score": round(-s, 2), "use": u} for p, u, s in con.execute(
-                    "select path, use, bm25(books, ?, ?, ?, ?, ?) as s from books where books match ? order by s limit ?",
-                    (*WEIGHTS, q, k))]
+                    "select path, use, bm25(books, ?, ?, ?, ?, ?) * (case when path like ? then ? else 1 end) as s "
+                    "from books where books match ? order by s limit ?", (*WEIGHTS, *near, q, k))]
             finally:
                 con.close()
         except sqlite3.DatabaseError as e:
@@ -802,15 +805,16 @@ def _fts_find(root, terms, k):
             _drop_index(_index_file(root))  # a torn or corrupt file: build it again, once
 
 
-def find(text, k=5, root=ROOT):
+def find(text, k=5, root=ROOT, kind=None):
     """(mode, [{path, score, use}]): the k books that best fit text, best first; mode fts5, or scan when this
-    Python's sqlite has no FTS5 (or the index can't be had): books whose title and use line share the most words."""
+    Python's sqlite has no FTS5 (or the index can't be had): books whose title and use line share the most words.
+    kind: a task type, whose folder's books score PREFER times higher (FTS5 only)."""
     import sqlite3
     terms = _terms(text)
     if not terms:
         return "fts5", []
     try:
-        return "fts5", _fts_find(root, terms, k)
+        return "fts5", _fts_find(root, terms, k, kind)
     except sqlite3.Error:
         pass
     got = []
@@ -835,11 +839,11 @@ def cmd_route(args):
         b = c.find_brief(fmcli.resolve(args), args.task)
         if not b:
             raise fmcli.UsageError(f"no task {args.task}")
-        text = task_text(b)
+        text, kind = task_text(b), b.type
     else:
-        text = args.name
+        text, kind = args.name, None
     k = max(1, min(args.k, 50))
-    mode, got = find(text, k)
+    mode, got = find(text, k, kind=kind)
     if not got and not args.task and len(text.split()) == 1:  # one word: most likely a stage key mistyped
         raise fmcli.UsageError(f"no stage or book fits {text!r}; stages: {', '.join(c.SKILL_FOR)}")
     if got:
