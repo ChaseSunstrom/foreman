@@ -192,16 +192,24 @@ def run_fences(root=None, timeout=FENCE_TIMEOUT):
             for why in [fmplaybooks._run(body, timeout, limits, argv=bash, env=_fence_env, what="fence")] if why]
 
 
+def release_env(work):
+    """A newcomer's environment: nothing of the user's Foreman, Claude Code or git, except FOREMAN_DOCTOR_BENCH, so
+    the suite's run can skip hook timings that a loaded machine makes fail (T-1829)."""
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(("FOREMAN_", "CLAUDE", "GIT_")) or k == "FOREMAN_DOCTOR_BENCH"}
+    env.update(HOME=os.path.join(work, "home"), XDG_STATE_HOME=os.path.join(work, "xdg"),
+               FOREMAN_HOME=os.path.dirname(PLUGIN), FOREMAN_STATE=os.path.join(work, "state"),
+               FOREMAN_NO_BACKGROUND="1", PYTHONDONTWRITEBYTECODE="1", GIT_CONFIG_NOSYSTEM="1")
+    return env
+
+
 def cmd_release_check(args):
     """T-0960: what a newcomer runs first, the way they run it: fm doctor and fm demo on this checkout with a temporary
     HOME and Foreman state (nothing of the user's), each passing, and (T-1519) the docs' runnable fences, which are
     trusted like tests (run_fences). Exit 0 when all do. fm demo stubs claude itself."""
     work = tempfile.mkdtemp(prefix="fm-release-")
     try:
-        env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDE", "GIT_"))}
-        env.update(HOME=os.path.join(work, "home"), XDG_STATE_HOME=os.path.join(work, "xdg"),
-                   FOREMAN_HOME=os.path.dirname(PLUGIN), FOREMAN_STATE=os.path.join(work, "state"),
-                   FOREMAN_NO_BACKGROUND="1", PYTHONDONTWRITEBYTECODE="1", GIT_CONFIG_NOSYSTEM="1")
+        env = release_env(work)
         os.makedirs(env["HOME"])
         bad = 0
         for verb in ("doctor", "demo"):
