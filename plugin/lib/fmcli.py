@@ -847,6 +847,11 @@ def cmd_task(args):
             raise UsageError("--until takes a date, YYYY-MM-DD[THH:MM], reset, \"when PATH changes\", "
                              "\"installed NAME\" or \"exists PATH\"")
         cur = need_brief(p, args.id)
+        last, until = (cur.section("Log").strip().splitlines() or [""])[-1], getattr(args, "until", None) or None
+        said = f" {status}: {c.redact(reason)}" + (f" (revisit {until})" if until else "")  # as change() logs it
+        if cur.status == status and until == cur.meta.get("revisit") and (not reason or last.endswith(said)):
+            # T-1879: a repeat with nothing new is a no-op
+            return out(args, c.brief_summary(cur), f"{cur.id} is already {status}.")
         if cur.status in c.CLOSED and status not in c.TRANSITIONS[cur.status]:  # T-0679 chaos test: dropped → blocked
             raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (fm task set {cur.id} status=planned)")
         saved = []
