@@ -722,10 +722,11 @@ class Paste(unittest.TestCase):
     def test_modes_on_and_off(self):
         import fmcodeterm
         import pty
-        import select
+        from helpers import pty_reader
         for crash in (False, True):
             master, slave = pty.openpty()
             got = []
+            reader = pty_reader(master)  # T-1828: macOS drops output nobody read before the slave closes
 
             def run(io):
                 os.write(master, b"\x1b[200~one\rtw")
@@ -738,21 +739,21 @@ class Paste(unittest.TestCase):
                 fmcodeterm.session(run, slave, slave)
             except RuntimeError:
                 self.assertTrue(crash)
-            out = b""
-            while select.select([master], [], [], 0.1)[0]:
-                out += os.read(master, 65536)
-            os.close(master)
             os.close(slave)
+            reader.join(10)
+            os.close(master)
             self.assertEqual(got, [("paste", "one\ntwo"), "q"], crash)
-            text = out.decode()
+            text = bytes(reader.out).decode()
             self.assertIn("\x1b[?2004h", text)
             self.assertGreater(text.rindex("\x1b[?2004l"), text.index("\x1b[?2004h"), crash)
 
     def test_a_paste_whose_end_never_comes_is_taken_once_input_stalls(self):
         import fmcodeterm
         import pty
+        from helpers import pty_reader
         master, slave = pty.openpty()
         got = []
+        reader = pty_reader(master)  # T-1828: an unread master stalls the session's writes on macOS
 
         def run(io):
             os.write(master, b"\x1b[200~abc")
@@ -760,8 +761,9 @@ class Paste(unittest.TestCase):
             got.append(io.keys(0.01))
         with unittest.mock.patch.object(fmcodeterm, "PASTE_STALL", 0.0):
             fmcodeterm.session(run, slave, slave)
-        os.close(master)
         os.close(slave)
+        reader.join(10)
+        os.close(master)
         self.assertEqual(got, [[], [("paste", "abc")]])
 
 
@@ -2336,7 +2338,8 @@ class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
             self.assertEqual(app.sweep(), [4242])
         self.assertIn("pid 4242", app.message)
 
-    def test_quitting_mid_run_names_and_stops_each_runner(self):
+    def running(self):
+        """An app whose fm code (a sleep) registered a runner (another sleep): (app, runner)."""
         import subprocess
         import tempfile
         import fmcode
@@ -2349,15 +2352,32 @@ class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
         child = subprocess.Popen(["sleep", "60"], start_new_session=True)
         runner = subprocess.Popen(["sleep", "61"], start_new_session=True)
         self.addCleanup(lambda: [x.kill() or x.wait() for x in (child, runner)])
-        for _ in range(200):  # until the fork has become sleep (its name is read from /proc)
-            with open(f"/proc/{runner.pid}/cmdline", "rb") as f:
-                if f.read().startswith(b"sleep"):
-                    break
+        for _ in range(200):  # until the fork has become sleep (its name is what the app shows)
+            if fmideas._cmdline(runner.pid)[0].startswith(b"sleep"):
+                break
             time.sleep(0.01)
         os.makedirs(os.path.dirname(fmcode._registry(runner.pid)), exist_ok=True)
         with open(fmcode._registry(runner.pid), "w") as f:
             f.write(f"{fmideas._starttime(runner.pid)} {child.pid} {fmideas._starttime(child.pid)}")
         app.child = child
+        return app, runner
+
+    def test_a_runner_is_named_without_proc_too(self):  # T-1828: macOS has no /proc; ps names it
+        import builtins
+        import fmideas
+        app, runner = self.running()
+        real = builtins.open
+
+        def no_proc(path, *a, **k):
+            if str(path).startswith("/proc/"):
+                raise FileNotFoundError(path)
+            return real(path, *a, **k)
+        with unittest.mock.patch.object(fmideas, "PROC", "/nonexistent-proc"), \
+                unittest.mock.patch.object(builtins, "open", no_proc):
+            self.assertEqual(app._runners_of_child(), [("sleep", runner.pid)])
+
+    def test_quitting_mid_run_names_and_stops_each_runner(self):
+        app, runner = self.running()
         app.stop()
         self.assertEqual(app.stopping, [("sleep", runner.pid)])
         self.assertEqual(app.stop_report(wait=0.3), [f"stopping sleep (pid {runner.pid})… stopped (killed)"])
@@ -2578,9 +2598,12 @@ class Command(CodeCase):
             while want not in screen(stream) and time.time() < deadline:
                 if select.select([fd], [], [], 0.3)[0]:
                     try:
-                        stream.extend(os.read(fd, 65536))
+                        chunk = os.read(fd, 65536)
                     except OSError:
+                        chunk = b""
+                    if not chunk:  # T-1828: the child closed the terminal (EIO on Linux, b'' on macOS)
                         break
+                    stream.extend(chunk)
             return screen(stream)
         try:
             seen = until("add export")
@@ -2703,23 +2726,19 @@ class Command(CodeCase):
             self.assertIn(b"\x1b[2J", seen, "a resize clears and draws again")
             os.write(fd, b"q")
             after = b""
-            while time.time() < deadline:
-                done, status = os.waitpid(pid, os.WNOHANG)
-                if done:
-                    self.assertEqual(os.waitstatus_to_exitcode(status), 0)
-                    break
+            while time.time() < deadline:  # T-1828: read to the end (EIO on Linux, b'' on macOS), then reap
                 if select.select([fd], [], [], 0.2)[0]:
                     try:
-                        after += os.read(fd, 65536)
+                        chunk = os.read(fd, 65536)
                     except OSError:
-                        pass
+                        chunk = b""
+                    if not chunk:
+                        break
+                    after += chunk
             else:
                 self.fail("q didn't quit")
-            while select.select([fd], [], [], 0.2)[0]:  # what it wrote just before it exited
-                try:
-                    after += os.read(fd, 65536)
-                except OSError:
-                    break
+            _, status = os.waitpid(pid, 0)
+            self.assertEqual(os.waitstatus_to_exitcode(status), 0)
             for mode, why in ((b"\x1b[?1049l", "the alternate screen is left"), (b"\x1b[?25h", "the cursor shown"),
                               (b"\x1b[?7h", "wrap back on")):
                 self.assertIn(mode, after, why)
@@ -3374,12 +3393,8 @@ class Editors(unittest.TestCase):
         with open(pidfile) as f:
             pid = int(f.read())
 
-        def alive():
-            try:
-                with open(f"/proc/{pid}/stat") as f:
-                    return f.read().rsplit(")", 1)[1].split()[0] != "Z"
-            except OSError:
-                return False
+        def alive():  # T-1828: /proc where there is one, else signal 0 (macOS)
+            return tui()._alive(pid)
         self.assertTrue(alive())
         app.quit()
         app.runner_test.join(5)
