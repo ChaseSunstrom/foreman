@@ -842,6 +842,48 @@ class BenchScene(ForemanTestCase):
         self.assertEqual(self.fm("scene", "check", out).returncode, 0)
 
 
+class Lookbook(ForemanTestCase):
+    """T-1852: fm scene lookbook, the look cards hung as colour-field panels in a 3D gallery."""
+
+    def test_lookbook_hangs_a_frame_per_look_banded_in_its_palette(self):
+        known = {"look-a": {"palette": [(255, 0, 0), (0, 0, 255)]}, "look-b": {"palette": [(0, 255, 0)]},
+                 "look-c": {"palette": []}}
+        s = fmscene.lookbook(["look-b", "look-a", "look-c"], known)
+        self.assertEqual(fmscene.validate(s), s)
+        mesh = {m["name"]: m for m in s["meshes"]}
+        self.assertLessEqual({"look-a", "look-b", "look-c", "look-a-1", "look-a-2", "look-b-1", "floor"}, set(mesh))
+        self.assertNotIn("look-c-1", mesh)  # no palette, an empty frame
+        colour = {n: s["materials"][m["material"]]["color"] for n, m in mesh.items()}
+        self.assertEqual([colour[n] for n in ("look-a-1", "look-a-2", "look-b-1")], ["#ff0000", "#0000ff", "#00ff00"])
+        self.assertGreater(mesh["look-a-1"]["position"][1], mesh["look-a-2"]["position"][1])  # bands top to bottom
+        self.assertLess(abs(mesh["look-b"]["position"][0]), abs(mesh["look-c"]["position"][0]))  # best ranked: centre
+        self.assertEqual(len([n for n in mesh if n.count("-") == 1 and n.startswith("look-")]), 3)
+        with self.assertRaises(ValueError):
+            fmscene.lookbook([], known)
+        with self.assertRaises(ValueError):
+            fmscene.lookbook(["look-a"] * 13, known)
+
+    def test_fm_scene_lookbook_hangs_the_cards(self):
+        out = os.path.join(self.tmp, "lookbook.json")
+        self.assertIn("3 look(s)", self.fm("scene", "lookbook", "--count", "3", "--out", out).stdout)
+        self.assertEqual(self.fm("scene", "check", out).returncode, 0)
+        for n in ("13", "0"):
+            r = self.fm("scene", "lookbook", "--count", n, check=False)
+            self.assertEqual((r.returncode, "1 to 12" in r.stderr), (2, True), r.stderr)
+
+    def test_lookbook_frames_hang_flush_on_the_walls_all_in_view(self):
+        known = {f"look-{i}": {"palette": [(9, 9, 9)]} for i in range(12)}
+        s = fmscene.lookbook(list(known), known)
+        cx, _, cz = s["camera"]["position"]
+        for n in known:
+            m = next(m for m in s["meshes"] if m["name"] == n)
+            (x, _, z), (sx, _, sz) = m["position"], m["geometry"]["size"]
+            self.assertAlmostEqual(max(abs(x), abs(z)), 5.95, msg=n)  # its back on the wall's inner face, 6.0
+            for ex in (-sx / 2, sx / 2):  # every corner inside the 8:5 view at fov 60, 42.7 degrees each side
+                for ez in (-sz / 2, sz / 2):
+                    self.assertLess(math.degrees(math.atan2(abs(x + ex - cx), cz - z - ez)), 42, n)
+
+
 class Terrain(ForemanTestCase):
     """T-1851: fm scene terrain, the repo's churn as a ribbon per busiest path."""
 
