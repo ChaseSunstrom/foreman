@@ -1,5 +1,6 @@
 """Shared test helpers: isolated FOREMAN_HOME, scratch git repos, running the CLI."""
 import atexit
+import functools
 import json
 import os
 import shutil
@@ -75,7 +76,18 @@ def headless_chrome():
     newest = sorted(builds, key=build, reverse=True)
     found = [os.environ.get("FOREMAN_CHROME")] + [shutil.which(n) for n in (
         "chrome-headless-shell", "chromium", "chromium-browser", "google-chrome")] + newest
-    return next((p for p in found if p and os.access(p, os.X_OK)), None)
+    return next((p for p in found if p and os.access(p, os.X_OK) and _starts(p)), None)
+
+
+@functools.lru_cache(None)
+def _starts(browser):
+    """T-1799: a browser that is there may still not start (a CI runner's snap chromium dies at Target.createTarget,
+    and fm then rightly says "not run"): browser tests skip unless one answers here."""
+    try:
+        with tempfile.TemporaryDirectory() as profile:
+            return devtools(browser, "about:blank", profile, "", (), [0], "1+1", timeout=20) == [2]
+    except Exception:
+        return False
 
 
 # Before any page script: count requestAnimationFrame calls and the context types asked for (T-1610; shared, T-1653);

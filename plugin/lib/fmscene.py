@@ -252,11 +252,29 @@ def _constant(name):
 
 def loads(text):
     """scene.json's text → the validated scene (a leading byte-order mark is fine)."""
+    text = text.removeprefix("﻿")
+    if _depth(text) > MAX_DEPTH:  # T-1799: json's own limit is the C stack's, so it differs by platform and Python
+        raise ValueError("nested too deeply")
     try:
-        data = json.loads(text.removeprefix("﻿"), object_pairs_hook=_pairs, parse_constant=_constant)
+        return validate(json.loads(text, object_pairs_hook=_pairs, parse_constant=_constant))
     except RecursionError:
         raise ValueError("nested too deeply") from None
-    return validate(data)
+
+
+MAX_DEPTH = 256
+
+
+def _depth(text):
+    """The deepest [ or { nesting outside strings."""
+    d = top = 0
+    for m in re.finditer(r'"(?:[^"\\]|\\.)*"|[\[{\]}]', text):
+        t = m.group()
+        if t in ("[", "{"):
+            d += 1
+            top = max(top, d)
+        elif t in ("]", "}"):
+            d -= 1
+    return top
 
 
 def load(path):

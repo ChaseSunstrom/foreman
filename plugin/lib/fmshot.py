@@ -133,7 +133,8 @@ def killable():
 
 
 class Browser:
-    """One headless Chromium over the DevTools pipe; close() kills its whole process group."""
+    """One headless Chromium over the DevTools pipe; close() kills its whole process group (its own group, not
+    setsid: a Python built on an old glibc, uv's python-build-standalone, has no POSIX_SPAWN_SETSID; T-1799)."""
 
     def __init__(self, path, size, scale=1, reduced=False):
         import fcntl
@@ -152,7 +153,7 @@ class Browser:
                 path, "--headless", "--remote-debugging-pipe", "--user-data-dir=" + self.profile.name,
                 "--no-first-run", "--hide-scrollbars", "--mute-audio", "--use-angle=swiftshader",
                 "--enable-unsafe-swiftshader", f"--window-size={size[0]},{size[1]}", "about:blank"], os.environ,
-                setsid=True, file_actions=[(os.POSIX_SPAWN_DUP2, fds[2], 3), (os.POSIX_SPAWN_DUP2, fds[3], 4),
+                setpgroup=0, file_actions=[(os.POSIX_SPAWN_DUP2, fds[2], 3), (os.POSIX_SPAWN_DUP2, fds[3], 4),
                                            (os.POSIX_SPAWN_OPEN, 0, os.devnull, os.O_RDONLY, 0),
                                            (os.POSIX_SPAWN_OPEN, 1, os.devnull, os.O_WRONLY, 0),
                                            (os.POSIX_SPAWN_OPEN, 2, self.log, os.O_WRONLY | os.O_CREAT, 0o600)])
