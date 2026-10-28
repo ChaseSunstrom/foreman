@@ -242,6 +242,16 @@ class CaptureAndIntake(ForemanTestCase):
         self.assertEqual([x["text"] for x in got["criteria"]], ["old check"], "no --ac: the capture's own stay")
         self.assertEqual([x["text"] for x in got["steps"]], ["old step"])
 
+    def test_a_planned_task_never_started_can_be_planned_again(self):
+        # T-1862: an M task whose --focus was refused stays planned; --from refused it, so only status=captured got out
+        self.fm("task", "new", "big one", "--type", "FIX", "--tier", "S", "--ac", "old :: true", "--step", "old")
+        self.fm("task", "new", "big one", "--type", "FIX", "--tier", "S", "--from", "T-0001", "--ac", "new :: true",
+                "--step", "new", "--focus")
+        got = json.loads(self.fm("task", "show", "T-0001", "--json").stdout)
+        self.assertEqual(([x["text"] for x in got["criteria"]], got["status"]), (["new"], "active"))
+        r = self.fm("task", "new", "big one", "--type", "FIX", "--tier", "S", "--from", "T-0001", check=False)
+        self.assertEqual((r.returncode, "T-0001 is active" in r.stderr), (1, True), r.stderr)
+
     def test_parallel_captures_get_unique_ids(self):
         outs = []
 
