@@ -1,7 +1,7 @@
 ---
 description: Your taste in looks: the twelve looks ranked by what you kept, a 12-pair calibration, or learn from files you name
 disable-model-invocation: true
-argument-hint: "[calibrate | keep LOOK | revert LOOK | not LOOK [why] | learn PATH… | tournament | opposite LOOK | book]"
+argument-hint: "[calibrate | keep LOOK | revert LOOK | not LOOK [why] | learn PATH… | tournament | opposite LOOK | book | roll | bisect | seance | history [PATH]]"
 ---
 Foreman's taste ledger for looks, through `fm looks` (the fm code app and a terminal use the same verb).
 
@@ -29,9 +29,14 @@ Arguments (may be empty): $ARGUMENTS
    until it names a champion. Denied or stopped early: record nothing, and say so.
 6. `opposite LOOK`: run `fm looks opposite LOOK` and show the three looks farthest from it (opposite day).
 7. `book [LOOK…]`: run `fm looks book --out lookbook.html` (or with the looks named) and say where the page is.
+8. `roll`: run `fm looks roll` (the look of the day, leaning on the ranking). `bisect`: `fm looks bisect` (where the
+   taste turned). `seance`: `fm looks seance` (the looks turned away from, their last words). Show what fm printed.
+9. `history [PATH]`: run `fm looks history` (DESIGN.md, Foreman's own record of the look) or, only when the user typed
+   a path, `fm looks history 'PATH'` (quoted as in 4). It reads that file's git history and records each look it named
+   as kept (a week or more) or reverted (replaced sooner), once per stint.
 
-Kept and reverted are never detected on their own: nothing reads DESIGN.md or git history for them. Whenever the user
-keeps a look (picks it, ships it, says it's the one) or reverts or replaces one, in this command or anywhere else,
-run `fm looks keep` or `fm looks revert` yourself; otherwise the ledger never hears of it.
+Kept and reverted are detected only when `fm looks history` runs. Whenever the user keeps a look (picks it, ships it,
+says it's the one) or reverts or replaces one, in this command or anywhere else,
+run `fm looks keep` or `fm looks revert` yourself; otherwise the ledger hears of it only when its history is next read.
 
 Reply in at most 8 lines: what fm printed, then that `/foreman:directions` drafts from the top of this ranking.

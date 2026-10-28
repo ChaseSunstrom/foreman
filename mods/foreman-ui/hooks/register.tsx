@@ -1525,7 +1525,7 @@ export const register: Register = (on, options) => {
     const planRows = planQ ? 2 + (planQ.plan.interpretation ? 1 : 0) + (planQ.plan.approach ? 1 : 0) + planQ.plan.steps.length + planQ.plan.criteria.length : 0
     const stepBar = !planQ && a && a.steps.length ? 1 : 0 // T-1026: done and left, a segment a step
     const splitRow = !planQ && a?.splits?.length ? 1 : 0 // T-1078: speedrun splits, one compact row
-    const taskWant = 2 + stepBar + splitRow + (planQ ? planRows : a ? railWant + a.steps.length + extras.length : v.learned && !live ? 1 : 0)
+    const taskWant = 2 + stepBar + splitRow + (planQ ? planRows : a ? railWant + a.steps.length + extras.length : (v.learned && !live ? 1 : 0) + (v.look && !live ? 1 : 0))
 
     // ── activity: one lane per kind of call, fixed in order so nothing jumps; fewer lanes on a short dock
     const nLanes = H >= 40 ? KINDS.length : H >= 30 ? 4 : 3
@@ -1842,6 +1842,7 @@ export const register: Register = (on, options) => {
           {v.next ? humanNext(v.next) : <Text color={dim}>The queue and the inbox are empty.</Text>}
         </Text>,
         ...(v.learned && !live ? [<Text key="idle-learned" color={dim} wrap="truncate-end">{v.learned}</Text>] : []), // T-1045
+        ...(v.look && !live ? [<Text key="idle-look" color={dim} wrap="truncate-end">{v.look}</Text>] : []), // T-1672
       )
     }
     if (taskRows.length + (hidden ? 1 : 0) > R.task!) { // never cut silently (T-0146): the last row counts what's gone

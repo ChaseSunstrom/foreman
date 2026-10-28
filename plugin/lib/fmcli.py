@@ -6925,7 +6925,9 @@ def _build_parser():
             help="your taste in looks (T-1537): the twelve ranked by what you kept; keep|revert|not LOOK; calibrate "
                  "(12 A-or-B pairs: a keyboard picker on a terminal, --answers to record); learn PATH… (only files "
                  "you name, read-only, never the network)")
-    s.add_argument("action", nargs="?", metavar="rank|keep|revert|not|calibrate|learn|tournament|opposite|book",
+    s.add_argument("action", nargs="?", metavar="rank|keep|revert|not|calibrate|learn|tournament|opposite|book|roll|"
+                   "bisect|seance|history",  # T-1672: roll the look of the day, where taste turned, the departed,
+                   # kept/reverted from DESIGN.md's git history (fm looks history [PATH])
                    help="checked by fm looks itself, so a look named here gets the fix (fm looks keep LOOK)")
     s.add_argument("words", nargs="*", metavar="LOOK|PATH")
     s.add_argument("--why", help="keep/revert/not: the user's words")
