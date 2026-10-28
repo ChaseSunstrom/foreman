@@ -717,13 +717,32 @@ def title_text(st):
     return "".join(ch for ch in words if ch.isprintable())[:80]
 
 
+SCORE = {"bar": "fm-code-bars", "n": "fm-code-counts", "tok": "fm-code-counts", "col": "fm-code-columns",
+         "deck": "fm-code-deck"}  # T-1626: an eased key's family (its leading letters) → the score motion that times it
+
+
+def score_durations(root):
+    """T-1626: seconds per key family from the project's Motion Score (motion.toml at root), for the motions SCORE
+    names; {} without one, or when it can't be read. 0 ms is 1 ms: there at once."""
+    path = os.path.join(root, "motion.toml")
+    if not os.path.isfile(path):
+        return {}
+    import fmmotion
+    try:
+        got = {m["name"]: m["ms"] for m in fmmotion.check(path)["motions"] if m["ms"] is not None}
+    except (OSError, ValueError):
+        return {}
+    return {fam: max(got[name], 1) / 1000 for fam, name in SCORE.items() if name in got}
+
+
 class Motion:
     """What render needs to animate, kept across frames: when each watched value changed, and from what. A value
     already there in the first frame is no change (opening a finished run shows it as it is); one first seen later
     is new (a fresh activity line fades in, a new number rolls up from 0)."""
 
-    def __init__(self):
+    def __init__(self, score=None):
         self.seen, self.frames, self.last_change = {}, 0, -1e9
+        self.score = score or {}  # T-1626: seconds per key family (bar, n, tok, col, deck) from the project's score
 
     def since(self, key, value, t):
         """Seconds since key's value became `value` (inf when it already was in the first frame)."""
@@ -736,7 +755,10 @@ class Motion:
         return float("inf") if rec[1] is None else max(0.0, t - rec[1])
 
     def eased(self, key, value, t, dur=0.7):
-        """value as shown at t: it rolls from what was shown before to the new value over dur seconds."""
+        """value as shown at t: it rolls from what was shown before to the new value over dur seconds (or the score's
+        for the key's family)."""
+        if self.score:
+            dur = self.score.get(re.match(r"[a-z]*", key).group(), dur)
         rec = self.seen.get(("e", key))
         if rec is None:
             rec = (value, value, None) if self.frames <= 1 else (value, 0, t)
@@ -2135,7 +2157,7 @@ class App:
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
-        self.motion, self.clock = Motion(), time.monotonic  # T-1300: what moves, and the time it moves by
+        self.motion, self.clock = Motion(score_durations(self.root)), time.monotonic  # T-1300, T-1626 (the score)
         self.confirm_key = None  # T-1348: (command, until) after a first q or s during a live run
         self.bell_seen = (0, False)  # T-1310: refusals counted and whether blocked, as of the last bell check
         self.game, self.game_t = None, 0.0  # T-1556: Breakout and the clock it was last stepped to

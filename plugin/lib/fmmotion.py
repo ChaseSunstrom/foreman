@@ -13,12 +13,13 @@ motion the UI uses, so timing and the reduced-motion path are decided once and c
                                          #   instant: the change happens at once (0 ms) to its end state
 
 check(path) lists its problems; fm motion check [PATH] prints them (exit 1 on any). compile_score(path, to) (T-1625,
-fm motion compile [PATH] --to css|waapi|three [--out FILE]) emits a clean score as CSS custom properties and
-@keyframes, a WAAPI options module or three.js tween parameters: every target carries the score's own durations and
+fm motion compile [PATH] --to css|waapi|three|lab [--out FILE]) emits a clean score as CSS custom properties and
+@keyframes, a WAAPI options module, three.js tween parameters or (T-1626) a lab page to play, scrub and edit each motion: every target carries the score's own durations and
 easings, and each motion's reduced form keeps the three meanings above. verify(path, samples) (T-1627, fm motion verify
 [PATH] [--samples FILE]) holds values sampled from the page under fm smoke's frozen profile to the score's duration and
 curve (the three target's own ease(p), run in node), and report() names each drift; with no browser it says so and
 checks only the score."""
+import html
 import json
 import os
 import re
@@ -275,7 +276,7 @@ def check(path):
     return {"score": path, "design": design, "motions": motions, "problems": problems}
 
 
-TARGETS = ("css", "waapi", "three")
+TARGETS = ("css", "waapi", "three", "lab")
 NAMED = {"linear": "linear(0, 1)", "ease": "cubic-bezier(0.25, 0.1, 0.25, 1)", "ease-in": "cubic-bezier(0.42, 0, 1, 1)",
          "ease-out": "cubic-bezier(0, 0, 0.58, 1)", "ease-in-out": "cubic-bezier(0.42, 0, 0.58, 1)",
          "step-start": "steps(1, jump-start)", "step-end": "steps(1, jump-end)"}  # CSS Easing's own definitions
@@ -432,7 +433,118 @@ def compile_score(path, to):
     if got["problems"]:
         return None, got["problems"]
     label = _label(os.path.basename(path))
+    if to == "lab":
+        return _lab(got["motions"], label), []
     return (_css(got["motions"], label) if to == "css" else _module(got["motions"], label, to)), []
+
+
+LAB = """<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion lab - {{TITLE}}</title>
+<style>
+:root { color-scheme: light dark; --fg: #1d1d1f; --dim: #6b6b6b; --bg: #fafaf9; --line: #d4d4d0; --accent: #3366cc; }
+@media (prefers-color-scheme: dark) { :root { --fg: #ececec; --dim: #9a9a9a; --bg: #161616; --line: #3a3a3a; --accent: #7aa2ff; } }
+body { margin: 0; padding: 16px; font: 14px/1.45 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+h1 { font-size: 18px; margin: 0 0 4px; } p { margin: 0 0 12px; color: var(--dim); max-width: 70ch; }
+.m { display: grid; grid-template-columns: 112px 1fr; gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); }
+.head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; } .dim { color: var(--dim); }
+input[type=number] { width: 6em; } input[type=range] { width: 100%; margin: 0; }
+.track { position: relative; height: 28px; margin-top: 8px; border-bottom: 1px solid var(--line); }
+.dot { position: absolute; left: 0; top: 4px; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); }
+svg { width: 112px; height: 205px; border: 1px solid var(--line); touch-action: none; overflow: visible; }
+.curve { stroke: var(--accent); stroke-width: 0.03; } .arm { stroke: var(--dim); stroke-width: 0.015; }
+.handle { fill: var(--bg); stroke: var(--fg); stroke-width: 0.02; pointer-events: none; }
+.hit { fill: transparent; cursor: grab; } .hit:focus { outline: none; } .hit:focus + .handle { stroke: var(--accent); stroke-width: 0.04; }  /* a 28 px target over the dot; an outline scales with the viewBox */
+code { display: block; margin-top: 8px; white-space: pre; user-select: all; font: 12px/1.4 ui-monospace, monospace; }
+</style>
+<h1>Motion lab</h1>
+<p>From {{TITLE}}. Play a motion, or drag the slider under it to scrub. Drag a curve's handles (or focus one and use the
+arrow keys) and change the duration; the lines under each motion are ready to paste back into the score.
+<label><input type="checkbox" id="red"> reduced motion</label></p>
+<div id="list"></div>
+<script>
+const MOTIONS = {{DATA}};
+const NS = "http://www.w3.org/2000/svg", red = document.getElementById("red"), redraws = [];
+red.checked = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const svgEl = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function curveBox(m, changed) {
+  const svg = svgEl("svg", { viewBox: "-0.1 -0.6 1.2 2.2", role: "img", "aria-label": m.name + " easing: " + m.curve });
+  const b = m.bezier;
+  if (!b) { const t = svgEl("text", { x: 0, y: 0.55, "font-size": 0.12, fill: "currentColor" }); t.textContent = "no handles"; svg.append(t); return svg; }
+  const path = svgEl("path", { fill: "none", class: "curve" }), arms = [svgEl("line", { x1: 0, y1: 1, class: "arm" }), svgEl("line", { x1: 1, y1: 0, class: "arm" })];
+  const hs = [0, 1].map(k => svgEl("circle", { r: 0.15, class: "hit", tabindex: 0, role: "slider", "aria-label": m.name + " handle " + (k + 1) }));
+  const dots = [0, 1].map(() => svgEl("circle", { r: 0.06, class: "handle" }));
+  const draw = () => {
+    path.setAttribute("d", `M0 1C${b[0]} ${1 - b[1]} ${b[2]} ${1 - b[3]} 1 0`);
+    hs.forEach((c, k) => {
+      for (const [e, x, y] of [[arms[k], "x2", "y2"], [c, "cx", "cy"], [dots[k], "cx", "cy"]]) { e.setAttribute(x, b[2 * k]); e.setAttribute(y, 1 - b[2 * k + 1]); }
+      c.setAttribute("aria-valuetext", `x ${b[2 * k]}, y ${b[2 * k + 1]}`);
+    });
+  };
+  const move = (k, x, y) => {
+    b[2 * k] = +clamp(x, 0, 1).toFixed(3); b[2 * k + 1] = +clamp(y, -0.5, 1.5).toFixed(3);
+    m.curve = `cubic-bezier(${b.join(", ")})`; draw(); changed();
+  };
+  hs.forEach((c, k) => {
+    c.addEventListener("pointerdown", e => {
+      c.setPointerCapture(e.pointerId);
+      c.onpointermove = ev => { const p = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(svg.getScreenCTM().inverse()); move(k, p.x, 1 - p.y); };
+      c.onpointerup = () => { c.onpointermove = null; };
+    });
+    c.addEventListener("keydown", e => {
+      const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
+      if (d) { e.preventDefault(); move(k, b[2 * k] + d[0] * 0.02, b[2 * k + 1] + d[1] * 0.02); }
+    });
+  });
+  svg.append(path, ...arms, hs[0], dots[0], hs[1], dots[1]); draw();
+  return svg;
+}
+
+for (const m of MOTIONS) {
+  const row = el("section", "m"), side = el("div"), head = el("div", "head"), track = el("div", "track"), dot = el("div", "dot");
+  const play = el("button", null, "Play"), dur = el("input"), scrub = el("input"), line = el("code");
+  Object.assign(dur, { type: "number", min: 0, max: 2000, step: 10, value: m.ms });
+  Object.assign(scrub, { type: "range", min: 0, max: 1000, value: 0 });
+  dur.setAttribute("aria-label", m.name + " duration in ms"); scrub.setAttribute("aria-label", "scrub " + m.name);
+  head.append(el("b", null, m.name), play, dur, el("span", "dim", "ms, reduced: " + m.reduced));
+  track.append(dot); side.append(head, track, scrub, line);
+  let anim = null;
+  const redraw = () => {
+    if (anim) anim.cancel();
+    const form = red.checked ? m.reduced : null, w = track.clientWidth - dot.offsetWidth;
+    const frames = form === "fade" ? [{ opacity: 0 }, { opacity: 1 }] : [{ transform: "translateX(0)" }, { transform: `translateX(${w}px)` }];
+    anim = form === "none" ? null : dot.animate(frames, { duration: form === "instant" ? 0 : m.ms, easing: m.curve, fill: "both" });
+    if (anim) { anim.pause(); anim.currentTime = scrub.value / 1000 * m.ms; }
+    play.disabled = scrub.disabled = !anim; play.title = anim ? "" : "reduced: none plays nothing";
+    line.textContent = `duration = ${m.ms}\neasing = "${m.curve}"`;
+  };
+  row.append(curveBox(m, redraw), side);
+  document.getElementById("list").append(row);
+  const follow = () => { if (anim && anim.playState === "running") { scrub.value = m.ms ? anim.currentTime / m.ms * 1000 : 1000; requestAnimationFrame(follow); } };
+  play.onclick = () => { scrub.value = 0; redraw(); if (anim) { anim.play(); follow(); } };
+  scrub.oninput = () => { if (anim) { anim.pause(); anim.currentTime = scrub.value / 1000 * m.ms; } };
+  dur.oninput = () => { m.ms = clamp(Math.round(+dur.value || 0), 0, 2000); redraw(); };
+  scrub.addEventListener("pointerdown", () => anim && anim.pause());
+  redraws.push(redraw);
+}
+red.onchange = () => redraws.forEach(f => f());
+addEventListener("resize", () => redraws.forEach(f => f()));
+redraws.forEach(f => f());
+</script>
+</html>
+"""
+
+
+def _lab(motions, label):
+    """T-1626: one self-contained page that plays each motion, scrubs it, and edits its duration and bezier handles
+    into score lines to paste back. Names, curves and forms are check()'s validated ones; </ is escaped anyway."""
+    data = [{"name": m["name"], "ms": m["ms"], "curve": m["curve"], "reduced": m["reduced"],
+             "bezier": (lambda c: c[1:] if c[0] == "bezier" else None)(curve_data(m["curve"]))} for m in motions]
+    page = LAB.replace("{{DATA}}", json.dumps(data).replace("</", "<\\/"), 1)  # first: the label can't land in it
+    return page.replace("{{TITLE}}", html.escape(label.strip('"')))
 
 
 TOL = 0.02  # a sample may sit this share of its property's travel (from to to) off the score's curve
