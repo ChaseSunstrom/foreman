@@ -1,0 +1,241 @@
+<!doctype html>
+<!-- Foreman's own example page (written for Foreman, not ported) for references/ui/visual-qa.md. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Visual QA Receipt</title>
+<script>
+(function () { // QA flags: ?theme=light|dark and ?motion=reduce
+  var d = document.documentElement, q = new URLSearchParams(location.search), t = q.get('theme');
+  if (t === 'light' || t === 'dark') d.dataset.theme = t;
+  if (q.get('motion') === 'reduce') d.dataset.motion = 'reduce';
+})();
+</script>
+<style>
+  :root {
+    --paper: #e9edf2; --ink: #16202c; --muted: #46525f; --rule: #b4bfcb; --accent: #1c4e80; --raised: #f8fafc;
+    --ok: #1a6b35; --err: #b42318; --on-ink: #f8fafc;
+    --font-display: "Optima", "Candara", "Segoe UI Semibold", "Gill Sans", "Trebuchet MS", sans-serif;
+    --font-body: "Seravek", "Gill Sans Nova", Calibri, "Source Sans 3", Ubuntu, sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+    --step-0: clamp(1rem, .97rem + .15vw, 1.1rem); --step-2: clamp(1.4rem, 1.25rem + .8vw, 1.9rem);
+    --step-3: clamp(2rem, 1.6rem + 2vw, 3.2rem);
+    --space-1: .25rem; --space-2: .5rem; --space-3: 1rem; --space-4: 1.5rem; --space-5: 3rem;
+    --radius-control: 4px; --radius-card: 12px;
+    --lift-1: 0 1px 2px rgb(22 32 44 / .12); --lift-2: 0 14px 30px -16px rgb(22 32 44 / .45);
+    --dur-quick: 120ms; --ease-out: cubic-bezier(.2, .7, .2, 1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0e141b; --ink: #e3e9f0; --muted: #9fadbb; --rule: #2b3947; --accent: #7db4ee; --raised: #16202a;
+      --ok: #6fd08a; --err: #ff8b83; --on-ink: #0e141b;
+      --lift-1: 0 1px 2px rgb(0 0 0 / .5); --lift-2: 0 14px 30px -16px rgb(0 0 0 / .85);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0e141b; --ink: #e3e9f0; --muted: #9fadbb; --rule: #2b3947; --accent: #7db4ee; --raised: #16202a;
+    --ok: #6fd08a; --err: #ff8b83; --on-ink: #0e141b;
+    --lift-1: 0 1px 2px rgb(0 0 0 / .5); --lift-2: 0 14px 30px -16px rgb(0 0 0 / .85);
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+  @media (prefers-reduced-motion: reduce) { :root { --dur-quick: 0s; } }
+  :root[data-motion="reduce"] { --dur-quick: 0s; }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 var(--step-0)/1.55 var(--font-body); }
+  h1, h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.1; margin: 0 0 var(--space-3); }
+  h1 { font-size: var(--step-3); letter-spacing: -.01em; }
+  h2 { font-size: var(--step-2); }
+  p { margin: 0 0 var(--space-3); max-width: 62ch; }
+  code { font-family: var(--font-mono); font-size: .88em; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-control); }
+  .skip { position: absolute; left: var(--space-3); top: -6rem; background: var(--ink); color: var(--paper); padding: var(--space-2) var(--space-3); }
+  .skip:focus { top: var(--space-3); }
+  .wrap { max-width: 66rem; margin: 0 auto; padding: 0 var(--space-4); }
+  .kicker { font: 700 .8rem/1 var(--font-body); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: var(--space-5) 0 var(--space-3); }
+  section { margin-block: var(--space-5); }
+  .card { background: var(--raised); border-radius: var(--radius-card); box-shadow: var(--lift-1); padding: var(--space-4); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-3); }
+  button { min-height: 44px; min-width: 44px; padding: 0 var(--space-3); font: 600 .95rem var(--font-body); color: var(--ink);
+           background: var(--raised); border: 1px solid var(--rule); border-radius: var(--radius-control); cursor: pointer;
+           transition: background-color var(--dur-quick) var(--ease-out), color var(--dur-quick) var(--ease-out); }
+  button:hover { background: var(--rule); }
+  button[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
+  button:disabled { cursor: not-allowed; color: var(--muted); border-style: dashed; background: var(--raised); }
+  label.check { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 44px; }
+  input[type="checkbox"] { width: 1.4rem; height: 1.4rem; accent-color: var(--accent); }
+  input[type="text"] { width: 100%; min-height: 44px; padding: 0 var(--space-3); font: inherit; color: var(--ink); background: var(--paper);
+           border: 1px solid var(--muted); border-radius: var(--radius-control); }
+
+  .frames { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: var(--space-2); }
+  .frame { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); padding: var(--space-3) var(--space-1); text-align: center; min-height: 11rem; font-size: .88rem; }
+  .frame svg { height: 90px; width: auto; max-width: 100%; border-radius: 3px; box-shadow: var(--lift-1); }
+  .frame code { color: var(--muted); transition: color var(--dur-quick) var(--ease-out); }
+  .frame[aria-pressed="true"] code { color: var(--on-ink); }
+  .th-light { --tb: #ffffff; --tf: #28323e; --tr: #e1e7ee; --ta: #1c4e80; }
+  .th-dark { --tb: #121a22; --tf: #d4dde6; --tr: #243240; --ta: #7db4ee; }
+  .run { margin-top: var(--space-4); }
+  table { border-collapse: collapse; width: 100%; max-width: 34rem; font-size: .95rem; }
+  th, td { text-align: left; padding: var(--space-1) var(--space-2) var(--space-1) 0; border-bottom: 1px solid var(--rule); }
+  .msg { font-weight: 600; margin: var(--space-3) 0 0; }
+  .msg.ok { color: var(--ok); } .msg.bad { color: var(--err); }
+
+  .checks { display: grid; gap: var(--space-2); padding: 0; margin: 0; list-style: none; }
+  .checks li { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2) var(--space-3); align-items: center;
+               padding-bottom: var(--space-2); border-bottom: 1px solid var(--rule); }
+  .checks b { text-transform: capitalize; }
+  .checks span { display: block; color: var(--muted); font-size: .92rem; }
+  .pair { display: flex; gap: var(--space-1); }
+  pre { margin: var(--space-3) 0; padding: var(--space-3); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius-control);
+        font: 400 .85rem/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .shows li { margin-bottom: var(--space-2); max-width: 66ch; }
+  footer { border-top: 1px solid var(--rule); padding-block: var(--space-4); color: var(--muted); font-size: .9rem; }
+  @media (max-width: 40rem) { .checks li { grid-template-columns: 1fr; } .card { padding: var(--space-3); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<main id="main" class="wrap">
+  <p class="kicker">Receipt for commit a41c9e2</p>
+  <h1>Frames for the settings screen</h1>
+  <p>Seven frames per fixture, a second run to prove they are stable, an eight-line eyeball checklist, and the receipt
+     that goes into the task's evidence. Open each frame as you "look at" it; the receipt counts only those.</p>
+
+  <section class="card" aria-labelledby="fx">
+    <h2 id="fx">1. Frame matrix</h2>
+    <div class="row" role="group" aria-label="Fixture">
+      <button id="fx-full" aria-pressed="true">Fixture: full</button><button id="fx-empty" aria-pressed="false">Fixture: empty</button>
+    </div>
+    <div class="frames" id="frames"><noscript>The frame matrix is drawn by a small script and needs it to run.</noscript></div>
+
+    <div class="run">
+      <div class="row">
+        <button id="run">Run the frames twice</button>
+        <label class="check"><input type="checkbox" id="moving"> Leave the clock running (a moving part)</label>
+      </div>
+      <div id="result"><p class="msg">Not run yet. Run twice: every hash should match.</p></div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="eye">
+    <h2 id="eye">2. Eyeball checklist</h2>
+    <ul class="checks" id="checks"></ul>
+    <div id="foundrow" hidden>
+      <p class="msg bad" style="margin-bottom:var(--space-2)">A ✗ needs its found line.</p>
+      <label for="found">found: (end it with "fixed in &lt;commit&gt;" or "captured T-NNNN")</label>
+      <input type="text" id="found" placeholder="settings-768-dark.png: owner column past the edge → fixed in b07d311">
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="rc">
+    <h2 id="rc">3. Receipt</h2>
+    <pre id="receipt" tabindex="0" aria-label="Receipt text"></pre>
+    <div class="row"><button id="copy" disabled>Copy the receipt</button><span id="rstat" role="status" class="msg" style="margin:0"></span></div>
+  </section>
+
+  <section class="card shows" aria-labelledby="shows">
+    <h2 id="shows">What this shows (visual-qa playbook)</h2>
+    <ul>
+      <li><b>The frame matrix:</b> 360, 768 and 1440 wide, light and dark, plus a reduced-motion frame at 360, each with a short hash.</li>
+      <li><b>Seeded fixtures:</b> <em>full</em> and <em>empty</em> are two data sets; "Run twice" must print the same hashes, and a moving part names the frame it moved.</li>
+      <li><b>A frame you didn't open wasn't checked:</b> the receipt counts frames read and lists the unread ones.</li>
+      <li><b>Eight marks, never blank:</b> a ✗ needs a <code>found:</code> line ending in a fix commit or a task id.</li>
+      <li><b>The receipt itself</b> is the exact three-line text the playbook asks for, with a state for pending, incomplete, wrong and complete.</li>
+    </ul>
+  </section>
+</main>
+<footer class="wrap"><p>An example page for Foreman's visual-qa playbook. Frames are drawn as small stand-ins; hashes are computed from the fixture and frame names.</p></footer>
+
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); }, COMMIT = 'a41c9e2', clock = 0, fx = 'full', last = null;
+  var FR = [[360, 'light'], [360, 'dark'], [768, 'light'], [768, 'dark'], [1440, 'light'], [1440, 'dark'], [360, 'reduce']].map(function (a) {
+    return { w: a[0], t: a[1], id: 'settings-' + a[0] + '-' + a[1], read: false };
+  });
+  var CH = [['overlap', 'Nothing sits on other text; badges stay in their box'], ['overflow', 'Nothing cut at the right edge; the longest name fits'],
+    ['contrast', 'Everything reads in both themes; no white patch in dark'], ['alignment', 'Shared left edges; numbers line up'],
+    ['empty', 'Empty states say what is missing and offer one action'], ['reach', 'At 360 the main action is on the first screen, 44 px high'],
+    ['motion', 'Every reduce-still says ok'], ['direction', 'The cover test passes on the 1440 light frame']];
+  var M = {}, FOUND_OK = /(fixed in [0-9a-f]{7,}|captured T-\d+)\s*$/;
+
+  function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16).padStart(8, '0'); }
+  function shoot(f, tick) { // the same inputs, the same pixels: only the clock (when left running) changes a frame
+    return hash(COMMIT + '|' + fx + '|' + f.id + (f.id === 'settings-768-dark' && $('#moving').checked ? '|' + tick : ''));
+  }
+  function thumb(f) { // a stand-in for the screenshot: [width, height] / 10
+    var W = f.w / 10, H = f.w === 360 ? 80 : f.w === 768 ? 102 : 90, s = '<rect width="' + W + '" height="' + H + '" fill="var(--tb)"/><rect width="' + W + '" height="8" fill="var(--ta)"/>';
+    if (fx === 'empty') s += '<circle cx="' + W / 2 + '" cy="38" r="8" fill="none" stroke="var(--tf)" stroke-width="1.5"/><rect x="' + (W / 2 - 14) + '" y="52" width="28" height="3" fill="var(--tf)"/><rect x="' + (W / 2 - 10) + '" y="60" width="20" height="8" rx="2" fill="var(--ta)"/>';
+    else {
+      s += '<rect x="4" y="12" width="' + W * .4 + '" height="4" fill="var(--tf)"/>';
+      for (var i = 0; i < 4; i++) s += '<rect x="4" y="' + (22 + i * 14) + '" width="' + (W - 8) + '" height="10" rx="2" fill="var(--tr)"/><rect x="7" y="' + (25 + i * 14) + '" width="' + (i === 2 ? W * .6 : W * .3) + '" height="3" fill="var(--tf)"/>';
+    }
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true" focusable="false">' + s + '</svg>';
+  }
+  function frames() {
+    var box = $('#frames'); box.textContent = '';
+    FR.forEach(function (f) {
+      var b = document.createElement('button'); b.className = 'frame th-' + (f.t === 'dark' ? 'dark' : 'light'); b.setAttribute('aria-pressed', String(f.read));
+      b.innerHTML = thumb(f) + '<span><b>' + f.w + '</b> ' + f.t + '</span><code>' + shoot(f, 0) + '</code><span>' + (f.read ? '✓ read' : 'not opened') + (f.t === 'reduce' ? ' · still ok' : '') + '</span>';
+      b.setAttribute('aria-label', f.id + ', hash ' + shoot(f, 0) + ', ' + (f.read ? 'read, press to unmark' : 'not opened, press to mark read'));
+      b.addEventListener('click', function () { f.read = !f.read; frames(); receipt(); $('#frames').children[FR.indexOf(f)].focus(); });
+      box.appendChild(b);
+    });
+  }
+  function run() {
+    var res = $('#result'), btn = $('#run'); btn.disabled = true;
+    res.innerHTML = '<p class="msg" role="status">Shooting 14 frames…</p>'; // loading: the button waits, the old table is gone
+    setTimeout(function () {
+      var A = FR.map(function (f) { return shoot(f, ++clock); }), B = FR.map(function (f) { return shoot(f, ++clock); });
+      var bad = FR.filter(function (f, i) { return A[i] !== B[i]; }), t = '<table><thead><tr><th>Frame</th><th>Run 1</th><th>Run 2</th><th>Same</th></tr></thead><tbody>';
+      FR.forEach(function (f, i) { t += '<tr><td>' + f.w + ' ' + f.t + '</td><td><code>' + A[i] + '</code></td><td><code>' + B[i] + '</code></td><td>' + (A[i] === B[i] ? '✓' : '✗') + '</td></tr>'; });
+      res.innerHTML = t + '</tbody></table>' + (bad.length
+        ? '<p class="msg bad" role="status">✗ ' + bad.length + ' hash differs: ' + bad[0].id + '. A moving part (the clock): freeze it, then run again.</p>'
+        : '<p class="msg ok" role="status">✓ Both runs print the same ' + FR.length + ' hashes.</p>');
+      btn.disabled = false; last = bad.length;
+    }, matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.motion === 'reduce' ? 0 : 700);
+  }
+  function checks() {
+    var ul = $('#checks'); ul.textContent = '';
+    CH.forEach(function (c) {
+      var li = document.createElement('li'); li.innerHTML = '<div><b>' + c[0] + '</b><span>' + c[1] + '</span></div><div class="pair" role="group" aria-label="' + c[0] + '"></div>';
+      [['✓', 'Pass'], ['✗', 'Fail']].forEach(function (m) {
+        var b = document.createElement('button'); b.textContent = m[0] + ' ' + m[1]; b.setAttribute('aria-pressed', String(M[c[0]] === m[0]));
+        b.addEventListener('click', function () { M[c[0]] = M[c[0]] === m[0] ? undefined : m[0]; var i = CH.indexOf(c) * 2 + (m[0] === '✓' ? 0 : 1); receipt(); checks(); $('#checks').querySelectorAll('button')[i].focus(); });
+        li.lastChild.appendChild(b);
+      });
+      ul.appendChild(li);
+    });
+  }
+  function receipt() {
+    var read = FR.filter(function (f) { return f.read; }), unread = FR.filter(function (f) { return !f.read; }).map(function (f) { return f.w + ' ' + f.t; });
+    var marked = CH.filter(function (c) { return M[c[0]]; }).length, fails = CH.filter(function (c) { return M[c[0]] === '✗'; }).length, found = $('#found').value.trim();
+    $('#foundrow').hidden = !fails;
+    $('#receipt').textContent = 'eyeball .qa/frames/' + COMMIT + '-' + fx + ': settings × 360/768/1440 × light/dark + reduce, ' + read.length + ' frames read' + (unread.length && read.length ? ' (not looked at: ' + unread.join(', ') + ')' : '') + '\n' +
+      CH.map(function (c) { return c[0] + ' ' + (M[c[0]] || '·'); }).join(' ') + '\nfound: ' + (fails ? found || '…' : 'none');
+    var st = $('#rstat'), ok = false;
+    if (!marked && !read.length) st.textContent = 'Pending: nothing looked at yet. Open the frames, then mark each line.';
+    else if (marked < CH.length) st.textContent = 'Incomplete: ' + (CH.length - marked) + ' of 8 marks are blank (shown as ·).';
+    else if (!read.length) st.textContent = '✗ No frame was opened, so nothing was looked at.';
+    else if (fails && !FOUND_OK.test(found)) st.textContent = '✗ The found line must end in "fixed in <commit>" or "captured T-NNNN".';
+    else { ok = true; st.textContent = '✓ Complete' + (last ? ' (but a frame hash moved: fix that first)' : '') + '. Paste it into the task\'s evidence.'; }
+    st.className = 'msg ' + (ok ? 'ok' : st.textContent.charAt(0) === '✗' ? 'bad' : '');
+    $('#copy').disabled = !ok;
+  }
+  function setFx(v) { fx = v; last = null; $('#fx-full').setAttribute('aria-pressed', String(v === 'full')); $('#fx-empty').setAttribute('aria-pressed', String(v === 'empty')); $('#result').innerHTML = '<p class="msg">Not run yet. Run twice: every hash should match.</p>'; frames(); receipt(); }
+  $('#fx-full').addEventListener('click', function () { setFx('full'); });
+  $('#fx-empty').addEventListener('click', function () { setFx('empty'); });
+  $('#run').addEventListener('click', run);
+  $('#found').addEventListener('input', receipt);
+  $('#copy').addEventListener('click', function () {
+    var t = $('#receipt').textContent, st = $('#rstat');
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { st.textContent = '✓ Copied.'; }, function () { st.textContent = '✗ Copy is blocked here: select the receipt text and copy it by hand.'; st.className = 'msg bad'; });
+  });
+  frames(); checks(); receipt();
+})();
+</script>
+</body>
+</html>

@@ -571,6 +571,8 @@ state), `fm lib show data-tables` and `fm lib show infinite-scroll` (long lists)
 (the hero's artefact), `fm lib show toasts`, `fm lib show i18n` (plurals, pseudo-locale, right-to-left),
 `fm lib show accessibility` (reading order, live regions). Add `--section verify` for just the checks.
 
+Example: `references/ui/examples/composition.html`: a product landing page on a 5:7 split with a spacing rhythm, depth from one light, a hero and a state atlas (empty, loading, error, done). The site's Gallery shows it.
+
 ## UI contract
 
 - motion: depth and the hero hold still under reduced motion; no layout needs an entrance animation to be read.

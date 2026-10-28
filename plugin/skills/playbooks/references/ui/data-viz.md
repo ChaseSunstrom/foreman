@@ -68,6 +68,8 @@ those rules hold here unchanged.
 `fm lib show data-tables` (the table view), `fm lib show color-contrast`, `fm lib show accessibility`,
 `fm lib show animation`.
 
+Example: `references/ui/examples/data-viz.html` (one chart, one claim, a direct label, a table view).
+
 ## UI contract
 
 - motion: chart transitions use the motion tokens and snap under reduced motion; no value appears only mid-animation.

@@ -1,0 +1,220 @@
+<!doctype html>
+<!-- Foreman's own example page (written for Foreman, not ported) for references/ui/data-viz.md. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Pedal Quay rides</title>
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search), t = q.get("theme"), r = document.documentElement;
+    if (t === "light" || t === "dark") r.setAttribute("data-theme", t);
+    if (q.get("motion") === "reduce") r.setAttribute("data-motion", "reduce");
+  })();
+</script>
+<style>
+  /* Instrument-like: graphite and one teal. Charts use roles only; teal (hue 195) sits 30 degrees or more from every status hue. */
+  :root {
+    color-scheme: light dark;
+    --surface: #EDF2F1; --surface-raised: #FAFCFB; --surface-sunken: #DFE7E5; --text: #10201F; --text-muted: #44575A; --border: #66797A; --hairline: #C5D1CF;
+    --accent: #00696B; --on-accent: #FAFCFB; --series-1: var(--accent); --error: #A8261F; --focus: #00696B;
+    --font-body: "Schibsted Grotesk", "Archivo", "Helvetica Neue", "Segoe UI", Ubuntu, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --space-1: .25rem; --space-2: .5rem; --space-3: 1rem; --space-4: 1.5rem; --space-5: 2.5rem;
+    --radius-control: 3px; --radius-card: 8px;
+    --lift-1: 0 1px 2px rgb(16 32 31 / .14); --lift-2: 0 8px 22px -10px rgb(16 32 31 / .35);
+    --dur-pulse: 1200ms; --dur-quick: 100ms; --dur-move: 240ms; --dur-enter: 360ms; --ease-move: cubic-bezier(.3, 0, .2, 1); --ease-enter: cubic-bezier(.2, .7, .2, 1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --surface: #0F1716; --surface-raised: #172120; --surface-sunken: #1F2B2A; --text: #E4EEEC; --text-muted: #A3B5B2; --border: #6E8280; --hairline: #2D3C3A;
+      --accent: #5CC7C9; --on-accent: #0F1716; --error: #F59088; --focus: #5CC7C9;
+      --lift-1: 0 1px 2px rgb(0 0 0 / .5); --lift-2: 0 10px 26px -10px rgb(0 0 0 / .8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --surface: #0F1716; --surface-raised: #172120; --surface-sunken: #1F2B2A; --text: #E4EEEC; --text-muted: #A3B5B2; --border: #6E8280; --hairline: #2D3C3A;
+    --accent: #5CC7C9; --on-accent: #0F1716; --error: #F59088; --focus: #5CC7C9;
+    --lift-1: 0 1px 2px rgb(0 0 0 / .5); --lift-2: 0 10px 26px -10px rgb(0 0 0 / .8);
+  }
+  @media (prefers-reduced-motion: reduce) { :root { --dur-quick: 0s; --dur-move: 0s; --dur-enter: 0s; } }
+  :root[data-motion="reduce"] { --dur-quick: 0s; --dur-move: 0s; --dur-enter: 0s; }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface); color: var(--text); font: 400 1rem/1.5 var(--font-body); font-variant-numeric: tabular-nums; }
+  h1, h2, p, ol, figure { margin: 0; padding: 0; }
+  h1 { font-size: clamp(1.7rem, 1.4rem + 1.4vw, 2.4rem); line-height: 1.1; letter-spacing: -.015em; font-weight: 700; text-wrap: balance; }
+  h2, figcaption { font-size: 1.25rem; line-height: 1.3; font-weight: 700; text-wrap: balance; }
+  ol { list-style: none; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-control); }
+  .skip { position: absolute; left: var(--space-3); top: -5rem; background: var(--text); color: var(--surface); padding: var(--space-2) var(--space-3); border-radius: var(--radius-control); }
+  .skip:focus { top: var(--space-2); }
+  .wrap { max-width: 52rem; margin: 0 auto; padding-inline: var(--space-3); }
+  header.wrap { display: grid; gap: var(--space-3); padding-block: var(--space-4) var(--space-3); }
+  .kicker { font: 600 .8rem/1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+  .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+  select, .btn, summary { min-height: 2.75rem; border-radius: var(--radius-control); border: 1px solid var(--border); background: var(--surface-raised); color: var(--text); font: inherit; padding: 0 var(--space-3); }
+  select { max-width: 100%; }
+  .btn { font-weight: 700; cursor: pointer; transition: transform var(--dur-quick) var(--ease-move); }
+  .btn:hover { transform: translateY(-1px); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+  .card { background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: var(--radius-card); box-shadow: var(--lift-1); padding: var(--space-3); display: grid; gap: var(--space-3); margin-bottom: var(--space-4); min-width: 0; }
+  .big { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
+  .big strong { font-size: clamp(3.2rem, 2rem + 6vw, 5.5rem); line-height: 1; letter-spacing: -.03em; color: var(--accent); font-weight: 700; }
+  .big span { max-width: 32ch; color: var(--text-muted); }
+  figure { display: grid; gap: var(--space-3); min-width: 0; }
+  .plot { min-height: 15rem; min-width: 0; position: relative; }
+  .plot svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .tick { fill: var(--text-muted); font: 12px var(--font-mono); }
+  .lab { font: 700 13px var(--font-body); }
+  .grid { stroke: var(--hairline); stroke-width: 1; }
+  .axis { stroke: var(--border); stroke-width: 1; }
+  .mark { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; }
+  .s-now { fill: none; stroke: var(--series-1); stroke-width: 3; stroke-linejoin: round; animation: fade var(--dur-enter) var(--ease-enter) both; }
+  .s-prev { fill: none; stroke: var(--text-muted); stroke-width: 2; stroke-dasharray: 7 5; animation: fade var(--dur-enter) var(--ease-enter) both; }
+  .pt { fill: var(--surface-raised); stroke: var(--series-1); stroke-width: 3; cursor: pointer; }
+  .pt:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .t-now { fill: var(--series-1); } .t-prev { fill: var(--text-muted); } .t-txt { fill: var(--text); }
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes grow { from { transform: scaleX(0); } }
+  .readout { min-height: 1.5em; font-family: var(--font-mono); font-size: .9rem; color: var(--text-muted); }
+  .skel { height: 15rem; border-radius: var(--radius-control); background: var(--surface-sunken); animation: pulse var(--dur-pulse) ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .5; } }
+  @media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+  :root[data-motion="reduce"] .skel { animation: none; }
+  .state { padding: var(--space-4); border: 1px dashed var(--border); border-radius: var(--radius-control); display: grid; gap: var(--space-3); justify-items: start; align-content: center; min-height: 15rem; }
+  .state.err p { color: var(--error); font-weight: 700; }
+
+  .bars li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); padding-block: var(--space-2); }
+  .bars b { font-family: var(--font-mono); font-weight: 700; }
+  .track { grid-column: 1 / -1; height: .9rem; background: var(--surface-sunken); border-radius: 2px; }
+  .track i { display: block; height: 100%; width: var(--w); border-radius: 2px; background: var(--text-muted); transform-origin: left; animation: grow var(--dur-enter) var(--ease-enter) both; }
+  .bars .hot .track i { background: var(--series-1); }
+  .bars .hot span::after { content: " · new in March"; color: var(--text-muted); font-weight: 400; }
+  details { border-top: 1px solid var(--hairline); padding-top: var(--space-2); }
+  summary { display: inline-flex; align-items: center; cursor: pointer; font-weight: 700; }
+  .tw { overflow-x: auto; margin-top: var(--space-2); }
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  th, td { padding: var(--space-2); border-bottom: 1px solid var(--hairline); text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { background: var(--surface-sunken); font: 600 .8rem/1.3 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .shows { display: grid; gap: var(--space-2); padding-left: var(--space-4); max-width: 62ch; margin-bottom: var(--space-5); }
+  footer.wrap { padding-block: var(--space-4) var(--space-5); color: var(--text-muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="wrap">
+  <p class="kicker">Pedal Quay bike share · weekday rides</p>
+  <h1>Mill Bridge brought the riders.</h1>
+  <div class="ctl"><label for="st" class="kicker">Data state (for review)</label>
+    <select id="st"><option value="ok">Loaded</option><option value="loading">Loading</option><option value="empty">No data</option><option value="error">Failed to load</option><option value="one">One point only</option></select></div>
+</header>
+<main id="main" class="wrap">
+  <div class="card big" id="big" aria-live="polite"><strong>+47%</strong><span>average weekday rides, March to October 2026 against the same months of 2025</span></div>
+
+  <div class="card">
+    <figure aria-labelledby="c1">
+      <figcaption id="c1">Weekday rides rose 47% on last year once Mill Bridge opened</figcaption>
+      <div class="plot" id="line"></div>
+      <p class="readout" id="read" aria-live="polite">Focus or hover a 2026 point for its value.</p>
+    </figure>
+    <details><summary>Show as table</summary><div class="tw" id="t1"></div></details>
+  </div>
+
+  <div class="card">
+    <figure aria-labelledby="c2">
+      <figcaption id="c2">Mill Bridge carries a third of weekday rides</figcaption>
+      <div class="plot" id="barbox"></div>
+    </figure>
+    <details><summary>Show as table</summary><div class="tw" id="t2"></div></details>
+  </div>
+
+  <h2>What this shows</h2>
+  <ul class="shows" style="padding-top:var(--space-2)">
+    <li><strong>Claim first:</strong> each title states what the chart proves, and the numbers in it are computed from the same data.</li>
+    <li><strong>Form by job and one axis:</strong> a line for change over time, sorted bars for categories, one number for one number.</li>
+    <li><strong>Colour by job:</strong> teal for the series the claim is about, grey for the rest; every line and bar is also labelled, and last year is dashed.</li>
+    <li><strong>Table view and states:</strong> a table under each chart; loading, no data, failed fetch and a single point each have a designed state.</li>
+  </ul>
+</main>
+<footer class="wrap">Pedal Quay is invented. A worked example of the data-viz playbook.</footer>
+<script>
+  (function () {
+    var $ = function (id) { return document.getElementById(id); }, NS = "http://www.w3.org/2000/svg", fmt = new Intl.NumberFormat();
+    var M = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var prev = [410, 430, 520, 610, 690, 760, 790, 780, 700, 610, 480, 420], now = [450, 470, 640, 880, 1010, 1120, 1160, 1150, 1090, 960];
+    var stations = [["Mill Bridge", 340], ["Station Square", 191], ["Dockside", 150], ["Library Steps", 120], ["Hospital Gate", 110], ["Park Gate", 90]];
+    var mode = "ok", lastW = 0;
+    function avg(a, from) { var s = a.slice(from, now.length); return s.reduce(function (x, y) { return x + y; }, 0) / s.length; }
+    var pct = Math.round((avg(now, 2) / avg(prev, 2) - 1) * 100), total = stations.reduce(function (x, s) { return x + s[1]; }, 0);
+    var share = Math.round(stations[0][1] / total * 100);
+    function el(tag, attrs, text) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; }
+    function html(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+    function clear(n) { n.textContent = ""; return n; }
+    function state(box, kind, msg, retry) {
+      clear(box);
+      if (kind === "loading") { var s = html("div", "skel"); s.setAttribute("role", "status"); s.setAttribute("aria-label", "Loading"); box.appendChild(s); return; }
+      var d = html("div", "state" + (kind === "error" ? " err" : "")); d.appendChild(html("p", "", (kind === "error" ? "✗ " : "") + msg));
+      if (retry) { var b = html("button", "btn primary", "Retry"); b.type = "button"; b.addEventListener("click", function () { mode = "loading"; $("st").value = mode; draw(); setTimeout(function () { mode = "ok"; $("st").value = mode; draw(); }, 700); }); d.appendChild(b); }
+      box.appendChild(d);
+    }
+    function line(box) {
+      var w = Math.max(box.clientWidth, 260), narrow = w < 480, h = narrow ? 240 : 300, L = 44, R = 50, T = 24, B = 30, one = mode === "one";
+      var pts = one ? [now[9]] : now, x = function (i) { return L + (w - L - R) * (one ? 9 : i) / 11; }, y = function (v) { return T + (h - T - B) * (1 - v / 1200); };
+      var svg = el("svg", { viewBox: "0 0 " + w + " " + h, role: "img", "aria-label": "Line chart: " + $("c1").textContent + ". The table below has the same numbers." });
+      svg.appendChild(el("text", { x: 0, y: 12, class: "tick" }, "Rides per weekday"));
+      [0, 300, 600, 900, 1200].forEach(function (v) { svg.appendChild(el("line", { x1: L, x2: w - R, y1: y(v), y2: y(v), class: v ? "grid" : "axis" })); svg.appendChild(el("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end", class: "tick" }, fmt.format(v))); });
+      M.forEach(function (m, i) { if (!narrow || i % 2 === 0) svg.appendChild(el("text", { x: x(i), y: h - 8, "text-anchor": "middle", class: "tick" }, narrow ? m[0] : m)); });
+      if (!one) {
+        svg.appendChild(el("line", { x1: x(2), x2: x(2), y1: T, y2: h - B, class: "mark" })); svg.appendChild(el("text", { x: x(2) + 5, y: h - B - 6, class: "tick" }, "Bridge opens"));
+        svg.appendChild(el("polyline", { points: prev.map(function (v, i) { return x(i) + "," + y(v); }).join(" "), class: "s-prev" }));
+        svg.appendChild(el("text", { x: x(11) + 6, y: y(prev[11]) + 4, class: "lab t-prev" }, "2025"));
+        svg.appendChild(el("polyline", { points: now.map(function (v, i) { return x(i) + "," + y(v); }).join(" "), class: "s-now" }));
+      }
+      svg.appendChild(el("text", { x: x(one ? 9 : 9) + 8, y: y(pts[pts.length - 1]) + 4, class: "lab t-now" }, one ? "Oct 2026" : "2026"));
+      pts.forEach(function (v, i) {
+        var idx = one ? 9 : i, c = el("circle", { cx: x(idx), cy: y(v), r: 5, class: "pt", tabindex: 0, role: "img", "aria-label": M[idx] + " 2026: " + fmt.format(v) + " rides per weekday" });
+        var say = function () { $("read").textContent = M[idx] + " 2026: " + fmt.format(v) + " rides per weekday" + (one ? "" : " (2025: " + fmt.format(prev[idx]) + ")"); };
+        c.addEventListener("focus", say); c.addEventListener("mouseenter", say); svg.appendChild(c);
+      });
+      clear(box).appendChild(svg);
+    }
+    function table(box, head, rows, empty) {
+      clear(box);
+      if (!rows.length) { box.appendChild(html("p", "", empty)); return; }
+      var t = html("table"), tr = html("tr"); head.forEach(function (c) { var th = html("th", "", c); th.scope = "col"; tr.appendChild(th); });
+      t.appendChild(html("thead")).appendChild(tr); var tb = html("tbody"); t.appendChild(tb);
+      rows.forEach(function (r) { var row = html("tr"); r.forEach(function (c, i) { var cell = html(i ? "td" : "th", "", c); if (!i) cell.scope = "row"; row.appendChild(cell); }); tb.appendChild(row); });
+      box.appendChild(t);
+    }
+    function draw() {
+      var ok = mode === "ok" || mode === "one", lineBox = $("line"), bars = $("barbox");
+      var strong = $("big").firstChild;
+      if (ok) {
+        $("big").lastChild.textContent = "average weekday rides, March to October 2026 against the same months of 2025";
+        strong.textContent = "+" + pct + "%"; $("c1").textContent = "Weekday rides rose " + pct + "% on last year once Mill Bridge opened"; $("c2").textContent = "Mill Bridge carries " + (share > 30 && share < 36 ? "a third" : share + "%") + " of weekday rides";
+      } else { strong.textContent = "—"; $("big").lastChild.textContent = mode === "empty" ? "No rides between 1 and 7 May." : mode === "error" ? "Not loaded." : "Loading the ride counts…"; }
+      $("read").textContent = ok ? "Focus or hover a 2026 point for its value." : "";
+      if (mode === "loading") { state(lineBox, "loading"); state(bars, "loading"); }
+      else if (mode === "empty") { state(lineBox, "empty", "No rides between 1 and 7 May. The counters sent nothing for that week."); state(bars, "empty", "No rides between 1 and 7 May, so there are no stations to rank."); }
+      else if (mode === "error") { state(lineBox, "error", "We couldn't load the ride counts: the counter service timed out.", true); state(bars, "error", "We couldn't load the station counts.", true); }
+      else {
+        line(lineBox); clear(bars); var ol = html("ol", "bars"); ol.setAttribute("aria-label", "Average weekday rides by station");
+        stations.forEach(function (s, i) { var li = html("li", i ? "" : "hot"), n = html("span", "", s[0]), v = html("b", "", fmt.format(s[1])), tr = html("div", "track"), bar = html("i"); bar.style.setProperty("--w", (s[1] / stations[0][1] * 100) + "%"); tr.appendChild(bar); [n, v, tr].forEach(function (c) { li.appendChild(c); }); ol.appendChild(li); });
+        bars.appendChild(ol);
+      }
+      var rows = mode === "one" ? [[M[9], fmt.format(now[9]), fmt.format(prev[9])]] : ok ? M.map(function (m, i) { return [m, i < now.length ? fmt.format(now[i]) : "no data yet", fmt.format(prev[i])]; }) : [];
+      table($("t1"), ["Month", "2026 rides per weekday", "2025 rides per weekday"], rows, "No numbers to show: the chart has no data in this state.");
+      table($("t2"), ["Station", "Average weekday rides"], ok ? stations.map(function (s) { return [s[0], fmt.format(s[1])]; }) : [], "No numbers to show: the chart has no data in this state.");
+    }
+    $("st").addEventListener("change", function () { mode = this.value; draw(); });
+    var tick = 0; new ResizeObserver(function () { var w = $("line").clientWidth; if (w && w !== lastW && (mode === "ok" || mode === "one")) { lastW = w; cancelAnimationFrame(tick); tick = requestAnimationFrame(function () { line($("line")); }); } }).observe($("line"));
+    draw();
+  })();
+</script>
+</body>
+</html>
