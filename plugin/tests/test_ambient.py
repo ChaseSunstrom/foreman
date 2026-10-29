@@ -85,6 +85,24 @@ class Ambient(HookCase):
         self.assertIn("waiting for another fm check", r.stderr)
         self.assertIsNotNone(busy.poll(), "it ran only after the other check ended")
 
+    def test_a_full_check_waits_for_fm_ships_test_run_but_not_inside_it(self):
+        # T-1978: fm ship's suite in its scratch tree had no marker, so a full check here ran a second suite beside it
+        import threading
+        self.fm("check", "add", "true")
+        p = self.project()
+        busy = subprocess.Popen(["sleep", "30"])
+        try:  # the ship's own fm check runs in its scratch tree: it never waits for itself
+            c.update_meta(p, ship_testing={"pid": busy.pid, "at": c.now(), "root": p.root})
+            self.assertNotIn("fm ship", self.fm("check", "--fresh").stderr)
+        finally:
+            busy.kill()
+            busy.wait()
+        busy = subprocess.Popen(["sleep", "2"])
+        threading.Thread(target=busy.wait, daemon=True).start()
+        c.update_meta(p, ship_testing={"pid": busy.pid, "at": c.now(), "root": "/elsewhere/ship"})
+        self.assertIn("waiting for fm ship's test run", self.fm("check", "--fresh").stderr)
+        self.assertIsNotNone(busy.poll(), "it ran only after the ship's test run ended")
+
     def test_a_check_whose_tree_changed_mid_run_starts_an_ambient_run(self):
         # T-1973: an edit made while full gates ran got no ambient run (T-1965) and no pass (T-1963): nothing tested it
         self.fm("check", "ambient", "on")

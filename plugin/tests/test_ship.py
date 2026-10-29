@@ -46,6 +46,31 @@ class Ship(ForemanTestCase):
     def ship(self, *a):
         return self.fm("ship", "--remote", "origin", *a, check=False)
 
+    def test_the_test_run_is_marked_while_it_runs_and_waits_for_a_live_check(self):
+        # T-1978: the ship's suite had no marker (a full fm check ran beside it) and ran beside a live check here
+        import threading
+        self.grant()
+        p = c.find_project(self.repo)
+        seen = os.path.join(self.tmp, "seen.json")
+        busy = subprocess.Popen(["sleep", "2"])
+        threading.Thread(target=busy.wait, daemon=True).start()
+        c.update_meta(p, gates_running={"task": None, "pid": busy.pid, "at": c.now(), "root": p.root})
+        r = self.ship("--test", f"cp {os.path.join(p.dir, 'meta.json')} {seen}")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("waiting for a running fm check", r.stdout + r.stderr)
+        with open(seen) as f:
+            self.assertEqual(json.load(f)["ship_testing"]["pid"] > 0, True)
+        self.assertFalse(c.read_meta(p).get("ship_testing"), "cleared after the run")
+
+    def test_the_default_fm_check_in_the_scratch_tree_never_waits_for_its_own_ship(self):
+        # T-1978: the ship's marker names its scratch tree; the fm check it runs there must not wait 10 minutes on it
+        self.grant()
+        self.fm("check", "add", "true")
+        r = self.ship()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("waiting for fm ship", r.stdout + r.stderr)
+        self.assertIn("add b", self.main_log())
+
     def test_without_the_grant_nothing_is_pushed(self):
         r = self.ship("--test", "true")
         self.assertNotEqual(r.returncode, 0)

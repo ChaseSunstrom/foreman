@@ -30,6 +30,12 @@ class Batch(ForemanTestCase):
         self.assertIn(host, [x["id"] for x in self.state()["queue"]] + inbox)
         self.assertEqual(res["tier"], "M", "three small ones are one medium task")
 
+    def test_a_done_when_verify_command_survives_the_batch(self):
+        # T-1976: the DONE-WHEN fallback kept "x :: cmd" as text with no verify, so fm focus refused the batch
+        ids = [self.capture(f"FEATURE: other thing {i}\nDONE-WHEN: other {i} works :: true") for i in range(2)]
+        show = self.fm("task", "show", json.loads(self.fm("batch", *ids, "--json").stdout)["id"]).stdout
+        self.assertIn(f"{ids[0]}: other 0 works — verify with `true`", show)
+
     def test_the_host_closing_closes_its_members(self):
         host = json.loads(self.fm("batch", *self.ids, "--json").stdout)["id"]
         self.fm("task", "set", host, "--section", "Interpretation", "--text", "all three")

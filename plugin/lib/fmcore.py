@@ -762,10 +762,11 @@ def update_meta(p, **changes):
     return meta
 
 
-def gates_live(p, here=False):
+def gates_live(p, here=False, key="gates_running"):
     """T-1176: meta gates_running while its fm check runs (live pid), else None; a marker whose process is gone is stale.
-    here: only a run on this tree (T-1965: fm ship's scratch-tree run tests another one)."""
-    g = read_meta(p).get("gates_running") or {}
+    here: only a run on this tree (T-1965: fm ship's scratch-tree run tests another one). key="ship_testing": fm
+    ship's test run in its scratch tree (T-1978)."""
+    g = read_meta(p).get(key) or {}
     try:
         os.kill(int(g["pid"]), 0)
     except (KeyError, TypeError, ValueError, OSError):
@@ -3613,9 +3614,12 @@ def defang(text):
 
 
 def first_touch(p, tid):
-    """Timestamp of the first file edit the hooks attributed to this task, or ""."""
+    """Timestamp of the first project-file edit the hooks attributed to this task, or "" (T-1979: a scratchpad Write
+    outside the project isn't one, as in task_touches)."""
+    root = p.root.rstrip("/") + "/"
     return min((e.get("ts", "") for e in ledger_tail(p, TASK_WINDOW) if e.get("task") == tid
-                and e.get("event") == "touched"), default="")
+                and e.get("event") == "touched" and str((e.get("data") or {}).get("file") or "").startswith(root)),
+               default="")
 
 
 def scope_reason_covers(b, touches, outside):
