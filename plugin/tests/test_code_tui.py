@@ -3421,8 +3421,11 @@ class Editors(unittest.TestCase):
         self.assertNotIn("diff", self.file())
 
     def test_quitting_mid_runner_test_stops_its_cli(self):
+        import fmcode
         pidfile = os.path.join(self.home, "pid")
-        self.runner(f"echo $$ > {pidfile}; exec sleep 30")
+        self.runner(f"echo $$ > {pidfile}; exec sleep 90")
+        real = fmcode.test_runner  # T-1941: a 60 s timeout, so a slow runner's 30 s join still tells the bug from a fix
+        self.enterContext(unittest.mock.patch.object(fmcode, "test_runner", lambda name, **kw: real(name, timeout=60, **kw)))
         app = self.app()
         app.key("r")
         app.item_index = [r["name"] for r in app.items].index("fake")
@@ -3438,8 +3441,8 @@ class Editors(unittest.TestCase):
             return tui()._alive(pid)
         self.assertTrue(alive())
         app.quit()
-        app.runner_test.join(5)
-        self.assertFalse(app.runner_test.is_alive(), "the test ends with the app, not at its 10 s timeout")
+        app.runner_test.join(30)  # T-1941: a 1338 s macOS run needed more than 5 s
+        self.assertFalse(app.runner_test.is_alive(), "the test ends with the app, not at its 60 s timeout")
         for _ in range(100):
             if not alive():
                 break
