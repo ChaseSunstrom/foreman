@@ -211,6 +211,50 @@ class Hang(unittest.TestCase):
         self.assertIn("still running after 2s", err)
         self.assertIn("test_s", err)  # where it hung
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "PR_SET_PDEATHSIG is Linux's")
+    def test_a_class_still_running_dies_with_an_orphaning_kill_of_the_run(self):  # T-2034: one spun a core for a day
+        import contextlib
+        import subprocess
+        import tempfile
+        import time
+
+        def gone(pid):
+            try:
+                with open(f"/proc/{pid}/stat") as f:
+                    return f.read().rsplit(")", 1)[1].split()[0] == "Z"  # dead, not yet reaped
+            except FileNotFoundError:
+                return True
+
+        with tempfile.TemporaryDirectory() as d:
+            pidf = os.path.join(d, "pid")
+            with open(os.path.join(d, "test_orphan.py"), "w") as f:
+                f.write(f"import os, time, unittest\nclass S(unittest.TestCase):\n    def test_s(self):\n"
+                        f"        with open({pidf!r}, 'w') as f:\n            f.write(str(os.getpid()))\n"
+                        "        time.sleep(60)\n")
+            boss = subprocess.Popen([sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import run; "
+                                     "run.HERE = sys.argv[2]; run.run_one('test_orphan.S', [], timeout=60)",
+                                     os.path.dirname(os.path.abspath(run.__file__)), d])
+            pid = None
+            try:
+                for _ in range(400):
+                    with contextlib.suppress(OSError, ValueError):
+                        with open(pidf) as f:
+                            pid = int(f.read())
+                        break
+                    time.sleep(0.05)
+                self.assertIsNotNone(pid, "the class never started")
+                boss.kill()  # a Bash timeout's SIGKILL: run.py gets no chance to clean up
+                boss.wait()
+                for _ in range(100):
+                    if gone(pid):
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(gone(pid), "the class outlived the run that started it")
+            finally:
+                boss.kill()
+                if pid and not gone(pid):
+                    os.kill(pid, 9)
+
     def test_the_run_deadline_kills_a_running_class_and_skips_unstarted_ones(self):
         # T-1809: macOS hit its 35 min job cap with no annotation at all; the run now ends itself first
         import tempfile
