@@ -203,9 +203,11 @@ def _hint(detail, cat=""):
         return (" On Foreman's own repo, land a reviewed builder branch with fm lane merge ID: it merges --no-ff and "
                 "checks each file it changes as that task's write.")
     if cat == "core" and detail.endswith("(a tree write over it)"):  # T-1897: 21 in a week, none with a hint
-        return (" Foreman's own tree changes through a task: fm edit or the Edit tool per file, fm task finish to "
-                "commit. Run git checkout, reset, cherry-pick or rebase in a scratch worktree instead (git worktree "
-                "add <scratch>/x, then cd <scratch>/x && git …).")
+        return (" Run git checkout, reset, cherry-pick or rebase in a scratch worktree (git worktree add <scratch>/x, "
+                "then cd <scratch>/x && git …). Foreman's own tree changes through a task: fm edit or the Edit tool per "
+                "file (with a standing core yes: fm ask ID core --standing), fm task finish to commit.")
+    if detail.startswith("interpreter code driving Foreman's modules"):  # review of T-1897: 17 in a week, no hint
+        return " A draft that only names them goes through the Write tool, then fm edit < draft as the next command."
     if detail.endswith("(written from interpreter code)"):
         return (" If the script only writes other files, keep it to builtin open() on literal paths with no import but "
                 "re, json, textwrap or sys, so only those count, or use the Edit tool.") + research
