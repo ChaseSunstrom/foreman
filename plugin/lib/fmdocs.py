@@ -122,8 +122,8 @@ def task_docs(root, docs_impact):
     except (OSError, subprocess.SubprocessError):
         tracked = []
     meant = {n: [t for t in tracked if t.endswith("/" + n)] for n in gone}
-    blockers = [f"docs impact names {n}, which doesn't exist" + (f" ({meant[n][0]}?)" if len(meant[n]) == 1 else "")
-                for n in gone]
+    blockers = [f"docs impact names {n}, which doesn't exist" + (f" ({meant[n][0]}?)" if len(meant[n]) == 1 else
+                f" (one of {', '.join(meant[n][:3])}?)" if meant[n] else "") for n in gone]  # T-2000: up to three
     notes = []
     added = {}
     for f in scan(root):

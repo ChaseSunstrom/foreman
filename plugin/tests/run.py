@@ -3,7 +3,7 @@
 test already gets its own FOREMAN_HOME and repo), so the gate waits for the slowest class instead of the sum of all.
 Exit 1 on any failure, with each failing class's report.
 
-  python3 plugin/tests/run.py [-j N] [-k PATTERN] [-p GLOB] [--load N]
+  python3 plugin/tests/run.py [-j N] [-k PATTERN] [-p GLOB] [--load N] [NAME ...]
 """
 import argparse
 import concurrent.futures
@@ -173,7 +173,8 @@ def main():
     todo = classes(a.p or ["test*.py"], a.k, hit, a.names)
     missing = [n for n in a.names if n not in hit]
     if missing:  # T-1287: a name that matches nothing (a test file that doesn't exist) fails, not passes unseen
-        sys.stderr.write(f"run.py: no test matches {', '.join(missing)}\n")
+        sys.stderr.write(f"run.py: no test matches {', '.join(missing)}"  # T-1999: say what filtered it out
+                         + (f" with -k {' -k '.join(a.k)}" if a.k else "") + "\n")
         return 1
     if a.shard:
         todo = todo[a.shard[0] - 1::a.shard[1]]
