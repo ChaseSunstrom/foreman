@@ -11,7 +11,7 @@ Ask for as little as possible, show password rules up front, support passkeys an
 ## Verify
 - `npx playwright test --grep signup`: creates an account, hits a duplicate email, and a weak password.
 - `grep -rn "autocomplete=\"new-password\"" src`: password managers can fill and save.
-- `npx axe-core-cli http://localhost:3000/signup`: labels and errors pass.
+- `npx @axe-core/cli http://localhost:3000/signup`: labels and errors pass.
 - Paste a long password with spaces: it must be accepted (no paste block, 64+ characters allowed).
 
 ## Test first

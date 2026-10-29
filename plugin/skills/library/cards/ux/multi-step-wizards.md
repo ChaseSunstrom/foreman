@@ -11,7 +11,7 @@ Split a long task into short, validated steps with visible progress, safe Back, 
 ## Verify
 - `npx playwright test --grep wizard`: completes the flow, goes Back, reloads mid-way and expects state kept.
 - `grep -rn "aria-current=\"step\"" src | wc -l`: the stepper marks the current step.
-- `npx axe-core-cli http://localhost:3000/setup`: step headings, errors and focus pass.
+- `npx @axe-core/cli http://localhost:3000/setup`: step headings, errors and focus pass.
 - Step count check: more than 5-7 steps usually means the flow should be split.
 
 ## Test first

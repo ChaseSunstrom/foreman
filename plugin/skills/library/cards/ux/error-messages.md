@@ -11,7 +11,7 @@ Say what happened, why, and how to fix it, next to the thing that failed, in wor
 ## Verify
 - `npx playwright test --grep "error message"`: triggers each failure and asserts text, placement and focus.
 - `grep -rnE "Error:|Something went wrong|Invalid input|undefined" src/ui`: finds raw or vague copy.
-- `npx axe-core-cli http://localhost:3000/signup`: errors are associated with fields (`aria-describedby`).
+- `npx @axe-core/cli http://localhost:3000/signup`: errors are associated with fields (`aria-describedby`).
 - Kill the network in devtools and submit: a recoverable message appears with a retry.
 
 ## Test first

@@ -12,7 +12,7 @@ Treat "nothing here" as a screen to design: say why it is empty, and offer the o
 - `npx playwright test --grep "empty state"`: renders each list with zero rows and asserts the message and primary action.
 - `grep -rn "No data\|No results\|Nothing found" src`: finds bare, unhelpful empty text to rewrite.
 - Seed the dev database empty and click through every list, table and chart once.
-- `npx axe-core-cli http://localhost:3000/projects`: the empty view has a heading and a reachable action.
+- `npx @axe-core/cli http://localhost:3000/projects`: the empty view has a heading and a reachable action.
 
 ## Test first
 Separate the four empties and assert each has different copy.

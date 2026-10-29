@@ -10,7 +10,7 @@ A short, honest path to paid: guest checkout, autofill, visible totals, and reco
 
 ## Verify
 - `npx playwright test --grep checkout`: completes an order with the test card, and a declined card path.
-- `npx axe-core-cli http://localhost:3000/checkout`: labels, errors and focus pass.
+- `npx @axe-core/cli http://localhost:3000/checkout`: labels, errors and focus pass.
 - `grep -rn "autocomplete=" src/checkout | wc -l`: fields carry `autocomplete` tokens (`cc-number`, `postal-code`, `email`).
 - Run the flow on a real phone; check the numeric keyboard appears for card and postal fields.
 

@@ -11,7 +11,7 @@ Group settings by the user's mental model, save safely, and keep dangerous actio
 ## Verify
 - `npx playwright test --grep settings`: changes a value, reloads, and expects it persisted.
 - `grep -rn "autoSave\|onBlur" src/settings`: the saving model is one chosen pattern, applied consistently.
-- `npx axe-core-cli http://localhost:3000/settings`: every control has a label and group `legend`.
+- `npx @axe-core/cli http://localhost:3000/settings`: every control has a label and group `legend`.
 - Count top-level sections: 5-8 is the target; more needs search.
 
 ## Test first

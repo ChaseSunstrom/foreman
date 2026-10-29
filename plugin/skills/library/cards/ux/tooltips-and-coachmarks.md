@@ -10,7 +10,7 @@ Tooltips name or briefly explain a control; coachmarks introduce one new thing o
 
 ## Verify
 - `npx playwright test --grep tooltip`: hovers and focuses the trigger, asserts text, and Esc dismisses.
-- `npx axe-core-cli http://localhost:3000`: tooltip uses `role="tooltip"` and `aria-describedby`.
+- `npx @axe-core/cli http://localhost:3000`: tooltip uses `role="tooltip"` and `aria-describedby`.
 - `grep -rn "title=" src | wc -l`: native `title` attributes are not the only source of essential info.
 - Zoom to 400% and use a touch emulation profile: the hint is still reachable without hover.
 

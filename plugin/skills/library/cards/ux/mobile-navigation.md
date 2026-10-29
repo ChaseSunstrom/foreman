@@ -11,7 +11,7 @@ On phones put the 3-5 main destinations in a bottom tab bar within thumb reach, 
 ## Verify
 - `npx playwright test --project="Mobile Safari" --grep nav`: runs on a 390 px device profile.
 - `grep -rnE "height: *(2[0-9]|3[0-9])px" src/nav`: finds likely undersized tap targets.
-- `npx axe-core-cli http://localhost:3000 --viewport 375x667`: target size and label rules pass.
+- `npx playwright test --project="Mobile Safari" --grep a11y`: an `AxeBuilder` scan under `devices['iPhone 13']` finds no violations (target size and labels).
 - Real-device test: reach every tab one-handed on a large phone; check the safe-area inset on iOS.
 
 ## Test first

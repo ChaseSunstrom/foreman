@@ -10,7 +10,7 @@ Show the common path first and reveal advanced options on demand, without hiding
 
 ## Verify
 - `npx playwright test --grep disclosure`: expands and collapses sections, checks `aria-expanded` and focus.
-- `npx axe-core-cli http://localhost:3000/settings`: disclosure buttons pass role and name rules.
+- `npx @axe-core/cli http://localhost:3000/settings`: disclosure buttons pass role and name rules.
 - Task analytics: if more than about 30% of users open a hidden section, promote it.
 - `grep -rn "<details" src | wc -l`: native `details` is used where it fits.
 

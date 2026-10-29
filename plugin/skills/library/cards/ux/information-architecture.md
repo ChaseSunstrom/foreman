@@ -10,20 +10,29 @@ Organise content around how users think: test the structure with card sorting an
 
 ## Verify
 - `npx playwright test --grep sitemap`: crawls the nav and asserts no page is deeper than 3 clicks from home.
-- `npx broken-link-checker http://localhost:3000 -ro`: no orphaned or dead pages.
+- `npx broken-link-checker http://localhost:3000 -ro`: finds dead links; cross-check the sitemap against nav links to find orphan pages.
 - Tree test (Optimal Workshop or Maze): target at least 70% direct success on top tasks.
 - Compare search queries to labels: frequent queries that miss mean a label mismatch.
 
 ## Test first
 ```ts
 import { test, expect } from '@playwright/test';
-import sitemap from '../fixtures/sitemap.json';
-
-for (const { path, depth } of sitemap) {
-  test(`${path} is within 3 clicks`, () => {
-    expect(depth).toBeLessThanOrEqual(3);
-  });
-}
+test('every internal page is within 3 clicks of home', async ({ page }) => {
+  const seen = new Map<string, number>([['/', 0]]);
+  let frontier = ['/'];
+  for (let depth = 1; depth <= 4; depth++) {
+    const next: string[] = [];
+    for (const path of frontier) {
+      await page.goto(path);
+      const hrefs = await page.locator('a[href^="/"]').evaluateAll(
+        as => as.map(a => new URL((a as HTMLAnchorElement).href).pathname));
+      for (const h of hrefs) if (!seen.has(h)) { seen.set(h, depth); next.push(h); }
+    }
+    frontier = next;
+  }
+  const deep = [...seen].filter(([, d]) => d > 3);
+  expect(deep).toEqual([]);
+});
 
 test('top task is reachable from home', async ({ page }) => {
   await page.goto('/');
