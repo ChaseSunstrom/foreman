@@ -1938,12 +1938,13 @@ BRIEF_MEMO_MAX = 5000  # a long-lived process (fm serve, the MCP server) starts 
 
 
 BRIEF_INDEX = "briefs-index.json"  # T-2022: {"v": 1, "e": {file name: [inode, mtime_ns, size, meta, preamble]}}
+BRIEF_CLOSED = "briefs-closed.json"  # T-2031: {"v": 1, "e": {file name: [inode, mtime_ns, size]}}: its keys alone
 
 
-def _brief_index(p):
+def _brief_index(p, name=BRIEF_INDEX):
     """The closed briefs' index entries, or {} when it is missing or unreadable: it is only ever a cache."""
     try:
-        with open(os.path.join(p.dir, BRIEF_INDEX), encoding="utf-8") as f:
+        with open(os.path.join(p.dir, name), encoding="utf-8") as f:
             d = json.load(f)
         e = d.get("e") if isinstance(d, dict) and d.get("v") == 1 else None
         return e if isinstance(e, dict) else {}
@@ -1998,9 +1999,11 @@ def load_briefs(p, include_archive=False, errors=None):
         except (OSError, ValueError) as e:
             if errors is not None:
                 errors.append((path, str(e)))
-    if len(fresh) != len(idx) or any(v is not idx.get(k) for k, v in fresh.items()):
+    keys = os.path.join(p.dir, BRIEF_CLOSED)
+    if len(fresh) != len(idx) or any(v is not idx.get(k) for k, v in fresh.items()) or not os.path.exists(keys):
         with contextlib.suppress(OSError):  # a read-only state folder just goes without
             write_atomic(os.path.join(p.dir, BRIEF_INDEX), json.dumps({"v": 1, "e": fresh}, separators=(",", ":")))
+            write_atomic(keys, json.dumps({"v": 1, "e": {k: v[:3] for k, v in fresh.items()}}, separators=(",", ":")))
     return out
 
 
@@ -3457,13 +3460,15 @@ _ACTIVE_LINE = lazy(rb"^status:[ \t]*(?:active|verifying)[ \t]*\r?$", re.M)
 def active_brief_fast(p, lane=None):
     """T-1140: active_brief(load_briefs(p), lane) without parsing every brief (half of each PreToolUse call at 1,069
     briefs): only a brief whose frontmatter says active or verifying is parsed."""
-    hits, idx = [], _brief_index(p)
+    hits, closed = [], _brief_index(p, BRIEF_CLOSED)  # T-2031: the index's keys alone, not its 700 KB of meta (4 ms)
+    if not closed:
+        closed = {n: e[:3] for n, e in _brief_index(p).items()
+                  if isinstance(e, list) and len(e) == 5 and isinstance(e[3], dict) and e[3].get("status") in CLOSED}
     for path in brief_paths(p):
         try:
-            if idx:  # T-2022: an unchanged closed brief needs no read
+            if closed:  # T-2022: an unchanged closed brief needs no read
                 st = os.stat(path)
-                e = _indexed(idx.get(os.path.basename(path)), [st.st_ino, st.st_mtime_ns, st.st_size])
-                if e and e[3].get("status") in CLOSED:
+                if closed.get(os.path.basename(path)) == [st.st_ino, st.st_mtime_ns, st.st_size]:
                     continue
             with open(path, "rb") as f:
                 head = f.read(4096)
