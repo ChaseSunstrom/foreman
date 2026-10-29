@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard lets a quoted heredoc write a scratch draft (`.txt`, `.patch`, `.diff`, `.md`, `.json`) that names Foreman's modules when the same command only feeds it to `fm edit` or an existing script, so writing and applying a draft is one command; any other use of the draft, a glob, quote, expansion or `cd` still blocks (T-1917).
 - `fm which` and `fm help WORDS` name a command's actions too: "merge a lane" finds `fm lane merge`, not just fm lane's summary (T-1916).
 - Guard treats `fm inbox ticket --post` (any spelling, a project flag first, or via `python3 …/fm`) as a publish, so an outward post needs the publish grant (T-1881).
 - A guard block for a tree write over Foreman's own code (git checkout, reset or cherry-pick on its repo) says what passes: git in a scratch worktree, or fm edit per file with a standing core yes (T-1897). Interpreter code that drives Foreman's modules points a draft at the Write tool, then `fm edit <`. `fm risk` says how to start or focus a task for an edit made with none. Rule names drop filler words and read a contraction as one word: `core:tree-write-over`, not `core:a-tree-write-over`.

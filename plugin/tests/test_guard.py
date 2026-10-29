@@ -1576,6 +1576,44 @@ class InterpreterWrites(GuardCase):
                     "cat > {fhome}/plugin/lib/fmx.py <<EOF\n" + body + "python3 -m pytest -q"):  # unquoted: expands
             self.assertTrue(driving(cmd), cmd)
 
+    def test_a_scratch_draft_naming_foreman_modules_is_text_until_it_runs(self):
+        # T-1917: a draft for fm edit (or an apply script on disk) whose text names fmcore's writers was this core block
+        driving = lambda cmd: any("driving Foreman's modules" in str(d)
+                                  for _, d in g.check_bash(cmd, self.ctx()))
+        s = "/tmp/claude-1000/proj/sess/scratchpad"
+        tool = os.path.join(self.repo, "apply.py")
+        with open(tool, "w") as f:
+            f.write("print(1)\n")
+        link = os.path.join(self.repo, "via.py")
+        if not os.path.lexists(link):
+            os.symlink(f"{s}/d.txt", link)
+        body = "import fmcore\nfmcore.write_meta(p, {})\nEOF\n"
+        w = f"cat > {s}/d.txt <<'EOF'\n" + body
+        for cmd in (w + f"fm edit < {s}/d.txt\npython3 -m pytest -q",
+                    w + f"fm edit < {s}/d.txt && python3 plugin/tests/run.py test_x 2>&1 | tail -3; echo $?",
+                    f"cat > {s}/d.patch <<'EOF'\n" + body + f"python3 {tool} {s}/d.patch",
+                    w + f"python3 apply.py < {s}/d.txt", f"cat > {s}/d.diff <<'EOF'\n" + body + f"fm edit < {s}/d.diff"):
+            self.assertFalse(driving(cmd), cmd)
+        w0 = f"cat > {s}/d0.txt <<'EOF'\n" + body  # review: $? is 0 there, so d$?.txt is d0.txt
+        for cmd in (w0 + f"python3 {s}/d$?.txt", w + f"python3 -W {tool} {s}/d.txt", w + f"python3 -X {tool} {s}/d.txt",
+                    w + f"shopt -s extglob\npython3 {s}/d@(.)txt"):  # -W/-X take the script's place as their value
+            with self.subTest(cmd=cmd[-50:]):
+                self.assertTrue(driving(cmd))
+        for cmd in (w + f"python3 {s}/d.txt", w + f"python3 - < {s}/d.txt",
+                    w + f"python3 -c \"exec(open('{s}/d.txt').read())\"",
+                    w + f"python3 {tool} x; python3 {s}/d.txt", w + f"python3 {tool} `bash {s}/d.txt`",
+                    w + f"python3 {tool} $(cat {s}/d.txt)", w + f"python3 {s}/d.t*", w + f"python3 {s}/d\\.txt",
+                    w + f"python3 {s}/'d'.txt", w + f"cp {s}/d.txt {s}/x.py && python3 {s}/x.py",
+                    w + f"python3 {s}/new.py {s}/d.txt", w + f"python3 {link} {s}/d.txt",
+                    w + f"python3 -m pdb {s}/d.txt", w + f"PYTHONSTARTUP={s}/d.txt python3 {tool}",
+                    w + f"cd {s} && python3 {tool} d.txt", w + f"python3 {tool} {s}/d.txt <(bash {s}/d.txt)",
+                    f"cat > {s}/d.py <<'EOF'\n" + body + "python3 -m pytest -q",  # code, not a draft
+                    f"cat > {self.repo}/d.txt <<'EOF'\n" + body + f"python3 {tool} {self.repo}/d.txt",  # not scratch
+                    f"cat > {s}/d.txt <<EOF\n" + body + f"fm edit < {s}/d.txt\npython3 -m pytest -q",  # expands
+                    w + f"cat > {s}/run.py <<'EOF'\nexec(open('{s}/d.txt').read())\nEOF\npython3 {s}/run.py"):
+            with self.subTest(cmd=cmd[-70:]):
+                self.assertTrue(driving(cmd))
+
     def test_a_quoted_heredoc_marker_hides_nothing(self):
         # T-0178: a quoted heredoc marker was taken for a heredoc, so every later line was a body the guard never read
         for cmd in ("echo '<<EOF'\ngit push --force origin main\nEOF", 'echo "x <<EOF"\ngit push --force origin main',
