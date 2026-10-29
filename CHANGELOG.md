@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm task set --section` reads criteria written `done when :: cmd` and steps written `1. step`, the forms `fm task new` takes, and stores them as the brief keeps them (T-1894). Before, they stayed plain text, so the criterion had no verify command, the task had no steps, and `fm focus` refused it as not planned.
 - `fm task finish` counts a red run recorded with `fm task evidence --expect-fail` as the red half of red-to-green proof (T-1893). Before, a fix built test-first that way was refused for having no proof, and `fm task prove` had to run the test again.
 - The guard no longer reads `cd DIR && git checkout -- . && … || echo f` as a checkout over the folder it started in (T-1891). Any `||` in a line, including one in a loop body, made every `cd` in it uncertain. Now a command chained by `&&` after a `cd` is known to run in that folder. A `cd` after `||` (`true || cd X && y`) still counts as maybe skipped.
 - `fm tidy` no longer asks to re-plan a queued task just because CHANGELOG.md is in its scope and changed (T-1890). Every finished task appends to the changelog, so four queued plans were flagged in one round for nothing. Other scope files still flag as before.
