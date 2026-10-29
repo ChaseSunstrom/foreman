@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm task prove` leaves a changed tests-folder file that the start tree already has (a runner like `run.py`) at its start version, so the red run tests the change instead of passing with it; new helpers and test-named files still come over (T-1919).
 - Guard lets a quoted heredoc write a scratch draft (`.txt`, `.patch`, `.diff`, `.md`, `.json`) that names Foreman's modules when the same command only feeds it to `fm edit` or an existing script, so writing and applying a draft is one command; any other use of the draft, a glob, quote, expansion or `cd` still blocks (T-1917).
 - `fm which` and `fm help WORDS` name a command's actions too: "merge a lane" finds `fm lane merge`, not just fm lane's summary (T-1916).
 - Guard treats `fm inbox ticket --post` (any spelling, a project flag first, or via `python3 …/fm`) as a publish, so an outward post needs the publish grant (T-1881).
