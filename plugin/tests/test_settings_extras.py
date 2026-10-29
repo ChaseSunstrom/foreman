@@ -95,6 +95,18 @@ class Log(_Home):
         self.assertNotIn("theme", out)
         self.assertEqual(len(json.loads(self.settings("log", "--json").stdout)), 3)
 
+    def test_a_key_set_by_hand_three_times_gets_a_macro_suggested(self):  # T-1876
+        for v in ("heavy", "double", "heavy"):
+            fmsettings.set_key("border", v, surface="app")
+        fmsettings.set_key("theme", "riso", surface="app")
+        tip = "border set by hand 3 times: fm settings macro border --set border=heavy saves it as one command"
+        self.assertIn(tip, self.settings("log").stdout)
+        self.assertNotIn("theme set by hand", self.settings("log").stdout)
+        self.assertNotIn("set by hand", self.settings("log", "theme").stdout)
+        self.assertEqual(len(json.loads(self.settings("log", "--json").stdout)), 4)  # the JSON stays the log
+        self.settings("macro", "border", "--set", "border=heavy")
+        self.assertNotIn("set by hand", self.settings("log").stdout)  # a macro already holds it
+
     def test_a_key_undone_three_times_is_named_with_where_it_came_from(self):
         for v in ("heavy", "double"):
             fmsettings.set_key("border", v, surface="app")
