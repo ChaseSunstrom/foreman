@@ -684,26 +684,11 @@ def cmd_task(args):
         drift, notes = fmdocs.task_docs(p.root, pre.section("Docs impact")) if pre.tier in ("M", "L") else ([], [])
 
         lesson = c.plain(args.lesson or "").strip()
-        touches = c.task_touches(p, pre.id)
-        base = c.task_base(p.root, pre) if c.git_root(p.root) else None
-        if base:  # R1: edits made through the shell or outside Claude count too
-            import fmmap
-            for f in fmmap.changed(p.root, base):
-                if f not in touches and not f.startswith(".foreman/"):
-                    try:
-                        touches[f] = c.iso(os.path.getmtime(os.path.join(p.root, f)))
-                    except OSError:  # deleted
-                        touches[f] = c.now()
+        touches, risky = _task_files(p, pre)
         files = list(touches)
-        diff = c.task_diff(p.root, base) if base else None
-        risky = c.sensitive(files, diff or "")
-        recorded = pre.meta.get("base_tree") or pre.meta.get("base")  # never focused: no start point, as before
-        if diff is None and recorded and c.git_root(p.root):  # T-0078 review: what can't be read isn't passed as clean
-            risky.append("diff unavailable, so its content wasn't checked")
 
         def done(b):
-            reasons = [r + f" (security-sensitive: {', '.join(risky)}); record it in this close: --lens \"adversary: "
-                       f"<what you tried and what held>\"" if r.startswith("audit missing: adversary")
+            reasons = [r + _adversary_ask(risky) if r.startswith("audit missing: adversary")
                        else r for r in b.done_blockers(since, tree, ("adversary",) if risky else ())] + drift
             import fmsplit  # T-0709: a parent closes after its children
             reasons += [f"child {k.id} is {k.status}: finish it first (fm task capsule {k.id} shows what it returned)"
@@ -1094,7 +1079,8 @@ def task_finish(p, args):
     gaps = [f"{named('step', n)}: its last run failed; record a passing run (fm task evidence {b.id} --step {n} --run CMD, or finish with --run CMD)"
             for n in red] + ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or "
                               f"evidence of its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b) \
-        + _file_map_gaps(p, b) + [g for g in [b.proof_gap(then=[cmd for _, _, cmd in todo] + [args.run])] if g]  # T-1906
+        + _file_map_gaps(p, b) + [g for g in [b.proof_gap(then=[cmd for _, _, cmd in todo] + [args.run])] if g] \
+        + _adversary_gaps(p, b, lenses)  # T-1906, T-1907: asked before anything runs
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always
@@ -1535,6 +1521,39 @@ def _warning_kind(w):
     if re.match(r"T-\d+ was planned [SML], but its diff is", w):
         return "tier drift"
     return re.split(r"[:(\[]| in ", w, maxsplit=1)[0].strip()
+
+
+def _task_files(p, b):
+    """({file: when touched}, the security-sensitive ones): edits made outside Claude since the task's base count."""
+    touches = c.task_touches(p, b.id)
+    base = c.task_base(p.root, b) if c.git_root(p.root) else None
+    if base:  # R1: edits made through the shell or outside Claude count too
+        import fmmap
+        for f in fmmap.changed(p.root, base):
+            if f not in touches and not f.startswith(".foreman/"):
+                try:
+                    touches[f] = c.iso(os.path.getmtime(os.path.join(p.root, f)))
+                except OSError:  # deleted
+                    touches[f] = c.now()
+    diff = c.task_diff(p.root, base) if base else None
+    risky = c.sensitive(list(touches), diff or "")
+    recorded = b.meta.get("base_tree") or b.meta.get("base")  # never focused: no start point, as before
+    if diff is None and recorded and c.git_root(p.root):  # T-0078 review: what can't be read isn't passed as clean
+        risky.append("diff unavailable, so its content wasn't checked")
+    return touches, risky
+
+
+def _adversary_ask(risky):
+    return f" (security-sensitive: {', '.join(risky)}); record it in this close: --lens \"adversary: <what you tried and what held>\""
+
+
+def _adversary_gaps(p, b, lenses):
+    """T-1907: a close over security-sensitive files is asked for its adversary lens before any check runs."""
+    if any(lens == "adversary" for lens, _ in lenses):
+        return []
+    risky = _task_files(p, b)[1]
+    return [r + _adversary_ask(risky) for r in (b.audit_blockers(need=("adversary",)) if risky else [])
+            if r.startswith("audit missing: adversary")]
 
 
 def _finish_gaps(b, args, lenses):

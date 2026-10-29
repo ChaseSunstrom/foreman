@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm task finish asks for the adversary lens on a security-sensitive change before any check runs, where fm task done asked for it only after the close's checks had run (T-1907).
 - fm capture reads a leading tag as fm intake does: "FIX: the send button stays grey" is filed as a FIX titled without the tag, where it was a FEATURE with "FIX:" in its title, and `TAG!:` marks it urgent and `TAG?:` one to explore; --type still wins (T-1904).
 - fm task step and fm task ac take a one-word step or criterion with no action named (`fm task step T-1 CHANGELOG`), where it was "invalid choice"; a word close to an action, as `dnoe`, still stops as a typo (T-1903).
 - `fm task set --section` also reads a criterion written `done when :: cmd` with no checkbox and steps written one per line with no number, the forms `--ac` and `--step` take (T-1900).

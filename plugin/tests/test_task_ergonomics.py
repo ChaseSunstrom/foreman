@@ -140,6 +140,16 @@ class TaskErgonomics(ForemanTestCase):
         r = self.fm("task", "finish", tid, "--audit", "self: x", "--run", "true", check=False)
         self.assertIn('--lens "adversary:', r.stderr)
 
+    def test_the_adversary_refusal_comes_before_any_check_runs(self):  # T-1907: it came after them
+        tid = self.task()
+        self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: fixture")
+        with open(os.path.join(self.repo, "auth.py"), "w") as f:
+            f.write("x = 1\n")
+        r = self.fm("task", "finish", tid, "--audit", "self: x", check=False)
+        self.assertIn("nothing ran", r.stderr)
+        self.assertIn('--lens "adversary:', r.stderr)
+        self.assertEqual(self.brief(tid).evidence(), [])
+
 
 class ExpectFail(ForemanTestCase):
     """T-1486: a failing-test step's red run had no way in except fm task prove; --expect-fail records it."""
