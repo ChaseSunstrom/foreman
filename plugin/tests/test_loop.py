@@ -72,6 +72,17 @@ class Loop(ForemanTestCase):
         self.assertIn("Optional work is dropped (weekly usage 80%)", brief)  # or the spent risk budget: not usage
         self.assertIn("isn't counted dry", brief)  # T-1990: T-1986's rule, said where the yield is asked for
 
+    def test_a_main_thread_round_names_the_lenses_to_sweep(self):
+        # T-2004: "review what shipped" alone shrank rounds to 1-3 follow-ups and the user asked for breadth again
+        from unittest import mock
+        import fmloop
+        self.fm("loop", "on")
+        with mock.patch("fmbudget.degrade", return_value="weekly usage 80%"):
+            brief = fmloop.round_brief(c.find_project(self.repo))
+        self.assertIn("one grounded idea per lens", brief)
+        for lens in fmloop.MAIN_LENSES:
+            self.assertIn(lens, brief)
+
     def test_a_budget_limited_round_leaves_the_dry_streak_alone(self):
         # T-1986: with optional work dropped there is no ideas fan-out; a spent budget ended the loop as "2 dry rounds"
         from unittest import mock
