@@ -806,10 +806,24 @@ def cmd_task(args):
         return task_prove(p, args)
     if sub == "finish":
         return task_finish(p, args)
+    if sub == "drop" and not args.reason and not getattr(args, "done_in", None):
+        raise UsageError("fm task drop needs a reason (or --done-in ID when another task did the work)")
+    if sub in ("drop", "defer", "unblock") and _TASK_IDS.match(args.id) and not _TASK_ID.match(args.id):  # T-1877
+        return _task_each(args, task_ids(p, args.id))
     if sub == "drop" and getattr(args, "done_in", None):
         return task_done_in(p, args)
-    if sub == "drop" and not args.reason:
-        raise UsageError("fm task drop needs a reason (or --done-in ID when another task did the work)")
+    if sub == "unblock":  # T-1877: blocked work back to planned, or captured while it has no criteria
+        cur = need_brief(p, args.id)
+        reason = args.reason or ""
+
+        def back(b):
+            if b.status != "blocked":  # read under the lock: a close in between is kept
+                raise c.PolicyError(f"{b.id} is {b.status}, not blocked")
+            b.meta["status"] = "planned" if b.acceptance() else "captured"
+            b.meta.pop("revisit", None)
+            b.append_log(f"unblocked: {reason}" if reason else "unblocked")
+        b, _ = mutate(p, cur.id, back, "task_unblock", {"reason": reason})
+        return out(args, c.brief_summary(b), f"{b.id} unblocked: {b.status}.")
     if sub in ("block", "drop", "defer"):
         status = {"block": "blocked", "drop": "dropped", "defer": "deferred"}[sub]
         reason = getattr(args, "reason", None) or ""
@@ -2129,6 +2143,51 @@ def task_prove_same(p, b, args):
         f"{b.id}: " + (f"behaviour lock holds: `{args.same}` is the same before and after" if same else
                        f"behaviour changed: `{args.same}` exit {before[0]} → {after[0]}\n{diff}"))
     return 0 if same else 1
+
+
+BULK_MAX = 50  # T-1877: a typo'd range can't sweep the backlog
+
+
+def task_ids(p, spec):
+    """T-1877: the ids T-3..T-7,T-12 names, in order, once each. A range takes the tasks that exist in it; a listed id
+    stands as given, so a missing one fails by name. UsageError when a range is backwards or empty, or past BULK_MAX."""
+    names = (c._BRIEF_FILE.match(os.path.basename(x)) for x in c.brief_paths(p))
+    here = {int(m.group(1)[2:]): m.group(1) for m in names if m}
+    ids = []
+    for part in spec.upper().split(","):
+        first, _, last = part.partition("..")
+        lo = int(first[2:])
+        if not last:
+            ids.append(here.get(lo, part))
+            continue
+        hi = int(last.removeprefix("T-"))
+        got = [here[n] for n in sorted(here) if lo <= n <= hi]
+        if lo > hi or not got:
+            raise UsageError(f"{part}: " + ("backwards" if lo > hi else "no task in that range"))
+        ids += got
+    ids = list(dict.fromkeys(ids))
+    if len(ids) > BULK_MAX:
+        raise UsageError(f"{spec} names {len(ids)} tasks; at most {BULK_MAX} at once")
+    return ids
+
+
+def _task_each(args, ids):
+    """T-1877: one task verb over several ids; a failure is said and the rest still run. Exit 1 when any failed."""
+    import contextlib
+    import io
+    ok, failed = [], []
+    for tid in ids:
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) if args.json else contextlib.nullcontext():
+                cmd_task(argparse.Namespace(**{**vars(args), "id": tid, "json": False}))
+            ok.append(tid)
+        except (UsageError, c.PolicyError, c.LockTimeout, KeyError, ValueError, OSError) as e:  # a busy lock or a
+            said = e.args[0] if isinstance(e, KeyError) and e.args else e  # brief that won't parse fails one, not all
+            print(f"fm: task {args.task_cmd} {tid}: {said}", file=sys.stderr)
+            failed.append({"id": tid, "error": str(said)})
+    done = {"drop": "dropped", "defer": "deferred", "unblock": "unblocked"}[args.task_cmd]
+    out(args, {"ok": ok, "failed": failed}, f"{len(ok)} of {len(ids)} {done}.")
+    return 1 if failed else 0
 
 
 def task_done_in(p, args):
@@ -5754,12 +5813,16 @@ def _build_parser():
     t.add_argument("reason")
     t.add_argument("--until", help="YYYY-MM-DD, \"when PATH changes\", \"installed NAME\" or \"exists PATH\": fm next "
                                    "names it again once that holds (T-1183)")
+    some = "an id, a range T-3..T-7 (or T-3..7) or a list T-3,T-9; one failure doesn't stop the rest (T-1877)"
     t = tadd("drop")
-    t.add_argument("id")
+    t.add_argument("id", help=some)
     t.add_argument("reason", nargs="?")
     t.add_argument("--done-in", metavar="ID", help="it was done as part of this other task (closed as done there)")
+    t = tadd("unblock")  # T-1877
+    t.add_argument("id", help=some + "; back to planned, or captured while it has no criteria")
+    t.add_argument("reason", nargs="?")
     t = tadd("defer")
-    t.add_argument("id")
+    t.add_argument("id", help=some)
     t.add_argument("reason", nargs="?")
     t.add_argument("--until", help="YYYY-MM-DD[THH:MM]: fm next names it again from that day or local minute (T-0450); "
                                    "reset: the weekly usage reset (T-1802); \"when PATH changes\": once that file "
@@ -7197,6 +7260,8 @@ def _alias(argv):
 
 
 _TASK_ID = re.compile(r"^T-\d+$", re.I)
+# T-1877: ranges and lists; nine digits at most, so int() never sees a runaway number
+_TASK_IDS = re.compile(r"^T-\d{1,9}(?:\.\.(?:T-)?\d{1,9})?(?:,T-\d{1,9}(?:\.\.(?:T-)?\d{1,9})?)*$", re.I)
 
 
 def _task_shape(parser, argv):
@@ -7217,7 +7282,7 @@ def _task_shape(parser, argv):
     acts = pos[1].choices if len(pos) > 1 and pos[1].choices else None
     if acts and len(rest) > 1 and rest[0] in acts and _TASK_ID.match(rest[1]):
         rest[0], rest[1] = rest[1], rest[0]
-    if sub in ("drop", "block", "defer"):
+    if sub in ("drop", "block", "defer", "unblock"):
         for i, a in enumerate(rest):
             if a == "--reason" and i + 1 < len(rest):
                 rest = rest[:i] + rest[i + 1:]
@@ -7225,7 +7290,7 @@ def _task_shape(parser, argv):
             if a.startswith("--reason="):
                 rest[i] = a.split("=", 1)[1]
                 break
-    if not any(_TASK_ID.match(a) for a in rest):  # review: an id after an option is still the task named
+    if not any(_TASK_IDS.match(a) for a in rest):  # review: an id or range after an option is still the task named
         try:
             p = c.project_by_slug(argv[1]) if lead else c.find_project(os.getcwd(), create=False)
             act = p and c.active_brief_fast(p, getattr(p, "lane", None))
