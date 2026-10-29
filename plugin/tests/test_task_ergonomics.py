@@ -157,6 +157,15 @@ class ExpectFail(ForemanTestCase):
         self.assertNotIn("✗ exit", ev, "not read as a failed run by the red-step scans")
         self.assertTrue(self.brief(tid).has_evidence(step=1))
 
+    def test_the_red_run_then_a_pass_is_red_to_green_proof(self):
+        # T-1893: fm task finish refused every test-first FIX recorded this way: red_green_cmd read only "✗ exit"
+        tid = self.task("--step", "make it pass")
+        self.fm("task", "evidence", tid, "--step", "1", "--run", "test -e ok", "--expect-fail")
+        self.assertIsNone(self.brief(tid).red_green_cmd(), "no pass yet")
+        open(os.path.join(self.repo, "ok"), "w").close()
+        self.fm("task", "evidence", tid, "--step", "2", "--run", "test -e ok")
+        self.assertEqual(self.brief(tid).red_green_cmd(), "test -e ok")
+
     def test_a_passing_run_is_refused_and_nothing_recorded(self):
         tid = self.task()
         r = self.fm("task", "evidence", tid, "--step", "1", "--run", "true", "--expect-fail", check=False)

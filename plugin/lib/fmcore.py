@@ -1691,7 +1691,7 @@ class Brief:
             if _RAN_MARK not in line or "`" not in line:
                 continue
             cmd = line.split("`", 2)[1]
-            if "` → ✗ exit" in line:
+            if "` → ✗ exit" in line or "` → red as expected" in line:  # T-1893: --expect-fail's red run counts
                 failed.add(cmd)
             elif cmd in failed:
                 return cmd
