@@ -351,6 +351,14 @@ class Briefs(unittest.TestCase):
     def test_round_trip_is_lossless(self):
         self.assertEqual(c.Brief.parse(SAMPLE).render(), SAMPLE)
 
+    def test_plain_strips_hidden_characters_and_passes_printable_text_through(self):
+        # T-2017: plain() checked every character in Python; printable text now skips the scan
+        for bad in ("\x1b", "\x07", "\n", "‮", "​", " ", " ", "️", "\U000e0100"):
+            self.assertEqual(c.plain(f"a{bad}b"), "ab", repr(bad))
+        for good in ("café 日本 ✓", "a b", "x" * 500, ""):
+            self.assertEqual(c.plain(good), good)
+        self.assertEqual(c.plain(None), "")
+
     def test_sections_are_split_only_when_read_and_copies_stay_apart(self):
         # T-2015: a hook loads every brief but reads few past their frontmatter; splitting 9 MB of sections cost ~50 ms
         b = c.Brief.parse(SAMPLE)
