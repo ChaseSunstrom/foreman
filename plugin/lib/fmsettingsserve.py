@@ -324,9 +324,10 @@ def run(server, token, label):
     """Print the URL once, serve until Ctrl-C, SIGTERM or IDLE seconds idle (fm inbox swipe --serve too)."""
     url = f"http://127.0.0.1:{server.server_address[1]}/?t={token}"
     print(f"{label}: {url}\n(open it once, in one browser; Ctrl-C or {IDLE // 60} idle minutes stop it)", flush=True)
-    old = signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+    stop = threading.Event()  # T-2056: a flag the loop reads; sys.exit here threw into whatever ran, and hung CI
+    old = signal.signal(signal.SIGTERM, lambda *a: stop.set())
     try:
-        serve(server)
+        serve(server, stop=stop)
     except KeyboardInterrupt:
         pass
     finally:
