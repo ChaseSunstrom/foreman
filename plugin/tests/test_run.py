@@ -150,6 +150,10 @@ class UnknownNames(unittest.TestCase):
         r = self.run_py("test_run.Args", "-k", "no_such_test")
         self.assertEqual(r.returncode, 1, r.stderr)
         self.assertIn("no test matches test_run.Args with -k no_such_test", r.stderr)
+        r = self.run_py("test_run.Args", "-k", "names_are_K_PATTERNS")  # T-2003: case and underscores aside, it exists
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("did you mean -k test_names_are_k_patterns?", r.stderr)
+        self.assertNotIn("did you mean", self.run_py("test_run.Args", "-k", "no_such_test").stderr)
 
     def test_names_that_all_match_still_pass(self):
         self.assertEqual(self.run_py("test_run.Args").returncode, 0)
