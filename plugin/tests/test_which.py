@@ -58,6 +58,15 @@ class Which(ForemanTestCase):
         self.assertIn("fm task drop", self.fm("help", "drop a task").stdout)
         self.assertIn("drop a task, with why", self.fm("task", "--help").stdout)
 
+    def test_an_action_choice_is_found_as_its_own_command(self):  # T-1916: fm lane's actions are choices, not subparsers
+        self.assertIn("fm lane merge", self.fm("which", "merge a lane").stdout)
+        self.assertIn("fm lane resume", self.fm("which", "take back a stopped builder's work").stdout)
+        self.assertIn("fm lane merge", self.fm("help", "merge a lane").stdout)
+        self.assertNotIn("fm lane list", self.fm("which", "a git worktree beside the repo").stdout, "no echo per action")
+        # review: actions listed in the positional's own help count; one that only restates its command doesn't
+        self.assertIn("fm playbooks blame", self.fm("which", "blame each playbook line's task from git").stdout)
+        self.assertNotIn("fm round close", self.fm("which", "close a round").stdout)
+
     def test_the_rules_plain_words_find_their_command_and_the_strongest_kind_prints_first(self):  # T-1908
         self.assertIn("fm drive", self.fm("which", "stop auto-continuing").stdout)
         self.assertIn("fm serve", self.fm("which", "serve this repo").stdout)  # review: the second verb on its line
