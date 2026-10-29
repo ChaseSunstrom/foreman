@@ -115,6 +115,11 @@ class TitleCard(ForemanTestCase):
         self.assertIn("cursive", svg)
 
 
+def build_esc(text):
+    import html
+    return html.escape(text)
+
+
 def media_blocks(css, query):
     """The text of each @media block whose query contains `query`, braces matched."""
     out, at = [], css.find(query)
@@ -145,6 +150,23 @@ class Landing(unittest.TestCase):
             for rel in ("index.html", os.path.join("features", "index.html"), os.path.join("features", "benchmarks.html")):
                 self.assertRegex(read_text(os.path.join(out, rel)),
                                  rf'<link rel="icon" href="(\.\./)?assets/foreman\.svg\?v={v}"', rel)
+
+    def test_the_code_page_is_drawn_from_todays_tui(self):  # T-2061: a committed recording goes stale
+        sys.path.insert(0, os.path.join(PLUGIN, "lib"))
+        import fmcodetui
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "o")
+            p = subprocess.run([sys.executable, os.path.join(ROOT, "site", "build.py"), out], capture_output=True,
+                               text=True, timeout=300)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            page = read_text(os.path.join(out, "features", "code.html"))
+            self.assertIn("<animate", read_text(os.path.join(out, "assets", "code-tui-tour.svg")))
+        self.assertNotIn(".mp4", page, "a video recorded once shows an old fm code")
+        self.assertIn('src="../assets/code-tui-tour.svg"', page)
+        self.assertIn('media="(prefers-reduced-motion: reduce)" srcset="../assets/code-tui.svg"', page)
+        labels = dict(fmcodetui.COMMAND_LABELS)
+        for cmd in set(fmcodetui.DEFAULTS["keys"].values()):
+            self.assertIn(build_esc(labels.get(cmd, cmd)), page, f"the key for {cmd} isn't on the page")
 
     def test_its_counts_come_from_the_build_and_its_styles_from_the_sheet(self):
         src = read_text(os.path.join(ROOT, "site", "index.html"))
