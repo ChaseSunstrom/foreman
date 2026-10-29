@@ -38,6 +38,20 @@ class Flakes(ForemanTestCase):
             flaky = json.load(f)["flaky"]
         self.assertIn("FAIL: test_x (pkg.T.test_x)", flaky["pkg.T.test_x"]["why"])
 
+    def test_the_flaky_note_shows_the_assertion_not_unittests_closing_rule(self):
+        # T-1898: the note printed the excerpt's last line, the ----- rule that closes a unittest failure
+        self.fm("check", "rm", "1")
+        marker = os.path.join(self.tmp, "ran-once")
+        fail = (r"printf 'FAIL: test_x (pkg.T.test_x)\n----------\nTraceback:\nAssertionError: 1 != 2\n"
+                r" : got poster\n\n----------\nRan 1 test\n'")
+        self.fm("check", "add", f"test -f {marker} || {{ touch {marker}; {fail}; exit 1; }}")
+        self.assertIn("  pkg.T.test_x: AssertionError: 1 != 2\n", self.fm("check").stdout)
+
+    def test_a_failure_excerpt_ends_at_the_assertion_not_the_closing_rule(self):
+        import fmcore
+        out = "FAIL: test_x (pkg.T.test_x)\n----------\nTraceback:\nAssertionError: 1 != 2\n\n----------\nRan 1 test\n"
+        self.assertTrue(fmcore.failure_excerpt(out, "test_x").endswith("AssertionError: 1 != 2"))
+
     def test_log_lines_are_not_test_names(self):
         import fmcore as c
         self.assertEqual(c.failing_tests("ERROR: timeout (30)\nERROR: failed (retrying)\n"), [])

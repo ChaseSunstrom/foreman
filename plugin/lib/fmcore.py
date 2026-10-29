@@ -2778,6 +2778,8 @@ def failure_excerpt(output, test, most=700):
         if ln.startswith("=====") or ln.startswith("Ran "):
             break
         block.append(ln)
+    while len(block) > 1 and re.fullmatch(r"\s*(-{3,}\s*)?", block[-1]):  # T-1898: unittest's closing rule
+        block.pop()
     return redact("\n".join(block).strip())[-most:]
 
 
@@ -2817,8 +2819,9 @@ def note_flakes(p, runs, tree, commands=None):
                                         **({"why": str(why[i])} if why.get(i) else {}))
                     lines.append(f"flaky: {', '.join(was['tests'][:5])} failed on this same tree and now pass "
                                  f"({fit(key, 60)}); fix the race, don't rerun past it")
-                    lines += [f"  {i}: {fit(str(why[i]).splitlines()[-1], 140)}" for i in was["tests"][:3]
-                              if why.get(i)]  # T-1789: the assertion it failed with
+                    said = lambda w: (re.findall(r"(?m)^[\w.]*(?:Error|Exception)\b.*$", w) or w.splitlines())[-1]
+                    lines += [f"  {i}: {fit(said(str(why[i])), 140)}" for i in was["tests"][:3]
+                              if why.get(i)]  # T-1789, T-1898: the exception it raised, else its last line
         if len(flaky) > FLAKY_KEEP:
             flaky = dict(sorted(flaky.items(), key=lambda kv: str(kv[1].get("last") or ""))[-FLAKY_KEEP:])
         write_atomic(path, json.dumps({"pending": pending, "flaky": flaky}))

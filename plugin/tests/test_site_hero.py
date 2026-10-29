@@ -140,14 +140,28 @@ def hero_scene(page):
 # Run after the scene's module script: wait for the first frame, read the canvas, lose the context and get it back.
 PROBE = """<script>(async () => {
   const box = document.querySelector(".hero-scene"), c = box.querySelector("canvas");
-  const wait = s => new Promise(r => { let n = 300; const t = setInterval(() => {
+  const wait = s => new Promise(r => { let n = 1500; const t = setInterval(() => {  // 15 s each, in real time
     if (box.dataset.state === s || !n--) { clearInterval(t); r(box.dataset.state); } }, 10); });
-  const got = { first: await wait("live"), hidden: c.getAttribute("aria-hidden"), dpr: c.width / c.clientWidth };
-  const lose = c.getContext("webgl2").getExtension("WEBGL_lose_context");
-  lose.loseContext(); got.lost = await wait("lost");
-  lose.restoreContext(); got.back = await wait("live");
+  const got = {};
+  try {  // T-1898: whatever happens, say so: a throw or a scene that never went live ends the probe at once
+    Object.assign(got, { first: await wait("live"), hidden: c.getAttribute("aria-hidden"), dpr: c.width / c.clientWidth });
+    if (got.first === "live") {
+      const lose = c.getContext("webgl2").getExtension("WEBGL_lose_context");
+      lose.loseContext(); got.lost = await wait("lost");
+      lose.restoreContext(); got.back = await wait("live");
+    }
+  } catch (e) { got.error = String(e); }
   document.body.insertAdjacentHTML("beforeend", "<pre id=probe>" + JSON.stringify(got) + "</pre>");
 })();</script>"""
+HEARD = """(() => {  // T-1898: a device pixel ratio of 3, and what the page logs or throws
+  Object.defineProperty(window, "devicePixelRatio", { get: () => 3 });
+  const heard = window.__heard = [];
+  addEventListener("error", e => heard.push("Uncaught " + e.message));
+  addEventListener("unhandledrejection", e => heard.push("Uncaught (in promise) " + e.reason));
+  for (const k of ["log", "info", "warn", "error"]) {
+    const f = console[k].bind(console); console[k] = (...a) => { heard.push(a.join(" ")); f(...a); };
+  }
+})();"""
 
 
 class Scene(unittest.TestCase):
@@ -246,17 +260,17 @@ class Scene(unittest.TestCase):
         state = re.search(r'<div class="hero-scene" data-state="([^"]*)"', out)
         return out, (state.group(1) if state else ""), [ln for ln in err.splitlines() if ":CONSOLE" in ln]
 
-    def spied(self, until, media=()):
-        """The built index driven over DevTools in real time (headless virtual time never runs the frame callbacks),
-        SPY added before any page script: what it counted at each poll until `until` held (T-1728: not at fixed
+    def spied(self, until, media=(), page="index.html", init=SPY,
+              expr="({ ...window.__spy, state: document.querySelector('.hero-scene').dataset.state })"):
+        """A built page driven over DevTools in real time (headless virtual time never runs the frame callbacks),
+        `init` added before any page script: what `expr` read at each poll until `until` held (T-1728: not at fixed
         seconds, which a loaded machine's late start and slow frames outran)."""
         browser = headless_chrome()
         if not browser:
             self.skipTest("no headless Chromium (FOREMAN_CHROME, chrome-headless-shell or Playwright's download)")
         try:
-            return devtools(browser, "file://" + os.path.join(self.out, "index.html"), tempfile.mkdtemp(dir=self.tmp),
-                            SPY, media, polls(), "({ ...window.__spy, state: document.querySelector('.hero-scene').dataset.state })",
-                            until=until)
+            return devtools(browser, "file://" + os.path.join(self.out, page), tempfile.mkdtemp(dir=self.tmp),
+                            init, media, polls(), expr, until=until)
         except (EOFError, BrokenPipeError, FileNotFoundError, PermissionError) as e:  # a root sandbox, no libs
             self.skipTest(f"{browser} didn't take DevTools over a pipe: {e!r}")
 
@@ -296,16 +310,17 @@ class Scene(unittest.TestCase):
                 self.assertRegex(re.search(r"<canvas[^>]*>", out).group(0), r'aria-hidden="true"')
 
     def test_with_webgl2_the_scene_goes_live_survives_a_lost_context_and_caps_the_pixel_ratio(self):
-        page = os.path.join(self.out, "probe.html")  # beside style.css, so it is styled
-        with open(page, "w", encoding="utf-8") as f:
+        # T-1898: in real time over DevTools, as spied: virtual time ran out its waits before a loaded machine drew
+        with open(os.path.join(self.out, "probe.html"), "w", encoding="utf-8") as f:  # beside style.css: styled
             f.write(self.page.replace("</body>", PROBE + "</body>"))
-        out, _, console = self.browse("--force-device-scale-factor=3", page=page)
-        got = re.search(r"<pre id=\"probe\">(.*?)</pre>", out)
-        self.assertTrue(got, "the probe never finished")
-        got = json.loads(html.unescape(got.group(1)))
+        end = self.spied(lambda g: bool(g[-1] and g[-1]["probe"]), page="probe.html", init=HEARD,
+                         expr="({ probe: document.getElementById('probe')?.textContent ?? null, heard: window.__heard })")[-1]
+        self.assertTrue(end and end["probe"], f"the probe never finished: {end}")
+        self.assertIn("heard", end, "the page script hearing the console never ran")
+        got, console = json.loads(end["probe"]), end["heard"]
         self.assertEqual((got["first"], got["lost"], got["back"]), ("live", "lost", "live"), got)
         self.assertIsNone(got["hidden"], "live, the canvas is named to screen readers")
-        self.assertLessEqual(got["dpr"], 2.01, "the device pixel ratio is capped at 2")
+        self.assertAlmostEqual(got["dpr"], 2, delta=0.01, msg="a ratio of 3 is capped at 2")
         self.assertEqual([ln for ln in console if "scene" in ln.lower() or "Uncaught" in ln], [], console)
 
     def test_after_its_pass_the_scene_is_the_poster_lit(self):
