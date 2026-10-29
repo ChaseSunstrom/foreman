@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Performance: the guard judges a line of repeated cds it can't follow before `$(…)` bodies in under half a second instead of 7–17 s, which could time out the hook. A guessed folder is now tested once before it is joined with every place a lost cd may lead, with the same verdicts (T-1930).
 - Security: a task's rm-outside grant no longer lifts the guard's refusals for a line too tangled to read to its end (nesting too deep, nested commands in too many folders, the line in too many folders, an `eval` of computed text). The rest of such a line was never read, so a grant let it run unchecked. Each refusal now names its way through: split the command, or run the text itself (T-1929).
 - Fix: the code view's Activity, Run and Checks panels draw an event whose `text`, `cmd` or `action` isn't a string, instead of replacing the whole panel with a "panel … failed" line. The fuzz test now asserts that no built-in panel fails (T-1926).
 - Clean: `fm task set ID interpretation=…` now says that Interpretation is a brief section and how to fill it (`--section 'Interpretation' --text "…"`). The `--section` help names the brief's sections, so `fm which interpretation` finds `fm task set` (T-1925).
