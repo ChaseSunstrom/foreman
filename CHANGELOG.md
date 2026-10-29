@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Fixed: the code view's time chart clamps a bar that starts before the run; such a bar padded gigabytes of spaces, and macOS killed the test run (T-1922).
 - Security: the guard judges nested text (`sh -c`, `eval`, `sh <<<`, `find -exec`, `` `…` ``, `$( … )`) from the folders the line may be in when it runs, not the hook's folder: from a scratch folder, `cd <foreman> && sh -c 'git reset --hard'` and `cd <foreman> && python3 -c "os.system(…)"` got through. `cd <scratch> && echo $(ls) && git reset --hard` is no longer blocked as a tree write over Foreman, unless something after that head `cd` may move the shell (T-1921).
 - The guard reads a `for`/`while`/`if`/`case`/`{ }` compound after `cd <scratch> &&` as one command run in that folder, so the cherry-pick loop its own hint suggests isn't blocked as a tree write over Foreman; a compound that may move the shell (a `cd` as written, quoted or escaped, a computed command word, a substitution) still makes the line branchy, and so does a command merely named like a keyword (`for-x`) (T-1920).
 - A builder's contract says to probe code through the tests its criteria name, not `python3 -c 'import …'` from the root, where a module off the import path fails (T-1918).
