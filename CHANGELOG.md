@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Perf: the prompt hook compiles patterns only for card names your message contains, compiles module patterns on first use, and loads briefs and the ledger's last edit once each. The median call takes 101 ms, down from 127 (T-2024).
 - Perf: a hook loads `subprocess` and `glob` only when a call runs a process or searches for Python. The median PreToolUse call takes 41 ms, down from 44 (T-2023).
 - Perf: the Notification hook takes 51 ms, down from 87, and PreToolUse 41 ms, down from 45. Closed briefs load from `briefs-index.json` in the project's state folder, checked against each file's inode, modification time and size, and a closed brief's file is read only when its body is needed. Loading 1,199 briefs takes 7.8 ms, down from 31.6 (T-2022).
 - Perf: the PreToolUse hook takes 44 ms, down from 57, and the Notification hook 85 ms, down from 95. The hook modules' 191 module-level regular expressions now compile on first use, not at import; a PreToolUse call uses about 44 of them (T-2020).

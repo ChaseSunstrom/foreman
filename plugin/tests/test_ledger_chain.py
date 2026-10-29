@@ -70,6 +70,18 @@ class Chain(ForemanTestCase):
         self.assertLess(len(calls), 10, "lines without both words are never parsed")
         self.assertEqual(c.last_change(self.p, "T-0009"), "")
 
+    def test_last_change_reads_the_ledger_once_until_it_grows(self):
+        # T-2024: the prompt hook's state and its Next line each read the ledger's tail for the same answer
+        ev = lambda ts: json.dumps({"ts": ts, "event": "touched", "task": "T-0001"})
+        self.put([ev("2026-03-02T00:00:00Z")])
+        with mock.patch.object(c, "_tail_rows", wraps=c._tail_rows) as tail:
+            self.assertEqual(c.last_change(self.p, "T-0001"), "2026-03-02T00:00:00Z")
+            self.assertEqual(c.last_change(self.p, "T-0001"), "2026-03-02T00:00:00Z")
+            self.assertEqual(tail.call_count, 1)
+            with open(self.ledger, "a", encoding="utf-8") as f:
+                f.write(ev("2026-03-03T00:00:00Z") + "\n")
+            self.assertEqual(c.last_change(self.p, "T-0001"), "2026-03-03T00:00:00Z", "an append is read")
+
     def test_untouched_ledger_verifies(self):
         for i in range(5):
             c.log_event(self.p, "note", data={"i": i})
