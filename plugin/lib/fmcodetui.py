@@ -149,6 +149,8 @@ class State:
             ts = e.get("ts")
             if "ts" in e and not (isinstance(ts, (int, float)) and not isinstance(ts, bool) and math.isfinite(ts)):
                 e = {k: v for k, v in e.items() if k != "ts"}  # T-1306: a time that isn't a finite number isn't one
+            e = {k: v if k not in ("text", "cmd", "action") else "" if v is None else str(v)
+                 for k, v in e.items()}  # T-1926: the panels join, pad and strip these as words, whatever was sent
             # T-1306: a handler that trips on a bad field leaves the state as it was. One level of copies covers the
             # handlers here: each validates before it changes anything nested. ponytail: the copy grows with the log
             # (quadratic over a run); fine at hundreds of events, validate per handler if runs reach tens of thousands.
