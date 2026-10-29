@@ -2627,6 +2627,23 @@ class TokenFallback(GuardCase):
         ], lambda cmd: self.bash(cmd, cwd=self.fhome))
         self.assertLess(time.monotonic() - start, 2)
 
+    def test_unfollowable_cds_before_substitutions_are_judged_fast(self):
+        # T-1930: a relative target after cds the guard can't follow is guessed below every folder a word of the line
+        # names, joined with every lost cd, and each join was a stat: 4 blocks then two $(ls j) took 7 s, ten 10-17 s
+        os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)
+        cds = " ".join(f"(true); cd d{i}; cd x{i};" for i in range(4))
+        for k in (2, 10):
+            line = cds + " echo " + " ".join(f"$(ls {j})" for j in range(k)) + "; tar xf -"
+            start = time.monotonic()
+            self.assertIsNone(self.bash(line))
+            self.assertBlocked(self.bash(line, cwd=self.fhome), "core")
+            self.assertLess(time.monotonic() - start, 2, k)
+        self.run_table([  # the guesses still name a folder that exists below a word, .. included
+            ('ls {fhome}; cd "$D"; cd plugin/lib; echo x > fmguard.py', "core"),
+            ('ls {fhome}; cd "$D"; cd ../foreman/plugin; echo x > lib/fmguard.py', "core"),
+            ('ls {fhome}/nope; cd "$D"; cd plugin/lib; echo x > fmguard.py', None),
+        ], self.bash)
+
     def test_a_line_too_tangled_to_analyse_is_refused_under_any_grant(self):
         # T-1929: the folder caps and the nesting cap refused as rm-outside, so a task's rm-outside grant lifted them
         # and the rest of the line, never read (here a tar over Foreman), ran

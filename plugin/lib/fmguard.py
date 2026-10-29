@@ -3144,6 +3144,8 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="",
                 guesses += [_resolve(_expand(guess, ctx), base) for base in here]
     else:  # relative, somewhere a cd went that the guard couldn't follow: only a folder that exists takes a cd
         words = [p for w in raw for p in dict.fromkeys(_resolve(_expand(w, ctx), b) for b in here)]
+        if not any(map(os.path.isabs, lost)):  # T-1930: w/x is a folder only below a folder w (each part must be
+            words = [w for w in words if os.path.isdir(w)]  # one), so test w once, not once per lost x: 1M stats to 4K
         guesses = [os.path.join(w, x, _expand(t, ctx)) for w in words for x in lost if os.path.isdir(os.path.join(w, x))]
     for path in dict.fromkeys(guesses):
         if _possible(path):
