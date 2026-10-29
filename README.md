@@ -1,3 +1,5 @@
+<p align="center"><img src="site/assets/foreman.svg" width="96" height="96" alt="Foreman logo: a hard hat with a check mark"></p>
+
 # Foreman
 
 [![tests](https://github.com/ChaseSunstrom/foreman/actions/workflows/test.yml/badge.svg)](https://github.com/ChaseSunstrom/foreman/actions/workflows/test.yml)

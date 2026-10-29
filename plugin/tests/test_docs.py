@@ -937,5 +937,23 @@ class CardDates(unittest.TestCase):
         self.assertIn(f"Verified {dated[0]['verified']}", p.stdout)
 
 
+class Logo(unittest.TestCase):  # T-2041
+    def test_the_mark_is_a_small_self_contained_square_svg_the_readme_shows(self):
+        import xml.etree.ElementTree as ET
+        root_dir = os.path.dirname(PLUGIN)
+        path = os.path.join(root_dir, "site", "assets", "foreman.svg")
+        text = read_text(path)
+        self.assertLess(len(text.encode()), 2048, "a favicon-sized mark stays small")
+        svg = ET.fromstring(text)
+        ns = "{http://www.w3.org/2000/svg}"
+        self.assertEqual(svg.tag, ns + "svg")
+        self.assertEqual(svg.get("viewBox"), "0 0 64 64", "square, so it fits a favicon, an avatar and the README")
+        self.assertEqual(svg.findtext(ns + "title"), "Foreman", "screen readers name it")
+        self.assertIsNone(svg.find(f".//{ns}text"), "no text: fonts differ by host, so the mark is all paths")
+        self.assertNotIn("href", text, "nothing loaded from elsewhere")
+        self.assertEqual(re.findall(r"url\((?!#)", text), [], "only in-file gradients")
+        self.assertIn('src="site/assets/foreman.svg"', read_text(os.path.join(root_dir, "README.md")))
+
+
 if __name__ == "__main__":
     unittest.main()
