@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm lib check lints the cards of the checkout it runs in (a builder's worktree), not the installed plugin's, so a builder no longer gets a false clean result; --root names another checkout (T-2047).
 - A finished builder lane (its branch ahead, its tree clean, quiet for 30 minutes, its builder gone) is named for merge: fm next and the drive say fm lane merge ID instead of fm lane resume, so lane work no longer sits unmerged for days (T-2038).
 - fm ship --watch and fm ci-watch wait for every workflow of the commit: a green pages run no longer reads as CI green while the tests run fails (T-2058).
 - fm settings serve and fm inbox swipe --serve stop cleanly on SIGTERM: the signal sets a flag the loop reads instead of throwing into running code, which hung CI on Python 3.14 (T-2056).
