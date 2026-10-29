@@ -62,7 +62,7 @@ def _api(p, path, gh_error):
 def _latest(p, branch, sha, via=None):
     """The newest run for commit `sha` (an older commit's run, the usual first poll after a push, is never it). Adds
     "api" to the set `via` when it read GitHub's public API."""
-    cmd = ["run", "list", "--limit", "20", "--json", "databaseId,status,conclusion,url,headSha"] + (["--branch", branch] if branch else [])
+    cmd = ["run", "list", "--limit", "20", "--json", "databaseId,attempt,status,conclusion,url,headSha"] + (["--branch", branch] if branch else [])
     from fmcli import UsageError
     try:
         rows = json.loads(_gh(p, *cmd))
@@ -70,7 +70,7 @@ def _latest(p, branch, sha, via=None):
         got = _api(p, f"actions/runs?per_page=20&head_sha={sha}", e) if re.fullmatch(r"[0-9a-f]{40}", sha) else None
         if via is not None:
             via.add("api")
-        rows = [{"databaseId": r.get("id"), "status": r.get("status"), "conclusion": r.get("conclusion"),
+        rows = [{"databaseId": r.get("id"), "attempt": r.get("run_attempt"), "status": r.get("status"), "conclusion": r.get("conclusion"),
                  "url": r.get("html_url"), "headSha": r.get("head_sha")}
                 for r in (got.get("workflow_runs") or [] if isinstance(got, dict) else []) if isinstance(r, dict)]
     except ValueError:
@@ -79,8 +79,8 @@ def _latest(p, branch, sha, via=None):
                  and r.get("headSha") == sha), None) if isinstance(rows, list) else None
 
 
-def _failed_jobs(p, run):
-    """T-1942: a green run's failed jobs (continue-on-error ones don't fail the run); [] when its jobs can't be read."""
+def _jobs(p, run):
+    """The run's jobs as dicts; [] when they can't be read."""
     from fmcli import UsageError
     try:
         try:
@@ -89,8 +89,20 @@ def _failed_jobs(p, run):
             jobs = (_api(p, f"actions/runs/{run['databaseId']}/jobs", e) or {}).get("jobs")
     except (UsageError, ValueError, AttributeError):
         return []
-    return [str(j.get("name")) for j in (jobs if isinstance(jobs, list) else [])
-            if isinstance(j, dict) and j.get("conclusion") in ("failure", "timed_out")]
+    return [j for j in (jobs if isinstance(jobs, list) else []) if isinstance(j, dict)]
+
+
+def _failed_jobs(p, run):
+    """T-1942: a green run's failed jobs (continue-on-error ones don't fail the run)."""
+    return [str(j.get("name")) for j in _jobs(p, run) if j.get("conclusion") in ("failure", "timed_out")]
+
+
+def _no_runner(p, run):
+    """T-2013: a failed run's jobs that never got a runner (cancelled before any step: GitHub capacity), when they are
+    all that failed; [] when any job failed for real."""
+    bad = [j for j in _jobs(p, run) if j.get("conclusion") not in ("success", "skipped", "neutral")]
+    return [str(j.get("name")) for j in bad] if bad and all(
+        j.get("conclusion") == "cancelled" and not j.get("steps") for j in bad) else []
 
 
 def _brief(p, run, branch):
@@ -124,8 +136,9 @@ def watch(p, branch, retries, interval, max_polls=120, say=print, commit=None):
     say(f"watching {(commit or _head(p))[:7]} on {branch or 'this branch'}, up to {max_polls} polls", flush=True)
     for _ in range(max_polls):
         run = _latest(p, branch, commit or _head(p), via)  # a pushed fix moves HEAD: follow it unless --commit pins one
-        if run and run.get("status") == "completed" and run["databaseId"] not in seen:
-            seen.add(run["databaseId"])
+        key = run and (run["databaseId"], run.get("attempt"))  # a rerun keeps the id and bumps the attempt
+        if run and run.get("status") == "completed" and key not in seen:
+            seen.add(key)
             if run.get("conclusion") == "success":
                 failed = _failed_jobs(p, run)
                 if not failed:
@@ -134,11 +147,22 @@ def watch(p, branch, retries, interval, max_polls=120, say=print, commit=None):
                 n = len(failed)
                 return 0, (f"CI green, but {n} non-blocking job{'s' if n > 1 else ''} failed "
                            f"({c.fit(c.plain(', '.join(failed)), 120)}): FIX brief {b.id}.")
-            b, _new = _brief(p, run, branch)
-            fails += 1
-            say(f"run {run['databaseId']} {run.get('conclusion')}: FIX brief {b.id}")
-            if fails > retries:
-                return 1, f"gave up after {fails} failed runs (--max-retries {retries})."
+            idle = _no_runner(p, run)
+            if idle:
+                what = (f"run {run['databaseId']}: {len(idle)} job{'s' if len(idle) > 1 else ''} never got a runner "
+                        f"({c.fit(c.plain(', '.join(idle)), 120)}; GitHub capacity), not a code failure")
+                from fmcli import UsageError
+                try:
+                    _gh(p, "run", "rerun", str(run["databaseId"]), "--failed")
+                except UsageError:
+                    return 1, f"{what}: rerun it on GitHub or push again (gh auth login lets fm rerun it)."
+                say(f"{what}: rerunning {'them' if len(idle) > 1 else 'it'}")
+            else:
+                b, _new = _brief(p, run, branch)
+                fails += 1
+                say(f"run {run['databaseId']} {run.get('conclusion')}: FIX brief {b.id}")
+                if fails > retries:
+                    return 1, f"gave up after {fails} failed runs (--max-retries {retries})."
         time.sleep(max(interval, PUBLIC_POLL) if via else interval)
     where = " (read through GitHub's public API: gh is missing or logged out)" if via else ""  # T-1940
     return 1, f"gave up waiting: no new finished run in {max_polls} polls{where}."
