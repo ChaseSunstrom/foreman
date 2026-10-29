@@ -2730,12 +2730,14 @@ def rewound(b, now):
     return out
 
 
-def reconcile_rewind(p, lane=None, timeout=2):
+def reconcile_rewind(p, lane=None, timeout=2, briefs=None):
     """T-1267: rewound() on the active task against the working files now, reopening what it finds; the caller holds
-    the project lock. (task id, steps) when it reopened any, else None."""
-    b = active_brief_fast(p, lane)
+    the project lock. (task id, steps) when it reopened any, else None. briefs: the caller's load_briefs, if it has one."""
+    b = active_brief_fast(p, lane) if briefs is None else active_brief(briefs, lane)
     if not b or not b.steps() or not b.meta.get("base_tree"):
         return None
+    if not any(_EV_RE.match(e) and _TREE_MARK.search(e) and "` → ✗ " not in e for e in b.evidence()):
+        return None  # T-2029: only a passing proof can be rewound; without one, no git
     now = (worktree_tree(p.root, timeout) or "")[:12]
     steps = rewound(b, now)
     if not steps:
