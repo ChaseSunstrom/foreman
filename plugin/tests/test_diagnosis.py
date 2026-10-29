@@ -52,6 +52,25 @@ class Prove(Base):
         self.assertNotIn("tests/test_run.py,", r.stdout)
 
 
+class ProofFirst(Base):
+    def test_a_fix_with_no_red_run_is_refused_before_its_checks_run(self):
+        # T-1906: T-1902's close ran its 2-minute criterion check, then refused for the missing proof
+        self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S", "--ac", "ok :: test -f flag", "--step", "s",
+                "--focus")
+        self.write("flag", "")
+        close = ["task", "finish", "T-0001", "--audit", "self", "--docs", "none: internal", "--lesson", "none: trivial"]
+        r = self.fm(*close, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("nothing ran", r.stdout + r.stderr)
+        self.assertIn("red→green", r.stdout + r.stderr)
+        self.assertEqual(c.find_brief(self.p, "T-0001").evidence(), [])
+        os.remove(os.path.join(self.repo, "flag"))  # a red run of the command the close runs is the proof
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "test -f flag", "--expect-fail")
+        self.write("flag", "")
+        self.fm(*close)
+        self.assertEqual(c.find_brief(self.p, "T-0001").status, "done")
+
+
 class WhyNotCaught(Base):
     def test_a_fix_says_why_it_was_not_caught_and_the_answer_becomes_a_followup(self):
         self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "M", "--ac", "ok :: true", "--step", "s")

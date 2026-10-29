@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm task finish refuses a FIX with no red→green proof before any check runs, where it ran the criterion checks first (over two minutes for a full suite) and then refused; a red run of a command the close is about to run still counts (T-1906).
 - A builder's worktree and its main checkout count at their real paths too: on macOS, where the temp folder is a link, a builder's write inside its own worktree was refused as outside it, and the main checkout reached by its real path counted as scratch (T-1902).
 - A test's cleanup retries for a few seconds while a detached child it started on purpose still writes into its folder; `test_session_start_runs_it_in_the_background` failed CI on Ubuntu with Python 3.14 with "Directory not empty" (T-1901).
 - The drive's side-work offer skips a task that waits on any open task, not only on the active one, so a depends_on chain of drafted tasks isn't offered again on every Stop (T-1899).

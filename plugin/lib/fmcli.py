@@ -1089,7 +1089,7 @@ def task_finish(p, args):
     gaps = [f"{named('step', n)}: its last run failed; record a passing run (fm task evidence {b.id} --step {n} --run CMD, or finish with --run CMD)"
             for n in red] + ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or "
                               f"evidence of its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b) \
-        + _file_map_gaps(p, b)
+        + _file_map_gaps(p, b) + [g for g in [b.proof_gap(then=[cmd for _, _, cmd in todo] + [args.run])] if g]  # T-1906
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always
