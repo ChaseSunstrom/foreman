@@ -3738,14 +3738,16 @@ def _pace(p=None):
 
 def _side_work(sd, briefs, work, full, offered, p):
     """T-0401: the next queued task (then, in full autonomy, captured one) that can move while the active one's
-    background jobs run: not the active one, not offered already for this set, not waiting on the active task
-    (depends_on or what fm relate inferred), not already briefed for a builder lane."""
+    background jobs run: not the active one, not offered already for this set, not waiting on an open task
+    (depends_on or what fm relate inferred; T-1899: any open one, not only the active), not already briefed for a
+    builder lane."""
     by_id = {b.id: b for b in briefs}
     lanes = lanes_free(briefs, p)
     gated = _gates_running(p)
     for x in sd["queue"] + (sd["inbox"] if full else []):
         b = by_id.get(x["id"])
-        if (b is None or x["id"] == work["id"] or x["id"] in offered or work["id"] in c._deps(b) or x["id"] == gated
+        if (b is None or x["id"] == work["id"] or x["id"] in offered or x["id"] == gated
+                or any(d in by_id and by_id[d].status not in c.CLOSED for d in c._deps(b))
                 or b.meta.get("builder") or any(s.done for s in b.steps())  # T-0429: under way here already
                 or b.section("Verification evidence").strip()):
             continue
