@@ -7044,8 +7044,9 @@ def _build_parser(only=None):
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
             "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
     s.add_argument("action", choices=["compile", "check", "turntable", "shader", "soak", "cells", "import", "metaballs",
-                                       "terrain", "airlock", "bench", "lookbook", "shade", "gallery"],
-                   help="compile: the module; "
+                                       "terrain", "airlock", "bench", "lookbook", "shade", "gallery", "sketchbook"],
+                   help="sketchbook: one page with every shader look card running live (--out FILE; T-1784); "
+                   "compile: the module; "
                    "check: validate and count (a .gltf or .glb: its structure, offline); turntable: a contact sheet of "
                    "the scene turned about +Y, drawn by fmraster with no browser or GPU (--out PNG); shader: GLSL "
                    "checks of a shader card, file or folder; soak: the --hud build in headless Chrome for --seconds, "
@@ -7062,7 +7063,7 @@ def _build_parser(only=None):
                    "small on one sheet (--out PNG), a caption each saying what it tells you, a sample where this repo "
                    "has no data (T-1873)")
     s.add_argument("path", metavar="FILE", nargs="?", help="the scene.json (shader: a card, a GLSL file or a folder "
-                   "of them; import: the three.js JSON; metaballs, terrain, airlock, bench, lookbook, gallery: none)")
+                   "of them; import: the three.js JSON; metaballs, terrain, airlock, bench, lookbook, gallery, sketchbook: none)")
     s.add_argument("--balls", type=int, default=5, help="metaballs: how many balls, 1-12 (T-1848)")
     s.add_argument("--grid", type=int, default=32, help="metaballs: cubes along each side of the box, 8-48")
     s.add_argument("--count", type=int, default=8, help="lookbook: how many looks hang, 1-12 (T-1852)")

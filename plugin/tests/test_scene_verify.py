@@ -16,6 +16,43 @@ import fmshot
 TRIANGLE = struct.pack("<9f", 0, 0, 0, 1, 0, 0, 0, 1, 0)  # three VEC3 floats: 36 bytes
 
 
+class Sketchbook(ForemanTestCase):
+    """T-1784: each shader card's ## Sketch preset sets its uniforms; one page runs every card's shader live, still
+    under reduced motion, its description without WebGL2."""
+
+    def test_every_card_presets_each_declared_uniform(self):
+        cards = fmscene.sketch_cards()
+        self.assertEqual(len(cards), 8, [c["name"] for c in cards])
+        for card in cards:
+            declared = fmscene.uniforms(card["glsl"])
+            want = {u: n for u, n in declared.items() if u not in ("uRes", "uTime")}
+            got = card["sketch"]
+            self.assertEqual(set(got), set(want), card["name"])
+            for u, v in got.items():
+                self.assertTrue(v == "sweep" and want[u] == 1 or isinstance(v, list) and len(v) == want[u],
+                                (card["name"], u, v))
+
+    def test_a_sketch_line_parses_and_refuses_what_it_cannot_read(self):
+        self.assertEqual(fmscene.sketch("`uA=1 uB=0.5,0.25 uP=sweep`"), {"uA": [1.0], "uB": [0.5, 0.25], "uP": "sweep"})
+        for bad in ("`uA=`", "`uA=x`", "`=1`", "no backticks"):
+            with self.assertRaises(ValueError, msg=bad):
+                fmscene.sketch(bad)
+
+    def test_the_page_runs_each_shader_with_a_still_and_a_fallback(self):
+        page = fmscene.sketchbook_html(fmscene.sketch_cards())
+        self.assertEqual(page.count('<figure class="sketch"'), 8)
+        self.assertEqual(page.count('type="x-shader/x-fragment"'), 8)
+        self.assertEqual(page.count('class="fallback"'), 8)
+        self.assertIn("#version 300 es", page)
+        self.assertIn("prefers-reduced-motion", page)
+        self.assertIn('getContext("webgl2"', page)
+        self.assertIn("IntersectionObserver", page, "a thumbnail draws only while on screen")
+        out = os.path.join(self.tmp, "sketchbook.html")
+        self.fm("scene", "sketchbook", "--out", out)
+        with open(out, encoding="utf-8") as f:
+            self.assertTrue(f.read().startswith("<!doctype html>"))
+
+
 def gltf(**over):
     doc = {"asset": {"version": "2.0"}, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],
            "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],

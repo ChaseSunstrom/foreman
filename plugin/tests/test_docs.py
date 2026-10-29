@@ -701,7 +701,8 @@ class Site(unittest.TestCase):
                     self.assertIn(f'id="{anchor}"', page, os.path.relpath(path, out))
             for path in features:
                 page = read_text(path)
-                self.assertTrue('class="viz' in page or 'class="tiles"' in page or 'class="flow"' in page, path)
+                self.assertTrue('class="viz' in page or 'class="tiles"' in page or 'class="flow"' in page
+                                or 'class="sketchbook"' in page, path)  # T-1784: the shaders page runs them
                 self.assertIn('class="side"', page)
 
 
