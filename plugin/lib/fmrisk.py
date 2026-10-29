@@ -79,7 +79,8 @@ def collisions(p, days=7):
         cat, detail = str(last[r].get("category") or ""), str(last[r].get("detail") or "")
         rows.append({"rule": c.plain(r), "category": cat, "n": n[r], "spends": cat in DESTRUCTIVE,
                      "detail": c.defang(c.fit(c.redact(c.plain(detail)), 120)),
-                     "rewrite": fmguard._hint(detail, cat).strip()})
+                     "rewrite": fmguard._hint(detail, cat).strip() or (  # T-1897: the live block names the queued task
+                         "Start a task, or fm focus ID as its own command, before the edit." if cat == "brief" else "")})
     return rows
 
 
