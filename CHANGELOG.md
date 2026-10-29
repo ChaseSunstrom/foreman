@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Perf: the Stop hook's check for this session's running background work decodes only the event lines that hold its session id, not all 1,500 in the tail: Stop 88 -> 81 ms (T-2033).
 - Perf: the active-task scan behind every tool call reads a small file of closed briefs' keys instead of the whole 700 KB brief index: PreToolUse 39 -> 36 ms (T-2031).
 - Fix: quitting fm code while a runner test's CLI is starting ends that CLI too; before, a quit that landed before the app had seen the CLI left it running to its 60 s timeout (T-2030).
 - Perf: the prompt hook's rewind check runs its three git commands only once the active task has a passing proof to take back, and uses the hook's one brief load instead of scanning the briefs again: UserPromptSubmit 94 -> 77 ms before a step is proved (T-2029).

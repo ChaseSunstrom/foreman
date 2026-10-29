@@ -2514,6 +2514,21 @@ class Stop(HookCase):
             f.write(json.dumps({"ts": old, "kind": "bg_start", "session_id": "sess-1", "id": "bold"}) + "\n")
         self.assertEqual(self.decision(self.stop("Next: the queue.")), "block")
 
+    def test_running_decodes_only_this_sessions_lines(self):
+        # T-2033: Stop json-loaded all 1,500 tail lines to find this session's few
+        import fmhooks
+        from unittest import mock
+        self.fm("init")
+        rows = [{"kind": "bg_start", "session_id": f"other-{i}", "id": f"o{i}"} for i in range(200)]
+        rows += [{"kind": "bg_start", "session_id": "sess-1", "id": "b1"}, {"kind": "bg_start", "session_id": "sess-1",
+                 "id": "b2"}, {"kind": "bg_done", "session_id": "sess-1", "id": "b1"},
+                 {"kind": "note", "said": '"sess-1"', "session_id": "other", "id": "b3"}]
+        with open(os.path.join(self.home, "state", "events.jsonl"), "a", encoding="utf-8") as f:
+            f.writelines(json.dumps(dict({"ts": c.now()}, **r), ensure_ascii=False) + "\n" for r in rows)
+        with mock.patch("json.loads", wraps=json.loads) as loads:
+            self.assertEqual(fmhooks._running("sess-1"), ["b2"])
+        self.assertLess(loads.call_count, 10, "other sessions' lines are never decoded")
+
     def test_full_autonomy_drive_takes_inbox_requests_when_the_queue_is_empty(self):
         # T-0097: "continue implementing everything, don't stop until complete" — captured requests are work too
         self.fm("init")
