@@ -238,6 +238,7 @@ class Serve(ForemanTestCase):
         finally:
             proc.kill()
         self.assertEqual(proc.returncode, 0, err)
+        self.assertIn("stopped", out, "T-2056: SIGTERM ends the loop; an exception thrown into it hung CI on 3.14")
         self.assertNotIn(token, out + err, "the token printed once, never logged")
 
     def test_there_is_no_host_flag(self):
