@@ -259,6 +259,20 @@ class CaptureAndIntake(ForemanTestCase):
         self.fm("task", "set", "T-0002", "status=captured")
         self.assertEqual(status("T-0002"), "captured")  # set by hand: kept
 
+    def test_section_criteria_and_steps_in_the_task_new_forms_are_parsed(self):
+        # T-1894: "- [ ] X :: cmd" and "1. go" given with --section stayed plain text: no verify command, no steps,
+        # so fm focus refused the task as not planned
+        self.fm("capture", "one")
+        self.fm("task", "set", "T-0001", "--section", "Acceptance criteria", "--text", "- [ ] works :: test -e a",
+                "--section", "Steps", "--text", "1. go\n2. [x] went")
+        shown = self.fm("task", "show", "T-0001").stdout
+        self.assertIn("- [ ] works — verify with `test -e a`", shown)
+        self.assertIn("1. [ ] go\n2. [x] went", shown)
+        self.assertEqual(json.loads(self.fm("task", "show", "T-0001", "--json").stdout)["status"], "planned")
+        kept = "- [ ] kept — verify with `echo a :: b`"  # saved again as shown: a command holding " :: " stays
+        self.fm("task", "set", "T-0001", "--section", "Acceptance criteria", "--text", kept)
+        self.assertIn(kept + "\n", self.fm("task", "show", "T-0001").stdout)
+
     def test_a_planned_task_never_started_can_be_planned_again(self):
         # T-1862: an M task whose --focus was refused stays planned; --from refused it, so only status=captured got out
         self.fm("task", "new", "big one", "--type", "FIX", "--tier", "S", "--ac", "old :: true", "--step", "old")
