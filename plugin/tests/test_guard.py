@@ -1310,6 +1310,12 @@ class ScratchNames(GuardCase):
                                           foreman_home=os.path.join(base, "fh"), scratch=scratch, confine=(link, main))
         for where in (link, real):  # no scratch to fall back on, as fm settings' guard runs (review)
             self.assertEqual(fmguard.classify_write(os.path.join(where, "settings.json"), ctx([])), [])
+        # T-1910: the lane named through a linked parent (macOS: /var/…/private-lane while it really is
+        # /private/var/…) is still the lane; a link inside it to the main checkout is still outside
+        os.symlink(base, os.path.join(base, "via"))
+        self.assertEqual(fmguard.classify_write(os.path.join(base, "via", "private-lane", "a.py"), ctx([])), [])
+        os.symlink(rmain, os.path.join(real, "out"))
+        self.assertIn("confine", fmguard.classify_write(os.path.join(link, "out", "x.py"), ctx([])))
         ctx = ctx([base])
         self.assertIn("confine", fmguard.classify_write(os.path.join(main, "x.py"), ctx))
         self.assertIn("confine", fmguard.classify_write(os.path.join(rmain, "x.py"), ctx))  # scratch, but main
