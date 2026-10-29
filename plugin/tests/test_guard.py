@@ -525,15 +525,31 @@ class System(GuardCase):
             out = g.message(blk, self.ctx())
             self.assertIn(way, out, cmd)
             self.assertNotIn("--allow", out, cmd)
+            self.assertIn("no grant lifts", out, cmd)
+            # T-1932: a grant lifted it, and nothing else in the unread program was checked
+            self.assertBlocked(self.bash(cmd, allow=("system",)), "system", cmd)
         for detail, way in (("script nests too deep to read", "directly"),
                             ("a.sh line 3: rm -rf /x (rm outside; the script was too long to parse in time)", "shorter"),
                             ("IFS may be changed on a line that splits words on it: the guard can't read how bash "
-                             "splits them", "IFS")):
+                             "splits them", "IFS"),
+                            ("sed -f/--file runs a script file the guard can't read here", "-e"),
+                            ("vim -S loads a script the guard can't read", "-c")):
             out = g.message(g.Block("system", detail), self.ctx())
             self.assertIn(way, out.split(detail)[1], detail)
             self.assertNotIn("--allow", out, detail)
+            self.assertBlocked(g.check("Bash", {"command": "ls"}, self.ctx(allow=("system",)),
+                                       found=[("system", detail)]), "system", detail)
         for cmd in ("crontab -e", "sudo iptables -F", "sudo systemctl restart nginx"):
             self.assertIn("--allow system", g.message(self.bash(cmd), self.ctx()), cmd)
+            self.assertIsNone(self.bash(cmd, allow=("system",)), cmd)  # a program it read: the grant lifts it
+        self.assertIsNone(g.check("Bash", {"command": "ls"}, self.ctx(allow=("rm-outside",)),
+                                  found=[("rm-outside", "/x/can't read")]), "only system refusals are unread ones")
+        big = os.path.join(os.path.dirname(self.home), "big1932.sh")  # T-1932 review: a script over the size limit is never read
+        with open(big, "w") as f:
+            f.write("echo hi\n" * 40000)
+        blk = self.bash(f"bash {big}", allow=("system",))
+        self.assertBlocked(blk, "system")
+        self.assertIn("no grant lifts", g.message(blk, self.ctx()))
 
 
 class Publish(GuardCase):
