@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Change: the survival line (fm digest, fm outcomes) gives the number of closes and the share lost; '24 survived, 45 lost' read as a 65% loss rate when it was 45 of about 1300 (T-2037).
 - Fix: a Python snippet drafted outside the project (in a scratch folder) is no longer blocked as unparsable; JSON drafts are still checked (T-2035).
 - Fix: a test class run.py started now dies with run.py, even when run.py is killed outright (a Bash timeout); one orphaned class had spun a CPU core for a day (T-2034).
 - Fix: the end-of-reply "tests pass" check no longer holds a reply that says when they will pass ("once the gates pass"), and an edit to a file outside the project, like a scratch draft, no longer makes the last green run stale (T-2032).
