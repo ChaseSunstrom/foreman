@@ -3761,25 +3761,15 @@ def _side_work(sd, briefs, work, full, offered, p):
     return None
 
 
-def _gates_live(p):
-    """T-1176: meta gates_running while its fm check runs (live pid), else None; a marker whose process is gone is stale."""
-    g = c.read_meta(p).get("gates_running") or {}
-    try:
-        os.kill(int(g["pid"]), 0)
-        return g
-    except (KeyError, TypeError, ValueError, OSError):
-        return None
-
-
 def _gates_running(p):
     """T-1176: the task whose `fm check --evidence` runs in the background now, else None."""
-    return (_gates_live(p) or {}).get("task")
+    return (c.gates_live(p) or {}).get("task")
 
 
 def _gates_note(pl, p):
     """T-1963: an edit while a full fm check runs lands in the tree it tests."""
-    g = _gates_live(p) if p and pl.get("tool_name") in FILE_TOOLS and _in_project(_edit_path(pl), p) else None
-    if not g or g.get("root") not in (None, p.root):  # another tree's run: fm ship's scratch one
+    g = c.gates_live(p, here=True) if p and pl.get("tool_name") in FILE_TOOLS and _in_project(_edit_path(pl), p) else None
+    if not g:
         return None
     return (f"Foreman: fm check is running on this tree (pid {g['pid']}, since {g.get('at')}); this edit lands in "
             "what it tests, so its pass won't count for the edited tree: wait for it, then rerun the gates.")

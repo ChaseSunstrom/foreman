@@ -58,6 +58,19 @@ class Loop(ForemanTestCase):
         self.assertIn("fm loop yield", brief)
         self.assertIn("forever loop round 2", self.fm("next").stdout)
 
+    def test_a_round_ahead_of_pace_drops_the_ideas_fan_out(self):
+        # T-1966: the brief sent the model to fm ideas while usage was ahead of pace and its lens subagents waited
+        from unittest import mock
+        import fmloop
+        self.fm("loop", "on")
+        p = c.find_project(self.repo)
+        with mock.patch("fmbudget.degrade", return_value=None):
+            self.assertIn("fm ideas --pack", fmloop.round_brief(p))
+        with mock.patch("fmbudget.degrade", return_value="weekly usage 80%"):
+            brief = fmloop.round_brief(p)
+        self.assertNotIn("fm ideas", brief)
+        self.assertIn("Optional work is dropped (weekly usage 80%)", brief)  # or the spent risk budget: not usage
+
     def test_two_dry_rounds_end_the_loop_with_a_decision(self):
         self.fm("loop", "on")
         self.fm("loop", "round")

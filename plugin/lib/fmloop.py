@@ -92,11 +92,18 @@ def _brief(p, n, since):
         lines.append(f"- … {len(done) - 25} more")
     if commits:
         lines += ["", f"Commits ({len(commits)}):"] + [f"- {x}" for x in commits[:15]]
+    try:
+        import fmbudget
+        pace = fmbudget.degrade(p)
+    except Exception:  # an unreadable budget never changes the round
+        pace = None
+    fan = [f"2. Optional work is dropped ({pace}): skip fm mission and the ideas fan-out (its lens subagents wait); "
+           "turn your review into ideas here, in the main thread."] if pace else [
+        f"2. fm mission --request \"forever loop round {n}: improve past everything shipped\", add the review to "
+        "the pack, then:", f"   fm ideas --pack <pack> --rounds 2 --deepen 2 {seen_args}".rstrip()]
     lines += ["", "Do, in order:",
               "1. Review what shipped above as its user would: what is weak, missing, slow or confusing now.",
-              f"2. fm mission --request \"forever loop round {n}: improve past everything shipped\", add the review to "
-              "the pack, then:",
-              f"   fm ideas --pack <pack> --rounds 2 --deepen 2 {seen_args}".rstrip(),
+              *fan,
               "3. Cluster and ground every idea against the code (fm-recon for a big set); keep what is real and new.",
               "4. Queue every grounded idea with one fm intake block, then work the queue.",
               f"5. fm loop yield <how many you queued> — fewer than {DRY_YIELD} is a dry round; {DRY_STOP} dry rounds "
