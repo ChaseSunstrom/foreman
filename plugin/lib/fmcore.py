@@ -1154,8 +1154,9 @@ def tail_jsonl(path, n=200):
     return [e for e in rows if e is not None]  # not kept: nobody else holds these
 
 
-def _tail_rows(path, n):
-    """[record or None for an unreadable line] for the last n lines."""
+def _tail_rows(path, n, keep=()):
+    """[record or None for an unreadable line] for the last n lines; with keep, a line missing any of those strings is
+    None unparsed (T-2017: last_change wants a few lines of 5,000, and json.loads was most of its 20 ms)."""
     try:
         with open(path, "rb") as f:
             f.seek(0, os.SEEK_END)
@@ -1163,16 +1164,22 @@ def _tail_rows(path, n):
             while True:
                 start = max(0, size - chunk)
                 f.seek(start)
-                lines = f.read().decode("utf-8", "replace").splitlines()
-                if start == 0 or len(lines) > n:  # the first line of a partial read may be cut; > n leaves a spare
+                data = f.read()
+                got = data.count(b"\n")
+                if start == 0 or got > n:  # the first line of a partial read may be cut; > n leaves a spare
                     break
-                chunk *= 4
+                # T-2017: aim at n from the line length seen so far, and count bytes, decoding once at the end
+                chunk = max(chunk * 2, int(chunk * (n + 1) / max(got, 1) * 1.25))
+            lines = data.decode("utf-8", "replace").splitlines()
             if start > 0:
                 lines = lines[1:]
     except FileNotFoundError:
         return []
     out = []
     for line in lines[-n:]:
+        if keep and not all(k in line for k in keep):
+            out.append(None)
+            continue
         try:
             e = json.loads(line)
         except ValueError:
@@ -2518,10 +2525,15 @@ def plan_gaps(b, autonomy="standard"):
 STAGES = ("planning", "ready", "executing", "verifying", "documenting", "auditing", "closing")  # stage()'s order
 
 
+_VARSEL = re.compile("[︀-️\U000e0100-\U000e01ef]")  # variation selectors: printable, yet stripped below
+
+
 def plain(s):
     """Text safe to print or show in a dialog: no control, format (bidi overrides, zero-width) or line/paragraph
     separator characters that could move the cursor, retitle the terminal or disguise the text, nor variation selectors
     (T-1621 review: invisible, so a run of them after a character can smuggle a payload)."""
+    if isinstance(s, str) and s.isprintable() and not _VARSEL.search(s):  # T-2017: isprintable is False for every
+        return s  # Cc, Cf, Zl and Zp character, so printable text has none to strip; ~30x faster than the scan below
     import unicodedata
     return "".join(ch for ch in (s or "") if unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp")
                    and not ("︀" <= ch <= "️" or "\U000e0100" <= ch <= "\U000e01ef"))
@@ -2654,8 +2666,9 @@ def rewind_note(hit):
 
 def last_change(p, tid):
     """Timestamp of the latest file edit the hooks attributed to this task (audits must come after it)."""
-    return max((e.get("ts", "") for e in ledger_tail(p, 5000) if e.get("task") == tid and e.get("event") == "touched"),
-               default="")
+    rows = _tail_rows(os.path.join(p.dir, "ledger.jsonl"), 5000, keep=('"touched"', f'"{tid}"'))  # T-2017
+    return max((e.get("ts", "") for e in rows if isinstance(e, dict) and e.get("task") == tid
+                and e.get("event") == "touched"), default="")
 
 
 def routing():
