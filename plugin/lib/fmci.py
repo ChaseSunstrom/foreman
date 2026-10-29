@@ -60,9 +60,11 @@ def _api(p, path, gh_error):
 
 
 def _latest(p, branch, sha, via=None):
-    """The newest run for commit `sha` (an older commit's run, the usual first poll after a push, is never it). Adds
-    "api" to the set `via` when it read GitHub's public API."""
-    cmd = ["run", "list", "--limit", "20", "--json", "databaseId,attempt,status,conclusion,url,headSha"] + (["--branch", branch] if branch else [])
+    """The run that decides commit `sha` (an older commit's run, the usual first poll after a push, is never it): of
+    each workflow's newest run, a failed one, else one still going, else a green one with a failed non-blocking job,
+    else any green one (T-2058: pages read green while tests failed). Adds "api" to `via` when it read GitHub's
+    public API."""
+    cmd = ["run", "list", "--limit", "20", "--json", "databaseId,attempt,status,conclusion,url,headSha,workflowName"] + (["--branch", branch] if branch else [])
     from fmcli import UsageError
     try:
         rows = json.loads(_gh(p, *cmd))
@@ -71,12 +73,20 @@ def _latest(p, branch, sha, via=None):
         if via is not None:
             via.add("api")
         rows = [{"databaseId": r.get("id"), "attempt": r.get("run_attempt"), "status": r.get("status"), "conclusion": r.get("conclusion"),
-                 "url": r.get("html_url"), "headSha": r.get("head_sha")}
+                 "url": r.get("html_url"), "headSha": r.get("head_sha"), "workflowName": r.get("name")}
                 for r in (got.get("workflow_runs") or [] if isinstance(got, dict) else []) if isinstance(r, dict)]
     except ValueError:
         return None
-    return next((r for r in rows if isinstance(r, dict) and isinstance(r.get("databaseId"), int)
-                 and r.get("headSha") == sha), None) if isinstance(rows, list) else None
+    runs, names = [], set()
+    for r in rows if isinstance(rows, list) else []:  # newest first: one run per workflow
+        if isinstance(r, dict) and isinstance(r.get("databaseId"), int) and r.get("headSha") == sha \
+                and r.get("workflowName") not in names:
+            names.add(r.get("workflowName"))
+            runs.append(r)
+    done = [r for r in runs if r.get("status") == "completed"]
+    return (next((r for r in done if r.get("conclusion") != "success"), None)
+            or next((r for r in runs if r.get("status") != "completed"), None)
+            or next((r for r in runs if len(runs) > 1 and _failed_jobs(p, r)), None) or (runs or [None])[0])
 
 
 def _jobs(p, run):
