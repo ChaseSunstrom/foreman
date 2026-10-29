@@ -52,6 +52,15 @@ class Sketchbook(ForemanTestCase):
         with open(out, encoding="utf-8") as f:
             self.assertTrue(f.read().startswith("<!doctype html>"))
 
+    def test_review_fixes_bare_out_hidden_canvas_card_still_and_foreign_flags(self):  # T-1784 review
+        self.fm("scene", "sketchbook", cwd=self.tmp)  # the default ./sketchbook.html: a bare name has no dirname
+        self.assertTrue(os.path.exists(os.path.join(self.tmp, "sketchbook.html")))
+        page = fmscene.sketchbook_html(fmscene.sketch_cards())
+        self.assertIn(".sketch [hidden]{display:none}", page, "the author CSS display:block beats the UA [hidden]")
+        self.assertIn("draw(0, 1)", page, "the cards' still: uTime 0, a swept uniform at its end")
+        self.assertEqual(self.fm("scene", "sketchbook", "--balls", "5", check=False).returncode, 2)
+        self.assertEqual(self.fm("scene", "sketchbook", "x.glb", check=False).returncode, 2)
+
 
 def gltf(**over):
     doc = {"asset": {"version": "2.0"}, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],
