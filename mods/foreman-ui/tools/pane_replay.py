@@ -6,6 +6,12 @@ own test kit (claude plugin test) and its fakes, and a check that two runs of on
   pane_replay.py twin FIXTURE [--cols 80] [--rows 40] [--matrix]  two renders, each its own process, diffed: exit 1
                                                                   and the diff when they differ. --matrix: a third in
                                                                   another time zone and locale
+  pane_replay.py svg FIXTURE --out FILE [--cols 80] [--rows 40]   the text frame as an SVG (a .png through
+                                                                  rsvg-convert), for docs and reviews (T-1670)
+  pane_replay.py golden [--update]                                the pane drawn from tests/fixtures/pane-busy.ts at
+                                                                  80x40 against tests/fixtures/golden.ts, which the
+                                                                  kit's replay test checks too: exit 1 and the diff
+                                                                  when it drifted; --update rewrites it (T-1670)
 
 A fixture is what `fm ui --json` prints, the pane's whole input: a .json file, or a .ts module like
 tests/fixtures/pane-busy.ts whose text after `export default` is that JSON (read as data, never run). Recording one
@@ -222,6 +228,61 @@ def twin(path, cols=80, rows=40, matrix=False):
     return out
 
 
+GOLDEN = os.path.join(MOD, "tests", "fixtures", "golden.ts")  # T-1670
+GOLDEN_VIEW, GOLDEN_SIZE = os.path.join(MOD, "tests", "fixtures", "pane-busy.ts"), (80, 40)  # fixtures/replay.ts's
+
+
+def read_golden():
+    """The committed golden frame (the drawn tree line), or None when there is none."""
+    try:
+        with open(GOLDEN, encoding="utf-8") as f:
+            raw = f.read()
+    except FileNotFoundError:
+        return None
+    m = re.search(r"^export default\b", raw, re.M)
+    return json.loads(raw[m.end():].strip().removesuffix(";")) if m else None
+
+
+def golden(update=False):
+    """(whether the pane draws the golden frame, a diff when it doesn't): the synthetic fixture at replay.ts's size, as
+    the kit's replay test draws it. None committed yet, or update: written, and the same."""
+    line, old = drawn(load(GOLDEN_VIEW), *GOLDEN_SIZE), read_golden()
+    if update or old is None:
+        with open(GOLDEN, "w", encoding="utf-8") as f:
+            f.write("// T-1670: the pane drawn from pane-busy.ts at 80x40 (fixtures/replay.ts), as tests/replay.test.tsx\n"
+                    "// draws it. Written by tools/pane_replay.py golden --update after a change that draws differently.\n"
+                    f"export default {json.dumps(line, ensure_ascii=True)}\n")
+        return True, []
+    if line == old:
+        return True, []
+    a, b = (json.dumps(json.loads(x), indent=1, ensure_ascii=True) + "\n" for x in (old, line))
+    return False, list(difflib.unified_diff(a.splitlines(True), b.splitlines(True), "golden", "drawn now"))
+
+
+def svg(frame, cols, rows):
+    """A text frame as an SVG: its lines in monospace on the pane's dark ground, every character escaped."""
+    import html
+    cw, lh, pad = 8.4, 18, 12
+    w, h = round(cols * cw + 2 * pad), rows * lh + 2 * pad
+    lines = "".join(f'<text x="{pad}" y="{pad + (i + 1) * lh - 5}">{html.escape(ln)}</text>'
+                    for i, ln in enumerate(frame.splitlines()) if ln.strip())
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
+            f'font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14"><rect width="{w}" height="{h}" '
+            f'fill="#0d1420"/><g fill="#e7ecf4" xml:space="preserve">{lines}</g></svg>\n')
+
+
+def write_svg(path, frame, cols, rows):
+    """frame to path: an SVG, or a PNG through rsvg-convert for a path ending .png."""
+    text_ = svg(frame, cols, rows)
+    if not path.endswith(".png"):
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text_)
+        return
+    if not shutil.which("rsvg-convert"):
+        raise RuntimeError("a PNG needs rsvg-convert (librsvg), which isn't installed; --out FILE.svg works")
+    subprocess.run(["rsvg-convert", "-o", path], input=text_.encode(), check=True, timeout=60, capture_output=True)
+
+
 def size(lo, hi):
     def parse(s):
         n = int(s)
@@ -234,15 +295,27 @@ def size(lo, hi):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("render", "twin"):
+    for name in ("render", "twin", "svg"):
         s = sub.add_parser(name)
         s.add_argument("fixture")
         s.add_argument("--cols", type=size(20, 400), default=80)
         s.add_argument("--rows", type=size(4, 200), default=40)
     sub.choices["render"].add_argument("--json", action="store_true", help="the drawn tree, not the text")
     sub.choices["twin"].add_argument("--matrix", action="store_true", help="a third run in another zone and locale")
+    sub.choices["svg"].add_argument("--out", required=True, help="the file: .svg, or .png through rsvg-convert")
+    sub.add_parser("golden").add_argument("--update", action="store_true", help="rewrite tests/fixtures/golden.ts")
     a = ap.parse_args()
     try:
+        if a.cmd == "golden":
+            same, lines = golden(a.update)
+            sys.stdout.writelines(lines)
+            print("golden: " + ("written" if a.update else "the pane draws it" if same else
+                                "the pane drew differently; a change meant to draw so runs golden --update"))
+            return 0 if same else 1
+        if a.cmd == "svg":
+            write_svg(a.out, text(json.loads(drawn(load(a.fixture), a.cols, a.rows)), a.cols, a.rows), a.cols, a.rows)
+            print(f"wrote {a.out}")
+            return 0
         if a.cmd == "render":
             tree = json.loads(drawn(load(a.fixture), a.cols, a.rows))
             # JSON.stringify leaves C1 controls and bidi raw: printed again, everything outside ASCII escaped
