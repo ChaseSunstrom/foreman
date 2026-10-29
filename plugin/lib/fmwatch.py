@@ -725,15 +725,16 @@ def _follow(build, paths, interval, refresh=30.0):
             except OSError:
                 out.append(None)
         return out
-    last, seen, at = None, None, 0.0
+    last = None
     try:
+        v = build()  # the first build only names the paths to watch
         while True:
-            v = build()
+            seen, at = sig(v), time.time()
+            v = build()  # T-1882: built after the snapshot, so a change while it builds or prints is caught next round
             line = json.dumps(v)
             if line != last:
                 print(line, flush=True)
                 last = line
-            seen, at = sig(v), time.time()
             while sig(v) == seen and time.time() - at < refresh:
                 time.sleep(interval)
     except (BrokenPipeError, KeyboardInterrupt):
