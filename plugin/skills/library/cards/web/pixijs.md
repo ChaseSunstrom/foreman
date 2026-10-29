@@ -15,7 +15,7 @@ PixiJS: fast 2D renderer (WebGL or WebGPU) with a scene graph, sprites, text and
 - `npx vite build`: bundle size; import only what you use in v8.
 
 ## Test first
-Render once headlessly and assert a pixel, not frames.
+Render once and assert a pixel, not frames. This needs a real WebGL context, so run it in browser mode (Vitest browser mode or Playwright), not jsdom.
 ```ts
 import { Application, Graphics, Rectangle } from "pixi.js";
 

@@ -15,7 +15,7 @@ Rive: runtime for `.riv` interactive vector animations driven by state machines 
 - `du -h public/*.riv`: asset sizes stay in budget (aim under 200 KB each).
 
 ## Test first
-Load the file and assert the state machine and input names exist, so a renamed input fails CI.
+Load the file and assert the state machine and input names exist, so a renamed input fails CI. It needs a real canvas and wasm, so run it in browser mode (Vitest browser mode or Playwright), not jsdom.
 ```ts
 import { Rive } from "@rive-app/canvas";
 
