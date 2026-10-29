@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A builder's worktree and its main checkout count at their real paths too: on macOS, where the temp folder is a link, a builder's write inside its own worktree was refused as outside it, and the main checkout reached by its real path counted as scratch (T-1902).
 - A test's cleanup retries for a few seconds while a detached child it started on purpose still writes into its folder; `test_session_start_runs_it_in_the_background` failed CI on Ubuntu with Python 3.14 with "Directory not empty" (T-1901).
 - The drive's side-work offer skips a task that waits on any open task, not only on the active one, so a depends_on chain of drafted tasks isn't offered again on every Stop (T-1899).
 - Many tasks in one command (T-1877). `fm task drop`, `defer` and the new `unblock` take a range (`T-3..T-7` or `T-3..7`: the tasks that exist in it) or a list (`T-3,T-9`), at most 50 at once. Each id is handled as if named alone; one that fails is said ("fm: task unblock T-0002: T-0002 is deferred, not blocked") and the rest still go, then "2 of 3 unblocked." with exit 1 when any failed. `fm task unblock ID [WHY]` moves blocked work back to planned, or captured while it has no criteria.
