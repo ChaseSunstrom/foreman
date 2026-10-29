@@ -59,7 +59,7 @@ def claude_path(env):
     (T-0992: the tests point it at nothing, so a test that replaces PATH can't reach the paid binary)."""
     local = env.get("FOREMAN_NATIVE_BIN") or os.path.join(env.get("HOME") or os.path.expanduser("~"), ".local", "bin")
     if local not in env.get("PATH", "").split(os.pathsep) and os.access(os.path.join(local, "claude"), os.X_OK) \
-            and not shutil.which("claude", path=env.get("PATH")):  # T-2023: which() and shutil only when it can matter
+            and not shutil.which("claude", path=env.get("PATH")):  # T-2023: which() scans PATH only when it can matter
         env["PATH"] = local + os.pathsep + env.get("PATH", "")
     return env
 
@@ -2744,11 +2744,26 @@ def rewind_note(hit):
             f"(fm next).")
 
 
+_LAST_CHANGE = {}  # T-2024: (ledger, task) -> (file signature, answer); state_dict and the Next line both ask
+
+
 def last_change(p, tid):
     """Timestamp of the latest file edit the hooks attributed to this task (audits must come after it)."""
-    rows = _tail_rows(os.path.join(p.dir, "ledger.jsonl"), 5000, keep=('"touched"', f'"{tid}"'))  # T-2017
-    return max((e.get("ts", "") for e in rows if isinstance(e, dict) and e.get("task") == tid
-                and e.get("event") == "touched"), default="")
+    path = os.path.join(p.dir, "ledger.jsonl")
+    try:
+        st = os.stat(path)
+        sig = (st.st_ino, st.st_size, st.st_mtime_ns)  # the ledger only grows: an append changes the size
+    except OSError:
+        sig = None
+    hit = _LAST_CHANGE.get((path, tid))
+    if sig and hit and hit[0] == sig:
+        return hit[1]
+    rows = _tail_rows(path, 5000, keep=('"touched"', f'"{tid}"'))  # T-2017
+    ts = max((e.get("ts", "") for e in rows if isinstance(e, dict) and e.get("task") == tid
+              and e.get("event") == "touched"), default="")
+    if sig:
+        _LAST_CHANGE[(path, tid)] = (sig, ts)
+    return ts
 
 
 def routing():

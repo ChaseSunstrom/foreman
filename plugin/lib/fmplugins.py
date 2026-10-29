@@ -65,12 +65,12 @@ def _frontmatter(path):
 
 
 # T-1396: the Agent Skills spec's frontmatter rules, shared by fm doctor and fm lib's source indexer
-SPEC_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+SPEC_NAME = c.lazy(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 # a description that claims every task (or tells the model to drop its other instructions) would win every routing
 # choice: such a skill is indexed but held out of fm lib search. Matched on the NFKC-folded text with the common
 # Cyrillic and Greek look-alikes mapped to Latin. ponytail: phrase list, not a model judgement; a reworded claim
 # still passes (an LLM or embedding check if one gets through in practice).
-BROAD = re.compile(
+BROAD = c.lazy(
     r"(?i)\b(?:(?:for|on|in|before|with|to|during|after)\s+(?:each\s+and\s+every|every|all|any|each)(?:\s+of)?"
     r"(?:\s+(?:the|your|my|their|the\s+user's|user's))?\s+(?:single\s+|other\s+)?"
     r"(?:tasks?|requests?|prompts?|messages?|conversations?|questions?|turns?|queries|query|responses?|interactions?)\b"
@@ -281,13 +281,13 @@ def _handlers(hooks):
                     yield event, e.get("matcher") or "", h
 
 
-_ROOT_PATH = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\}?/([\w./@+~-]+)")  # T-1459 review: @scope/pkg+x paths whole
+_ROOT_PATH = c.lazy(r"\$\{?CLAUDE_PLUGIN_ROOT\}?/([\w./@+~-]+)")  # T-1459 review: @scope/pkg+x paths whole
 _FM_CAP = 256_000  # a frontmatter not closed by here is the event "?" (ponytail: Claude Code reads the whole file)
 _FM_FILES, _FM_DIRS = 2000, 5000  # past these a component folder is the event "?" (a hostile tree stays bounded)
 # a top-level hooks key, quoted or spaced (review), and its block: indented lines, blank lines, column-0 comments
-_FM_BLOCK = re.compile(r"""^["']?hooks["']?[ \t]*:[ \t]*(.*)\n?((?:[ \t]+.*\n?|[ \t\r]*\n|#.*\n?)*)""", re.M)
+_FM_BLOCK = c.lazy(r"""^["']?hooks["']?[ \t]*:[ \t]*(.*)\n?((?:[ \t]+.*\n?|[ \t\r]*\n|#.*\n?)*)""", re.M)
 # anything else that may be a hooks key (a flow-style frontmatter, an indented root, a "? hooks" key): unknown
-_FM_MENTION = re.compile(r"""\bhooks\b["']?[ \t]*:|\?[ \t]*["']?hooks\b""")
+_FM_MENTION = c.lazy(r"""\bhooks\b["']?[ \t]*:|\?[ \t]*["']?hooks\b""")
 
 
 def _component_files(root):
@@ -440,7 +440,7 @@ def _marketplace_files():
     return sorted(out)
 
 
-_PLUGIN_NAME = re.compile(r"[\w.-]+")  # the name part of fmguard.PLUGIN_ID: no @, no slash, no space
+_PLUGIN_NAME = c.lazy(r"[\w.-]+")  # the name part of fmguard.PLUGIN_ID: no @, no slash, no space
 
 
 def _marketplace_name(data, root):
@@ -673,7 +673,7 @@ def check(only=None):
 _ROUTES = c.routing()
 STAGE_WORDS = {k: tuple(v) for k, v in (_ROUTES.get("stage_words") or {}).items()}
 UI_WORDS = tuple(_ROUTES.get("ui_words") or ())
-UI_FILES = re.compile(r"\.(tsx|jsx|vue|svelte|css|scss|html)\b")
+UI_FILES = c.lazy(r"\.(tsx|jsx|vue|svelte|css|scss|html)\b")
 BUILTIN = {k: tuple(v) for k, v in (_ROUTES.get("builtin_skills") or {}).items()}
 LENS_WORDS = {k: tuple(v) for k, v in (_ROUTES.get("lens_words") or {}).items()}  # T-0276: review skills per lens
 LENS_BUILTIN = {k: tuple(v) for k, v in (_ROUTES.get("lens_builtin") or {}).items()}
