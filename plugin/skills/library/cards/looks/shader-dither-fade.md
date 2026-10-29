@@ -54,6 +54,9 @@ Class: low. One value-noise lookup and integer-ish arithmetic a pixel, no loop. 
 ## Reduced motion
 Still: `uProgress = 1.0`: the end state at once; no sweep.
 
+## Sketch
+The sketchbook's preset (`fm scene sketchbook`; sweep runs uProgress 0 to 1 and back): `uProgress=sweep uIntensity=1 uPixel=3 uFrom=0.07,0.08,0.12 uTo=0.93,0.91,0.86`
+
 ## Suits
 Page and theme transitions in retro, game and developer-tool sites, a dark-mode switch with character, loading reveals in a pixel-art product.
 Not for: soft, premium or editorial looks; transitions faster than `--dur-enter` (the pattern needs time to read).

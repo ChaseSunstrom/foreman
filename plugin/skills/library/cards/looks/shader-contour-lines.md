@@ -54,6 +54,9 @@ Class: low. Three value-noise lookups and two screen-space derivatives a pixel, 
 ## Reduced motion
 Still: `uTime = 0.0`: one fixed map, redrawn on resize only.
 
+## Sketch
+The sketchbook's preset (`fm scene sketchbook`): `uIntensity=0.9 uCount=16 uLine=0.45,0.5,0.6 uGround=0.96,0.95,0.92`
+
 ## Suits
 Outdoor gear, trail and travel apps, geography and climate stories, survey and land tools, an about page for a field team.
 Not for: food, fashion, anything urban and flat, a backdrop under data charts (two sets of lines compete).

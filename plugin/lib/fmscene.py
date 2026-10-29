@@ -1171,6 +1171,137 @@ def soak(path, three, seconds=10, budget_ms=None):
             "problems": soak_problems(samples, after, budget_ms)}
 
 
+# ---------------------------------------------------------------- the shader sketchbook (T-1784)
+
+LOOKS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills", "library", "cards", "looks")
+UNIFORM_DECL = re.compile(r"(?m)^\s*uniform\s+(?:(?:highp|mediump|lowp)\s+)?(float|vec2|vec3|vec4)\s+([^;]+);")
+COMPONENTS = {"float": 1, "vec2": 2, "vec3": 3, "vec4": 4}
+
+
+def uniforms(glsl):
+    """{name: components} of a shader's float and vector uniforms."""
+    return {n.strip(): COMPONENTS[t] for t, names in UNIFORM_DECL.findall(glsl) for n in names.split(",")}
+
+
+def sketch(text):
+    """A card's ## Sketch line, its preset in its last backticks (`uA=1 uB=0.5,0.25 uP=sweep`), as {uniform: [floats] or
+    "sweep"}: sweep runs a float from 0 to 1 and back, for a uniform no clock drives."""
+    spans = re.findall(r"`([^`]*)`", text)  # the last span: the line may name a command first
+    preset = spans[-1].strip() if spans else ""
+    if not preset:
+        raise ValueError("a Sketch line holds its preset in backticks: `uName=1 uColour=0.1,0.2,0.3`")
+    out = {}
+    for word in preset.split():
+        name, _, value = word.partition("=")
+        if not re.fullmatch(r"u[A-Za-z0-9]+", name) or not value:
+            raise ValueError(f"{word!r}: uName=VALUE")
+        nums = None if value == "sweep" else [float(v) for v in value.split(",")]  # a ValueError on a non-number
+        if nums is not None and not all(math.isfinite(v) for v in nums):
+            raise ValueError(f"{word!r}: finite numbers only")
+        out[name] = nums if nums is not None else "sweep"
+    return out
+
+
+def sketch_cards(folder=None):
+    """Every shader look card with a Sketch line: [{name, title, about, glsl, sketch}], by name."""
+    folder = folder or LOOKS
+    out = []
+    for name in sorted(os.listdir(folder)):
+        if not (name.startswith("shader-") and name.endswith(".md")):
+            continue
+        with open(os.path.join(folder, name), encoding="utf-8") as f:
+            text = f.read()
+        title = re.search(r'(?m)^title:\s*"?([^"\n]+)"?\s*$', text)
+        about = re.search(r"(?s)^---\n.*?\n---\n+(.+?)\n\n", text)
+        glsl = GLSL.search(text)
+        line = re.search(r"(?ms)^## Sketch\n(.*?)(?=^## |\Z)", text)
+        if glsl and line:
+            out.append({"name": name[:-3], "title": title.group(1) if title else name[:-3],
+                        "about": about.group(1).strip() if about else "", "glsl": glsl.group(1),
+                        "sketch": sketch(line.group(1))})
+    return out
+
+
+SKETCH_CSS = (".sketchbook{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:20px}"
+              ".sketch{margin:0}.sketch canvas{display:block;width:100%;height:auto;aspect-ratio:8/5;border-radius:8px}"
+              ".sketch .fallback{margin:0;padding:12px;border-radius:8px;outline:1px dashed currentColor;opacity:.8}"
+              ".sketch figcaption{margin-top:6px}.sketch code{opacity:.6;font-size:.8em}")
+SKETCH_JS = r"""// T-1784: each card's fragment shader on its canvas, drawn only while on screen; one still frame under reduced
+// motion; the card's words in place of a canvas when WebGL2 is missing or a shader won't compile.
+const VS = "#version 300 es\nout vec2 vUv;\nvoid main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); " +
+  "vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }";
+const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const live = [];
+for (const fig of document.querySelectorAll("figure.sketch")) {
+  const canvas = fig.querySelector("canvas"), note = fig.querySelector(".fallback");
+  const gl = canvas.getContext("webgl2");
+  const fail = () => { canvas.hidden = true; note.hidden = false; };
+  if (!gl) { fail(); continue; }
+  const shader = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+  };
+  const vs = shader(gl.VERTEX_SHADER, VS);
+  const fs = shader(gl.FRAGMENT_SHADER, document.getElementById(fig.dataset.shader).textContent.trim());
+  const prog = gl.createProgram();
+  if (vs && fs) { gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog); }
+  if (!vs || !fs || !gl.getProgramParameter(prog, gl.LINK_STATUS)) { fail(); continue; }
+  note.hidden = true;
+  gl.useProgram(prog);
+  gl.bindVertexArray(gl.createVertexArray());
+  const set = (name, v) => { const at = gl.getUniformLocation(prog, name); if (at !== null) gl["uniform" + v.length + "fv"](at, v); };
+  const sweep = [];
+  for (const [k, v] of Object.entries(JSON.parse(fig.dataset.uniforms))) v === "sweep" ? sweep.push(k) : set(k, v);
+  set("uRes", [canvas.width, canvas.height]);
+  const draw = (t) => {
+    set("uTime", [t]);
+    for (const k of sweep) set(k, [0.5 - 0.5 * Math.cos(t * 0.9)]);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  draw(2.0);  // the still a reader who asked for less motion keeps
+  live.push({ fig, draw, seen: false });
+}
+if (!still && live.length) {
+  const io = new IntersectionObserver((es) => es.forEach((e) => {
+    for (const s of live) if (s.fig === e.target) s.seen = e.isIntersecting;
+  }));
+  live.forEach((s) => io.observe(s.fig));
+  const t0 = performance.now();
+  const tick = (now) => { const t = 2.0 + (now - t0) / 1000; for (const s of live) if (s.seen) s.draw(t); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}
+"""
+
+
+def sketchbook_html(cards, page=True):
+    """One thumbnail per card: a canvas running its fragment shader with the card's Sketch preset, the card's
+    description as the fallback (shown until a shader runs, so it stays without JavaScript), and the shader sources
+    as non-executed script elements. page=False: the fragment alone, for the site."""
+    import html
+    figs, sources = [], []
+    for c in cards:
+        if re.search(r"(?i)</script", c["glsl"]):  # it would end its element early: left out
+            continue
+        sid = "sh-" + c["name"]
+        figs.append(f'<figure class="sketch" data-shader="{sid}" data-uniforms="{html.escape(json.dumps(c["sketch"]))}">'
+                    f'<canvas width="320" height="200" role="img" aria-label="{html.escape(c["title"])}"></canvas>'
+                    f'<p class="fallback">{html.escape(c["about"])}</p><figcaption><b>'
+                    f'{html.escape(c["title"].removeprefix("Shader: "))}</b> <code>{html.escape(c["name"])}</code>'
+                    f'</figcaption></figure>')
+        sources.append(f'<script type="x-shader/x-fragment" id="{sid}">\n{c["glsl"]}</script>')
+    body = (f'<style>{SKETCH_CSS}</style><div class="sketchbook">{"".join(figs)}</div>{"".join(sources)}'
+            f'<script type="module">\n{SKETCH_JS}</script>')
+    if not page:
+        return body
+    return ('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-'
+            'width,initial-scale=1"><title>Shader sketchbook</title><style>body{font:15px/1.5 system-ui,sans-serif;'
+            'margin:24px;background:#fafaf7;color:#1d1d1f}@media (prefers-color-scheme:dark){body{background:#15161a;'
+            f'color:#e8e8ea}}}}</style></head><body><h1>Shader sketchbook</h1>{body}</body></html>\n')
+
+
 TETS = ((1, 3), (1, 5), (2, 3), (2, 6), (4, 5), (4, 6))  # corner 0 → a → b → 7: six tets that agree on shared faces
 
 
@@ -1541,6 +1672,16 @@ def gallery(size=(160, 100), cols=3):
 def cmd_scene(args):
     import sys
     import fmcli
+    import fmcore
+    if args.action == "sketchbook":  # T-1784
+        try:
+            text = sketchbook_html(sketch_cards())
+        except ValueError as e:
+            raise fmcli.UsageError(f"a shader card's Sketch line: {e}")
+        out = args.out or "sketchbook.html"
+        fmcore.write_atomic(out, text)
+        print(f"wrote {out}: {text.count('<figure class=')} shaders; open it in a browser with WebGL2")
+        return 0
     for flag in sorted({t.partition("=")[0] for t in fmcli._ARGV} & set(_READS)):
         if args.action not in _READS[flag].split():
             print(f"fm: scene: {args.action} doesn't read {flag} (only {', '.join(_READS[flag].split())} do)",
