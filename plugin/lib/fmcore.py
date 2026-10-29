@@ -1058,6 +1058,24 @@ def _archived_last(p):
     return b""
 
 
+_TS = re.compile(rb'"ts": ?"([^"]+)"')
+
+
+def _seek_since(f, since, chunk=1 << 16):
+    """T-2015: start f near the first event at or after since: walk back a chunk at a time until one holds only older
+    stamps (the ledger is appended in time order), so a hook asking for today never parses the whole history."""
+    pos = f.seek(0, 2)
+    while pos > 0:
+        pos = max(0, pos - chunk)
+        f.seek(pos)
+        stamps = _TS.findall(f.read(chunk))
+        if stamps and max(stamps) < since:
+            break
+    f.seek(pos)
+    if pos:
+        f.readline()  # the partial line the chunk began in
+
+
 def ledger_events(p, kinds=None, since=""):
     """Every ledger event (of these kinds, at or after since), from the months fm tidy rolled into archive/ and the
     live file, oldest first: for reports over a window, which a fixed-size tail can't promise to cover. Archives
@@ -1070,6 +1088,8 @@ def ledger_events(p, kinds=None, since=""):
             continue
         try:
             with open(path, "rb") as f:
+                if since:
+                    _seek_since(f, str(since).encode())
                 for raw in f:
                     if marks and not any(m in raw for m in marks):
                         continue
@@ -1171,8 +1191,12 @@ def _fmt_value(v):
     return "" if v is None else str(v)
 
 
+_FM_LINE = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
+_SECTION = re.compile(r"(?m)^## (.*)\n")
+
+
 def _parse_value(raw):
-    v = re.sub(r"\s+#.*$", "", raw).strip()
+    v = (re.sub(r"\s+#.*$", "", raw) if "#" in raw else raw).strip()  # T-2015: most values carry no comment
     if v.startswith("[") and v.endswith("]"):
         return [x.strip().strip("'\"") for x in v[1:-1].split(",") if x.strip()]
     if v in ("true", "false"):
@@ -1240,14 +1264,27 @@ class Brief:
         self._orig = {k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v)  # T-1082 review:
                       for k, v in meta.items()}  # an in-place list edit must still differ from the original
         self.preamble = preamble                     # text between frontmatter and first "## " (title)
-        self.sections = sections                     # [[heading, body_text]]
+        self._sections = sections                    # [[heading, body_text]], or the text from the first "## " on
         self.path = path
+
+    @property
+    def sections(self):
+        """T-2015: split on first read; a hook loads every brief but reads few past the frontmatter."""
+        if isinstance(self._sections, str):
+            parts = _SECTION.split(self._sections)
+            self._sections = [[parts[i], parts[i + 1]] for i in range(1, len(parts), 2)]
+        return self._sections
+
+    @sections.setter
+    def sections(self, v):
+        self._sections = v
 
     def copy(self):
         """T-1082: an independent brief (the memo hands these out): its own meta, lines and sections."""
+        s = self._sections
         return Brief({k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v)  # str, bool,
                       for k, v in self.meta.items()},  # or a list of str: all _parse_value makes
-                     list(self._fm_lines), self.preamble, [list(x) for x in self.sections], self.path)
+                     list(self._fm_lines), self.preamble, s if isinstance(s, str) else [list(x) for x in s], self.path)
 
     # --- parse / render
     @classmethod
@@ -1259,16 +1296,15 @@ class Brief:
             raise ValueError("unterminated frontmatter")
         meta, fm_lines = {}, []
         for line in text[4:end].split("\n"):
-            m = re.match(r"^([A-Za-z_][\w-]*):(.*)$", line)
+            m = _FM_LINE.match(line)
             if m:
                 meta[m.group(1)] = _parse_value(m.group(2))
                 fm_lines.append((m.group(1), line))
             else:
                 fm_lines.append((None, line))
         body = text[end + 5:]
-        parts = re.split(r"(?m)^## (.*)\n", body)
-        preamble, sections = parts[0], [[parts[i], parts[i + 1]] for i in range(1, len(parts), 2)]
-        return cls(meta, fm_lines, preamble, sections, path)
+        m = _SECTION.search(body)
+        return cls(meta, fm_lines, body[:m.start()] if m else body, body[m.start():] if m else [], path)
 
     def render(self):
         out, seen = [], set()
@@ -1280,7 +1316,8 @@ class Brief:
                 same = key in self._orig and self.meta[key] == self._orig[key]
                 out.append(raw if same else f"{key}: {_fmt_value(self.meta[key])}")
         out += [f"{k}: {_fmt_value(v)}" for k, v in self.meta.items() if k not in seen]
-        body = self.preamble + "".join(f"## {h}\n{b}" for h, b in self.sections)
+        s = self._sections
+        body = self.preamble + (s if isinstance(s, str) else "".join(f"## {h}\n{b}" for h, b in s))
         return "---\n" + "\n".join(out) + "\n---\n" + body
 
     @classmethod
