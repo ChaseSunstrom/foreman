@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A builder's contract says to probe code through the tests its criteria name, not `python3 -c 'import …'` from the root, where a module off the import path fails (T-1918).
 - `fm task prove` leaves a changed tests-folder file that the start tree already has (a runner like `run.py`) at its start version, so the red run tests the change instead of passing with it; new helpers and test-named files still come over (T-1919).
 - Guard lets a quoted heredoc write a scratch draft (`.txt`, `.patch`, `.diff`, `.md`, `.json`) that names Foreman's modules when the same command only feeds it to `fm edit` or an existing script, so writing and applying a draft is one command; any other use of the draft, a glob, quote, expansion or `cd` still blocks (T-1917).
 - `fm which` and `fm help WORDS` name a command's actions too: "merge a lane" finds `fm lane merge`, not just fm lane's summary (T-1916).
