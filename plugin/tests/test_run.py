@@ -145,6 +145,12 @@ class UnknownNames(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stderr)
         self.assertIn("test_nosuch_module", r.stderr)
 
+    def test_a_name_whose_tests_a_k_filters_out_names_the_k(self):
+        # T-1999: "no test matches test_run.Args" read as if the module were missing
+        r = self.run_py("test_run.Args", "-k", "no_such_test")
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("no test matches test_run.Args with -k no_such_test", r.stderr)
+
     def test_names_that_all_match_still_pass(self):
         self.assertEqual(self.run_py("test_run.Args").returncode, 0)
 

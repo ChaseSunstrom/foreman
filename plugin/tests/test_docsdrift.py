@@ -113,6 +113,13 @@ class TaskDocsDrift(DocsDrift):
         blockers, _ = fmdocs.task_docs(self.repo, "rules/foreman.md and gone/NOPE.md")
         self.assertEqual(blockers, ["docs impact names gone/NOPE.md, which doesn't exist",
                                     "docs impact names rules/foreman.md, which doesn't exist (plugin/rules/foreman.md?)"])
+        os.makedirs(os.path.join(self.repo, "mods", "rules"))  # T-2000: several matches are all suggested
+        with open(os.path.join(self.repo, "mods", "rules", "foreman.md"), "w") as f:
+            f.write("# Rules\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        blockers, _ = fmdocs.task_docs(self.repo, "rules/foreman.md")
+        self.assertEqual(blockers, ["docs impact names rules/foreman.md, which doesn't exist "
+                                    "(one of mods/rules/foreman.md, plugin/rules/foreman.md?)"])
 
     def test_task_docs_a_new_doc_is_all_added(self):
         self.append("NEW.md", "See `src/missing.py`.\n")
