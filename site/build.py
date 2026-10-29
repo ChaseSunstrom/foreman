@@ -13,13 +13,16 @@ import json
 import os
 import re
 import shlex
+import hashlib
 import shutil
 import sys
 import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "__pycache__"}
+with open(os.path.join(HERE, "assets", "foreman.svg"), "rb") as _f:  # T-2060: browsers keep a favicon by its URL
+    ICON = "assets/foreman.svg?v=" + hashlib.sha256(_f.read()).hexdigest()[:8]
+SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "share.html", "__pycache__"}
 TYPES = ["FEATURE", "FIX", "CLEAN", "PERFORMANCE", "SECURITY", "RESEARCH"]
 esc = html.escape
 
@@ -287,8 +290,8 @@ def layout(title, desc, body, pages, here, depth=1):
 <meta name="description" content="{esc(desc)}">
 <meta property="og:title" content="{esc(title)} · Foreman">
 <meta property="og:description" content="{esc(desc)}">
-<meta property="og:image" content="https://chasesunstrom.github.io/foreman/assets/poster.jpg">
-<link rel="icon" href="{up}assets/foreman.svg" type="image/svg+xml">
+<meta property="og:image" content="https://chasesunstrom.github.io/foreman/assets/share.png">
+<link rel="icon" href="{up}{ICON}" type="image/svg+xml">
 <link rel="stylesheet" href="{up}style.css">
 </head>
 <body>
@@ -486,7 +489,8 @@ def build(out):
               "cards": sum(cards.values()), "areas": len(cards), "pages": len(P.PAGES), "replay": fmreplay.MAX}
     if not (counts["tests"] and counts["cards"]):  # review: a stats.json without them shipped "0 tests"
         raise SystemExit("build.py: site/data/stats.json has no code.tests or cards; run site/stats.py")
-    page = page.replace(PROOF_MARK, proof(totals, asof), 1)
+    page = page.replace(PROOF_MARK, proof(totals, asof), 1).replace('rel="icon" href="assets/foreman.svg"',
+                                                                    f'rel="icon" href="{ICON}"', 1)
     for k, v in counts.items():
         page = page.replace("{{" + k + "}}", fmt(v))
     if "{{" in page:  # a count the build doesn't know would ship as braces
