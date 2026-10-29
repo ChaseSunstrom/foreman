@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Six new playbooks, written from finished work (T-1885). Routing 600 finished tasks against the library found kinds of work with no book or a wrong one; each now has its own, built from the tasks that did that work: command guard rules (`security/command-guard`), CLI errors and argument shape (`fix/cli-errors`), is the difference real (`perf/benchmark-statistics`), ship a branch to main (`release/ship-to-main`), regex backtracking (`perf/regex-backtracking`) and surface parity (`review/surface-parity`). Real titles of other tasks of each kind route their book in the top 3. Performance and security now keep a stage index, so the playbook list stays within its budget.
 - fm capture's "already exists" warning sees subcommands too: a request restating `fm task prove` names it (T-1912).
 - On CI, run.py ends a failed run with one error naming every failed class and its exit code, cuts long annotation lines, says "no output" for a class that wrote nothing, and annotates its own crash, so a failure is never just "exit code 1" (T-1911).
 - `fm lib gaps` counts a Gradle `group:artifact` dependency as covered when a card names its bare artifact id, as the card spec says; the Espresso card also detects AndroidX Test and UiAutomator, and the Android card all of `androidx.lifecycle` (T-1914).
