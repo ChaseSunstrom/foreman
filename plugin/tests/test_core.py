@@ -698,6 +698,14 @@ SKIP: mobile layout
         self.assertEqual(r.done_when, ["all tests pass and the CSV opens in Excel"])
         self.assertEqual(r.skip, ["mobile layout"])
 
+    def test_an_at_path_line_under_an_item_scopes_it(self):
+        # T-1989: an unindented "@path" line under an item went to untagged text, its scope lost
+        r = c.parse_intake("FIX: totals are wrong\n@src/reports @src/csv.py\n  in every report\nFEATURE: export\n"
+                           "DONE-WHEN: it opens\n@src/export.py\n  and keeps the header\n\n@stray/path")
+        self.assertEqual(r.items[0].scopes, ["src/reports", "src/csv.py"])
+        self.assertEqual(r.items[1].scopes, ["src/export.py"])
+        self.assertEqual(r.untagged, "@stray/path")  # after a blank line it belongs to no item
+
     def test_aliases(self):
         r = c.parse_intake("BUG: a\nREFACTOR: b\nSPIKE: c\nADD: d\nSEC: e\nNOTE: n\nMUST: m\nACCEPT: x\nOUT: o")
         self.assertEqual([i.type for i in r.items], ["FIX", "CLEAN", "RESEARCH", "FEATURE", "SECURITY"])
