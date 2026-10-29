@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Fix: a system-folder refusal for a path that holds "can't read" was mistaken for a program the guard never read, so a system grant couldn't lift it. Only the guard's own wording counts now (T-1934).
 - Fix: in a script the guard reads, a refusal whose text happened to say "too deep" (a folder named so) was taken for the nesting limit and dropped. Only the nesting refusal itself counts now (T-1936).
 - Security: the guard scans a script's `bash -c` or `eval` layers nested past its depth limit for what it always refuses (`rm -rf ~`, a pipe into a shell, a state write) instead of passing them unread. No grant lifts that refusal, and the message says to flatten the layers (T-1931).
 - Security: a task's system grant no longer lifts the guard's refusal of a program it never read: text piped into a shell, words split on an IFS it can't follow, a script nested too deep, too long to parse in time or over the 256 KB it reads, or a script file passed to `sed -f` or `vim -S`. The grant would have run it unread. The message now says no grant lifts it and how to make the program readable (sed `-e`, vim `-c`), and the third identical refusal no longer says to ask for a grant (T-1932).

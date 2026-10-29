@@ -237,8 +237,9 @@ _DEEP = "nested too deep to read in full)"  # T-1931: a script's own nesting pas
 
 
 def _unread(detail):
-    """A system refusal for a program the guard couldn't read (not for what a program does)."""
-    return "can't read" in detail or detail == "script nests too deep to read" or detail.endswith(
+    """A system refusal for a program the guard couldn't read (not for what a program does). T-1934: by the guard's
+    own wording, so a path holding "can't read" doesn't count"""
+    return "guard can't read" in detail or detail == "script nests too deep to read" or detail.endswith(
         ("the script was too long to parse in time)", _DEEP)) or "KB the guard reads: run its" in detail
 
 
