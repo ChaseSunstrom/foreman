@@ -12,6 +12,8 @@ import fmcore as c
 
 DRY_YIELD = 3  # a round that queues fewer grounded ideas than this is dry
 DRY_STOP = 2   # dry rounds in a row that end the loop
+# T-2004: a main-thread round reviewing only the last ship shrank to 1-3 follow-ups; these keep it broad
+MAIN_LENSES = ("user value", "unspoken needs", "reliability", "speed", "simplicity", "docs", "UI and motion")
 SEEN_MAX = 6   # ponytail: the newest earlier brainstorms only (each carries 300+ titles, all of them would swamp every
 # lens's prompt); an older idea that comes back is caught at grounding, where ideas.md marks it near the finished task
 
@@ -98,7 +100,8 @@ def _brief(p, n, since):
     except Exception:  # an unreadable budget never changes the round
         pace = None
     fan = [f"2. Optional work is dropped ({pace}): skip fm mission and the ideas fan-out (its lens subagents wait); "
-           "turn your review into ideas here, in the main thread."] if pace else [
+           "turn your review into ideas here, in the main thread, and sweep all of Foreman, not just what shipped: "
+           f"at least one grounded idea per lens ({', '.join(MAIN_LENSES)})."] if pace else [
         f"2. fm mission --request \"forever loop round {n}: improve past everything shipped\", add the review to "
         "the pack, then:", f"   fm ideas --pack <pack> --rounds 2 --deepen 2 {seen_args}".rstrip()]
     lines += ["", "Do, in order:",
