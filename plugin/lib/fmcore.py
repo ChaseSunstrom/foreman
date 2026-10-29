@@ -3197,7 +3197,7 @@ def _next_for(p, briefs=None):
                 pace = None
             if not pace:
                 return None, "reflect", fmfriction.ACTION
-            waits += (f" · usage ahead of pace ({pace}): the self-improvement pass waits (optional work dropped; "
+            waits += (f" · optional work is dropped ({pace}): the self-improvement pass waits ("
                       f"required gates still run)")
     # T-0289: waits for the user, never picked; T-1478: nor, in the main checkout, a task a builder lane holds
     # T-1708: nor a task whose dependency is still open (a lane holds it, or it waits on the user)
