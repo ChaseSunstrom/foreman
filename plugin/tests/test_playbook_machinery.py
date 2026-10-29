@@ -119,6 +119,17 @@ class Load(ForemanTestCase):
         self.assertIn("references/fix/alpha.md", r.stderr)
         self.assertIn("references/ui/alpha.md", r.stderr)
 
+    def test_a_misspelled_name_suggests_the_nearest_names(self):
+        # T-2009: show tdd, show verifcation-loop failed with no hint of the names that exist
+        for typo in ("alpah", "fix/alpah", "Alph"):
+            r = self.show(typo)
+            self.assertNotEqual(r.returncode, 0, typo)
+            self.assertIn("did you mean fix/alpha?", r.stderr, typo)
+        r = self.show("zzzzqq")
+        self.assertNotIn("did you mean", r.stderr, "nothing close: no guess")
+        r = self.fm("playbooks", "eval", "alpah", check=False, env={"FOREMAN_PLAYBOOKS": self.lib})
+        self.assertIn("did you mean fix/alpha?", r.stderr)
+
     def test_outside_a_project_facts_stay_unknown(self):
         bare = os.path.join(self.tmp, "bare")
         os.makedirs(bare)
@@ -254,9 +265,12 @@ class Verbs(ForemanTestCase):
         for stage in c.SKILL_FOR:  # every stage routes somewhere real, or says it has no playbook
             r = self.run_fm("route", stage, lib=False)
             self.assertEqual(r.returncode, 0, (stage, r.stderr))
-        r = self.run_fm("route", "nosuch", lib=False)
+        r = self.run_fm("route", "nosuch", lib=False)  # T-1833: one word, no stage and no book: a typo of a stage
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("verifying", r.stderr)  # the stages it knows
+        r = self.run_fm("route", "nosuch word", lib=False)  # several words are a query: no hit is an answer
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("no playbook fits", r.stdout)
 
     def test_blame_maps_lines_to_the_tasks_that_wrote_them(self):
         put(self.lib, "references/fix/alpha.md", "# Alpha\n\nUse when.\n")

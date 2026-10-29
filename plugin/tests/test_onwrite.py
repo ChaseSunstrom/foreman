@@ -55,6 +55,10 @@ class OnWrite(HookCase):
 
     def test_python_that_does_not_compile_blocks(self):
         self.assertIn("SyntaxError", self.blocked(self.post(self.write("app.py", "def f(:\n"))))
+        # T-2035: a snippet drafted outside the project (it starts indented) isn't code the project runs
+        self.assertNotEqual(os.path.relpath(self.tmp, self.repo), ".")
+        self.assertEqual(self.post(self.write("../scratch/snippet.py", "    def f(self):\n        pass\n")).stdout, "")
+        self.assertIn("not valid JSON", self.blocked(self.post(self.write("../scratch/draft.json", "[{,]"))))
 
     def test_skill_and_agent_frontmatter_need_name_and_description(self):
         skill = self.write("skills/thing/SKILL.md", "---\nname: thing\n---\nBody.\n")

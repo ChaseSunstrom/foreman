@@ -7,11 +7,11 @@ import json
 import os
 import re
 import socket
-import subprocess
 import sys
 import time
 
 import fmcore as c
+from fmcore import subprocess  # T-2023: imported on first use
 
 LIVE_S = 15 * 60       # a session whose statusline wrote within this is live
 LEASE_S = 20 * 60      # an edit holds its function this long, renewed by each edit
@@ -19,7 +19,7 @@ FRESH_ALL_S = 15 * 60  # a session reading mail for the first time gets broadcas
 WATCH_S = 10           # a watcher whose heartbeat is this fresh delivers wakes; older, tmux is tried
 KEEP = 500             # messages kept
 TYPES = ("note", "steer", "stop")
-_DEF = re.compile(r"^(\s*)(?:(?:export|pub|async|static|public|private)\s+)*(?:def|class|function|fn|func)\s+(\w+)")
+_DEF = c.lazy(r"^(\s*)(?:(?:export|pub|async|static|public|private)\s+)*(?:def|class|function|fn|func)\s+(\w+)")
 
 
 def _dir():
@@ -626,7 +626,8 @@ def cmd_lease(args):
         return fmcli.out(args, {"leases": rows, "dropped": len(gone), "released": gone, "lane_claims": lane},
                          f"Dropped {len(gone)} lease(s)." + "".join(f"\ndropped: {x}" for x in gone[:8])
                          + (f"\n… {len(gone) - 8} more" if len(gone) > 8 else "")
-                         + (f"\nstill held: {lane} lane claim(s) (fm lease list)" if lane else ""))
+                         + (f"\nstill held: {lane} lane claim(s) of {act.id}, freed when its lane merges or is removed "
+                            "(fm lease list)" if lane else ""))  # T-1837: a bare count read as unfinished work
     if args.action == "take":  # T-1748: what this take claimed, only that (overlaps were warned on stderr)
         took = [f"{rel}::{sym}" for rel, sym in todo]
         return fmcli.out(args, {"leases": rows, "took": took},

@@ -46,6 +46,28 @@ class RoundF(ForemanTestCase):
         self.assertIn("changed during the gates: stamp.txt", out)  # T-1149: named, and honest that it may be the session's
         self.assertIn("your own edit", out)
 
+    def test_a_tree_changed_during_the_gates_gets_no_cached_pass(self):
+        # T-1963: the pass was recorded under the changed tree, so an edit made meanwhile got a pass it never earned
+        self.fm("check", "add", "test -f stamp.txt || echo x > stamp.txt")
+        self.assertIn("changed during the gates", self.fm("check").stdout)
+        self.assertNotIn("cached", self.fm("check").stdout, "stamp.txt was never on the tree the gates passed")
+        self.assertIn("cached", self.fm("check").stdout, "this run did test the tree with stamp.txt")
+
+    def test_an_edit_during_a_full_check_is_noted(self):
+        # T-1963: an edit made while the gates run lands in the tree they test
+        self.fm("task", "new", "x", "--type", "FIX", "--tier", "S", "--step", "s", "--ac", "a :: true", "--focus")
+        def edit(path=None):
+            r = self.hook("PreToolUse", {"tool_name": "Edit", "tool_input": {
+                "file_path": path or os.path.join(self.repo, "a.py"), "old_string": "x", "new_string": "y"}})
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return r.stdout
+        self.assertNotIn("fm check is running", edit())
+        c.update_meta(self.p, gates_running={"task": None, "pid": os.getpid(), "at": c.now(), "root": self.tmp})
+        self.assertNotIn("fm check is running", edit(), "a check in another tree (fm ship's scratch one)")
+        c.update_meta(self.p, gates_running={"task": None, "pid": os.getpid(), "at": c.now(), "root": self.p.root})
+        self.assertIn("fm check is running", edit())
+        self.assertNotIn("fm check is running", edit(os.path.join(self.tmp, "notes.txt")), "outside the tree")
+
     def test_a_check_that_changes_nothing_warns_of_nothing(self):
         self.fm("check", "add", "true")
         self.assertNotIn("changed during the gates", self.fm("check").stdout)
@@ -81,6 +103,15 @@ class RoundF(ForemanTestCase):
         self.assertTrue(c.sensitive(["web/package.json"]))
         self.assertTrue(c.sensitive(["uv.lock", "README.md"]))
         self.assertFalse(c.sensitive(["docs/packaging.md"]))
+
+    def test_sensitive_counts_files_that_run_elsewhere(self):
+        # T-1818: a CI workflow, hook config or install script runs with secrets or on every tool call
+        for f in (".github/workflows/test.yml", "plugin/hooks/hooks.json", "install.sh", "scripts/install-dev.sh",
+                  ".pre-commit-config.yaml", ".claude/settings.json", ".claude/settings.local.json",
+                  ".husky/pre-commit", ".gitlab-ci.yml"):
+            self.assertTrue(c.sensitive([f]), f)
+        for f in ("docs/workflows.md", "plugin/hooks/fmhooks.md", "settings.json.md"):
+            self.assertFalse(c.sensitive([f]), f)
 
     def test_audit_text_is_marked_as_data(self):
         self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S")

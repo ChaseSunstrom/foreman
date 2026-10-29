@@ -159,6 +159,7 @@ The page must be readable with animation and JS absent. Loading motion decorates
 ## Check it
 
 - `fm motion check [PATH]` — exits 0. The Motion Score (`motion.toml` at the repo root) lists each motion with `name`, `duration` (ms or a DESIGN.md token), `easing`, `properties` and `reduced` (`none`: rest state, never plays; `fade`; `instant`); the check names a missing reduced form, an unknown easing, a duration past 2000 ms, a duplicate name or a token DESIGN.md lacks.
+- `fm motion compile --to lab --out lab.html` — writes one offline page that plays each motion, scrubs it and lets you drag its bezier handles and change its duration; paste the lines under a motion back into the score. Motions named `fm-code-bars`, `fm-code-counts`, `fm-code-columns` and `fm-code-deck` also set how long `fm code`'s bars, numbers, columns and card ring take to settle.
 - `grep -rnE "([1-9][0-9]*|0?\.[0-9]+)m?s\b|cubic-bezier\(" src --include=*.css --include=*.scss | grep -v tokens/motion` — returns nothing (raw timing outside the tokens).
 - `grep -rnE "transition:\s*all|transition(-property)?:[^;]*\b(width|height|top|left|right|bottom|inset|margin|padding|font-size|box-shadow)\b" src` — returns nothing. It is a lower bound: it reads one line at a time, so also check multi-line `transition` lists and JS (`animate({ height … })`, Framer `animate={{ width … }}`) by eye or with `grep -rnE "animate\(?\{\{?[^}]*\b(width|height|top|left)\b" src`.
 - `grep -rnE "transitionend|animationend" src` — each hit has a timeout fallback or doesn't gate state.
@@ -170,6 +171,8 @@ The page must be readable with animation and JS absent. Loading motion decorates
 ## Library cards
 
 The code side lives in the stack library: `fm lib show animation` (CSS, WAAPI, view transitions), `fm lib show framer-motion` (variants, presence, layout), `fm lib show skeleton-loading`, `fm lib show layout-shift`, `fm lib show css-custom-properties` (token plumbing), `fm lib show toasts`, `fm lib show dialogs`, `fm lib show web-performance`, `fm lib show accessibility`. Add `--section verify` for just the checks.
+
+Example: `references/ui/examples/motion.html`: a menu, a toast and a list reorder driven by the timing tokens, interruptible, with reduced motion as its own path. The site's Gallery shows it.
 
 ## UI contract
 

@@ -31,7 +31,10 @@ Work inside a focused task (each step edits files). Per step, read only the play
 - Existing CSS: `fm design extract SRC` writes the token table from its custom properties into DESIGN.md's
   `## Tokens` section (`--out -` prints it instead). From nothing:
   `fm design palette SEED --out tokens.css` makes a light and dark palette from one colour (`--format css|dtcg|tailwind`);
-  it prints to stdout, so redirect with >.
+  it prints to stdout, so redirect with >. Tokens from Figma or a DTCG `.json`:
+  `fm design tokens tokens.json --to md --out DESIGN.md`. Hardcoded values: `fm design infer SRC` proposes tokens.
+- Brand assets: `fm design tokens DESIGN.md --to brand --out public/` writes favicon.svg and card.svg.
+- Token drift: `fm design xray PAGE --out xray.png` outlines each element green (token colour) or red.
 - Prove it before building on it: `fm design contrast TOKENS` checks the role pairs (body text 7:1 in dark).
 
 ## 3. Build: layout and behaviour
@@ -48,7 +51,7 @@ Work inside a focused task (each step edits files). Per step, read only the play
 - `../playbooks/references/ui/motion.md`: timing tokens, a state-to-motion table, storyboards, reduced motion as its
   own path.
 - Write the Motion Score (`motion.toml` at the repo root), then `fm motion check` (a missing reduced form, an unknown
-  easing, a token DESIGN.md lacks) and `fm motion compile --to css|waapi|three --out FILE` to emit the code.
+  easing, a token DESIGN.md lacks) and `fm motion compile --to css|waapi|three|lab --out FILE` to emit the code.
 - Games and playful UI: `../playbooks/references/ui/game-feel.md`. Sound: `../playbooks/references/ui/sound-design.md`.
 
 ## 5. 3D: a scene that never breaks the page
@@ -64,10 +67,11 @@ Work inside a focused task (each step edits files). Per step, read only the play
 
 ## 6. Check: prove it by looking
 
-- `fm design lint SRC`: generic-design tells and craft slips; fix each or say why it stays.
+- `fm design lint SRC`: generic-design tells and craft slips; fix each or say why it stays. Its last line names
+  DESIGN.md tokens no file uses: wire them in or drop them from the table.
 - `fm design check`: DESIGN.md's opted-in gates (`## Gates`, `- brief: advisory|blocking`): the Knobs' colours, type families and durations, found in the code; `- a11y: …`: token contrast pairs, a reduced-motion path, no fast flashes, img alt and a focus style that shows; `- debt: advisory 40`: untokened colours, durations and radii per file, under the budget.
 - `fm design contrast TOKENS` again after any colour change; `fm motion check` after any motion change.
-- `fm critique URL`: the styles the page really uses against DESIGN.md's tokens (unnamed, near-duplicate, one-off); `--why SELECTOR` shows which rule won.
+- `fm critique URL`: the styles the page really uses against DESIGN.md's tokens (unnamed, near-duplicate, one-off); `--why SELECTOR` shows which rule won. `--bingo` scores nine tells of a templated look (exit 1 on a full line); `--marks shot.png` turns pencil-red strokes drawn on a screenshot into one captured FIX per marked element (`--note` says what each asks); `--brief [ID]` checks that the phrases the brief quotes are on the page.
 - `../playbooks/references/ui/visual-qa.md`: `fm smoke` shoots the frame matrix (360/768/1440, light and dark,
   reduced motion); Read the PNGs and look. Before and after: `fm img diff A.png B.png --out diff.png`.
 - A component's states (default, hover, error, empty, loading): `fm stories CHART` shoots each into one matrix page. `fm shot` and `fm stories` take `--profile tv|eink|car|wrist` (that surface's size and scale) and `--reduced-motion` (prefers-reduced-motion: reduce, for posters and still states).

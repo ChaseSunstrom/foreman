@@ -14,7 +14,7 @@ import time
 import unittest
 from unittest import mock
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, headless_chrome
 
 import fmflow
 import fmshot
@@ -347,7 +347,7 @@ class BrowserClose(StubCase):
             os.waitpid(pid, 0)
 
 
-@unittest.skipUnless(fmshot.chrome(), "no headless Chromium here")
+@unittest.skipUnless(headless_chrome(), "no headless Chromium here")
 class InABrowser(ForemanTestCase):
     def flow(self, text, *args):
         path = os.path.join(self.repo, "j.flow")

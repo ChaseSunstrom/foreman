@@ -351,6 +351,25 @@ class Briefs(unittest.TestCase):
     def test_round_trip_is_lossless(self):
         self.assertEqual(c.Brief.parse(SAMPLE).render(), SAMPLE)
 
+    def test_plain_strips_hidden_characters_and_passes_printable_text_through(self):
+        # T-2017: plain() checked every character in Python; printable text now skips the scan
+        for bad in ("\x1b", "\x07", "\n", "‮", "​", " ", " ", "️", "\U000e0100"):
+            self.assertEqual(c.plain(f"a{bad}b"), "ab", repr(bad))
+        for good in ("café 日本 ✓", "a b", "x" * 500, ""):
+            self.assertEqual(c.plain(good), good)
+        self.assertEqual(c.plain(None), "")
+
+    def test_sections_are_split_only_when_read_and_copies_stay_apart(self):
+        # T-2015: a hook loads every brief but reads few past their frontmatter; splitting 9 MB of sections cost ~50 ms
+        b = c.Brief.parse(SAMPLE)
+        self.assertIsInstance(b._sections, str, "parse leaves the sections unsplit")
+        self.assertEqual(b.title, "Fix login timeout on slow networks")
+        x = b.copy()
+        x.set_section("Log", "changed\n")
+        self.assertEqual(b.render(), SAMPLE, "a copy's edit never reaches the original")
+        self.assertIn("## Log\nchanged\n", x.render())
+        self.assertIn("Add retry with backoff", b.section("Steps"))
+
     def test_steps_and_current(self):
         steps = c.Brief.parse(SAMPLE).steps()
         self.assertEqual([(s.n, s.done, s.current) for s in steps], [(1, True, False), (2, False, True), (3, False, False)])
@@ -698,6 +717,14 @@ SKIP: mobile layout
         self.assertEqual(r.done_when, ["all tests pass and the CSV opens in Excel"])
         self.assertEqual(r.skip, ["mobile layout"])
 
+    def test_an_at_path_line_under_an_item_scopes_it(self):
+        # T-1989: an unindented "@path" line under an item went to untagged text, its scope lost
+        r = c.parse_intake("FIX: totals are wrong\n@src/reports @src/csv.py\n  in every report\nFEATURE: export\n"
+                           "DONE-WHEN: it opens\n@src/export.py\n  and keeps the header\n\n@stray/path")
+        self.assertEqual(r.items[0].scopes, ["src/reports", "src/csv.py"])
+        self.assertEqual(r.items[1].scopes, ["src/export.py"])
+        self.assertEqual(r.untagged, "@stray/path")  # after a blank line it belongs to no item
+
     def test_aliases(self):
         r = c.parse_intake("BUG: a\nREFACTOR: b\nSPIKE: c\nADD: d\nSEC: e\nNOTE: n\nMUST: m\nACCEPT: x\nOUT: o")
         self.assertEqual([i.type for i in r.items], ["FIX", "CLEAN", "RESEARCH", "FEATURE", "SECURITY"])
@@ -895,3 +922,243 @@ class ActiveFast(ForemanTestCase):
         self.assertEqual(c.active_brief_fast(p).id, "T-0003")
         self.assertEqual(c.active_brief_fast(p, "/elsewhere").id, "T-0004")
         self.assertIsNone(c.active_brief_fast(p, "/nowhere"))
+
+
+class WaitWhile(unittest.TestCase):
+    """T-2010: one wait for fm check and fm ship: says what it waits for, and when it stops waiting and goes ahead."""
+    def test_wait_while_says_what_it_waits_for_and_when_it_gives_up(self):
+        import io
+        out = io.StringIO()
+        self.assertFalse(c.wait_while(lambda: False, "x", "fm t", limit=1, out=out))
+        self.assertEqual(out.getvalue(), "", "nothing running: no wait, no line")
+        left = [2]
+
+        def busy():
+            left[0] -= 1
+            return left[0] >= 0
+        self.assertTrue(c.wait_while(busy, "a running fm check", "fm t", limit=30, out=out, step=0.01))
+        self.assertIn("fm t: waiting for a running fm check to finish first (at most 30 seconds)", out.getvalue())
+        self.assertNotIn("going ahead", out.getvalue())
+        out = io.StringIO()
+        t0 = time.time()
+        self.assertTrue(c.wait_while(lambda: True, "the ambient test run", "fm t", limit=1, out=out, step=0.05))
+        self.assertLess(time.time() - t0, 3)
+        self.assertIn("the ambient test run is still running after 1 seconds; going ahead beside it", out.getvalue())
+
+
+class LazyPatterns(unittest.TestCase):
+    """T-2020: every hook spent ~25 ms compiling ~190 module-level patterns; a PreToolUse call uses about 44."""
+
+    def test_lazy_importing_the_hook_modules_compiles_no_module_level_pattern(self):
+        import sys
+        from helpers import LIB
+        code = ("import re, sys\nsys.path.insert(0, sys.argv[1])\norig, hits = re.compile, []\n"
+                "def counting(*a, **k):\n"
+                "    f = sys._getframe(1)\n"
+                "    while f and f.f_code.co_name != '<module>':\n"
+                "        f = f.f_back\n"
+                "    name = f.f_code.co_filename.rsplit('/', 1)[-1] if f else ''\n"
+                "    if name.startswith('fm'):\n"
+                "        hits.append(f'{name}:{f.f_lineno}')\n"
+                "    return orig(*a, **k)\n"
+                "re.compile = counting\nimport fmcore, fmguard, fmhooks\nprint(hits)\n")
+        out = subprocess.run([sys.executable, "-c", code, LIB], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.stdout.strip(), "[]", out.stderr)
+
+    def test_lazy_a_pattern_compiles_on_first_use_and_keeps_its_methods(self):
+        rx = c.lazy(r"a+", re.I)
+        self.assertEqual(rx.search("bAab").group(), "Aa")
+        self.assertIs(rx.search, rx.search)  # compiled once, then a plain attribute
+        self.assertEqual((rx.pattern, rx.flags & re.I), ("a+", re.I))
+
+    def test_lazy_every_deferred_pattern_still_compiles(self):
+        import fmguard
+        import fmhooks
+        found = []
+
+        def walk(v):
+            if type(v).__name__ == "lazy":
+                found.append(v)
+            elif isinstance(v, (list, tuple, set, frozenset)):
+                for x in v:
+                    walk(x)
+            elif isinstance(v, dict):
+                for x in v.values():
+                    walk(x)
+        for mod in (c, fmguard, fmhooks):
+            for v in list(vars(mod).values()):
+                walk(v)
+        for rx in found:
+            rx.flags  # a bad pattern raises re.error here, not at import
+        self.assertGreater(len(found), 150)
+
+
+class BriefIndex(ForemanTestCase):
+    """T-2022: closed briefs load from a stat-checked index instead of 1,100+ file reads per hook."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        for i in range(3):
+            self.fm("task", "new", f"t{i}", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        b = c.find_brief(self.p, "T-0001")
+        b.meta["status"] = "done"
+        c.save_brief(self.p, b)
+        self.age()
+        c._BRIEF_MEMO.clear()
+
+    def age(self, secs=60):
+        for path in c.brief_paths(self.p):
+            os.utime(path, (time.time() - secs, time.time() - secs))
+
+    def opened(self, fn):
+        from unittest import mock
+        real, seen = open, []
+
+        def spy(f, *a, **k):
+            seen.append(str(f))
+            return real(f, *a, **k)
+        with mock.patch("builtins.open", spy):
+            out = fn()
+        c._BRIEF_MEMO.clear()
+        return out, seen
+
+    def test_brief_index_closed_briefs_load_without_opening_their_files(self):
+        first = c.load_briefs(self.p)
+        c._BRIEF_MEMO.clear()
+        self.assertTrue(os.path.exists(os.path.join(self.p.dir, "briefs-index.json")))
+        second, seen = self.opened(lambda: c.load_briefs(self.p))
+        done = c.find_brief(self.p, "T-0001").path
+        self.assertNotIn(done, seen)
+        self.assertIn(c.find_brief(self.p, "T-0002").path, seen, "open briefs are read as before")
+        for a, b in zip(first, second):
+            self.assertEqual((a.id, a.meta, a.title, a.preamble), (b.id, b.meta, b.title, b.preamble))
+            self.assertEqual(a.render(), b.render())
+            self.assertEqual([list(x) for x in a.sections], [list(x) for x in b.sections])
+        _, seen = self.opened(lambda: c.active_brief_fast(self.p))
+        self.assertNotIn(done, seen, "the fast active scan skips indexed closed briefs too")
+
+    def test_brief_index_an_edited_brief_is_read_again(self):
+        c.load_briefs(self.p)
+        c._BRIEF_MEMO.clear()
+        path = c.find_brief(self.p, "T-0001").path
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text.replace("# t0", "# renamed"))
+        self.age(30)
+        c._BRIEF_MEMO.clear()
+        b = [x for x in c.load_briefs(self.p) if x.id == "T-0001"][0]
+        self.assertEqual(b.title, "renamed")
+
+    def test_brief_index_a_corrupt_index_is_ignored(self):
+        want = [x.render() for x in c.load_briefs(self.p)]
+        idx = os.path.join(self.p.dir, "briefs-index.json")
+        name = os.path.basename(c.find_brief(self.p, "T-0001").path)
+        for bad in ("{", "[]", '{"v":1,"e":[]}', json.dumps({"v": 1, "e": {name: [1]}}),
+                    json.dumps({"v": 1, "e": {name: "x"}}), json.dumps({"v": 1, "e": {name: [1, 2, 3, [], ""]}})):
+            with open(idx, "w", encoding="utf-8") as f:
+                f.write(bad)
+            c._BRIEF_MEMO.clear()
+            self.assertEqual([x.render() for x in c.load_briefs(self.p)], want, bad)
+            c._BRIEF_MEMO.clear()
+            self.assertIsNone(c.active_brief_fast(self.p), bad)
+
+    def test_brief_index_the_fast_scan_reads_only_the_closed_keys(self):
+        # T-2031: once the small keys file exists, the fast scan never opens the 700 KB index
+        c.load_briefs(self.p)
+        c._BRIEF_MEMO.clear()
+        keys, idx = (os.path.join(self.p.dir, n) for n in ("briefs-closed.json", "briefs-index.json"))
+        done = c.find_brief(self.p, "T-0001")
+        got, seen = self.opened(lambda: c.active_brief_fast(self.p))
+        self.assertIsNone(got)
+        self.assertNotIn(idx, seen)
+        self.assertNotIn(done.path, seen)
+        for bad in ("{", "[]"):  # unreadable: back to the index, still skipping the closed brief
+            with open(keys, "w", encoding="utf-8") as f:
+                f.write(bad)
+            got, seen = self.opened(lambda: c.active_brief_fast(self.p))
+            self.assertIsNone(got, bad)
+            self.assertNotIn(done.path, seen, bad)
+        os.remove(keys)
+        c._BRIEF_MEMO.clear()
+        c.load_briefs(self.p)
+        self.assertTrue(os.path.exists(keys), "a missing keys file is written again")
+        done.meta["status"] = "active"  # reopened: a stale key no longer matches, so the brief is read
+        c.save_brief(self.p, done)
+        self.age(30)
+        c._BRIEF_MEMO.clear()
+        self.assertEqual(c.active_brief_fast(self.p).id, "T-0001")
+
+    def test_brief_index_a_just_written_brief_is_not_indexed(self):
+        b = c.find_brief(self.p, "T-0002")
+        b.meta["status"] = "done"
+        c.save_brief(self.p, b)
+        c._BRIEF_MEMO.clear()
+        c.load_briefs(self.p)
+        with open(os.path.join(self.p.dir, "briefs-index.json"), encoding="utf-8") as f:
+            names = json.load(f)["e"]
+        self.assertIn(os.path.basename(c.find_brief(self.p, "T-0001").path), names)
+        self.assertNotIn(os.path.basename(b.path), names, "a same-tick rewrite could pass for it")
+
+    def test_brief_index_a_stub_copies_edits_and_renders_like_a_parsed_brief(self):
+        c.load_briefs(self.p)
+        c._BRIEF_MEMO.clear()
+        path = c.find_brief(self.p, "T-0001").path
+        c._BRIEF_MEMO.clear()
+        stub = [x for x in c.load_briefs(self.p) if x.id == "T-0001"][0]
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        full = c.Brief.parse(text, path)
+        self.assertEqual(stub.copy().render(), text)
+        for b in (stub, full):
+            b.meta["status"] = "dropped"
+            b.sections[0][1] += "more\n"
+        self.assertEqual(stub.render(), full.render())
+        stub2 = [x for x in c.load_briefs(self.p) if x.id == "T-0001"][0]
+        stub2.sections = [["Only", "x\n"]]
+        self.assertTrue(stub2.render().endswith("## Only\nx\n"))
+
+
+class LaterImports(ForemanTestCase):
+    """T-2023: every hook paid ~5 ms importing subprocess, shutil and glob, which an ordinary tool call never uses."""
+    HEAVY = ("subprocess", "glob")  # not shutil: tempfile imports it, and the guard needs tempfile each call
+
+    def loaded_after(self, event, payload):
+        site = os.path.join(self.tmp, "report")
+        os.makedirs(site, exist_ok=True)
+        out = os.path.join(site, "loaded")
+        with open(os.path.join(site, "sitecustomize.py"), "w") as f:
+            f.write(f"import atexit, sys\natexit.register(lambda: open({out!r}, 'w').write("
+                    f"' '.join(m for m in {self.HEAVY!r} if m in sys.modules)))\n")
+        r = self.hook(event, payload, env={"PYTHONPATH": site})
+        with open(out) as f:
+            return r, f.read().split()
+
+    def test_later_a_plain_tool_call_loads_no_heavy_module(self):
+        self.fm("init")
+        r, loaded = self.loaded_after("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "ls"}})
+        self.assertEqual((r.returncode, loaded), (0, []), r.stderr)
+
+    def test_later_a_stand_in_imports_on_first_use_and_mocks_still_reach_callers(self):
+        from unittest import mock
+        s = c._Later("subprocess")
+        self.assertIs(s.PIPE, subprocess.PIPE)
+        with mock.patch("subprocess.run", return_value="patched"):
+            self.assertEqual(s.run(["true"]), "patched")
+        with mock.patch.object(c.subprocess, "run", return_value="via fmcore"):
+            self.assertEqual(c.subprocess.run(["true"]), "via fmcore")
+        self.assertIs(c.subprocess.run, subprocess.run)
+
+    def test_later_claude_path_still_adds_the_native_folder_only_when_needed(self):
+        native = os.path.join(self.tmp, "native")
+        os.makedirs(native)
+        claude = os.path.join(native, "claude")
+        with open(claude, "w") as f:
+            f.write("#!/bin/sh\n")
+        os.chmod(claude, 0o755)
+        env = c.claude_path({"FOREMAN_NATIVE_BIN": native, "PATH": "/nonexistent"})
+        self.assertEqual(env["PATH"], native + os.pathsep + "/nonexistent")
+        on = native + os.pathsep + "/usr/bin"
+        self.assertEqual(c.claude_path({"FOREMAN_NATIVE_BIN": native, "PATH": on})["PATH"], on)

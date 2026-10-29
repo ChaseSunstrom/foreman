@@ -107,6 +107,8 @@ Confirmations over 300 ms pass this script but fail step 3; keep the cue table's
 (remembering the choice), `fm lib show accessibility` (live regions, never sound alone), `fm lib show toasts` (the
 visual twin).
 
+Example: `references/ui/examples/sound-design.html`: earcons that are off until asked for, one family, peak and repeat caps, and a visual twin for every cue. The site's Gallery shows it.
+
 ## UI contract
 
 - motion: n/a: sound doesn't move; each cue's visual twin follows the motion rule.

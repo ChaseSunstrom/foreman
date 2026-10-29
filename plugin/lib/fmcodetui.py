@@ -103,7 +103,7 @@ DEFAULTS = {
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
              "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
              "p": "projects", ",": "settings", "z": "hush", "L": "looks", "/": "search", "g": "queue", "T": "tickets",
-             "u": "undo", "P": "pr", "F": "photo", "B": "breakout"},
+             "u": "undo", "P": "pr", "F": "photo", "B": "breakout", "I": "backlog"},
     "ext": {},  # T-1657: each extension's settings ({name: {key: value}}), its declared defaults (API.setting)
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
@@ -149,6 +149,8 @@ class State:
             ts = e.get("ts")
             if "ts" in e and not (isinstance(ts, (int, float)) and not isinstance(ts, bool) and math.isfinite(ts)):
                 e = {k: v for k, v in e.items() if k != "ts"}  # T-1306: a time that isn't a finite number isn't one
+            e = {k: v if k not in ("text", "cmd", "action") else "" if v is None else str(v)
+                 for k, v in e.items()}  # T-1926: the panels join, pad and strip these as words, whatever was sent
             # T-1306: a handler that trips on a bad field leaves the state as it was. One level of copies covers the
             # handlers here: each validates before it changes anything nested. ponytail: the copy grows with the log
             # (quadratic over a run); fine at hundreds of events, validate per handler if runs reach tens of thousands.
@@ -717,13 +719,32 @@ def title_text(st):
     return "".join(ch for ch in words if ch.isprintable())[:80]
 
 
+SCORE = {"bar": "fm-code-bars", "n": "fm-code-counts", "tok": "fm-code-counts", "col": "fm-code-columns",
+         "deck": "fm-code-deck"}  # T-1626: an eased key's family (its leading letters) → the score motion that times it
+
+
+def score_durations(root):
+    """T-1626: seconds per key family from the project's Motion Score (motion.toml at root), for the motions SCORE
+    names; {} without one, or when it can't be read. 0 ms is 1 ms: there at once."""
+    path = os.path.join(root, "motion.toml")
+    if not os.path.isfile(path):
+        return {}
+    import fmmotion
+    try:
+        got = {m["name"]: m["ms"] for m in fmmotion.check(path)["motions"] if m["ms"] is not None}
+    except (OSError, ValueError):
+        return {}
+    return {fam: max(got[name], 1) / 1000 for fam, name in SCORE.items() if name in got}
+
+
 class Motion:
     """What render needs to animate, kept across frames: when each watched value changed, and from what. A value
     already there in the first frame is no change (opening a finished run shows it as it is); one first seen later
     is new (a fresh activity line fades in, a new number rolls up from 0)."""
 
-    def __init__(self):
+    def __init__(self, score=None):
         self.seen, self.frames, self.last_change = {}, 0, -1e9
+        self.score = score or {}  # T-1626: seconds per key family (bar, n, tok, col, deck) from the project's score
 
     def since(self, key, value, t):
         """Seconds since key's value became `value` (inf when it already was in the first frame)."""
@@ -736,7 +757,10 @@ class Motion:
         return float("inf") if rec[1] is None else max(0.0, t - rec[1])
 
     def eased(self, key, value, t, dur=0.7):
-        """value as shown at t: it rolls from what was shown before to the new value over dur seconds."""
+        """value as shown at t: it rolls from what was shown before to the new value over dur seconds (or the score's
+        for the key's family)."""
+        if self.score:
+            dur = self.score.get(re.match(r"[a-z]*", key).group(), dur)
         rec = self.seen.get(("e", key))
         if rec is None:
             rec = (value, value, None) if self.frames <= 1 else (value, 0, t)
@@ -989,7 +1013,7 @@ def _time(st, w, h, app):
     ok, ok2, accent, glow, bad = fx.c("ok"), fx.c("ok2"), fx.c("accent"), fx.c("glow"), fx.c("bad")
     out = []
     for i, (label, s, e) in enumerate(sp):
-        a = min(bw - 1, int(s * bw / total))
+        a = max(0, min(bw - 1, int(s * bw / total)))  # T-1922: a phase stamped before the run padded gigabytes
         b = max(a + 1, min(bw, round(e * bw / total)))
         live = i == len(sp) - 1 and st.status not in ("closed", "answered")
         cells = []
@@ -1381,6 +1405,7 @@ COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume"
                   ("diff", "the run's changes"), ("history", "past runs"), ("projects", "every Foreman project"),
                   ("model", "model or worker"), ("settings", "settings: look, layout, keys"),
                   ("looks", "your taste: 12 looks in pairs"),
+                  ("backlog", "the deferred pile: revive, keep or drop each"),
                   ("hush", "motion: full, reduced, off"),
                   ("queue", "work the queue: each task in turn"),
                   ("tickets", "tickets: requests that run after this one"),
@@ -1409,7 +1434,7 @@ CONFIRM_S = 2.0  # T-1348: q or s during a live run waits this long for the seco
 WIDE_ABOVE, WIDE_COLUMN = 160, ["plan", "verify"]  # T-1347: a third column's panels, from this many columns
 TIP_SKIP = {"stop", "up", "down", "focus", "expand", "follow", "help", "quit"}  # too plain to need a tip
 POSTER = (("run", ("new", "stop", "resume", "model")),  # T-1512: the keys poster's groups; extensions' go under more
-          ("see", ("diff", "history", "projects", "thoughts", "settings", "hush", "looks")),
+          ("see", ("diff", "history", "projects", "thoughts", "settings", "hush", "looks", "backlog")),
           ("move", ("focus", "up", "down", "expand", "follow", "search")), ("app", ("help", "quit")))
 
 
@@ -1571,6 +1596,13 @@ def _list_view(title, note, row, head=None, foot=None, empty="nothing here yet",
         for r, segs in enumerate(bottom):
             cv.line(iy + ih - len(bottom) + r, ix, segs, ix + iw)
     return view
+
+
+def _backlog_row(item):
+    """T-1856: one deferred item and why it was deferred."""
+    import fmcore
+    return [(f" {item['id']} ", "chip_todo"), ("  " + _one_line(fmcore.plain(item["title"])), "text")] + (
+        [("  — " + _one_line(fmcore.plain(item["why"])), "dim")] if item["why"] else [])
 
 
 def _history_row(item):
@@ -1735,8 +1767,8 @@ def _fm_json(*args):
 _GROUPS = {"look": "Look", "colors": "Colours", "layout": "Layout", "keys": "Keys", "pane": "Claude Code pane"}
 _WHERE = {"app": "this app · tui.toml · applies now", "plugin": "the foreman-ui pane · Claude Code's settings.json · "
                                                                 "applies within seconds"}
-_SET_HINTS = (("/", "search"), ("m", "changed only"), (":", "set"), ("Enter", "edit"), ("b", "bind a key"),
-              ("l", "layout"), ("r", "runners"), ("Esc", "close"))
+_SET_HINTS = (("/", "search"), ("m", "changed only"), (":", "set"), ("Enter", "edit"), ("[ ]", "turn"),
+              ("b", "bind a key"), ("l", "layout"), ("r", "runners"), ("Esc", "close"))
 # T-1511: keys b never binds: the ones the app keeps for itself, and what each does; a key tui.toml moved one of KEPT
 # to is kept too, and the last key for one of LAST isn't bound away
 RESERVED = {"q": "quit", "\x1b": "back", "^C": "quit", "?": "help", "z": "hush"}
@@ -1842,8 +1874,17 @@ def _settings_foot(app, iw):
         text = tail(app.set_query if app.set_typing == "search" else app.set_line, max(1, iw - 4))
         last = [(" /" if app.set_typing == "search" else " :", "key"), (text, "input"), ("▏", "key"),
                 (" " * max(0, iw - 3 - width(text)), "input")]
-    else:
-        last = [seg for k, word in _SET_HINTS for seg in ((f" {k} ", "key"), (f" {word}  ", "dim"))]
+    else:  # hints too wide for one line take the note's spare second line (a long note keeps it: they clip)
+        rows = [[]]
+        for k, word in _SET_HINTS:
+            pair = [(f" {k} ", "key"), (f" {word}  ", "dim")]
+            if rows[-1] and sum(width(s) for s, _ in rows[-1] + pair) > iw and len(rows) < 2:
+                rows.append([])
+            rows[-1] += pair
+        notes = (wrap(note, iw) + [""])[:2]
+        if len(rows) > 1 and not notes[1]:
+            return [[("─" * iw, "border")], about, [(notes[0], style)]] + rows
+        last = sum(rows, [])
     return [[("─" * iw, "border")], about] + [[(x, style)] for x in (wrap(note, iw) + [""])[:2]] + [last]
 
 
@@ -1932,6 +1973,8 @@ VIEWS = {"breakout": _breakout_view, "help": _help_view, "diff": _diff_view, "hi
          "runners": _list_view("Runners", "Enter tests one (--version) · p pings one (a tiny question) · Esc back",
                                _runner_row,
                                foot=_runners_foot),
+         "backlog": _list_view("Backlog: the deferred pile", "r revive · space keep · d drop · u undo · ↑↓ move · Esc back",
+                               _backlog_row, empty="nothing is deferred"),  # T-1856
          "looks": _list_view(lambda app: f"{len(app.look_answers) + 1}/{len(app.look_pairs)} Which is more like you?",
                              "1 · 2 · n neither · Backspace back · Esc stops, nothing kept",
                              lambda item: [(item[0], "text")])}
@@ -2135,7 +2178,7 @@ class App:
         self.extra_labels, self.ext = list(EXT_LABELS), {}
         self.rule, self.rule_said = None, False  # T-1657: the [[rule]] whose layout shows; a rule error said once
         self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
-        self.motion, self.clock = Motion(), time.monotonic  # T-1300: what moves, and the time it moves by
+        self.motion, self.clock = Motion(score_durations(self.root)), time.monotonic  # T-1300, T-1626 (the score)
         self.confirm_key = None  # T-1348: (command, until) after a first q or s during a live run
         self.bell_seen = (0, False)  # T-1310: refusals counted and whether blocked, as of the last bell check
         self.game, self.game_t = None, 0.0  # T-1556: Breakout and the clock it was last stepped to
@@ -2158,6 +2201,7 @@ class App:
                          "diff": self.show_diff, "history": self.show_history, "model": self.show_picker,
                          "thoughts": self.toggle_thoughts, "projects": self.show_home,
                          "settings": self.show_settings, "hush": self.hush, "looks": self.show_looks,
+                         "backlog": self.show_backlog,
                          "queue": self.work_queue, "tickets": self.show_tickets, "undo": self.undo,
                          "pr": self.draft_pr, "photo": self.take_photo, "breakout": self.open_breakout}
         self.size = None  # T-1546: the screen's size as last drawn, for the photo booth
@@ -2224,6 +2268,8 @@ class App:
             return self._runners_key(k)
         if self.mode == "looks":
             return self._looks_key(k)
+        if self.mode == "backlog":
+            return self._backlog_key(k)
         if self.mode == "breakout":  # T-1556: the game plays its own keys; any other closes it and does its usual thing
             if self._game_key(k):
                 return None
@@ -2433,8 +2479,8 @@ class App:
 
     # -- commands
     def quit(self):
+        self.done = True  # T-2030: first, so a runner CLI that spawns while stop() runs sees it and ends itself
         self.stop()
-        self.done = True
         if self.used_path:  # T-1348: what this launch used, for the next one's tip
             import fmcore
             try:
@@ -2651,8 +2697,8 @@ class App:
         path = os.path.join(self.history_dir, f"{tid}.events.jsonl") if self.history_dir else None
         if path and os.path.isfile(path):
             try:
-                with open(path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(e) + "\n")
+                import fmcore
+                fmcore.append_line(path, json.dumps(e) + "\n")
             except OSError:
                 pass
         self.state.note("note", text=e["text"])
@@ -2724,6 +2770,7 @@ class App:
     def _runners_of_child(self):
         """T-1756: (name, pid) of each runner the running fm code registered (fmcode's code-procs entries it owns)."""
         import fmcode
+        import fmideas
         out, owner = [], str(getattr(self.child, "pid", ""))
         try:
             names = [n for n in os.listdir(fmcode._registry()) if n.isdigit()]
@@ -2734,8 +2781,7 @@ class App:
                 with open(fmcode._registry(n)) as f:
                     if f.read().split()[1] != owner:
                         continue
-                with open(f"/proc/{n}/cmdline", "rb") as f:
-                    name = os.path.basename(os.fsdecode(f.read().split(b"\0")[0])) or "runner"
+                name = os.path.basename(os.fsdecode(fmideas._cmdline(n)[0])) or "runner"  # T-1828: ps without /proc
             except (OSError, IndexError):
                 continue
             out.append((name, int(n)))
@@ -2936,6 +2982,50 @@ class App:
                 self.message = f"taste: not recorded: {e}"
         return None
 
+    # -- backlog (T-1856): fm inbox swipe's deferred pile; each verdict is applied the moment its key is pressed
+    def show_backlog(self):
+        import fmcore
+        import fmeco
+        self.backlog_p = fmcore.find_project(self.root)
+        if not self.backlog_p:
+            self.message = "backlog: this folder is not a Foreman project (fm init makes it one)"
+            return
+        self.items, self.item_index, self.mode = fmeco.swipe_list(self.backlog_p), 0, "backlog"
+        self.backlog_undo, self.backlog_kept = [], set()  # T-1871: u takes back the newest answer given in this view
+
+    def _backlog_key(self, k):
+        import fmeco
+        step = {"up": -1, "down": 1}.get(self._list_cmd(k))
+        verdict = {"r": "revive", " ": "keep", "d": "drop"}.get(k)
+        if k in ("\x1b", "q"):
+            self.mode = "main"
+        elif step:
+            self.item_index = max(0, min(len(self.items) - 1, self.item_index + step))
+        elif k == "u":
+            last = self.backlog_undo[-1] if self.backlog_undo else None
+            ok, said = fmeco.swipe_undo(self.backlog_p, self.backlog_undo, self.backlog_kept)
+            self.message = f"backlog: {said}"
+            if ok:  # the pile read again less the cards kept here, the card taken back selected
+                self.items = [x for x in fmeco.swipe_list(self.backlog_p) if x["id"] not in self.backlog_kept]
+                self.item_index = next((i for i, x in enumerate(self.items) if x["id"] == last[0]), 0)
+        elif verdict and self.items:
+            try:
+                said = fmeco.swipe_apply(self.backlog_p, f"{self.items[self.item_index]['id']}:{verdict}",
+                                         self.backlog_undo)
+            except Exception as e:  # changed elsewhere since the list was read, a busy lock: said, the app stays up
+                import fmcli
+                self.message = f"backlog: {e}"
+                if isinstance(e, fmcli.UsageError):  # not deferred now: the stale row goes, a busy lock keeps it
+                    del self.items[self.item_index]
+                    self.item_index = max(0, min(self.item_index, len(self.items) - 1))
+                return None
+            self.message = f"backlog: {said[0]}"
+            if verdict == "keep":
+                self.backlog_kept.add(self.items[self.item_index]["id"])
+            del self.items[self.item_index]
+            self.item_index = max(0, min(self.item_index, len(self.items) - 1))
+        return None
+
     def show_picker(self):
         try:
             self.items = list(self.choices_source())
@@ -3048,6 +3138,14 @@ class App:
             self.set_note, self.lay_at, self.mode = None, (0, 0), "layout"
         elif k == "r":
             self.show_runners()
+        elif k in ("[", "]") and r:  # T-1661: the selected number turned one detent, through :set (scope, pins)
+            import fmsettings
+            try:
+                new = fmsettings.detent(r, r["value"], 1 if k == "]" else -1)
+            except fmsettings.SettingError as e:
+                self.set_note = (str(e), "bad")
+                return None
+            return self._settings_set(f"set --surface {r['surface']} {r['key']} {new}")
         elif cmd == "expand" and r:  # the :set line for this setting, its value ready to change
             both = sum(x["key"] == r["key"] for x in self.set_rows) > 1
             where = "--surface " + r["surface"] + " " if both else ""
@@ -3287,21 +3385,14 @@ class App:
         """The panel at column c, row i moved; layout.columns and layout.heights (each panel keeps its own) written as
         one change, so one fm settings undo puts the move back. A column keeps one panel at least."""
         import fmsettings
-        lay = self.cfg["layout"]
-        cols = [list(x) for x in lay["columns"]]
-        hts = [((list(lay["heights"][n]) if n < len(lay["heights"]) else []) + [1] * len(x))[:len(x)]
-               for n, x in enumerate(cols)]  # as render reads them: a missing height is 1
-        to, at = c + dc, i + di
-        if not 0 <= to < len(cols) or not dc and not 0 <= at < len(cols[c]):
-            return None  # the edge: nowhere to go
-        if dc and len(cols[c]) == 1:
-            self.set_note = (f"{cols[c][0]} is its column's only panel: a column keeps one (:set layout.columns to "
-                             "drop a column)", "bad")
+        try:
+            got = fmsettings.layout_moved(self.cfg["layout"], c, i, dc, di)
+        except fmsettings.SettingError as e:  # a column's only panel
+            self.set_note = (str(e).replace("(set ", "(:set "), "bad")
             return None
-        at = min(i, len(cols[to])) if dc else at  # across: to the same row there, or its end
-        name = cols[c].pop(i)
-        cols[to].insert(at, name)
-        hts[to].insert(at, hts[c].pop(i))
+        if got is None:
+            return None  # the edge: nowhere to go
+        cols, hts, name, to, at = got
         try:  # one write: both or neither
             done = fmsettings.set_apps([("layout.columns", cols), ("layout.heights", hts)], base=self._base())
             self.lay_at = (to, at)
@@ -3356,7 +3447,11 @@ class App:
             return
 
         def run():
-            spawned = lambda p: setattr(self, "runner_proc", p)  # noqa: E731
+            def spawned(p):
+                self.runner_proc = p
+                if self.done and p.poll() is None:  # T-2030: the quit landed before this; stop() saw no CLI
+                    with contextlib.suppress(OSError):
+                        os.killpg(p.pid, signal.SIGKILL)
             try:
                 if ping:
                     got = fmcode.ping_runner(item["name"], on_spawn=spawned)

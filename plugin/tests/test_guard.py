@@ -106,6 +106,102 @@ class KnownVars(GuardCase):
             ("cd {fhome} && cd /nonexistent && cd /tmp; echo x > plugin/lib/fmguard.py", "core"),
         ], self.bash)
 
+    def test_an_or_later_in_the_line_keeps_the_cd_before_it_certain(self):
+        # T-1891: any || made every cd uncertain, so `cd S/try && git checkout -- . && … || echo` (an unrolled loop
+        # body) read the checkout as one over the main tree
+        self.run_table([
+            ("cd /tmp && tar xf - && echo a || echo f", None),  # the tar runs only after the cd
+            ("cd /tmp && tar xf - && for e in a b; do true || echo $e; done", None),
+            ("cd /tmp || exit; tar xf -", None),  # a cd into a folder that exists can't fail
+            ("true || cd /tmp && tar xf -", "core"),  # (true || cd) && tar: the cd may be skipped
+            ("true || cd /tmp; tar xf -", "core"),
+            ("cd /nonexistent && true || tar xf -", "core"),  # the cd failed: the || runs here
+            ("cd /nonexistent || echo no; tar xf -", "core"),
+            ("cd /tmp && true || cd /nonexistent && tar xf -", None),
+            ("false || true && cd /tmp && tar xf -", None),  # the tar needs the cd, whatever ran before it
+        ], lambda cmd: self.bash(cmd, cwd=self.fhome))
+
+    def test_a_compound_after_a_cd_chain_runs_in_the_cd_folder(self):
+        # T-1920: any for/if/{ } keyword made the line branchy, so `cd S/w && for s in …; do git cherry-pick $s ||
+        # break; done` (the route the guard's own hint names) read as a tree write over Foreman. $L, not $(…): the
+        # text after a $( is also read from the starting folder (T-1921)
+        self.run_table([
+            ("cd /tmp && for s in a b; do tar xf - || break; done", None),  # break: not unrolled
+            ("cd /tmp && for s in $L; do tar xf -; done", None),
+            ("cd /tmp && if true; then tar xf -; else tar xf -; fi", None),
+            ("cd /tmp && {{ tar xf -; tar xf -; }}", None),
+            ("cd /tmp && while read s; do tar xf -; done && tar xf -", None),
+            ("cd /tmp && for a in $L; do if true; then tar xf -; fi; done", None),  # nested
+            ("cd /nonexistent && for s in $L; do :; done && tar xf -", None),  # the failed cd stops the chain
+            ("cd {fhome} && for d in $L; do cd /tmp; done && tar xf -", "core"),  # the loop may not run
+            ("cd /tmp && for s in $L; do tar xf -; cd {fhome}; done", "core"),  # its second pass runs there
+            ("cd {fhome} && if false; then cd /tmp; fi && tar xf -", "core"),
+            ("cd {fhome} && while true; do source x; done && tar xf -", "core"),
+            ("cd /nonexistent && if true; then :; fi; tar xf -", "core"),  # a ; after the compound
+            ("cd /nonexistent && while false; do :; done || tar xf -", "core"),
+            ("cd /nonexistent && echo for; tar xf -; echo done", "core"),  # keywords as arguments
+            ("cd /nonexistent && echo \\; if || tar xf - || echo \\; fi", "core"),  # escaped separators
+            ("cd /nonexistent && echo do for x\ntar xf -\ndone", "core"),  # `do` an argument: for is one too
+            ("cd /nonexistent && : >&for\ntar xf -\ndone", "core"),  # >& names a file
+            ("cd /nonexistent && for-x\ntar xf -\ndone", "core"),  # its review: a command named for-x
+            ("cd /nonexistent && if.x\ntar xf -\nfi", "core"),
+            ('if false; then "cd" /tmp; fi && tar xf -', "core"),  # its review: a cd as written, quotes and all
+            ("if false; then c\\d /tmp; fi && tar xf -", "core"),
+            ('if false; then c""d /tmp; fi && tar xf -', "core"),
+            ('echo x | while read l; do "cd" /tmp; done; tar xf -', "core"),
+            ('cd /tmp && for s in $L; do tar xf -; "cd" {fhome}; done', "core"),
+            ("cd /tmp && if true; then $C {fhome}; fi && tar xf -", "core"),  # a computed command word
+            ("cd /tmp && if true; then $(echo cd) {fhome}; fi && tar xf -", "core"),
+            ("cd /nonexistent && echo $'x; if' || tar xf - || echo $'; fi'", "core"),  # quotes left unmasked
+            ("cd /nonexistent && f() {{ :; }}; tar xf -", "core"),
+        ], lambda cmd: self.bash(cmd, cwd=self.fhome))
+
+    def test_a_substitution_behind_a_head_cd_runs_in_the_cd_folder(self):
+        # T-1921: `…` and $( … ) bodies and the text after each $( were read from the starting folder too, so `cd
+        # <scratch> && echo $(ls) && git reset --hard` read as a tree write over Foreman
+        self.run_table([
+            ("cd /tmp && echo $(ls) && tar xf -", None),  # the text after $( is read from /tmp
+            ("cd /tmp && x=$(tar xf -) && echo", None),
+            ("cd /tmp && echo `tar xf -` && tar xf -", None),
+            ("cd /tmp && sh <<< 'tar xf -'", None),
+            ("cd /nonexistent && echo $(tar xf -)", None),  # the failed cd stops the chain
+            ("cd {fhome} && echo $(tar xf -)", "core"),
+            ("cd /tmp && cd {fhome} && echo $(tar xf -)", "core"),  # a later cd still counts
+            ("cd /tmp && echo $(cd {fhome}; tar xf -)", "core"),
+            ("cd /tmp; echo $(tar xf -)", "core"),  # a failed cd: the rest runs here
+            ("cd /tmp && echo x || echo $(tar xf -)", "core"),
+            ("cd /tmp && echo x\necho $(tar xf -)", "core"),
+            ("cd /tmp 2>$(tar xf -) && echo", "core"),  # runs before the cd
+            ("cd /tmp/$(tar xf -) && echo", "core"),
+            ("x=$(tar xf -) cd /tmp && echo", "core"),
+            ('cd "/tmp" && echo $(tar xf -)', "core"),  # only a plain head: the rest as before
+            ("cd -P /tmp && echo $(tar xf -)", "core"),
+            ("cd ../.. && echo $(tar xf -)", "core"),
+            ("cd /tmp && cd -P {fhome} && echo `tar xf -`", "core"),  # anything after the head that may move it
+            ("cd /tmp && pushd {fhome} && echo `tar xf -`", "core"),
+            ("cd /tmp && eval cd {fhome} && echo `tar xf -`", "core"),
+            ("cd /tmp && source f && echo `tar xf -`", "core"),
+            ("cd /tmp && $C {fhome} && echo `tar xf -`", "core"),
+            ("cd /tmp && $(echo cd) {fhome} && echo `tar xf -`", "core"),
+            ("cd /tmp && c$(echo d) {fhome} && echo `tar xf -`", "core"),  # its review: a word made of fused parts
+            ("cd /tmp && X=d && c${{X}} {fhome} && echo `tar xf -`", "core"),
+            ("cd /tmp && A=1 $C {fhome} && echo `tar xf -`", "core"),
+            ('cd /tmp && "cd" {fhome} && echo `tar xf -`', "core"),
+            ('cd /tmp && echo "`" && cd {fhome} && echo "`" && echo $(tar xf -)', "core"),  # quoted backticks
+            ("cd /tmp | echo `tar xf -`", "core"),  # not an && head
+            ("for d in a b c d e f; do cd $d && echo $(git rev-parse HEAD); cd ..; done", None),  # was over the cap
+        ], lambda cmd: self.bash(cmd, cwd=self.fhome))
+        self.run_table([  # and the other way: nested text was judged from the hook's folder, so from scratch these passed
+            ("cd {fhome} && sh -c 'tar xf -'", "core"),
+            ("cd {fhome} && eval 'tar xf -'", "core"),
+            ("cd {fhome} && x=`tar xf -`", "core"),
+            ("cd {fhome} && sh <<< 'tar xf -'", "core"),
+            ("cd {fhome}; find . -exec tar xf - \\;", "core"),
+            ("cd {fhome}/plugin && sh -c 'rm -rf lib'", "core"),
+            ("cd {fhome} && python3 -c \"import os; os.system('tar xf -')\"", "core"),  # its review
+            ("cd /tmp && sh -c 'tar xf -'", None),
+        ], lambda cmd: self.bash(cmd, cwd="/tmp"))
+
     def test_jarvis_cd_and_pipeline_false_positives(self):
         # T-0384 (JARVIS, four refusals in an hour): writes only into the scratchpad or a builder's own folder were
         # refused with no task, because quoted text (a jq filter, a sed script) read as branches, a head `cd /abs &&`
@@ -188,7 +284,16 @@ class KnownVars(GuardCase):
             ("X=$(mktemp -d); rm -rf $X/../..", "rm-outside"),
             ("T=$(mktemp -d) && echo x > $T/a && rm -r $T", None),  # T-0892: a fresh temp folder is scratch
             ('T="$(mktemp -d)"; rm -rf "$T"', None),
-            ("T=$(mktemp -d -p {fhome}); rm -rf $T", "rm-outside"),  # -p puts it elsewhere: still unknown
+            ("T=$(mktemp -d -p {fhome}); rm -rf $T", "rm-outside"),  # -p puts it there: outside scratch
+            # T-1888: -p with a literal folder, or a literal DIR/nameXXX template, is a fresh folder there
+            ("T=$(mktemp -d -p /tmp/x) && rm -rf $T", None),
+            ('T="$(mktemp -p /tmp/x -d)"; rm -rf "$T"', None),
+            ("T=$(mktemp -d /tmp/x/w.XXXX); rm -rf $T", None),
+            ("W=$(mktemp -d -p /tmp/x) && cd $W && git cherry-pick abc1234 && rm -rf $W", None),
+            ("T=$(mktemp -d -p /tmp/x); rm -rf $T/../../..", "rm-outside"),
+            ('T="$(mktemp -d -p ~)"; rm -rf "$T/../x"', "rm-outside"),  # ~ is HOME inside $( ) even in quotes
+            ("T=$(mktemp -d -p $D); rm -rf $T", "rm-outside"),  # a name: unknown
+            ("T=$(mktemp -d -p /tmp/x w.XXX); rm -rf $T/../../..", "rm-outside"),  # -p and a template: unread
             # review: a TMPDIR set, or a mktemp shadowed, in the same command puts the folder elsewhere
             ('export TMPDIR={fhome}; T=$(mktemp -d); rm -rf "$T/.."', "rm-outside"),
             ('TMPDIR={fhome} T=$(mktemp -d); rm -rf "$T/.."', "rm-outside"),
@@ -420,15 +525,33 @@ class System(GuardCase):
             out = g.message(blk, self.ctx())
             self.assertIn(way, out, cmd)
             self.assertNotIn("--allow", out, cmd)
+            self.assertIn("no grant lifts", out, cmd)
+            # T-1932: a grant lifted it, and nothing else in the unread program was checked
+            self.assertBlocked(self.bash(cmd, allow=("system",)), "system", cmd)
         for detail, way in (("script nests too deep to read", "directly"),
                             ("a.sh line 3: rm -rf /x (rm outside; the script was too long to parse in time)", "shorter"),
                             ("IFS may be changed on a line that splits words on it: the guard can't read how bash "
-                             "splits them", "IFS")):
+                             "splits them", "IFS"),
+                            ("sed -f/--file runs a script file the guard can't read here", "-e"),
+                            ("vim -S loads a script the guard can't read", "-c")):
             out = g.message(g.Block("system", detail), self.ctx())
             self.assertIn(way, out.split(detail)[1], detail)
             self.assertNotIn("--allow", out, detail)
+            self.assertBlocked(g.check("Bash", {"command": "ls"}, self.ctx(allow=("system",)),
+                                       found=[("system", detail)]), "system", detail)
         for cmd in ("crontab -e", "sudo iptables -F", "sudo systemctl restart nginx"):
             self.assertIn("--allow system", g.message(self.bash(cmd), self.ctx()), cmd)
+            self.assertIsNone(self.bash(cmd, allow=("system",)), cmd)  # a program it read: the grant lifts it
+        self.assertIsNone(g.check("Bash", {"command": "ls"}, self.ctx(allow=("rm-outside",)),
+                                  found=[("rm-outside", "/x/can't read")]), "only system refusals are unread ones")
+        self.assertIsNone(g.check("Bash", {"command": "ls"}, self.ctx(allow=("system",)),
+                                  found=[("system", "writes /etc/can't read/x")]), "T-1934: a path, not the guard")
+        big = os.path.join(os.path.dirname(self.home), "big1932.sh")  # T-1932 review: a script over the size limit is never read
+        with open(big, "w") as f:
+            f.write("echo hi\n" * 40000)
+        blk = self.bash(f"bash {big}", allow=("system",))
+        self.assertBlocked(blk, "system")
+        self.assertIn("no grant lifts", g.message(blk, self.ctx()))
 
 
 class Publish(GuardCase):
@@ -448,6 +571,12 @@ class Publish(GuardCase):
             ("npx vercel --prod", "publish"),
             ("fly deploy", "publish"),
             ("claude plugin tag --push", "publish"),
+            ("fm inbox ticket --post T-0003", "publish"),  # T-1881: a comment on someone's issue
+            ("fm inbox ticket --post=T-0003", "publish"),
+            ("python3 plugin/bin/fm inbox ticket --post T-0003", "publish"),
+            ("fm -p foreman inbox ticket --post T-0003", "publish"),  # a project flag ahead of the subcommand
+            ("plugin/bin/fm --project foreman inbox ticket --post T-0003", "publish"),
+            ("fm inbox ticket gh:o/r#3", None),
             ("cargo publish --dry-run", None),
             ("npm install", None),
             ("terraform plan", None),
@@ -1270,6 +1399,33 @@ class ScratchNames(GuardCase):
         self.assertEqual(fmguard.classify_write(os.path.join(link, "secrets.txt"), ctx()), [])
         self.assertEqual(fmguard.classify_write(os.path.join(link, "x.txt"), ctx(confine=(lane, base + "/main"))), [])
 
+    def test_a_builder_worktree_named_through_a_link_is_confined_at_its_real_path_too(self):
+        # T-1902: macOS's temp folder is a link (/var → /private/var): a write inside the lane, judged at its real
+        # path, was outside the lane as named (CI: test_a_builder_lane_writes_nothing_outside_its_worktree), and the
+        # main checkout named through a link was scratch at its real path
+        import fmguard
+        base = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, base)
+        real, link, rmain, main = (os.path.join(base, x) for x in ("private-lane", "lane", "private-main", "main"))
+        for d in (real, rmain):
+            os.makedirs(d)
+        os.symlink(real, link)
+        os.symlink(rmain, main)
+        ctx = lambda scratch: fmguard.Ctx(cwd=link, project_root=link, home=os.path.join(base, "h"),  # noqa: E731
+                                          foreman_home=os.path.join(base, "fh"), scratch=scratch, confine=(link, main))
+        for where in (link, real):  # no scratch to fall back on, as fm settings' guard runs (review)
+            self.assertEqual(fmguard.classify_write(os.path.join(where, "settings.json"), ctx([])), [])
+        # T-1910: the lane named through a linked parent (macOS: /var/…/private-lane while it really is
+        # /private/var/…) is still the lane; a link inside it to the main checkout is still outside
+        os.symlink(base, os.path.join(base, "via"))
+        self.assertEqual(fmguard.classify_write(os.path.join(base, "via", "private-lane", "a.py"), ctx([])), [])
+        os.symlink(rmain, os.path.join(real, "out"))
+        self.assertIn("confine", fmguard.classify_write(os.path.join(link, "out", "x.py"), ctx([])))
+        ctx = ctx([base])
+        self.assertIn("confine", fmguard.classify_write(os.path.join(main, "x.py"), ctx))
+        self.assertIn("confine", fmguard.classify_write(os.path.join(rmain, "x.py"), ctx))  # scratch, but main
+        self.assertEqual(fmguard.classify_write(os.path.join(base, "notes.txt"), ctx), [])  # scratch stays scratch
+
     def test_a_state_fallback_named_through_a_link_is_state_at_its_real_path_too(self):
         # T-1284: macOS's temp folder is a link (/tmp → /private/tmp, /var → /private/var): a hard reset or a write
         # naming the real path was outside the fallback named through the link
@@ -1395,6 +1551,21 @@ class InterpreterWrites(GuardCase):
             self.assertTrue(driving(f"cd {d}\n" + body))
             self.assertTrue(driving(f"pushd {d} >/dev/null\n" + body))
 
+    def test_an_uppercase_variable_or_and_chain_before_a_heredoc(self):
+        # T-1887 (friction 5x): `S=… && python3 - "$S/f" <<'EOF'` made the heredoc no unit, so the text match refused
+        # an edit script that names fm modules only in its strings
+        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        body = ("python3 - \"$S/a.py\" <<'EOF'\nimport re\ns = 'import fmcore; fmcore.write_meta(p, {{}})'\n"
+                "print(re.escape(s))\nEOF")
+        for pre in ("S=/tmp/x && ", "S=/tmp/x; ", "s=/tmp/x && W=/tmp/y; "):
+            self.assertFalse(driving(pre + body), pre)
+        for pre in ("PATH=/tmp/b && ", "HOME=/tmp/h; ", "LD_PRELOAD=/tmp/x.so && ", "PYTHONPATH=/tmp && ", "IFS=/; ",
+                    "CLAUDE_CODE_ENTRYPOINT=x && ", "FOREMAN_HOME=/tmp/f; ", "S=$(echo /tmp) && ", "S=/tmp/x || ",
+                    "S=/tmp/x & ", "set -a\nS=/tmp/x && "):
+            self.assertIsNotNone(self.bash(pre + body), pre)  # refused: by the text match or its own rule
+        with mock.patch.dict(os.environ, {"S": "/tmp/x"}):  # exported already: the new value reaches python
+            self.assertTrue(driving("S=/tmp/y && " + body))
+
     def test_python_c_code_gets_the_same_proof_as_a_quoted_heredoc(self):
         # T-1194: -c code went to the text match, so a helper naming fm modules only in its strings was refused
         driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
@@ -1503,6 +1674,44 @@ class InterpreterWrites(GuardCase):
                     "cat > /tmp/x.py <<'EOF'\n" + body + "python3 -m pytest -q",
                     "cat > {fhome}/plugin/lib/fmx.py <<EOF\n" + body + "python3 -m pytest -q"):  # unquoted: expands
             self.assertTrue(driving(cmd), cmd)
+
+    def test_a_scratch_draft_naming_foreman_modules_is_text_until_it_runs(self):
+        # T-1917: a draft for fm edit (or an apply script on disk) whose text names fmcore's writers was this core block
+        driving = lambda cmd: any("driving Foreman's modules" in str(d)
+                                  for _, d in g.check_bash(cmd, self.ctx()))
+        s = "/tmp/claude-1000/proj/sess/scratchpad"
+        tool = os.path.join(self.repo, "apply.py")
+        with open(tool, "w") as f:
+            f.write("print(1)\n")
+        link = os.path.join(self.repo, "via.py")
+        if not os.path.lexists(link):
+            os.symlink(f"{s}/d.txt", link)
+        body = "import fmcore\nfmcore.write_meta(p, {})\nEOF\n"
+        w = f"cat > {s}/d.txt <<'EOF'\n" + body
+        for cmd in (w + f"fm edit < {s}/d.txt\npython3 -m pytest -q",
+                    w + f"fm edit < {s}/d.txt && python3 plugin/tests/run.py test_x 2>&1 | tail -3; echo $?",
+                    f"cat > {s}/d.patch <<'EOF'\n" + body + f"python3 {tool} {s}/d.patch",
+                    w + f"python3 apply.py < {s}/d.txt", f"cat > {s}/d.diff <<'EOF'\n" + body + f"fm edit < {s}/d.diff"):
+            self.assertFalse(driving(cmd), cmd)
+        w0 = f"cat > {s}/d0.txt <<'EOF'\n" + body  # review: $? is 0 there, so d$?.txt is d0.txt
+        for cmd in (w0 + f"python3 {s}/d$?.txt", w + f"python3 -W {tool} {s}/d.txt", w + f"python3 -X {tool} {s}/d.txt",
+                    w + f"shopt -s extglob\npython3 {s}/d@(.)txt"):  # -W/-X take the script's place as their value
+            with self.subTest(cmd=cmd[-50:]):
+                self.assertTrue(driving(cmd))
+        for cmd in (w + f"python3 {s}/d.txt", w + f"python3 - < {s}/d.txt",
+                    w + f"python3 -c \"exec(open('{s}/d.txt').read())\"",
+                    w + f"python3 {tool} x; python3 {s}/d.txt", w + f"python3 {tool} `bash {s}/d.txt`",
+                    w + f"python3 {tool} $(cat {s}/d.txt)", w + f"python3 {s}/d.t*", w + f"python3 {s}/d\\.txt",
+                    w + f"python3 {s}/'d'.txt", w + f"cp {s}/d.txt {s}/x.py && python3 {s}/x.py",
+                    w + f"python3 {s}/new.py {s}/d.txt", w + f"python3 {link} {s}/d.txt",
+                    w + f"python3 -m pdb {s}/d.txt", w + f"PYTHONSTARTUP={s}/d.txt python3 {tool}",
+                    w + f"cd {s} && python3 {tool} d.txt", w + f"python3 {tool} {s}/d.txt <(bash {s}/d.txt)",
+                    f"cat > {s}/d.py <<'EOF'\n" + body + "python3 -m pytest -q",  # code, not a draft
+                    f"cat > {self.repo}/d.txt <<'EOF'\n" + body + f"python3 {tool} {self.repo}/d.txt",  # not scratch
+                    f"cat > {s}/d.txt <<EOF\n" + body + f"fm edit < {s}/d.txt\npython3 -m pytest -q",  # expands
+                    w + f"cat > {s}/run.py <<'EOF'\nexec(open('{s}/d.txt').read())\nEOF\npython3 {s}/run.py"):
+            with self.subTest(cmd=cmd[-70:]):
+                self.assertTrue(driving(cmd))
 
     def test_a_quoted_heredoc_marker_hides_nothing(self):
         # T-0178: a quoted heredoc marker was taken for a heredoc, so every later line was a body the guard never read
@@ -2056,12 +2265,12 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
 
     def test_nesting_too_deep(self):
         r = g.check_bash("ls", self.ctx(), depth=5)
-        self.assertEqual(r, [("rm-outside", "command nesting too deep to analyse")])
+        self.assertEqual(r, [("rm-outside", "command nesting too deep to analyse: split the command")])
         self.assertEqual(g.check_bash("ls", self.ctx(), depth=4), [])
         deep = "ls"
         for _ in range(6):
             deep = "bash -c " + shlex.quote(deep)
-        self.assertBlocked(self.bash(deep), "rm-outside")
+        self.assertBlocked(self.bash(deep, allow=("rm-outside",)), "rm-outside")  # T-1929: no grant lifts the cap
 
 
 class SelfAuthorize(GuardCase):
@@ -2408,6 +2617,105 @@ class TokenFallback(GuardCase):
         self.assertEqual(g._pieces("'x'`cmd`>~/.bashrc"), ["'x'`cmd`", ">", "~/.bashrc"])  # re-review: after a `
         self.assertBlocked(self.bash("echo 'x'`cmd`>~/.bashrc"), "system")
         self.assertEqual(g._pieces("'$1>4000"), ["'$1>4000"])  # a > after a quote's text is text (debris)
+
+    def test_repeated_cds_in_a_line_are_judged_fast(self):
+        # T-1924: each `cd X; …; cd ..` that may fail doubled the folder sets, and the text after every $( was re-read
+        # from every folder: 14 blocks took 6.5 s, 20 never finished
+        blocks = " ".join(f"cd state; echo $(ls); cd ..; cd d{i}; echo $(pwd); cd ..;" for i in range(20))
+        start = time.monotonic()
+        self.run_table([
+            (blocks + " ls", None),
+            (blocks + " tar xf -", "core"),  # the d{i} cds fail: each `cd ..` climbs above Foreman
+            ("cd state; echo $(ls); cd ..; " * 20 + "tar xf -", "core"),  # back in Foreman
+            ("cd /tmp; cd state; echo $(ls); cd ..; tar xf -", "core"),  # cd state fails: `cd ..` lands in /
+            ("cd state; cd ..; cd x; tar xf -", "core"),  # relative cds that exist are certain, missing ones may fail
+            ("cd /tmp && echo $(case a in a) cd {fhome};; esac; tar xf -)", "core"),  # a case keeps the tail read
+            ("cd /tmp && echo $(echo #); cd {fhome}\n); tar xf -", "core"),  # so does a comment
+            (" ".join(f"(true); cd d{i}; cd x{i};" for i in range(20)) + " ls", "rm-outside"),  # too many: refused
+            ("for d in %s; do cd $d && echo $(pwd); cd ..; done; ls" % " ".join(f"d{i}" for i in range(20)), None),
+            ("cd ../../../repo; tar xf -", None),  # its review: a relative cd is certain only in this shell, and
+            ("time cd ../../../repo; tar xf -", None),
+            ("nice cd ../../../repo; tar xf -", "core"),  # a wrapper runs it in a child: the shell stays
+            ("sudo cd {repo}; tar xf -", "core"),
+            ("env cd {repo} && tar xf -", "core"),
+            ("ls ../../../repo; echo $(pwd); cd ../../../repo; tar xf -", None),  # only while all before it only read
+            ("touch y; cd ../../../repo; tar xf -", "core"),  # anything else may remove or relink the folder
+            ("echo $(touch y); cd ../../../repo; tar xf -", "core"),
+            ("mkdir -m 0 -p {repo}/q; cd {repo}/q; tar xf -", "core"),  # a folder it can't enter
+        ], lambda cmd: self.bash(cmd, cwd=self.fhome))
+        self.assertLess(time.monotonic() - start, 2)
+
+    def test_unfollowable_cds_before_substitutions_are_judged_fast(self):
+        # T-1930: a relative target after cds the guard can't follow is guessed below every folder a word of the line
+        # names, joined with every lost cd, and each join was a stat: 4 blocks then two $(ls j) took 7 s, ten 10-17 s
+        os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)
+        cds = " ".join(f"(true); cd d{i}; cd x{i};" for i in range(4))
+        for k in (2, 10):
+            line = cds + " echo " + " ".join(f"$(ls {j})" for j in range(k)) + "; tar xf -"
+            start = time.process_time()  # T-1935: CPU time (stats count): other test runs on the box slow the wall
+            self.assertIsNone(self.bash(line))
+            self.assertBlocked(self.bash(line, cwd=self.fhome), "core")
+            # T-1938: under 0.5 s here, 2.6 s on a CI runner; the bug it guards cost 7-17 s
+            self.assertLess(time.process_time() - start, 6, k)
+        self.run_table([  # the guesses still name a folder that exists below a word, .. included
+            ('ls {fhome}; cd "$D"; cd plugin/lib; echo x > fmguard.py', "core"),
+            ('ls {fhome}; cd "$D"; cd ../foreman/plugin; echo x > lib/fmguard.py', "core"),
+            ('ls {fhome}/nope; cd "$D"; cd plugin/lib; echo x > fmguard.py', None),
+        ], self.bash)
+
+    def test_a_cd_the_guard_cannot_name_is_judged_where_bash_may_land(self):
+        # T-1923: bash makes a name neither set nor inherited empty: cd "$X" stays put, cd $X goes home, $X cd D is cd D;
+        # a computed command word may be cd; nested text after a CDPATH cd runs below the folder CDPATH names
+        os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)
+        self.run_table([
+            ('cd "$X" && tar xf -', "core"),
+            ('cd "${{X}}" && git reset --hard', "core"),
+            ("cd $X && tar xf -", "core"),
+            ("C=cd; $C plugin && rm -rf lib", "core"),
+            ("$X cd /tmp && tar xf -", "core"),  # unsure: X may be set where the guard can't see
+            ('cd "$(true)" && tar xf -', "core"),  # empty output: stays put
+        ], lambda line: self.bash(line, cwd=self.fhome))
+        self.run_table([
+            ("cd $X && git reset --hard", "core"),
+            ("cd $X {fhome} && git reset --hard", "core"),
+            ("C=cd; $C {fhome}; git reset --hard", "core"),
+            ("$C {fhome} && git reset --hard", "core"),
+            ("$X cd {fhome} && git reset --hard", "core"),
+            ("$(echo cd) {fhome} && git reset --hard", "core"),
+            ('"$(echo cd)" {fhome} && git reset --hard', "core"),
+            ('C="cd {fhome}"; $C && git reset --hard', "core"),
+            ("export CDPATH={fhome}; cd plugin && sh -c 'rm -rf lib'", "core"),
+            ("export CDPATH=.:{fhome}; cd plugin && sh -c 'rm -rf lib'", "core"),  # review: each entry of the list
+            ("C=cd; $C -P {fhome}/plugin && rm -rf lib", "core"),
+            ("C=; $C cd {fhome} && git reset --hard", "core"),
+            ('cd "$X" && git reset --hard', None),  # stays in scratch
+            ("$X cd /tmp && git reset --hard", None),  # review: in scratch or /tmp, never anywhere
+            ("export CDPATH={fhome}; cd ./plugin && sh -c 'rm -rf lib'", None),  # ./ skips CDPATH
+            ("C=cd; $C /tmp/x && rm -rf build", None),
+        ], lambda line: self.bash(line, cwd="/tmp"))
+        self.run_table([
+            ('cd "$(git rev-parse --show-toplevel)" && tar xf -', None),
+            ('cd "$X" && rm -rf build', None),
+            ("$PY -m pytest && rm -rf build", None),
+            ('"$PY" -m pytest; rm -rf build', None),
+            ("cd $X && rm -rf build", "rm-outside"),  # bash removes ~/build
+        ], self.bash)
+
+    def test_a_line_too_tangled_to_analyse_is_refused_under_any_grant(self):
+        # T-1929: the folder caps and the nesting cap refused as rm-outside, so a task's rm-outside grant lifted them
+        # and the rest of the line, never read (here a tar over Foreman), ran
+        line = " ".join(f"(true); cd d{i}; cd x{i};" for i in range(6)) + " tar xf -"
+        self.assertIn(self.bash(line, cwd=self.fhome, allow=("rm-outside", "core")).detail, g.UNANALYSED)
+        r = self.bash("eval \"$(echo -e 'tar xf - -C {fhome}')\"", allow=("rm-outside",))  # its text is never read
+        self.assertIn(r.detail, g.UNANALYSED)
+        ctx = self.ctx(allow=("rm-outside",))
+        for detail in sorted(g.UNANALYSED):  # the nested-folders cap's line takes seconds: its words here
+            r = g.check("Bash", {"command": "ls"}, ctx, found=[("rm-outside", detail)])
+            self.assertBlocked(r, "rm-outside")
+            self.assertNotIn("--allow", g.message(r, ctx))
+            self.assertIn("no grant lifts", g.message(r, ctx))
+        self.assertIsNone(self.bash("rm -rf {home}/x", allow=("rm-outside",)), "the grant still lifts a plain one")
+        self.assertIsNone(self.bash("rm -rf '{home}/to analyse'", allow=("rm-outside",)), "a path is not a cap")
 
     def test_deep_nesting_is_masked_in_linear_time(self):
         line = "\"$(echo " * 20000 + "\"x\" " * 20000

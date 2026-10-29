@@ -3,6 +3,7 @@ the Stop drive continues into it); a round's brief says what shipped since the l
 earlier one; two dry rounds in a row end the loop with a recorded decision."""
 import json
 import os
+import time
 import unittest
 
 from helpers import ForemanTestCase
@@ -58,6 +59,45 @@ class Loop(ForemanTestCase):
         self.assertIn("fm loop yield", brief)
         self.assertIn("forever loop round 2", self.fm("next").stdout)
 
+    def test_a_round_ahead_of_pace_drops_the_ideas_fan_out(self):
+        # T-1966: the brief sent the model to fm ideas while usage was ahead of pace and its lens subagents waited
+        from unittest import mock
+        import fmloop
+        self.fm("loop", "on")
+        p = c.find_project(self.repo)
+        with mock.patch("fmbudget.degrade", return_value=None):
+            self.assertIn("fm ideas --pack", fmloop.round_brief(p))
+        with mock.patch("fmbudget.degrade", return_value="weekly usage 80%"):
+            brief = fmloop.round_brief(p)
+        self.assertNotIn("fm ideas", brief)
+        self.assertIn("Optional work is dropped (weekly usage 80%)", brief)  # or the spent risk budget: not usage
+        self.assertIn("isn't counted dry", brief)  # T-1990: T-1986's rule, said where the yield is asked for
+
+    def test_a_main_thread_round_names_the_lenses_to_sweep(self):
+        # T-2004: "review what shipped" alone shrank rounds to 1-3 follow-ups and the user asked for breadth again
+        from unittest import mock
+        import fmloop
+        self.fm("loop", "on")
+        with mock.patch("fmbudget.degrade", return_value="weekly usage 80%"):
+            brief = fmloop.round_brief(c.find_project(self.repo))
+        self.assertIn("one grounded idea per lens", brief)
+        for lens in fmloop.MAIN_LENSES:
+            self.assertIn(lens, brief)
+
+    def test_a_budget_limited_round_leaves_the_dry_streak_alone(self):
+        # T-1986: with optional work dropped there is no ideas fan-out; a spent budget ended the loop as "2 dry rounds"
+        from unittest import mock
+        import fmloop
+        self.fm("loop", "on")
+        p = c.find_project(self.repo)
+        with mock.patch("fmbudget.degrade", return_value="today's risk budget is spent"):
+            for _ in range(3):
+                s, stop = fmloop.record_yield(p, 1)
+        self.assertFalse(stop)
+        self.assertEqual(s["dry"], 0)
+        self.assertTrue(s["limited"])
+        self.assertIn("on", self.fm("loop").stdout)
+
     def test_two_dry_rounds_end_the_loop_with_a_decision(self):
         self.fm("loop", "on")
         self.fm("loop", "round")
@@ -73,6 +113,23 @@ class Loop(ForemanTestCase):
         self.assertIn("off", self.fm("loop").stdout)
         self.assertIn("forever loop", self.fm("decide", "--list").stdout)
         self.assertIn("queue is empty", self.fm("next").stdout)
+
+    def test_the_loop_says_what_it_shipped(self):
+        # T-2011: a loop that ran for days ended with only its round number; how much it got done went unsaid
+        self.fm("loop", "on")
+        p = c.find_project(self.repo)
+        s = c.read_meta(p)["loop"]
+        c.update_meta(p, loop=dict(s, started=c.iso(time.time() - 7200)))  # clear of the clock's second
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": c.iso(time.time() - 3600), "event": "task_done", "task": "T-0001"}) + "\n")
+        self.fm("loop", "round")
+        self.fm("loop", "yield", "0")
+        self.assertIn("1 round, 1 task closed since", self.fm("loop").stdout)
+        self.fm("loop", "round")
+        self.fm("loop", "yield", "1")
+        self.assertIn("2 rounds, 1 task closed since", self.fm("decide", "--list").stdout)
+        self.fm("loop", "on")
+        self.assertIn("0 rounds, 0 tasks closed since", self.fm("loop", "off").stdout, "a new run counts afresh")
 
     def test_the_drive_continues_into_each_round(self):
         self.fm("autonomy", "full")

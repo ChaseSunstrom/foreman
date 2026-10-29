@@ -306,16 +306,12 @@ def near_tasks(p, title, scope=(), type_=None):
 def covered(text):
     """T-0256: [(command, help)] for the fm commands whose help the request mostly restates (≥ 3 shared words and
     ≥ 60% of the help's): the best two, so a request for what exists is noticed before it is built."""
-    import argparse
-    import fmcli
     q, hits = set(_tokens(text)), []
-    for a in fmcli.build_parser()._actions:
-        if isinstance(a, argparse._SubParsersAction):
-            for ca in a._choices_actions:
-                h = set(_tokens(ca.help or ""))
-                shared = len(q & h)
-                if shared >= 3 and shared >= 0.6 * len(h) and shared >= 0.25 * len(q):  # review: a long paste isn't a match
-                    hits.append((shared / len(h), ca.dest, ca.help))
+    for name, (help_, _) in verb_docs().items():  # T-1912: subcommands too ("task prove")
+        h = set(_tokens(help_))
+        shared = len(q & h)
+        if shared >= 3 and shared >= 0.6 * len(h) and shared >= 0.25 * len(q):  # review: a long paste isn't a match
+            hits.append((shared / len(h), name, help_))
     return [(name, c.plain(help_)) for _, name, help_ in sorted(hits, reverse=True)[:2]]
 
 
@@ -339,19 +335,50 @@ def gist(text, question, width):
     return c.fit(("… " if i else "") + parts[i].rstrip(";,") + (" …" if i < len(parts) - 1 else ""), width)
 
 
+_PLAIN = re.compile(r'"([^"`·→]+)" → ([^·\n]+)')  # the rules' "plain words" → what they run, up to the next ·
+_VERB = re.compile(r'`fm ([\w-]+)(?: ([\w-]+))?')  # each `fm verb …` in it ("serve this repo": fm ask, then fm serve)
+
+
 def verb_docs():
-    """{command: (its help, its name, help and options' help as one text)} from fm's parser (fm which: T-1699)."""
+    """{command: (its help, one text of its name, help and options' help)} from fm's parser (fm which: T-1699). T-1908:
+    a subcommand with help is its own command ("task drop"), and the rules' plain words join their command's text.
+    T-1916: so is an action choice its help describes ("lane merge")."""
     import argparse
     import fmcli
     docs = {}
-    for a in fmcli.build_parser()._actions:
-        if isinstance(a, argparse._SubParsersAction):
-            helps = {ca.dest: ca.help or "" for ca in a._choices_actions}
-            for name, sub in a.choices.items():
-                if name in helps:
-                    words = [name.replace("-", " "), helps[name]] + [x.help for x in sub._actions
-                                                                    if x.help and x.help != argparse.SUPPRESS]
-                    docs[name] = (helps[name], " ".join(words))
+
+    def walk(parser, prefix):
+        for a in parser._actions:
+            if isinstance(a, argparse._SubParsersAction):
+                helps = {ca.dest: ca.help or "" for ca in a._choices_actions}
+                for name, sub in a.choices.items():
+                    if name in helps:
+                        words = [(prefix + name).replace("-", " "), helps[name]] + [
+                            x.help for x in sub._actions if x.help and x.help != argparse.SUPPRESS]
+                        docs[prefix + name] = (helps[name], " ".join(words))
+                        for x in sub._actions:  # T-1916: an action positional's choices ("lane merge") are commands too
+                            for ch in (x.choices or ()) if x.dest == "action" and not x.option_strings else ():
+                                first = re.split(r"[;,]", helps[name])[0].strip()  # "close a round" is fm round itself
+                                # the choice, maybe an argument, then two more words: "merge <id>: bring", not "send ID"
+                                said = next((s.strip() for s in re.split(r"[;,]", helps[name] + ";" + (x.help or ""))
+                                             if re.match(rf"\s*{re.escape(ch)}\b\S*\s+\S+\s+\S", s)
+                                             and s.strip() != first), "")
+                                own = [y.help for y in sub._actions if (y.help or "").startswith(ch + ":")]
+                                if said or own:  # a bare choice ("lane list") says nothing fm lane doesn't
+                                    docs[f"{prefix}{name} {ch}"] = (said or helps[name], " ".join(
+                                        [(prefix + name).replace("-", " "), ch, said] + own))
+                        walk(sub, prefix + name + " ")
+    walk(fmcli.build_parser(), "")
+    try:
+        with open(os.path.join(c.PLUGIN_ROOT, "rules", "foreman.md"), encoding="utf-8") as f:
+            rules = f.read()
+    except OSError:
+        rules = ""
+    for phrase, said in _PLAIN.findall(rules):
+        for verb, more in _VERB.findall(said):
+            key = f"{verb} {more}" if f"{verb} {more}" in docs else verb
+            if key in docs:
+                docs[key] = (docs[key][0], docs[key][1] + " " + phrase)
     return docs
 
 
@@ -369,9 +396,10 @@ def can(question, n=3):
     for name, d in docs.items():
         shared = [w for w in want if w in d]
         if shared and 2 * len(shared) >= len(want):
-            named = any(_stem(x) in want for x in name.split("-"))  # the question names the command itself
+            named = any(_stem(x) in want for x in name.replace("-", " ").split())  # the question names the command
             hits.append((sum(math.log(len(docs) / df[w]) for w in shared) + 2 * named, name))
-    return [(name, c.plain(" ".join(helps[name].split()))) for _, name in sorted(hits, reverse=True)[:n]]
+    hits.sort(key=lambda h: (h[0], -len(h[1])), reverse=True)  # a tie goes to the command, not its action ("mcp new")
+    return [(name, c.plain(" ".join(helps[name].split()))) for _, name in hits[:n]]
 
 
 def brief_query(b):
@@ -459,10 +487,9 @@ def note_failure(p, task, text):
             mine = [r for r in recs if task and r.get("task") == task and r.get("sig") == sig]
             first = not any(r.get("sig") == sig and r.get("task") == task for r in recs)  # with or without a task
             same, hinted = 1 + sum(not r.get("hinted") for r in mine), any(r.get("hinted") for r in mine)
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"sig": sig, "task": task, "at": c.now()}) + "\n")
-                if task and same >= REPEATS and not hinted:
-                    f.write(json.dumps({"sig": sig, "task": task, "at": c.now(), "hinted": True}) + "\n")
+            rows = [{"sig": sig, "task": task, "at": c.now()}] + (
+                [{"sig": sig, "task": task, "at": c.now(), "hinted": True}] if task and same >= REPEATS and not hinted else [])
+            c.append_line(path, "".join(json.dumps(r) + "\n" for r in rows))
     except (OSError, c.LockTimeout):
         pass
     api = API_MISUSE.search(text or "")
@@ -913,8 +940,7 @@ def share_lesson(p, b, lesson):
         if os.path.exists(shared_path()) and os.path.getsize(shared_path()) > 1_000_000:
             keep = c.tail_jsonl(shared_path(), SHARED_KEEP)
             c.write_atomic(shared_path(), "".join(json.dumps(r) + "\n" for r in keep))
-        with open(shared_path(), "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec) + "\n")
+        c.append_line(shared_path(), json.dumps(rec) + "\n")
 
 
 def _shared_docs(p):
@@ -1130,6 +1156,7 @@ _ASKING = set("why how what who whom when where which did does was were is are t
 _TID = re.compile(r"\bT-\d{4,}\b")
 # ledger events whose text is noise, or already in a brief, decisions.md or a research note
 _ECHOED = {"touched", "scope_note", "session_start", "focus", "evidence", "audit", "note", "step_add", "step_current",
+           "step_reword", "step_remove",
            "step_done", "ac_add", "ac_check", "task_set", "task_plan", "task_new", "decision", "subagent", "checks",
            "check_run", "capture", "intake", "research", "task_done", "finish"}
 

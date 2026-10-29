@@ -300,7 +300,9 @@ def check_frontmatter(plugin=PLUGIN):
             bad.append(f"agent {f}: not read-only ({', '.join(sorted(tools - READ_ONLY_TOOLS - EDITING_AGENTS.get(f, set())))})")
         # T-0768: Claude Code ignores a value it doesn't know, so a typo silently undoes the saving
         for key, ok in (("effort", {"low", "medium", "high", "xhigh", "max"}.__contains__),
-                        ("maxTurns", lambda v: v.isdigit() and int(v) > 0), ("omitClaudeMd", {"true", "false"}.__contains__)):
+                        ("maxTurns", lambda v: v.isascii() and v.isdigit() and int(v) > 0),
+                        ("omitClaudeMd", {"true", "false"}.__contains__),
+                        ("autoCompactWindow", lambda v: v.isascii() and v.isdigit() and int(v) > 0)):  # "²".isdigit()
             if key in meta and not ok(meta[key]):
                 bad.append(f"agent {f}: {key}: {meta[key]!r} isn't a value Claude Code knows")
     return Result("frontmatter", "FAIL" if bad else "PASS", "; ".join(bad) or "skills and read-only agents valid")
@@ -423,12 +425,19 @@ def check_validate(home):
 CORE_PATHS = ("plugin/lib", "plugin/bin", "plugin/hooks", "plugin/evals", "plugin/rules/foreman.md", "BUILD_PROMPT.md")
 
 
-def check_core_integrity(home):
-    """Protected core that differs from the last commit: a half-applied edit, or a change nobody reviewed."""
+def check_core_integrity(home, task=None):
+    """Protected core that differs from the last commit: a half-applied edit, or a change nobody reviewed. T-1998: what
+    the active task (a brief) changes inside its own scope globs is its work in progress, not a warning."""
     if not os.path.exists(os.path.join(home, ".git")):  # a worktree's .git is a file
         return Result("core integrity", "PASS", "not a git checkout: nothing to compare")
     out = _run(["git", "-C", home, "status", "--porcelain", "--", *CORE_PATHS]).stdout
     changed = [l[3:] for l in out.splitlines() if len(l) > 3]
+    if task is not None and task.meta.get("scope"):
+        outside = c.scope_drift(task, changed)
+        if changed and not outside:
+            return Result("core integrity", "PASS", f"core differs only inside {task.id}'s scope "
+                          f"({', '.join(changed[:6])}): it commits them when it finishes")
+        changed = outside
     return Result("core integrity", "WARN" if changed else "PASS",
                   f"protected core differs from the last commit: {', '.join(changed[:6])}"
                   + (f" (+{len(changed) - 6} more)" if len(changed) > 6 else "")
@@ -625,6 +634,8 @@ def check_python(v=sys.version_info[:3], refresh=None, child=False):
 CC_FEATURES = [
     ("hook onFailure", (2, 1, 295), ["hooks/*.json"], r'"onFailure"'),
     ("agent omitClaudeMd", (2, 1, 271), ["agents/*.md"], r"(?m)^omitClaudeMd:"),
+    # read from 2.1.296, but below Foreman's CLAUDE_CODE_AUTO_COMPACT_WINDOW (T-1796) it only lowers it from 2.1.312
+    ("agent autoCompactWindow", (2, 1, 312), ["agents/*.md"], r"(?m)^autoCompactWindow:"),
     ("agent effort/maxTurns", (2, 1, 78), ["agents/*.md"], r"(?m)^(effort|maxTurns):"),
     ("hook if", (2, 1, 85), ["hooks/*.json"], r'"if"\s*:'),
     ("plugin monitors", (2, 1, 105), ["monitors/monitors.json"], r"."),
@@ -1407,9 +1418,10 @@ def _pyc_of_source(p, st, budget):
         # marshal's ref flags follow refcounts, which differ between processes, so both bodies go through loads then
         # dumps in this process: equal means the same object graph (filename, names, consts, code), nothing trailing
         # (marshal.load builds objects only, never runs code; a hostile pyc raises, is capped at 8 MB, and stays flagged)
+        # T-1799: both sides are dumped as temporaries: a held reference sets other ref flags on 3.12
         body = io.BytesIO(got[16:])
-        mine = marshal.load(body)
-        return body.tell() == len(got) - 16 and marshal.dumps(mine) == marshal.dumps(marshal.loads(marshal.dumps(code)))
+        mine = marshal.dumps(marshal.load(body))
+        return body.tell() == len(got) - 16 and mine == marshal.dumps(marshal.loads(marshal.dumps(code)))
     except (OSError, ValueError, EOFError, TypeError, SyntaxError, MemoryError, RecursionError):
         return False
 
@@ -1748,6 +1760,17 @@ def check_enforce(p, days=7):
                   + f", cards named {named}, cards read {read}")
 
 
+def check_usage_burn(found=None):
+    """T-1800: why usage burns, named with its fix (fmcost.burn_findings), so nobody has to notice it first."""
+    if found is None:
+        import fmcost
+        found = fmcost.burn_findings()
+        fmcost.write_burn(found)
+    return Result("usage burn", "WARN" if found else "PASS",
+                  "; ".join(f"{a} → {b}" for a, b in found) + "; /usage names Claude Code's own causes, f applies them"
+                  if found else "no sign of usage burn in the last 2 days")
+
+
 def check_idle_stops(p, days=7):
     """T-0957: stops with open work that nothing kept going (the drive was off, paused or done nudging). Information:
     many of them mean the drive gave up early or the user keeps stopping it."""
@@ -1776,7 +1799,8 @@ FSCK_SKIP = {"lib-sources", "lib-drafts", "quarantine", "snapshots", "outputs", 
 FSCK_TAIL = 65536  # bytes of a journal read: its last line is judged, never the whole file
 FSCK_LOCK_AGE = 3600  # s: a pid file is judged only once this old. A holder in another PID namespace (Claude Code's
 # sandbox) looks dead to os.kill, and fmcli._sentinel already counts an hour-old sentinel.pid as no run (review)
-FSCK_KINDS = ("broken lane", "stale lock", "torn journal", "unreadable")
+FSCK_KINDS = ("broken lane", "stale lock", "torn journal", "corrupt state", "unreadable")
+FSCK_JSON_MAX = 1 << 20  # bytes: a state *.json bigger than this isn't parsed (T-1669)
 PID_NS = "/proc/self/ns/pid"
 INIT_PID_NS = "pid:[4026531836]"  # the kernel's fixed inode of the initial PID namespace (PROC_PID_INIT_INO); a user
 # can't read /proc/1/ns/pid to compare with
@@ -1895,7 +1919,8 @@ def _broken_lanes(projects, here=None):
 def fsck(projects=None, state=None, here=None):
     """T-1667: what a crash or a hand edit left broken in Foreman's own state, as {kind, path, detail, project[, task]}:
     open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, journals (*.jsonl) whose last
-    line is torn, and locks or journals it can't read. project is None for state no project owns. Reads only."""
+    line is torn, state *.json that doesn't parse (T-1669), and files it can't read. project is None for state no
+    project owns. Reads only."""
     state = state or c.state_dir()
     found = _broken_lanes([p for p, _ in c.all_projects()] if projects is None else projects, here)
     pdir, now = os.path.join(state, "projects"), time.time()
@@ -1903,16 +1928,34 @@ def fsck(projects=None, state=None, here=None):
         dirs[:] = sorted(x for x in dirs if root != state or x not in FSCK_SKIP)
         for n in sorted(names):
             path, lock = os.path.join(root, n), n.endswith(".pid")
+            state_json = n.endswith(".json") and (root == state or os.path.dirname(root) == pdir)  # T-1669: meta,
+            # gate, status: the files fm reads whole; a session's or an audit's own files aren't judged
             try:
-                why = _stale_pid(path, now) if lock else _torn(path) if n.endswith(".jsonl") else ""
-                kind = "stale lock" if lock else "torn journal"
+                if state_json:
+                    why, kind = _corrupt_json(path), "corrupt state"
+                else:
+                    why = _stale_pid(path, now) if lock else _torn(path) if n.endswith(".jsonl") else ""
+                    kind = "stale lock" if lock else "torn journal"
             except PermissionError:
-                why, kind = f"permission denied: fsck can't check this {'lock' if lock else 'journal'}", "unreadable"
+                what = "lock" if lock else "state file" if state_json else "journal"
+                why, kind = f"permission denied: fsck can't check this {what}", "unreadable"
             if why:
                 rel = os.path.relpath(path, pdir)
                 found.append({"kind": kind, "path": path, "detail": why,
                               "project": None if rel.startswith("..") else rel.split(os.sep)[0]})
     return found
+
+
+def _corrupt_json(path):
+    """T-1669: why a state *.json doesn't parse ("" when it does, or is too big to judge)."""
+    if os.path.getsize(path) > FSCK_JSON_MAX:
+        return ""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        try:
+            json.load(f)
+        except ValueError as e:
+            return f"isn't valid JSON ({e}); Foreman can't read it: fix it by hand or restore it"
+    return ""
 
 
 def _pid_ns_doubt():
@@ -1967,7 +2010,7 @@ def check_fsck(projects=None):
     except Exception as e:  # the scan failing is a finding, not a crash of doctor
         return Result("fsck", "WARN", f"not run: {e}")
     return Result("fsck", "WARN", f"{_fsck_counts(found)}: fm fsck lists them (--fix removes only the stale locks)") \
-        if found else Result("fsck", "PASS", "no broken lanes, stale locks or torn journals")
+        if found else Result("fsck", "PASS", "no broken lanes, stale locks, torn journals or corrupt state")
 
 
 def check_landlock():
@@ -2014,8 +2057,8 @@ def cmd_fsck(args):
     hints = (["fm fsck --fix removes the stale locks"] if any(f["kind"] == "stale lock" for f in left) else []) + (
         ["the rest is left for a person (fm lane list in its project; a torn ledger: fm verify-ledger)"]
         if any(f["kind"] != "stale lock" for f in left) else [])
-    print(("\n" if fixed or left else "") + "fm fsck: " + (f"{_fsck_counts(left)}; " + "; ".join(hints) if left else
-                                                           "OK: no broken lanes, stale locks or torn journals"))
+    ok = "OK: no broken lanes, stale locks, torn journals or corrupt state"
+    print(("\n" if fixed or left else "") + "fm fsck: " + (f"{_fsck_counts(left)}; " + "; ".join(hints) if left else ok))
     return 1 if left else 0
 
 
@@ -2069,9 +2112,12 @@ def run_all(full=False, accept_supply=False):
     results.append(check_product(here))
     results.append(check_enforce(here))
     results.append(check_idle_stops(here))
+    results.append(check_usage_burn())
     results.append(check_version_skew(c.all_projects()))
+    home_p = c.find_project(home)  # T-1998: its active task's in-scope core edits aren't a warning
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
-                check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
+                check_git_hygiene(home), check_core_integrity(home, home_p and c.active_brief_fast(home_p)),
+                check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full),
                 check_integrity(integrity_roots(projects), projects, current=c.find_project(os.getcwd()) or False),
                 check_routing(), check_cc_features(), check_upstream()]

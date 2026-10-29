@@ -32,6 +32,11 @@ class Help(ForemanTestCase):
         leaks = {where: re.findall(r"\bT-\d{3,4}\b", t) for where, t in texts.items() if re.search(r"\bT-\d{3,4}\b", t)}
         self.assertEqual(leaks, {})
 
+    def test_a_command_name_prints_its_help(self):  # T-1909: "task" is a stop word, so fm help task was refused
+        self.assertIn("drop a task, with why", self.fm("help", "task").stdout)  # T-1913: 3.12's usage line differs
+        self.assertIn("--done-in ID", self.fm("help", "task", "drop").stdout)
+        self.assertNotIn("usage:", self.fm("help", "notify", "me", "when", "done").stdout, "words past a name: a question")
+
     def test_status_is_state(self):
         # T-0393: "status" is the word the rules and /foreman:status use; `fm status` was an invalid choice
         self.fm("init")

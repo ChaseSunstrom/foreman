@@ -180,6 +180,8 @@ def stale_plans(p, briefs):
             path = os.path.realpath(os.path.join(root, s))
             if re.search(r"[*?\[]", s) or not path.startswith(root + os.sep):
                 continue
+            if os.path.basename(path) == "CHANGELOG.md":  # T-1890: every finished task appends to it: no re-plan
+                continue
             rel = os.path.relpath(path, root)
             landed = max((t for f, t in log.items() if f == rel or f.startswith(rel + "/")), default=0)
             if not os.path.exists(path):
@@ -308,9 +310,9 @@ def check_project(p, apply, actions):
                                               os.path.join(p.root, "CLAUDE.local.md")],
                                os.path.join(p.root, ".claude", "rules"), PROJECT_MD_MAX)
     if apply:
+        c.update_meta(p, last_tidy=c.now())  # T-1879: before the views, or STATE.md says "Last tidy: never" after one
         with c.lock(p.dir):
             c.regen_views(p)
-        c.update_meta(p, last_tidy=c.now())
         c.log_event(p, "tidy", data={"actions": [f"{k}:{v}" for k, v in actions if k != "global"][:50],
                                      "findings": len(out)})
     return out

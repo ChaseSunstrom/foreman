@@ -203,6 +203,18 @@ class Fsck(ForemanTestCase):
         self.fix()
         self.assertTrue(os.path.exists(lock), "an unreadable lock is never removed")
 
+    def test_a_state_file_that_isnt_json_is_corrupt_state(self):
+        # T-1669: a corrupt meta.json stopped every fm verb, fm doctor included, and nothing named it
+        gate = write(os.path.join(self.p.dir, "gate.json"), '{"cut')
+        write(os.path.join(self.p.dir, "meta.json.bak"), "not json, not judged")
+        write(os.path.join(c.state_dir(), "sessions", "s.tripfile-1.json"), "")  # an empty marker in a folder
+        write(os.path.join(self.p.dir, "audits", "T-0001.dirty.json"), "{")  # only a project's or state's own files
+        found = [(os.path.basename(f["path"]), f["detail"]) for f in d.fsck() if f["kind"] == "corrupt state"]
+        self.assertEqual([n for n, _ in found], ["gate.json"])
+        self.assertIn("isn't valid JSON", found[0][1])
+        self.assertIn("1 corrupt state", d.check_fsck().detail)
+        self.assertEqual(gate, next(f["path"] for f in d.fsck() if f["kind"] == "corrupt state"))
+
     def test_doctor_reports_the_one_line_summary(self):
         r = d.check_fsck()
         self.assertEqual(r.status, "WARN")

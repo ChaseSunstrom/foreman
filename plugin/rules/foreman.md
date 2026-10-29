@@ -10,11 +10,11 @@ capture → expand → ground → plan → execute → verify → reflect → re
 - Tiers: S (≤~30 lines, 1–2 files, obvious) · M (several files or a design choice) · L (cross-cutting, schema/API/security, large or uncertain). Unsure → one tier up.
 - M/L: before editing, list what a complete version has and 3+ approaches; choose, capture the rest.
 - Procedures: `/foreman:intake`; stage playbooks `/foreman:playbooks`. Open-ended, exhaustive or broad ("super improve it", "limitless", "a ton of …") → `/foreman:brainstorm`.
-- Be economical: targeted reads (grep, `fm outline PATH`, line ranges), `fm quiet -- <cmd>` for noisy output, short replies, no pasted output.
+- Be economical: targeted reads (grep, `fm outline PATH`, line ranges), `fm quiet -- <cmd>`, short replies, nothing pasted; Multiply out each default and hook (cost × calls × sessions × days).
 
 ## You run everything
 - Never ask the user to run a command; run it yourself (only logins, secrets and slash commands need them).
-- Plain words: "status" → `/foreman:status` · "sensitive repo" → `fm sensitive on` · "stop auto-continuing" → `fm drive off` · "don't ask to edit Foreman" → `fm ask ID core --standing` (one yes for every task; `fm standing off` revokes) · "let Claude edit the guard/settings" → the user types `/fm-trust on` (never you) · "full auto" → `fm autonomy full` · "clean up" → `fm tidy` (dry run, then `--apply`) · "is foreman ok?" → `fm doctor` (fix each failure; `--repair`) · "improve foreman" → `/foreman:improve` · "keep tasks with the repo" → `fm sync on` · "serve this repo" → `fm ask ID remote`, then `fm serve` · "work the queue headless" → `fm run` · which verb or skill does X → `fm which "<X>"` · missing capability → `fm plugins find <need>`, `fm ask ID plugin --pin <id>`, `fm plugins install <id>` · repeated manual work → `fm repeats` · "keep improving yourself" → `fm friction --every 3` (fm next then says how to run each pass) · "improve forever" → `fm loop on` · "ping me when done" → `fm notify '<cmd using $1>'` · "what did it cost" → `fm cost` · "this week" → `fm digest`.
+- Plain words: "status" → `/foreman:status` · "sensitive repo" → `fm sensitive on` · "stop auto-continuing" → `fm drive off` · "stop everything now" → `fm pause --now` · "don't ask to edit Foreman" → `fm ask ID core --standing` (one yes, all tasks; `fm standing off` revokes) · "let Claude edit the guard/settings" → user types `/fm-trust on` (never you) · "full auto" → `fm autonomy full` · "clean up" → `fm tidy` (then `--apply`) · "is foreman ok?" → `fm doctor` (fix failures; `--repair`) · "improve foreman" → `/foreman:improve` · "keep tasks with the repo" → `fm sync on` · "serve this repo" → `fm ask ID remote`, then `fm serve` · "work the queue headless" → `fm run` · which verb or skill does X → `fm which "<X>"` · missing capability → `fm plugins find <need>`, `fm ask ID plugin --pin <id>`, `fm plugins install <id>` · repeated manual work → `fm repeats` · "keep improving yourself" → `fm friction --every 3` (fm next says how) · "improve forever" → `fm loop on` · "ping me when done" → `fm notify '<cmd using $1>'` · "what did it cost" → `fm cost` · "this week" → `fm digest`.
 - Ask through Claude Code's prompts, not chat: a guard category → `fm ask ID <category> --why "…"` as its own command (the user's answer grants it; you can't). Anything else: one AskUserQuestion, your default first.
 
 ## Intake
@@ -27,12 +27,12 @@ capture → expand → ground → plan → execute → verify → reflect → re
 
 ## Evidence and state
 - Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only when it can't run here); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. Every task closes in one call: `fm task finish ID --audit "<how>" [--lens "edge: <result>" …] [--docs …] [--lesson …] [--commit "<msg>"]` (commits its own files after a clean close).
-- Related items are one task: `fm batch` (`fm next` offers it). All members' failing tests first; per step only its own tests; full gates and review once at close.
+- Related items are one task: `fm batch`. All members' failing tests first; per step only its own tests; full gates and review once at close.
 - All state through `fm`. Checkpoint before switching or risky steps.
 - 3 failed attempts on a step → diagnosis in the brief, `fm task block ID "<why>"`, move on.
 - Before `fm task done`: the audits `fm gates` names; `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture; the lenses go in `fm task finish --lens`.
 - End of task: `fm task finish` (or `fm task done ID`), then straight on to the next queued or inbox item (`/foreman:next`) — never stop to report while work remains.
-- Never idle on a long job: background it and do what doesn't need its result.
+- Never idle on a long job: background it, work on.
 
 ## Autonomy and drive
 - standard: approval for L plans, `?` items and anything destructive or irreversible (`fm task set ID approved=true` after the yes); S/M run after self-review.

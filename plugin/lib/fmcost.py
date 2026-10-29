@@ -12,6 +12,7 @@ import time
 import fmcore as c
 
 WEIGHTS = {"input_tokens": 1, "cache_creation_input_tokens": 1.25, "cache_read_input_tokens": 0.1, "output_tokens": 5}
+WRITE_1H = 2.0  # T-1820: a 1 h cache write costs 2× base input; WEIGHTS' 1.25 is the 5 min cache's price
 SHORT = {"input_tokens": "input", "cache_creation_input_tokens": "cache writes", "cache_read_input_tokens":
          "cache reads", "output_tokens": "output"}
 
@@ -35,6 +36,18 @@ def transcripts_dir(root):
 
 def _since(days):
     return (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def one_hour(u):
+    """A usage row's 1 h cache writes (Claude Code logs them under cache_creation)."""
+    cc = u.get("cache_creation")
+    return (cc.get("ephemeral_1h_input_tokens") or 0) if isinstance(cc, dict) else 0
+
+
+def weighted(u):
+    """A usage row in input-equivalent tokens."""
+    return (sum((u.get(k) or 0) * w for k, w in WEIGHTS.items())
+            + one_hour(u) * (WRITE_1H - WEIGHTS["cache_creation_input_tokens"]))
 
 
 def _human(n):
@@ -121,12 +134,15 @@ def _share(a, share):
         share["all"] += len(json.dumps(a))
 
 
-def scan(folder, since, share=None):
+def scan(folder, since, share=None, sidechains=True):
     """(assistant messages [(ts, session, usage)], tool result chars by tool name) since the cutoff. A message's usage
     repeats on each of its content blocks: counted once per message id. A `share` Counter gets what entered the
-    context: "all", and Foreman's part by source (T-1257)."""
+    context: "all", and Foreman's part by source (T-1257). A subagent's replies carry its parent's session id:
+    `sidechains=False` leaves them out (T-1797)."""
     msgs, tools, names, fm_ids = {}, collections.Counter(), {}, {}
     for path, e in _entries(folder, since):
+        if not sidechains and f"{os.sep}subagents{os.sep}" in path:
+            continue
         n = os.path.basename(path)
         ts = str(e.get("timestamp") or "")
         if share is not None and isinstance(e.get("attachment"), dict) and ts[:19] >= since:
@@ -154,6 +170,69 @@ def scan(folder, since, share=None):
         if e.get("type") == "assistant" and isinstance(m.get("usage"), dict):
             msgs[m.get("id") or (n, ts)] = (ts, e.get("sessionId") or n[:-6], m["usage"])
     return list(msgs.values()), tools
+
+
+BURN_CONTEXT = 150_000  # T-1800: a session averaging more context than this per reply compacts too late
+
+
+def burn_findings(folder=None, days=2, forecast=None):
+    """T-1800: why usage burns, as [(finding, fix)], from every project's transcripts (usage is account-wide) and the
+    statusline's usage reading. Each cause comes with its fix, so nobody has to ask."""
+    folder = folder or os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "projects")
+    ctx, by, hours, seen = [], collections.Counter(), collections.defaultdict(set), set()
+    for path, e in _entries(folder, _since(days)):
+        m = e.get("message")
+        if e.get("type") != "assistant" or not isinstance(m, dict) or not isinstance(m.get("usage"), dict) \
+                or m.get("id") in seen:
+            continue
+        seen.add(m.get("id"))
+        u = m["usage"]
+        size = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+        sub = f"{os.sep}subagents{os.sep}" in path
+        if not sub:
+            ctx.append(size)
+            hours[str(e.get("timestamp"))[:13]].add(e.get("sessionId"))
+        by[("subagent " if sub else "") + ("opus" if "opus" in str(m.get("model")) else "other")] += size
+    out = []
+    if len(ctx) >= 20 and sum(ctx) / len(ctx) > BURN_CONTEXT:
+        out.append((f"context per reply averages {_human(sum(ctx) / len(ctx))} over {len(ctx)} replies",
+                    "sessions compact late: fm install-user sets Foreman's 200k compact window; /compact long ones"))
+    peak = max(map(len, hours.values()), default=0)
+    if peak >= 3:
+        out.append((f"{peak} sessions replied in the same hour", "each one multiplies usage: fm drive off in the "
+                    "ones nobody watches, or fm run one queue headless"))
+    total = sum(by.values())
+    if total and by["subagent opus"] / total > 0.2:
+        out.append((f"Opus subagents used {by['subagent opus'] * 100 // total}% of the tokens",
+                    "subagents on Sonnet or Haiku (model: in the agent's frontmatter, or Agent model=)"))
+    week = (forecast if forecast is not None else __import__("fmbudget").forecast()).get("seven_day") or {}
+    if week.get("full_at") and week.get("resets_at"):
+        out.append((f"weekly usage is on pace to run out {(week['resets_at'] - week['full_at']) / 3600:.0f} h before "
+                    "its reset", "optional work already waits; fewer sessions, or the causes above"))
+    return out
+
+
+def _burn_path():
+    return os.path.join(c.state_dir(), "burn.json")
+
+
+def write_burn(found):
+    try:
+        c.write_atomic(_burn_path(), json.dumps({"ts": time.time(), "found": found}))
+    except OSError:
+        pass
+
+
+def burn_line(max_age=86400):
+    """The session-start line from the last cached scan (the Stop hook's detached refresh writes it): never a scan."""
+    try:
+        with open(_burn_path(), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return ""
+    if not d.get("found") or time.time() - d.get("ts", 0) > max_age:
+        return ""
+    return "Usage burn: " + "; ".join(f"{a} → {b}" for a, b in d["found"]) + "."
 
 
 IDLE_S = 600  # a gap longer than this between two entries is time away, not work
@@ -253,7 +332,7 @@ def unexplained(msgs, events, gap=UNEXPLAINED_GAP_S):
     total = lost = 0.0
     sessions = collections.Counter()
     for ts, sid, usage in msgs:
-        w = sum((usage.get(k) or 0) * wt for k, wt in WEIGHTS.items())
+        w = weighted(usage)
         t, near = _epoch(ts), times.get(sid)
         if t is None:  # no usable time: neither explained nor not, and left out of the total
             continue
@@ -300,14 +379,44 @@ def _task_for(lines, sid, ts):
     return _task_at(by.get(sid) or every, ts)
 
 
-def task_costs(p, days):
-    """T-1083: input-equivalent tokens per task over the window (what fm cost's by-task table sums)."""
+def retry_windows(p, days):
+    """T-1824: {task: [(from, to)]}, each span from a step's failing evidence to its next passing one; a step still
+    failing runs on ("~" sorts after every timestamp). Evidence on a later step drops an earlier step's open failure:
+    the red run of red→green (a failing test, then the work) or a failure the task moved past isn't a retry."""
+    failing, spans = {}, collections.defaultdict(list)
+    for e in c.ledger_events(p, since=_since(days + 2)):
+        if e.get("event") == "evidence" and e.get("task"):
+            d, ts = e.get("data") or {}, str(e.get("ts", ""))[:19]
+            key, step = (e["task"], d.get("step")), d.get("step")
+            if isinstance(step, int):
+                for k in [k for k in failing if k[0] == e["task"] and isinstance(k[1], int) and k[1] < step]:
+                    del failing[k]
+            if str(d.get("result", "")).startswith("✗"):
+                failing.setdefault(key, ts)
+            elif key in failing:
+                spans[e["task"]].append((failing.pop(key), ts))
+    for (task, _), ts in failing.items():
+        spans[task].append((ts, "~"))
+    return spans
+
+
+def _retrying(spans, task, ts):
+    return any(a <= ts < b for a, b in spans.get(task, ()))
+
+
+def task_costs(p, days, retry=None):
+    """T-1083: input-equivalent tokens per task over the window (what fm cost's by-task table sums). A `retry` Counter
+    gets each task's share spent inside its retry windows (T-1824)."""
     folder = transcripts_dir(p.root)
     if not os.path.isdir(folder):
         return collections.Counter()
     lines, out = _timelines(p, days), collections.Counter()
+    spans = retry_windows(p, days) if retry is not None else {}
     for ts, sid, usage in scan(folder, _since(days))[0]:
-        out[_task_for(lines, sid, ts[:19]) or "(no task)"] += sum((usage.get(k) or 0) * w for k, w in WEIGHTS.items())
+        task, w = _task_for(lines, sid, ts[:19]) or "(no task)", weighted(usage)
+        out[task] += w
+        if _retrying(spans, task, ts[:19]):
+            retry[task] += w
     return out
 
 
@@ -315,6 +424,30 @@ def parse_tokens(v):
     """'200k', '2M' or '150000' as a count; None when it isn't one."""
     m = re.fullmatch(r"(\d+(?:\.\d+)?)([kKmM]?)", str(v).strip())
     return round(float(m[1]) * {"": 1, "k": 1e3, "m": 1e6}[m[2].lower()]) if m else None
+
+
+def queue_quote(p, order, days=90):
+    """T-1878: what the queue will likely cost before it starts: each task's median of finished tasks of its type and
+    tier (two or more), summed, beside the last day's spend and the week's usage. A quote only: nothing is refused."""
+    import fmbudget
+    costs, done = task_costs(p, days), collections.defaultdict(list)
+    for x in c.load_briefs(p):
+        if x.status == "done" and costs.get(x.id):
+            done[(x.type, x.tier)].append(costs[x.id])
+    med = {k: round(statistics.median(v)) for k, v in done.items() if len(v) >= 2}
+    return {"tasks": len(order), "tokens": sum(med.get((b.type, b.tier), 0) for b in order),
+            "no_history": [b.id for b in order if (b.type, b.tier) not in med],
+            "last_day": sum(task_costs(p, 1).values()),
+            "week_used": (fmbudget.forecast().get("seven_day") or {}).get("used")}
+
+
+def quote_line(q):
+    left = q["no_history"]
+    return (f"Quote: {q['tasks']} task(s) ≈ {_human(q['tokens'])} tokens (each the median of its type and tier"
+            + (f"; no history: {', '.join(left[:5])}{' …' if left[5:] else ''}" if left else "")
+            + f") · last 24 h {_human(q['last_day'])}"
+            + (f" · week {q['week_used']:.0f}% used" if q["week_used"] is not None else "")
+            + ". A quote: nothing is refused.")
 
 
 def forecast_task(p, b, costs=None, days=90):
@@ -373,6 +506,47 @@ def cached_costs(p, compute=True, refresh=False):
     except OSError:
         pass  # a cache: never worth failing for
     return costs
+
+
+def sweep(p):
+    """T-1810: the Stop hook's detached sweep, for every project (no cap or contract needed): CI on the default branch
+    and a changed setup (fmforesight), then usage burn (T-1800), whose account-wide scan runs at most every 10 min
+    unless the setup just changed."""
+    try:
+        import fmforesight
+        changed = fmforesight.refresh(p)
+    except Exception:
+        changed = False
+    try:
+        fresh = not changed and time.time() - os.path.getmtime(_burn_path()) < 600
+    except OSError:
+        fresh = False
+    if not fresh:
+        write_burn(burn_findings())
+
+
+def sweep_detached(p):
+    """Spawn fm cost --sweep at most every SWEEP_EVERY per project: one stat per Stop hook otherwise."""
+    import fmforesight
+    stamp = os.path.join(p.dir, "sweep.spawned")
+    try:
+        if time.time() - os.path.getmtime(stamp) < fmforesight.SWEEP_EVERY:
+            return
+    except OSError:
+        pass
+    try:
+        open(stamp, "w").close()
+    except OSError:
+        return  # no stamp, no spawn: never one per turn
+    if os.environ.get("FOREMAN_NO_BACKGROUND"):
+        return  # tests: no detached child racing a test folder's cleanup; sweep() is tested directly
+    import subprocess
+    try:
+        subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "cost", "--sweep"], cwd=p.root,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except OSError:
+        pass
 
 
 def _refresh_detached(p):
@@ -442,12 +616,16 @@ def cost_line(p, b):
 
 def _task(args, p, fmcli):
     b = fmcli.need_brief(p, args.task)
-    costs = task_costs(p, 90)
+    retry = collections.Counter()
+    costs = task_costs(p, 90, retry)
     spent, fc, cap = costs[b.id], forecast_task(p, b, costs), parse_tokens(b.meta.get("cost_cap"))
-    text = (f"{b.id} [{b.type} {b.tier}]: spent {_human(spent)}" + (f", cap {_human(cap)}" if cap else "")
+    text = (f"{b.id} [{b.type} {b.tier}]: spent {_human(spent)}"
+            + (f", retry {_human(retry[b.id])} ({100 * retry[b.id] / spent:.0f}%: fixing failed steps)"
+               if retry[b.id] else "") + (f", cap {_human(cap)}" if cap else "")
             + (f", forecast {_human(fc[0])} (median of {fc[1]} finished {b.type} {b.tier} tasks)" if fc
                else ", no forecast (needs two finished tasks of the same type and tier)"))
-    return fmcli.out(args, {"task": b.id, "spent": round(spent), "cap": cap, "forecast": fc and fc[0]}, text)
+    return fmcli.out(args, {"task": b.id, "spent": round(spent), "retry": round(retry[b.id]), "cap": cap,
+                            "forecast": fc and fc[0]}, text)
 
 
 def _share_line(share):
@@ -478,6 +656,9 @@ def cmd_cost(args):
         size, costs = _transcripts_size(p), task_costs(p, 90)
         c.write_atomic(_cache_path(p), json.dumps({"size": size, "ts": time.time(), "costs": dict(costs)}))
         return 0
+    if getattr(args, "sweep", False):
+        sweep(p)
+        return 0
     if getattr(args, "task", None):
         return _task(args, p, fmcli)
     if getattr(args, "by_model", False):
@@ -488,18 +669,19 @@ def cmd_cost(args):
     if not os.path.isdir(folder):
         raise fmcli.UsageError(f"no Claude Code transcripts for this project at {folder}")
     share = collections.Counter()
+    if getattr(args, "sessions", False):  # a subagent's own context isn't its parent's per-turn figure
+        return _sessions(scan(folder, _since(args.days), sidechains=False)[0], args, fmcli)
     msgs, tools = scan(folder, _since(args.days), share)
-    if getattr(args, "sessions", False):
-        return _sessions(msgs, args, fmcli)
     totals, by_task, by_session = collections.Counter(), collections.Counter(), collections.Counter()
     lines = _timelines(p, args.days)  # T-1083 review: each turn to its own session's task
+    spans, retry = retry_windows(p, args.days), collections.Counter()
     for ts, sid, usage in msgs:
-        w = 0.0
-        for k, weight in WEIGHTS.items():
-            v = usage.get(k) or 0
-            totals[k] += v
-            w += v * weight
-        by_task[_task_for(lines, sid, ts[:19]) or "(no task)"] += w
+        for k in WEIGHTS:
+            totals[k] += usage.get(k) or 0
+        w, task = weighted(usage), _task_for(lines, sid, ts[:19]) or "(no task)"
+        by_task[task] += w
+        if _retrying(spans, task, ts[:19]):
+            retry[task] += w
         by_session[sid] += w
     if not msgs:  # R3 canary: transcripts are Claude Code's internal format and may change under us
         return fmcli.out(args, {"days": args.days, "messages": 0},
@@ -518,7 +700,7 @@ def cmd_cost(args):
     unex_line = unexplained_line(unex)
     data = {"days": args.days, "messages": len(msgs), "tokens": dict(totals), "input_equivalent": round(total),
             "unexplained": unex,
-            "by_task": dict(by_task.most_common()), "by_session": dict(by_session.most_common()),
+            "by_task": dict(by_task.most_common()), "retry_by_task": dict(retry), "by_session": dict(by_session.most_common()),
             "tool_result_chars": dict(tools.most_common()), "session_start_context": base,
             "foreman_share": {"all": share["all"], "chars": {k: v for k, v in share.most_common()
                                                              if k != "all" and not k.startswith("fm:")},
@@ -533,8 +715,10 @@ def cmd_cost(args):
                                     if k == "Bash" and shell_s else "") for k, v in tool_s.most_common(5))) if active else ""
     text = (f"Tokens, last {args.days} day(s), {len(by_session)} session(s), {len(msgs)} replies: "
             + " · ".join(f"{SHORT[k]} {_human(totals[k])}" for k in WEIGHTS)
-            + f" ≈ {_human(total)} input-equivalent (cache reads ×0.1, writes ×1.25, output ×5)"
-            + "\nBy task: " + " · ".join(f"{t} {_human(v)} ({100 * v / total:.0f}%)" for t, v in by_task.most_common(8))
+            + f" ≈ {_human(total)} input-equivalent (cache reads ×0.1, writes ×1.25 or ×2 on the 1 h cache, output ×5)"
+            + "\nBy task: " + " · ".join(f"{t} {_human(v)} ({100 * v / total:.0f}%"
+                                      + (f", retry {_human(retry[t])}" if retry[t] else "") + ")"
+                                      for t, v in by_task.most_common(8))
             + ("\n" + unex_line if unex_line else "")
             + "\nTool results (what filled the context): " + " · ".join(
                 f"{t} {100 * v / tool_total:.0f}%" for t, v in tools.most_common(6))
@@ -546,7 +730,10 @@ def cmd_cost(args):
 
 
 BUST_MIN = 30000  # a turn re-writing over half of a context this big lost its cache (T-0703)
-CACHE_TTL_S = 300  # the prompt cache's default lifetime: a bust after a longer gap is the ttl, else a context edit
+# T-1797: Foreman's compact window (T-1796): a session averaging past it compacted late. BURN_CONTEXT (150k) is the
+# account-wide early warning; this is the per-session regression line.
+SESSION_OVER = 200_000
+CACHE_TTL_S, CACHE_TTL_1H_S = 300, 3600  # the prompt cache's default lifetime: a bust after a longer gap is the ttl, else a context edit
 
 
 def _epoch(ts):
@@ -566,30 +753,49 @@ def _sessions(msgs, args, fmcli):
     rows = {}
     for ts, sid, u in sorted(msgs, key=lambda x: x[0]):
         r = rows.setdefault(sid, {"session": sid, "turns": 0, "busts": 0, "ctx": 0, "prev": 0, "prev_t": None,
-                                  "causes": collections.Counter(), "tokens": collections.Counter()})
+                                  "causes": collections.Counter(), "tokens": collections.Counter(), "h1": 0,
+                                  "bust_cost": 0.0, "ttl": None})
         ctx = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
         w = u.get("cache_creation_input_tokens") or 0
-        t = _epoch(ts)
+        t, h = _epoch(ts), one_hour(u)
         if r["prev"] > BUST_MIN and ctx > BUST_MIN and w > ctx / 2:  # T-0959: the cache expired, or the prefix changed
             r["busts"] += 1
-            r["causes"]["ttl" if t and r["prev_t"] and t - r["prev_t"] > CACHE_TTL_S else "context edit"] += 1
+            ttl = r["ttl"] or (CACHE_TTL_1H_S if h else CACHE_TTL_S)  # T-1820: the lifetime its last write chose
+            r["causes"]["ttl" if t and r["prev_t"] and t - r["prev_t"] > ttl else "context edit"] += 1
+            r["bust_cost"] += weighted({"cache_creation_input_tokens": w, "cache_creation": u.get("cache_creation")}) \
+                - w * WEIGHTS["cache_read_input_tokens"]  # re-written instead of read
+        r["h1"] += h
+        if w:
+            r["ttl"] = CACHE_TTL_1H_S if h else CACHE_TTL_S
         r["turns"], r["ctx"], r["prev"], r["prev_t"] = r["turns"] + 1, r["ctx"] + ctx, ctx, t
         for k in WEIGHTS:
             r["tokens"][k] += u.get(k) or 0
     out = []
     for r in rows.values():
         spend = {k: r["tokens"][k] * WEIGHTS[k] for k in WEIGHTS}
+        spend["cache_creation_input_tokens"] += r["h1"] * (WRITE_1H - WEIGHTS["cache_creation_input_tokens"])
         out.append({"session": r["session"], "turns": r["turns"], "avg_context": r["ctx"] // r["turns"],
-                    "busts": r["busts"], "bust_causes": dict(sorted(r["causes"].items())), "tokens": dict(r["tokens"]), "input_equivalent": round(sum(spend.values())),
-                    "split": {SPLIT[k]: round(100 * v / (sum(spend.values()) or 1)) for k, v in sorted(spend.items(), key=lambda kv: list(SPLIT).index(kv[0]))}})
+                    "over": r["ctx"] // r["turns"] > SESSION_OVER,
+                    "busts": r["busts"], "bust_causes": dict(sorted(r["causes"].items())), "tokens": dict(r["tokens"]),
+                    "input_equivalent": round(sum(spend.values())), "bust_cost": round(r["bust_cost"]),
+                    "split": {name: round(100 * spend[k] / (sum(spend.values()) or 1)) for k, name in SPLIT.items()}})
     out.sort(key=lambda s: -s["input_equivalent"])
-    text = (f"Sessions, last {args.days:g} day(s), costliest first (the context a turn re-reads is most of the cost):\n"
+    over = sum(s["over"] for s in out)
+    text = (f"Sessions, last {args.days:g} day(s), costliest first, main thread only (the context a turn re-reads is "
+            "most of the cost):\n"
             + "\n".join(f"  {s['session'][:12]}: {s['turns']} turns, {_human(s['avg_context'])} context per turn, "
                         f"≈ {_human(s['input_equivalent'])} input-equivalent (" + ", ".join(
                             f"{k} {v}%"
                             for k, v in s["split"].items()) + f"), {s['busts']} bust{'s' * (s['busts'] != 1)}"
-                        + (" (" + ", ".join(f"{n} {k}" for k, n in s["bust_causes"].items()) + ")" if s["busts"] else "")
-                        for s in out[:15]) if out else f"No token usage in the last {args.days:g} day(s).")
+                        + (" (" + ", ".join(f"{n} {k}" for k, n in s["bust_causes"].items())
+                           + f") ≈ {_human(s['bust_cost'])} lost" if s["busts"] else "")
+                        + (" ⚠ over 200k a reply: compacted late (one started after fm install-user and a restart "
+                           "shouldn't)" if s["over"] else "")
+                        for s in out[:15]) + (f"\n  {over} session(s) average over 200k a reply" if over else "")
+            + ("\n  Busts: a ttl one outlasted the cache (5 min, or 1 h when the session writes 1 h): fewer long idle "
+               "gaps. A context edit changed the prefix: CLAUDE.md, rules, tools or MCP servers edited mid-session, "
+               "or a model switch." if any(s["busts"] for s in out[:15]) else "")
+            if out else f"No token usage in the last {args.days:g} day(s).")
     return fmcli.out(args, {"days": args.days, "sessions": out}, text)
 
 
@@ -682,7 +888,7 @@ def cmd_digest(args):
     tokens, unex = None, ""
     if os.path.isdir(transcripts_dir(p.root)):
         msgs, _ = scan(transcripts_dir(p.root), since)
-        tokens = sum((u.get(k) or 0) * w for _, _, u in msgs for k, w in WEIGHTS.items())
+        tokens = sum(weighted(u) for _, _, u in msgs)
         unex = unexplained_line(unexplained_spend(p, msgs, args.days))
     lines = [f"Last {args.days:g} day(s) in {p.slug}: {len(done)} task(s) done — "
              + (", ".join(f"{v} {k}" for k, v in grades.most_common()) or "none")
@@ -733,8 +939,11 @@ def cmd_digest(args):
         for e in nights[-5:]] if nights else []
     learn = learned(p, args.days, len(done))
     lines += [learn["line"]]
+    burn = burn_findings()  # T-1800: why usage burns, named with its fix
+    lines += ["Usage burn:"] + [f"- {a} → {b}" for a, b in burn] if burn else []
     fmcli.out(args, {"learned": learn, "done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review, "decided": decided,
-                     "blocked": [b.id for b in blocked], "stale_plans": stale, "deferred_triage": triage, "failures": dict(fails.most_common(5)), "tokens": tokens},
+                     "blocked": [b.id for b in blocked], "stale_plans": stale, "deferred_triage": triage, "failures": dict(fails.most_common(5)), "tokens": tokens,
+                     "burn": burn},
               "\n".join(lines))
     if getattr(args, "say", False):  # T-1549: the digest read aloud, when a speech program is installed
         say("\n".join(lines))

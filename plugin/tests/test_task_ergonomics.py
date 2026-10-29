@@ -134,10 +134,21 @@ class TaskErgonomics(ForemanTestCase):
 
     def test_the_adversary_refusal_says_how_to_record_it_in_the_close(self):
         tid = self.task()
+        self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: fixture")  # T-1906: asked first
         with open(os.path.join(self.repo, "auth.py"), "w") as f:
             f.write("x = 1\n")
         r = self.fm("task", "finish", tid, "--audit", "self: x", "--run", "true", check=False)
         self.assertIn('--lens "adversary:', r.stderr)
+
+    def test_the_adversary_refusal_comes_before_any_check_runs(self):  # T-1907: it came after them
+        tid = self.task()
+        self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: fixture")
+        with open(os.path.join(self.repo, "auth.py"), "w") as f:
+            f.write("x = 1\n")
+        r = self.fm("task", "finish", tid, "--audit", "self: x", check=False)
+        self.assertIn("nothing ran", r.stderr)
+        self.assertIn('--lens "adversary:', r.stderr)
+        self.assertEqual(self.brief(tid).evidence(), [])
 
 
 class ExpectFail(ForemanTestCase):
@@ -156,6 +167,15 @@ class ExpectFail(ForemanTestCase):
         self.assertIn("red as expected (exit 3)", ev)
         self.assertNotIn("✗ exit", ev, "not read as a failed run by the red-step scans")
         self.assertTrue(self.brief(tid).has_evidence(step=1))
+
+    def test_the_red_run_then_a_pass_is_red_to_green_proof(self):
+        # T-1893: fm task finish refused every test-first FIX recorded this way: red_green_cmd read only "✗ exit"
+        tid = self.task("--step", "make it pass")
+        self.fm("task", "evidence", tid, "--step", "1", "--run", "test -e ok", "--expect-fail")
+        self.assertIsNone(self.brief(tid).red_green_cmd(), "no pass yet")
+        open(os.path.join(self.repo, "ok"), "w").close()
+        self.fm("task", "evidence", tid, "--step", "2", "--run", "test -e ok")
+        self.assertEqual(self.brief(tid).red_green_cmd(), "test -e ok")
 
     def test_a_passing_run_is_refused_and_nothing_recorded(self):
         tid = self.task()

@@ -24,10 +24,13 @@ DENY_RULES = [
 ]
 STOP_CAP = "60"  # drive mode: allow long queues past Claude Code's default 8 consecutive Stop-hook continuations
 COMPACT_PCT = "70"  # compact earlier than the default: PreCompact checkpoints and SessionStart re-injects the task
-ENV = {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": STOP_CAP, "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": COMPACT_PCT}
+COMPACT_WINDOW = "200k"  # T-1796: a 1M window let every reply re-read ~380k tokens; 70% of 200k compacts near 140k
+ENV = {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": STOP_CAP, "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": COMPACT_PCT,
+       "CLAUDE_CODE_AUTO_COMPACT_WINDOW": COMPACT_WINDOW}
 OUTPUT_STYLE = "foreman:Foreman"  # plugin/output-styles/foreman.md; plugin styles are selected as <plugin>:<name>
 WHY = {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": "drive mode: long queues aren't cut at 8 continuations",
-       "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "compact before long contexts degrade; Foreman state survives compaction"}
+       "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "compact before long contexts degrade; Foreman state survives compaction",
+       "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "every reply re-reads the whole context: a 200k window keeps it small"}
 BEGIN, END = "<!-- foreman:begin -->", "<!-- foreman:end -->"
 BLOCK = (f"{BEGIN}\n# Foreman\nForeman is installed. Operating rules: ~/.claude/rules/foreman.md. "
          f"System map: ~/.claude/foreman/MASTER.md.\n{END}\n")

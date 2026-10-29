@@ -690,8 +690,9 @@ class Site(unittest.TestCase):
             for path in pages:
                 page = read_text(path)
                 head = page.split("</head>")[0]  # T-1244: every page sets the stored theme before <body>
-                self.assertIn('getItem("fm-theme")', head, os.path.relpath(path, out))
-                for u in re.findall(r'(?:src|href|poster)="([^"]+)"', page):
+                if os.sep + "gallery" + os.sep not in path:  # T-1785: playbook examples, copied byte for byte
+                    self.assertIn('getItem("fm-theme")', head, os.path.relpath(path, out))
+                for u in re.findall(r'(?:src|href|poster)="([^"]+)"', re.sub(r"(?s)<!--.*?-->", "", page)):  # a comment links nothing
                     u = u.split("#")[0].split("?")[0]
                     if u and ":" not in u and not u.startswith("//"):
                         self.assertTrue(os.path.exists(os.path.normpath(os.path.join(os.path.dirname(path), u))),

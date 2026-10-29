@@ -250,17 +250,41 @@ def _constant(name):
     raise ValueError(f"{name} is not a number JSON allows")
 
 
-def loads(text):
-    """scene.json's text → the validated scene (a leading byte-order mark is fine)."""
+def _json(text):
+    """JSON text → its value: a leading byte-order mark is fine; a repeated key, NaN or deep nesting isn't."""
+    text = text.removeprefix("﻿")
+    if _depth(text) > MAX_DEPTH:  # T-1799: json's own limit is the C stack's, so it differs by platform and Python
+        raise ValueError("nested too deeply")
     try:
-        data = json.loads(text.removeprefix("﻿"), object_pairs_hook=_pairs, parse_constant=_constant)
+        return json.loads(text, object_pairs_hook=_pairs, parse_constant=_constant)
     except RecursionError:
         raise ValueError("nested too deeply") from None
-    return validate(data)
 
 
-def load(path):
-    """A scene.json file → the validated scene; ValueError for a file that isn't regular, is too big or is wrong."""
+def loads(text):
+    """scene.json's text → the validated scene."""
+    return validate(_json(text))
+
+
+MAX_DEPTH = 256
+
+
+def _depth(text):
+    """The deepest [ or { nesting outside strings."""
+    d = top = 0
+    for m in re.finditer(r'"(?:[^"\\]|\\.)*"|[\[{\]}]', text):
+        t = m.group()
+        if t in ("[", "{"):
+            d += 1
+            top = max(top, d)
+        elif t in ("]", "}"):
+            d -= 1
+    return top
+
+
+def load(path, parse=loads):
+    """A scene.json file → the validated scene (or parse(its text)); ValueError for a file that isn't regular, is too
+    big or is wrong."""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)  # a plain open() of a FIFO waits for a writer
         if not stat.S_ISREG(os.fstat(fd).st_mode):
@@ -270,7 +294,7 @@ def load(path):
             data = f.read(MAX_FILE + 1)
         if len(data) > MAX_FILE:
             raise ValueError(f"too large a file (over {MAX_FILE >> 20} MB)")
-        return loads(data.decode("utf-8"))
+        return parse(data.decode("utf-8"))
     except ValueError as e:
         raise ValueError(f"{path}: {e}") from None
 
@@ -593,14 +617,14 @@ def turntable(scene, frames=8, size=(160, 100), cols=4):
     """T-1530: a contact sheet of the scene turned about +Y in `frames` even steps, drawn by fmraster (flat shading,
     no browser or GPU): (width, height, RGB bytes), frames left to right then down. ponytail: pure Python, about a
     second a megapixel; a scene of many thousand triangles takes a while."""
-    import fmraster
     w, h = size
-    focal = max(1, round(h / 2 / math.tan(math.radians(scene["camera"]["fov"]) / 2)))
-    bg = tuple(int(scene["background"][i:i + 2], 16) for i in (1, 3, 5)) if scene["background"] else (0, 0, 0)
-    tiles = [fmraster.render(triangles(scene, 360 * k / frames), w, h, focal=focal, background=bg)
-             for k in range(frames)]
-    cols = min(cols, frames)
-    rows = -(-frames // cols)
+    return _sheet([_frame(scene, 360 * k / frames, w, h) for k in range(frames)], w, h, cols, _background(scene))
+
+
+def _sheet(tiles, w, h, cols, bg):
+    """w x h RGB tiles laid left to right then down, cols wide, on bg: (width, height, RGB bytes)."""
+    cols = min(cols, len(tiles))
+    rows = -(-len(tiles) // cols)
     sheet = bytearray(bytes(bg) * (w * cols * h * rows))
     for k, tile in enumerate(tiles):
         x0, y0 = (k % cols) * w, (k // cols) * h
@@ -608,6 +632,245 @@ def turntable(scene, frames=8, size=(160, 100), cols=4):
             at = ((y0 + y) * w * cols + x0) * 3
             sheet[at:at + w * 3] = tile[y * w * 3:(y + 1) * w * 3]
     return w * cols, h * rows, bytes(sheet)
+
+
+def _background(scene):
+    return tuple(int(scene["background"][i:i + 2], 16) for i in (1, 3, 5)) if scene["background"] else (0, 0, 0)
+
+
+def _frame(scene, turn, w, h):
+    """One w x h RGB frame of the scene turned `turn` degrees about +Y, drawn by fmraster from its camera."""
+    import fmraster
+    focal = max(1, round(h / 2 / math.tan(math.radians(scene["camera"]["fov"]) / 2)))
+    return fmraster.render(triangles(scene, turn), w, h, focal=focal, background=_background(scene))
+
+
+def cells(scene, cols=64, turn=0.0):
+    """T-1635: the scene as terminal text: cols x (cols * 5/8, down to even) pixels from fmraster, two to a cell as
+    an upper half block, the top pixel its 24-bit foreground and the bottom its background; one string per row of
+    cells, each ending in a reset. ponytail: every cell carries both colours, about 40 bytes; truecolor only."""
+    if not 2 <= cols <= 400:
+        raise ValueError(f"--cols {cols}: 2 to 400")
+    h = max(2, cols * 5 // 8 // 2 * 2)
+    rgb = _frame(scene, turn, cols, h)
+    lines = []
+    for y in range(0, h, 2):
+        row = []
+        for x in range(cols):
+            a, b = 3 * (y * cols + x), 3 * ((y + 1) * cols + x)
+            row.append("\x1b[38;2;%d;%d;%dm\x1b[48;2;%d;%d;%dm\u2580" % (*rgb[a:a + 3], *rgb[b:b + 3]))
+        lines.append("".join(row) + "\x1b[0m")
+    return lines
+
+
+THREE_LIGHTS = {"AmbientLight": "ambient", "HemisphereLight": "hemisphere", "DirectionalLight": "directional",
+                "PointLight": "point"}
+IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+IMPORT_VERTICES = 1 << 20  # MAX_FILE's million vertices: meshes sharing one geometry can't multiply past it
+MATERIAL_DROPS = ("opacity", "transparent", "wireframe", "side", "flatShading", "vertexColors", "alphaTest")
+
+
+def _hex(n):
+    return "#%06x" % (int(n) & 0xFFFFFF)
+
+
+def _tidy(vs):
+    return [round(v, 6) + 0.0 for v in vs]  # + 0.0: no -0.0 in the file
+
+
+def _mat4mul(a, b):
+    """Column-major 4x4 matrices, as three.js keeps them: a * b."""
+    return [sum(a[k * 4 + r] * b[c * 4 + k] for k in range(4)) for c in range(4) for r in range(4)]
+
+
+def _decompose(m):
+    """A column-major matrix → position, rotation (degrees, Euler XYZ), scale and whether it shears, as three's
+    Matrix4.decompose and Euler.setFromRotationMatrix: a mirrored matrix negates scale x; a shear is lost."""
+    cols = [m[0:3], m[4:7], m[8:11]]
+    s = [math.sqrt(sum(v * v for v in col)) for col in cols]
+    if sum(a * b for a, b in zip(cols[0], _cross3(cols[1], cols[2]))) < 0:
+        s[0] = -s[0]
+    r = [[cols[j][i] / s[j] if s[j] else 0.0 for j in range(3)] for i in range(3)]  # r[row][col]
+    shear = any(abs(sum(r[k][i] * r[k][j] for k in range(3))) > 1e-6 for i, j in ((0, 1), (0, 2), (1, 2)))
+    y = math.asin(max(-1.0, min(1.0, r[0][2])))
+    if abs(r[0][2]) < 0.9999999:
+        x, z = math.atan2(-r[1][2], r[2][2]), math.atan2(-r[0][1], r[0][0])
+    else:
+        x, z = math.atan2(r[2][1], r[1][1]), 0.0
+    return _tidy(m[12:15]), _tidy(math.degrees(a) for a in (x, y, z)), _tidy(s), shear
+
+
+def from_three(doc):
+    """T-1847: three.js JSON (Object3D.toJSON / ObjectLoader, format 4) → (the scene.json dict, validated; notes on
+    what it couldn't carry). Each object's matrix is composed with its parents' (Groups, Object3Ds), then split into
+    position, rotation and scale. Box, Sphere, Plane and BufferGeometry (position, optional index) become box,
+    sphere, plane and vertices; a mesh material's color, roughness, metalness and emissive carry, textures don't;
+    Ambient, Hemisphere, Directional and Point lights (at most 3 of the last two); the first PerspectiveCamera looks
+    along its -Z, its target as far off as it stands from the origin (none: three's usual fov 50 at [0, 0, 5]).
+    Whatever scene.json refuses is left out with a note, never a failed import; ValueError when the document isn't
+    three.js JSON or holds no mesh scene.json can draw."""
+    try:
+        return _from_three(doc)
+    except (TypeError, AttributeError, ArithmeticError) as e:  # a field of the wrong kind: "50" for a fov, a null
+        raise ValueError(f"not three.js JSON as Object3D.toJSON writes it ({type(e).__name__}: {e})") from None
+
+
+def _from_three(doc):
+    import collections
+    if not isinstance(doc, dict) or not isinstance(doc.get("object"), dict):
+        raise ValueError("not three.js JSON: no object (Object3D.toJSON writes metadata, geometries, materials, object)")
+    geos = {g.get("uuid"): g for g in doc.get("geometries") or [] if isinstance(g, dict)}
+    mats = {m.get("uuid"): m for m in doc.get("materials") or [] if isinstance(m, dict)}
+    notes, meshes, lights, materials, matname, taken = [], [], [], {}, {}, {"camera"}  # camera: a path's target
+    camera, seen, targets, count = None, set(), [], [0]
+    fallback = {"fov": 50, "position": [0, 0, 5]}
+
+    def refused(part, what):
+        try:
+            validate(dict({"camera": fallback}, **part))
+            return False
+        except ValueError as e:
+            notes.append(f"{what} scene.json refuses ({e})")
+            return True
+
+    def name(want, prefix, used):
+        n, i = want if isinstance(want, str) and NAME.fullmatch(want) and want not in used else None, 0
+        if n is None and want not in (None, ""):
+            notes.append(f"a {prefix} name scene.json can't take or a repeat (renamed {prefix}N)")
+        while n is None or n in used:
+            i += 1
+            n = f"{prefix}{i}"
+        used.add(n)
+        return n
+
+    def geometry(g):
+        t = str(g.get("type", "")).removesuffix("BufferGeometry").removesuffix("Geometry") or "Buffer"
+        if t == "Box":
+            return {"type": "box", "size": [g.get("width", 1), g.get("height", 1), g.get("depth", 1)]}
+        if t == "Sphere":
+            return {"type": "sphere", "radius": g.get("radius", 1), "segments": g.get("widthSegments", 32)}
+        if t == "Plane":
+            return {"type": "plane", "size": [g.get("width", 1), g.get("height", 1)]}
+        if t == "Buffer":
+            data = g.get("data") or {}
+            pos = (data.get("attributes") or {}).get("position") or {}
+            a = pos.get("array") or []
+            if pos.get("itemSize", 3) != 3 or len(a) % 3 or not a:
+                return None
+            verts = [a[i:i + 3] for i in range(0, len(a), 3)]
+            idx = (data.get("index") or {}).get("array") or list(range(len(verts) // 3 * 3))
+            return {"type": "vertices", "vertices": verts, "faces": [idx[i:i + 3] for i in range(0, len(idx) // 3 * 3, 3)]}
+        return None
+
+    def material(ref):
+        if isinstance(ref, list):
+            if len(ref) > 1:
+                notes.append("a second material on a mesh (its first is kept)")
+            ref = ref[0] if ref else None
+        m = mats.get(ref) if isinstance(ref, str) else None
+        if m is None:
+            return None
+        if ref not in matname:
+            out = {"color": _hex(m.get("color", 0xFFFFFF))}
+            for k in ("roughness", "metalness", "emissiveIntensity"):
+                if isinstance(m.get(k), (int, float)):
+                    out[k] = m[k]
+            if "roughness" in out:
+                out["roughness"] = min(1, max(out["roughness"], 0.001))  # scene.json's roughness is above 0
+            if "metalness" in out:
+                out["metalness"] = min(1, max(out["metalness"], 0))
+            if "emissive" in m:
+                out["emissive"] = _hex(m["emissive"])
+            if m.get("type") not in ("MeshStandardMaterial", "MeshPhysicalMaterial", None):
+                notes.append(f"a {_show(m.get('type'))} (drawn as a lit standard material)")
+            notes.extend(f"a material's {k}" for k in MATERIAL_DROPS if k in m)
+            if any(k.lower().endswith("map") for k in m):
+                notes.append("a texture")
+            matname[ref] = name(m.get("name"), "material", set(materials))
+            materials[matname[ref]] = out
+        return matname[ref]
+
+    def walk(o, parent):
+        nonlocal camera
+        t, m = o.get("type"), o.get("matrix", IDENTITY)
+        if not (isinstance(m, list) and len(m) == 16 and all(isinstance(v, (int, float)) for v in m)):
+            raise ValueError(f"{_show(t)} {_show(o.get('uuid', ''))}: matrix isn't 16 numbers")
+        seen.add(o.get("uuid"))
+        if o.get("visible") is False:
+            notes.append("a hidden object (with its children)")
+            return
+        world = _mat4mul(parent, m)
+        if t == "Mesh":
+            g = geos.get(o.get("geometry"))
+            geo, mat = geometry(g) if g else None, material(o.get("material"))
+            if geo is None or mat is None:
+                notes.append(f"a {_show(g.get('type')) if g else 'geometry-less'} mesh" if geo is None
+                             else "a mesh with no material")
+            else:
+                p, r, s, shear = _decompose(world)
+                mesh = {"name": name(o.get("name"), "mesh", taken), "material": mat, "geometry": geo,
+                        "position": p, "rotation": r, "scale": s}
+                if shear:
+                    notes.append("a sheared transform (the shear is lost)")
+                if not refused({"materials": {mat: materials[mat]}, "meshes": [mesh]}, f"a mesh {mesh['name']}"):
+                    count[0] += len(geo.get("vertices", ()))
+                    if count[0] > IMPORT_VERTICES:
+                        raise ValueError(f"over {IMPORT_VERTICES:,} vertices (a geometry shared by many meshes?)")
+                    meshes.append(mesh)
+        elif t in THREE_LIGHTS:
+            lt = {"type": THREE_LIGHTS[t], "intensity": o.get("intensity", 1)}
+            if t == "HemisphereLight":
+                lt.update(sky=_hex(o.get("color", 0xFFFFFF)), ground=_hex(o.get("groundColor", 0x444444)))
+            else:
+                lt["color"] = _hex(o.get("color", 0xFFFFFF))
+            if t in ("DirectionalLight", "PointLight"):
+                lt["position"] = _tidy(world[12:15])
+            if t == "DirectionalLight" and o.get("target"):
+                targets.append(o["target"])
+            if t == "PointLight" and (o.get("distance", 0) or o.get("decay", 2) != 2):
+                notes.append("a point light's distance or decay (scene.json's falls off as 1/d^2)")
+            if t in ("DirectionalLight", "PointLight") and sum(x["type"] in ("directional", "point") for x in lights) >= 3:
+                notes.append(f"a {t} past the third")
+            elif not refused({"lights": [lt]}, f"a {t}"):
+                lights.append(lt)
+        elif t == "PerspectiveCamera" and camera is None:
+            p, fwd = world[12:15], _unit([-world[8], -world[9], -world[10]])
+            d = max(1.0, math.sqrt(sum(v * v for v in p)))
+            if math.hypot(fwd[0], fwd[2]) < 1e-6:  # straight down or up, along scene.json's fixed up: lean it a hair
+                fwd = _unit([0, fwd[1], -1e-3])
+                notes.append("a camera looking straight down or up (tilted 0.06 degrees)")
+            elif abs(world[1]) > 1e-6 * math.hypot(*world[0:3]):  # its x axis tilts out of level: rolled
+                notes.append("a camera's roll (scene.json's camera keeps +Y up)")
+            fov = math.degrees(2 * math.atan(math.tan(math.radians(o.get("fov", 50)) / 2) / (o.get("zoom") or 1)))
+            near, far = o.get("near", 0.1), o.get("far", 2000)
+            if far > near * 10000:
+                notes.append(f"the camera's far {far} (clipped to 10,000 x near)")
+            cam = {"fov": min(179, max(1, round(fov, 6))), "near": near, "far": min(far, near * 10000),
+                   "position": _tidy(p), "target": _tidy(a + b * d for a, b in zip(p, fwd))}
+            camera = None if refused({"camera": cam}, "the camera") else cam
+        elif t not in ("Scene", "Group", "Object3D"):
+            notes.append(f"a {_show(t)}")
+        for ch in o.get("children") or []:
+            if isinstance(ch, dict):
+                walk(ch, world)
+
+    root = doc["object"]
+    walk(root, IDENTITY)
+    if not meshes:
+        raise ValueError("no mesh scene.json can draw" + (f" (left out: {', '.join(notes[:20])})" if notes else ""))
+    scene = {"camera": camera or fallback, "materials": {k: v for k, v in materials.items() if k in {m["material"] for m in meshes}},
+             "meshes": meshes, "lights": lights}
+    if isinstance(root.get("background"), int):
+        scene["background"] = _hex(root["background"])
+    elif root.get("background") is not None:
+        notes.append("a background texture")
+    notes += ["fog"] * bool(root.get("fog")) + ["animations"] * bool(doc.get("animations"))
+    notes += ["a directional light's target (scene.json's shines toward the origin)"] * any(u in seen for u in targets)
+    if camera is None:
+        notes.append("the camera (none in the file: three's usual fov 50 at [0, 0, 5])")
+    counts = collections.Counter(notes)
+    left = [w if n == 1 else f"{w} (x{n})" for w, n in counts.items()]
+    return validate(scene), left if len(left) <= 20 else left[:20] + [f"{len(left) - 20} more kinds"]
 
 
 GLSL = re.compile(r"```glsl\n(.*?)```", re.S)
@@ -1039,6 +1302,373 @@ def sketchbook_html(cards, page=True):
             f'color:#e8e8ea}}}}</style></head><body><h1>Shader sketchbook</h1>{body}</body></html>\n')
 
 
+TETS = ((1, 3), (1, 5), (2, 3), (2, 6), (4, 5), (4, 6))  # corner 0 → a → b → 7: six tets that agree on shared faces
+
+
+def metaballs(balls=5, grid=32, seed=0):
+    """T-1848: a scene.json of a metaball blob: the field sum r²/d² of `balls` seeded balls, polygonised where it is 1
+    by marching tetrahedra on a grid³ box (each cube cut into six tets round its diagonal, so neighbours share their
+    cuts and the surface closes), one vertices mesh wound counter-clockwise seen from outside, over a floor, turning.
+    The box grows until the field is under 0.9 on all of it, so the blob never touches its sides. ValueError for
+    balls outside 1-12 or grid outside 8-48."""
+    import random
+    if not 1 <= balls <= 12:
+        raise ValueError(f"--balls {balls}: 1 to 12")
+    if not 8 <= grid <= 48:
+        raise ValueError(f"--grid {grid}: 8 to 48")
+    rnd = random.Random(seed)
+    bs = [([rnd.uniform(-0.8, 0.8) for _ in range(3)], rnd.uniform(0.35, 0.6)) for _ in range(balls)]
+    half = max(max(map(abs, c)) + r for c, r in bs)
+    while sum(r * r / (half - max(map(abs, c))) ** 2 for c, r in bs) >= 0.9:  # a box point is that far from a ball
+        half *= 1.1
+    n, step = grid + 1, 2 * half / grid
+    pts = [(-half + i * step, -half + j * step, -half + k * step) for k in range(n) for j in range(n) for i in range(n)]
+    val = [sum(r * r / ((x - c[0]) ** 2 + (y - c[1]) ** 2 + (z - c[2]) ** 2 + 1e-12) for c, r in bs) for x, y, z in pts]
+    verts, index, tris = [], {}, []
+
+    def vertex(a, b):  # where the surface crosses grid edge a-b, made once and shared by every tet on that edge
+        key = (a, b) if a < b else (b, a)
+        if key not in index:
+            t = (1 - val[a]) / (val[b] - val[a])
+            index[key] = len(verts)
+            verts.append([p + t * (q - p) for p, q in zip(pts[a], pts[b])])
+        return index[key]
+
+    def det(o, p, q, s):  # the sign of the tet's volume: which way round its faces go
+        u, v, w = ([pts[x][i] - pts[o][i] for i in range(3)] for x in (p, q, s))
+        return sum(a * b for a, b in zip(u, _cross3(v, w)))
+
+    corner = [0, 1, n, n + 1, n * n, n * n + 1, n * n + n, n * n + n + 1]  # bit 1: +x, 2: +y, 4: +z
+    for k in range(grid):
+        for j in range(grid):
+            for i in range(grid):
+                cube = [i + j * n + k * n * n + d for d in corner]
+                inside = sum(val[p] > 1 for p in cube)
+                if inside in (0, 8):
+                    continue
+                for a, b in TETS:
+                    tet = (cube[0], cube[a], cube[b], cube[7])
+                    inn, out = [p for p in tet if val[p] > 1], [p for p in tet if val[p] <= 1]
+                    if len(inn) in (1, 3):  # one corner apart: a triangle round it, facing away from the inside
+                        one, rest = (inn[0], out) if len(inn) == 1 else (out[0], inn)
+                        t = [vertex(one, p) for p in rest]
+                        if (det(one, *rest) > 0) != (len(inn) == 1):
+                            t.reverse()
+                        tris.append(t)
+                    elif len(inn) == 2:  # two and two: a quad between the inside edge and the outside one
+                        (p, q), (r, s) = inn, out
+                        quad = [vertex(p, r), vertex(p, s), vertex(q, s), vertex(q, r)]
+                        if det(p, q, r, s) < 0:
+                            quad.reverse()
+                        tris += [quad[:3], [quad[0], quad[2], quad[3]]]
+    if not verts:
+        raise ValueError(f"--grid {grid} is too coarse to catch any ball: raise it")
+    floor = min(v[1] for v in verts) - 0.02
+    return validate({
+        "background": "#101218",
+        "camera": {"fov": 40, "position": [0, round(half, 3), round(half * 3.2, 3)], "target": [0, 0, 0], "far": 100},
+        "lights": [{"type": "hemisphere", "sky": "#dfe8ff", "ground": "#2a221a", "intensity": 0.6},
+                   {"type": "directional", "position": [3, 5, 4], "intensity": 1.6},
+                   {"type": "directional", "position": [-4, 2, -3], "color": "#7aa2ff", "intensity": 0.5}],
+        "materials": {"blob": {"color": "#e0569a", "roughness": 0.25, "metalness": 0.1},
+                      "floor": {"color": "#22252e", "roughness": 0.9}},
+        "meshes": [{"name": "blob", "material": "blob",
+                    "geometry": {"type": "vertices", "vertices": [_tidy(v) for v in verts], "faces": tris}},
+                   {"name": "floor", "material": "floor", "geometry": {"type": "plane", "size": [half * 6, half * 6]},
+                    "position": [0, round(floor, 6), 0], "rotation": [-90, 0, 0]}],
+        "animations": {"spin": {"target": "blob", "property": "rotation", "times": [0, 12],
+                                "values": [[0, 0, 0], [0, 360, 0]]}}})
+
+
+TERRAIN = ("#e0569a", "#5aa9e6", "#f2c14e", "#6cc58a", "#b07cf0", "#f08a5d", "#4fd1c5", "#e8e8e8", "#9aa5b1", "#d4a373")
+
+
+def terrain(rows, names):
+    """T-1851: churn as terrain: rows[i][t], the lines changed under names[i] in column t → a scene.json with a ribbon
+    per row (its own colour, a mesh named after its path), log1p(lines) high with the tallest at 1.5, its front
+    dropped to the floor so it reads as a ridge. ValueError for no rows, over 10 rows, under 2 or over 40 columns,
+    rows of unequal length or a negative count."""
+    if not 1 <= len(rows) <= 10 or len(rows) != len(names):
+        raise ValueError(f"1 to 10 rows, one name each, not {len(rows)} rows and {len(names)} names")
+    cols = len(rows[0])
+    if not 2 <= cols <= 40 or any(len(r) != cols for r in rows) or any(v < 0 for r in rows for v in r):
+        raise ValueError("rows of 2 to 40 counts each, all the same length, none negative")
+    top = max(math.log1p(v) for r in rows for v in r) or 1
+    meshes, materials, taken = [], {"floor": {"color": "#1b1e26", "roughness": 0.9}}, {"floor", "camera"}
+    for i, (r, path) in enumerate(zip(rows, names)):
+        n = re.sub(r"[^A-Za-z0-9_-]", "-", path)[:60]
+        n = n if n[:1].isalpha() else f"p-{n}"
+        base, k = n[:56], i + 1
+        while n in taken:  # T-1851 review: the renamed one may be taken too
+            n, k = f"{base}-{k}", k + 1
+        taken.add(n)
+        z, verts = (i - (len(rows) - 1) / 2) * 1.2, []
+        for t, v in enumerate(r):  # per column: the top's back and front edge, the front's foot
+            x, y = round(16 * t / (cols - 1) - 8, 6), round(0.02 + 1.5 * math.log1p(v) / top, 6)
+            verts += [[x, y, z - 0.4], [x, y, z + 0.4], [x, 0, z + 0.4]]
+        tris = [f for t in range(cols - 1) for a in (3 * t,) for f in
+                ([a, a + 1, a + 4], [a, a + 4, a + 3], [a + 2, a + 5, a + 4], [a + 2, a + 4, a + 1])]  # up, toward +z
+        materials[f"row{i}"] = {"color": TERRAIN[i], "roughness": 0.6}
+        meshes.append({"name": n, "material": f"row{i}", "geometry": {"type": "vertices", "vertices": verts,
+                                                                      "faces": tris}})
+    meshes.append({"name": "floor", "material": "floor", "geometry": {"type": "plane", "size": [20, 16]},
+                   "rotation": [-90, 0, 0]})
+    return validate({
+        "background": "#101218", "materials": materials, "meshes": meshes,
+        "camera": {"fov": 40, "position": [0, 9, 15], "target": [0, 0.4, 0], "far": 100},
+        "lights": [{"type": "hemisphere", "sky": "#dfe8ff", "ground": "#2a221a", "intensity": 0.7},
+                   {"type": "directional", "position": [-4, 8, 6], "intensity": 1.4},
+                   {"type": "directional", "position": [6, 3, -4], "color": "#7aa2ff", "intensity": 0.4}]})
+
+
+def churn(root, days):
+    """T-1851: (rows, names) for terrain: lines added and deleted per top-level path in root's git log over the last
+    `days` days, a column per day from the oldest commit in range (at most 40), the 10 busiest paths first.
+    ValueError outside git or with nothing in range."""
+    import collections
+    import subprocess
+    import time
+    try:  # quotepath off: café/ arrives as café/, not "caf\303\251/"
+        r = subprocess.run(["git", "-C", root, "-c", "core.quotepath=false", "log", f"--since={days}.days", "--numstat",
+                            "--no-renames", "--format=@%ct"], capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        raise ValueError("git log took over 60 s: try fewer --days") from None
+    if r.returncode:
+        raise ValueError(f"git log: {r.stderr.strip() or 'failed'}")
+    rec, when = [], None
+    for line in r.stdout.splitlines():
+        parts = line.split("\t")
+        if line.startswith("@"):
+            when = int(line[1:])
+        elif len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit() and when:  # "-": a binary file
+            rec.append((when, parts[2].split("/")[0], int(parts[0]) + int(parts[1])))
+    if not rec:
+        raise ValueError(f"no lines changed in the last {days} days")
+    start = min(w for w, _, _ in rec)  # from the oldest commit in range: a young repo fills the floor
+    span = max(time.time() - start, 1)
+    cols = min(40, max(2, math.ceil(span / 86400)))
+    per = collections.defaultdict(lambda: [0] * cols)
+    for w, path, n in rec:
+        per[path][min(cols - 1, int((w - start) / span * cols))] += n
+    names = sorted(per, key=lambda k: (-sum(per[k]), k))[:10]
+    return [per[k] for k in names], names
+
+
+AIRLOCK = ("#e0569a", "#f08a5d", "#f2c14e", "#e8685a", "#d4a373", "#c9708f")
+
+
+def airlock(held, through):
+    """T-1849: the guard as a gate. Before it a box per category it held, past it one green box for the tool calls it
+    let through; heights log-scaled to the largest, so 3 blocks still show beside 3,000 calls."""
+    import collections
+    if through < 0 or any(v < 0 for v in held.values()):
+        raise ValueError("counts can't be negative")
+    gate, named = {"pillar-l", "pillar-r", "lintel", "through", "floor", "camera"}, collections.Counter()
+    for k, v in held.items():  # a name a mesh can't carry, or one the gate uses, joins other
+        if v:
+            named[k if re.fullmatch(r"[a-z][a-z0-9-]{0,40}", str(k)) and k not in gate else "other"] += v
+    top = max([math.log1p(v) for v in named.values()] + [math.log1p(through)]) or 1
+
+    def box(name, material, size, x, z, y=None):
+        return {"name": name, "material": material, "geometry": {"type": "box", "size": size},
+                "position": [x, size[1] / 2 if y is None else y, z]}
+
+    def h(v):
+        return round(0.1 + 2 * math.log1p(v) / top, 6)
+    materials = {"gate": {"color": "#9aa5b1", "roughness": 0.5}, "through": {"color": "#6cc58a", "roughness": 0.6},
+                 "floor": {"color": "#1b1e26", "roughness": 0.9}}
+    meshes = [box("pillar-l", "gate", [0.5, 3, 0.5], 0, -2.2), box("pillar-r", "gate", [0.5, 3, 0.5], 0, 2.2),
+              box("lintel", "gate", [0.7, 0.4, 4.9], 0, 0, 3.2), box("through", "through", [1.6, h(through), 1.6], 2.4, 0)]
+    for j, (k, v) in enumerate(sorted(named.items(), key=lambda kv: (-kv[1], kv[0]))):  # rows of 3 back from the gate
+        materials[f"held{j}"] = {"color": AIRLOCK[j % len(AIRLOCK)], "roughness": 0.6}
+        meshes.append(box(k, f"held{j}", [1, h(v), 1], -2 - (j // 3) * 1.3, (j % 3 - 1) * 1.3))
+    meshes.append({"name": "floor", "material": "floor", "geometry": {"type": "plane", "size": [20, 12]},
+                   "rotation": [-90, 0, 0]})
+    return validate({
+        "background": "#101218", "materials": materials, "meshes": meshes,
+        "camera": {"fov": 40, "position": [5, 6, 11], "target": [-1, 1, 0], "far": 100},
+        "lights": [{"type": "hemisphere", "sky": "#dfe8ff", "ground": "#2a221a", "intensity": 0.7},
+                   {"type": "directional", "position": [-4, 8, 6], "intensity": 1.4},
+                   {"type": "directional", "position": [6, 3, -4], "color": "#7aa2ff", "intensity": 0.4}]})
+
+
+def bench(runs):
+    """T-1850: fm code bench's last 12 runs as a diorama, a box per seed per run: runs left to right, seeds front to
+    back, height log-scaled to the slowest, green when the seed closed, red when it didn't. Skipped seeds have no box."""
+    runs = runs[-12:]
+
+    def secs(v):  # a hand-edited history: a list, inf, nan or 10**400 reads as 0, not a crash
+        return v if isinstance(v, (int, float)) and 0 <= v <= 1e6 else 0
+    cells = [(i, str(r.get("seed")), bool(r.get("closed")), secs(r.get("seconds")))
+             for i, run in enumerate(runs) for r in (run.get("results") if isinstance(run.get("results"), list) else ())
+             if isinstance(r, dict) and not r.get("skipped")]
+    if not cells:
+        raise ValueError("no fm code bench results to draw: fm code bench makes them")
+    seeds = sorted({c[1] for c in cells})
+    top = max(math.log1p(c[3]) for c in cells) or 1
+    meshes, taken = [], {"floor", "camera"}
+    for i, seed, closed, secs in cells:
+        base = re.sub(r"[^A-Za-z0-9_-]", "-", seed)[:48]
+        n = first = (base if base[:1].isalpha() else "s" + base) + f"-{i + 1}"
+        k = 2
+        while n in taken:  # a seed twice in one run, or two seeds that clean to the same name
+            n, k = f"{first[:58]}_{k}", k + 1
+        taken.add(n)
+        h = round(0.1 + 2 * math.log1p(secs) / top, 6)
+        meshes.append({"name": n, "material": "closed" if closed else "open", "geometry": {"type": "box",
+                       "size": [0.8, h, 0.8]}, "position": [round((i - (len(runs) - 1) / 2) * 1.2, 6), h / 2,
+                                                           round((seeds.index(seed) - (len(seeds) - 1) / 2) * 1.2, 6)]})
+    w, d = len(runs) * 1.2 + 4, len(seeds) * 1.2 + 4
+    meshes.append({"name": "floor", "material": "floor", "geometry": {"type": "plane", "size": [w, d]},
+                   "rotation": [-90, 0, 0]})
+    return validate({
+        "background": "#101218", "meshes": meshes,
+        "materials": {"closed": {"color": "#6cc58a", "roughness": 0.6}, "open": {"color": "#e8685a", "roughness": 0.6},
+                      "floor": {"color": "#1b1e26", "roughness": 0.9}},
+        "camera": {"fov": 40, "position": [round(w * 0.3, 3), round(3 + w * 0.3, 3), round(d / 2 + w * 0.7, 3)],
+                   "target": [0, 0.8, 0], "far": 200},
+        "lights": [{"type": "hemisphere", "sky": "#dfe8ff", "ground": "#2a221a", "intensity": 0.7},
+                   {"type": "directional", "position": [-4, 8, 6], "intensity": 1.4},
+                   {"type": "directional", "position": [6, 3, -4], "color": "#7aa2ff", "intensity": 0.4}]})
+
+
+def lookbook(names, known):
+    """T-1852: the look cards hung in a gallery, best first: a dark frame per look on a U of walls (four along the
+    back wall's lower row, centre out, then the side walls' back halves, then a row above the first), its palette as
+    colour-field bands top to bottom. Every frame is in the camera's view. known: fmtaste.looks()."""
+    if not 1 <= len(names) <= 12:
+        raise ValueError(f"{len(names)} looks: 1 to 12 hang")
+
+    def back(y):  # (centre, along, out of the wall); 5.95: a frame's back on the wall's inner face
+        return [((x, y, -5.95), (1, 0, 0), (0, 0, 1)) for x in (-1.4, 1.4, -4.2, 4.2)]
+    sides = [s for z in (-4.2, -1.4) for s in (((-5.95, 1.6, z), (0, 0, 1), (1, 0, 0)),
+                                              ((5.95, 1.6, z), (0, 0, -1), (-1, 0, 0)))]
+    slots = back(1.6) + sides + back(3.7)
+
+    def box(name, material, size, at):
+        return {"name": name, "material": material, "geometry": {"type": "box", "size": [round(v, 6) for v in size]},
+                "position": [round(v, 6) for v in at]}
+    materials = {"frame": {"color": "#2a2d36", "roughness": 0.5}, "wall": {"color": "#e9e4da", "roughness": 0.95},
+                 "floor": {"color": "#6b5a48", "roughness": 0.8}}
+    meshes = [box("wall-back", "wall", [12.4, 5, 0.2], [0, 2.5, -6.1]),
+              box("wall-left", "wall", [0.2, 5, 12.2], [-6.1, 2.5, 0]),
+              box("wall-right", "wall", [0.2, 5, 12.2], [6.1, 2.5, 0]),
+              {"name": "floor", "material": "floor", "geometry": {"type": "plane", "size": [12.2, 12.2]},
+               "rotation": [-90, 0, 0]}]
+    for n, ((cx, cy, cz), a, o) in zip(names, slots):
+        def at(along, up, out):
+            return [cx + a[0] * along + o[0] * out, cy + up, cz + a[2] * along + o[2] * out]
+
+        def size(along, up, out):
+            return [abs(a[0]) * along + abs(o[0]) * out, up, abs(a[2]) * along + abs(o[2]) * out]
+        meshes.append(box(n, "frame", size(2.4, 1.8, 0.1), at(0, 0, 0)))
+        pal = known[n]["palette"]
+        for j, (r, g, b) in enumerate(pal):
+            c = f"{r:02x}{g:02x}{b:02x}"
+            materials.setdefault("c" + c, {"color": "#" + c, "roughness": 0.7})
+            meshes.append(box(f"{n}-{j + 1}", "c" + c, size(2.1, 1.5 / len(pal), 0.04),
+                              at(0, 0.75 - (j + 0.5) * 1.5 / len(pal), 0.07)))
+    return validate({
+        "background": "#101218", "materials": materials, "meshes": meshes,
+        "camera": {"fov": 60, "position": [0, 2.6, 7.5], "target": [0, 2.6, -6], "far": 100},
+        "lights": [{"type": "hemisphere", "sky": "#fff6e8", "ground": "#3a2e22", "intensity": 0.8},
+                   {"type": "directional", "position": [2, 8, 10], "intensity": 1.2},
+                   {"type": "point", "position": [0, 4, 0], "color": "#ffd9a0", "intensity": 0.6}]})
+
+
+def guard_counts(p, days):
+    """T-1849: ({category: blocks}, tool calls run) for project p over the last `days` days: blocks from its ledger,
+    calls (clean or failed, both got past the guard) from the global events."""
+    import collections
+    import time
+    import fmcore
+    since = fmcore.iso(time.time() - days * 86400)
+    held = collections.Counter(str((e.get("data") or {}).get("category"))
+                               for e in fmcore.ledger_events(p, ["guard_block"], since))
+    through = sum(1 for e in fmcore.global_events(since)
+                  if e.get("kind") in ("tool", "tool_fail") and e.get("project") == p.slug)
+    return dict(held), through
+
+
+def _write_out(args, text, what="FILE"):
+    """--out's absolute path with text written there, never over args.path; None when there's no --out."""
+    import fmcore
+    out = os.path.abspath(args.out) if args.out else None  # write_atomic makes dirname(path): "" for a bare name
+    if out and args.path and os.path.exists(out) and os.path.samefile(out, args.path):
+        raise ValueError(f"--out {args.out} is {what}")
+    if out:
+        fmcore.write_atomic(out, text)  # through a temp file: a symlink at out is replaced, never written through
+    return out
+
+
+_READS = {"--balls": "metaballs", "--grid": "metaballs", "--seed": "metaballs", "--count": "lookbook",
+          "--days": "terrain airlock", "--hud": "compile", "--to": "compile", "--tag": "compile", "--frames": "turntable",
+          "--cols": "cells", "--turn": "cells", "--seconds": "soak", "--budget-ms": "soak", "--size": "shade",
+          "--time": "shade", "--set": "shade"}  # T-1855: which actions read each flag; --out is everyone's
+
+
+GALLERY = {"metaballs": "a seeded blob, polygonised by marching tetrahedra: the smooth-surface path",
+           "terrain": "where the repo churns: a ridge per busiest path, taller is more lines changed",
+           "airlock": "what the guard held, a box per category, beside the calls it let through",
+           "bench": "fm code bench by run and seed: green closed, red didn't, taller was slower",
+           "lookbook": "the look cards, best ranked in the middle, each palette as bands"}  # T-1873: tile order
+SAMPLES = {"terrain": lambda: terrain([[1, 4, 2, 6, 3], [2, 1, 5, 2, 4]], ["plugin", "docs"]),
+           "airlock": lambda: airlock({"destructive": 3, "core": 1}, 120),
+           "bench": lambda: bench([{"results": [{"seed": "operator", "closed": True, "seconds": 22},
+                                                {"seed": "fixer", "closed": False, "seconds": 40}]}]),
+           "lookbook": lambda: lookbook(["sample"], {"sample": {"palette": [(230, 90, 60), (40, 120, 200)]}})}
+
+
+def _builtin(action, a):
+    """(scene, what) for a built-in scene from this repo's data; ValueError when the flags or the data won't do."""
+    if action == "metaballs":
+        return metaballs(a.balls, a.grid, a.seed), f"a blob of {a.balls} ball(s)"
+    if action == "lookbook":
+        import fmtaste
+        if not 1 <= a.count <= 12:
+            raise ValueError(f"--count {a.count}: 1 to 12")
+        names = [r["look"] for r in fmtaste.rank()][:a.count]
+        if not names:
+            raise ValueError("no look cards yet")
+        return lookbook(names, fmtaste.looks()), f"{len(names)} look(s), best ranked first"
+    if action == "bench":
+        import fmcodebench
+        runs = fmcodebench.history()
+        return bench(runs), f"the last {min(len(runs), 12)} of {len(runs)} bench run(s)"
+    days = a.days if a.days is not None else 90 if action == "terrain" else 30
+    if not 1 <= days <= 3650:
+        raise ValueError(f"--days {days}: 1 to 3650")
+    if action == "terrain":
+        rows, names = churn(os.getcwd(), days)
+        return terrain(rows, names), f"{len(names)} path(s) over {days} days"
+    import fmcore
+    p = fmcore.find_project(os.getcwd())
+    if not p:
+        raise ValueError("not in a Foreman project: the guard's record is per project")
+    held, through = guard_counts(p, days)
+    if not held and not through and getattr(a, "need_data", False):  # T-1873 review: the gallery's sample instead
+        raise ValueError(f"no guard record over {days} days")
+    return airlock(held, through), f"{sum(held.values())} held in {len(held)} categories, {through} through over {days} days"
+
+
+def gallery(size=(160, 100), cols=3):
+    """T-1873: every built-in scene drawn once, small and unturned, on one sheet left to right then down; each built
+    from this repo's data, or its sample (the reason said) when there's none. (width, height, RGB bytes, captions).
+    The blob is drawn on a 16-cube grid: half the default's detail, an eighth of its work."""
+    import types
+    a, tiles, said = types.SimpleNamespace(balls=5, grid=16, seed=0, count=8, days=None, need_data=True), [], []
+    for k, action in enumerate(GALLERY, 1):
+        try:
+            scene, what = _builtin(action, a)
+        except (OSError, ValueError) as e:
+            scene, what = SAMPLES[action](), f"a sample: {e}"
+        except Exception as e:  # noqa: BLE001 — review: a corrupt record costs its tile, not the sheet
+            scene, what = SAMPLES[action](), f"a sample: unreadable ({type(e).__name__})"
+        tiles.append(_frame(scene, 0, *size))
+        said.append(f"{k}. {action}: {GALLERY[action]} ({what})")
+    return (*_sheet(tiles, *size, cols, (17, 17, 17)), said)
+
+
 def cmd_scene(args):
     import sys
     import fmcli
@@ -1052,8 +1682,70 @@ def cmd_scene(args):
         fmcore.write_atomic(out, text)
         print(f"wrote {out}: {text.count('<figure class=')} shaders; open it in a browser with WebGL2")
         return 0
+    for flag in sorted({t.partition("=")[0] for t in fmcli._ARGV} & set(_READS)):
+        if args.action not in _READS[flag].split():
+            print(f"fm: scene: {args.action} doesn't read {flag} (only {', '.join(_READS[flag].split())} do)",
+                  file=sys.stderr)
+            return 2
+    if args.action in ("metaballs", "terrain", "airlock", "bench", "lookbook", "gallery"):  # T-1848..T-1852, T-1873
+        if args.path:
+            print(f"fm: scene: {args.action} takes no FILE (got {args.path}); write it with --out", file=sys.stderr)
+            return 2
+        try:
+            if args.action == "gallery":
+                if not args.out:
+                    raise ValueError("gallery writes a PNG: give --out PATH")
+                import fmimg
+                w, h, rgb, said = gallery()
+                fmimg.save(args.out, w, h, rgb, "rgb")
+            else:
+                scene, what = _builtin(args.action, args)
+                text = json.dumps(scene, indent=2) + "\n"
+                out = _write_out(args, text)
+        except (OSError, ValueError) as e:
+            print(f"fm: scene: {args.action}: {e}", file=sys.stderr)
+            return 2
+        if args.action == "gallery":
+            return fmcli.out(args, {"out": args.out, "size": [w, h], "scenes": said}, "\n".join(
+                [f"wrote {args.out}: {len(said)} scenes, {w}x{h}, left to right then down"] + said)) or 0
+        if not out:
+            return fmcli.out(args, {"scene": scene}, text.rstrip("\n")) or 0
+        gs = [m["geometry"] for m in scene["meshes"] if m["name"] != "floor"]
+        tris = sum(len(g.get("faces", ())) for g in gs)  # boxes count none: three.js makes their triangles
+        return fmcli.out(args, {"out": args.out, "vertices": sum(len(g.get("vertices", ())) for g in gs),
+                                "triangles": tris}, f"wrote {args.out}: {what}" + f", {tris} triangles" * bool(tris)) or 0
     if not args.path:
-        raise fmcli.UsageError(f"fm scene {args.action} FILE")
+        print(f"fm: scene: {args.action} needs FILE", file=sys.stderr)
+        return 2
+    if args.action == "shade":  # T-1846: a fragment shader run per pixel on the CPU, no browser or GPU
+        import re
+        import fmimg
+        import fmshade
+        try:
+            m = re.fullmatch(r"(\d+)x(\d+)", args.size)
+            w, h = (int(m[1]), int(m[2])) if m else (0, 0)
+            if not (0 < w <= 512 and 0 < h <= 512):
+                raise ValueError(f"--size WxH: 1 to 512 each (got {args.size})")
+            sets = {}
+            for s in args.set or ():
+                name, eq, vals = s.partition("=")
+                if not eq or not name:
+                    raise ValueError(f"--set NAME=V[,V…] (got {s})")
+                sets[name.strip()] = [float(v) for v in vals.split(",")]
+            if not args.out:
+                raise ValueError("shade writes a PNG: give --out PATH")
+            if os.path.exists(args.out) and os.path.samefile(args.out, args.path):
+                raise ValueError(f"--out {args.out} is FILE")
+            src, first = fmshade.source(args.path)
+            rgb, notes = fmshade.render(src, w, h, sets, args.time, first)
+            fmimg.save(args.out, w, h, rgb, "rgb")
+        except (OSError, ValueError) as e:
+            print(f"fm: scene: {e}", file=sys.stderr)
+            return 2
+        said = f"wrote {args.out}: {w}x{h} of {args.path}"
+        said += f"; preview defaults for {', '.join(notes['defaulted'])}" * bool(notes["defaulted"])
+        said += f"; {notes['undefined']} pixel(s) undefined, drawn black" * bool(notes["undefined"])
+        return fmcli.out(args, {"out": args.out, "size": [w, h], **notes}, said) or 0
     if args.action == "shader":  # T-1530: GLSL checks with no browser; glslangValidator when it's installed
         import shutil
         validator = shutil.which("glslangValidator")
@@ -1096,9 +1788,26 @@ def cmd_scene(args):
             f"{'→'.join(map(str, sorted(set(got['geometries']), key=got['geometries'].index)))}, after dispose "
             f"{got['after']}"]))
         return 1 if got["problems"] else 0
-    if args.action in ("check", "turntable"):  # T-1530
+    if args.action == "import":  # T-1847: three.js JSON in, a checked scene.json out; what didn't carry, named
+        try:
+            scene, left = load(args.path, lambda text: from_three(_json(text)))
+            text = json.dumps(scene, indent=2) + "\n"
+            out = _write_out(args, text, "the file it imports")
+        except (OSError, ValueError) as e:
+            print(f"fm: scene: import: {e}", file=sys.stderr)
+            return 2
+        note = f"left out: {'; '.join(left)}" if left else "nothing left out"
+        if not out:  # stdout is the scene, so the note goes to stderr
+            print(note, file=sys.stderr)
+            return fmcli.out(args, {"scene": scene, "left_out": left}, text.rstrip("\n")) or 0
+        return fmcli.out(args, {"out": args.out, "meshes": len(scene["meshes"]), "left_out": left},
+                         f"wrote {args.out}: {len(scene['meshes'])} mesh(es); {note}") or 0
+    if args.action in ("check", "turntable", "cells"):  # T-1530, T-1635
         try:
             scene = load(args.path)
+            if args.action == "cells":
+                lines = cells(scene, args.cols, args.turn)
+                return fmcli.out(args, {"cols": args.cols, "rows": len(lines), "lines": lines}, "\n".join(lines)) or 0
             if args.action == "check":
                 tris = sum(len(faces(m["geometry"])) for m in scene["meshes"])
                 return fmcli.out(args, {"meshes": len(scene["meshes"]), "triangles": tris,
@@ -1125,11 +1834,7 @@ def cmd_scene(args):
         hud = getattr(args, "hud", False)
         text = compile_component(scene, tag or "fm-scene", hud) if args.to == "component" else \
             compile_three(scene, hud=hud)
-        out = os.path.abspath(args.out) if args.out else None  # write_atomic makes dirname(path): "" for a bare name
-        if out and os.path.exists(out) and os.path.samefile(out, args.path):
-            raise ValueError(f"--out {args.out} is the scene it compiles")
-        if out:
-            fmcore.write_atomic(out, text)  # through a temp file: a symlink at out is replaced, never written through
+        out = _write_out(args, text, "the scene it compiles")
     except (OSError, ValueError) as e:
         print(f"fm: scene: {e}", file=sys.stderr)
         return 2

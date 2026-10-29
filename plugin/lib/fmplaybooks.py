@@ -25,6 +25,9 @@ the checkout (no link anywhere under it), cut at OVERLAY_MAX, control characters
 alone, and shown as one blockquote under a provenance line, marked (uncommitted) when it differs from HEAD: text an
 injected session planted can't pass for Foreman's. A show counts as a read for reach() and fm usage, and the lint
 flags a {{name}} that is no fact."""
+import contextlib
+import hashlib
+import math
 import json
 import os
 import re
@@ -36,6 +39,7 @@ import sys
 import tempfile
 import textwrap
 import time
+from array import array
 
 import fmcore as c
 
@@ -49,6 +53,9 @@ UI_CONTRACT = ("motion", "contrast", "keyboard", "small screens", "states")
 _CONTRACT = re.compile(r"^## UI contract[ \t]*$(.*?)(?=^## |\Z)", re.M | re.S)
 _RULE = re.compile(r"^- ([a-z][a-z ]*?):[ \t]*\S", re.M)
 SHINGLE = 5
+NEAR = 0.5  # T-1834: shingle Jaccard from which two playbooks are merge candidates and a draft repeats a book
+RECORD_MAX = 20  # playbooks one close records
+_ROUTE = re.compile(r"""\bfm\s+playbooks\s+route\s+(['"]?)([\w-]+)\1(?=\s*(?:$|[;&|)\n]|-))""")  # a bare stage only
 TIMEOUT = 20  # seconds per python block
 REACH_DAYS = 60
 SHOWN = 30  # findings printed before "and N more"; --json lists them all
@@ -194,6 +201,7 @@ def _run(code, timeout, limits=(), argv=(sys.executable, "-I", "-c"), env=None, 
                 pass  # a platform without that limit
     with tempfile.TemporaryDirectory(prefix="fm-playbook-", ignore_cleanup_errors=True) as d, \
             tempfile.TemporaryFile() as err:
+        d = os.path.realpath(d)  # T-1828: macOS /var is /private/var; a fence's $PWD is the real path
         env = dict({"PATH": os.environ.get("PATH") or os.defpath, "HOME": d}, **(env(d) if env else {}))
         try:
             proc = subprocess.Popen([*argv, code], cwd=d, env=env, stdin=subprocess.DEVNULL,
@@ -242,15 +250,17 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
                 named.setdefault(path, set()).add(name)
                 if not os.path.exists(os.path.join(root, path)):
                     out.append(f"{name}:{n}: {path} doesn't exist")
+    folders = [(d, s) for d, s in named.items() if d.endswith("/")]  # T-1785: a line naming a folder covers its files
     for f in files:
         stage = "/".join(f.split("/")[:2]) + "/INDEX.md"
-        if not named.get(f, set()) & {"SKILL.md", stage}:
+        by = named.get(f, set()).union(*(s for d, s in folders if f.startswith(d)))
+        if not by & {"SKILL.md", stage}:
             out.append(f"{f}: in no index (SKILL.md, or {stage} named in SKILL.md)")
     record, bad = _record(root)
     if bad:
         out.append(bad)
     cards = card_names if card_names is not None else _cards()
-    titles, shingles, snippets = {}, {}, []
+    titles, snippets = {}, []
     for rel in _playbooks(root):
         text = _read(os.path.join(root, rel))
         blocks, prose = _blocks(text)
@@ -258,7 +268,6 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
         if title in titles:
             out.append(f"{rel}: same title as {titles[title]} ({title!r})")
         titles.setdefault(title, rel)
-        shingles[rel] = _shingles(text)
         head = prose[:next((i for i, x in enumerate(prose) if x.startswith("## ")), len(prose))]
         if not any(_USE.search(x) for x in head):
             out.append(f"{rel}: no Use-when line above its first section ('Use when …')")
@@ -291,14 +300,12 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
                 except (SyntaxError, ValueError) as e:  # ValueError: a NUL byte in the block
                     out.append(f"{rel}:{n}: python no-run block doesn't parse: {getattr(e, 'msg', e)} "
                                f"(its line {getattr(e, 'lineno', '?')})")
-    books = sorted(shingles)
-    for i, a in enumerate(books):
-        for b in books[i + 1:]:
-            union = len(shingles[a] | shingles[b])
-            share = len(shingles[a] & shingles[b]) / union if union else 0
-            if share > DUP:
-                out.append(f"{b}: shares {share:.0%} of its wording with {a}: merge them or cut one")
+    for a, b, share in similar(root, DUP):  # T-1834: same-stage books sharing a title word, not every pair
+        if share > DUP:
+            out.append(f"{b}: shares {share:.0%} of its wording with {a}: merge them or cut one")
     for rel, n, body in snippets if run else ():
+        if sys.version_info < (3, 14) and "__future__" not in body:  # T-1799: 3.14's lazy annotations, on 3.12 too
+            body = "from __future__ import annotations\n" + body
         why = _run(body, timeout, _limits())
         if why:
             out.append(f"{rel}:{n}: {why} (mark it ```python no-run if it isn't a self-check)")
@@ -345,31 +352,146 @@ def coverage_text(cov):
     return "\n".join(head + rows + ["", "playbooks in a stage naming a card of that stack: · none  ░ 1  ▒ 2  ▓ 3  █ 4+"])
 
 
-def reach(root=ROOT, days=REACH_DAYS):
-    """{days, covers, read: {path: reads}, unread: [path]}: Read events of each playbook in the window, from every
-    project; covers is the days the event log actually spans, when that is fewer."""
-    books, read, oldest = _playbooks(root), {}, None
+def _scan(root, days, routes=False):
+    """One pass over the event logs (the rotated ones too): ({book: reads}, {book: routes}, days covered) in the
+    window, from every project. T-1834: reach() and unused() share it, so a report reads the logs once."""
+    books, read, routed, stages, oldest = _playbooks(root), {}, {}, {}, None
+    known = set(books)
     since = c.iso(time.time() - days * 86400)
-    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
+    for e in c.global_events(""):
         ts = str(e.get("ts") or "")
         oldest = ts if ts and (oldest is None or ts < oldest) else oldest
-        target = str(e.get("target") or "")
-        if ts < since or e.get("kind") != "tool":
+        if ts < since:
             continue
-        if e.get("tool") == "Bash" and (hit := shown(target, books)):
+        if e.get("kind") == "playbook" and e.get("action") == "route":  # T-1833: route TEXT named these, no read
+            for hit in {x for x in e.get("paths") or () if isinstance(x, str) and x in known}:
+                routed[hit] = routed.get(hit, 0) + 1
+            continue
+        if hit := _book_of(e, books):
             read[hit] = read.get(hit, 0) + 1
-            continue
-        if e.get("tool") != "Read" or _MARK not in target:
-            continue
-        key = "references/" + target.split(_MARK, 1)[1]
-        # fmhooks keeps 120 characters of a target: a cut path still names one playbook by its prefix
-        hit = [b for b in books if b == key] or ([] if key.endswith(".md") else [b for b in books if b.startswith(key)])
-        if len(hit) == 1:
-            read[hit[0]] = read.get(hit[0], 0) + 1
+        m = _ROUTE.search(str(e.get("target") or "")) if routes and e.get("tool") == "Bash" else None
+        if m:  # route() walks the library: once per stage, not per event
+            if m.group(2) not in stages:
+                stages[m.group(2)] = (route(m.group(2), root) or (0, 0, []))[2]
+            for x in stages[m.group(2)]:
+                routed[x] = routed.get(x, 0) + 1
     ts = c.parse_ts(oldest) if oldest and oldest > since else None
     covers = 0 if oldest is None else round((time.time() - ts.timestamp()) / 86400, 1) if ts else days
+    return read, routed, covers
+
+
+def reach(root=ROOT, days=REACH_DAYS):
+    """{days, covers, read: {path: reads}, routed: {path: routes}, unread: [path]}: Read events of each playbook in the
+    window, from every project; routed counts the books `fm playbooks route TEXT` named (T-1833, not reads; stage
+    routes count only in unused()); covers is the
+    days the event log actually spans, when that is fewer."""
+    read, routed, covers = _scan(root, days)
     return {"days": days, "covers": covers,
-            "read": read, "unread": [b for b in books if b not in read]}
+            "read": read, "routed": routed, "unread": [b for b in _playbooks(root) if b not in read]}
+
+
+def _book_of(e, books):
+    """The playbook a tool event loaded (fm playbooks show in a shell, or a Read of the skill's file), or None."""
+    target = str(e.get("target") or "")
+    if e.get("kind") != "tool":
+        return None
+    if e.get("tool") == "Bash":
+        return shown(target, books)
+    if e.get("tool") == "Read" and e.get("book"):  # T-1702: the hook keeps the book's name when the target is cut
+        key = f"references/{e['book']}.md"
+        return key if key in books else None
+    if e.get("tool") != "Read" or _MARK not in target:
+        return None
+    key = "references/" + target.split(_MARK, 1)[1]
+    # fmhooks keeps 120 characters of a target: a cut path still names one playbook by its prefix
+    hit = [b for b in books if b == key] or ([] if key.endswith(".md") else [b for b in books if b.startswith(key)])
+    return hit[0] if len(hit) == 1 else None
+
+
+def followed(p, b, root=ROOT):
+    """T-1834: [{playbook, followed, steps}] for each playbook this task loaded since its first focus (this project's
+    tool events), with score()'s share of its steps the run followed. Empty when it loaded none: no scoring then."""
+    start = min((e["ts"] for e in c.ledger_tail(p, 5000) if e.get("task") == b.id and e.get("event") == "focus"
+                 and e.get("ts")), default=str(b.meta.get("created") or ""))
+    books, loaded = listed(root), []  # an index loads too, and score() counts words over all of them
+    # ponytail: the live log's last 50,000 events; a task that outlives a rotation or that many events loses its early loads
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 50000):
+        if str(e.get("ts") or "") >= start and e.get("project") == p.slug and (hit := _book_of(e, books)):
+            if hit not in loaded:
+                loaded.append(hit)
+    if not loaded:
+        return []
+    seen, out = _doc_freq(books, root), []
+    for rel in loaded[:RECORD_MAX]:
+        rows = score(_read(os.path.join(root, rel)), b, seen=seen, total=len(books))
+        out.append({"playbook": rel, "followed": sum(x["followed"] for x in rows), "steps": len(rows)})
+    return out
+
+
+def record_use(p, b, root=ROOT):
+    """T-1834: one playbook_use ledger event for a closed task: the books it loaded and the share it followed. Never
+    fails the close: a problem is a warning."""
+    try:
+        got = followed(p, b, root)
+        if got:
+            c.log_event(p, "playbook_use", task=b.id, data={"books": got})
+    except Exception as e:
+        print(f"fm: warning: playbook use not recorded: {e}", file=sys.stderr)
+
+
+def unused(root=ROOT, days=REACH_DAYS, p=None):
+    """T-1834: (drop candidates, days the logs cover): the playbooks with no read, route hit or followed record (this
+    project's ledger) in the window. ponytail: the event log is every project's but the followed records are this
+    one's; only ever names."""
+    since = c.iso(time.time() - days * 86400)
+    used, routed, covers = _scan(root, days, routes=True)
+    used = set(used) | set(routed)
+    for e in c.ledger_events(p, ("playbook_use",), since=since) if p else ():
+        used.update(x.get("playbook") for x in (e.get("data") or {}).get("books") or [])
+    return [b for b in _playbooks(root) if b not in used], covers
+
+
+def overlap(a, b):
+    """Shingle Jaccard of two shingle sets (what problems() calls sharing wording)."""
+    union = len(a | b)
+    return len(a & b) / union if union else 0.0
+
+
+def similar(root=ROOT, least=NEAR):
+    """T-1834: merge candidates, [(a, b, jaccard)] with a < b, overlap at least `least`. Exact, not sampled: a pair at
+    Jaccard >= least must share one of the first n - ceil(least*n) + 1 shingle hashes (in hash order) of the smaller
+    book (prefix filtering), so only books meeting on such a hash are compared, each pair once, and sets whose sizes
+    differ by more than 1/least can't reach it (skipped). A book is its sorted shingle hashes (8 bytes each) and only
+    pairs at `least` are kept. ponytail: boilerplate shared by thousands of books fills a posting list; skip those
+    hashes by document frequency if a library ever does that."""
+    sh, post = {}, {}
+    for rel in _playbooks(root):
+        sh[rel] = array("q", sorted({hash(t) for t in _shingles(_read(os.path.join(root, rel)))}))
+        n = len(sh[rel])
+        for t in sh[rel][:n - math.ceil(least * n) + 1]:
+            post.setdefault(t, []).append(rel)
+    seen, out = set(), []
+    for rels in post.values():
+        for i, a in enumerate(rels):
+            for b in rels[i + 1:]:
+                x, y = sorted((a, b))
+                if (x, y) in seen:
+                    continue
+                seen.add((x, y))
+                if min(len(sh[x]), len(sh[y])) < least * max(len(sh[x]), len(sh[y])):
+                    continue
+                if (j := overlap(set(sh[x]), set(sh[y]))) >= least:
+                    out.append((x, y, j))
+    return sorted(out)
+
+
+def nearest(text, root=ROOT):
+    """(book, jaccard) of the playbook sharing the most wording with text, or (None, 0)."""
+    mine, best = _shingles(text), (None, 0.0)
+    for rel in _playbooks(root):
+        j = overlap(mine, _shingles(_read(os.path.join(root, rel))))
+        best = (rel, j) if j > best[1] else best
+    return best
 
 
 def listed(root=ROOT):
@@ -499,6 +621,240 @@ def route(stage, root=ROOT):
     return key, hint, list(dict.fromkeys(got))
 
 
+# T-1833: routing by meaning. An FTS5 index of the library in Foreman's state (the plugin tree may be read-only),
+# refreshed from one stat pass: only a book whose mtime or size changed is read again. Costs nothing until a query.
+BODY_MAX = 4096  # characters of a book indexed: 20k books stay a few tens of MB
+READ_MAX = 8192  # bytes of a book read to index it
+TERMS_MAX = 8  # query words kept: the first ones (a task's title) route real tasks best, more dilute them (T-1838)
+WEIGHTS = (0, 10, 10, 2, 0.25)  # bm25 per column: path (unindexed), title, use line, headings, body (T-1838)
+FOLDER = {"FIX": "fix", "PERFORMANCE": "perf", "SECURITY": "security", "CLEAN": "clean", "RESEARCH": "ground"}
+PREFER = 1.5  # T-1838: a task type's folder (FOLDER) scores this many times higher
+INDEX_VERSION = 1
+
+
+def _entries(root, dirs):
+    """Every playbook's DirEntry (what _playbooks lists) under root; dirs gets each folder's (path, mtime_ns). The same
+    rule as that walk: a link to a regular file counts, a linked folder isn't entered; a FIFO or device is skipped,
+    since reading one could block."""
+    todo = [os.path.join(os.path.abspath(root), "references")]
+    while todo:
+        d = todo.pop()
+        try:
+            dirs.append((d, os.stat(d).st_mtime_ns))
+            it = os.scandir(d)
+        except OSError:
+            continue
+        with it:
+            for e in it:
+                n = e.name
+                try:
+                    if n.endswith(".md"):
+                        if n != "INDEX.md" and e.is_file():  # as _playbooks' walk: a link to a regular file counts
+                            yield e
+                    elif n != "templates" and e.is_dir(follow_symlinks=False):
+                        todo.append(e.path)
+                except OSError:
+                    continue  # gone since the listing
+
+
+def _stat_tree(root):
+    """{(rel, mtime_ns, size)} for every playbook, one stat each."""
+    cut, out = len(os.path.abspath(root)) + 1, set()
+    for e in _entries(root, []):
+        try:
+            st = e.stat()
+        except OSError:
+            continue
+        out.add((e.path[cut:], st.st_mtime_ns, st.st_size))
+    return out
+
+
+def _signature(root):
+    """A string that changes when a book is added, removed, renamed or edited, for one stat per book and no more: the
+    count and the sums of mtimes and sizes, and every folder's mtime (an add, remove or rename touches one). The stat
+    per file is what a call costs at 20k books, so a call that finds this unchanged reads nothing else.
+    ponytail: two edits whose mtimes move opposite ways by the same ns cancel in the sum; the next edit shows them."""
+    n = m = z = 0
+    dirs = []
+    for e in _entries(root, dirs):
+        try:
+            st = e.stat()
+        except OSError:
+            continue
+        n += 1
+        m += st.st_mtime_ns
+        z += st.st_size
+    return f"{n} {m} {z} {sorted(dirs)}"
+
+
+def _doc(root, rel):
+    """(title, use line, headings, body) of a book; empty ones when it can't be read (it is read again once its mtime
+    or size changes)."""
+    try:
+        with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as f:
+            text = f.read(READ_MAX)
+    except OSError:
+        return ("", "", "", "")
+    lines = text.splitlines()
+    return (next((x[2:].strip() for x in lines if x.startswith("# ")), ""),
+            next((x.strip() for x in lines[:40] if _USE.search(x)), ""),
+            " ".join(x[3:].strip() for x in lines if x.startswith("## ")), text[:BODY_MAX])
+
+
+def _terms(text):
+    """The words a query keeps: 5+ letters, not common, each once, TERMS_MAX at most."""
+    return list(dict.fromkeys(w for w in _WORD.findall(text.lower()) if w not in _COMMON))[:TERMS_MAX]
+
+
+def _index_file(root):
+    """Where root's index lives: in the state folder, named by a hash of the library's real path."""
+    folder = os.path.join(c.state_dir(), "playbooks")
+    os.makedirs(folder, exist_ok=True)
+    key = hashlib.sha1(os.path.realpath(root).encode("utf-8", "replace")).hexdigest()[:12]
+    return os.path.join(folder, f"index-v{INDEX_VERSION}-{key}.db")
+
+
+def _drop_index(path):
+    for suffix in ("", "-journal", "-wal", "-shm"):
+        with contextlib.suppress(OSError):
+            os.remove(path + suffix)
+
+
+def _prune(mine):
+    """Drops the other indexes whose library (recorded in their meta row) is gone: a plugin update runs from a new
+    cache folder, and its index starts again beside the old one's."""
+    import pathlib
+    import sqlite3
+    for f in os.listdir(os.path.dirname(mine)):
+        path = os.path.join(os.path.dirname(mine), f)
+        if not (f.startswith("index-") and f.endswith(".db")) or path == mine:
+            continue
+        try:
+            con = sqlite3.connect(pathlib.Path(path).as_uri() + "?mode=ro", uri=True, timeout=1)
+            try:
+                row = con.execute("select root from meta").fetchone()
+            finally:
+                con.close()
+        except sqlite3.Error:
+            continue
+        if row and not os.path.isdir(row[0]):
+            _drop_index(path)
+
+
+def _index(root):
+    """The open, refreshed index of root: raises sqlite3.Error (no FTS5, a broken file) for the caller to handle."""
+    import sqlite3
+    # 60 s: a first build of 20k books by one process is not a reason for a second to scan every file instead
+    con = sqlite3.connect(_index_file(root), timeout=60, isolation_level=None)
+    try:
+        con.execute("pragma synchronous=off")  # rebuildable: a torn file is dropped and built again
+        con.execute("create table if not exists meta(root text)")
+        if con.execute("select 1 from meta").fetchone() is None:  # a new index: say whose, and tidy the dead ones
+            con.execute("insert into meta values(?)", (os.path.realpath(root),))
+            _prune(_index_file(root))
+        con.execute("create table if not exists files(path text primary key, mtime_ns int, size int)")
+        con.execute("create virtual table if not exists books using fts5(path unindexed, title, use, heads, body, "
+                    "tokenize='porter unicode61')")
+        con.execute("create table if not exists seen(sig text)")
+        sig = _signature(root)  # before the books are read: an edit after it shows as a change next call
+        if (con.execute("select sig from seen").fetchone() or (None,))[0] != sig:
+            now = _stat_tree(root)
+            con.execute("begin immediate")  # another fm may have refreshed since: read the table again under the lock
+            have = {p: (m, s, i) for p, m, s, i in con.execute("select path, mtime_ns, size, rowid from files")}
+            paths = {p for p, _, _ in now}
+            for p, (_, _, i) in have.items():
+                if p not in paths:
+                    con.execute("delete from books where rowid=?", (i,))
+                    con.execute("delete from files where rowid=?", (i,))
+            for p, *ms in now:
+                if p in have and list(have[p][:2]) == ms:
+                    continue
+                doc = _doc(root, p)
+                if p in have:
+                    con.execute("delete from books where rowid=?", (have[p][2],))
+                    con.execute("update files set mtime_ns=?, size=? where rowid=?", (*ms, have[p][2]))
+                    rid = have[p][2]
+                else:
+                    rid = con.execute("insert into files values(?,?,?)", (p, *ms)).lastrowid
+                con.execute("insert into books(rowid, path, title, use, heads, body) values(?,?,?,?,?,?)", (rid, p, *doc))
+            con.execute("delete from seen")
+            con.execute("insert into seen values(?)", (sig,))
+            con.execute("commit")
+        return con
+    except BaseException:
+        con.close()
+        raise
+
+
+def _fts_find(root, terms, k, kind=None):
+    import sqlite3
+    q = " OR ".join('"' + t + '"' for t in terms)
+    near = (f"references/{FOLDER[kind]}/%", PREFER) if kind in FOLDER else ("", 1)
+    for attempt in (0, 1):
+        try:
+            con = _index(root)
+            try:  # the query too: a corrupt FTS table passes the refresh when the signature matches
+                return [{"path": p, "score": round(-s, 2), "use": u} for p, u, s in con.execute(
+                    "select path, use, bm25(books, ?, ?, ?, ?, ?) * (case when path like ? then ? else 1 end) as s "
+                    "from books where books match ? order by s limit ?", (*WEIGHTS, *near, q, k))]
+            finally:
+                con.close()
+        except sqlite3.DatabaseError as e:
+            if attempt or "no such module" in str(e).lower() or "locked" in str(e).lower():
+                raise
+            _drop_index(_index_file(root))  # a torn or corrupt file: build it again, once
+
+
+def find(text, k=5, root=ROOT, kind=None):
+    """(mode, [{path, score, use}]): the k books that best fit text, best first; mode fts5, or scan when this
+    Python's sqlite has no FTS5 (or the index can't be had): books whose title and use line share the most words.
+    kind: a task type, whose folder's books score PREFER times higher (FTS5 only)."""
+    import sqlite3
+    terms = _terms(text)
+    if not terms:
+        return "fts5", []
+    try:
+        return "fts5", _fts_find(root, terms, k, kind)
+    except sqlite3.Error:
+        pass
+    got = []
+    for rel, *_ in _stat_tree(root):
+        doc = _doc(root, rel)
+        n = len(set(terms) & set(_WORD.findall(f"{doc[0]} {doc[1]}".lower())))
+        if n:
+            got.append({"path": rel, "score": float(n), "use": doc[1]})
+    return "scan", sorted(got, key=lambda x: (-x["score"], x["path"]))[:k]
+
+
+def task_text(b):
+    """What a task asks for, as a query: its title, interpretation and criteria (without their verify commands)."""
+    crit = "\n".join(x.split("::")[0] for x in b.section("Acceptance criteria").splitlines())
+    return f"{b.title}\n{b.section('Interpretation')}\n{crit}"
+
+
+def cmd_route(args):
+    """fm playbooks route TEXT|--task ID [-k N]: the top books by relevance, with score and Use-when line."""
+    import fmcli
+    if args.task:
+        b = c.find_brief(fmcli.resolve(args), args.task)
+        if not b:
+            raise fmcli.UsageError(f"no task {args.task}")
+        text, kind = task_text(b), b.type
+    else:
+        text, kind = args.name, None
+    k = max(1, min(args.k, 50))
+    mode, got = find(text, k, kind=kind)
+    if not got and not args.task and len(text.split()) == 1:  # one word: most likely a stage key mistyped
+        raise fmcli.UsageError(f"no stage or book fits {text!r}; stages: {', '.join(c.SKILL_FOR)}")
+    if got:
+        import fmhooks
+        fmhooks._event({"kind": "playbook", "action": "route", "paths": [x["path"] for x in got]})  # the text stays out
+    return fmcli.out(args, {"mode": mode, "playbooks": got}, "\n".join(
+        f"  {x['score']:>6}  {x['path']} — {c.fit(x['use'], 100)}" for x in got) if got else
+        "no playbook fits: no word of 5 letters or more matches a title, Use-when line, heading or body "
+        f"(a stage routes by its key: {', '.join(c.SKILL_FOR)})") or 0
+
+
 def blame(path):
     """[{line, task, commit, summary, text}] per line of path from git blame: task is the first T-NNNN in the commit's
     whole message (None without one), commit None for a line not committed yet. ValueError when git can't blame it."""
@@ -624,16 +980,46 @@ def look_first(text, b):
     return sorted(hits, key=lambda x: (-len(x["words"]), x["n"]))[:3]
 
 
-def score(text, b):
-    """T-1525, the dojo: each of a playbook's numbered steps, followed when the task's run (its steps, evidence, approach
-    and log) shares two or more of its telling words: ones at most an eighth of the library's playbooks use, so 'files'
-    or 'evidence' never make a match."""
-    books = listed()
+def _doc_freq(books, root=ROOT):
+    """{word: playbooks using it} over these books. T-1834: kept under the state dir while no book's size or mtime
+    changes, so a close opens only the books it loaded, not the library (20,000 opens). ponytail: one edited book
+    counts everything again; per-book word sets would recount only it."""
+    stats = []
+    for rel in books:
+        try:
+            st = os.stat(os.path.join(root, rel))
+            stats.append((rel, st.st_size, st.st_mtime_ns))
+        except OSError:
+            stats.append((rel, 0, 0))
+    sig = hashlib.sha1(json.dumps([root, stats]).encode()).hexdigest()
+    path = os.path.join(c.state_dir(), "playbook_df.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            kept = json.load(f)
+        if isinstance(kept, dict) and kept.get("sig") == sig and isinstance(kept.get("df"), dict):
+            return kept["df"]
+    except (OSError, ValueError):
+        pass
     seen = {}
     for rel in books:
-        for w in set(_WORD.findall(_read(os.path.join(ROOT, rel)).lower())):
+        for w in set(_WORD.findall(_read(os.path.join(root, rel)).lower())):
             seen[w] = seen.get(w, 0) + 1
-    limit = max(1, len(books) // 8)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        c.write_atomic(path, json.dumps({"sig": sig, "df": seen}))
+    except OSError:
+        pass  # a read-only state dir only costs the next close the recount
+    return seen
+
+
+def score(text, b, seen=None, total=None):
+    """T-1525, the dojo: each of a playbook's numbered steps, followed when the task's run (its steps, evidence, approach
+    and log) shares two or more of its telling words: ones at most an eighth of the library's playbooks use, so 'files'
+    or 'evidence' never make a match. T-1834: a caller scoring several books passes the word counts once."""
+    if seen is None:
+        books = listed()
+        seen, total = _doc_freq(books), len(books)
+    limit = max(1, total // 8)
     run = [s.text for s in b.steps()] + b.evidence() + [b.section("Approach (options → choice → why)"), b.section("Log")]
     rows = [dict(x, words=[w for w in x["words"] if seen.get(w, 0) <= limit]) for x in _sharing(text, run)]
     return [dict(x, followed=len(x["words"]) >= 2) for x in rows]
@@ -691,19 +1077,47 @@ def _blame_text(rel, rows):
     return "\n".join(out)
 
 
+def _near(name, books, n=3):
+    """T-2009: up to n playbook names close to a misspelled one ("alpah" -> fix/alpha), best first."""
+    import difflib
+    names = [b.removeprefix("references/").removesuffix(".md") for b in books]
+    q = name.lower().removeprefix("references/").removesuffix(".md")
+    def score(x):
+        return 1.0 if q in x else max(difflib.SequenceMatcher(None, q, x).ratio(),
+                                      difflib.SequenceMatcher(None, q.rsplit("/", 1)[-1], x.rsplit("/", 1)[-1]).ratio())
+    return [x for sc, x in sorted(((score(x), x) for x in names), key=lambda t: -t[0]) if sc >= 0.6][:n]
+
+
 def _one(name, books):
     import fmcli
     hits = resolve(name, books)
     if len(hits) != 1:
+        near = [] if hits else _near(name, books)
         raise fmcli.UsageError(f"{name!r} names {len(hits)} playbooks: {', '.join(hits)}; give its stage too"
-                               if hits else f"no playbook {name!r}: name it as SKILL.md does (fix/sql or "
-                               f"references/fix/sql.md)")
+                               if hits else f"no playbook {name!r}: did you mean {' or '.join(near)}?" if near
+                               else f"no playbook {name!r}: name it as SKILL.md does (fix/sql or references/fix/sql.md)")
     return hits[0]
 
 
 def cmd_show(args):
-    """fm playbooks show NAME (T-1621); eval NAME (T-1618); route STAGE, blame NAME, preview NAME (T-1622)."""
+    """fm playbooks show NAME (T-1621); eval NAME (T-1618); route STAGE|TEXT|--task ID, blame NAME, preview NAME (T-1622)."""
     import fmcli
+    if args.action == "coverage" and args.unused:  # T-1834: who earns a place; only ever names, never deletes
+        p = fmcli.resolve(args, create=False) if getattr(args, "project", None) else c.find_project(os.getcwd())
+        days = REACH_DAYS if args.days is None else args.days
+        if days < 1:
+            raise fmcli.UsageError("fm playbooks coverage --unused --days takes a whole number of days, 1 or more")
+        (drop, covers), merge = unused(ROOT, days, p), [(a, b, round(j, 2)) for a, b, j in similar(ROOT)]
+        return fmcli.out(args, {"days": days, "covers": covers, "unused": drop, "similar": merge}, (
+            (f"Note: the event log covers only {covers:g} of the {days} days, so a book read earlier shows as unused\n"
+             if covers < days else "")
+            + f"Drop candidates: no read, route hit or followed record in {days} days ({len(drop)})"
+            + "".join(f"\n  {x}" for x in drop[:SHOWN]) + (f"\n  … and {len(drop) - SHOWN} more (--json lists them all)"
+                                                           if len(drop) > SHOWN else "")
+            + f"\nMerge candidates: {int(NEAR * 100)}%+ of their wording shared ({len(merge)})"
+            + "".join(f"\n  {a} ~ {b} ({j:.0%})" for a, b, j in merge[:SHOWN])
+            + (f"\n  … and {len(merge) - SHOWN} more" if len(merge) > SHOWN else "")
+            + "\nThis names books; it never deletes one.")) or 0
     if args.action == "coverage":  # T-1623
         cov = coverage()
         return fmcli.out(args, cov, coverage_text(cov)) or 0
@@ -734,8 +1148,10 @@ def cmd_show(args):
         return fmcli.out(args, {"failures": got}, ("What failed here (don't repeat it)\n" + "\n".join(
             f"  ✗ {x['what']} ({x['kind']}: {x['why']})" for x in got[:40])
             if got else "nothing failed here: no reverted commit and no task blocked with a reason")) or 0
+    if args.action == "route" and (args.task or (args.name and route(args.name) is None)):  # T-1833: by meaning
+        return cmd_route(args)
     if args.name is None:  # left out (coverage takes none); an empty one still says no playbook
-        raise fmcli.UsageError(f"fm playbooks {args.action} NAME")
+        raise fmcli.UsageError(f"fm playbooks {args.action} NAME" + (" (or --task ID)" if args.action == "route" else ""))
     if args.action == "eval":
         return cmd_eval(args)
     if args.action == "draft":  # T-1523
@@ -746,7 +1162,19 @@ def cmd_show(args):
         if b.status != "done":
             raise fmcli.UsageError(f"{b.id} is {b.status}: a draft comes from a done task, whose steps were proved")
         text = draft(b)
-        return fmcli.out(args, {"task": b.id, "text": text}, text.rstrip("\n")) or 0
+        near, share = nearest(text)  # T-1834: a draft that says what a book says is a merge, not a new book
+        dup = near is not None and share >= NEAR
+        if near and share:
+            print(f"nearest: {near} ({share:.0%} of its wording shared)", file=sys.stderr)
+        if dup and not args.force:
+            if getattr(args, "json", False):
+                fmcli.out(args, {"task": b.id, "refused": True, "nearest": near, "overlap": round(share, 2)}, None)
+            else:
+                print(f"fm playbooks draft: {near} already says this ({share:.0%} shared wording): edit that book, or "
+                      f"--force to draft anyway", file=sys.stderr)
+            return 1
+        return fmcli.out(args, {"task": b.id, "text": text, "nearest": near, "overlap": round(share, 2)},
+                         text.rstrip("\n")) or 0
     if args.action == "route":
         got = route(args.name)
         if got is None:
@@ -983,11 +1411,9 @@ def cmd_eval(args):
         default = os.path.splitext(name)[0] + ".json"
         print(f"fm playbooks eval: reading {name} (not a library playbook)", file=sys.stderr)
     else:
-        if len(hits) != 1:
-            raise fmcli.UsageError(f"{args.name!r} names {len(hits)} playbooks: {', '.join(hits)}" if hits
-                                   else f"no playbook {args.name!r}")
-        name, book = hits[0], load(hits[0])
-        default = os.path.join(EVALS, hits[0][len("references/"):-len(".md")] + ".json")
+        name = _one(args.name, listed())
+        book = load(name)
+        default = os.path.join(EVALS, name[len("references/"):-len(".md")] + ".json")
     path = args.briefs or default
     if not os.path.isfile(path):
         raise fmcli.UsageError(f"no held-out briefs for {name}: write {path} "
@@ -1004,8 +1430,7 @@ def cmd_eval(args):
     row = {"ts": c.now(), "playbook": name, "briefs": os.path.abspath(path), "model": model.name, **r,
            **({"ablate": cuts} if cuts is not None else {})}
     os.makedirs(c.state_dir(), exist_ok=True)
-    with open(os.path.join(c.state_dir(), "playbook-evals.jsonl"), "a", encoding="utf-8") as f:
-        f.write(json.dumps(row) + "\n")
+    c.append_line(os.path.join(c.state_dir(), "playbook-evals.jsonl"), json.dumps(row) + "\n")
     n = r["n"]
     fmcli.out(args, row, f"{name}: lift {r['lift']:+.2f} (with {r['with']}/{n}, without {r['without']}/{n}) on {n} "
               f"held-out brief(s), {model.name} model"

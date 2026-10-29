@@ -16,11 +16,13 @@ found in the code), a11y (token contrast, the lint's reduced-motion, flash and i
 shows) and debt (untokened colours, durations and radii per file, under a budget)."""
 import bisect
 import colorsys
+import hashlib
 import json
 import math
 import os
 import re
 import stat
+import sys
 
 import fmcore
 
@@ -771,7 +773,7 @@ def collect(paths):
 
 
 def run(paths):
-    """(findings, files linted, skipped, empty paths)."""
+    """(findings, files linted, skipped, empty paths, the texts read: linted files and tailwind.config files)."""
     files, skipped, configs, empty = collect(paths)
     sources = []
     for f in files:
@@ -780,12 +782,36 @@ def run(paths):
             skipped.append({"file": f, "why": why})
         else:
             sources.append(Source(f, text))
-    tw_fonts = any("fontFamily" in (_read(c)[0] or "") for c in configs)
-    return Run(sources, tw_fonts).check(), [s.path for s in sources], skipped, empty
+    cfg = [_read(c)[0] or "" for c in configs]
+    tw_fonts = any("fontFamily" in t for t in cfg)
+    return Run(sources, tw_fonts).check(), [s.path for s in sources], skipped, empty, [s.raw for s in sources] + cfg
+
+
+TW_SPACES = ("font-weight", "inset-shadow", "drop-shadow", "color", "font", "text", "spacing", "radius", "shadow",
+             "leading", "tracking", "ease", "animate", "blur", "container", "breakpoint")  # Tailwind v4 theme names
+
+
+def unused_tokens(names, texts):
+    """T-1874: the token names no text uses, in their order. A use is --name anywhere but its own definition
+    (--name:); a Tailwind theme name (--color-brand, --text-lg, --radius-xl …) also counts as used by a class word
+    ending -brand (bg-brand, md:text-brand/50), and --breakpoint-md by an md: prefix. ponytail: any class word ending
+    -X counts, so it can miss an unused --spacing-2 beside p-2; it never calls a used token unused."""
+    blob = "\n".join(texts)
+    used, out = set(re.findall(r"(?<![\w-])--[\w-]+(?![\w-])(?!\s*:)", blob)), []
+    for n in names:
+        if n in used:
+            continue
+        space = next((s for s in TW_SPACES if n.startswith(f"--{s}-") and len(n) > len(s) + 3), None)
+        x = n[len(space) + 3:] if space else None
+        if x and re.search(rf"(?<![\w-])[a-z][\w:-]*-{re.escape(x)}(?:/[\w.]+)?(?![\w-])" if space != "breakpoint"
+                           else rf"(?<!\w){re.escape(x)}:", blob):  # md:, max-md:
+            continue
+        out.append(n)
+    return out
 
 
 def lint(paths, skipped=None):
-    found, _, sk, _ = run(paths)
+    found, _, sk, _, _ = run(paths)
     if skipped is not None:
         skipped.extend(sk)
     return found
@@ -1220,19 +1246,21 @@ def _rel(path, base_dir):
     return rel
 
 
-def section(rows, proofs, srcs, base_dir):
-    """DESIGN.md's Tokens section (markdown lines): the table, then each known text/surface pair's contrast."""
+def section(rows, proofs, srcs, base_dir, how=None):
+    """DESIGN.md's Tokens section (markdown lines): the table, then each known text/surface pair's contrast. how: the
+    intro, when fm design extract didn't write it (T-1652); a row's line None: its file alone."""
     def val(v, h):
         return " ".join(x for x in (f"`{_cell(v, 200)}`" if v else "", h or "") if x)  # T-1624: fm motion reads them
     out = ["## Tokens", "",
-           f"Written by `fm design extract {_cell(' '.join(_rel(p, base_dir) for p in srcs), 4096)}` from the CSS "
-           "custom properties set in :root, "
+           how or f"Written by `fm design extract {_cell(' '.join(_rel(p, base_dir) for p in srcs), 4096)}` from the "
+           "CSS custom properties set in :root, "
            "html, :host and @theme (dark: a .dark, [data-theme] or prefers-color-scheme: dark block, or light-dark()) "
            "and tailwind.config colours. Rerun it after a token change; it rewrites this section only.", "",
            "| Token | Kind | Light | Dark | Source |", "|---|---|---|---|---|"]
     for r in rows[:MAX_ROWS]:
         out.append(f"| `{r['name']}` | {r['kind']} | {val(r['light'], r['light_hex'])} | "
-                   f"{val(r['dark'], r['dark_hex'])} | {_cell(_rel(r['file'], base_dir), 4096)}:{r['line']} |")
+                   f"{val(r['dark'], r['dark_hex'])} | {_cell(_rel(r['file'], base_dir), 4096)}"
+                   + (f":{r['line']} |" if r["line"] else " |"))
     if len(rows) > MAX_ROWS:
         out += ["", f"{len(rows) - MAX_ROWS} more token(s) left out of the table."]
     if proofs:
@@ -1347,10 +1375,13 @@ PANE_ALL = fmcore.PANE_ALL  # the C object's keys in mods/foreman-ui/hooks/kit.t
 
 def read_design(path):
     """{name: {kind, light, dark, light_hex, dark_hex}} from the markdown file's ## Tokens table, in table order: the
-    cells as fm design extract's section() writes them (a backquoted value, then a hex). ValueError when it has none."""
+    cells as fm design extract's section() writes them (a backquoted value, then a hex). ValueError when it has none.
+    A .json is a W3C design-tokens file or a Figma variables export (json_tokens, T-1652)."""
     text, why = _read(path, strict=True)
     if text is None:
         raise ValueError(f"{path}: {why}")
+    if path.lower().endswith(".json"):
+        return json_tokens(text, path)
     doc = text.replace("\r\n", "\n").split("\n")
     heads, _ = headings(doc)
     at = next((i for i, h in heads if h == "## Tokens"), None)
@@ -1380,6 +1411,330 @@ def read_design(path):
         raise ValueError(f"{path}: its ## Tokens section has no token rows under a | Token | Kind | Light | Dark | "
                          "Source | header")
     return out
+
+
+DTCG_KINDS = {"color": "colour", "dimension": "length", "duration": "duration", "fontFamily": "font",
+              "number": "number", "shadow": "shadow"}
+FIGMA_TYPES = {"COLOR": "color", "FLOAT": "number", "STRING": "string"}
+MAX_DEPTH = 32  # groups nested and aliases followed
+
+
+def json_tokens(text, path):
+    """read_design's rows from a W3C design-tokens (DTCG) file or a Figma variables export (T-1652): top-level light
+    and dark groups (Figma: a mode named dark) are the themes, an alias reads as the value it names. ValueError when
+    it holds none."""
+    try:
+        data = json.loads(text)
+    except RecursionError:
+        raise ValueError(f"{path}: nested too deep") from None
+    except ValueError as e:
+        raise ValueError(f"{path}: not JSON ({e})") from None
+    meta = data.get("meta", data) if isinstance(data, dict) else None
+    rows = {}
+    if isinstance(meta, dict) and isinstance(meta.get("variables"), dict):
+        skipped = _figma(meta, rows)
+    else:
+        skipped = _dtcg(data, rows)
+    skipped += max(0, len(rows) - MAX_ROWS)
+    if skipped:  # T-1652 review: never silently fewer
+        print(f"design tokens: {path}: {skipped} token(s) skipped (a composite, an alias to nothing, a value it "
+              f"can't read, a name taken twice or past {MAX_ROWS})", file=sys.stderr)
+    for row in rows.values():  # one value for both themes: written once, as extract writes it
+        if (row["dark"], row["dark_hex"]) == (row["light"], row["light_hex"]):
+            row["dark"] = row["dark_hex"] = None
+    if not rows:
+        raise ValueError(f"{path}: no design tokens in it (it reads a W3C design-tokens .json or a Figma variables "
+                         "export)")
+    return dict(list(rows.items())[:MAX_ROWS])
+
+
+def _put(rows, path, theme, got):
+    """One imported value into rows, named from its path (letters, digits, - and _ kept). False when not kept: a value
+    it can't read, or a name another path already took in that theme."""
+    name = "--" + re.sub(r"[^A-Za-z0-9_-]+", "-", path)[:100].strip("-")
+    if not got or len(name) <= 2:
+        return False
+    row = rows.setdefault(name, {"kind": got[0], "light": None, "light_hex": None, "dark": None, "dark_hex": None})
+    if row[theme] is not None:
+        return False
+    row[theme], row[f"{theme}_hex"] = got[1], got[2]
+    return True
+
+
+def _dtcg(data, rows):
+    """The tokens of a DTCG file into rows; how many it skipped."""
+    themes = [(t, data[t]) for t in ("light", "dark") if isinstance(data, dict) and isinstance(data.get(t), dict)]
+    shared = {k: v for k, v in data.items() if k not in ("light", "dark")} if themes else {}  # Tokens Studio's global
+    flat = {}  # theme: {dotted path: ($type, $value)}
+
+    def walk(node, path, typ, into, depth):
+        if not isinstance(node, dict) or depth > MAX_DEPTH:
+            return
+        typ = node["$type"] if isinstance(node.get("$type"), str) else typ  # a group's $type is its tokens'
+        if "$value" in node:
+            into[".".join(path)] = (typ, node["$value"])
+            return
+        for k, v in node.items():
+            if not k.startswith("$"):
+                walk(v, path + [k], typ, into, depth + 1)
+
+    for theme, node in themes or [("light", data)]:
+        walk(shared, [], None, flat.setdefault(theme, {}), 0)  # beside the themes: in both, so aliases reach it
+        walk(node, [], None, flat[theme], 0)  # a theme's own token wins at the same path
+
+    def resolve(theme, typ, v):
+        for _ in range(MAX_DEPTH):
+            m = re.fullmatch(r"\{([^{}]+)\}", v.strip()) if isinstance(v, str) else None
+            if not m:
+                return typ, v
+            hit = flat[theme].get(m.group(1)) or flat.get("light", {}).get(m.group(1))
+            if not hit:
+                return typ, None
+            typ, v = typ or hit[0], hit[1]
+        return typ, None  # an alias loop
+
+    return len({path for theme, toks in flat.items() for path, (typ, v) in toks.items()
+                if not _put(rows, path, theme, _json_value(*resolve(theme, typ, v)))})
+
+
+def _figma(meta, rows):
+    cols = meta["variableCollections"] if isinstance(meta.get("variableCollections"), dict) else {}
+    vs = meta["variables"]
+    text = lambda x: x if isinstance(x, str) else None  # noqa: E731 — an id from the file is data, maybe not a key
+
+    def modes(cid):
+        """(the default mode's id, the dark one's or None) of a collection."""
+        c = cols[cid] if text(cid) and isinstance(cols.get(cid), dict) else {}
+        ms = [m for m in c["modes"] if isinstance(m, dict)] if isinstance(c.get("modes"), list) else []
+        return text(c.get("defaultModeId")), next((text(m.get("modeId")) for m in ms
+                                                   if "dark" in str(m.get("name", "")).lower()), None)
+
+    def value(vid, mode, depth=0):
+        v = vs.get(vid) if text(vid) else None
+        if not isinstance(v, dict) or depth > MAX_DEPTH:
+            return None, None
+        by = v["valuesByMode"] if isinstance(v.get("valuesByMode"), dict) else {}
+        x = by[mode] if mode in by else by.get(modes(v.get("variableCollectionId"))[0], next(iter(by.values()), None))
+        if isinstance(x, dict) and x.get("type") == "VARIABLE_ALIAS":  # what it names, in the same mode
+            return value(x.get("id"), mode, depth + 1)
+        return FIGMA_TYPES.get(text(v.get("resolvedType"))), x
+
+    skipped = set()
+    for vid, v in vs.items():
+        if isinstance(v, dict) and isinstance(v.get("name"), str):
+            light, dark = modes(v.get("variableCollectionId"))
+            for theme, mode in (("light", light), ("dark", dark)):
+                if (theme == "light" or mode) and not _put(rows, v["name"], theme, _json_value(*value(vid, mode))):
+                    skipped.add(vid)
+    return len(skipped)
+
+
+def _json_value(typ, v):
+    """(kind, CSS text, #HEX or None) for an imported token's value (typ: a DTCG $type), None for one it doesn't read
+    (a composite, a boolean)."""
+    num = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)  # noqa: E731
+    if isinstance(v, dict) and typ == "color":  # DTCG {colorSpace, components, alpha, hex}; Figma {r, g, b, a}
+        a, c = v.get("alpha", v.get("a", 1)), v.get("components")
+        alpha = "%02X" % round(max(a, 0) * 255) if num(a) and a < 1 else ""
+        if isinstance(v.get("hex"), str):
+            v = v["hex"] + alpha
+        else:
+            if isinstance(c, list) and len(c) == 3 and v.get("colorSpace", "srgb") == "srgb":
+                v = dict(zip("rgb", c))
+            v = hex_of([min(max(v[k], 0), 1) for k in "rgb"]) + alpha if all(num(v.get(k)) for k in "rgb") else None
+    if isinstance(v, dict) and num(v.get("value")) and isinstance(v.get("unit"), str):
+        v = format(v["value"], ".10g") + v["unit"]
+    elif isinstance(v, list) and typ == "fontFamily":
+        v = ", ".join(x for x in v if isinstance(x, str))
+    elif num(v):
+        v = format(v, ".10g")
+    if not isinstance(v, str) or not v.strip():
+        return None
+    text = " ".join(v.split())[:200]
+    rgb = parse_colour(text) if typ in ("color", None) else None
+    return ("colour" if rgb or typ == "color" else DTCG_KINDS.get(typ, "other"),
+            text.lower() if rgb and text.startswith("#") else text, rgb and hex_of(rgb))
+
+
+def title_of(path):
+    """A design file's H1 without its "DESIGN.md:" prefix (a .json has none), else its folder's name."""
+    text = "" if path.lower().endswith(".json") else _read(path)[0] or ""
+    h1 = next((h[2:] for _, h in headings(text.replace("\r\n", "\n").split("\n"))[0] if h.startswith("# ")), "")
+    t = " ".join(re.sub(r"^DESIGN(?:\.md)?\s*[:—–-]\s*", "", h1.strip(), flags=re.I).split())[:60]
+    return t or os.path.basename(os.path.dirname(os.path.abspath(path))) or "design"
+
+
+def brand(tokens, dark, title, out):
+    """Write favicon.svg (the title's first letter on an accent tile) and card.svg (a 1200x630 social card: the title
+    on the bg colour beside an accent bar) into the folder out, in the theme's accent, bg and text roles (T-1652)."""
+    from xml.sax.saxutils import escape
+    roles = token_roles(tokens, dark)
+    missing = [r for r in ("accent", "bg", "text") if r not in roles]
+    if missing:
+        raise ValueError(f"no {', '.join(missing)} colour token to draw with (names like --accent, --bg or --surface, "
+                         "--text)")
+    accent, bg, ink = (roles[r][1] for r in ("accent", "bg", "text"))
+    on = max((ink, bg), key=lambda h: contrast(parse_colour(h), parse_colour(accent)))
+    font = 'font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-weight="700"'
+    size = max(28, min(72, int(1040 / (0.56 * len(title)))))  # ponytail: an average glyph width, not measured
+    files = {"favicon.svg": f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" '
+                            f'height="64" rx="14" fill="{accent}"/><text x="32" y="44" {font} font-size="36" '
+                            f'text-anchor="middle" fill="{on}">{escape(title[0].upper())}</text></svg>\n',
+             "card.svg": f'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">'
+                         f'<rect width="1200" height="630" fill="{bg}"/><rect x="80" y="160" width="14" height="310" '
+                         f'fill="{accent}"/><text x="132" y="{315 + size * 0.35:.0f}" {font} font-size="{size}" '
+                         f'fill="{ink}">{escape(title, {chr(34): "&quot;"})}</text></svg>\n'}
+    for name, svg in files.items():
+        fmcore.write_atomic(os.path.join(os.path.abspath(out), name), svg)
+    return list(files)
+
+
+def _norm(v):
+    rgb = parse_colour(v)
+    return hex_of(rgb) if rgb else " ".join(v.lower().split())
+
+
+def infer(paths):
+    """(proposed rows, uses, files read, skipped): a colour, duration or radius written out twice or more that no
+    custom property holds becomes a proposed token row, most used first; one a custom property holds is a use of
+    (literal, token, count) to swap for var() (T-1652)."""
+    files, skipped, _, _ = collect(paths)
+    sources = []
+    for f in files:
+        text, why = _read(f)
+        if text is None:
+            skipped.append({"file": f, "why": why})
+        else:
+            sources.append(Source(f, text))
+    run = Run(sources)
+    held = {}
+    for name, v in run.props.items():
+        if name.startswith("--"):
+            held.setdefault(_norm(v), name)
+    seen = {}  # (kind, normalised value): [count, the value, file, line of its first use]
+    for d in run.decls:
+        for kind, lit in _literals(d):
+            seen.setdefault((kind, _norm(lit)), [0, _norm(lit), d.src.path, d.src.line(d.offset)])[0] += 1
+    order = ("colour", "duration", "radius")
+    rows, uses, n = [], [], {}
+    for (kind, key), (count, v, f, ln) in sorted(seen.items(), key=lambda x: (order.index(x[0][0]), -x[1][0])):
+        if key in held:
+            uses.append((v, held[key], count))
+        elif count > 1:
+            n[kind] = n.get(kind, 0) + 1
+            hx = v if kind == "colour" and re.fullmatch(r"#[0-9A-F]{6}", v) else None
+            rows.append({"name": f"--{'color' if kind == 'colour' else kind}-{n[kind]}", "kind": kind,
+                         "light": v.lower() if hx else v, "light_hex": hx, "dark": None, "dark_hex": None,
+                         "file": f, "line": ln, "uses": count})
+    return rows, uses, len(sources), skipped
+
+
+XRAY_JS = r"""(hexes => {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 1;
+  const cx = cv.getContext('2d', {willReadFrequently: true}), memo = new Map();
+  const norm = c => {  // any computed colour as #RRGGBB through one canvas pixel; null when transparent
+    if (!memo.has(c)) {
+      cx.clearRect(0, 0, 1, 1); cx.fillStyle = c; cx.fillRect(0, 0, 1, 1);
+      const [r, g, b, a] = cx.getImageData(0, 0, 1, 1).data;
+      memo.set(c, a ? '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase() : null);
+    }
+    return memo.get(c);
+  };
+  const ch = (h, i) => parseInt(h.slice(1 + 2 * i, 3 + 2 * i), 16);
+  const near = h => hexes.some(t => [0, 1, 2].every(i => Math.abs(ch(h, i) - ch(t, i)) <= 2));
+  const skip = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'LINK', 'META']);
+  let on = 0, off = 0, capped = false; const offc = {};
+  for (const el of document.querySelectorAll('body, body *')) {
+    if (on + off >= 3000) { capped = true; break; }
+    const s = getComputedStyle(el), r = el.getBoundingClientRect();
+    if (skip.has(el.tagName) || s.display === 'none' || s.visibility !== 'visible' || !r.width || !r.height) continue;
+    const paint = [s.backgroundColor];
+    if ([...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) paint.push(s.color);
+    for (const side of ['Top', 'Right', 'Bottom', 'Left'])
+      if (parseFloat(s['border' + side + 'Width']) > 0 && s['border' + side + 'Style'] !== 'none')
+        paint.push(s['border' + side + 'Color']);
+    const hs = [...new Set(paint.map(norm).filter(Boolean))];
+    if (!hs.length) continue;
+    const bad = hs.filter(h => !near(h));
+    bad.forEach(h => { offc[h] = (offc[h] || 0) + 1; });
+    bad.length ? off++ : on++;
+    el.style.setProperty('outline', '2px solid ' + (bad.length ? '#ff2d55' : '#00c853'), 'important');
+    el.style.setProperty('outline-offset', '-2px', 'important');
+  }
+  return {on, off, off_colours: offc, capped};
+})"""
+
+
+def xray(args, fmcli):
+    """fm design xray PAGE [--tokens DESIGN.md] [--out PNG]: each painted element outlined green when every colour it
+    paints is a token's (within 2 per channel), red when not; the coverage, the off-token colours most used first
+    (T-1652). Exit 1 when any is off, 2 when it can't run."""
+    import fmcritique as cr
+    import fmshot
+
+    def fail(msg):
+        print(f"fm: design xray: {msg}", file=sys.stderr)
+        return 2
+    if len(args.paths) != 1:
+        return fail("takes one page: an HTML file, or http(s) on localhost")
+    target, out = args.paths[0], getattr(args, "out", None)
+    if out and out != "-" and not out.lower().endswith(".png"):  # T-1652 review: never PNG bytes over the page
+        return fail("--out names the PNG it writes, e.g. --out xray.png")
+    try:
+        tokens, notes = cr._tokens(getattr(args, "tokens", None))
+    except ValueError as e:
+        return fail(cr.clean(e, 300))
+    if tokens is None:
+        return fail(notes[0] if notes else "no DESIGN.md")
+    hexes = sorted({h.upper() for r in tokens.values() for h in (r["light_hex"], r["dark_hex"]) if h})
+    if not hexes:
+        return fail("the tokens hold no colour to match against")
+    try:
+        url, root = cr._url(target, False)
+    except ValueError as e:
+        return fail(f"opens an HTML file, or http(s) on localhost, 127.0.0.1 or [::1]: {cr.clean(e, 300)}")
+    path, note = fmshot.find_browser("fm design xray")
+    if not path:
+        fmcli.out(args, {"skipped": note}, f"fm design xray: not run: {note}")
+        return 2
+    with fmshot.killable():  # SIGTERM unwinds, so the browser's process group dies
+        try:
+            b = fmshot.Browser(path, fmshot.SIZE)
+        except (OSError, RuntimeError, EOFError, ValueError) as e:
+            return fail(f"the browser ({fmshot.safe(path)}) did not start: {cr.clean(e, 300)}")
+        try:
+            notes = ([note] if note else []) + notes + cr._open(b, url, root, False)
+            got = cr._eval(b, f"({XRAY_JS})({json.dumps(hexes)})")
+            png = b.png() if out and out != "-" else None
+        except (OSError, RuntimeError, EOFError, ValueError) as e:
+            return fail(f"not run: {cr.clean(e, 300)}")
+        except (KeyError, TypeError, AttributeError) as e:
+            return fail(f"not run: the browser answered oddly: {type(e).__name__} {cr.clean(e, 200)}")
+        finally:
+            b.close()
+    got = got if isinstance(got, dict) else {}
+    count = lambda x: x if isinstance(x, int) and not isinstance(x, bool) and x >= 0 else 0  # noqa: E731 — the page's
+    on, off = count(got.get("on")), count(got.get("off"))  # script answers; a hostile page could forge any field
+    offc = got.get("off_colours") if isinstance(got.get("off_colours"), dict) else {}
+    offc = dict(sorted(((k, count(v)) for k, v in offc.items() if re.fullmatch(r"#[0-9A-F]{6}", k)),
+                       key=lambda kv: -kv[1])[:20])
+    total = on + off
+    if not total:
+        return fail("nothing painted on the page to read (is it empty, or drawn on a canvas?)")
+    if png:
+        fmcore.write_atomic(os.path.abspath(out), png)
+    cover = round(100 * on / total)
+    if got.get("capped") is True:
+        notes.append(f"stopped at {total} painted elements: the rest not read")
+    lines = [f"xray: {on} of {total} element(s) wear token colours ({cover}%)"]
+    if offc:
+        lines.append("off-token: " + ", ".join(f"{k} ×{v}" for k, v in list(offc.items())[:8]))
+    if png:
+        lines.append(f"shot: {out} (green outline: on token, red: off)")
+    lines += [f"note: {cr.clean(n, 300)}" for n in notes]
+    fmcli.out(args, {"url": url, "on": on, "off": off, "coverage": cover, "off_colours": offc,
+                     "out": out if png else None, "notes": notes}, "\n".join(lines))
+    return 1 if off else 0
 
 
 def _safe_css(v):
@@ -1510,9 +1865,11 @@ def to_pane(tokens, theme=None):
     return json.dumps(pal, indent=2) + "\n", [k for k in PANE_ALL if k not in pal]
 
 
-def _default_out():
+def _default_out(at=None):
     import fmcore
-    root = fmcore.git_root(os.getcwd()) or os.getcwd()
+    at = at or os.getcwd()
+    at = at if os.path.isdir(at) else os.path.dirname(os.path.abspath(at))
+    root = fmcore.git_root(at) or at
     out, docs = os.path.join(root, "DESIGN.md"), os.path.join(root, "docs", "DESIGN.md")
     return docs if not os.path.lexists(out) and os.path.isfile(docs) else out
 
@@ -1525,6 +1882,9 @@ def _design_tokens(args, fmcli):
     import sys
     act, err = args.action, sys.stderr
     try:
+        if act in ("palette", "tokens") and getattr(args, "out", None) not in (None, "-") \
+                and os.environ.get("FOREMAN_WORKER_OF"):  # T-1652 review: --out writes past the run's write guard
+            raise ValueError(f"--out writes a file: not from an fm code worker (fm design {act} prints without it)")
         if act == "palette":
             if len(args.paths) != 1:
                 raise ValueError("palette takes one seed colour, e.g. fm design palette '#3366cc'")
@@ -1563,7 +1923,7 @@ def _design_tokens(args, fmcli):
             print("The pane's saved palette is gone: it paints its default again." if had else
                   "No saved pane palette to clear.")
             return 0
-        if act == "tokens":  # T-1651: prints only (T-1717: --to pane --save keeps it for the pane)
+        if act == "tokens":  # T-1651: prints (T-1717: --to pane --save keeps it for the pane; T-1652: brand, md --out)
             if len(args.paths) != 1:
                 raise ValueError("tokens takes one DESIGN.md, e.g. fm design tokens DESIGN.md --to css")
             to = getattr(args, "to", None) or "css"
@@ -1573,10 +1933,29 @@ def _design_tokens(args, fmcli):
             if light and dark:
                 raise ValueError("--light or --dark, not both")
             theme = "light" if light else "dark" if dark else None
-            tokens, unmapped = read_design(args.paths[0]), []
-            if to == "css":
-                if theme:
-                    print(f"design tokens: --{theme} ignored: --to css carries both themes", file=err)
+            tokens, unmapped, src = read_design(args.paths[0]), [], args.paths[0]
+            out = getattr(args, "out", None)
+            if to in ("css", "md") and theme:
+                print(f"design tokens: --{theme} ignored: --to {to} carries both themes", file=err)
+            if to == "brand":  # T-1652
+                if not out or out == "-":
+                    raise ValueError("--to brand writes favicon.svg and card.svg: name the folder with --out DIR")
+                names = brand(tokens, theme != "light", title_of(src), out)
+                text = f"design tokens: {', '.join(names)} → {out}\n"
+            elif to == "md":  # T-1652: a tokens .json (or another DESIGN.md) as a ## Tokens section
+                if out and out != "-" and os.path.realpath(out) == os.path.realpath(src):
+                    raise ValueError(f"--out is {src} itself: its own lines would go; write to another file")
+                base = os.path.dirname(os.path.realpath(out)) if out and out != "-" else os.getcwd()
+                rel = _cell(_rel(src, base), 4096)
+                lines = section([dict(r, name=n, file=src, line=None) for n, r in tokens.items()], [], [src], base,
+                                how=f"Written by `fm design tokens {rel} --to md`. Rerun it after {rel} changes; it "
+                                    "rewrites this section only.")
+                if out and out != "-":
+                    write_section(out, lines, os.path.basename(base))
+                    text = f"design tokens: {len(tokens)} token(s) → {out} (## Tokens)\n"
+                else:
+                    text = "\n".join(lines) + "\n"
+            elif to == "css":
                 text = to_css(tokens)
             elif to == "app":
                 text = to_app(tokens, theme)
@@ -1596,6 +1975,23 @@ def _design_tokens(args, fmcli):
         missing = [p for p in args.paths if not os.path.exists(p)]
         if missing:
             raise ValueError(f"no such file or directory: {', '.join(missing)}")
+        if act == "infer":  # T-1652: prints only; fm design extract writes DESIGN.md
+            rows, uses, read, skipped = infer(args.paths)
+            how = (f"Proposed by `fm design infer {_cell(' '.join(_rel(p, os.getcwd()) for p in args.paths), 4096)}`"
+                   ": each colour, duration and radius written out twice or more that no custom property holds. "
+                   "Rename them, set them in :root, then fm design extract writes the real section.")
+            lines = (section(rows, [], args.paths, os.getcwd(), how=how) if rows else []) \
+                + [f"- use `var({t})` for `{_cell(v, 200)}` ({k} use{'s' * (k != 1)})" for v, t, k in uses]
+            if getattr(args, "json", False):
+                fmcli.out(args, {"proposed": rows, "use_token": [{"value": v, "token": t, "uses": k}
+                                                                 for v, t, k in uses],
+                                 "files": read, "skipped": skipped}, None)
+            else:
+                print("\n".join(lines) if lines else "nothing to propose: no literal colour, duration or radius "
+                      "repeats outside a custom property")
+                print(f"design infer: {len(rows)} proposed, {len(uses)} literal(s) a token already holds, from {read} "
+                      f"file(s)" + "".join(f"; skipped {x['file']} ({x['why']})" for x in skipped), file=err)
+            return 0
         rows, proofs, read, skipped = extract(args.paths)
         gone = "; ".join(f"{x['file']} ({x['why']})" for x in skipped)
         if not rows:
@@ -1669,21 +2065,35 @@ def cmd_design(args):
         if len(args.paths) > 1:
             print("fm: design check takes one project root", file=sys.stderr)
             return 2
-        got = check_gates(args.paths[0] if args.paths else ".")
+        root = args.paths[0] if args.paths else "."
+        try:
+            got = trial(root, check_gates(root), getattr(args, "wrong", None), getattr(args, "why", None))
+        except ValueError as e:
+            print(f"fm: design check: {e}", file=sys.stderr)
+            return 1
         fmcli.out(args, got, render_gates(got))
-        return 1 if any(g["mode"] == "blocking" and not all(m["pass"] for m in g["musts"])
-                        for g in got["gates"]) else 0
+        return 1 if blocks(got) else 0
     if not args.paths and not (args.action == "tokens" and getattr(args, "clear", False)):  # check's defaults to the
         # project root; tokens --clear forgets the saved pane palette and names no file (T-1717)
         print(f"fm: design {args.action}: needs an argument (fm design -h)", file=sys.stderr)
         return 2
+    if args.action == "xray":  # T-1652
+        return xray(args, fmcli)
     if args.action != "lint":
         return _design_tokens(args, fmcli)
     missing = [p for p in args.paths if not os.path.exists(p)]
     if missing:
         print(f"fm: design lint: no such file or directory: {', '.join(missing)}", file=sys.stderr)
         return 2
-    found, linted, skipped, empty = run(args.paths)
+    src, names = getattr(args, "tokens", None), []  # T-1874: report only, the exit stays the lint's
+    tokens = src or _default_out(args.paths[0])
+    try:
+        names = list(read_design(tokens))
+    except ValueError as e:  # no DESIGN.md or no ## Tokens in it: nothing to say, unless --tokens named it
+        if src:
+            print(f"fm: design lint: --tokens: {e}", file=sys.stderr)
+            return 2
+    found, linted, skipped, empty, texts = run(args.paths)
     if empty:
         print(f"fm: design lint: no UI files under {', '.join(empty)} (it reads {' '.join(sorted(EXTS))})",
               file=sys.stderr)
@@ -1693,14 +2103,21 @@ def cmd_design(args):
         f"design lint: clean ({n} file(s))"
     if skipped:
         text += "\nskipped: " + "; ".join(f"{x['file']} ({x['why']})" for x in skipped)
-    fmcli.out(args, {"findings": found, "files": n, "skipped": skipped}, text)
+    unused = unused_tokens(names, texts)
+    if unused:
+        text += (f"\n{os.path.basename(tokens)}: {len(unused)} token(s) unused in the {n} file(s) linted: "
+                 f"{', '.join(unused)}")
+    fmcli.out(args, {"findings": found, "files": n, "skipped": skipped, "unused_tokens": unused}, text)
     return 1 if found else 0
 
 
 # T-1645: design gates a project opts into in DESIGN.md's ## Gates section ("- brief: advisory" or "blocking");
 # T-1646: a11y and debt ("- debt: advisory 40": its budget of untokened literals)
+# T-1669: trial runs advisory and logs each would-block; it blocks once TRIAL_MIN are logged with under TRIAL_RATE of
+# the last TRIAL_WINDOW marked wrong (fm design check --wrong GATE), and the same rule demotes it
 GATES = ("brief", "a11y", "debt")
-MODES = ("advisory", "blocking")
+MODES = ("advisory", "blocking", "trial")
+TRIAL_MIN, TRIAL_RATE, TRIAL_WINDOW = 10, 0.10, 20
 A11Y_RULES = (("reduced motion", "reduced-motion"), ("no fast flashes", "flash"), ("img alt text", "img-alt"))
 FOCUS = re.compile(r":focus(?:-visible)?(?![\w-])")  # :focus-within styles the container, not the focused element
 VISUAL = re.compile(r"(?:outline(?!-offset)|box-shadow|border(?!.*radius)|background|text-decoration)(?:-[\w-]+)?$|"
@@ -1983,7 +2400,7 @@ def check_gates(root):
                 found = run.check()
             if gate == "a11y":
                 out["gates"].append({"gate": gate, "mode": mode,
-                                     "musts": _a11y(run, found, out["notes"], mode == "blocking")})
+                                     "musts": _a11y(run, found, out["notes"], mode in ("blocking", "trial"))})
             else:
                 budget = m.group(3)
                 if budget and not re.fullmatch(r"\d{1,9}", budget):
@@ -2005,7 +2422,59 @@ def check_gates(root):
             f"{os.path.relpath(x['file'], root)} ({x['why']})" for x in skipped[:3]) +
             (f" and {len(skipped) - 3} more" if len(skipped) > 3 else ""))
     out["notes"] = list(dict.fromkeys(out["notes"]))  # a gate listed twice says its note once
+    out["digest"] = hashlib.sha1("\0".join(f"{r}\0{b}" for r, b in bodies).encode("utf-8", "replace")).hexdigest()
     return out
+
+
+def trial(root, got, wrong=None, why=None):
+    """T-1669: count the trial gates' would-blocks in the project's design-trials.jsonl (one per new failing UI state;
+    a rerun on the same code adds none), mark the latest one wrong for --wrong GATE, and set each trial gate's
+    trial = {acts, n, overridden}: blocking once TRIAL_MIN are logged with under TRIAL_RATE overridden. Outside a
+    Foreman project nothing is counted and it reads as advisory. Raises ValueError for --wrong with nothing to mark."""
+    p = fmcore.find_project(root)
+    gates = [g for g in got["gates"] if g["mode"] == "trial"]
+    if wrong and wrong not in {g["gate"] for g in gates}:
+        raise ValueError(f"{wrong} isn't on trial in DESIGN.md's ## Gates ('- {wrong}: trial')")
+    if not p:
+        if wrong:
+            raise ValueError("no Foreman project here, so there are no would-blocks to mark wrong")
+        for g in gates:
+            g["mode"] = "advisory"
+        if gates:
+            got["notes"].append("trial: no Foreman project here, so nothing is counted; read as advisory")
+        return got
+    path = os.path.join(p.dir, "design-trials.jsonl")
+    recs = fmcore.tail_jsonl(path, 2000) if os.path.exists(path) else []
+    for g in gates:
+        failing = [m["must"] for m in g["musts"] if not m["pass"]]
+        mine = [r for r in recs if r.get("gate") == g["gate"]]
+        hits = [r for r in mine if r.get("key")]
+        if failing:
+            key = hashlib.sha1(json.dumps([g["gate"], failing, got.get("digest")]).encode()).hexdigest()[:16]
+            if not hits or hits[-1]["key"] != key:
+                rec = {"ts": fmcore.now(), "gate": g["gate"], "key": key, "failing": failing}
+                fmcore.append_line(path, json.dumps(rec) + "\n")
+                mine.append(rec)
+                hits.append(rec)
+        marked = {r.get("of") for r in mine if r.get("wrong")}
+        if wrong == g["gate"]:
+            left = [r for r in hits if r["key"] not in marked]
+            if not left:
+                raise ValueError(f"no would-block of {wrong} to mark wrong: it hasn't blocked anything unmarked")
+            fmcore.append_line(path, json.dumps({"ts": fmcore.now(), "gate": wrong, "wrong": True, "of": left[-1]["key"],
+                                                 "why": why or ""}) + "\n")
+            marked.add(left[-1]["key"])
+        window = hits[-TRIAL_WINDOW:]
+        n, w = len(window), sum(r["key"] in marked for r in window)
+        g["trial"] = {"acts": "blocking" if n >= TRIAL_MIN and w / n < TRIAL_RATE else "advisory", "n": n,
+                      "overridden": w}
+    return got
+
+
+def blocks(got):
+    """T-1669: whether the check exits 1: a blocking gate, or a trial acting as one, with a failing must."""
+    return any((g["mode"] == "blocking" or (g.get("trial") or {}).get("acts") == "blocking")
+               and not all(m["pass"] for m in g["musts"]) for g in got["gates"])
 
 
 def render_gates(got):
@@ -2018,7 +2487,10 @@ def render_gates(got):
     lines = []
     for g in got["gates"]:
         ok = sum(m["pass"] for m in g["musts"])
-        lines.append(f"{g['gate']} ({g['mode']}): {ok} of {len(g['musts'])} "
+        t = g.get("trial")
+        mode = (f"trial: {t['acts']}; {t['n']} would-block{'' if t['n'] == 1 else 's'}, {t['overridden']} overridden; "
+                f"blocks after {TRIAL_MIN} at under {TRIAL_RATE:.0%}") if t else g["mode"]
+        lines.append(f"{g['gate']} ({mode}): {ok} of {len(g['musts'])} "
                      + ("must-have(s) found" if g["gate"] == "brief" else "check(s) pass"))
         lines += [f"  {'✓' if m['pass'] else '✗'} {safe(m['must'])}: {safe(m['why'])}" for m in g["musts"]]
         lines += [f"    {safe(r['file'])} {r['count']} (" + ", ".join(f"{k} {n}" for k, n in r["kinds"].items()) + ")"

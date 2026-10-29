@@ -121,6 +121,30 @@ class ParserOnce(unittest.TestCase):
         self.assertEqual(a.parse_args(["state", "--json"]).json, True, "a second parse starts from the defaults")
         self.assertFalse(a.parse_args(["state"]).json)
 
+    def test_a_run_builds_only_its_command_and_each_matches_the_full_parser(self):
+        # T-2016: building all 214 subparsers was ~80 ms of every fm call; a command whose arguments leaned on another
+        # command's block would lose them silently, so every partial parser is compared with the full one
+        def subs(ap):
+            return next((a for a in ap._actions if isinstance(a, argparse._SubParsersAction)), None)
+
+        def shape(ap):
+            s = subs(ap)
+            return ([(a.option_strings, a.dest, a.nargs, a.choices if not isinstance(a, argparse._SubParsersAction)
+                      else None, a.default, a.required) for a in ap._actions]
+                    + [(k, shape(v)) for k, v in (s.choices.items() if s else ())])
+
+        full = subs(fmcli.build_parser()).choices
+        tiers = list(fmcli.HELP_TIERS)
+        for name in full:
+            part = subs(fmcli._build_parser(only=name)).choices
+            self.assertEqual(set(part), {name, *(k for k, v in full.items() if v is full[name])}, name)
+            self.assertEqual(shape(part[name]), shape(full[name]), name)
+        self.assertEqual(fmcli.HELP_TIERS, tiers, "fm help's tiers stay whole")
+        from unittest import mock
+        with mock.patch.object(fmcli, "_PARSER", None), mock.patch.dict(fmcli._PARTS, clear=True):
+            self.assertEqual(len(subs(fmcli._parser_for(["-p", "x", "next"])).choices), 1)
+            self.assertEqual(len(subs(fmcli._parser_for(["nxet"])).choices), len(full), "a typo gets the whole parser")
+
 
 class CaptureAndIntake(ForemanTestCase):
     def test_a_missing_file_argument_is_a_usage_error(self):
@@ -165,6 +189,42 @@ class CaptureAndIntake(ForemanTestCase):
         c.add_veto(c.find_project(self.repo), "never push to main")
         self.assertIn("Vetoed: \"never push to main\"", self.fm("capture", "push the release to main").stdout)
         self.assertNotIn("Vetoed", self.fm("capture", "write the release notes").stdout)
+
+    def test_a_lone_word_no_action_resembles_is_a_step_or_criterion_to_add(self):
+        # T-1903: `fm task step T-1 CHANGELOG` was "invalid choice"; a word near an action stays a typo
+        self.fm("task", "new", "x", "--type", "FIX", "--tier", "S")
+        self.fm("task", "step", "T-0001", "CHANGELOG")
+        self.fm("task", "ac", "T-0001", "works")
+        b = c.find_brief(c.find_project(self.repo), "T-0001")
+        self.assertEqual([s.text for s in b.steps()], ["CHANGELOG"])
+        self.assertIn("works", b.section("Acceptance criteria"))
+        p = self.fm("task", "step", "T-0001", "dnoe", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("invalid choice", p.stderr)
+        self.fm("task", "ac", "T-0001", "fast", "--verify", "true")  # review: an option after the word
+        self.assertIn("verify with `true`", c.find_brief(c.find_project(self.repo), "T-0001").section("Acceptance criteria"))
+        for typo in ("DONE", "3", "--json"):  # review: an action in capitals, a number, an option alone stay errors
+            self.assertNotEqual(self.fm("task", "step", "T-0001", typo, check=False).returncode, 0, typo)
+        self.assertEqual(len(c.find_brief(c.find_project(self.repo), "T-0001").steps()), 1)
+
+    def test_capture_reads_a_leading_tag_as_the_type(self):  # T-1904: "FIX: …" was filed as a FEATURE
+        self.fm("capture", "FIX: the send button stays grey")
+        self.fm("capture", "bug: login loops", "--type", "CLEAN")  # --type wins; the words stay
+        self.fm("capture", "Note: tags are case-blind")
+        self.fm("capture", "PERF?: slow startup")  # explore, as fm intake reads it
+        self.fm("capture", "fix!: crash on save")  # urgent
+        p = c.find_project(self.repo)
+        one, two, three, four, five = (c.find_brief(p, f"T-000{i}") for i in range(1, 6))
+        self.assertEqual((one.type, one.title, one.priority), ("FIX", "The send button stays grey", "normal"))
+        self.assertEqual((two.type, two.title), ("CLEAN", "Bug: login loops"))
+        self.assertEqual((three.type, three.title), ("FEATURE", "Note: tags are case-blind"))
+        self.assertEqual((four.type, four.title, bool(four.meta.get("explore"))), ("PERFORMANCE", "Slow startup", True))
+        self.assertEqual((five.type, five.title, five.priority), ("FIX", "Crash on save", "urgent"))
+        self.assertFalse(one.meta.get("explore"))
+        self.fm("capture", "FIX: the save hangs\nrepro: save twice")  # review: a tag on the first of several lines
+        six = c.find_brief(p, "T-0006")
+        self.assertEqual(six.type, "FIX")
+        self.assertNotIn("FIX:", six.title)
 
     def test_capture_keeps_a_mid_text_ref_and_records_refs_as_depends(self):  # T-0334
         self.fm("capture", "first")
@@ -214,6 +274,27 @@ class CaptureAndIntake(ForemanTestCase):
         b = c.find_brief(c.find_project(self.repo), res["created"][0]["id"])
         self.assertEqual(b.meta["depends_on"], ["T-0001"])
 
+    def test_a_long_title_is_cut_at_a_word_and_a_command_keeps_its_case(self):
+        # T-1985: "…the DONE-WHEN fallbac" and "Fm batch drops …"
+        self.fm("capture", "FIX: fm batch drops a member's verify command when its criteria come from the DONE-WHEN "
+                           "fallback of the raw request text")
+        self.fm("capture", "FIX: c.first_touch counts a Write outside the project")
+        self.fm("capture", "FIX: the band is slow")
+        t = {b.id: b.title for b in c.load_briefs(c.find_project(self.repo))}
+        self.assertTrue(t["T-0001"].startswith("fm batch drops"), t["T-0001"])
+        self.assertTrue(t["T-0001"].endswith(" DONE-WHEN…"), t["T-0001"])
+        self.assertLessEqual(len(t["T-0001"]), 90)
+        self.assertTrue(t["T-0002"].startswith("c.first_touch"), t["T-0002"])
+        self.assertEqual(t["T-0003"], "The band is slow")
+
+    def test_a_mid_sentence_scope_keeps_its_text_and_an_end_one_is_dropped(self):
+        # T-1991: "an intake line made only of @path tokens …" became "made only of  tokens"
+        import fmcli
+        self.assertEqual(fmcli._title("a line of @path tokens is dropped @plugin/lib/fmcore.py"),
+                         "A line of path tokens is dropped")
+        self.assertEqual(fmcli._title("@src/app.py the totals row is wrong"), "The totals row is wrong")
+        self.assertEqual(fmcli._title("mail a@b.com bounces @src/mail.py"), "Mail a@b.com bounces")
+
     def test_titles_cannot_carry_terminal_control_sequences(self):
         # round 4 (brainstorm, security): titles are printed by the dashboard, statusline and terminal title
         self.fm("capture", "evil\x1b]0;pwned\x07 title‮ here")
@@ -241,6 +322,57 @@ class CaptureAndIntake(ForemanTestCase):
         got = json.loads(self.fm("task", "show", "T-0002", "--json").stdout)
         self.assertEqual([x["text"] for x in got["criteria"]], ["old check"], "no --ac: the capture's own stay")
         self.assertEqual([x["text"] for x in got["steps"]], ["old step"])
+
+    def test_a_capture_given_criteria_and_steps_is_planned(self):
+        # T-1886: filled by fm task set, ac or step it stayed captured, so the drive kept offering it for planning
+        def status(tid):
+            return json.loads(self.fm("task", "show", tid, "--json").stdout)["status"]
+        self.fm("capture", "one")
+        self.fm("capture", "two")
+        self.fm("task", "set", "T-0001", "--section", "Acceptance criteria",
+                "--text", "- [ ] works — verify with `true`")
+        self.assertEqual(status("T-0001"), "captured")  # criteria alone: not yet
+        self.fm("task", "step", "T-0001", "add", "do it")
+        self.assertEqual(status("T-0001"), "planned")
+        self.fm("task", "set", "T-0002", "--section", "Steps", "--text", "1. [ ] go")
+        self.fm("task", "ac", "T-0002", "add", "works :: true")
+        self.assertEqual(status("T-0002"), "planned")
+        self.fm("task", "set", "T-0002", "status=captured")
+        self.assertEqual(status("T-0002"), "captured")  # set by hand: kept
+
+    def test_section_criteria_and_steps_in_the_task_new_forms_are_parsed(self):
+        # T-1894: "- [ ] X :: cmd" and "1. go" given with --section stayed plain text: no verify command, no steps,
+        # so fm focus refused the task as not planned
+        self.fm("capture", "one")
+        self.fm("task", "set", "T-0001", "--section", "Acceptance criteria", "--text", "- [ ] works :: test -e a",
+                "--section", "Steps", "--text", "1. go\n2. [x] went")
+        shown = self.fm("task", "show", "T-0001").stdout
+        self.assertIn("- [ ] works — verify with `test -e a`", shown)
+        self.assertIn("1. [ ] go\n2. [x] went", shown)
+        self.assertEqual(json.loads(self.fm("task", "show", "T-0001", "--json").stdout)["status"], "planned")
+        kept = "- [ ] kept — verify with `echo a :: b`"  # saved again as shown: a command holding " :: " stays
+        self.fm("task", "set", "T-0001", "--section", "Acceptance criteria", "--text", kept)
+        self.assertIn(kept + "\n", self.fm("task", "show", "T-0001").stdout)
+
+    def test_section_criteria_and_steps_in_the_ac_and_step_forms_are_parsed(self):
+        # T-1900: "works :: cmd" and bare step lines, the forms --ac and --step take, stayed plain text
+        self.fm("capture", "one")
+        self.fm("task", "set", "T-0001", "--section", "Acceptance criteria", "--text", "works :: test -e a",
+                "--section", "Steps", "--text", "go\nwent")
+        shown = self.fm("task", "show", "T-0001").stdout
+        self.assertIn("- [ ] works — verify with `test -e a`", shown)
+        self.assertIn("1. [ ] go\n2. [ ] went", shown)
+        self.assertEqual(json.loads(self.fm("task", "show", "T-0001", "--json").stdout)["status"], "planned")
+
+    def test_a_planned_task_never_started_can_be_planned_again(self):
+        # T-1862: an M task whose --focus was refused stays planned; --from refused it, so only status=captured got out
+        self.fm("task", "new", "big one", "--type", "FIX", "--tier", "S", "--ac", "old :: true", "--step", "old")
+        self.fm("task", "new", "big one", "--type", "FIX", "--tier", "S", "--from", "T-0001", "--ac", "new :: true",
+                "--step", "new", "--focus")
+        got = json.loads(self.fm("task", "show", "T-0001", "--json").stdout)
+        self.assertEqual(([x["text"] for x in got["criteria"]], got["status"]), (["new"], "active"))
+        r = self.fm("task", "new", "big one", "--type", "FIX", "--tier", "S", "--from", "T-0001", check=False)
+        self.assertEqual((r.returncode, "T-0001 is active" in r.stderr), (1, True), r.stderr)
 
     def test_parallel_captures_get_unique_ids(self):
         outs = []
@@ -714,6 +846,17 @@ class Checks(ForemanTestCase):
         codes = [self.fm("check", "--fresh", check=False) for _ in range(3)]
         self.assertEqual([p.returncode for p in codes], [0, 0, 1])
         self.assertIn("flaky again", codes[2].stdout)
+
+    def test_a_failed_gate_names_its_failing_test_and_how(self):  # T-1884: not the summary's last 10 lines
+        self.fm("init")
+        with open(os.path.join(self.repo, "run.py"), "w") as f:
+            f.write("import sys\nprint('FAIL: test_x (test_m.C.test_x)\\n---\\nAssertionError: the playbook grew')\n"
+                    "print('\\n' * 12 + 'Ran 9 tests\\n\\nFAILED (failures=1)')\nsys.exit(1)\n")
+        self.fm("check", "add", "python3 run.py")
+        p = self.fm("check", "--fresh", check=False)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("    failing: test_m.C.test_x\n", p.stdout)
+        self.assertIn("    AssertionError: the playbook grew", p.stdout)
 
     def test_a_pass_on_the_same_tree_is_reused_and_affected_runs_only_linked_tests(self):
         # round 5 (T-0063): the ~100 s suite ran twice per tree (step and criterion evidence); iterate on linked tests
@@ -1389,7 +1532,7 @@ class InboxList(ForemanTestCase):
         self.assertIn("T-0001", r.stdout)
         self.assertIn("Add a dark theme", r.stdout)
         self.assertEqual(json.loads(self.fm("inbox", "--json").stdout)["inbox"][0]["id"], "T-0001")
-        self.assertIn("{gh,spec}",self.fm("inbox", "--help").stdout)  # the tracker source is still there
+        self.assertIn("{gh,spec,",self.fm("inbox", "--help").stdout)  # the tracker source is still there
 
 
 class AffectedPairs(ForemanTestCase):

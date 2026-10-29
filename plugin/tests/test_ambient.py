@@ -59,6 +59,78 @@ class Ambient(HookCase):
         b = c.find_brief(self.project(), self.tid)
         self.assertFalse(b.has_evidence(step=1), b.evidence())
 
+    def test_a_full_check_waits_for_an_ambient_run(self):
+        # T-1964: a full fm check started while an ambient run was going ran two suites at once
+        import threading
+        self.fm("check", "add", "true")
+        busy = subprocess.Popen(["sleep", "2"])
+        threading.Thread(target=busy.wait, daemon=True).start()  # reaped when it ends, so its pid dies
+        d = os.path.join(self.project().dir, "ambient")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "run.pid"), "w") as f:
+            f.write(str(busy.pid))
+        r = self.fm("check")
+        self.assertIn("waiting for the ambient test run", r.stderr)
+        self.assertIsNotNone(busy.poll(), "it ran only after the ambient run ended")
+
+    def test_a_full_check_waits_for_another_on_this_tree(self):
+        # T-1971: a second full fm check ran a suite beside the first one and cleared its gates_running marker
+        import threading
+        self.fm("check", "add", "true")
+        busy = subprocess.Popen(["sleep", "2"])
+        threading.Thread(target=busy.wait, daemon=True).start()
+        p = self.project()
+        c.update_meta(p, gates_running={"task": None, "pid": busy.pid, "at": c.now(), "root": p.root})
+        r = self.fm("check")
+        self.assertIn("waiting for another fm check", r.stderr)
+        self.assertIsNotNone(busy.poll(), "it ran only after the other check ended")
+
+    def test_a_full_check_waits_for_fm_ships_test_run_but_not_inside_it(self):
+        # T-1978: fm ship's suite in its scratch tree had no marker, so a full check here ran a second suite beside it
+        import threading
+        self.fm("check", "add", "true")
+        p = self.project()
+        busy = subprocess.Popen(["sleep", "30"])
+        try:  # the ship's own fm check runs in its scratch tree: it never waits for itself
+            c.update_meta(p, ship_testing={"pid": busy.pid, "at": c.now(), "root": p.root})
+            self.assertNotIn("fm ship", self.fm("check", "--fresh").stderr)
+        finally:
+            busy.kill()
+            busy.wait()
+        busy = subprocess.Popen(["sleep", "2"])
+        threading.Thread(target=busy.wait, daemon=True).start()
+        c.update_meta(p, ship_testing={"pid": busy.pid, "at": c.now(), "root": "/elsewhere/ship"})
+        self.assertIn("waiting for fm ship's test run", self.fm("check", "--fresh").stderr)
+        self.assertIsNotNone(busy.poll(), "it ran only after the ship's test run ended")
+
+    def test_a_check_whose_tree_changed_mid_run_starts_an_ambient_run(self):
+        # T-1973: an edit made while full gates ran got no ambient run (T-1965) and no pass (T-1963): nothing tested it
+        self.fm("check", "ambient", "on")
+        self.write("brk.py", "open('calc.py', 'w').write('def add(a, b):\\n    return a - b\\n')\n")
+        self.fm("check", "add", "python3 brk.py")  # stands in for an edit made while the gates ran
+        self.fm("check", "--fresh", env=SYNC, check=False)
+        self.assertIn("now fail", self.note())
+
+    def test_an_edit_during_fm_ships_test_run_starts_no_ambient_run(self):
+        # T-1984: fm ship's suite runs in its scratch tree; an ambient run beside it was two suites at once
+        self.fm("check", "ambient", "on")
+        p = self.project()
+        c.update_meta(p, ship_testing={"pid": os.getpid(), "at": c.now(), "root": "/elsewhere/ship"})
+        self.edit("def add(a, b):\n    return a - b\n")
+        self.assertNotIn("Ambient", self.note(), "fm ship starts one after its run")
+        c.update_meta(p, ship_testing=None)
+
+    def test_an_edit_during_full_gates_starts_no_ambient_run(self):
+        # T-1965: an edit while fm check ran started an ambient suite beside it
+        self.fm("check", "ambient", "on")
+        p = self.project()
+        c.update_meta(p, gates_running={"task": None, "pid": os.getpid(), "at": c.now(), "root": p.root})
+        self.edit("def add(a, b):\n    return a - b\n")
+        self.assertNotIn("Ambient", self.note(), "the gates answer for this edit")
+        c.update_meta(p, gates_running={})
+        self.edit("def add(a, b):\n    return a - b\n")
+        self.assertIn("now fail", self.note())
+
     def test_a_failing_note_names_the_failing_tests_not_the_runners_timing(self):
         # T-1275: 'Ran 44 tests in 1.6s (12 classes …)' made these notes 23 KB over 92 edits
         self.fm("check", "ambient", "on")

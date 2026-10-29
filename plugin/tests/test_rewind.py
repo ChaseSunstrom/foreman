@@ -73,6 +73,26 @@ class Rewind(ForemanTestCase):
         self.fm("task", "evidence", tid, "true", "ok [rewound]", "--step", "2")
         self.assertNotIn("ok [rewound]", self.fm("task", "show", tid).stdout)
 
+    def test_no_git_before_a_passing_proof_and_the_callers_briefs_are_used(self):
+        # T-2029: every prompt ran three git commands and a second brief scan, though only a proved step can rewind
+        from unittest import mock
+
+        import fmcore as c
+        tid = self.fm_json("task", "new", "Unproved", "--type", "FIX", "--tier", "S", "--ac", "it works :: true",
+                           "--step", "one")["id"]
+        self.fm("focus", tid)
+        self.fm("task", "evidence", tid, "--step", "1", "--run", "false", check=False)  # a failed run proves nothing
+        p = c.find_project(self.repo)
+        with mock.patch.object(c, "worktree_tree", side_effect=AssertionError("ran git")):
+            self.assertIsNone(c.reconcile_rewind(p))
+        self.fm("task", "drop", tid, "test")
+        tid = self.two_steps_done()
+        os.remove(os.path.join(self.repo, "b.py"))
+        briefs = c.load_briefs(p)
+        with mock.patch.object(c, "active_brief_fast", side_effect=AssertionError("scanned the briefs again")):
+            self.assertEqual(c.reconcile_rewind(p, briefs=briefs), (tid, [2]))
+        self.assertIn("2. [ ] two", self.fm("task", "show", tid).stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

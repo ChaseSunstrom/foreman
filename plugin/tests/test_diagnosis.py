@@ -37,6 +37,52 @@ class Prove(Base):
         self.assertRegex(out.lower(), r"red|fail")
         self.assertTrue(c.find_brief(self.p, "T-0001").red_green())
 
+    def test_a_changed_runner_in_the_tests_folder_stays_at_its_start_version(self):
+        # T-1845/T-1919: T-1842 and T-1911 changed plugin/tests/run.py; prove copied it onto the start tree with the
+        # tests, so the red run passed there. A tests-folder file the start tree has is code under change; a new
+        # helper the new test imports still comes over.
+        os.makedirs(os.path.join(self.repo, "tests"))
+        self.write("tests/run.py", "import sys\nsys.exit(0 if '--shard' in sys.argv else 2)\n")
+        self.write("tests/helpers.py", "X = 1\n")
+        self.commit("runner")
+        self.fm("task", "new", "Shard", "--type", "FIX", "--tier", "S", "--ac", "s :: true", "--step", "s", "--focus")
+        self.write("tests/run.py", "import sys\nsys.exit(0)\n")
+        self.write("tests/shard_case.py", "ARGS = ['--shard']\n")
+        self.write("tests/test_run.py", "import subprocess, sys\nfrom shard_case import ARGS\nif False:\n    import run\n"
+                                        "sys.exit(subprocess.call([sys.executable, 'tests/run.py']))\n")
+        r = self.fm("task", "prove", "T-0001", "--run", "python3 tests/test_run.py", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("proved", r.stdout)  # run.py is test_run.py's subject: kept, though test_run.py imports it
+        self.assertIn("kept at its start version: tests/run.py", r.stdout)
+        self.assertNotIn("shard_case", r.stdout.split("kept at")[1])
+        # review: a changed helper a new test imports (and a new one) comes over, or red fails for the wrong reason:
+        # here red passes only when both did, so a dropped copy reads "proved"
+        self.write("tests/helpers.py", "X = 2\n")
+        self.write("tests/test_helper.py", "import sys\nfrom shard_case import ARGS\nfrom helpers import X\n"
+                                           "sys.exit(0 if X == 2 and ARGS else 1)\n")
+        r = self.fm("task", "prove", "T-0001", "--run", "python3 tests/test_helper.py", check=False)
+        self.assertIn("passes without the change too", r.stdout)
+        self.assertNotIn("helpers", r.stdout.split("kept at")[1])
+
+
+class ProofFirst(Base):
+    def test_a_fix_with_no_red_run_is_refused_before_its_checks_run(self):
+        # T-1906: T-1902's close ran its 2-minute criterion check, then refused for the missing proof
+        self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S", "--ac", "ok :: test -f flag", "--step", "s",
+                "--focus")
+        self.write("flag", "")
+        close = ["task", "finish", "T-0001", "--audit", "self", "--docs", "none: internal", "--lesson", "none: trivial"]
+        r = self.fm(*close, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("nothing ran", r.stdout + r.stderr)
+        self.assertIn("red→green", r.stdout + r.stderr)
+        self.assertEqual(c.find_brief(self.p, "T-0001").evidence(), [])
+        os.remove(os.path.join(self.repo, "flag"))  # a red run of the command the close runs is the proof
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "test -f flag", "--expect-fail")
+        self.write("flag", "")
+        self.fm(*close)
+        self.assertEqual(c.find_brief(self.p, "T-0001").status, "done")
+
 
 class WhyNotCaught(Base):
     def test_a_fix_says_why_it_was_not_caught_and_the_answer_becomes_a_followup(self):

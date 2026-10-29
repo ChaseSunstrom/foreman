@@ -1512,6 +1512,15 @@ test('idle, the pane says what Foreman learned this week (T-1045)', async ($, on
   await ui.unmount()
 })
 
+test('idle, the pane shows the look of the day once taste exists (T-1672)', async ($, on) => {
+  const look = 'Look of the day: Lido (look-lido): sunlit pool tiles · fm looks keep lido'
+  world(on, [{ ...VIEW, active: null, queue: [], inbox: [], inbox_total: 0, look }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /Look of the day: Lido/ })).toBeDefined()
+  await ui.unmount()
+})
+
 test('History lists the newest first, one short line each, as many as fit (T-1002)', async ($, on) => {
   const recent = Array.from({ length: 24 }, (_, i) => `  10:${String(i).padStart(2, '0')}  ✓ T-0007 step ${i + 1}: pytest -q → exit 0 · 3 passed`)
   world(on, [{ ...CALM, recent }])

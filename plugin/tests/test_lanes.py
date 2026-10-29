@@ -3,6 +3,7 @@
 task the other holds. fm lane new|list|rm manage them; rm never discards uncommitted work."""
 import json
 import os
+import shutil
 import subprocess
 import unittest
 
@@ -41,6 +42,17 @@ class Lanes(ForemanTestCase):
         p = self.fm("focus", lane, check=False)  # the lane holds it
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("lane", p.stderr)
+
+    def test_a_task_whose_lane_folder_is_gone_is_named_not_no_active_task(self):
+        tid = self.new("Lane work", self.lane)  # T-1841
+        shutil.rmtree(self.lane)
+        st = json.loads(self.fm("state", "--json").stdout)
+        self.assertIsNone(st["active"])
+        self.assertEqual([x["id"] for x in st["stranded"]], [tid])
+        for out in (self.fm("status").stdout, self.fm("next").stdout,
+                    self.hook("UserPromptSubmit", {"prompt": "carry on", "session_id": "s1"}).stdout):
+            self.assertIn(tid, out)
+            self.assertIn(f"fm lane rm {tid}", out)
 
     def test_the_edit_gate_in_a_lane_needs_that_lanes_task(self):
         self.new("Main work", self.repo)
@@ -223,6 +235,7 @@ class Lanes(ForemanTestCase):
                                 "--step", "s", *extra, "--json").stdout)["id"]
             agent = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"]
             self.assertIn(f'effort: "{effort}"', agent)
+            self.assertIn('model: "sonnet"', agent, "T-1796: every builder runs on Sonnet; Opus M lanes were 22% of usage")
 
     def test_a_clean_tasks_brief_says_to_record_the_behaviour_lock_first(self):
         # T-1712: CLEAN lanes failed the close gate: their brief never said to run the tests before the first edit

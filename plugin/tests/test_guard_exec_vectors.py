@@ -2,6 +2,7 @@
 bash -c; a payload the guard can't read is refused, a harmless look-alike passes."""
 import json
 import os
+import shlex
 from unittest import mock
 
 from test_guard import GuardCase, g
@@ -444,6 +445,28 @@ class ScriptCache(GuardCase):
         r = self.bash(f"bash {last}")
         self.assertBlocked(r, "system")
         self.assertIn("too deep", r.detail)
+
+    def test_a_script_nested_too_deep_to_read_is_scanned_for_literals(self):
+        # T-1931: a script's own bash -c or eval nesting past the cap was dropped as no chain, so its innermost part
+        # was never read. ($( … ) nesting is read anyway: each body is read from the top.)
+        for wrap in ("bash -c ", "eval "):
+            bad, ok = "rm -rf ~", "date"
+            for _ in range(5):
+                bad, ok = wrap + shlex.quote(bad), wrap + shlex.quote(ok)
+            deep = self.script('deep-bad.sh', bad + chr(10))
+            r = self.bash(f"bash {deep}", allow=("system", "rm-outside"))
+            self.assertBlocked(r, "system", wrap)
+            self.assertIn("nested too deep to read in full", r.detail)
+            self.assertIn("no grant lifts", g.message(r, self.ctx()))
+            # review: run from a wrapper script, the refusal reaches the caller
+            self.assertBlocked(self.bash(f"bash {self.script('wrap.sh', f'bash {deep}' + chr(10))}"), "system", wrap)
+            self.assertIsNone(self.bash(f"bash {self.script('deep-ok.sh', ok + chr(10))}"), wrap)
+
+    def test_a_finding_that_only_mentions_too_deep_is_not_the_nesting_cap(self):
+        # T-1936: any finding holding "too deep" was taken for the nesting cap and dropped
+        target = os.path.join(os.path.dirname(self.d), "too deep")
+        r = self.bash(f"bash {self.script('named.sh', f'rm -rf {shlex.quote(target)}' + chr(10))}")
+        self.assertBlocked(r, "rm-outside")
 
     def test_a_nested_script_that_appears_later_or_is_relinked_invalidates_the_cache(self):
         inner = os.path.join(self.d, "later.sh")

@@ -11,6 +11,9 @@ from fmtidy import dead_paths, stale_commands
 
 SKIP_DIRS = {"node_modules", "vendor", "dist", "build", "target", "venv", "__pycache__"}
 _FENCE = re.compile(r"```.*?```", re.S)
+# T-1817: paths in other trees: a stack card's are the detected project's (./gradlew), a changelog's files as they were
+_FRONT = re.compile(r"---\n(.*?)\n---\n", re.S)
+_HISTORY = re.compile(r"(?i)(changelog|changes|history|news)(\.\w+)?\.md")
 
 
 def _markdown(root):
@@ -76,6 +79,9 @@ def scan(root):
                 text = _FENCE.sub("", f.read())
         except OSError:
             continue
+        front = _FRONT.match(text)
+        if front and re.search(r"(?m)^detect:", front.group(1)) or _HISTORY.fullmatch(os.path.basename(md)):
+            continue
         rel, here = os.path.relpath(md, root), os.path.dirname(md)
         missing = [t for t in dead_paths(text, here) if _anchored(t, root, here, tops)
                    and not os.path.exists(os.path.join(root, t))]
@@ -109,8 +115,15 @@ def task_docs(root, docs_impact):
     other docs, and old drift in the ones it updated, is reported, not blocking, so an old problem never holds up
     unrelated work."""
     named = {os.path.normpath(n) for n in re.findall(r"[\w./-]+\.md\b", docs_impact or "")}
-    blockers = [f"docs impact names {n}, which doesn't exist" for n in sorted(named)
-                if not os.path.exists(os.path.join(root, n))]
+    gone = [n for n in sorted(named) if not os.path.exists(os.path.join(root, n))]
+    try:  # T-1995: name the one tracked doc it most likely meant ("rules/foreman.md" for plugin/rules/foreman.md)
+        tracked = subprocess.run(["git", "-C", root, "ls-files", "--", "*.md"], capture_output=True, text=True,
+                                 timeout=30).stdout.splitlines() if gone else []
+    except (OSError, subprocess.SubprocessError):
+        tracked = []
+    meant = {n: [t for t in tracked if t.endswith("/" + n)] for n in gone}
+    blockers = [f"docs impact names {n}, which doesn't exist" + (f" ({meant[n][0]}?)" if len(meant[n]) == 1 else
+                f" (one of {', '.join(meant[n][:3])}?)" if meant[n] else "") for n in gone]  # T-2000: up to three
     notes = []
     added = {}
     for f in scan(root):

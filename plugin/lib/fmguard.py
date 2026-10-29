@@ -11,7 +11,21 @@ import os
 import re
 import sys
 import shlex
-import subprocess
+
+
+class lazy:  # fmcore.lazy's twin: this module imports no other Foreman module
+    """T-2020: a module-level pattern compiled on first use."""
+
+    def __init__(self, pattern, flags=0):
+        self._args = (pattern, flags)
+
+    def __getattr__(self, name):
+        if name.startswith("__") or name == "_args":
+            raise AttributeError(name)
+        attr = getattr(re.compile(*self._args), name)
+        setattr(self, name, attr)
+        return attr
+
 
 CATEGORIES = ["self-authorize", "state-direct", "core", "remote", "plugin", "credentials", "system", "rm-outside",
               "git-destructive", "pipe-shell", "publish", "confirm", "confine", "brief"]
@@ -77,7 +91,8 @@ class Ctx:
         self.trusted = bool(trusted)  # T-0120: /fm-trust on: the guard file and Claude Code settings too
         # T-0234: (a builder's worktree, its project's main checkout) — every write outside the worktree is refused but
         # scratch, and the main checkout is never scratch (even under /tmp)
-        self.confine = confine
+        self.confine = confine  # T-1902: and each as it really is (macOS's temp folder is a link, as for scratch)
+        self.confine_real = tuple(x and os.path.realpath(x) for x in confine) if confine else None
         self.unbriefed = unbriefed  # T-0308: the project's root while no task is active — writes inside wait for one
 
     @property
@@ -99,13 +114,17 @@ class Block:
         return f"Block({self.category!r}, {self.detail!r})"
 
 
+_FILLER = {"a", "an", "the", "it", "its", "is", "of", "to", "this", "s", "t"}  # T-1897: words a rule name reads past
+
+
 def rule_id(category, detail):
     """T-0672: a stable name for the check behind a refusal: its category and the first words of its wording, with
-    paths, quoted text and numbers taken out (rm -rf ~ and rm -rf /x are one rule)."""
-    words = re.sub(r"\S*[/~$\\]\S*|\S*\d\S*|`[^`]*`|'[^']*'|\"[^\"]*\"", " ", detail.lower())
+    paths, quoted text, numbers and filler words taken out (rm -rf ~ and rm -rf /x are one rule)."""
+    # T-1897: a quote opens and closes outside a word, so command's and hasn't are not one quoted span
+    words = re.sub(r"\S*[/~$\\]\S*|\S*\d\S*|`[^`]*`|(?<!\w)'[^']*'(?!\w)|\"[^\"]*\"", " ", detail.lower())
     ext = os.path.splitext(detail.split()[0])[1].lstrip(".").lower() if "/" in detail else ""  # T-0894: kinds apart
     path = ("path-" + ext if ext.isalnum() else "path") if "/" in detail else "other"
-    return f"{category}:{'-'.join(re.findall(r'[a-z]+', words)[:4]) or path}"
+    return f"{category}:{'-'.join([w for w in re.findall(r'[a-z]+', words) if w not in _FILLER][:4]) or path}"
 
 
 def findings(tool_name, tool_input, ctx):
@@ -116,7 +135,6 @@ def findings(tool_name, tool_input, ctx):
         return [(cat, path) for cat in classify_write(path, ctx)]
     if tool_name == "Bash":
         _DISCARDS[:], _DISCARDS_OF[0] = [], tool_input["command"]  # T-1482: filled by this check only
-        _DCWD.clear()
         _COMMITS.clear()
         return check_bash(tool_input["command"], ctx)
     if tool_name == "Read":  # T-1224
@@ -129,7 +147,7 @@ def check(tool_name, tool_input, ctx, found=None):
     found = findings(tool_name, tool_input, ctx) if found is None else found
     for cat in CATEGORIES:
         for got, detail in found:
-            if got == cat and (got in NOT_AUTHORIZABLE or got not in ctx.allow):
+            if got == cat and (got in NOT_AUTHORIZABLE or got not in ctx.allow or unliftable(got, detail)):
                 if got == "core" and ("core" in ctx.standing and _standing_covers(detail, ctx)
                                       or ctx.trusted and _trust_covers(detail, ctx)):
                     continue
@@ -185,8 +203,15 @@ def _hint(detail, cat=""):
         return " Write the script in one command, run it in the next command (Edit/Write tool or cat > f <<'EOF')."
     if detail == "script nests too deep to read":  # T-1298
         return " Run the innermost script directly, or fold the chain into fewer scripts, so the guard reads each one."
+    if detail.endswith(_DEEP):  # T-1931
+        return (" Flatten the script's nested bash -c / eval layers (run the inner command itself), so the guard "
+                "reads all of it.")
     if detail.endswith("the script was too long to parse in time)"):
         return " Run a shorter script (split it, or run the part you need directly): a shorter one is read in full."
+    if detail.startswith("sed -f/--file"):  # T-1932
+        return " Pass the sed commands with -e (the guard reads them), or make the change with the Edit tool."
+    if detail.startswith("vim ") and "can't read" in detail:
+        return " Pass the commands with -c (the guard reads them), or make the change with the Edit tool."
     if detail.startswith("IFS") and "can't read" in detail:
         return " Leave IFS at its default on a line that splits words, or set it inside a script file the guard reads."
     if cat == "brief" and os.path.basename(detail).lower() == "changelog.md":  # T-1452
@@ -197,16 +222,44 @@ def _hint(detail, cat=""):
     if detail.endswith("; git merge)"):
         return (" On Foreman's own repo, land a reviewed builder branch with fm lane merge ID: it merges --no-ff and "
                 "checks each file it changes as that task's write.")
+    if cat == "core" and detail.endswith("(a tree write over it)"):  # T-1897: 21 in a week, none with a hint
+        return (" Run git checkout, reset, cherry-pick or rebase in a scratch worktree (git worktree add <scratch>/x, "
+                "then cd <scratch>/x && git …). Foreman's own tree changes through a task: fm edit or the Edit tool per "
+                "file (with a standing core yes: fm ask ID core --standing), fm task finish to commit.")
+    if detail.startswith("interpreter code driving Foreman's modules"):  # review of T-1897: 17 in a week, no hint
+        return " A draft that only names them goes through the Write tool, then fm edit < draft as the next command."
     if detail.endswith("(written from interpreter code)"):
         return (" If the script only writes other files, keep it to builtin open() on literal paths with no import but "
                 "re, json, textwrap or sys, so only those count, or use the Edit tool.") + research
     return research
 
 
+UNANALYSED = frozenset({  # T-1929: refusals for text the guard never read to its end; each names its way through
+    "command nesting too deep to analyse: split the command",
+    "nested commands in too many folders to analyse: split the command",
+    "the line may be in too many folders to analyse: split the command",
+    "eval of computed text it can't analyse: run the text itself",
+})
+
+
+def unanalysed(detail):
+    """T-1929: no grant lifts these: the rest of the line was never read, so a grant would let it run unchecked."""
+    return isinstance(detail, str) and detail in UNANALYSED
+
+
+_DEEP = "nested too deep to read in full)"  # T-1931: a script's own nesting past the cap, scanned for literals only
+
+
 def _unread(detail):
-    """A system refusal for a program the guard couldn't read (not for what a program does)."""
-    return "can't read" in detail or detail == "script nests too deep to read" or detail.endswith(
-        "the script was too long to parse in time)")
+    """A system refusal for a program the guard couldn't read (not for what a program does). T-1934: by the guard's
+    own wording, so a path holding "can't read" doesn't count"""
+    return "guard can't read" in detail or detail == "script nests too deep to read" or detail.endswith(
+        ("the script was too long to parse in time)", _DEEP)) or "KB the guard reads: run its" in detail
+
+
+def unliftable(cat, detail):
+    """T-1932: no grant lifts a refusal for text the guard never read (to its end): it would run unchecked."""
+    return unanalysed(detail) or cat == "system" and isinstance(detail, str) and _unread(detail)
 
 
 def message(block, ctx):
@@ -236,8 +289,8 @@ def _message(block, ctx):
         return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
                 f"(fm task …, fm capture, fm checkpoint{f'; fm audit prep {diff[1]} rewrites it' if diff else ''}); "
                 f"direct writes are never authorized.")
-    if cat == "system" and _unread(detail):  # T-1298: the way through is a program the guard can read (the hint),
-        return f"Foreman guard: blocked system: {detail}."  # not --allow system, which lifts every system check
+    if unliftable(cat, detail):  # T-1298, T-1929, T-1932: the way through is text the guard reads (the hint)
+        return f"Foreman guard: blocked {cat}: {detail}; no grant lifts this."
     if ctx.task_id:
         how = f"fm task set {ctx.task_id} --allow {cat} (records it in the brief), then retry"
     else:
@@ -300,7 +353,7 @@ def _variants(path):
     return out
 
 
-_SAFE_DEV = re.compile(r"^/dev/(null|zero|stdout|stderr|stdin|tty|random|urandom|fd/.*|shm/.*)$")
+_SAFE_DEV = lazy(r"^/dev/(null|zero|stdout|stderr|stdin|tty|random|urandom|fd/.*|shm/.*)$")
 _DOC_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".c", ".h", ".cc", ".cpp", ".hpp", ".java", ".kt", ".rb",
             ".php", ".cs", ".swift", ".scala", ".sh", ".md", ".rst", ".adoc", ".html", ".css", ".nix", ".lua", ".zig", ".ml"}
 _CRED_DIRS = [".ssh", ".aws", ".config/gcloud", ".kube", ".gnupg", ".config/gh"]
@@ -404,7 +457,7 @@ def _sent_files(name, args):
     return [f for f in files if f not in stdin], bool(stdin)
 
 
-_ENVIRON = re.compile(r"/proc/[^/\s]+/environ$")
+_ENVIRON = lazy(r"/proc/[^/\s]+/environ$")
 
 
 def _prints_environment(c):
@@ -425,7 +478,7 @@ def _prints_environment(c):
 _SYS_TREES = ("/etc", "/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/boot", "/System", "/Library", "/private/etc")
 _DEV_TREES = ("/dev", "/proc", "/sys")
 _SYS_TOPS = ("/", "/var", "/opt", "/srv", "/home", "/root", "/Users", "/private", "/snap", "/run", "/mnt", "/media")
-_MODE_OPT = re.compile(r"--\S+|-[RfvchHLP]+")
+_MODE_OPT = lazy(r"--\S+|-[RfvchHLP]+")
 
 
 def _opens_mode(mode, bits):
@@ -469,7 +522,7 @@ def classify_system_mode(path, ctx, recursive=True):
 
 # T-0340: where Codex, Gemini CLI and opencode load Foreman's hooks from (user-wide or a project's): editing one can
 # switch the guard off in that agent, as Claude Code's settings can in Claude
-_AGENT_WIRING = re.compile(r"/\.codex/(?:hooks\.json|config\.toml)$|/\.gemini/settings\.json$|/opencode\.jsonc?$|"
+_AGENT_WIRING = lazy(r"/\.codex/(?:hooks\.json|config\.toml)$|/\.gemini/settings\.json$|/opencode\.jsonc?$|"
                            r"/\.?opencode/plugins?(?:/|$)")
 
 
@@ -529,7 +582,7 @@ def _runs_later(p, ctx):
 
 
 # T-1107: a git config file can set core.hooksPath, a `!` alias or a filter driver, as `git config` can (_git_config_code)
-_GIT_CONFIG_FILE = re.compile(r"/\.git/(?:worktrees/[^/]+/)?config(?:\.worktree)?$", re.I)  # I: macOS folds case
+_GIT_CONFIG_FILE = lazy(r"/\.git/(?:worktrees/[^/]+/)?config(?:\.worktree)?$", re.I)  # I: macOS folds case
 
 
 def _protected_roots(ctx):
@@ -624,8 +677,10 @@ def classify_write(path, ctx, real=True):
         if _under(p, os.path.join(ctx.home, ".claude", "plugins")) or _new_context_file(p, ctx):
             cats.append("plugin")  # installed plugins, or a new skill/agent/command: what runs in every session
         lane, main = getattr(ctx, "confine", None) or (None, None)
-        if lane and not _under(p, lane) and not (p.startswith("/dev/") and _SAFE_DEV.match(p)) and (
-                _under(p, main or "/nonexistent") or not any(_under(p, s) for s in ctx.scratch)):
+        rlane, rmain = getattr(ctx, "confine_real", None) or (lane, main)
+        if lane and not _under(p, lane) and not _under(p, rlane) and not _under(os.path.realpath(p), rlane) \
+                and not (p.startswith("/dev/") and _SAFE_DEV.match(p)) \
+                and (any(_under(p, m) for m in (main, rmain) if m) or not any(_under(p, s) for s in ctx.scratch)):
             cats.append("confine")
         root = getattr(ctx, "unbriefed", None)  # strictly inside: a checkout-wide git write (merge, pull) is no edit
         if root and _strictly_under(p, root) and "state-direct" not in cats and not any(  # a scratch dir holding the
@@ -718,24 +773,24 @@ def _ends_body(text, delim, starter):
 # splits anything on it can't be read that way
 # T-1473: group 1 is the expansion; an odd run of backslashes before the $ makes it literal text (\$IFS), so it never
 # expands, in or out of double quotes; an even run (\\$IFS) is escaped backslashes and then a real expansion
-_IFS_PLAIN = re.compile(r"(?<!\\)(?:\\\\)*(\$IFS(?![A-Za-z0-9_])|\$\{IFS\})")
-_IFS_OP = re.compile(r"\$\{[#!]?IFS(?![A-Za-z0-9_])")
-_IFS_NAME = re.compile(r"(?<![A-Za-z0-9_])IFS(?![A-Za-z0-9_])")
-_IFS_IN_VALUE = re.compile(r"(?<![\w$])[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=[^\s;&|()<>]*(?:\$IFS(?![A-Za-z0-9_])|\$\{IFS\})")
-_IFS_FOR_READ = re.compile(r"(?<![\w$])IFS=(?:\$?'[^'\n]*'|\"[^\"\n]*\"|[^\s;&|'\"])*[ \t]+read\b")  # one line
-_READ_REDEFINED = re.compile(r"\b(?:alias|enable|function)\b|\bread\s*\(")
-_NAME_COMPUTED = re.compile(  # a variable name built by an expansion: declare $'\x49FS=/', export "$n=/", (( $n = 1 ))
+_IFS_PLAIN = lazy(r"(?<!\\)(?:\\\\)*(\$IFS(?![A-Za-z0-9_])|\$\{IFS\})")
+_IFS_OP = lazy(r"\$\{[#!]?IFS(?![A-Za-z0-9_])")
+_IFS_NAME = lazy(r"(?<![A-Za-z0-9_])IFS(?![A-Za-z0-9_])")
+_IFS_IN_VALUE = lazy(r"(?<![\w$])[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=[^\s;&|()<>]*(?:\$IFS(?![A-Za-z0-9_])|\$\{IFS\})")
+_IFS_FOR_READ = lazy(r"(?<![\w$])IFS=(?:\$?'[^'\n]*'|\"[^\"\n]*\"|[^\s;&|'\"])*[ \t]+read\b")  # one line
+_READ_REDEFINED = lazy(r"\b(?:alias|enable|function)\b|\bread\s*\(")
+_NAME_COMPUTED = lazy(  # a variable name built by an expansion: declare $'\x49FS=/', export "$n=/", (( $n = 1 ))
     r"(?:^|[;&|({`\n]|\$\(|\b(?:then|do|else|elif)\s)\s*(?:builtin\s+|command\s+)?(?:"  # at command position
     r"(?:declare|typeset|local|export|readonly|read|mapfile|readarray|getopts|let)\b[^;&|\n]*?\s[^\s=;&|]*[$`'\"\\]"
     r"|(?:declare|typeset|local)\b[^;&|\n]*\s-\w*n|printf\b[^;&|\n]*-v\s*\S*[$`'\"\\])"
     r"|\(\(\s*(?:[^()]*,\s*)?\$\{?\w+\}?\s*(?:[-+*/%^|&]|<<|>>)?=(?!=)|\$\{![^}]*=")  # (( $n = 1 )), not (( a == b ))
-_UNQUOTED = re.compile(r"\$[\w{@*#?!$(-]|`")
-_RUNS_HERE = re.compile(  # T-0590: code this shell runs that the line doesn't show: eval text, a sourced file
+_UNQUOTED = lazy(r"\$[\w{@*#?!$(-]|`")
+_RUNS_HERE = lazy(  # T-0590: code this shell runs that the line doesn't show: eval text, a sourced file
     # T-1473 review: after any keyword, !, a case pattern's ) or prefix assignments too (if eval, a=b . f)
     r"(?:^|[;&|({`\n)!]|\$\(|\b(?:then|do|else|elif|if|while|until|coproc|time(?:\s+-p)?)\s)\s*(?:\w+=\S*\s+)*"
     r"(?:builtin\s+|command\s+)?(?:eval|source|\.)(?=\s)")
 # an unquoted word that runs a string again in this shell (eval, source, trap, mapfile -C, alias), anywhere on the line
-_EVAL_WORD = re.compile(r"(?<![\w.$/-])(?:eval|source|trap|mapfile|readarray|alias)(?![\w.=/-])")
+_EVAL_WORD = lazy(r"(?<![\w.$/-])(?:eval|source|trap|mapfile|readarray|alias)(?![\w.=/-])")
 
 
 def _ifs_unreadable(cmd):
@@ -893,7 +948,7 @@ def _heredocs(cmd):
 
 
 # T-0589: what may read a heredoc or here-string as code (bash, sh -s, bash /dev/stdin, { bash; }, . /dev/stdin …)
-_RUNS_STDIN = re.compile(r"(ba|z|da|k|fi|c|tc|a|mk|ya|po|lk)?sh|busybox|source|\.|eval")
+_RUNS_STDIN = lazy(r"(ba|z|da|k|fi|c|tc|a|mk|ya|po|lk)?sh|busybox|source|\.|eval")
 _STDIN_PATHS = {"-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
 _INLINE = {"sh": "c", "py": "cm", "js": "ep", "pl": "eE", "rb": "e", "php": "rBRFE"}  # flags whose next word is the code
 # T-0716: options whose next word is a value, not the script (bash -o posix, python3 -W ignore, node -r ./hook.js)
@@ -902,12 +957,12 @@ _LONG_VALUE = {"--rcfile", "--init-file", "--require", "--import", "--loader", "
                "--conditions", "--title", "--env-file"}
 # inline code that runs what it reads on stdin (python3 -c 'exec(sys.stdin.read())', perl -e 'eval <STDIN>');
 # json.load, re.compile and ast.literal_eval read data
-_RUNS_IT = re.compile(r"(?<![.\w'\"])(?:eval|compile)\b|(?<!['\"])\b(?:exec|execSync|execFile\w*|execv\w*|execl\w*|"
+_RUNS_IT = lazy(r"(?<![.\w'\"])(?:eval|compile)\b|(?<!['\"])\b(?:exec|execSync|execFile\w*|execv\w*|execl\w*|"
                       r"Function|runpy|run(?:In\w*Context)|system|popen|Popen|subprocess|spawn\w*|instance_eval|"
                       r"class_eval)\b(?!['\"])")  # a quoted word ('system' in rows) names it, doesn't call it
-_STDIN_WORD = re.compile(r"stdin|STDIN|<>|readFileSync\(\s*0|/dev/fd/0|php://stdin")
-_CAT_SUBST = re.compile(r"\$\(\s*(?:cat\b[^)]*|<\s*/dev/stdin\s*)\)|`\s*cat\b[^`]*`")
-_READ_RUNS = re.compile(r"(?:^|[;&|({]|\bdo|\bthen|\belse)\s*(?:eval\b|\"?\$|\S*sh\s+-\w*c\s+\"?\$)")  # read l; $l
+_STDIN_WORD = lazy(r"stdin|STDIN|<>|readFileSync\(\s*0|/dev/fd/0|php://stdin")
+_CAT_SUBST = lazy(r"\$\(\s*(?:cat\b[^)]*|<\s*/dev/stdin\s*)\)|`\s*cat\b[^`]*`")
+_READ_RUNS = lazy(r"(?:^|[;&|({]|\bdo|\bthen|\belse)\s*(?:eval\b|\"?\$|\S*sh\s+-\w*c\s+\"?\$)")  # read l; $l
 
 
 def _reads_stdin_code(name, args, via_xargs=False, any_word=False):
@@ -1190,11 +1245,11 @@ class _Quoted(str):
 
 
 _OPS = ";&|()<>"
-_OP_WORD = re.compile(r"[;&|()<>]+")
+_OP_WORD = lazy(r"[;&|()<>]+")
 # what shlex mustn't see as itself, as plain word characters: _ESC and a digit is _ENCODED's character at that place,
 # _ESC _ESC is _ESC (so no character a line already holds can pass for one: self-review)
 _ESC, _ENCODED = "", _OPS + '"'
-_DECODE = re.compile(_ESC + "(.)", re.S)
+_DECODE = lazy(_ESC + "(.)", re.S)
 
 
 def _decode(token):
@@ -1397,6 +1452,7 @@ def _split(tokens):
 
 
 _KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "{", "!", "coproc"}  # words before a command
+_CDS = ("cd", "pushd", "popd")  # T-1923: the builtins that move the shell
 
 
 def _strip_wrappers(argv):
@@ -1477,47 +1533,47 @@ def _name(argv):
 
 # ---------------------------------------------------------------- bash checks
 
-_SHELLS = re.compile(r"^((ba|z|da|k|fi|c|tc)?sh|python[0-9.]*|perl|ruby|node|php|pwsh)$")
+_SHELLS = lazy(r"^((ba|z|da|k|fi|c|tc)?sh|python[0-9.]*|perl|ruby|node|php|pwsh)$")
 # T-1786: whose -c text is shell, read again as bash (pwsh's rm is close enough). python's -c code is python, read by
 # its own reader (_spawned_commands); perl, ruby and node -c is a syntax check, php -c a config file
-_C_SHELLS = re.compile(r"^((ba|z|da|k|fi|c|tc)?sh|pwsh)$")
+_C_SHELLS = lazy(r"^((ba|z|da|k|fi|c|tc)?sh|pwsh)$")
 _FETCHERS = {"curl", "wget", "fetch"}
-_FETCH_WORD = re.compile(r"(?<![\w./-])(?:\S*/)?(?:curl|wget|(?<!git )fetch)(?![\w.-])")  # T-0421: a fetcher anywhere; T-0937: not `git fetch`
-_PRINTED_SUBST = re.compile(r"(\$\(|`)\s*((?:(?:command\s+|builtin\s+)?(?:\S*/)?(?:echo|printf))\s[^`)]*?)\s*(?:\)|`)")
-_DOWNLOAD_SUBST = re.compile(r"(\$\(|`)\s*(curl|wget|fetch)\b")
+_FETCH_WORD = lazy(r"(?<![\w./-])(?:\S*/)?(?:curl|wget|(?<!git )fetch)(?![\w.-])")  # T-0421: a fetcher anywhere; T-0937: not `git fetch`
+_PRINTED_SUBST = lazy(r"(\$\(|`)\s*((?:(?:command\s+|builtin\s+)?(?:\S*/)?(?:echo|printf))\s[^`)]*?)\s*(?:\)|`)")
+_DOWNLOAD_SUBST = lazy(r"(\$\(|`)\s*(curl|wget|fetch)\b")
 
 
 _INTERP_NAMES = (r"(?:python|perl|ruby|php|pypy|ipython|lua)[0-9.]*|py|jruby|truffleruby|irb|node|nodejs|deno|bun"
                  r"|luajit|Rscript|julia|tclsh")  # T-1585 review: pypy, ipython, lua, R, julia, tcl
-_INTERP = re.compile(rf"(?:^|[\s;&|(/`])({_INTERP_NAMES})(?=\s|$|[;&|)`])")
-_TEXT_TICKS = re.compile(r"(?:python[0-9.]*|py|node|nodejs|deno|bun)$")  # a backtick is only text in these
-_WRITE_API = re.compile(
+_INTERP = lazy(rf"(?:^|[\s;&|(/`])({_INTERP_NAMES})(?=\s|$|[;&|)`])")
+_TEXT_TICKS = lazy(r"(?:python[0-9.]*|py|node|nodejs|deno|bun)$")  # a backtick is only text in these
+_WRITE_API = lazy(
     r"""open\s*\([^)]*['"][rwxab+]*[wxa+][rwxab+]*['"]|\.write_(?:text|bytes)\s*\(|(?:write|append)FileSync|"""
     r"createWriteStream|\bos\.(?:replace|rename|remove|unlink)\b|\bshutil\.\w+\(|\.(?:unlink|rename|replace|touch)\(|"
     r"File\.write|file_put_contents|open\s*\(\s*(?:my\s+)?\$?\w+\s*,\s*['\"]?[>+]")
 # T-0344: .replace( stays a write here even with two string arguments: os.replace('a', 'b'), an aliased os or (os) look
 # the same as str.replace to a text match, and only a proved script (_open_targets) can tell them apart
-_QUOTED = re.compile(r"""(['"])((?:[~/.]|[\w.-]+/)[^'"\s]*)\1""")
+_QUOTED = lazy(r"""(['"])((?:[~/.]|[\w.-]+/)[^'"\s]*)\1""")
 _GUARDED_BY_PATH = ("core", "state-direct", "credentials", "plugin", "brief")
 # A slash command that changes plugins, MCP servers or config, sent to claude as a prompt (argv, stdin or a heredoc).
 _SLASH_BODY = (r"/(?:plugins?\s+(?:install|i|enable|disable|uninstall|remove|update|"
                r"marketplace\s+(?:add|remove|rm|update))|"
                r"mcp\s+(?:add|remove|enable|disable)|config\s+(?:set|add|remove))\b")
-_SLASH_CHANGE = re.compile(r"(?:^|[\s'\"])" + _SLASH_BODY)
+_SLASH_CHANGE = lazy(r"(?:^|[\s'\"])" + _SLASH_BODY)
 # Interpreter code that runs claude's plugin/mcp/config subcommands (argv list, split argv array or command string) or
 # sends such a slash command. Both an exec API and the command shape must appear, so code that merely mentions them
 # isn't blocked.
-_CLAUDE_IN_CODE = re.compile(r"""['"]claude['"][^;\n]{0,40}?['"](?:plugins?|mcp|config)['"]|"""
+_CLAUDE_IN_CODE = lazy(r"""['"]claude['"][^;\n]{0,40}?['"](?:plugins?|mcp|config)['"]|"""
                              r"""['"`]claude\s+(?:plugins?|mcp|config)\b|['"]\s*""" + _SLASH_BODY)
-_EXEC_API = re.compile(r"\bsubprocess\b|\bos\.(?:system|popen|exec\w*|spawn\w*)\b|\bPopen\b|child_process|"
+_EXEC_API = lazy(r"\bsubprocess\b|\bos\.(?:system|popen|exec\w*|spawn\w*)\b|\bPopen\b|child_process|"
                        r"\b(?:exec|execSync|spawn|spawnSync|system)\s*\(")
 
 
 # Any Foreman module (fm*.py in plugin/lib), so new modules are covered without editing this list. Calls into the entry
 # point modules count as mutating; fmcore/fmguard/fmdocs/fmdoctor are mostly read-only, so their mutators are by name.
-_FM_INTERNALS = re.compile(r"\b(?:import|from)\s+fm[a-z]+\b|(?:__import__|import_module)\s*\(\s*['\"]fm[a-z]+")
+_FM_INTERNALS = lazy(r"\b(?:import|from)\s+fm[a-z]+\b|(?:__import__|import_module)\s*\(\s*['\"]fm[a-z]+")
 _FM_ENTRY = r"(?:fmcli|fmhooks|fmsetup|fmtidy|fmideas|fmserve|fmplugins)"
-_FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_event|regen_views|init_project|"
+_FM_MUTATORS = lazy(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_event|regen_views|init_project|"
                           r"add_rule|drop_rule|add_veto|drop_veto|"  # T-0971 review: the user's rules and vetoes
                           r"checkpoint|mutate|cmd_\w+|task_\w+|_resolve_approvals|_activate_fallback|"
                           r"restore_default_state)\s*\(|"
@@ -1529,7 +1585,7 @@ _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|
                           r"log_event|regen_views|init_project|checkpoint|mutate|restore_default_state)\b")
 
 
-_FM_RUN_ARG = re.compile(r"""--run(?:=|\s+)(?:"(?:\\.|[^"\\])*"|'[^']*')""")
+_FM_RUN_ARG = lazy(r"""--run(?:=|\s+)(?:"(?:\\.|[^"\\])*"|'[^']*')""")
 
 
 def _unescape_ticks(body):
@@ -1537,7 +1593,7 @@ def _unescape_ticks(body):
     return re.sub(r"\\([`$\\])", r"\1", body)
 
 
-def _subst_bodies(text, tails=True):
+def _subst_bodies(text, tails=True, clean=False):
     """Every command-substitution body a shell would run in text (T-0158): `…` and $( … ), nested ones too, bare or
     inside double quotes, never inside single quotes or after a backslash; $(( … )) is arithmetic. Each $( opens a fresh
     quoting context, as in bash. With $'…' quoting (where \\' is a quote) the scan can't follow: every span between
@@ -1562,11 +1618,12 @@ def _subst_bodies(text, tails=True):
             tick = i + 1
         elif ch == "$" and text[i + 1:i + 2] == "(":
             ends.append(text[i + 2:])  # $(( … )) too: bash falls back to a subshell when )) doesn't close it
+            tail = len(ends) - 1  # T-1924: which tail a clean close may drop
             last = text.rfind(")")  # T-0669: and, when it ends inside a quote, up to the last ): an outer `)"`
             if last > i + 2 and _quote_at(text[i + 2:]) is not None:  # left it open (whole code stays whole)
                 ends.append(text[i + 2:last])
             if text[i + 2:i + 3] != "(":
-                ctx.append([None, i + 2, 0])
+                ctx.append([None, i + 2, 0, tail])
             i += 2
             continue
         elif ch == '"':
@@ -1580,8 +1637,11 @@ def _subst_bodies(text, tails=True):
                 top[2] -= 1
             else:
                 bodies.append(text[top[1]:i])
+                if clean and not re.search(r"[#`\\]|<<|\(\(|\bcase\b", bodies[-1]):  # T-1924: nothing in it can end
+                    ends[top[3]] = None  # it early, so its tail is its body, already read, then the rest, read by the
                 ctx.pop()
         i += 1
+    ends = [e for e in ends if e is not None]  # caller (a tail per substitution from every folder doubled the walk)
     return bodies + ([_unescape_ticks(text[tick:])] if tick is not None else []) + (ends if tails else [])
 
 
@@ -1677,14 +1737,18 @@ def _python_units(cmd):
         i += 1
         starts = _heredoc_starts(seen, line)
         seen.append(line)
-        # T-0315: plain name=value; first (lowercase: a shell variable, never PATH, HOME or LD_* that pick which python
-        # runs or what it loads) and the script's own arguments (sys.argv: they pick what it reads, never what it may
-        # write, which _open_targets proves from literals) don't change what the code does
-        run = re.match(r"\s*(?:[a-z_][a-z0-9_]*=[\w./~@+:=,-]*\s*;\s*)*(?:cd\s+[\w./~@+:=,-]+\s*&&\s*)*"
-                       r"(python[0-9.]*\s+-(?:\s+(?:'[^'\n]*'|\"[^\"`\n]*\"|[\w./~@+:=,$-]+))*\s*<<.*)$", line)
+        # T-0315: plain name=value; or && first (T-1887: any case, but never one python or bash reads, nor one already
+        # exported, whose new value python would inherit) and the script's own arguments (sys.argv: they pick what it
+        # reads, never what it may write, which _open_targets proves from literals) don't change what the code does
+        run = re.match(r"\s*(?P<pre>(?:[A-Za-z_][A-Za-z0-9_]*=[\w./~@+:=,-]*\s*(?:;|&&)\s*)*)"
+                       r"(?:cd\s+[\w./~@+:=,-]+\s*&&\s*)*"
+                       r"(?P<py>python[0-9.]*\s+-(?:\s+(?:'[^'\n]*'|\"[^\"`\n]*\"|[\w./~@+:=,$-]+))*\s*<<.*)$", line)
+        if run and (re.search(r"\bset\s+-\w*a|allexport", cmd) or any(  # set -a exports them all
+                _PRE_DENY.match(n) or n in os.environ for n in re.findall(r"([A-Za-z_]\w*)=", run["pre"]))):
+            run = None
         # review (T-0286): bash must read the body the guard parses — no continued line (`\`), no second `<<` form
         # the heredoc scan doesn't know (`<<\E`: the last redirect wins)
-        fed = len(starts) == 1 and starts[0][0] and run and not re.search(r"[|`;&\\]|\$\(", run.group(1)) and \
+        fed = len(starts) == 1 and starts[0][0] and run and not re.search(r"[|`;&\\]|\$\(", run["py"]) and \
             len(re.findall(r"(?<!<)<<(?!<)", line)) == 1
         if fed:
             lead = list(rest)
@@ -1701,13 +1765,18 @@ def _python_units(cmd):
     return units, rest, starters, lead
 
 
+# T-1887: names python, the loader, bash or Foreman read: never a plain prefix of a heredoc the guard parses
+_PRE_DENY = lazy(r"(?:PATH|HOME|IFS|CDPATH|ENV|BASH_ENV|TMPDIR|GCONV_PATH|LOCPATH|NLSPATH|GLIBC_TUNABLES|LD_\w*"
+                       r"|MALLOC_\w*|PYTHON\w*|CLAUDE\w*|FOREMAN\w*|FM_\w*|XDG_\w*|CODEX_\w*)$")
+
+
 # module → (functions it may call, values it may name: flags, exception classes, argv); nothing that holds a module
 _PY_PURE = {"re": (set("sub subn search match fullmatch findall finditer split compile escape".split()),
                    set("error I IGNORECASE M MULTILINE S DOTALL X VERBOSE A ASCII".split())),
             "json": ({"loads", "dumps", "load", "dump"}, {"JSONDecodeError"}),
             "textwrap": ({"dedent", "indent", "fill", "wrap", "shorten"}, set()),
             "sys": ({"exit"}, {"argv", "stdin"})}  # T-0344: reading stdin writes nothing
-_FRAME_ATTR = re.compile(r"(?:gi|cr|ag|f|tb)_")
+_FRAME_ATTR = lazy(r"(?:gi|cr|ag|f|tb)_")
 _PY_PATH_VARS = ("PYTHONPATH", "PYTHONHOME", "PYTHONUSERBASE", "PYTHONPLATLIBDIR", "PYTHONSTARTUP")  # what imports load
 # review: the only builtins a proved script may name (not type: type(f.buffer.raw) is FileIO, which opens files; not
 # locals: locals()['__builtins__'].open, or a name rebound behind the binding count)
@@ -1849,10 +1918,10 @@ def _proved_writes(cmd, ctx):
     return list(dict.fromkeys(_resolve(_expand(t, ctx), b) for t in targets for b in bases))
 
 
-_SOURCE_WRITE = re.compile(r"(?:cat\s+>>?\s*|tee\s+(?:-a\s+)?)([\w./~@+-]+)\s*(?:>\s*/dev/null\s*)?<<-?\s*"
+_SOURCE_WRITE = lazy(r"(?:cat\s+>>?\s*|tee\s+(?:-a\s+)?)([\w./~@+-]+)\s*(?:>\s*/dev/null\s*)?<<-?\s*"
                            r"(?:'\w+'|\"\w+\")\s*$")  # a quoted marker: the body is data, never expanded
 # T-0981: Foreman's code and tests, in the checkout or in a builder worktree's copy of it
-_SOURCE_DIRS = re.compile(r"(?:\.claude/worktrees/[\w.-]+/)?plugin/(?:" + "|".join(_CORE_DIRS) + r"|tests)/")
+_SOURCE_DIRS = lazy(r"(?:\.claude/worktrees/[\w.-]+/)?plugin/(?:" + "|".join(_CORE_DIRS) + r"|tests)/")
 
 
 def _writes_unrun_source(line, cmd, ctx):
@@ -1870,6 +1939,39 @@ def _writes_unrun_source(line, cmd, ctx):
     return bool(_SOURCE_DIRS.match(rel)) and len(re.findall(rf"\b{stem}\b", _drop_data_heredocs(cmd))) == 1
 
 
+_DRAFT_EXT = (".txt", ".patch", ".diff", ".md", ".json")
+# review: only flags that take no value (-W/-X would take the script's place, leaving the draft to run)
+_DRAFT_USE = lazy(r"\s*fm\s+edit\b.*|\s*python[0-9.]*\s+(?:-[BEIOPRSbdqsuv]+\s+)*([\w./~@+-]+\.py)\s.*")
+
+
+def _writes_unrun_draft(line, cmd, ctx):
+    """T-1917: a data heredoc writing a scratch draft (.txt/.patch…) is text, though it names Foreman's modules, when
+    the command names the draft again only as fm edit's input or a script's argument, never as code: no wider than the
+    two-command form (write the file, then run). Fails closed on anything that could spell its name another way (globs,
+    expansion, quotes, escapes), a cd, a second heredoc, or a script that isn't already a plain file on disk."""
+    m = _SOURCE_WRITE.fullmatch(line.strip())
+    if not m:
+        return False
+    path = os.path.realpath(_resolve(_expand(m.group(1), ctx), ctx.cwd))
+    if not path.endswith(_DRAFT_EXT) or not any(_strictly_under(path, os.path.realpath(s)) for s in ctx.scratch):
+        return False
+    # review: $? and 2>&1 only as whole words (d$?.txt is d0.txt to bash); any ( or ) fails closed (extglob's @(…))
+    rest = re.sub(r"(?<!\S)(?:\$\?|2>&1)(?!\S)", "", _drop_data_heredocs(cmd).replace(line, "", 1))
+    if "<<" in rest or re.search(r"[*?\[\]{}$`\\'\"()]|\balias\b|\bfunction\b|\bshopt\b|(?:^|[\s;&|])(?:cd|pushd)\b",
+                                 rest):
+        return False
+    name = re.compile(rf"(?<![\w.-]){re.escape(os.path.basename(path))}(?![\w.-])")
+    for seg in re.split(r"[;&|()\n]", rest):
+        if not name.search(seg):
+            continue
+        use = _DRAFT_USE.fullmatch(seg[:name.search(seg).start()] + " ")
+        script = use and use.group(1) and os.path.join(ctx.cwd, os.path.expanduser(use.group(1)))
+        if not use or script and (os.path.islink(script) or not os.path.isfile(script)
+                                  or os.path.realpath(script) == path or name.search(use.group(1))):
+            return False
+    return True
+
+
 def _run_dir(starter, cwd):
     """The folder `python -` runs in (its sys.path[0]) after the starter's `cd` chain, or None when it can't be known."""
     d = cwd
@@ -1881,10 +1983,10 @@ def _run_dir(starter, cwd):
 
 # the cd chain is bounded (unbounded, each separator rescans the chain: quadratic); a longer chain is matched from a
 # later link, and the cd before it makes the run folder unknown in _drives_fm
-_PY_C = re.compile(r"(?:^|(?<=[\n;&|(]))[ \t]*((?:cd\s+[\w./~@+:=,-]+\s*&&\s*){0,8}(?:/[\w./-]*/)?python[0-9.]*\s+"
+_PY_C = lazy(r"(?:^|(?<=[\n;&|(]))[ \t]*((?:cd\s+[\w./~@+:=,-]+\s*&&\s*){0,8}(?:/[\w./-]*/)?python[0-9.]*\s+"
                    r"(?:-(?:[bBdEIOPqsSuvV]+|[WX]\s*[\w.:=-]+)\s+)*-[bBdEIOPqsSuvV]*c\s+)"  # not -i: stdin runs after
                    r"""('[^']*'|"(?:[^"\\$`]|\\[\s\S])*")(?=\s|$|[;&|)])""")
-_CD = re.compile(r"(?:^|[\s;&|(])(?:cd|pushd|popd)\b")
+_CD = lazy(r"(?:^|[\s;&|(])(?:cd|pushd|popd)\b")
 
 
 def _python_c_units(shell):
@@ -2075,7 +2177,8 @@ def _interpreter_writes(cmd, ctx):
     user's yes, rather than never-authorizable state-direct, because the text match can't tell code from test data."""
     if not _INTERP.search(_mask_fm(_drop_data_heredocs(cmd), ctx)):
         return []
-    if _drives_fm(_drop_data_heredocs(cmd, only=lambda line: _writes_unrun_source(line, cmd, ctx)), ctx.cwd):
+    if _drives_fm(_drop_data_heredocs(cmd, only=lambda line: _writes_unrun_source(line, cmd, ctx)
+                                      or _writes_unrun_draft(line, cmd, ctx)), ctx.cwd):
         # T-0740: 9 repeats in a day; T-0934: `cd DIR; python3 - <<EOF` is refused only because of the `;`. T-1171: 12
         # of 31 refusals in four days wrote a test with cat <<EOF and ran the tests in the same command
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI; to edit a Foreman source file "
@@ -2104,14 +2207,14 @@ def _interpreter_writes(cmd, ctx):
 
 
 # T-1460: the home folder's credential names, as code joins them (os.path.join(HOME, ".ssh", "id_rsa"))
-_CRED_PART = re.compile(r"(?:^|/)(?:\.ssh|\.aws|\.gnupg|\.kube|\.config/gcloud|\.config/gh|\.netrc|\.npmrc|\.pypirc"
+_CRED_PART = lazy(r"(?:^|/)(?:\.ssh|\.aws|\.gnupg|\.kube|\.config/gcloud|\.config/gh|\.netrc|\.npmrc|\.pypirc"
                         r"|\.git-credentials|\.docker|\.credentials\.json|id_(?:rsa|dsa|ecdsa|ed25519)(?!\.pub))(?:/|$)")
-_HOME_IN_CODE = re.compile(r"~|\bHOME\b|expanduser|homedir|Path\.home|Dir\.home|getpwuid")
+_HOME_IN_CODE = lazy(r"~|\bHOME\b|expanduser|homedir|Path\.home|Dir\.home|getpwuid")
 # credential files by name, wherever they sit in the code (quotes can be paired wrongly on purpose)
-_CRED_FILE_NAMES = re.compile(r"id_(?:rsa|dsa|ecdsa|ed25519)(?![\w.]*\.pub)(?!\w)|\.netrc\b|\.git-credentials\b"
+_CRED_FILE_NAMES = lazy(r"id_(?:rsa|dsa|ecdsa|ed25519)(?![\w.]*\.pub)(?!\w)|\.netrc\b|\.git-credentials\b"
                               r"|\.credentials\.json\b|\.aws/credentials\b|\.docker/config\.json\b|\.pypirc\b|\.npmrc\b")
-_PATHY = re.compile(r"^[^\s()'\"`;,{}]+$")  # a literal that is one path, not a program
-_CC_NAME = re.compile(r"CLAUDE(?:CODE|_CODE_ENTRYPOINT)(?!\w)")  # no left edge: env -uCLAUDECODE
+_PATHY = lazy(r"^[^\s()'\"`;,{}]+$")  # a literal that is one path, not a program
+_CC_NAME = lazy(r"CLAUDE(?:CODE|_CODE_ENTRYPOINT)(?!\w)")  # no left edge: env -uCLAUDECODE
 
 
 
@@ -2162,7 +2265,7 @@ def _interpreter_reads(cmd, ctx):
     return list(dict.fromkeys(found))
 
 
-_CC_SET = re.compile(r"^(?:CLAUDECODE|CLAUDE_CODE_ENTRYPOINT)\+?=")
+_CC_SET = lazy(r"^(?:CLAUDECODE|CLAUDE_CODE_ENTRYPOINT)\+?=")
 _CC_VARS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
 
 
@@ -2210,7 +2313,7 @@ def _hides_claude(words):
     return False
 
 
-_CONFINE_SET = re.compile(r"^FOREMAN_CONFINE\+?=")
+_CONFINE_SET = lazy(r"^FOREMAN_CONFINE\+?=")
 
 
 def _unconfines(words):
@@ -2446,6 +2549,24 @@ def read_only(cmd):
     return bool(parts)
 
 
+def _keeps_folders(c, argv):
+    """T-1924 review: True when a command can't remove, rename or relink a folder, so a later cd into one that exists
+    still lands (`mv ../d ../e; cd ../d` stays where it was): cd, mkdir without a mode, a _READS program or reading git,
+    substituting only reads, nothing fed or process-substituted."""
+    text = " ".join(list(c.argv) + list(c.redirs))
+    if c.feeds or c.procsub or re.search(r"`|[<>]\(", text) or not all(
+            read_only(b) for b in _subst_bodies(text, tails=False)):
+        return False
+    if not argv or argv[0] in ("cd", "pushd", "popd"):
+        return True
+    if argv[0] == "mkdir":
+        return not any(a.startswith(("-m", "--mode")) for a in argv[1:])
+    if argv[0] == "git":
+        return argv[1:2] != [] and argv[1] in _GIT_READS and not _bad_flag(argv[2:], _GIT_BAD)
+    bad = _READS.get(argv[0])
+    return bad is not None and not _bad_flag(argv[1:], bad)
+
+
 def lone_fm_ask(cmd):
     """The arguments of `fm ask …` when it is the whole command (nothing chained, piped, redirected or substituted):
     a permission prompt then approves exactly that request."""
@@ -2460,7 +2581,7 @@ def lone_fm_ask(cmd):
 
 # T-0151: variables are resolved only in a straight-line command (simple commands joined by ; or newlines): a pipe, &&,
 # ||, &, a subshell, a group or a control keyword can make an assignment conditional or local, so then none are
-_BRANCHY = re.compile(r"[|&(){}]|\b(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|select|function|coproc)\b")
+_BRANCHY = lazy(r"[|&(){}]|\b(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|select|function|coproc)\b")
 # T-0161: only a builtin can change a variable of this shell (an alias or a function needs one first), so resolving stops
 # at any builtin outside the inert ones (cd and pushd set only names that are never resolved; [[ -eq assigns)
 _BUILTINS = set(". : [ [[ alias bg bind break builtin caller cd command compgen complete compopt continue declare dirs "
@@ -2468,7 +2589,7 @@ _BUILTINS = set(". : [ [[ alias bg bind break builtin caller cd command compgen 
                 "mapfile popd printf pushd pwd read readarray readonly return set shift shopt source suspend test times "
                 "trap true type typeset ulimit umask unalias unset wait".split())
 _INERT = set(": [ cd dirs echo exit false hash help jobs kill popd pushd pwd shift test times true type ulimit umask".split())
-_ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
+_ASSIGN = lazy(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
 
 
 def _setter(name, args):
@@ -2480,9 +2601,9 @@ def _setter(name, args):
         return bool(args) and (word is None or "$" in first or "`" in first or word.startswith("-v")
                                or bool(m) and "-v".startswith(first[:m.start()]))
     return name in _BUILTINS and name not in _INERT
-_ASSIGNISH = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?\+?=")  # NAME=, NAME+= and NAME[i]=
+_ASSIGNISH = lazy(r"^([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?\+?=")  # NAME=, NAME+= and NAME[i]=
 # bash sets these itself, ignores an assignment to them or makes it fail (readonly)
-_SHELL_SET = re.compile(r"^(?:_|PWD|OLDPWD|DIRSTACK|BASH\w*|RANDOM|SRANDOM|SECONDS|LINENO|EPOCH\w+|HISTCMD|PPID|E?UID|"
+_SHELL_SET = lazy(r"^(?:_|PWD|OLDPWD|DIRSTACK|BASH\w*|RANDOM|SRANDOM|SECONDS|LINENO|EPOCH\w+|HISTCMD|PPID|E?UID|"
                         r"GROUPS|FUNCNAME|PIPESTATUS|OPT\w+|REPLY|MAPFILE|COPROC\w*|SHELLOPTS|SHLVL|HOST\w+|MACHTYPE|"
                         r"OSTYPE|COMP_\w+|READLINE_\w+|COLUMNS|LINES)$")
 
@@ -2500,37 +2621,74 @@ def _with_vars(tok, env):
     return re.sub(r"\$(?:\{(\w+)\}|(\w+))", lambda m: env.get(m.group(1) or m.group(2), m.group(0)), tok)
 
 
-_WORD = re.compile(r"[^\s'\"`;|&<>()=]+")
-_PART = re.compile(r"\$(?:\{(\w+)\}|(\w+))|\$\{[^}]*\}?|\$\([^)]*\)?|`[^`]*`?|\$")  # what a shell fills in at run time
+_WORD = lazy(r"[^\s'\"`;|&<>()=]+")
+_PART = lazy(r"\$(?:\{(\w+)\}|(\w+))|\$\{[^}]*\}?|\$\([^)]*\)?|`[^`]*`?|\$")  # what a shell fills in at run time
+
+
+def _only_unset(tok, bare):
+    """T-0374: every part a shell fills in is a name the line neither sets nor inherits: bash makes each empty."""
+    return bare is not None and not any(not (n := m.group(1) or m.group(2)) or n in bare or _SHELL_SET.match(n)
+                                        for m in _PART.finditer(tok))
+
+
+def _line_words(shell, known):
+    """T-0190: the words a line names, through the variables known here (a variable's name is no guess, its value is)."""
+    text = re.sub(r"(?<![\w$])[A-Za-z_]\w*\+?=", " ", shell)
+    return [w for w in dict.fromkeys(_with_vars(w, known) for w in _WORD.findall(text)) if not _unresolvable(w)]
+
+
+_COMP_BODY = r"(?:(?!\b(?:for|while|until|select|if|case|done|fi|esac)\b)[^{}])*?"
+_COMP_END = r"(?<![\\<>])[;\n&]\s*"  # an unescaped separator, not a redirect's (>&)
+# T-1920: a for/while/until/select/if/case/{ } compound with none inside it, where a command starts: the start, an
+# unescaped ; & | ( or newline (not >& >| <(), or `{ `, then any do/then/else/elif/time words; it runs in this shell
+_COMPOUND = lazy(
+    rf"(^|(?<![\\<>])[;&|(\n]|(?<![\\\w$])\{{(?=\s))((?:\s*\b(?:do|then|else|elif|time)(?=\s))*\s*)"  # whole words:
+    rf"(?:\b(?:for|while|until|select)(?=\s){_COMP_BODY}{_COMP_END}done|\bif(?=\s){_COMP_BODY}{_COMP_END}fi"  # for-x
+    rf"|\bcase(?=\s){_COMP_BODY}{_COMP_END}esac|\{{\s{_COMP_BODY}{_COMP_END}\}})(?=$|[\s;&|)])")  # is a command
+
+
+def _compound_moves(m, shell):
+    """T-1920 review: whether a compound _top matched may move the shell, read as written (a quoted "cd", c\\d, a computed
+    command word or a substitution may): _moves_text on it, its own { } and its ${name}s aside."""
+    t = shell[m.start() + len(m[1]) + len(m[2]):m.end()]
+    return _moves_text(re.sub(r"\$\{\w+\}", "$V", t[1:-1] if t[:1] == "{" else t))
 
 
 def _top(shell):
     """(straight, and_chain, mixed) at the command's top level, command substitutions blanked: straight when every command
     there runs in this shell, in order (no branch, subshell, pipe, background or !: `! cd BAD && x` runs x); and_chain
     when only && joins them, so a failed cd stops the rest."""
-    s, prev = re.sub(r"`[^`]*`", "S", shell), None
+    blank = lambda m: "S" * len(m[0])  # noqa: E731 — same length throughout: T-1920 reads shell beside the masked text
+    s, prev = re.sub(r"`[^`]*`", blank, shell), None
     while s != prev:
-        s, prev = re.sub(r"\$\([^()]*\)", "S", s), s
-    s = _mask_quotes(s)  # T-0384: a quoted ( | or ; is text
+        s, prev = re.sub(r"\$\([^()]*\)", blank, s), s
+    q = _mask_quotes(s)  # T-0384: a quoted ( | or ; is text
+    if q != s or not re.search(r"['\"#]", s):  # T-1920: not when quote masking failed closed ($'…', an open quote)
+        q, prev = re.sub(r"\$\{\w+\}", lambda m: "V" * len(m[0]), q), None
+        while q != prev:  # innermost first; one that may move the shell stays branchy (a loop repeats its cd)
+            q, prev = _COMPOUND.sub(lambda m: m[0] if _compound_moves(m, shell) else
+                                    m[1] + m[2] + "C".ljust(len(m[0]) - len(m[1]) - len(m[2])), q), q
+    s = q
     straight = "!" not in s and _straight_line(s)
     # T-0339: a ; list with && in it: each &&-segment is a chain of its own, the segments run in order; T-0355: its
-    # elements may be pipelines (a pipe runs in subshells, so only a cd outside one moves the shell)
-    mixed = not straight and "!" not in s and _straight_line(re.sub(r"&&|(?<!\|)\|&?(?!\|)", ";", s))
+    # elements may be pipelines (a pipe runs in subshells, so only a cd outside one moves the shell); T-1891: or ||
+    # (a new segment too; the caller never takes a cd after || as certain: `true || cd X && y` runs y here)
+    mixed = not straight and "!" not in s and _straight_line(re.sub(r"&&|\|\||(?<!\|)\|&?(?!\|)", ";", s))
     return straight, straight and "&&" in s, mixed
 
 
 _DATA_TOOLS = {"curl", "wget", "head", "tail", "echo", "printf", "jq", "cat", "wc", "grep", "cut", "tr", "sleep", "true",
                "nvidia-smi"}  # T-0397: a GPU query (its -f/--filename, which logs to a file, voids it)
 # flags that write no file; T-0397: -k -i -I -v (stdout or stderr only) and a timeout fused to them (-sSm5)
-_CURL_SAFE = re.compile(r"-[sSLfkiIv]*m\d+(?:\.\d+)?|-[sSLfkiIv]+|--(?:silent|show-error|location|fail|compressed|insecure|"
+_CURL_SAFE = lazy(r"-[sSLfkiIv]*m\d+(?:\.\d+)?|-[sSLfkiIv]+|--(?:silent|show-error|location|fail|compressed|insecure|"
                         r"include|head|verbose|(?:max-time|connect-timeout)=\d+(?:\.\d+)?)")
-_CURL_TIMES = re.compile(r"-[sSLfkiIv]*m|--max-time|--connect-timeout")  # T-0397: take a number next
+_CURL_TIMES = lazy(r"-[sSLfkiIv]*m|--max-time|--connect-timeout")  # T-0397: take a number next
 _WGET_SAFE = {"-q", "--quiet", "-nv"}
-_RUNS = re.compile(r"\$\(|`|\$\{[^}]*=")  # T-0414: a word that runs a command or sets a name as it expands
-_REACHES_PYTHON = re.compile(r"PYTHON\w*|LD_\w*|PATH|HOME|ENV|BASH_ENV|IFS")  # read by python, its loader or the shell
+_RUNS = lazy(r"\$\(|`|\$\{[^}]*=")  # T-0414: a word that runs a command or sets a name as it expands
+_REACHES_PYTHON = lazy(r"PYTHON\w*|LD_\w*|PATH|HOME|ENV|BASH_ENV|IFS")  # read by python, its loader or the shell
 
 
-_BRACES = re.compile(r"\{[^{}]*(?:,|\.\.)[^{}]*\}")  # a brace expansion bash would turn into several words
+_BRACES = lazy(r"\{[^{}]*(?:,|\.\.)[^{}]*\}")  # a brace expansion bash would turn into several words
 
 
 def _writes_nothing(x):
@@ -2695,8 +2853,8 @@ def _moved(cwds, lost, tgt, sure, cdpath, ctx):
     return list(dict.fromkeys(new if sure else cwds + new)), list(dict.fromkeys(tails if sure else lost + tails))
 
 
-_BRACE = re.compile(r"\{([^{}]*)\}")
-_SEQ = re.compile(r"(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])(?:\.\.-?\d+)?")
+_BRACE = lazy(r"\{([^{}]*)\}")
+_SEQ = lazy(r"(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])(?:\.\.-?\d+)?")
 EXPANSIONS_MAX = 1024  # ponytail: a brace product past this is checked only this far
 
 
@@ -2802,10 +2960,10 @@ def _mask_quotes(text):
 
 
 # `done` ends the loop only where a command starts (`echo done` is an argument)
-_LOOP = re.compile(r"(?<![\w$-])for\s+([A-Za-z_]\w*)\s+in\s+([^;\n]*?)\s*[;\n]\s*do\b(.*?[;\n&])\s*done(?![^\s;&|()<>])",
+_LOOP = lazy(r"(?<![\w$-])for\s+([A-Za-z_]\w*)\s+in\s+([^;\n]*?)\s*[;\n]\s*do\b(.*?[;\n&])\s*done(?![^\s;&|()<>])",
                    re.S)
-_LITERAL_WORD = re.compile(r"[\w./@:+,=%-]+")
-_LOOP_SETTERS = re.compile(r"(?<![\w-])(?:read|readarray|mapfile|declare|typeset|local|export|printf|eval|unset|let|"
+_LITERAL_WORD = lazy(r"[\w./@:+,=%-]+")
+_LOOP_SETTERS = lazy(r"(?<![\w-])(?:read|readarray|mapfile|declare|typeset|local|export|printf|eval|unset|let|"
                            r"source|for|while|until|select|case|function|do|done|break|continue)(?![\w-])|"
                            r"(?:^|[\s;&|(])\.\s|<<|\$\{!")  # break/continue: V may keep an earlier word
 
@@ -2876,10 +3034,10 @@ def _expand_literal_loops(cmd):
     return "".join(out) + cmd[last:] if out else cmd
 
 
-_MOVERS = re.compile(r"(?<![\w./-])(?:cd|pushd|popd|eval|source|trap|mapfile|readarray)(?![\w./-])|(?:^|[\s;&|(])\.\s")
-_CD_TO = re.compile(r"(?<![\w./-])(?:cd|pushd)\s+(?:-[LPe@]+\s+)*([^\s;&|<>()'\"`$]+)")
+_MOVERS = lazy(r"(?<![\w./-])(?:cd|pushd|popd|eval|source|trap|mapfile|readarray)(?![\w./-])|(?:^|[\s;&|(])\.\s")
+_CD_TO = lazy(r"(?<![\w./-])(?:cd|pushd)\s+(?:-[LPe@]+\s+)*([^\s;&|<>()'\"`$]+)")
 # a command word bash computes: a $ expansion or a quote right where a command starts
-_COMPUTED = re.compile(r"(?:^|[;&|(\n]|\b(?:then|do|else|elif|time|!))\s*[\"']?\$")
+_COMPUTED = lazy(r"(?:^|[;&|(\n]|\b(?:then|do|else|elif|time|!))\s*[\"']?\$")
 
 
 def _cd_targets(code):
@@ -3003,8 +3161,7 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="",
             return found
     elif not guess:  # T-1224: reads and modes judge resolved paths only
         return found
-    elif not any(not (m.group(1) or m.group(2)) or bare is None or (m.group(1) or m.group(2)) in bare
-                 or _SHELL_SET.match(m.group(1) or m.group(2)) for m in _PART.finditer(t)):
+    elif _only_unset(t, bare):
         # only names it neither sets nor inherits: bash expands them to nothing (T-0374: echo x > $NOPE/<guard file>
         # wrote the guard file), so the target is the rest of the word
         e = _expand(_PART.sub("", t), ctx)
@@ -3012,8 +3169,7 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="",
             found += [(cat, f"{target}{note} (an unset name is empty: {path})") for cat in classify(path, ctx)
                       if cat in _GUARDED_BY_PATH]
         return found
-    text = re.sub(r"(?<![\w$])[A-Za-z_]\w*\+?=", " ", shell)  # T-0190: a variable's name is no guess, its value is
-    raw = [w for w in dict.fromkeys(_with_vars(w, known) for w in _WORD.findall(text)) if not _unresolvable(w)]
+    raw = _line_words(shell, known)
     if _unresolvable(t):
         # T-0183: words as written, one per unknown part, the first two paired (a word in every part guessed
         # <abs>/<abs>), the rest a neutral name; the whole guess is resolved after. T-0374: and every part empty,
@@ -3027,6 +3183,8 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="",
                 guesses += [_resolve(_expand(guess, ctx), base) for base in here]
     else:  # relative, somewhere a cd went that the guard couldn't follow: only a folder that exists takes a cd
         words = [p for w in raw for p in dict.fromkeys(_resolve(_expand(w, ctx), b) for b in here)]
+        if not any(map(os.path.isabs, lost)):  # T-1930: w/x is a folder only below a folder w (each part must be
+            words = [w for w in words if os.path.isdir(w)]  # one), so test w once, not once per lost x: 1M stats to 4K
         guesses = [os.path.join(w, x, _expand(t, ctx)) for w in words for x in lost if os.path.isdir(os.path.join(w, x))]
     for path in dict.fromkeys(guesses):
         if _possible(path):
@@ -3096,20 +3254,31 @@ def _shell_c(args):
     return out
 
 
-# T-0892: NAME=$(mktemp -d) (no -p/--tmpdir/template) is a fresh folder in TMPDIR or /tmp: read as that literal path,
-# so `rm -r $T` later is a known target, and `$T/../..` still resolves to what it would remove
-_MKTEMP_D = re.compile(r"""(?<![\w$])(\w+=)(["']?)(?:\$\(\s*mktemp\s+-d\s*\)|`\s*mktemp\s+-d\s*`)\2""")
+# T-0892: NAME=$(mktemp -d) is a fresh folder in TMPDIR or /tmp: read as that literal path, so `rm -r $T` later is a
+# known target, and `$T/../..` still resolves to what it would remove. T-1888: so is `-d -p DIR` in DIR, and
+# `-d DIR/nameXXX` (mktemp prints the path as given); DIR a literal without ~ (HOME inside $( ) even in quotes)
+_MKTEMP_D = lazy(r"""(?<![\w$])(\w+=)(["']?)"""
+                       r"""(?:\$\(\s*mktemp\s+([^()`'"$\n]*?)\s*\)|`\s*mktemp\s+([^()`'"$\n]*?)\s*`)\2""")
+_MKTEMP_ARGS = lazy(r"-d|-d\s+-p\s+(?P<p>[\w./@+:,-]+)|-p\s+(?P<q>[\w./@+:,-]+)\s+-d"
+                          r"|-d\s+(?P<t>[\w./@+:,][\w./@+:,-]*?)X{3,}")
 # T-0906: a command that names TMPDIR or PATH at all (TMPDIR=, TMPDIR[0]=, ${TMPDIR:=…}), gives a shell an rc file
 # (BASH_ENV, ENV, --rcfile, --init-file), defines its own mktemp or repoints it (hash -p, enable, an alias) makes the
 # folder somewhere else (after eval or source the guard already treats T as unknown: see the KnownVars cases)
-_MKTEMP_MOVED = re.compile(r"\b(?:TMPDIR|PATH|BASH_ENV|ENV)\b|--(?:rcfile|init-file)\b|\bmktemp\s*\(\s*\)|"
+_MKTEMP_MOVED = lazy(r"\b(?:TMPDIR|PATH|BASH_ENV|ENV)\b|--(?:rcfile|init-file)\b|\bmktemp\s*\(\s*\)|"
                            r"\bfunction\s+mktemp\b|\balias\b[^;&|\n]*\bmktemp\b|\b(?:hash|enable)\s")
 
 
 def _mktemp_literal(cmd):
     if _MKTEMP_MOVED.search(cmd):
         return cmd
-    return _MKTEMP_D.sub(lambda m: m.group(1) + os.path.join(os.environ.get("TMPDIR") or "/tmp", "tmp.mktemp"), cmd)
+    def lit(m):
+        a = _MKTEMP_ARGS.fullmatch(m[3] if m[3] is not None else m[4])
+        if not a:
+            return m[0]
+        if a["t"] is not None:
+            return m[1] + a["t"] + "mktemp"
+        return m[1] + os.path.join(a["p"] or a["q"] or os.environ.get("TMPDIR") or "/tmp", "tmp.mktemp")
+    return _MKTEMP_D.sub(lit, cmd)
 
 
 def _track_vars(words, env, home=None):
@@ -3150,13 +3319,27 @@ def _track_vars(words, env, home=None):
     return None if _setter(name, words[words.index(word) + 1:] if word in words else []) else env
 
 
-def check_bash(cmd, ctx, depth=0, tails=True):
+def check_bash(cmd, ctx, depth=0, tails=True, at=False):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
-        return [("rm-outside", "command nesting too deep to analyse")]
+        return [("rm-outside", "command nesting too deep to analyse: split the command")]
     # T-1727 review: the folders the caller may be in when it runs this text (eval, sh -c, sh <<<), so a discarding
     # git command read here is saved where it runs, not in the hook's cwd
+    if not depth:
+        _DCWD.clear()  # T-1921 review: fmmcp calls this directly, in a process that lives on
     starts = _DCWD.get(depth - 1, [ctx.cwd]) if depth else [ctx.cwd]
+    if at is False and starts != [ctx.cwd]:  # T-1921: and judged there, once per folder (None: one it can't name,
+        out, seen = [], _DCWD.setdefault("seen", {})  # judged from here with every relative path unknown); a text a
+        for s in starts:  # loop repeats is judged once per folder, so only new pairs count toward the cap
+            if (cmd, s, depth, tails) not in seen:
+                if len(seen) >= 256:
+                    return [("rm-outside", "nested commands in too many folders to analyse: split the command")]
+                here = object.__new__(Ctx)
+                here.__dict__ = {**ctx.__dict__, "cwd": s or ctx.cwd}
+                seen[cmd, s, depth, tails] = check_bash(cmd, here, depth, tails, s)
+            out += [f for f in seen[cmd, s, depth, tails] if f not in out]
+        return out
+    starts = starts if at is False else [at]
     _DCWD[depth] = starts
     # the whole command only: a nested shell's text alone would miss what its caller set (BASH_ENV=… bash -c '…')
     cmd = _mktemp_literal(_join_continued(cmd)) if depth == 0 else _join_continued(cmd)
@@ -3169,16 +3352,30 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     # T-0345: what python code starts; a script only written with cat isn't run by writing it, unless the same
     # command also runs an interpreter (cat > t.py <<EOF … EOF; python3 t.py)
     dry = _drop_data_heredocs(cmd)
-    for spawned in (x for src in _python_sources(cmd if _INTERP.search(dry) else dry) for x in _spawned_commands(src)):
-        found += check_bash(spawned, ctx, depth + 1)
     shell = _strip_heredocs(cmd)
     # T-0158: every `…` and $( … ) a shell runs (unquoted heredoc bodies included), read as a command of its own
     # a tail (the text after a substitution opens) is read once as it stands: its own tails are suffixes of it already
     live = [x for t in _live_heredocs(cmd) for x in ([t, _unescape_ticks(t)] if "\\`" in t else [t])]  # T-0669: in
-    cmds = _split(_tokens(_lines(shell)))
-    _DCWD[depth] = list(dict.fromkeys(starts + [  # text read before the walk below (`…`, sh <<<): any folder a cd names
-        _cd_from(x.argv[1], s, ctx) for x in cmds if x.argv[:1] == ["cd"] and x.argv[1:2] for s in starts]))
-    for body in _subst_bodies(shell, tails) + [b for t in live for b in _subst_bodies(t, tails)]:  # `…` a \` is a `
+    cmds, top = _split(_tokens(_lines(shell))), _top(shell)
+    # T-1921: an && chain headed by a plain `cd /abs &&` runs nothing where it starts (a failed cd stops it all)
+    head = top[1] and re.match(r"\s*cd[ \t]+(/[^\s;&|<>()'\"`$*?\[\]{}\\!#~]*)[ \t]*&&", shell)
+    rest, prev = shell[head.end():] if head else "", None
+    while rest != prev:  # and nothing after it may move it (substitutions run in subshells: only a word they make may)
+        rest, prev = re.sub(r"`[^`]*`|\$\([^()]*\)", "$S", rest), rest
+    word = lambda a: next((w for w in a if not re.match(r"\w+=", w)), "")  # its review: the masking above isn't quote
+    head = head if head and not _moves_text(re.sub(r"\$\{\w+\}", "$V", rest)) and not any(  # aware, nor sees c$(…) or
+        _MOVERS.search(" ".join(x.argv)) or re.search(r"[^\w./+:@%,-]", word(x.argv)) for x in cmds[1:]) else None  # A=1 $C
+    _DCWD[depth] = [os.path.normpath(head[1])] if head else list(dict.fromkeys(starts + [  # text read before the walk
+        _cd_from(x.argv[1], s, ctx) for x in cmds if x.argv[:1] == ["cd"] and x.argv[1:2] for s in starts]))  # below
+    for spawned in (x for src in _python_sources(cmd if _INTERP.search(dry) else dry) for x in _spawned_commands(src)):
+        found += check_bash(spawned, ctx, depth + 1)  # T-0345, and its review: from those folders too (`…`, sh <<<,
+    # python -c): any folder a cd names
+    plain, prev = re.sub(r"(?<![\w./-])cd[ \t]+[\w./+:@%,][\w./+:@%,-]*(?=[ \t]*(?:[;&|)\n]|$))", "", shell), None
+    while plain != prev:  # T-1924: the walk names every folder a literal cd may reach; any other mover (cd $(…), $C,
+        plain, prev = re.sub(r"`[^`]*`|\$\([^()]*\)", "$S", plain), plain  # eval) keeps each tail, read from the
+    clean = not _moves_text(plain) and not any(  # folders before it, as the coarse catch it was (review: c$(…), A=1 $C)
+        re.search(r"[^\w./+:@%,-]", word(x.argv)) for x in cmds)
+    for body in _subst_bodies(shell, tails, clean) + [b for t in live for b in _subst_bodies(t, tails, clean)]:  # `…`
         found += check_bash(body, ctx, depth + 1, tails=False)
     lits = _line_literals(shell)  # T-0587: literal values a computed name, eval or sh -c text may use
     for script in _stdin_scripts(cmd, cmds):  # T-0589: bash <<'EOF' … EOF and sh <<< '…' run that text
@@ -3191,7 +3388,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     outside, bare = _outside(shell, cmds, ctx, pre)  # T-0175: what it inherits and can't change
     # VAR → literal (T-0151); rm trusts no inherited value but HOME, a write target any (its review)
     env = {k: v for k, v in outside.items() if k == "HOME"} if raw is not None and len(raw) == len(cmds) else None
-    (straight, and_chain, mixed), cwds, lost, made = _top(shell), [ctx.cwd], [], set()  # where it may be (T-0175)
+    (straight, and_chain, mixed), cwds, lost, made = top, [ctx.cwd], [""] if at is None else [], set()  # (T-0175)
     base = None  # T-0339: (cwds, lost, made) where the current &&-segment of a mixed list began, and its folders
     # T-1727 review: the same walk for recording discards only (verdicts use cwds): from the caller's folders, None for
     # one a cd makes unknown; rbase is base's twin
@@ -3201,6 +3398,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     outside = {**outside, **fixed}                                                  # branches, known in them
     scan = _mask_fm(shell, ctx)  # T-0183: guess from the command's own words, not fm's text arguments
     wrote, fed = [], []  # T-0275: files earlier commands here write (all; and those a heredoc fills)
+    gone = False  # T-1924 review: an earlier command here may remove, rename or relink a folder a later cd names
     for idx, c in enumerate(cmds):
         nxt_op = cmds[idx + 1].op if idx + 1 < len(cmds) else ""
         piped = c.op in ("|", "|&") or nxt_op in ("|", "|&")  # T-0355: in a pipeline, a cd moves its subshell only
@@ -3224,23 +3422,51 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             chain = []
         name = os.path.basename(argv[0]) if argv else ""
         args = argv[1:]
+        cdn, cda, maybe, unsure = (name, args, [], False) if name in _CDS else ("", args, [], False)
+        if argv and not cdn and _unresolvable(argv[0]):  # T-1923: a computed command word: a cd if it names one
+            w0 = _with_vars(argv[0], known)  # (split as bash splits it), or any command
+            w0 = ([w0] if _unresolvable(w0) else w0.split() or [""]) + args
+            if w0[0] in _CDS:
+                cdn, cda = w0[0], w0[1:]
+            elif _unresolvable(w0[0]):  # a cd to its first word, or alone (C="cd /x"; $C, or the $ of an unquoted
+                maybe = [_with_vars(a, known) for a in args[:1]] or ["$OLDPWD"]  # $(…) whose words split off) anywhere
+                if args[:1] and args[0] in _CDS and not _PART.sub("", w0[0]):
+                    cdn, cda, unsure = args[0], args[1:], True  # $X cd D: X empty, eval or builtin moves it to D
+        gone = gone or not _keeps_folders(c, argv)
         if name == "mkdir" and "-p" in args:  # a folder this command makes takes a cd as surely as one that exists,
             made.update(d for d in (os.path.normpath(_expand(_with_vars(a, known), ctx)) for a in args)  # when its
                         if os.path.isabs(d) and "$" not in d and _makeable(d))  # nearest existing folder lets it be made
-        if name in ("cd", "pushd", "popd"):
-            dirs = [a for a in args if a not in ("-P", "-L", "-e", "-@", "--")]
-            if name == "cd" or "-n" not in dirs:  # pushd/popd -n change only the stack
-                unknown = name == "popd" or dirs[:1] == ["-"] or (
-                    name == "pushd" and (not dirs or re.fullmatch(r"[+-]\d+", dirs[0])))  # rotations, a swap, cd -
+        if cdn:
+            dirs = [a for a in cda if a not in ("-P", "-L", "-e", "-@", "--")]
+            if cdn == "cd" or "-n" not in dirs:  # pushd/popd -n change only the stack
+                unknown = cdn == "popd" or dirs[:1] == ["-"] or (
+                    cdn == "pushd" and (not dirs or re.fullmatch(r"[+-]\d+", dirs[0])))  # rotations, a swap, cd -
                 tgt = "$OLDPWD" if unknown else _with_vars(dirs[0], known) if dirs else ctx.home
                 if not _unresolvable(tgt):
                     cwd = _resolve(_expand(tgt, ctx), cwd)
                 d = "" if _unresolvable(tgt) else _expand(tgt, ctx)
-                can_fail = len(dirs) > 1 or not (os.path.isabs(d) and (os.path.normpath(d) in made or (  # review: cd a b
-                    os.path.isdir(d) and os.access(d, os.X_OK))))  # fails with too many arguments
-                certain = not piped and (and_chain or in_chain or ((straight or mixed) and not can_fail))
+                lands = [os.path.normpath(d)] if os.path.isabs(d) else [] if not d or lost or cdpath else [
+                    _resolve(d, b) for b in cwds]  # T-1924: a relative one too, from folders it can name (each
+                child = unsure or any(a not in _KEYWORDS and a not in ("time", "command", "builtin", "noglob") and not re.match(
+                    r"[A-Za-z_]\w*\+?=", a) for a in c.argv[:len(c.argv) - len(argv)])  # review: nice cd X moves a child
+                can_fail = gone or child or len(dirs) > 1 or not lands or not all(x in made or (  # review: cd a b fails
+                    os.path.isdir(x) and os.access(x, os.X_OK)) for x in lands)  # (too many arguments); `cd ..` doubled
+                certain = not child and not piped and c.op != "||" and (  # T-1891: a cd after || may be skipped
+                    and_chain or in_chain or ((straight or mixed) and not can_fail))
+                before = cwds
                 cwds, lost = _moved(cwds, lost, tgt, certain, cdpath, ctx)
                 new = [_cd_from(tgt, r, ctx) for r in rd]
+                if dirs and not unknown and _unresolvable(tgt) and _only_unset(tgt, bare):  # T-1923: bash makes it
+                    rest = _PART.sub("", tgt)  # empty: cd "$X" stays put, cd $X goes home (or to the word after it)
+                    ws = [w for w in raw[idx] if _unquote(w) == dirs[0]] if raw is not None and len(raw) == len(cmds) else []
+                    to = [rest] if rest else ([] if ws and all(w == dirs[0] for w in ws) else ["."]) + (
+                        [] if ws and all(w != dirs[0] for w in ws) else [dirs[1] if len(dirs) > 1 else ctx.home])
+                    cwds = list(dict.fromkeys(cwds + [p for x in to for p in _moved(before, [], x, True, False, ctx)[0]]))
+                    new += [_cd_from(x, r, ctx) for x in to for r in rd]
+                if cdpath and d and not os.path.isabs(d) and not re.match(r"\.\.?(/|$)", d):  # T-1923: CDPATH may send
+                    new += [None] + [p for w in _line_words(scan, known) for s in w.split(":") if s for p in [_resolve(  # it
+                        d, _resolve(_expand(s, ctx), ctx.cwd))] if os.path.isdir(p)]  # below a folder the line names
+                    # (each entry of a CDPATH=a:b list): nested text runs there
                 rd = list(dict.fromkeys(new if certain else rd + new))
                 if base and c.op not in ("&&", "|", "|&") and not piped and not can_fail:
                     base = (list(cwds), list(lost), base[2])  # T-0384: a head cd that can't fail: the chain stops after
@@ -3249,7 +3475,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                     base = (base[0] + cwds, base[1] + lost, base[2])
                     rbase = rbase + rd
         moves, places = (_moves_shell(name, args, cwds, ctx, shell) if name in ("eval", "source", ".", "trap",
-                                                                               "mapfile", "readarray") else (0, []))
+                                                                               "mapfile", "readarray") else
+                         (1, maybe) if maybe else (0, []))
         if moves:  # T-0384: it may cd here: anywhere, or any folder it names after a cd
             for d in ["$OLDPWD"] + places:
                 cwds, lost = _moved(cwds, lost, d, False, cdpath, ctx)
@@ -3258,6 +3485,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 base = (base[0] + cwds, base[1] + lost, base[2])
                 rbase = rbase + rd
         here_dirs = _DCWD[depth] = rd  # T-1727 review: where this command may run (and nested text start)
+        if len(cwds) + len(lost) + len(rd) > 1024:  # T-1924: cds that may each fail double these (a line that
+            # isn't straight: if, ( ), | and ||): refuse in milliseconds, not minutes
+            return found + [("rm-outside", "the line may be in too many folders to analyse: split the command")]
         for inner in (x for t in _shell_c(args) for x in _readings(t, {**lits, **known})) if _C_SHELLS.match(name) else ():
             found += check_bash(inner, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(inner):
@@ -3290,7 +3520,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                           cmdname == "printf" and not re.search(r"[%\\]", w[0])):
                     found += check_bash(" ".join(w), ctx, depth + 1)
                 else:  # flags, escapes, a format, a wrapped or pathed echo: the text isn't what is written
-                    found.append(("rm-outside", "eval of computed text"))
+                    found.append(("rm-outside", "eval of computed text it can't analyse: run the text itself"))
             if _DOWNLOAD_SUBST.search(joined):
                 found.append(("pipe-shell", "eval of a downloaded script"))
         computed = bool(re.search(r"[$`]", name))  # `| $GREP pat` is common: any word after it counts as its script
@@ -3461,8 +3691,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         for nm in names:
             if nm == "rm" != name and not _rm_opts_only(args):  # GNU rm stops at an option it doesn't know
                 continue                                      # (-fwrapv, -Wno-unused…): nothing is deleted
-            found += _check_rm(nm, [_with_vars(a, rm_vars) for a in args] if rm_vars else args, via_xargs, chain, cwd, ctx,
-                               xodd)
+            for w in dict.fromkeys([cwd] + cwds):  # T-1923: in every folder the shell may be (cd $X: home, too)
+                found += [f for f in _check_rm(nm, [_with_vars(a, rm_vars) for a in args] if rm_vars else args,
+                                               via_xargs, chain, w, ctx, xodd) if f not in found]
             found += _check_git(nm, args, cwd, ctx)
             if nm == "git":  # T-1482: what the hook saves, in each folder it may run in, through known names
                 wargs = [_with_vars(a, known) for a in args]
@@ -3512,7 +3743,7 @@ _GIT_WORKTREE_WRITES = {"pull", "checkout", "switch", "reset", "merge", "rebase"
                         "am", "cherry-pick", "revert", "clean", "rm", "mv"}
 
 
-_GIT_EXEC_KEYS = re.compile(r"(?i)^(core\.(pager|editor|fsmonitor|sshcommand|askpass|gitproxy|alternaterefscommand)|"
+_GIT_EXEC_KEYS = lazy(r"(?i)^(core\.(pager|editor|fsmonitor|sshcommand|askpass|gitproxy|alternaterefscommand)|"
                             r"pager\..+|sequence\.editor|diff\.external|diff\..+\.(command|textconv)|merge\..+\.driver|"
                             r"filter\..+\.(clean|smudge|process)|credential\..*helper|gpg\.program|gpg\..+\.program|"
                             r"interactive\.difffilter|uploadpack\.packobjectshook|remote\..+\.(uploadpack|receivepack)|"
@@ -3524,7 +3755,7 @@ _GIT_EXEC_ENV = {"GIT_PAGER", "PAGER", "GIT_EXTERNAL_DIFF", "GIT_SSH_COMMAND", "
 
 
 _GIT_CONFIG_SOURCES = {"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG", "GIT_TEMPLATE_DIR", "GIT_EXEC_PATH"}
-_GIT_FILE_ENV = re.compile(r"^(GIT_TRACE\w*|GIT_INDEX_FILE)$")  # a path value: git writes that file
+_GIT_FILE_ENV = lazy(r"^(GIT_TRACE\w*|GIT_INDEX_FILE)$")  # a path value: git writes that file
 # T-0270: options whose value is a command git runs (a short flag's value may also be attached: -O'cmd')
 _GIT_EXEC_FLAGS = {"rebase": ("-x", "--exec"), "difftool": ("-x", "--extcmd"), "grep": ("-O", "--open-files-in-pager"),
                    "fetch": ("--upload-pack",), "pull": ("--upload-pack",), "clone": ("--upload-pack", "-u"),
@@ -3579,7 +3810,7 @@ def _git_pos(args, valued):
     return out
 
 
-_ASSIGN_ANY = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\+?=(.*)$", re.S)  # NAME=v and NAME+=v
+_ASSIGN_ANY = lazy(r"^([A-Za-z_][A-Za-z0-9_]*)\+?=(.*)$", re.S)  # NAME=v and NAME+=v
 
 
 def _assignments(argv):
@@ -3773,7 +4004,7 @@ def _exec_options(name, args):
 
 
 _SCRIPT_LIMIT = 1 << 18
-_SH_NAME = re.compile(r"^(ba|z|da|k|fi|c|tc)?sh$")
+_SH_NAME = lazy(r"^(ba|z|da|k|fi|c|tc)?sh$")
 
 
 def _script_text(path, cwd, shebang=False, data=None):
@@ -3852,13 +4083,15 @@ def _check_script(text, ctx, depth, acc):
             got = check_bash("\n".join(state[-40:] + [chunk]), ctx, depth + 1)
         finally:
             _NO_GUESS.pop()
+        deep = False
         for f in got:
-            if f == ("system", "script nests too deep to read"):
-                pass  # from a script further down the chain: it keeps its way up
-            elif "too deep" in f[1]:
+            if f == ("system", "script nests too deep to read") or f[0] == "system" and f[1].endswith(_DEEP):
+                pass  # from a script further down the chain: it keeps its way up (T-1931 review)
+            elif f[1] == "command nesting too deep to analyse: split the command":  # T-1936: exact, not any "too deep"
                 # a chain of scripts this deep hides its last one: refuse, never read as clean. Only from the third
                 # script in a chain: a script of its own deep $( … ) nesting is no chain (5 of 330 real scripts)
                 if len(_IN_SCRIPT) < 3:
+                    deep = True
                     continue
                 f = ("system", "script nests too deep to read")
             elif not ((f[0] in ("rm-outside", "self-authorize", "state-direct") or f[0] == "core" and "/state" in f[1]
@@ -3867,13 +4100,18 @@ def _check_script(text, ctx, depth, acc):
                 continue
             if f not in acc:  # the carried lines are read again with each piece
                 acc.append(f)
+        # T-1931: the part past the cap was never read: scan it for literals, as a script too long to parse.
+        # ponytail: literals only (rm -rf ~, a pipe into a shell, a state write): a core write that deep goes unseen
+        if deep:
+            acc += [f for f in dict.fromkeys(("system", f"{line[:80]} ({why}; {_DEEP}")
+                                             for _n, line, why in _literal_scan(chunk, ctx)) if f not in acc]
         state += _state_lines(chunk)
     return acc
 
 
-_STATE_LINE = re.compile(r"^\s*(?:(?:cd|pushd|popd)\b.*|(?:(?:export|declare|local|readonly)\s+)?[A-Za-z_]\w*=[^\s`$(]*"
+_STATE_LINE = lazy(r"^\s*(?:(?:cd|pushd|popd)\b.*|(?:(?:export|declare|local|readonly)\s+)?[A-Za-z_]\w*=[^\s`$(]*"
                          r"|.*(?:[^<>&\d]|^)>>?\s*(?!/dev/null)[^\s&>|]\S*.*|.*\b(?:tee|cp|mv|install|ln)\b.*)$")
-_HEREDOC_OP = re.compile(r"<<-?\s*['\"]?\w+['\"]?")
+_HEREDOC_OP = lazy(r"<<-?\s*['\"]?\w+['\"]?")
 
 
 def _state_lines(chunk):
@@ -3972,7 +4210,7 @@ def _cache_store(path, key, entry):
         pass  # no cache dir: the next run reads the file again
 
 
-_SCAN = [(re.compile(rx, re.M | re.I if ci else re.M), why) for rx, why, ci in (
+_SCAN = [(lazy(rx, re.M | re.I if ci else re.M), why) for rx, why, ci in (
     # every quantifier is bounded: a line of NODE_OPTIONS= repeated would otherwise cost its length per occurrence
     (r"\b(?:LD_PRELOAD|LD_AUDIT|BASH_ENV|PROMPT_COMMAND|RSYNC_RSH|PERL5OPT)=[^\s\n]", "a code-loading variable", False),
     (r"\b(?:NODE_OPTIONS|RUBYOPT)=[^\n]{0,200}?(?:--require|--import|--loader|(?:^|[ \t'\"=])-r)",
@@ -3984,8 +4222,8 @@ _SCAN = [(re.compile(rx, re.M | re.I if ci else re.M), why) for rx, why, ci in (
     (r"\b(?:Proxy|Local)Command[ =]|\bvim?[ \t][^\n]{0,200}?-c[ \t]*['\"]?!", "a command an option runs", True),
 )]
 _LINE_CAP = 4096  # a longer line is scanned in overlapping pieces of this size, never as one backtracking field
-_RM_TARGET = re.compile(r"/?\*?$")
-_PIPE_SH = re.compile(r"(?:curl|wget)\b[^|\n]*(?:\|[^|\n]*)*?\|\s*(?:(?:sudo|exec|env|command|nohup)(?:\s+-\S+)*\s+|"
+_RM_TARGET = lazy(r"/?\*?$")
+_PIPE_SH = lazy(r"(?:curl|wget)\b[^|\n]*(?:\|[^|\n]*)*?\|\s*(?:(?:sudo|exec|env|command|nohup)(?:\s+-\S+)*\s+|"
                       r"[A-Za-z_]+=\S*\s+)*(?:/\S+/)?(?:ba|z|da|k)?sh\b")
 
 
@@ -4116,9 +4354,9 @@ def _file_digest(p):
         return ""
 
 
-_RUN_CMD = re.compile(r"(?:^|[;&|(\s`])(?:/[^\s;&|]*/)?(?:env[ \t]+)?(?:(?:ba|z|da|k)?sh|python3?|source|\.)(?=[ \t])"
+_RUN_CMD = lazy(r"(?:^|[;&|(\s`])(?:/[^\s;&|]*/)?(?:env[ \t]+)?(?:(?:ba|z|da|k)?sh|python3?|source|\.)(?=[ \t])"
                       r"([^\n;&|)<>]{0,300})", re.M)
-_RUN_DIRECT = re.compile(r"(?:^|[;&|(\s`])((?:\./|/)[^\s;&|)<>\"'$`]*(?:\.(?:sh|bash|zsh|ksh|py)\b|(?<=\./)[^\s;&|)<>\"'$`]+))",
+_RUN_DIRECT = lazy(r"(?:^|[;&|(\s`])((?:\./|/)[^\s;&|)<>\"'$`]*(?:\.(?:sh|bash|zsh|ksh|py)\b|(?<=\./)[^\s;&|)<>\"'$`]+))",
                          re.M)
 
 
@@ -4651,6 +4889,7 @@ def _find_paths(args):
 
 
 def _git(cwd, *args):
+    import subprocess  # T-2023: only this helper runs a process
     try:
         r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True, timeout=2)
         return r.stdout.strip() if r.returncode == 0 else ""
@@ -4922,7 +5161,7 @@ def _check_claude_config(name, args, stdin=""):
 
 
 _PLUGIN_ADDS = ("install", "i", "enable")  # the plugin changes that bring code in: a yes for them is pinned (T-0036)
-PLUGIN_ID = re.compile(r"[\w.-]+(?:@[\w.-]+)?")  # name or name@marketplace; fm ask --pin takes the same
+PLUGIN_ID = lazy(r"[\w.-]+(?:@[\w.-]+)?")  # name or name@marketplace; fm ask --pin takes the same
 
 
 def plugin_mark(target):
@@ -5014,7 +5253,7 @@ _PUBLISH = {
     "fly": ["deploy"], "flyctl": ["deploy"], "firebase": ["deploy"], "serverless": ["deploy"], "sls": ["deploy"],
     "wrangler": ["deploy", "publish"], "heroku": ["releases:rollback"],
 }
-_LIT_ASSIGN = re.compile(r"(?<![\w$])([A-Za-z_]\w*)=(?:'([^']*)'|\"([^\"$`\\]*)\"|([^\s;&|()<>'\"$`\\]*))(?=[\s;&|)]|$)")
+_LIT_ASSIGN = lazy(r"(?<![\w$])([A-Za-z_]\w*)=(?:'([^']*)'|\"([^\"$`\\]*)\"|([^\s;&|()<>'\"$`\\]*))(?=[\s;&|)]|$)")
 
 
 def _line_literals(shell):
@@ -5068,6 +5307,8 @@ def _check_publish(name, args):
         return []
     if re.match(r"^python[0-9.]*$", name) and args[:1] == ["-m"] and len(args) > 1:
         name, args = args[1], args[2:]
+    if re.match(r"^python[0-9.]*$", name) and args[:1] and args[0].endswith("/fm"):  # T-1881: python3 plugin/bin/fm
+        name, args = "fm", args[1:]
     pos = _positionals(args)
     joined = " ".join(pos[:2])
     for verb in _PUBLISH.get(name, []):
@@ -5077,4 +5318,6 @@ def _check_publish(name, args):
         return [("publish", f"{name} production deploy")]
     if name == "claude" and pos[:2] == ["plugin", "tag"] and "--push" in args:
         return [("publish", "claude plugin tag --push")]
+    if name == "fm" and "inbox" in pos and "ticket" in pos and any(a == "--post" or a.startswith("--post=") for a in args):
+        return [("publish", "fm inbox ticket --post")]  # T-1881: posted on the user's ask, not the agent's
     return []

@@ -1,4 +1,5 @@
 """T-1155: the return-after-gap summary (fm away; one line at session start after a long gap)."""
+import os
 import time
 
 import fmcore as c
@@ -7,12 +8,24 @@ GAP = 2 * 3600  # seconds of silence from the user that counts as being away
 MAX = 6         # lines per kind
 
 
-def since(p, now=None):
+def since(p, now=None, tail=4000):
     """(ts, gap seconds) of the last time the user spoke before a silence of GAP or more, else None. The silence runs
-    to the next prompt, or to now for the latest: so a prompt typed on return (fm away itself) still finds the gap."""
+    to the next prompt, or to now for the latest: so a prompt typed on return (fm away itself) still finds the gap.
+    T-2025: the live ledger's tail first, then one 4x wider, parsing prompt lines only (a silence sat 4,133 lines back
+    on a busy day); consecutive prompts inside a tail bound a true silence, so only a tail without one scans every
+    ledger file, and the cap keeps that case near the old cost."""
     now = now or time.time()
-    stamps = [t.timestamp() for e in c.ledger_events(p, ("prompt",)) if (t := c.parse_ts(e.get("ts")))]
-    stamps = sorted(stamps)
+    path = os.path.join(p.dir, "ledger.jsonl")
+    for n in (tail, tail * 4):
+        rows = c._tail_rows(path, n, keep=('"prompt"',))
+        gap = _newest_gap([e for e in rows if isinstance(e, dict) and e.get("event") == "prompt"], now)
+        if gap:
+            break
+    return gap or _newest_gap(c.ledger_events(p, ("prompt",)), now)
+
+
+def _newest_gap(events, now):
+    stamps = sorted(t.timestamp() for e in events if (t := c.parse_ts(e.get("ts"))))
     for i in range(len(stamps) - 1, -1, -1):
         end = stamps[i + 1] if i + 1 < len(stamps) else now
         if end - stamps[i] >= GAP:
@@ -47,9 +60,26 @@ def summary(p, ts, titles=True):
     return rows
 
 
-def line(p):
-    """One session-start line, or "" after a short gap or when nothing happened."""
-    s = since(p)
+def returned(p, n=500):
+    """T-2008: the away line for the prompt just logged, when the prompt before it came GAP or more earlier; else "".
+    Reads the ledger's tail; only when the previous prompt is further back does it scan the whole ledger."""
+    rows = c.ledger_tail(p, n)
+    at = [i for i, e in enumerate(rows) if e.get("event") == "prompt" and c.parse_ts(e.get("ts"))]
+    if any(e.get("event") == "session_start" and (e.get("data") or {}).get("source") in ("startup", "resume")
+           for e in rows[at[-2] if len(at) > 1 else 0:at[-1] if at else 0]):
+        return ""  # this session's start already carried the line
+    stamps = [c.parse_ts(rows[i].get("ts")).timestamp() for i in at]
+    if len(stamps) >= 2:
+        gap = stamps[-1] - stamps[-2]
+        return line(p, (c.iso(stamps[-2]), gap)) if gap >= GAP else ""
+    s = since(p, stamps[-1]) if stamps else None
+    ended = s and abs(c.parse_ts(s[0]).timestamp() + s[1] - stamps[-1]) < 2  # since() may find an older silence
+    return line(p, s) if ended else ""
+
+
+def line(p, s=None):
+    """One session-start line, or "" after a short gap or when nothing happened. s: since()'s (ts, gap) when known."""
+    s = s or since(p)
     if not s:
         return ""
     rows = summary(p, s[0], titles=False)

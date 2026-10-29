@@ -28,14 +28,10 @@ Core debugging, regression-test and verification procedures live with intake: `.
 - `references/clean/refactor-cleaner.md` — Dead code cleanup and consolidation specialist. Runs analysis tools (knip, depcheck, ts-prune) to…
 
 ## PERFORMANCE — measure before and after
-- `references/perf/benchmark-loop.md` — Use when the user asks to make something faster, try many variants, run recursive optimization…
-- `references/perf/latency-critical.md` — Use for latency-sensitive systems such as realtime dashboards, market data, streaming agents, execution…
-- `references/perf/profiling.md` — Find where the time goes before guessing: profilers per language, reading a profile, biggest frame first.
+- `references/perf/INDEX.md` — profiling, the benchmark loop, is the difference real (noise and statistics), latency-critical systems, regex backtracking.
 
 ## SECURITY — review, hardening, triage
-- `references/security/bounty-triage.md` — Hunt for exploitable, bounty-worthy security issues in repositories. Focuses on remotely reachable…
-- `references/security/cloud-infrastructure.md` — 
-- `references/security/security-review.md` — Use this skill when adding authentication, handling user input, working with secrets, creating API…
+- `references/security/INDEX.md` — the security review checklist, command guard rules, cloud infrastructure, bounty triage.
 
 ## BASELINE / FIX — build and compile errors
 - `references/build/INDEX.md` — build and compile errors per toolchain: C++, Rust, TypeScript, Go, JVM, Swift, C#, shell. `fm playbooks show` the index, then the one you need.
@@ -48,6 +44,7 @@ Core debugging, regression-test and verification procedures live with intake: `.
 - `references/fix/sql.md` — Slow or new queries: real SQL, call count, plan on real data, query before index, before/after proof.
 - `references/fix/migration.md` — Live schema changes: expand, dual-write, batched backfill, switch reads, contract, lock timeout.
 - `references/fix/text-time-bytes.md` — Text, time, bytes, money: encodings, Unicode normalisation, UTC and DST, minor units.
+- `references/fix/cli-errors.md` — A CLI crashes, rejects a natural argument shape or acts on more than named: usage errors, many at once.
 
 ## REVIEW — checklists (also read by foreman:fm-reviewer)
 - `references/review/code-reviewer.md` — Expert code review specialist. Proactively reviews code for quality, security, and maintainability. Use…
@@ -59,6 +56,7 @@ Core debugging, regression-test and verification procedures live with intake: `.
 - `references/review/test-coverage.md` — Review pull request test coverage quality and completeness, with emphasis on behavioral coverage and…
 - `references/review/type-design.md` — Analyze type design for encapsulation, invariant expression, usefulness, and enforcement.
 - `references/review/typescript.md` — Expert TypeScript/JavaScript code reviewer specializing in type safety, async correctness, Node/web…
+- `references/review/surface-parity.md` — A feature must reach every surface (CLI, plugin, app, pane): one source, a parity test from the code.
 
 ## Language references — idioms and testing
 For one framework, library, service or tool, use the stack library instead: `fm lib` suggests this repo's cards, `fm lib show NAME --section verify` reads one part (`../library/SKILL.md`).
@@ -80,7 +78,7 @@ For one framework, library, service or tool, use the stack library instead: `fm 
 - `references/release/release-and-changelog.md` — Cutting a version: gate the tagged commit, bump everywhere, user-facing changelog, migration notes…
 - `references/release/dependency-admission.md` — Before adding a dependency: avoid it, name, licence, health, audit, weight, pin.
 - `references/release/dependency-upgrade.md` — Bumping a library or toolchain: one per task, read the notes, baseline, fix forward, verify, check the…
-- `references/release/INDEX.md` — more: demo production.
+- `references/release/INDEX.md` — more: shipping a branch to main, demo production.
 
 ## REFLECT — decisions and retros
 - `references/reflect/agent-introspection.md` — Structured self-debugging workflow for AI agent failures using capture, diagnosis, contained recovery…

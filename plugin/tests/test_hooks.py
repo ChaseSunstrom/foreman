@@ -34,6 +34,20 @@ class GatePipe(unittest.TestCase):  # T-1759
         self.assertIsNone(fmhooks._gate_pipe_note({"tool_name": "Read", "tool_input": {"command": "fm check | tail"}}))
 
 
+class GatePipeOnce(ForemanTestCase):
+    def test_a_later_piped_gate_in_the_session_gets_the_one_line_form(self):
+        # T-1889: the full note came back after every compaction (8x in a week); the session already knows it
+        import fmhooks
+        pl = {"tool_name": "Bash", "tool_input": {"command": "fm check | tail -3"}, "session_id": "s1889"}
+        first = fmhooks._gate_pipe_note(pl)
+        self.assertIn("the last program's, not the gates'", first)
+        self.hook("SessionStart", {"source": "compact", "session_id": "s1889"})  # re-arms one-shot notes, not this
+        again = fmhooks._gate_pipe_note(pl)
+        self.assertIn("✓/✗", again)
+        self.assertLess(len(again), len(first) // 2)
+        self.assertIn("the last program's, not the gates'", fmhooks._gate_pipe_note(dict(pl, session_id="s2")))
+
+
 class HookCase(ForemanTestCase):
     def setUp(self):
         super().setUp()
@@ -1589,6 +1603,29 @@ class PreToolUse(HookCase):
         poll = 'for i in $(seq 1 110); do grep -q "^EXIT" f.log && break; sleep 5; done; tail f.log'
         self.assertEqual(self.pre("Bash", {"command": poll}).returncode, 2)
 
+    def test_a_process_match_on_its_own_command_is_refused(self):
+        # T-1839 (2026-10-28, idle for hours; the user: "fix that so it doesn't happen"): a background
+        # `while pgrep -f "plugin/bin/fm check"; do sleep 20; done` found its own shell, whose command line holds the
+        # pattern, so it never ended and no notification came; `pkill -f "while pgrep -f"` then killed its own shell
+        self.fm("init")
+        self.task()
+        for bad in ({"command": 'while pgrep -f "plugin/bin/fm check" >/dev/null; do sleep 20; done',
+                     "run_in_background": True},
+                    {"command": 'pkill -f "while pgrep -f"; fm status'},
+                    {"command": "until ! pgrep -af fm.check; do sleep 30; done", "run_in_background": True},
+                    {"command": "pgrep --full 'npm run dev'"}, {"command": "cd /x\npgrep -f 'cd /x'"}):
+            with self.subTest(cmd=bad["command"]):
+                p = self.pre("Bash", bad)
+                self.assertEqual(p.returncode, 2, p.stdout)
+                self.assertIn("kill -0", p.stdout)
+        for ok in ('while pgrep -f "[f]m check" >/dev/null; do sleep 20; done',  # the bracket can't match itself
+                   "pgrep -fx 'python3 serve.py'",  # -x: the whole command line must equal it
+                   "pgrep -x node", "while kill -0 4242 2>/dev/null; do sleep 20; done", "ps -eo pid,args | grep fm",
+                   "git commit -m \"refuse a pgrep -f 'fm check' that matches itself\"",  # a mention runs nothing
+                   "pgrep -af 'git push' | grep -v pgrep | head", "pgrep -af 'fm check' | grep -v -e pgrep -e while"):
+            with self.subTest(cmd=ok):
+                self.assertEqual(self.pre("Bash", {"command": ok, "run_in_background": True}).returncode, 0, ok)
+
     def test_every_refusal_names_its_fix(self):
         # T-0440: a refusal that names no allowed form costs a guess; every category names the next action
         import types
@@ -1611,6 +1648,16 @@ class PreToolUse(HookCase):
         self.assertIn("Stop retrying", texts[2])
         self.pre("Bash", {"command": "npm publish"})  # a different block resets the count
         self.assertNotIn("Stop retrying", self.pre("Bash", cmd).stdout)
+
+    def test_third_unread_refusal_says_no_ask_helps(self):
+        # T-1932 review: no grant lifts a refusal for a program the guard never read, so asking for one is a dead end
+        self.fm("init")
+        self.task()
+        cmd = {"command": "cat cmds.txt | bash"}
+        text = [self.pre("Bash", cmd).stdout for _ in range(3)][2]
+        self.assertIn("Stop retrying", text)
+        self.assertIn("do what the refusal says", text)
+        self.assertNotIn("fm ask", text)
 
     def test_brief_refusal_names_the_task_to_resume(self):
         # T-0409 (JARVIS): after closing a lane task it edited docs before refocusing T-0278; the refusal offered
@@ -1991,8 +2038,19 @@ class Stop(HookCase):
         with open(path, "a") as f:
             f.write(json.dumps({"type": "user", "isMeta": True, "message": {"content": "<system-reminder>x</system-reminder>"}}) + "\n")
         self.assertEqual(self.decision(stop(path, "Now the tests pass.")), "block")
-
-    def test_a_promise_in_a_reply_that_ends_the_turn_is_captured_once(self):
+        # T-2032: a claim still to come isn't a claim, and a scratch draft outside the project isn't stale code
+        for said in ("Gates running; I'll commit when the gates pass.", "Once the tests pass, it ships."):
+            self.assertIsNone(self.decision(stop(self.turn(red, edit), said)), said)
+        cwd = os.path.realpath(self.repo)  # hook() sends it as the payload's cwd
+        scratch = ("Write", {"file_path": os.path.join(self.tmp, "scratch", "draft.json")}, "ok", False)
+        inside = ("Edit", {"file_path": os.path.join(cwd, "b.py")}, "ok", False)
+        self.assertIsNone(self.decision(stop(self.turn(edit, green, scratch), "Done; the tests pass.")))
+        self.assertEqual(self.decision(stop(self.turn(edit, green, inside), "Done; all tests pass.")), "block")
+        sub = os.path.join(cwd, "tests")  # a session cd'd into a subfolder still owns the whole repo's code
+        os.makedirs(sub, exist_ok=True)
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "So all the tests pass.",
+                               "transcript_path": self.turn(edit, green, inside), "cwd": sub})
+        self.assertEqual(self.decision(p), "block")
         # T-0899: "I'll also update the README later" in a closing reply was a promise nothing tracked
         self.fm("init")
         self.fm("drive", "off")
@@ -2466,6 +2524,21 @@ class Stop(HookCase):
         with open(os.path.join(self.home, "state", "events.jsonl"), "a") as f:
             f.write(json.dumps({"ts": old, "kind": "bg_start", "session_id": "sess-1", "id": "bold"}) + "\n")
         self.assertEqual(self.decision(self.stop("Next: the queue.")), "block")
+
+    def test_running_decodes_only_this_sessions_lines(self):
+        # T-2033: Stop json-loaded all 1,500 tail lines to find this session's few
+        import fmhooks
+        from unittest import mock
+        self.fm("init")
+        rows = [{"kind": "bg_start", "session_id": f"other-{i}", "id": f"o{i}"} for i in range(200)]
+        rows += [{"kind": "bg_start", "session_id": "sess-1", "id": "b1"}, {"kind": "bg_start", "session_id": "sess-1",
+                 "id": "b2"}, {"kind": "bg_done", "session_id": "sess-1", "id": "b1"},
+                 {"kind": "note", "said": '"sess-1"', "session_id": "other", "id": "b3"}]
+        with open(os.path.join(self.home, "state", "events.jsonl"), "a", encoding="utf-8") as f:
+            f.writelines(json.dumps(dict({"ts": c.now()}, **r), ensure_ascii=False) + "\n" for r in rows)
+        with mock.patch("json.loads", wraps=json.loads) as loads:
+            self.assertEqual(fmhooks._running("sess-1"), ["b2"])
+        self.assertLess(loads.call_count, 10, "other sessions' lines are never decoded")
 
     def test_full_autonomy_drive_takes_inbox_requests_when_the_queue_is_empty(self):
         # T-0097: "continue implementing everything, don't stop until complete" — captured requests are work too

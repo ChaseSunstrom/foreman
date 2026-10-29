@@ -99,13 +99,29 @@ class BoardVerbs(ForemanTestCase):
         with open(os.path.join(stub, "claude"), "w") as f:
             f.write("#!/bin/sh\necho '9.9.9 (Claude Code)'\n")
         os.chmod(os.path.join(stub, "claude"), 0o755)
-        e = dict(os.environ, FOREMAN_HOME=self.home, PATH=stub + os.pathsep + os.environ["PATH"])
+        e = dict(os.environ, FOREMAN_HOME=self.home, PATH=stub + os.pathsep + os.environ["PATH"],
+                 FOREMAN_DOCTOR_BENCH="0")  # T-1829: no hook timings under the parallel suite's load
         p = subprocess.run([sys.executable, FM, "release-check"], cwd=self.repo, env=e, capture_output=True, text=True,
                            timeout=300)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn("fm doctor", p.stdout)
         self.assertIn("fm demo", p.stdout)
         self.assertEqual(sorted(os.listdir(self.home)), before, "the user's Foreman home is never touched")
+
+    def test_release_check_child_env_keeps_only_the_bench_switch(self):
+        import fmdemo
+        old = dict(os.environ)
+        try:
+            os.environ.update(FOREMAN_DOCTOR_BENCH="0", FOREMAN_INHIBITED="1", CLAUDE_X="1", GIT_DIR="/x")
+            env = fmdemo.release_env(self.tmp)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+        self.assertEqual(env.get("FOREMAN_DOCTOR_BENCH"), "0")
+        self.assertNotIn("FOREMAN_INHIBITED", env)
+        self.assertNotIn("CLAUDE_X", env)
+        self.assertNotIn("GIT_DIR", env)
+        self.assertEqual(env["HOME"], os.path.join(self.tmp, "home"))
 
     def test_sensitive_suggest_prints_signals_and_sets_nothing(self):
         self.assertIn("No signals", self.fm("sensitive", "suggest").stdout)

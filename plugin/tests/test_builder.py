@@ -88,11 +88,11 @@ class Brief(_Tasks):
         self.assertIn("final report", brief)
 
     def test_builder_model_follows_the_tier(self):
-        # T-0373: "not everything needs to be opus if opus orchestrates": an S task's builder runs on Sonnet, an M
-        # task's on the main model; the main thread still reviews, merges and re-verifies
+        # T-0373: "not everything needs to be opus if opus orchestrates"; T-1796: M builders too (Opus M lanes were
+        # 22% of a week's usage); the main thread still reviews, merges and re-verifies
         small, mid = self.task("Small one"), self.task("Mid one", tier="M")
-        self.assertIn('model: "sonnet"', json.loads(self.fm("lane", "brief", small, "--json").stdout)["agent"])
-        self.assertNotIn("model:", json.loads(self.fm("lane", "brief", mid, "--json").stdout)["agent"])
+        for tid in (small, mid):
+            self.assertIn('model: "sonnet"', json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"])
 
     def test_l_tasks_held_tasks_and_a_third_builder_are_refused(self):
         big = self.task("Rewrite the engine", tier="L")
@@ -358,3 +358,29 @@ class LaneMergeGate(_Tasks):
         self.assertTrue(os.path.exists(os.path.join(self.repo, tid + ".py")))
         ev = [e for e in c.ledger_tail(c.find_project(self.repo), 50) if e["event"] == "lane_unverified"]
         self.assertEqual(ev[-1]["data"]["reason"], "gate is flaky here")
+
+
+class DroppedRedo(_Tasks):
+    """T-1823: a builder's branch dropped with fm lane rm --why: the next builder brief starts from the reason, the kept
+    branch and the check that was red."""
+    gated = LaneMergeGate.gated
+
+    def test_the_redo_brief_starts_from_the_drop(self):
+        fresh = self.task("Untouched")
+        self.assertNotIn("First attempt", read_text(json.loads(self.fm("lane", "brief", fresh, "--json").stdout)["path"]))
+        tid, wt = self.gated("Redo", "it passes :: sh -c 'echo broken; exit 3'")
+        self.assertNotEqual(self.fm("lane", "merge", tid, check=False).returncode, 0)
+        git(self.repo, "worktree", "lock", "--reason", "claude agent agent-x (pid 1 start 1)", wt)  # T-0725: CC keeps it
+        self.assertNotEqual(self.fm("lane", "rm", tid, check=False).returncode, 0, "unmerged and locked: plain rm refuses")
+        r = self.fm("lane", "rm", tid, "--why", "builder drops itself", cwd=wt, check=False)
+        self.assertNotEqual(r.returncode, 0, "a builder can't drop its own work")
+        rm = json.loads(self.fm("lane", "rm", tid, "--why", "it patched the test, not the parser", "--json").stdout)
+        self.assertEqual(rm["dropped"]["why"], "it patched the test, not the parser")
+        brief = read_text(json.loads(self.fm("lane", "brief", tid, "--json").stdout)["path"])
+        part = brief.split("## First attempt (dropped)", 1)[1].split("\n## ", 1)[0]
+        for want in ("it patched the test, not the parser", f"foreman/{tid}", "exit 3"):
+            self.assertIn(want, part)
+
+    def test_rm_without_why_records_no_drop(self):
+        tid, wt = self.gated("Plain", "it passes :: true")
+        self.assertNotIn("dropped", json.loads(self.fm("lane", "rm", tid, "--json").stdout))

@@ -33,7 +33,7 @@ class VisibilityCase(ForemanTestCase):
                 "cost": {"total_cost_usd": 1.23},
                 "context_window": {"used_percentage": 41.5, "context_window_size": 200000},
                 "rate_limits": {"five_hour": {"used_percentage": 12, "resets_at": 1}},
-                "prompt_cache": {"hit_ratio": 0.8}}
+                "prompt_cache": {"hit_ratio": 0.8}, "version": "2.1.312"}
 
     def statusline(self, payload=None, env=None):
         e = dict(os.environ, FOREMAN_HOME=self.home, COLUMNS="120")
@@ -69,6 +69,7 @@ class Statusline(VisibilityCase):
         self.statusline()
         snap = read_json(os.path.join(self.home, "state", "sessions", "sess-9.json"))
         self.assertEqual((snap["context_pct"], snap["cost_usd"], snap["cache_hit_ratio"]), (41.5, 1.23, 0.8))
+        self.assertEqual(snap["version"], "2.1.312")  # T-1810: a new CC version reruns the cost math
         self.assertEqual(snap["project"], c.slug_for(self.repo))
 
     def test_without_manifest_or_project_prints_something_useful(self):

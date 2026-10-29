@@ -18,19 +18,45 @@ def _sketchbook(s):
     return fmscene.sketchbook_html(fmscene.sketch_cards(), page=False)
 
 
+def _books(stage):
+    """[(name, title, when-to-use line, text)] for each playbook in one stage folder."""
+    folder, out = os.path.join(LIBRARY, stage), []
+    for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else ():
+        if name.endswith(".md") and name != "INDEX.md":
+            with open(os.path.join(folder, name), encoding="utf-8") as f:
+                text = f.read()
+            title = re.search(r"(?m)^# (.+)$", text)
+            use = re.search(r"(?ms)^(Use when\b.+?)(?:\n\s*\n|\Z)", text)
+            out.append((name[:-3], title.group(1) if title else name[:-3], " ".join(use.group(1).split()) if use else "",
+                        text))
+    return out
+
+
+def gallery():
+    """T-1785: each UI playbook's worked example, from its `Example: \`references/ui/...html\`` line:
+    [(name, title, when-to-use line, source path)]; a playbook without the line stops the build."""
+    out = []
+    for name, title, use, text in _books("ui"):
+        m = re.search(r"(?m)^Example: `(references/ui/(?:examples|templates)/[\w-]+\.html)`", text)
+        if not m:
+            raise SystemExit(f"pages.py: ui/{name}.md has no `Example: \\`references/ui/examples/NAME.html\\`` line")
+        out.append((name, title, use, os.path.join(os.path.dirname(LIBRARY), m.group(1))))
+    return out
+
+
+def _gallery(s):
+    books = gallery()
+    return tiles([("worked examples", len(books))]) + '<div class="fgrid">' + "".join(
+        f'<a class="fcard" href="../gallery/{esc(name)}.html"><b>{esc(title)}</b><span>{esc(use)}</span>'
+        f'<span><code>ui/{esc(name)}.md</code></span></a>' for name, title, use, _ in books) + "</div>"
+
+
 def _field_guide(s):
     """T-1525: every playbook in the library by stage, with the line that says when to use it."""
     stages = {}
     for stage in sorted(os.listdir(LIBRARY)):
-        folder = os.path.join(LIBRARY, stage)
-        for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else ():
-            if name.endswith(".md") and name != "INDEX.md":
-                with open(os.path.join(folder, name), encoding="utf-8") as f:
-                    text = f.read()
-                title = re.search(r"(?m)^# (.+)$", text)
-                use = re.search(r"(?ms)^(Use when\b.+?)(?:\n\s*\n|\Z)", text)
-                stages.setdefault(stage, []).append((name[:-3], title.group(1) if title else name[:-3],
-                                                     " ".join(use.group(1).split()) if use else ""))
+        for name, title, use, _ in _books(stage):
+            stages.setdefault(stage, []).append((name, title, use))
     return tiles([(stage, len(books)) for stage, books in stages.items()]) + "".join(
         f"<section><h2>{esc(stage)}</h2><dl>" + "".join(
             f"<dt><code>{esc(stage)}/{esc(name)}</code> {esc(title)}</dt><dd>{esc(use)}</dd>"
@@ -642,6 +668,18 @@ PAGES = [
           "<li><strong>See them all.</strong> <code>fm scene sketchbook --out FILE</code> writes this page; each "
           "thumbnail draws only while on screen, and without WebGL2 it shows the card's description.</li></ul>"),
          ("chart", _sketchbook)]},
+    {"slug": "gallery", "nav": "Gallery", "title": "What each design playbook builds",
+     "desc": "A worked example page for every UI playbook, shipped beside it and built with the site.",
+     "lede": "Every UI playbook ends in a page you can open: the playbook's rules applied to one small screen, in "
+             "one file with no outside host. Each passes <code>fm new check</code> and keeps the five-rule UI "
+             "contract: reduced motion, contrast, keyboard, 360 px and designed states.",
+     "blocks": [
+         ("chart", _gallery),
+         ("text", "Use one", "<ul><li><strong>Open it from disk.</strong> Each example lives at <code>plugin/skills/"
+          "playbooks/references/ui/examples/</code> (the 3D one is the <code>fm new scene</code> template), named on "
+          "its playbook's <code>Example:</code> line.</li><li><strong>Start from it.</strong> Copy the file, then "
+          "<code>fm new check FILE</code> keeps it to the same rules.</li><li><strong>Rebuild.</strong> <code>python3 "
+          "site/build.py</code> copies every example into this gallery.</li></ul>")]},
     {"slug": "releases", "nav": "Releases", "title": "Shipped in small, gated releases",
      "desc": "Every release passes the full gates and a release check before it reaches main.",
      "lede": "<code>fm release</code> runs the ritual as nine named steps with a checkpoint after each: gates, version "

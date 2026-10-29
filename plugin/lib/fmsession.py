@@ -61,8 +61,7 @@ def _set(sid, **kw):
 
 def _emit(sid, turn, ev):
     row = {"ts": c.now(), "turn": turn, **{k: v for k, v in ev.items() if v is not None}}
-    with open(os.path.join(_dir(sid), "events.jsonl"), "a", encoding="utf-8") as f:
-        f.write(json.dumps(row) + "\n")
+    c.append_line(os.path.join(_dir(sid), "events.jsonl"), json.dumps(row) + "\n")
 
 
 # ---------------------------------------------------------------- agents: argv and normalisers

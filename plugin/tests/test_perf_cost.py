@@ -102,7 +102,7 @@ class DegradeOnPace(HookCase):
         usage(**AHEAD)
         out = self.fm("next").stdout
         self.assertNotIn("self-improvement pass due", out)
-        self.assertIn("ahead of pace", out)
+        self.assertIn("optional work is dropped (weekly usage 78%", out)
         self.assertIn("required gates still run", out)
 
     def test_the_drive_offers_no_side_work_while_ahead_of_pace(self):
@@ -116,7 +116,7 @@ class DegradeOnPace(HookCase):
         reason = (parse(p) or {}).get("reason", "")
         self.assertNotIn(f"lane brief {queued}", reason, "no side task while usage runs ahead of pace")
         self.assertNotIn(f"second plan {queued}", reason)
-        self.assertIn("ahead of pace", reason)
+        self.assertIn("Optional work is dropped (weekly usage 78%", reason)
         self.assertIn(queued, reason, "the queue is the user's work: it's still named as what comes next")
 
     def test_ideas_deepen_runs_no_rounds_and_over_the_cap_still_blocks(self):
@@ -136,7 +136,7 @@ class DegradeOnPace(HookCase):
         calls = [json.loads(l) for l in read_text(log).splitlines()]
         self.assertEqual(len(calls), 1, "the lens ran; no deepen round")
         self.assertFalse(any("Lens: deepen:" in x["stdin"] for x in calls))
-        self.assertIn("ahead of pace", r.stdout + r.stderr)
+        self.assertIn("optional work is dropped (weekly usage 78%", r.stdout + r.stderr)
         self.fm("check", "add", "true")
         self.assertEqual(self.fm("check", "--fresh", check=False).returncode, 0, "required gates still run")
         self.fm("budget", "set", "--day", "0")

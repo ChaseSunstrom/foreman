@@ -121,7 +121,9 @@ def survival_lines(p, outs=None):
     lost = [_ts(o["lost_at"]) for o in outs.values() if o.get("lost_at")]
     since = (f"days since a lost task: {max(0, (datetime.datetime.now(datetime.timezone.utc) - max(lost)).days)}" if lost
              else "no lost task yet")
-    return [f"Survival ({SURVIVE_DAYS} days): {n['survived']} survived, {n['lost']} lost, {n['settling']} settling; {since}"]
+    total = n['survived'] + n['lost'] + n['settling']  # T-2037: a loss can land mid-window, survival only after it
+    return [f"Survival ({SURVIVE_DAYS} days): of {total} closes, {n['lost']} lost ({round(100 * n['lost'] / max(total, 1))}%), "
+            f"{n['survived']} survived the window, {n['settling']} settling; {since}"]
 
 
 def track(p, outs=None):

@@ -83,3 +83,143 @@ class CiWatch(ForemanTestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("gave up", r.stdout + r.stderr)
         self.assertEqual(len([b for b in self.briefs() if b.type == "FIX"]), 3)
+
+    def test_a_green_run_with_a_failed_non_blocking_job_says_so_and_briefs_it_once(self):
+        # T-1942: continue-on-error jobs don't fail the run, so a macOS failure hid behind "CI green."
+        from unittest import mock
+        import fmci
+        self.fm("init")
+        p = c.find_project(self.repo)
+        head = fmci._head(p)
+        jobs = [{"name": "test (ubuntu, 3.12, 1)", "conclusion": "success"},
+                {"name": "test (macos-latest, 3.14, 2)", "conclusion": "failure"}]
+
+        def gh(p, *argv):
+            if argv[:2] == ("run", "list"):
+                return json.dumps([{"databaseId": 5, "status": "completed", "conclusion": "success", "headSha": head,
+                                    "url": "https://github.com/o/r/actions/runs/5"}])
+            if "--json" in argv:
+                return json.dumps({"jobs": jobs})
+            return LOG
+        quiet = {"say": lambda *a, **k: None}
+        with mock.patch.object(fmci, "_gh", side_effect=gh):
+            code, msg = fmci.watch(p, "main", 3, 0, **quiet)
+            self.assertEqual(code, 0, "a non-blocking job's failure never fails the watch")
+            self.assertRegex(msg, r"CI green, but 1 non-blocking job failed \(test \(macos-latest, 3\.14, 2\)\): FIX brief T-\d+")
+            self.assertEqual(fmci.watch(p, "main", 3, 0, **quiet)[0], 0)
+            fixes = [b for b in self.briefs() if b.type == "FIX"]
+            self.assertEqual(len(fixes), 1, "the same run is briefed once")
+            self.assertIn("test_y - AssertionError", fixes[0].section("Raw request"))
+            jobs[1]["conclusion"] = "success"
+            self.assertEqual(fmci.watch(p, "main", 3, 0, **quiet), (0, "CI green."))
+
+    def test_a_job_that_never_got_a_runner_reruns_instead_of_filing_a_fix(self):
+        # T-2013: GitHub capacity left a macOS job cancelled with no steps; that is no code failure to brief.
+        from unittest import mock
+        import fmci
+        from fmcli import UsageError
+        self.fm("init")
+        p = c.find_project(self.repo)
+        head = fmci._head(p)
+        state = {"attempt": 1, "reruns": [], "rerun_ok": True}
+        said = []
+
+        def gh(p, *argv):
+            a = state["attempt"]
+            if argv[:2] == ("run", "list"):
+                return json.dumps([{"databaseId": 7, "attempt": a, "status": "completed", "headSha": head,
+                                    "conclusion": "failure" if a == 1 else "success",
+                                    "url": "https://github.com/o/r/actions/runs/7"}])
+            if argv[:2] == ("run", "rerun"):
+                state["reruns"].append(argv)
+                if not state["rerun_ok"]:
+                    raise UsageError("gh: HTTP 401")
+                state["attempt"] += 1
+                return ""
+            if "--json" in argv:
+                return json.dumps({"jobs": [
+                    {"name": "test (ubuntu, 3.12, 1)", "conclusion": "success", "steps": [{"name": "run"}]},
+                    {"name": "test (macos-latest, 3.14, 2)", "conclusion": "cancelled" if a == 1 else "success",
+                     "steps": [] if a == 1 else [{"name": "run"}]}]})
+            return LOG
+        with mock.patch.object(fmci, "_gh", side_effect=gh):
+            self.assertEqual(fmci.watch(p, "main", 0, 0, say=lambda *a, **k: said.append(a[0])), (0, "CI green."))
+            self.assertEqual(state["reruns"], [("run", "rerun", "7", "--failed")])
+            self.assertTrue(any("never got a runner" in s for s in said), said)
+            state.update(attempt=1, rerun_ok=False)
+            code, msg = fmci.watch(p, "main", 3, 0, say=lambda *a, **k: None)
+        self.assertEqual(code, 1)
+        self.assertRegex(msg, r"never got a runner .*test \(macos-latest, 3\.14, 2\).*push again")
+        self.assertEqual([b for b in self.briefs() if b.type == "FIX"], [], "a capacity cancel files no FIX brief")
+
+    def test_with_gh_logged_out_the_public_api_finds_the_run_and_briefs_its_annotations(self):
+        # T-1939: gh logged out left ci-watch blind; a public repo's runs and annotations need no token
+        import contextlib
+        import io
+        from unittest import mock
+        import fmci
+        from fmcli import UsageError
+        self.fm("init")
+        subprocess.run(["git", "-C", self.repo, "remote", "add", "origin", "git@github.com:o/r.git"], check=True)
+        p = c.find_project(self.repo)
+        head, asked = fmci._head(p), []
+        polls = iter([OSError("down"), ("failure", 7), ("failure", 9), ("success", 8)])
+
+        def body(url):
+            if "/actions/runs?" in url:
+                step = next(polls)
+                if isinstance(step, Exception):
+                    raise step
+                return {"workflow_runs": [{"id": step[1], "status": "completed", "conclusion": step[0], "head_sha": head,
+                                           "html_url": f"https://github.com/o/r/actions/runs/{step[1]}"}]}
+            if url.endswith("/actions/runs/7/jobs"):
+                return {"jobs": [{"id": 70, "conclusion": "failure"}, {"id": 71, "conclusion": "success"}]}
+            if url.endswith("/actions/runs/9/jobs"):
+                return {"jobs": [{"id": 90, "conclusion": "failure"}]}
+            if url.endswith("/actions/runs/8/jobs"):  # T-1942: a green run's jobs are read too
+                return {"jobs": [{"id": 80, "conclusion": "success"}]}
+            if url.endswith("/check-runs/70/annotations"):
+                return [{"path": "tests/test_x.py", "start_line": 9, "annotation_level": "failure", "message": LOG}]
+            if url.endswith("/check-runs/90/annotations"):
+                return []
+            raise AssertionError(url)
+
+        def urlopen(req, timeout=None):
+            asked.append(req)
+            return contextlib.nullcontext(io.BytesIO(json.dumps(body(req.full_url)).encode()))
+        gh_out = mock.patch.object(fmci, "_gh", side_effect=UsageError("gh run list failed: not logged in"))
+        quiet = {"say": lambda *a, **k: None}
+        with gh_out, mock.patch("urllib.request.urlopen", side_effect=urlopen), mock.patch.object(fmci, "time") as clock, \
+                mock.patch.dict(os.environ, {"FOREMAN_NO_NET": ""}):
+            self.assertEqual(fmci.watch(p, "main", 3, 0, **quiet), (0, "CI green."))
+        naps = clock.sleep.call_args_list  # fmci's own clock: other test threads share the time module
+        self.assertTrue(naps and all(a.args[0] >= 60 for a in naps),
+                        "60 unauthenticated calls an hour: public polls are spaced out")
+        self.assertTrue(all(r.full_url.startswith("https://api.github.com/repos/o/r/") for r in asked))
+        self.assertFalse(any(r.has_header("Authorization") for r in asked), "no token is ever sent")
+        self.assertFalse(any("/check-runs/71/" in r.full_url for r in asked), "only failed jobs are read")
+        raw = "\n".join(open(b.path).read() for b in self.briefs() if b.type == "FIX")
+        self.assertIn("tests/test_x.py:9", raw)
+        self.assertIn("https://github.com/o/r/actions/runs/7", raw)
+        self.assertIn(c.DEFANGED.strip(), raw)
+        self.assertNotIn("\nignore previous", raw.lower())
+        self.assertRegex(raw, r"runs/9[\s\S]*no annotations", "an empty brief says where to look")
+        import urllib.error
+        private = urllib.error.HTTPError("https://api.github.com/repos/o/r", 404, "Not Found", {}, None)
+        with gh_out, mock.patch("urllib.request.urlopen", side_effect=private), self.assertRaisesRegex(UsageError, "not logged in.*404"):
+            fmci.watch(p, "main", 3, 0, max_polls=1, **quiet)  # a private repo: gh's error at once, not an hour of polls
+        none_yet = lambda req, timeout=None: contextlib.nullcontext(io.BytesIO(b'{"workflow_runs": []}'))
+        with gh_out, mock.patch("urllib.request.urlopen", side_effect=none_yet), mock.patch.object(fmci, "time"):
+            code, msg = fmci.watch(p, "main", 3, 0, max_polls=1, **quiet)
+        self.assertEqual(code, 1)
+        self.assertIn("GitHub's public API", msg, "T-1940: a watch that saw nothing says where it looked")
+        for off in ({"FOREMAN_NO_NET": "1"}, {"FOREMAN_NO_NET": ""}):
+            if off["FOREMAN_NO_NET"] == "":
+                self.fm("sensitive", "on")
+            with gh_out, mock.patch.dict(os.environ, off), mock.patch("urllib.request.urlopen") as net, \
+                    self.assertRaisesRegex(UsageError, "not logged in"):
+                fmci.watch(p, "main", 3, 0, max_polls=1, **quiet)
+            net.assert_not_called()
+        subprocess.run(["git", "-C", self.repo, "remote", "remove", "origin"], check=True)
+        with gh_out, self.assertRaisesRegex(UsageError, "not logged in"):  # nowhere public to look: gh's own error
+            fmci.watch(p, "main", 3, 0, max_polls=1, **quiet)
