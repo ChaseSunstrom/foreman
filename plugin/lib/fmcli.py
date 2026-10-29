@@ -6703,7 +6703,8 @@ def _build_parser():
                    "pane's palette JSON (T-1651), favicon.svg and a 1200x630 card.svg in the accent, bg and text "
                    "roles, or a ## Tokens section (T-1652)")
     s.add_argument("--tokens", metavar="FILE", help="xray: the DESIGN.md (or tokens .json) whose colours count as "
-                   "on-token (default: the one fm motion finds)")
+                   "on-token (default: the one fm motion finds); lint: the one whose ## Tokens it names when no "
+                   "linted file uses them (default: the repo's DESIGN.md; T-1874)")
     s.add_argument("--light", action="store_true", help="tokens --to app|pane|brand: the light values (app: on the "
                    "paper theme)")
     s.add_argument("--dark", action="store_true", help="tokens --to app|pane|brand: the dark values (app: on the "

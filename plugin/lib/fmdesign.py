@@ -773,7 +773,7 @@ def collect(paths):
 
 
 def run(paths):
-    """(findings, files linted, skipped, empty paths)."""
+    """(findings, files linted, skipped, empty paths, the texts read: linted files and tailwind.config files)."""
     files, skipped, configs, empty = collect(paths)
     sources = []
     for f in files:
@@ -782,12 +782,36 @@ def run(paths):
             skipped.append({"file": f, "why": why})
         else:
             sources.append(Source(f, text))
-    tw_fonts = any("fontFamily" in (_read(c)[0] or "") for c in configs)
-    return Run(sources, tw_fonts).check(), [s.path for s in sources], skipped, empty
+    cfg = [_read(c)[0] or "" for c in configs]
+    tw_fonts = any("fontFamily" in t for t in cfg)
+    return Run(sources, tw_fonts).check(), [s.path for s in sources], skipped, empty, [s.raw for s in sources] + cfg
+
+
+TW_SPACES = ("font-weight", "inset-shadow", "drop-shadow", "color", "font", "text", "spacing", "radius", "shadow",
+             "leading", "tracking", "ease", "animate", "blur", "container", "breakpoint")  # Tailwind v4 theme names
+
+
+def unused_tokens(names, texts):
+    """T-1874: the token names no text uses, in their order. A use is --name anywhere but its own definition
+    (--name:); a Tailwind theme name (--color-brand, --text-lg, --radius-xl …) also counts as used by a class word
+    ending -brand (bg-brand, md:text-brand/50), and --breakpoint-md by an md: prefix. ponytail: any class word ending
+    -X counts, so it can miss an unused --spacing-2 beside p-2; it never calls a used token unused."""
+    blob = "\n".join(texts)
+    used, out = set(re.findall(r"(?<![\w-])--[\w-]+(?![\w-])(?!\s*:)", blob)), []
+    for n in names:
+        if n in used:
+            continue
+        space = next((s for s in TW_SPACES if n.startswith(f"--{s}-") and len(n) > len(s) + 3), None)
+        x = n[len(space) + 3:] if space else None
+        if x and re.search(rf"(?<![\w-])[a-z][\w:-]*-{re.escape(x)}(?:/[\w.]+)?(?![\w-])" if space != "breakpoint"
+                           else rf"(?<!\w){re.escape(x)}:", blob):  # md:, max-md:
+            continue
+        out.append(n)
+    return out
 
 
 def lint(paths, skipped=None):
-    found, _, sk, _ = run(paths)
+    found, _, sk, _, _ = run(paths)
     if skipped is not None:
         skipped.extend(sk)
     return found
@@ -1841,9 +1865,11 @@ def to_pane(tokens, theme=None):
     return json.dumps(pal, indent=2) + "\n", [k for k in PANE_ALL if k not in pal]
 
 
-def _default_out():
+def _default_out(at=None):
     import fmcore
-    root = fmcore.git_root(os.getcwd()) or os.getcwd()
+    at = at or os.getcwd()
+    at = at if os.path.isdir(at) else os.path.dirname(os.path.abspath(at))
+    root = fmcore.git_root(at) or at
     out, docs = os.path.join(root, "DESIGN.md"), os.path.join(root, "docs", "DESIGN.md")
     return docs if not os.path.lexists(out) and os.path.isfile(docs) else out
 
@@ -2059,7 +2085,15 @@ def cmd_design(args):
     if missing:
         print(f"fm: design lint: no such file or directory: {', '.join(missing)}", file=sys.stderr)
         return 2
-    found, linted, skipped, empty = run(args.paths)
+    src, names = getattr(args, "tokens", None), []  # T-1874: report only, the exit stays the lint's
+    tokens = src or _default_out(args.paths[0])
+    try:
+        names = list(read_design(tokens))
+    except ValueError as e:  # no DESIGN.md or no ## Tokens in it: nothing to say, unless --tokens named it
+        if src:
+            print(f"fm: design lint: --tokens: {e}", file=sys.stderr)
+            return 2
+    found, linted, skipped, empty, texts = run(args.paths)
     if empty:
         print(f"fm: design lint: no UI files under {', '.join(empty)} (it reads {' '.join(sorted(EXTS))})",
               file=sys.stderr)
@@ -2069,7 +2103,11 @@ def cmd_design(args):
         f"design lint: clean ({n} file(s))"
     if skipped:
         text += "\nskipped: " + "; ".join(f"{x['file']} ({x['why']})" for x in skipped)
-    fmcli.out(args, {"findings": found, "files": n, "skipped": skipped}, text)
+    unused = unused_tokens(names, texts)
+    if unused:
+        text += (f"\n{os.path.basename(tokens)}: {len(unused)} token(s) unused in the {n} file(s) linted: "
+                 f"{', '.join(unused)}")
+    fmcli.out(args, {"findings": found, "files": n, "skipped": skipped, "unused_tokens": unused}, text)
     return 1 if found else 0
 
 
