@@ -6,20 +6,20 @@ tags: [look, style, palette, climate, monitoring, outdoors, data, dark]
 detect: []
 related: [look-observatory, look-cartographer, design-systems, typography, color-contrast]
 ---
-A field station on the ice: blue-black slate, cold grey text, one meltwater-cyan accent, long quiet charts.
+A field station on the ice: green-grey slate, cold pale text, one ice-white accent, long quiet charts.
 
 ## Palette
 | Role | Hex | OKLCH | Measured |
 |---|---|---|---|
-| `--surface` | #0B1117 | 0.174 0.016 249 | page |
-| `--raised` | #141C24 | 0.222 0.020 249 | cards, popovers |
-| `--text` | #E8EFF5 | 0.949 0.011 244 | 16.4:1 on surface, 14.8:1 on raised |
-| `--text-muted` | #A9B8C6 | 0.775 0.026 246 | 9.4:1 on surface, 8.5:1 on raised |
-| `--border` | #617080 | 0.539 0.031 250 | 3.7:1 on surface |
-| `--accent` | #86D4D6 | 0.82 0.077 198 | 11.2:1 on surface |
-| `--on-accent` | #0B1117 | 0.174 0.016 249 | 11.2:1 on accent |
+| `--surface` | #0F1A17 | 0.206 0.017 176 | page |
+| `--raised` | #17251F | 0.249 0.022 166 | cards, popovers |
+| `--text` | #E7F0EC | 0.947 0.011 168 | 15.3:1 on surface, 13.7:1 on raised |
+| `--text-muted` | #A8BBB3 | 0.775 0.024 169 | 8.8:1 on surface, 7.9:1 on raised |
+| `--border` | #62766D | 0.547 0.027 166 | 3.7:1 on surface |
+| `--accent` | #E6F3EF | 0.953 0.015 176 | 15.6:1 on surface |
+| `--on-accent` | #0F1A17 | 0.206 0.017 176 | 15.6:1 on accent |
 
-Dark first: body text clears Foreman's 7:1 dark rule. Cyan sits at chroma 0.08, a pale meltwater that reads cold without glowing. Accent hue 198, 48° from the nearest status hue.
+Dark first: body text clears Foreman's 7:1 dark rule. Ice-white is nearly neutral (chroma 0.015) with a trace of green, so the one accent reads as frost, not as a colour. Accent hue 176, 26° from the nearest status hue.
 
 ## Type
 Neo-grotesk at 400 and 600 for body and headings; mono at 12 px for sensor ids and coordinates. Readings are large (2rem, 300 weight) with the unit small and muted beside them.
@@ -53,9 +53,9 @@ def lum(h):
 
 
 def test_pairs():
-    for fg, bg, floor in [("#E8EFF5", "#0B1117", 7), ("#E8EFF5", "#141C24", 7), ("#A9B8C6", "#0B1117", 4.5),
-                          ("#A9B8C6", "#141C24", 4.5), ("#617080", "#0B1117", 3), ("#86D4D6", "#0B1117", 4.5),
-                          ("#0B1117", "#86D4D6", 4.5)]:
+    for fg, bg, floor in [("#E7F0EC", "#0F1A17", 7), ("#E7F0EC", "#17251F", 7), ("#A8BBB3", "#0F1A17", 4.5),
+                          ("#A8BBB3", "#17251F", 4.5), ("#62766D", "#0F1A17", 3), ("#E6F3EF", "#0F1A17", 4.5),
+                          ("#0F1A17", "#E6F3EF", 4.5)]:
         hi, lo = sorted((lum(fg), lum(bg)), reverse=True)
         assert (hi + 0.05) / (lo + 0.05) >= floor, (fg, bg, floor)
 ```

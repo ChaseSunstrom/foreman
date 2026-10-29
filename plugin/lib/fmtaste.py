@@ -188,14 +188,16 @@ def rounds_done(events=None):
 def pairs(known, rnd=None):
     """PAIRS A-or-B pairs over the looks; round r pairs each look with the one r+1 places on (sorted), so with
     PAIRS or fewer looks each shows twice, never against itself, and the next round meets new rivals; with up to twice
-    PAIRS looks every one shows at least once."""
+    PAIRS looks every one shows at least once, with only about (n-PAIRS)..n/2 distinct rounds (two at 20, one at 24)."""
     names = sorted(known)
     if len(names) < 2:
         raise ValueError("calibration needs two looks at least")
     r, n = (rounds_done() if rnd is None else rnd), len(names)
     k = 1 + r % max(1, (n - 1) // 2)
     if n > PAIRS:  # more looks than pairs: an offset in [n-PAIRS, PAIRS] shows every look (up to 2*PAIRS looks), never a mirrored pair
-        ks = [x for x in range(max(1, n - PAIRS), min(n - 1, PAIRS) + 1) if 2 * x % n] or [1]
+        # k and n-k would meet the same rivals again, so only the smaller of each such pair is used
+        ks = sorted({min(x, n - x) for x in range(max(1, n - PAIRS), min(n - 1, PAIRS) + 1)
+                     if 2 * x % n or x >= PAIRS}) or [1]
         k = ks[r % len(ks)]
     return [(names[i % len(names)], names[(i + k) % len(names)]) for i in range(PAIRS)]
 
