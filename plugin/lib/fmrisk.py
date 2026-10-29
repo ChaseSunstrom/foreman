@@ -4,6 +4,7 @@ work waits, until the day rolls. Only the user moves the cap (the guard's USER_O
 isn't one."""
 import math
 import os
+import re
 import time
 
 import fmcore as c
@@ -61,6 +62,36 @@ def slowed(p, meta=None):
     return f"today's risk budget is spent ({s['spent']:g} of {s['cap']:g}: {what}); autonomy steps down a notch until tomorrow"
 
 
+def collisions(p, days=7):
+    """T-1875: the last days' guard blocks by rule, most first: [{rule, category, n, spends, detail, rewrite}], spends
+    when its category counts against the budget, detail the newest, rewrite the guard's hint for it ("" when none)."""
+    since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - days * 86400))
+    n, last = {}, {}
+    for e in c.ledger_events(p, kinds=["guard_block"], since=since):
+        d = e.get("data") or {}
+        r = str(d.get("rule") or d.get("category") or "?")
+        n[r], last[r] = n.get(r, 0) + 1, d
+    if not n:
+        return []
+    import fmguard  # about 12 ms, at SessionStart only, and only when the week had a block
+    rows = []
+    for r in sorted(n, key=lambda r: -n[r]):
+        cat, detail = str(last[r].get("category") or ""), str(last[r].get("detail") or "")
+        rows.append({"rule": c.plain(r), "category": cat, "n": n[r], "spends": cat in DESTRUCTIVE,
+                     "detail": c.defang(c.fit(c.redact(c.plain(detail)), 120)),
+                     "rewrite": fmguard._hint(detail, cat).strip()})
+    return rows
+
+
+def collision_line(p, least=3):
+    """T-1875: one SessionStart line for the week's most-hit guard rule when it fired least times or more, else None."""
+    top = next(iter(collisions(p)), None)
+    if not top or top["n"] < least:
+        return None
+    say = re.split(r"(?<=[.!?])\s", top["rewrite"], maxsplit=1)[0] or f"Last: {top['detail']}."  # review: keep it short
+    return c.fit(f"Guard collisions: {top['rule']} blocked {top['n']}× in 7 days. {say} fm risk lists them.", 240)
+
+
 def cmd_risk(args):
     import fmcli
     p = fmcli.resolve(args)
@@ -78,4 +109,9 @@ def cmd_risk(args):
     lines += [f"  {n} {k} × {WEIGHTS[k]}" for k, n in s["counts"].items() if n]
     if s["slowed"]:
         lines.append("  " + slowed(p))
+    s["collisions"] = collisions(p)  # T-1875: a habit costs rewrites even where it spends no risk
+    if s["collisions"]:
+        lines.append("Guard collisions, 7 days (the rewrite that passes):")
+        lines += [f"  {h['n']}× {h['rule']}" + (" (spends risk)" if h["spends"] else "")
+                  + f" — {c.fit(h['rewrite'], 160) or 'last: ' + h['detail']}" for h in s["collisions"][:8]]
     return fmcli.out(args, s, "\n".join(lines))
