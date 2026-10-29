@@ -5114,6 +5114,6 @@ def _check_publish(name, args):
         return [("publish", f"{name} production deploy")]
     if name == "claude" and pos[:2] == ["plugin", "tag"] and "--push" in args:
         return [("publish", "claude plugin tag --push")]
-    if name == "fm" and pos[:2] == ["inbox", "ticket"] and any(a == "--post" or a.startswith("--post=") for a in args):
+    if name == "fm" and "inbox" in pos and "ticket" in pos and any(a == "--post" or a.startswith("--post=") for a in args):
         return [("publish", "fm inbox ticket --post")]  # T-1881: posted on the user's ask, not the agent's
     return []
