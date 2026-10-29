@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- fm help with a command's name (fm help task, fm help task drop) prints that command's help, where "task" was refused as a word too common to look up (T-1909).
+- fm which and fm help find task subcommands (fm task drop, fm task evidence) and the rules' plain words ("stop auto-continuing" finds fm drive), and fm which lists the strongest kind first; fm task -h says what each subcommand does (T-1908).
 - fm task finish asks for the adversary lens on a security-sensitive change before any check runs, where fm task done asked for it only after the close's checks had run (T-1907).
 - fm capture reads a leading tag as fm intake does: "FIX: the send button stays grey" is filed as a FIX titled without the tag, where it was a FEATURE with "FIX:" in its title, and `TAG!:` marks it urgent and `TAG?:` one to explore; --type still wins (T-1904).
 - fm task step and fm task ac take a one-word step or criterion with no action named (`fm task step T-1 CHANGELOG`), where it was "invalid choice"; a word close to an action, as `dnoe`, still stops as a typo (T-1903).
