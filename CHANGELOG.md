@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+- `fm task step ID edit N "<text>"` and `rm N` (T-1959); `fm ship --check [COMMIT…]` says whether main has those commits' changes without a grant (T-1960); fm focus's "Done needs" line names the task for `fm gates ID` (T-1961).
 - Feature: `fm gates T-…` lists that task's gates; `fm task finish --numbers "<metric>: <before> → <after>"` records a PERFORMANCE task's measurements in the closing call; `fm task new --json --focus` keeps stdout to one JSON document (T-1954, T-1955, T-1956).
 - Feature: `fm ship` lands finished commits on the remote's main in one call: it cherry-picks them onto the fetched main in a scratch worktree, runs the checks there and pushes only if main didn't move, behind the task's publish grant. A failure pushes nothing (T-1943). It remembers the last commit it shipped and starts after it, so commits main holds under another patch aren't offered again (T-1945); `--watch` then watches CI on the pushed commit (T-1946). It remembers the last `--test` too (T-1950).
 - Feature: `fm ci-watch` works without `gh` (missing or logged out): for a public GitHub repo it reads the commit's runs and the failed jobs' annotations from GitHub's API, with no token, and briefs the failing lines as before. The ship-to-main playbook now names it (T-1939). When it gives up without seeing a finished run, it says it was reading the API (T-1940). A green run whose non-blocking job failed (continue-on-error, like the macOS jobs) no longer reads as plain green: ci-watch names the failed jobs and briefs them once, still exiting 0 (T-1942).

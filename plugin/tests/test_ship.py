@@ -68,6 +68,21 @@ class Ship(ForemanTestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("nothing to ship", r.stdout)
 
+    def test_check_says_whether_main_has_the_commits_without_the_grant(self):
+        # T-1960: a ship task's verify was git log -n3 | grep, which a later ship pushes out of view
+        first = sh(self.repo, "rev-parse", "HEAD~1").strip()
+        r = self.ship("--check")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("add a", r.stdout)
+        self.grant()
+        self.assertEqual(self.ship(first, "--test", "true").returncode, 0)
+        self.assertTrue(self.granted() is False)
+        self.assertEqual(self.ship("--check", first).returncode, 0)
+        r = self.ship("--check")
+        self.assertEqual(r.returncode, 1, "add b is still missing")
+        self.assertIn("add b", r.stdout)
+        self.assertNotIn("add a", r.stdout)
+
     def test_a_named_commit_ships_alone(self):
         self.grant()
         first = sh(self.repo, "rev-parse", "HEAD~1").strip()
