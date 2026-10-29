@@ -1223,7 +1223,7 @@ def sketch_cards(folder=None):
 
 
 SKETCH_CSS = (".sketchbook{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:20px}"
-              ".sketch{margin:0}.sketch canvas{display:block;width:100%;height:auto;aspect-ratio:8/5;border-radius:8px}"
+              ".sketch [hidden]{display:none}.sketch{margin:0}.sketch canvas{display:block;width:100%;height:auto;aspect-ratio:8/5;border-radius:8px}"
               ".sketch .fallback{margin:0;padding:12px;border-radius:8px;outline:1px dashed currentColor;opacity:.8}"
               ".sketch figcaption{margin-top:6px}.sketch code{opacity:.6;font-size:.8em}")
 SKETCH_JS = r"""// T-1784: each card's fragment shader on its canvas, drawn only while on screen; one still frame under reduced
@@ -1255,13 +1255,13 @@ for (const fig of document.querySelectorAll("figure.sketch")) {
   const sweep = [];
   for (const [k, v] of Object.entries(JSON.parse(fig.dataset.uniforms))) v === "sweep" ? sweep.push(k) : set(k, v);
   set("uRes", [canvas.width, canvas.height]);
-  const draw = (t) => {
+  const draw = (t, s) => {
     set("uTime", [t]);
-    for (const k of sweep) set(k, [0.5 - 0.5 * Math.cos(t * 0.9)]);
+    for (const k of sweep) set(k, [s ?? 0.5 - 0.5 * Math.cos(t * 0.9)]);
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   };
-  draw(2.0);  // the still a reader who asked for less motion keeps
+  draw(0, 1);  // the cards' own still (uTime 0, a swept uniform at its end) for a reader who asked for less motion
   live.push({ fig, draw, seen: false });
 }
 if (!still && live.length) {
@@ -1673,20 +1673,27 @@ def cmd_scene(args):
     import sys
     import fmcli
     import fmcore
-    if args.action == "sketchbook":  # T-1784
-        try:
-            text = sketchbook_html(sketch_cards())
-        except ValueError as e:
-            raise fmcli.UsageError(f"a shader card's Sketch line: {e}")
-        out = args.out or "sketchbook.html"
-        fmcore.write_atomic(out, text)
-        print(f"wrote {out}: {text.count('<figure class=')} shaders; open it in a browser with WebGL2")
-        return 0
     for flag in sorted({t.partition("=")[0] for t in fmcli._ARGV} & set(_READS)):
         if args.action not in _READS[flag].split():
             print(f"fm: scene: {args.action} doesn't read {flag} (only {', '.join(_READS[flag].split())} do)",
                   file=sys.stderr)
             return 2
+    if args.action == "sketchbook":  # T-1784
+        if args.path:
+            print(f"fm: scene: sketchbook takes no FILE (got {args.path}); write it with --out", file=sys.stderr)
+            return 2
+        try:
+            text = sketchbook_html(sketch_cards())
+        except ValueError as e:
+            raise fmcli.UsageError(f"a shader card's Sketch line: {e}")
+        out = args.out or "sketchbook.html"
+        try:
+            fmcore.write_atomic(out, text)
+        except OSError as e:
+            print(f"fm: scene: can't write {out}: {e}", file=sys.stderr)
+            return 1
+        print(f"wrote {out}: {text.count('<figure class=')} shaders; open it in a browser with WebGL2")
+        return 0
     if args.action in ("metaballs", "terrain", "airlock", "bench", "lookbook", "gallery"):  # T-1848..T-1852, T-1873
         if args.path:
             print(f"fm: scene: {args.action} takes no FILE (got {args.path}); write it with --out", file=sys.stderr)
