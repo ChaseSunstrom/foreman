@@ -923,7 +923,7 @@ def append_line(path, text):
 
 
 def write_atomic(path, text):
-    d = os.path.dirname(path)
+    d = os.path.dirname(path) or "."  # T-1784 review: a bare name has no dirname, and makedirs("") raises
     os.makedirs(d, exist_ok=True)
     try:
         mode = os.stat(path).st_mode & 0o777
