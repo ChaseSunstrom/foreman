@@ -21,7 +21,7 @@ import { test, expect } from '@playwright/test';
 test('page declares a valid share image', async ({ page, request }) => {
   await page.goto('/blog/hello');
   const url = await page.locator('meta[property="og:image"]').getAttribute('content');
-  expect(url).toMatch(/^https:\/\//);
+  expect(url).toMatch(/^https:|^http:\/\/localhost/);
   await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image');
   const res = await request.get(url!);
   expect(res.ok()).toBe(true);

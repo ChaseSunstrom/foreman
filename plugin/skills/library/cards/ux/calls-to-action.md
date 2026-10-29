@@ -11,7 +11,7 @@ A CTA is a verb-led button that names the outcome, stands out once per view, and
 ## Verify
 - `npx playwright test --grep cta`: checks label, size, contrast and count.
 - `grep -rniE ">(submit|click here|ok|go)<" src`: vague labels.
-- `node scripts/contrast.mjs --pair "#ffffff" "#3b5bdb"`: your contrast script; the button text needs 4.5:1, the button edge against the page 3:1.
+- Playwright with `new AxeBuilder({ page }).withRules(['color-contrast']).analyze()` (`@axe-core/playwright`): button text needs 4.5:1; check the button edge against the page for 3:1 by eye or a token test.
 - Devtools device mode at 375 px: tap target at least 44x44 px.
 
 ## Test first

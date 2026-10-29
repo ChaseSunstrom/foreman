@@ -14,13 +14,15 @@ One JSON source of truth for color, space, type, radius and motion, in three tie
 - `git diff --exit-code dist/tokens.css`: generated output is committed and current.
 
 ## Test first
-Every alias resolves and every semantic token has a dark value.
+Every alias resolves.
 ```python
 import json
 
 def flat(d, p=""):
     for k, v in d.items():
-        if isinstance(v, dict) and "value" not in v and "$value" not in v:
+        if not isinstance(v, dict):
+            continue  # group-level $type / $description strings
+        if "value" not in v and "$value" not in v:
             yield from flat(v, f"{p}{k}.")
         else:
             yield p + k, v.get("$value", v.get("value"))

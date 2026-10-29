@@ -10,12 +10,25 @@ A palette is a neutral ramp, one brand hue, and semantic colors, each with fixed
 
 ## Verify
 - `grep -rnE "#[0-9a-fA-F]{3,8}\b" src --include=*.css --include=*.tsx | grep -v tokens`: raw hex outside the token file.
-- `node scripts/contrast.mjs`: your script that checks each text/background token pair at 4.5:1 (3:1 for large text and UI).
-- `npx playwright test --grep palette`: renders swatches in light and dark and runs axe.
+- `npx playwright test --grep palette`: renders the app in light and dark and runs `new AxeBuilder({ page }).withRules(['color-contrast']).analyze()` (from `@axe-core/playwright`); expect no violations.
+- `python3 -m pytest tests/test_palette.py`: the token-file contrast test below.
 
 ## Test first
-Compute WCAG contrast for the declared pairs.
+Compute WCAG contrast for text/surface pairs read from the token file (hex values in W3C format, `tokens/tokens.json`).
 ```python
+import json
+
+PAIRS = [("color.text", "color.surface"), ("color.on-action", "color.action")]  # semantic names
+
+def token(tree, path):
+    for k in path.split("."):
+        tree = tree[k]
+    return tree["$value"]
+
+def rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
 def lum(rgb):
     f = lambda c: c / 12.92 if c <= .03928 else ((c + .055) / 1.055) ** 2.4
     r, g, b = (f(x / 255) for x in rgb)
@@ -26,8 +39,10 @@ def ratio(a, b):
     return (la + .05) / (lb + .05)
 
 def test_text_on_surface():
-    assert ratio((0x1a, 0x1a, 0x1f), (0xfa, 0xfa, 0xfb)) >= 4.5
-    assert ratio((0xff, 0xff, 0xff), (0x3b, 0x5b, 0xdb)) >= 4.5
+    tree = json.load(open("tokens/tokens.json"))
+    for fg, bg in PAIRS:
+        r = ratio(rgb(token(tree, fg)), rgb(token(tree, bg)))
+        assert r >= 4.5, f"{fg} on {bg}: {r:.2f}"
 ```
 
 ## Do

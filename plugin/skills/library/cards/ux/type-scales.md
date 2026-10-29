@@ -28,13 +28,14 @@ test('body text is 16px+ with a 45-75 char measure', async ({ page }) => {
     const c = parseFloat(getComputedStyle(e).fontSize) * 0.5;
     return e.getBoundingClientRect().width / c;
   });
-  expect(ch).toBeLessThanOrEqual(80);
+  expect(ch).toBeGreaterThanOrEqual(45);  // rough: average glyph is about 0.5em wide
+  expect(ch).toBeLessThanOrEqual(75);
 });
 ```
 
 ## Do
 - Pick the ratio by density: 1.2 minor third for apps and dashboards, 1.25 major third for content, 1.333 perfect fourth for marketing.
-- Base 1rem (16px); steps: 0.833, 1, 1.25, 1.563, 1.953, 2.441 rem for ratio 1.25.
+- Base 1rem (16px); steps: 0.8, 1, 1.25, 1.563, 1.953, 2.441 rem for ratio 1.25.
 - Make headings fluid: `font-size: clamp(2rem, 1.2rem + 3vw, 3.5rem)`; keep body fixed.
 - Use `rem`, so user font settings scale the page; never set root size in px.
 - Body line-height 1.5-1.6; headings 1.1-1.25; tighten letter-spacing slightly (-0.01em to -0.02em) on large headings.

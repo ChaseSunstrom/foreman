@@ -11,8 +11,8 @@ Charts that answer one question: the right chart type, a zero baseline for bars,
 ## Verify
 - `npx playwright test --grep chart`: checks each chart has a title, an accessible name and a data table fallback.
 - `grep -rn "scaleLinear().domain(\[[1-9]" src`: bar charts whose y domain does not start at 0.
-- `python3 scripts/cvd_check.py`: your script simulating deuteranopia on the series palette and checking distinct colors.
-- `npx axe http://localhost:3000/reports`: no failures on chart containers.
+- Colour vision: write a script that applies a deuteranopia matrix to each series colour and fails when two series differ by less than about 20 in CIE76 distance; or emulate it in devtools (Rendering, Emulate vision deficiencies).
+- `npx @axe-core/cli http://localhost:3000/reports`: no failures on chart containers.
 
 ## Test first
 Assert the chart is labeled and has a text equivalent.
