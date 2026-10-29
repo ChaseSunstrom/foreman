@@ -121,6 +121,41 @@ class KnownVars(GuardCase):
             ("false || true && cd /tmp && tar xf -", None),  # the tar needs the cd, whatever ran before it
         ], lambda cmd: self.bash(cmd, cwd=self.fhome))
 
+    def test_a_compound_after_a_cd_chain_runs_in_the_cd_folder(self):
+        # T-1920: any for/if/{ } keyword made the line branchy, so `cd S/w && for s in …; do git cherry-pick $s ||
+        # break; done` (the route the guard's own hint names) read as a tree write over Foreman. $L, not $(…): the
+        # text after a $( is also read from the starting folder (T-1921)
+        self.run_table([
+            ("cd /tmp && for s in a b; do tar xf - || break; done", None),  # break: not unrolled
+            ("cd /tmp && for s in $L; do tar xf -; done", None),
+            ("cd /tmp && if true; then tar xf -; else tar xf -; fi", None),
+            ("cd /tmp && {{ tar xf -; tar xf -; }}", None),
+            ("cd /tmp && while read s; do tar xf -; done && tar xf -", None),
+            ("cd /tmp && for a in $L; do if true; then tar xf -; fi; done", None),  # nested
+            ("cd /nonexistent && for s in $L; do :; done && tar xf -", None),  # the failed cd stops the chain
+            ("cd {fhome} && for d in $L; do cd /tmp; done && tar xf -", "core"),  # the loop may not run
+            ("cd /tmp && for s in $L; do tar xf -; cd {fhome}; done", "core"),  # its second pass runs there
+            ("cd {fhome} && if false; then cd /tmp; fi && tar xf -", "core"),
+            ("cd {fhome} && while true; do source x; done && tar xf -", "core"),
+            ("cd /nonexistent && if true; then :; fi; tar xf -", "core"),  # a ; after the compound
+            ("cd /nonexistent && while false; do :; done || tar xf -", "core"),
+            ("cd /nonexistent && echo for; tar xf -; echo done", "core"),  # keywords as arguments
+            ("cd /nonexistent && echo \\; if || tar xf - || echo \\; fi", "core"),  # escaped separators
+            ("cd /nonexistent && echo do for x\ntar xf -\ndone", "core"),  # `do` an argument: for is one too
+            ("cd /nonexistent && : >&for\ntar xf -\ndone", "core"),  # >& names a file
+            ("cd /nonexistent && for-x\ntar xf -\ndone", "core"),  # its review: a command named for-x
+            ("cd /nonexistent && if.x\ntar xf -\nfi", "core"),
+            ('if false; then "cd" /tmp; fi && tar xf -', "core"),  # its review: a cd as written, quotes and all
+            ("if false; then c\\d /tmp; fi && tar xf -", "core"),
+            ('if false; then c""d /tmp; fi && tar xf -', "core"),
+            ('echo x | while read l; do "cd" /tmp; done; tar xf -', "core"),
+            ('cd /tmp && for s in $L; do tar xf -; "cd" {fhome}; done', "core"),
+            ("cd /tmp && if true; then $C {fhome}; fi && tar xf -", "core"),  # a computed command word
+            ("cd /tmp && if true; then $(echo cd) {fhome}; fi && tar xf -", "core"),
+            ("cd /nonexistent && echo $'x; if' || tar xf - || echo $'; fi'", "core"),  # quotes left unmasked
+            ("cd /nonexistent && f() {{ :; }}; tar xf -", "core"),
+        ], lambda cmd: self.bash(cmd, cwd=self.fhome))
+
     def test_jarvis_cd_and_pipeline_false_positives(self):
         # T-0384 (JARVIS, four refusals in an hour): writes only into the scratchpad or a builder's own folder were
         # refused with no task, because quoted text (a jq filter, a sed script) read as branches, a head `cd /abs &&`
