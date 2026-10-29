@@ -6318,7 +6318,8 @@ def _build_parser(only=None):
             help="land HEAD's unpushed commits (or the named ones) on the remote's main: cherry-picked onto the fetched "
                  "main in a scratch worktree, tested there, pushed if main didn't move; needs the active task's (or --task ID's) publish "
                  "grant; run it in the background (T-1943)")
-    s.add_argument("commits", nargs="*", metavar="COMMIT", help="default: HEAD's commits main lacks (git cherry)")
+    s.add_argument("commits", nargs="*", metavar="COMMIT", help="default: HEAD's commits main lacks (git cherry), or the branch's "
+                   "own steps since the last ship while main still matches it")
     s.add_argument("--remote", metavar="URL", help="push to this remote instead of origin")
     s.add_argument("--test", metavar="CMD", help="the check to run in the scratch tree (default: the last --test given here, else fm check)")
     s.add_argument("--watch", action="store_true", help="then watch CI on the pushed commit and exit with its result (T-1946)")
