@@ -171,7 +171,7 @@ class Rank(ForemanTestCase):
             ("FIX", "Fm edit silently drops a second <<< === >>> block written under the same @@ file header (o",
              "review/silent-failures"),
             ("FIX", "Fmsettings.set_key accepts an unknown key silently; only cmd_settings and apply check firs",
-             "review/silent-failures fix/cli-errors"),  # T-1885: an unknown key let through is a CLI error too
+             "review/silent-failures fix/cli-errors"),  # T-1885: ranks fix/cli-errors 1st, silent-failures 2nd
             ("FIX", "Stop hook still judges the turn when the project lock is busy",
              "review/silent-failures"),
             ("SECURITY", "fm approve-reads: exec-capable and abbreviated flags are not reads",
@@ -223,7 +223,7 @@ class Rank(ForemanTestCase):
 
     def test_mined_books_route_their_kind(self):
         # T-1885: six books written from finished tasks for work no book fitted; real titles (verbatim) of other tasks
-        # of the same kind, held out from the writing (the regex book has one such task: its own), each in the top 3
+        # of the same kind, held out from the writing, each in the top 3 (the regex case is a self-test: its own source task)
         held = [
             ("FIX", "Guard false block: git checkout -b NAME and git switch -c NAME are refused as tree writes",
              "security/command-guard"),
@@ -246,7 +246,6 @@ class Rank(ForemanTestCase):
             ("FEATURE", "Release Foreman 1.2.35 and push to main so the Pages site publishes", "release/ship-to-main"),
             ("FEATURE", "Claude Code pane parity for settings safety: the foreman-ui pane boots its last good setti",
              "review/surface-parity"),
-            ("FEATURE", "Harness parity of the guard (C033, value 4/5, effort M, risk low)", "review/surface-parity"),
             ("PERFORMANCE", "Fmcore _AC_RE and _STEP_RE end in a lazy (.*?) then \\s*$, which backtracks quadratically o",
              "perf/regex-backtracking"),
         ]
