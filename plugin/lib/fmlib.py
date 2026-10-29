@@ -189,6 +189,7 @@ def uncovered_deps(roots, asked=()):
     """T-1037: dependency -> number of roots using it, for those no card's dep: signal covers (and not in asked)."""
     pats = {_norm(s[4:]) for card in cards() for s in card.get("detect") or [] if s.startswith("dep:")}
     exact, globs = {x for x in pats if "*" not in x}, [x for x in pats if "*" in x]
+    covered = lambda d: d in exact or any(fnmatch.fnmatchcase(d, g) for g in globs)  # noqa: E731
     seen = collections.Counter()
     for root in list(roots)[:30]:
         try:
@@ -196,8 +197,9 @@ def uncovered_deps(roots, asked=()):
         except Exception:  # an unreadable project is skipped, not the scan
             continue
         twins = {d.split(":", 1)[1] for d in deps if ":" in d}  # T-1022: Gradle lists group:artifact and the bare id
-        seen.update(d for d in deps if _DEP.fullmatch(d) and d not in exact and d not in asked and d not in twins
-                    and not any(fnmatch.fnmatchcase(d, g) for g in globs) and not d.startswith("@types/"))
+        seen.update(d for d in deps if _DEP.fullmatch(d) and d not in asked and d not in twins and not covered(d)
+                    and not (":" in d and covered(d.split(":", 1)[1]))  # T-1914: a card may name the bare artifact id
+                    and not d.startswith("@types/"))
     return seen
 
 

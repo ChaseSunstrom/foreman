@@ -107,17 +107,17 @@ class ScoutProbes(ForemanTestCase):
         readme = open(os.path.join(c.PLUGIN_ROOT, os.pardir, "README.md"), encoding="utf-8").read()
         self.assertIn(f"tested on {fmscout.CC_TESTED}", readme)
 
-    def test_a_bare_gradle_artifact_with_its_group_listed_is_not_a_gap(self):
+    def test_a_bare_gradle_artifact_with_its_group_listed_is_not_a_gap(self):  # T-1914: androidx.test is a card now
         # T-1022: 'rules', 'runner', 'json', 'app' were asked for as libraries: build.gradle's artifact ids, listed beside
         # their group:artifact form (the form cards detect)
         p = self._p()
         with open(os.path.join(self.repo, "build.gradle"), "w") as f:
-            f.write('dependencies {\n  androidTestImplementation "androidx.test:rules:1.5.0"\n'
+            f.write('dependencies {\n  androidTestImplementation "com.example.yy:rules:1.5.0"\n'
                     '  implementation "com.example.zz:obscurelib:1.0"\n}\n')
         for args in (["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "gradle"]):
             subprocess.run(["git", "-C", self.repo, *args], check=True)
         why = ",".join(f.key for f in fmscout.probe_lib_gaps(p, {"roots": [self.repo]})) + ","
-        self.assertIn("androidx.test:rules,", why)
+        self.assertIn("com.example.yy:rules,", why)
         self.assertNotIn(":rules,rules", why)
         self.assertNotIn("libgap:rules", why)
         self.assertNotIn(",rules,", why)
