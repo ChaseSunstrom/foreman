@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Security: the guard judges nested text (`sh -c`, `eval`, `sh <<<`, `find -exec`, `` `…` ``, `$( … )`) from the folders the line may be in when it runs, not the hook's folder: from a scratch folder, `cd <foreman> && sh -c 'git reset --hard'` and `cd <foreman> && python3 -c "os.system(…)"` got through. `cd <scratch> && echo $(ls) && git reset --hard` is no longer blocked as a tree write over Foreman, unless something after that head `cd` may move the shell (T-1921).
 - The guard reads a `for`/`while`/`if`/`case`/`{ }` compound after `cd <scratch> &&` as one command run in that folder, so the cherry-pick loop its own hint suggests isn't blocked as a tree write over Foreman; a compound that may move the shell (a `cd` as written, quoted or escaped, a computed command word, a substitution) still makes the line branchy, and so does a command merely named like a keyword (`for-x`) (T-1920).
 - A builder's contract says to probe code through the tests its criteria name, not `python3 -c 'import …'` from the root, where a module off the import path fails (T-1918).
 - `fm task prove` leaves a changed tests-folder file that the start tree already has (a runner like `run.py`) at its start version, so the red run tests the change instead of passing with it; new helpers and test-named files still come over (T-1919).

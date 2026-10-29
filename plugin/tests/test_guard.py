@@ -156,6 +156,52 @@ class KnownVars(GuardCase):
             ("cd /nonexistent && f() {{ :; }}; tar xf -", "core"),
         ], lambda cmd: self.bash(cmd, cwd=self.fhome))
 
+    def test_a_substitution_behind_a_head_cd_runs_in_the_cd_folder(self):
+        # T-1921: `…` and $( … ) bodies and the text after each $( were read from the starting folder too, so `cd
+        # <scratch> && echo $(ls) && git reset --hard` read as a tree write over Foreman
+        self.run_table([
+            ("cd /tmp && echo $(ls) && tar xf -", None),  # the text after $( is read from /tmp
+            ("cd /tmp && x=$(tar xf -) && echo", None),
+            ("cd /tmp && echo `tar xf -` && tar xf -", None),
+            ("cd /tmp && sh <<< 'tar xf -'", None),
+            ("cd /nonexistent && echo $(tar xf -)", None),  # the failed cd stops the chain
+            ("cd {fhome} && echo $(tar xf -)", "core"),
+            ("cd /tmp && cd {fhome} && echo $(tar xf -)", "core"),  # a later cd still counts
+            ("cd /tmp && echo $(cd {fhome}; tar xf -)", "core"),
+            ("cd /tmp; echo $(tar xf -)", "core"),  # a failed cd: the rest runs here
+            ("cd /tmp && echo x || echo $(tar xf -)", "core"),
+            ("cd /tmp && echo x\necho $(tar xf -)", "core"),
+            ("cd /tmp 2>$(tar xf -) && echo", "core"),  # runs before the cd
+            ("cd /tmp/$(tar xf -) && echo", "core"),
+            ("x=$(tar xf -) cd /tmp && echo", "core"),
+            ('cd "/tmp" && echo $(tar xf -)', "core"),  # only a plain head: the rest as before
+            ("cd -P /tmp && echo $(tar xf -)", "core"),
+            ("cd ../.. && echo $(tar xf -)", "core"),
+            ("cd /tmp && cd -P {fhome} && echo `tar xf -`", "core"),  # anything after the head that may move it
+            ("cd /tmp && pushd {fhome} && echo `tar xf -`", "core"),
+            ("cd /tmp && eval cd {fhome} && echo `tar xf -`", "core"),
+            ("cd /tmp && source f && echo `tar xf -`", "core"),
+            ("cd /tmp && $C {fhome} && echo `tar xf -`", "core"),
+            ("cd /tmp && $(echo cd) {fhome} && echo `tar xf -`", "core"),
+            ("cd /tmp && c$(echo d) {fhome} && echo `tar xf -`", "core"),  # its review: a word made of fused parts
+            ("cd /tmp && X=d && c${{X}} {fhome} && echo `tar xf -`", "core"),
+            ("cd /tmp && A=1 $C {fhome} && echo `tar xf -`", "core"),
+            ('cd /tmp && "cd" {fhome} && echo `tar xf -`', "core"),
+            ('cd /tmp && echo "`" && cd {fhome} && echo "`" && echo $(tar xf -)', "core"),  # quoted backticks
+            ("cd /tmp | echo `tar xf -`", "core"),  # not an && head
+            ("for d in a b c d e f; do cd $d && echo $(git rev-parse HEAD); cd ..; done", None),  # was over the cap
+        ], lambda cmd: self.bash(cmd, cwd=self.fhome))
+        self.run_table([  # and the other way: nested text was judged from the hook's folder, so from scratch these passed
+            ("cd {fhome} && sh -c 'tar xf -'", "core"),
+            ("cd {fhome} && eval 'tar xf -'", "core"),
+            ("cd {fhome} && x=`tar xf -`", "core"),
+            ("cd {fhome} && sh <<< 'tar xf -'", "core"),
+            ("cd {fhome}; find . -exec tar xf - \\;", "core"),
+            ("cd {fhome}/plugin && sh -c 'rm -rf lib'", "core"),
+            ("cd {fhome} && python3 -c \"import os; os.system('tar xf -')\"", "core"),  # its review
+            ("cd /tmp && sh -c 'tar xf -'", None),
+        ], lambda cmd: self.bash(cmd, cwd="/tmp"))
+
     def test_jarvis_cd_and_pipeline_false_positives(self):
         # T-0384 (JARVIS, four refusals in an hour): writes only into the scratchpad or a builder's own folder were
         # refused with no task, because quoted text (a jq filter, a sed script) read as branches, a head `cd /abs &&`
