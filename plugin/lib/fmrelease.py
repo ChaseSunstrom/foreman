@@ -348,6 +348,13 @@ def ship(p, args):
     if not picks:
         print(f"nothing to ship: {remote} main already has HEAD's changes" + (f" after the last shipped commit {last[:8]}" if last else ""))
         return 0
+    if args.check:  # T-1960: a ship verifies without a grant: which of these main lacks, by patch
+        missing = [x for x in picks if not args.commits or _git(root, "cherry", base, x, f"{x}^").startswith("+")]
+        for x in missing:
+            print(f"{remote} main lacks {x[:8]} {c.fit(c.plain(_git(root, 'log', '-1', '--format=%s', x).strip()), 72)}")
+        if not missing:
+            print(f"{remote} main has the changes of {', '.join(x[:8] for x in picks)}")
+        return 1 if missing else 0
     b = _grant(p) or _err(_NEED_GRANT.replace("--push", "fm ship", 1) + "; nothing was pushed")
     if args.test:  # T-1950: remembered per repo, so the oldest runtime's suite isn't retyped each ship
         _git(root, "config", "--local", "foreman.shiptest", args.test, ok=True)
