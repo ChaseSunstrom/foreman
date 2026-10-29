@@ -6780,7 +6780,7 @@ def _build_parser():
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
             "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
     s.add_argument("action", choices=["compile", "check", "turntable", "shader", "soak", "cells", "import", "metaballs",
-                                       "terrain", "airlock", "bench", "lookbook", "shade"],
+                                       "terrain", "airlock", "bench", "lookbook", "shade", "gallery"],
                    help="compile: the module; "
                    "check: validate and count (a .gltf or .glb: its structure, offline); turntable: a contact sheet of "
                    "the scene turned about +Y, drawn by fmraster with no browser or GPU (--out PNG); shader: GLSL "
@@ -6794,9 +6794,11 @@ def _build_parser():
                    "--days as boxes either side of a gate, no FILE (T-1849); bench: fm code bench's last 12 runs, a "
                    "box per seed, no FILE (T-1850); lookbook: the look cards hung in a gallery, best ranked first, "
                    "--count of them, no FILE (T-1852); shade: a fragment shader (a card, a .frag) run per pixel on the "
-                   "CPU, a GLSL ES subset, written as a PNG to --out (T-1846)")
+                   "CPU, a GLSL ES subset, written as a PNG to --out (T-1846); gallery: every built-in scene drawn "
+                   "small on one sheet (--out PNG), a caption each saying what it tells you, a sample where this repo "
+                   "has no data (T-1873)")
     s.add_argument("path", metavar="FILE", nargs="?", help="the scene.json (shader: a card, a GLSL file or a folder "
-                   "of them; import: the three.js JSON; metaballs, terrain, airlock, bench, lookbook: none)")
+                   "of them; import: the three.js JSON; metaballs, terrain, airlock, bench, lookbook, gallery: none)")
     s.add_argument("--balls", type=int, default=5, help="metaballs: how many balls, 1-12 (T-1848)")
     s.add_argument("--grid", type=int, default=32, help="metaballs: cubes along each side of the box, 8-48")
     s.add_argument("--count", type=int, default=8, help="lookbook: how many looks hang, 1-12 (T-1852)")

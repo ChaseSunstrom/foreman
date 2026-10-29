@@ -618,10 +618,13 @@ def turntable(scene, frames=8, size=(160, 100), cols=4):
     no browser or GPU): (width, height, RGB bytes), frames left to right then down. ponytail: pure Python, about a
     second a megapixel; a scene of many thousand triangles takes a while."""
     w, h = size
-    bg = _background(scene)
-    tiles = [_frame(scene, 360 * k / frames, w, h) for k in range(frames)]
-    cols = min(cols, frames)
-    rows = -(-frames // cols)
+    return _sheet([_frame(scene, 360 * k / frames, w, h) for k in range(frames)], w, h, cols, _background(scene))
+
+
+def _sheet(tiles, w, h, cols, bg):
+    """w x h RGB tiles laid left to right then down, cols wide, on bg: (width, height, RGB bytes)."""
+    cols = min(cols, len(tiles))
+    rows = -(-len(tiles) // cols)
     sheet = bytearray(bytes(bg) * (w * cols * h * rows))
     for k, tile in enumerate(tiles):
         x0, y0 = (k % cols) * w, (k // cols) * h
@@ -1473,6 +1476,68 @@ _READS = {"--balls": "metaballs", "--grid": "metaballs", "--seed": "metaballs", 
           "--time": "shade", "--set": "shade"}  # T-1855: which actions read each flag; --out is everyone's
 
 
+GALLERY = {"metaballs": "a seeded blob, polygonised by marching tetrahedra: the smooth-surface path",
+           "terrain": "where the repo churns: a ridge per busiest path, taller is more lines changed",
+           "airlock": "what the guard held, a box per category, beside the calls it let through",
+           "bench": "fm code bench by run and seed: green closed, red didn't, taller was slower",
+           "lookbook": "the look cards, best ranked in the middle, each palette as bands"}  # T-1873: tile order
+SAMPLES = {"terrain": lambda: terrain([[1, 4, 2, 6, 3], [2, 1, 5, 2, 4]], ["plugin", "docs"]),
+           "airlock": lambda: airlock({"destructive": 3, "core": 1}, 120),
+           "bench": lambda: bench([{"results": [{"seed": "operator", "closed": True, "seconds": 22},
+                                                {"seed": "fixer", "closed": False, "seconds": 40}]}]),
+           "lookbook": lambda: lookbook(["sample"], {"sample": {"palette": [(230, 90, 60), (40, 120, 200)]}})}
+
+
+def _builtin(action, a):
+    """(scene, what) for a built-in scene from this repo's data; ValueError when the flags or the data won't do."""
+    if action == "metaballs":
+        return metaballs(a.balls, a.grid, a.seed), f"a blob of {a.balls} ball(s)"
+    if action == "lookbook":
+        import fmtaste
+        if not 1 <= a.count <= 12:
+            raise ValueError(f"--count {a.count}: 1 to 12")
+        names = [r["look"] for r in fmtaste.rank()][:a.count]
+        if not names:
+            raise ValueError("no look cards yet")
+        return lookbook(names, fmtaste.looks()), f"{len(names)} look(s), best ranked first"
+    if action == "bench":
+        import fmcodebench
+        runs = fmcodebench.history()
+        return bench(runs), f"the last {min(len(runs), 12)} of {len(runs)} bench run(s)"
+    days = a.days if a.days is not None else 90 if action == "terrain" else 30
+    if not 1 <= days <= 3650:
+        raise ValueError(f"--days {days}: 1 to 3650")
+    if action == "terrain":
+        rows, names = churn(os.getcwd(), days)
+        return terrain(rows, names), f"{len(names)} path(s) over {days} days"
+    import fmcore
+    p = fmcore.find_project(os.getcwd())
+    if not p:
+        raise ValueError("not in a Foreman project: the guard's record is per project")
+    held, through = guard_counts(p, days)
+    if not held and not through and getattr(a, "need_data", False):  # T-1873 review: the gallery's sample instead
+        raise ValueError(f"no guard record over {days} days")
+    return airlock(held, through), f"{sum(held.values())} held in {len(held)} categories, {through} through over {days} days"
+
+
+def gallery(size=(160, 100), cols=3):
+    """T-1873: every built-in scene drawn once, small and unturned, on one sheet left to right then down; each built
+    from this repo's data, or its sample (the reason said) when there's none. (width, height, RGB bytes, captions).
+    The blob is drawn on a 16-cube grid: half the default's detail, an eighth of its work."""
+    import types
+    a, tiles, said = types.SimpleNamespace(balls=5, grid=16, seed=0, count=8, days=None, need_data=True), [], []
+    for k, action in enumerate(GALLERY, 1):
+        try:
+            scene, what = _builtin(action, a)
+        except (OSError, ValueError) as e:
+            scene, what = SAMPLES[action](), f"a sample: {e}"
+        except Exception as e:  # noqa: BLE001 — review: a corrupt record costs its tile, not the sheet
+            scene, what = SAMPLES[action](), f"a sample: unreadable ({type(e).__name__})"
+        tiles.append(_frame(scene, 0, *size))
+        said.append(f"{k}. {action}: {GALLERY[action]} ({what})")
+    return (*_sheet(tiles, *size, cols, (17, 17, 17)), said)
+
+
 def cmd_scene(args):
     import sys
     import fmcli
@@ -1481,43 +1546,27 @@ def cmd_scene(args):
             print(f"fm: scene: {args.action} doesn't read {flag} (only {', '.join(_READS[flag].split())} do)",
                   file=sys.stderr)
             return 2
-    if args.action in ("metaballs", "terrain", "airlock", "bench", "lookbook"):  # T-1848, T-1851, T-1849, T-1850, T-1852
+    if args.action in ("metaballs", "terrain", "airlock", "bench", "lookbook", "gallery"):  # T-1848..T-1852, T-1873
         if args.path:
             print(f"fm: scene: {args.action} takes no FILE (got {args.path}); write it with --out", file=sys.stderr)
             return 2
         try:
-            if args.action == "metaballs":
-                scene, what = metaballs(args.balls, args.grid, args.seed), f"a blob of {args.balls} ball(s)"
-            elif args.action == "lookbook":
-                import fmtaste
-                if not 1 <= args.count <= 12:
-                    raise ValueError(f"--count {args.count}: 1 to 12")
-                names = [r["look"] for r in fmtaste.rank()][:args.count]
-                scene, what = lookbook(names, fmtaste.looks()), f"{len(names)} look(s), best ranked first"
-            elif args.action == "bench":
-                import fmcodebench
-                runs = fmcodebench.history()
-                scene, what = bench(runs), f"the last {min(len(runs), 12)} of {len(runs)} bench run(s)"
+            if args.action == "gallery":
+                if not args.out:
+                    raise ValueError("gallery writes a PNG: give --out PATH")
+                import fmimg
+                w, h, rgb, said = gallery()
+                fmimg.save(args.out, w, h, rgb, "rgb")
             else:
-                days = args.days if args.days is not None else 90 if args.action == "terrain" else 30
-                if not 1 <= days <= 3650:
-                    raise ValueError(f"--days {days}: 1 to 3650")
-                if args.action == "terrain":
-                    rows, names = churn(os.getcwd(), days)
-                    scene, what = terrain(rows, names), f"{len(names)} path(s) over {days} days"
-                else:
-                    import fmcore
-                    p = fmcore.find_project(os.getcwd())
-                    if not p:
-                        raise ValueError("not in a Foreman project: the guard's record is per project")
-                    held, through = guard_counts(p, days)
-                    scene = airlock(held, through)
-                    what = f"{sum(held.values())} held in {len(held)} categories, {through} through over {days} days"
-            text = json.dumps(scene, indent=2) + "\n"
-            out = _write_out(args, text)
+                scene, what = _builtin(args.action, args)
+                text = json.dumps(scene, indent=2) + "\n"
+                out = _write_out(args, text)
         except (OSError, ValueError) as e:
             print(f"fm: scene: {args.action}: {e}", file=sys.stderr)
             return 2
+        if args.action == "gallery":
+            return fmcli.out(args, {"out": args.out, "size": [w, h], "scenes": said}, "\n".join(
+                [f"wrote {args.out}: {len(said)} scenes, {w}x{h}, left to right then down"] + said)) or 0
         if not out:
             return fmcli.out(args, {"scene": scene}, text.rstrip("\n")) or 0
         gs = [m["geometry"] for m in scene["meshes"] if m["name"] != "floor"]

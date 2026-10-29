@@ -942,5 +942,65 @@ class Terrain(ForemanTestCase):
         self.assertNotEqual(self.fm("scene", "terrain", "--days", "0", check=False).returncode, 0)
 
 
+class Gallery(ForemanTestCase):
+    """T-1873: fm scene gallery, every built-in scene on one sheet, a caption each."""
+
+    def test_each_built_in_builds_and_draws_small_inside_a_time_budget(self):
+        import time
+        self.assertEqual(set(fmscene.SAMPLES) | {"metaballs"}, set(fmscene.GALLERY))  # every tile has a fallback
+        for action in fmscene.GALLERY:
+            t = time.monotonic()
+            scene = fmscene.SAMPLES[action]() if action in fmscene.SAMPLES else fmscene.metaballs(5, 16, 0)
+            rgb = fmscene._frame(fmscene.validate(scene), 0, 160, 100)
+            self.assertLess(time.monotonic() - t, 3.0, action)  # ponytail: a hang guard, not a bench
+            self.assertGreater(len({rgb[i:i + 3] for i in range(0, len(rgb), 3)}), 2, action)  # drew something
+        full = {"terrain": fmscene.terrain([[(r * 7 + t * 3) % 11 for t in range(40)] for r in range(10)],
+                                           [f"p{r}" for r in range(10)]),  # the largest churn draws: 10 by 40
+                "lookbook": fmscene.lookbook([f"l{k}" for k in range(8)],
+                                             {f"l{k}": {"palette": [(200, 30 * k, 90)] * 4} for k in range(8)}),
+                "bench": fmscene.bench([{"results": [{"seed": s, "closed": k % 2 == 0, "seconds": 10 + k}
+                                                     for s in "abcd"]} for k in range(12)])}
+        for action, scene in full.items():  # review: the gallery draws real data, larger than the samples
+            t = time.monotonic()
+            fmscene._frame(fmscene.validate(scene), 0, 160, 100)
+            self.assertLess(time.monotonic() - t, 3.0, action)
+
+    def test_a_tile_falls_back_to_its_sample_when_its_data_is_empty_or_unreadable(self):
+        import types
+        from unittest import mock
+        real = fmscene._builtin
+
+        def broken(action, a):
+            if action == "bench":
+                raise KeyError("runs")  # a corrupt record: one tile, not the whole sheet
+            if action == "airlock":
+                return real(action, types.SimpleNamespace(**{**vars(a), "days": 1}))
+            return real(action, a)
+        with mock.patch.object(fmscene, "guard_counts", return_value=({}, 0)), \
+                mock.patch.object(fmscene, "_builtin", side_effect=broken), \
+                mock.patch("fmcore.find_project", return_value=object()):
+            w, h, rgb, said = fmscene.gallery()
+        self.assertEqual((w, h, len(said)), (480, 200, 5))
+        self.assertIn("(a sample: unreadable (KeyError))", said[3])
+        self.assertIn("(a sample: no guard record over 1 days)", said[2])  # an empty record isn't a bare gate
+
+    def test_fm_scene_gallery_writes_one_sheet_and_a_caption_per_scene(self):
+        import struct
+        out = os.path.join(self.tmp, "gallery.png")
+        lines = self.fm("scene", "gallery", "--out", out).stdout.splitlines()
+        self.assertIn("5 scenes, 480x200", lines[0])
+        self.assertEqual([ln.split(":")[0] for ln in lines[1:]], [f"{k}. {a}" for k, a in enumerate(fmscene.GALLERY, 1)])
+        self.assertIn("(a sample: no fm code bench results", lines[4])  # a fresh project has no bench runs
+        with open(out, "rb") as f:
+            png = f.read(24)
+        self.assertEqual((png[:8], struct.unpack(">II", png[16:24])), (b"\x89PNG\r\n\x1a\n", (480, 200)))
+        said = json.loads(self.fm("scene", "gallery", "--out", out, "--json").stdout)
+        self.assertEqual((said["size"], len(said["scenes"])), ([480, 200], 5))
+        for bad, why in ((["x.json", "--out", out], "takes no FILE"), ([], "give --out"), (["--out", out, "--balls", "3"],
+                                                                                           "only metaballs")):
+            r = self.fm("scene", "gallery", *bad, check=False)
+            self.assertEqual((r.returncode, why in r.stderr, "Traceback" in r.stderr), (2, True, False), r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
