@@ -20,7 +20,22 @@ import threading
 import time
 from collections import Counter, defaultdict
 
-PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+class lazy:  # lowercase: reads like re.compile at each site
+    """T-2020: a module-level pattern compiled on first use; a hook uses few of the ~190 its modules define."""
+
+    def __init__(self, pattern, flags=0):
+        self._args = (pattern, flags)
+
+    def __getattr__(self, name):  # only reached for what isn't cached yet
+        if name.startswith("__") or name == "_args":
+            raise AttributeError(name)
+        attr = getattr(re.compile(*self._args), name)
+        setattr(self, name, attr)
+        return attr
+
+
+PLUGIN_ROOT =os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def claude_path(env):
@@ -578,14 +593,14 @@ def judged(code, out):
     return code, out
 
 
-_NO_TESTS = re.compile(r"(?m)^(=+ )?(Ran 0 tests in|collected 0 items\b|no tests ran\b|No tests found\b|"
+_NO_TESTS = lazy(r"(?m)^(=+ )?(Ran 0 tests in|collected 0 items\b|no tests ran\b|No tests found\b|"
                        r"0 examples, 0 failures)")
 # test runners' failure summaries: unittest, pytest, jest, cargo, go
-_FAILED_SUMMARY = re.compile(r"(?m)^(FAILED \((failures|errors)=\d|=+ .*\b\d+ (failed|errors?)\b.* =+$|Tests: .*\b\d+ failed\b|"
+_FAILED_SUMMARY = lazy(r"(?m)^(FAILED \((failures|errors)=\d|=+ .*\b\d+ (failed|errors?)\b.* =+$|Tests: .*\b\d+ failed\b|"
                              r"test result: FAILED\b|--- FAIL: |\s*\d+ failing\b)")
-_SOME_TESTS = re.compile(r"Ran [1-9]\d* tests? in|collected [1-9]\d* items?|\b[1-9]\d* (passed|examples?)\b")
+_SOME_TESTS = lazy(r"Ran [1-9]\d* tests? in|collected [1-9]\d* items?|\b[1-9]\d* (passed|examples?)\b")
 # T-1256: their pass summaries: unittest, pytest (full or -q), jest, cargo, go, mocha
-_PASSED_SUMMARY = re.compile(r"(?m)^(OK( \([^)]*\))?\s*$|=+ (.*, )?\d+ passed\b.* =+\s*$|\d+ passed\b.* in [\d.]+m?s\b|"
+_PASSED_SUMMARY = lazy(r"(?m)^(OK( \([^)]*\))?\s*$|=+ (.*, )?\d+ passed\b.* =+\s*$|\d+ passed\b.* in [\d.]+m?s\b|"
                              r"Tests:\s+(\d+ \w+, )*\d+ passed\b|test result: ok\b|ok\s+\S+\s+[\d.]+s\s*$|PASS\s*$|"
                              r"\s*\d+ passing \()")
 
@@ -937,16 +952,16 @@ def lock(directory, timeout=5.0):
 _V = r"""[^\s"',;\\]"""
 _KEYWORDS = (r"api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|auth[_-]?token|token|secret|password|passwd"
              r"|pwd")
-_SECRET_KEY = re.compile(r"(?i)(?:" + _KEYWORDS + r")$")  # T-1733: a key name that ends in one holds a secret
+_SECRET_KEY = lazy(r"(?i)(?:" + _KEYWORDS + r")$")  # T-1733: a key name that ends in one holds a secret
 _SECRET_RES = [
-    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"), "[REDACTED PRIVATE KEY]"),
-    (re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"), "[REDACTED JWT]"),
-    (re.compile(r"\b(?:sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
+    (lazy(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"), "[REDACTED PRIVATE KEY]"),
+    (lazy(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"), "[REDACTED JWT]"),
+    (lazy(r"\b(?:sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
                 r"|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}|glpat-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{30,})"), "[REDACTED]"),
-    (re.compile(r"(?i)(authorization\s*[:=]\s*)(?:(?:bearer|basic|token)\s+)?" + r"""[^\s"'\\]+"""), r"\1[REDACTED]"),
-    (re.compile(r"(?i)((?:" + _KEYWORDS + r")\\?[\"']?\s*[=:]\s*)(\\?[\"']?)" + _V + "{4,}"),  # T-1733: "key": too
+    (lazy(r"(?i)(authorization\s*[:=]\s*)(?:(?:bearer|basic|token)\s+)?" + r"""[^\s"'\\]+"""), r"\1[REDACTED]"),
+    (lazy(r"(?i)((?:" + _KEYWORDS + r")\\?[\"']?\s*[=:]\s*)(\\?[\"']?)" + _V + "{4,}"),  # T-1733: "key": too
      r"\1\2[REDACTED]"),
-    (re.compile(r"(://[^/\s:@]+:)[^@\s/]+@"), r"\1[REDACTED]@"),
+    (lazy(r"(://[^/\s:@]+:)[^@\s/]+@"), r"\1[REDACTED]@"),
 ]
 
 
@@ -1016,7 +1031,7 @@ def log_event(p, event, task=None, data=None, session=None):
     return rec
 
 
-LEDGER_ARCHIVE = re.compile(r"ledger-\d{4}-\d\d\.jsonl")
+LEDGER_ARCHIVE = lazy(r"ledger-\d{4}-\d\d\.jsonl")
 
 
 def ledger_hash(raw):
@@ -1058,7 +1073,7 @@ def _archived_last(p):
     return b""
 
 
-_TS = re.compile(rb'"ts": ?"([^"]+)"')
+_TS = lazy(rb'"ts": ?"([^"]+)"')
 
 
 def _seek_since(f, since, chunk=1 << 16):
@@ -1198,8 +1213,8 @@ def _fmt_value(v):
     return "" if v is None else str(v)
 
 
-_FM_LINE = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
-_SECTION = re.compile(r"(?m)^## (.*)\n")
+_FM_LINE = lazy(r"^([A-Za-z_][\w-]*):(.*)$")
+_SECTION = lazy(r"(?m)^## (.*)\n")
 
 
 def _parse_value(raw):
@@ -1213,16 +1228,16 @@ def _parse_value(raw):
 
 # T-1616: the text is non-space characters and runs of spaces followed by one, so no lazy scan retries the tail at
 # every position (a run of 20,000 spaces took 1.5 s); same groups as the old (.*?) form
-_STEP_RE = re.compile(r"^(\d+)\.\s+\[([ xX])\]\s+((?:\S|\s+(?!<- CURRENT\s*$)(?=\S))*)(\s+<- CURRENT)?\s*$")
-_AC_RE = re.compile(r"^-\s+\[([ xX])\]\s+((?:\S|\s+(?=\S))*)\s*$")
-_HYPO_RE = re.compile(r"^- H(\d+) \[(open|ruled out|confirmed)\] (.*)$")
-_EV_RE = re.compile(r"^-\s+\((step|ac)\s+(\d+)\)")
-_AUDIT_RE = re.compile(r"^-\s+\(audit\s+([a-z]+)\)")
-_TREE_MARK = re.compile(r"\[tree ([0-9a-f]+)\]")
+_STEP_RE = lazy(r"^(\d+)\.\s+\[([ xX])\]\s+((?:\S|\s+(?!<- CURRENT\s*$)(?=\S))*)(\s+<- CURRENT)?\s*$")
+_AC_RE = lazy(r"^-\s+\[([ xX])\]\s+((?:\S|\s+(?=\S))*)\s*$")
+_HYPO_RE = lazy(r"^- H(\d+) \[(open|ruled out|confirmed)\] (.*)$")
+_EV_RE = lazy(r"^-\s+\((step|ac)\s+(\d+)\)")
+_AUDIT_RE = lazy(r"^-\s+\(audit\s+([a-z]+)\)")
+_TREE_MARK = lazy(r"\[tree ([0-9a-f]+)\]")
 _RAN_MARK = " [ran]"  # evidence fm produced by running the command (fm task evidence --run, fm check)
 _INCONCLUSIVE = " [inconclusive]"  # T-0255: a run that neither proves nor disproves: kept, never counted
 _REWOUND = " [rewound]"  # T-1267: a step proof whose files a /rewind or a revert took back: kept, never counted
-_ASSUME_RE = re.compile(r"^- (?:\[(assumed|verified|false)(?:: (.*?))?\] )?(.*)$")  # T-0254
+_ASSUME_RE = lazy(r"^- (?:\[(assumed|verified|false)(?:: (.*?))?\] )?(.*)$")  # T-0254
 
 
 def _ledger(text, code=False):
@@ -1235,7 +1250,7 @@ def _ledger(text, code=False):
 def _unmarked(text):
     """Typed text can't carry the marks fm appends ([tree …], [ran]): they would forge a worktree id or a run."""
     return re.sub(r"\[(tree|ran|inconclusive|rewound)\b", r"(\1", text)
-_TS_TAIL = re.compile(r"\((\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\)\s*$")
+_TS_TAIL = lazy(r"\((\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\)\s*$")
 DEFAULT_LENSES = ("intent", "adversary", "edge", "operator", "maintainer")  # what M/L reviews run by default
 # design (T-1501): advisory, never required; fm audit prep adds it only when the diff touches UI (ui_paths)
 AUDIT_LENSES = ("self",) + DEFAULT_LENSES + ("design",)
@@ -1854,7 +1869,7 @@ def id_num(tid):
     return int(m.group(1)) if m else 10 ** 9
 
 
-_BRIEF_FILE = re.compile(r"^(T-\d+)(?:-.*)?\.md$")
+_BRIEF_FILE = lazy(r"^(T-\d+)(?:-.*)?\.md$")
 
 
 def brief_paths(p, include_archive=False):
@@ -2076,7 +2091,7 @@ def rank_inbox(briefs):
     return [pending[i] for i in order]
 
 
-_PREF_WORD, _PREF_STOP = re.compile(r"[a-z][a-z0-9]{2,}"), {"the", "and", "for", "with", "from", "into", "add", "fix"}
+_PREF_WORD, _PREF_STOP = lazy(r"[a-z][a-z0-9]{2,}"), {"the", "and", "for", "with", "from", "into", "add", "fix"}
 
 
 def pref_words(title):
@@ -2158,9 +2173,9 @@ WORK_TAGS = {"CLEAN": "CLEAN", "REFACTOR": "CLEAN", "TIDY": "CLEAN", "PERFORMANC
              "RESEARCH": "RESEARCH", "SPIKE": "RESEARCH", "INVESTIGATE": "RESEARCH"}
 BLOCK_TAGS = {"CONTEXT": "context", "NOTE": "context", "CONSTRAINT": "constraints", "MUST": "constraints",
               "NEVER": "constraints", "DONE-WHEN": "done_when", "ACCEPT": "done_when", "SKIP": "skip", "OUT": "skip"}
-_TAG_LINE = re.compile(r"^(?P<tag>[A-Za-z][A-Za-z-]*)(?P<mod>[!?])?:(?:\s+|$)(?P<text>.*)$")
-_SCOPE_RE = re.compile(r"(?<![\w@])@([\w./*-]+)")
-_REF_RE = re.compile(r"#(T-\d{4,})\b")
+_TAG_LINE = lazy(r"^(?P<tag>[A-Za-z][A-Za-z-]*)(?P<mod>[!?])?:(?:\s+|$)(?P<text>.*)$")
+_SCOPE_RE = lazy(r"(?<![\w@])@([\w./*-]+)")
+_REF_RE = lazy(r"#(T-\d{4,})\b")
 _PAUSE = {"pause", "stop", "hold on", "hold", "wait"}
 
 
@@ -2193,7 +2208,7 @@ _STANDARD = {"standard autonomy", "autonomy standard", "full auto off", "stop fu
 
 
 _GENERIC = r"(it|this|that|everything|all|things|stuff|the (app|project|repo|code|codebase|product|system|tool))"
-_OPEN_ENDED = re.compile("|".join([
+_OPEN_ENDED = lazy("|".join([
     r"\bbrainstorm",
     r"\bget (it|this|everything|things|stuff) done\b",
     r"\bmake " + _GENERIC + r" ((way|much|far|a lot|even) )?(better|great|awesome|perfect|nicer|amazing|shine)\b",
@@ -2204,7 +2219,7 @@ _OPEN_ENDED = re.compile("|".join([
 ]), re.I)
 
 
-_WORK_VERB = re.compile(r"^\W*(?:(?:please|can you|could you|would you|pls)\s+)?(?:add|fix|make|implement|create|"
+_WORK_VERB = lazy(r"^\W*(?:(?:please|can you|could you|would you|pls)\s+)?(?:add|fix|make|implement|create|"
                         r"remove|delete|update|refactor|rename|change|build|write|support|migrate|replace|optimi[sz]e|"
                         r"speed up|clean up|handle|allow|prevent|convert|move|split|merge|extract|upgrade)\b", re.I)
 
@@ -2212,7 +2227,7 @@ _WORK_VERB = re.compile(r"^\W*(?:(?:please|can you|could you|would you|pls)\s+)?
 # Plan-only means holding off on everything ("don't implement anything yet"), not a constraint on one thing ("don't
 # change the API") or a mention of a plan ("the plan only covers X"): clause-anchored, or "anything"/"yet"/"for now".
 _CLAUSE = r"(?:^|[.;:,!?\n]\s*)(?:please\s+)?"
-_PLAN_ONLY = re.compile(
+_PLAN_ONLY = lazy(
     r"\b(?:don'?t|do not|no need to)\s+(?:implement|code|build|start|change|write|execute|touch)\s+"
     r"(?:anything(?!\s+else)|(?:it|this|these|them)\s+(?:yet|for now)|yet|for now)\b|"
     r"\bjust\s+(?:plan|capture)\b|" + _CLAUSE + r"(?:plan|planning|capture)(?:\s+(?:it|this|these|them))?\s+only\b|"
@@ -2241,17 +2256,17 @@ def is_open_ended(text):
     return bool(_OPEN_ENDED.search(t))
 
 
-_EXHAUSTIVE = re.compile(r"(?i)\b(fully[- ]featured|feature[- ]complete|(more )?feature-?full?|every (possible|conceivable) "
+_EXHAUSTIVE = lazy(r"(?i)\b(fully[- ]featured|feature[- ]complete|(more )?feature-?full?|every (possible|conceivable) "
                          r"\w+|every (feature|capability|solution)|all (the )?(possible )?(features|ideas|possibilities|"
                          r"capabilities|solutions)|all possible \w+|everything possible|exhaustive(ly)?|limitless|"
                          r"no (caveats|limits|limitations|gaps) (or|and)|super[- ]brainstorm\w*)\b")
 # T-0364: a concrete target asked for in bulk ("a ton of benchmarks", "like a lot more,"): sweep the space before
 # planning. "more" counts before punctuation or a plural, so "a lot more readable" doesn't.
-_BROAD = re.compile(r"(?i)\b((a ton|tons|loads|heaps) of|(a lot|way|tons|loads|a ton|even) more(?=[,.!?]|$| \w+s\b))")
+_BROAD = lazy(r"(?i)\b((a ton|tons|loads|heaps) of|(a lot|way|tons|loads|a ton|even) more(?=[,.!?]|$| \w+s\b))")
 
 
 # T-0364: a cleanup of the whole repo or of everything named, not one spot: the repo-sweep playbook, tier L
-_SWEEP = re.compile(r"(?i)\b(dead code|unused (code|functions?|functionality|features?)|(replaced|superseded) "
+_SWEEP = lazy(r"(?i)\b(dead code|unused (code|functions?|functionality|features?)|(replaced|superseded) "
                     r"(code|functionality)|clean(ing)?[- ]?up (everything|all (the )?(docs|code|files)|the (whole )?"
                     r"(repo|codebase|project|docs))\b|CLEAN:\s*(the )?(whole|entire|all)\b)")
 
@@ -2263,10 +2278,10 @@ def is_sweep(text):
 # T-1697: a request for a new look (the directions skill, which writes DESIGN.md, fits first) or a smaller change to a
 # screen (the ui playbooks). "design" alone isn't one ("design the schema"), nor a redesign of something with no
 # screen ("the cache layer", "how the app handles retries"), nor Foreman's own fm ui, foreman-ui or a ui test.
-_DESIGN = re.compile(r"(?i)\b(landing page|re-?design\w* (the |a |an |our |my |this |its )?(\w+ )?(page|screen|site|"
+_DESIGN = lazy(r"(?i)\b(landing page|re-?design\w* (the |a |an |our |my |this |its )?(\w+ )?(page|screen|site|"
                      r"layout|dashboard|header|footer|menu|form|modal|look)|(visual|web|page|screen|ui) design|"
                      r"design (direction|system|language)|look and feel)\b")
-_UI = re.compile(r"(?i)(?<![\w-])(?<!fm )(ui|ux)(?![\w-]| tests?\b| --)|\b(front-?end|user interface|web interface|"
+_UI = lazy(r"(?i)(?<![\w-])(?<!fm )(ui|ux)(?![\w-]| tests?\b| --)|\b(front-?end|user interface|web interface|"
                  r"restyl\w*|colou?r (scheme|palette)|typography|dark mode|design tokens|animat\w*|3-?d|webgl|"
                  r"three\.?js|r3f)\b|(?<!fm )\bmotion\b")  # T-1700: animation, motion and 3D reach the ui-design skill
 
@@ -2289,7 +2304,7 @@ def is_exhaustive(text):
 
 
 _NOT = r"(?:can'?t|cannot|isn'?t|aren'?t|doesn'?t|don'?t|won'?t|wouldn'?t|didn'?t|not)"
-_FRICTION = re.compile(
+_FRICTION = lazy(
     r"(?i)\b(?:why|how come)\b(?!\s+(?:don'?t|not)\s+(?:we|you)\b|\s+not\b)[^.?!\n]{0,80}\b" + _NOT + r"\b"
     r"|\b(?:doesn'?t|does not|didn'?t|won'?t|isn'?t|is not|not) (?:work|working|do(?:ing)? anything|start|launch|run|"
     r"open|recogni[sz]ed)\b|\bjust sits there\b|\bnothing happens\b|\b(?:is|are|seems?|looks?) broken\b"
@@ -2391,7 +2406,7 @@ def parse_intake(text):
     return r
 
 
-_L_WORDS = re.compile(r"\b(migrat\w*|schema|auth\w*|oauth\w*|security|architecture|rewrite|redesign|api|database|"
+_L_WORDS = lazy(r"\b(migrat\w*|schema|auth\w*|oauth\w*|security|architecture|rewrite|redesign|api|database|"
                       r"cross-cutting|breaking|concurren\w*|payment\w*)\b", re.I)
 
 
@@ -2525,7 +2540,7 @@ def plan_gaps(b, autonomy="standard"):
 STAGES = ("planning", "ready", "executing", "verifying", "documenting", "auditing", "closing")  # stage()'s order
 
 
-_VARSEL = re.compile("[︀-️\U000e0100-\U000e01ef]")  # variation selectors: printable, yet stripped below
+_VARSEL = lazy("[︀-️\U000e0100-\U000e01ef]")  # variation selectors: printable, yet stripped below
 
 
 def plain(s):
@@ -2704,17 +2719,17 @@ def routing_problem(r):
 
 # T-0251: the user's "no" as data — a correction that says never/don't/stop X is kept as X's key words and checked
 # before a matching tool call (a note, not a block: a phrase match can be wrong)
-_VETO = re.compile(r"(?i)\b(?:never|don['’]?t|do not|stop)\s+(?:ever\s+)?([^.,;!?\n]{3,120})")
+_VETO = lazy(r"(?i)\b(?:never|don['’]?t|do not|stop)\s+(?:ever\s+)?([^.,;!?\n]{3,120})")
 _NOT_A_VETO = {"think", "know", "want", "like", "care", "mind", "worry", "understand", "see", "need", "get", "mean",
                "believe", "remember", "forget", "bother"}  # "don't think so" is an opinion, not a standing rule
 _VETO_STOP = set("""without asking ask me you the a an it its that this these those any anything ever first again please
 before being told unless until and or to of in on for with from my your our just so too also all again yet
 make do does doing done be is are was were get got have has had use using there here then""".split())
-_GRANTS = re.compile(r"(?i)\s*(?:(?:ask|check|confirm|wait|bother)(?:s|ed|ing)?|stop|until|till|unless|before|now|working|going)\b")
+_GRANTS = lazy(r"(?i)\s*(?:(?:ask|check|confirm|wait|bother)(?:s|ed|ing)?|stop|until|till|unless|before|now|working|going)\b")
 VETOES_KEEP = 30
 
 
-STANDING_STEER = re.compile(r"(?i)\b(always|never|from now on|every time|going forward|by default|in general|"
+STANDING_STEER = lazy(r"(?i)\b(always|never|from now on|every time|going forward|by default|in general|"
                             r"any time|whenever|as a rule)\b")  # T-0601: a steer meant to last, not just this once
 
 
@@ -2875,11 +2890,11 @@ def veto_hits(p, text):
     return [v for v in vetoes(p) if all(any(h.startswith(str(w)) for h in have) for w in v["words"])]
 
 
-CODE = re.compile(r"\.(py|js|jsx|ts|tsx|go|rs|rb|java|kt|c|cc|cpp|h|hpp|cs|swift|php|sh|lua|zig)$")
-TESTISH = re.compile(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$")
-DOC = re.compile(r"(?i)\.(md|markdown|rst|txt|adoc)$")  # prose files
+CODE = lazy(r"\.(py|js|jsx|ts|tsx|go|rs|rb|java|kt|c|cc|cpp|h|hpp|cs|swift|php|sh|lua|zig)$")
+TESTISH = lazy(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$")
+DOC = lazy(r"(?i)\.(md|markdown|rst|txt|adoc)$")  # prose files
 # T-0272: the names of failing tests in a gate's output (unittest, pytest, go test, cargo test)
-_FAILING_TEST = re.compile(r"(?m)^(?:(?:FAIL|ERROR): \S+ \(([A-Za-z_]\w*(?:\.\w+)+)\)|FAILED (\S+::\S+)|--- FAIL: (\S+)|"
+_FAILING_TEST = lazy(r"(?m)^(?:(?:FAIL|ERROR): \S+ \(([A-Za-z_]\w*(?:\.\w+)+)\)|FAILED (\S+::\S+)|--- FAIL: (\S+)|"
                            r"test (\S+) \.\.\. FAILED)")  # unittest's (module.Class.test): dotted, not "ERROR: x (30)"
 FLAKY_KEEP = 500
 
@@ -2953,7 +2968,7 @@ def note_flakes(p, runs, tree, commands=None):
 
 QUIET_AFTER = 6  # T-0250: a hint shown this many times running without being used loses its detail
 HINT_MARKS = {"batch": "fm batch ", "skills": "skills that fit"}  # in the full and the quiet form alike
-_REVISIT_TAG = re.compile(r"\[revisit: (?:after (\d{4}-\d\d-\d\d)|when (\S+) changes @([0-9a-f]+))\]")
+_REVISIT_TAG = lazy(r"\[revisit: (?:after (\d{4}-\d\d-\d\d)|when (\S+) changes @([0-9a-f]+))\]")
 
 
 def _hints(p):
@@ -3033,7 +3048,7 @@ def revisit_tag(root, trigger):
     return f"[revisit: when {os.path.relpath(path, top)} changes @{file_digest(path)}]"
 
 
-_UNTIL_NAME = re.compile(r"[\w.+-]{1,64}")
+_UNTIL_NAME = lazy(r"[\w.+-]{1,64}")
 
 
 def _until_path(root, rel):
@@ -3164,7 +3179,7 @@ def stuck_rung(b):
     return None
 
 
-_ENV_FAIL = re.compile(r"command not found|no such file or directory|permission denied|connection refused|"
+_ENV_FAIL = lazy(r"command not found|no such file or directory|permission denied|connection refused|"
                        r"timed out|could not resolve|address already in use|disk full|no space left")
 
 
@@ -3334,7 +3349,7 @@ def active_brief(briefs, lane=None):
     return next((b for b in briefs if b.status in ("active", "verifying") and b.meta.get("lane") == lane), None)
 
 
-_ACTIVE_LINE = re.compile(rb"^status:[ \t]*(?:active|verifying)[ \t]*\r?$", re.M)
+_ACTIVE_LINE = lazy(rb"^status:[ \t]*(?:active|verifying)[ \t]*\r?$", re.M)
 
 
 def active_brief_fast(p, lane=None):
@@ -3669,10 +3684,10 @@ def task_touches(p, tid, window=None):
     return files
 
 
-_WORKTREE_PREFIX = re.compile(r"^\.claude/worktrees/[^/]+/")  # Claude Code's lane worktrees inside the checkout
+_WORKTREE_PREFIX = lazy(r"^\.claude/worktrees/[^/]+/")  # Claude Code's lane worktrees inside the checkout
 
 
-_INSTRUCTION = re.compile(r"(?i)(ignore|disregard|forget) (all |any |the )?(previous|prior|above|earlier|your) "
+_INSTRUCTION = lazy(r"(?i)(ignore|disregard|forget) (all |any |the )?(previous|prior|above|earlier|your) "
                           r"(instructions|prompts?|rules)|\byou are now\b|new (system )?instructions:|system prompt|"
                           r"</?(system|instructions?|assistant)>|^\s*(system|assistant)\s*:|do not tell the user|"
                           r"(curl|wget)\s[^|\n]*\|\s*(ba|z)?sh\b")
@@ -3708,7 +3723,7 @@ def scope_drift(b, files):
     return [f for f in files if scope and not f.startswith(".foreman/") and not any(glob_match(f, s) for s in scope)]
 
 
-_VERIFY_OF = re.compile(r"— verify with `(.+)`\s*$")
+_VERIFY_OF = lazy(r"— verify with `(.+)`\s*$")
 
 
 def strip_verify(criterion_text):
@@ -3722,13 +3737,13 @@ def verify_of(criterion_text):
     return m.group(1) if m else None
 
 
-_SENSITIVE_PATH = re.compile(r"(?i)(auth|crypt|secret|passw|credential|oauth|jwt|sandbox|guard|sudo|keyring|csrf|"
+_SENSITIVE_PATH = lazy(r"(?i)(auth|crypt|secret|passw|credential|oauth|jwt|sandbox|guard|sudo|keyring|csrf|"
                              r"xss|saniti[sz])")
 # T-1231: these only at the end of a word of the path (usertoken.py, APIToken.ts) or before a service-like suffix
 # (sessionmanager.go); kit/tokenbucket.py, tokenizer.py and oracle.py aren't auth code
-_SENSITIVE_WORD = re.compile(r"(?i)^[a-z0-9]*(tokens?|sessions?|logins?|signin|permissions?|acls?|security|signing|"
+_SENSITIVE_WORD = lazy(r"(?i)^[a-z0-9]*(tokens?|sessions?|logins?|signin|permissions?|acls?|security|signing|"
                              r"signers?|cookies?)$")
-_SENSITIVE_RUNON = re.compile(r"(?i)^(tokens?|sessions?|logins?|permissions?|acls?)(manager|store|handler|service|"
+_SENSITIVE_RUNON = lazy(r"(?i)^(tokens?|sessions?|logins?|permissions?|acls?)(manager|store|handler|service|"
                               r"provider|helper|middleware|util|utils|cache)s?$")
 
 
@@ -3736,22 +3751,22 @@ def _sensitive_path(f):
     words = [w for w in re.split(r"[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", f) if w]
     return bool(_SENSITIVE_PATH.search(f)) or any(_SENSITIVE_WORD.match(w) or _SENSITIVE_RUNON.match(w)
                                                   for w in words)
-_SENSITIVE_CODE = re.compile(r"(pickle\.loads?\(|yaml\.load\(|marshal\.loads?\(|\beval\(|\bexec\(|shell=True|"
+_SENSITIVE_CODE = lazy(r"(pickle\.loads?\(|yaml\.load\(|marshal\.loads?\(|\beval\(|\bexec\(|shell=True|"
                              r"os\.system\(|verify=False|innerHTML|dangerouslySetInnerHTML|\bmd5\(|\bsha1\(|"
                              r"deseriali[sz]e|"
                              # T-0284: network and ingest — untrusted text arrives here
                              r"urlopen\(|requests\.(?:get|post|request)\(|http\.client|\bfetch\(|axios\.)")
 # ponytail: one-line quotes only; a pattern inside a multi-line string or a docstring still counts. f-strings are
 # kept: their {fields} are code
-_STRING_LITERAL = re.compile(r"""(?<![fF])(?<![fF][rR])(["'])(?:\\.|(?!\1).)*\1""")
-_REGEX_EXEC = re.compile(r"/(?:\\.|[^/\n])+/[a-z]*\.exec\(")  # T-0118: a JS regex literal matching, not running code
+_STRING_LITERAL = lazy(r"""(?<![fF])(?<![fF][rR])(["'])(?:\\.|(?!\1).)*\1""")
+_REGEX_EXEC = lazy(r"/(?:\\.|[^/\n])+/[a-z]*\.exec\(")  # T-0118: a JS regex literal matching, not running code
 
 
-_MANIFEST = re.compile(r"(^|/)(package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|requirements[^/]*\.txt|pyproject\.toml|"
+_MANIFEST = lazy(r"(^|/)(package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|requirements[^/]*\.txt|pyproject\.toml|"
                        r"poetry\.lock|uv\.lock|Pipfile(\.lock)?|Cargo\.(toml|lock)|go\.(mod|sum)|Gemfile(\.lock)?|"
                        r"composer\.(json|lock)|pom\.xml|build\.gradle(\.kts)?)$")  # supply chain: new code runs here
 # T-0885, T-1818: code that runs outside this diff's tests: CI (with its secrets), installs, builds, every tool call
-_RUNS_ELSEWHERE = re.compile(r"(^|/)(\.github/workflows/|\.gitlab-ci\.yml$|install[^/]*\.sh$|Dockerfile|Makefile$|"
+_RUNS_ELSEWHERE = lazy(r"(^|/)(\.github/workflows/|\.gitlab-ci\.yml$|install[^/]*\.sh$|Dockerfile|Makefile$|"
                              r"setup\.py$|hooks/hooks\.json$|\.claude/settings[^/]*\.json$|\.pre-commit-config\.yaml$|"
                              r"\.husky/)")
 
@@ -3771,9 +3786,9 @@ def sensitive(files, diff=""):
 
 
 _UI_MORE = {".sass", ".less", ".astro", ".jinja", ".jinja2", ".hbs", ".njk", ".ejs", ".twig", ".liquid"}  # not linted
-_UI_TUI = re.compile(r"(?:^|[/_-])[a-z]*tui(?:[/_-].*)?\.(py|go|rs|[jt]s)$")  # fmcodetui.py, tui/x.py; not intuition
-_UI_OTHER = re.compile(r"^mods/[^/]+/hooks/.+\.ts$|(?:^|/)(?:subagent-)?statusline(?:\.\w+)?$")  # the pane, statuslines
-_NOT_UI = re.compile(r"(?:^|/)(?:tests?|__tests__|fixtures)/|(?:^|/)test_[^/]*$|\.(?:test|spec)\.\w+$")
+_UI_TUI = lazy(r"(?:^|[/_-])[a-z]*tui(?:[/_-].*)?\.(py|go|rs|[jt]s)$")  # fmcodetui.py, tui/x.py; not intuition
+_UI_OTHER = lazy(r"^mods/[^/]+/hooks/.+\.ts$|(?:^|/)(?:subagent-)?statusline(?:\.\w+)?$")  # the pane, statuslines
+_NOT_UI = lazy(r"(?:^|/)(?:tests?|__tests__|fixtures)/|(?:^|/)test_[^/]*$|\.(?:test|spec)\.\w+$")
 
 
 def ui_paths(files):
@@ -3792,7 +3807,7 @@ def ui_paths(files):
     return out
 
 
-_ENTRY = re.compile(r"(?i)(?:^|/)(?:index|main|app|page|layout|routes?|router|server|cli|__main__|_app|_document)\.\w+$")
+_ENTRY = lazy(r"(?i)(?:^|/)(?:index|main|app|page|layout|routes?|router|server|cli|__main__|_app|_document)\.\w+$")
 _STYLE = (".css", ".scss", ".sass", ".less")
 
 
@@ -3849,13 +3864,13 @@ def lint_verify(cmd, root):
     return problems
 
 
-_STATE_READ = re.compile(r"(?:^|[\s'\"=:/])\.foreman(?:/|\b)|\bforeman/state/(?:projects/[^/\s]+/)?(?:tasks|briefs)\b"
+_STATE_READ = lazy(r"(?:^|[\s'\"=:/])\.foreman(?:/|\b)|\bforeman/state/(?:projects/[^/\s]+/)?(?:tasks|briefs)\b"
                          r"|\bstate/projects/[^/\s]+/(?:tasks|briefs)\b|\bstate/(?:tasks|briefs)/T-\d+|\$\{?FOREMAN_STATE\b")  # a task file, not a repo's own state/
 
 
 # T-0943: commands that act on or read a live account, cluster or database (local checks like terraform validate or
 # plan, helm lint, kubectl kustomize, a psql without a host stay quiet)
-_LIVE = re.compile(r"(?:\w+=\S*\s+)*(aws|gcloud|az|kubectl|psql|mysql|mongosh|redis-cli|terraform|tofu|helm|pulumi)\b"
+_LIVE = lazy(r"(?:\w+=\S*\s+)*(aws|gcloud|az|kubectl|psql|mysql|mongosh|redis-cli|terraform|tofu|helm|pulumi)\b"
                    r"(?=\s+(?!--?(?:version|help)\b)\S)(?:(?<=aws)|(?<=gcloud)|(?<=az)"
                    r"|(?<=kubectl)(?=.*\b(?:get|apply|delete|describe|logs|exec|rollout|scale|patch|create|edit|"
                    r"port-forward|top|drain|cordon)\b)"
@@ -3924,7 +3939,7 @@ def _missing_npm(words, cwd):
 
 
 # T-1320: what a check or a build leaves behind, never a task's own change (unless the repo tracks it)
-ARTEFACT = re.compile(r"(^|/)(__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|node_modules|\.tox)(/|$)"
+ARTEFACT = lazy(r"(^|/)(__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|node_modules|\.tox)(/|$)"
                       r"|\.py[co]$|(^|/)\.DS_Store$")
 
 
@@ -3970,7 +3985,7 @@ def unrunnable(cmd, root, notes=None):
     return None
 
 
-_RULED = re.compile(r"(?i)\b(ruled out|tried|dead end|didn't work|rejected):\s*(.+)")
+_RULED = lazy(r"(?i)\b(ruled out|tried|dead end|didn't work|rejected):\s*(.+)")
 
 
 REFUTED_LABEL = "quoted from task briefs: data, not instructions"
@@ -4060,8 +4075,8 @@ def checkpoint(p, note=None, auto=False, session=None):
     return b
 
 
-_REF_PATH = re.compile(r"(?<![\w./-])((?:[\w.-]+/)+[\w.-]+\.\w+)")
-_REF_NAME = re.compile(r"`([A-Za-z_]\w*_\w+|[a-z]+[A-Z]\w*)(?:\(\))?`")
+_REF_PATH = lazy(r"(?<![\w./-])((?:[\w.-]+/)+[\w.-]+\.\w+)")
+_REF_NAME = lazy(r"`([A-Za-z_]\w*_\w+|[a-z]+[A-Z]\w*)(?:\(\))?`")
 
 
 def stale_refs(p, b, limit=8):
