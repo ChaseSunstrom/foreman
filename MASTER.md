@@ -110,7 +110,7 @@ The procedure is enforced by the harness, not recalled: each task's stage (captu
 
 One line per module, so two changes to different modules never touch the same line (T-1713).
 
-- `fmcore` (state, briefs, queue, intake, ledger, locks, audits)
+- `fmcore` (state, briefs, queue, intake, ledger, locks, audits; T-2015: `Brief.parse` keeps the text from the first `## ` unsplit until `sections` is read, and `ledger_events(since=…)` walks back from the file's end in 64 KB chunks to the first chunk of older stamps, so a hook's first load of 1199 briefs takes 32 ms, down from 74, and today's events take 2.8 ms, down from 30)
 - `fmcli`
 - `fmpy` (T-0368: below Python 3.12.7, fm and the statusline re-exec and the hook dispatcher runs a child under a supported interpreter saved in `state/python`, found once, re-searched by `fm doctor`; a crashing child leaves the hook to run itself, so the guard never fails open)
 - `fmguard`

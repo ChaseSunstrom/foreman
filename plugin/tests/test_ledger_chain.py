@@ -47,6 +47,17 @@ class Chain(ForemanTestCase):
         self.assertEqual([e["task"] for e in c.ledger_events(self.p, ("correction",), since="2026-02-01")], ["T-0002"])
         self.assertGreaterEqual(len(c.ledger_events(self.p)), 3)
 
+    def test_ledger_events_since_reads_only_the_tail(self):
+        # T-2015: the risk budget asked for today's events and parsed all 18 MB of the ledger on every hook
+        old = json.dumps({"ts": "2026-01-05T00:00:00Z", "event": "note", "data": {"pad": "x" * 200}})
+        self.put([old] * 3000 + [json.dumps({"ts": f"2026-03-0{i + 1}T00:00:00Z", "event": "note", "data": {"i": i}})
+                                 for i in range(3)])
+        real, calls = json.loads, []
+        with mock.patch.object(c.json, "loads", side_effect=lambda s, *a, **k: calls.append(1) or real(s, *a, **k)):
+            got = c.ledger_events(self.p, since="2026-03-01")
+        self.assertEqual([e["data"]["i"] for e in got], [0, 1, 2])
+        self.assertLess(len(calls), 500, "older lines past the tail are never parsed")
+
     def test_untouched_ledger_verifies(self):
         for i in range(5):
             c.log_event(self.p, "note", data={"i": i})
