@@ -1654,11 +1654,8 @@ class Brief:
         if self.docs_gap():
             reasons.append(f"docs impact not recorded (fm task set {self.id} --section \"Docs impact\" --text "
                            f"\"<docs updated | none: why>\")")
-        if self.type == "FIX" and not self.red_green() and not self.section("Regression test").strip():
-            reasons.append(f"no red→green proof: fm task prove {self.id} --run \"<test cmd>\" (runs it on the start tree "
-                           f"with this task's tests, then now), or record it failing before the fix and passing after "
-                           f"(fm task evidence {self.id} --run \"<test cmd>\", both times), or say why there is none "
-                           f"(fm task set {self.id} --section \"Regression test\" --text \"none: <why>\")")
+        if gap := self.proof_gap():
+            reasons.append(gap)
         if self.type == "PERFORMANCE" and not self.section("Measurements").strip():
             reasons.append(f"no before/after numbers: fm task set {self.id} --section \"Measurements\" --text "
                            f"\"<metric>: <before> → <after> (<how measured>)\" (or \"none: <why>\")")
@@ -1684,8 +1681,19 @@ class Brief:
         """A command fm ran that failed and later passed (T-0045): the test proves the fix."""
         return self.red_green_cmd() is not None
 
-    def red_green_cmd(self):
-        """The first command fm ran that failed and later passed, or None (fm pr shows it: T-0263)."""
+    def proof_gap(self, then=()):
+        """A FIX's missing red→green proof, said with how to give it, or None; then: commands about to run, counted as
+        passing (T-1906: fm task finish asks before its checks run, not after)."""
+        if self.type != "FIX" or self.section("Regression test").strip() or self.red_green_cmd(then):
+            return None
+        return (f"no red→green proof: fm task prove {self.id} --run \"<test cmd>\" (runs it on the start tree with this "
+                f"task's tests, then now), or record it failing before the fix and passing after (fm task evidence "
+                f"{self.id} --run \"<test cmd>\", both times), or say why there is none (fm task set {self.id} --section "
+                f"\"Regression test\" --text \"none: <why>\")")
+
+    def red_green_cmd(self, then=()):
+        """The first command fm ran that failed and later passed, or None (fm pr shows it: T-0263); then: commands
+        about to run, counted as passing."""
         failed = set()
         for line in self.evidence():
             if _RAN_MARK not in line or "`" not in line:
@@ -1695,7 +1703,7 @@ class Brief:
                 failed.add(cmd)
             elif cmd in failed:
                 return cmd
-        return None
+        return next((cmd for cmd in then if cmd in failed), None)
 
     def first_evidence(self):
         """{step n: timestamp of its first evidence}: when each step's work was first checked."""
