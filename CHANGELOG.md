@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The guard reads a `for`/`while`/`if`/`case`/`{ }` compound after `cd <scratch> &&` as one command run in that folder, so the cherry-pick loop its own hint suggests isn't blocked as a tree write over Foreman; a compound that may move the shell (a `cd` as written, quoted or escaped, a computed command word, a substitution) still makes the line branchy, and so does a command merely named like a keyword (`for-x`) (T-1920).
 - A builder's contract says to probe code through the tests its criteria name, not `python3 -c 'import …'` from the root, where a module off the import path fails (T-1918).
 - `fm task prove` leaves a changed tests-folder file that the start tree already has (a runner like `run.py`) at its start version, so the red run tests the change instead of passing with it; new helpers and test-named files still come over (T-1919).
 - Guard lets a quoted heredoc write a scratch draft (`.txt`, `.patch`, `.diff`, `.md`, `.json`) that names Foreman's modules when the same command only feeds it to `fm edit` or an existing script, so writing and applying a draft is one command; any other use of the draft, a glob, quote, expansion or `cd` still blocks (T-1917).
