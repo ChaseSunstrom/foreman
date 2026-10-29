@@ -1749,6 +1749,9 @@ class Fuzz(unittest.TestCase):
             app = T.App(T.DEFAULTS, spawn=lambda *a, **k: None)
             for e in events:
                 app.feed(e)
+            for name in T.PANELS:  # T-1926: a panel that throws draws one "failed" line; none may need it
+                row = (T._draw(name, app.state, 80, 24, app) or [[]])[0]
+                self.assertFalse(row and str(row[0][0]).startswith(f"panel {name} failed"), (seed, row))
             for w, h in self.SIZES:
                 with self.subTest(seed=seed, size=(w, h)):
                     for t in (100.0, 100.3, 101.7):
