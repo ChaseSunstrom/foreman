@@ -1250,9 +1250,14 @@ def cmd_lib(args):
             raise fmcli.UsageError(f"{dest} appeared meanwhile; not admitted")
         os.remove(path)
         return print(f"Admitted {os.path.relpath(dest, into)}.")
-    if args.action == "check":
-        problems, notes = lint()
-        found = cards()
+    if args.action == "check":  # T-2047: the checkout it runs in (a builder's worktree), not the installed plugin's
+        top = (args.root or [None])[0] or c._git(os.getcwd(), "rev-parse", "--show-toplevel").strip()
+        here = os.path.join(top, "plugin", "skills", "library", "cards") if top else ""
+        if args.root and not os.path.isdir(here):
+            raise fmcli.UsageError(f"{args.root[0]} has no plugin/skills/library/cards to check")
+        here = here if os.path.isdir(here) else CARDS
+        problems, notes = lint(here)
+        found = cards(here)
         n, dated, related = len(found), sum(1 for x in found if _verified(x)), related_notes(notes)
         fmcli.out(args, {"cards": n, "verified": dated, "problems": problems, "notes": notes},
                   "\n".join(problems) if problems else f"{n} cards, all well-formed, {dated} with a verified: date"
