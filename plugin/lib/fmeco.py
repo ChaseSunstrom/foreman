@@ -591,6 +591,27 @@ def prefer(p, win, lose):
     return a, b, len(wa ^ wb)
 
 
+def prefer_why(p, tid):
+    """T-1872: why the learned order lifts or sinks an inbox item: (brief, [(word, weight)] strongest first, tilt),
+    from the same terms title_tilt sums."""
+    import fmcli
+    b = next((x for x in c.load_briefs(p) if x.id == str(tid).upper() and x.status == "captured"), None)
+    if not b:
+        raise fmcli.UsageError(f"fm inbox prefer --why {c.fit(c.plain(tid), 20)}: an item in the inbox")
+    weights = c.learned_weights(p.dir)
+    words = sorted(((w, weights[w]) for w in c.pref_words(b.title) if weights.get(w)), key=lambda x: (-abs(x[1]), x[0]))
+    return b, words, c.title_tilt(weights, b.title)
+
+
+def cmd_triage(args):
+    """T-1872: the backlog on the surface that fits: --serve the swipe page, a terminal the swipe loop, otherwise
+    (a pipe, --json, Claude Code) the small items ready to start."""
+    for k in ("file", "loser", "apply", "epsilon", "reset", "repo", "limit", "post", "why"):
+        setattr(args, k, None)
+    args.source = "swipe" if args.serve or (not args.json and _tty()) else "first"
+    return cmd_inbox(args)
+
+
 def prefer_reset(p):
     """T-1861: forget the learned title-word weights: (how many there were, whether a prefer.json was removed; one
     that couldn't be read holds none)."""
@@ -891,7 +912,7 @@ def cmd_inbox(args):
         return fmcli.out(args, {"inbox": sd["inbox"]}, c.render_inbox(sd).split("\n", 2)[2].strip())
     for flag, used in (("apply", ("swipe",)), ("serve", ("swipe",)), ("loser", ("prefer",)), ("repo", ("gh",)), ("epsilon", ("pick",)),
                        ("reset", ("prefer",)), ("limit", ("gh", "first", "pick")), ("file", ("spec", "ticket", "prefer")),
-                       ("post", ("ticket",))):
+                       ("post", ("ticket",)), ("why", ("prefer",))):
         if getattr(args, flag) is not None and args.source not in used:  # T-1855's rule: no flag silently unread
             name = "a second item" if flag == "loser" else "FILE" if flag == "file" else f"--{flag}"
             raise fmcli.UsageError(f"fm inbox {args.source}: {name} goes with {' or '.join(used)} only")
@@ -926,6 +947,17 @@ def cmd_inbox(args):
         d = inbox_pick(p, args.limit or 4, eps)
         return fmcli.out(args, {"pairs": d}, "\n".join(f"{x['a']['id']} {x['a']['title']}  or  {x['b']['id']} "
                                                        f"{x['b']['title']}" for x in d) or "No close pair to choose.")
+    if args.source == "prefer" and args.why:
+        if args.file or args.loser or args.reset:
+            raise fmcli.UsageError("fm inbox prefer --why ID explains one item: no other item and no --reset")
+        b, words, tilt = prefer_why(p, args.why)
+        head = f"{b.id} {c.plain(b.title)}: "
+        # a word moves the order half its weight (title_tilt), so the lines add up to the head's points, before its cap
+        return fmcli.out(args, {"id": b.id, "tilt": tilt, "words": [{"word": w, "weight": v, "points": v / 2}
+                                                                     for w, v in words]},
+                         head + f"{tilt:+g} from learned choices (at most ±2)\n" + "\n".join(
+                             f"  {w} {v / 2:+g} {'lifts' if v > 0 else 'sinks'} it" for w, v in words) if words else
+                         head + "nothing learned lifts or sinks it.")
     if args.source == "prefer" and args.reset:
         if args.file or args.loser:
             raise fmcli.UsageError("fm inbox prefer --reset takes no items")
