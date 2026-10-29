@@ -426,6 +426,30 @@ def parse_tokens(v):
     return round(float(m[1]) * {"": 1, "k": 1e3, "m": 1e6}[m[2].lower()]) if m else None
 
 
+def queue_quote(p, order, days=90):
+    """T-1878: what the queue will likely cost before it starts: each task's median of finished tasks of its type and
+    tier (two or more), summed, beside the last day's spend and the week's usage. A quote only: nothing is refused."""
+    import fmbudget
+    costs, done = task_costs(p, days), collections.defaultdict(list)
+    for x in c.load_briefs(p):
+        if x.status == "done" and costs.get(x.id):
+            done[(x.type, x.tier)].append(costs[x.id])
+    med = {k: round(statistics.median(v)) for k, v in done.items() if len(v) >= 2}
+    return {"tasks": len(order), "tokens": sum(med.get((b.type, b.tier), 0) for b in order),
+            "no_history": [b.id for b in order if (b.type, b.tier) not in med],
+            "last_day": sum(task_costs(p, 1).values()),
+            "week_used": (fmbudget.forecast().get("seven_day") or {}).get("used")}
+
+
+def quote_line(q):
+    left = q["no_history"]
+    return (f"Quote: {q['tasks']} task(s) ≈ {_human(q['tokens'])} tokens (each the median of its type and tier"
+            + (f"; no history: {', '.join(left[:5])}{' …' if left[5:] else ''}" if left else "")
+            + f") · last 24 h {_human(q['last_day'])}"
+            + (f" · week {q['week_used']:.0f}% used" if q["week_used"] is not None else "")
+            + ". A quote: nothing is refused.")
+
+
 def forecast_task(p, b, costs=None, days=90):
     """T-1083: (median cost, how many) of finished tasks of b's type and tier (two or more), else None."""
     costs = task_costs(p, days) if costs is None else costs
