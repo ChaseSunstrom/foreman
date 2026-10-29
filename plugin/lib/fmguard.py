@@ -1677,14 +1677,18 @@ def _python_units(cmd):
         i += 1
         starts = _heredoc_starts(seen, line)
         seen.append(line)
-        # T-0315: plain name=value; first (lowercase: a shell variable, never PATH, HOME or LD_* that pick which python
-        # runs or what it loads) and the script's own arguments (sys.argv: they pick what it reads, never what it may
-        # write, which _open_targets proves from literals) don't change what the code does
-        run = re.match(r"\s*(?:[a-z_][a-z0-9_]*=[\w./~@+:=,-]*\s*;\s*)*(?:cd\s+[\w./~@+:=,-]+\s*&&\s*)*"
-                       r"(python[0-9.]*\s+-(?:\s+(?:'[^'\n]*'|\"[^\"`\n]*\"|[\w./~@+:=,$-]+))*\s*<<.*)$", line)
+        # T-0315: plain name=value; or && first (T-1887: any case, but never one python or bash reads, nor one already
+        # exported, whose new value python would inherit) and the script's own arguments (sys.argv: they pick what it
+        # reads, never what it may write, which _open_targets proves from literals) don't change what the code does
+        run = re.match(r"\s*(?P<pre>(?:[A-Za-z_][A-Za-z0-9_]*=[\w./~@+:=,-]*\s*(?:;|&&)\s*)*)"
+                       r"(?:cd\s+[\w./~@+:=,-]+\s*&&\s*)*"
+                       r"(?P<py>python[0-9.]*\s+-(?:\s+(?:'[^'\n]*'|\"[^\"`\n]*\"|[\w./~@+:=,$-]+))*\s*<<.*)$", line)
+        if run and (re.search(r"\bset\s+-\w*a|allexport", cmd) or any(  # set -a exports them all
+                _PRE_DENY.match(n) or n in os.environ for n in re.findall(r"([A-Za-z_]\w*)=", run["pre"]))):
+            run = None
         # review (T-0286): bash must read the body the guard parses — no continued line (`\`), no second `<<` form
         # the heredoc scan doesn't know (`<<\E`: the last redirect wins)
-        fed = len(starts) == 1 and starts[0][0] and run and not re.search(r"[|`;&\\]|\$\(", run.group(1)) and \
+        fed = len(starts) == 1 and starts[0][0] and run and not re.search(r"[|`;&\\]|\$\(", run["py"]) and \
             len(re.findall(r"(?<!<)<<(?!<)", line)) == 1
         if fed:
             lead = list(rest)
@@ -1699,6 +1703,11 @@ def _python_units(cmd):
                 i += 1
             (units if fed else rest).append("\n".join(body))
     return units, rest, starters, lead
+
+
+# T-1887: names python, the loader, bash or Foreman read: never a plain prefix of a heredoc the guard parses
+_PRE_DENY = re.compile(r"(?:PATH|HOME|IFS|CDPATH|ENV|BASH_ENV|TMPDIR|GCONV_PATH|LOCPATH|NLSPATH|GLIBC_TUNABLES|LD_\w*"
+                       r"|MALLOC_\w*|PYTHON\w*|CLAUDE\w*|FOREMAN\w*|FM_\w*|XDG_\w*|CODEX_\w*)$")
 
 
 # module → (functions it may call, values it may name: flags, exception classes, argv); nothing that holds a module
