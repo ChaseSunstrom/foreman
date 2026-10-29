@@ -36,23 +36,52 @@
 
 <main>
   <div class="wrap hero">
-    <h1>Claude Code, with a foreman on the job.</h1>
+    <h1>Claude Code, with a <em>foreman</em> on the job.</h1>
     <p class="lede">Foreman is the discipline layer for Claude Code. It makes Claude plan before it edits, prove its work with commands it actually ran, stay on one task at a time, and keep going through the queue until the work is done or needs you.</p>
     <div class="install">
-      <code id="cmd-install">curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash</code>
+      <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/ChaseSunstrom/foreman/main/<wbr>install.sh | bash</code>
       <button class="copy" type="button" data-copy="cmd-install">Copy</button>
     </div>
     <p class="alt">Or from inside Claude Code: <code>/plugin marketplace add ChaseSunstrom/foreman</code>, then <code>/plugin install foreman@foreman</code>.</p>
-    <!-- poster: build.py draws it from data/stats.json (T-1609) -->
+    <!-- proof: build.py fills it from data/stats.json (T-1609) -->
 
-    <figure class="reel" style="margin-inline:0">
+    <figure class="reel">
       <div class="window">
-        <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
-        <video id="reel" muted loop playsinline preload="metadata" poster="assets/poster.jpg" aria-label="A recorded Claude Code session with Foreman">
-          <source src="demo/live.mp4" type="video/mp4">
-        </video>
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>claude · ~/foreman</span></div>
+        <div class="session" id="session" role="group" aria-label="Example session">
+          <div class="talk">
+            <p class="ln type" data-s="0" data-w="500"><span class="d" aria-hidden="true">❯</span> <span class="tx">FIX: fm edit's block form can't delete text</span></p>
+            <p class="ln" data-s="0" data-w="1900">● Treating this as FIX, tier S.</p>
+            <p class="ln sub" data-s="1"><span class="d" aria-hidden="true">⎿</span> <b>T-0001</b> · done when an empty new side deletes the block</p>
+            <p class="ln" data-s="2" data-w="1000"><span class="b" aria-hidden="true">●</span> <b>foreman:fm-scout</b> <span class="d">Find the block parser</span></p>
+            <p class="ln sub" data-s="2" data-w="1400"><span class="d" aria-hidden="true">⎿</span> parse_spec in plugin/lib/fmedit.py:42</p>
+            <p class="ln" data-s="3" data-w="900"><span class="g" aria-hidden="true">●</span> <b>Plan</b> 1 step, test first <span class="d">· scope fmedit.py and its test</span></p>
+            <p class="ln" data-s="4" data-w="900"><span class="g" aria-hidden="true">●</span> <b>Write</b> plugin/tests/test_batch_edit.py <span class="g">+4</span></p>
+            <p class="ln sub" data-s="4" data-w="1200"><span class="d" aria-hidden="true">⎿</span> <span class="r">✗ 1 failed</span> test_block_with_empty_new_text_deletes</p>
+            <p class="ln" data-s="4" data-w="1000"><span class="g" aria-hidden="true">●</span> <b>Update</b> plugin/lib/fmedit.py <span class="g">+1</span> <span class="r">−1</span></p>
+            <p class="ln" data-s="5" data-w="900"><span class="g" aria-hidden="true">●</span> <b>Run</b> fm task prove T-0001</p>
+            <p class="ln sub" data-s="5" data-w="1400"><span class="d" aria-hidden="true">⎿</span> <span class="g">✓</span> fails without the change, passes with it</p>
+            <p class="ln" data-s="5" data-w="800"><span class="g" aria-hidden="true">●</span> <b>Run</b> fm check</p>
+            <p class="ln sub" data-s="5" data-w="1600"><span class="d" aria-hidden="true">⎿</span> <span class="g">✓</span> {{tests}} tests · doctor · replay</p>
+            <p class="ln" data-s="5" data-w="900"><span class="b" aria-hidden="true">●</span> <b>foreman:fm-reviewer</b> <span class="d">Audit the diff</span></p>
+            <p class="ln sub" data-s="5" data-w="1400"><span class="d" aria-hidden="true">⎿</span> <span class="g">✓</span> five lenses, no findings</p>
+            <p class="ln" data-s="6" data-w="900"><span class="y" aria-hidden="true">●</span> <b>Lesson</b> an empty side is a delete, not a parse error</p>
+            <p class="ln" data-s="7" data-w="900"><span class="g" aria-hidden="true">●</span> <b>Run</b> fm task finish T-0001 --commit</p>
+            <p class="ln sub" data-s="7" data-w="1200"><span class="d" aria-hidden="true">⎿</span> <span class="g">✓</span> closed · changelog · committed 3f2a1c9</p>
+            <p class="ln" data-s="8" data-w="1000">● Queue is empty. Nothing needs you.</p>
+          </div>
+          <div class="pane" aria-hidden="true">
+            <p><b class="y">Foreman</b> <span class="d">standard</span></p>
+            <p><b class="r">FIX</b> <b>T-0001</b> <span class="d">small</span></p>
+            <p class="d">fm edit block form: allow empty new text</p>
+            <ol class="stage">
+              <li class="done">capture</li><li class="done">expand</li><li class="done">ground</li><li class="done">plan</li>
+              <li class="done">execute</li><li class="done">verify</li><li class="done">reflect</li><li class="done">record</li>
+            </ol>
+          </div>
+        </div>
       </div>
-      <figcaption class="caption">A real session, recorded in a copy of this repo. One typed request becomes a task: a scout subagent finds the parser, Claude writes the test and the fix, and <code>fm task prove</code> shows the test fails without the change before the task closes. The panel on the right tracks the stage, the steps and every agent.</figcaption>
+      <figcaption class="caption">A sketch of one task, start to finish, modelled on a real session: a scout subagent finds the parser, Claude writes the failing test and the fix, and <code>fm task prove</code> shows the test fails without the change before the task closes. The pane walks the eight stations below. <a href="demo/live.mp4">Watch the raw recording</a>.</figcaption>
     </figure>
   </div>
 
@@ -108,7 +137,7 @@
         <a class="fcard" href="features/code.html"><b>Foreman Code</b><span>The loop on any model or CLI, in progress.</span></a>
         <a class="fcard" href="features/benchmarks.html"><b>Benchmarks</b><span>Against Claude Code: dangerous commands, and real tasks graded blind. Published whichever way they fall.</span></a>
       </div>
-      <p style="margin-top:18px"><a href="features/index.html">All 15 feature pages</a></p>
+      <p class="more"><a href="features/index.html">All {{pages}} feature pages</a></p>
     </div>
   </section>
 
@@ -151,7 +180,7 @@
       </div>
       <div class="term">
 <pre><span class="b">T-0042</span>  FIX small  login times out on slow wifi
-<span class="d">────────────────────────────────────────────</span>
+<span class="d" aria-hidden="true">────────────────────────────────────────────</span>
 <span class="g">✓</span> step 1  failing test first
   <span class="d">$ pytest tests/test_login.py -k slow</span>
   <span class="r">✗ exit 1</span> <span class="d">· fails for the right reason</span>
@@ -178,7 +207,7 @@
           <li><strong>Resumable.</strong> A stopped session picks its lanes back up where they were.</li>
         </ul>
       </div>
-      <figure class="lanes" style="margin:0">
+      <figure class="lanes">
         <svg viewBox="0 0 560 250" role="img" aria-labelledby="lanes-t">
           <title id="lanes-t">The main branch splits into three builder lanes; each passes a review before merging back.</title>
           <path class="main" d="M20 210 H540" stroke-width="3" fill="none"/>
@@ -206,10 +235,11 @@
     <div class="wrap">
       <div class="head">
         <h2>Knows your stack, works beyond Claude Code</h2>
-        <p class="prose">Over a thousand stack cards give the exact commands that verify the work, a failing-test recipe and the mistakes models actually make, for 27 areas from Python and Rust to infrastructure and games. They cost no context until a matching file is edited. The same guard, context and MCP server install into other agents with one command.</p>
+        <p class="prose">{{cards}} stack cards give the exact commands that verify the work, a failing-test recipe and the mistakes models actually make, for {{areas}} areas from Python and Rust to infrastructure and games. They cost no context until a matching file is edited. The same guard, context and MCP server install into other agents with one command.</p>
       </div>
       <p><code>fm agents install codex</code> <span class="muted">or</span> <code>gemini</code> <span class="muted">or</span> <code>opencode</code></p>
       <div class="agents" aria-label="Supported agents"><span>Claude Code</span><span>Codex CLI</span><span>Gemini CLI</span><span>opencode</span></div>
+      <figure class="diagram"><img src="assets/diagrams/architecture.svg" width="880" height="410" loading="lazy" alt="How the pieces fit: Claude Code, other agents, fm code and headless runs call Foreman's hooks and the fm CLI, which keep state on disk; the foreman-ui pane, the status line, Foreman Desktop and MCP clients read fm's JSON"></figure>
     </div>
   </section>
 
@@ -220,9 +250,9 @@
         <p class="prose">Foreman is developed under Foreman: every change on this repo went through the stations above.</p>
       </div>
       <div class="facts">
-        <p><strong>744</strong>tasks planned, proved and closed on Foreman's own code before the first tagged round.</p>
-        <p><strong>2,000+</strong>tests in the gate that every release has to pass.</p>
-        <p><strong>5,000</strong>real commands replayed against the guard whenever it changes.</p>
+        <p><strong>{{tasks}}</strong>tasks planned, proved and closed on Foreman's own code.</p>
+        <p><strong>{{tests}}</strong>tests in the gate that every release has to pass.</p>
+        <p><strong>{{replay}}</strong>real commands replayed against the guard whenever it changes.</p>
       </div>
     </div>
   </section>
@@ -252,7 +282,7 @@
         <div class="st">
           <h3>Run the installer</h3>
           <div class="install">
-            <code id="cmd-install-2">curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash</code>
+            <code id="cmd-install-2">curl -fsSL https://<wbr>raw.githubusercontent.com/ChaseSunstrom/foreman/main/<wbr>install.sh | bash</code>
             <button class="copy" type="button" data-copy="cmd-install-2">Copy</button>
           </div>
         </div>
@@ -265,7 +295,7 @@
         </div>
         <div class="st">
           <h3>Ask for work</h3>
-          <p class="muted" style="margin:0">Plain requests work: <code>fix the login timeout on slow wifi</code>. Tags like <code>FIX:</code>, <code>FEATURE:</code> and <code>DONE-WHEN:</code> make them precise.</p>
+          <p class="muted">Plain requests work: <code>fix the login timeout on slow wifi</code>. Tags like <code>FIX:</code>, <code>FEATURE:</code> and <code>DONE-WHEN:</code> make them precise.</p>
         </div>
       </div>
     </div>
@@ -274,7 +304,7 @@
 
 <footer>
   <div class="wrap">
-    <a class="brand" href="#" style="font-size:1.3rem"><img src="assets/foreman.svg" alt="" width="22" height="22">Foreman</a>
+    <a class="brand" href="#"><img src="assets/foreman.svg" alt="" width="22" height="22">Foreman</a>
     <nav aria-label="Links">
       <a href="https://github.com/ChaseSunstrom/foreman">Source</a>
       <a href="https://github.com/ChaseSunstrom/foreman/blob/main/README.md">Read me</a>

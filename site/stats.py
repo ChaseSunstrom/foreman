@@ -114,14 +114,16 @@ def ledger(state, kinds):
     }
 
 
+def test_count(rev):
+    """def test_ lines under plugin/tests at `rev`."""
+    return sum(int(r.rsplit(":", 1)[1]) for r in git("grep", "-c", "def test_", rev, "--", "plugin/tests").splitlines())
+
+
 def releases():
     out = []
     for line in git("log", "--format=%h %ad %s", "--date=short", "-E", "--grep=^Foreman [0-9]+\\.[0-9]+\\.[0-9]+$").splitlines()[:16]:
         sha, day, _, version = line.split(" ", 3)
-        tests = 0
-        for row in git("grep", "-c", "def test_", sha, "--", "plugin/tests").splitlines():
-            tests += int(row.rsplit(":", 1)[1])
-        out.append({"version": version, "day": day, "tests": tests})
+        out.append({"version": version, "day": day, "tests": test_count(sha)})
     return list(reversed(out))
 
 
@@ -227,7 +229,7 @@ def code_counts():
         tests = len(re.findall(r"(?m)^    def test_", f.read()))
     sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))
     import fmmodels
-    return {"model_tests": tests, "endpoints": len(fmmodels.LOCAL) + len(fmmodels.CLOUD)}
+    return {"model_tests": tests, "endpoints": len(fmmodels.LOCAL) + len(fmmodels.CLOUD), "tests": test_count("HEAD")}
 
 
 def main():

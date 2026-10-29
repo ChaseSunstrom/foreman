@@ -1,17 +1,17 @@
 {
- "generated": "2026-10-20",
+ "generated": "2026-10-29",
  "totals": {
-  "tasks_done": 734,
-  "evidence": 2684,
-  "proofs": 250,
-  "commits": 570,
-  "gate_runs": 558,
-  "subagents": 539,
-  "lanes_merged": 131,
-  "findings": 155,
-  "guard_blocks": 296,
-  "captures": 522,
-  "lessons_shown": 730
+  "tasks_done": 1290,
+  "evidence": 5394,
+  "proofs": 435,
+  "commits": 1029,
+  "gate_runs": 839,
+  "subagents": 1029,
+  "lanes_merged": 306,
+  "findings": 1269,
+  "guard_blocks": 466,
+  "captures": 1056,
+  "lessons_shown": 1544
  },
  "daily": [
   {
@@ -126,116 +126,133 @@
   },
   {
    "day": "2026-10-20",
-   "FEATURE": 0,
-   "FIX": 0,
+   "FEATURE": 10,
+   "FIX": 12,
+   "CLEAN": 6,
+   "PERFORMANCE": 6,
+   "SECURITY": 2,
+   "RESEARCH": 1,
+   "lanes": 17,
+   "evidence": 164
+  },
+  {
+   "day": "2026-10-21",
+   "FEATURE": 20,
+   "FIX": 23,
+   "CLEAN": 4,
+   "PERFORMANCE": 1,
+   "SECURITY": 14,
+   "RESEARCH": 0,
+   "lanes": 33,
+   "evidence": 307
+  },
+  {
+   "day": "2026-10-22",
+   "FEATURE": 59,
+   "FIX": 31,
    "CLEAN": 2,
-   "PERFORMANCE": 0,
+   "PERFORMANCE": 3,
+   "SECURITY": 18,
+   "RESEARCH": 2,
+   "lanes": 75,
+   "evidence": 814
+  },
+  {
+   "day": "2026-10-23",
+   "FEATURE": 109,
+   "FIX": 32,
+   "CLEAN": 4,
+   "PERFORMANCE": 3,
+   "SECURITY": 7,
+   "RESEARCH": 1,
+   "lanes": 32,
+   "evidence": 741
+  },
+  {
+   "day": "2026-10-27",
+   "FEATURE": 1,
+   "FIX": 1,
+   "CLEAN": 0,
+   "PERFORMANCE": 1,
    "SECURITY": 0,
    "RESEARCH": 0,
    "lanes": 0,
-   "evidence": 4
+   "evidence": 10
+  },
+  {
+   "day": "2026-10-28",
+   "FEATURE": 47,
+   "FIX": 16,
+   "CLEAN": 2,
+   "PERFORMANCE": 1,
+   "SECURITY": 1,
+   "RESEARCH": 0,
+   "lanes": 5,
+   "evidence": 265
+  },
+  {
+   "day": "2026-10-29",
+   "FEATURE": 35,
+   "FIX": 56,
+   "CLEAN": 9,
+   "PERFORMANCE": 15,
+   "SECURITY": 3,
+   "RESEARCH": 0,
+   "lanes": 13,
+   "evidence": 413
   }
  ],
  "tiers": {
-  "S": 387,
-  "M": 300,
-  "L": 47
+  "S": 655,
+  "M": 581,
+  "L": 54
  },
  "types": {
-  "FEATURE": 335,
-  "FIX": 239,
-  "CLEAN": 46,
-  "PERFORMANCE": 21,
-  "SECURITY": 68,
-  "RESEARCH": 25
+  "FEATURE": 616,
+  "FIX": 410,
+  "CLEAN": 71,
+  "PERFORMANCE": 51,
+  "SECURITY": 113,
+  "RESEARCH": 29
  },
  "guard": {
-  "core": 111,
-  "brief": 80,
-  "state-direct": 36,
-  "plugin": 26,
-  "rm-outside": 15,
-  "system": 12,
-  "pipe-shell": 8,
-  "credentials": 4
+  "core": 174,
+  "brief": 142,
+  "state-direct": 48,
+  "system": 28,
+  "plugin": 27,
+  "rm-outside": 22,
+  "pipe-shell": 11,
+  "credentials": 7
  },
  "findings": {
   "lenses": {
-   "edge": 55,
-   "adversary": 48,
-   "operator": 22,
-   "maintainer": 16,
-   "intent": 14
+   "adversary": 342,
+   "edge": 309,
+   "maintainer": 203,
+   "self": 168,
+   "intent": 154,
+   "operator": 60
   },
   "severity": {
-   "LOW": 62,
-   "MEDIUM": 44,
-   "HIGH": 11
+   "LOW": 774,
+   "MEDIUM": 396,
+   "HIGH": 61
   }
  },
  "subagents": {
-  "fm-builder": 224,
-  "fm-reviewer": 148,
-  "general-purpose": 76,
-  "fm-recon": 71,
-  "Explore": 8,
-  "claude-code-guide": 7
+  "fm-builder": 525,
+  "fm-reviewer": 311,
+  "fm-recon": 92,
+  "general-purpose": 78,
+  "fm-scout": 8,
+  "Explore": 8
  },
  "gate_seconds": {
-  "runs": 558,
-  "median": 75.6
+  "runs": 839,
+  "median": 132.2
  },
  "releases": [
-  {
-   "version": "1.2.25",
-   "day": "2026-10-09",
-   "tests": 1215
-  },
-  {
-   "version": "1.2.26",
-   "day": "2026-10-09",
-   "tests": 1249
-  },
-  {
-   "version": "1.2.27",
-   "day": "2026-10-09",
-   "tests": 1263
-  },
-  {
-   "version": "1.2.28",
-   "day": "2026-10-15",
-   "tests": 1372
-  },
-  {
-   "version": "1.2.29",
-   "day": "2026-10-15",
-   "tests": 1385
-  },
-  {
-   "version": "1.2.30",
-   "day": "2026-10-15",
-   "tests": 1418
-  },
-  {
-   "version": "1.2.31",
-   "day": "2026-10-15",
-   "tests": 1591
-  },
-  {
-   "version": "1.2.32",
-   "day": "2026-10-16",
-   "tests": 1935
-  },
-  {
-   "version": "1.2.33",
-   "day": "2026-10-16",
-   "tests": 2018
-  },
-  {
-   "version": "1.2.34",
-   "day": "2026-10-16",
-   "tests": 2081
-  },
   {
    "version": "1.2.35",
    "day": "2026-10-16",
@@ -265,25 +282,77 @@
    "version": "1.2.40",
    "day": "2026-10-16",
    "tests": 2283
+  },
+  {
+   "version": "1.2.41",
+   "day": "2026-10-20",
+   "tests": 2312
+  },
+  {
+   "version": "1.2.42",
+   "day": "2026-10-20",
+   "tests": 2318
+  },
+  {
+   "version": "1.2.43",
+   "day": "2026-10-20",
+   "tests": 2369
+  },
+  {
+   "version": "1.2.44",
+   "day": "2026-10-20",
+   "tests": 2394
+  },
+  {
+   "version": "1.2.45",
+   "day": "2026-10-20",
+   "tests": 2428
+  },
+  {
+   "version": "1.2.46",
+   "day": "2026-10-20",
+   "tests": 2444
+  },
+  {
+   "version": "1.2.47",
+   "day": "2026-10-21",
+   "tests": 2484
+  },
+  {
+   "version": "1.2.48",
+   "day": "2026-10-21",
+   "tests": 2505
+  },
+  {
+   "version": "1.2.49",
+   "day": "2026-10-21",
+   "tests": 2600
+  },
+  {
+   "version": "1.2.50",
+   "day": "2026-10-21",
+   "tests": 2636
   }
  ],
  "cards": {
+  "web": 81,
+  "frontend": 65,
   "python": 62,
   "data": 60,
   "infra": 60,
   "tools": 59,
   "security": 59,
   "design": 58,
-  "web": 57,
   "node": 56,
   "cloud": 55,
   "ml": 54,
+  "jvm": 53,
+  "ux": 50,
   "lang": 50,
   "testing": 50,
-  "jvm": 50,
   "domains": 45,
   "native": 41,
-  "frontend": 37,
+  "looks": 30,
   "mobile": 28,
   "claude-code": 27,
   "rust": 26,
@@ -297,8 +366,9 @@
   "hardware": 8
  },
  "code": {
-  "model_tests": 51,
-  "endpoints": 9
+  "model_tests": 52,
+  "endpoints": 9,
+  "tests": 4274
  },
  "bench": {
   "SessionStart": {
@@ -386,192 +456,286 @@
   {
    "model": "sonnet",
    "at": "2026-10-16",
+   "claude": null,
    "cases": [
     {
-     "case": "csvlite",
+     "case": "honour",
+     "id": "R-T-0218-b40c34",
      "foreman": {
-      "pass": true,
-      "cost": 0.06,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 15.0,
-      "turns": 3.0,
-      "error": false
+      "pass": false,
+      "cost": 0.115,
+      "score": 1,
+      "runs": 1,
+      "passed": 0,
+      "seconds": 79.0,
+      "turns": 10.0,
+      "error": false,
+      "tests": null,
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": null,
+        "compactions": null
+       }
+      ],
+      "found": []
      },
      "bare": {
-      "pass": true,
-      "cost": 0.055,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 14.3333,
-      "turns": 4.0,
-      "error": false
+      "pass": false,
+      "cost": 0.223,
+      "score": 1,
+      "runs": 1,
+      "passed": 0,
+      "seconds": 189.0,
+      "turns": 21.0,
+      "error": false,
+      "tests": null,
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": null,
+        "compactions": null
+       }
+      ],
+      "found": []
      }
     },
     {
-     "case": "tokenbucket",
+     "case": "honour",
+     "id": "R-T-0201-39a53b",
      "foreman": {
-      "pass": true,
-      "cost": 0.078,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 21.6667,
-      "turns": 3.3333,
-      "error": false
+      "pass": false,
+      "cost": 0.256,
+      "score": 2,
+      "runs": 1,
+      "passed": 0,
+      "seconds": 236.0,
+      "turns": 26.0,
+      "error": false,
+      "tests": null,
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": null,
+        "compactions": null
+       }
+      ],
+      "found": []
      },
      "bare": {
       "pass": true,
-      "cost": 0.078,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 22.6667,
-      "turns": 4.6667,
-      "error": false
+      "cost": 0.161,
+      "score": 4,
+      "runs": 1,
+      "passed": 1,
+      "seconds": 152.0,
+      "turns": 12.0,
+      "error": false,
+      "tests": null,
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": null,
+        "compactions": null
+       }
+      ],
+      "found": []
      }
     },
     {
-     "case": "dotted",
+     "case": "honour",
+     "id": "R-T-0205-8d4b0f",
      "foreman": {
-      "pass": true,
-      "cost": 0.076,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 20.6667,
-      "turns": 3.0,
-      "error": false
+      "pass": false,
+      "cost": 0.367,
+      "score": 1,
+      "runs": 1,
+      "passed": 0,
+      "seconds": 225.0,
+      "turns": 20.0,
+      "error": false,
+      "tests": null,
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": null,
+        "compactions": null
+       }
+      ],
+      "found": []
      },
      "bare": {
-      "pass": true,
-      "cost": 0.073,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 23.3333,
-      "turns": 3.3333,
-      "error": false
+      "pass": false,
+      "cost": 0.224,
+      "score": 1,
+      "runs": 1,
+      "passed": 0,
+      "seconds": 257.0,
+      "turns": 13.0,
+      "error": false,
+      "tests": null,
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": null,
+        "compactions": null
+       }
+      ],
+      "found": []
      }
     },
     {
-     "case": "ranges",
+     "case": "T-0205",
+     "id": "T-0205",
      "foreman": {
-      "pass": true,
-      "cost": 0.069,
+      "pass": false,
+      "cost": 0.351,
       "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 17.3333,
-      "turns": 3.0,
-      "error": false
+      "runs": 1,
+      "passed": 0,
+      "seconds": 167.0,
+      "turns": 23.0,
+      "error": false,
+      "tests": null,
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": null,
+        "compactions": null
+       }
+      ],
+      "found": []
      },
      "bare": {
-      "pass": true,
-      "cost": 0.068,
+      "pass": false,
+      "cost": 0.227,
       "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 19.0,
-      "turns": 4.0,
-      "error": false
+      "runs": 1,
+      "passed": 0,
+      "seconds": 416.0,
+      "turns": 16.0,
+      "error": false,
+      "tests": null,
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": null,
+        "compactions": null
+       }
+      ],
+      "found": []
      }
     },
     {
-     "case": "table",
+     "case": "T-0207",
+     "id": "T-0207",
      "foreman": {
-      "pass": true,
-      "cost": 0.06,
+      "pass": false,
+      "cost": 0.417,
       "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 17.3333,
-      "turns": 3.6667,
-      "error": false
+      "runs": 1,
+      "passed": 0,
+      "seconds": 425.0,
+      "turns": 30.0,
+      "error": false,
+      "tests": null,
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": null,
+        "compactions": null
+       }
+      ],
+      "found": []
      },
      "bare": {
-      "pass": true,
-      "cost": 0.057,
+      "pass": false,
+      "cost": 0.351,
       "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 15.0,
-      "turns": 4.0,
-      "error": false
+      "runs": 1,
+      "passed": 0,
+      "seconds": 297.0,
+      "turns": 22.0,
+      "error": false,
+      "tests": null,
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": null,
+        "compactions": null
+       }
+      ],
+      "found": []
      }
     },
     {
-     "case": "semver",
+     "case": "T-0206",
+     "id": "T-0206",
      "foreman": {
-      "pass": true,
-      "cost": 0.073,
+      "pass": false,
+      "cost": 0.44,
       "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 19.3333,
-      "turns": 4.3333,
-      "error": false
+      "runs": 1,
+      "passed": 0,
+      "seconds": 185.0,
+      "turns": 32.0,
+      "error": false,
+      "tests": null,
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": null,
+        "compactions": null
+       }
+      ],
+      "found": []
      },
      "bare": {
-      "pass": true,
-      "cost": 0.056,
+      "pass": false,
+      "cost": 0.279,
       "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 16.0,
-      "turns": 3.3333,
-      "error": false
-     }
-    },
-    {
-     "case": "lru",
-     "foreman": {
-      "pass": true,
-      "cost": 0.063,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 14.0,
-      "turns": 3.6667,
-      "error": false
-     },
-     "bare": {
-      "pass": true,
-      "cost": 0.055,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 15.3333,
-      "turns": 4.3333,
-      "error": false
-     }
-    },
-    {
-     "case": "duration",
-     "foreman": {
-      "pass": true,
-      "cost": 0.069,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 19.3333,
-      "turns": 4.3333,
-      "error": false
-     },
-     "bare": {
-      "pass": true,
-      "cost": 0.058,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 18.0,
-      "turns": 4.3333,
-      "error": false
+      "runs": 1,
+      "passed": 0,
+      "seconds": 213.0,
+      "turns": 18.0,
+      "error": false,
+      "tests": null,
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": null,
+        "compactions": null
+       }
+      ],
+      "found": []
      }
     }
    ],
+   "label": "duel-none-foreman-20261016-105940",
    "name": "quality"
   },
   {

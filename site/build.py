@@ -19,7 +19,7 @@ import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "hero-scene.js", "__pycache__"}
+SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "__pycache__"}
 TYPES = ["FEATURE", "FIX", "CLEAN", "PERFORMANCE", "SECURITY", "RESEARCH"]
 esc = html.escape
 
@@ -261,49 +261,15 @@ def tiles(pairs, cls=""):
                                            for label, v in pairs) + "</div>"
 
 
-POSTER_MARK = "<!-- poster: build.py draws it from data/stats.json (T-1609) -->"
+PROOF_MARK = "<!-- proof: build.py fills it from data/stats.json (T-1609) -->"
 STATIONS = [("tasks_done", "tasks done"), ("evidence", "evidence runs"), ("proofs", "proofs"), ("commits", "commits")]
 
 
-def poster(totals, asof="", cols=4):
-    """T-1609: the hero's proof chain, one station per total along a track, each the site's 45° diamond (.points)
-    with its area set by its total over a floor and the real number as text; one hue, since the counts aren't states.
-    Inline, so it is the first paint and loads nothing. cols=4 is the fixed 960x270 frame T-1610's scene sits over;
-    cols=2 is the 2x2 that phones get, without the dated kicker (the aria-label keeps the date)."""
-    vals = [(label, totals.get(k) or 0) for k, label in STATIONS]
-    top = max([v for _, v in vals] + [1])
-    head = "Foreman's proof chain from its own record" + (f", to {asof}" if asof else "")
-    said = f"{head}: " + ", ".join(f"{fmt(v)} {label}" for label, v in vals)
-    lead, rows = (40 if cols == 4 else 0), -(-len(vals) // cols)
-    w, h = 240 * cols, lead + 230 * rows
-    out = [f'<svg class="poster{"" if cols == 4 else " compact"}" viewBox="0 0 {w} {h}" role="img" '
-           f'aria-label="{esc(said)}">' + (f'<text class="kick" x="0" y="24">{esc(head)}</text>' if cols == 4 else "")]
-    out += [f'<line class="track" x1="8" y1="{lead + 230 * r + 130}" x2="{w - 8}" y2="{lead + 230 * r + 130}"/>'
-            for r in range(rows)]
-    for i, (label, v) in enumerate(vals):
-        x, y, s = 120 + 240 * (i % cols), lead + 230 * (i // cols), 12 + 46 * (max(v, 0) / top) ** .5
-        out.append(f'<rect class="st" x="{x - s / 2:.1f}" y="{y + 130 - s / 2:.1f}" width="{s:.1f}" height="{s:.1f}" '
-                   f'transform="rotate(45 {x} {y + 130})"/>'
-                   f'<text class="num" x="{x}" y="{y + 60}" text-anchor="middle">{esc(fmt(v))}</text>'
-                   f'<text class="lab" x="{x}" y="{y + 212}" text-anchor="middle">{esc(label)}</text>')
-    return "".join(out) + "</svg>"
-
-
-SCENE_LABEL = ("The proof chain in motion: a pulse of light runs the track from failing to proved and lights each "
-               "station as it passes")  # review: what it means, not colour words
-
-
-def scene(totals, asof=""):
-    """T-1610: both posters in one box with a canvas over them, then hero-scene.js inline: a WebGL2 scene that reads
-    the visible poster's stations and makes them lit forms with a pulse on the track. The canvas is hidden from
-    screen readers until the scene is live; reduced motion, no WebGL2 or any failure keeps the poster."""
-    with open(os.path.join(HERE, "hero-scene.js"), encoding="utf-8") as f:
-        js = f.read()
-    if re.search(r"(?i)</script|<!--", js):  # either would end or derail the inline script early
-        raise SystemExit("build.py: site/hero-scene.js can't be inlined: it holds </script or <!--")
-    return (f'<div class="hero-scene" data-state="poster">{poster(totals, asof)}{poster(totals, asof, 2)}'
-            f'<canvas role="img" aria-hidden="true" aria-label="{esc(SCENE_LABEL)}"></canvas></div>'
-            f'<script type="module">\n{js}</script>')
+def proof(totals, asof=""):
+    """T-1609, T-2040: the hero's proof ledger, the four totals from Foreman's own record as plain figures on hairlines
+    (the diamond poster and its WebGL scene read as decoration, not data). Inline, so it is first paint."""
+    items = "".join(f"<div><dt>{esc(label)}</dt><dd>{esc(fmt(totals.get(k) or 0))}</dd></div>" for k, label in STATIONS)
+    return f'<div class="proof"><p>From Foreman\'s own record{", to " + esc(asof) if asof else ""}</p><dl>{items}</dl></div>'
 
 
 def layout(title, desc, body, pages, here, depth=1):
@@ -345,7 +311,7 @@ def layout(title, desc, body, pages, here, depth=1):
 </div>
 <footer>
   <div class="wrap">
-    <a class="brand" href="{up}index.html" style="font-size:1.3rem"><img src="{up}assets/foreman.svg" alt="" width="22" height="22">Foreman</a>
+    <a class="brand" href="{up}index.html"><img src="{up}assets/foreman.svg" alt="" width="22" height="22">Foreman</a>
     <nav aria-label="Links">
       <a href="https://github.com/ChaseSunstrom/foreman">Source</a>
       <a href="https://github.com/ChaseSunstrom/foreman/blob/main/README.md">Read me</a>
@@ -509,16 +475,27 @@ def build(out):
     shutil.copytree(HERE, out, ignore=lambda d, names: [n for n in names if n in SOURCE_ONLY])
     with open(os.path.join(out, "index.html"), encoding="utf-8") as f:  # T-1609: the hero's poster
         page = f.read()
-    if POSTER_MARK not in page:  # review: a lost mark shipped a hero with no poster
-        raise SystemExit("build.py: site/index.html lost the poster mark: " + POSTER_MARK)
+    if PROOF_MARK not in page:  # review: a lost mark shipped a hero with no proof
+        raise SystemExit("build.py: site/index.html lost the proof mark: " + PROOF_MARK)
     totals, asof = stats.get("totals") or {}, str(stats.get("generated") or "")
+    sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))  # T-1283: fm code tui draws its own picture
+    import fmcodetui
+    import fmreplay
+    cards = stats.get("cards") or {}
+    counts = {"tasks": totals.get("tasks_done", 0), "tests": (stats.get("code") or {}).get("tests", 0),  # T-2040
+              "cards": sum(cards.values()), "areas": len(cards), "pages": len(P.PAGES), "replay": fmreplay.MAX}
+    if not (counts["tests"] and counts["cards"]):  # review: a stats.json without them shipped "0 tests"
+        raise SystemExit("build.py: site/data/stats.json has no code.tests or cards; run site/stats.py")
+    page = page.replace(PROOF_MARK, proof(totals, asof), 1)
+    for k, v in counts.items():
+        page = page.replace("{{" + k + "}}", fmt(v))
+    if "{{" in page:  # a count the build doesn't know would ship as braces
+        raise SystemExit("build.py: site/index.html has an unknown {{count}}: " + page[page.index("{{"):][:40])
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
-        f.write(page.replace(POSTER_MARK, scene(totals, asof), 1))
+        f.write(page)
     os.makedirs(os.path.join(out, "demo"), exist_ok=True)
     for f in ("live.mp4", "demo.svg", "code-tui.mp4"):  # code-tui.mp4: fm code tui --record demo/code-tui.jsonl
         shutil.copy2(os.path.join(ROOT, "demo", f), os.path.join(out, "demo", f))
-    sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))  # T-1283: fm code tui draws its own picture
-    import fmcodetui
     with open(os.path.join(ROOT, "demo", "code-tui.jsonl"), encoding="utf-8") as f:
         fmcodetui.snapshot([json.loads(line) for line in f if line.strip()], os.path.join(out, "assets", "code-tui.svg"),
                            (120, 34))
