@@ -3399,6 +3399,7 @@ def _headless_wait(pl):
             f"rerun it in the foreground), then finish with its result.")
 
 
+_IF = c.lazy(r"(?i)\b(?:when|once|until|till|if|after|before|unless)\s+$")  # T-2032: a claim still to come
 _TEST_CLAIM = c.lazy(r"(?i)\b(?:all |the )?(?:tests?|suite|checks|gates)\s+(?:now\s+|all\s+)?(?:pass(?:es|ing)?|"
                          r"(?:are |is )?green)\b")
 # a test runner in command position (T-0907: fm checkpoint, toxic aren't runs; round-7 review: nor cat pytest.ini,
@@ -3454,15 +3455,20 @@ def _claims_gate(pl, g):
     """T-0886: a reply saying the tests pass, held once when the turn's own runs don't back it: a file edited after the
     last test run, or that run failed. A turn with no edits and no runs isn't judged."""
     msg = pl.get("last_assistant_message") or ""
-    m = next((x for x in _TEST_CLAIM.finditer(msg) if not _NEG.search(msg[max(0, x.start() - 40):x.start()])), None)
+    m = next((x for x in _TEST_CLAIM.finditer(msg) if not _NEG.search(msg[max(0, x.start() - 40):x.start()])
+              and not _IF.search(msg[max(0, x.start() - 12):x.start()])), None)  # T-2032: "once the gates pass"
     if not m or pl.get("stop_hook_active") or not pl.get("transcript_path"):
         return None
     key = f"{pl.get('session_id')}:{hashlib.sha1(msg.encode()).hexdigest()[:12]}"
     if key in g.setdefault("claims", []):
         return None
     calls = _turn_calls(pl["transcript_path"])
+    cwd = pl.get("cwd") if isinstance(pl.get("cwd"), str) and pl.get("cwd") else ""
+    root = (c.git_root(cwd) or os.path.realpath(cwd)) + os.sep if cwd else ""  # the repo, not the cwd's subfolder
     edits = [i for i, x in enumerate(calls) if x[0] in _EDIT_TOOLS  # a doc edit leaves a green run standing (T-0907)
-             and not c.DOC.search(str(x[1].get("file_path") or x[1].get("notebook_path") or ""))]
+             and not c.DOC.search(f := str(x[1].get("file_path") or x[1].get("notebook_path") or ""))
+             and (not root or not os.path.isabs(f) or os.path.realpath(f).startswith(root))]  # T-2032: a draft
+    # outside the project (a scratch file) isn't code a test run covers
     runs = [i for i, x in enumerate(calls) if x[0] == "Bash" and _TEST_CMD.search(str(x[1].get("command") or ""))]
     if edits and (not runs or runs[-1] < edits[-1]):  # an edit after the last run: whatever it said is stale
         last = os.path.basename(str(calls[edits[-1]][1].get("file_path") or calls[edits[-1]][1].get("notebook_path")))

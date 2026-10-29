@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Fix: the end-of-reply "tests pass" check no longer holds a reply that says when they will pass ("once the gates pass"), and an edit to a file outside the project, like a scratch draft, no longer makes the last green run stale (T-2032).
 - Perf: the Stop hook's check for this session's running background work decodes only the event lines that hold its session id, not all 1,500 in the tail: Stop 88 -> 81 ms (T-2033).
 - Perf: the active-task scan behind every tool call reads a small file of closed briefs' keys instead of the whole 700 KB brief index: PreToolUse 39 -> 36 ms (T-2031).
 - Fix: quitting fm code while a runner test's CLI is starting ends that CLI too; before, a quit that landed before the app had seen the CLI left it running to its 60 s timeout (T-2030).
