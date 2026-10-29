@@ -2,6 +2,7 @@
 
 ## Unreleased
 - A flaky test's note names the exception it raised (`AssertionError: …`), not the dashed rule that closes a unittest failure (T-1898). The site-hero scene probe runs in real time over DevTools, so virtual time can't run out its waits before a loaded machine draws (T-1898).
+- The guard keeps a builder's write inside its worktree when the worktree is named through a linked parent folder (macOS's /var is /private/var), where it refused it as outside (T-1910).
 - fm help with a command's name (fm help task, fm help task drop) prints that command's help, where "task" was refused as a word too common to look up (T-1909).
 - fm which and fm help find task subcommands (fm task drop, fm task evidence) and the rules' plain words ("stop auto-continuing" finds fm drive), and fm which lists the strongest kind first; fm task -h says what each subcommand does (T-1908).
 - fm task finish asks for the adversary lens on a security-sensitive change before any check runs, where fm task done asked for it only after the close's checks had run (T-1907).
