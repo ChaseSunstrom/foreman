@@ -54,10 +54,10 @@ def annotations(cid, err):
         lines = [x.strip() for x in block.splitlines() if x.strip()]
         code = [x for x in lines if not x.startswith(("Traceback", "File ")) and lines.index(x) < len(lines) - 1]
         body = ([code[-1]] if code else []) + lines[-1:]
-        out.append(f"::error title={cid}.{name}::" + "%0A".join(body).replace("::", ": :"))
-    if not out:
-        tail = [x.strip() for x in err.splitlines() if x.strip() and not set(x.strip()) <= set("-=~^")][-4:]
-        out.append(f"::error title={cid}::" + "%0A".join(tail).replace("::", ": :"))
+        out.append(f"::error title={cid}.{name}::" + "%0A".join(x[:250] for x in body).replace("::", ": :"))
+    if not out:  # T-1911: lines cut to 250, and a class that wrote nothing says so (an empty message isn't shown)
+        tail = [x.strip()[:120] for x in err.splitlines() if x.strip() and not set(x.strip()) <= set("-=~^")][-4:]
+        out.append(f"::error title={cid}::" + ("%0A".join(tail) or "no output").replace("::", ": :"))
     return out
 
 
@@ -111,6 +111,9 @@ def summary_notes(results, elapsed, deadline):
     unstarted = sum(r[2] == NOT_STARTED for r in results)
     if unstarted:
         notes.append(f"::error title=run.py::{unstarted} classes never started: the run reached its {deadline}s deadline")
+    broke = [f"{r[0]} (exit {r[1]})" for r in results if r[1] != 0 and r[2] != NOT_STARTED]
+    if broke:  # T-1911: one line naming them all, should a class's own annotations go missing
+        notes.append(f"::error title=run.py::{len(broke)} classes failed: {', '.join(broke)}"[:1000])
     return notes
 
 
@@ -200,4 +203,9 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as e:  # T-1911: a crash after the notes was a bare exit 1 in CI
+        if os.environ.get("GITHUB_ACTIONS"):
+            print(f"::error title=run.py::run.py crashed: {e!r}"[:1000], flush=True)
+        raise
