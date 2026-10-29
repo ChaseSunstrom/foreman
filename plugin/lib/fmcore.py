@@ -1282,16 +1282,27 @@ class Brief:
 
     def __init__(self, meta, fm_lines, preamble, sections, path=None):
         self.meta = meta
-        self._fm_lines = fm_lines                    # [(key, raw_line)]
-        self._orig = {k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v)  # T-1082 review:
-                      for k, v in meta.items()}  # an in-place list edit must still differ from the original
+        self._fml = fm_lines                         # [(key, raw_line)], or None: a stub from the brief index
         self.preamble = preamble                     # text between frontmatter and first "## " (title)
-        self._sections = sections                    # [[heading, body_text]], or the text from the first "## " on
+        self._sections = sections                    # [[heading, body_text]], the text from the first "## " on, or None
         self.path = path
+
+    @property
+    def _fm_lines(self):
+        """T-2022: a stub from the brief index (meta and preamble only) reads its file when more is needed."""
+        if self._fml is None:
+            with open(self.path, encoding="utf-8") as f:
+                b = Brief.parse(f.read(), self.path)
+            self._fml = b._fml
+            if self._sections is None:  # sections set on the stub win
+                self._sections = b._sections
+        return self._fml
 
     @property
     def sections(self):
         """T-2015: split on first read; a hook loads every brief but reads few past the frontmatter."""
+        if self._sections is None:
+            self._fm_lines
         if isinstance(self._sections, str):
             parts = _SECTION.split(self._sections)
             self._sections = [[parts[i], parts[i + 1]] for i in range(1, len(parts), 2)]
@@ -1303,10 +1314,11 @@ class Brief:
 
     def copy(self):
         """T-1082: an independent brief (the memo hands these out): its own meta, lines and sections."""
-        s = self._sections
+        s, f = self._sections, self._fml
         return Brief({k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v)  # str, bool,
                       for k, v in self.meta.items()},  # or a list of str: all _parse_value makes
-                     list(self._fm_lines), self.preamble, s if isinstance(s, str) else [list(x) for x in s], self.path)
+                     f if f is None else list(f), self.preamble,
+                     s if s is None or isinstance(s, str) else [list(x) for x in s], self.path)
 
     # --- parse / render
     @classmethod
@@ -1329,13 +1341,14 @@ class Brief:
         return cls(meta, fm_lines, body[:m.start()] if m else body, body[m.start():] if m else [], path)
 
     def render(self):
-        out, seen = [], set()
-        for key, raw in self._fm_lines:
+        out, seen, lines = [], set(), self._fm_lines
+        orig = {k: _parse_value(raw.partition(":")[2]) for k, raw in lines if k}  # T-2022: what the file says
+        for key, raw in lines:
             if key is None:
                 out.append(raw)
             elif key in self.meta:
                 seen.add(key)
-                same = key in self._orig and self.meta[key] == self._orig[key]
+                same = self.meta[key] == orig[key]
                 out.append(raw if same else f"{key}: {_fmt_value(self.meta[key])}")
         out += [f"{k}: {_fmt_value(v)}" for k, v in self.meta.items() if k not in seen]
         s = self._sections
@@ -1887,19 +1900,50 @@ _BRIEF_MEMO = {}  # T-1082: path -> ((inode, mtime_ns, size), Brief): one parse 
 BRIEF_MEMO_MAX = 5000  # a long-lived process (fm serve, the MCP server) starts over past this
 
 
-def _read_brief(path):
-    """A brief from its file, parsed once per process while the file is unchanged; every caller gets its own copy."""
+BRIEF_INDEX = "briefs-index.json"  # T-2022: {"v": 1, "e": {file name: [inode, mtime_ns, size, meta, preamble]}}
+
+
+def _brief_index(p):
+    """The closed briefs' index entries, or {} when it is missing or unreadable: it is only ever a cache."""
+    try:
+        with open(os.path.join(p.dir, BRIEF_INDEX), encoding="utf-8") as f:
+            d = json.load(f)
+        e = d.get("e") if isinstance(d, dict) and d.get("v") == 1 else None
+        return e if isinstance(e, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _indexed(e, key):
+    """An index entry, when well formed and its file's (inode, mtime_ns, size) still match."""
+    if isinstance(e, list) and len(e) == 5 and e[:3] == key and isinstance(e[3], dict) and isinstance(e[4], str):
+        return e
+    return None
+
+
+def _read_brief(path, idx=None, fresh=None):
+    """A brief from its file, parsed once per process while the file is unchanged; every caller gets its own copy.
+    T-2022: an unchanged closed brief in the index idx comes back as a stub that reads its file only if its body is
+    needed; fresh, when given, collects the index entries of closed briefs."""
     st = os.stat(path)
-    key = (st.st_ino, st.st_mtime_ns, st.st_size)
+    key = [st.st_ino, st.st_mtime_ns, st.st_size]
+    name = os.path.basename(path)
+    e = _indexed(idx.get(name), key) if idx else None
     hit = _BRIEF_MEMO.get(path)
-    if hit and hit[0] == key:
-        return hit[1].copy()
-    with open(path, encoding="utf-8") as f:
-        b = Brief.parse(f.read(), path)
-    if time.time() - st.st_mtime > 2:  # just written: a same-size rewrite in the same clock tick could pass for it
+    if e:  # a stub costs less than the memo's copy, and its index is read afresh each load
+        b = Brief(e[3], None, e[4], None, path)
+    elif hit and hit[0] == key:
+        b = hit[1].copy()
+    else:
+        with open(path, encoding="utf-8") as f:
+            b = Brief.parse(f.read(), path)
+        if time.time() - st.st_mtime <= 2:  # just written: a same-size rewrite in the same tick could pass for it
+            return b
         if len(_BRIEF_MEMO) > BRIEF_MEMO_MAX:
             _BRIEF_MEMO.clear()
         _BRIEF_MEMO[path] = (key, b.copy())
+    if fresh is not None and b.status in CLOSED:
+        fresh[name] = e or key + [b.meta, b.preamble]
     return b
 
 
@@ -1910,12 +1954,16 @@ def load_briefs(p, include_archive=False, errors=None):
         listed = set(paths)
         for gone in [k for k in _BRIEF_MEMO if k.startswith(tdir) and k not in listed]:
             _BRIEF_MEMO.pop(gone, None)
+    idx, fresh = _brief_index(p), {}
     for path in paths:
         try:
-            out.append(_read_brief(path))
+            out.append(_read_brief(path, idx, fresh) if path.startswith(tdir) else _read_brief(path))
         except (OSError, ValueError) as e:
             if errors is not None:
                 errors.append((path, str(e)))
+    if len(fresh) != len(idx) or any(v is not idx.get(k) for k, v in fresh.items()):
+        with contextlib.suppress(OSError):  # a read-only state folder just goes without
+            write_atomic(os.path.join(p.dir, BRIEF_INDEX), json.dumps({"v": 1, "e": fresh}, separators=(",", ":")))
     return out
 
 
@@ -3355,9 +3403,14 @@ _ACTIVE_LINE = lazy(rb"^status:[ \t]*(?:active|verifying)[ \t]*\r?$", re.M)
 def active_brief_fast(p, lane=None):
     """T-1140: active_brief(load_briefs(p), lane) without parsing every brief (half of each PreToolUse call at 1,069
     briefs): only a brief whose frontmatter says active or verifying is parsed."""
-    hits = []
+    hits, idx = [], _brief_index(p)
     for path in brief_paths(p):
         try:
+            if idx:  # T-2022: an unchanged closed brief needs no read
+                st = os.stat(path)
+                e = _indexed(idx.get(os.path.basename(path)), [st.st_ino, st.st_mtime_ns, st.st_size])
+                if e and e[3].get("status") in CLOSED:
+                    continue
             with open(path, "rb") as f:
                 head = f.read(4096)
                 end = head.find(b"\n---", 3)
