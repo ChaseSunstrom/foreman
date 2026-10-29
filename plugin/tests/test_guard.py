@@ -2600,6 +2600,33 @@ class TokenFallback(GuardCase):
         self.assertBlocked(self.bash("echo 'x'`cmd`>~/.bashrc"), "system")
         self.assertEqual(g._pieces("'$1>4000"), ["'$1>4000"])  # a > after a quote's text is text (debris)
 
+    def test_repeated_cds_in_a_line_are_judged_fast(self):
+        # T-1924: each `cd X; …; cd ..` that may fail doubled the folder sets, and the text after every $( was re-read
+        # from every folder: 14 blocks took 6.5 s, 20 never finished
+        blocks = " ".join(f"cd state; echo $(ls); cd ..; cd d{i}; echo $(pwd); cd ..;" for i in range(20))
+        start = time.monotonic()
+        self.run_table([
+            (blocks + " ls", None),
+            (blocks + " tar xf -", "core"),  # the d{i} cds fail: each `cd ..` climbs above Foreman
+            ("cd state; echo $(ls); cd ..; " * 20 + "tar xf -", "core"),  # back in Foreman
+            ("cd /tmp; cd state; echo $(ls); cd ..; tar xf -", "core"),  # cd state fails: `cd ..` lands in /
+            ("cd state; cd ..; cd x; tar xf -", "core"),  # relative cds that exist are certain, missing ones may fail
+            ("cd /tmp && echo $(case a in a) cd {fhome};; esac; tar xf -)", "core"),  # a case keeps the tail read
+            ("cd /tmp && echo $(echo #); cd {fhome}\n); tar xf -", "core"),  # so does a comment
+            (" ".join(f"(true); cd d{i}; cd x{i};" for i in range(20)) + " ls", "rm-outside"),  # too many: refused
+            ("for d in %s; do cd $d && echo $(pwd); cd ..; done; ls" % " ".join(f"d{i}" for i in range(20)), None),
+            ("cd ../../../repo; tar xf -", None),  # its review: a relative cd is certain only in this shell, and
+            ("time cd ../../../repo; tar xf -", None),
+            ("nice cd ../../../repo; tar xf -", "core"),  # a wrapper runs it in a child: the shell stays
+            ("sudo cd {repo}; tar xf -", "core"),
+            ("env cd {repo} && tar xf -", "core"),
+            ("ls ../../../repo; echo $(pwd); cd ../../../repo; tar xf -", None),  # only while all before it only read
+            ("touch y; cd ../../../repo; tar xf -", "core"),  # anything else may remove or relink the folder
+            ("echo $(touch y); cd ../../../repo; tar xf -", "core"),
+            ("mkdir -m 0 -p {repo}/q; cd {repo}/q; tar xf -", "core"),  # a folder it can't enter
+        ], lambda cmd: self.bash(cmd, cwd=self.fhome))
+        self.assertLess(time.monotonic() - start, 2)
+
     def test_deep_nesting_is_masked_in_linear_time(self):
         line = "\"$(echo " * 20000 + "\"x\" " * 20000
         start = time.monotonic()

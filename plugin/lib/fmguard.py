@@ -1549,7 +1549,7 @@ def _unescape_ticks(body):
     return re.sub(r"\\([`$\\])", r"\1", body)
 
 
-def _subst_bodies(text, tails=True):
+def _subst_bodies(text, tails=True, clean=False):
     """Every command-substitution body a shell would run in text (T-0158): `…` and $( … ), nested ones too, bare or
     inside double quotes, never inside single quotes or after a backslash; $(( … )) is arithmetic. Each $( opens a fresh
     quoting context, as in bash. With $'…' quoting (where \\' is a quote) the scan can't follow: every span between
@@ -1574,11 +1574,12 @@ def _subst_bodies(text, tails=True):
             tick = i + 1
         elif ch == "$" and text[i + 1:i + 2] == "(":
             ends.append(text[i + 2:])  # $(( … )) too: bash falls back to a subshell when )) doesn't close it
+            tail = len(ends) - 1  # T-1924: which tail a clean close may drop
             last = text.rfind(")")  # T-0669: and, when it ends inside a quote, up to the last ): an outer `)"`
             if last > i + 2 and _quote_at(text[i + 2:]) is not None:  # left it open (whole code stays whole)
                 ends.append(text[i + 2:last])
             if text[i + 2:i + 3] != "(":
-                ctx.append([None, i + 2, 0])
+                ctx.append([None, i + 2, 0, tail])
             i += 2
             continue
         elif ch == '"':
@@ -1592,8 +1593,11 @@ def _subst_bodies(text, tails=True):
                 top[2] -= 1
             else:
                 bodies.append(text[top[1]:i])
+                if clean and not re.search(r"[#`\\]|<<|\(\(|\bcase\b", bodies[-1]):  # T-1924: nothing in it can end
+                    ends[top[3]] = None  # it early, so its tail is its body, already read, then the rest, read by the
                 ctx.pop()
         i += 1
+    ends = [e for e in ends if e is not None]  # caller (a tail per substitution from every folder doubled the walk)
     return bodies + ([_unescape_ticks(text[tick:])] if tick is not None else []) + (ends if tails else [])
 
 
@@ -2501,6 +2505,24 @@ def read_only(cmd):
     return bool(parts)
 
 
+def _keeps_folders(c, argv):
+    """T-1924 review: True when a command can't remove, rename or relink a folder, so a later cd into one that exists
+    still lands (`mv ../d ../e; cd ../d` stays where it was): cd, mkdir without a mode, a _READS program or reading git,
+    substituting only reads, nothing fed or process-substituted."""
+    text = " ".join(list(c.argv) + list(c.redirs))
+    if c.feeds or c.procsub or re.search(r"`|[<>]\(", text) or not all(
+            read_only(b) for b in _subst_bodies(text, tails=False)):
+        return False
+    if not argv or argv[0] in ("cd", "pushd", "popd"):
+        return True
+    if argv[0] == "mkdir":
+        return not any(a.startswith(("-m", "--mode")) for a in argv[1:])
+    if argv[0] == "git":
+        return argv[1:2] != [] and argv[1] in _GIT_READS and not _bad_flag(argv[2:], _GIT_BAD)
+    bad = _READS.get(argv[0])
+    return bad is not None and not _bad_flag(argv[1:], bad)
+
+
 def lone_fm_ask(cmd):
     """The arguments of `fm ask …` when it is the whole command (nothing chained, piped, redirected or substituted):
     a permission prompt then approves exactly that request."""
@@ -3292,7 +3314,12 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
     for spawned in (x for src in _python_sources(cmd if _INTERP.search(dry) else dry) for x in _spawned_commands(src)):
         found += check_bash(spawned, ctx, depth + 1)  # T-0345, and its review: from those folders too (`…`, sh <<<,
     # python -c): any folder a cd names
-    for body in _subst_bodies(shell, tails) + [b for t in live for b in _subst_bodies(t, tails)]:  # `…` a \` is a `
+    plain, prev = re.sub(r"(?<![\w./-])cd[ \t]+[\w./+:@%,][\w./+:@%,-]*(?=[ \t]*(?:[;&|)\n]|$))", "", shell), None
+    while plain != prev:  # T-1924: the walk names every folder a literal cd may reach; any other mover (cd $(…), $C,
+        plain, prev = re.sub(r"`[^`]*`|\$\([^()]*\)", "$S", plain), plain  # eval) keeps each tail, read from the
+    clean = not _moves_text(plain) and not any(  # folders before it, as the coarse catch it was (review: c$(…), A=1 $C)
+        re.search(r"[^\w./+:@%,-]", word(x.argv)) for x in cmds)
+    for body in _subst_bodies(shell, tails, clean) + [b for t in live for b in _subst_bodies(t, tails, clean)]:  # `…`
         found += check_bash(body, ctx, depth + 1, tails=False)
     lits = _line_literals(shell)  # T-0587: literal values a computed name, eval or sh -c text may use
     for script in _stdin_scripts(cmd, cmds):  # T-0589: bash <<'EOF' … EOF and sh <<< '…' run that text
@@ -3315,6 +3342,7 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
     outside = {**outside, **fixed}                                                  # branches, known in them
     scan = _mask_fm(shell, ctx)  # T-0183: guess from the command's own words, not fm's text arguments
     wrote, fed = [], []  # T-0275: files earlier commands here write (all; and those a heredoc fills)
+    gone = False  # T-1924 review: an earlier command here may remove, rename or relink a folder a later cd names
     for idx, c in enumerate(cmds):
         nxt_op = cmds[idx + 1].op if idx + 1 < len(cmds) else ""
         piped = c.op in ("|", "|&") or nxt_op in ("|", "|&")  # T-0355: in a pipeline, a cd moves its subshell only
@@ -3338,6 +3366,7 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
             chain = []
         name = os.path.basename(argv[0]) if argv else ""
         args = argv[1:]
+        gone = gone or not _keeps_folders(c, argv)
         if name == "mkdir" and "-p" in args:  # a folder this command makes takes a cd as surely as one that exists,
             made.update(d for d in (os.path.normpath(_expand(_with_vars(a, known), ctx)) for a in args)  # when its
                         if os.path.isabs(d) and "$" not in d and _makeable(d))  # nearest existing folder lets it be made
@@ -3350,9 +3379,13 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
                 if not _unresolvable(tgt):
                     cwd = _resolve(_expand(tgt, ctx), cwd)
                 d = "" if _unresolvable(tgt) else _expand(tgt, ctx)
-                can_fail = len(dirs) > 1 or not (os.path.isabs(d) and (os.path.normpath(d) in made or (  # review: cd a b
-                    os.path.isdir(d) and os.access(d, os.X_OK))))  # fails with too many arguments
-                certain = not piped and c.op != "||" and (  # T-1891: a cd after || may be skipped
+                lands = [os.path.normpath(d)] if os.path.isabs(d) else [] if not d or lost or cdpath else [
+                    _resolve(d, b) for b in cwds]  # T-1924: a relative one too, from folders it can name (each
+                child = any(a not in _KEYWORDS and a not in ("time", "command", "builtin", "noglob") and not re.match(
+                    r"[A-Za-z_]\w*\+?=", a) for a in c.argv[:len(c.argv) - len(argv)])  # review: nice cd X moves a child
+                can_fail = gone or child or len(dirs) > 1 or not lands or not all(x in made or (  # review: cd a b fails
+                    os.path.isdir(x) and os.access(x, os.X_OK)) for x in lands)  # (too many arguments); `cd ..` doubled
+                certain = not child and not piped and c.op != "||" and (  # T-1891: a cd after || may be skipped
                     and_chain or in_chain or ((straight or mixed) and not can_fail))
                 cwds, lost = _moved(cwds, lost, tgt, certain, cdpath, ctx)
                 new = [_cd_from(tgt, r, ctx) for r in rd]
@@ -3373,6 +3406,9 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
                 base = (base[0] + cwds, base[1] + lost, base[2])
                 rbase = rbase + rd
         here_dirs = _DCWD[depth] = rd  # T-1727 review: where this command may run (and nested text start)
+        if len(cwds) + len(lost) + len(rd) > 1024:  # T-1924: cds that may each fail double these (a line that
+            # isn't straight: if, ( ), | and ||): refuse in milliseconds, not minutes
+            return found + [("rm-outside", "the line may be in too many folders to analyse: split the command")]
         for inner in (x for t in _shell_c(args) for x in _readings(t, {**lits, **known})) if _C_SHELLS.match(name) else ():
             found += check_bash(inner, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(inner):
