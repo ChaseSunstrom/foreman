@@ -3586,10 +3586,14 @@ def _drive(p, sd, briefs, pl, g):
                  if w["id"] not in waiting and w["id"] not in held and (not scope or w["id"] == scope)), None)
     if not work and full and not scope:  # T-0097: in full autonomy the user's captured requests are work too
         work = next((w for w in sd["inbox"] if w["id"] not in waiting and w["id"] not in held), None)
-    if not work and held:  # said once per set of lanes; each builder's notification wakes the session
-        if d.get("lanes") == held:
+    done = [] if work else c.finished_lanes(p, briefs)  # T-2038: a finished lane waits on a merge, not a notification
+    if not work and (held or done):  # said once per set of lanes; each builder's notification wakes the session
+        if d.get("lanes") == held + ["done"] + done:
             return None
-        d["lanes"] = held
+        d["lanes"] = held + ["done"] + done
+        if done:
+            return ("Foreman drive: builder lane(s) finished and wait on a merge: " + "; ".join(
+                f"fm lane merge {i}" for i in done) + " (review the branch first), then fm lane rm and close it here.")
         return (f"Foreman drive: builder lanes hold {', '.join(held[:4])}; nothing else is queued. Each builder's "
                 f"notification wakes you: then review its branch, fm lane merge, fm lane rm, and close it here.")
     if d.get("hold"):
