@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- On CI, run.py ends a failed run with one error naming every failed class and its exit code, cuts long annotation lines, says "no output" for a class that wrote nothing, and annotates its own crash, so a failure is never just "exit code 1" (T-1911).
 - `fm lib gaps` counts a Gradle `group:artifact` dependency as covered when a card names its bare artifact id, as the card spec says; the Espresso card also detects AndroidX Test and UiAutomator, and the Android card all of `androidx.lifecycle` (T-1914).
 - A flaky test's note names the exception it raised (`AssertionError: …`), not the dashed rule that closes a unittest failure (T-1898). The site-hero scene probe runs in real time over DevTools, so virtual time can't run out its waits before a loaded machine draws (T-1898).
 - The guard keeps a builder's write inside its worktree when the worktree is named through a linked parent folder (macOS's /var is /private/var), where it refused it as outside (T-1910).
