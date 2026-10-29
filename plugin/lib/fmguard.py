@@ -3105,9 +3105,13 @@ def _shell_c(args):
     return out
 
 
-# T-0892: NAME=$(mktemp -d) (no -p/--tmpdir/template) is a fresh folder in TMPDIR or /tmp: read as that literal path,
-# so `rm -r $T` later is a known target, and `$T/../..` still resolves to what it would remove
-_MKTEMP_D = re.compile(r"""(?<![\w$])(\w+=)(["']?)(?:\$\(\s*mktemp\s+-d\s*\)|`\s*mktemp\s+-d\s*`)\2""")
+# T-0892: NAME=$(mktemp -d) is a fresh folder in TMPDIR or /tmp: read as that literal path, so `rm -r $T` later is a
+# known target, and `$T/../..` still resolves to what it would remove. T-1888: so is `-d -p DIR` in DIR, and
+# `-d DIR/nameXXX` (mktemp prints the path as given); DIR a literal without ~ (HOME inside $( ) even in quotes)
+_MKTEMP_D = re.compile(r"""(?<![\w$])(\w+=)(["']?)"""
+                       r"""(?:\$\(\s*mktemp\s+([^()`'"$\n]*?)\s*\)|`\s*mktemp\s+([^()`'"$\n]*?)\s*`)\2""")
+_MKTEMP_ARGS = re.compile(r"-d|-d\s+-p\s+(?P<p>[\w./@+:,-]+)|-p\s+(?P<q>[\w./@+:,-]+)\s+-d"
+                          r"|-d\s+(?P<t>[\w./@+:,][\w./@+:,-]*?)X{3,}")
 # T-0906: a command that names TMPDIR or PATH at all (TMPDIR=, TMPDIR[0]=, ${TMPDIR:=…}), gives a shell an rc file
 # (BASH_ENV, ENV, --rcfile, --init-file), defines its own mktemp or repoints it (hash -p, enable, an alias) makes the
 # folder somewhere else (after eval or source the guard already treats T as unknown: see the KnownVars cases)
@@ -3118,7 +3122,14 @@ _MKTEMP_MOVED = re.compile(r"\b(?:TMPDIR|PATH|BASH_ENV|ENV)\b|--(?:rcfile|init-f
 def _mktemp_literal(cmd):
     if _MKTEMP_MOVED.search(cmd):
         return cmd
-    return _MKTEMP_D.sub(lambda m: m.group(1) + os.path.join(os.environ.get("TMPDIR") or "/tmp", "tmp.mktemp"), cmd)
+    def lit(m):
+        a = _MKTEMP_ARGS.fullmatch(m[3] if m[3] is not None else m[4])
+        if not a:
+            return m[0]
+        if a["t"] is not None:
+            return m[1] + a["t"] + "mktemp"
+        return m[1] + os.path.join(a["p"] or a["q"] or os.environ.get("TMPDIR") or "/tmp", "tmp.mktemp")
+    return _MKTEMP_D.sub(lit, cmd)
 
 
 def _track_vars(words, env, home=None):

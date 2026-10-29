@@ -188,7 +188,16 @@ class KnownVars(GuardCase):
             ("X=$(mktemp -d); rm -rf $X/../..", "rm-outside"),
             ("T=$(mktemp -d) && echo x > $T/a && rm -r $T", None),  # T-0892: a fresh temp folder is scratch
             ('T="$(mktemp -d)"; rm -rf "$T"', None),
-            ("T=$(mktemp -d -p {fhome}); rm -rf $T", "rm-outside"),  # -p puts it elsewhere: still unknown
+            ("T=$(mktemp -d -p {fhome}); rm -rf $T", "rm-outside"),  # -p puts it there: outside scratch
+            # T-1888: -p with a literal folder, or a literal DIR/nameXXX template, is a fresh folder there
+            ("T=$(mktemp -d -p /tmp/x) && rm -rf $T", None),
+            ('T="$(mktemp -p /tmp/x -d)"; rm -rf "$T"', None),
+            ("T=$(mktemp -d /tmp/x/w.XXXX); rm -rf $T", None),
+            ("W=$(mktemp -d -p /tmp/x) && cd $W && git cherry-pick abc1234 && rm -rf $W", None),
+            ("T=$(mktemp -d -p /tmp/x); rm -rf $T/../../..", "rm-outside"),
+            ('T="$(mktemp -d -p ~)"; rm -rf "$T/../x"', "rm-outside"),  # ~ is HOME inside $( ) even in quotes
+            ("T=$(mktemp -d -p $D); rm -rf $T", "rm-outside"),  # a name: unknown
+            ("T=$(mktemp -d -p /tmp/x w.XXX); rm -rf $T/../../..", "rm-outside"),  # -p and a template: unread
             # review: a TMPDIR set, or a mktemp shadowed, in the same command puts the folder elsewhere
             ('export TMPDIR={fhome}; T=$(mktemp -d); rm -rf "$T/.."', "rm-outside"),
             ('TMPDIR={fhome} T=$(mktemp -d); rm -rf "$T/.."', "rm-outside"),
