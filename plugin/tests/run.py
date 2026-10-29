@@ -10,9 +10,11 @@ import concurrent.futures
 import contextlib
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 
@@ -66,6 +68,7 @@ def annotations(cid, err):
 
 
 NOT_STARTED = "run.py: not started: the run reached its --deadline (T-1809)\n"
+TMP_PREFIX = "fmtest-"  # not fm-: fm tidy reads ~/.claude/projects/-tmp-fm-* as its own claude -p runs' folders
 
 
 def run_one(cid, k, timeout=480, deadline=None):
@@ -81,9 +84,10 @@ def run_one(cid, k, timeout=480, deadline=None):
             timeout = round(deadline - t0)
             why = f"still running at the run's deadline ({timeout}s in): killed (T-1809)"
     extra = [a for x in k for a in ("-k", x)]
+    tmp = tempfile.mkdtemp(prefix=f"{TMP_PREFIX}{os.getpid()}-")  # T-2019: whatever the class leaks goes with it
     p = subprocess.Popen([sys.executable, "-X", "faulthandler", "-m", "unittest", "-q", cid, *extra], cwd=HERE,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL,
-                         start_new_session=True)
+                         start_new_session=True, env=dict(os.environ, TMPDIR=tmp))
     try:
         _, err = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -96,8 +100,25 @@ def run_one(cid, k, timeout=480, deadline=None):
             os.killpg(p.pid, signal.SIGKILL)
         _, err = p.communicate()
         err += f"\nrun.py: {cid} {why}\n"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     m = re.search(r"Ran (\d+) tests?", err)
     return cid, p.returncode, err, int(m.group(1)) if m else 0, time.time() - t0  # killed: negative
+
+
+def sweep(base=None):
+    """T-2019: a run killed before its cleanup leaves its classes' temp dirs; the next run removes dead runs' ones."""
+    base = base or tempfile.gettempdir()
+    for name in os.listdir(base):
+        m = re.match(rf"{TMP_PREFIX}(\d+)-", name)
+        if not m:
+            continue
+        try:
+            os.kill(int(m.group(1)), 0)
+        except ProcessLookupError:
+            shutil.rmtree(os.path.join(base, name), ignore_errors=True)
+        except PermissionError:
+            pass  # alive, someone else's
 
 
 def slowest(results, n):
@@ -173,6 +194,7 @@ def main():
     if any(re.search(r"\s", k) for k in a.k + a.names):  # T-0357: '-k "a or b"' matched nothing and failed only at the end
         ap.error("-k matches a substring of test ids; repeat -k for each pattern (-k test_guard -k test_cli)")
     t0 = time.time()
+    sweep()
     hit, ids = set(), []
     todo = classes(a.p or ["test*.py"], a.k, hit, a.names, ids)
     missing = [n for n in a.names if n not in hit]
