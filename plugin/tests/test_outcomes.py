@@ -99,7 +99,8 @@ class Survival(Base):
         self.assertEqual(t[fresh]["survival"], "settling")
         self.assertGreater(t[fresh]["days_left"], 25)
         out = self.fm("outcomes").stdout
-        self.assertIn("Survival (30 days): 2 survived, 2 lost, 1 settling", out)
+        # T-2037: lost counts every close and survived only those past the window, so give the total and the share
+        self.assertIn("Survival (30 days): of 5 closes, 2 lost (40%), 2 survived the window, 1 settling", out)
         self.assertIn("days since a lost task: 0", out)
 
     def test_settling_logs_one_grade_per_task_and_shows_in_digest_and_history(self):
