@@ -113,6 +113,45 @@ class CiWatch(ForemanTestCase):
             jobs[1]["conclusion"] = "success"
             self.assertEqual(fmci.watch(p, "main", 3, 0, **quiet), (0, "CI green."))
 
+    def test_a_job_that_never_got_a_runner_reruns_instead_of_filing_a_fix(self):
+        # T-2013: GitHub capacity left a macOS job cancelled with no steps; that is no code failure to brief.
+        from unittest import mock
+        import fmci
+        from fmcli import UsageError
+        self.fm("init")
+        p = c.find_project(self.repo)
+        head = fmci._head(p)
+        state = {"attempt": 1, "reruns": [], "rerun_ok": True}
+        said = []
+
+        def gh(p, *argv):
+            a = state["attempt"]
+            if argv[:2] == ("run", "list"):
+                return json.dumps([{"databaseId": 7, "attempt": a, "status": "completed", "headSha": head,
+                                    "conclusion": "failure" if a == 1 else "success",
+                                    "url": "https://github.com/o/r/actions/runs/7"}])
+            if argv[:2] == ("run", "rerun"):
+                state["reruns"].append(argv)
+                if not state["rerun_ok"]:
+                    raise UsageError("gh: HTTP 401")
+                state["attempt"] += 1
+                return ""
+            if "--json" in argv:
+                return json.dumps({"jobs": [
+                    {"name": "test (ubuntu, 3.12, 1)", "conclusion": "success", "steps": [{"name": "run"}]},
+                    {"name": "test (macos-latest, 3.14, 2)", "conclusion": "cancelled" if a == 1 else "success",
+                     "steps": [] if a == 1 else [{"name": "run"}]}]})
+            return LOG
+        with mock.patch.object(fmci, "_gh", side_effect=gh):
+            self.assertEqual(fmci.watch(p, "main", 0, 0, say=lambda *a, **k: said.append(a[0])), (0, "CI green."))
+            self.assertEqual(state["reruns"], [("run", "rerun", "7", "--failed")])
+            self.assertTrue(any("never got a runner" in s for s in said), said)
+            state.update(attempt=1, rerun_ok=False)
+            code, msg = fmci.watch(p, "main", 3, 0, say=lambda *a, **k: None)
+        self.assertEqual(code, 1)
+        self.assertRegex(msg, r"never got a runner .*test \(macos-latest, 3\.14, 2\).*push again")
+        self.assertEqual([b for b in self.briefs() if b.type == "FIX"], [], "a capacity cancel files no FIX brief")
+
     def test_with_gh_logged_out_the_public_api_finds_the_run_and_briefs_its_annotations(self):
         # T-1939: gh logged out left ci-watch blind; a public repo's runs and annotations need no token
         import contextlib
