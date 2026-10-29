@@ -250,6 +250,19 @@ class CaptureAndIntake(ForemanTestCase):
         b = c.find_brief(c.find_project(self.repo), res["created"][0]["id"])
         self.assertEqual(b.meta["depends_on"], ["T-0001"])
 
+    def test_a_long_title_is_cut_at_a_word_and_a_command_keeps_its_case(self):
+        # T-1985: "…the DONE-WHEN fallbac" and "Fm batch drops …"
+        self.fm("capture", "FIX: fm batch drops a member's verify command when its criteria come from the DONE-WHEN "
+                           "fallback of the raw request text")
+        self.fm("capture", "FIX: c.first_touch counts a Write outside the project")
+        self.fm("capture", "FIX: the band is slow")
+        t = {b.id: b.title for b in c.load_briefs(c.find_project(self.repo))}
+        self.assertTrue(t["T-0001"].startswith("fm batch drops"), t["T-0001"])
+        self.assertTrue(t["T-0001"].endswith(" DONE-WHEN…"), t["T-0001"])
+        self.assertLessEqual(len(t["T-0001"]), 90)
+        self.assertTrue(t["T-0002"].startswith("c.first_touch"), t["T-0002"])
+        self.assertEqual(t["T-0003"], "The band is slow")
+
     def test_titles_cannot_carry_terminal_control_sequences(self):
         # round 4 (brainstorm, security): titles are printed by the dashboard, statusline and terminal title
         self.fm("capture", "evil\x1b]0;pwned\x07 title‮ here")

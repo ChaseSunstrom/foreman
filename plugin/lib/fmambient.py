@@ -24,7 +24,9 @@ def _dir(p):
 def after_edit(p, path):
     """The PostToolUse hook's call after an edit: start a run, or mark the running one dirty so it runs again."""
     if not c.read_meta(p).get("ambient") or not path.startswith(p.root.rstrip("/") + "/") or c.host_strain() \
-            or c.gates_live(p, here=True):  # T-1965: the full gates answer for this edit; no second suite beside them
+            or c.gates_live(p, here=True) \
+            or c.gates_live(p, key="ship_testing"):  # T-1965, T-1984: no second suite beside full gates or fm ship's run
+        # ponytail: an edit during fm ship's run waits for the next edit or the close gates, no run after the ship
         return
     if os.environ.get("FOREMAN_AMBIENT_SYNC"):  # tests: inline, so the result is there when the hook returns
         return run(p)

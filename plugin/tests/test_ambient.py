@@ -111,6 +111,15 @@ class Ambient(HookCase):
         self.fm("check", "--fresh", env=SYNC, check=False)
         self.assertIn("now fail", self.note())
 
+    def test_an_edit_during_fm_ships_test_run_starts_no_ambient_run(self):
+        # T-1984: fm ship's suite runs in its scratch tree; an ambient run beside it was two suites at once
+        self.fm("check", "ambient", "on")
+        p = self.project()
+        c.update_meta(p, ship_testing={"pid": os.getpid(), "at": c.now(), "root": "/elsewhere/ship"})
+        self.edit("def add(a, b):\n    return a - b\n")
+        self.assertNotIn("Ambient", self.note(), "fm ship starts one after its run")
+        c.update_meta(p, ship_testing=None)
+
     def test_an_edit_during_full_gates_starts_no_ambient_run(self):
         # T-1965: an edit while fm check ran started an ambient suite beside it
         self.fm("check", "ambient", "on")
