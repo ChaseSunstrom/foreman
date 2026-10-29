@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -280,7 +281,14 @@ class ForemanTestCase(unittest.TestCase):
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
-        self._tmp.cleanup()
+        until = time.monotonic() + 5 * busy_factor()
+        while True:  # T-1901: a detached child a test started on purpose may still be writing into state/
+            try:
+                return self._tmp.cleanup()
+            except OSError:  # Errno 39: it wrote between rmtree's listing and its rmdir
+                if time.monotonic() > until:
+                    raise
+                time.sleep(0.1)
 
     def fm(self, *args, cwd=None, check=True, env=None, input=None):
         # fm run never takes a real inhibitor lock; T-1379: fm doctor skips its hook bench (no test reads its timings)
