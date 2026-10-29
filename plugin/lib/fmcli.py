@@ -1531,8 +1531,10 @@ def _task_files(p, b):
     base = c.task_base(p.root, b) if c.git_root(p.root) else None
     if base:  # R1: edits made through the shell or outside Claude count too
         import fmmap
-        for f in fmmap.changed(p.root, base):
-            if f not in touches and not f.startswith(".foreman/"):
+        changed = fmmap.changed(p.root, base)
+        theirs = set(_theirs(p, b, changed))  # T-1968: another task's edits are its to answer for (scope, audit)
+        for f in changed:
+            if f not in touches and f not in theirs and not f.startswith(".foreman/"):
                 try:
                     touches[f] = c.iso(os.path.getmtime(os.path.join(p.root, f)))
                 except OSError:  # deleted
@@ -4910,6 +4912,8 @@ def affected(p, b=None, skipped=None):
     act = b or c.active_brief(c.load_briefs(p), p.lane)  # T-1117 review: the closing task's base, active or not
     base = (c.task_base(p.root, act) if act else None) or "HEAD"
     changed = set(fmmap.changed(p.root, base))
+    if b:  # T-1968: a close answers for its own changes; another task's files are left out, as its commit leaves them
+        changed -= set(_theirs(p, b, sorted(changed)))
     m = fmmap.load(p)
     # T-0875: a changed test file always runs, linked or not (a new one isn't in the map until it's committed); by its
     # name, so a helper under tests/ isn't run alone (pytest exits 5 when it collects nothing)
