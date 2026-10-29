@@ -2560,14 +2560,38 @@ _WORD = re.compile(r"[^\s'\"`;|&<>()=]+")
 _PART = re.compile(r"\$(?:\{(\w+)\}|(\w+))|\$\{[^}]*\}?|\$\([^)]*\)?|`[^`]*`?|\$")  # what a shell fills in at run time
 
 
+_COMP_BODY = r"(?:(?!\b(?:for|while|until|select|if|case|done|fi|esac)\b)[^{}])*?"
+_COMP_END = r"(?<![\\<>])[;\n&]\s*"  # an unescaped separator, not a redirect's (>&)
+# T-1920: a for/while/until/select/if/case/{ } compound with none inside it, where a command starts: the start, an
+# unescaped ; & | ( or newline (not >& >| <(), or `{ `, then any do/then/else/elif/time words; it runs in this shell
+_COMPOUND = re.compile(
+    rf"(^|(?<![\\<>])[;&|(\n]|(?<![\\\w$])\{{(?=\s))((?:\s*\b(?:do|then|else|elif|time)(?=\s))*\s*)"  # whole words:
+    rf"(?:\b(?:for|while|until|select)(?=\s){_COMP_BODY}{_COMP_END}done|\bif(?=\s){_COMP_BODY}{_COMP_END}fi"  # for-x
+    rf"|\bcase(?=\s){_COMP_BODY}{_COMP_END}esac|\{{\s{_COMP_BODY}{_COMP_END}\}})(?=$|[\s;&|)])")  # is a command
+
+
+def _compound_moves(m, shell):
+    """T-1920 review: whether a compound _top matched may move the shell, read as written (a quoted "cd", c\\d, a computed
+    command word or a substitution may): _moves_text on it, its own { } and its ${name}s aside."""
+    t = shell[m.start() + len(m[1]) + len(m[2]):m.end()]
+    return _moves_text(re.sub(r"\$\{\w+\}", "$V", t[1:-1] if t[:1] == "{" else t))
+
+
 def _top(shell):
     """(straight, and_chain, mixed) at the command's top level, command substitutions blanked: straight when every command
     there runs in this shell, in order (no branch, subshell, pipe, background or !: `! cd BAD && x` runs x); and_chain
     when only && joins them, so a failed cd stops the rest."""
-    s, prev = re.sub(r"`[^`]*`", "S", shell), None
+    blank = lambda m: "S" * len(m[0])  # noqa: E731 — same length throughout: T-1920 reads shell beside the masked text
+    s, prev = re.sub(r"`[^`]*`", blank, shell), None
     while s != prev:
-        s, prev = re.sub(r"\$\([^()]*\)", "S", s), s
-    s = _mask_quotes(s)  # T-0384: a quoted ( | or ; is text
+        s, prev = re.sub(r"\$\([^()]*\)", blank, s), s
+    q = _mask_quotes(s)  # T-0384: a quoted ( | or ; is text
+    if q != s or not re.search(r"['\"#]", s):  # T-1920: not when quote masking failed closed ($'…', an open quote)
+        q, prev = re.sub(r"\$\{\w+\}", lambda m: "V" * len(m[0]), q), None
+        while q != prev:  # innermost first; one that may move the shell stays branchy (a loop repeats its cd)
+            q, prev = _COMPOUND.sub(lambda m: m[0] if _compound_moves(m, shell) else
+                                    m[1] + m[2] + "C".ljust(len(m[0]) - len(m[1]) - len(m[2])), q), q
+    s = q
     straight = "!" not in s and _straight_line(s)
     # T-0339: a ; list with && in it: each &&-segment is a chain of its own, the segments run in order; T-0355: its
     # elements may be pipelines (a pipe runs in subshells, so only a cd outside one moves the shell); T-1891: or ||
