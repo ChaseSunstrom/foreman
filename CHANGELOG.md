@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- New logo: a hard hat with a check mark on a navy tile, used as the site favicon, nav mark and README header (T-2041).
 - Library: 25 UX pattern cards in a new ux area (onboarding, empty states, navigation, UX writing, error messages, search, filters, command palette, settings, pricing, checkout, sign-up, notifications, dashboards, progressive disclosure, wizards, undo, destructive actions, mobile navigation, tooltips, feedback, permissions, information architecture, usability testing, dark patterns) (T-2039).
 - Library: 25 visual-design cards in the ux area (visual hierarchy, grids, spacing and type scales, palettes, tokens, icons, logos, brand, illustration, imagery, charts, landing pages, heroes, calls to action, social proof, bento layouts, gestalt, polish, handoff, art direction, app icons, share images, email) (T-2042).
 - Library: 28 frontend cards for motion, effects and modern CSS (scroll-driven animations, view transitions, springs, anchor positioning, popover, oklch, and more) (T-2043).
