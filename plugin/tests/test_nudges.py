@@ -118,3 +118,26 @@ class QuietHints(ForemanTestCase):
             self._turn()
         self.c.hint_used(self.p, "batch")
         self.assertIn("one plan, gate run, review and commit", self.c.next_for(self.p)[2])
+
+
+class OneLoad(ForemanTestCase):
+    def test_next_loads_briefs_once(self):
+        # T-2016: fm next loaded every brief up to five times a call, ~18 ms each at 1,200 briefs
+        from unittest import mock
+        import fmcli
+        import fmcore as c
+        self.fm("init")
+        self.fm("task", "new", "x", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "x", "--focus")
+        p, here = c.find_project(self.repo), os.getcwd()
+        os.chdir(self.repo)
+        try:
+            with mock.patch("sys.stdout"):
+                fmcli.main(["next"])  # warms the builders' stall cache, which loads on its own when cold
+                with mock.patch.object(c, "load_briefs", wraps=c.load_briefs) as load:
+                    c.next_for(p)
+                    self.assertEqual(load.call_count, 1, "next_for")
+                    load.reset_mock()
+                    fmcli.main(["next"])
+                    self.assertEqual(load.call_count, 1, "fm next")
+        finally:
+            os.chdir(here)

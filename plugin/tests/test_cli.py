@@ -121,6 +121,30 @@ class ParserOnce(unittest.TestCase):
         self.assertEqual(a.parse_args(["state", "--json"]).json, True, "a second parse starts from the defaults")
         self.assertFalse(a.parse_args(["state"]).json)
 
+    def test_a_run_builds_only_its_command_and_each_matches_the_full_parser(self):
+        # T-2016: building all 214 subparsers was ~80 ms of every fm call; a command whose arguments leaned on another
+        # command's block would lose them silently, so every partial parser is compared with the full one
+        def subs(ap):
+            return next((a for a in ap._actions if isinstance(a, argparse._SubParsersAction)), None)
+
+        def shape(ap):
+            s = subs(ap)
+            return ([(a.option_strings, a.dest, a.nargs, a.choices if not isinstance(a, argparse._SubParsersAction)
+                      else None, a.default, a.required) for a in ap._actions]
+                    + [(k, shape(v)) for k, v in (s.choices.items() if s else ())])
+
+        full = subs(fmcli.build_parser()).choices
+        tiers = list(fmcli.HELP_TIERS)
+        for name in full:
+            part = subs(fmcli._build_parser(only=name)).choices
+            self.assertEqual(set(part), {name, *(k for k, v in full.items() if v is full[name])}, name)
+            self.assertEqual(shape(part[name]), shape(full[name]), name)
+        self.assertEqual(fmcli.HELP_TIERS, tiers, "fm help's tiers stay whole")
+        from unittest import mock
+        with mock.patch.object(fmcli, "_PARSER", None), mock.patch.dict(fmcli._PARTS, clear=True):
+            self.assertEqual(len(subs(fmcli._parser_for(["-p", "x", "next"])).choices), 1)
+            self.assertEqual(len(subs(fmcli._parser_for(["nxet"])).choices), len(full), "a typo gets the whole parser")
+
 
 class CaptureAndIntake(ForemanTestCase):
     def test_a_missing_file_argument_is_a_usage_error(self):
