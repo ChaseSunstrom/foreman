@@ -324,6 +324,9 @@ def _push_main(p, tid, sha, remote, by):
         raise
 
 
+SHIPPED = "refs/foreman/shipped"  # T-1945: the last commit fm ship landed; default picks start after it
+
+
 def ship(p, args):
     """T-1943: fm ship — HEAD's commits the remote's main lacks (git cherry, by patch) or the named ones, cherry-picked
     onto the fetched main in a scratch worktree, their files compared, tested there, main re-checked, then pushed
@@ -338,9 +341,12 @@ def ship(p, args):
     for x in args.commits or []:
         sha = "" if x.startswith("-") else _git(root, "rev-parse", "--verify", "-q", "--end-of-options", f"{x}^{{commit}}", ok=True).strip()
         picks.append(sha or _err(f"{x!r} isn't a commit here"))
-    picks = picks or [ln[2:] for ln in _git(root, "cherry", base, "HEAD").splitlines() if ln.startswith("+ ")]
+    last = _git(root, "rev-parse", "--verify", "-q", SHIPPED, ok=True).strip()  # T-1945: main may hold these under another patch
+    if last and c._git(root, "merge-base", "--is-ancestor", last, "HEAD", timeout=60, proc=True).returncode:
+        last = ""  # rebased or another branch: git cherry alone
+    picks = picks or [ln[2:] for ln in _git(root, "cherry", base, "HEAD", *([last] if last else [])).splitlines() if ln.startswith("+ ")]
     if not picks:
-        print(f"nothing to ship: {remote} main already has HEAD's changes")
+        print(f"nothing to ship: {remote} main already has HEAD's changes" + (f" after the last shipped commit {last[:8]}" if last else ""))
         return 0
     b = _grant(p) or _err(_NEED_GRANT.replace("--push", "fm ship", 1) + "; nothing was pushed")
     test = shlex.split(args.test) if args.test else [*FM, "check"]
@@ -372,11 +378,17 @@ def ship(p, args):
             if c._git(root, "merge-base", "--is-ancestor", "FETCH_HEAD", tip, timeout=60, proc=True).returncode:
                 _err(f"{remote} main moved while testing; nothing was pushed: run fm ship again")
             _push_main(p, b.id, tip, remote, "fm ship")
+            _git(root, "update-ref", SHIPPED, picks[-1])
         finally:
             _git(root, "worktree", "remove", "--force", wt, ok=True)
-    print(f"shipped {n} to {remote} main at {tip} (the publish grant is spent). "
-          f"Watch CI in the background: fm ci-watch --commit {tip}")
-    return 0
+    print(f"shipped {n} to {remote} main at {tip} (the publish grant is spent)."
+          + ("" if args.watch else f" Watch CI in the background: fm ci-watch --commit {tip}"), flush=True)
+    if not args.watch:
+        return 0
+    import fmci  # T-1946
+    code, msg = fmci.watch(p, "main", 3, 30, commit=tip)
+    print(msg)
+    return code
 
 
 def cmd_ship(args):
