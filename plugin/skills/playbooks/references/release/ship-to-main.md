@@ -3,7 +3,7 @@
 
 Use when finished work on a working branch goes to main: push to main, fast-forward main, publish a release commit, or a CI job on main fails after a push.
 
-In Foreman's own repo a release ships with `fm release VERSION --push` and the task's `publish` grant (it merges with `--no-ff` from a temporary worktree); this book is for any other branch or repo.
+In Foreman's own repo a release ships with `fm release VERSION --push` and the task's `publish` grant (it merges with `--no-ff` from a temporary worktree); this book is for any other branch or repo. `fm ship [COMMIT…] [--remote URL] [--test CMD]` runs steps 1, 2, 4, 5 and 8 in one call behind the same grant, and step 3 when `--test` names the oldest runtime's suite (run it in the background).
 
 1. **Start from fetched main**, not the local copy: fetch, then make a scratch worktree at the fetched head and cherry-pick or merge the work there. The working tree stays untouched.
 2. **Check the trees match:** the shipped files in the scratch worktree equal the branch's (`git diff --quiet HEAD branch -- <paths>`). A difference means a missed or extra commit.
@@ -14,4 +14,4 @@ In Foreman's own repo a release ships with `fm release VERSION --push` and the t
 7. **When CI fails only there:** look for OS differences (paths, case, line endings), missing tools, suite deadlines on slow runners and stale action versions before touching the code.
 8. **Clean up:** remove the scratch worktree and refresh the remote-tracking ref so the next ship starts clean.
 
-Mined from T-1801, T-1805, T-1828, T-1840, T-1799, T-1939.
+Mined from T-1801, T-1805, T-1828, T-1840, T-1799, T-1939, T-1943.

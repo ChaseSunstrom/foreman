@@ -6232,6 +6232,13 @@ def _build_parser():
     s.add_argument("--no-check", action="store_true", help="skip fm check, fm release-check and the canary (recorded as skipped; such a release can't --push)")
     s.add_argument("--stale-ok", metavar="REASON", help="--push even though the guard corpus replay (fm replay --cases) "
                                                         "is red or over 7 days old; the waiver is logged (T-1401)")
+    s = add("ship", lazy("fmrelease", "cmd_ship"), tier=("Project and settings", 907),
+            help="land HEAD's unpushed commits (or the named ones) on the remote's main: cherry-picked onto the fetched "
+                 "main in a scratch worktree, tested there, pushed if main didn't move; needs the active task's publish "
+                 "grant; run it in the background (T-1943)")
+    s.add_argument("commits", nargs="*", metavar="COMMIT", help="default: HEAD's commits main lacks (git cherry)")
+    s.add_argument("--remote", metavar="URL", help="push to this remote instead of origin")
+    s.add_argument("--test", metavar="CMD", help="the check to run in the scratch tree (default: fm check)")
     add("release-check", lazy("fmdemo", "cmd_release_check"), tier=("Project and settings", 910),
         help="fm doctor and fm demo in a temporary HOME: a clean checkout passes before a release (T-0960)")
     s = add("secrets", lazy("fmsecrets", "cmd_secrets"), tier=("Finding your way", 400), help="credentials in the working tree, Claude config and "
@@ -7407,7 +7414,7 @@ def _worker_may(args):
     return verb in WORKER_READS and not getattr(args, "replan", False)
 
 
-LONG_VERBS = {"check", "code", "release", "bench", "sentinel"}
+LONG_VERBS = {"check", "code", "release", "ship", "bench", "sentinel"}
 
 
 def _stack_dumps(verb):

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Feature: `fm ship` lands finished commits on the remote's main in one call: it cherry-picks them onto the fetched main in a scratch worktree, runs the checks there and pushes only if main didn't move, behind the task's publish grant. A failure pushes nothing (T-1943).
 - Feature: `fm ci-watch` works without `gh` (missing or logged out): for a public GitHub repo it reads the commit's runs and the failed jobs' annotations from GitHub's API, with no token, and briefs the failing lines as before. The ship-to-main playbook now names it (T-1939). When it gives up without seeing a finished run, it says it was reading the API (T-1940). A green run whose non-blocking job failed (continue-on-error, like the macOS jobs) no longer reads as plain green: ci-watch names the failed jobs and briefs them once, still exiting 0 (T-1942).
 - Fix: a system-folder refusal for a path that holds "can't read" was mistaken for a program the guard never read, so a system grant couldn't lift it. Only the guard's own wording counts now (T-1934).
 - Fix: in a script the guard reads, a refusal whose text happened to say "too deep" (a folder named so) was taken for the nesting limit and dropped. Only the nesting refusal itself counts now (T-1936).
