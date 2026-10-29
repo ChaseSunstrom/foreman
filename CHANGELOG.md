@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Perf: session start finds your last long silence in the ledger's recent lines instead of reading every ledger file, and filtered ledger tails search the raw bytes and parse only the lines they want. Session start takes 152 ms, down from 177, and the Stop hook 64 ms, down from 70 (T-2025).
 - Perf: the prompt hook compiles patterns only for card names your message contains, compiles module patterns on first use, and loads briefs and the ledger's last edit once each. The median call takes 101 ms, down from 127 (T-2024).
 - Perf: a hook loads `subprocess` and `glob` only when a call runs a process or searches for Python. The median PreToolUse call takes 41 ms, down from 44 (T-2023).
 - Perf: the Notification hook takes 51 ms, down from 87, and PreToolUse 41 ms, down from 45. Closed briefs load from `briefs-index.json` in the project's state folder, checked against each file's inode, modification time and size, and a closed brief's file is read only when its body is needed. Loading 1,199 briefs takes 7.8 ms, down from 31.6 (T-2022).
