@@ -120,6 +120,49 @@ class Ship(ForemanTestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.main_log()[0], "add b")
 
+    def test_a_plain_ship_starts_after_the_shipped_ref(self):
+        # T-1945: main held shipped commits under another patch (a merge), so git cherry listed them every time
+        self.grant()
+        self.assertEqual(self.ship("--test", "true").returncode, 0)
+        other = os.path.join(self.tmp, "other")
+        subprocess.run(["git", "clone", "-q", self.origin, other], check=True)
+        sh(other, "reset", "-q", "--hard", "HEAD~2")
+        for name in ("a", "b"):
+            with open(os.path.join(other, f"{name}.txt"), "w") as f:
+                f.write(name + "\n")
+        sh(other, "add", ".")
+        sh(other, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a and b squashed")
+        sh(other, "push", "-qf", "origin", "HEAD:main")
+        with open(os.path.join(self.repo, "c.txt"), "w") as f:
+            f.write("c\n")
+        sh(self.repo, "add", "c.txt")
+        sh(self.repo, "commit", "-qm", "add c")
+        self.grant()
+        r = self.ship("--test", "true")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.main_log()[:2], ["add c", "a and b squashed"])
+        self.assertEqual(sh(self.repo, "rev-parse", "refs/foreman/shipped"), sh(self.repo, "rev-parse", "HEAD"))
+
+    def test_watch_watches_the_pushed_commit(self):
+        # T-1946: ship, then CI on the pushed sha, in one background job
+        import sys
+        bin_dir = os.path.join(self.tmp, "bin")
+        os.makedirs(bin_dir)
+        with open(os.path.join(bin_dir, "gh"), "w") as f:
+            f.write(f"#!{sys.executable}\nimport json, subprocess, sys\n"
+                    "if sys.argv[1:3] != ['run', 'list']: sys.exit(3)\n"
+                    f"sha = subprocess.run(['git', '-C', {self.origin!r}, 'rev-parse', 'main'], capture_output=True, text=True).stdout.strip()\n"
+                    "print(json.dumps([{'databaseId': 1, 'status': 'completed', 'conclusion': 'success', 'headSha': sha, "
+                    "'url': 'https://github.com/o/r/actions/runs/1'}]))\n")
+        os.chmod(os.path.join(bin_dir, "gh"), 0o755)
+        self.grant()
+        r = self.fm("ship", "--remote", "origin", "--test", "true", "--watch",
+                    env={"PATH": bin_dir + os.pathsep + os.environ["PATH"]}, check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        tip = sh(self.origin, "rev-parse", "main").strip()
+        self.assertIn(f"watching {tip[:7]} on main", r.stdout)
+        self.assertIn("CI green", r.stdout)
+
     def test_a_remote_or_commit_that_reads_as_an_option_is_refused(self):
         self.grant()
         for argv in (["--remote=--upload-pack=touch x"], ["--remote", "origin", "--", "--output=x"]):
