@@ -547,6 +547,21 @@ class LibraryAdmit(ForemanTestCase):
         p = self.fm("lib", "gaps", "--root", os.path.join(self.tmp, "typo"), check=False)
         self.assertNotEqual(p.returncode, 0)
 
+    def test_a_gradle_dependency_a_card_names_by_its_bare_artifact_is_covered(self):
+        # T-1914: the espresso card detects espresso-core, as the spec says; its group:artifact form was still a gap
+        repo = os.path.join(self.tmp, "droid")
+        os.makedirs(repo)
+        with open(os.path.join(repo, "build.gradle"), "w") as f:
+            f.write('dependencies {\n  androidTestImplementation "androidx.test.espresso:espresso-core:3.6.1"\n'
+                    '  androidTestImplementation "androidx.test.uiautomator:uiautomator:2.3.0"\n'
+                    '  implementation "androidx.lifecycle:lifecycle-service:2.8.7"\n'
+                    '  implementation "com.example.zz:obscurelib:1.0"\n}\n')
+        gaps = fmlib.uncovered_deps([repo])
+        for d in ("androidx.test.espresso:espresso-core", "androidx.test.uiautomator:uiautomator",
+                  "androidx.lifecycle:lifecycle-service"):
+            self.assertNotIn(d, gaps)
+        self.assertIn("com.example.zz:obscurelib", gaps)
+
     def test_gaps_list_an_uncovered_dependency_and_not_a_covered_one(self):
         repo = os.path.join(self.tmp, "proj")
         os.makedirs(repo)
