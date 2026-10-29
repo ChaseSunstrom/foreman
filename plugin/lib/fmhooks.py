@@ -11,13 +11,13 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import shlex
-import subprocess
+import shutil
 import sys
 import time
 
 import fmcore as c
+from fmcore import subprocess  # T-2023: imported on first use
 
 CTX_BUDGET = 2000       # SessionStart additionalContext
 PROMPT_BUDGET = 400     # UserPromptSubmit additionalContext

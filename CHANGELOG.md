@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Perf: a hook loads `subprocess` and `glob` only when a call runs a process or searches for Python. The median PreToolUse call takes 41 ms, down from 44 (T-2023).
 - Perf: the Notification hook takes 51 ms, down from 87, and PreToolUse 41 ms, down from 45. Closed briefs load from `briefs-index.json` in the project's state folder, checked against each file's inode, modification time and size, and a closed brief's file is read only when its body is needed. Loading 1,199 briefs takes 7.8 ms, down from 31.6 (T-2022).
 - Perf: the PreToolUse hook takes 44 ms, down from 57, and the Notification hook 85 ms, down from 95. The hook modules' 191 module-level regular expressions now compile on first use, not at import; a PreToolUse call uses about 44 of them (T-2020).
 - Fix: test runs no longer fill /tmp. Each test class gets its own temp folder, removed when it ends, and the next run sweeps any a killed run left. Leaked folders had used 99% of /tmp's inodes (17 of them held over 60,000 files each), so `git worktree add` failed with "No space left on device" and a ship was refused (T-2019).

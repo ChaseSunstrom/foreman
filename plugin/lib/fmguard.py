@@ -11,7 +11,6 @@ import os
 import re
 import sys
 import shlex
-import subprocess
 
 
 class lazy:  # fmcore.lazy's twin: this module imports no other Foreman module
@@ -4890,6 +4889,7 @@ def _find_paths(args):
 
 
 def _git(cwd, *args):
+    import subprocess  # T-2023: only this helper runs a process
     try:
         r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True, timeout=2)
         return r.stdout.strip() if r.returncode == 0 else ""
