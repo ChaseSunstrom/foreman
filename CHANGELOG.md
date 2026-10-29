@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A done-when check that runs plugin/tests/run.py now warns when you write it if a named test module doesn't exist, or no test in it matches its -k filter. Such a check fails every run and can't be edited once it has evidence (T-2027).
 - Perf: session start finds your last long silence in the ledger's recent lines instead of reading every ledger file, and filtered ledger tails search the raw bytes and parse only the lines they want. Session start takes 152 ms, down from 177, and the Stop hook 64 ms, down from 70 (T-2025).
 - Perf: the prompt hook compiles patterns only for card names your message contains, compiles module patterns on first use, and loads briefs and the ledger's last edit once each. The median call takes 101 ms, down from 127 (T-2024).
 - Perf: a hook loads `subprocess` and `glob` only when a call runs a process or searches for Python. The median PreToolUse call takes 41 ms, down from 44 (T-2023).

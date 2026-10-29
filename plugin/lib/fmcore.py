@@ -3958,6 +3958,7 @@ def lint_verify(cmd, root):
         problems.append("it can't fail (nothing in it checks the behaviour)")
     if re.search(r"plugin/tests/run\.py\b.*\s-k\s+(['\"])[^'\"]*\s[^'\"]*\1", cmd or ""):  # T-0357: a substring
         problems.append("run.py -k matches a substring, so a pattern with a space matches nothing: repeat -k")
+    problems += _run_py_misses(cmd, root)
     if re.search(r"(?<!\|)\|(?!\|)", cmd or "") and "pipefail" not in cmd:
         problems.append("its exit status is the last piped program's (add set -o pipefail or drop the pipe)")
     live = sorted({m.group(1) for seg in re.split(r"&&|\|\||;|\|", cmd or "") for m in [_LIVE.match(seg.strip())] if m})
@@ -3967,6 +3968,53 @@ def lint_verify(cmd, root):
     if _STATE_READ.search(cmd or ""):  # T-0963: it passes when the records say so, not when the code works
         problems.append("it reads Foreman's state (.foreman, state/tasks or briefs), not the code: check the behaviour")
     return problems
+
+
+def _run_py_misses(cmd, root):
+    """T-2027: run.py names that match no test, and named ones no -k matches, read from the test files, not imported
+    (such a criterion fails every run, and can't be edited once it has evidence)."""
+    m = re.search(r"plugin/tests/run\.py\b([^;&|<>]*)", cmd or "")
+    try:
+        words = shlex.split(m.group(1)) if m else []
+    except ValueError:
+        return []
+    names, k, opts = [], [], ("-k", "-j", "--timeout", "--deadline", "--shard", "--load")
+    for i, w in enumerate(words):
+        if i and words[i - 1] in opts:
+            k += [w] if words[i - 1] == "-k" else []
+        elif w == "-p":
+            return []  # its own module glob: not worth reading here
+        elif not w.startswith("-") and not w.isdigit():
+            names.append(w)
+    tests = os.path.join(root, "plugin", "tests")
+    try:
+        stems = sorted(f[:-3] for f in os.listdir(tests) if f.startswith("test") and f.endswith(".py")) if names else []
+    except OSError:
+        return []
+    out = []
+    for n in names:  # a name is a substring of test ids, as -k is; a module name is the usual one
+        ids = [i for s in ([s for s in stems if n in s] or stems) for i in _test_ids(tests, s) if n in i]
+        if not ids:
+            out.append(f"run.py {n} names no test module or test in plugin/tests")
+        elif k and not any(x in i for i in ids for x in k):
+            out.append(f"no test in {n} matches -k {' -k '.join(k)}")
+    return out
+
+
+def _test_ids(tests, stem):
+    """module.Class.test ids of a test file, from its lines. ponytail: tests a class inherits from another module are
+    missed, so a -k naming only those warns; import the module if that ever bites."""
+    cls, ids = None, []
+    try:
+        with open(os.path.join(tests, stem + ".py"), encoding="utf-8") as f:
+            for line in f:
+                if c := re.match(r"class (\w+)", line):
+                    cls = c.group(1)
+                elif cls and (t := re.match(r"    (?:async )?def (test\w*)", line)):
+                    ids.append(f"{stem}.{cls}.{t.group(1)}")
+    except OSError:
+        pass
+    return ids
 
 
 _STATE_READ = lazy(r"(?:^|[\s'\"=:/])\.foreman(?:/|\b)|\bforeman/state/(?:projects/[^/\s]+/)?(?:tasks|briefs)\b"
