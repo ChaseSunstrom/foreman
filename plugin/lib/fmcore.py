@@ -11,14 +11,29 @@ import json
 import os
 import re
 import shlex
-import shutil
+import shutil  # tempfile imports it anyway, and state_fallbacks needs tempfile on every guard call
 import string
-import subprocess
 import sys
 import tempfile
 import threading
 import time
 from collections import Counter, defaultdict
+
+
+class _Later:
+    """T-2023: a standard module imported on first attribute use: a hook that runs no process skips subprocess
+    (~2.5 ms). Attributes come from the real module each time, so mock.patch("subprocess.run") still applies."""
+
+    def __init__(self, name):
+        self._name = name
+
+    def __getattr__(self, attr):
+        if attr.startswith("__") or attr == "_name":
+            raise AttributeError(attr)
+        return getattr(__import__(self._name), attr)
+
+
+subprocess = _Later("subprocess")
 
 
 class lazy:  # lowercase: reads like re.compile at each site
@@ -43,7 +58,8 @@ def claude_path(env):
     gates, fm run and doctor find it from a shell that predates the install. FOREMAN_NATIVE_BIN overrides the folder
     (T-0992: the tests point it at nothing, so a test that replaces PATH can't reach the paid binary)."""
     local = env.get("FOREMAN_NATIVE_BIN") or os.path.join(env.get("HOME") or os.path.expanduser("~"), ".local", "bin")
-    if not shutil.which("claude", path=env.get("PATH")) and os.access(os.path.join(local, "claude"), os.X_OK):
+    if local not in env.get("PATH", "").split(os.pathsep) and os.access(os.path.join(local, "claude"), os.X_OK) \
+            and not shutil.which("claude", path=env.get("PATH")):  # T-2023: which() and shutil only when it can matter
         env["PATH"] = local + os.pathsep + env.get("PATH", "")
     return env
 
@@ -557,9 +573,10 @@ def pump(stream, sink, on_line=None, idle=None, on_idle=None):
         sel.close()
 
 
-def run_command(root, cmd, timeout=600, env=None, stdin=subprocess.DEVNULL):
+def run_command(root, cmd, timeout=600, env=None, stdin=None):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output). stdin is
     /dev/null unless a caller hands it one it knows won't block (T-1766)."""
+    stdin = subprocess.DEVNULL if stdin is None else stdin
     if root and os.path.isdir(root):
         _drop_racy_pyc(root)
     if env is None:  # T-1114: fm check sets the skip list itself; an inherited one would leave tests out silently

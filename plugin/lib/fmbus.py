@@ -7,11 +7,11 @@ import json
 import os
 import re
 import socket
-import subprocess
 import sys
 import time
 
 import fmcore as c
+from fmcore import subprocess  # T-2023: imported on first use
 
 LIVE_S = 15 * 60       # a session whose statusline wrote within this is live
 LEASE_S = 20 * 60      # an edit holds its function this long, renewed by each edit
