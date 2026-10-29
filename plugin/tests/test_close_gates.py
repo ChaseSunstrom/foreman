@@ -61,6 +61,19 @@ class CloseGates(ForemanTestCase):
         r = self.finish(tid)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def test_a_close_runs_no_tests_for_another_tasks_files_its_own_are_none(self):
+        # T-1968: a ship task closed while another task's edit to calc.py was uncommitted ran that file's tests
+        ship = self.fm_json("task", "new", "Ship it", "--type", "FEATURE", "--tier", "S", "--ac", "works :: true",
+                            "--step", "s", "--scope", "README.md")["id"]
+        self.fm("focus", ship)
+        self.fm("checkpoint")
+        other = self.task()
+        c.log_event(self.p, "touched", task=other, data={"file": os.path.join(self.repo, "calc.py")})
+        self.write("calc.py", "def add(a, b):\n    return a - b\n")  # other's work in progress breaks test_calc
+        r = self.finish(ship)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.events("close_affected"), [], "nothing of its own was linked to a test")
+
     def test_a_failure_already_red_in_the_last_full_run_is_noted_not_refused(self):
         self.write("calc.py", "def add(a, b):\n    return a - b\n")  # broken before the task
         self.fm("check", check=False, env={"FOREMAN_SENTINEL": "off"})
