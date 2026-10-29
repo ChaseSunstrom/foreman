@@ -19,7 +19,7 @@ A field station on the ice: green-grey slate, cold pale text, one ice-white acce
 | `--accent` | #E6F3EF | 0.953 0.015 176 | 15.6:1 on surface |
 | `--on-accent` | #0F1A17 | 0.206 0.017 176 | 15.6:1 on accent |
 
-Dark first: body text clears Foreman's 7:1 dark rule. Ice-white is nearly neutral (chroma 0.015) with a trace of green, so the one accent reads as frost, not as a colour. Accent hue 176, 26° from the nearest status hue.
+Dark first: body text clears Foreman's 7:1 dark rule. Ice-white is nearly neutral (chroma 0.015) with a trace of green, so the one accent reads as frost, not as a colour.
 
 ## Type
 Neo-grotesk at 400 and 600 for body and headings; mono at 12 px for sensor ids and coordinates. Readings are large (2rem, 300 weight) with the unit small and muted beside them.
