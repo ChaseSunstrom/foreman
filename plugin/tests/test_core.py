@@ -991,3 +991,105 @@ class LazyPatterns(unittest.TestCase):
         for rx in found:
             rx.flags  # a bad pattern raises re.error here, not at import
         self.assertGreater(len(found), 150)
+
+
+class BriefIndex(ForemanTestCase):
+    """T-2022: closed briefs load from a stat-checked index instead of 1,100+ file reads per hook."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        for i in range(3):
+            self.fm("task", "new", f"t{i}", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        b = c.find_brief(self.p, "T-0001")
+        b.meta["status"] = "done"
+        c.save_brief(self.p, b)
+        self.age()
+        c._BRIEF_MEMO.clear()
+
+    def age(self, secs=60):
+        for path in c.brief_paths(self.p):
+            os.utime(path, (time.time() - secs, time.time() - secs))
+
+    def opened(self, fn):
+        from unittest import mock
+        real, seen = open, []
+
+        def spy(f, *a, **k):
+            seen.append(str(f))
+            return real(f, *a, **k)
+        with mock.patch("builtins.open", spy):
+            out = fn()
+        c._BRIEF_MEMO.clear()
+        return out, seen
+
+    def test_brief_index_closed_briefs_load_without_opening_their_files(self):
+        first = c.load_briefs(self.p)
+        c._BRIEF_MEMO.clear()
+        self.assertTrue(os.path.exists(os.path.join(self.p.dir, "briefs-index.json")))
+        second, seen = self.opened(lambda: c.load_briefs(self.p))
+        done = c.find_brief(self.p, "T-0001").path
+        self.assertNotIn(done, seen)
+        self.assertIn(c.find_brief(self.p, "T-0002").path, seen, "open briefs are read as before")
+        for a, b in zip(first, second):
+            self.assertEqual((a.id, a.meta, a.title, a.preamble), (b.id, b.meta, b.title, b.preamble))
+            self.assertEqual(a.render(), b.render())
+            self.assertEqual([list(x) for x in a.sections], [list(x) for x in b.sections])
+        _, seen = self.opened(lambda: c.active_brief_fast(self.p))
+        self.assertNotIn(done, seen, "the fast active scan skips indexed closed briefs too")
+
+    def test_brief_index_an_edited_brief_is_read_again(self):
+        c.load_briefs(self.p)
+        c._BRIEF_MEMO.clear()
+        path = c.find_brief(self.p, "T-0001").path
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text.replace("# t0", "# renamed"))
+        self.age(30)
+        c._BRIEF_MEMO.clear()
+        b = [x for x in c.load_briefs(self.p) if x.id == "T-0001"][0]
+        self.assertEqual(b.title, "renamed")
+
+    def test_brief_index_a_corrupt_index_is_ignored(self):
+        want = [x.render() for x in c.load_briefs(self.p)]
+        idx = os.path.join(self.p.dir, "briefs-index.json")
+        name = os.path.basename(c.find_brief(self.p, "T-0001").path)
+        for bad in ("{", "[]", '{"v":1,"e":[]}', json.dumps({"v": 1, "e": {name: [1]}}),
+                    json.dumps({"v": 1, "e": {name: "x"}}), json.dumps({"v": 1, "e": {name: [1, 2, 3, [], ""]}})):
+            with open(idx, "w", encoding="utf-8") as f:
+                f.write(bad)
+            c._BRIEF_MEMO.clear()
+            self.assertEqual([x.render() for x in c.load_briefs(self.p)], want, bad)
+            c._BRIEF_MEMO.clear()
+            self.assertIsNone(c.active_brief_fast(self.p), bad)
+
+    def test_brief_index_a_just_written_brief_is_not_indexed(self):
+        b = c.find_brief(self.p, "T-0002")
+        b.meta["status"] = "done"
+        c.save_brief(self.p, b)
+        c._BRIEF_MEMO.clear()
+        c.load_briefs(self.p)
+        with open(os.path.join(self.p.dir, "briefs-index.json"), encoding="utf-8") as f:
+            names = json.load(f)["e"]
+        self.assertIn(os.path.basename(c.find_brief(self.p, "T-0001").path), names)
+        self.assertNotIn(os.path.basename(b.path), names, "a same-tick rewrite could pass for it")
+
+    def test_brief_index_a_stub_copies_edits_and_renders_like_a_parsed_brief(self):
+        c.load_briefs(self.p)
+        c._BRIEF_MEMO.clear()
+        path = c.find_brief(self.p, "T-0001").path
+        c._BRIEF_MEMO.clear()
+        stub = [x for x in c.load_briefs(self.p) if x.id == "T-0001"][0]
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        full = c.Brief.parse(text, path)
+        self.assertEqual(stub.copy().render(), text)
+        for b in (stub, full):
+            b.meta["status"] = "dropped"
+            b.sections[0][1] += "more\n"
+        self.assertEqual(stub.render(), full.render())
+        stub2 = [x for x in c.load_briefs(self.p) if x.id == "T-0001"][0]
+        stub2.sections = [["Only", "x\n"]]
+        self.assertTrue(stub2.render().endswith("## Only\nx\n"))
