@@ -134,6 +134,7 @@ class TaskErgonomics(ForemanTestCase):
 
     def test_the_adversary_refusal_says_how_to_record_it_in_the_close(self):
         tid = self.task()
+        self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: fixture")  # T-1906: asked first
         with open(os.path.join(self.repo, "auth.py"), "w") as f:
             f.write("x = 1\n")
         r = self.fm("task", "finish", tid, "--audit", "self: x", "--run", "true", check=False)
