@@ -25,6 +25,7 @@ FLOOR = 0.25  # and this share of the best overall: a kind whose best is one str
 NAMED = 2  # extra weight of a task word in a document's name (ui/motion, fm notify, foreman:tidy)
 STEM = 6  # letters a stem keeps: at fmrecall's 5, archives and architecture are one word
 SHOWN = {"skills": 3, "playbooks": 5, "commands": 3}
+BIG = 2000  # T-1835: past this many playbooks, candidates come from fmplaybooks.find's index, not every header
 SELF = {"which", "help"}  # the commands that answer this same question
 FOREMAN_ONLY = {"release", "release-check", "bench", "burden", "evals"}  # Foreman's own repo's tools, not a user's
 _USER_ONLY = re.compile(r"^disable-model-invocation:[ \t]*true[ \t]*$", re.M | re.I)
@@ -63,12 +64,15 @@ def skills(root=None):
     return out
 
 
-def playbooks():
+def playbooks(task=None):
     """[{name, load, summary, text}] for each playbook: its stage and name, then its title and the lines above its
-    first section (the Use-when line), HEADER_MAX characters at most; named the way fm playbooks show takes it."""
+    first section (the Use-when line), HEADER_MAX characters at most; named the way fm playbooks show takes it. Past
+    BIG books only the ones fmplaybooks.find returns for the task are read."""
     import fmplaybooks
-    out = []
-    for rel in fmplaybooks._playbooks(fmplaybooks.ROOT):
+    out, rels = [], fmplaybooks._playbooks(fmplaybooks.ROOT)
+    if task and len(rels) > BIG:
+        rels = [x["path"] for x in fmplaybooks.find(task, 4 * SHOWN["playbooks"], fmplaybooks.ROOT)[1]]
+    for rel in rels:
         _, prose = fmplaybooks._blocks(_head(os.path.join(fmplaybooks.ROOT, rel)))
         head = prose[:next((i for i, x in enumerate(prose) if x.startswith("## ")), len(prose))]
         head = [x.strip() for x in head if x.strip() and not x.lstrip().startswith("<!--")]
@@ -83,14 +87,14 @@ def commands():
     import fmcli
     import fmrecall
     return [{"name": n, "load": f"fm {n}", "summary": fmcli._no_ids(" ".join(h.split())), "text": t}
-            for n, (h, t) in sorted(fmrecall.verb_docs().items()) if n not in SELF | FOREMAN_ONLY]
+            for n, (h, t) in sorted(fmrecall.verb_docs().items()) if n.split()[0] not in SELF | FOREMAN_ONLY]
 
 
 def rank(task, found=None):
     """{kind: [row with its score]} for the task's words, best first; every kind empty when no fit holds half of
     them."""
     want = list(dict.fromkeys(words(task)))
-    found = found or {"skills": skills(), "playbooks": playbooks(), "commands": commands()}
+    found = found or {"skills": skills(), "playbooks": playbooks(task), "commands": commands()}
     docs = [(kind, x, set(words(x["text"])), set(words(x["name"].replace("/", " ").replace("-", " "))))
             for kind, rows in found.items() for x in rows]
     df = {w: sum(w in d for _, _, d, _ in docs) for w in want}
@@ -122,7 +126,8 @@ def cmd(args):
                   "enough of its words.\nfm help --all lists every command; say what the work is in other words.")
         return 1
     lines = []
-    for kind, title in (("skills", "Skills"), ("playbooks", "Playbooks"), ("commands", "fm commands")):
+    kinds = (("skills", "Skills"), ("playbooks", "Playbooks"), ("commands", "fm commands"))
+    for kind, title in sorted(kinds, key=lambda k: -max((r["score"] for r in got[k[0]]), default=0)):  # T-1908
         if got[kind]:
             w = max(len(r["load"]) for r in got[kind]) + 2
             lines += [f"{title}:"] + [f"  {r['load']:<{w}}{fmrecall.gist(r['summary'], task, max(30, 98 - w))}"

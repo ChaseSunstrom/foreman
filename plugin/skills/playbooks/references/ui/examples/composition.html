@@ -1,0 +1,249 @@
+<!doctype html>
+<!-- Foreman's own example page (written for Foreman, not ported) for references/ui/composition.md. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Kilnroom live kiln</title>
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search), t = q.get("theme"), r = document.documentElement;
+    if (t === "light" || t === "dark") r.setAttribute("data-theme", t);
+    if (q.get("motion") === "reduce") r.setAttribute("data-motion", "reduce");
+  })();
+</script>
+<style>
+  :root {
+    color-scheme: light dark;
+    --paper: #F3ECE0; --raised: #FBF7EF; --sunken: #E8DFD0; --ink: #2B2420; --muted: #66594D; --edge: #7F7365; --slip: #CDBFAB;
+    --celadon: #3F6553; --on-celadon: #FBF7EF; --iron: #8C3B23; --hatch: #D9CCB8;
+    --shadow-ink: rgb(70 48 24 / .18); --scrim: rgb(24 18 12 / .65);
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", P052, Georgia, serif;
+    --font-body: "Avenir Next", Avenir, "Nunito Sans", Seravek, Ubuntu, Calibri, sans-serif;
+    --space-1: .25rem; --space-2: .5rem; --space-3: .75rem; --space-4: 1rem; --space-5: 1.25rem;
+    --space-6: 1.5rem; --space-7: 2rem; --space-8: 3rem; --space-9: 4rem; --space-10: 6rem;
+    --measure: 62ch;
+    --shadow-1: 0 1px 2px var(--shadow-ink), 0 2px 6px var(--shadow-ink);
+    --shadow-2: 0 2px 4px var(--shadow-ink), 0 8px 24px var(--shadow-ink);
+    --shadow-3: 0 4px 8px var(--shadow-ink), 0 24px 48px var(--shadow-ink);
+    --z-raised: 1; --z-sticky: 10;
+    --radius-control: 6px; --radius-card: 12px;
+    --dur-quick: 140ms; --dur-pulse: 1400ms; --ease-out: cubic-bezier(.2, .7, .2, 1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1B1712; --raised: #241F19; --sunken: #2D2720; --ink: #EFE6D7; --muted: #B0A491; --edge: #8A7E6D; --slip: #4A4036;
+      --celadon: #8DB7A1; --on-celadon: #14110D; --iron: #E8957A; --hatch: #3A3229;
+      --shadow-ink: rgb(0 0 0 / .45); --scrim: rgb(0 0 0 / .7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1B1712; --raised: #241F19; --sunken: #2D2720; --ink: #EFE6D7; --muted: #B0A491; --edge: #8A7E6D; --slip: #4A4036;
+    --celadon: #8DB7A1; --on-celadon: #14110D; --iron: #E8957A; --hatch: #3A3229;
+    --shadow-ink: rgb(0 0 0 / .45); --scrim: rgb(0 0 0 / .7);
+  }
+  @media (prefers-reduced-motion: reduce) { :root { --dur-quick: 0s; --dur-pulse: 0s; } }
+  :root[data-motion="reduce"] { --dur-quick: 0s; --dur-pulse: 0s; }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 1rem/1.55 var(--font-body); }
+  h1, h2, h3, p, ul, ol { margin: 0; padding: 0; }
+  h1, h2, h3 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; }
+  h1 { font-size: clamp(2.4rem, 1.7rem + 3vw, 4rem); line-height: 1.02; letter-spacing: -.02em; }
+  h2 { font-size: clamp(1.5rem, 1.3rem + .8vw, 2rem); line-height: 1.15; padding-bottom: var(--space-2); }
+  p { max-width: var(--measure); text-wrap: pretty; }
+  ul, ol { list-style: none; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--celadon); outline-offset: 3px; border-radius: var(--radius-control); }
+  .wrap { max-width: 72rem; margin: 0 auto; padding-inline: var(--space-4); }
+  .skip { position: absolute; left: var(--space-4); top: calc(-1 * var(--space-10)); background: var(--ink); color: var(--paper); padding: var(--space-2) var(--space-4); border-radius: var(--radius-control); }
+  .skip:focus { top: var(--space-2); }
+  .bar { position: sticky; top: 0; z-index: var(--z-sticky); background: var(--raised); box-shadow: var(--shadow-1); }
+  .bar .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-6); padding-block: var(--space-2); }
+  .mark { font: 600 1.4rem/1 var(--font-display); }
+  .bar nav ul { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); }
+  .link { background: none; border: 0; padding: 0; min-height: 2.75rem; min-width: 2.75rem; text-decoration: underline; text-underline-offset: .22em; text-decoration-color: var(--edge);
+          color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; transition: text-decoration-color var(--dur-quick) var(--ease-out); }
+  .link:hover { text-decoration-color: var(--celadon); text-decoration-thickness: 2px; }
+  a.link { text-decoration: underline; }
+
+  .btn { min-height: 2.75rem; padding: var(--space-2) var(--space-6); border-radius: var(--radius-control); border: 1px solid var(--celadon); background: var(--celadon); color: var(--on-celadon);
+         font-weight: 700; cursor: pointer; transition: transform var(--dur-quick) var(--ease-out), background-color var(--dur-quick) var(--ease-out), opacity var(--dur-quick) var(--ease-out); }
+  .btn:hover { transform: translateY(-1px); }
+  .btn.quiet { background: none; color: var(--ink); border-color: var(--edge); }
+  .btn[disabled] { background: var(--sunken); color: var(--muted); border-color: var(--edge); cursor: not-allowed; }
+
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); padding-block: var(--space-8) var(--space-6); }
+  .copy { display: grid; gap: var(--space-6); align-content: start; }
+  .label { font-size: .8rem; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
+  .lede { color: var(--muted); font-size: 1.125rem; }
+  .act { display: grid; gap: var(--space-2); justify-items: start; }
+  .act-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-6); }
+  .msg { padding: var(--space-3) var(--space-4); border-radius: var(--radius-control); background: var(--sunken); border-left: 4px solid var(--edge); max-width: var(--measure); overflow-wrap: anywhere; }
+  .msg.err { border-left-color: var(--iron); } .msg.ok { border-left-color: var(--celadon); }
+  .msg[hidden], [hidden] { display: none; }
+  .msg:focus { outline: 3px solid var(--celadon); outline-offset: 2px; }
+
+  .kiln { background: var(--raised); border-radius: var(--radius-card); box-shadow: var(--shadow-1); padding: var(--space-5); display: grid; gap: var(--space-6); }
+  .kiln-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-1) var(--space-4); align-items: baseline; }
+  .stale { font-size: .85rem; font-weight: 700; color: var(--iron); }
+  .shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: var(--space-2); padding-block: var(--space-3); border-block: 3px double var(--slip); }
+  .slot { min-width: 0; min-height: 3.5rem; padding: var(--space-2) var(--space-3); border-radius: var(--radius-control); border: 1px solid var(--edge); overflow-wrap: anywhere; line-height: 1.3; }
+  .slot b { display: block; font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; }
+  .slot.taken { background: repeating-linear-gradient(135deg, var(--hatch) 0 4px, transparent 4px 9px); }
+  .slot.free { border-style: dashed; border-color: var(--celadon); color: var(--ink); }
+  .slot.free b { color: var(--celadon); }
+  .skel { background: var(--sunken); border-color: transparent; animation: pulse var(--dur-pulse) ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  .wheels { display: grid; gap: var(--space-2); }
+  .wheels li { display: grid; grid-template-columns: 3rem minmax(0, 1fr); gap: var(--space-1) var(--space-3); align-items: baseline; }
+  .pips { letter-spacing: .15em; font-variant-numeric: tabular-nums; }
+  .sub { color: var(--muted); font-size: .9rem; }
+  .box { padding: var(--space-4); border: 1px dashed var(--edge); border-radius: var(--radius-control); display: grid; gap: var(--space-3); justify-items: start; }
+  .banner { background: var(--sunken); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--edge); font-size: .9rem; font-weight: 600; }
+  .review { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); padding-block: var(--space-4); border-top: 1px solid var(--slip); }
+  select { min-height: 2.75rem; padding: 0 var(--space-3); border-radius: var(--radius-control); border: 1px solid var(--edge); background: var(--raised); color: var(--ink); max-width: 100%; }
+
+  [popover] { margin: 0; position: fixed; inset: auto; top: var(--space-10); right: var(--space-4); max-width: calc(100vw - 2rem); background: var(--raised); color: var(--ink); border: 0; border-radius: var(--radius-card); box-shadow: var(--shadow-2); padding: var(--space-5); }
+  dialog { background: var(--raised); color: var(--ink); border: 0; border-radius: var(--radius-card); box-shadow: var(--shadow-3); padding: var(--space-6); max-width: min(28rem, calc(100vw - 2rem)); }
+  dialog::backdrop { background: var(--scrim); }
+  dialog .act-row { margin-top: var(--space-6); }
+
+  .seq { counter-reset: n; display: grid; gap: var(--space-6); padding-block: var(--space-6) var(--space-8); }
+  .seq li { counter-increment: n; border-top: 1px solid var(--slip); padding-top: var(--space-3); max-width: var(--measure); }
+  .seq li::before { content: counter(n); font: 600 1.8rem/1 var(--font-display); color: var(--celadon); display: block; margin-bottom: var(--space-2); }
+  .shows { display: grid; gap: var(--space-3); padding-block: var(--space-6) var(--space-9); border-top: 3px double var(--slip); }
+  .shows li { max-width: var(--measure); }
+  @media (min-width: 52rem) { .hero { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--space-9); align-items: start; } .seq { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<div class="banner" id="offline" hidden>Offline: showing slots as of 17:42. Booking needs a connection.</div>
+<header class="bar">
+  <div class="wrap">
+    <span class="mark">Kilnroom</span>
+    <nav aria-label="Main"><ul>
+      <li><a class="link" href="#evening">An evening</a></li>
+      <li><button class="link" type="button" popovertarget="prices">Prices</button></li>
+    </ul></nav>
+  </div>
+</header>
+<div id="prices" popover>
+  <p class="label">Prices</p>
+  <p>Wheel evening £28 · Firing shelf £6 · Glaze £4 a test tile</p>
+</div>
+<main id="main">
+  <section class="wrap hero" aria-labelledby="h">
+    <div class="copy">
+      <p class="label">Pottery studio · three streets from the station</p>
+      <h1 id="h">This week's wheels and kiln, live.</h1>
+      <p class="lede">Turn up after work, throw a bowl, and watch your shelf fill in Thursday's firing.</p>
+      <div class="act">
+        <div class="act-row">
+          <button class="btn" type="button" id="book">Book Thursday, 18:00</button>
+          <button class="link" type="button" popovertarget="prices">Prices</button>
+        </div>
+        <p class="sub" id="left">3 wheels left this week</p>
+        <p class="msg" id="actmsg" tabindex="-1" hidden></p>
+      </div>
+    </div>
+    <div class="kiln" id="kiln" aria-labelledby="kh">
+      <div class="kiln-head"><h2 id="kh">Thursday firing</h2><span class="sub">cone 6 · 1222 °C</span><span class="stale" id="stale" hidden>as of 17:42, 12 minutes old</span></div>
+      <div id="shelves"></div>
+      <ul class="wheels" id="wheels" aria-label="Wheels this week"></ul>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <p class="sr" id="live" role="status" aria-live="polite" style="position:absolute;left:-9999px"></p>
+    <div class="review">
+      <label for="state" class="label">Force a state for review</label>
+      <select id="state">
+        <option value="live">Live</option><option value="loading">Loading, first time</option><option value="stale">Stale</option>
+        <option value="partial">Partial: kiln failed</option><option value="error">Error, the screen</option>
+        <option value="conflict">Error, an action</option><option value="offline">Offline</option><option value="full">Empty, all done</option>
+      </select>
+    </div>
+    <section aria-labelledby="evening"><h2 id="evening">An evening, start to finish</h2>
+      <ol class="seq">
+        <li><h3>Arrive at 18:00</h3><p>Apron, clay and a wheel are waiting. The studio holds up to three wheels a night.</p></li>
+        <li><h3>Throw until 20:30</h3><p>Trim another day; leave the foot thick and pencil your name on the base.</p></li>
+        <li><h3>Collect after Thursday's firing</h3><p>Pieces on the shelf come out glazed the following week.</p></li>
+      </ol>
+    </section>
+    <section aria-labelledby="what"><h2 id="what">What this shows</h2>
+      <ul class="shows">
+        <li><strong>Hero:</strong> opens with the live kiln, the one thing no other studio has this week; one primary action named as the act.</li>
+        <li><strong>Grid and rhythm:</strong> a 5:7 split, spacing tokens only, three tiers of space; the DOM keeps reading order on a phone.</li>
+        <li><strong>Depth:</strong> three heights from one light: the sticky bar (raised), Prices (floating), the booking dialog (blocking, with a scrim).</li>
+        <li><strong>State atlas:</strong> the selector above forces every row: loading, stale, partial, error, offline and all done.</li>
+        <li><strong>Overflow:</strong> a 49-character member name wraps on its shelf; waitlist counts read as words.</li>
+      </ul>
+    </section>
+  </div>
+</main>
+<dialog id="confirm" aria-labelledby="ct">
+  <h2 id="ct">Book Thursday, 18:00?</h2>
+  <p>One wheel for the evening, £28. You can cancel until Wednesday noon.</p>
+  <div class="act-row"><button class="btn" type="button" id="yes">Book it</button><button class="btn quiet" type="button" id="no">Not now</button></div>
+</dialog>
+<script>
+  (function () {
+    var $ = function (id) { return document.getElementById(id); };
+    var mode = "live", booked = false, time = "18:00", pr = new Intl.PluralRules("en");
+    var shelves = [[["Bowl", "Ines"], ["Mug", "Tomasz"], ["Mug", "Aiko"], ["Vase", "María Guadalupe Ximénez-Ó Súilleabháin de la Cruz"], ["Jug", ""]],
+                   [["Jug", "Bea"], ["", ""], ["", ""], ["Bowl", "Hal"], ["", ""]]];
+    var days = [["Mon", 2, 2, 12], ["Tue", 2, 2, 1], ["Thu", 0, 3, 0]];
+    function waiting(n) { return n === 0 ? "No one waiting" : n + (pr.select(n) === "one" ? " person" : " people") + " waiting"; }
+    function say(t) { $("live").textContent = t; }
+    function box(msg, label, fn) { var d = document.createElement("div"); d.className = "box"; var p = document.createElement("p"); p.textContent = msg; d.appendChild(p);
+      var b = document.createElement("button"); b.className = "btn quiet"; b.type = "button"; b.textContent = label; b.addEventListener("click", fn); d.appendChild(b); return d; }
+    function shelfHtml() {
+      var out = $("shelves"); out.textContent = "";
+      shelves.forEach(function (row, i) {
+        var u = document.createElement("ul"); u.className = "shelf"; u.setAttribute("aria-label", "Shelf " + (i + 1));
+        row.forEach(function (s) { var li = document.createElement("li"); li.className = "slot " + (mode === "loading" ? "skel" : s[0] ? "taken" : "free");
+          if (mode !== "loading") { var b = document.createElement("b"); b.textContent = s[0] ? s[0] : "Free"; li.appendChild(b); li.appendChild(document.createTextNode(s[1] || (s[0] ? "" : "Shelf space"))); }
+          u.appendChild(li); });
+        out.appendChild(u); });
+    }
+    function wheelsHtml() {
+      var w = $("wheels"); w.textContent = "";
+      days.forEach(function (d) { var n = d[0] === "Thu" && booked ? 1 : d[1], full = mode === "full"; var li = document.createElement("li");
+        var pips = "●".repeat(full ? d[2] : n) + "○".repeat(d[2] - (full ? d[2] : n));
+        li.innerHTML = "<strong>" + d[0] + "</strong><span><span class='pips' aria-hidden='true'>" + pips + "</span> <span class='sub'>" + (full ? d[2] : n) + " of " + d[2] + " booked · " + waiting(d[3]) + "</span></span>";
+        w.appendChild(li); });
+    }
+    function render() {
+      var off = mode === "offline", full = mode === "full", left = full ? 0 : booked ? 2 : 3;
+      $("offline").hidden = !off; $("stale").hidden = mode !== "stale";
+      $("book").disabled = off || full || mode === "loading" || booked || mode === "error";
+      $("book").textContent = booked ? "Booked: Thursday, " + time : "Book Thursday, " + time;
+      $("left").textContent = off ? "Booking needs a connection." : full ? "No wheels left this week." : mode === "error" ? "We couldn't check the wheels." : mode === "loading" ? "Checking the wheels…" : left + (left === 1 ? " wheel" : " wheels") + " left this week";
+      $("actmsg").hidden = true;
+      var k = $("shelves"); k.textContent = ""; $("wheels").textContent = "";
+      if (mode === "error") {
+        k.appendChild(box("We couldn't load this week's slots. Your booking basket is safe.", "Retry", retry));
+        say("We couldn't load this week's slots."); return;
+      }
+      if (mode === "partial") k.appendChild(box("Firing status didn't load.", "Retry", retry)); else shelfHtml();
+      if (mode === "loading") for (var i = 0; i < 3; i++) { var s = document.createElement("li"); s.className = "slot skel"; s.setAttribute("aria-hidden", "true"); $("wheels").appendChild(s); } else wheelsHtml();
+      if (full) { var m = $("actmsg"); m.hidden = false; m.className = "msg ok"; m.textContent = "Every wheel this week is booked. Next week opens Sunday at 18:00."; }
+      say({ loading: "Loading the week.", live: "Slots up to date.", stale: "Showing slots as of 17:42.", offline: "You are offline.", full: "All wheels are booked.", partial: "The kiln panel failed to load." }[mode] || "");
+    }
+    function retry() { mode = "loading"; $("state").value = "loading"; render(); setTimeout(function () { mode = "live"; $("state").value = "live"; render(); }, 800); }
+    $("state").addEventListener("change", function () { mode = this.value; render(); });
+    $("book").addEventListener("click", function () {
+      if (mode === "conflict") { var m = $("actmsg"); time = "19:30"; m.hidden = false; m.className = "msg err"; m.textContent = "Someone booked this a moment ago. The next free wheel is 19:30."; $("book").textContent = "Book Thursday, 19:30"; mode = "live"; $("state").value = "live"; m.focus(); return; }
+      $("confirm").showModal();
+    });
+    $("no").addEventListener("click", function () { $("confirm").close(); });
+    $("yes").addEventListener("click", function () { $("confirm").close(); booked = true; render(); var m = $("actmsg"); m.hidden = false; m.className = "msg ok"; m.textContent = "Booked. See you Thursday at " + time + "."; say(m.textContent); m.focus(); });
+    render();
+  })();
+</script>
+</body>
+</html>

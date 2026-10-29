@@ -47,6 +47,54 @@ class Chain(ForemanTestCase):
         self.assertEqual([e["task"] for e in c.ledger_events(self.p, ("correction",), since="2026-02-01")], ["T-0002"])
         self.assertGreaterEqual(len(c.ledger_events(self.p)), 3)
 
+    def test_ledger_events_since_reads_only_the_tail(self):
+        # T-2015: the risk budget asked for today's events and parsed all 18 MB of the ledger on every hook
+        old = json.dumps({"ts": "2026-01-05T00:00:00Z", "event": "note", "data": {"pad": "x" * 200}})
+        self.put([old] * 3000 + [json.dumps({"ts": f"2026-03-0{i + 1}T00:00:00Z", "event": "note", "data": {"i": i}})
+                                 for i in range(3)])
+        real, calls = json.loads, []
+        with mock.patch.object(c.json, "loads", side_effect=lambda s, *a, **k: calls.append(1) or real(s, *a, **k)):
+            got = c.ledger_events(self.p, since="2026-03-01")
+        self.assertEqual([e["data"]["i"] for e in got], [0, 1, 2])
+        self.assertLess(len(calls), 500, "older lines past the tail are never parsed")
+
+    def test_last_change_parses_only_its_tasks_touched_lines(self):
+        # T-2017: every hook parsed 5,000 ledger lines to find one task's file edits
+        ev = lambda ts, event, task: json.dumps({"ts": ts, "event": event, "task": task, "data": {"note": "T-0001"}})
+        self.put([ev("2026-03-01T00:00:00Z", "note", "T-0002")] * 3000 + [
+            ev("2026-03-02T00:00:00Z", "touched", "T-0001"), ev("2026-03-03T00:00:00Z", "touched", "T-0002"),
+            ev("2026-03-04T00:00:00Z", "focus", "T-0001"), ev("2026-03-05T00:00:00Z", "touched", "T-00011")])
+        real, calls = json.loads, []
+        with mock.patch.object(c.json, "loads", side_effect=lambda s, *a, **k: calls.append(1) or real(s, *a, **k)):
+            self.assertEqual(c.last_change(self.p, "T-0001"), "2026-03-02T00:00:00Z")
+        self.assertLess(len(calls), 10, "lines without both words are never parsed")
+        self.assertEqual(c.last_change(self.p, "T-0009"), "")
+
+    def test_tail_rows_with_keep_parses_only_matching_lines_of_the_last_n(self):
+        # T-2025: decoding and splitting every line of a 4.7 MB tail cost 12 ms to find 23 prompt lines
+        ev = lambda i, event: json.dumps({"i": i, "event": event, "data": {"note": "é"}})
+        self.put([ev(0, "prompt"), ev(1, "note"), ev(2, "prompt"), ev(3, "note"), ev(4, "prompt"),
+                  '{"event": "prompt", "cut', ev(6, "note"), ev(7, "prompt"), ev(8, "prompt-ish"), ev(9, "prompt")])
+        real, calls = json.loads, []
+        with mock.patch.object(c.json, "loads", side_effect=lambda s, *a, **k: calls.append(1) or real(s, *a, **k)):
+            rows = c._tail_rows(self.ledger, 5, keep=('"prompt"',))
+        self.assertEqual([e["i"] for e in rows], [7, 9], "the last 5 lines only; the damaged line is skipped")
+        self.assertEqual(len(calls), 3, "only lines holding the word are parsed")
+        self.assertEqual([e["i"] for e in c._tail_rows(self.ledger, 99, keep=('"prompt"', '"i": 2'))], [2],
+                         "every word must be on the line")
+
+    def test_last_change_reads_the_ledger_once_until_it_grows(self):
+        # T-2024: the prompt hook's state and its Next line each read the ledger's tail for the same answer
+        ev = lambda ts: json.dumps({"ts": ts, "event": "touched", "task": "T-0001"})
+        self.put([ev("2026-03-02T00:00:00Z")])
+        with mock.patch.object(c, "_tail_rows", wraps=c._tail_rows) as tail:
+            self.assertEqual(c.last_change(self.p, "T-0001"), "2026-03-02T00:00:00Z")
+            self.assertEqual(c.last_change(self.p, "T-0001"), "2026-03-02T00:00:00Z")
+            self.assertEqual(tail.call_count, 1)
+            with open(self.ledger, "a", encoding="utf-8") as f:
+                f.write(ev("2026-03-03T00:00:00Z") + "\n")
+            self.assertEqual(c.last_change(self.p, "T-0001"), "2026-03-03T00:00:00Z", "an append is read")
+
     def test_untouched_ledger_verifies(self):
         for i in range(5):
             c.log_event(self.p, "note", data={"i": i})

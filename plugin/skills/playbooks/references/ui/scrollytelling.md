@@ -70,6 +70,8 @@ the top by a link, can sit above the middle band and never trigger.
 `fm lib show animation` (compositor-only motion, reduced motion), `fm lib show d3`, `fm lib show svg-canvas`,
 `fm lib show web-performance`, `fm lib show accessibility`, `fm lib show layout-shift`.
 
+Example: `references/ui/examples/scrollytelling.html` (text steps drive a sticky graphic; no scroll-jacking).
+
 ## UI contract
 
 - motion: under reduced motion the sticky graphic becomes stepped images, and nothing hijacks the scroll either way.

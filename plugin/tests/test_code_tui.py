@@ -130,6 +130,13 @@ class Core(unittest.TestCase):
         self.assertEqual((top.split(), floor.split()), (["██████"], ["▄▄▄▄▄▄", "██████", "██████"]),
                          "each call a column, the biggest the chart's full height")
 
+    def test_a_phase_stamped_before_the_run_stays_on_the_chart(self):
+        # T-1922: its bar's padding was " " * (width - start) with start far below 0: gigabytes, killed on macOS
+        evs = [dict(e, ts=1000 + 10 * i) for i, e in enumerate(RUN)]
+        evs[next(i for i, e in enumerate(evs) if e["event"] == "step")]["ts"] = 1000 - 10 ** 6
+        for line in tui()._time(self.state(evs), 80, 12, None):
+            self.assertLessEqual(sum(len(t) for t, _ in line), 80)
+
     def test_partial_runs_and_unknown_events_never_break_the_view(self):
         for n in range(len(RUN) + 1):
             tui().render(self.state(RUN[:n]), 80, 24, tui().DEFAULTS)
@@ -722,10 +729,11 @@ class Paste(unittest.TestCase):
     def test_modes_on_and_off(self):
         import fmcodeterm
         import pty
-        import select
+        from helpers import pty_reader
         for crash in (False, True):
             master, slave = pty.openpty()
             got = []
+            reader = pty_reader(master)  # T-1828: macOS drops output nobody read before the slave closes
 
             def run(io):
                 os.write(master, b"\x1b[200~one\rtw")
@@ -738,21 +746,21 @@ class Paste(unittest.TestCase):
                 fmcodeterm.session(run, slave, slave)
             except RuntimeError:
                 self.assertTrue(crash)
-            out = b""
-            while select.select([master], [], [], 0.1)[0]:
-                out += os.read(master, 65536)
-            os.close(master)
             os.close(slave)
+            reader.join(10)
+            os.close(master)
             self.assertEqual(got, [("paste", "one\ntwo"), "q"], crash)
-            text = out.decode()
+            text = bytes(reader.out).decode()
             self.assertIn("\x1b[?2004h", text)
             self.assertGreater(text.rindex("\x1b[?2004l"), text.index("\x1b[?2004h"), crash)
 
     def test_a_paste_whose_end_never_comes_is_taken_once_input_stalls(self):
         import fmcodeterm
         import pty
+        from helpers import pty_reader
         master, slave = pty.openpty()
         got = []
+        reader = pty_reader(master)  # T-1828: an unread master stalls the session's writes on macOS
 
         def run(io):
             os.write(master, b"\x1b[200~abc")
@@ -760,8 +768,9 @@ class Paste(unittest.TestCase):
             got.append(io.keys(0.01))
         with unittest.mock.patch.object(fmcodeterm, "PASTE_STALL", 0.0):
             fmcodeterm.session(run, slave, slave)
-        os.close(master)
         os.close(slave)
+        reader.join(10)
+        os.close(master)
         self.assertEqual(got, [[], [("paste", "abc")]])
 
 
@@ -793,6 +802,36 @@ class Motion(unittest.TestCase):
             if i >= 0:
                 return tui().resolve(row[i + offset][1], cfg, cv.bg[y][i + offset])
         self.fail(f"{needle!r} not drawn")
+
+    def test_the_projects_motion_score_sets_how_long_values_roll(self):  # T-1626
+        score = ('[[motion]]\nname = "fm-code-counts"\nduration = 2000\neasing = "linear"\nproperties = ["opacity"]\n'
+                 'reduced = "fade"\n[[motion]]\nname = "fm-code-deck"\nduration = 0\neasing = "linear"\n'
+                 'properties = ["opacity"]\nreduced = "instant"\n')
+        score += "".join(f'[[motion]]\nname = "fm-code-{n}"\nduration = {ms}\neasing = "linear"\nproperties = ["opacity"]\n'
+                         'reduced = "fade"\n' for n, ms in (("bars", 300), ("columns", 500)))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(tui().score_durations(d), {})  # no score: fm code keeps its own
+            with open(os.path.join(d, "motion.toml"), "w") as f:
+                f.write(score)
+            got = tui().score_durations(d)
+            self.assertEqual(got, {"n": 2.0, "tok": 2.0, "deck": 0.001, "bar": 0.3, "col": 0.5})  # 0 ms is 1 ms: no divide by zero
+            cfg = dict(tui().DEFAULTS, motion="full")
+            self.assertEqual(tui().App(cfg, spawn=lambda *a, **k: None, root=d).motion.score, got)
+            with open(os.path.join(d, "motion.toml"), "w") as f:
+                f.write("[[motion]\n")  # unreadable: ignored, not a crash
+            self.assertEqual(tui().score_durations(d), {})
+        for score, mid in (({}, 100), ({"n": 2.0}, None)):
+            m = tui().Motion(score)
+            m.frames = 5  # past the first frame: a new value rolls up from 0
+            m.eased("n+:a.py", 100, 10.0)
+            shown = m.eased("n+:a.py", 100, 11.0)
+            self.assertEqual(shown, 100) if mid else self.assertLess(shown, 100)
+            self.assertEqual(m.eased("bar+:a.py", 7, 10.0), 0)  # another family keeps the default dur
+            self.assertEqual(m.eased("bar+:a.py", 7, 10.8), 7)
+        m = tui().Motion({"deck": 0.001})
+        m.frames = 5
+        m.eased("deck_y", 3, 10.0)
+        self.assertEqual(m.eased("deck_y", 3, 10.01), 3)  # 1 ms: there at once, no ZeroDivisionError
 
     def test_a_switch_between_views_fades_in_unless_motion_is_off(self):  # T-1307
         for motion, fades in (("full", True), ("reduced", True), ("off", False)):
@@ -1710,6 +1749,9 @@ class Fuzz(unittest.TestCase):
             app = T.App(T.DEFAULTS, spawn=lambda *a, **k: None)
             for e in events:
                 app.feed(e)
+            for name in T.PANELS:  # T-1926: a panel that throws draws one "failed" line; none may need it
+                row = (T._draw(name, app.state, 80, 24, app) or [[]])[0]
+                self.assertFalse(row and str(row[0][0]).startswith(f"panel {name} failed"), (seed, row))
             for w, h in self.SIZES:
                 with self.subTest(seed=seed, size=(w, h)):
                     for t in (100.0, 100.3, 101.7):
@@ -1791,6 +1833,7 @@ class HostileWidth(unittest.TestCase):
                  "diff": dict(view_lines=["+" + s, "-" + s, "@@ " + s, s]),
                  "tickets": dict(tickets=[s, s], items=[(0, s, True), (1, s, False)]),  # T-1350
                  "looks": dict(look_answers=[], look_pairs=[(s, s)], items=[(s, s)]),
+                 "backlog": dict(items=[{"id": s, "title": s, "why": s}, {"id": s, "title": s, "why": ""}]),  # T-1856
                  "help": {},
                  "breakout": dict(game=__import__("fmextras").Breakout(), game_t=0.0),  # T-1556
                  "settings": dict(set_rows=[1, 2], set_query=s, set_note=(s, "warn"), items=[
@@ -2336,7 +2379,8 @@ class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
             self.assertEqual(app.sweep(), [4242])
         self.assertIn("pid 4242", app.message)
 
-    def test_quitting_mid_run_names_and_stops_each_runner(self):
+    def running(self):
+        """An app whose fm code (a sleep) registered a runner (another sleep): (app, runner)."""
         import subprocess
         import tempfile
         import fmcode
@@ -2349,15 +2393,32 @@ class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
         child = subprocess.Popen(["sleep", "60"], start_new_session=True)
         runner = subprocess.Popen(["sleep", "61"], start_new_session=True)
         self.addCleanup(lambda: [x.kill() or x.wait() for x in (child, runner)])
-        for _ in range(200):  # until the fork has become sleep (its name is read from /proc)
-            with open(f"/proc/{runner.pid}/cmdline", "rb") as f:
-                if f.read().startswith(b"sleep"):
-                    break
+        for _ in range(200):  # until the fork has become sleep (its name is what the app shows)
+            if fmideas._cmdline(runner.pid)[0].startswith(b"sleep"):
+                break
             time.sleep(0.01)
         os.makedirs(os.path.dirname(fmcode._registry(runner.pid)), exist_ok=True)
         with open(fmcode._registry(runner.pid), "w") as f:
             f.write(f"{fmideas._starttime(runner.pid)} {child.pid} {fmideas._starttime(child.pid)}")
         app.child = child
+        return app, runner
+
+    def test_a_runner_is_named_without_proc_too(self):  # T-1828: macOS has no /proc; ps names it
+        import builtins
+        import fmideas
+        app, runner = self.running()
+        real = builtins.open
+
+        def no_proc(path, *a, **k):
+            if str(path).startswith("/proc/"):
+                raise FileNotFoundError(path)
+            return real(path, *a, **k)
+        with unittest.mock.patch.object(fmideas, "PROC", "/nonexistent-proc"), \
+                unittest.mock.patch.object(builtins, "open", no_proc):
+            self.assertEqual(app._runners_of_child(), [("sleep", runner.pid)])
+
+    def test_quitting_mid_run_names_and_stops_each_runner(self):
+        app, runner = self.running()
         app.stop()
         self.assertEqual(app.stopping, [("sleep", runner.pid)])
         self.assertEqual(app.stop_report(wait=0.3), [f"stopping sleep (pid {runner.pid})… stopped (killed)"])
@@ -2578,9 +2639,12 @@ class Command(CodeCase):
             while want not in screen(stream) and time.time() < deadline:
                 if select.select([fd], [], [], 0.3)[0]:
                     try:
-                        stream.extend(os.read(fd, 65536))
+                        chunk = os.read(fd, 65536)
                     except OSError:
+                        chunk = b""
+                    if not chunk:  # T-1828: the child closed the terminal (EIO on Linux, b'' on macOS)
                         break
+                    stream.extend(chunk)
             return screen(stream)
         try:
             seen = until("add export")
@@ -2703,23 +2767,19 @@ class Command(CodeCase):
             self.assertIn(b"\x1b[2J", seen, "a resize clears and draws again")
             os.write(fd, b"q")
             after = b""
-            while time.time() < deadline:
-                done, status = os.waitpid(pid, os.WNOHANG)
-                if done:
-                    self.assertEqual(os.waitstatus_to_exitcode(status), 0)
-                    break
+            while time.time() < deadline:  # T-1828: read to the end (EIO on Linux, b'' on macOS), then reap
                 if select.select([fd], [], [], 0.2)[0]:
                     try:
-                        after += os.read(fd, 65536)
+                        chunk = os.read(fd, 65536)
                     except OSError:
-                        pass
+                        chunk = b""
+                    if not chunk:
+                        break
+                    after += chunk
             else:
                 self.fail("q didn't quit")
-            while select.select([fd], [], [], 0.2)[0]:  # what it wrote just before it exited
-                try:
-                    after += os.read(fd, 65536)
-                except OSError:
-                    break
+            _, status = os.waitpid(pid, 0)
+            self.assertEqual(os.waitstatus_to_exitcode(status), 0)
             for mode, why in ((b"\x1b[?1049l", "the alternate screen is left"), (b"\x1b[?25h", "the cursor shown"),
                               (b"\x1b[?7h", "wrap back on")):
                 self.assertIn(mode, after, why)
@@ -3361,8 +3421,11 @@ class Editors(unittest.TestCase):
         self.assertNotIn("diff", self.file())
 
     def test_quitting_mid_runner_test_stops_its_cli(self):
+        import fmcode
         pidfile = os.path.join(self.home, "pid")
-        self.runner(f"echo $$ > {pidfile}; exec sleep 30")
+        self.runner(f"echo $$ > {pidfile}; exec sleep 90")
+        real = fmcode.test_runner  # T-1941: a 60 s timeout, so a slow runner's 30 s join still tells the bug from a fix
+        self.enterContext(unittest.mock.patch.object(fmcode, "test_runner", lambda name, **kw: real(name, timeout=60, **kw)))
         app = self.app()
         app.key("r")
         app.item_index = [r["name"] for r in app.items].index("fake")
@@ -3374,21 +3437,45 @@ class Editors(unittest.TestCase):
         with open(pidfile) as f:
             pid = int(f.read())
 
-        def alive():
-            try:
-                with open(f"/proc/{pid}/stat") as f:
-                    return f.read().rsplit(")", 1)[1].split()[0] != "Z"
-            except OSError:
-                return False
+        def alive():  # T-1828: /proc where there is one, else signal 0 (macOS)
+            return tui()._alive(pid)
         self.assertTrue(alive())
         app.quit()
-        app.runner_test.join(5)
-        self.assertFalse(app.runner_test.is_alive(), "the test ends with the app, not at its 10 s timeout")
+        app.runner_test.join(30)  # T-1941: a 1338 s macOS run needed more than 5 s
+        self.assertFalse(app.runner_test.is_alive(), "the test ends with the app, not at its 60 s timeout")
         for _ in range(100):
             if not alive():
                 break
             time.sleep(0.02)
         self.assertFalse(alive(), "its CLI is gone too")
+
+    def test_quitting_before_the_app_has_seen_the_runner_cli_still_ends_it(self):
+        # T-2030: a loaded macOS runner quit after the CLI started but before on_spawn told the app: nothing was killed
+        import fmcode
+        pidfile = os.path.join(self.home, "pid")
+        self.runner(f"echo $$ > {pidfile}; exec sleep 90")
+        real = fmcode.test_runner
+
+        def late(name, on_spawn=None, **kw):
+            def spawned(p):
+                for _ in range(500):  # the quit lands first
+                    if app.done:
+                        break
+                    time.sleep(0.01)
+                on_spawn(p)
+            return real(name, timeout=60, on_spawn=spawned, **kw)
+        self.enterContext(unittest.mock.patch.object(fmcode, "test_runner", late))
+        app = self.app()
+        app.key("r")
+        app.item_index = [r["name"] for r in app.items].index("fake")
+        app.key("\n")
+        for _ in range(250):
+            if os.path.exists(pidfile) and os.path.getsize(pidfile):
+                break
+            time.sleep(0.02)
+        app.quit()
+        app.runner_test.join(30)
+        self.assertFalse(app.runner_test.is_alive(), "the CLI ends with the app, not at its 60 s timeout")
 
     def test_a_failure_between_the_two_layout_keys_writes_nothing_and_the_screen_shows_the_file(self):
         import fmsettings

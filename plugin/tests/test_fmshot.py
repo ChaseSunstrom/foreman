@@ -14,7 +14,7 @@ import time
 import unittest
 from unittest import mock
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, headless_chrome
 
 import fmimg
 import fmshot
@@ -121,6 +121,12 @@ class Capture(StubCase):
         with mock.patch.dict(os.environ, {"FOREMAN_CHROME": "", "PATH": empty, "HOME": empty,
                                           "PLAYWRIGHT_BROWSERS_PATH": os.path.join(self.tmp, "pw")}):
             self.assertEqual(fmshot.chrome(), os.path.join(build, "chrome-headless-shell"))
+
+    def test_foreman_chrome_none_turns_the_browser_off(self):  # T-1806: CI's chromium crashes under load
+        import helpers
+        with mock.patch.dict(os.environ, {"FOREMAN_CHROME": "none", "PATH": os.path.dirname(self.stub)}):
+            self.assertIsNone(fmshot.chrome())
+            self.assertIsNone(helpers.headless_chrome())
 
     def test_a_stub_browser_lists_the_viewport_frames_and_poster(self):
         data = json.loads(self.shot(self.page, "--frames", "4", "--every", "20", "--json", paint="0,1,4,9,2").stdout)
@@ -409,7 +415,7 @@ class Diff(StubCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("not compared", r.stdout)
 
-    @unittest.skipUnless(fmshot.chrome(), "no headless Chromium here")
+    @unittest.skipUnless(headless_chrome(), "no headless Chromium here")
     def test_in_a_browser_a_font_that_fails_to_load_is_caught(self):
         page = os.path.join(self.repo, "font.html")
         with open(page, "w") as f:
@@ -440,7 +446,7 @@ def _png(n):
     return base64.b64encode(fmimg.encode(8, 8, bytes(px)))
 
 
-@unittest.skipUnless(fmshot.chrome(), "no headless Chromium here")
+@unittest.skipUnless(headless_chrome(), "no headless Chromium here")
 class InABrowser(ForemanTestCase):
     def test_an_animated_page_gets_a_poster_and_frozen_holds_it_still(self):
         self.fm("init")

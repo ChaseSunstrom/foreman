@@ -53,6 +53,8 @@ def parse(text, root, default_title):
         chart = json.loads(text)
     except ValueError as e:
         raise ValueError(f"not JSON: {e}") from None
+    except RecursionError:  # T-1799: how deep json recurses depends on the Python and the C stack
+        raise ValueError("not JSON: nested too deeply") from None
     if not isinstance(chart, dict) or set(chart) - KEYS:
         raise ValueError(f"a chart is a JSON object with only {', '.join(sorted(KEYS))}")
     title = _text(chart.get("component", default_title), "component", MAX_TITLE)

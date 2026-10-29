@@ -16,7 +16,6 @@ import fmcore as c
 
 DEFAULTS = {"day": 15.0, "run": 6.0}  # USD per day, USD per command
 PACE_FLOOR = 75  # weekly usage % below which subagents never wait for the pace (T-0364)
-WEIGHTS = {"input_tokens": 1, "cache_creation_input_tokens": 1.25, "cache_read_input_tokens": 0.1, "output_tokens": 5}
 
 
 class BudgetError(ValueError):  # a ValueError: callers already turn those into a clean refusal
@@ -64,8 +63,7 @@ def record(feature, usd=None, runs=1, tokens=None, project=None, detail=""):
     e = {"ts": c.now(), "day": _today(), "feature": feature, "usd": round(usd, 4) if usd is not None else None,
          "runs": runs, "tokens": tokens, "project": project, "detail": c.fit(str(detail), 120)}
     os.makedirs(c.state_dir(), exist_ok=True)
-    with open(_path("spend.jsonl"), "a", encoding="utf-8") as f:
-        f.write(json.dumps(e) + "\n")
+    c.append_line(_path("spend.jsonl"), json.dumps(e) + "\n")
     return e
 
 
@@ -231,7 +229,8 @@ def transcript_tokens(path):
                     seen[m.get("id") or len(seen)] = m["usage"]
     except OSError:
         return 0
-    return int(sum((u.get(k) or 0) * w for u in seen.values() for k, w in WEIGHTS.items()))
+    import fmcost
+    return int(sum(fmcost.weighted(u) for u in seen.values()))
 
 
 def cmd_budget(args):

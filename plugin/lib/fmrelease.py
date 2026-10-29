@@ -53,6 +53,9 @@ def _dump(path, data):
     c.write_atomic(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
+DESIGN_PJ = "plugins/foreman-design/.claude-plugin/plugin.json"  # T-1652: links to plugin/skills, so foreman's version
+
+
 def _setver(path, v):
     with open(path, encoding="utf-8") as f:
         text = f.read()
@@ -65,15 +68,22 @@ def _grant(p):
     return b if b and "publish" in (b.meta.get("allow") or []) else None
 
 
-def _spend(p, tid):
+def _named_grant(p, tid):
+    """T-2007: fm ship --task ID: that task (closed or active) when it holds the publish grant."""
+    b = c.find_brief(p, tid) or _err(f"no task {tid.upper()}; nothing was pushed")
+    return b if "publish" in (b.meta.get("allow") or []) else _err(
+        f"{b.id} has no publish grant (fm task set {b.id} --allow publish); nothing was pushed")
+
+
+def _spend(p, tid, by):
     with c.lock(p.dir):
         b = c.find_brief(p, tid)
         if "publish" not in (b.meta.get("allow") or []):  # another release spent it since _grant looked
             _err("the publish grant was already spent; nothing was pushed")
         b.meta["allow"] = [x for x in b.meta.get("allow") or [] if x != "publish"]
-        b.append_log("publish grant used by fm release --push")
+        b.append_log(f"publish grant used by {by}")
         c.save_brief(p, b)
-        c.log_event(p, "grant_spent", task=tid, data={"allow": "publish", "by": "fm release --push"})
+        c.log_event(p, "grant_spent", task=tid, data={"allow": "publish", "by": by})
 
 
 def _gate(root, verb):
@@ -116,6 +126,7 @@ def _bump(ctx):
     pj = os.path.join(root, "plugin", ".claude-plugin", "plugin.json")
     mk = os.path.join(root, ".claude-plugin", "marketplace.json")
     uj = os.path.join(root, "mods", "foreman-ui", ".claude-plugin", "plugin.json")
+    dj = os.path.join(root, DESIGN_PJ)
     data = _json(mk)  # everything read before anything is written
     if ui and not os.path.isfile(uj):
         _err("no mods/foreman-ui to give --ui to")
@@ -123,11 +134,13 @@ def _bump(ctx):
     if meta.get("version") == old:  # only what is at the old version moves, as release.py always did
         meta["version"] = v
     for e in data.get("plugins", []):
-        if e.get("name") == "foreman" and e.get("version") == old:
+        if e.get("name") in ("foreman", "foreman-design") and e.get("version") == old:  # T-1652: design's skills
             e["version"] = v
         elif e.get("name") == "foreman-ui" and ui:
             e["version"] = ui
     _setver(pj, v)
+    if os.path.isfile(dj):
+        _setver(dj, v)
     _dump(mk, data)
     if ui:
         _setver(uj, ui)
@@ -162,6 +175,8 @@ def _commit(ctx):
                  "plugin/defaults.json"]  # T-1549: the defaults this release ships, for the next one to compare
         if ctx["ui"]:
             files.append("mods/foreman-ui/.claude-plugin/plugin.json")
+        if os.path.isfile(os.path.join(root, DESIGN_PJ)):
+            files.append(DESIGN_PJ)
         b = c.active_brief_fast(ctx["p"], ctx["p"].lane)
         if os.path.isfile(os.path.join(root, "plugin", "defaults.json")):
             _git(root, "add", "--", "plugin/defaults.json")  # the first snapshot is a new file: commit -- needs it known
@@ -290,16 +305,121 @@ def _push(ctx):
         _err(_NEED_GRANT)
     sha = ctx["state"].get("sha") or _err(f"no release commit recorded for {v}: fm release --abandon, then release again")
     _git(root, "fetch", "-q", remote, "main")
-    _spend(p, b.id)  # the yes covers this one push: spent before it, as fm pr train does
     with tempfile.TemporaryDirectory() as tmp:
         wt = os.path.join(tmp, "rel")
         _git(root, "worktree", "add", "-q", "--detach", wt, "FETCH_HEAD")
         try:
             _git(wt, "merge", "-q", "--no-ff", sha, "-m", f"Foreman {v}")
-            _git(wt, "push", "-q", remote, "HEAD:main")
+            _push_main(p, b.id, _git(wt, "rev-parse", "HEAD").strip(), remote, "fm release --push")
         finally:
             _git(root, "worktree", "remove", "--force", wt, ok=True)
     print(f"  pushed Foreman {v} to {remote} main (the publish grant is spent)")
+
+
+def _push_main(p, tid, sha, remote, by):
+    """Push sha to remote's main from the repo (a relative remote URL resolves there). The grant is spent first, so one
+    yes is one push even for two racing callers, and given back if git push fails (T-1943)."""
+    _spend(p, tid, by)
+    try:
+        _git(p.root, "push", "-q", remote, f"{sha}:refs/heads/main")
+    except Exception:
+        with c.lock(p.dir):
+            b = c.find_brief(p, tid)
+            b.meta["allow"] = [*(b.meta.get("allow") or []), "publish"]
+            b.append_log(f"publish grant given back: {by}'s push failed")
+            c.save_brief(p, b)
+        raise
+
+
+SHIPPED = "refs/foreman/shipped"  # T-1945: the last commit fm ship landed; default picks start after it
+
+
+def ship(p, args):
+    """T-1943: fm ship — HEAD's commits the remote's main lacks (git cherry, by patch) or the named ones, cherry-picked
+    onto the fetched main in a scratch worktree, their files compared, tested there, main re-checked, then pushed
+    behind the publish grant. The working tree is never touched; a failure pushes nothing and keeps the grant."""
+    import shlex
+    root, remote = p.root, args.remote or "origin"
+    if remote.startswith("-"):
+        _err(f"--remote {remote!r} reads as a git option; name a remote or a URL")
+    _git(root, "fetch", "-q", remote, "main")
+    base = _git(root, "rev-parse", "FETCH_HEAD").strip()
+    picks = []
+    for x in args.commits or []:
+        sha = "" if x.startswith("-") else _git(root, "rev-parse", "--verify", "-q", "--end-of-options", f"{x}^{{commit}}", ok=True).strip()
+        picks.append(sha or _err(f"{x!r} isn't a commit here"))
+    last = _git(root, "rev-parse", "--verify", "-q", SHIPPED, ok=True).strip()  # T-1945: main may hold these under another patch
+    if last and c._git(root, "merge-base", "--is-ancestor", last, "HEAD", timeout=60, proc=True).returncode:
+        last = ""  # rebased or another branch: git cherry alone
+    picks = picks or [ln[2:] for ln in _git(root, "cherry", base, "HEAD", *([last] if last else [])).splitlines() if ln.startswith("+ ")]
+    if not picks:
+        print(f"nothing to ship: {remote} main already has HEAD's changes" + (f" after the last shipped commit {last[:8]}" if last else ""))
+        return 0
+    if args.check:  # T-1960: a ship verifies without a grant: which of these main lacks, by patch
+        missing = [x for x in picks if not args.commits or _git(root, "cherry", base, x, f"{x}^").startswith("+")]
+        for x in missing:
+            print(f"{remote} main lacks {x[:8]} {c.fit(c.plain(_git(root, 'log', '-1', '--format=%s', x).strip()), 72)}")
+        if not missing:
+            print(f"{remote} main has the changes of {', '.join(x[:8] for x in picks)}")
+        return 1 if missing else 0
+    b = (_named_grant(p, args.task) if getattr(args, "task", None)
+         else _grant(p) or _err(_NEED_GRANT.replace("--push", "fm ship", 1) + "; nothing was pushed"))
+    if args.test:  # T-1950: remembered per repo, so the oldest runtime's suite isn't retyped each ship
+        _git(root, "config", "--local", "foreman.shiptest", args.test, ok=True)
+    said = args.test or _git(root, "config", "--local", "--get", "foreman.shiptest", ok=True).strip()
+    test = shlex.split(said) if said else [*FM, "check"]
+    files = sorted({f for s in picks for f in _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "-m", s).splitlines() if f})
+    n = f"{len(picks)} commit{'s' if len(picks) > 1 else ''}"
+    with tempfile.TemporaryDirectory() as tmp:
+        wt = os.path.join(tmp, "ship")
+        _git(root, "worktree", "add", "-q", "--detach", wt, base)
+        try:
+            for s in picks:
+                r = c._git(wt, "cherry-pick", s, timeout=300, proc=True)
+                if r.returncode:
+                    _git(wt, "cherry-pick", "--abort", ok=True)
+                    hint = "" if args.commits else " (main may hold it under another patch: name the commits to ship)"
+                    _err(f"{s[:8]} didn't cherry-pick onto {remote} main{hint}: {c.fit(c.plain(r.stderr.strip()), 200)}; nothing was pushed")
+            if files and c._git(wt, "diff", "--quiet", "HEAD", picks[-1], "--", *files, timeout=300, proc=True).returncode:
+                _err(f"the shipped files differ from {picks[-1][:8]}'s: a commit is missing or extra, or main changed "
+                     "these files since the branch left it (rebase onto main); nothing was pushed")
+            import fmambient
+            c.wait_while(lambda: c.gates_live(p) or fmambient.running(p),  # T-1978: never two suites at once
+                         "a running fm check or ambient test run", "fm ship", out=sys.stdout)
+            print(f"testing {n} on {remote} main: {shlex.join(test)}", flush=True)
+            env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # GIT_DIR from a hook: not the user's repo
+            c.update_meta(p, ship_testing={"pid": os.getpid(), "at": c.now(), "root": os.path.realpath(wt)})
+            try:  # a full fm check here waits for this run; the ship's own fm check (in wt) doesn't
+                failed = subprocess.run(test, cwd=wt, stdin=subprocess.DEVNULL, env=env).returncode
+            except OSError as e:
+                _err(f"--test {test[0]!r} couldn't run ({e.strerror}); nothing was pushed")
+            finally:
+                if (c.read_meta(p).get("ship_testing") or {}).get("pid") == os.getpid():
+                    c.update_meta(p, ship_testing=None)
+            if failed:
+                _err("the test failed in the scratch tree; nothing was pushed")
+            tip = _git(wt, "rev-parse", "HEAD").strip()
+            _git(root, "fetch", "-q", remote, "main")
+            if c._git(root, "merge-base", "--is-ancestor", "FETCH_HEAD", tip, timeout=60, proc=True).returncode:
+                _err(f"{remote} main moved while testing; nothing was pushed: run fm ship again")
+            _push_main(p, b.id, tip, remote, "fm ship")
+            if c._git(root, "update-ref", SHIPPED, picks[-1], timeout=60, proc=True).returncode:  # T-1951: main has them
+                print(f"warning: couldn't move {SHIPPED} to {picks[-1][:8]}; the next plain fm ship may offer these again")
+        finally:
+            _git(root, "worktree", "remove", "--force", wt, ok=True)
+    print(f"shipped {n} to {remote} main at {tip} (the publish grant is spent)."
+          + ("" if args.watch else f" Watch CI in the background: fm ci-watch --commit {tip}"), flush=True)
+    if not args.watch:
+        return 0
+    import fmci  # T-1946
+    code, msg = fmci.watch(p, "main", 3, 30, commit=tip)
+    print(msg)
+    return code
+
+
+def cmd_ship(args):
+    import fmcli
+    return ship(fmcli.resolve(args), args)
 
 
 def _round(ctx):

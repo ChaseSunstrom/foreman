@@ -141,6 +141,17 @@ class BoardClose(Base):
         self.assertIn("debug scaffolding", err[verdict[0]])
         self.assertIn("conflict marker", err[verdict[0]])
 
+    def test_a_fetched_ticket_s_close_names_the_post_back_command(self):  # T-1870: outward only when asked
+        import fmcli
+        self.committed("x.py", "A = 1\n")
+        self.task()
+        fmcli.mutate(self.p, "T-0001", lambda x: x.set_section("Raw request", "> Parser\n> CONTEXT: ticket jira "
+                                                               "PROJ-12 0123456789ab, fetched by fm inbox ticket"), "t")
+        self.write("x.py", "A = 2\n")
+        out = self.finish("--commit", "Parser").stdout.strip().splitlines()
+        self.assertEqual((out[-2], out[-1][:18]), ("Post it back (outward, only when wanted, once pushed): fm inbox ticket --post "
+                                                   "T-0001 — one comment on jira PROJ-12", "Landed: committed "))
+
     def test_finish_ends_with_a_landed_line(self):
         self.committed("x.py", "A = 1\n")
         self.task()

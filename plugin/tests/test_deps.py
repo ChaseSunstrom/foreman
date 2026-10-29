@@ -94,6 +94,17 @@ class Deps(HookCase):
         self.assertEqual(r.returncode, 0)
         self.assertNotIn("lodash", self.ctx_of(r))
 
+    def test_a_command_with_no_install_word_skips_the_check(self):
+        # T-2017: every Bash call imported fmdeps (urllib, socket) to find nothing to check
+        import fmhooks
+        from unittest import mock
+        p = c.find_project(self.repo)
+        with mock.patch.object(fmdeps, "note") as note:
+            self.assertIsNone(fmhooks._dep_note({"tool_name": "Bash", "tool_input": {"command": "ls -la && git status"}}, p))
+            note.assert_not_called()
+        for cmd in ("pip install --index-url http://x requests", "cd x && npm i lodash", "uv add foo", "cargo install x"):
+            self.assertTrue(fmhooks._INSTALL_WORD.search(cmd), cmd)
+
 
 if __name__ == "__main__":
     unittest.main()

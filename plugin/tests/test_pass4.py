@@ -16,12 +16,12 @@ class GuardHeredoc(GuardCase):
     def test_a_cd_prefix_is_parsed_like_a_bare_heredoc(self):
         edit = "s = open('fmx.py').read()\ns = s.replace('a', '''    import fmcli\\n    p = fmcli.resolve(args)\\n''')\n" \
                "open('fmx.py', 'w').write(s)\n"
-        for pre in ("", "cd /tmp/x && ", "cd /tmp/x && cd sub && "):
+        for pre in ("", "cd /tmp/x && ", "cd /tmp/x && cd sub && ", "x=1 && "):  # T-1887: name=value && too
             self.assertFalse(self.driving(f"{pre}python3 - <<'PY'\n{edit}PY"), pre)
         drive = "import fmhooks\nfmhooks.save_brief(x)\n"
         for pre in ("cd /tmp/x && ", "cd /tmp/x; ", "cd $(mktemp -d) && ", "cd /tmp/x | ", "true && "):
             self.assertTrue(self.driving(f"{pre}python3 - <<'PY'\n{drive}PY"), pre)  # a real drive still blocks
-        for pre in ("cd /tmp/x; ", "cd `pwd` && ", "x=1 && "):  # anything but a plain cd chain keeps the text match
+        for pre in ("cd /tmp/x; ", "cd `pwd` && ", "x=$(id) && "):  # anything but a plain cd chain keeps the text match
             self.assertTrue(self.driving(f"{pre}python3 - <<'PY'\n{edit}PY"), pre)
 
 

@@ -1,6 +1,7 @@
 """T-0126: a gate can declare the paths it covers; fm check skips it when nothing under them changed since its last
 pass (and says so), runs it when a covered file changed, and --fresh runs everything; a gate without paths always runs.
 T-1101: another open task's red-first test file is left out of the suite gate, and fm check says so."""
+import json
 import os
 import shutil
 import subprocess
@@ -70,10 +71,10 @@ class CheckPaths(ForemanTestCase):
         self.fm("check", "paths", "1", "src/**")
         self.fm("check")
         self.write("docs/a.md", "a\n")
-        self.fm("check")  # gate 1 skipped; gate 2 rewrote src/gen.py after it
+        self.fm("check")  # gate 2 rewrote src/gen.py after gate 1 ran
         self.write("docs/a.md", "b\n")
         self.fm("check")
-        self.assertEqual(self.count("src-gate"), 2)
+        self.assertEqual(self.count("src-gate"), 3, "T-1963: gate 1 never saw a src/gen.py gate 2 wrote, so it reruns")
 
 
 RED = "import unittest\n\n\nclass Red(unittest.TestCase):\n    def test_red(self):\n        self.fail('not yet')\n"
@@ -158,6 +159,30 @@ class CheckSkip(ForemanTestCase):
         self.task("A")
         r = self.fm("check", check=False, env={"FOREMAN_SKIP_TESTS": "test_red"})
         self.assertEqual(r.returncode, 1, "only fm check's own red-first list leaves a file out")
+
+
+class CheckPython(ForemanTestCase):
+    """T-1805: fm check --python VER runs the gates with that interpreter as python3 (oldest: the lowest Foreman
+    supports), so a push or release catches a break only that version has; a version not on the machine is refused."""
+
+    def test_the_gates_run_under_the_named_python(self):
+        self.fm("init")
+        bin_, mark = os.path.join(self.tmp, "bin"), os.path.join(self.tmp, "mark")
+        os.makedirs(bin_)
+        stub = os.path.join(bin_, "python3.12")
+        with open(stub, "w") as f:  # answers fmpy's version probe as a supported 3.12; a gate's run leaves a mark
+            f.write(f'#!/bin/sh\ncase "$*" in *version_info*) echo 3 12 9;; *) echo ran >> {mark};; esac\n')
+        os.chmod(stub, 0o755)
+        self.fm("check", "add", "python3 -c pass")
+        env = {"PATH": bin_ + os.pathsep + os.environ["PATH"]}
+        p = self.fm("check", "--python", "oldest", "--json", env=env)
+        self.assertIn(stub, p.stderr, "it names the interpreter")
+        self.assertEqual(json.loads(p.stdout)["failed"], 0, "--json stays one document")
+        with open(mark) as f:
+            self.assertEqual(f.read().count("ran"), 1, "the gate's python3 was the 3.12 one")
+        r = self.fm("check", "--python", "3.99", env=env, check=False)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)  # fm's usage error
+        self.assertIn("python3.99", r.stderr)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import argparse
 import contextlib
 import functools
 import io
+import json
 import os
 import re
 import time
@@ -115,16 +116,25 @@ def cmd_lane(args):
         fmcli.mutate(p, b.id, give, "lane_new", {"path": path, "branch": branch})
         return fmcli.out(args, {"id": b.id, "path": path, "branch": branch},
                          f"{b.id}: lane {path} on {branch}. Work there: cd into it and start claude; fm focus {b.id}.")
+    why = (getattr(args, "why", None) or "").strip()
+    if why and p.lane:  # like --unverified: a builder can't judge its own work
+        raise c.PolicyError("--why is for the main thread: a builder can't drop its own work")
+    drop = {"why": why, "check": _last_refusal(p, b.id)} if why else None  # T-1823: the redo's brief starts from it
     if not b.meta.get("lane"):
         if b.meta.get("builder"):  # briefed, never launched (or its worktree went): the slot comes back
-            fmcli.mutate(p, b.id, lambda x: (x.meta.pop("builder", None), x.meta.pop("builder_proc", None), x.append_log("builder slot freed")),
-                         "lane_rm", {"builder": True})
-            return fmcli.out(args, {"id": b.id, "path": None, "branch_kept": []}, f"{b.id}: builder slot freed.")
+            def free(x):
+                x.meta.pop("builder", None), x.meta.pop("builder_proc", None)
+                x.append_log("builder slot freed" + (f"; dropped: {why}" if why else ""))
+            fmcli.mutate(p, b.id, free, "lane_rm", {"builder": True, **({"dropped": why} if why else {})})
+            if drop:
+                _save_drop(p, b.id, dict(drop, branch=b.meta.get("lane_branch") or ""))
+            return fmcli.out(args, {"id": b.id, "path": None, "branch_kept": [], **({"dropped": drop} if drop else {})},
+                             f"{b.id}: builder slot freed.")
         raise fmcli.UsageError(f"{b.id} isn't in a lane")
-    path, kept = remove(p, b, main)
-    return fmcli.out(args, {"id": b.id, "path": path, "branch_kept": kept},
+    path, kept = remove(p, b, main, drop)
+    return fmcli.out(args, {"id": b.id, "path": path, "branch_kept": kept, **({"dropped": drop} if drop else {})},
                      f"{b.id}: lane {path} removed" + (f"; branch {', '.join(kept)} kept (not merged)" if kept else "")
-                     + ".")
+                     + (f"; the next fm lane brief {b.id} starts from the drop" if drop else "") + ".")
 
 
 BUILDERS = 2  # at once by default: each is a full session's worth of tokens, and every merge is reviewed here
@@ -563,6 +573,19 @@ def builder_brief(p, b, args, resume_branch=None):
                   f"unfinished files, is on branch `{resume_branch}`. Right after `fm focus {b.id}`, run "
                   f"`git merge {resume_branch}` (never rebase), read `git log {base}..{resume_branch}` and the Steps "
                   f"already ticked, and carry on from there.", ""]
+    try:
+        with open(_drop_path(p, b.id), encoding="utf-8") as f:
+            drop = json.load(f)
+    except (OSError, ValueError):
+        drop = None
+    if isinstance(drop, dict):  # T-1823: a redo starts where the dropped attempt went wrong, not blind
+        br = drop.get("branch")
+        parts += ["## First attempt (dropped)", f"A builder worked this task before and the main thread dropped its "
+                  f"work: {drop.get('why')}." + (f" Its branch `{br}` is kept: read `git diff {base}...{br}` for what "
+                                                f"it tried; never merge it." if br else "")
+                  + " Take another route where it went wrong.", ""]
+        if drop.get("check"):
+            parts += ["Its last refused merge said:", "```", drop["check"].strip(), "```", ""]
     import fmbus  # T-1068: claim the concrete scope files up front, under the task id
     racing = b.meta.get("race") or b.meta.get("race_of")  # review: both sides edit the same files by design
     skipped = [] if racing else fmbus.preclaim(p, b.id, [s for s in b.meta.get("scope") or []
@@ -597,9 +620,9 @@ def builder_brief(p, b, args, resume_branch=None):
             x.meta.pop("builder_proc", None)
         x.append_log(f"builder brief: {path}")
     fmcli.mutate(p, b.id, mark, "lane_builder", {"path": path})
-    # T-0373: an S task's builder runs on Sonnet; an M task's keeps the main model (the main thread reviews either)
-    # T-0779: and its effort follows the tier too: medium for small well-specified diffs, high for M
-    model = (', model: "sonnet"' if b.tier == "S" else "") + f', effort: "{"medium" if b.tier == "S" else "high"}"'
+    # T-1796: every builder runs on Sonnet (Opus M lanes were 22% of a week's usage); the main thread reviews either
+    # T-0779: and its effort follows the tier: medium for small well-specified diffs, high for M
+    model = f', model: "sonnet", effort: "{"medium" if b.tier == "S" else "high"}"'
     agent = (f'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"{model}, prompt: "Read {path} and work '
              f'the task it describes."')
     return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id], "warnings": warns},
@@ -766,9 +789,28 @@ def _conflict_brief(p, b, main, branch, files):
     return out
 
 
-def remove(p, b, main):
+def _last_refusal(p, tid):
+    """T-1823: the reason the task's last refused merge gave (its red criterion and output tail), or ""."""
+    hits = [e for e in c.ledger_tail(p, 500) if e.get("task") == tid and e.get("event") == "enforce"
+            and (e.get("data") or {}).get("kind") == "merge_refused"]
+    return hits[-1]["data"].get("reason", "") if hits else ""
+
+
+def _drop_path(p, tid):
+    return os.path.join(p.dir, "audits", f"{tid}.dropped.json")  # beside its builder brief; meta holds one line
+
+
+def _save_drop(p, tid, drop):
+    with c.lock(p.dir):
+        os.makedirs(os.path.dirname(_drop_path(p, tid)), exist_ok=True)
+        c.write_atomic(_drop_path(p, tid), json.dumps(drop))
+
+
+def remove(p, b, main, drop=None):
     """fm lane rm (and fm tidy --apply, T-0186): the lane's folder, its registration and its branch if merged; never
-    uncommitted or ignored files (PolicyError). (path, the branches kept because they aren't merged)."""
+    uncommitted or ignored files (PolicyError). (path, the branches kept because they aren't merged). drop (T-1823,
+    fm lane rm --why): the main thread drops the work, so a locked unmerged worktree goes too (its branch stays) and
+    the drop stays on the brief for the next builder brief."""
     import fmcli
     import fmguard
     path = b.meta["lane"]
@@ -799,9 +841,10 @@ def remove(p, b, main):
         if r.returncode and "claude agent" in r.stderr and "locked" in r.stderr:
             # T-0725: Claude Code keeps a finished builder's worktree locked; once its work is in main it can go
             tip = _git(path, "rev-parse", "HEAD").stdout.strip()
-            if not tip or _git(main, "merge-base", "--is-ancestor", tip, "HEAD").returncode:
+            if drop is None and (not tip or _git(main, "merge-base", "--is-ancestor", tip, "HEAD").returncode):
                 raise fmcli.UsageError(f"lane {path} is locked by a Claude Code agent and its branch isn't merged: "
-                                       f"merge it first (fm lane merge {b.id}), or let the agent finish")
+                                       f"merge it first (fm lane merge {b.id}), drop it (fm lane rm {b.id} --why "
+                                       f"\"<reason>\"; its branch is kept), or let the agent finish")
             _git(main, "worktree", "unlock", path)
             r = _git(main, "worktree", "remove", path)
         if r.returncode:
@@ -818,8 +861,13 @@ def remove(p, b, main):
                 x.meta.pop(k, None)
         if x.status in ("active", "verifying"):
             x.meta["status"] = "planned"  # not the main checkout's active task by accident
-        x.append_log(f"lane removed: {path}" + (f" (branch {', '.join(kept)} kept: not merged)" if kept else ""))
-    fmcli.mutate(p, b.id, take_back, "lane_rm", {"path": path, "branch_kept": kept})
+        x.append_log(f"lane removed: {path}" + (f" (branch {', '.join(kept)} kept: not merged)" if kept else "")
+                     + (f"; dropped: {drop['why']}" if drop else ""))
+    fmcli.mutate(p, b.id, take_back, "lane_rm", {"path": path, "branch_kept": kept,
+                                                 **({"dropped": drop["why"]} if drop else {})})
+    if drop is not None:
+        drop["branch"] = ", ".join(kept)
+        _save_drop(p, b.id, drop)
     return path, kept
 
 

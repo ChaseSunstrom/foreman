@@ -2,20 +2,29 @@
 does: a look kept, reverted or met with 'not like that', twelve A-or-B calibration answers, and the local files the
 user names (read-only, capped, never the network). It ranks the looks by it; the directions skill drafts from the top.
 Stored in Foreman's state (state/taste/looks.json), one file for every project: taste is the user's. Stdlib only."""
+import datetime
 import errno
 import json
 import math
 import os
+import random
 import re
 import stat
+import subprocess
 import sys
+import time
 
 import fmcore as c
 
 LOOKS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills", "library", "cards", "looks")
 WEIGHTS = {"kept": 3, "reverted": -3, "not": -2, "learned": 1}  # a calibration pick is +1, the other look -1
 LEARNED_CAP = 3  # a look's learned score at most: a glob of files never outweighs one look the user kept
-VERBS = ("rank", "keep", "revert", "not", "calibrate", "learn", "tournament", "opposite", "book")
+VERBS = ("rank", "keep", "revert", "not", "calibrate", "learn", "tournament", "opposite", "book", "roll", "bisect",
+         "seance", "history")
+KEEP_DAYS = 7  # T-1672: a look DESIGN.md named this long is kept; replaced sooner, reverted
+HISTORY_MAX = 200  # T-1672: the DESIGN.md versions fm looks history reads at most
+HISTORY_SECONDS = 60  # T-1672: all of fm looks history's git calls together
+_LOOK = re.compile(r"\blook-[a-z][a-z-]*")
 SIZES = (2, 4, 8)  # T-1536: a taste duel, a four-look tournament, eight
 PAIRS = 12
 EVENTS_KEEP = 500  # learned go first, then the oldest; ponytail: a cap, not decay; weigh recent ones if old taste drags
@@ -452,6 +461,132 @@ def learn(paths):
 
 # ---------------------------------------------------------------- fm looks
 
+def roll(day=None, events=None, known=None):
+    """T-1672: the look of the day: a draw leaning on the ledger (weight e^(score/3): a look kept once is ~e times as
+    likely as one never seen), the same all day while the ledger holds (seeded by the date)."""
+    s, names = scores(events), sorted(known or looks())
+    weights = [math.exp(max(-30, min(30, s.get(n, {}).get("score", 0))) / 3) for n in names]
+    return random.Random(str(day or datetime.date.today())).choices(names, weights)[0]
+
+
+def roll_line():
+    """The pane's idle line: the look of the day once the ledger holds any taste; None before (no nagging)."""
+    events = load()["events"]
+    if not events:
+        return None
+    known = looks()
+    n = roll(events=events, known=known)
+    return f"Look of the day: {known[n]['title']} — {known[n]['line']} · fm looks keep {n[len('look-'):]}"
+
+
+def _scoring(events):
+    """The events that score, oldest first."""
+    rows = [e for e in events if isinstance(e, dict) and e.get("signal") in (*WEIGHTS, "calibration", "tournament")]
+    return sorted(rows, key=lambda e: str(e.get("ts") or ""))
+
+
+def bisect(events=None):
+    """T-1672: where taste turned: the split of the ledger (two signals a side at least) across which each look's score
+    per signal moved most; {at, event, of, before, after, shift}: at is the first signal after the turn, None when the
+    leader held. ValueError under four signals. ponytail: O(n²) over EVENTS_KEEP rows, ~0.1 s at the cap."""
+    rows = _scoring(load()["events"] if events is None else events)
+    if len(rows) < 4:
+        raise ValueError(f"too few to bisect: {len(rows)} signals in the ledger, 4 at least (fm looks keep|revert|not "
+                         "LOOK, fm looks calibrate)")
+
+    def lean(side):
+        return {n: r["score"] / len(side) for n, r in scores(side).items()}
+    best = None
+    for k in range(2, len(rows) - 1):
+        a, b = lean(rows[:k]), lean(rows[k:])
+        shift = sum(abs(b.get(n, 0) - a.get(n, 0)) for n in a.keys() | b.keys())
+        if best is None or shift > best[0] + 1e-9:
+            best = (shift, k, min(a, key=lambda n: (-a[n], n)), min(b, key=lambda n: (-b[n], n)))
+    shift, k, before, after = best
+    return {"at": rows[k].get("ts") if before != after else None, "event": k, "of": len(rows), "before": before,
+            "after": after, "shift": round(shift, 3)}
+
+
+def seance(events=None):
+    """T-1672, a style séance: each departed look (below 0 after a revert or 'not like that'), the last words said
+    against it, and the look with taste for it nearest it (by distance): where what it had lives on."""
+    events = load()["events"] if events is None else events
+    s, known = scores(events), looks()
+    alive = [n for n in known if s.get(n, {}).get("score", 0) > 0]
+    gone = [n for n in known if s.get(n, {}).get("score", 0) < 0 and (s[n].get("reverted") or s[n].get("not"))]
+    out = []
+    for n in sorted(gone, key=lambda n: (s[n]["score"], n)):
+        said = next((e["why"] for e in reversed(events) if isinstance(e, dict) and e.get("look") == n
+                     and e.get("signal") in ("reverted", "not") and e.get("why")), None)
+        heir = min(alive, key=lambda m: (distance(known[n], known[m]), m), default=None)
+        out.append({"look": n, "title": known[n]["title"], "score": s[n]["score"], "said": said, "lives_on": heir,
+                    "distance": round(distance(known[n], known[heir]), 3) if heir else None})
+    return out
+
+
+def _when(ts):
+    return datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(datetime.timezone.utc)
+
+
+def _stamp(when):
+    return when.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _direction(text, known):
+    """The bank look a DESIGN.md's Direction names first, on its first line; None for a bank row or one's own."""
+    first = next((x for x in section(text, "Direction").splitlines() if x.strip()), "")
+    return next((m for m in _LOOK.findall(first) if m in known), None)
+
+
+def history(path="DESIGN.md", now=None):
+    """T-1672: kept and reverted read from PATH's git history. DESIGN.md is Foreman's own record of the look the user
+    picked (the directions skill writes it), so it is the default; any other file only when named. Each run of versions
+    naming one bank look is a stint: replaced within KEEP_DAYS, reverted; KEEP_DAYS or longer, open or not, kept.
+    Read-only (git log and git show, HISTORY_MAX versions at most); each stint is recorded once (source FILE@sha).
+    → {file, stints, recorded}; ValueError for a file with no history."""
+    path = os.path.abspath(path)
+    d, base = os.path.split(path)
+    deadline = time.monotonic() + HISTORY_SECONDS
+
+    def git(*a):  # a hostile repo's config can't run a signer; a name is a path, never pathspec magic
+        try:
+            return subprocess.run(["git", "-c", "log.showSignature=false", "--literal-pathspecs", *a], cwd=d,
+                                  capture_output=True, text=True, timeout=max(1, deadline - time.monotonic()))
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise ValueError(f"{path}: git failed or took over {HISTORY_SECONDS} s: {e}")
+    log = git("log", "--format=%H%x09%cI", "-n", str(HISTORY_MAX), "--", base)
+    if log.returncode or not log.stdout.strip():
+        raise ValueError(f"{path}: no git history (fm looks history reads a committed DESIGN.md)")
+    known, stints, lines = looks(), [], log.stdout.splitlines()
+    for line in reversed(lines):
+        sha, when = line.split("\t", 1)
+        look = _direction(git("show", f"{sha}:./{base}").stdout, known)
+        if not stints or stints[-1]["look"] != look:
+            stints.append({"look": look, "sha": sha, "since": _stamp(_when(when))})
+    if len(lines) >= HISTORY_MAX:
+        stints = stints[1:]  # the window cut the oldest stint: its start (and so its key) is unknown
+    ledger = [e for e in load()["events"] if isinstance(e, dict)]
+    name, end, events = _why(base)[:60], _when(now or c.now()), []
+    for st, nxt in zip(stints, stints[1:] + [None]):
+        since, until = _when(st["since"]), _when(nxt["since"]) if nxt else end
+        st["days"] = max(0.0, round((until - since).total_seconds() / 86400, 1))  # a rebase can run dates backwards
+        if st["look"] is None or (nxt is None and st["days"] < KEEP_DAYS):
+            continue  # a bank row or one's own isn't a look; an open stint under a week isn't decided
+        st["signal"] = "kept" if st["days"] >= KEEP_DAYS else "reverted"
+        if any(e.get("signal") == st["signal"] and e.get("look") == st["look"] and not e.get("source")
+               and st["since"] <= str(e.get("ts", "")) <= _stamp(until) for e in ledger):
+            continue  # the user said so by hand during the stint: one signal, not two
+        at = since + datetime.timedelta(days=KEEP_DAYS) if st["signal"] == "kept" else until
+        events.append({"ts": _stamp(at), "signal": st["signal"], "look": st["look"], "source": f"{name}@{st['sha'][:10]}",
+                       "why": f"{name} named it {st['days']} days" + ("" if st["signal"] == "kept" else ", then another")})
+    have = {(e.get("signal"), e.get("source")) for e in ledger}
+    # ponytail: no lock across read and append; dedup sees only what the ledger still keeps (EVENTS_KEEP)
+    new = [e for e in events if (e["signal"], e["source"]) not in have]
+    if new:
+        _append(*new)
+    return {"file": path, "stints": stints, "recorded": new}
+
+
 def _rank_text(rows):
     lines = ["Looks by what you kept (score: kept +3, reverted -3, 'not like that' -2, a calibration pick +1 and its "
              "rival -1, a file you named +1):"]
@@ -459,6 +594,46 @@ def _rank_text(rows):
         counts = ", ".join(f"{k} {r[k]}" for k in ("kept", "reverted", "not", "picked", "passed", "learned") if r.get(k))
         lines.append(f"  {i:2}. {r['look']:<24} {r['score']:+d}" + (f"  ({counts})" if counts else ""))
     return "\n".join(lines)
+
+
+def _followups(fmcli, args, action, words):
+    known = looks()
+    title = lambda n: known[n]["title"] if n in known else c.plain(str(n))  # noqa: E731
+    if action == "roll":
+        n = roll(known=known)
+        return fmcli.out(args, {"look": n, "title": known[n]["title"], "line": known[n]["line"],
+                                "day": str(datetime.date.today())},
+                         f"Look of the day: {known[n]['title']} ({n}): {known[n]['line']}\n(the ledger leans the "
+                         f"draw; the same all day while it holds. Keep it: fm looks keep {n[len('look-'):]})")
+    if action == "bisect":
+        try:
+            g = bisect()
+        except ValueError as e:  # too few signals: bad input (exit 1), not a crash
+            raise fmcli.UsageError(str(e))
+        where = f"signal {g['event'] + 1} of {g['of']}"
+        return fmcli.out(args, g, f"Your taste turned at {where} ({g['at']}): {title(g['before'])} → "
+                                  f"{title(g['after'])} (a shift of {g['shift']})" if g["at"] else
+                         f"Your taste held: {title(g['before'])} led on both sides of every split (the biggest "
+                         f"shift, {g['shift']}, at {where}).")
+    if action == "seance":
+        rows = seance()
+        return fmcli.out(args, {"departed": rows}, "\n".join(
+            ["The departed:"] + [f"  {r['title']} ({r['score']}): "
+                                 + (f'"{c.plain(r["said"])}"' if r["said"] else "no last words")
+                                 + (f" · lives on in {title(r['lives_on'])} ({r['distance']:.2f} apart)"
+                                    if r["lives_on"] else " · nothing with taste for it is near it yet")
+                                 for r in rows]) if rows else
+            "No departed looks: nothing reverted or met with 'not like that' is below 0.")
+    try:
+        g = history(words[0] if words else "DESIGN.md")
+    except ValueError as e:
+        raise fmcli.UsageError(str(e))
+    return fmcli.out(args, g, "\n".join(
+        [f"{g['file']}: {len(g['stints'])} stints"]
+        + [f"  {s['since'][:10]}  {title(s['look']) if s['look'] else 'not a look (a bank row or its own)'}, "
+           f"{s['days']} d{': ' + s['signal'] if s.get('signal') else ''}" for s in g["stints"]]
+        + [f"Recorded {len(g['recorded'])}: " + ", ".join(f"{e['look']} {e['signal']}" for e in g["recorded"])
+           if g["recorded"] else "Nothing new to record."]))
 
 
 def cmd_looks(args):
@@ -494,6 +669,8 @@ def cmd_looks(args):
                 [f"Tournament of {len(seeds)}: {len(played)} answered; next, answer each a or b:"]
                 + [f"  a {a['title']}: {a['line']}\n  b {b['title']}: {b['line']}" for a, b in rows]
                 + [f"Then: {again}"]))
+        if action in ("roll", "bisect", "seance", "history"):  # T-1672
+            return _followups(fmcli, args, action, words)
         if action == "opposite":  # T-1536, opposite day
             known = looks()
             if not words:

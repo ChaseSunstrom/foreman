@@ -210,6 +210,51 @@ def ext_value(e, value):
     return _check(e, value)
 
 
+_LADDER = sorted({0} | {m * 10 ** k for m in (1, 2, 5) for k in range(-3, 16)})  # 1-2-5: a dial's detents
+
+
+def detent(e, value, n):
+    """T-1661: `value` turned one detent (n > 0 up, else down): a closed range on its 1-2-5 step nearest a twentieth of
+    the span, an open one to the next 1-2-5 value (whole ones from a whole value); clamped to the range. SettingError
+    for a setting that isn't a number."""
+    if e["type"] not in ("int", "number"):
+        raise SettingError(f"{e['key']} isn't a number: [ and ] turn numbers")
+    v, (lo, hi) = _check(e, value), e["range"] or (None, None)
+    if lo is not None and hi is not None:
+        step = max([x for x in _LADDER if 0 < x <= (hi - lo) / 20 and (x >= 1 or e["type"] != "int")] or [1])
+        k = round(v / step, 9)  # 0.3 / 0.05 is 5.999…: floored, ] would never move
+        new = (math.floor(k) + 1) * step if n > 0 else (math.ceil(k) - 1) * step
+    else:
+        ladder = [x for x in _LADDER if not float(v).is_integer() or x == int(x)]
+        new = (next((x for x in ladder if x > v), v + 1) if n > 0 else
+               next((x for x in reversed(ladder) if x < v), v - 1))
+    new = max(new, lo) if lo is not None else new
+    new = round(min(new, hi) if hi is not None else new, 9)
+    return int(new) if e["type"] == "int" or float(new).is_integer() else new
+
+
+def layout_moved(lay, c, i, dc, di):
+    """T-1661: the panel at column c, row i of layout `lay` moved one step (dc across, di within its column): (columns,
+    heights, its name, its column, its row), each panel keeping its height; None at an edge or for no such panel.
+    SettingError for more than one step, or for a column's only panel moved across (a column keeps one)."""
+    if (abs(dc), abs(di)) not in ((1, 0), (0, 1)):
+        raise SettingError("a move is one step: across or within a column")
+    cols = [list(x) for x in lay["columns"]]
+    hts = [((list(lay["heights"][n]) if n < len(lay["heights"]) else []) + [1] * len(x))[:len(x)]
+           for n, x in enumerate(cols)]  # as render reads them: a missing height is 1
+    to, at = c + dc, i + di
+    if not (0 <= c < len(cols) and 0 <= i < len(cols[c]) and 0 <= to < len(cols)) or not dc and not 0 <= at < len(cols[c]):
+        return None
+    if dc and len(cols[c]) == 1:
+        raise SettingError(f"{cols[c][0]} is its column's only panel: a column keeps one (set layout.columns to drop a "
+                           "column)")
+    at = min(i, len(cols[to])) if dc else at  # across: to the same row there, or its end
+    name = cols[c].pop(i)
+    cols[to].insert(at, name)
+    hts[to].insert(at, hts[c].pop(i))
+    return cols, hts, name, to, at
+
+
 # ---------------------------------------------------------------- tui.toml in place
 
 _PART = r'(?:"(?:[^"\\]|\\.)*"|\'[^\']*\'|[A-Za-z0-9_-]+)'
@@ -897,6 +942,9 @@ def _recorded(how):
             except (OSError, SettingError) as e:  # the change is written: said, never reported as failed
                 print(f"fm settings: written, but undo can't put it back: the history wasn't saved ({_safe(e)})",
                       file=sys.stderr)
+            with contextlib.suppress(OSError):  # T-1658: fm settings log; a record, never the change's failure
+                if changes:
+                    _log(how, changes)
 
 
 def undo(p=None):
@@ -936,12 +984,524 @@ def undo(p=None):
             _keep(hist[:-1] + ([dict(last, changes=kept)] if kept else []))
         except OSError as e:  # put back, but still listed: the next undo finds them changed and leaves them
             refused.append(f"undone, but the history wasn't saved ({e})")
+        with contextlib.suppress(OSError):  # T-1658: old is the value undone, new the one put back
+            if done:
+                _log("undo", [{"surface": s, "key": k, "old": new, "new": v} for s, k, v, new, _ in done])
     return done, refused
 
 
 def _shown(v, surface):
     import fmcodetui as T
     return "unset" if v is None else T._toml(v) if surface == "app" else json.dumps(v, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------- T-1658: changelog, macros, duel, replay, words
+
+CHANGELOG_MAX = 500  # entries fm settings log keeps (undo walks back HISTORY_MAX)
+EVENTS_MAX = 8 << 20  # bytes of a past run replay reads
+REPLAY_SIZES = ((100, 30), (60, 20), (40, 12), (200, 60))  # wide, the app's narrow layout, a split pane, a big screen
+MACRO_NAME = re.compile(r"[A-Za-z0-9_-]{1,40}")
+
+
+def _state_file(name):
+    return os.path.join(os.path.dirname(_history_path()), name)
+
+
+def _plain(v):
+    """A value as fm settings log and words say it: a word as it is, unset for none."""
+    return ("unset" if v is None else v.replace("\n", "\\n") if isinstance(v, str)  # one line: no forged log lines
+            else json.dumps(v, ensure_ascii=False, default=str))
+
+
+def _log(how, changes):
+    """`changes` on the changelog (fm settings log), cut back to CHANGELOG_MAX entries once it holds twice that; under
+    the history's lock (the caller's)."""
+    import fmcore
+    path = _state_file("changelog.jsonl")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fmcore.append_line(path, json.dumps({"at": fmcore.now(), "how": how, "changes": changes}, ensure_ascii=False,
+                                        default=str) + "\n")
+    got = changelog()
+    if len(got) > 2 * CHANGELOG_MAX:
+        fmcore.write_atomic(path, "".join(json.dumps(e, ensure_ascii=False, default=str) + "\n"
+                                          for e in got[-CHANGELOG_MAX:]))
+
+
+def changelog(key=None):
+    """Every set, import, macro, words change and undo, oldest first: [{at, how, changes: [{surface, key, old,
+    new}]}]; with `key`, its changes alone (and only the entries holding one). A line it can't read is passed over."""
+    import fmcodetui as T
+    k = None if key is None else _norm(key)
+    try:
+        with open(_state_file("changelog.jsonl"), encoding="utf-8", errors="replace") as f:
+            got = [T._json_line(line) for line in f]
+    except OSError:
+        return []
+    out = []
+    for e in got:
+        if e and isinstance(e.get("changes"), list):
+            mine = [c for c in e["changes"] if isinstance(c, dict) and k in (None, c.get("key"))]
+            if mine:
+                out.append(dict(e, changes=mine))
+    return out
+
+
+def _undone():
+    """{(key, value undone as _plain says it): times undone} over the changelog."""
+    n = {}
+    for e in changelog():
+        if e.get("how") == "undo":
+            for c in e["changes"]:
+                kv = (c.get("key"), _plain(c.get("old")))
+                n[kv] = n.get(kv, 0) + 1
+    return n
+
+
+def undo_hints(done):
+    """For each (surface, key) just put back that has been undone 3 times or more, a line saying so and what set it
+    each time: what keeps setting it is the thing to change."""
+    log, out = changelog(), []
+    for s, k in dict.fromkeys(done):
+        hows = [str(e.get("how")) for e in log for c in e["changes"] if (c.get("surface"), c.get("key")) == (s, k)]
+        if hows.count("undo") >= 3:
+            src = ", ".join(f"{h} ×{hows.count(h)}" for h in dict.fromkeys(hows) if h != "undo") or "hand"
+            out.append(f"{s} {k}: undone {hows.count('undo')} times; set by {src}: change what sets it, or leave it as "
+                       "it is now")
+    return out
+
+
+def macros():
+    """{name: {key: value as typed}} fm settings macro saved; {} when there are none or the file can't be read."""
+    try:
+        with open(_state_file("macros.json"), encoding="utf-8") as f:
+            got = json.load(f)
+    except (OSError, ValueError, RecursionError):
+        return {}
+    return {n: m for n, m in got.items() if isinstance(m, dict)} if isinstance(got, dict) else {}
+
+
+def _pairs(words):
+    """--set KEY=VALUE words as [(key, value)]: SettingError for the first that isn't a setting with a value it takes."""
+    out = []
+    for w in words or ():
+        k, eq, v = w.partition("=")
+        found = find(k.strip())
+        if not eq or not found:
+            raise SettingError(f"{w}: KEY=VALUE, KEY a setting (fm settings list shows them)")
+        for e in found:
+            _check(e, v)
+        out.append((k.strip(), v))
+    return out
+
+
+def save_macro(name, words):
+    """A named list of settings (fm settings macro NAME runs it); SettingError, and nothing saved, for a bad name or
+    pair."""
+    import fmcore
+    if not MACRO_NAME.fullmatch(name or ""):
+        raise SettingError(f"{name!r}: a macro's name is 1 to 40 letters, digits, - or _")
+    pairs = _pairs(words)
+    with fmcore.lock(os.path.dirname(_history_path())):
+        got = macros()
+        got[name] = dict(pairs)
+        fmcore.write_atomic(_state_file("macros.json"), json.dumps(got, indent=2, ensure_ascii=False) + "\n")
+    return got[name]
+
+
+def apply(how, pairs, p=None):
+    """[(key, value)] set one after another, each as set_key sets it, all one entry of the history (one undo puts them
+    all back): ([(surface, key, value, warnings)], [why each refused one wasn't set])."""
+    done, refused = [], []
+    with _recorded(how) as changes:
+        for k, v in pairs:
+            d, r = _set_key(k, v, None, p, changes, written())
+            done += [(s, k, val, w) for s, val, w in d]
+            refused += r
+    return done, refused
+
+
+def _events(path):
+    """An fm code events file's events (a line that isn't one passed over); SettingError when it can't be read."""
+    import fmcodetui as T
+    if not os.path.isfile(path):  # never a FIFO's open that waits for a writer
+        raise SettingError(f"{path}: no such file")
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:  # its first EVENTS_MAX bytes: a huge run, cut short
+            return [e for e in map(T._json_line, f.read(EVENTS_MAX).splitlines()) if e]
+    except OSError as e:
+        raise SettingError(f"{path}: can't read it ({e.strerror or e})") from None
+
+
+def _app_of(cfg, events):
+    import fmcodetui as T
+    app = T.App(cfg, spawn=lambda *_, **__: None)
+    for e in events:
+        app.feed(e)
+    return app
+
+
+def duel(a, b, events=None, size=(60, 20)):
+    """Two tui.toml files drawn on the same run (the sample run, or `events`): (A's frame, B's frame, the settings they
+    set differently). SettingError for a file it can't read."""
+    import fmcodetui as T
+    texts, frames = [], []
+    for path in (a, b):
+        if not os.path.isfile(path):
+            raise SettingError(f"{path}: no such file")
+        texts.append(_read_app(path))
+        if _parses(texts[-1]) is None:  # load_config would draw the defaults: no duel
+            raise SettingError(f"{path}: not TOML (fm settings bisect finds the line)")
+        cfg = T.load_config(path, profile=False)[0]
+        try:
+            frames.append(T.render(_app_of(cfg, events or T.SAMPLE_RUN).state, *size, cfg).text())
+        except Exception as x:  # a config the app can't draw: said, as replay says it
+            raise SettingError(f"{path}: can't be drawn ({type(x).__name__}: {x})") from None
+    return frames[0], frames[1], changed(*texts)
+
+
+def _play(cfg, events, checks=10):
+    """`events` fed one by one to an app on `cfg`, drawn at each of REPLAY_SIZES `checks` times along the way and at
+    the end: {frames, slowest_ms, failure: the first exception and where it came, or None}."""
+    import time
+    import fmcodetui as T
+    app, frames, slow, at = T.App(cfg, spawn=lambda *_, **__: None), 0, 0.0, "starting"
+    step = max(1, len(events) // checks)
+    try:
+        for i, e in enumerate(events, 1):
+            at = f"event {i}"
+            app.feed(e)
+            if i % step == 0 or i == len(events):
+                for w, h in REPLAY_SIZES:
+                    at, t = f"event {i}, drawn {w}x{h}", time.perf_counter()
+                    T.render(app.state, w, h, cfg, app)
+                    slow, frames = max(slow, time.perf_counter() - t), frames + 1
+    except Exception as x:  # what replay is for: the failure, said with where it came
+        return {"frames": frames, "slowest_ms": round(slow * 1000, 1), "failure": f"{type(x).__name__}: {x} ({at})"}
+    return {"frames": frames, "slowest_ms": round(slow * 1000, 1), "failure": None}
+
+
+def replay(pairs=(), events=(), runs=5, p=None):
+    """Past runs (this project's last `runs` fm code runs, then `events` files), the sample run and a stress burst (the
+    sample 25 times over) replayed on tui.toml at several sizes. With `pairs` [(key, value)], each also on tui.toml as
+    set would leave it, nothing written: `with` that run, `breaks` (it fails only with them), `slower`. {runs, check
+    (check_render of the changed file), set}; SettingError for a pair set would refuse."""
+    import fmcodetui as T
+    path = app_path()
+    text = _read_app(path)
+    base, new = _load(text, path)[0], None
+    for k, v in pairs:
+        found = find(k, "app")
+        if not found:
+            raise SettingError(f"{k}: not a setting of the app (fm settings list shows them)")
+        text, new, _ = _plan_app(k, _check(found[0], v), path, *_split(k), text=text)
+    cases = [("the sample run", T.SAMPLE_RUN)]
+    if p is not None:
+        cases += [(os.path.basename(r["path"]), r["path"]) for r in T.history(os.path.join(p.dir, "code"))[:runs]]
+    cases += [(os.path.basename(f), f) for f in events] + [("a stress burst", T.SAMPLE_RUN * 25)]
+    out = []
+    for name, evs in cases:
+        evs = _events(evs) if isinstance(evs, str) else evs
+        r = dict(run=name, **_play(base, evs))
+        if new is not None:
+            w = _play(new, evs)
+            r.update({"with": w, "breaks": bool(w["failure"]) and not r["failure"],
+                      "slower": w["slowest_ms"] > max(2 * r["slowest_ms"], r["slowest_ms"] + 20)})
+        out.append(r)
+    return {"runs": out, "check": [{"way": w, "why": y} for w, y in check_render(new)] if new is not None else [],
+            "set": [list(x) for x in pairs]}
+
+
+def words(text, model="haiku", p=None):
+    """What `text` asks of the look and feel, as settings, from a tool-less claude -p child: ([(key, value, its value
+    now)], [why each other proposal was left out]). A change undone twice or more is never proposed: the model is told
+    so, and one it proposes anyway is left out. ValueError when the child fails or says no settings."""
+    import fmideas
+    undone, rs = _undone(), rows()
+    never = [f"{k} = {v}" for (k, v), n in undone.items() if n >= 2]
+    now, lines = {}, []
+    for r in rs:
+        if r["key"] not in now:
+            now[r["key"]] = r["value"]
+            kind = f"one of {', '.join(map(str, r['choices']))}" if r.get("choices") else r["type"]
+            lines.append(f"- {r['key']}: {kind}; now {_plain(r['value'])}; {r.get('help') or ''}")
+    system = ("You turn a request about how Foreman's fm code app and its foreman-ui pane look and behave into "
+              'settings. Reply with one JSON object, {"setting": value, ...}, naming only settings listed here, and '
+              "nothing else.\nSettings (name: what it takes; its value now; what it does):\n" + "\n".join(lines)
+              + ("\nNever propose these; the user undid them twice or more: " + "; ".join(never) if never else ""))
+    reply = fmideas.run_child("settings words", system, text, model, 180, detail=text[:60])
+    try:
+        got = json.JSONDecoder().raw_decode(reply, reply.index("{"))[0]
+    except ValueError:
+        got = None
+    if not isinstance(got, dict):
+        raise ValueError(f"no settings came back: {_safe(reply[:160])}")
+    ok, dropped = [], []
+    for k, v in got.items():
+        k, found = str(k)[:80], find(str(k))
+        if not found:
+            dropped.append(f"{k}: no such setting")
+            continue
+        try:
+            for e in found:
+                v = _check(e, v)
+        except SettingError as x:
+            dropped.append(str(x))
+            continue
+        n = undone.get((_norm(k), _plain(v)), 0)
+        if n >= 2:
+            dropped.append(f"{k} = {_plain(v)}: undone {n} times before, not proposed again")
+            continue
+        ok.append((k, v, now.get(k)))
+    return ok, dropped
+
+
+NEWCOMER_GOALS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "evals", "settings",
+                              "newcomer.json")
+NEWCOMER_MODES = ("settings", "layout")  # the screens a newcomer plays; one that leaves them stops (no run, no runner)
+
+
+def _goals(path):
+    """A newcomer goals file: [{goal, steps: [{see, keys}], done: {key: value or null}}], or SettingError."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            got = json.load(f)
+    except (OSError, ValueError) as e:
+        raise SettingError(f"{path}: {e}") from None
+    ok = isinstance(got, list) and all(
+        isinstance(g, dict) and isinstance(g.get("goal"), str) and isinstance(g.get("done"), dict)
+        and isinstance(g.get("steps", []), list)
+        and all(isinstance(s, dict) and isinstance(s.get("see"), str) and isinstance(s.get("keys"), str)
+                for s in g.get("steps", [])) for g in got)
+    if not ok:
+        raise SettingError(f'{path}: a list of {{"goal", "steps": [{{"see", "keys"}}], "done": {{setting: value}}}}')
+    return got
+
+
+def newcomer(goals=None, real=False, model="haiku", turns=6, size=(120, 40)):
+    """T-1661: a first-time user played through the fm code app's settings screen with only what it shows, on the
+    defaults, in a sandbox (tui.toml, state and Claude Code's settings in a temp folder; a write anywhere else is
+    refused): [{goal, done, step, missing}]. Scripted: each step's keys pressed once its `see` text is on screen, else
+    stuck there. real: a tool-less claude -p child is shown the goal and the screen and replies with the keys, up to
+    `turns` times."""
+    import unittest.mock as mock
+    import fmcodeterm
+    import fmcodetui as T
+    import fmcore
+    import fmideas
+    goals = _goals(NEWCOMER_GOALS) if goals is None else goals
+    mine = macros()  # T-1876: the user's own, read before the sandbox
+    system = ("You are using a terminal app's settings screen for the first time and see only its screen as text. "
+              'Reply with one JSON object, {"keys": "..."}: the keys to press next (\\n is Enter, \\u001b Escape, '
+              "\\u001b[A \\u001b[B \\u001b[C \\u001b[D the arrows), and nothing else.")
+    out, write = [], fmcore.write_atomic
+    outer = {k: os.environ.get(k) for k in ("FOREMAN_HOME", "FOREMAN_STATE")}
+
+    def ask(prompt, detail):  # the model call is the real world's: the real budget, spend and state record it
+        with mock.patch.dict(os.environ, {k: v for k, v in outer.items() if v is not None}), \
+                mock.patch.object(fmcore, "write_atomic", write):
+            for k in [k for k, v in outer.items() if v is None]:
+                os.environ.pop(k, None)
+            return fmideas.run_child("settings newcomer", system, prompt, model, 120, detail=detail)
+    for g in goals:
+        with tempfile.TemporaryDirectory(prefix="fm-newcomer-") as tmp, contextlib.ExitStack() as stack:
+            cs = os.path.join(tmp, "settings.json")
+
+            def cs_read():  # Claude Code's settings.json, the sandbox's own
+                try:
+                    with open(cs, encoding="utf-8") as f:
+                        return cs, json.load(f)
+                except FileNotFoundError:
+                    return cs, {}
+
+            def boxed(path, *a, **k):  # the backstop: nothing outside the sandbox, whatever the screen did
+                if not os.path.realpath(path).startswith(os.path.realpath(tmp) + os.sep):
+                    raise SettingError(f"the newcomer writes nothing outside its sandbox ({path})")
+                return write(path, *a, **k)
+            for x in (mock.patch.dict(os.environ, {"FOREMAN_HOME": tmp, "FOREMAN_STATE": os.path.join(tmp, "state")}),
+                      mock.patch.object(fmcore, "write_atomic", boxed),
+                      mock.patch(__name__ + ".in_claude_code", return_value=False),  # the guard is for real files
+                      mock.patch(__name__ + ".claude_settings", cs_read)):
+                stack.enter_context(x)
+            none = lambda *a, **k: None  # noqa: E731
+            cfg = T.load_config()[0]
+            app = T.App(cfg, spawn=none, root=tmp, diff=lambda *a, **k: "", history=tmp, choices=lambda *a, **k: [],
+                        projects=lambda *a, **k: [], project_state=lambda *a, **k: {}, noticed=lambda *a, **k: [],
+                        asker=none, queued=lambda *a, **k: [])
+            app.show_settings()
+            screen = lambda: T.render(app.state, *size, app.cfg, app).text()  # noqa: E731
+
+            def press(keys):
+                for k in fmcodeterm.parse_keys(keys[:500]):
+                    if app.mode not in NEWCOMER_MODES:
+                        return False
+                    app.key(k)
+                return True
+
+            def reached():
+                now = {}
+                for r in rows():
+                    now.setdefault(r["key"], r)
+                return all(k in now and (now[k]["value"] != now[k]["default"] if v is None else
+                                         now[k]["value"] == v or str(now[k]["value"]) == str(v))
+                           for k, v in g["done"].items())
+            got = {"goal": g["goal"], "done": False, "step": None, "missing": None}
+            if real:
+                for n in range(1, turns + 1):
+                    if reached():
+                        break
+                    try:
+                        reply = ask(f"Goal: {g['goal']}\n\nThe screen:\n{screen()}", g["goal"][:60])
+                    except ValueError as e:  # timed out, logged out, the budget spent: this goal stops, the rest play
+                        got.update(step=n, missing=f"the model failed: {_safe(str(e))[:160]}")
+                        break
+                    try:
+                        keys = json.JSONDecoder().raw_decode(reply, reply.index("{"))[0]["keys"]
+                    except (ValueError, KeyError, TypeError):
+                        got.update(step=n, missing=f"no keys came back: {_safe(reply[:120])}")
+                        break
+                    if not press(str(keys)):
+                        got.update(step=n, missing="left the settings screen")
+                        break
+            else:
+                for n, s in enumerate(g.get("steps") or [], 1):
+                    if s["see"] not in screen():
+                        got.update(step=n, missing=s["see"])
+                        break
+                    if not press(s["keys"]):
+                        got.update(step=n, missing="left the settings screen")
+                        break
+            got["done"] = reached()
+            got["macro"] = None if got["done"] else _reaches(mine, g["done"])
+            out.append(got)
+    return out
+
+
+def _reaches(mine, done):
+    """T-1876: the first saved macro setting each of `done`'s settings to its value (None: to any value), or None."""
+    for name, m in mine.items():
+        m = {_norm(k): str(v) for k, v in m.items()}
+        if done and all(_norm(k) in m and (v is None or m[_norm(k)] == _plain(v)) for k, v in done.items()):
+            return name
+    return None
+
+
+def _macro_tips(key=None, least=3):
+    """T-1876: each key a one-key set (fm settings set, the app's :set line) wrote `least`+ times, its last value no
+    macro holds: the fm settings macro line that saves the typing. A panel move (several keys at once) isn't one."""
+    import shlex
+    count, last = {}, {}
+    for e in changelog():
+        keys = {c.get("key") for c in e["changes"]}
+        if e.get("how") == "set" and len(keys) == 1:
+            k = keys.pop()
+            count[k], last[k] = count.get(k, 0) + 1, e["changes"][-1].get("new")
+    have = {(_norm(k), str(v)) for m in macros().values() for k, v in m.items()}
+    return [f"{k} set by hand {n} times: fm settings macro {re.sub(r'[^A-Za-z0-9_-]', '-', k)[:40]} --set "
+            f"{shlex.quote(f'{k}={_plain(last[k])}')} saves it as one command" for k, n in count.items()
+            if n >= least and last[k] is not None and (_norm(k), _plain(last[k])) not in have
+            and key in (None, k)]
+
+
+def _said(args, done, refused, data=None, lines=()):
+    """A set's output (set, macro, words --apply): each value written, then each refused; PolicyError for those."""
+    import fmcli
+    import fmcore
+    data = dict(data or {}, set=[{"surface": s, "key": k, "value": v, "warnings": w} for s, k, v, w in done],
+                refused=refused)
+    lines = [*lines, *(f"{s}: {k} = {_shown(v, s)}" + "".join(f"\n  now skipped: {x}" for x in w)
+                       for s, k, v, w in done), *refused]
+    fmcli.out(args, data, _safe("\n".join(lines)) or "nothing to change")
+    if refused:
+        raise fmcore.PolicyError(f"{len(refused)} not set (above)")
+    return 0
+
+
+def _cmd_extras(args):
+    """fm settings log [KEY] | macro [NAME [--set K=V …]] | duel A B | replay [--set K=V …] | words TEXT (T-1658)."""
+    import itertools
+    import shutil
+    import fmcli
+    import fmcore
+    if args.action == "log":
+        got = changelog(args.key)
+        return fmcli.out(args, got, _safe("\n".join([
+            f"{e.get('at')} {e.get('how')} · {c.get('surface')} {c.get('key')}: {_plain(c.get('old'))} → "
+            f"{_plain(c.get('new'))}" for e in got for c in e["changes"]]
+            + _macro_tips(args.key and _norm(args.key)))) or "no settings changed yet")
+    if args.action == "macro":
+        if args.pairs:
+            got = save_macro(args.key, args.pairs)
+            return fmcli.out(args, {"saved": args.key, "sets": got}, f"saved {args.key}: fm settings macro {args.key} "
+                             "sets them, one undo puts them back")
+        if not args.key:
+            got = macros()
+            return fmcli.out(args, got, _safe("\n".join(f"{n}: " + " ".join(f"{k}={v}" for k, v in m.items())
+                                                        for n, m in got.items()))
+                             or "no macros yet (fm settings macro NAME --set KEY=VALUE … saves one)")
+        m = macros().get(args.key)
+        if m is None:
+            raise SettingError(f"{args.key}: no such macro (fm settings macro lists them)")
+        return _said(args, *apply(f"macro {args.key}", list(m.items()), _project(args)))
+    if args.action == "duel":
+        if not (args.key and args.value):
+            raise SettingError("fm settings duel A.toml B.toml [--events FILE]: two tui.toml files")
+        fa, fb, keys = duel(args.key, args.value, _events(args.events[0]) if args.events else None)
+        rows_ = itertools.zip_longest(fa.splitlines(), fb.splitlines(), fillvalue="")
+        lines = [f"{os.path.basename(args.key)[:60]:<60} │ {os.path.basename(args.value)}",
+                 *(f"{x:<60} │ {y}" for x, y in rows_),
+                 "they differ in: " + ", ".join(keys) if keys else "they set the same settings"]
+        return fmcli.out(args, {"a": fa, "b": fb, "differ": keys}, _safe("\n".join(lines)))
+    if args.action == "replay":
+        pairs = _pairs(args.pairs)
+        got = replay(pairs, args.events or (), args.runs, _project(args))
+        said = " ".join(f"{k}={v}" for k, v in pairs)
+        lines = []
+        for r in got["runs"]:
+            line = f"{r['run']}: {r['frames']} frames, slowest {r['slowest_ms']} ms" + (
+                f"; ✗ {r['failure']}" if r["failure"] else "")
+            w = r.get("with")
+            if w:
+                line += (f"; ✗ with {said}: {w['failure']}" if w["failure"] else
+                         f"; with {said}: slowest {w['slowest_ms']} ms" + (" (slower)" if r["slower"] else ""))
+            lines.append(line)
+        lines += [f"✗ {x['way']} can't draw it with {said}: {x['why']}" for x in got["check"]]
+        bad = sum(bool(r["failure"] or (r.get("with") or {}).get("failure")) for r in got["runs"]) + len(got["check"])
+        if pairs:
+            n, already = (sum(bool(r[x]) for r in got["runs"]) for x in ("breaks", "failure"))
+            lines += [f"{already} of {len(got['runs'])} runs already fail without {said}"] if already else []
+            lines.append(f"{n} of {len(got['runs'])} runs break with {said} (nothing written)" if n or got["check"]
+                         else f"nothing more breaks with {said} (nothing written)" if bad
+                         else f"nothing breaks with {said} (nothing written: fm settings set does it)")
+        fmcli.out(args, got, _safe("\n".join(lines)))
+        return 1 if bad else 0
+    if args.action == "newcomer":  # T-1661
+        if args.real and not shutil.which("claude"):
+            raise SettingError("fm settings newcomer --real asks a model through claude (Claude Code's CLI), not on "
+                               "PATH; without --real a scripted newcomer plays")
+        got = newcomer(_goals(args.goals) if args.goals else None, args.real, args.model)
+        hint = lambda m: m if args.real or m == "left the settings screen" else f'the screen never showed "{m}"'  # noqa: E731
+        lines = [(f"✓ {g['goal']}" if g["done"] else f"✗ {g['goal']}: stuck at step {g['step']}: {hint(g['missing'])}"
+                  if g["step"] else f"✗ {g['goal']}: not reached")
+                 + (f"; fm settings macro {g['macro']} sets it" if g.get("macro") else "") for g in got]
+        fmcli.out(args, got, _safe("\n".join(lines + ["nothing written (a sandbox: its own tui.toml, state and Claude "
+                                                      "Code settings)"])))
+        return 1 if any(not g["done"] for g in got) else 0
+    if not args.key:
+        raise SettingError('fm settings words "what you want" [--apply]: the change, said in words')
+    if not shutil.which("claude"):
+        raise SettingError("fm settings words asks a model through claude (Claude Code's CLI), not on PATH; fm "
+                           "settings set KEY VALUE sets one by hand")
+    try:
+        ok, dropped = words(args.key, args.model, _project(args))
+    except ValueError as e:
+        raise fmcore.PolicyError(f"fm settings words: {e}") from None
+    lines = [f"{k}: {_plain(now)} → {_plain(v)}" for k, v, now in ok] + [f"  left out: {x}" for x in dropped]
+    data = {"proposed": [{"key": k, "value": v, "now": now} for k, v, now in ok], "left_out": dropped}
+    if not args.apply:
+        return fmcli.out(args, dict(data, set=[], refused=[]), _safe("\n".join(
+            lines + ([f'fm settings words "…" --apply sets {"them" if len(ok) > 1 else "it"} (one undo puts '
+                      'back)'] if ok else ["nothing to change"]))))
+    return _said(args, *(apply("words", [(k, v) for k, v, _ in ok], _project(args)) if ok else ([], [])), data, lines)
 
 
 # ---------------------------------------------------------------- T-1543: last good copy, outside edits, bisect
@@ -1479,8 +2039,11 @@ def cmd_settings(args):
         return 1 if bad else 0
     if args.action == "chords":  # T-1660 (keys is the bindings group: fm settings list keys)
         return _cmd_chords(args)
-    if args.action in ("diff", "export", "import", "undo", "bisect"):
+    if args.action in ("diff", "export", "import", "undo", "bisect", "log", "macro", "duel", "replay", "words",
+                       "newcomer"):
         try:
+            if args.action in ("log", "macro", "duel", "replay", "words", "newcomer"):  # T-1658, T-1661
+                return _cmd_extras(args)
             return _cmd_bisect(args) if args.action == "bisect" else _cmd_history(args)
         except SettingError as e:
             import fmcore
@@ -1536,9 +2099,12 @@ def _set_project(args):
     path = T.project_settings_path(root)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     try:
+        old = _flat(_read_app(path)).get(_norm(args.key))
         value, warn = set_app(args.key, args.value, path=path, p=p)
     except SettingError as e:
         raise fmcli.UsageError(str(e))
+    with contextlib.suppress(OSError):  # T-1658: on the log, not the history (undo is tui.toml's)
+        _log("set --scope project", [{"surface": "app", "scope": "project", "key": args.key, "old": old, "new": value}])
     pinned = (T.layered(T.DEFAULTS, root)[0].get("scopes") or {}).get(_norm(args.key)) == "pin"
     lines = [f"app: {args.key} = {T._toml(value)} in {path} (this project's: fm code run in {root} reads it)"]
     lines += [f"  now skipped: {w}" for w in warn]
@@ -1593,6 +2159,8 @@ def _cmd_history(args):
                 "refused": refused}
         lines = [f"{s}: {k} back to {_shown(v, s)} (was {_shown(new, s)})" + (f"; {n}" if n else "")
                  for s, k, v, new, n in done]
+        data["hints"] = undo_hints([(s, k) for s, k, *_ in done])  # T-1658: undone again and again: what sets it
+        lines += data["hints"]
     fmcli.out(args, data, _safe("\n".join(lines + refused)) or "nothing to change")
     if refused:
         raise fmcore.PolicyError(f"{len(refused)} not done (above)")

@@ -47,3 +47,16 @@ class CardsAtPrompt(HookCase):
         detail = d.check_enforce(self.project()).detail
         self.assertIn("cards named 1", detail)
         self.assertIn("cards read 1", detail)
+
+    def test_matching_compiles_only_the_names_the_request_contains(self):
+        """T-2024: an alternation of every card name took ~9 ms to compile on each prompt; only names the text holds
+        are compiled now, with the same answers (a name inside a longer word still isn't one)."""
+        import re
+        from unittest import mock
+        real, seen = re.compile, []
+        with mock.patch.object(fmlib.re, "compile", side_effect=lambda *a: seen.append(a[0]) or real(*a)):
+            self.assertEqual(fmlib.cards_named("the redis cache"), ["redis"])
+            self.assertEqual(fmlib.cards_named("predisposed to kafkaesque prose"), [])
+        pats = [s for s in seen if "redis" in s]
+        self.assertTrue(pats)
+        self.assertFalse(any("postgres" in s for s in pats), pats)

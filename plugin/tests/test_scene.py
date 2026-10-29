@@ -2,6 +2,7 @@
 ES module that builds the scene with three.js and keeps templates/scene.html's survival clauses."""
 import copy
 import json
+import math
 import os
 import re
 import shutil
@@ -486,6 +487,30 @@ class Offline(ForemanTestCase):
         p = self.fm("scene", "turntable", path, check=False)
         self.assertNotEqual(p.returncode, 0, "it writes a PNG: --out")
 
+    def test_cells_draw_the_scene_as_half_blocks(self):  # T-1635
+        lines = fmscene.cells(plate(type="plane", size=[2, 1]), cols=40)
+        self.assertEqual(len(lines), 12)  # 40 x 25 pixels, rounded down to even: 24 rows of pixels, 12 of cells
+        for ln in lines:
+            self.assertEqual(ln.count("▀"), 40)
+            self.assertTrue(ln.endswith("\x1b[0m"))
+        text = "".join(lines)
+        self.assertIn("\x1b[38;2;", text)
+        self.assertNotEqual(text.count("48;2;0;0;0m"), 40 * 12, "the plate is drawn, not only background")
+        self.assertEqual(lines, fmscene.cells(plate(type="plane", size=[2, 1]), cols=40))  # integer raster: same bytes
+        back = "".join(fmscene.cells(plate(type="plane", size=[2, 1]), cols=40, turn=180))
+        self.assertEqual(set(re.findall(r"[34]8;2;([0-9;]+)m", back)), {"0;0;0"})  # its back, culled
+        self.assertEqual(len(fmscene.cells(plate(type="plane", size=[2, 1]), cols=2)), 1)  # never under one row
+        with self.assertRaises(ValueError):
+            fmscene.cells(plate(type="plane", size=[2, 1]), cols=1)
+
+    def test_fm_scene_cells(self):  # T-1635
+        path = os.path.join(self.tmp, "scene.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(SCENE, f)
+        out = self.fm("scene", "cells", path, "--cols", "30").stdout
+        self.assertEqual(out.count("▀"), 30 * 9)
+        self.assertNotEqual(self.fm("scene", "cells", path, "--cols", "500", check=False).returncode, 0)
+
     def test_the_shipped_shader_cards_pass(self):
         paths = fmscene.shader_paths(CARDS)
         self.assertGreaterEqual(len(paths), 8)
@@ -511,6 +536,470 @@ class Offline(ForemanTestCase):
         p = self.fm("scene", "shader", folder, check=False)
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("2 shader file(s)", p.stdout)
+
+
+
+def m4(pos=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1)):
+    """three.js's Matrix4.compose: T * Rx * Ry * Rz * S, column-major as toJSON writes it."""
+    import math
+    x, y, z = (math.radians(a) for a in rot)
+    rx = [[1, 0, 0], [0, math.cos(x), -math.sin(x)], [0, math.sin(x), math.cos(x)]]
+    ry = [[math.cos(y), 0, math.sin(y)], [0, 1, 0], [-math.sin(y), 0, math.cos(y)]]
+    rz = [[math.cos(z), -math.sin(z), 0], [math.sin(z), math.cos(z), 0], [0, 0, 1]]
+    mul = lambda a, b: [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+    r = mul(mul(rx, ry), rz)
+    return [v for j in range(3) for v in [r[i][j] * scale[j] for i in range(3)] + [0]] + [*pos, 1]
+
+
+def three_doc():
+    """A scene as three.js's Object3D.toJSON() writes it (format 4)."""
+    tri = {"itemSize": 3, "type": "Float32Array", "array": [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], "normalized": False}
+    return {
+        "metadata": {"version": 4.6, "type": "Object", "generator": "Object3D.toJSON"},
+        "geometries": [
+            {"uuid": "g-box", "type": "BoxGeometry", "width": 2, "height": 1, "depth": 0.5},
+            {"uuid": "g-ball", "type": "SphereGeometry", "radius": 0.5, "widthSegments": 16, "heightSegments": 8},
+            {"uuid": "g-floor", "type": "PlaneGeometry", "width": 10, "height": 6},
+            {"uuid": "g-quad", "type": "BufferGeometry",
+             "data": {"attributes": {"position": tri}, "index": {"type": "Uint16Array", "array": [0, 1, 2, 2, 1, 3]}}},
+            {"uuid": "g-soup", "type": "BufferGeometry", "data": {"attributes": {"position": dict(tri, array=tri["array"][:9])}}},
+            {"uuid": "g-knot", "type": "TorusKnotGeometry", "radius": 1},
+        ],
+        "materials": [
+            {"uuid": "m-red", "type": "MeshStandardMaterial", "name": "red", "color": 0xFF0000, "roughness": 0.4,
+             "metalness": 0.2, "emissive": 0x110000, "emissiveIntensity": 2},
+            {"uuid": "m-flat", "type": "MeshBasicMaterial", "color": 0x336699},
+        ],
+        "object": {"uuid": "s", "type": "Scene", "background": 0x101418, "matrix": m4(), "children": [
+            {"uuid": "grp", "type": "Group", "matrix": m4((1, 0, 0)), "children": [
+                {"uuid": "crate", "type": "Mesh", "name": "crate", "geometry": "g-box", "material": "m-red",
+                 "matrix": m4((1, 0, 0), (0, 90, 0))}]},
+            {"uuid": "ball", "type": "Mesh", "name": "crate", "geometry": "g-ball", "material": "m-flat",
+             "matrix": m4((0, 1, 0), scale=(2, 2, 2))},  # a second "crate": renamed, names are unique
+            {"uuid": "floor", "type": "Mesh", "geometry": "g-floor", "material": "m-flat", "matrix": m4(rot=(-90, 0, 0))},
+            {"uuid": "quad", "type": "Mesh", "geometry": "g-quad", "material": "m-red", "matrix": m4()},
+            {"uuid": "soup", "type": "Mesh", "geometry": "g-soup", "material": ["m-red", "m-flat"], "matrix": m4()},
+            {"uuid": "knot", "type": "Mesh", "geometry": "g-knot", "material": "m-red", "matrix": m4()},
+            {"uuid": "wire", "type": "Line", "geometry": "g-soup", "material": "m-red", "matrix": m4()},
+            {"uuid": "amb", "type": "AmbientLight", "color": 0xFFFFFF, "intensity": 0.5, "matrix": m4()},
+            {"uuid": "sun", "type": "DirectionalLight", "color": 0xFFEEDD, "intensity": 2, "matrix": m4((3, 4, 5)),
+             "target": "t"},
+            {"uuid": "cam", "type": "PerspectiveCamera", "fov": 40, "zoom": 1, "near": 0.1, "far": 50, "aspect": 1.5,
+             "matrix": m4((0, 0, 8))},
+        ]}}
+
+
+class Import(ForemanTestCase):
+    """T-1847: fm scene import, a three.js Object3D.toJSON() scene to scene.json."""
+
+    def near(self, a, b):
+        self.assertEqual(len(a), len(b))
+        for x, y in zip(a, b):
+            self.assertAlmostEqual(x, y, places=4)
+
+    def test_from_three_carries_what_scene_json_holds_and_names_the_rest(self):
+        scene, left = fmscene.from_three(three_doc())
+        self.assertEqual(fmscene.validate(scene), scene, "the import is a valid scene.json")
+        m = {x["name"]: x for x in scene["meshes"]}
+        crate = m["crate"]
+        self.near(crate["position"], [2, 0, 0])  # the group's move composed with its own
+        self.near(crate["rotation"], [0, 90, 0])
+        self.assertEqual(crate["geometry"], {"type": "box", "size": [2, 1, 0.5]})
+        self.assertEqual(scene["materials"][crate["material"]],
+                         {"color": "#ff0000", "roughness": 0.4, "metalness": 0.2, "emissive": "#110000",
+                          "emissiveIntensity": 2})
+        ball = next(x for x in scene["meshes"] if x["geometry"]["type"] == "sphere")
+        self.assertNotEqual(ball["name"], "crate")
+        self.near(ball["scale"], [2, 2, 2])
+        self.assertEqual(ball["geometry"], {"type": "sphere", "radius": 0.5, "segments": 16})
+        floor = next(x for x in scene["meshes"] if x["geometry"]["type"] == "plane")
+        self.near(floor["rotation"], [-90, 0, 0])
+        self.assertEqual(floor["geometry"]["size"], [10, 6])
+        quad, soup = [x["geometry"] for x in scene["meshes"] if x["geometry"]["type"] == "vertices"]
+        self.assertEqual(quad["faces"], [[0, 1, 2], [2, 1, 3]])
+        self.assertEqual(soup["faces"], [[0, 1, 2]], "no index: each three vertices a triangle")
+        self.assertEqual(scene["background"], "#101418")
+        self.assertEqual([lt["type"] for lt in scene["lights"]], ["ambient", "directional"])
+        self.near(scene["lights"][1]["position"], [3, 4, 5])
+        self.assertEqual(scene["camera"]["fov"], 40)
+        self.near(scene["camera"]["position"], [0, 0, 8])
+        self.near(scene["camera"]["target"], [0, 0, 0])
+        joined = " ".join(left)
+        for word in ("TorusKnotGeometry", "Line", "second material"):
+            self.assertIn(word, joined)
+
+    def test_rotations_survive_the_matrix(self):
+        for rot in ((30, 45, 60), (-120, 10, 170), (0, -90, 0)):
+            doc = {"metadata": {"version": 4.6}, "geometries": [{"uuid": "g", "type": "BoxGeometry"}],
+                   "materials": [{"uuid": "m", "type": "MeshStandardMaterial", "color": 0}],
+                   "object": {"type": "Scene", "matrix": m4(), "children": [
+                       {"type": "Mesh", "geometry": "g", "material": "m", "matrix": m4((1, 2, 3), rot, (1, 2, 3))}]}}
+            scene, _ = fmscene.from_three(doc)
+            got = fmscene.triangles(scene)
+            want = fmscene.triangles(dict(scene, meshes=[dict(scene["meshes"][0], rotation=list(rot),
+                                                               position=[1, 2, 3], scale=[1, 2, 3])]))
+            self.assertEqual(got, want, rot)
+            self.near(scene["camera"]["position"], [0, 0, 5])  # no camera in the file: three's default
+
+    def test_fm_scene_import_writes_a_scene_fm_scene_checks(self):
+        src, out = os.path.join(self.tmp, "three.json"), os.path.join(self.tmp, "scene.json")
+        with open(src, "w") as f:
+            json.dump(three_doc(), f)
+        r = self.fm("scene", "import", src, "--out", out)
+        self.assertIn("left out", r.stdout)
+        self.assertEqual(self.fm("scene", "check", out).returncode, 0)
+        printed = self.fm("scene", "import", src).stdout
+        self.assertEqual(fmscene.loads(printed), fmscene.load(out))
+        with open(src, "w") as f:
+            f.write('{"metadata": {"version": 4.6}, "object": {"type": "Mesh"}}')
+        self.assertNotEqual(self.fm("scene", "import", src, check=False).returncode, 0)
+
+    def test_a_top_down_camera_and_a_mesh_named_camera_still_validate(self):
+        doc = three_doc()
+        kids = doc["object"]["children"]
+        kids[1]["name"] = "camera"  # scene.json keeps that name for a camera path
+        next(k for k in kids if k["type"] == "PerspectiveCamera")["matrix"] = m4((0, 8, 0), (-90, 0, 0))
+        scene, left = fmscene.from_three(doc)
+        self.assertNotIn("camera", [x["name"] for x in scene["meshes"]])
+        self.near(scene["camera"]["position"], [0, 8, 0])
+        self.assertLess(scene["camera"]["target"][1], 1)
+        self.assertIn("straight down", " ".join(left))
+
+
+    def test_odd_input_is_a_note_or_a_value_error_never_a_crash(self):
+        doc = three_doc()
+        kids = doc["object"]["children"]
+        kids.append({"type": "\x1b[2J", "matrix": m4()})  # a terminal escape as a type: shown escaped
+        kids.append({"type": "Mesh", "geometry": "g-box", "material": "m-red", "visible": False, "matrix": m4()})
+        kids.append({"type": "Mesh", "name": "mirror", "geometry": "g-box", "material": "m-red",
+                     "matrix": m4((0, 0, 1), (0, 30, 0), (-1, 1, 1))})
+        kids.append({"type": "Mesh", "name": "Cube.001", "geometry": "g-box", "material": "m-red", "matrix": m4()})
+        kids += [{"type": "DirectionalLight", "matrix": m4((i + 1, 1, 0))} for i in range(3)]  # a 4th direct light
+        kids.append({"type": "DirectionalLight", "matrix": m4()})  # at the origin: refused, so a note
+        cam = next(k for k in kids if k["type"] == "PerspectiveCamera")
+        cam.update(zoom=2, far=5000, matrix=m4((0, 0, 8), (0, 0, 20)))  # rolled 20 degrees
+        scene, left = fmscene.from_three(doc)
+        joined = " ".join(left)
+        self.assertNotIn("\x1b", joined)
+        self.assertIn("\\x1b[2J", joined)
+        for word in ("hidden", "past the third", "roll", "MeshBasicMaterial", "renamed", "far 5000"):
+            self.assertIn(word, joined)
+        m = {x["name"]: x for x in scene["meshes"]}
+        self.assertEqual(len(scene["meshes"]), 7, "the hidden mesh isn't drawn")
+        got = fmscene.triangles(dict(scene, meshes=[m["mirror"]]))
+        want = fmscene.triangles(dict(scene, meshes=[dict(m["mirror"], position=[0, 0, 1], rotation=[0, 30, 0],
+                                                          scale=[-1, 1, 1])]))
+        self.assertEqual(got, want, "a mirrored matrix round-trips")
+        self.assertAlmostEqual(scene["camera"]["fov"], 2 * math.degrees(math.atan(math.tan(math.radians(20)) / 2)),
+                               places=4)
+        self.assertEqual(scene["camera"]["far"], 1000)
+        for bad in ({"fov": "50"}, {"color": None}):  # a field of the wrong kind: ValueError, not a traceback
+            d = three_doc()
+            target = next(k for k in d["object"]["children"] if k["type"] == "PerspectiveCamera") \
+                if "fov" in bad else d["materials"][0]
+            target.update(bad)
+            with self.assertRaises(ValueError):
+                fmscene.from_three(d)
+        d = three_doc()  # one big geometry shared by many meshes: bounded, not multiplied
+        d["geometries"][3]["data"]["attributes"]["position"]["array"] = [0.0] * 3 * 30000
+        d["object"]["children"] += [{"type": "Mesh", "geometry": "g-quad", "material": "m-red", "matrix": m4()}] * 40
+        with self.assertRaises(ValueError) as e:
+            fmscene.from_three(d)
+        self.assertIn("vertices", str(e.exception))
+
+
+def vol6(v, f):
+    return sum(fmscene._cross3(v[j], v[k])[0] * v[i][0] + fmscene._cross3(v[j], v[k])[1] * v[i][1]
+               + fmscene._cross3(v[j], v[k])[2] * v[i][2] for i, j, k in f)
+
+
+class Metaballs(ForemanTestCase):
+    """T-1848: fm scene metaballs, a seeded blob polygonised by marching tetrahedra."""
+
+    def blob(self, scene):
+        g = next(m for m in scene["meshes"] if m["name"] == "blob")["geometry"]
+        return g["vertices"], g["faces"]
+
+    def test_the_blob_is_closed_wound_outward_and_seeded(self):
+        import collections
+        a = fmscene.metaballs(balls=4, grid=16, seed=3)
+        self.assertEqual(fmscene.validate(a), a)
+        v, f = self.blob(a)
+        directed = collections.Counter((t[i], t[(i + 1) % 3]) for t in f for i in range(3))
+        self.assertEqual(max(directed.values()), 1)  # no edge twice the same way: wound alike
+        self.assertTrue(all((y, x) in directed for x, y in directed))  # every edge has its twin: closed
+        self.assertGreater(vol6(v, f), 0)  # counter-clockwise seen from outside
+        self.assertEqual(fmscene.metaballs(balls=4, grid=16, seed=3), a)
+        self.assertNotEqual(fmscene.metaballs(balls=4, grid=16, seed=4), a)
+        self.assertGreater(len(fmscene.metaballs(4, 32, 3)["meshes"][0]["geometry"]["faces"]), len(f))
+        for bad in ({"balls": 0}, {"balls": 13}, {"grid": 7}, {"grid": 49}):
+            with self.assertRaises(ValueError):
+                fmscene.metaballs(**bad)
+
+    def test_one_ball_is_a_sphere_of_its_radius(self):
+        v, f = self.blob(fmscene.metaballs(balls=1, grid=32, seed=5))
+        mid = [(min(p[i] for p in v) + max(p[i] for p in v)) / 2 for i in range(3)]
+        d = [math.dist(p, mid) for p in v]
+        self.assertLess(max(d) / min(d), 1.04)
+        self.assertAlmostEqual(vol6(v, f) / 6, 4 / 3 * math.pi * (sum(d) / len(d)) ** 3, delta=0.05 * vol6(v, f) / 6)
+
+    def test_fm_scene_metaballs_prints_or_writes_a_scene_fm_scene_checks(self):
+        out = os.path.join(self.tmp, "blob.json")
+        flags = ("--balls", "3", "--grid", "12", "--seed", "1")
+        self.assertIn("wrote", self.fm("scene", "metaballs", *flags, "--out", out).stdout)
+        self.assertEqual(self.fm("scene", "check", out).returncode, 0)
+        self.assertEqual(fmscene.loads(self.fm("scene", "metaballs", *flags).stdout), fmscene.load(out))
+        self.assertNotEqual(self.fm("scene", "metaballs", "--grid", "4", check=False).returncode, 0)
+        for action in ("check", "shader", "soak", "compile", "metaballs"):  # the others need FILE; metaballs takes none
+            r = self.fm("scene", action, *(["x.json"] if action == "metaballs" else []), check=False)
+            self.assertEqual((r.returncode, "Traceback" in r.stderr), (2, False), r.stderr)
+
+    def test_a_flag_the_action_does_not_read_is_refused_naming_who_reads_it(self):
+        # T-1855: metaballs --days used to run and drop --days without a word
+        for args, said in ((["metaballs", "--days", "5"], "terrain, airlock"), (["terrain", "--balls=3"], "metaballs"),
+                           (["compile", "x.json", "--size", "2x2"], "shade")):
+            r = self.fm("scene", *args, check=False)
+            self.assertEqual((r.returncode, said in r.stderr), (2, True), r.stderr)
+
+
+class Airlock(ForemanTestCase):
+    """T-1849: fm scene airlock, what the guard held and let through as boxes either side of a gate."""
+
+    def test_airlock_stands_a_box_per_held_category_beside_a_gate(self):
+        s = fmscene.airlock({"core": 100, "brief": 1, "rm-outside": 0, "Bad name!": 3, "floor": 2}, 50)
+        self.assertEqual(fmscene.validate(s), s)
+        box = {m["name"]: m for m in s["meshes"] if m["geometry"]["type"] == "box"}
+        self.assertEqual(set(box), {"pillar-l", "pillar-r", "lintel", "through", "core", "brief", "other"})
+        h = {n: m["geometry"]["size"][1] for n, m in box.items()}
+        self.assertAlmostEqual(h["core"], 2.1)  # the most held stands tallest; nothing held, no box
+        self.assertTrue(0.1 < h["brief"] < h["other"] < h["through"] < h["core"])  # other: Bad name! and floor
+        self.assertTrue(all(box[n]["position"][0] < 0 < box["through"]["position"][0] for n in ("core", "brief")))
+        self.assertAlmostEqual(box["core"]["position"][1], h["core"] / 2)  # standing on the floor
+        for bad in (({"core": -1}, 0), ({}, -1)):
+            with self.assertRaises(ValueError):
+                fmscene.airlock(*bad)
+
+    def test_guard_counts_reads_this_projects_blocks_and_tool_calls(self):
+        import fmcore as c
+        p = c.find_project(self.repo, create=True)
+        for cat in ("core", "core", "brief"):
+            c.log_event(p, "guard_block", data={"category": cat})
+        os.makedirs(c.state_dir(), exist_ok=True)
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            for ts, kind, proj in ((c.now(), "tool", p.slug), (c.now(), "tool_fail", p.slug),
+                                   (c.now(), "tool", "elsewhere"), ("2020-01-01T00:00:00Z", "tool", p.slug),
+                                   (c.now(), "stop", p.slug)):
+                f.write(json.dumps({"ts": ts, "kind": kind, "project": proj}) + "\n")
+        self.assertEqual(fmscene.guard_counts(p, 30), ({"core": 2, "brief": 1}, 2))
+
+    def test_fm_scene_airlock_prints_a_scene_fm_scene_checks(self):
+        import fmcore as c
+        c.find_project(self.repo, create=True)
+        out = os.path.join(self.tmp, "airlock.json")
+        self.assertIn("wrote", self.fm("scene", "airlock", "--days", "7", "--out", out).stdout)
+        self.assertEqual(self.fm("scene", "check", out).returncode, 0)
+        r = self.fm("scene", "airlock", "--days", "0", check=False)  # a refusal, not a traceback
+        self.assertEqual((r.returncode, "1 to 3650" in r.stderr), (2, True), r.stderr)
+        other = os.path.join(self.tmp, "plain")
+        os.makedirs(other)
+        r = self.fm("scene", "airlock", cwd=other, check=False)
+        self.assertEqual((r.returncode, "not in a Foreman project" in r.stderr), (2, True), r.stderr)
+
+
+class BenchScene(ForemanTestCase):
+    """T-1850: fm scene bench, fm code bench's runs as a diorama."""
+
+    def test_bench_stands_a_box_per_run_and_seed(self):
+        runs = [{"results": [{"seed": "operator", "closed": True, "seconds": 20}]},
+                {"results": [{"seed": "operator", "closed": False, "seconds": 400},
+                             {"seed": "fix-bug", "closed": True, "seconds": 0}]}]
+        s = fmscene.bench(runs)
+        self.assertEqual(fmscene.validate(s), s)
+        box = {m["name"]: m for m in s["meshes"] if m["name"] != "floor"}
+        self.assertEqual(set(box), {"operator-1", "operator-2", "fix-bug-2"})
+        colour = {n: s["materials"][m["material"]]["color"] for n, m in box.items()}
+        self.assertEqual(colour["operator-1"], colour["fix-bug-2"])  # closed
+        self.assertNotEqual(colour["operator-1"], colour["operator-2"])  # not closed
+        h = {n: m["geometry"]["size"][1] for n, m in box.items()}
+        self.assertAlmostEqual(h["operator-2"], 2.1)  # the slowest stands tallest
+        self.assertAlmostEqual(h["fix-bug-2"], 0.1)
+        self.assertLess(box["operator-1"]["position"][0], box["operator-2"]["position"][0])  # runs left to right
+        self.assertNotEqual(box["operator-2"]["position"][2], box["fix-bug-2"]["position"][2])  # seeds front to back
+        self.assertEqual(sum(m["name"].startswith("operator-") for m in fmscene.bench(runs * 10)["meshes"]), 12)
+        skip = [{"results": [{"seed": "rm-rf", "closed": False, "skipped": True}]}]
+        self.assertNotIn("rm-rf-3", {m["name"] for m in fmscene.bench(runs + skip)["meshes"]})  # skipped: no box
+        for empty in ([], skip):
+            with self.assertRaises(ValueError):
+                fmscene.bench(empty)
+        odd = [{"results": [{"seed": "a b", "closed": True, "seconds": 10 ** 400},
+                            {"seed": "a-b", "closed": True, "seconds": [1]},
+                            {"seed": "9lives", "closed": True, "seconds": float("inf")}, "x"]}, {"results": 5}]
+        self.assertEqual({m["name"] for m in fmscene.bench(odd)["meshes"]},  # a hand-edited history: drawn, no crash
+                         {"a-b-1", "a-b-1_2", "s9lives-1", "floor"})
+
+    def test_fm_scene_bench_reads_the_bench_history(self):
+        import fmcore as c
+        r = self.fm("scene", "bench", check=False)  # no runs yet: a refusal, not a traceback
+        self.assertEqual((r.returncode, "no fm code bench results" in r.stderr), (2, True), r.stderr)
+        os.makedirs(c.state_dir(), exist_ok=True)
+        with open(os.path.join(c.state_dir(), "code-bench.jsonl"), "w") as f:
+            f.write(json.dumps({"score": 1.0, "results": [{"seed": "operator", "closed": True, "seconds": 22.2}]}) + "\n")
+        out = os.path.join(self.tmp, "bench.json")
+        self.assertIn("wrote", self.fm("scene", "bench", "--out", out).stdout)
+        self.assertEqual(self.fm("scene", "check", out).returncode, 0)
+
+
+class Lookbook(ForemanTestCase):
+    """T-1852: fm scene lookbook, the look cards hung as colour-field panels in a 3D gallery."""
+
+    def test_lookbook_hangs_a_frame_per_look_banded_in_its_palette(self):
+        known = {"look-a": {"palette": [(255, 0, 0), (0, 0, 255)]}, "look-b": {"palette": [(0, 255, 0)]},
+                 "look-c": {"palette": []}}
+        s = fmscene.lookbook(["look-b", "look-a", "look-c"], known)
+        self.assertEqual(fmscene.validate(s), s)
+        mesh = {m["name"]: m for m in s["meshes"]}
+        self.assertLessEqual({"look-a", "look-b", "look-c", "look-a-1", "look-a-2", "look-b-1", "floor"}, set(mesh))
+        self.assertNotIn("look-c-1", mesh)  # no palette, an empty frame
+        colour = {n: s["materials"][m["material"]]["color"] for n, m in mesh.items()}
+        self.assertEqual([colour[n] for n in ("look-a-1", "look-a-2", "look-b-1")], ["#ff0000", "#0000ff", "#00ff00"])
+        self.assertGreater(mesh["look-a-1"]["position"][1], mesh["look-a-2"]["position"][1])  # bands top to bottom
+        self.assertLess(abs(mesh["look-b"]["position"][0]), abs(mesh["look-c"]["position"][0]))  # best ranked: centre
+        self.assertEqual(len([n for n in mesh if n.count("-") == 1 and n.startswith("look-")]), 3)
+        with self.assertRaises(ValueError):
+            fmscene.lookbook([], known)
+        with self.assertRaises(ValueError):
+            fmscene.lookbook(["look-a"] * 13, known)
+
+    def test_fm_scene_lookbook_hangs_the_cards(self):
+        out = os.path.join(self.tmp, "lookbook.json")
+        self.assertIn("3 look(s)", self.fm("scene", "lookbook", "--count", "3", "--out", out).stdout)
+        self.assertEqual(self.fm("scene", "check", out).returncode, 0)
+        for n in ("13", "0"):
+            r = self.fm("scene", "lookbook", "--count", n, check=False)
+            self.assertEqual((r.returncode, "1 to 12" in r.stderr), (2, True), r.stderr)
+
+    def test_lookbook_frames_hang_flush_on_the_walls_all_in_view(self):
+        known = {f"look-{i}": {"palette": [(9, 9, 9)]} for i in range(12)}
+        s = fmscene.lookbook(list(known), known)
+        cx, _, cz = s["camera"]["position"]
+        for n in known:
+            m = next(m for m in s["meshes"] if m["name"] == n)
+            (x, _, z), (sx, _, sz) = m["position"], m["geometry"]["size"]
+            self.assertAlmostEqual(max(abs(x), abs(z)), 5.95, msg=n)  # its back on the wall's inner face, 6.0
+            for ex in (-sx / 2, sx / 2):  # every corner inside the 8:5 view at fov 60, 42.7 degrees each side
+                for ez in (-sz / 2, sz / 2):
+                    self.assertLess(math.degrees(math.atan2(abs(x + ex - cx), cz - z - ez)), 42, n)
+
+
+class Terrain(ForemanTestCase):
+    """T-1851: fm scene terrain, the repo's churn as a ribbon per busiest path."""
+
+    def test_terrain_draws_a_ribbon_per_row_as_tall_as_its_churn(self):
+        s = fmscene.terrain([[0, 0, 0], [1, 100, 0], [3, 0, 0]], ["plugin", ".github", "README.md"])
+        self.assertEqual(fmscene.validate(s), s)
+        ribbons = [m for m in s["meshes"] if m["name"] != "floor"]
+        self.assertEqual([m["name"] for m in ribbons], ["plugin", "p--github", "README-md"])
+        top = [max(v[1] for v in m["geometry"]["vertices"]) for m in ribbons]
+        self.assertAlmostEqual(top[0], 0.02)  # no churn: flat on the floor
+        self.assertAlmostEqual(top[1], 1.52)  # the busiest day is the tallest
+        self.assertTrue(0.02 < top[2] < top[1])
+        self.assertEqual(len({s["materials"][m["material"]]["color"] for m in ribbons}), 3)
+        for bad in (([], []), ([[1]], ["a"]), ([[1, 2], [1]], ["a", "b"]), ([[1, -1]], ["a"]),
+                    ([[1, 2]] * 11, [f"p{i}" for i in range(11)]), ([[1] * 41], ["a"])):
+            with self.assertRaises(ValueError):
+                fmscene.terrain(*bad)
+        for m in ribbons:  # tops face up, fronts face the camera
+            vs = m["geometry"]["vertices"]
+            for f in m["geometry"]["faces"]:
+                a, b, c = (vs[k] for k in f)
+                u, w = [b[k] - a[k] for k in range(3)], [c[k] - a[k] for k in range(3)]
+                ny, nz = u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]
+                self.assertTrue(ny >= 0 and nz >= 0 and ny + nz > 0, (m["name"], f))
+        names = [m["name"] for m in fmscene.terrain([[1, 2]] * 5, ["floor", "camera", "a-b", "a-b-5", "a.b"])["meshes"]]
+        self.assertEqual(len(set(names)), 6, names)  # renamed clear of the reserved and of each other
+
+    def test_churn_reads_lines_changed_per_top_level_path(self):
+        for path, n in (("a/x.py", 10), ("b/y.py", 2), ("café/z.py", 1)):
+            os.makedirs(os.path.join(self.repo, os.path.dirname(path)), exist_ok=True)
+            with open(os.path.join(self.repo, path), "w") as f:
+                f.write("x\n" * n)
+        subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "two"], check=True)
+        rows, names = fmscene.churn(self.repo, 30)
+        self.assertEqual(names, ["a", "b", "README.md", "café"])  # not git's quoted "caf\303\251"
+        self.assertEqual([sum(r) for r in rows], [10, 2, 1, 1])
+        self.assertEqual(len(rows[0]), 2)  # columns run from the oldest commit in range, not from 30 days back
+        with self.assertRaises(ValueError):
+            fmscene.churn(self.tmp, 30)  # not a repository
+
+    def test_fm_scene_terrain_prints_a_scene_fm_scene_checks(self):
+        out = os.path.join(self.tmp, "terrain.json")
+        self.assertIn("wrote", self.fm("scene", "terrain", "--days", "7", "--out", out).stdout)
+        self.assertEqual(self.fm("scene", "check", out).returncode, 0)
+        self.assertEqual(fmscene.loads(self.fm("scene", "terrain", "--days", "7").stdout), fmscene.load(out))
+        self.assertNotEqual(self.fm("scene", "terrain", cwd=self.tmp, check=False).returncode, 0)
+        self.assertIn("wrote", self.fm("scene", "terrain", "--days", "1", "--out", out).stdout)
+        self.assertNotEqual(self.fm("scene", "terrain", "--days", "0", check=False).returncode, 0)
+
+
+class Gallery(ForemanTestCase):
+    """T-1873: fm scene gallery, every built-in scene on one sheet, a caption each."""
+
+    def test_each_built_in_builds_and_draws_small_inside_a_time_budget(self):
+        import time
+        self.assertEqual(set(fmscene.SAMPLES) | {"metaballs"}, set(fmscene.GALLERY))  # every tile has a fallback
+        for action in fmscene.GALLERY:
+            t = time.monotonic()
+            scene = fmscene.SAMPLES[action]() if action in fmscene.SAMPLES else fmscene.metaballs(5, 16, 0)
+            rgb = fmscene._frame(fmscene.validate(scene), 0, 160, 100)
+            self.assertLess(time.monotonic() - t, 3.0, action)  # ponytail: a hang guard, not a bench
+            self.assertGreater(len({rgb[i:i + 3] for i in range(0, len(rgb), 3)}), 2, action)  # drew something
+        full = {"terrain": fmscene.terrain([[(r * 7 + t * 3) % 11 for t in range(40)] for r in range(10)],
+                                           [f"p{r}" for r in range(10)]),  # the largest churn draws: 10 by 40
+                "lookbook": fmscene.lookbook([f"l{k}" for k in range(8)],
+                                             {f"l{k}": {"palette": [(200, 30 * k, 90)] * 4} for k in range(8)}),
+                "bench": fmscene.bench([{"results": [{"seed": s, "closed": k % 2 == 0, "seconds": 10 + k}
+                                                     for s in "abcd"]} for k in range(12)])}
+        for action, scene in full.items():  # review: the gallery draws real data, larger than the samples
+            t = time.monotonic()
+            fmscene._frame(fmscene.validate(scene), 0, 160, 100)
+            self.assertLess(time.monotonic() - t, 3.0, action)
+
+    def test_a_tile_falls_back_to_its_sample_when_its_data_is_empty_or_unreadable(self):
+        import types
+        from unittest import mock
+        real = fmscene._builtin
+
+        def broken(action, a):
+            if action == "bench":
+                raise KeyError("runs")  # a corrupt record: one tile, not the whole sheet
+            if action == "airlock":
+                return real(action, types.SimpleNamespace(**{**vars(a), "days": 1}))
+            return real(action, a)
+        with mock.patch.object(fmscene, "guard_counts", return_value=({}, 0)), \
+                mock.patch.object(fmscene, "_builtin", side_effect=broken), \
+                mock.patch("fmcore.find_project", return_value=object()):
+            w, h, rgb, said = fmscene.gallery()
+        self.assertEqual((w, h, len(said)), (480, 200, 5))
+        self.assertIn("(a sample: unreadable (KeyError))", said[3])
+        self.assertIn("(a sample: no guard record over 1 days)", said[2])  # an empty record isn't a bare gate
+
+    def test_fm_scene_gallery_writes_one_sheet_and_a_caption_per_scene(self):
+        import struct
+        out = os.path.join(self.tmp, "gallery.png")
+        lines = self.fm("scene", "gallery", "--out", out).stdout.splitlines()
+        self.assertIn("5 scenes, 480x200", lines[0])
+        self.assertEqual([ln.split(":")[0] for ln in lines[1:]], [f"{k}. {a}" for k, a in enumerate(fmscene.GALLERY, 1)])
+        self.assertIn("(a sample: no fm code bench results", lines[4])  # a fresh project has no bench runs
+        with open(out, "rb") as f:
+            png = f.read(24)
+        self.assertEqual((png[:8], struct.unpack(">II", png[16:24])), (b"\x89PNG\r\n\x1a\n", (480, 200)))
+        said = json.loads(self.fm("scene", "gallery", "--out", out, "--json").stdout)
+        self.assertEqual((said["size"], len(said["scenes"])), ([480, 200], 5))
+        for bad, why in ((["x.json", "--out", out], "takes no FILE"), ([], "give --out"), (["--out", out, "--balls", "3"],
+                                                                                           "only metaballs")):
+            r = self.fm("scene", "gallery", *bad, check=False)
+            self.assertEqual((r.returncode, why in r.stderr, "Traceback" in r.stderr), (2, True, False), r.stderr)
 
 
 if __name__ == "__main__":

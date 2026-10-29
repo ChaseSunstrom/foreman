@@ -96,24 +96,18 @@ class Command(ForemanTestCase):
         import pty
         import subprocess
         import sys
-        from helpers import FM
+        from helpers import FM, pty_reader
         env = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_INHIBITED="1", **self.env)
         env.pop("CLAUDE_CODE_SESSION_ID", None)
         main, sub = pty.openpty()
+        reader = pty_reader(main)
         try:
             p = subprocess.run([sys.executable, FM, *args], cwd=self.repo, env=env, stdin=sub, stdout=sub,
                                stderr=subprocess.PIPE, text=True, timeout=30)
         finally:
             os.close(sub)
-        out = b""
-        while True:  # what it printed waits in the pty; EIO once it's read
-            try:
-                chunk = os.read(main, 65536)
-            except OSError:
-                break
-            if not chunk:
-                break
-            out += chunk
+        reader.join(10)
+        out = bytes(reader.out)
         os.close(main)
         self.assertEqual(p.returncode, 0, f"fm {' '.join(args)}\n{out.decode(errors='replace')}{p.stderr}")
         return out.decode(errors="replace")

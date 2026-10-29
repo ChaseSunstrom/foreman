@@ -51,6 +51,27 @@ class Which(ForemanTestCase):
         out = self.fm("which", "notify me when a run finishes").stdout
         self.assertIn("fm notify", out)
 
+    def test_a_task_subcommand_is_found_by_its_help(self):  # T-1908: only top-level commands were indexed
+        self.assertIn("fm task drop", self.fm("which", "drop a task").stdout)
+        self.assertIn("fm task evidence", self.fm("which", "record evidence for a step").stdout)
+        self.assertIn("fm task defer", self.fm("which", "defer a task").stdout)
+        self.assertIn("fm task drop", self.fm("help", "drop a task").stdout)
+        self.assertIn("drop a task, with why", self.fm("task", "--help").stdout)
+
+    def test_an_action_choice_is_found_as_its_own_command(self):  # T-1916: fm lane's actions are choices, not subparsers
+        self.assertIn("fm lane merge", self.fm("which", "merge a lane").stdout)
+        self.assertIn("fm lane resume", self.fm("which", "take back a stopped builder's work").stdout)
+        self.assertIn("fm lane merge", self.fm("help", "merge a lane").stdout)
+        self.assertNotIn("fm lane list", self.fm("which", "a git worktree beside the repo").stdout, "no echo per action")
+        # review: actions listed in the positional's own help count; one that only restates its command doesn't
+        self.assertIn("fm playbooks blame", self.fm("which", "blame each playbook line's task from git").stdout)
+        self.assertNotIn("fm round close", self.fm("which", "close a round").stdout)
+
+    def test_the_rules_plain_words_find_their_command_and_the_strongest_kind_prints_first(self):  # T-1908
+        self.assertIn("fm drive", self.fm("which", "stop auto-continuing").stdout)
+        self.assertIn("fm serve", self.fm("which", "serve this repo").stdout)  # review: the second verb on its line
+        self.assertTrue(self.fm("which", "what did it cost").stdout.startswith("fm commands:"))
+
     def test_one_common_word_is_no_match(self):
         # T-1699 review: "page" alone listed the UI playbooks and fm page for a login task nothing covers
         p = self.fm("which", "add a login page with oauth", check=False)
@@ -77,6 +98,22 @@ class Which(ForemanTestCase):
             fmplaybooks.ROOT = old
         self.assertNotIn("zebra", text)
         self.assertLessEqual(len(text), fmwhich.HEADER_MAX + 20)
+
+    def test_a_big_library_reads_only_the_headers_the_index_returns(self):
+        # T-1835: past BIG books, fm which takes its candidates from fmplaybooks.find, not a read of every header
+        from unittest import mock
+        import fmplaybooks
+        import fmwhich
+        from test_playbook_machinery import put
+        root = os.path.join(self.tmp, "books")
+        for i in range(12):
+            put(root, f"references/misc/b{i}.md", f"# Book {i}\n\nUse when the gizmo{i} breaks.\n\n## Steps\n\n1. x\n")
+        put(root, "references/fix/kiln.md", "# Kiln repair\n\nUse when the pottery kiln overheats.\n\n## Steps\n\n1. x\n")
+        with mock.patch.object(fmplaybooks, "ROOT", root), mock.patch.object(fmwhich, "BIG", 10), \
+                mock.patch.object(fmwhich, "_head", wraps=fmwhich._head) as head:
+            got = fmwhich.rank("repair the pottery kiln", {"playbooks": fmwhich.playbooks("repair the pottery kiln")})
+        self.assertEqual([x["name"] for x in got["playbooks"]], ["fix/kiln"])
+        self.assertEqual(head.call_count, 1, "only the index's hit is read")
 
     def test_the_stemmer_is_fmrecalls_and_collapses_doubled_consonants(self):
         import fmrecall

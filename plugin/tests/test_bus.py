@@ -264,7 +264,8 @@ class Lease(Base):
         self.assertIn("… 2 more", out)
         fmbus.preclaim(self.project(), "T-0001", ["scope.py"])
         out = self.fm("lease", "drop", env=a).stdout
-        self.assertIn("still held: 1 lane claim(s) (fm lease list)", out)
+        self.assertIn("still held: 1 lane claim(s) of T-0001, freed when its lane merges or is removed (fm lease list)",
+                      out)  # T-1837: builders read the bare count as unfinished work
 
 
     def test_a_fm_code_workers_edits_lease_as_the_run_so_the_run_and_its_next_worker_edit_on(self):

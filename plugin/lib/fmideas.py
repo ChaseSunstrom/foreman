@@ -247,8 +247,8 @@ def run_child(feature, system, prompt, model, timeout, project=None, detail="", 
             so, se = pr.communicate(prompt, timeout=timeout)
         except BaseException as e:  # a timeout or ^C: the whole group goes (subprocess.run killed only the leader)
             _reap(pr)
-            if isinstance(e, subprocess.TimeoutExpired):
-                raise ValueError(f"the {feature} child didn't run: {e} (is `claude` on PATH and logged in?)")
+            if isinstance(e, subprocess.TimeoutExpired):  # never str(e): it holds the argv, the whole system prompt
+                raise ValueError(f"the {feature} child timed out after {timeout} s (is `claude` logged in?)")
             raise
         _forget(pr)
     text, usd = fmbudget.result(so)
@@ -758,7 +758,7 @@ def cmd_ideas(args):
     deepen = max(0, getattr(args, "deepen", 0) or 0)
     pace = fmbudget.degrade(p) if deepen else None
     if pace:  # T-0449: optional rounds go first; the caps below still refuse what's over one
-        print(f"fm: usage ahead of pace ({pace}): --deepen dropped (0 rounds, optional work); the lenses still run",
+        print(f"fm: optional work is dropped ({pace}): --deepen dropped (0 rounds); the lenses still run",
               file=sys.stderr)
         deepen = 0
     runs = len(lenses) * max(1, args.rounds) + deepen

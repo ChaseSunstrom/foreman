@@ -42,9 +42,9 @@ MARKERS = {
     "psycopg": {"postgres"}, "psycopg2": {"postgres"}, "psycopg2-binary": {"postgres"}, "asyncpg": {"postgres"},
     "pg": {"postgres"}, "redis": {"redis"}, "ioredis": {"redis"}, "boto3": {"boto3"}, "botocore": {"boto3"},
 }
-_FM = re.compile(r"\A---\n(.*?)\n---\n", re.S)
-_SIGNAL = re.compile(r"^(dep|file|ext):([^\s{},]+)$")
-_PLACEHOLDER = re.compile(r"\b(TODO|TBD|FIXME)\b|[Ll]orem ipsum")  # upper case only: a todo app is fine
+_FM = c.lazy(r"\A---\n(.*?)\n---\n", re.S)
+_SIGNAL = c.lazy(r"^(dep|file|ext):([^\s{},]+)$")
+_PLACEHOLDER = c.lazy(r"\b(TODO|TBD|FIXME)\b|[Ll]orem ipsum")  # upper case only: a todo app is fine
 _SKIP_DIRS = {"node_modules", ".git", "vendor", "target", "dist", "build", ".venv", "venv", "__pycache__", ".next",
               ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".cache", ".idea", ".vscode", "Pods", ".gradle", "bin",
               "obj"}
@@ -121,12 +121,14 @@ def _name_index():
 def cards_named(text, n=3):
     """T-0977: the cards a request names outright, in the order it names them, at most n. One alternation, longest
     phrase first, so react-hook-form wins over react at the same place."""
+    low = (text or "").lower()
     names = _name_index()
-    if not names:
+    hits = [k for k in names if k in low]  # T-2024: compiling every name cost ~9 ms a prompt; a match is a substring
+    if not hits:
         return []
-    pat = re.compile(r"(?<![\w.-])(" + "|".join(map(re.escape, sorted(names, key=len, reverse=True))) + r")(?![\w-])")
+    pat = re.compile(r"(?<![\w.-])(" + "|".join(map(re.escape, sorted(hits, key=len, reverse=True))) + r")(?![\w-])")
     out = []
-    for m in pat.finditer((text or "").lower()):
+    for m in pat.finditer(low):
         if names[m.group(1)] not in out:
             out.append(names[m.group(1)])
     return out[:n]
@@ -182,13 +184,14 @@ def _verified(x):
         return None
 
 
-_DEP = re.compile(r"[a-z0-9@][\w@./:-]{2,60}")  # a manifest key is data: anything else never reaches a brief
+_DEP = c.lazy(r"[a-z0-9@][\w@./:-]{2,60}")  # a manifest key is data: anything else never reaches a brief
 
 
 def uncovered_deps(roots, asked=()):
     """T-1037: dependency -> number of roots using it, for those no card's dep: signal covers (and not in asked)."""
     pats = {_norm(s[4:]) for card in cards() for s in card.get("detect") or [] if s.startswith("dep:")}
     exact, globs = {x for x in pats if "*" not in x}, [x for x in pats if "*" in x]
+    covered = lambda d: d in exact or any(fnmatch.fnmatchcase(d, g) for g in globs)  # noqa: E731
     seen = collections.Counter()
     for root in list(roots)[:30]:
         try:
@@ -196,22 +199,23 @@ def uncovered_deps(roots, asked=()):
         except Exception:  # an unreadable project is skipped, not the scan
             continue
         twins = {d.split(":", 1)[1] for d in deps if ":" in d}  # T-1022: Gradle lists group:artifact and the bare id
-        seen.update(d for d in deps if _DEP.fullmatch(d) and d not in exact and d not in asked and d not in twins
-                    and not any(fnmatch.fnmatchcase(d, g) for g in globs) and not d.startswith("@types/"))
+        seen.update(d for d in deps if _DEP.fullmatch(d) and d not in asked and d not in twins and not covered(d)
+                    and not (":" in d and covered(d.split(":", 1)[1]))  # T-1914: a card may name the bare artifact id
+                    and not d.startswith("@types/"))
     return seen
 
 
 # T-1037: text from a dependency's README or docs is data; a card that tells the agent to run web commands or switch
 # checks off never joins the library.
-_UNTRUSTED = re.compile(
+_UNTRUSTED = c.lazy(
     r"(curl|wget|iwr|Invoke-WebRequest)\b[^\n]*\|\s*(sudo\s+)?(ba|z|da)?sh\b"
     r"|(curl|wget)\b[^\n]*\|\s*(sudo\s+)?(python|perl|ruby|node)[\w.]*\s*(-\s*)?($|[;&`)\"'])"
     r"|\b(ba|z)?sh\s+<\(\s*(curl|wget)\b|\b(ba|z)?sh\s+-c\s+[\"']?\$\(\s*(curl|wget)\b"
     r"|\b(ignore|disregard|forget)\b[^\n]{0,30}\b(previous|prior|above|earlier|all)\b[^\n]{0,20}\binstructions?\b"
     r"|--no-verify\b|--no-gpg-sign\b|\b(disable|skip|turn off|bypass)\s+(all\s+|the\s+|your\s+)?(tests?|checks?|lint\w*|hooks?|guards?|verification)\b"
     r"|\brm\s+-\w*[rf]\w*\s+(-\w+\s+)*(~|/|\$HOME)(\s|$|`)|\bchmod\s+-R?\s*777\b|\bsudo\s+rm\b", re.I)
-_GOVERNED = re.compile(r"\b(avoid|never|don'?t|do not|must not)\s+(run(ning)?\s+|us(e|ing)\s+)?[`'\"]*$", re.I)
-_BULLET = re.compile(r"^\s*[-*]\s*[`'\"]?[^`'\"]*$")  # an Avoid bullet whose first quoted span holds the match: the heading governs it
+_GOVERNED = c.lazy(r"\b(avoid|never|don'?t|do not|must not)\s+(run(ning)?\s+|us(e|ing)\s+)?[`'\"]*$", re.I)
+_BULLET = c.lazy(r"^\s*[-*]\s*[`'\"]?[^`'\"]*$")  # an Avoid bullet whose first quoted span holds the match: the heading governs it
 
 
 def _untrusted(text):
@@ -389,7 +393,7 @@ def _deps_of(path):
     return []
 
 
-_MANIFEST = re.compile(r"^(package\.json|composer\.json|deno\.json|pyproject\.toml|Cargo\.toml|Pipfile|"
+_MANIFEST = c.lazy(r"^(package\.json|composer\.json|deno\.json|pyproject\.toml|Cargo\.toml|Pipfile|"
                        r"requirements[^/]*\.txt|go\.mod|Gemfile|pom\.xml|build\.gradle(\.kts)?|libs\.versions\.toml|"
                        r"pubspec\.yaml|mix\.exs|.*\.(cs|fs|vb)proj|Directory\.Packages\.props|Package\.swift)$")
 
@@ -532,12 +536,12 @@ DEPTHS = ("reference", "index", "host")
 # T-1389: a licence file whose line starts with one of these is open; any other licence file is source-available; none
 # is ideas-only. Anchored at a line's start, and a line that also says not/never/prohibited doesn't count, so "This is
 # not the MIT License" or "Redistribution … is prohibited" stays source-available.
-_OPEN_LICENCE = re.compile(r"(?im)^[\s#*]*(?:the\s+)?(?:MIT License\b|Permission is hereby granted, free of charge|"
+_OPEN_LICENCE = c.lazy(r"(?im)^[\s#*]*(?:the\s+)?(?:MIT License\b|Permission is hereby granted, free of charge|"
                            r"Apache License\b|BSD\b[\w -]{0,20}License|Redistribution and use in source and binary "
                            r"forms, with or without modification, are permitted|Permission to use, copy, modify, "
                            r"and/?or distribute this software for any purpose|ISC License|Mozilla Public License|"
                            r"This is free and unencumbered software released into the public domain).*$")
-_LICENCE_NAME = re.compile(r"(?i)^(LICENSE|LICENCE|COPYING|UNLICENSE)([.-][\w.-]*)?$")
+_LICENCE_NAME = c.lazy(r"(?i)^(LICENSE|LICENCE|COPYING|UNLICENSE)([.-][\w.-]*)?$")
 
 
 def _licence_class(text):
@@ -971,7 +975,7 @@ def for_map(root, files):
             for r in keep]
 
 
-_NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
+_NAME = c.lazy(r"[a-z0-9]+(-[a-z0-9]+)*")
 AVOID_MAX = 700
 
 
@@ -1004,11 +1008,11 @@ def card_for(p, path):
 
 
 # T-1036: what a file imports, by language family: Python modules, JS/TS packages, Rust crates, Go import paths
-_PY_FROM = re.compile(r"(?m)^[ \t]*from[ \t]+([A-Za-z_][\w.]*)[ \t]+import\b")
-_PY_IMPORT = re.compile(r"(?m)^[ \t]*import[ \t]+([A-Za-z_][\w.]*(?:[ \t]*,[ \t]*[A-Za-z_][\w.]*)*)")
-_JS = re.compile(r"""(?:\bfrom|\bimport|\brequire\(|\bimport\()[ \t]*['"]([^'"\s]+)['"]""")
-_RS = re.compile(r"(?m)^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:use|extern[ \t]+crate)[ \t]+([A-Za-z_]\w*)")
-_GO = re.compile(r"""(?ms)^import[ \t]*(?:\(([^)]*)\)|"([^"]+)")""")
+_PY_FROM = c.lazy(r"(?m)^[ \t]*from[ \t]+([A-Za-z_][\w.]*)[ \t]+import\b")
+_PY_IMPORT = c.lazy(r"(?m)^[ \t]*import[ \t]+([A-Za-z_][\w.]*(?:[ \t]*,[ \t]*[A-Za-z_][\w.]*)*)")
+_JS = c.lazy(r"""(?:\bfrom|\bimport|\brequire\(|\bimport\()[ \t]*['"]([^'"\s]+)['"]""")
+_RS = c.lazy(r"(?m)^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:use|extern[ \t]+crate)[ \t]+([A-Za-z_]\w*)")
+_GO = c.lazy(r"""(?ms)^import[ \t]*(?:\(([^)]*)\)|"([^"]+)")""")
 _FAMILY = {".py": "py", ".pyi": "py", ".js": "js", ".jsx": "js", ".mjs": "js", ".cjs": "js", ".ts": "js", ".tsx": "js",
            ".mts": "js", ".cts": "js", ".svelte": "js", ".vue": "js", ".astro": "js", ".rs": "rs", ".go": "go"}
 _PY_ALIAS = {"yaml": "pyyaml", "sklearn": "scikit-learn", "bs4": "beautifulsoup4", "pil": "pillow", "cv2": "opencv-python",

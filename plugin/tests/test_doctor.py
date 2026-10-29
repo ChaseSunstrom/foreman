@@ -256,12 +256,24 @@ class Checks(unittest.TestCase):
         self.write("plug/skills/y/SKILL.md", "no frontmatter here\n")
         self.assertIn("y", d.check_frontmatter(root).detail)
         # T-0768: Claude Code ignores a mistyped effort, maxTurns or omitClaudeMd, so the saving silently never happens
-        for field in ("effort: lo", "maxTurns: 0", "omitClaudeMd: yes"):
+        for field in ("effort: lo", "maxTurns: 0", "omitClaudeMd: yes", "autoCompactWindow: 150k",
+                      "autoCompactWindow: ²"):  # isdigit() but int() raises
             self.write("plug/agents/a.md", f"---\nname: a\ndescription: agent\ntools: Read\n{field}\n---\nbody\n")
             self.assertIn(field.split(":")[0], d.check_frontmatter(root).detail, field)
         self.write("plug/agents/a.md", "---\nname: a\ndescription: agent\ntools: Read\neffort: low\nmaxTurns: 20\n"
-                                       "omitClaudeMd: true\n---\nbody\n")
+                                       "omitClaudeMd: true\nautoCompactWindow: 150000\n---\nbody\n")
         self.assertNotIn("a.md", d.check_frontmatter(root).detail)
+
+    def test_every_sonnet_agent_compacts_before_foremans_200k_window(self):
+        # T-1797: from CC 2.1.312 a subagent's autoCompactWindow lowers CLAUDE_CODE_AUTO_COMPACT_WINDOW (200k, T-1796);
+        # a 40-turn Sonnet reviewer otherwise re-reads up to 200k a reply. Haiku's 20-turn scout never gets there.
+        folder = os.path.join(d.PLUGIN, "agents")
+        for f in sorted(os.listdir(folder)):
+            with open(os.path.join(folder, f), encoding="utf-8") as fh:
+                head = fh.read().split("\n---", 1)[0]
+            if "model: haiku" not in head:
+                self.assertRegex(head, r"(?m)^autoCompactWindow: 150000$", f)
+        self.assertIn("agent autoCompactWindow", [x[0] for x in d.CC_FEATURES if x[1] == (2, 1, 312)])
 
     def test_a_skill_that_breaks_the_agent_skills_spec_fails(self):
         # T-1396: name 1-64 lowercase letters, digits and single hyphens, equal to its folder; description 1-1024
@@ -640,6 +652,31 @@ class CoreIntegrity(unittest.TestCase):
             with open(os.path.join(wt, "plugin", "lib", "fmx.py"), "w") as f:
                 f.write("x = 3\n")
             self.assertEqual(d.check_core_integrity(wt).status, "WARN")
+
+    def test_core_the_active_task_changes_in_scope_passes_and_names_it(self):
+        # T-1998: every fm check of a core task warned "git checkout it back" about the task's own edits
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as t:
+            repo = git_repo(t, "fh")
+            os.makedirs(os.path.join(repo, "plugin", "lib"))
+            for n in ("fmx.py", "fmy.py"):
+                with open(os.path.join(repo, "plugin", "lib", n), "w") as f:
+                    f.write("x = 1\n")
+            subprocess.run(["git", "-C", repo, "add", "-A"], check=True)
+            subprocess.run(["git", "-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"],
+                           check=True)
+            with open(os.path.join(repo, "plugin", "lib", "fmx.py"), "w") as f:
+                f.write("x = 2\n")
+            task = SimpleNamespace(id="T-1", meta={"scope": ["plugin/lib/fmx.py"]})
+            r = d.check_core_integrity(repo, task)
+            self.assertEqual((r.status, "T-1" in r.detail), ("PASS", True), r.detail)
+            self.assertEqual(d.check_core_integrity(repo, SimpleNamespace(id="T-1", meta={})).status, "WARN")
+            with open(os.path.join(repo, "plugin", "lib", "fmy.py"), "w") as f:
+                f.write("y = 2\n")
+            r = d.check_core_integrity(repo, task)
+            self.assertEqual(r.status, "WARN")
+            self.assertIn("plugin/lib/fmy.py", r.detail)
+            self.assertNotIn("fmx.py", r.detail)
 
     def test_description_budget(self):
         with tempfile.TemporaryDirectory() as t:

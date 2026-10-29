@@ -23,13 +23,16 @@ def _dir(p):
 
 def after_edit(p, path):
     """The PostToolUse hook's call after an edit: start a run, or mark the running one dirty so it runs again."""
-    if not c.read_meta(p).get("ambient") or not path.startswith(p.root.rstrip("/") + "/") or c.host_strain():
+    if not c.read_meta(p).get("ambient") or not path.startswith(p.root.rstrip("/") + "/") or c.host_strain() \
+            or c.gates_live(p, here=True) \
+            or c.gates_live(p, key="ship_testing"):  # T-1965, T-1984: no second suite beside full gates or fm ship's run
+        # ponytail: an edit during fm ship's run waits for the next edit or the close gates, no run after the ship
         return
     if os.environ.get("FOREMAN_AMBIENT_SYNC"):  # tests: inline, so the result is there when the hook returns
         return run(p)
     if os.environ.get("FOREMAN_NO_BACKGROUND"):
         return
-    if _running(p):
+    if running(p):
         open(os.path.join(_dir(p), "dirty"), "w").close()
         return
     subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "check", "ambient", "run"], cwd=p.root,
@@ -37,7 +40,7 @@ def after_edit(p, path):
                      start_new_session=True)
 
 
-def _running(p):
+def running(p):
     try:
         with open(os.path.join(_dir(p), "run.pid")) as f:
             os.kill(int(f.read().strip()), 0)
@@ -54,7 +57,7 @@ def run(p):
     try:
         fd = os.open(pid, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
-        if _running(p):
+        if running(p):
             return
         os.unlink(pid)  # a run that died left it
         fd = os.open(pid, os.O_CREAT | os.O_EXCL | os.O_WRONLY)

@@ -95,7 +95,7 @@ Loading: the 3D code and assets load after the page's main content has painted (
 
 ## Survival contract
 
-The scene is an enhancement. Each clause below has a probe; a scene that fails one doesn't ship. A raw WebGL2 starting point that already passes all nine, in one file with no dependencies: `references/ui/templates/scene.html`. For three.js, describe the scene once as plain data (camera, lights, materials, meshes, animations) and `fm scene compile scene.json --out scene.js` emits a module with the same clauses built in; the page keeps the poster and the text twin (`fm scene --help` holds the schema). `--to component` adds `<fm-scene label="...">`, a custom element holding the poster as its `slot="poster"` child and the twin after it; give it its box before it is defined, `fm-scene:not(:defined){display:block;position:relative;aspect-ratio:16/10}` and `fm-scene:not(:defined)>[slot=poster]{width:100%;height:100%;object-fit:cover}`, then set the ratio with `fm-scene::part(stage)`. A second scene on one page takes its own tag: `fm scene compile scene2.json --to component --tag fm-scene-2` defines it as `customElements.define("fm-scene-2", FmScene)`, and its markup and box rules use `<fm-scene-2>` too. `label` is watched: change it and the canvas's name follows; take it away and the canvas hides from assistive tech so the twin speaks.
+The scene is an enhancement. Each clause below has a probe; a scene that fails one doesn't ship. A raw WebGL2 start passing all nine, one file, no dependencies: `references/ui/templates/scene.html`. For three.js, describe the scene once as plain data (camera, lights, materials, meshes, animations) and `fm scene compile scene.json --out scene.js` emits a module with the same clauses built in; the page keeps the poster and the text twin (`fm scene --help` holds the schema). `--to component` adds `<fm-scene label="...">`, a custom element holding the poster as its `slot="poster"` child and the twin after it; give it its box before it is defined, `fm-scene:not(:defined){display:block;position:relative;aspect-ratio:16/10}` and `fm-scene:not(:defined)>[slot=poster]{width:100%;height:100%;object-fit:cover}`, then set the ratio with `fm-scene::part(stage)`. A second scene on one page takes its own tag: `fm scene compile scene2.json --to component --tag fm-scene-2` gives `define("fm-scene-2", FmScene)`; its markup and box rules use `<fm-scene-2>` too. `label` is watched: change it and the canvas's name follows; take it away and the canvas hides from assistive tech so the twin speaks.
 
 1. **No WebGL, no problem.** When `getContext("webgl2")` (and the WebGL1 fallback, if you have one) returns null, the poster and the text twin show and nothing throws. Check before constructing the renderer: three.js's `WebGLRenderer` and an R3F `Canvas` throw when there is no context, so test `getContext` first, or wrap the construction in try/catch (an error boundary for R3F). Decorative scenes also pass `failIfMajorPerformanceCaveat: true`, so a software renderer gets the poster instead of a 5 fps slideshow. Probe: an init script that replaces `HTMLCanvasElement.prototype.getContext` with one returning null; the page has no console errors and shows the poster.
 2. **The poster is there first.** A still image rendered from the same scene, same framing, same aspect ratio, sits where the canvas will be from the first paint; the canvas fades in over it only after its first frame has drawn. Pass: layout shift from the scene is 0, and with JavaScript disabled the poster shows.
@@ -127,6 +127,12 @@ Run the first probe first: it halves the search.
 | Black only in screenshot tests | headless browser without a GPU, or the capture runs before the first frame or after the buffer was cleared | run headless with a software GL backend; wait for a "first frame drawn" flag; capture with `preserveDrawingBuffer` in tests only |
 | Washed out or too dark, not black | color space mismatch | check output color space and each texture's color space against the pipeline in Light and material |
 
+Preview without a browser (T-1635): `fm scene cells scene.json [--cols 64] [--turn DEG]` prints fmraster's frame as 24-bit half blocks, two pixels a cell. It needs a truecolor terminal; `fm scene turntable` writes the same frames as a PNG. A shader card or `.frag`: `fm scene shade FILE --out x.png` runs it per pixel (T-1846).
+
+Bring a scene in from three.js (T-1847): `fm scene import three.json --out scene.json` reads what `Object3D.toJSON()` writes (format 4). Matrices are composed with their groups' and split into position, Euler XYZ rotation and scale (shear is lost). Box, sphere, plane and BufferGeometry carry, as do material colour, roughness, metalness and emissive, the four light types (at most three direct), the first PerspectiveCamera (its target placed along its view) and the background colour. The rest is named as left out.
+
+Showpieces, no FILE (`--out PATH`): `fm scene metaballs --seed 2` (T-1848), a seeded blob; `terrain` (T-1851), git churn; `airlock` (T-1849), guard blocks and passes at a gate; `bench` (T-1850), bench runs as boxes; `lookbook` (T-1852), look cards; `gallery` (T-1873), all five on one captioned sheet.
+
 ## Done when
 
 - [ ] The scene's job is one sentence, and a still image couldn't do it.
@@ -134,6 +140,8 @@ Run the first probe first: it halves the search.
 - [ ] The budget table's numbers were measured on the target devices and recorded in the task's evidence.
 - [ ] All nine survival clauses have their probe run, ideally as browser tests (null context, lose and restore, reduced motion, blocked asset, mount/unmount memory).
 - [ ] The poster is rendered from the current scene, not a stale one.
+
+Example: `references/ui/templates/scene.html`: the strict 3D template itself (fm new scene): poster first, a text twin, every survival clause. The site's Gallery shows it.
 
 ## UI contract
 

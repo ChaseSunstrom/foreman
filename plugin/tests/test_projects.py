@@ -67,6 +67,36 @@ class Follow(ForemanTestCase):
         self.fm("capture", "Merge the date helpers")
         self.assertEqual(self.read_line(proc)["inbox_total"], 1)
 
+    def test_a_change_while_the_view_is_built_is_not_missed(self):  # T-1882: the snapshot comes before the build
+        import contextlib
+        import fmwatch
+        path = os.path.join(self.home, "src")
+        with open(path, "w") as f:
+            f.write("0")
+        os.utime(path, (time.time() - 10, time.time() - 10))  # an old mtime, so the write below always moves it
+
+        def build():
+            with open(path) as f:
+                n = f.read()
+            if n == "0":  # a capture lands right after the view read the state
+                with open(path, "w") as f:
+                    f.write("1")
+            return {"n": n}
+
+        class Out(list):
+            def write(self, s):
+                self.append(s)
+                if '"1"' in s:
+                    raise BrokenPipeError  # the reader saw the change: stop
+
+            def flush(self):
+                pass
+
+        out, t = Out(), time.time()
+        with contextlib.redirect_stdout(out):
+            fmwatch._follow(build, lambda v: [path], 0.01, refresh=3)
+        self.assertLess(time.time() - t, 1.5, out)  # the change came through, not held until the refresh
+
     def test_projects_follow_sees_a_new_project(self):
         self.fm("init")
         proc = self.follow("projects")

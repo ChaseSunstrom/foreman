@@ -1,11 +1,13 @@
 """Shared test helpers: isolated FOREMAN_HOME, scratch git repos, running the CLI."""
 import atexit
+import functools
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,6 +31,11 @@ atexit.register(shutil.rmtree, _LOCKOUT, True)
 # T-0744: every test sees a calm host unless it says otherwise; the machine's real load (a full run beside other work)
 # turned lanes and ambient runs off and failed tests only then
 os.environ.setdefault("FOREMAN_HOST", "load=0.1,cpus=8,mem_mb=8192")
+# T-1791: the Claude Code env fm install-user sets (T-1796's 200k compact window) belongs to the running session, not a
+# test: the bench stub read an inherited window as a soak and 10 tests failed in every installed session
+import fmsetup  # noqa: E402
+for _k in fmsetup.ENV:
+    os.environ.pop(_k, None)
 
 
 def busy_factor(cap=8.0):
@@ -61,7 +68,9 @@ def read_json(path):
 
 def headless_chrome():
     """A headless Chromium (T-1499, T-1610): FOREMAN_CHROME, one on PATH, or Playwright's newest download; None if
-    absent."""
+    absent. FOREMAN_CHROME=none: no browser (CI: a runner's snap chromium starts, then crashes under load; T-1806)."""
+    if os.environ.get("FOREMAN_CHROME") == "none":
+        return None
     import glob
     import re
     builds = glob.glob(os.path.expanduser(
@@ -70,7 +79,18 @@ def headless_chrome():
     newest = sorted(builds, key=build, reverse=True)
     found = [os.environ.get("FOREMAN_CHROME")] + [shutil.which(n) for n in (
         "chrome-headless-shell", "chromium", "chromium-browser", "google-chrome")] + newest
-    return next((p for p in found if p and os.access(p, os.X_OK)), None)
+    return next((p for p in found if p and os.access(p, os.X_OK) and _starts(p)), None)
+
+
+@functools.lru_cache(None)
+def _starts(browser):
+    """T-1799: a browser that is there may still not start (a CI runner's snap chromium dies at Target.createTarget,
+    and fm then rightly says "not run"): browser tests skip unless one answers here."""
+    try:
+        with tempfile.TemporaryDirectory() as profile:
+            return devtools(browser, "about:blank", profile, "", (), [0], "1+1", timeout=20) == [2]
+    except Exception:
+        return False
 
 
 # Before any page script: count requestAnimationFrame calls and the context types asked for (T-1610; shared, T-1653);
@@ -88,6 +108,28 @@ SPY = """(() => {
   window.cancelAnimationFrame = id => { ids.delete(id); cancel(id); };
   HTMLCanvasElement.prototype.getContext = function (type, ...rest) { seen.contexts.push(type); return get.call(this, type, ...rest); };
 })();"""
+
+
+def pty_reader(master):
+    """T-1828: a thread reading a pty's master until its other end closes (EIO on Linux, b'' on macOS): .join(), then
+    .out. macOS drops what was written once the writer closes, and stalls the writer (and tcdrain) while the master
+    goes unread, so a test keeps this reading from before the writer starts."""
+    import threading
+    out = bytearray()
+
+    def run():
+        while True:
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:
+                return
+            if not chunk:
+                return
+            out.extend(chunk)
+    t = threading.Thread(target=run, daemon=True)
+    t.out = out
+    t.start()
+    return t
 
 
 def polls(upto=30, every=0.5):
@@ -239,7 +281,14 @@ class ForemanTestCase(unittest.TestCase):
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
-        self._tmp.cleanup()
+        until = time.monotonic() + 5 * busy_factor()
+        while True:  # T-1901: a detached child a test started on purpose may still be writing into state/
+            try:
+                return self._tmp.cleanup()
+            except OSError:  # Errno 39: it wrote between rmtree's listing and its rmdir
+                if time.monotonic() > until:
+                    raise
+                time.sleep(0.1)
 
     def fm(self, *args, cwd=None, check=True, env=None, input=None):
         # fm run never takes a real inhibitor lock; T-1379: fm doctor skips its hook bench (no test reads its timings)

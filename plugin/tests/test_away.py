@@ -56,9 +56,39 @@ class Away(ForemanTestCase):
                          )["hookSpecificOutput"]["additionalContext"]
         self.assertNotIn("Away:", ctx)
 
+    def prompt(self, text="back"):
+        out = self.hook("UserPromptSubmit", {"prompt": text, "session_id": "s-away"}).stdout
+        return (json.loads(out).get("hookSpecificOutput") or {}).get("additionalContext", "") if out.strip() else ""
+
+    def test_the_away_line_rides_on_a_prompt(self):
+        # T-2008: back after a silence mid-session (no new session start): the first prompt carries the summary
+        self.gap()
+        ctx = self.prompt()
+        self.assertEqual(ctx.count("Away: 10 h since you last spoke"), 1, ctx)
+        self.assertIn("T-0003", ctx)
+        self.assertNotIn("Away:", self.prompt("and then"), "only the prompt that ends the silence")
+
+    def test_a_short_gap_adds_nothing_on_a_prompt(self):
+        self.seed([(0.2, "prompt", None, {"text": "go"}), (0.1, "task_done", "T-0003", {})])
+        self.assertNotIn("Away:", self.prompt())
+
     def start(self, source):
         return json.loads(self.hook("SessionStart", {"source": source}, env={"CLAUDE_ENV_FILE": self.env_file}).stdout
                           )["hookSpecificOutput"]["additionalContext"]
+
+    def test_a_new_sessions_first_prompt_leaves_the_line_to_its_start(self):
+        self.gap()
+        self.seed([(0, "session_start", None, {"source": "startup"})])
+        self.assertNotIn("Away:", self.prompt(), "the session start already said it")
+
+    def test_a_prompt_past_the_tail_reports_only_its_own_silence(self):
+        import fmaway
+        self.seed([(30, "prompt", None, {}), (20, "prompt", None, {}), (19, "task_done", "T-0001", {}),
+                   (1, "prompt", None, {}), (0.5, "task_done", "T-0003", {}), (0.4, "task_done", "T-0004", {}),
+                   (0, "prompt", None, {})])
+        self.assertEqual(fmaway.returned(self.p, n=3), "", "the 19 h silence ended an hour before this prompt")
+        self.seed([(-1, "task_done", "T-0005", {}), (-1, "task_done", "T-0006", {}), (-3, "prompt", None, {})])
+        self.assertIn("Away: 3 h since you last spoke", fmaway.returned(self.p, n=3))
 
     def test_a_compact_or_clear_start_after_a_gap_has_no_away_line(self):
         self.gap()
@@ -79,3 +109,33 @@ class Away(ForemanTestCase):
         ctx = self.start("startup")
         self.assertIn("T-0009", ctx)
         self.assertNotIn("T-0001", ctx)
+
+    def test_since_finds_the_newest_silence_in_the_tail_without_scanning_every_ledger(self):
+        # T-2025: every session start parsed every prompt in every ledger file to find the newest 2 h silence
+        import fmaway
+        from unittest import mock
+        self.seed([(30, "prompt", None, {})] + [(29, "note", None, {})] * 20 + [(10, "prompt", None, {}),
+                                                                                (1, "prompt", None, {})])
+        want = fmaway.since(self.p)
+        self.assertAlmostEqual(want[1], 9 * 3600, delta=5)
+        with mock.patch.object(c, "ledger_events", side_effect=AssertionError("scanned every ledger")):
+            self.assertEqual(fmaway.since(self.p), want)
+
+    def test_since_widens_the_tail_until_it_holds_a_silence(self):
+        import fmaway
+        from unittest import mock
+        self.seed([(30, "prompt", None, {})] + [(1.5, "note", None, {})] * 20 + [(1.5, "prompt", None, {}),
+                                                                                 (1, "prompt", None, {})])
+        with mock.patch.object(c, "ledger_events", side_effect=AssertionError("scanned every ledger")):
+            got = fmaway.since(self.p, tail=6)  # the 4x tail (24 lines) reaches the 30 h prompt
+        self.assertAlmostEqual(got[1], 28.5 * 3600, delta=5, msg="the silence before the tail's first prompt")
+
+    def test_since_falls_back_to_every_ledger_when_the_live_one_holds_no_silence(self):
+        import fmaway
+        from unittest import mock
+        self.seed([(1.5, "prompt", None, {}), (1, "prompt", None, {})])
+        archived = [{"ts": c.iso(time.time() - 40 * 3600), "event": "prompt"}]
+        with mock.patch.object(c, "ledger_events", return_value=archived + [{"ts": c.iso(time.time() - h * 3600),
+                                                                            "event": "prompt"} for h in (1.5, 1)]):
+            got = fmaway.since(self.p)
+        self.assertAlmostEqual(got[1], 38.5 * 3600, delta=5, msg="the silence between the archive and the live file")

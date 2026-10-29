@@ -12,4 +12,4 @@ Use when you know something is slow but not where (pair with benchmark-loop.md f
    - Shell/CI: `time` each step; `strace -c` for syscall-heavy work.
 3. **Read the profile top-down:** the widest frames by inclusive time; distinguish CPU-bound, I/O-bound (waiting), and allocation-bound.
 4. **Fix the biggest frame first**, one change at a time, re-measure after each; stop when the target is met.
-5. **Record** baseline → after numbers as evidence (`--section Measurements`).
+5. **Record** baseline → after numbers as evidence (`fm task finish ID --numbers "…"`, or `--section Measurements`).

@@ -613,6 +613,7 @@ def view(p):
         "fleet": _guarded(_fleet) or [],  # T-0711
         "today_done": today_done,
         "learned": _guarded(lambda: _learned_line(p)),  # T-1045
+        "look": _guarded(lambda: __import__("fmtaste").roll_line()),  # T-1672: the look of the day, once taste exists
         "done_days": done_days,
         "trust_file": c.trust_path(),  # where /fm-trust on writes (the mod, never a tool call)
         # T-0145: a driven turn ended so a session's mod could reload; that mod starts the next turn (fresh ones only)
@@ -724,15 +725,16 @@ def _follow(build, paths, interval, refresh=30.0):
             except OSError:
                 out.append(None)
         return out
-    last, seen, at = None, None, 0.0
+    last = None
     try:
+        v = build()  # the first build only names the paths to watch
         while True:
-            v = build()
+            seen, at = sig(v), time.time()
+            v = build()  # T-1882: built after the snapshot, so a change while it builds or prints is caught next round
             line = json.dumps(v)
             if line != last:
                 print(line, flush=True)
                 last = line
-            seen, at = sig(v), time.time()
             while sig(v) == seen and time.time() - at < refresh:
                 time.sleep(interval)
     except (BrokenPipeError, KeyboardInterrupt):

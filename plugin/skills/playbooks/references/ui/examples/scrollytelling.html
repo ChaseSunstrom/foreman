@@ -1,0 +1,237 @@
+<!doctype html>
+<!-- Foreman's own example page (written for Foreman, not ported) for references/ui/scrollytelling.md. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Slow Build Story</title>
+<script>
+(function () { // QA flags: ?theme=light|dark and ?motion=reduce; "js" lets the CSS tell scripts-on from scripts-off
+  var d = document.documentElement, q = new URLSearchParams(location.search), t = q.get('theme');
+  if (t === 'light' || t === 'dark') d.dataset.theme = t;
+  if (q.get('motion') === 'reduce') d.dataset.motion = 'reduce';
+  d.classList.add('js');
+})();
+</script>
+<style>
+  :root {
+    --paper: #edf1ee; --ink: #12211c; --muted: #43544d; --rule: #b9c6bf; --accent: #0a6b57; --warn: #a1400a;
+    --raised: #fbfdfb; --on-accent: #ffffff; --dim: .7;
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", P052, Georgia, serif;
+    --font-body: "Avenir Next", Avenir, "Nunito Sans", Seravek, Ubuntu, Calibri, sans-serif;
+    --step-0: clamp(1rem, .96rem + .2vw, 1.125rem); --step-2: clamp(1.5rem, 1.3rem + 1vw, 2.1rem);
+    --step-3: clamp(2.2rem, 1.8rem + 2.4vw, 3.8rem);
+    --space-1: .25rem; --space-2: .5rem; --space-3: 1rem; --space-4: 1.5rem; --space-5: 3rem;
+    --radius-control: 4px; --radius-card: 14px;
+    --lift-1: 0 1px 2px rgb(18 33 28 / .1); --lift-2: 0 12px 30px -14px rgb(18 33 28 / .35);
+    --dur-small: 120ms; --dur-move: 420ms; --dur-enter: 240ms; --ease-move: cubic-bezier(.3, .7, .2, 1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0f1a16; --ink: #e4eee9; --muted: #9fb2a9; --rule: #2e413a; --accent: #5fd0b0; --warn: #f2a05f;
+      --raised: #172622; --on-accent: #0f1a16; --dim: .6;
+      --lift-1: 0 1px 2px rgb(0 0 0 / .5); --lift-2: 0 12px 30px -14px rgb(0 0 0 / .8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0f1a16; --ink: #e4eee9; --muted: #9fb2a9; --rule: #2e413a; --accent: #5fd0b0; --warn: #f2a05f;
+    --raised: #172622; --on-accent: #0f1a16; --dim: .6;
+    --lift-1: 0 1px 2px rgb(0 0 0 / .5); --lift-2: 0 12px 30px -14px rgb(0 0 0 / .8);
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+  /* reduced motion is its own path: the chart swaps state in place with a short cross-fade, nothing travels */
+  @media (prefers-reduced-motion: reduce) { :root { --dur-move: var(--dur-small); --dur-enter: var(--dur-small); } }
+  :root[data-motion="reduce"] { --dur-move: var(--dur-small); --dur-enter: var(--dur-small); }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 var(--step-0)/1.6 var(--font-body); }
+  h1, h2 { font-family: var(--font-display); font-weight: 600; line-height: 1.1; margin: 0 0 var(--space-3); }
+  h1 { font-size: var(--step-3); letter-spacing: -.015em; max-width: 14ch; }
+  h2 { font-size: var(--step-2); }
+  p { margin: 0 0 var(--space-3); max-width: 58ch; }
+  a { color: var(--accent); text-underline-offset: .2em; transition: color var(--dur-small); }
+  a:hover { color: var(--ink); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-control); }
+  .skip { position: absolute; left: var(--space-3); top: -6rem; background: var(--ink); color: var(--paper);
+          padding: var(--space-2) var(--space-3); border-radius: var(--radius-control); }
+  .skip:focus { top: var(--space-3); }
+  .wrap { max-width: 70rem; margin: 0 auto; padding: 0 var(--space-4); }
+  .kicker { font: 700 .8rem/1 var(--font-body); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .hero { padding-block: var(--space-5); }
+  .notice { border: 2px solid var(--warn); border-radius: var(--radius-control); padding: var(--space-2) var(--space-3); }
+  .notice[hidden] { display: none; }
+
+  .story { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 4fr); gap: var(--space-5); align-items: start; }
+  .sticky { position: sticky; top: var(--space-3); background: var(--raised); border-radius: var(--radius-card);
+            box-shadow: var(--lift-2); padding: var(--space-3); }
+  .chart { display: block; width: 100%; height: auto; max-height: 60vh; font: 600 12px var(--font-body); }
+  .bar { fill: var(--accent); transition: opacity var(--dur-move) var(--ease-move); }
+  .bar.slow { fill: var(--warn); }
+  .mark { transition: opacity var(--dur-enter) var(--ease-move); }
+  .sticky p, .fig figcaption { margin: var(--space-2) 0 0; color: var(--muted); font-size: .95rem; }
+  .chart { --o0: var(--dim); --o1: var(--dim); --o2: var(--dim); --o3: var(--dim); --o4: var(--dim); --o5: var(--dim);
+           --m0: 0; --m1: 0; --m2: 0; --m3: 0; --m4: 0; --m5: 0; }
+  /* the storyboard's graphic column: state i is a lookup, never a sum of changes */
+  .chart[data-state="0"] { --o0: 1; --o1: 1; --o2: 1; --o3: 1; --o4: 1; --o5: 1; }
+  .chart[data-state="1"] { --o0: 1; --o1: 1; --o2: 1; --m0: 1; --m1: 1; --m2: 1; }
+  .chart[data-state="2"] { --o3: 1; --m3: 1; }
+  .chart[data-state="3"] { --o4: 1; --m4: 1; }
+  .chart[data-state="4"] { --o5: 1; --m5: 1; }
+
+  .step { min-height: 60vh; display: flex; align-items: center; padding-block: var(--space-4); scroll-margin-top: var(--space-3); }
+  .card { position: relative; background: var(--raised); border: 1px solid var(--rule); border-radius: var(--radius-card);
+          box-shadow: var(--lift-1); padding: var(--space-4); width: 100%; }
+  .card h2 { font-size: 1.35rem; }
+  .now { margin: 0; font-weight: 700; font-size: .9rem; color: var(--accent); opacity: 0; transition: opacity var(--dur-enter) var(--ease-move); }
+  .step.on .now { opacity: 1; }
+  .permalink { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+  .fig { display: none; margin: 0 0 var(--space-3); }
+  html:not(.js) .sticky { display: none; }
+  html:not(.js) .fig { display: block; }
+  html:not(.js) .story { grid-template-columns: minmax(0, 1fr); }
+  html:not(.js) .step { min-height: 0; }
+  .after { padding-block: var(--space-5); }
+  details { border-top: 1px solid var(--rule); padding-block: var(--space-2); }
+  summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 700; }
+  table { border-collapse: collapse; width: 100%; max-width: 30rem; }
+  th, td { text-align: left; padding: var(--space-2) var(--space-3) var(--space-2) 0; border-bottom: 1px solid var(--rule); }
+  td:last-child, th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  footer { border-top: 1px solid var(--rule); padding-block: var(--space-4); color: var(--muted); font-size: .9rem; }
+
+  @media (max-width: 48rem) { /* a phone: the chart sits on top, at most half the screen; opaque cards scroll over it */
+    .story { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .sticky { top: 0; z-index: 1; border-radius: 0 0 var(--radius-card) var(--radius-card); padding: var(--space-2) var(--space-3); }
+    .chart { max-height: 32vh; }
+    .step { min-height: 70vh; scroll-margin-top: 42vh; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#story">Skip to the story</a>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+  <g id="bars" style="fill:var(--ink)" text-anchor="middle">
+    <line x1="10" y1="176" x2="310" y2="176" style="stroke:var(--muted)" stroke-width="1.5"/>
+    <rect class="bar" x="24" y="114.5" width="34" height="61.5" style="opacity:var(--o0)"/><text x="41" y="108">4.1</text><text class="mark" x="41" y="94" style="opacity:var(--m0)">▼</text><text x="41" y="192">W1</text>
+    <rect class="bar" x="74" y="111.5" width="34" height="64.5" style="opacity:var(--o1)"/><text x="91" y="105">4.3</text><text class="mark" x="91" y="91" style="opacity:var(--m1)">▼</text><text x="91" y="192">W2</text>
+    <rect class="bar" x="124" y="113" width="34" height="63" style="opacity:var(--o2)"/><text x="141" y="107">4.2</text><text class="mark" x="141" y="93" style="opacity:var(--m2)">▼</text><text x="141" y="192">W3</text>
+    <rect class="bar slow" x="174" y="29" width="34" height="147" style="opacity:var(--o3)"/><text x="191" y="23">9.8</text><text class="mark" x="191" y="9" style="opacity:var(--m3)">▼</text><text x="191" y="192">W4</text>
+    <rect class="bar slow" x="224" y="32" width="34" height="144" style="opacity:var(--o4)"/><text x="241" y="26">9.6</text><text class="mark" x="241" y="12" style="opacity:var(--m4)">▼</text><text x="241" y="192">W5</text>
+    <rect class="bar" x="274" y="101" width="34" height="75" style="opacity:var(--o5)"/><text x="291" y="95">5.0</text><text class="mark" x="291" y="81" style="opacity:var(--m5)">▼</text><text x="291" y="192">W6</text>
+  </g>
+</defs></svg>
+
+<main id="main" class="wrap">
+  <header class="hero">
+    <p class="kicker">A build-time story, five steps</p>
+    <h1>Why CI got slow, and when it healed</h1>
+    <p>Minutes per CI build, by week. Scroll, or use Page Down, Space or the arrow keys: the chart follows the step
+       in the middle of your screen, and every step has its own link.</p>
+    <p class="notice" id="fail" role="status" hidden>The live chart could not start, so each step shows its own picture instead.</p>
+  </header>
+
+  <div class="story" id="story">
+    <div class="sticky" role="group" aria-label="Chart: CI build minutes by week">
+      <svg class="chart" id="chart" viewBox="0 0 320 204" role="img" aria-label="Six weeks of build time" data-state="0"><use href="#bars"/></svg>
+      <p id="cap">Six weeks of CI build time, in minutes.</p>
+    </div>
+    <div class="steps">
+      <section class="step" id="step-1" aria-labelledby="h1s">
+        <div class="card">
+          <figure class="fig"><svg class="chart" viewBox="0 0 320 204" role="img" aria-label="Six weeks, all bars equally strong" data-state="0"><use href="#bars"/></svg><figcaption>State 1: all six weeks.</figcaption></figure>
+          <p class="now" aria-hidden="true">● Showing in the chart</p>
+          <h2 id="h1s">1. Six weeks on record</h2>
+          <p>We timed every merge build for six weeks. Each bar is one week's average, in minutes, with its number above it.</p>
+          <a class="permalink" href="#step-1">Link to step 1</a>
+        </div>
+      </section>
+      <section class="step" id="step-2" aria-labelledby="h2s">
+        <div class="card">
+          <figure class="fig"><svg class="chart" viewBox="0 0 320 204" role="img" aria-label="Weeks 1 to 3 marked" data-state="1"><use href="#bars"/></svg><figcaption>State 2: weeks 1 to 3 marked ▼.</figcaption></figure>
+          <p class="now" aria-hidden="true">● Showing in the chart</p>
+          <h2 id="h2s">2. Weeks 1 to 3 were steady</h2>
+          <p>Builds took 4.1, 4.3 and 4.2 minutes. The three marked bars are the baseline everything else is judged by.</p>
+          <a class="permalink" href="#step-2">Link to step 2</a>
+        </div>
+      </section>
+      <section class="step" id="step-3" aria-labelledby="h3s">
+        <div class="card">
+          <figure class="fig"><svg class="chart" viewBox="0 0 320 204" role="img" aria-label="Week 4 marked, 9.8 minutes" data-state="2"><use href="#bars"/></svg><figcaption>State 3: week 4 marked ▼.</figcaption></figure>
+          <p class="now" aria-hidden="true">● Showing in the chart</p>
+          <h2 id="h3s">3. Week 4 more than doubled</h2>
+          <p>The build jumped from 4.2 to 9.8 minutes. A dependency upgrade changed the cache key, so every build started cold.</p>
+          <a class="permalink" href="#step-3">Link to step 3</a>
+        </div>
+      </section>
+      <section class="step" id="step-4" aria-labelledby="h4s">
+        <div class="card">
+          <figure class="fig"><svg class="chart" viewBox="0 0 320 204" role="img" aria-label="Week 5 marked, 9.6 minutes" data-state="3"><use href="#bars"/></svg><figcaption>State 4: week 5 marked ▼.</figcaption></figure>
+          <p class="now" aria-hidden="true">● Showing in the chart</p>
+          <h2 id="h4s">4. Week 5 stayed slow</h2>
+          <p>Nobody saw it: 9.6 minutes looked like normal weather. A budget alert on build time would have caught week 4.</p>
+          <a class="permalink" href="#step-4">Link to step 4</a>
+        </div>
+      </section>
+      <section class="step" id="step-5" aria-labelledby="h5s">
+        <div class="card">
+          <figure class="fig"><svg class="chart" viewBox="0 0 320 204" role="img" aria-label="Week 6 marked, 5.0 minutes" data-state="4"><use href="#bars"/></svg><figcaption>State 5: week 6 marked ▼.</figcaption></figure>
+          <p class="now" aria-hidden="true">● Showing in the chart</p>
+          <h2 id="h5s">5. Week 6 healed it</h2>
+          <p>Pinning the cache key brought the build to 5.0 minutes. Still above 4.2, and the alert now stands guard.</p>
+          <a class="permalink" href="#step-5">Link to step 5</a>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="after" aria-labelledby="what">
+    <details>
+      <summary>The data as a table</summary>
+      <table><thead><tr><th scope="col">Week</th><th scope="col">Minutes</th></tr></thead>
+        <tbody><tr><td>1</td><td>4.1</td></tr><tr><td>2</td><td>4.3</td></tr><tr><td>3</td><td>4.2</td></tr>
+          <tr><td>4</td><td>9.8</td></tr><tr><td>5</td><td>9.6</td></tr><tr><td>6</td><td>5.0</td></tr></tbody></table>
+    </details>
+    <details open>
+      <summary id="what">What this shows (scrollytelling playbook)</summary>
+      <ul>
+        <li>Storyboard first: five steps, one change to the chart each; the CSS blocks <code>[data-state]</code> are its graphic column.</li>
+        <li>Works with scripts off: every step carries its own static figure, and a failed chart falls back to them.</li>
+        <li>Steps, not pixels: one <code>IntersectionObserver</code> band across the middle; no scroll or wheel handler at all.</li>
+        <li>State is a lookup on the step's index, so scrolling back reverses exactly, and <code>#step-4</code> opened cold draws step 4.</li>
+        <li>Reduced motion is its own path: the chart swaps in place with a short cross-fade; only opacity ever animates.</li>
+        <li>Phone: the chart takes under half the screen and opaque cards scroll over it. Every number in a step is in the chart.</li>
+      </ul>
+    </details>
+  </section>
+</main>
+<footer class="wrap"><p>An example page for Foreman's scrollytelling playbook. Data is made up.</p></footer>
+
+<script>
+(function () {
+  var root = document.documentElement, steps = [].slice.call(document.querySelectorAll('.step'));
+  var chart = document.getElementById('chart'), cap = document.getElementById('cap');
+  var CAP = ['Six weeks of CI build time, in minutes.', 'Weeks 1 to 3 (marked): 4.1, 4.3 and 4.2 minutes.',
+    'Week 4 (marked): 9.8 minutes.', 'Week 5 (marked): 9.6 minutes.', 'Week 6 (marked): 5.0 minutes.'];
+  function fail() { root.classList.remove('js'); document.getElementById('fail').hidden = false; }
+  function render(i) { // sets state i outright
+    chart.dataset.state = i; cap.textContent = CAP[i]; chart.setAttribute('aria-label', CAP[i]);
+    steps.forEach(function (s, k) { s.classList.toggle('on', k === i); });
+  }
+  try {
+    if (!('IntersectionObserver' in window)) throw new Error('no observer');
+    var active = -1;
+    var show = function (i) { if (i !== active) { active = i; render(i); } };
+    var linked = function () { return steps.findIndex(function (s) { return '#' + s.id === location.hash; }); };
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) show(steps.indexOf(e.target)); });
+    }, { rootMargin: '-45% 0px -45% 0px' }); // a band across the middle; between steps the last state holds
+    show(linked() >= 0 ? linked() : 0);
+    steps.forEach(function (s) { io.observe(s); });
+    window.addEventListener('hashchange', function () { if (linked() >= 0) show(linked()); });
+  } catch (err) { fail(); }
+})();
+</script>
+</body>
+</html>

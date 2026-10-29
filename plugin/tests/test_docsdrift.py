@@ -59,6 +59,17 @@ class DocsDrift(ForemanTestCase):
             f.write("Audit note: `src/gone-long-ago.py:12` was the bug.\n")
         self.assertNotIn("local/notes.md", {f["file"] for f in fmdocs.scan(self.repo)})
 
+    def test_stack_cards_and_changelogs_name_other_trees(self):
+        # T-1817: a card's paths are the detected project's (./gradlew); a changelog's, files as they were then
+        os.makedirs(os.path.join(self.repo, "cards"), exist_ok=True)
+        with open(os.path.join(self.repo, "cards", "gradle.md"), "w") as f:
+            f.write("---\nname: gradle\ndetect: [file:gradlew]\n---\nRun `./gradlew build`; see `src/gone.py`.\n")
+        with open(os.path.join(self.repo, "CHANGELOG.md"), "w") as f:
+            f.write("## 1.0\n- `src/removed.py` is gone; `./gradlew` too.\n")
+        found = {f["file"] for f in fmdocs.scan(self.repo)}
+        self.assertFalse(found & {"cards/gradle.md", "CHANGELOG.md"}, found)
+        self.assertIn("README.md", found)  # drift elsewhere still reports
+
     def test_cli(self):
         p = self.fm("docs", "--json", cwd=self.repo)
         self.assertEqual(len(json.loads(p.stdout)["findings"]), 5)
@@ -92,6 +103,23 @@ class TaskDocsDrift(DocsDrift):
         blockers, _ = fmdocs.task_docs(self.repo, "README.md")
         self.assertEqual(len(blockers), 1)
         self.assertIn("src/never-written.py", blockers[0])
+
+    def test_a_missing_named_doc_suggests_the_tracked_path_it_meant(self):
+        # T-1995: "rules/foreman.md" for plugin/rules/foreman.md was refused with no hint
+        os.makedirs(os.path.join(self.repo, "plugin", "rules"))
+        with open(os.path.join(self.repo, "plugin", "rules", "foreman.md"), "w") as f:
+            f.write("# Rules\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        blockers, _ = fmdocs.task_docs(self.repo, "rules/foreman.md and gone/NOPE.md")
+        self.assertEqual(blockers, ["docs impact names gone/NOPE.md, which doesn't exist",
+                                    "docs impact names rules/foreman.md, which doesn't exist (plugin/rules/foreman.md?)"])
+        os.makedirs(os.path.join(self.repo, "mods", "rules"))  # T-2000: several matches are all suggested
+        with open(os.path.join(self.repo, "mods", "rules", "foreman.md"), "w") as f:
+            f.write("# Rules\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        blockers, _ = fmdocs.task_docs(self.repo, "rules/foreman.md")
+        self.assertEqual(blockers, ["docs impact names rules/foreman.md, which doesn't exist "
+                                    "(one of mods/rules/foreman.md, plugin/rules/foreman.md?)"])
 
     def test_task_docs_a_new_doc_is_all_added(self):
         self.append("NEW.md", "See `src/missing.py`.\n")
