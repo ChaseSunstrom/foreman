@@ -170,8 +170,16 @@ class RuleIds(Base):
         # T-1897: 21 such blocks in a week came with no hint
         hint = g._hint("/home/u/.claude/foreman (a tree write over it)", "core")
         self.assertIn("fm edit", hint)
-        self.assertIn("git worktree add", hint)
+        self.assertTrue(hint.strip().startswith("Run git checkout"), "review: the worktree route is the common case")
+        self.assertIn("fm ask ID core --standing", hint)  # review: Edit on Foreman's tree is core without it
         self.assertNotIn("git worktree add", g._hint("/x (a tree write over it; git merge)", "core"))  # fm lane merge
+
+    def test_interpreter_code_driving_foreman_says_where_a_draft_goes(self):
+        # review of T-1897: 17 blocks in a week, no hint
+        hint = g._hint("interpreter code driving Foreman's modules (use the fm CLI; to edit a Foreman source file "
+                       "whose text names its modules, use the Edit or Write tool)", "core")
+        self.assertIn("fm edit <", hint)
+        self.assertIn("Write tool", hint)
 
     def test_a_state_write_is_pointed_at_fm_research_not_at_naming_it(self):
         # T-0814: state-direct can't be granted: when research/ was the real target, "name it literally" only moved the
