@@ -174,7 +174,12 @@ def _title(text):
     # T-0334: a ref that leads or ends the line is a dependency marker; one inside the sentence is part of it
     first = re.sub(r"^(?:\s*#T-\d{4,}\b)+|(?:\s*#T-\d{4,}\b)+\s*$", "", first)
     first = c._SCOPE_RE.sub("", c._REF_RE.sub(r"\1", first)).strip()
-    return (first[:1].upper() + first[1:])[:90] or "untitled"
+    word = first.split(" ", 1)[0]
+    if not re.search(r"[._/(`]", word) and re.search(r"(?i)[aeiouy]", word):  # T-1985: fm, c.first_touch stay as typed
+        first = first[:1].upper() + first[1:]
+    if len(first) > 90:  # T-1985: at a word, not "…fallbac"
+        first = (first[:89].rsplit(" ", 1)[0] if " " in first[:89] else first[:89]) + "…"
+    return first or "untitled"
 
 
 def cmd_intake(args):

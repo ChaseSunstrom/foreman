@@ -114,8 +114,13 @@ def _brief(p, n, since):
 def record_yield(p, n):
     """Record a round's grounded yield; the second dry round in a row turns the loop off, with a decision on record."""
     s = state(p)
-    s["dry"] = int(s.get("dry") or 0) + 1 if n < DRY_YIELD else 0
-    s["yielded"] = n
+    try:
+        import fmbudget
+        limited = n < DRY_YIELD and fmbudget.degrade(p)  # T-1986: no ideas fan-out ran; a spent budget isn't dryness
+    except Exception:
+        limited = None
+    s["dry"] = int(s.get("dry") or 0) if limited else int(s.get("dry") or 0) + 1 if n < DRY_YIELD else 0
+    s["yielded"], s["limited"] = n, bool(limited)
     hist = (s.get("history") or [])[-19:]
     s["history"] = hist + [{"round": s.get("round"), "yield": n, "at": c.now()}]
     stop = s["dry"] >= DRY_STOP
@@ -170,6 +175,7 @@ def cmd_loop(args):
                                    "the next")
         s, stop = record_yield(p, args.n)
         return fmcli.out(args, view(p), f"Round {s.get('round')}: {args.n} queued"
+                         + ("; optional work was dropped, so not counted dry" if s.get("limited") else "")
                          + (f"; {s['dry']} dry in a row" if s.get("dry") else "")
                          + (f". Forever loop: off ({s['reason']})." if stop else ". Forever loop: on."))
     s = state(p)

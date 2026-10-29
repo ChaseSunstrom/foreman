@@ -71,6 +71,20 @@ class Loop(ForemanTestCase):
         self.assertNotIn("fm ideas", brief)
         self.assertIn("Optional work is dropped (weekly usage 80%)", brief)  # or the spent risk budget: not usage
 
+    def test_a_budget_limited_round_leaves_the_dry_streak_alone(self):
+        # T-1986: with optional work dropped there is no ideas fan-out; a spent budget ended the loop as "2 dry rounds"
+        from unittest import mock
+        import fmloop
+        self.fm("loop", "on")
+        p = c.find_project(self.repo)
+        with mock.patch("fmbudget.degrade", return_value="today's risk budget is spent"):
+            for _ in range(3):
+                s, stop = fmloop.record_yield(p, 1)
+        self.assertFalse(stop)
+        self.assertEqual(s["dry"], 0)
+        self.assertTrue(s["limited"])
+        self.assertIn("on", self.fm("loop").stdout)
+
     def test_two_dry_rounds_end_the_loop_with_a_decision(self):
         self.fm("loop", "on")
         self.fm("loop", "round")
