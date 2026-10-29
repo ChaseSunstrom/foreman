@@ -70,6 +70,19 @@ class Chain(ForemanTestCase):
         self.assertLess(len(calls), 10, "lines without both words are never parsed")
         self.assertEqual(c.last_change(self.p, "T-0009"), "")
 
+    def test_tail_rows_with_keep_parses_only_matching_lines_of_the_last_n(self):
+        # T-2025: decoding and splitting every line of a 4.7 MB tail cost 12 ms to find 23 prompt lines
+        ev = lambda i, event: json.dumps({"i": i, "event": event, "data": {"note": "é"}})
+        self.put([ev(0, "prompt"), ev(1, "note"), ev(2, "prompt"), ev(3, "note"), ev(4, "prompt"),
+                  '{"event": "prompt", "cut', ev(6, "note"), ev(7, "prompt"), ev(8, "prompt-ish"), ev(9, "prompt")])
+        real, calls = json.loads, []
+        with mock.patch.object(c.json, "loads", side_effect=lambda s, *a, **k: calls.append(1) or real(s, *a, **k)):
+            rows = c._tail_rows(self.ledger, 5, keep=('"prompt"',))
+        self.assertEqual([e["i"] for e in rows], [7, 9], "the last 5 lines only; the damaged line is skipped")
+        self.assertEqual(len(calls), 3, "only lines holding the word are parsed")
+        self.assertEqual([e["i"] for e in c._tail_rows(self.ledger, 99, keep=('"prompt"', '"i": 2'))], [2],
+                         "every word must be on the line")
+
     def test_last_change_reads_the_ledger_once_until_it_grows(self):
         # T-2024: the prompt hook's state and its Next line each read the ledger's tail for the same answer
         ev = lambda ts: json.dumps({"ts": ts, "event": "touched", "task": "T-0001"})
