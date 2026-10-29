@@ -1011,7 +1011,7 @@ def _time(st, w, h, app):
     ok, ok2, accent, glow, bad = fx.c("ok"), fx.c("ok2"), fx.c("accent"), fx.c("glow"), fx.c("bad")
     out = []
     for i, (label, s, e) in enumerate(sp):
-        a = min(bw - 1, int(s * bw / total))
+        a = max(0, min(bw - 1, int(s * bw / total)))  # T-1922: a phase stamped before the run padded gigabytes
         b = max(a + 1, min(bw, round(e * bw / total)))
         live = i == len(sp) - 1 and st.status not in ("closed", "answered")
         cells = []
