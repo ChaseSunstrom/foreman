@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Site: the tab icon's URL carries the logo's content hash, so a browser that kept the old favicon fetches the new one; the share image is a new card with the current logo (site/share.html, assets/share.png); the header logo loses its pixel-art rendering (T-2060).
 - Looks: darkroom and glacier drop their hue-distance note; below accent chroma 0.03 a hue is no colour to clash with a status (T-2051).
 - The pane replay SVG keeps a task title holding U+2028 on its own row: frames split on newlines only (T-2048).
 - fm lib check lints the cards of the checkout it runs in (a builder's worktree), not the installed plugin's, so a builder no longer gets a false clean result; --root names another checkout (T-2047).

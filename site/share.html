@@ -1,0 +1,31 @@
+<!doctype html>
+<html><head><!-- T-2060: the og:image. Rebuild: chrome-headless-shell --hide-scrollbars --window-size=1200,630 --screenshot=site/assets/share.png --allow-file-access-from-files file://$PWD/site/share.html --><meta charset="utf-8"><style>
+html, body { margin: 0; }
+body { width: 1200px; height: 630px; overflow: hidden; background: #0D1420; color: #E7ECF4;
+       font-family: "Noto Sans", sans-serif; position: relative; }
+.grid { position: absolute; inset: 0; background-image:
+        linear-gradient(#24324A55 1px, transparent 1px), linear-gradient(90deg, #24324A55 1px, transparent 1px);
+        background-size: 40px 40px; mask-image: radial-gradient(ellipse at 78% 45%, #000 0, transparent 70%); }
+.glow { position: absolute; width: 620px; height: 620px; right: -60px; top: -20px; border-radius: 50%;
+        background: radial-gradient(circle, #FFC83D2e 0, #86A8FF14 45%, transparent 70%); }
+.logo { position: absolute; right: 110px; top: 135px; width: 330px; height: 330px;
+        filter: drop-shadow(0 30px 50px #000a); }
+.copy { position: absolute; left: 84px; top: 92px; width: 640px; }
+.brand { font: 700 30px/1 "JetBrainsMono NF", monospace; color: #FFC83D; letter-spacing: .02em; }
+h1 { font: 800 74px/1.02 "Noto Sans", sans-serif; letter-spacing: -.025em; margin: 26px 0 26px; }
+h1 em { font-style: normal; color: #FFC83D; }
+p { font-size: 25px; line-height: 1.45; color: #9AA8BC; margin: 0; }
+.loop { position: absolute; left: 84px; bottom: 72px; display: flex; gap: 10px;
+        font: 600 19px/1 "JetBrainsMono NF", monospace; }
+.loop span { padding: 10px 14px; border: 1px solid #24324A; border-radius: 8px; background: #131C2B; color: #D7DEE9; }
+.loop span b { color: #47C98B; font-weight: 700; margin-right: 8px; }
+</style></head><body>
+<div class="grid"></div><div class="glow"></div>
+<img class="logo" src="assets/foreman.svg" alt="">
+<div class="copy">
+  <div class="brand">foreman</div>
+  <h1>Claude Code, with a <em>foreman</em> on the job.</h1>
+  <p>Plans before it edits. Proves its work with commands it ran. One task at a time, until the queue is done.</p>
+</div>
+<div class="loop"><span><b>✓</b>plan</span><span><b>✓</b>build</span><span><b>✓</b>verify</span><span><b>✓</b>audit</span><span><b>✓</b>ship</span></div>
+</body></html>
