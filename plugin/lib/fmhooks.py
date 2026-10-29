@@ -1912,11 +1912,14 @@ def _fix_note(pl, p):
         return None
 
 
+_INSTALL_WORD = re.compile(r"(?<![\w.-])(?:install|add|i)(?![\w.-])")  # every verb in fmdeps._VERBS
+
+
 def _dep_note(pl, p):
     """T-1049: a Bash install of a new package gets a typosquat, registry and age note; fails open, never blocks."""
     cmd = (pl.get("tool_input") or {}).get("command")
-    if pl.get("tool_name") != "Bash" or not p or not cmd:
-        return None
+    if pl.get("tool_name") != "Bash" or not p or not cmd or not _INSTALL_WORD.search(cmd):
+        return None  # T-2017: most commands install nothing, and importing fmdeps (urllib, socket) cost every one ~8 ms
     try:
         import fmdeps
         return fmdeps.note(p, cmd)

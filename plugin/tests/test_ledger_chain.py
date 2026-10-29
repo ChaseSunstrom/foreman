@@ -58,6 +58,18 @@ class Chain(ForemanTestCase):
         self.assertEqual([e["data"]["i"] for e in got], [0, 1, 2])
         self.assertLess(len(calls), 500, "older lines past the tail are never parsed")
 
+    def test_last_change_parses_only_its_tasks_touched_lines(self):
+        # T-2017: every hook parsed 5,000 ledger lines to find one task's file edits
+        ev = lambda ts, event, task: json.dumps({"ts": ts, "event": event, "task": task, "data": {"note": "T-0001"}})
+        self.put([ev("2026-03-01T00:00:00Z", "note", "T-0002")] * 3000 + [
+            ev("2026-03-02T00:00:00Z", "touched", "T-0001"), ev("2026-03-03T00:00:00Z", "touched", "T-0002"),
+            ev("2026-03-04T00:00:00Z", "focus", "T-0001"), ev("2026-03-05T00:00:00Z", "touched", "T-00011")])
+        real, calls = json.loads, []
+        with mock.patch.object(c.json, "loads", side_effect=lambda s, *a, **k: calls.append(1) or real(s, *a, **k)):
+            self.assertEqual(c.last_change(self.p, "T-0001"), "2026-03-02T00:00:00Z")
+        self.assertLess(len(calls), 10, "lines without both words are never parsed")
+        self.assertEqual(c.last_change(self.p, "T-0009"), "")
+
     def test_untouched_ledger_verifies(self):
         for i in range(5):
             c.log_event(self.p, "note", data={"i": i})
