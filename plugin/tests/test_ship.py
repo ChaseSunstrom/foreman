@@ -202,6 +202,33 @@ class Ship(ForemanTestCase):
         self.assertEqual(self.main_log()[:2], ["add c", "a and b squashed"])
         self.assertEqual(sh(self.repo, "rev-parse", "refs/foreman/shipped"), sh(self.repo, "rev-parse", "HEAD"))
 
+    def test_a_merged_lane_whose_merge_settled_a_conflict_ships_through_the_merge(self):
+        # T-2054: a builder lane's own commit didn't cherry-pick onto main alone; its merge on the branch had settled it
+        self.grant()
+        self.assertEqual(self.ship("--test", "true").returncode, 0)
+        shipped = sh(self.repo, "rev-parse", "HEAD").strip()
+        with open(os.path.join(self.repo, "shared.txt"), "w") as f:
+            f.write("one\n")
+        sh(self.repo, "add", "shared.txt")
+        sh(self.repo, "commit", "-qm", "branch writes shared")
+        sh(self.repo, "checkout", "-q", "-b", "lane", shipped)
+        with open(os.path.join(self.repo, "shared.txt"), "w") as f:
+            f.write("two\n")
+        sh(self.repo, "add", "shared.txt")
+        sh(self.repo, "commit", "-qm", "lane writes shared")
+        sh(self.repo, "checkout", "-q", "work")
+        subprocess.run(["git", "-C", self.repo, "merge", "-q", "lane"], capture_output=True)
+        with open(os.path.join(self.repo, "shared.txt"), "w") as f:
+            f.write("one\ntwo\n")
+        sh(self.repo, "add", "shared.txt")
+        sh(self.repo, "commit", "-qm", "Merge lane")
+        self.grant()
+        r = self.ship("--test", "true")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(sh(self.origin, "show", "main:shared.txt"), "one\ntwo\n")
+        self.assertEqual(self.main_log()[:2], ["Merge lane", "branch writes shared"])
+        self.assertEqual(sh(self.repo, "rev-parse", "refs/foreman/shipped"), sh(self.repo, "rev-parse", "HEAD"))
+
     def test_a_remembered_test_runs_when_test_is_left_out(self):
         # T-1950: the oldest runtime's suite was retyped on every ship
         mark = os.path.join(self.tmp, "ran")
