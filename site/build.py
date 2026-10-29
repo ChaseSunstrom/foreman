@@ -498,11 +498,12 @@ def build(out):
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
         f.write(page)
     os.makedirs(os.path.join(out, "demo"), exist_ok=True)
-    for f in ("live.mp4", "demo.svg", "code-tui.mp4"):  # code-tui.mp4: fm code tui --record demo/code-tui.jsonl
+    for f in ("live.mp4", "demo.svg"):
         shutil.copy2(os.path.join(ROOT, "demo", f), os.path.join(out, "demo", f))
     with open(os.path.join(ROOT, "demo", "code-tui.jsonl"), encoding="utf-8") as f:
         fmcodetui.snapshot([json.loads(line) for line in f if line.strip()], os.path.join(out, "assets", "code-tui.svg"),
                            (120, 34))
+    fmcodetui.tour_svg(os.path.join(out, "assets", "code-tui-tour.svg"), (120, 34))  # T-2061: today's TUI, every build
     os.makedirs(os.path.join(out, "assets", "examples"), exist_ok=True)  # T-1320: each example's last screen
     for name, _ in EXAMPLES:
         src = os.path.join(ROOT, "demo", "examples", name + ".jsonl")
