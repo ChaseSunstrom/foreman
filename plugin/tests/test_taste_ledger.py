@@ -67,7 +67,7 @@ class Ledger(ForemanTestCase):
         self.assertEqual([(e["signal"], e["look"]) for e in events],
                          [("kept", "look-lido"), ("kept", "look-night-market")])
         top = self.fm_json("looks")["looks"]
-        self.assertEqual(len(top), 12, "every look is ranked, the unseen ones at 0")
+        self.assertEqual(len(top), 20, "every look is ranked, the unseen ones at 0")
         self.assertEqual({top[0]["look"], top[1]["look"]}, {"look-lido", "look-night-market"})
         self.fm("looks", "revert", "lido", "--why", "too cheerful for a bank")
         self.fm("looks", "not", "look-lido", "--why", "not like that")
