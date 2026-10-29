@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Perf: the prompt hook's rewind check runs its three git commands only once the active task has a passing proof to take back, and uses the hook's one brief load instead of scanning the briefs again: UserPromptSubmit 94 -> 77 ms before a step is proved (T-2029).
 - Perf: the daily risk budget check keeps today's counts in a small risk.json, so each hook reads only the ledger lines added since and runs git log only when HEAD moved. Its share of the Stop hook went from 9-10 ms to under 0.5 ms: Stop 60 -> 55 ms, UserPromptSubmit 98 -> 92 ms. A rolled or broken cache is counted afresh (T-2028).
 - A done-when check that runs plugin/tests/run.py now warns when you write it if a named test module doesn't exist, or no test in it matches its -k filter. Such a check fails every run and can't be edited once it has evidence (T-2027).
 - Perf: session start finds your last long silence in the ledger's recent lines instead of reading every ledger file, and filtered ledger tails search the raw bytes and parse only the lines they want. Session start takes 152 ms, down from 177, and the Stop hook 64 ms, down from 70 (T-2025).
