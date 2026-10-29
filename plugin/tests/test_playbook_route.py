@@ -171,7 +171,7 @@ class Rank(ForemanTestCase):
             ("FIX", "Fm edit silently drops a second <<< === >>> block written under the same @@ file header (o",
              "review/silent-failures"),
             ("FIX", "Fmsettings.set_key accepts an unknown key silently; only cmd_settings and apply check firs",
-             "review/silent-failures"),
+             "review/silent-failures fix/cli-errors"),  # T-1885: an unknown key let through is a CLI error too
             ("FIX", "Stop hook still judges the turn when the project lock is busy",
              "review/silent-failures"),
             ("SECURITY", "fm approve-reads: exec-capable and abbreviated flags are not reads",
@@ -220,6 +220,43 @@ class Rank(ForemanTestCase):
                 missed += [] if hit else [f"{title[:40]} -> {got}"]
             self.assertTrue(top3 >= want3 and top1 >= want1,
                             f"{top3} of {len(part)} in the top 3, {top1} at the top; missed: {missed}")
+
+    def test_mined_books_route_their_kind(self):
+        # T-1885: six books written from finished tasks for work no book fitted; real titles (verbatim) of other tasks
+        # of the same kind, held out from the writing (the regex book has one such task: its own), each in the top 3
+        held = [
+            ("FIX", "Guard false block: git checkout -b NAME and git switch -c NAME are refused as tree writes",
+             "security/command-guard"),
+            ("SECURITY", "Guard: IFS set by any name form, or expanded with an operator, is refused instead of erased",
+             "security/command-guard"),
+            ("FIX", "Guard false refusal: cd /abs/scratch && date && for f in a b; do cp /repo/$f full/$f; done",
+             "security/command-guard"),
+            ("FIX", "An unknown fm command prints argparse's full list of 170 choices (and a poor 'did you mean",
+             "fix/cli-errors"),
+            ("FIX", "Fm intake --file PATH with a missing file crashes with a Python traceback instead of a usa",
+             "fix/cli-errors"),
+            ("FIX", "Fm lease take prints every lease in the project instead of only the ones it took", "fix/cli-errors"),
+            ("FIX", "fm bench: a replay stopped at its budget cap is inconclusive, not a failed judgement",
+             "perf/benchmark-statistics"),
+            ("FEATURE", "Bench rigor — fm bench run --runs N reports per-case pass fraction and cost/turns spread,",
+             "perf/benchmark-statistics"),
+            ("FEATURE", "Release Foreman 1.2.50 and push to main", "release/ship-to-main"),
+            ("FEATURE", "Release foreman-ui 0.5.0 to every session and fast-forward main to foreman/build",
+             "release/ship-to-main"),
+            ("FEATURE", "Release Foreman 1.2.35 and push to main so the Pages site publishes", "release/ship-to-main"),
+            ("FEATURE", "Claude Code pane parity for settings safety: the foreman-ui pane boots its last good setti",
+             "review/surface-parity"),
+            ("FEATURE", "Harness parity of the guard (C033, value 4/5, effort M, risk low)", "review/surface-parity"),
+            ("PERFORMANCE", "Fmcore _AC_RE and _STEP_RE end in a lazy (.*?) then \\s*$, which backtracks quadratically o",
+             "perf/regex-backtracking"),
+        ]
+        for _, _, want in held:
+            self.assertTrue(os.path.isfile(os.path.join(pb.ROOT, "references", want + ".md")), want)
+        if pb.find("verify", 1, pb.ROOT)[0] != "fts5":
+            self.skipTest("no FTS5: the scan fallback has no weights")
+        missed = [f"{title[:40]} -> {got}" for kind, title, want in held
+                  if want not in (got := [x["path"][len("references/"):-3] for x in pb.find(title, 3, pb.ROOT, kind=kind)[1]])]
+        self.assertEqual(missed, [])
 
     def test_a_task_type_prefers_its_folder(self):  # T-1838
         put(self.root, "references/perf/kiln.md", "Kiln", "Use when the kiln heats slowly.")
