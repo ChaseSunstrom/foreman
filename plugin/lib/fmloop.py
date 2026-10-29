@@ -115,6 +115,20 @@ def _brief(p, n, since):
     return "\n".join(lines)
 
 
+def tally(p, s):
+    """T-2011: "N rounds, M tasks closed since DAY" for this run of the loop (from its fm loop on), or "" before one."""
+    started = s.get("started")
+    if not started:
+        return ""
+    rounds = (int(s.get("round") or 0) - int(s["from_round"]) if "from_round" in s
+              else sum(1 for h in s.get("history") or [] if str(h.get("at") or "") >= started))
+    t0 = c.parse_ts(started)
+    closed = {e.get("task") for e in c.ledger_events(p, ("task_done",), since=started)
+              if e.get("event") == "task_done" and (t := c.parse_ts(e.get("ts"))) and t0 and t >= t0}
+    return (f"{rounds} round{'' if rounds == 1 else 's'}, {len(closed)} task{'' if len(closed) == 1 else 's'} closed "
+            f"since {started[:10]}")
+
+
 def record_yield(p, n):
     """Record a round's grounded yield; the second dry round in a row turns the loop off, with a decision on record."""
     s = state(p)
@@ -133,7 +147,8 @@ def record_yield(p, n):
     c.update_meta(p, loop=s)
     if stop:
         import fmcli
-        fmcli._write_decision(p, f"forever loop off after round {s.get('round')}: {DRY_STOP} dry rounds in a row",
+        fmcli._write_decision(p, f"forever loop off after round {s.get('round')}: {DRY_STOP} dry rounds in a row "
+                                 f"({tally(p, s)})",
                               why=f"the last rounds queued fewer than {DRY_YIELD} grounded ideas each")
     return s, stop
 
@@ -150,7 +165,9 @@ def cmd_loop(args):
     act = args.action or "status"
     if act == "on":
         s = state(p)
-        s.update(on=True, started=s.get("started") if s.get("on") else c.now(), dry=0, reason=None)
+        if not s.get("on"):  # a fresh run: its tally starts here (T-2011)
+            s.update(started=c.now(), from_round=int(s.get("round") or 0))
+        s.update(on=True, dry=0, reason=None)
         c.update_meta(p, loop=s)
         return fmcli.out(args, view(p), "Forever loop: on. When the queue and inbox are empty, fm next starts the next "
                          "round; two dry rounds in a row, the budget or fm loop off end it.")
@@ -158,7 +175,8 @@ def cmd_loop(args):
         s = state(p)
         s.update(on=False, reason="turned off")
         c.update_meta(p, loop=s)
-        return fmcli.out(args, view(p), "Forever loop: off.")
+        done = tally(p, s)
+        return fmcli.out(args, view(p), f"Forever loop: off ({done})." if done else "Forever loop: off.")
     if act == "round":
         if not on(p):
             raise fmcli.UsageError("the forever loop is off: fm loop on first")
@@ -185,5 +203,6 @@ def cmd_loop(args):
     s = state(p)
     text = ("Forever loop: on" if s.get("on") else "Forever loop: off") + (
         f" · round {s.get('round') or 0}" + (f" · {s['dry']} dry" if s.get("dry") else "")
-        + (f" · {s['reason']}" if not s.get("on") and s.get("reason") else "") if s else "")
+        + (f" · {s['reason']}" if not s.get("on") and s.get("reason") else "")
+        + (f" · {done}" if (done := tally(p, s)) else "") if s else "")
     return fmcli.out(args, view(p) or {"on": False}, text)

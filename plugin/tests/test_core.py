@@ -903,3 +903,25 @@ class ActiveFast(ForemanTestCase):
         self.assertEqual(c.active_brief_fast(p).id, "T-0003")
         self.assertEqual(c.active_brief_fast(p, "/elsewhere").id, "T-0004")
         self.assertIsNone(c.active_brief_fast(p, "/nowhere"))
+
+
+class WaitWhile(unittest.TestCase):
+    """T-2010: one wait for fm check and fm ship: says what it waits for, and when it stops waiting and goes ahead."""
+    def test_wait_while_says_what_it_waits_for_and_when_it_gives_up(self):
+        import io
+        out = io.StringIO()
+        self.assertFalse(c.wait_while(lambda: False, "x", "fm t", limit=1, out=out))
+        self.assertEqual(out.getvalue(), "", "nothing running: no wait, no line")
+        left = [2]
+
+        def busy():
+            left[0] -= 1
+            return left[0] >= 0
+        self.assertTrue(c.wait_while(busy, "a running fm check", "fm t", limit=30, out=out, step=0.01))
+        self.assertIn("fm t: waiting for a running fm check to finish first (at most 30 seconds)", out.getvalue())
+        self.assertNotIn("going ahead", out.getvalue())
+        out = io.StringIO()
+        t0 = time.time()
+        self.assertTrue(c.wait_while(lambda: True, "the ambient test run", "fm t", limit=1, out=out, step=0.05))
+        self.assertLess(time.time() - t0, 3)
+        self.assertIn("the ambient test run is still running after 1 seconds; going ahead beside it", out.getvalue())

@@ -68,6 +68,13 @@ def _grant(p):
     return b if b and "publish" in (b.meta.get("allow") or []) else None
 
 
+def _named_grant(p, tid):
+    """T-2007: fm ship --task ID: that task (closed or active) when it holds the publish grant."""
+    b = c.find_brief(p, tid) or _err(f"no task {tid.upper()}; nothing was pushed")
+    return b if "publish" in (b.meta.get("allow") or []) else _err(
+        f"{b.id} has no publish grant (fm task set {b.id} --allow publish); nothing was pushed")
+
+
 def _spend(p, tid, by):
     with c.lock(p.dir):
         b = c.find_brief(p, tid)
@@ -355,7 +362,8 @@ def ship(p, args):
         if not missing:
             print(f"{remote} main has the changes of {', '.join(x[:8] for x in picks)}")
         return 1 if missing else 0
-    b = _grant(p) or _err(_NEED_GRANT.replace("--push", "fm ship", 1) + "; nothing was pushed")
+    b = (_named_grant(p, args.task) if getattr(args, "task", None)
+         else _grant(p) or _err(_NEED_GRANT.replace("--push", "fm ship", 1) + "; nothing was pushed"))
     if args.test:  # T-1950: remembered per repo, so the oldest runtime's suite isn't retyped each ship
         _git(root, "config", "--local", "foreman.shiptest", args.test, ok=True)
     said = args.test or _git(root, "config", "--local", "--get", "foreman.shiptest", ok=True).strip()
@@ -376,12 +384,8 @@ def ship(p, args):
                 _err(f"the shipped files differ from {picks[-1][:8]}'s: a commit is missing or extra, or main changed "
                      "these files since the branch left it (rebase onto main); nothing was pushed")
             import fmambient
-            if c.gates_live(p) or fmambient.running(p):  # T-1978: never two suites at once
-                print("fm ship: waiting for a running fm check or ambient test run to finish first (at most 10 minutes)",
-                      flush=True)
-                end = time.time() + 600
-                while (c.gates_live(p) or fmambient.running(p)) and time.time() < end:
-                    time.sleep(1)
+            c.wait_while(lambda: c.gates_live(p) or fmambient.running(p),  # T-1978: never two suites at once
+                         "a running fm check or ambient test run", "fm ship", out=sys.stdout)
             print(f"testing {n} on {remote} main: {shlex.join(test)}", flush=True)
             env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # GIT_DIR from a hook: not the user's repo
             c.update_meta(p, ship_testing={"pid": os.getpid(), "at": c.now(), "root": os.path.realpath(wt)})
