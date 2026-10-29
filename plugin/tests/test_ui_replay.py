@@ -198,7 +198,11 @@ class Frames(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             gold = os.path.join(tmp, "golden.ts")
             with mock.patch.object(tool, "GOLDEN", gold), mock.patch.object(tool, "drawn", return_value='{"a":1}'):
-                self.assertEqual(tool.golden(), (True, []))  # none yet: written
+                same, lines = tool.golden()  # T-1670 review: a missing golden is never blessed by a compare
+                self.assertFalse(same)
+                self.assertIn("golden --update", "".join(lines))
+                self.assertIsNone(tool.read_golden())
+                self.assertEqual(tool.golden(update=True), (True, []))
                 self.assertEqual(tool.read_golden(), '{"a":1}')
                 self.assertEqual(tool.golden(), (True, []))
             with mock.patch.object(tool, "GOLDEN", gold), mock.patch.object(tool, "drawn", return_value='{"a":2}'):
@@ -208,8 +212,49 @@ class Frames(unittest.TestCase):
                 self.assertEqual(tool.read_golden(), '{"a":1}', "a compare never rewrites it")
                 self.assertEqual(tool.golden(update=True), (True, []))
                 self.assertEqual(tool.read_golden(), '{"a":2}')
+            with open(gold, "w", encoding="utf-8") as f:
+                f.write("<<<<<<< HEAD\nexport default 'x\n")  # a conflicted golden: --update still recovers
+            with mock.patch.object(tool, "GOLDEN", gold), mock.patch.object(tool, "drawn", return_value='{"a":3}'):
+                self.assertEqual(tool.golden(update=True), (True, []))
+                self.assertEqual(tool.read_golden(), '{"a":3}')
+
+    def test_golden_drift_shows_the_text_rows_not_the_tree(self):  # T-1670 review: rasters are 30 KB lines
+        tool = load()
+        with tempfile.TemporaryDirectory() as tmp:
+            gold = os.path.join(tmp, "golden.ts")
+            with mock.patch.object(tool, "GOLDEN", gold), \
+                    mock.patch.object(tool, "drawn", return_value=json.dumps(text("old row"))):
+                tool.golden(update=True)
+            with mock.patch.object(tool, "GOLDEN", gold), \
+                    mock.patch.object(tool, "drawn", return_value=json.dumps(text("new row"))):
+                same, lines = tool.golden()
+        self.assertFalse(same)
+        self.assertTrue(any(ln.startswith("-old row") for ln in lines), lines)
+        self.assertFalse(any('"type"' in ln for ln in lines), "the text frame, not the JSON tree")
+
+    def test_the_staged_copy_has_a_golden_to_import(self):  # T-1670 review: --update from a missing/broken golden
+        tool = load()
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = tool.stage({"tasks": []}, 80, 40, tmp)
+            self.assertTrue(os.path.exists(os.path.join(mod, "tests", "fixtures", "golden.ts")))
+
+    def test_png_goes_through_rsvg_convert_and_other_extensions_are_refused(self):
+        tool = load()
+        ok = subprocess.CompletedProcess([], 0, b"", b"")
+        with mock.patch.object(tool.shutil, "which", return_value="/usr/bin/rsvg-convert"), \
+                mock.patch.object(tool.subprocess, "run", return_value=ok) as run:
+            tool.write_svg("/nowhere/pane.PNG", "hi\n", 20, 4)
+        self.assertEqual(run.call_args[0][0][:2], ["rsvg-convert", "-o"])
+        with mock.patch.object(tool.shutil, "which", return_value=None):
+            self.assertRaisesRegex(RuntimeError, "rsvg-convert", tool.write_svg, "/nowhere/p.png", "hi\n", 20, 4)
+        self.assertRaisesRegex(ValueError, r"\.svg or \.png", tool.write_svg, "/nowhere/p.jpg", "hi\n", 20, 4)
+        bad = subprocess.CalledProcessError(1, "rsvg-convert", b"", b"bad frame")
+        with mock.patch.object(tool.shutil, "which", return_value="/usr/bin/rsvg-convert"), \
+                mock.patch.object(tool.subprocess, "run", side_effect=bad):
+            self.assertRaisesRegex(RuntimeError, "bad frame", tool.write_svg, "/nowhere/p.png", "hi\n", 20, 4)
 
     def test_the_committed_golden_is_the_kit_tests_and_is_checked(self):
+        # string checks only: the comparison itself runs under the mod gate, claude plugin test mods/foreman-ui
         tool = load()
         frame = json.loads(tool.read_golden())
         self.assertIn('"key":"fm-pane"', json.dumps(frame, separators=(",", ":")))

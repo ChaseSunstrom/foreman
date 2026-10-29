@@ -82,6 +82,8 @@ def stage(view, cols, rows, folder):
     shutil.copytree(MOD, mod, ignore=_kit_only)
     with open(os.path.join(mod, "tests", "fixtures", "replay.ts"), "w", encoding="utf-8") as f:
         f.write(options(view, cols, rows))
+    with open(os.path.join(mod, "tests", "fixtures", "golden.ts"), "w", encoding="utf-8") as f:
+        f.write('export default ""\n')  # T-1670 review: the copy draws in print mode; a missing or conflicted golden still imports
     return mod
 
 
@@ -98,7 +100,7 @@ def drawn(view, cols=80, rows=40, env=None):
                 os.killpg(p.pid, signal.SIGKILL)
                 p.wait()
                 raise
-    out = (stdout + "\n" + stderr).splitlines()
+    out = [ln.rstrip("\r") for ln in (stdout + "\n" + stderr).split("\n")]  # splitlines breaks on U+2028 in a title
     line = next((ln for ln in out if ln.startswith(MARK)), None)
     if p.returncode or line is None:
         why = clean("\n".join(ln for ln in out if not ln.startswith(MARK))[-2000:])  # the failure, not the 30 KB tree
@@ -245,9 +247,12 @@ def read_golden():
 
 def golden(update=False):
     """(whether the pane draws the golden frame, a diff when it doesn't): the synthetic fixture at replay.ts's size, as
-    the kit's replay test draws it. None committed yet, or update: written, and the same."""
-    line, old = drawn(load(GOLDEN_VIEW), *GOLDEN_SIZE), read_golden()
-    if update or old is None:
+    the kit's replay test draws it. update: written, and the same; none committed: not the same, and nothing written."""
+    line = drawn(load(GOLDEN_VIEW), *GOLDEN_SIZE)
+    old = None if update else read_golden()  # update never reads it: a conflicted golden is what it rewrites
+    if old is None and not update:
+        return False, [f"no golden at {GOLDEN}; golden --update writes it\n"]
+    if update:
         with open(GOLDEN, "w", encoding="utf-8") as f:
             f.write("// T-1670: the pane drawn from pane-busy.ts at 80x40 (fixtures/replay.ts), as tests/replay.test.tsx\n"
                     "// draws it. Written by tools/pane_replay.py golden --update after a change that draws differently.\n"
@@ -255,8 +260,8 @@ def golden(update=False):
         return True, []
     if line == old:
         return True, []
-    a, b = (json.dumps(json.loads(x), indent=1, ensure_ascii=True) + "\n" for x in (old, line))
-    return False, list(difflib.unified_diff(a.splitlines(True), b.splitlines(True), "golden", "drawn now"))
+    return False, diff([("golden", old, text(json.loads(old), *GOLDEN_SIZE)),  # text rows first: rasters are 30 KB lines
+                        ("drawn now", line, text(json.loads(line), *GOLDEN_SIZE))])
 
 
 def svg(frame, cols, rows):
@@ -273,14 +278,19 @@ def svg(frame, cols, rows):
 
 def write_svg(path, frame, cols, rows):
     """frame to path: an SVG, or a PNG through rsvg-convert for a path ending .png."""
-    text_ = svg(frame, cols, rows)
-    if not path.endswith(".png"):
+    text_, ext = svg(frame, cols, rows), os.path.splitext(path)[1].lower()
+    if ext not in (".svg", ".png"):
+        raise ValueError(f"--out takes a .svg or .png file, not {path}")
+    if ext == ".svg":
         with open(path, "w", encoding="utf-8") as f:
             f.write(text_)
         return
     if not shutil.which("rsvg-convert"):
         raise RuntimeError("a PNG needs rsvg-convert (librsvg), which isn't installed; --out FILE.svg works")
-    subprocess.run(["rsvg-convert", "-o", path], input=text_.encode(), check=True, timeout=60, capture_output=True)
+    try:
+        subprocess.run(["rsvg-convert", "-o", path], input=text_.encode(), check=True, timeout=60, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"rsvg-convert failed: {clean(e.stderr.decode(errors='replace'))[-500:]}") from None
 
 
 def size(lo, hi):
@@ -309,7 +319,8 @@ def main():
         if a.cmd == "golden":
             same, lines = golden(a.update)
             sys.stdout.writelines(lines)
-            print("golden: " + ("written" if a.update else "the pane draws it" if same else
+            print("golden: " + ("written" if a.update else "the pane draws it" if same else "none committed" if
+                                lines[:1] and lines[0].startswith("no golden") else
                                 "the pane drew differently; a change meant to draw so runs golden --update"))
             return 0 if same else 1
         if a.cmd == "svg":
