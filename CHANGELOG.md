@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- README redesign: centered hero, a nav row, three hand-drawn diagrams (the loop, the guard, how the pieces fit) that read in light and dark, tables instead of paragraphs, depth folded into details; about 6,300 visible words (tables included) down to 1,700, prose 5,700 to 700. MASTER.md gains a contents line and two of the diagrams; a docs test keeps the README short (T-2052).
 - New logo: a hard hat with a check mark on a navy tile, used as the site favicon, nav mark and README header (T-2041).
 - Library: 25 UX pattern cards in a new ux area (onboarding, empty states, navigation, UX writing, error messages, search, filters, command palette, settings, pricing, checkout, sign-up, notifications, dashboards, progressive disclosure, wizards, undo, destructive actions, mobile navigation, tooltips, feedback, permissions, information architecture, usability testing, dark patterns) (T-2039).
 - Library: 25 visual-design cards in the ux area (visual hierarchy, grids, spacing and type scales, palettes, tokens, icons, logos, brand, illustration, imagery, charts, landing pages, heroes, calls to action, social proof, bento layouts, gestalt, polish, handoff, art direction, app icons, share images, email) (T-2042).

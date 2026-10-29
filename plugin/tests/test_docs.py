@@ -955,5 +955,47 @@ class Logo(unittest.TestCase):  # T-2041
         self.assertIn('src="site/assets/foreman.svg"', read_text(os.path.join(root_dir, "README.md")))
 
 
+class ReadmeShape(unittest.TestCase):  # T-2052
+    root = os.path.dirname(PLUGIN)
+
+    def visible_lines(self, text):
+        # What a reader sees without expanding anything: prose, tables, headings; no folded <details> or code.
+        text = re.sub(r"(?s)<details>.*?</details>", "", text)
+        text = re.sub(r"(?s)```.*?```", "", text)
+        return [l for l in text.splitlines() if l.strip()]
+
+    def test_the_readme_is_scannable_not_a_wall_of_text(self):
+        lines = self.visible_lines(read_text(os.path.join(self.root, "README.md")))
+        words = sum(len(re.sub(r"<[^>]+>|\]\([^)]*\)|[|*`#\[\]-]", " ", l).split()) for l in lines)
+        self.assertLessEqual(words, 2000, "fold the depth into <details> or the docs")  # tables count too
+        prose = [l for l in lines if not l.lstrip().startswith(("<", "|", "#"))]
+        self.assertLessEqual(sum(len(l.split()) for l in prose), 1000, "say it in a table or a diagram")
+        longest = max((l for l in lines if not l.lstrip().startswith("<")), key=len)
+        self.assertLessEqual(len(longest), 300, f"split this paragraph or table row: {longest[:80]}…")
+
+    def test_every_image_exists_and_the_diagrams_are_safe_self_contained_tiles(self):
+        import xml.etree.ElementTree as ET
+        ns = "{http://www.w3.org/2000/svg}"
+        for doc in ("README.md", "MASTER.md"):
+            text = read_text(os.path.join(self.root, doc))
+            srcs = [s for s in re.findall(r'src="([^"]+)"', text) if not s.startswith("http")]
+            for src in srcs:
+                self.assertTrue(os.path.exists(os.path.join(self.root, src)), f"{doc}: missing {src}")
+            diagrams = [s for s in srcs if s.startswith("site/assets/diagrams/")]
+            self.assertGreaterEqual(len(diagrams), 3 if doc == "README.md" else 1, doc)
+        for name in os.listdir(os.path.join(self.root, "site", "assets", "diagrams")):
+            path = os.path.join(self.root, "site", "assets", "diagrams", name)
+            text = read_text(path)
+            svg = ET.fromstring(text)
+            self.assertTrue(svg.findtext(ns + "title"), f"{name}: screen readers need a title")
+            self.assertTrue(svg.get("viewBox"), f"{name}: scales with the page")
+            for bad in ("href", "<script", "@import", "<foreignObject"):
+                self.assertNotIn(bad, text, f"{name}: nothing loaded or run from elsewhere")
+            self.assertEqual(re.findall(r"url\((?!#)", text), [], f"{name}: only in-file gradients")
+            tile = svg.find(ns + "rect")
+            self.assertEqual(tile.get("width"), svg.get("viewBox").split()[2], f"{name}: opens on its own tile")
+            self.assertNotIn(tile.get("fill"), (None, "none"), f"{name}: an opaque tile reads on light and dark pages")
+
+
 if __name__ == "__main__":
     unittest.main()

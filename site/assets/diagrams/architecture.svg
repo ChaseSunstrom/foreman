@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 410" width="880" height="410" role="img">
+<title>How Foreman fits together: Claude Code, other agents, fm code and headless runs call Foreman's hooks and the fm CLI, which keep state on disk; the pane, status line, desktop app and MCP clients read fm's JSON</title>
+<style>
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif}
+.t{font-size:19px;font-weight:700;fill:#E7ECF4}
+.u{font-size:13.5px;fill:#9AA8BC}
+.k{font-size:11px;font-weight:700;letter-spacing:.14em}
+.h{font-size:15px;font-weight:600;fill:#E7ECF4}
+.s{font-size:12.5px;fill:#9AA8BC}
+.c{fill:#131C2B;stroke:#24324A}
+.flow{stroke-dasharray:4 8;animation:f 1.6s linear infinite}
+@keyframes f{to{stroke-dashoffset:-12}}
+@media (prefers-reduced-motion:reduce){.flow{animation:none}}
+</style>
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#18243A"/><stop offset="1" stop-color="#0B111C"/></linearGradient>
+<marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#7E8BA0"/></marker>
+<marker id="ag" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#FFC83D"/></marker>
+</defs>
+<rect width="880" height="410" rx="16" fill="url(#bg)"/>
+<rect x=".5" y=".5" width="879" height="409" rx="15.5" fill="none" stroke="#fff" stroke-opacity=".08"/>
+<text class="t" x="32" y="44">How the pieces fit</text>
+<text class="u" x="32" y="67">One CLI and one state folder. Every view reads fm's JSON; rules and gates live in fm.</text>
+<text class="k" x="32" y="106" fill="#86A8FF">WHERE YOU WORK</text>
+<text class="k" x="325" y="106" fill="#FFC83D">FOREMAN</text>
+<text class="k" x="618" y="106" fill="#47C98B">WHAT YOU SEE</text>
+<g>
+<rect class="c" x="32" y="118" width="230" height="56" rx="10"/><rect x="32" y="128" width="3" height="36" rx="1.5" fill="#86A8FF"/>
+<text class="h" x="48" y="141">Claude Code</text><text class="s" x="48" y="161">a hook on every tool call</text>
+<rect class="c" x="32" y="184" width="230" height="56" rx="10"/><rect x="32" y="194" width="3" height="36" rx="1.5" fill="#86A8FF"/>
+<text class="h" x="48" y="207">Other agents</text><text class="s" x="48" y="227">Codex, Gemini CLI, opencode</text>
+<rect class="c" x="32" y="250" width="230" height="56" rx="10"/><rect x="32" y="260" width="3" height="36" rx="1.5" fill="#86A8FF"/>
+<text class="h" x="48" y="273">fm code</text><text class="s" x="48" y="293">the loop on any model</text>
+<rect class="c" x="32" y="316" width="230" height="56" rx="10"/><rect x="32" y="326" width="3" height="36" rx="1.5" fill="#86A8FF"/>
+<text class="h" x="48" y="339">fm run · fm serve</text><text class="s" x="48" y="359">headless, on a server</text>
+</g>
+<g fill="none" stroke="#7E8BA0" stroke-width="1.5" marker-end="url(#a)">
+<path d="M264 146C296 146 296 150 323 150"/><path d="M264 212C298 212 296 162 323 162"/>
+<path d="M264 278C300 278 300 238 323 238"/><path d="M264 344C302 344 302 252 323 252"/>
+</g>
+<rect x="325" y="118" width="230" height="62" rx="10" fill="#131C2B" stroke="#FFC83D" stroke-opacity=".5"/>
+<text class="h" x="341" y="142">Hooks</text><text class="s" x="341" y="162">guard · context · drive · gates</text>
+<path class="flow" d="M440 182V214" stroke="#FFC83D" stroke-width="2" marker-end="url(#ag)"/>
+<rect x="325" y="216" width="230" height="62" rx="10" fill="#FFC83D" fill-opacity=".1" stroke="#FFC83D" stroke-opacity=".8"/>
+<text x="341" y="242" style="font:700 17px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#FFD866">fm</text>
+<text class="s" x="341" y="262">one CLI: tasks, evidence, gates</text>
+<path class="flow" d="M440 280V312" stroke="#FFC83D" stroke-width="2" marker-end="url(#ag)"/>
+<rect x="325" y="314" width="230" height="58" rx="10" fill="#131C2B" stroke="#FFC83D" stroke-opacity=".5"/>
+<text class="h" x="341" y="337">State on disk</text><text class="s" x="341" y="357">briefs · proof ledger · lessons</text>
+<g fill="none" stroke="#7E8BA0" stroke-width="1.5" marker-end="url(#a)">
+<path d="M557 240C586 240 584 146 616 146"/><path d="M557 246C590 246 586 212 616 212"/>
+<path d="M557 252C590 252 586 278 616 278"/><path d="M557 258C586 258 584 344 616 344"/>
+</g>
+<g>
+<rect class="c" x="618" y="118" width="230" height="56" rx="10"/><rect x="845" y="128" width="3" height="36" rx="1.5" fill="#47C98B"/>
+<text class="h" x="634" y="141">foreman-ui pane</text><text class="s" x="634" y="161">task, stages, agents, charts</text>
+<rect class="c" x="618" y="184" width="230" height="56" rx="10"/><rect x="845" y="194" width="3" height="36" rx="1.5" fill="#47C98B"/>
+<text class="h" x="634" y="207">Status line and band</text><text class="s" x="634" y="227">task, step and queue</text>
+<rect class="c" x="618" y="250" width="230" height="56" rx="10"/><rect x="845" y="260" width="3" height="36" rx="1.5" fill="#47C98B"/>
+<text class="h" x="634" y="273">Foreman Desktop</text><text class="s" x="634" y="293">every project and session</text>
+<rect class="c" x="618" y="316" width="230" height="56" rx="10"/><rect x="845" y="326" width="3" height="36" rx="1.5" fill="#47C98B"/>
+<text class="h" x="634" y="339">fm mcp</text><text class="s" x="634" y="359">read-only, any MCP client</text>
+</g>
+</svg>
