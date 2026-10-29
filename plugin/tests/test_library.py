@@ -35,6 +35,16 @@ class LibraryCards(ForemanTestCase):
         self.assertGreaterEqual(len(fmlib.cards()), 400)
         self.assertIn("cards", self.fm("lib", "check").stdout)
 
+    def test_check_lints_the_checkout_it_runs_in(self):  # T-2047: a builder's worktree, not the installed cards
+        bad = os.path.join(self.repo, "plugin", "skills", "library", "cards", "web", "broken.md")
+        os.makedirs(os.path.dirname(bad))
+        with open(bad, "w") as f:
+            f.write("no front matter\n")
+        r = self.fm("lib", "check", check=False)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("broken", r.stdout)
+        self.assertIn("has no plugin/skills/library/cards", self.fm("lib", "check", "--root", self.home, check=False).stderr)
+
     def test_lint_notes_carry_their_kind(self):  # T-1604
         _, notes = fmlib.lint()
         self.assertTrue(all(getattr(x, "kind", None) in ("related", "stale") for x in notes), notes[:5])
