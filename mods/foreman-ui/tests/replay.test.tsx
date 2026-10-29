@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import REPLAY from './fixtures/replay'
+import GOLDEN from './fixtures/golden'
 
 // T-1534: the pane drawn from a recorded `fm ui --json` view with no live session: fm, the clock (frozen: it moves only
 // when a test advances it), the store and the environment are fakes. tools/pane_replay.py runs this same file in a copy
@@ -62,4 +63,12 @@ test('replay: a second run in a fresh world draws the same bytes (T-1534)', asyn
   const drawn = await draw($, on)
   expect(runs.length).toBe(2)
   expect(drawn).toBe(runs[0]!)
+})
+
+// T-1670: the committed golden frame. A pane change that draws differently fails here until
+// `python3 tools/pane_replay.py golden --update` rewrites fixtures/golden.ts (its diff shows what moved).
+test('replay: the pane draws its golden frame, else tools/pane_replay.py golden --update (T-1670)', async ($, on) => {
+  if (REPLAY.print) return // a tool's own copy draws another view: no golden there
+  const drawn = await draw($, on)
+  expect(drawn).toBe(GOLDEN)
 })
