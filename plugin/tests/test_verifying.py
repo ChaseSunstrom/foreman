@@ -111,3 +111,15 @@ class CatchRate(Base):
         self.assertRegex(warns, r"`make lint` never failed in 3 run")
         self.assertRegex(warns, r"`make test` caught a failure in 1 task")
         self.assertRegex(warns, r"`make unit` caught a failure in 1 task")  # T-0880: prove's red run on the start tree
+
+    def test_track_record_trusts_this_tasks_red_prove_under_another_command(self):
+        # T-1947: the prove ran a narrower command (-k one_test), so the step's check looked untested
+        tid = self.task("lint is clean :: make lint")
+        rows = [{"ts": c.now(), "task": t, "event": "evidence", "data": {"cmd": "make lint", "result": c.run_result(0, "ok")}}
+                for t in ("T-0101", "T-0102", "T-0103")]
+        rows.append({"ts": c.now(), "task": tid, "event": "prove", "data": {"cmd": "make lint -k one", "red": 1, "green": 0}})
+        with open(os.path.join(self.p.dir, "ledger.jsonl"), "a") as f:
+            f.writelines(json.dumps(r) + "\n" for r in rows)
+        import fmcli
+        warns = " ".join(fmcli._close_warnings(self.p, c.find_brief(self.p, tid), []))
+        self.assertNotIn("never failed", warns)
