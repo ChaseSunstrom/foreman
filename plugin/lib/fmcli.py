@@ -2878,11 +2878,22 @@ def task_set(p, args):
         for sec, raw in pairs:
             text = c.redact(raw)
             b.set_section(sec, b.keep_ticks(text) if sec == "Acceptance criteria" else text)
+        if "status" not in changes:
+            _filled(b)
         if changes:
             b.append_log("set " + ", ".join(f"{k}={v}" for k, v in changes.items()))
     b, _ = mutate(p, args.id, apply, "task_set", {"changes": changes, "allow": args.allow or [],
                                                   "section": [sec for sec, _ in pairs] or None})
     out(args, c.brief_summary(b), f"{b.id} updated.")
+
+
+def _filled(b, result=None):
+    """T-1886: a captured brief that now has criteria and steps is planned, as fm task new makes it; left captured,
+    the drive kept offering it for planning. Returns result, the mutation's own."""
+    if b.status == "captured" and b.acceptance() and b.steps():
+        b.meta["status"] = "planned"
+        b.append_log("planned: it has criteria and steps")
+    return result
 
 
 def _list_value(v):
@@ -2894,7 +2905,7 @@ def _list_value(v):
 
 def task_step(p, args):
     if args.action == "add":
-        b, n = mutate(p, args.id, lambda b: b.add_step(args.arg), "step_add", {"text": args.arg})
+        b, n = mutate(p, args.id, lambda b: _filled(b, b.add_step(args.arg)), "step_add", {"text": args.arg})
         return out(args, c.brief_summary(b), f"{b.id}: added step {n}.")
     try:
         n = int(args.arg)
@@ -2920,7 +2931,7 @@ def task_ac(p, args):
         text, sep, verify = args.arg.rpartition(" :: ")  # "criterion :: verify cmd", as with task new --ac
         text, verify = (text, verify.strip()) if sep and not args.verify else (args.arg, args.verify)
         _refuse_unrunnable(p, [verify])
-        b, _ = mutate(p, args.id, lambda b: b.add_ac(text, verify), "ac_add", {"text": text})
+        b, _ = mutate(p, args.id, lambda b: _filled(b, b.add_ac(text, verify)), "ac_add", {"text": text})
         _lint_verify(p, [verify])
         return out(args, c.brief_summary(b), f"{b.id}: criterion added.")
     try:
