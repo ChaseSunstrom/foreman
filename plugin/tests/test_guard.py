@@ -2650,10 +2650,10 @@ class TokenFallback(GuardCase):
         cds = " ".join(f"(true); cd d{i}; cd x{i};" for i in range(4))
         for k in (2, 10):
             line = cds + " echo " + " ".join(f"$(ls {j})" for j in range(k)) + "; tar xf -"
-            start = time.monotonic()
+            start = time.process_time()  # T-1935: CPU time (stats count): other test runs on the box slow the wall
             self.assertIsNone(self.bash(line))
             self.assertBlocked(self.bash(line, cwd=self.fhome), "core")
-            self.assertLess(time.monotonic() - start, 2, k)
+            self.assertLess(time.process_time() - start, 2, k)
         self.run_table([  # the guesses still name a folder that exists below a word, .. included
             ('ls {fhome}; cd "$D"; cd plugin/lib; echo x > fmguard.py', "core"),
             ('ls {fhome}; cd "$D"; cd ../foreman/plugin; echo x > lib/fmguard.py', "core"),
