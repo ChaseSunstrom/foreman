@@ -2247,12 +2247,12 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
 
     def test_nesting_too_deep(self):
         r = g.check_bash("ls", self.ctx(), depth=5)
-        self.assertEqual(r, [("rm-outside", "command nesting too deep to analyse")])
+        self.assertEqual(r, [("rm-outside", "command nesting too deep to analyse: split the command")])
         self.assertEqual(g.check_bash("ls", self.ctx(), depth=4), [])
         deep = "ls"
         for _ in range(6):
             deep = "bash -c " + shlex.quote(deep)
-        self.assertBlocked(self.bash(deep), "rm-outside")
+        self.assertBlocked(self.bash(deep, allow=("rm-outside",)), "rm-outside")  # T-1929: no grant lifts the cap
 
 
 class SelfAuthorize(GuardCase):
@@ -2626,6 +2626,22 @@ class TokenFallback(GuardCase):
             ("mkdir -m 0 -p {repo}/q; cd {repo}/q; tar xf -", "core"),  # a folder it can't enter
         ], lambda cmd: self.bash(cmd, cwd=self.fhome))
         self.assertLess(time.monotonic() - start, 2)
+
+    def test_a_line_too_tangled_to_analyse_is_refused_under_any_grant(self):
+        # T-1929: the folder caps and the nesting cap refused as rm-outside, so a task's rm-outside grant lifted them
+        # and the rest of the line, never read (here a tar over Foreman), ran
+        line = " ".join(f"(true); cd d{i}; cd x{i};" for i in range(6)) + " tar xf -"
+        self.assertIn(self.bash(line, cwd=self.fhome, allow=("rm-outside", "core")).detail, g.UNANALYSED)
+        r = self.bash("eval \"$(echo -e 'tar xf - -C {fhome}')\"", allow=("rm-outside",))  # its text is never read
+        self.assertIn(r.detail, g.UNANALYSED)
+        ctx = self.ctx(allow=("rm-outside",))
+        for detail in sorted(g.UNANALYSED):  # the nested-folders cap's line takes seconds: its words here
+            r = g.check("Bash", {"command": "ls"}, ctx, found=[("rm-outside", detail)])
+            self.assertBlocked(r, "rm-outside")
+            self.assertNotIn("--allow", g.message(r, ctx))
+            self.assertIn("no grant lifts", g.message(r, ctx))
+        self.assertIsNone(self.bash("rm -rf {home}/x", allow=("rm-outside",)), "the grant still lifts a plain one")
+        self.assertIsNone(self.bash("rm -rf '{home}/to analyse'", allow=("rm-outside",)), "a path is not a cap")
 
     def test_deep_nesting_is_masked_in_linear_time(self):
         line = "\"$(echo " * 20000 + "\"x\" " * 20000

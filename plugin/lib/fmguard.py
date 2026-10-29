@@ -133,7 +133,7 @@ def check(tool_name, tool_input, ctx, found=None):
     found = findings(tool_name, tool_input, ctx) if found is None else found
     for cat in CATEGORIES:
         for got, detail in found:
-            if got == cat and (got in NOT_AUTHORIZABLE or got not in ctx.allow):
+            if got == cat and (got in NOT_AUTHORIZABLE or got not in ctx.allow or unanalysed(detail)):
                 if got == "core" and ("core" in ctx.standing and _standing_covers(detail, ctx)
                                       or ctx.trusted and _trust_covers(detail, ctx)):
                     continue
@@ -213,6 +213,19 @@ def _hint(detail, cat=""):
     return research
 
 
+UNANALYSED = frozenset({  # T-1929: refusals for text the guard never read to its end; each names its way through
+    "command nesting too deep to analyse: split the command",
+    "nested commands in too many folders to analyse: split the command",
+    "the line may be in too many folders to analyse: split the command",
+    "eval of computed text it can't analyse: run the text itself",
+})
+
+
+def unanalysed(detail):
+    """T-1929: no grant lifts these: the rest of the line was never read, so a grant would let it run unchecked."""
+    return isinstance(detail, str) and detail in UNANALYSED
+
+
 def _unread(detail):
     """A system refusal for a program the guard couldn't read (not for what a program does)."""
     return "can't read" in detail or detail == "script nests too deep to read" or detail.endswith(
@@ -248,6 +261,8 @@ def _message(block, ctx):
                 f"direct writes are never authorized.")
     if cat == "system" and _unread(detail):  # T-1298: the way through is a program the guard can read (the hint),
         return f"Foreman guard: blocked system: {detail}."  # not --allow system, which lifts every system check
+    if unanalysed(detail):
+        return f"Foreman guard: blocked {cat}: {detail}; no grant lifts this."
     if ctx.task_id:
         how = f"fm task set {ctx.task_id} --allow {cat} (records it in the brief), then retry"
     else:
@@ -3266,7 +3281,7 @@ def _track_vars(words, env, home=None):
 def check_bash(cmd, ctx, depth=0, tails=True, at=False):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
-        return [("rm-outside", "command nesting too deep to analyse")]
+        return [("rm-outside", "command nesting too deep to analyse: split the command")]
     # T-1727 review: the folders the caller may be in when it runs this text (eval, sh -c, sh <<<), so a discarding
     # git command read here is saved where it runs, not in the hook's cwd
     if not depth:
@@ -3441,7 +3456,7 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
                           cmdname == "printf" and not re.search(r"[%\\]", w[0])):
                     found += check_bash(" ".join(w), ctx, depth + 1)
                 else:  # flags, escapes, a format, a wrapped or pathed echo: the text isn't what is written
-                    found.append(("rm-outside", "eval of computed text"))
+                    found.append(("rm-outside", "eval of computed text it can't analyse: run the text itself"))
             if _DOWNLOAD_SUBST.search(joined):
                 found.append(("pipe-shell", "eval of a downloaded script"))
         computed = bool(re.search(r"[$`]", name))  # `| $GREP pat` is common: any word after it counts as its script
