@@ -1395,6 +1395,21 @@ class InterpreterWrites(GuardCase):
             self.assertTrue(driving(f"cd {d}\n" + body))
             self.assertTrue(driving(f"pushd {d} >/dev/null\n" + body))
 
+    def test_an_uppercase_variable_or_and_chain_before_a_heredoc(self):
+        # T-1887 (friction 5x): `S=… && python3 - "$S/f" <<'EOF'` made the heredoc no unit, so the text match refused
+        # an edit script that names fm modules only in its strings
+        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        body = ("python3 - \"$S/a.py\" <<'EOF'\nimport re\ns = 'import fmcore; fmcore.write_meta(p, {{}})'\n"
+                "print(re.escape(s))\nEOF")
+        for pre in ("S=/tmp/x && ", "S=/tmp/x; ", "s=/tmp/x && W=/tmp/y; "):
+            self.assertFalse(driving(pre + body), pre)
+        for pre in ("PATH=/tmp/b && ", "HOME=/tmp/h; ", "LD_PRELOAD=/tmp/x.so && ", "PYTHONPATH=/tmp && ", "IFS=/; ",
+                    "CLAUDE_CODE_ENTRYPOINT=x && ", "FOREMAN_HOME=/tmp/f; ", "S=$(echo /tmp) && ", "S=/tmp/x || ",
+                    "S=/tmp/x & ", "set -a\nS=/tmp/x && "):
+            self.assertIsNotNone(self.bash(pre + body), pre)  # refused: by the text match or its own rule
+        with mock.patch.dict(os.environ, {"S": "/tmp/x"}):  # exported already: the new value reaches python
+            self.assertTrue(driving("S=/tmp/y && " + body))
+
     def test_python_c_code_gets_the_same_proof_as_a_quoted_heredoc(self):
         # T-1194: -c code went to the text match, so a helper naming fm modules only in its strings was refused
         driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
