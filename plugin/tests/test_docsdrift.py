@@ -104,6 +104,16 @@ class TaskDocsDrift(DocsDrift):
         self.assertEqual(len(blockers), 1)
         self.assertIn("src/never-written.py", blockers[0])
 
+    def test_a_missing_named_doc_suggests_the_tracked_path_it_meant(self):
+        # T-1995: "rules/foreman.md" for plugin/rules/foreman.md was refused with no hint
+        os.makedirs(os.path.join(self.repo, "plugin", "rules"))
+        with open(os.path.join(self.repo, "plugin", "rules", "foreman.md"), "w") as f:
+            f.write("# Rules\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        blockers, _ = fmdocs.task_docs(self.repo, "rules/foreman.md and gone/NOPE.md")
+        self.assertEqual(blockers, ["docs impact names gone/NOPE.md, which doesn't exist",
+                                    "docs impact names rules/foreman.md, which doesn't exist (plugin/rules/foreman.md?)"])
+
     def test_task_docs_a_new_doc_is_all_added(self):
         self.append("NEW.md", "See `src/missing.py`.\n")
         blockers, _ = fmdocs.task_docs(self.repo, "NEW.md")
