@@ -60,6 +60,9 @@ Class: medium. Three 4-octave fbm calls, twelve value-noise lookups a pixel. Ren
 ## Reduced motion
 Still: `uTime = 0.0`, `uSpread = 1.0`: draw the finished stain once, no spread and no drift; redraw only on resize.
 
+## Sketch
+The sketchbook's preset (`fm scene sketchbook`): `uIntensity=1 uSpread=0.6 uOrigin=0.5,0.5 uInk=0.12,0.16,0.35 uPaper=0.97,0.96,0.93`
+
 ## Suits
 Editorial features, literary and art sites, tea and craft brands, a hero reveal behind one headline.
 Not for: dashboards, dense UI, anything behind body text (the rim crosses it).

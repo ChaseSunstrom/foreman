@@ -52,6 +52,9 @@ Class: low. Four value-noise lookups a pixel, no loop. Render at half resolution
 ## Reduced motion
 Still: `uTime = 0.0`: a fixed net of light, redrawn on resize only.
 
+## Sketch
+The sketchbook's preset (`fm scene sketchbook`): `uIntensity=1 uScale=4 uSoft=0.2 uFloor=0.1,0.3,0.4 uLight=0.75,0.95,1`
+
 ## Suits
 Hotels and spas, swimwear and summer campaigns, drinks and citrus brands, a pool or marine-science page.
 Not for: anything that must feel dry or exact (finance, legal, tooling), dark night themes (caustics need daylight).

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Shader sketchbook (T-1784): fm scene sketchbook writes one page where every shader look card runs live with the preset its new Sketch section ships; thumbnails draw only while on screen, hold one still frame for readers who ask for less motion, and show the card's description without WebGL2. The site gains the same page.
 - Change: the survival line (fm digest, fm outcomes) gives the number of closes and the share lost; '24 survived, 45 lost' read as a 65% loss rate when it was 45 of about 1300 (T-2037).
 - Fix: a Python snippet drafted outside the project (in a scratch folder) is no longer blocked as unparsable; JSON drafts are still checked (T-2035).
 - Fix: a test class run.py started now dies with run.py, even when run.py is killed outright (a Bash timeout); one orphaned class had spun a CPU core for a day (T-2034).
