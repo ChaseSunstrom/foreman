@@ -263,6 +263,14 @@ class CaptureAndIntake(ForemanTestCase):
         self.assertTrue(t["T-0002"].startswith("c.first_touch"), t["T-0002"])
         self.assertEqual(t["T-0003"], "The band is slow")
 
+    def test_a_mid_sentence_scope_keeps_its_text_and_an_end_one_is_dropped(self):
+        # T-1991: "an intake line made only of @path tokens …" became "made only of  tokens"
+        import fmcli
+        self.assertEqual(fmcli._title("a line of @path tokens is dropped @plugin/lib/fmcore.py"),
+                         "A line of path tokens is dropped")
+        self.assertEqual(fmcli._title("@src/app.py the totals row is wrong"), "The totals row is wrong")
+        self.assertEqual(fmcli._title("mail a@b.com bounces @src/mail.py"), "Mail a@b.com bounces")
+
     def test_titles_cannot_carry_terminal_control_sequences(self):
         # round 4 (brainstorm, security): titles are printed by the dashboard, statusline and terminal title
         self.fm("capture", "evil\x1b]0;pwned\x07 title‮ here")

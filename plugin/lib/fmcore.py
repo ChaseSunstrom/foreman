@@ -2308,6 +2308,10 @@ def parse_intake(text):
             val = m.group("text").strip()
             current = [BLOCK_TAGS[tag], f"{tag}: {val}" if tag in ("MUST", "NEVER") else val, len(r.items) - 1]
             lines.append(current)
+        elif current is not None and r.items and body and not _SCOPE_RE.sub("", body).strip():
+            it = r.items[-1]  # T-1989: an @path-only line scopes the item above (kept in its text, so a later
+            it.text, it.raw = it.text + "\n" + body, it.raw + "\n" + line  # continuation line's re-scan keeps it)
+            it.scopes = _SCOPE_RE.findall(it.text)
         else:
             untagged.append(body)
             current = None

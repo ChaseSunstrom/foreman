@@ -70,6 +70,7 @@ class Loop(ForemanTestCase):
             brief = fmloop.round_brief(p)
         self.assertNotIn("fm ideas", brief)
         self.assertIn("Optional work is dropped (weekly usage 80%)", brief)  # or the spent risk budget: not usage
+        self.assertIn("isn't counted dry", brief)  # T-1990: T-1986's rule, said where the yield is asked for
 
     def test_a_budget_limited_round_leaves_the_dry_streak_alone(self):
         # T-1986: with optional work dropped there is no ideas fan-out; a spent budget ended the loop as "2 dry rounds"
