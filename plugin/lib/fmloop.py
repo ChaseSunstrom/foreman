@@ -107,7 +107,8 @@ def _brief(p, n, since):
               "3. Cluster and ground every idea against the code (fm-recon for a big set); keep what is real and new.",
               "4. Queue every grounded idea with one fm intake block, then work the queue.",
               f"5. fm loop yield <how many you queued> — fewer than {DRY_YIELD} is a dry round; {DRY_STOP} dry rounds "
-              "in a row end the loop."]
+              "in a row end the loop" + ("; with optional work dropped, a small round isn't counted dry (T-1990)."
+                                          if pace else ".")]
     return "\n".join(lines)
 
 
