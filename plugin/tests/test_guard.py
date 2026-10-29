@@ -475,6 +475,8 @@ class Publish(GuardCase):
             ("fm inbox ticket --post T-0003", "publish"),  # T-1881: a comment on someone's issue
             ("fm inbox ticket --post=T-0003", "publish"),
             ("python3 plugin/bin/fm inbox ticket --post T-0003", "publish"),
+            ("fm -p foreman inbox ticket --post T-0003", "publish"),  # a project flag ahead of the subcommand
+            ("plugin/bin/fm --project foreman inbox ticket --post T-0003", "publish"),
             ("fm inbox ticket gh:o/r#3", None),
             ("cargo publish --dry-run", None),
             ("npm install", None),
