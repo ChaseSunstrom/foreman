@@ -68,15 +68,15 @@ def _grant(p):
     return b if b and "publish" in (b.meta.get("allow") or []) else None
 
 
-def _spend(p, tid):
+def _spend(p, tid, by):
     with c.lock(p.dir):
         b = c.find_brief(p, tid)
         if "publish" not in (b.meta.get("allow") or []):  # another release spent it since _grant looked
             _err("the publish grant was already spent; nothing was pushed")
         b.meta["allow"] = [x for x in b.meta.get("allow") or [] if x != "publish"]
-        b.append_log("publish grant used by fm release --push")
+        b.append_log(f"publish grant used by {by}")
         c.save_brief(p, b)
-        c.log_event(p, "grant_spent", task=tid, data={"allow": "publish", "by": "fm release --push"})
+        c.log_event(p, "grant_spent", task=tid, data={"allow": "publish", "by": by})
 
 
 def _gate(root, verb):
@@ -298,16 +298,90 @@ def _push(ctx):
         _err(_NEED_GRANT)
     sha = ctx["state"].get("sha") or _err(f"no release commit recorded for {v}: fm release --abandon, then release again")
     _git(root, "fetch", "-q", remote, "main")
-    _spend(p, b.id)  # the yes covers this one push: spent before it, as fm pr train does
     with tempfile.TemporaryDirectory() as tmp:
         wt = os.path.join(tmp, "rel")
         _git(root, "worktree", "add", "-q", "--detach", wt, "FETCH_HEAD")
         try:
             _git(wt, "merge", "-q", "--no-ff", sha, "-m", f"Foreman {v}")
-            _git(wt, "push", "-q", remote, "HEAD:main")
+            _push_main(p, b.id, _git(wt, "rev-parse", "HEAD").strip(), remote, "fm release --push")
         finally:
             _git(root, "worktree", "remove", "--force", wt, ok=True)
     print(f"  pushed Foreman {v} to {remote} main (the publish grant is spent)")
+
+
+def _push_main(p, tid, sha, remote, by):
+    """Push sha to remote's main from the repo (a relative remote URL resolves there). The grant is spent first, so one
+    yes is one push even for two racing callers, and given back if git push fails (T-1943)."""
+    _spend(p, tid, by)
+    try:
+        _git(p.root, "push", "-q", remote, f"{sha}:refs/heads/main")
+    except Exception:
+        with c.lock(p.dir):
+            b = c.find_brief(p, tid)
+            b.meta["allow"] = [*(b.meta.get("allow") or []), "publish"]
+            b.append_log(f"publish grant given back: {by}'s push failed")
+            c.save_brief(p, b)
+        raise
+
+
+def ship(p, args):
+    """T-1943: fm ship — HEAD's commits the remote's main lacks (git cherry, by patch) or the named ones, cherry-picked
+    onto the fetched main in a scratch worktree, their files compared, tested there, main re-checked, then pushed
+    behind the publish grant. The working tree is never touched; a failure pushes nothing and keeps the grant."""
+    import shlex
+    root, remote = p.root, args.remote or "origin"
+    if remote.startswith("-"):
+        _err(f"--remote {remote!r} reads as a git option; name a remote or a URL")
+    _git(root, "fetch", "-q", remote, "main")
+    base = _git(root, "rev-parse", "FETCH_HEAD").strip()
+    picks = []
+    for x in args.commits or []:
+        sha = "" if x.startswith("-") else _git(root, "rev-parse", "--verify", "-q", "--end-of-options", f"{x}^{{commit}}", ok=True).strip()
+        picks.append(sha or _err(f"{x!r} isn't a commit here"))
+    picks = picks or [ln[2:] for ln in _git(root, "cherry", base, "HEAD").splitlines() if ln.startswith("+ ")]
+    if not picks:
+        print(f"nothing to ship: {remote} main already has HEAD's changes")
+        return 0
+    b = _grant(p) or _err(_NEED_GRANT.replace("--push", "fm ship", 1) + "; nothing was pushed")
+    test = shlex.split(args.test) if args.test else [*FM, "check"]
+    files = sorted({f for s in picks for f in _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "-m", s).splitlines() if f})
+    n = f"{len(picks)} commit{'s' if len(picks) > 1 else ''}"
+    with tempfile.TemporaryDirectory() as tmp:
+        wt = os.path.join(tmp, "ship")
+        _git(root, "worktree", "add", "-q", "--detach", wt, base)
+        try:
+            for s in picks:
+                r = c._git(wt, "cherry-pick", s, timeout=300, proc=True)
+                if r.returncode:
+                    _git(wt, "cherry-pick", "--abort", ok=True)
+                    hint = "" if args.commits else " (main may hold it under another patch: name the commits to ship)"
+                    _err(f"{s[:8]} didn't cherry-pick onto {remote} main{hint}: {c.fit(c.plain(r.stderr.strip()), 200)}; nothing was pushed")
+            if files and c._git(wt, "diff", "--quiet", "HEAD", picks[-1], "--", *files, timeout=300, proc=True).returncode:
+                _err(f"the shipped files differ from {picks[-1][:8]}'s: a commit is missing or extra, or main changed "
+                     "these files since the branch left it (rebase onto main); nothing was pushed")
+            print(f"testing {n} on {remote} main: {shlex.join(test)}", flush=True)
+            env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # GIT_DIR from a hook: not the user's repo
+            try:
+                failed = subprocess.run(test, cwd=wt, stdin=subprocess.DEVNULL, env=env).returncode
+            except OSError as e:
+                _err(f"--test {test[0]!r} couldn't run ({e.strerror}); nothing was pushed")
+            if failed:
+                _err("the test failed in the scratch tree; nothing was pushed")
+            tip = _git(wt, "rev-parse", "HEAD").strip()
+            _git(root, "fetch", "-q", remote, "main")
+            if c._git(root, "merge-base", "--is-ancestor", "FETCH_HEAD", tip, timeout=60, proc=True).returncode:
+                _err(f"{remote} main moved while testing; nothing was pushed: run fm ship again")
+            _push_main(p, b.id, tip, remote, "fm ship")
+        finally:
+            _git(root, "worktree", "remove", "--force", wt, ok=True)
+    print(f"shipped {n} to {remote} main at {tip} (the publish grant is spent). "
+          f"Watch CI in the background: fm ci-watch --commit {tip}")
+    return 0
+
+
+def cmd_ship(args):
+    import fmcli
+    return ship(fmcli.resolve(args), args)
 
 
 def _round(ctx):
