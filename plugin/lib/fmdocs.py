@@ -115,8 +115,15 @@ def task_docs(root, docs_impact):
     other docs, and old drift in the ones it updated, is reported, not blocking, so an old problem never holds up
     unrelated work."""
     named = {os.path.normpath(n) for n in re.findall(r"[\w./-]+\.md\b", docs_impact or "")}
-    blockers = [f"docs impact names {n}, which doesn't exist" for n in sorted(named)
-                if not os.path.exists(os.path.join(root, n))]
+    gone = [n for n in sorted(named) if not os.path.exists(os.path.join(root, n))]
+    try:  # T-1995: name the one tracked doc it most likely meant ("rules/foreman.md" for plugin/rules/foreman.md)
+        tracked = subprocess.run(["git", "-C", root, "ls-files", "--", "*.md"], capture_output=True, text=True,
+                                 timeout=30).stdout.splitlines() if gone else []
+    except (OSError, subprocess.SubprocessError):
+        tracked = []
+    meant = {n: [t for t in tracked if t.endswith("/" + n)] for n in gone}
+    blockers = [f"docs impact names {n}, which doesn't exist" + (f" ({meant[n][0]}?)" if len(meant[n]) == 1 else "")
+                for n in gone]
     notes = []
     added = {}
     for f in scan(root):
