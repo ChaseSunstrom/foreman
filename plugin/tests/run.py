@@ -24,9 +24,10 @@ def skipped():
     return {x.strip() for x in os.environ.get("FOREMAN_SKIP_TESTS", "").split(",") if x.strip()}
 
 
-def classes(patterns, k, hit=None, names=()):
+def classes(patterns, k, hit=None, names=(), ids=None):
     """Every test class id (module.Class) discover would run, biggest first so the long ones start early; hit (a set)
-    gets each -k pattern or name that matched a test. T-1994: with names and -k both, a test matches one of each."""
+    gets each -k pattern or name that matched a test. T-1994: with names and -k both, a test matches one of each.
+    ids (a list) gets every test id walked, before any filter."""
     sys.path.insert(0, HERE)
     counts, skip, hit = {}, skipped(), set() if hit is None else hit
 
@@ -34,10 +35,13 @@ def classes(patterns, k, hit=None, names=()):
         for t in suite:
             if isinstance(t, unittest.TestSuite):
                 walk(t)
-            elif skip and (t.id().rsplit(".", 1)[-1] if type(t).__name__ == "_FailedTest"  # a module that won't import
+                continue
+            if skip and (t.id().rsplit(".", 1)[-1] if type(t).__name__ == "_FailedTest"  # a module that won't import
                            else type(t).__module__) in skip:
                 continue
-            elif (not k or any(x in t.id() for x in k)) and (not names or any(x in t.id() for x in names)):
+            if ids is not None:
+                ids.append(t.id())
+            if (not k or any(x in t.id() for x in k)) and (not names or any(x in t.id() for x in names)):
                 hit.update(x for x in (*k, *names) if x in t.id())
                 cid = f"{type(t).__module__}.{type(t).__name__}"
                 counts[cid] = counts.get(cid, 0) + 1
@@ -169,12 +173,16 @@ def main():
     if any(re.search(r"\s", k) for k in a.k + a.names):  # T-0357: '-k "a or b"' matched nothing and failed only at the end
         ap.error("-k matches a substring of test ids; repeat -k for each pattern (-k test_guard -k test_cli)")
     t0 = time.time()
-    hit = set()
-    todo = classes(a.p or ["test*.py"], a.k, hit, a.names)
+    hit, ids = set(), []
+    todo = classes(a.p or ["test*.py"], a.k, hit, a.names, ids)
     missing = [n for n in a.names if n not in hit]
     if missing:  # T-1287: a name that matches nothing (a test file that doesn't exist) fails, not passes unseen
+        fold = lambda s: s.lower().replace("_", "")  # noqa: E731
+        near = dict.fromkeys(seg for i in ids if any(n in i for n in missing) for seg in i.split(".")
+                             if any(fold(x) in fold(seg) for x in a.k))  # T-2003: -k core_integrity meant CoreIntegrity
         sys.stderr.write(f"run.py: no test matches {', '.join(missing)}"  # T-1999: say what filtered it out
-                         + (f" with -k {' -k '.join(a.k)}" if a.k else "") + "\n")
+                         + (f" with -k {' -k '.join(a.k)}" if a.k else "")
+                         + (f"; did you mean {' or '.join('-k ' + s for s in list(near)[:3])}?" if near else "") + "\n")
         return 1
     if a.shard:
         todo = todo[a.shard[0] - 1::a.shard[1]]
