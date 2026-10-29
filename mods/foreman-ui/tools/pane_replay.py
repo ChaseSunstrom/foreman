@@ -270,7 +270,7 @@ def svg(frame, cols, rows):
     cw, lh, pad = 8.4, 18, 12
     w, h = round(cols * cw + 2 * pad), rows * lh + 2 * pad
     lines = "".join(f'<text x="{pad}" y="{pad + (i + 1) * lh - 5}">{html.escape(ln)}</text>'
-                    for i, ln in enumerate(frame.splitlines()) if ln.strip())
+                    for i, ln in enumerate(frame.split("\n")) if ln.strip())  # T-2048: U+2028 in a title is no row
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
             f'font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14"><rect width="{w}" height="{h}" '
             f'fill="#0d1420"/><g fill="#e7ecf4" xml:space="preserve">{lines}</g></svg>\n')
