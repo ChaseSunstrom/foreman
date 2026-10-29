@@ -63,7 +63,7 @@ h3 { font-size: 1.45rem; font-weight: 600; line-height: 1.1; }
 .top { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(10px); }
 .top .wrap { display: flex; align-items: center; gap: 20px; height: 64px; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font: condensed 700 1.6rem/1 var(--display); }
-.brand img { width: 28px; height: 28px; image-rendering: pixelated; }
+.brand img { width: 28px; height: 28px; }
 .nav { margin-left: auto; display: flex; align-items: center; gap: 22px; }
 .nav a { color: var(--ink-2); text-decoration: none; font-weight: 500; transition: color .15s; }
 .nav a:hover { color: var(--ink); }
