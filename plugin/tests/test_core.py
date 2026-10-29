@@ -351,6 +351,17 @@ class Briefs(unittest.TestCase):
     def test_round_trip_is_lossless(self):
         self.assertEqual(c.Brief.parse(SAMPLE).render(), SAMPLE)
 
+    def test_sections_are_split_only_when_read_and_copies_stay_apart(self):
+        # T-2015: a hook loads every brief but reads few past their frontmatter; splitting 9 MB of sections cost ~50 ms
+        b = c.Brief.parse(SAMPLE)
+        self.assertIsInstance(b._sections, str, "parse leaves the sections unsplit")
+        self.assertEqual(b.title, "Fix login timeout on slow networks")
+        x = b.copy()
+        x.set_section("Log", "changed\n")
+        self.assertEqual(b.render(), SAMPLE, "a copy's edit never reaches the original")
+        self.assertIn("## Log\nchanged\n", x.render())
+        self.assertIn("Add retry with backoff", b.section("Steps"))
+
     def test_steps_and_current(self):
         steps = c.Brief.parse(SAMPLE).steps()
         self.assertEqual([(s.n, s.done, s.current) for s in steps], [(1, True, False), (2, False, True), (3, False, False)])
