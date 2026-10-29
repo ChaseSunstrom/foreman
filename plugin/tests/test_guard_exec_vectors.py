@@ -462,6 +462,12 @@ class ScriptCache(GuardCase):
             self.assertBlocked(self.bash(f"bash {self.script('wrap.sh', f'bash {deep}' + chr(10))}"), "system", wrap)
             self.assertIsNone(self.bash(f"bash {self.script('deep-ok.sh', ok + chr(10))}"), wrap)
 
+    def test_a_finding_that_only_mentions_too_deep_is_not_the_nesting_cap(self):
+        # T-1936: any finding holding "too deep" was taken for the nesting cap and dropped
+        target = os.path.join(os.path.dirname(self.d), "too deep")
+        r = self.bash(f"bash {self.script('named.sh', f'rm -rf {shlex.quote(target)}' + chr(10))}")
+        self.assertBlocked(r, "rm-outside")
+
     def test_a_nested_script_that_appears_later_or_is_relinked_invalidates_the_cache(self):
         inner = os.path.join(self.d, "later.sh")
         if os.path.exists(inner):

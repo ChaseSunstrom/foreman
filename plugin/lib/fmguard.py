@@ -4072,7 +4072,7 @@ def _check_script(text, ctx, depth, acc):
         for f in got:
             if f == ("system", "script nests too deep to read") or f[0] == "system" and f[1].endswith(_DEEP):
                 pass  # from a script further down the chain: it keeps its way up (T-1931 review)
-            elif "too deep" in f[1]:
+            elif f[1] == "command nesting too deep to analyse: split the command":  # T-1936: exact, not any "too deep"
                 # a chain of scripts this deep hides its last one: refuse, never read as clean. Only from the third
                 # script in a chain: a script of its own deep $( … ) nesting is no chain (5 of 330 real scripts)
                 if len(_IN_SCRIPT) < 3:
