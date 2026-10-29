@@ -159,6 +159,20 @@ class RuleIds(Base):
         self.assertEqual(g.Block("brief", os.path.join(self.repo, "notes.md")).rule, "brief:path-md")  # T-0894
         self.assertEqual(g.Block("brief", os.path.join(self.repo, "Makefile")).rule, "brief:path")
 
+    def test_rule_names_read_as_the_check(self):
+        # T-1897: articles named core:a-tree-write-over, and a contraction's apostrophe paired with the next one as a
+        # quote, so brief:this-command-t-run kept "this" and "t" and lost the words between
+        self.assertEqual(g.rule_id("core", "/x/foreman (a tree write over it)"), "core:tree-write-over")
+        self.assertEqual(g.rule_id("brief", "/x/a.py" + g._FOCUS_LATE), "brief:command-own-fm-focus")
+        self.assertEqual(g.rule_id("x", "ran 'rm -rf a b' twice"), "x:ran-twice")  # a quote still goes
+
+    def test_a_tree_write_over_foreman_points_at_a_task_or_a_scratch_worktree(self):
+        # T-1897: 21 such blocks in a week came with no hint
+        hint = g._hint("/home/u/.claude/foreman (a tree write over it)", "core")
+        self.assertIn("fm edit", hint)
+        self.assertIn("git worktree add", hint)
+        self.assertNotIn("git worktree add", g._hint("/x (a tree write over it; git merge)", "core"))  # fm lane merge
+
     def test_a_state_write_is_pointed_at_fm_research_not_at_naming_it(self):
         # T-0814: state-direct can't be granted: when research/ was the real target, "name it literally" only moved the
         # same block to the next try
@@ -180,4 +194,4 @@ class RuleIds(Base):
         blocks = [e for e in events if e.get("event") == "guard_block"]
         self.assertTrue(blocks)
         self.assertTrue(all((e.get("data") or {}).get("rule", "").startswith("rm-outside:") for e in blocks), blocks)
-        self.assertIn("rm-outside:recursive-delete-of", self.fm("friction").stdout)
+        self.assertIn("rm-outside:recursive-delete", self.fm("friction").stdout)
