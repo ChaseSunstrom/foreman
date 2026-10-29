@@ -5360,7 +5360,8 @@ def cmd_next(args):
     import fmcontract
     over += fmcontract.line(p)  # T-1158
     import fmlanes
-    dead = fmlanes.stopped(p, briefs)  # T-1028
+    done = set(c.finished_lanes(p, briefs))  # T-2038: a finished lane is merged, not resumed
+    dead = [i for i in fmlanes.stopped(p, briefs) if i not in done]  # T-1028
     over += (f" · builder(s) stopped, their Claude Code process ended: " + "; ".join(f"fm lane resume {i}" for i in dead)
              + " (keeps the work, frees the worktree, writes a new brief)") if dead else ""
     idle = fmlanes.stalled(p)  # T-1156

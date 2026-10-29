@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A finished builder lane (its branch ahead, its tree clean, quiet for 30 minutes, its builder gone) is named for merge: fm next and the drive say fm lane merge ID instead of fm lane resume, so lane work no longer sits unmerged for days (T-2038).
 - fm ship --watch and fm ci-watch wait for every workflow of the commit: a green pages run no longer reads as CI green while the tests run fails (T-2058).
 - fm settings serve and fm inbox swipe --serve stop cleanly on SIGTERM: the signal sets a flag the loop reads instead of throwing into running code, which hung CI on Python 3.14 (T-2056).
 - Site redesign: a two-column hero with a grid-and-glow backdrop and a highlighted headline, entrance motion, scroll-driven reveals, stamps that slam in, a scroll progress bar, the architecture diagram, hover lift on feature cards; every animation off under reduced motion. The hero's recorded video (whose terminal colours smeared) is now a session drawn as text in the site's palette, replayed line by line while its pane walks the eight stations, crisp at any size and in both themes, whole without JS or with reduced motion; the diamond poster and its WebGL scene became a plain ledger of the four totals. Every count on the landing page now comes from the build (tests, tasks, cards, areas, pages), no inline styles remain, and the demo reel (video, cast and SVG) no longer opens on Claude Code's folder-trust question (T-2040).

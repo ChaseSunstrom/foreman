@@ -3315,6 +3315,47 @@ def andons(briefs):
     return out
 
 
+def finished_lanes(p, briefs, quiet_min=30):
+    """T-2038: ids of open tasks whose lane has commits the main checkout's branch lacks, a clean tree and no commit for
+    `quiet_min` minutes and no live builder: the work waits on fm lane merge (T-1670 and T-1784 sat for days).
+    Cached FM_STALL_CACHE_S seconds (60) per lane set and main commit: the pane asks every 2 s, a merge clears it."""
+    import fmbus
+    lanes = [b for b in briefs if b.meta.get("lane") and b.status not in CLOSED and os.path.isdir(b.meta["lane"])
+             and fmbus.proc_state(b.meta.get("builder_proc")) != "alive"]
+    if not lanes or p.lane:  # only the main checkout merges; no lane costs no git call
+        return []
+    base = _git(main_worktree(p.root) or p.root, "rev-parse", "HEAD").strip()  # a sha: a detached main works too
+    if not base:
+        return []
+    key = [base] + sorted(f"{b.id}={b.meta['lane']}" for b in lanes)
+    cache = os.path.join(p.dir, "finished.json")
+    try:
+        ttl = float(os.environ.get("FM_STALL_CACHE_S") or 60)
+    except ValueError:
+        ttl = 60
+    try:
+        if ttl > 0 and time.time() - os.stat(cache).st_mtime < ttl:
+            with open(cache) as f:
+                got = json.load(f)
+            if got.get("key") == key:
+                return got["out"]
+    except (OSError, ValueError, AttributeError, KeyError):
+        pass
+    out = []
+    for b in lanes:
+        path = b.meta["lane"]
+        last = _git(path, "log", "-1", "--format=%ct").strip()
+        if last.isdigit() and time.time() - int(last) >= quiet_min * 60 \
+                and _git(path, "rev-list", "--count", "HEAD", "--not", base).strip() not in ("", "0") \
+                and not _git(path, "status", "--porcelain", fail="?").strip():
+            out.append(b.id)
+    try:
+        write_atomic(cache, json.dumps({"key": key, "out": out}))
+    except OSError:
+        pass
+    return out
+
+
 def next_for(p, briefs=None):
     """(brief or None, stage, action): the active task, else the first queued, else the top-ranked captured item (T-0111);
     T-0247: a decision whose revisit trigger fired rides along."""
@@ -3332,6 +3373,14 @@ def next_for(p, briefs=None):
     briefs = briefs if briefs is not None else load_briefs(p)
     if b is None or b.status not in ("active", "verifying"):  # T-1841: its lane folder went; it's still active there
         action = "".join(stranded_note(s) + " · " for s in stranded(briefs, p.lane)) + action
+    done = finished_lanes(p, briefs)  # T-2038: first when nothing else is under way
+    if done:
+        merge = (f"builder lane(s) finished, their work waits on a merge: "
+                 + "; ".join(f"fm lane merge {i}" for i in done) + " (review the branch first)")
+        if b is None or b.status not in ("active", "verifying"):
+            action = merge + " · " + action
+        else:
+            action += " · " + merge
     raised = andons(briefs)  # T-0648: a lane stopped to ask
     if raised:
         tid, text = raised[0]
