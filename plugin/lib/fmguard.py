@@ -5092,6 +5092,8 @@ def _check_publish(name, args):
         return []
     if re.match(r"^python[0-9.]*$", name) and args[:1] == ["-m"] and len(args) > 1:
         name, args = args[1], args[2:]
+    if re.match(r"^python[0-9.]*$", name) and args[:1] and args[0].endswith("/fm"):  # T-1881: python3 plugin/bin/fm
+        name, args = "fm", args[1:]
     pos = _positionals(args)
     joined = " ".join(pos[:2])
     for verb in _PUBLISH.get(name, []):
@@ -5101,4 +5103,6 @@ def _check_publish(name, args):
         return [("publish", f"{name} production deploy")]
     if name == "claude" and pos[:2] == ["plugin", "tag"] and "--push" in args:
         return [("publish", "claude plugin tag --push")]
+    if name == "fm" and pos[:2] == ["inbox", "ticket"] and any(a == "--post" or a.startswith("--post=") for a in args):
+        return [("publish", "fm inbox ticket --post")]  # T-1881: posted on the user's ask, not the agent's
     return []
