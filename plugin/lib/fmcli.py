@@ -5400,6 +5400,16 @@ def cmd_help(args):
         q = " ".join(args.words)
         if args.all:
             raise UsageError("fm help --all lists every command and fm help WORDS answers a question: one or the other")
+        named = build_parser()
+        for w in args.words:  # T-1909: words that are a command's name ("task", "task drop") print its -h
+            sub = next((a for a in named._actions if isinstance(a, argparse._SubParsersAction)), None)
+            named = sub.choices.get(w) if sub else None
+            if named is None:
+                break
+        if named is not None:
+            text = named.format_help()
+            out(args, {"command": q, "help": text}, text.rstrip())
+            return 0
         if not fmrecall.asked(q):
             raise UsageError(f"nothing to look up in {q!r}, only words like can, do and it: name the thing, e.g. "
                              "fm help scaffold an mcp server")
@@ -5655,8 +5665,25 @@ def _build_parser():
     s = add("task", cmd_task, tier=("Every task", 60), help="task operations")
     tsp = s.add_subparsers(dest="task_cmd", required=True)
 
+    task_help = {  # T-1908: fm task -h, fm help and fm which read these
+        "dissent": "add or resolve an objection raised against the plan",
+        "split": "partition the task's files over the work graph into child tasks",
+        "capsule": "a split child's bounded return to its parent", "finding": "record one reviewer finding and if it held",
+        "revert": "what undoing the task would touch, and the command that undoes it",
+        "packet": "one redacted markdown handoff of the task", "new": "plan a task: its type, tier, criteria and steps",
+        "show": "print a task's brief", "card": "write a proved task's SVG title card",
+        "receipt": "what a reviewer reads, with the before and after numbers",
+        "set": "change a task's fields or a section", "step": "add a step, or mark one current or done",
+        "ac": "add, check or edit an acceptance criterion", "evidence": "run a step's check and record it as evidence",
+        "audit": "record an audit lens result", "finish": "one-call close: checks, audits, docs, done and commit",
+        "prove": "red to green proof: the tests fail on the start tree and pass now", "log": "add a line to the log",
+        "hypo": "debugging hypotheses: add, test, reject", "note": "working memory: a fact or an open question",
+        "assume": "add or verify an assumption", "done": "mark the task done", "block": "mark it blocked, with why",
+        "drop": "drop a task, with why or --done-in the one that did it", "unblock": "put a blocked task back in the queue",
+        "defer": "put a task off until later"}
+
     def tadd(name):
-        t = tsp.add_parser(name)
+        t = tsp.add_parser(name, help=task_help[name])
         t.add_argument("--json", action="store_true")
         return t
 

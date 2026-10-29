@@ -51,6 +51,18 @@ class Which(ForemanTestCase):
         out = self.fm("which", "notify me when a run finishes").stdout
         self.assertIn("fm notify", out)
 
+    def test_a_task_subcommand_is_found_by_its_help(self):  # T-1908: only top-level commands were indexed
+        self.assertIn("fm task drop", self.fm("which", "drop a task").stdout)
+        self.assertIn("fm task evidence", self.fm("which", "record evidence for a step").stdout)
+        self.assertIn("fm task defer", self.fm("which", "defer a task").stdout)
+        self.assertIn("fm task drop", self.fm("help", "drop a task").stdout)
+        self.assertIn("drop a task, with why", self.fm("task", "--help").stdout)
+
+    def test_the_rules_plain_words_find_their_command_and_the_strongest_kind_prints_first(self):  # T-1908
+        self.assertIn("fm drive", self.fm("which", "stop auto-continuing").stdout)
+        self.assertIn("fm serve", self.fm("which", "serve this repo").stdout)  # review: the second verb on its line
+        self.assertTrue(self.fm("which", "what did it cost").stdout.startswith("fm commands:"))
+
     def test_one_common_word_is_no_match(self):
         # T-1699 review: "page" alone listed the UI playbooks and fm page for a login task nothing covers
         p = self.fm("which", "add a login page with oauth", check=False)
