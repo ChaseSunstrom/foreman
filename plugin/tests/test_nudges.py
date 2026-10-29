@@ -141,3 +141,26 @@ class OneLoad(ForemanTestCase):
                     self.assertEqual(load.call_count, 1, "fm next")
         finally:
             os.chdir(here)
+
+    def test_prompt_hook_loads_briefs_once(self):
+        # T-2024: the prompt hook loaded every brief for the state, then again for the Next line
+        import json
+        from unittest import mock
+        import fmcore as c
+        import fmhooks
+        self.fm("init")
+        self.fm("task", "new", "x", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "x", "--focus")
+        payload = json.dumps({"prompt": "continue", "session_id": "s1", "cwd": self.repo,
+                              "hook_event_name": "UserPromptSubmit"})
+        here = os.getcwd()
+        os.chdir(self.repo)
+        try:
+            with mock.patch("sys.stdout") as out, mock.patch.object(c, "load_briefs", wraps=c.load_briefs) as load:
+                try:
+                    fmhooks.run("UserPromptSubmit", payload)
+                except SystemExit:
+                    pass
+        finally:
+            os.chdir(here)
+        self.assertIn("Next:", "".join(str(a) for call in out.write.call_args_list for a in call.args))
+        self.assertEqual(load.call_count, 1)

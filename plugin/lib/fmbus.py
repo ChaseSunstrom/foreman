@@ -19,7 +19,7 @@ FRESH_ALL_S = 15 * 60  # a session reading mail for the first time gets broadcas
 WATCH_S = 10           # a watcher whose heartbeat is this fresh delivers wakes; older, tmux is tried
 KEEP = 500             # messages kept
 TYPES = ("note", "steer", "stop")
-_DEF = re.compile(r"^(\s*)(?:(?:export|pub|async|static|public|private)\s+)*(?:def|class|function|fn|func)\s+(\w+)")
+_DEF = c.lazy(r"^(\s*)(?:(?:export|pub|async|static|public|private)\s+)*(?:def|class|function|fn|func)\s+(\w+)")
 
 
 def _dir():

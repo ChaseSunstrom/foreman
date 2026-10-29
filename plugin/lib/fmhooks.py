@@ -1211,7 +1211,8 @@ def user_prompt_submit(pl):
             g["drive"].setdefault(sid, {}).update(count=0, hold=hold, turn_at=time.time())
             _write_gate(p, g)
             rewind = _reconcile(p, "UserPromptSubmit")
-            sd = c.regen_views(p) if r.overrides or approvals or rewind else c.state_dict(p)
+            briefs = c.load_briefs(p)  # T-2024: one load for the state and the Next line
+            sd = c.regen_views(p, briefs) if r.overrides or approvals or rewind else c.state_dict(p, briefs)
     except c.LockTimeout:  # never drop a yes / PAUSE silently
         return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
                 "Foreman: state was busy (another session or fm held the lock), so this message was not recorded: "
@@ -1285,7 +1286,7 @@ def user_prompt_submit(pl):
                      + "".join(f"; {c.stranded_note(s)}" for s in sd.get("stranded", ())))
     try:
         if a or sd["queue"] or not _headless():  # T-1231: a one-request unattended run has no queue to finish
-            nb, nst, action = c.next_for(p)
+            nb, nst, action = c.next_for(p, briefs)
             state.append("Next: " + action)
             hint = c.skill_for(nb, nst)
     except Exception:
