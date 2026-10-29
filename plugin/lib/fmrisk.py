@@ -115,5 +115,6 @@ def cmd_risk(args):
     if s["collisions"]:
         lines.append("Guard collisions, 7 days (the rewrite that passes):")
         lines += [f"  {h['n']}× {h['rule']}" + (" (spends risk)" if h["spends"] else "")
-                  + f" — {c.fit(h['rewrite'], 160) or 'last: ' + h['detail']}" for h in s["collisions"][:8]]
+                  + f" — {c.fit(h['rewrite'], 160) or 'last: ' + h['detail']}"
+                  for h in sorted(s["collisions"], key=lambda h: not h["spends"])[:8]]  # T-1972: what spent it first
     return fmcli.out(args, s, "\n".join(lines))

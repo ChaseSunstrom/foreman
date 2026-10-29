@@ -4244,6 +4244,11 @@ def _cmd_check(args):
             pass
         raise UsageError(f"no checks configured for this project: fm check add '<cmd>' (tests, lint, fm doctor…){hint}")
     import time
+    if c.gates_live(p, here=True):  # T-1971: never two full suites on one tree; its pass is reused when nothing changed
+        print("fm check: waiting for another fm check on this tree to finish first (at most 10 minutes)", file=sys.stderr)
+        end = time.time() + 600
+        while c.gates_live(p, here=True) and time.time() < end:
+            time.sleep(1)
     act = c.active_brief(c.load_briefs(p), p.lane)
     tree = c.worktree_id(p.root)
     skip = red_first_tests(p, act, checks)  # T-1101
@@ -4311,8 +4316,10 @@ def _cmd_check(args):
     wrote = bool(tree) and after != tree  # R2: a check should only read; one of these wrote (formatter, codegen…)
     wrote_paths = c._git(p.root, "diff", "--name-only", tree, after, timeout=10).split() if wrote and after else []  # T-1149
     # T-1963: tree stays the one tested; a change made meanwhile (a writing gate, an edit) gets no pass of its own
-    if marked:  # T-1176: the gates are done; the task is no longer "in progress" for the drive
-        c.update_meta(p, gates_running=None)
+    if marked and (c.read_meta(p).get("gates_running") or {}).get("pid") == os.getpid():  # T-1971: only its own
+        c.update_meta(p, gates_running=None)  # T-1176: the gates are done; the task is no longer "in progress"
+    if wrote_paths:  # T-1973: an edit made while the gates ran got no ambient run (T-1965); it gets one now
+        fmambient.after_edit(p, os.path.join(p.root, wrote_paths[0]))
     failed = sum(1 for _, code, _, _ in results if code)
     if failed:
         c.hints_reset(p)  # T-0250: a quieted hint gets its detail back when a gate fails
