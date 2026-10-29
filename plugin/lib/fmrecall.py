@@ -306,16 +306,12 @@ def near_tasks(p, title, scope=(), type_=None):
 def covered(text):
     """T-0256: [(command, help)] for the fm commands whose help the request mostly restates (≥ 3 shared words and
     ≥ 60% of the help's): the best two, so a request for what exists is noticed before it is built."""
-    import argparse
-    import fmcli
     q, hits = set(_tokens(text)), []
-    for a in fmcli.build_parser()._actions:
-        if isinstance(a, argparse._SubParsersAction):
-            for ca in a._choices_actions:
-                h = set(_tokens(ca.help or ""))
-                shared = len(q & h)
-                if shared >= 3 and shared >= 0.6 * len(h) and shared >= 0.25 * len(q):  # review: a long paste isn't a match
-                    hits.append((shared / len(h), ca.dest, ca.help))
+    for name, (help_, _) in verb_docs().items():  # T-1912: subcommands too ("task prove")
+        h = set(_tokens(help_))
+        shared = len(q & h)
+        if shared >= 3 and shared >= 0.6 * len(h) and shared >= 0.25 * len(q):  # review: a long paste isn't a match
+            hits.append((shared / len(h), name, help_))
     return [(name, c.plain(help_)) for _, name, help_ in sorted(hits, reverse=True)[:2]]
 
 
