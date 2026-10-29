@@ -37,19 +37,32 @@ class Prove(Base):
         self.assertRegex(out.lower(), r"red|fail")
         self.assertTrue(c.find_brief(self.p, "T-0001").red_green())
 
-    def test_a_vacuous_prove_names_a_changed_runner_it_copied_from_the_tests_folder(self):
-        # T-1845: T-1842 changed plugin/tests/run.py; prove copied it onto the start tree with the tests, so it passed there
+    def test_a_changed_runner_in_the_tests_folder_stays_at_its_start_version(self):
+        # T-1845/T-1919: T-1842 and T-1911 changed plugin/tests/run.py; prove copied it onto the start tree with the
+        # tests, so the red run passed there. A tests-folder file the start tree has is code under change; a new
+        # helper the new test imports still comes over.
         os.makedirs(os.path.join(self.repo, "tests"))
         self.write("tests/run.py", "import sys\nsys.exit(0 if '--shard' in sys.argv else 2)\n")
+        self.write("tests/helpers.py", "X = 1\n")
         self.commit("runner")
         self.fm("task", "new", "Shard", "--type", "FIX", "--tier", "S", "--ac", "s :: true", "--step", "s", "--focus")
         self.write("tests/run.py", "import sys\nsys.exit(0)\n")
-        self.write("tests/test_run.py", "pass\n")
-        r = self.fm("task", "prove", "T-0001", "--run", "python3 tests/run.py", check=False)
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("tests/run.py", r.stdout)
-        self.assertIn("Regression test", r.stdout)
-        self.assertNotIn("tests/test_run.py,", r.stdout)
+        self.write("tests/shard_case.py", "ARGS = ['--shard']\n")
+        self.write("tests/test_run.py", "import subprocess, sys\nfrom shard_case import ARGS\nif False:\n    import run\n"
+                                        "sys.exit(subprocess.call([sys.executable, 'tests/run.py']))\n")
+        r = self.fm("task", "prove", "T-0001", "--run", "python3 tests/test_run.py", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("proved", r.stdout)  # run.py is test_run.py's subject: kept, though test_run.py imports it
+        self.assertIn("kept at its start version: tests/run.py", r.stdout)
+        self.assertNotIn("shard_case", r.stdout.split("kept at")[1])
+        # review: a changed helper a new test imports (and a new one) comes over, or red fails for the wrong reason:
+        # here red passes only when both did, so a dropped copy reads "proved"
+        self.write("tests/helpers.py", "X = 2\n")
+        self.write("tests/test_helper.py", "import sys\nfrom shard_case import ARGS\nfrom helpers import X\n"
+                                           "sys.exit(0 if X == 2 and ARGS else 1)\n")
+        r = self.fm("task", "prove", "T-0001", "--run", "python3 tests/test_helper.py", check=False)
+        self.assertIn("passes without the change too", r.stdout)
+        self.assertNotIn("helpers", r.stdout.split("kept at")[1])
 
 
 class ProofFirst(Base):
