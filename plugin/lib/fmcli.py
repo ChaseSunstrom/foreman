@@ -3036,6 +3036,15 @@ def task_step(p, args):
         n = int(args.arg)
     except ValueError:
         raise UsageError(f"step number expected, got {args.arg!r}")
+    if args.action in ("edit", "rm"):  # T-1959
+        if args.action == "edit" and not (args.text or "").strip():
+            raise UsageError("fm task step ID edit N needs the new text: fm task step ID edit N \"<text>\"")
+        try:
+            b, _ = mutate(p, args.id, lambda b: b.edit_step(n, args.text) if args.action == "edit" else b.remove_step(n),
+                          "step_reword" if args.action == "edit" else "step_remove", {"step": n, "text": args.text})  # step_edit: a file edit
+        except KeyError as e:
+            raise UsageError(str(e).strip("'\""))
+        return out(args, c.brief_summary(b), f"{b.id}: step {n} {'edited' if args.action == 'edit' else 'removed; later steps renumbered'}.")
     if args.action == "current":
         b, _ = mutate(p, args.id, lambda b: b.set_current(n), "step_current", {"step": n})
         return out(args, c.brief_summary(b), f"{b.id}: current step {n}.")
@@ -3194,7 +3203,7 @@ def cmd_focus(args):
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
         + (f"\nStale since it started (gone from the repo now): {', '.join(stale)} — re-check the brief." if stale else "")
         + (f"\n{related}" if related else "") + (f"\n{record}" if record else "")
-        + f"\nDone needs: {', '.join(g for g, _ in gates(target.type, target.tier))} (fm gates)")
+        + f"\nDone needs: {', '.join(g for g, _ in gates(target.type, target.tier))} (fm gates {target.id})")
 
 
 def _ready_stdin():
@@ -5792,8 +5801,9 @@ def _build_parser():
     t.add_argument("--file")
     t = tadd("step")
     t.add_argument("id")
-    t.add_argument("action", choices=["add", "current", "done"])
-    t.add_argument("arg")
+    t.add_argument("action", choices=["add", "current", "done", "edit", "rm"])
+    t.add_argument("arg", help="the step's text (add) or number")
+    t.add_argument("text", nargs="?", help="edit: the step's new text (T-1959)")
     t.add_argument("--evidence", nargs=2, metavar=("CMD", "RESULT"))
     t = tadd("ac")
     t.add_argument("id")
@@ -6255,6 +6265,8 @@ def _build_parser():
     s.add_argument("--remote", metavar="URL", help="push to this remote instead of origin")
     s.add_argument("--test", metavar="CMD", help="the check to run in the scratch tree (default: the last --test given here, else fm check)")
     s.add_argument("--watch", action="store_true", help="then watch CI on the pushed commit and exit with its result (T-1946)")
+    s.add_argument("--check", action="store_true", help="push nothing: exit 0 when the remote's main has these commits' "
+                                                        "changes (by patch), 1 naming the ones it lacks; no grant needed (T-1960)")
     add("release-check", lazy("fmdemo", "cmd_release_check"), tier=("Project and settings", 910),
         help="fm doctor and fm demo in a temporary HOME: a clean checkout passes before a release (T-0960)")
     s = add("secrets", lazy("fmsecrets", "cmd_secrets"), tier=("Finding your way", 400), help="credentials in the working tree, Claude config and "
