@@ -182,6 +182,11 @@ class Frames(unittest.TestCase):
         self.assertEqual(root.find("{http://www.w3.org/2000/svg}g").get("{http://www.w3.org/XML/1998/namespace}space"),
                          "preserve")
 
+    def test_a_line_separator_in_a_title_stays_on_its_row(self):  # T-2048
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(load().svg("  a b title\n  T-0007\n", 80, 2))
+        self.assertEqual(len(list(root.iter("{http://www.w3.org/2000/svg}text"))), 2)
+
     def test_the_verb_writes_the_svg_of_a_replay(self):
         tool = load()
         with tempfile.TemporaryDirectory() as tmp:
