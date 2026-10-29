@@ -84,6 +84,35 @@ class CiWatch(ForemanTestCase):
         self.assertIn("gave up", r.stdout + r.stderr)
         self.assertEqual(len([b for b in self.briefs() if b.type == "FIX"]), 3)
 
+    def test_a_green_run_with_a_failed_non_blocking_job_says_so_and_briefs_it_once(self):
+        # T-1942: continue-on-error jobs don't fail the run, so a macOS failure hid behind "CI green."
+        from unittest import mock
+        import fmci
+        self.fm("init")
+        p = c.find_project(self.repo)
+        head = fmci._head(p)
+        jobs = [{"name": "test (ubuntu, 3.12, 1)", "conclusion": "success"},
+                {"name": "test (macos-latest, 3.14, 2)", "conclusion": "failure"}]
+
+        def gh(p, *argv):
+            if argv[:2] == ("run", "list"):
+                return json.dumps([{"databaseId": 5, "status": "completed", "conclusion": "success", "headSha": head,
+                                    "url": "https://github.com/o/r/actions/runs/5"}])
+            if "--json" in argv:
+                return json.dumps({"jobs": jobs})
+            return LOG
+        quiet = {"say": lambda *a, **k: None}
+        with mock.patch.object(fmci, "_gh", side_effect=gh):
+            code, msg = fmci.watch(p, "main", 3, 0, **quiet)
+            self.assertEqual(code, 0, "a non-blocking job's failure never fails the watch")
+            self.assertRegex(msg, r"CI green, but 1 non-blocking job failed \(test \(macos-latest, 3\.14, 2\)\): FIX brief T-\d+")
+            self.assertEqual(fmci.watch(p, "main", 3, 0, **quiet)[0], 0)
+            fixes = [b for b in self.briefs() if b.type == "FIX"]
+            self.assertEqual(len(fixes), 1, "the same run is briefed once")
+            self.assertIn("test_y - AssertionError", fixes[0].section("Raw request"))
+            jobs[1]["conclusion"] = "success"
+            self.assertEqual(fmci.watch(p, "main", 3, 0, **quiet), (0, "CI green."))
+
     def test_with_gh_logged_out_the_public_api_finds_the_run_and_briefs_its_annotations(self):
         # T-1939: gh logged out left ci-watch blind; a public repo's runs and annotations need no token
         import contextlib
@@ -108,6 +137,8 @@ class CiWatch(ForemanTestCase):
                 return {"jobs": [{"id": 70, "conclusion": "failure"}, {"id": 71, "conclusion": "success"}]}
             if url.endswith("/actions/runs/9/jobs"):
                 return {"jobs": [{"id": 90, "conclusion": "failure"}]}
+            if url.endswith("/actions/runs/8/jobs"):  # T-1942: a green run's jobs are read too
+                return {"jobs": [{"id": 80, "conclusion": "success"}]}
             if url.endswith("/check-runs/70/annotations"):
                 return [{"path": "tests/test_x.py", "start_line": 9, "annotation_level": "failure", "message": LOG}]
             if url.endswith("/check-runs/90/annotations"):
