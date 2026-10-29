@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A queue's quote before it starts (T-1878). `fm queue --cost` adds "Quote: 4 task(s) ≈ 1.2M tokens (each the median of its type and tier; no history: T-0012) · last 24 h 9.8M · week 41% used." Each task counts as the median of this project's finished tasks of its type and tier (two or more, last 90 days), so a long run is weighed before it starts. A quote only: nothing is refused.
 - A failed gate says which test failed and how (T-1884): `fm check` names the failing tests (up to 5, then "+N more") and shows the first one's failure, not the last 10 lines of the summary.
 - `--follow` no longer misses a change made right after a line is printed (T-1882). `fm ui`, `fm projects`, `fm sessions` and `fm claude` followers took their file-time snapshot after building and printing the view, so a capture that landed in between waited for the 30 s refresh (and made a test flaky). The snapshot now comes before each build.
 - Every built-in scene at a glance (T-1873). `fm scene gallery --out sheet.png` draws metaballs, terrain, airlock, bench and lookbook small on one sheet, three across, and prints one caption per tile saying what it tells you. Each is built from this repo's data, or from a sample (with the reason) when there's none yet, such as no bench runs.
