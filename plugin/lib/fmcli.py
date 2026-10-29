@@ -2322,14 +2322,12 @@ def _close_warnings_of(p, b, files):
                       "anything else a line for the project's CLAUDE.md or memory, asked first")
     honest += [f"stale evidence: {path} changed after step {n}'s check last ran (`{c.fit(cmd, 60)}`): run it again"
                for n, path, cmd in _stale_evidence(p, b)[:3]]  # T-0634
-    rates, said = catch_rates(p), []
-    proved = any(e.get("event") == "prove" and e.get("task") == b.id and (e.get("data") or {}).get("red")
-                 and not e["data"].get("green") for e in c.ledger_tail(p, 50000))  # T-1947: often a narrower command
+    (rates, proven), said = catch_rates(p), []
     for _, cmd in b.verify_cmds():  # T-0653: has this check ever caught anything here?
         n, k = rates.get(cmd, (0, 0)) if cmd else (0, 0)
         if k:
             said.append(f"`{c.fit(cmd, 50)}` caught a failure in {k} task(s) here")
-        elif n >= 3 and not proved:
+        elif n >= 3 and b.id not in proven:  # T-1947: its red prove is often a narrower command
             said.append(f"`{c.fit(cmd, 50)}` never failed in {n} run(s) here (does it test the change?)")
     if said:
         honest.append("Check track record: " + "; ".join(said[:4]))
@@ -2384,10 +2382,13 @@ def _stale_evidence(p, b):
 
 
 def catch_rates(p):
-    """T-0653: {command: (runs, tasks where it failed and later passed)} over this project's evidence."""
-    runs, seq = collections.Counter(), collections.defaultdict(list)
+    """T-0653: ({command: (runs, tasks where it failed and later passed)}, tasks with a red-then-green prove),
+    in one pass over this project's evidence (T-1952)."""
+    runs, seq, proven = collections.Counter(), collections.defaultdict(list), set()
     for e in c.ledger_tail(p, 50000):
         d = e.get("data") or {}
+        if e.get("event") == "prove" and d.get("red") and not d.get("green"):
+            proven.add(e.get("task"))
         if e.get("event") == "evidence" and d.get("cmd") and c.result_exit(d.get("result")) is not None:
             runs[d["cmd"]] += 1
             seq[(d["cmd"], e.get("task"))].append(c.result_exit(d["result"]) == 0)
@@ -2399,7 +2400,7 @@ def catch_rates(p):
             runs[d["cmd"]] += 2
             seq[(d["cmd"], e.get("task"))] += [not d["red"], not d.get("green")]
     caught = collections.Counter(cmd for (cmd, _), ok in seq.items() if False in ok and ok[-1])
-    return {cmd: (n, caught[cmd]) for cmd, n in runs.items()}
+    return {cmd: (n, caught[cmd]) for cmd, n in runs.items()}, proven
 
 
 _EXPECT = re.compile(r"\(expect:\s*([^)]+)\)")
