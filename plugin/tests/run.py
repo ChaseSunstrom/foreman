@@ -71,6 +71,14 @@ NOT_STARTED = "run.py: not started: the run reached its --deadline (T-1809)\n"
 TMP_PREFIX = "fmtest-"  # not fm-: fm tidy reads ~/.claude/projects/-tmp-fm-* as its own claude -p runs' folders
 
 
+# T-2034: a class dies with run.py, even a SIGKILLed one (a Bash timeout): its own session kept it alive, and one
+# orphan spun a core for a day. Like -m unittest after that; off Linux the prctl is a no-op.
+BOOT = ("import ctypes, os, signal, sys, unittest\n"
+        "try:\n    ctypes.CDLL(None).prctl(1, signal.SIGKILL)  # PR_SET_PDEATHSIG\nexcept Exception:\n    pass\n"
+        "if os.getppid() != int(sys.argv[1]):\n    os._exit(1)  # run.py was gone before the prctl\n"
+        "unittest.main(module=None, argv=['python -m unittest', *sys.argv[2:]])\n")
+
+
 def run_one(cid, k, timeout=480, deadline=None):
     """T-1808: a class still running after timeout s is killed and fails by name, with every thread's stack
     (faulthandler on SIGABRT); its own session, so a child holding the pipes dies with it. T-1809: the run's deadline
@@ -85,7 +93,8 @@ def run_one(cid, k, timeout=480, deadline=None):
             why = f"still running at the run's deadline ({timeout}s in): killed (T-1809)"
     extra = [a for x in k for a in ("-k", x)]
     tmp = tempfile.mkdtemp(prefix=f"{TMP_PREFIX}{os.getpid()}-")  # T-2019: whatever the class leaks goes with it
-    p = subprocess.Popen([sys.executable, "-X", "faulthandler", "-m", "unittest", "-q", cid, *extra], cwd=HERE,
+    p = subprocess.Popen([sys.executable, "-X", "faulthandler", "-c", BOOT, str(os.getpid()), "-q", cid, *extra],
+                         cwd=HERE,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL,
                          start_new_session=True, env=dict(os.environ, TMPDIR=tmp))
     try:

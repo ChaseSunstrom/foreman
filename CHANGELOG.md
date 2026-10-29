@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Fix: a test class run.py started now dies with run.py, even when run.py is killed outright (a Bash timeout); one orphaned class had spun a CPU core for a day (T-2034).
 - Fix: the end-of-reply "tests pass" check no longer holds a reply that says when they will pass ("once the gates pass"), and an edit to a file outside the project, like a scratch draft, no longer makes the last green run stale (T-2032).
 - Perf: the Stop hook's check for this session's running background work decodes only the event lines that hold its session id, not all 1,500 in the tail: Stop 88 -> 81 ms (T-2033).
 - Perf: the active-task scan behind every tool call reads a small file of closed briefs' keys instead of the whole 700 KB brief index: PreToolUse 39 -> 36 ms (T-2031).
