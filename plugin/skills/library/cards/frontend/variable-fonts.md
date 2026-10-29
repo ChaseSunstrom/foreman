@@ -9,7 +9,7 @@ related: [typography, fluid-typography, kinetic-typography, web-performance, lay
 One variable file for many weights and widths: axis ranges in @font-face, high-level properties first, subset and preload.
 
 ## Verify
-- `npx fonttools varLib.instancer --help` or `pyftsubset font.woff2 --unicodes=U+0020-007F --flavor=woff2`: subsets and instances to cut size.
+- `fonttools varLib.instancer --help` (pip install fonttools) or `pyftsubset font.woff2 --unicodes=U+0020-007F --flavor=woff2`: subsets and instances to cut size.
 - `ls -l public/fonts/*.woff2`: a Latin variable file is typically 30-100 KB; investigate bigger.
 - `npx playwright test --grep font`: asserts `document.fonts.check` and computed weight.
 

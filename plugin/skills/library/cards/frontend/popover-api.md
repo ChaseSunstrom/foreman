@@ -10,7 +10,7 @@ Native popovers with the popover attribute: top layer, light dismiss and Escape 
 
 ## Verify
 - `npx playwright test --grep popover`: opens by click, closes with Escape and an outside click, asserts focus returns.
-- `npx axe-cli http://localhost:3000`: checks roles and names on the trigger and content.
+- `npx @axe-core/cli http://localhost:3000`: checks roles and names on the trigger and content.
 - `grep -rn "z-index: *[0-9]\{3,\}" src`: stacking hacks the top layer makes unnecessary.
 
 ## Test first

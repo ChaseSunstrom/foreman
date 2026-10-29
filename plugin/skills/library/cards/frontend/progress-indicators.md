@@ -10,7 +10,7 @@ Show progress honestly: determinate bars when known, indeterminate only when not
 
 ## Verify
 - `npx playwright test --grep progress`: asserts `role=progressbar` with `aria-valuenow` changing.
-- `npx axe-cli http://localhost:3000`: flags progress elements without accessible names.
+- `npx @axe-core/cli http://localhost:3000`: flags progress elements without accessible names.
 - Devtools Performance panel: animation uses transform; no layout each frame.
 
 ## Test first

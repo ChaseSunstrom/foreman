@@ -10,7 +10,7 @@ Define palettes in oklch(), derive shades with color-mix() and relative color sy
 
 ## Verify
 - `npx playwright test --grep palette`: asserts computed colors resolve and contrast ratios hold.
-- `npx culori --help` or a small script: converts oklch to sRGB and flags out-of-gamut values.
+- `node -e "import('culori').then(c => console.log(c.formatHex(c.oklch('oklch(70% 0.1 200)'))))"`: converts oklch to sRGB; `c.displayable()` flags out-of-gamut values.
 - `grep -rnE "#[0-9a-fA-F]{3,8}\b" src --include=*.css`: hard-coded hex values to fold into tokens.
 
 ## Test first

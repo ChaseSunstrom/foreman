@@ -10,7 +10,7 @@ Translucent blurred panels with backdrop-filter that keep text contrast and degr
 
 ## Verify
 - `npx playwright test --grep glass`: asserts the computed `backdropFilter` and a solid fallback when unsupported.
-- `npx axe-cli http://localhost:3000`: color-contrast on text over the panel (sample a busy background).
+- `npx @axe-core/cli http://localhost:3000`: color-contrast on text over the panel (sample a busy background).
 - Devtools Performance panel: frames under 16.7 ms while scrolling content behind the panel.
 
 ## Test first

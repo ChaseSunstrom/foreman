@@ -10,7 +10,7 @@ Smooth, intentional gradients: interpolate in oklch, avoid banding and muddy mid
 
 ## Verify
 - `npx playwright test --grep gradient`: asserts computed `backgroundImage` includes the oklab or oklch interpolation.
-- `npx axe-cli http://localhost:3000`: contrast of text over gradient samples at both ends and the middle.
+- `npx @axe-core/cli http://localhost:3000`: contrast of text over gradient samples at both ends and the middle.
 - `grep -rnE "linear-gradient\(" src | grep -v " in "`: gradients still using the default sRGB interpolation.
 
 ## Test first

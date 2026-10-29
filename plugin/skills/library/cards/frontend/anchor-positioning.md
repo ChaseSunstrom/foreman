@@ -10,7 +10,7 @@ Attach tooltips, menus and popovers to an anchor in CSS, with automatic flip and
 
 ## Verify
 - `npx playwright test --grep anchor`: asserts the popover sits beside its trigger and stays inside the viewport at small sizes.
-- `npx playwright test --project=webkit --grep anchor`: confirms the fallback where support is missing.
+- `npx playwright test --grep anchor-fallback`: injects `@supports not (anchor-name: --a)` styles (or an init script deleting `CSS.supports` for it) to exercise the fallback; every current engine supports the feature, so a real check needs an older browser.
 - `grep -rn "getBoundingClientRect" src | grep -i "tooltip\|menu"`: JavaScript positioning that CSS could replace.
 
 ## Test first
@@ -33,7 +33,7 @@ test('menu stays inside the viewport near the right edge', async ({ page }) => {
 - Flip when cramped: `position-try-fallbacks: flip-block, flip-inline;` or `@position-try --alt { ... }` for custom alternatives.
 - Match widths: `min-width: anchor-size(width);`.
 - Combine with `popover` so the layer goes to the top layer and handles light dismiss (see popover-api); do not stack z-index.
-- Support: Chromium 125+, Safari 26; Firefox is behind. Guard with `@supports (anchor-name: --a)` and fall back to Floating UI or a fixed offset.
+- Support: Chromium, Safari 26+, Firefox 147+; check caniuse. Older engines need a guard: with `@supports (anchor-name: --a)` and fall back to Floating UI or a fixed offset.
 - Give tooltips `role="tooltip"` linked by `aria-describedby`; menus follow the menu pattern.
 - Use `position-visibility: anchors-visible` to hide when the anchor scrolls away.
 

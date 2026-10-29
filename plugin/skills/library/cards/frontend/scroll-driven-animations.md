@@ -34,7 +34,7 @@ test('hero is visible without scroll animation', async ({ page }) => {
 - Set `animation-duration: 1ms` as a fallback for older engines that need a duration; use `linear` easing, since scroll position is the timing.
 - Gate with `@supports (animation-timeline: view())` and `@media (prefers-reduced-motion: no-preference)`; default styles must be the finished state.
 - Animate `transform`, `opacity`, `clip-path`, `filter`: compositor-friendly, so scrolling stays smooth.
-- Chrome and Edge ship it; Safari 26 and Firefox are behind or flagged: treat as progressive enhancement, or use the polyfill only if the effect is essential.
+- Support: Chromium and Safari 26+; Firefox behind a flag; check caniuse. Treat as progressive enhancement, or use the polyfill only if the effect is essential.
 
 ## Avoid
 - Scroll listeners that write styles: they run on the main thread and jank under load.
