@@ -113,6 +113,39 @@ class CiWatch(ForemanTestCase):
             jobs[1]["conclusion"] = "success"
             self.assertEqual(fmci.watch(p, "main", 3, 0, **quiet), (0, "CI green."))
 
+    def test_every_workflow_of_the_commit_must_pass_not_just_the_first_listed(self):
+        # T-2058: pages finished green first and "CI green." went out while tests (the same push) failed.
+        from unittest import mock
+        import fmci
+        self.fm("init")
+        p = c.find_project(self.repo)
+        head = fmci._head(p)
+        runs = [{"databaseId": 9, "workflowName": "pages", "status": "completed", "conclusion": "success",
+                 "headSha": head, "url": "https://github.com/o/r/actions/runs/9"},
+                {"databaseId": 8, "workflowName": "tests", "status": "in_progress", "conclusion": "",
+                 "headSha": head, "url": "https://github.com/o/r/actions/runs/8"},
+                {"databaseId": 3, "workflowName": "tests", "status": "completed", "conclusion": "success",
+                 "headSha": head, "url": "https://github.com/o/r/actions/runs/3"}]  # an older run of tests: not it
+        polls = []
+
+        def gh(p, *argv):
+            if argv[:2] == ("run", "list"):
+                self.assertIn("workflowName", argv[argv.index("--json") + 1])
+                polls.append(1)
+                if len(polls) > 1:
+                    runs[1].update(status="completed", conclusion="failure")
+                return json.dumps(runs)
+            if "--json" in argv:
+                return json.dumps({"jobs": [{"name": "suite", "conclusion": "failure"}]})
+            return LOG
+        with mock.patch.object(fmci, "_gh", side_effect=gh):
+            code, msg = fmci.watch(p, "main", 0, 0, say=lambda *a, **k: None)
+        self.assertEqual(code, 1, msg)
+        self.assertEqual(len(polls), 2, "waited for tests instead of trusting the green pages run")
+        fixes = [b for b in self.briefs() if b.type == "FIX"]
+        self.assertEqual(len(fixes), 1)
+        self.assertIn("runs/8", fixes[0].section("Raw request"))
+
     def test_a_job_that_never_got_a_runner_reruns_instead_of_filing_a_fix(self):
         # T-2013: GitHub capacity left a macOS job cancelled with no steps; that is no code failure to brief.
         from unittest import mock
