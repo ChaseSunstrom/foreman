@@ -18,6 +18,33 @@ def _sketchbook(s):
     return fmscene.sketchbook_html(fmscene.sketch_cards(), page=False)
 
 
+def _tui():
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin", "lib"))
+    import fmcodetui
+    return fmcodetui
+
+
+def _keys(s):
+    """T-2061: every key fm code tui binds, grouped as its own keys poster (?) groups them, read from its key map."""
+    t = _tui()
+    keys = {}
+    for k, cmd in t.DEFAULTS["keys"].items():
+        name = t.KEY_NAMES.get(k) or t.key_name(k)
+        if name not in keys.setdefault(cmd, []):
+            keys[cmd].append(name)
+    labels = dict(t.COMMAND_LABELS)
+    placed = {c for _, cmds in t.POSTER for c in cmds}
+    rows = []
+    for group, cmds in [*t.POSTER, ("more", [c for c in keys if c not in placed])]:
+        for i, c in enumerate(c for c in cmds if c in keys):
+            cli = f" <small><code>{esc(t.CLI[c])}</code></small>" if c in t.CLI else ""
+            rows.append(f"<tr><td>{'' if i else esc(group)}</td><td>{' '.join(f'<kbd>{esc(n)}</kbd>' for n in keys[c])}"
+                        f"</td><td>{esc(labels.get(c, c))}{cli}</td></tr>")
+    return ('<div class="verdicts"><table><thead><tr><th>Group</th><th>Key</th><th>What it does</th></tr></thead>'
+            "<tbody>" + "".join(rows) + "</tbody></table></div>")
+
+
 def _books(stage):
     """[(name, title, when-to-use line, text)] for each playbook in one stage folder."""
     folder, out = os.path.join(LIBRARY, stage), []
@@ -544,10 +571,29 @@ PAGES = [
           "Themes (night, paper, signal for colour-blind eyes, mono), layout "
           "and keys come from <code>tui.toml</code>, and a Python file in Foreman's home folder can add a panel, a "
           "command or an event handler.</p>"),
-         ("raw", '<video class="shot" autoplay muted loop playsinline poster="../assets/code-tui.svg" '
-          'aria-label="fm code tui running a request: the track fills station by station, checks flip from red to pass, '
-          'change bars and token columns grow, a refused git push flashes, and the close plays a wave along the track">'
-          '<source src="../demo/code-tui.mp4" type="video/mp4"></video>'),
+         ("raw", '<picture><source media="(prefers-reduced-motion: reduce)" srcset="../assets/code-tui.svg">'
+          '<img class="shot" src="../assets/code-tui-tour.svg" width="1040" height="678" loading="lazy" '
+          'alt="fm code tui --tour: a sample run in the real screen, a caption naming each panel as it lights: the '
+          'track, red checks before the fix, the activity log, a refused rm -rf, tokens per call, changed files, '
+          'green checks and the commit"></picture>'
+          '<p><small>Drawn by <code>fm code tui --tour --snapshot FILE.svg</code> from today\'s code each time the site '
+          'builds.</small></p>'),
+         ("text", "More than one request", "<ul><li><strong>Work the queue.</strong> <code>g</code> runs each queued "
+          "task in turn and ends with a digest; pressed during a run, the queue starts when it ends.</li><li><strong>"
+          "Ask beside a run.</strong> <code>n</code> during a run, or <code>fm code --ask</code>, answers a question "
+          "about the code read-only, next to the run already working in that tree.</li><li><strong>Follow up.</strong> "
+          "<code>fm code --after ID</code> hands the planner the earlier run's request, plan, ending and files; "
+          "<code>T</code> lines up tickets that run after this one.</li><li><strong>Take it back.</strong> <code>u"
+          "</code> reverts a closed run's commit; <code>P</code> drafts its pull request; <code>x</code> hands a "
+          "stuck run to a live CLI, then <code>fm code --recheck ID</code> checks what it did.</li><li><strong>Know "
+          "why.</strong> <code>fm code why</code> says how a run ended, what it was on, a stall's cause and the one "
+          "command to run next; blocked, stalled and killed runs feed Foreman's own improvement round.</li><li><strong>"
+          "Keep a frame.</strong> <code>F</code> saves the screen as SVG and PNG; <code>fm code tui --chaos SECONDS"
+          "</code> throws hostile events, keys and resizes at a headless app and exits 1 on a crash, with the seed to "
+          "replay it.</li></ul>"),
+         ("text", "Every key", "<p>Read from the key map fm code tui ships, so a new key shows here at the next build. "
+          "<code>?</code> shows the same list in the app, and <code>tui.toml</code> rebinds any of them.</p>"),
+         ("chart", _keys),
          ("examples", "Examples: real runs of every kind",
           "<p>Each card below is one real run, in a throwaway repo on this machine, with nothing set up but Claude "
           "Code's own CLI: <code>--worker claude</code> plans in Claude's read-only mode, then does each step, while "
