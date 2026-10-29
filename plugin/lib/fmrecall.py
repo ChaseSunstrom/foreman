@@ -341,7 +341,8 @@ _VERB = re.compile(r'`fm ([\w-]+)(?: ([\w-]+))?')  # each `fm verb …` in it ("
 
 def verb_docs():
     """{command: (its help, one text of its name, help and options' help)} from fm's parser (fm which: T-1699). T-1908:
-    a subcommand with help is its own command ("task drop"), and the rules' plain words join their command's text."""
+    a subcommand with help is its own command ("task drop"), and the rules' plain words join their command's text.
+    T-1916: so is an action choice its help describes ("lane merge")."""
     import argparse
     import fmcli
     docs = {}
@@ -355,6 +356,17 @@ def verb_docs():
                         words = [(prefix + name).replace("-", " "), helps[name]] + [
                             x.help for x in sub._actions if x.help and x.help != argparse.SUPPRESS]
                         docs[prefix + name] = (helps[name], " ".join(words))
+                        for x in sub._actions:  # T-1916: an action positional's choices ("lane merge") are commands too
+                            for ch in (x.choices or ()) if x.dest == "action" and not x.option_strings else ():
+                                first = re.split(r"[;,]", helps[name])[0].strip()  # "close a round" is fm round itself
+                                # the choice, maybe an argument, then two more words: "merge <id>: bring", not "send ID"
+                                said = next((s.strip() for s in re.split(r"[;,]", helps[name] + ";" + (x.help or ""))
+                                             if re.match(rf"\s*{re.escape(ch)}\b\S*\s+\S+\s+\S", s)
+                                             and s.strip() != first), "")
+                                own = [y.help for y in sub._actions if (y.help or "").startswith(ch + ":")]
+                                if said or own:  # a bare choice ("lane list") says nothing fm lane doesn't
+                                    docs[f"{prefix}{name} {ch}"] = (said or helps[name], " ".join(
+                                        [(prefix + name).replace("-", " "), ch, said] + own))
                         walk(sub, prefix + name + " ")
     walk(fmcli.build_parser(), "")
     try:
@@ -386,7 +398,8 @@ def can(question, n=3):
         if shared and 2 * len(shared) >= len(want):
             named = any(_stem(x) in want for x in name.replace("-", " ").split())  # the question names the command
             hits.append((sum(math.log(len(docs) / df[w]) for w in shared) + 2 * named, name))
-    return [(name, c.plain(" ".join(helps[name].split()))) for _, name in sorted(hits, reverse=True)[:n]]
+    hits.sort(key=lambda h: (h[0], -len(h[1])), reverse=True)  # a tie goes to the command, not its action ("mcp new")
+    return [(name, c.plain(" ".join(helps[name].split()))) for _, name in hits[:n]]
 
 
 def brief_query(b):
