@@ -14,6 +14,7 @@ import shlex
 import shutil
 import string
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -772,6 +773,23 @@ def gates_live(p, here=False, key="gates_running"):
     except (KeyError, TypeError, ValueError, OSError):
         return None
     return None if here and g.get("root") not in (None, p.root) else g
+
+
+def wait_while(busy, what, who, limit=600, out=None, step=1):
+    """T-2010: wait (at most limit seconds) while busy() holds, saying what for; True when it waited. A wait that runs
+    out says it goes ahead beside the other run, so a slow suite reads as a known overlap, not a hang."""
+    if not busy():
+        return False
+    out = out or sys.stderr
+    span = f"{limit // 60} minutes" if limit >= 60 and not limit % 60 else f"{limit} seconds"
+    print(f"{who}: waiting for {what} to finish first (at most {span})", file=out, flush=True)
+    end = time.time() + limit
+    while busy():
+        if time.time() >= end:
+            print(f"{who}: {what} is still running after {span}; going ahead beside it", file=out, flush=True)
+            break
+        time.sleep(step)
+    return True
 
 
 def init_project(root, sensitive=None):

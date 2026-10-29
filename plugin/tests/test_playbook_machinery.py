@@ -119,6 +119,17 @@ class Load(ForemanTestCase):
         self.assertIn("references/fix/alpha.md", r.stderr)
         self.assertIn("references/ui/alpha.md", r.stderr)
 
+    def test_a_misspelled_name_suggests_the_nearest_names(self):
+        # T-2009: show tdd, show verifcation-loop failed with no hint of the names that exist
+        for typo in ("alpah", "fix/alpah", "Alph"):
+            r = self.show(typo)
+            self.assertNotEqual(r.returncode, 0, typo)
+            self.assertIn("did you mean fix/alpha?", r.stderr, typo)
+        r = self.show("zzzzqq")
+        self.assertNotIn("did you mean", r.stderr, "nothing close: no guess")
+        r = self.fm("playbooks", "eval", "alpah", check=False, env={"FOREMAN_PLAYBOOKS": self.lib})
+        self.assertIn("did you mean fix/alpha?", r.stderr)
+
     def test_outside_a_project_facts_stay_unknown(self):
         bare = os.path.join(self.tmp, "bare")
         os.makedirs(bare)

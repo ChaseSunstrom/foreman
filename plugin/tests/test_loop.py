@@ -3,6 +3,7 @@ the Stop drive continues into it); a round's brief says what shipped since the l
 earlier one; two dry rounds in a row end the loop with a recorded decision."""
 import json
 import os
+import time
 import unittest
 
 from helpers import ForemanTestCase
@@ -112,6 +113,23 @@ class Loop(ForemanTestCase):
         self.assertIn("off", self.fm("loop").stdout)
         self.assertIn("forever loop", self.fm("decide", "--list").stdout)
         self.assertIn("queue is empty", self.fm("next").stdout)
+
+    def test_the_loop_says_what_it_shipped(self):
+        # T-2011: a loop that ran for days ended with only its round number; how much it got done went unsaid
+        self.fm("loop", "on")
+        p = c.find_project(self.repo)
+        s = c.read_meta(p)["loop"]
+        c.update_meta(p, loop=dict(s, started=c.iso(time.time() - 7200)))  # clear of the clock's second
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": c.iso(time.time() - 3600), "event": "task_done", "task": "T-0001"}) + "\n")
+        self.fm("loop", "round")
+        self.fm("loop", "yield", "0")
+        self.assertIn("1 round, 1 task closed since", self.fm("loop").stdout)
+        self.fm("loop", "round")
+        self.fm("loop", "yield", "1")
+        self.assertIn("2 rounds, 1 task closed since", self.fm("decide", "--list").stdout)
+        self.fm("loop", "on")
+        self.assertIn("0 rounds, 0 tasks closed since", self.fm("loop", "off").stdout, "a new run counts afresh")
 
     def test_the_drive_continues_into_each_round(self):
         self.fm("autonomy", "full")

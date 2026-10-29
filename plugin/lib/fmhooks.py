@@ -1171,8 +1171,10 @@ def user_prompt_submit(pl):
                         session=sid)
         except Exception:
             log_error("UserPromptSubmit", _tb())
+    logged = False
     try:  # T-0957: the user's words, for reflection and the court; redacted, capped, never in a sensitive project
         if not c.read_meta(p).get("sensitive"):
+            logged = True
             c.log_event(p, "prompt", data={"text": c.redact(c.plain_lines(text))[:2000],
                                            "mode": pl.get("permission_mode")}, session=sid)
     except Exception:
@@ -1218,6 +1220,12 @@ def user_prompt_submit(pl):
     secret = _secret_note(pl.get("prompt") or "")  # pasted blocks included: the likeliest place for one
     if secret:
         parts.append(secret)
+    if logged:  # T-2008: back after hours mid-session: what happened meanwhile, not only at a session start
+        try:
+            import fmaway
+            parts += [x for x in [fmaway.returned(p)] if x]
+        except Exception:
+            log_error("UserPromptSubmit", _tb())
     if r.items:
         tags = ", ".join(i.type + ("!" if i.urgent else "") + ("?" if i.explore else "") for i in r.items)
         n = len(r.items)
