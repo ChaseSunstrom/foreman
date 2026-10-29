@@ -618,8 +618,9 @@ def session_context(p, sd, other_note=None, sid=None):
     try:  # T-1800/T-1810: problems nobody raised, from caches only, each with its action
         import fmcost
         import fmforesight
+        import fmrisk
         parts = (lambda: fmforesight.lines(p), lambda: [x for x in [fmcost.burn_line()] if x],
-                 lambda: fmforesight.pile_lines(sd))
+                 lambda: fmforesight.pile_lines(sd), lambda: [x for x in [fmrisk.collision_line(p)] if x])  # T-1875
     except Exception:
         log_error("SessionStart", _tb())
         parts = ()

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard collisions by rule (T-1875). `fm risk` lists the last 7 days' guard blocks by rule, most first, each with the rewrite that passes and "(spends risk)" when its category counts against the budget; a new session's first context names the rule that fired 3 or more times, with its rewrite. It only reports: the cap and its weights are unchanged.
 - `fm task set --section` reads criteria written `done when :: cmd` and steps written `1. step`, the forms `fm task new` takes, and stores them as the brief keeps them (T-1894). Before, they stayed plain text, so the criterion had no verify command, the task had no steps, and `fm focus` refused it as not planned.
 - `fm task finish` counts a red run recorded with `fm task evidence --expect-fail` as the red half of red-to-green proof (T-1893). Before, a fix built test-first that way was refused for having no proof, and `fm task prove` had to run the test again.
 - The guard no longer reads `cd DIR && git checkout -- . && … || echo f` as a checkout over the folder it started in (T-1891). Any `||` in a line, including one in a loop body, made every `cd` in it uncertain. Now a command chained by `&&` after a `cd` is known to run in that folder. A `cd` after `||` (`true || cd X && y`) still counts as maybe skipped.
