@@ -200,10 +200,10 @@ class Roll(ForemanTestCase):
 
     def test_golden_seeds_name_their_card_in_the_written_section(self):
         # a seed's meaning changes when the cards do: update these with the card set, and the ## Look names its card
-        golden = {0: "look-lido", 1: "look-card-catalogue", 2: "look-archive-ledger", 3: "look-cartographer"}
+        golden = {0: "look-night-market", 1: "look-cartographer", 2: "look-botanical-press", 3: "look-darkroom"}
         self.assertEqual({s: self.roll("--seed", str(s))["look"] for s in golden}, golden)
         self.roll("--seed", "3", "--apply")
-        self.assertIn("`look-cartographer` (Cartographer), seed 3", read_text(self.md))
+        self.assertIn("`look-darkroom` (Darkroom), seed 3", read_text(self.md))
 
     def undo_files(self, ext=".json"):
         return glob.glob(os.path.join(self.home, "state", "projects", "*", "design-roll", "*" + ext))

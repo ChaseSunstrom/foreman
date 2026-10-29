@@ -382,6 +382,108 @@ footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--g-r
 @keyframes recolour { from { color: var(--text-muted); } }
 .tr .new { animation: arrive var(--dur-enter) var(--ease-enter) 120ms backwards; }
 @container (max-width: 30rem) { .tr .dep { grid-template-columns: auto minmax(0, 1fr) auto; } .tr .plat { grid-column: 2 / -1; grid-row: 2; font-size: .875rem; } .tr .to { font-size: 1.125rem; } }
+
+/* T-2045: Swiss poster: a 12-column sheet, black type flush left, one cobalt block */
+.sw { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 0 1.5rem; padding: 2rem clamp(1rem, 4cqi, 2rem) 2.5rem; }
+.sw .eyebrow { grid-column: 1 / 8; font: 700 .75rem/1 var(--f1); letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); padding-bottom: .75rem; border-bottom: 1px solid var(--border); }
+.sw h3 { grid-column: 1 / 9; margin-top: 1.25rem; font: 700 clamp(2rem, 9cqi, 4rem)/1.02 var(--f1); letter-spacing: -.02em; animation: arrive var(--dur-enter) var(--ease-enter) backwards; --from: 16px; }
+.sw .body { grid-column: 1 / 8; margin-top: 1rem; font: 400 1.0625rem/1.5 var(--f1); }
+.sw .dates { grid-column: 1 / 8; margin-top: 1.5rem; display: grid; gap: 0; }
+.sw .dates div { display: flex; justify-content: space-between; padding: .5rem 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.sw .block { grid-column: 8 / 13; grid-row: 2 / span 4; align-self: start; display: grid; gap: .75rem; padding: 1.25rem; background: var(--accent); color: var(--on-accent); animation: arrive var(--dur-enter) var(--ease-enter) 120ms backwards; --from: 16px; }
+.sw .block b { font: 700 1.5rem/1.1 var(--f1); }
+.sw .block button { min-height: 44px; border: 2px solid var(--on-accent); background: none; color: var(--on-accent); font: 700 1rem/1 var(--f1); cursor: pointer; }
+.sw .block button:hover { background: var(--on-accent); color: var(--accent); }
+@container (max-width: 36rem) { .sw h3, .sw .body, .sw .dates, .sw .eyebrow { grid-column: 1 / -1; } .sw .block { grid-column: 1 / -1; grid-row: auto; margin-top: 1.5rem; } }
+
+/* Darkroom: the image is the brightest thing; two narrow rails of panels, exposure values in mono */
+.dk { display: grid; grid-template-columns: 11rem minmax(0, 1fr); min-height: 17rem; }
+.dk .rail { display: grid; align-content: start; gap: 1px; background: var(--border); border-right: 1px solid var(--border); }
+.dk .panel { padding: .75rem; background: var(--raised); }
+.dk h3 { font: 600 .6875rem/1 var(--f1); letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: .5rem; }
+.dk dl { display: grid; grid-template-columns: 1fr auto; gap: .2rem .5rem; font-size: .8125rem; }
+.dk dd { font: 500 .8125rem/1.3 var(--f2); font-variant-numeric: tabular-nums; text-align: right; }
+.dk .bars { display: flex; align-items: end; gap: 2px; height: 3rem; }
+.dk .bars i { flex: 1; background: var(--text-muted); }
+.dk .frame { display: grid; place-items: center; padding: 1rem; }
+.dk .print { width: min(100%, 22rem); aspect-ratio: 3 / 2; border-radius: 2px; background: linear-gradient(160deg, #cfcfcf, #5a5a5a 55%, #1c1c1c); animation: fade var(--dur-stage) var(--ease-enter) backwards; }
+.dk .lamp { margin-top: .5rem; min-height: 44px; border: 1px solid var(--accent); border-radius: 2px; background: none; color: var(--accent); font: 600 .875rem/1 var(--f1); cursor: pointer; }
+@container (max-width: 34rem) { .dk { grid-template-columns: minmax(0, 1fr); } .dk .rail { border-right: 0; } }
+
+/* Botanical press: one specimen sheet, a boxed typed label, Latin names in italic */
+.bp { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1.25rem; padding: 1.5rem clamp(1rem, 4cqi, 2rem); align-items: end; }
+.bp .sheet { min-height: 15rem; background: linear-gradient(100deg, var(--sunken), var(--surface) 60%); border: 1px solid var(--border); display: grid; place-items: center; transition: transform var(--dur-small) var(--ease-move); animation: arrive var(--dur-move) var(--ease-enter) backwards; --from: 12px; }
+.bp .sheet:hover { transform: translateY(-2px); }
+.bp .sheet svg { width: 70%; height: auto; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+.bp h3 { grid-column: 1 / -1; font: 400 1.5rem/1.2 var(--f1); font-variant-caps: small-caps; letter-spacing: .06em; }
+.bp h3 i { font-variant-caps: normal; letter-spacing: 0; }
+.bp .label { display: grid; gap: .25rem; padding: .75rem; border: 1px solid var(--accent); font: .75rem/1.4 var(--f2); font-variant-numeric: tabular-nums; }
+.bp .label b { font: 600 .8125rem/1.3 var(--f1); font-variant-caps: small-caps; letter-spacing: .08em; }
+@container (max-width: 30rem) { .bp { grid-template-columns: minmax(0, 1fr); } }
+
+/* Letterpress: one 34em column, a wine drop cap, text pressed into the stock */
+.lp { padding: 2rem clamp(1rem, 4cqi, 2rem) 2.5rem; }
+.lp .col { max-width: 34em; margin-inline: auto; text-shadow: -.4px -.4px 0 var(--sunken); }
+.lp .rh { display: flex; justify-content: space-between; font: .8125rem/1 var(--f1); font-variant-caps: all-small-caps; letter-spacing: .1em; color: var(--text-muted); padding-bottom: .5rem; border-bottom: 1px solid var(--accent); }
+.lp h3 { margin-top: 1.5rem; font: 700 1.75rem/1.15 var(--f1); font-variant-caps: small-caps; letter-spacing: .04em; }
+.lp p.first::first-letter { float: left; font: 700 3.6rem/.85 var(--f1); padding: .1em .12em 0 0; color: var(--accent); }
+.lp p { margin-top: 1rem; font: 1.15rem/1.6 var(--f1); font-variant-numeric: oldstyle-nums; hyphens: auto; animation: fade var(--dur-enter) var(--ease-enter) backwards; }
+.lp .fleuron { margin-top: 1.5rem; text-align: center; color: var(--accent); text-shadow: none; }
+.lp .fn { margin-top: 1rem; padding-top: .5rem; border-top: 1px solid var(--border); font-size: .875rem; color: var(--text-muted); }
+.lp a { color: var(--accent); text-underline-offset: .2em; transition: color var(--dur-tap) var(--ease-move); }
+
+/* Cinema lobby: posters, brass-outlined showtime pills, a seat map under a curved screen line */
+.cl { display: grid; gap: 1.25rem; padding: 1.5rem clamp(1rem, 4cqi, 2rem); }
+.cl h3 { font: 700 1.5rem/1.1 var(--f1); text-transform: uppercase; letter-spacing: .04em; }
+.cl .films { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: 1rem; }
+.cl .poster { aspect-ratio: 2 / 3; display: grid; align-content: end; padding: .75rem; border-radius: 2px; background: radial-gradient(ellipse at 50% 30%, var(--raised), var(--surface) 80%); border: 1px solid var(--border); font: 700 1.125rem/1.1 var(--f1); text-transform: uppercase; animation: arrive var(--dur-stage) var(--ease-enter) backwards; --from: 12px; }
+.cl .times { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.cl .times button { min-height: 44px; padding: 0 .9rem; border: 1px solid var(--accent); border-radius: 22px; background: none; color: var(--text); font: 500 1.125rem/1 var(--f2); font-variant-numeric: tabular-nums; cursor: pointer; transition: background-color var(--dur-small) var(--ease-move); }
+.cl .times button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.cl .times button:disabled { border-color: var(--border); color: var(--text-muted); text-decoration: line-through; cursor: default; }
+.cl .seats { display: grid; gap: .5rem; justify-items: center; padding: 1rem; background: var(--raised); }
+.cl .screen { width: 70%; height: .75rem; border-top: 3px solid var(--accent); border-radius: 50% 50% 0 0; }
+.cl .seats p { display: grid; grid-template-columns: repeat(8, 1.5rem); gap: .35rem; }
+.cl .seats i { height: 1.5rem; border-radius: 4px 4px 2px 2px; border: 1px solid var(--text-muted); }
+.cl .seats i.on { background: var(--accent); border-color: var(--accent); }
+.cl .seats i.x { background: var(--border); border-color: var(--border); }
+
+/* Glacier: wide short charts, readings large and light with a small muted unit; no loops */
+.gl { display: grid; gap: 1rem; padding: 1.5rem clamp(1rem, 4cqi, 2rem); }
+.gl .row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1rem; padding: 1rem; background: var(--raised); border-radius: 4px; align-items: center; }
+.gl h3 { grid-column: 1 / -1; font: 600 .75rem/1 var(--f1); font-variant-caps: all-small-caps; letter-spacing: .1em; color: var(--text-muted); }
+.gl svg { width: 100%; height: 5rem; background: repeating-linear-gradient(to bottom, transparent 0 19px, rgba(255, 255, 255, .08) 19px 20px); }
+.gl polyline { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 400; stroke-dashoffset: 0; animation: draw var(--dur-stage) var(--ease-enter) backwards; }
+@keyframes draw { from { stroke-dashoffset: calc(400 * var(--travel)); } }
+.gl .read b { display: block; font: 300 2rem/1.1 var(--f1); font-variant-numeric: tabular-nums; }
+.gl .read small { font-size: .75rem; color: var(--text-muted); }
+.gl .read span { display: block; font: .75rem/1.4 var(--f2); color: var(--text-muted); }
+@container (max-width: 30rem) { .gl .row { grid-template-columns: minmax(0, 1fr); } }
+
+/* Saltpan: horizontal bands of unequal height, a 60ch column offset left, wide image strips */
+.sp { display: grid; }
+.sp .band { padding: 1.5rem clamp(1rem, 4cqi, 2rem); border-bottom: 1px solid var(--border); animation: arrive var(--dur-enter) var(--ease-enter) backwards; --from: 8px; }
+.sp .band:nth-child(2) { animation-delay: 60ms; } .sp .band:nth-child(3) { animation-delay: 60ms; }
+.sp .hero { min-height: 11rem; display: grid; align-content: end; background: var(--sunken); }
+.sp .eyebrow { font: 600 .75rem/1 var(--f2); text-transform: uppercase; letter-spacing: .12em; color: var(--text-muted); }
+.sp h3 { margin-top: .5rem; font: 600 1.75rem/1.2 var(--f1); max-width: 60ch; }
+.sp .facts { display: flex; flex-wrap: wrap; gap: .5rem 2rem; padding-block: .75rem; font-size: .9375rem; color: var(--text-muted); }
+.sp .facts b { color: var(--accent); font-weight: 600; }
+.sp .strip { aspect-ratio: 21 / 9; border-radius: 2px; background: linear-gradient(to bottom, var(--sunken) 0 55%, var(--accent) 55% 58%, var(--surface) 58%); }
+.sp p { font: 1.0625rem/1.65 var(--f1); max-width: 60ch; margin-top: .75rem; }
+
+/* Pit stop: a dense timing board, mono tabular numbers, one followed row marked with a blue bar */
+.ps { padding: 1rem clamp(.5rem, 3cqi, 1.5rem) 1.5rem; display: grid; gap: .75rem; }
+.ps h3 { font: 700 .8125rem/1 var(--f1); letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.ps ol { list-style: none; padding: 0; margin: 0; }
+.ps li { display: grid; grid-template-columns: 2rem 3.5rem minmax(0, 1fr) 5rem 6rem; gap: .5rem; align-items: center; min-height: 32px; padding: 0 .5rem; border-bottom: 1px solid var(--border); border-inline-start: 4px solid transparent; font: 500 .875rem/1 var(--f2); font-variant-numeric: tabular-nums; }
+.ps li b { font: 700 .875rem/1 var(--f1); text-transform: uppercase; letter-spacing: .04em; }
+.ps li.me { border-inline-start-color: var(--accent); background: var(--raised); }
+.ps li span:nth-child(n+4) { text-align: right; }
+.ps li.mv { animation: arrive var(--dur-move) var(--ease-enter) backwards; --from: 24px; }
+.ps .gap-new { animation: flash var(--dur-tap) var(--ease-enter) backwards; }
+@keyframes flash { from { background: var(--accent); color: var(--on-accent); } }
+@container (max-width: 28rem) { .ps li { grid-template-columns: 1.5rem 3rem minmax(0, 1fr) 4.5rem; } .ps li span:nth-child(5) { display: none; } }
 </style>
 <style>
 __STYLES__
@@ -654,6 +756,89 @@ __SPECIMENS__
     <li class="dep"><span class="code">H5</span><span class="to">Old Town via Quayside</span><span class="plat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>Platform 1</span><span class="when">21:54</span></li>
     <li class="dep upd"><span class="code">X1</span><span class="to">Airport</span><span class="plat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Platform 4</span><span class="when"><s>21:58</s>22:03</span></li>
     <li class="dep new"><span class="code">H2</span><span class="to">Harbourfront</span><span class="plat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>Platform 3</span><span class="when">22:04</span></li>
+  </ol>
+</div>
+<!--/look-->
+
+<!--look look-swiss-poster-->
+<div class="sw">
+  <p class="eyebrow">Kunsthalle Nord · 2026</p>
+  <h3>Order and Interval</h3>
+  <p class="body">Forty posters set on a single grid, from the first press proofs to the last wall sheet. Open daily; the east gallery stays empty on purpose.</p>
+  <div class="dates"><div><span>Opening</span><span>12 March</span></div><div><span>Closing</span><span>28 June</span></div><div><span>Admission</span><span>CHF 14</span></div></div>
+  <div class="block"><b>Reserve a slot</b><span>Entry every 30 minutes, 60 places.</span><button type="button">Book tickets</button></div>
+</div>
+<!--/look-->
+
+<!--look look-darkroom-->
+<div class="dk">
+  <div class="rail">
+    <section class="panel"><h3>Exposure</h3><dl><dt>Aperture</dt><dd>f/5.6</dd><dt>Shutter</dt><dd>1/125</dd><dt>ISO</dt><dd>400</dd></dl></section>
+    <section class="panel"><h3>Histogram</h3><div class="bars" aria-hidden="true"><i style="height:20%"></i><i style="height:45%"></i><i style="height:80%"></i><i style="height:100%"></i><i style="height:60%"></i><i style="height:30%"></i><i style="height:12%"></i></div></section>
+  </div>
+  <div class="frame"><div><div class="print" role="img" aria-label="A grey test print"></div><button type="button" class="lamp" aria-pressed="false">Safe light</button></div></div>
+</div>
+<!--/look-->
+
+<!--look look-botanical-press-->
+<div class="bp">
+  <h3><i>Quercus robur</i> · pressed leaf</h3>
+  <div class="sheet"><svg viewBox="0 0 120 80" aria-hidden="true"><path d="M60 74V30M60 56c-10-2-18-8-22-18M60 46c10-2 18-8 22-18M60 36c-6-4-9-10-10-18M60 30c6-8 14-12 22-14"/></svg></div>
+  <div class="label"><b>Accession</b><span>No. 0412-B</span><b>Place</b><span>Hollin Wood</span><b>Date</b><span>14 Sept 1938</span></div>
+</div>
+<!--/look-->
+
+<!--look look-letterpress-->
+<div class="lp">
+  <div class="col">
+    <div class="rh"><span>On Small Presses</span><span>Chapter 3</span></div>
+    <h3>The Weight of a Page</h3>
+    <p class="first">A sheet of cotton stock takes the type the way wet clay takes a thumb. The letter is not printed on the page so much as pushed into it, and you can read the line by touch in the dark.</p>
+    <p>Margins are the quiet part of the job. Set the measure at thirty-four ems and leave the rest alone<sup><a href="#fn-lp">1</a></sup>.</p>
+    <p class="fleuron" aria-hidden="true">❦</p>
+    <p class="fn" id="fn-lp">1. Longer lines tire the eye; shorter ones chop the sense.</p>
+  </div>
+</div>
+<!--/look-->
+
+<!--look look-cinema-lobby-->
+<div class="cl">
+  <h3>Tonight at the Regent</h3>
+  <div class="films">
+    <div><div class="poster">The Long Reel</div><div class="times" role="group" aria-label="The Long Reel times" data-pick><button type="button" aria-pressed="false">18:30</button><button type="button" aria-pressed="true">21:00</button><button type="button" disabled>23:15 sold out</button></div></div>
+    <div><div class="poster">Harbour Lights</div><div class="times" role="group" aria-label="Harbour Lights times" data-pick><button type="button" aria-pressed="false">17:45</button><button type="button" aria-pressed="false">20:15</button></div></div>
+  </div>
+  <div class="seats"><div class="screen" aria-hidden="true"></div><p role="img" aria-label="Row F: two seats taken, one picked"><i></i><i></i><i class="x"></i><i class="x"></i><i class="on"></i><i></i><i></i><i></i></p></div>
+</div>
+<!--/look-->
+
+<!--look look-glacier-->
+<div class="gl">
+  <div class="row"><h3>Station Ny-3 · ice temperature</h3>
+    <svg viewBox="0 0 300 80" preserveAspectRatio="none" role="img" aria-label="Temperature over the last 24 hours, falling slowly"><polyline points="0,20 40,24 80,22 120,34 160,38 200,36 240,50 300,56"/></svg>
+    <p class="read"><b>-8.4<small> °C</small></b><span>Ny-3 · 06:40 UTC</span></p></div>
+  <div class="row"><h3>Station Ny-5 · meltwater flow</h3>
+    <svg viewBox="0 0 300 80" preserveAspectRatio="none" role="img" aria-label="Flow over the last 24 hours, steady then rising"><polyline points="0,60 60,58 120,56 180,50 240,34 300,22"/></svg>
+    <p class="read"><b>2.1<small> m³/s</small></b><span>Ny-5 · 06:40 UTC</span></p></div>
+</div>
+<!--/look-->
+
+<!--look look-saltpan-->
+<div class="sp">
+  <header class="band hero"><p class="eyebrow">Salar de Uyuni · four nights</p><h3>The flat white water of the high desert</h3></header>
+  <div class="band"><p class="facts"><span><b>3,656</b> m above the sea</span><span><b>10,582</b> km² of salt</span><span><b>Nov–Mar</b> mirror season</span></p></div>
+  <div class="band"><div class="strip" role="img" aria-label="A flat horizon over still water"></div><p>Rooms face the horizon. Meals are late, quiet and unhurried; the guide leaves at dusk.</p></div>
+</div>
+<!--/look-->
+
+<!--look look-pit-stop-->
+<div class="ps">
+  <h3>Lap 41 / 57 · Intervals</h3>
+  <ol>
+    <li><span>1</span><b>VER</b><span>Red Bull</span><span>Leader</span><span>1:32.411</span></li>
+    <li class="me mv"><span>2</span><b>NOR</b><span>McLaren</span><span class="gap-new">+0.312</span><span>1:32.388</span></li>
+    <li><span>3</span><b>LEC</b><span>Ferrari</span><span>+1.904</span><span>1:32.760</span></li>
+    <li><span>4</span><b>HAM</b><span>Mercedes</span><span>+0.447</span><span>1:32.902</span></li>
   </ol>
 </div>
 <!--/look-->
