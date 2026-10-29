@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Fix: the code view's Activity, Run and Checks panels draw an event whose `text`, `cmd` or `action` isn't a string, instead of replacing the whole panel with a "panel … failed" line. The fuzz test now asserts that no built-in panel fails (T-1926).
 - Clean: `fm task set ID interpretation=…` now says that Interpretation is a brief section and how to fill it (`--section 'Interpretation' --text "…"`). The `--section` help names the brief's sections, so `fm which interpretation` finds `fm task set` (T-1925).
 - Performance: the guard judges a line of repeated `cd X; …; cd ..` blocks in milliseconds. Twenty such blocks never finished, and seven with `$(…)` in them were refused as "too many folders". A relative `cd` into a folder that exists is now certain, but only while every command before it on the line only reads. A `cd` run under a wrapper (`nice`, `sudo`, `env`) is never certain, because the wrapper runs it in a child and the shell stays put. This closes an older hole where `env cd /tmp && tar xf -` was judged from /tmp. The text after a cleanly closed `$(…)` is no longer re-read from every folder when every mover on the line is a plain `cd`. A line whose folder sets still pass 1024 entries is refused at once (T-1924).
 - Fixed: the code view's time chart clamps a bar that starts before the run; such a bar padded gigabytes of spaces, and macOS killed the test run (T-1922).
