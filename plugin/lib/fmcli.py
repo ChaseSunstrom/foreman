@@ -218,11 +218,16 @@ def cmd_capture(args):
         p = c.find_project(home, create=True) or c.init_project(home)
     else:
         p = resolve(args)
+    text, raw = (args.text or "").strip(), args.text
+    first, nl, more = text.partition("\n")  # review: the tag is on the first line; the rest stays
+    tag, explore = None if args.type else c._TAG_LINE.match(first), False  # T-1904: "FIX: …", "PERF?: …" as intake
+    if tag and tag.group("tag").upper() in c.WORK_TAGS:
+        args.type, text, explore = tag.group("tag"), (tag.group("text") + nl + more).strip(), tag.group("mod") == "?"
+        args.urgent = args.urgent or tag.group("mod") == "!"
     type_ = (args.type or "FEATURE").upper()
     type_ = c.WORK_TAGS.get(type_, type_)
     if type_ not in c.TYPES:
         raise UsageError(f"unknown type {args.type!r}; one of {', '.join(c.TYPES)}")
-    text, raw = (args.text or "").strip(), args.text
     near = _near(p, args, text, type_) if text else None  # T-1662 review: before a paste is read and kept
     if near and near[0] is not None:
         return near[0]
@@ -239,7 +244,7 @@ def cmd_capture(args):
         b = _create(p, _title(text), type_, args.tier or c.guess_tier(type_, text), "captured",
                     raw=raw, scope=args.scope or (), source=args.source,
                     depends=list(dict.fromkeys(c._REF_RE.findall(args.text or ""))),  # T-0334: as fm intake does
-                    priority="urgent" if args.urgent else "normal")
+                    priority="urgent" if args.urgent else "normal", explore=explore)
         c.log_event(p, "capture", task=b.id, data={"source": args.source, "type": type_}, session=session())
         c.regen_views(p)
     _note_escapes(p, b, args.text)
@@ -2950,8 +2955,12 @@ def _task_new_forms(sec, text):
     """T-1894: criteria and steps given with --section in the forms fm task new takes ("done when :: cmd", "1. step"),
     written as the brief keeps them; left as they were, they parsed as no verify command and no steps."""
     if sec == "Acceptance criteria":
+        text = re.sub(r"(?m)^(?=[^\s-].* :: )", "- [ ] ", text)  # T-1900: bare "done when :: cmd", as --ac takes it
         return re.sub(r"(?m)^(-\s+\[[ xX]\]\s+(?!.*— verify with `).*) :: (.+?)\s*$", r"\1 — verify with `\2`", text)
     if sec == "Steps":
+        if not re.search(r"(?m)^\d+\.\s", text):  # T-1900: bare lines, one step each, as --step takes them
+            n = iter(range(1, text.count("\n") + 2))
+            text = re.sub(r"(?m)^(?=[^\s-])", lambda _: f"{next(n)}. ", text)
         return re.sub(r"(?m)^(\d+)\.\s+(?!\[[ xX]\])(?=\S)", r"\1. [ ] ", text)
     return text
 
@@ -7300,9 +7309,11 @@ def _task_shape(parser, argv):
             return argv  # argparse says the id is required
         print(f"(task {act.id}, the active one)", file=sys.stderr)
         rest = [act.id] + rest
-    if acts and "add" in acts and len(rest) > 1 and _TASK_ID.match(rest[0]) and rest[1] not in acts \
-            and " " in rest[1]:  # review: a one-word typo stays an error, not a new step
-        rest = [rest[0], "add"] + rest[1:]
+    import difflib
+    lone = len(rest) > 1 and not rest[1].startswith("-") and not rest[1].isdigit()  # an option or a step number
+    if acts and "add" in acts and lone and _TASK_ID.match(rest[0]) and rest[1] not in acts and (
+            " " in rest[1] or not difflib.get_close_matches(rest[1].lower(), acts)):
+        rest = [rest[0], "add"] + rest[1:]  # review: a one-word typo stays an error; T-1903: a lone word nothing resembles is one
     return argv[:lead + 2] + rest
 
 

@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- fm capture reads a leading tag as fm intake does: "FIX: the send button stays grey" is filed as a FIX titled without the tag, where it was a FEATURE with "FIX:" in its title, and `TAG!:` marks it urgent and `TAG?:` one to explore; --type still wins (T-1904).
+- fm task step and fm task ac take a one-word step or criterion with no action named (`fm task step T-1 CHANGELOG`), where it was "invalid choice"; a word close to an action, as `dnoe`, still stops as a typo (T-1903).
+- `fm task set --section` also reads a criterion written `done when :: cmd` with no checkbox and steps written one per line with no number, the forms `--ac` and `--step` take (T-1900).
 - fm task finish refuses a FIX with no red→green proof before any check runs, where it ran the criterion checks first (over two minutes for a full suite) and then refused; a red run of a command the close is about to run still counts (T-1906).
 - A builder's worktree and its main checkout count at their real paths too: on macOS, where the temp folder is a link, a builder's write inside its own worktree was refused as outside it, and the main checkout reached by its real path counted as scratch (T-1902).
 - A test's cleanup retries for a few seconds while a detached child it started on purpose still writes into its folder; `test_session_start_runs_it_in_the_background` failed CI on Ubuntu with Python 3.14 with "Directory not empty" (T-1901).

@@ -166,6 +166,42 @@ class CaptureAndIntake(ForemanTestCase):
         self.assertIn("Vetoed: \"never push to main\"", self.fm("capture", "push the release to main").stdout)
         self.assertNotIn("Vetoed", self.fm("capture", "write the release notes").stdout)
 
+    def test_a_lone_word_no_action_resembles_is_a_step_or_criterion_to_add(self):
+        # T-1903: `fm task step T-1 CHANGELOG` was "invalid choice"; a word near an action stays a typo
+        self.fm("task", "new", "x", "--type", "FIX", "--tier", "S")
+        self.fm("task", "step", "T-0001", "CHANGELOG")
+        self.fm("task", "ac", "T-0001", "works")
+        b = c.find_brief(c.find_project(self.repo), "T-0001")
+        self.assertEqual([s.text for s in b.steps()], ["CHANGELOG"])
+        self.assertIn("works", b.section("Acceptance criteria"))
+        p = self.fm("task", "step", "T-0001", "dnoe", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("invalid choice", p.stderr)
+        self.fm("task", "ac", "T-0001", "fast", "--verify", "true")  # review: an option after the word
+        self.assertIn("verify with `true`", c.find_brief(c.find_project(self.repo), "T-0001").section("Acceptance criteria"))
+        for typo in ("DONE", "3", "--json"):  # review: an action in capitals, a number, an option alone stay errors
+            self.assertNotEqual(self.fm("task", "step", "T-0001", typo, check=False).returncode, 0, typo)
+        self.assertEqual(len(c.find_brief(c.find_project(self.repo), "T-0001").steps()), 1)
+
+    def test_capture_reads_a_leading_tag_as_the_type(self):  # T-1904: "FIX: …" was filed as a FEATURE
+        self.fm("capture", "FIX: the send button stays grey")
+        self.fm("capture", "bug: login loops", "--type", "CLEAN")  # --type wins; the words stay
+        self.fm("capture", "Note: tags are case-blind")
+        self.fm("capture", "PERF?: slow startup")  # explore, as fm intake reads it
+        self.fm("capture", "fix!: crash on save")  # urgent
+        p = c.find_project(self.repo)
+        one, two, three, four, five = (c.find_brief(p, f"T-000{i}") for i in range(1, 6))
+        self.assertEqual((one.type, one.title, one.priority), ("FIX", "The send button stays grey", "normal"))
+        self.assertEqual((two.type, two.title), ("CLEAN", "Bug: login loops"))
+        self.assertEqual((three.type, three.title), ("FEATURE", "Note: tags are case-blind"))
+        self.assertEqual((four.type, four.title, bool(four.meta.get("explore"))), ("PERFORMANCE", "Slow startup", True))
+        self.assertEqual((five.type, five.title, five.priority), ("FIX", "Crash on save", "urgent"))
+        self.assertFalse(one.meta.get("explore"))
+        self.fm("capture", "FIX: the save hangs\nrepro: save twice")  # review: a tag on the first of several lines
+        six = c.find_brief(p, "T-0006")
+        self.assertEqual(six.type, "FIX")
+        self.assertNotIn("FIX:", six.title)
+
     def test_capture_keeps_a_mid_text_ref_and_records_refs_as_depends(self):  # T-0334
         self.fm("capture", "first")
         self.fm("capture", "fix the #T-0001 regression in send")
@@ -272,6 +308,16 @@ class CaptureAndIntake(ForemanTestCase):
         kept = "- [ ] kept — verify with `echo a :: b`"  # saved again as shown: a command holding " :: " stays
         self.fm("task", "set", "T-0001", "--section", "Acceptance criteria", "--text", kept)
         self.assertIn(kept + "\n", self.fm("task", "show", "T-0001").stdout)
+
+    def test_section_criteria_and_steps_in_the_ac_and_step_forms_are_parsed(self):
+        # T-1900: "works :: cmd" and bare step lines, the forms --ac and --step take, stayed plain text
+        self.fm("capture", "one")
+        self.fm("task", "set", "T-0001", "--section", "Acceptance criteria", "--text", "works :: test -e a",
+                "--section", "Steps", "--text", "go\nwent")
+        shown = self.fm("task", "show", "T-0001").stdout
+        self.assertIn("- [ ] works — verify with `test -e a`", shown)
+        self.assertIn("1. [ ] go\n2. [ ] went", shown)
+        self.assertEqual(json.loads(self.fm("task", "show", "T-0001", "--json").stdout)["status"], "planned")
 
     def test_a_planned_task_never_started_can_be_planned_again(self):
         # T-1862: an M task whose --focus was refused stays planned; --from refused it, so only status=captured got out
