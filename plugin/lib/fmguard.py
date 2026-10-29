@@ -77,7 +77,8 @@ class Ctx:
         self.trusted = bool(trusted)  # T-0120: /fm-trust on: the guard file and Claude Code settings too
         # T-0234: (a builder's worktree, its project's main checkout) — every write outside the worktree is refused but
         # scratch, and the main checkout is never scratch (even under /tmp)
-        self.confine = confine
+        self.confine = confine  # T-1902: and each as it really is (macOS's temp folder is a link, as for scratch)
+        self.confine_real = tuple(x and os.path.realpath(x) for x in confine) if confine else None
         self.unbriefed = unbriefed  # T-0308: the project's root while no task is active — writes inside wait for one
 
     @property
@@ -624,8 +625,9 @@ def classify_write(path, ctx, real=True):
         if _under(p, os.path.join(ctx.home, ".claude", "plugins")) or _new_context_file(p, ctx):
             cats.append("plugin")  # installed plugins, or a new skill/agent/command: what runs in every session
         lane, main = getattr(ctx, "confine", None) or (None, None)
-        if lane and not _under(p, lane) and not (p.startswith("/dev/") and _SAFE_DEV.match(p)) and (
-                _under(p, main or "/nonexistent") or not any(_under(p, s) for s in ctx.scratch)):
+        rlane, rmain = getattr(ctx, "confine_real", None) or (lane, main)
+        if lane and not _under(p, lane) and not _under(p, rlane) and not (p.startswith("/dev/") and _SAFE_DEV.match(p)) \
+                and (any(_under(p, m) for m in (main, rmain) if m) or not any(_under(p, s) for s in ctx.scratch)):
             cats.append("confine")
         root = getattr(ctx, "unbriefed", None)  # strictly inside: a checkout-wide git write (merge, pull) is no edit
         if root and _strictly_under(p, root) and "state-direct" not in cats and not any(  # a scratch dir holding the
