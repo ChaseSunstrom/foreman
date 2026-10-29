@@ -3185,6 +3185,7 @@ def andons(briefs):
 def next_for(p, briefs=None):
     """(brief or None, stage, action): the active task, else the first queued, else the top-ranked captured item (T-0111);
     T-0247: a decision whose revisit trigger fired rides along."""
+    briefs = briefs if briefs is not None else load_briefs(p)  # T-2016: one load for every check below
     b, st, action = _next_for(p, briefs)
     if b is not None and b.tier == "L" and b.status == "planned" and not b.meta.get("approved") \
             and not b.section("Plan review").strip():  # T-0662: L plans get a second read before approval
