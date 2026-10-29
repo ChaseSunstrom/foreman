@@ -34,7 +34,7 @@ test("tooltip opens on focus and closes on Escape", async () => {
 - In React use `useFloating({ open, onOpenChange, placement, middleware: [offset(8), flip(), shift({ padding: 8 })], whileElementsMounted: autoUpdate })`.
 - Compose interactions: `useHover`, `useFocus`, `useClick`, `useDismiss`, `useRole`, then `useInteractions([...])` and spread the prop getters.
 - Render overlays in `<FloatingPortal>` and use `FloatingFocusManager` for dialogs and menus.
-- Add `arrow()` before others when using an arrow, and `size()` to cap the height of long lists.
+- Put `arrow({ element })` after `offset`, `flip` and `shift` in the array when using an arrow, and `size()` to cap the height of long lists.
 - Use `strategy: "fixed"` when the reference sits in a transformed or scrolling container.
 - Use `autoUpdate` only while open (via `whileElementsMounted`) and clean up on close.
 - Use `useRole({ role: "tooltip" })` or `"dialog"`, `"menu"`, `"listbox"` so aria attributes are right.

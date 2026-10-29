@@ -15,16 +15,19 @@ AutoAnimate: one call adds enter, exit and move transitions to a parent's childr
 - `npx playwright test --grep list`: add, remove and reorder animate and settle in a real browser.
 
 ## Test first
-Assert DOM state, and turn the animation off through the controller.
+Assert DOM state, and turn the animation off through the controller so the test does not wait on it.
 ```tsx
+import autoAnimate from "@formkit/auto-animate";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TodoList } from "./TodoList";
 
-test("removing an item removes it from the list", async () => {
+test("removing an item removes it from the list with animation disabled", async () => {
   render(<TodoList initial={["a", "b"]} />);
+  const list = screen.getByRole("list");
+  autoAnimate(list).disable(); // controller: enable() / disable()
   await userEvent.click(screen.getAllByRole("button", { name: /remove/i })[0]);
-  await vi.waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(1));
+  expect(screen.getAllByRole("listitem")).toHaveLength(1);
 });
 ```
 

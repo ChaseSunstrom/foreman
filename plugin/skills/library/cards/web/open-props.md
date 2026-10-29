@@ -10,7 +10,7 @@ Open Props: a set of CSS custom properties (sizes, colors, easings, shadows) you
 
 ## Verify
 - `npx stylelint "**/*.css"`: lint, with `csstools/value-no-unknown-custom-properties` to catch unknown `--var` names.
-- `npx postcss src/main.css -o /tmp/out.css`: confirms JIT props are injected.
+- `npx postcss-cli src/main.css -o /tmp/out.css`: confirms JIT props are injected.
 - `grep -c "^\s*--" /tmp/out.css`: counts emitted custom properties (should be small with JIT).
 - `npx playwright test --grep theme`: light and dark themes render with enough contrast.
 

@@ -9,8 +9,8 @@ related: [tailwind, css-custom-properties, accessibility, testing-library]
 daisyUI: a Tailwind plugin that adds semantic component classes (`btn`, `card`, `modal`) and themes.
 
 ## Verify
-- `npx tailwindcss -i src/input.css -o /tmp/out.css --minify`: builds with the plugin (v3).
-- `npx vite build`: v4 uses `@plugin "daisyui"` in CSS with the Tailwind v4 Vite plugin.
+- `npx tailwindcss -i src/input.css -o /tmp/out.css --minify`: builds with the plugin (daisyUI 4 with Tailwind 3).
+- `npx vite build`: daisyUI 5 with Tailwind 4 uses `@plugin "daisyui"` in CSS with the Tailwind Vite plugin.
 - `npx playwright test --grep theme`: each configured theme renders and keeps contrast.
 - `npx eslint .`: lint, including class-name plugins.
 
@@ -27,7 +27,7 @@ test("built CSS contains used components and the dark theme", () => {
 ```
 
 ## Do
-- Check the major: v4 uses `@plugin "daisyui" { themes: light --default, dark --prefersdark; }` in CSS; v3 uses `plugins: [require("daisyui")]` and `daisyui: { themes }` in `tailwind.config`.
+- Check the major: daisyUI 5 with Tailwind 4 uses `@plugin "daisyui" { themes: light --default, dark --prefersdark; }` in CSS; daisyUI 4 and earlier with Tailwind 3 use `plugins: [require("daisyui")]` and `daisyui: { themes }` in `tailwind.config`.
 - Enable only the themes you ship; set `data-theme` on `<html>` and persist the choice.
 - Compose daisyUI classes with Tailwind utilities (`btn btn-primary w-full`); override with utilities or theme variables.
 - Use semantic colors (`bg-base-100`, `text-base-content`, `btn-primary`) so every theme works.
@@ -40,7 +40,7 @@ test("built CSS contains used components and the dark theme", () => {
 - Enabling every built-in theme: bloats CSS.
 - Dynamically constructed class names the scanner cannot see (`btn-${kind}`).
 - Using a modal class without a close path and focus handling.
-- Relying on v3 config options in a v4 project.
+- Relying on `tailwind.config` daisyUI options in a daisyUI 5 / Tailwind 4 project (or the CSS `@plugin` form in Tailwind 3).
 
 ## Review
 - [ ] Version syntax matches the installed major.

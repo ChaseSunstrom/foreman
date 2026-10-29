@@ -15,16 +15,20 @@ Lenis: lightweight smooth-scroll that keeps native scrolling semantics; one inst
 - `npx lighthouse http://localhost:3000 --only-categories=performance,accessibility --quiet`: no regression after adding it.
 
 ## Test first
-Drive the instance directly and assert the position, with smoothing disabled.
+jsdom has no layout, so `scrollTo(400)` clamps to 0 there: run this in Playwright against a page taller than the viewport.
 ```ts
-import Lenis from "lenis";
+import { test, expect } from "@playwright/test";
 
-test("scrollTo with immediate lands on target", () => {
-  const lenis = new Lenis({ autoRaf: false });
-  lenis.scrollTo(400, { immediate: true });
-  expect(Math.round(lenis.scroll)).toBe(400);
-  lenis.destroy();
-  expect(document.documentElement.classList.contains("lenis")).toBe(false);
+test("scrollTo with immediate lands on target and destroy cleans up", async ({ page }) => {
+  await page.goto("/");
+  const result = await page.evaluate(() => {
+    const lenis = (window as any).lenis; // expose the single instance in dev/test builds
+    lenis.scrollTo(400, { immediate: true });
+    const y = Math.round(lenis.scroll);
+    lenis.destroy();
+    return { y, cls: document.documentElement.classList.contains("lenis") };
+  });
+  expect(result).toEqual({ y: 400, cls: false });
 });
 ```
 

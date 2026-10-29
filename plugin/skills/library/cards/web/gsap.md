@@ -12,7 +12,7 @@ GSAP: imperative tween and timeline engine with ScrollTrigger; every animation n
 - `npx tsc --noEmit`: tween vars and plugin imports type-check.
 - `npx eslint .`: lint, including react-hooks rules for the cleanup.
 - `npx playwright test --grep motion`: end state with `reducedMotion: 'reduce'` and with motion on.
-- `npx vite build --report 2>&1 | grep -i gsap`: confirms only the plugins you register are bundled.
+- `npx vite build && grep -l ScrollTrigger dist/assets/*.js`: confirms plugins appear only in bundles that use them (or inspect with vite-bundle-visualizer).
 
 ## Test first
 Assert the end state, not frames; jump timelines to the end instead of sleeping.
@@ -22,8 +22,9 @@ import { buildIntro } from "./intro";
 
 test("intro ends visible and leaves no tweens behind", () => {
   document.body.innerHTML = `<h1 class="hero" style="opacity:0"></h1>`;
-  const ctx = gsap.context(() => buildIntro(".hero"));
-  gsap.globalTimeline.progress(1);
+  let tl!: gsap.core.Timeline;
+  const ctx = gsap.context(() => { tl = buildIntro(".hero"); }); // buildIntro returns its timeline
+  tl.progress(1);
   expect(getComputedStyle(document.querySelector(".hero")!).opacity).toBe("1");
   ctx.revert();
   expect(gsap.globalTimeline.getChildren().length).toBe(0);
