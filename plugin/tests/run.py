@@ -24,9 +24,9 @@ def skipped():
     return {x.strip() for x in os.environ.get("FOREMAN_SKIP_TESTS", "").split(",") if x.strip()}
 
 
-def classes(patterns, k, hit=None):
+def classes(patterns, k, hit=None, names=()):
     """Every test class id (module.Class) discover would run, biggest first so the long ones start early; hit (a set)
-    gets each -k pattern or name that matched a test."""
+    gets each -k pattern or name that matched a test. T-1994: with names and -k both, a test matches one of each."""
     sys.path.insert(0, HERE)
     counts, skip, hit = {}, skipped(), set() if hit is None else hit
 
@@ -37,8 +37,8 @@ def classes(patterns, k, hit=None):
             elif skip and (t.id().rsplit(".", 1)[-1] if type(t).__name__ == "_FailedTest"  # a module that won't import
                            else type(t).__module__) in skip:
                 continue
-            elif not k or any(x in t.id() for x in k):
-                hit.update(x for x in k if x in t.id())
+            elif (not k or any(x in t.id() for x in k)) and (not names or any(x in t.id() for x in names)):
+                hit.update(x for x in (*k, *names) if x in t.id())
                 cid = f"{type(t).__module__}.{type(t).__name__}"
                 counts[cid] = counts.get(cid, 0) + 1
     for pattern in dict.fromkeys(patterns):
@@ -149,7 +149,8 @@ def parse(argv=None):
     ap.add_argument("--shard", metavar="K/N",
                     help="run only the Kth of N interleaved slices of the classes (T-1842: CI splits the suite "
                          "across N jobs; biggest-first order keeps the slices even)")
-    ap.add_argument("names", nargs="*", help="test module names, each like -k (T-0808: fm check affected's {names})")
+    ap.add_argument("names", nargs="*", help="test module names (T-0808: fm check affected's {names}); with -k, only "
+                                             "their tests that match a -k (T-1994)")
     a = ap.parse_intermixed_args(argv)  # names may sit on either side of -k
     if a.deadline is not None and a.deadline < 1:  # review: 0 is falsy and turned the deadline off
         ap.error("--deadline takes a number of seconds, 1 or more")
@@ -158,7 +159,6 @@ def parse(argv=None):
         if not (k.isdigit() and n.isdigit() and 1 <= int(k) <= int(n)):
             ap.error("--shard takes K/N with 1 <= K <= N, like 1/2")
         a.shard = int(k), int(n)
-    a.k += a.names
     a.error = ap.error
     return a
 
@@ -166,11 +166,11 @@ def parse(argv=None):
 def main():
     a = parse()
     ap = a
-    if any(re.search(r"\s", k) for k in a.k):  # T-0357: '-k "a or b"' matched nothing and failed only at the end
+    if any(re.search(r"\s", k) for k in a.k + a.names):  # T-0357: '-k "a or b"' matched nothing and failed only at the end
         ap.error("-k matches a substring of test ids; repeat -k for each pattern (-k test_guard -k test_cli)")
     t0 = time.time()
     hit = set()
-    todo = classes(a.p or ["test*.py"], a.k, hit)
+    todo = classes(a.p or ["test*.py"], a.k, hit, a.names)
     missing = [n for n in a.names if n not in hit]
     if missing:  # T-1287: a name that matches nothing (a test file that doesn't exist) fails, not passes unseen
         sys.stderr.write(f"run.py: no test matches {', '.join(missing)}\n")
@@ -179,7 +179,7 @@ def main():
         todo = todo[a.shard[0] - 1::a.shard[1]]
     with burn(a.load), concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
         end = t0 + a.deadline if a.deadline is not None else None
-        results = list(ex.map(lambda c: run_one(c, a.k, a.timeout, end), todo))
+        results = list(ex.map(lambda c: run_one(c, a.k or a.names, a.timeout, end), todo))  # T-1994: the class is in a named module, so -k alone
     failed = [r for r in results if r[1] != 0]
     ci = os.environ.get("GITHUB_ACTIONS")  # T-1223: a run's log needs a login; its annotations are public
     for cid, _, err, _, _ in failed:

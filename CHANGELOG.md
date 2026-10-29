@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix: `run.py test_x -k NAME` runs only the tests of `test_x` that match `NAME` (names and `-k` were unioned, so it ran the whole module); the docs-impact blocker for a missing doc names the one tracked doc it most likely meant, as in `rules/foreman.md` → `(plugin/rules/foreman.md?)` (T-1996: T-1994, T-1995).
 - Fix: an `@path`-only intake line under an item scopes that item instead of landing in untagged text; a task title keeps an `@path` written mid-sentence (only a leading or trailing one is a scope marker, as for `#T-` refs); the forever-loop brief says a small round with optional work dropped isn't counted dry (T-1992: T-1989, T-1990, T-1991).
 - Fix: an edit during `fm ship`'s test run starts no ambient run beside it; a captured title is cut at a word with … and a command or identifier first word (`fm`, `c.first_touch`) keeps its case; a forever-loop round run while optional work is dropped no longer counts toward the dry streak that ends the loop (T-1987: T-1984, T-1985, T-1986).
 - Fix: `fm ship` marks its scratch-tree test run and first waits for a running full `fm check` or ambient run here; a full `fm check` waits for a live ship test run (up to 10 minutes each, saying so), so two suites never run at once. `fm batch` keeps each member's DONE-WHEN verify command, `fm gates` names why-not-caught for an M or L FIX, and a Write outside the project (a scratchpad note) no longer counts as a CLEAN task's first edit (T-1980: T-1976, T-1977, T-1978, T-1979).

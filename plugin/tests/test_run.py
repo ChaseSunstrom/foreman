@@ -9,8 +9,17 @@ import run  # noqa: E402
 
 class Args(unittest.TestCase):
     def test_names_are_k_patterns(self):
-        self.assertEqual(sorted(run.parse(["test_lanes", "-k", "Stop", "test_cli"]).k), ["Stop", "test_cli", "test_lanes"])
+        a = run.parse(["test_lanes", "-k", "Stop", "test_cli"])
+        self.assertEqual((sorted(a.names), a.k), (["test_cli", "test_lanes"], ["Stop"]))
         self.assertEqual(run.parse([]).k, [])
+
+    def test_a_name_and_a_k_select_only_the_tests_matching_both(self):
+        # T-1994: "run.py test_run -k shards" ran every test_run test (names and -k were unioned)
+        hit = set()
+        self.assertEqual(run.classes(["test_run.py"], ["shards"], hit, names=["test_run"]), ["test_run.Args"])
+        self.assertEqual(hit, {"shards", "test_run"})
+        self.assertEqual(run.classes(["test_run.py"], ["no_such_test"], set(), names=["test_run"]), [])
+        self.assertGreater(len(run.classes(["test_run.py"], [], set(), names=["test_run"])), 1)  # a name alone: all
 
     def test_shards_split_the_classes_disjointly_and_cover_them_all(self):  # T-1842: one CI job ran out of time
         import contextlib
