@@ -99,7 +99,7 @@ def main():
     if a.from_cast:
         with open(os.path.join(HERE, "live.cast"), encoding="utf-8") as f:
             head, *events = [json.loads(ln) for ln in f]
-        events = thin(events, a.max_frames)
+        events = thin(kept(events), a.max_frames)
         with open(os.path.join(HERE, "live.cast"), "w", encoding="utf-8") as f:
             f.write(json.dumps(head) + "\n" + "".join(json.dumps(e) + "\n" for e in events))
         return render(events, a)
@@ -173,10 +173,16 @@ def thin(events, n):
     return out
 
 
+def kept(frames):
+    """T-2040: Claude Code's folder-trust question is this machine's setup, not the product: never a frame of the reel
+    (frames are (ts, raw) or cast events [t, "o", text]: the text is last)."""
+    return [f for f in frames if "trust this folder" not in shot._SGR.sub("", f[-1]).lower()]
+
+
 def write(frames, a):
     cast, t, last = os.path.join(HERE, "live.cast"), 0.0, None
     events = []
-    for ts, raw in frames:
+    for ts, raw in kept(frames):
         t += min(MAX_GAP, ts - last) if last is not None else 0.5
         last = ts
         events.append([round(t, 3), "o", "\x1b[H\x1b[2J" + raw.rstrip("\n").replace("\n", "\r\n")])

@@ -6,7 +6,7 @@
   --rule: #D5DCE6;
   --accent: #2F5BD3;
   --signal: #E9A800;
-  --signal-ink: #5A4100;
+  --signal-ink: #5A4100; --mark: color-mix(in srgb, var(--signal) 60%, transparent);
   --ok: #1F8A5B;
   --stop: #C62F3B;
   --term: #11161F;
@@ -22,14 +22,14 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --paper: #0D1420; --panel: #131C2B; --ink: #E7ECF4; --ink-2: #9AA8BC; --rule: #24324A;
-    --accent: #86A8FF; --signal: #FFC83D; --signal-ink: #FFC83D; --ok: #47C98B; --stop: #FF6B6B;
+    --accent: #86A8FF; --signal: #FFC83D; --signal-ink: #FFC83D; --ok: #47C98B; --stop: #FF6B6B; --mark: color-mix(in srgb, var(--signal) 35%, transparent);
     --term: #0A0F18; --shadow: 0 0 0 1px #1C283C, 0 16px 40px -20px rgba(0, 0, 0, .8);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --paper: #0D1420; --panel: #131C2B; --ink: #E7ECF4; --ink-2: #9AA8BC; --rule: #24324A;
-  --accent: #86A8FF; --signal: #FFC83D; --signal-ink: #FFC83D; --ok: #47C98B; --stop: #FF6B6B;
+  --accent: #86A8FF; --signal: #FFC83D; --signal-ink: #FFC83D; --ok: #47C98B; --stop: #FF6B6B; --mark: color-mix(in srgb, var(--signal) 35%, transparent);
   --term: #0A0F18; --shadow: 0 0 0 1px #1C283C, 0 16px 40px -20px rgba(0, 0, 0, .8);
   color-scheme: dark;
 }
@@ -76,38 +76,69 @@ h3 { font-size: 1.45rem; font-weight: 600; line-height: 1.1; }
 
 /* hero */
 .hero { padding: clamp(40px, 8vw, 96px) 0 40px; }
-.hero h1 { max-width: 17ch; }
 .hero .lede { font-size: clamp(1.12rem, 1.7vw, 1.3rem); color: var(--ink-2); max-width: 58ch; margin: 22px 0 30px; }
-/* T-1609: the proof-chain poster build.py draws from data/stats.json: .points' diamonds on a quiet track, labels set
-   like a .stamp; under 720px the 2x2 (labels stay ~13px at 320px, nothing clips) */
-.poster { width: 100%; height: auto; }
-.poster.compact { display: none; }
-/* T-1610: the scene's canvas over the poster, the same box: it fades in on its first frame and only then do the
-   poster's diamonds and track step aside (its numbers and labels stay); any other state is the poster */
-.hero-scene { position: relative; max-width: 900px; margin-top: clamp(28px, 5vw, 48px); }
-.hero-scene canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
-.hero-scene[data-state="live"] canvas { opacity: 1; transition: opacity .4s ease-out; }
-.hero-scene[data-state="live"] .poster :is(.st, .track) { visibility: hidden; transition: visibility 0s .4s; }
-@media (max-width: 719px) { .hero-scene { max-width: 480px; } }
-.poster .track { stroke: var(--rule); stroke-width: 4; stroke-linecap: round; }
-.poster .st { fill: var(--signal); }
-.poster .kick { font: 600 20px var(--sans); fill: var(--ink-2); }
-.poster .num { font: condensed 700 50px var(--display); fill: var(--ink); font-variant-numeric: tabular-nums; }
-.poster .lab { font: condensed 700 20px var(--display); letter-spacing: .12em; text-transform: uppercase; fill: var(--ink-2); }
-@media (max-width: 719px) { .poster { display: none; } .poster.compact { display: block; } .poster.compact .lab { font-size: 22px; } }
+/* T-1609, T-2040: the proof ledger build.py fills from data/stats.json: four totals as plain figures on hairlines */
+.proof { margin-top: clamp(32px, 5vw, 48px); }
+.proof p { margin: 0 0 12px; font: 600 .78rem var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.proof dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 24px; margin: 0; }
+.proof dl div { display: flex; flex-direction: column-reverse; gap: 2px; padding: 14px 0 16px; border-top: 1px solid var(--rule); }
+.proof dd { margin: 0; font: condensed 700 clamp(2.2rem, 4vw, 3.1rem)/1 var(--display); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.proof dt { color: var(--ink-2); font-size: .95rem; }
+@media (max-width: 719px) { .proof dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* T-2040: a drafting-table backdrop behind the hero (a fine grid fading out, one warm light), the headline balanced,
+   and from 1080px the 2x2 proof chain beside the words with the reel full width below */
+.hero { position: relative; isolation: isolate; }
+.hero::before {
+  content: ""; position: absolute; z-index: -1; top: -64px; bottom: 0; left: 50%; width: 100vw; translate: -50% 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 50% 45% at 78% 28%, color-mix(in srgb, var(--signal) 16%, transparent), transparent 70%),
+    radial-gradient(ellipse 45% 40% at 18% 8%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%),
+    linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 32px 32px;
+  mask-image: linear-gradient(#000 55%, transparent 92%);
+}
+.hero h1 { max-width: 18ch; text-wrap: balance; }
+.hero h1 em { font-style: normal; background: linear-gradient(transparent 64%, var(--mark) 0) no-repeat 0 0 / 100% 100%; padding: 0 .06em; margin: 0 -.06em; }
+h2 { text-wrap: balance; }
+.lede, .head p, .prose { text-wrap: pretty; }
+@media (min-width: 1080px) {
+  .hero { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); column-gap: 64px; align-items: center; }
+  .hero > * { grid-column: 1; }
+  .hero h1 { font-size: clamp(3.6rem, 5.4vw, 5rem); }
+  .hero .proof { grid-column: 2; grid-row: 1 / span 4; margin: 0; }
+  .hero .proof dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero .reel { grid-column: 1 / -1; }
+}
 .install { display: flex; align-items: stretch; max-width: 760px; background: var(--term); color: var(--term-ink); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
-.install code { flex: 1; padding: 15px 18px; overflow-x: auto; white-space: nowrap; font-size: .86rem; line-height: 1.5; }
+.install code { flex: 1; padding: 15px 18px; overflow-wrap: anywhere; font-size: .86rem; line-height: 1.5; }
 .install code::before { content: "$ "; color: var(--term-dim); }
 .copy { appearance: none; border: 0; border-left: 1px solid #263248; background: #182132; color: var(--term-ink); font: 600 .9rem var(--sans); padding: 0 18px; cursor: pointer; min-width: 82px; transition: background .15s; }
 .copy:hover { background: #1F2A3E; }
 .copy[data-done] { color: #6FE0A6; }
 .alt { margin-top: 14px; color: var(--ink-2); font-size: .98rem; }
 
-.reel { margin-top: clamp(36px, 6vw, 64px); }
+.reel { margin: clamp(36px, 6vw, 64px) 0 0; }
 .window { background: var(--term); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
-.window .bar { display: flex; gap: 7px; padding: 11px 14px; background: #161D2A; }
+.window .bar { display: flex; align-items: center; gap: 7px; padding: 11px 14px; background: #161D2A; }
 .window .bar i { width: 11px; height: 11px; border-radius: 50%; background: #2C3649; }
-.window video, .window img { width: 100%; height: auto; aspect-ratio: 1546 / 890; background: var(--term); }
+.window .bar span { margin-left: 10px; font: .78rem var(--mono); color: var(--term-dim); }
+/* T-2040: the hero's session, drawn as text in the site's own palette (the recorded video smeared its colours):
+   site.js replays it line by line while the pane walks the stations; without JS or with reduced motion it is whole */
+.session { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); font: .82rem/1.8 var(--mono); color: var(--term-ink); }
+.session p { margin: 0; }
+.session b { font-weight: 600; color: #F2F5FA; }
+.session .talk { padding: 18px 22px 22px; }
+.session .ln { padding-left: 2ch; text-indent: -2ch; overflow-wrap: anywhere; }
+.session .ln.sub { padding-left: 5ch; text-indent: -3ch; }
+.session .pane { padding: 18px 20px; border-left: 1px solid #1E2738; background: color-mix(in srgb, var(--term-ink) 3%, var(--term)); }
+.stage { list-style: none; margin: 14px 0 0; padding: 12px 0 0; border-top: 1px solid #1E2738; }
+.stage li { color: var(--term-dim); transition: color .3s; }
+.stage li::before { content: "○"; display: inline-block; width: 2.4ch; }
+.stage li.done { color: var(--term-ink); }
+.stage li.done::before { content: "✓"; color: #6FE0A6; }
+.stage li.now { color: #FFD166; }
+.stage li.now::before { content: "●"; }
+@media (max-width: 719px) { .session { grid-template-columns: 1fr; font-size: .74rem; } .session .pane { display: none; } .session .talk { padding: 14px 14px 18px; } }
 .caption { color: var(--ink-2); font-size: .95rem; margin-top: 12px; max-width: 80ch; }
 
 /* sections */
@@ -165,18 +196,18 @@ section { padding: clamp(64px, 10vw, 120px) 0 0; }
 .term .stamp.stop { color: #FF7A7A; }
 .term .stamp.ok { color: #6FE0A6; }
 .term pre { margin: 0; font-size: .82rem; line-height: 1.75; color: var(--term-ink); }
-.term .d { color: var(--term-dim); }
-.term .g { color: #6FE0A6; }
-.term .r { color: #FF7A7A; }
-.term .y { color: #FFD166; }
-.term .b { color: #9DB8FF; }
+:is(.term, .session) .d { color: var(--term-dim); }
+:is(.term, .session) .g { color: #6FE0A6; }
+:is(.term, .session) .r { color: #FF7A7A; }
+:is(.term, .session) .y { color: #FFD166; }
+:is(.term, .session) .b { color: #9DB8FF; }
 .points { margin: 22px 0 0; padding: 0; list-style: none; display: grid; gap: 12px; }
 .points li { padding-left: 22px; position: relative; color: var(--ink-2); }
 .points li::before { content: ""; position: absolute; left: 0; top: .62em; width: 9px; height: 9px; background: var(--signal); transform: rotate(45deg); }
 .points strong { color: var(--ink); font-weight: 600; }
 
 /* lanes diagram */
-.lanes { background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); }
+.lanes { margin: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); }
 .lanes svg { width: 100%; height: auto; color: var(--ink); }
 .lanes .t { font: 600 13px var(--mono); fill: var(--ink-2); }
 .lanes .main { stroke: var(--ink); }
@@ -187,6 +218,8 @@ section { padding: clamp(64px, 10vw, 120px) 0 0; }
 /* elsewhere + honest bits */
 .agents { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
 .agents span { border: 1px solid var(--rule); background: var(--panel); border-radius: 999px; padding: 6px 14px; font-weight: 500; }
+.diagram { margin: 36px 0 0; }
+.diagram img { display: block; width: 100%; max-width: 880px; height: auto; border-radius: 14px; }
 .facts { display: grid; gap: 22px; margin-top: 8px; }
 @media (min-width: 820px) { .facts { grid-template-columns: repeat(3, 1fr); } }
 .facts p { margin: 0; color: var(--ink-2); }
@@ -199,6 +232,7 @@ section { padding: clamp(64px, 10vw, 120px) 0 0; }
 /* install */
 .steps { display: grid; gap: 18px; counter-reset: s; }
 .steps .st { display: grid; gap: 10px; }
+.steps .st p { margin: 0; }
 .steps h3 { display: flex; gap: 12px; align-items: baseline; }
 .steps h3::before { counter-increment: s; content: counter(s); font: condensed 700 1rem var(--display); color: var(--signal-ink); border: 2px solid var(--signal); border-radius: 50%; width: 30px; height: 30px; display: inline-grid; place-items: center; flex: none; }
 .req { color: var(--ink-2); font-size: .98rem; }
@@ -207,10 +241,35 @@ footer { margin-top: clamp(80px, 12vw, 140px); padding: 34px 0 48px; border-top:
 footer .wrap { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; }
 footer nav { display: flex; flex-wrap: wrap; gap: 18px; }
 footer .fine { flex-basis: 100%; }
+footer .brand { font-size: 1.3rem; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .loop li::before { transition: none; }
+  .fcard, .fcard:hover, .fcard:focus-visible { transition: none; transform: none; }
+}
+
+/* T-2040: motion, only where it's allowed; without it everything is simply in place. The hero rises in once; below
+   it, sections reveal as they scroll in, the guard's stamps land, the proof chain prints line by line and a signal
+   bar under the header tracks the page: all CSS scroll timelines, no script, skipped where unsupported */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes rise { from { opacity: 0; translate: 0 20px; } }
+  @keyframes mark { from { background-size: 0 100%; } }
+  @keyframes slam { 0% { opacity: 0; scale: 2.4; } 70% { opacity: 1; scale: .94; } 100% { scale: 1; } }
+  @keyframes print { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0); } }
+  @keyframes fill { from { scale: 0 1; } }
+  .hero > :is(h1, .lede, .install, .alt, .proof, .reel) { animation: rise .7s cubic-bezier(.2, .7, .2, 1) both; }
+  .hero > .lede { animation-delay: .08s; }
+  .hero > .install { animation-delay: .16s; }
+  .hero > .alt { animation-delay: .22s; }
+  .hero > :is(.proof, .reel) { animation-delay: .28s; }
+  .hero h1 em { animation: mark .7s .5s cubic-bezier(.6, 0, .2, 1) both; }
+  @supports (animation-timeline: view()) {
+    .head, .rules > div, .fcard, .points li, .term, .chart, .lanes, .diagram, .facts p, .notfor li, .steps .st { animation: rise ease-out both; animation-timeline: view(); animation-range: entry 0% entry 70%; }
+    .term .stamp { animation: slam ease-out both; animation-timeline: view(); animation-range: entry 70% cover 35%; }
+    .term pre { animation: print steps(11, end) both; animation-timeline: view(); animation-range: entry 40% cover 45%; }
+    .top::after { content: ""; position: absolute; inset: auto 0 0; height: 2px; background: var(--signal); transform-origin: 0 50%; animation: fill linear both; animation-timeline: scroll(root); }
+  }
 }
 
 /* ---- feature pages (T-1220) ---- */
@@ -249,6 +308,14 @@ footer .fine { flex-basis: 100%; }
 .viz .m, .viz .dot { transition: opacity .15s; }
 .viz .m:hover, .viz .dot:hover { opacity: .8; }
 @media (prefers-reduced-motion: no-preference) { /* T-1615: armed by site.js; without it (or seen still) a chart is whole */
+  /* T-2040: the hero session's replay, live only once site.js runs it */
+  .session.live .ln { opacity: 0; translate: 0 6px; }
+  .session.live .ln.on { opacity: 1; translate: none; transition: opacity .3s ease-out, translate .3s ease-out; }
+  .session.live .ln.type.on .tx { display: inline-block; text-indent: 0; animation: type 1.2s steps(var(--n, 40)) both; }
+  .session.live .ln.cur::after { content: "▍"; margin-left: .4ch; color: var(--term-dim); animation: blink 1s steps(1) infinite; }
+
+  @keyframes type { from { clip-path: inset(0 100% 0 0); } }
+  @keyframes blink { 50% { opacity: 0; } }
   .viz.armed .m { transform-box: fill-box; transition: transform .7s cubic-bezier(.2, .7, .2, 1), opacity .15s; }
   .viz.grow-x.armed .m { transform-origin: left center; transform: scaleX(0); }
   .viz.grow-y.armed .m { transform-origin: center bottom; transform: scaleY(0); }
@@ -283,8 +350,9 @@ footer .fine { flex-basis: 100%; }
 .tile strong { display: block; font: condensed 700 2.2rem/1.05 var(--display); margin-top: 4px; }
 .fgrid { display: grid; gap: 12px; margin-top: 32px; }
 @media (min-width: 720px) { .fgrid { grid-template-columns: 1fr 1fr; } }
-.fcard { display: grid; gap: 4px; padding: 16px 18px; border: 1px solid var(--rule); border-radius: 12px; background: var(--panel); color: var(--ink); text-decoration: none; }
-.fcard:hover { border-color: var(--accent); }
+.fcard { display: grid; gap: 4px; padding: 16px 18px; border: 1px solid var(--rule); border-radius: 12px; background: var(--panel); color: var(--ink); text-decoration: none; transition: transform .2s ease-out, border-color .2s; }
+.fcard:hover, .fcard:focus-visible { border-color: var(--accent); transform: translateY(-3px); }
+.more { margin-top: 18px; }
 .fcard b { font: condensed 700 1.35rem/1.1 var(--display); }
 .fcard span { color: var(--ink-2); font-size: .97rem; }
 .feature .shot { margin-top: 28px; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
