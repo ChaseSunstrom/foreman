@@ -90,6 +90,15 @@ class VerifyStrength(ForemanTestCase):
         self.fm("task", "set", "T-0001", "--section", "Behaviour lock", "--text", "none: docs-only rename")
         self.assertEqual(self.fm("task", "done", "T-0001", check=False).returncode, 0)
 
+    def test_an_edit_outside_the_project_is_not_a_clean_tasks_first_edit(self):
+        # T-1979: a scratchpad Write made a ship task (no repo edits) need a behaviour lock
+        self.new("CLEAN")
+        with open(os.path.join(self.p.dir, "ledger.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": "2000-01-01T00:00:00Z", "task": "T-0001", "event": "touched",
+                                "data": {"file": os.path.join(self.tmp, "scratch", "notes.txt"), "tool": "Write"}}) + "\n")
+        p = self.finish_s()
+        self.assertNotIn("no behaviour lock", p.stderr)
+
     def test_done_reports_a_verification_grade_and_records_files(self):
         self.new("FEATURE")
         with open(os.path.join(self.p.dir, "ledger.jsonl"), "a") as f:

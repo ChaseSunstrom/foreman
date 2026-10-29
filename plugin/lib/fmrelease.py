@@ -375,12 +375,23 @@ def ship(p, args):
             if files and c._git(wt, "diff", "--quiet", "HEAD", picks[-1], "--", *files, timeout=300, proc=True).returncode:
                 _err(f"the shipped files differ from {picks[-1][:8]}'s: a commit is missing or extra, or main changed "
                      "these files since the branch left it (rebase onto main); nothing was pushed")
+            import fmambient
+            if c.gates_live(p) or fmambient.running(p):  # T-1978: never two suites at once
+                print("fm ship: waiting for a running fm check or ambient test run to finish first (at most 10 minutes)",
+                      flush=True)
+                end = time.time() + 600
+                while (c.gates_live(p) or fmambient.running(p)) and time.time() < end:
+                    time.sleep(1)
             print(f"testing {n} on {remote} main: {shlex.join(test)}", flush=True)
             env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # GIT_DIR from a hook: not the user's repo
-            try:
+            c.update_meta(p, ship_testing={"pid": os.getpid(), "at": c.now(), "root": os.path.realpath(wt)})
+            try:  # a full fm check here waits for this run; the ship's own fm check (in wt) doesn't
                 failed = subprocess.run(test, cwd=wt, stdin=subprocess.DEVNULL, env=env).returncode
             except OSError as e:
                 _err(f"--test {test[0]!r} couldn't run ({e.strerror}); nothing was pushed")
+            finally:
+                if (c.read_meta(p).get("ship_testing") or {}).get("pid") == os.getpid():
+                    c.update_meta(p, ship_testing=None)
             if failed:
                 _err("the test failed in the scratch tree; nothing was pushed")
             tip = _git(wt, "rev-parse", "HEAD").strip()

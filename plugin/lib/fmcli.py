@@ -2787,7 +2787,8 @@ def _make_batch(p, ids, title):
                                         "once, at close (T-0670).")
         for b in members:
             crit = [(c._VERIFY_OF.sub("", a.text).strip(), c.verify_of(a.text)) for a in b.acceptance()] or \
-                [(x.strip(), None) for x in _DONE_WHEN.findall(b.section("Raw request"))] or [(f"{b.title} works", None)]
+                [(t.strip(), v.strip() or None) for t, _, v in (x.partition(" :: ") for x in _DONE_WHEN.findall(  # T-1976
+                    b.section("Raw request")))] or [(f"{b.title} works", None)]
             for text, verify in crit:
                 h.add_ac(f"{b.id}: {text}", verify)
             for s in b.steps() or [None]:  # a planned member's own steps, else one step for it
@@ -3253,6 +3254,9 @@ def gates(type_, tier):
     if tier in ("M", "L"):
         need += [("docs impact", "--section \"Docs impact\" (updated docs, or none: why)"),
                  ("lesson", "fm task done ID --lesson \"…\"")]
+        if type_ == "FIX":  # T-1977: fm task finish refuses an M/L fix without it (_close_gaps)
+            need.append(("why-not-caught", "fm task finish --why-not-caught \"<the test, gate or guard that would have "
+                                           "caught it>\" (or none: why)"))
     need += {"FIX": [("red→green", "fm task prove ID --run \"<test>\" (or --section \"Regression test\" none: why)")],
              "PERFORMANCE": [("numbers", "fm task finish --numbers (or --section \"Measurements\"): <metric> before → after")],
              "CLEAN": [("behaviour lock", "tests run (fm check --evidence ID --step 1) before the first edit")]
@@ -4248,6 +4252,11 @@ def _cmd_check(args):
         print("fm check: waiting for another fm check on this tree to finish first (at most 10 minutes)", file=sys.stderr)
         end = time.time() + 600
         while c.gates_live(p, here=True) and time.time() < end:
+            time.sleep(1)
+    if (c.gates_live(p, key="ship_testing") or {}).get("root", p.root) != p.root:  # T-1978: not the ship's own check
+        print("fm check: waiting for fm ship's test run to finish first (at most 10 minutes)", file=sys.stderr)
+        end = time.time() + 600
+        while c.gates_live(p, key="ship_testing") and time.time() < end:
             time.sleep(1)
     act = c.active_brief(c.load_briefs(p), p.lane)
     tree = c.worktree_id(p.root)
