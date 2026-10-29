@@ -180,6 +180,8 @@ def stale_plans(p, briefs):
             path = os.path.realpath(os.path.join(root, s))
             if re.search(r"[*?\[]", s) or not path.startswith(root + os.sep):
                 continue
+            if os.path.basename(path) == "CHANGELOG.md":  # T-1890: every finished task appends to it: no re-plan
+                continue
             rel = os.path.relpath(path, root)
             landed = max((t for f, t in log.items() if f == rel or f.startswith(rel + "/")), default=0)
             if not os.path.exists(path):

@@ -250,6 +250,14 @@ class StalePlans(TidyCase):
         out = self.fm("tidy", "--json", cwd=cwd, env={"HOME": self.fake_home}).stdout
         return [f["detail"] for f in json.loads(out)["findings"] if f["kind"] == "stale_plan"]
 
+    def test_a_changelog_in_scope_moving_is_no_replan(self):
+        # T-1890: every finished task appends to CHANGELOG.md, so each queued plan scoped to it looked stale
+        tid = self.plan("change a", "--scope", "CHANGELOG.md", "--scope", "a.py")
+        self.write("CHANGELOG.md", time.time() - 60)
+        self.assertEqual(self.stale(), [], "only the changelog moved")
+        self.write("a.py", time.time() - 60)
+        self.assertTrue(any(tid in d and "a.py changed since it was planned" in d for d in self.stale()), self.stale())
+
     def test_an_untracked_scope_file_newer_than_the_plan_flags_a_replan_until_a_log_line_says_it_was_reread(self):
         tid = self.plan("change a", "--scope", "a.py")
         self.assertEqual(c.find_brief(self.p, tid).status, "planned")
