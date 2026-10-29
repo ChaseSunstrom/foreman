@@ -1429,14 +1429,17 @@ def _onwrite(p, path):
     """T-0947: the validators for a file just written, as (problem, note): a problem blocks until fixed; a note (a
     project validator that timed out, which says nothing about the file) doesn't. Built-ins run in this process; the
     project's own (fm check onwrite GLOB 'CMD {file}') run in its root, ONWRITE_TIMEOUT seconds each."""
-    problem = _syntax_note(path) or _frontmatter_problem(path)
+    rel = os.path.relpath(path, p.root)
+    # T-2035: Python outside the project (a scratch snippet that starts indented) isn't code it runs; JSON is checked
+    # everywhere (an fm edit draft)
+    problem = (None if rel.startswith("..") and path.endswith(".py") else _syntax_note(path)) \
+        or _frontmatter_problem(path)
     if not problem and _CARD.search(path) and os.path.isfile(path):
         import fmlib
         found = fmlib.lint_card(path)
         problem = (f"Foreman: the stack card fails the lint (fm lib check): {'; '.join(found)}") if found else None
     if problem:
         return problem, None
-    rel = os.path.relpath(path, p.root)
     rules = (c.read_meta(p).get("onwrite") or {}) if not rel.startswith("..") else {}
     for pattern, cmd in rules.items():
         if not fnmatch.fnmatch(rel, pattern) or not os.path.isfile(path):
