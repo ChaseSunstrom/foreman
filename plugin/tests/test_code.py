@@ -1120,18 +1120,21 @@ class Failures(CodeCase):  # T-1754 (T-1334, T-1355)
         self.assertEqual(start["containment"], {"kind": "guard", "label": "guard only"})
 
 
-def cmdline(pid):
+def cmdline(pid):  # T-1902: ps where there's no /proc (macOS CI never saw the runner)
+    import fmideas
     try:
-        with open(f"/proc/{pid}/cmdline", "rb") as f:
-            return f.read()
+        return b"\0".join(fmideas._cmdline(pid))
     except OSError:
         return b""
 
 
-def alive(pid):
+def alive(pid):  # running, not a zombie: /proc's state, else ps's
+    import fmideas
     try:
-        with open(f"/proc/{pid}/stat") as f:
-            return f.read().rsplit(")", 1)[1].split()[0] not in "ZX"
+        if os.path.isdir("/proc"):
+            with open(f"/proc/{pid}/stat") as f:
+                return f.read().rsplit(")", 1)[1].split()[0] not in "ZX"
+        return not fmideas._ps(pid, "stat").startswith("Z")
     except OSError:
         return False
 

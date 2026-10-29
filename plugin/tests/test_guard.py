@@ -1294,6 +1294,27 @@ class ScratchNames(GuardCase):
         self.assertEqual(fmguard.classify_write(os.path.join(link, "secrets.txt"), ctx()), [])
         self.assertEqual(fmguard.classify_write(os.path.join(link, "x.txt"), ctx(confine=(lane, base + "/main"))), [])
 
+    def test_a_builder_worktree_named_through_a_link_is_confined_at_its_real_path_too(self):
+        # T-1902: macOS's temp folder is a link (/var → /private/var): a write inside the lane, judged at its real
+        # path, was outside the lane as named (CI: test_a_builder_lane_writes_nothing_outside_its_worktree), and the
+        # main checkout named through a link was scratch at its real path
+        import fmguard
+        base = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, base)
+        real, link, rmain, main = (os.path.join(base, x) for x in ("private-lane", "lane", "private-main", "main"))
+        for d in (real, rmain):
+            os.makedirs(d)
+        os.symlink(real, link)
+        os.symlink(rmain, main)
+        ctx = lambda scratch: fmguard.Ctx(cwd=link, project_root=link, home=os.path.join(base, "h"),  # noqa: E731
+                                          foreman_home=os.path.join(base, "fh"), scratch=scratch, confine=(link, main))
+        for where in (link, real):  # no scratch to fall back on, as fm settings' guard runs (review)
+            self.assertEqual(fmguard.classify_write(os.path.join(where, "settings.json"), ctx([])), [])
+        ctx = ctx([base])
+        self.assertIn("confine", fmguard.classify_write(os.path.join(main, "x.py"), ctx))
+        self.assertIn("confine", fmguard.classify_write(os.path.join(rmain, "x.py"), ctx))  # scratch, but main
+        self.assertEqual(fmguard.classify_write(os.path.join(base, "notes.txt"), ctx), [])  # scratch stays scratch
+
     def test_a_state_fallback_named_through_a_link_is_state_at_its_real_path_too(self):
         # T-1284: macOS's temp folder is a link (/tmp → /private/tmp, /var → /private/var): a hard reset or a write
         # naming the real path was outside the fallback named through the link
