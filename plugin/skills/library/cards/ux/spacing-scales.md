@@ -10,7 +10,7 @@ Space comes from a short 4px-based scale, never from ad hoc pixel values.
 
 ## Verify
 - `grep -rnE "(margin|padding|gap)[a-z-]*: *[0-9]+px" src --include=*.css | grep -vE ": *(0|4|8|12|16|24|32|48|64|96)px"`: lists off-scale values.
-- `npx stylelint "src/**/*.css" --rule '{"declaration-property-value-allowed-list": {"/^(margin|padding|gap)/": ["/var\\(--space/", "0", "auto"]}}'`: forces tokens.
+- `npx stylelint "src/**/*.css" --config .stylelintrc.spacing.json`: forces tokens. The config holds `{"rules": {"declaration-property-value-allowed-list": {"/^(margin|padding|gap)/": ["/^(var\\(--space-[0-9]+\\)|0|auto)( (var\\(--space-[0-9]+\\)|0|auto))*$/"]}}}`, which also allows `margin: 0 auto`.
 - Devtools box model overlay: sibling gaps match across similar components.
 
 ## Test first

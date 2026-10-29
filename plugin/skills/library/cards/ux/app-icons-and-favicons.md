@@ -11,7 +11,7 @@ A small icon set: SVG plus 32 px ICO, a 180 px Apple touch icon, and 192/512 px 
 ## Verify
 - `identify public/favicon.ico public/apple-touch-icon.png public/icon-192.png public/icon-512.png`: sizes 32 (in ICO), 180, 192, 512.
 - `jq '.icons[] | {sizes, purpose}' public/site.webmanifest`: lists 192 and 512, with a `maskable` entry.
-- `npx lighthouse http://localhost:3000 --only-categories=pwa`: manifest and icon audits.
+- `jq -e '.name and .start_url and .background_color and ([.icons[].sizes] | index("192x192") != null and index("512x512") != null)' public/site.webmanifest`: manifest fields and sizes (Lighthouse 12 dropped its pwa category); add a Playwright test that requests each `<link rel="icon">` and the manifest icons and expects status 200.
 - `curl -sI http://localhost:3000/favicon.ico | head -1`: 200, not a 404 spam source.
 
 ## Test first
