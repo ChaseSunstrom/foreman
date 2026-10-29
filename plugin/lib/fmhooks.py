@@ -1779,8 +1779,9 @@ def _pre_tool_use(raw):
                 reason += f" To continue the queued work instead: fm focus {nxt.id} ({c.fit(nxt.title, 60)})."
         if _repeat_streak(pl.get("session_id"), block.category, str(block.detail)[:120]) >= 2:  # T-0440: 3rd in a row
             tid = act.id if act else "ID"
-            how = (f"ask the user (fm ask {tid} {block.category} --why \"<what and why>\"), or "
-                   if block.category not in guard.NOT_AUTHORIZABLE else "")
+            how = ("do what the refusal says, or " if getattr(guard, "unanalysed", lambda d: False)(block.detail) else
+                   f"ask the user (fm ask {tid} {block.category} --why \"<what and why>\"), or "
+                   if block.category not in guard.NOT_AUTHORIZABLE else "")  # committed fallback may lack unanalysed
             reason += (f" Stop retrying: this exact refusal came 3 times in a row. Instead, {how}record why the task "
                        f"can't go on (fm task block {tid} \"<why>\") and take the next task.")
         _event({"kind": "guard_block", "session_id": pl.get("session_id"), "category": block.category,
