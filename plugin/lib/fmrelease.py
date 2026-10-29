@@ -351,6 +351,10 @@ def ship(p, args):
     last = _git(root, "rev-parse", "--verify", "-q", SHIPPED, ok=True).strip()  # T-1945: main may hold these under another patch
     if last and c._git(root, "merge-base", "--is-ancestor", last, "HEAD", timeout=60, proc=True).returncode:
         last = ""  # rebased or another branch: git cherry alone
+    if not picks and last and not c._git(root, "diff", "--quiet", last, base, timeout=60, proc=True).returncode:
+        # T-2054: main is where the last ship left it, so replay the branch's own history: a merged lane's commit
+        # may not apply alone (its merge settled a conflict), but each first-parent step applies in turn
+        picks = _git(root, "rev-list", "--first-parent", "--reverse", f"{last}..HEAD").split()
     picks = picks or [ln[2:] for ln in _git(root, "cherry", base, "HEAD", *([last] if last else [])).splitlines() if ln.startswith("+ ")]
     if not picks:
         print(f"nothing to ship: {remote} main already has HEAD's changes" + (f" after the last shipped commit {last[:8]}" if last else ""))
@@ -375,7 +379,8 @@ def ship(p, args):
         _git(root, "worktree", "add", "-q", "--detach", wt, base)
         try:
             for s in picks:
-                r = c._git(wt, "cherry-pick", s, timeout=300, proc=True)
+                merge = len(_git(root, "rev-list", "--parents", "-n1", s).split()) > 2
+                r = c._git(wt, "cherry-pick", *(["-m", "1"] if merge else []), s, timeout=300, proc=True)
                 if r.returncode:
                     _git(wt, "cherry-pick", "--abort", ok=True)
                     hint = "" if args.commits else " (main may hold it under another patch: name the commits to ship)"
