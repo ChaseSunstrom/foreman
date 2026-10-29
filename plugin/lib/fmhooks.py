@@ -565,10 +565,10 @@ def _sync_import(p):
         res["conflicts"] else None
 
 
-def _reconcile(p, event):
+def _reconcile(p, event, briefs=None):
     """T-1267: a /rewind or a revert took back a done step's files: reopen it (the caller holds the project lock)."""
     try:
-        return c.reconcile_rewind(p, getattr(p, "lane", None), timeout=1)
+        return c.reconcile_rewind(p, getattr(p, "lane", None), timeout=1, briefs=briefs)
     except Exception:
         log_error(event, _tb())
         return None
@@ -1210,8 +1210,9 @@ def user_prompt_submit(pl):
             # a plan-only prompt holds drive this turn; turn_at: when this turn began (T-0145)
             g["drive"].setdefault(sid, {}).update(count=0, hold=hold, turn_at=time.time())
             _write_gate(p, g)
-            rewind = _reconcile(p, "UserPromptSubmit")
-            briefs = c.load_briefs(p)  # T-2024: one load for the state and the Next line
+            briefs = c.load_briefs(p)  # T-2024: one load for the state and the Next line (T-2029: and the rewind check)
+            rewind = _reconcile(p, "UserPromptSubmit", briefs)
+            briefs = c.load_briefs(p) if rewind else briefs  # it reopened steps: read them back
             sd = c.regen_views(p, briefs) if r.overrides or approvals or rewind else c.state_dict(p, briefs)
     except c.LockTimeout:  # never drop a yes / PAUSE silently
         return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
