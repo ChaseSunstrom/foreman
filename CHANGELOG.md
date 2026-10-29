@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Perf: the active-task scan behind every tool call reads a small file of closed briefs' keys instead of the whole 700 KB brief index: PreToolUse 39 -> 36 ms (T-2031).
 - Fix: quitting fm code while a runner test's CLI is starting ends that CLI too; before, a quit that landed before the app had seen the CLI left it running to its 60 s timeout (T-2030).
 - Perf: the prompt hook's rewind check runs its three git commands only once the active task has a passing proof to take back, and uses the hook's one brief load instead of scanning the briefs again: UserPromptSubmit 94 -> 77 ms before a step is proved (T-2029).
 - Perf: the daily risk budget check keeps today's counts in a small risk.json, so each hook reads only the ledger lines added since and runs git log only when HEAD moved. Its share of the Stop hook went from 9-10 ms to under 0.5 ms: Stop 60 -> 55 ms, UserPromptSubmit 98 -> 92 ms. A rolled or broken cache is counted afresh (T-2028).

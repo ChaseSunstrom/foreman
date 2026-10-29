@@ -1065,6 +1065,32 @@ class BriefIndex(ForemanTestCase):
             c._BRIEF_MEMO.clear()
             self.assertIsNone(c.active_brief_fast(self.p), bad)
 
+    def test_brief_index_the_fast_scan_reads_only_the_closed_keys(self):
+        # T-2031: once the small keys file exists, the fast scan never opens the 700 KB index
+        c.load_briefs(self.p)
+        c._BRIEF_MEMO.clear()
+        keys, idx = (os.path.join(self.p.dir, n) for n in ("briefs-closed.json", "briefs-index.json"))
+        done = c.find_brief(self.p, "T-0001")
+        got, seen = self.opened(lambda: c.active_brief_fast(self.p))
+        self.assertIsNone(got)
+        self.assertNotIn(idx, seen)
+        self.assertNotIn(done.path, seen)
+        for bad in ("{", "[]"):  # unreadable: back to the index, still skipping the closed brief
+            with open(keys, "w", encoding="utf-8") as f:
+                f.write(bad)
+            got, seen = self.opened(lambda: c.active_brief_fast(self.p))
+            self.assertIsNone(got, bad)
+            self.assertNotIn(done.path, seen, bad)
+        os.remove(keys)
+        c._BRIEF_MEMO.clear()
+        c.load_briefs(self.p)
+        self.assertTrue(os.path.exists(keys), "a missing keys file is written again")
+        done.meta["status"] = "active"  # reopened: a stale key no longer matches, so the brief is read
+        c.save_brief(self.p, done)
+        self.age(30)
+        c._BRIEF_MEMO.clear()
+        self.assertEqual(c.active_brief_fast(self.p).id, "T-0001")
+
     def test_brief_index_a_just_written_brief_is_not_indexed(self):
         b = c.find_brief(self.p, "T-0002")
         b.meta["status"] = "done"
