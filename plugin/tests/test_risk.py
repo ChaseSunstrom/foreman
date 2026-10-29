@@ -139,6 +139,43 @@ class Risk(HookCase):
                 f.write(json.dumps({"ts": old, "event": "guard_block", "data": {"category": "rm-outside"}}) + "\n")
         self.assertEqual(self.fm_json("risk")["spent"], 0)
 
+    def fresh(self, p):
+        fmrisk._MEMO.clear()  # as a new hook process
+        return fmrisk.status(p)["spent"]
+
+    def test_a_new_process_reads_only_new_ledger_lines_and_reuses_the_revert_count(self):
+        # T-2028: every hook process rescanned the day's ledger and ran git log for today's reverts
+        from unittest import mock
+        self.fm("init")
+        g = lambda *a: subprocess.run(["git", "-C", self.repo, "-c", "user.email=t@example.com", "-c", "user.name=t",  # noqa: E731
+                                       *a], check=True, capture_output=True)
+        g("commit", "--allow-empty", "-m", "start")
+        p = self.spend(blocks=1, failed=1)
+        self.assertEqual(self.fresh(p), 3)
+        c.log_event(p, "guard_block", data={"category": "rm-outside"})
+        with mock.patch.object(c, "_seek_since", side_effect=AssertionError("rescanned the day")), \
+                mock.patch.object(c, "_git", side_effect=AssertionError("ran git log")):
+            self.assertEqual(self.fresh(p), 4)
+            self.assertEqual(self.fresh(p), 4, "unchanged: the same")
+        g("commit", "--allow-empty", "-m", 'Revert "x"')
+        with mock.patch.object(c, "_seek_since", side_effect=AssertionError("rescanned the day")):
+            self.assertEqual(self.fresh(p), 7, "HEAD moved: git log again")
+
+    def test_a_rolled_ledger_is_read_afresh(self):
+        self.fm("init")
+        p = self.spend(blocks=2)
+        self.assertEqual(self.fresh(p), 2)
+        path = os.path.join(p.dir, "ledger.jsonl")
+        with open(path, "rb") as f:
+            lines = f.readlines()
+        with open(path, "wb") as f:  # fm tidy's roll: a prefix out, rewritten in place
+            f.writelines(lines[1:])
+            f.write(lines[-1].replace(b'"exit": 0', b'"exit": 1'))  # one failed close more
+        self.assertEqual(self.fresh(p), 4)
+        with open(os.path.join(p.dir, fmrisk.CACHE), "w") as f:
+            f.write("{not json")
+        self.assertEqual(self.fresh(p), 4, "a broken cache counts afresh")
+
     def test_a_revert_commit_today_costs_three(self):
         self.fm("init")
         g = lambda *a: subprocess.run(["git", "-C", self.repo, *a], check=True, capture_output=True)  # noqa: E731
