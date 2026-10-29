@@ -220,6 +220,12 @@ class Newcomer(_Room):
         self.assertEqual(rc, 1, out)
         self.assertIn("find the hidden switch: stuck at step 1", out)
         self.assertIn("flip the hidden switch", out)
+        self.assertNotIn("fm settings macro", out)
+        fmsettings.save_macro("squared", ["border=square"])  # T-1876: a saved macro that reaches it is offered
+        rc, out = self.run_cli("--goals", goals, "--json")
+        self.assertEqual([g["macro"] for g in json.loads(out)], ["squared"], out)
+        rc, out = self.run_cli("--goals", goals)
+        self.assertIn('the screen never showed "flip the hidden switch"; fm settings macro squared sets it', out)
 
     def test_real_asks_a_model_for_the_keys_with_only_the_screen(self):
         asked = []

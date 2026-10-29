@@ -1289,6 +1289,7 @@ def newcomer(goals=None, real=False, model="haiku", turns=6, size=(120, 40)):
     import fmcore
     import fmideas
     goals = _goals(NEWCOMER_GOALS) if goals is None else goals
+    mine = macros()  # T-1876: the user's own, read before the sandbox
     system = ("You are using a terminal app's settings screen for the first time and see only its screen as text. "
               'Reply with one JSON object, {"keys": "..."}: the keys to press next (\\n is Enter, \\u001b Escape, '
               "\\u001b[A \\u001b[B \\u001b[C \\u001b[D the arrows), and nothing else.")
@@ -1370,8 +1371,35 @@ def newcomer(goals=None, real=False, model="haiku", turns=6, size=(120, 40)):
                         got.update(step=n, missing="left the settings screen")
                         break
             got["done"] = reached()
+            got["macro"] = None if got["done"] else _reaches(mine, g["done"])
             out.append(got)
     return out
+
+
+def _reaches(mine, done):
+    """T-1876: the first saved macro setting each of `done`'s settings to its value (None: to any value), or None."""
+    for name, m in mine.items():
+        m = {_norm(k): str(v) for k, v in m.items()}
+        if done and all(_norm(k) in m and (v is None or m[_norm(k)] == _plain(v)) for k, v in done.items()):
+            return name
+    return None
+
+
+def _macro_tips(key=None, least=3):
+    """T-1876: each key a one-key set (fm settings set, the app's :set line) wrote `least`+ times, its last value no
+    macro holds: the fm settings macro line that saves the typing. A panel move (several keys at once) isn't one."""
+    import shlex
+    count, last = {}, {}
+    for e in changelog():
+        keys = {c.get("key") for c in e["changes"]}
+        if e.get("how") == "set" and len(keys) == 1:
+            k = keys.pop()
+            count[k], last[k] = count.get(k, 0) + 1, e["changes"][-1].get("new")
+    have = {(_norm(k), str(v)) for m in macros().values() for k, v in m.items()}
+    return [f"{k} set by hand {n} times: fm settings macro {re.sub(r'[^A-Za-z0-9_-]', '-', k)[:40]} --set "
+            f"{shlex.quote(f'{k}={_plain(last[k])}')} saves it as one command" for k, n in count.items()
+            if n >= least and last[k] is not None and (_norm(k), _plain(last[k])) not in have
+            and key in (None, k)]
 
 
 def _said(args, done, refused, data=None, lines=()):
@@ -1396,9 +1424,10 @@ def _cmd_extras(args):
     import fmcore
     if args.action == "log":
         got = changelog(args.key)
-        return fmcli.out(args, got, _safe("\n".join(
+        return fmcli.out(args, got, _safe("\n".join([
             f"{e.get('at')} {e.get('how')} · {c.get('surface')} {c.get('key')}: {_plain(c.get('old'))} → "
-            f"{_plain(c.get('new'))}" for e in got for c in e["changes"])) or "no settings changed yet")
+            f"{_plain(c.get('new'))}" for e in got for c in e["changes"]]
+            + _macro_tips(args.key and _norm(args.key)))) or "no settings changed yet")
     if args.action == "macro":
         if args.pairs:
             got = save_macro(args.key, args.pairs)
@@ -1451,8 +1480,9 @@ def _cmd_extras(args):
                                "PATH; without --real a scripted newcomer plays")
         got = newcomer(_goals(args.goals) if args.goals else None, args.real, args.model)
         hint = lambda m: m if args.real or m == "left the settings screen" else f'the screen never showed "{m}"'  # noqa: E731
-        lines = [f"✓ {g['goal']}" if g["done"] else f"✗ {g['goal']}: stuck at step {g['step']}: {hint(g['missing'])}"
-                 if g["step"] else f"✗ {g['goal']}: not reached" for g in got]
+        lines = [(f"✓ {g['goal']}" if g["done"] else f"✗ {g['goal']}: stuck at step {g['step']}: {hint(g['missing'])}"
+                  if g["step"] else f"✗ {g['goal']}: not reached")
+                 + (f"; fm settings macro {g['macro']} sets it" if g.get("macro") else "") for g in got]
         fmcli.out(args, got, _safe("\n".join(lines + ["nothing written (a sandbox: its own tui.toml, state and Claude "
                                                       "Code settings)"])))
         return 1 if any(not g["done"] for g in got) else 0
