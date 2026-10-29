@@ -175,6 +175,38 @@ class Prefer(_Inbox):
         self.assertIn("unreadable", self.fm("inbox", "prefer", "--reset").stdout)
 
 
+    def test_why_names_the_title_words_that_lift_or_sink_an_item(self):  # T-1872
+        self.capture("Speed up the search index", "Polish the onboarding screens", "Speed up onboarding screens")
+        self.assertIn("nothing learned", self.fm("inbox", "prefer", "--why", "t-0003").stdout)
+        for _ in range(2):
+            self.fm("inbox", "prefer", "T-0002", "T-0001")
+        lines = self.fm("inbox", "prefer", "--why", "T-0003").stdout.splitlines()
+        self.assertIn("+1 from learned choices", lines[0])
+        self.assertEqual(lines[1:], ["  onboarding +1 lifts it", "  screens +1 lifts it", "  speed -1 sinks it"])  # adds up
+        d = json.loads(self.fm("inbox", "prefer", "--why", "T-0003", "--json").stdout)
+        self.assertEqual((d["tilt"], d["words"][0]), (1, {"word": "onboarding", "weight": 2, "points": 1}))
+        for argv in (("prefer", "--why", "T-0099"), ("prefer", "T-0002", "--why", "T-0003"),
+                     ("prefer", "--reset", "--why", "T-0003"), ("pick", "--why", "T-0003")):
+            self.assertEqual(self.fm("inbox", *argv, check=False).returncode, 1, argv)
+
+
+class Triage(_Inbox):
+    def test_triage_opens_the_surface_that_fits(self):  # T-1872
+        self.deferred("Port the CLI to Windows")
+        self.fm("capture", "Fix the typo in the README", "--tier", "S", "--type", "FIX", "--anyway")
+        parse = fmcli.build_parser().parse_args
+        with mock.patch.object(fmeco, "_tty", return_value=True), mock.patch.object(fmcli, "resolve", return_value=self.p), \
+                mock.patch.object(fmeco, "swipe_loop", return_value=[]) as loop, \
+                mock.patch.object(fmeco, "swipe_server", return_value=(None, None)), \
+                mock.patch.object(fmsettingsserve, "run", return_value=0) as serve, contextlib.redirect_stdout(io.StringIO()):
+            fmeco.cmd_triage(parse(["triage"]))
+            fmeco.cmd_triage(parse(["triage", "--serve"]))
+            fmeco.cmd_triage(parse(["triage", "--json"]))  # JSON on a terminal is the list, never the loop
+        self.assertEqual((loop.call_count, serve.call_count), (1, 1))
+        self.assertIn("Fix the typo in the README", self.fm("triage").stdout, "piped: the small items ready to start")
+        self.assertEqual(json.loads(self.fm("triage", "--json").stdout)["first"][0]["title"], "Fix the typo in the README")
+
+
 class Served(_Inbox):
     """T-1858: fm inbox swipe --serve: the pile as a card at a time in the browser, on fm settings serve's server."""
     def setUp(self):
