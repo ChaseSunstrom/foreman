@@ -106,6 +106,21 @@ class KnownVars(GuardCase):
             ("cd {fhome} && cd /nonexistent && cd /tmp; echo x > plugin/lib/fmguard.py", "core"),
         ], self.bash)
 
+    def test_an_or_later_in_the_line_keeps_the_cd_before_it_certain(self):
+        # T-1891: any || made every cd uncertain, so `cd S/try && git checkout -- . && … || echo` (an unrolled loop
+        # body) read the checkout as one over the main tree
+        self.run_table([
+            ("cd /tmp && tar xf - && echo a || echo f", None),  # the tar runs only after the cd
+            ("cd /tmp && tar xf - && for e in a b; do true || echo $e; done", None),
+            ("cd /tmp || exit; tar xf -", None),  # a cd into a folder that exists can't fail
+            ("true || cd /tmp && tar xf -", "core"),  # (true || cd) && tar: the cd may be skipped
+            ("true || cd /tmp; tar xf -", "core"),
+            ("cd /nonexistent && true || tar xf -", "core"),  # the cd failed: the || runs here
+            ("cd /nonexistent || echo no; tar xf -", "core"),
+            ("cd /tmp && true || cd /nonexistent && tar xf -", None),
+            ("false || true && cd /tmp && tar xf -", None),  # the tar needs the cd, whatever ran before it
+        ], lambda cmd: self.bash(cmd, cwd=self.fhome))
+
     def test_jarvis_cd_and_pipeline_false_positives(self):
         # T-0384 (JARVIS, four refusals in an hour): writes only into the scratchpad or a builder's own folder were
         # refused with no task, because quoted text (a jq filter, a sed script) read as branches, a head `cd /abs &&`
