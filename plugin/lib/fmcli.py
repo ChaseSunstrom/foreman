@@ -6553,7 +6553,7 @@ def _build_parser():
     s = add("triage", lazy("fmeco", "cmd_triage"), tier=("Project and settings", 671), help="the backlog on the surface "
             "that fits: --serve the swipe page, a terminal the swipe loop, else the small items ready to start (T-1872)")
     s.add_argument("--serve", action="store_true", default=None, help="the deferred pile as a page in the browser")
-    s = add("ci-watch", lazy("fmci", "cmd_ci_watch"), tier=("Project and settings", 930), help="after a push, poll the branch's latest CI run through gh; a "
+    s = add("ci-watch", lazy("fmci", "cmd_ci_watch"), tier=("Project and settings", 930), help="after a push, poll the branch's latest CI run through gh (or a public repo's API without it); a "
                                                            "failure's log tail becomes a FIX brief (data), up to --max-retries; it can run "
                                                            "max-polls x interval: use run_in_background, or let fm next or a Monitor wake you")
     s.add_argument("--branch", help="default: the branch gh finds here")

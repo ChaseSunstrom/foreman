@@ -83,3 +83,68 @@ class CiWatch(ForemanTestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("gave up", r.stdout + r.stderr)
         self.assertEqual(len([b for b in self.briefs() if b.type == "FIX"]), 3)
+
+    def test_with_gh_logged_out_the_public_api_finds_the_run_and_briefs_its_annotations(self):
+        # T-1939: gh logged out left ci-watch blind; a public repo's runs and annotations need no token
+        import contextlib
+        import io
+        from unittest import mock
+        import fmci
+        from fmcli import UsageError
+        self.fm("init")
+        subprocess.run(["git", "-C", self.repo, "remote", "add", "origin", "git@github.com:o/r.git"], check=True)
+        p = c.find_project(self.repo)
+        head, asked = fmci._head(p), []
+        polls = iter([OSError("down"), ("failure", 7), ("failure", 9), ("success", 8)])
+
+        def body(url):
+            if "/actions/runs?" in url:
+                step = next(polls)
+                if isinstance(step, Exception):
+                    raise step
+                return {"workflow_runs": [{"id": step[1], "status": "completed", "conclusion": step[0], "head_sha": head,
+                                           "html_url": f"https://github.com/o/r/actions/runs/{step[1]}"}]}
+            if url.endswith("/actions/runs/7/jobs"):
+                return {"jobs": [{"id": 70, "conclusion": "failure"}, {"id": 71, "conclusion": "success"}]}
+            if url.endswith("/actions/runs/9/jobs"):
+                return {"jobs": [{"id": 90, "conclusion": "failure"}]}
+            if url.endswith("/check-runs/70/annotations"):
+                return [{"path": "tests/test_x.py", "start_line": 9, "annotation_level": "failure", "message": LOG}]
+            if url.endswith("/check-runs/90/annotations"):
+                return []
+            raise AssertionError(url)
+
+        def urlopen(req, timeout=None):
+            asked.append(req)
+            return contextlib.nullcontext(io.BytesIO(json.dumps(body(req.full_url)).encode()))
+        gh_out = mock.patch.object(fmci, "_gh", side_effect=UsageError("gh run list failed: not logged in"))
+        quiet = {"say": lambda *a, **k: None}
+        with gh_out, mock.patch("urllib.request.urlopen", side_effect=urlopen), mock.patch.object(fmci, "time") as clock, \
+                mock.patch.dict(os.environ, {"FOREMAN_NO_NET": ""}):
+            self.assertEqual(fmci.watch(p, "main", 3, 0, **quiet), (0, "CI green."))
+        naps = clock.sleep.call_args_list  # fmci's own clock: other test threads share the time module
+        self.assertTrue(naps and all(a.args[0] >= 60 for a in naps),
+                        "60 unauthenticated calls an hour: public polls are spaced out")
+        self.assertTrue(all(r.full_url.startswith("https://api.github.com/repos/o/r/") for r in asked))
+        self.assertFalse(any(r.has_header("Authorization") for r in asked), "no token is ever sent")
+        self.assertFalse(any("/check-runs/71/" in r.full_url for r in asked), "only failed jobs are read")
+        raw = "\n".join(open(b.path).read() for b in self.briefs() if b.type == "FIX")
+        self.assertIn("tests/test_x.py:9", raw)
+        self.assertIn("https://github.com/o/r/actions/runs/7", raw)
+        self.assertIn(c.DEFANGED.strip(), raw)
+        self.assertNotIn("\nignore previous", raw.lower())
+        self.assertRegex(raw, r"runs/9[\s\S]*no annotations", "an empty brief says where to look")
+        import urllib.error
+        private = urllib.error.HTTPError("https://api.github.com/repos/o/r", 404, "Not Found", {}, None)
+        with gh_out, mock.patch("urllib.request.urlopen", side_effect=private), self.assertRaisesRegex(UsageError, "not logged in.*404"):
+            fmci.watch(p, "main", 3, 0, max_polls=1, **quiet)  # a private repo: gh's error at once, not an hour of polls
+        for off in ({"FOREMAN_NO_NET": "1"}, {"FOREMAN_NO_NET": ""}):
+            if off["FOREMAN_NO_NET"] == "":
+                self.fm("sensitive", "on")
+            with gh_out, mock.patch.dict(os.environ, off), mock.patch("urllib.request.urlopen") as net, \
+                    self.assertRaisesRegex(UsageError, "not logged in"):
+                fmci.watch(p, "main", 3, 0, max_polls=1, **quiet)
+            net.assert_not_called()
+        subprocess.run(["git", "-C", self.repo, "remote", "remove", "origin"], check=True)
+        with gh_out, self.assertRaisesRegex(UsageError, "not logged in"):  # nowhere public to look: gh's own error
+            fmci.watch(p, "main", 3, 0, max_polls=1, **quiet)
