@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A failed gate says which test failed and how (T-1884): `fm check` names the failing tests (up to 5, then "+N more") and shows the first one's failure, not the last 10 lines of the summary.
 - `--follow` no longer misses a change made right after a line is printed (T-1882). `fm ui`, `fm projects`, `fm sessions` and `fm claude` followers took their file-time snapshot after building and printing the view, so a capture that landed in between waited for the 30 s refresh (and made a test flaky). The snapshot now comes before each build.
 - Every built-in scene at a glance (T-1873). `fm scene gallery --out sheet.png` draws metaballs, terrain, airlock, bench and lookbook small on one sheet, three across, and prints one caption per tile saying what it tells you. Each is built from this repo's data, or from a sample (with the reason) when there's none yet, such as no bench runs.
 - Why an item sits where it does, and one door to the backlog (T-1872). `fm inbox prefer --why T-0042` says how far the choices `pick` taught lift or sink an inbox item (at most 2 points either way) and the title words behind it, one line each, largest first, adding up to its total: "onboarding +1 lifts it". `fm triage` opens the backlog surface that fits: the swipe loop in a terminal, the swipe page with `--serve`, otherwise the list of small items ready to start (`--json` too).

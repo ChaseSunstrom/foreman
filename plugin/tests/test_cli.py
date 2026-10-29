@@ -725,6 +725,17 @@ class Checks(ForemanTestCase):
         self.assertEqual([p.returncode for p in codes], [0, 0, 1])
         self.assertIn("flaky again", codes[2].stdout)
 
+    def test_a_failed_gate_names_its_failing_test_and_how(self):  # T-1884: not the summary's last 10 lines
+        self.fm("init")
+        with open(os.path.join(self.repo, "run.py"), "w") as f:
+            f.write("import sys\nprint('FAIL: test_x (test_m.C.test_x)\\n---\\nAssertionError: the playbook grew')\n"
+                    "print('\\n' * 12 + 'Ran 9 tests\\n\\nFAILED (failures=1)')\nsys.exit(1)\n")
+        self.fm("check", "add", "python3 run.py")
+        p = self.fm("check", "--fresh", check=False)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("    failing: test_m.C.test_x\n", p.stdout)
+        self.assertIn("    AssertionError: the playbook grew", p.stdout)
+
     def test_a_pass_on_the_same_tree_is_reused_and_affected_runs_only_linked_tests(self):
         # round 5 (T-0063): the ~100 s suite ran twice per tree (step and criterion evidence); iterate on linked tests
         self.fm("init")

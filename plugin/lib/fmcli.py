@@ -4191,7 +4191,11 @@ def _cmd_check(args):
     for cmd, code, output, secs in results:
         lines.append(f"{'✗' if code else '✓'} {cmd} → {c.run_result(code, output)} ({secs:.1f} s)"
                      + (f" — {notes[cmd]}" if cmd in notes else ""))
-        lines += ["    " + l for l in output.rstrip().splitlines()[-10:]] if code else []
+        names = c.failing_tests(output) if code else []  # T-1884: the failing test and how, not the summary's tail
+        tail = ([f"failing: {', '.join(names[:5])}" + (f" (+{len(names) - 5} more)" if names[5:] else "")]
+                + c.failure_excerpt(output, names[0], 600).splitlines()[-10:] if names
+                else output.rstrip().splitlines()[-10:])
+        lines += ["    " + l for l in tail] if code else []
     lines += [f"! {x}" for x in flaky + ([left_out] if left_out else []) + base_lines]
     if wrote:
         shown = ", ".join(wrote_paths[:8]) + (f" (+{len(wrote_paths) - 8} more)" if len(wrote_paths) > 8 else "")
