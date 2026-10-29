@@ -287,6 +287,67 @@ class Lanes(ForemanTestCase):
             f.write("x = 1\n")
         return tid, path
 
+    def finished_builder(self, when="2026-01-01T00:00:00"):
+        """T-2038: a stopped builder whose work is committed in its lane at `when`, the tree clean."""
+        os.environ["FM_STALL_CACHE_S"] = "0"
+        self.addCleanup(os.environ.pop, "FM_STALL_CACHE_S", None)
+        tid, path = self.stopped_builder()
+        env = {**os.environ, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
+        subprocess.run(["git", "-C", path, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", path, "commit", "-qm", "built"], check=True, env=env)
+        return tid, path
+
+    def test_a_finished_lane_asks_for_a_merge_not_a_resume(self):
+        tid, path = self.finished_builder()
+        out = self.fm("next").stdout
+        self.assertIn(f"fm lane merge {tid}", out)
+        self.assertNotIn(f"fm lane resume {tid}", out, "a finished lane is merged, not resumed")
+        self.assertEqual(c.finished_lanes(c.find_project(self.repo), c.load_briefs(c.find_project(self.repo))), [tid])
+
+    def test_the_drive_names_a_finished_lane_for_merge_once(self):
+        tid, _ = self.finished_builder()
+        stop = lambda: self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting.",
+                                          "session_id": "sess-1"}).stdout
+        first = stop()
+        self.assertIn(f"finished and wait on a merge: fm lane merge {tid}", first)
+        self.assertNotIn(f"fm lane merge {tid}", stop(), "said once, not on every Stop")
+
+    def test_a_dirty_or_fresh_lane_is_not_finished(self):
+        tid, path = self.finished_builder()
+        with open(os.path.join(path, "more.py"), "w") as f:
+            f.write("y = 2\n")
+        p = c.find_project(self.repo)
+        self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [], "uncommitted work: still building")
+        os.remove(os.path.join(path, "more.py"))
+        self.git("commit", "-q", "--allow-empty", "-m", "just now", cwd=path)
+        self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [], "a commit minutes ago: maybe still building")
+
+    def test_a_merged_lane_or_a_live_builder_is_not_named(self):
+        import fmbus
+        tid, path = self.finished_builder()
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, tid)
+        b.meta["builder_proc"] = f"{fmbus.host_id()}|{os.getpid()}|{fmbus._proc(os.getpid())[1]}"
+        c.save_brief(p, b)
+        self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [], "a live builder may be on a long test run")
+        b.meta["builder_proc"] = f"{fmbus.host_id()}|999999999|1"
+        c.save_brief(p, b)
+        self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [tid])
+        sha = self.git("rev-parse", "HEAD", cwd=path).strip()
+        self.git("merge", "-q", "--no-ff", "-m", "merge", sha)
+        self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [], "merged: nothing waits")
+
+    def test_the_finished_check_is_cached_until_main_moves(self):
+        tid, path = self.finished_builder()
+        os.environ["FM_STALL_CACHE_S"] = "60"
+        p = c.find_project(self.repo)
+        self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [tid])
+        with open(os.path.join(path, "more.py"), "w") as f:
+            f.write("y = 2\n")
+        self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [tid], "within the ttl: no git calls")
+        self.git("commit", "-q", "--allow-empty", "-m", "main moved")
+        self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [], "a new main commit invalidates it")
+
     def test_a_builder_whose_claude_process_ended_is_flagged_with_the_resume_command(self):
         tid, _ = self.stopped_builder()
         self.assertIn(f"fm lane resume {tid}", self.fm("next").stdout)
