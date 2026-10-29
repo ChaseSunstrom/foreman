@@ -79,6 +79,20 @@ def _latest(p, branch, sha, via=None):
                  and r.get("headSha") == sha), None) if isinstance(rows, list) else None
 
 
+def _failed_jobs(p, run):
+    """T-1942: a green run's failed jobs (continue-on-error ones don't fail the run); [] when its jobs can't be read."""
+    from fmcli import UsageError
+    try:
+        try:
+            jobs = json.loads(_gh(p, "run", "view", str(run["databaseId"]), "--json", "jobs")).get("jobs")
+        except UsageError as e:
+            jobs = (_api(p, f"actions/runs/{run['databaseId']}/jobs", e) or {}).get("jobs")
+    except (UsageError, ValueError, AttributeError):
+        return []
+    return [str(j.get("name")) for j in (jobs if isinstance(jobs, list) else [])
+            if isinstance(j, dict) and j.get("conclusion") in ("failure", "timed_out")]
+
+
 def _brief(p, run, branch):
     from fmeco import capture_once
     url = str(run.get("url") or "")
@@ -113,7 +127,13 @@ def watch(p, branch, retries, interval, max_polls=120, say=print, commit=None):
         if run and run.get("status") == "completed" and run["databaseId"] not in seen:
             seen.add(run["databaseId"])
             if run.get("conclusion") == "success":
-                return 0, "CI green."
+                failed = _failed_jobs(p, run)
+                if not failed:
+                    return 0, "CI green."
+                b, _new = _brief(p, run, branch)
+                n = len(failed)
+                return 0, (f"CI green, but {n} non-blocking job{'s' if n > 1 else ''} failed "
+                           f"({c.fit(c.plain(', '.join(failed)), 120)}): FIX brief {b.id}.")
             b, _new = _brief(p, run, branch)
             fails += 1
             say(f"run {run['databaseId']} {run.get('conclusion')}: FIX brief {b.id}")
