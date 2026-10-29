@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix: the Stop drive, `fm next` and `fm ideas --deepen` say "optional work is dropped (<why>)" instead of "usage is ahead of pace (<why>)", so a spent risk budget is no longer called usage pace (T-1969).
 - Never two test suites at once: a full `fm check` waits (up to 5 minutes, saying so) for a running ambient test run, and an edit made while full gates run starts no ambient run (T-1964, T-1965). A loop round run while optional work is dropped (usage ahead of pace, or the risk budget spent) skips the `fm ideas` fan-out for ideas made in the main thread (T-1966).
 - Fix: `fm task finish` answers only for the closing task's own files: another task's uncommitted edits no longer run their linked tests at the close or trip the scope check (T-1968).
 - Fix: a file changed while `fm check` ran no longer gets that run's pass or evidence; an edit made during a full check gets a note (T-1963).

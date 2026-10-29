@@ -758,7 +758,7 @@ def cmd_ideas(args):
     deepen = max(0, getattr(args, "deepen", 0) or 0)
     pace = fmbudget.degrade(p) if deepen else None
     if pace:  # T-0449: optional rounds go first; the caps below still refuse what's over one
-        print(f"fm: usage ahead of pace ({pace}): --deepen dropped (0 rounds, optional work); the lenses still run",
+        print(f"fm: optional work is dropped ({pace}): --deepen dropped (0 rounds); the lenses still run",
               file=sys.stderr)
         deepen = 0
     runs = len(lenses) * max(1, args.rounds) + deepen
