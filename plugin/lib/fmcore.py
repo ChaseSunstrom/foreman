@@ -1357,6 +1357,45 @@ class Brief:
             s.current = s.n == n
         self._write_steps(steps)
 
+    def edit_step(self, n, text):
+        """T-1959: step n's text replaced, its checkbox kept; refused once it has evidence (as edit_ac)."""
+        steps = self.steps()
+        s = next((s for s in steps if s.n == n), None)
+        if s is None:
+            raise KeyError(f"no step {n}")
+        if self.has_evidence(step=n):
+            raise PolicyError(f"{self.id} step {n} already has evidence, so it stays as it is; add a step instead")
+        self.append_log(f"step {n} text: {s.text} → {text.strip()}")
+        s.text = text.strip()
+        self._write_steps(steps)
+
+    def remove_step(self, n):
+        """T-1959: step n removed and the later ones renumbered; refused when it or a later step has evidence,
+        which is keyed by step number and would move to another step."""
+        steps = self.steps()
+        s = next((s for s in steps if s.n == n), None)
+        if s is None:
+            raise KeyError(f"no step {n}")
+        if any(self.has_evidence(step=x.n) for x in steps if x.n >= n):
+            raise PolicyError(f"{self.id}: step {n} or a later one has evidence, which renumbering would move; "
+                              "edit the step's text instead, or leave it")
+        rest = [x for x in steps if x.n != n]
+        if s.current:
+            nxt = next((x for x in rest if x.n > n and not x.done), None) or next((x for x in rest if not x.done), None)
+            if nxt:
+                nxt.current = True
+        lines, k = [], 0
+        for line in self.section("Steps").splitlines():
+            m = _STEP_RE.match(line)
+            if not m:
+                lines.append(line)
+            elif int(m.group(1)) != n:
+                x = rest[k]
+                k += 1
+                lines.append(f"{k}. [{'x' if x.done else ' '}] {x.text}" + ("  <- CURRENT" if x.current else ""))
+        self.append_log(f"step {n} removed: {s.text}")
+        self.set_section("Steps", "\n".join(lines) + ("\n" if lines else ""))
+
     def mark_step(self, n):
         steps = self.steps()
         s = next((s for s in steps if s.n == n), None)

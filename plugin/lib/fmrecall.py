@@ -1156,6 +1156,7 @@ _ASKING = set("why how what who whom when where which did does was were is are t
 _TID = re.compile(r"\bT-\d{4,}\b")
 # ledger events whose text is noise, or already in a brief, decisions.md or a research note
 _ECHOED = {"touched", "scope_note", "session_start", "focus", "evidence", "audit", "note", "step_add", "step_current",
+           "step_reword", "step_remove",
            "step_done", "ac_add", "ac_check", "task_set", "task_plan", "task_new", "decision", "subagent", "checks",
            "check_run", "capture", "intake", "research", "task_done", "finish"}
 
