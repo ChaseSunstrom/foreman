@@ -7115,6 +7115,7 @@ def _build_parser():
     s = add("lane", lazy("fmlanes", "cmd_lane"), tier=("Running elsewhere", 1120), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent; "
+                                                       "merge <id>: bring a builder's finished commits in; "
                                                        "resume <id>: take back a stopped builder's work")
     s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "race", "pick"])
     s.add_argument("--score", action="store_true", help="race: run both sides' criteria in their worktrees, count "
