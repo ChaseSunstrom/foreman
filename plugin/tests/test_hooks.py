@@ -2038,8 +2038,19 @@ class Stop(HookCase):
         with open(path, "a") as f:
             f.write(json.dumps({"type": "user", "isMeta": True, "message": {"content": "<system-reminder>x</system-reminder>"}}) + "\n")
         self.assertEqual(self.decision(stop(path, "Now the tests pass.")), "block")
-
-    def test_a_promise_in_a_reply_that_ends_the_turn_is_captured_once(self):
+        # T-2032: a claim still to come isn't a claim, and a scratch draft outside the project isn't stale code
+        for said in ("Gates running; I'll commit when the gates pass.", "Once the tests pass, it ships."):
+            self.assertIsNone(self.decision(stop(self.turn(red, edit), said)), said)
+        cwd = os.path.realpath(self.repo)  # hook() sends it as the payload's cwd
+        scratch = ("Write", {"file_path": os.path.join(self.tmp, "scratch", "draft.json")}, "ok", False)
+        inside = ("Edit", {"file_path": os.path.join(cwd, "b.py")}, "ok", False)
+        self.assertIsNone(self.decision(stop(self.turn(edit, green, scratch), "Done; the tests pass.")))
+        self.assertEqual(self.decision(stop(self.turn(edit, green, inside), "Done; all tests pass.")), "block")
+        sub = os.path.join(cwd, "tests")  # a session cd'd into a subfolder still owns the whole repo's code
+        os.makedirs(sub, exist_ok=True)
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "So all the tests pass.",
+                               "transcript_path": self.turn(edit, green, inside), "cwd": sub})
+        self.assertEqual(self.decision(p), "block")
         # T-0899: "I'll also update the README later" in a closing reply was a promise nothing tracked
         self.fm("init")
         self.fm("drive", "off")
