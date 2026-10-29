@@ -420,7 +420,7 @@ def unanswered_asks(p):
     """T-0622: tasks fm second session captured from the last session's missed requests that are still captured."""
     found = {e.get("task") for e in c.ledger_tail(p, 5000) if e.get("event") == "capture"
              and (e.get("data") or {}).get("via") == "second session"}
-    return [b.id for b in c.load_briefs(p) if b.id in found and b.status == "captured"]
+    return [b.id for b in c.load_briefs(p) if b.id in found and b.status == "captured"] if found else []
 
 
 def flag_replan(p, task, reason):
@@ -5333,7 +5333,8 @@ def _sync_in(args):
 
 def cmd_next(args):
     p = resolve(args)
-    b, st, action = c.next_for(p)
+    briefs = c.load_briefs(p)  # T-2016: shared by every check below; each load is ~18 ms at 1,200 briefs
+    b, st, action = c.next_for(p, briefs)
     usual = None
     if b and b.status != "active":  # T-0451: what this kind of task usually takes here (fm next only: not the hooks)
         import fmwatch
@@ -5359,7 +5360,7 @@ def cmd_next(args):
     import fmcontract
     over += fmcontract.line(p)  # T-1158
     import fmlanes
-    dead = fmlanes.stopped(p)  # T-1028
+    dead = fmlanes.stopped(p, briefs)  # T-1028
     over += (f" · builder(s) stopped, their Claude Code process ended: " + "; ".join(f"fm lane resume {i}" for i in dead)
              + " (keeps the work, frees the worktree, writes a new brief)") if dead else ""
     idle = fmlanes.stalled(p)  # T-1156
@@ -5571,7 +5572,36 @@ def build_parser():
     return _PARSER
 
 
-def _build_parser():
+class _Skip:
+    """T-2016: stands in for the parsers of commands this run doesn't use: every call and attribute is a no-op."""
+    def __getattr__(self, name):
+        return self
+
+    def __setattr__(self, name, value):
+        pass
+
+    def __call__(self, *a, **kw):
+        return self
+
+
+_PARTS = {}  # command -> its parser alone: in-process fm calls (the hooks) reuse them
+
+
+def _parser_for(argv):
+    """T-2016: the parser for just the command argv runs, ~5 ms instead of ~80 for all 214; a bare fm, a typo or a
+    leading option gets the whole one."""
+    k = 2 if argv[:1] in (["-p"], ["--project"]) else 0
+    name = argv[k] if len(argv) > k else ""
+    if _PARSER is not None or not name or name.startswith("-"):
+        return build_parser()
+    if name not in _PARTS:
+        ap = _build_parser(only=name)
+        sub = next(a for a in ap._actions if isinstance(a, argparse._SubParsersAction))
+        _PARTS[name] = ap if name in sub.choices else None
+    return _PARTS[name] or build_parser()
+
+
+def _build_parser(only=None):
     ap = _Parser(prog="fm", usage="fm [-p PROJECT] <command> [options]",
                  description="Foreman state CLI (the only writer of Foreman state).")
     ap.format_help = lambda: START_HERE  # only the root: subparsers keep argparse's own help
@@ -5582,6 +5612,8 @@ def _build_parser():
 
     def add(name, fn, *, tier, **kw):
         tiered.append((tier[1], tier[0], name))
+        if only is not None and only != name and only not in kw.get("aliases", ()):
+            return _Skip()
         s = sp.add_parser(name, **kw)
         s.set_defaults(fn=fn, verb=name)  # T-1388: args.cmd can be a subcommand's own `cmd` argument; verb can't
         s.add_argument("--json", action="store_true", help="machine-readable output")
@@ -7519,7 +7551,7 @@ def main(argv=None):
     argv, aliased = _alias(list(argv))
     if aliased:
         print(f"(ran `fm {aliased}`)", file=sys.stderr)
-    parser = build_parser()
+    parser = _parser_for(argv)
     argv = _task_shape(parser, argv)
     global _ARGV
     _ARGV = list(argv)  # T-0273: what _Parser.error reads for a mistyped flag

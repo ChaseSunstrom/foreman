@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Perf: `fm next` takes 143 ms, down from 187. It loads every brief once instead of up to five times, and each run builds only the parser of the command it runs instead of all 214 (T-2016).
 - Perf: hooks load briefs and today's ledger events faster. A brief's sections are split only when read, and the frontmatter regexes are compiled once, so the first load of 1199 briefs takes 32 ms, down from 74. When the risk budget asks for today's events, it reads only the end of the 18 MB ledger: 2.8 ms, down from 30, with the same events (T-2015).
 - Fix: a CI run that failed only because a job never got a runner (cancelled before any step: GitHub capacity) no longer files a FIX brief. `fm ship --watch` and `fm ci-watch` rerun the failed jobs and watch the new attempt; when gh can't rerun (logged out), they say to rerun on GitHub or push again (T-2013).
 - Feature: `fm ship --task ID` ships on that task's publish grant, closed or active, so a finished task ships without a separate ship task. A prompt that ends a silence of 2 hours or more carries the away summary, not only a session start. A misspelled playbook name suggests the nearest ones ("did you mean fix/alpha?"). `fm check` and `fm ship` share one wait helper, which says when a wait runs out and it goes ahead beside the other run. The forever loop's stop decision, `fm loop off` and `fm loop` say how many rounds ran and tasks closed since it started (T-2012: T-2007, T-2008, T-2009, T-2010, T-2011).
