@@ -159,6 +159,40 @@ class UnknownNames(unittest.TestCase):
         self.assertEqual(self.run_py("test_run.Args").returncode, 0)
 
 
+class Tmp(unittest.TestCase):
+    """T-2019: classes leaked 45k temp dirs, some with 68k files, until /tmp ran out of inodes and git failed."""
+
+    def test_tmp_a_class_leaves_nothing_behind(self):
+        import tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "made")
+            with open(os.path.join(d, "test_leak.py"), "w") as f:
+                f.write(f"import tempfile, unittest\nclass S(unittest.TestCase):\n    def test_s(self):\n"
+                        f"        open({out!r}, 'w').write(tempfile.mkdtemp())\n")
+            with mock.patch.object(run, "HERE", d):
+                _, code, err, _, _ = run.run_one("test_leak.S", [])
+            self.assertEqual(code, 0, err)
+            made = open(out).read()
+        self.assertNotEqual(os.path.dirname(made), tempfile.gettempdir())  # in the class's own dir
+        self.assertFalse(os.path.exists(made))
+        self.assertFalse(os.path.exists(os.path.dirname(made)))
+
+    def test_tmp_a_dead_runs_dirs_are_swept_and_a_live_ones_kept(self):
+        import subprocess
+        import tempfile
+        p = subprocess.Popen(["true"])
+        p.wait()  # its pid is now a dead run's
+        with tempfile.TemporaryDirectory() as base:
+            dead = os.path.join(base, f"{run.TMP_PREFIX}{p.pid}-abc")
+            live = os.path.join(base, f"{run.TMP_PREFIX}{os.getpid()}-def")
+            other = os.path.join(base, "tmpkeepme1")
+            for x in (dead, live, other):
+                os.makedirs(os.path.join(x, "sub"))
+            run.sweep(base)
+            self.assertEqual(sorted(os.listdir(base)), sorted(os.path.basename(x) for x in (live, other)))
+
+
 class Hang(unittest.TestCase):
     def test_a_class_that_hangs_is_killed_and_named_with_its_stack(self):  # T-1808: CI's job cap hid where
         import tempfile

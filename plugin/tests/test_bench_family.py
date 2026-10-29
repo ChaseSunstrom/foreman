@@ -56,7 +56,10 @@ else:  # the judge
 
 
 def git(cwd, *args):
-    return subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True, check=True).stdout.strip()
+    p = subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True)
+    if p.returncode:  # T-2019: a bare CalledProcessError hid "No space left on device"
+        raise AssertionError(f"git {' '.join(args)} exited {p.returncode}: {p.stderr.strip()}")
+    return p.stdout.strip()
 
 
 class _Bench(ForemanTestCase):
