@@ -600,7 +600,7 @@ def _oklch_ch(h):
 
 
 class Looks(ForemanTestCase):
-    """T-1498: the style shelf, twelve named looks that extend design-direction.md's bank without repeating it."""
+    """T-1498: the style shelf, twenty named looks that extend design-direction.md's bank without repeating it."""
     BANK = {"broadsheet", "instrument", "gallery", "toybox", "raw", "blueprint", "field-guide", "civic", "night-arcade",
             "riso-zine", "soft-utility", "poster"}
     CLASSES = ("grotesk", "neo-grotesk", "geometric sans", "humanist sans", "transitional serif", "old-style serif",
@@ -612,9 +612,9 @@ class Looks(ForemanTestCase):
         return [x for x in fmlib.cards() if x["area"] == "looks" and not x["name"].startswith("shader-")
                 and x["name"] not in ShaderLooks.RECIPES]
 
-    def test_twelve_looks_each_with_every_field(self):
+    def test_twenty_looks_each_with_every_field(self):
         got = self.looks()
-        self.assertEqual(len(got), 12, [x["name"] for x in got])
+        self.assertEqual(len(got), 20, [x["name"] for x in got])
         problems, _ = fmlib.lint()
         self.assertEqual([p for p in problems if p.startswith("looks/")], [])
         for x in got:

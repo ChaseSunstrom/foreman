@@ -67,7 +67,7 @@ class Ledger(ForemanTestCase):
         self.assertEqual([(e["signal"], e["look"]) for e in events],
                          [("kept", "look-lido"), ("kept", "look-night-market")])
         top = self.fm_json("looks")["looks"]
-        self.assertEqual(len(top), 12, "every look is ranked, the unseen ones at 0")
+        self.assertEqual(len(top), 20, "every look is ranked, the unseen ones at 0")
         self.assertEqual({top[0]["look"], top[1]["look"]}, {"look-lido", "look-night-market"})
         self.fm("looks", "revert", "lido", "--why", "too cheerful for a bank")
         self.fm("looks", "not", "look-lido", "--why", "not like that")
@@ -132,6 +132,20 @@ class Ledger(ForemanTestCase):
 
 
 class Calibration(ForemanTestCase):
+    def test_pairs_show_every_look_for_up_to_twice_as_many_looks_as_pairs(self):
+        for n in (20, 24):  # T-2045: 20 looks, and 24 where the offset n/2 is allowed
+            known = {f"look-{i:02d}": {} for i in range(n)}
+            rivals = set()
+            for rnd in range(4):
+                got = fmtaste.pairs(known, rnd)
+                self.assertEqual({x for p in got for x in p}, set(known), (n, rnd))
+                self.assertTrue(all(a != b for a, b in got), (n, rnd))
+                keys = [frozenset(p) for p in got]
+                self.assertEqual(len(set(keys)), len(keys), f"n={n} round {rnd}: no pair twice")
+                if rnd < 1 + (n == 20):  # the distinct offsets: n=20 has two, n=24 one
+                    self.assertFalse(rivals & set(keys), f"n={n} round {rnd}: new rivals")
+                    rivals |= set(keys)
+
     def test_the_calibration_picker_records_twelve_answers(self):
         shown = self.fm_json("looks", "calibrate")
         pairs = shown["pairs"]
