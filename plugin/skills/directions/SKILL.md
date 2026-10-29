@@ -16,11 +16,11 @@ that file holds the taste words, the direction bank, the audacity dial, "Default
 template. Read it, then `references/cards.md` (the card format, the rules for the set, the generic defaults, the
 preview page recipe and a worked example) before drafting.
 
-Directions come from three shelves: the playbook's twelve-row bank; the twelve looks (`fm lib list --area looks`,
+Directions come from three shelves: the playbook's twelve-row bank; the twenty looks (`fm lib list --area looks`,
 then `fm lib show look-NAME`: measured palettes, type, layout, motion and a contrast test); and the shader looks
 (`fm lib show shader-NAME`) as an optional texture on one surface, never as the direction itself.
 
-The user's taste orders the looks: `fm looks` ranks the twelve by what they kept, reverted, called "not like that"
+The user's taste orders the looks: `fm looks` ranks the twenty by what they kept, reverted, called "not like that"
 or picked in a calibration (`/foreman:looks calibrate`). Draw the looks you offer from its top, never one below 0
 unless the user names it or none at 0 or above fits, else the least negative, and say which card the ranking
 favoured; with no signal yet every look is 0. Nothing detects a kept or reverted look on its own: when the user

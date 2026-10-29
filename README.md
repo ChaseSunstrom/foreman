@@ -121,7 +121,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 **Plans.** Intake turns a request into briefs: type and tier (S, M or L), acceptance criteria with the commands that prove them, steps, scope and risks. M and L work lists the approaches first. The queue orders itself, dependencies included. Each brief lives in Foreman's state, outside your repo, unless you turn on `fm sync`.
 
 **Knows your stack.**
-- A library of over 1,000 stack cards spans 28 areas: languages, Python, Node, web, JVM, .NET, mobile, Rust, Go, C/C++ and embedded, data, ML and LLM apps, infra, cloud, ops, testing, security, architecture, product domains, tools, games and hardware, building Claude Code plugins, hooks, skills and mods, practice (brainstorming, premortems, experiments, self-improvement loops), and a style shelf of twelve named visual looks with measured palettes.
+- A library of over 1,000 stack cards spans 28 areas: languages, Python, Node, web, JVM, .NET, mobile, Rust, Go, C/C++ and embedded, data, ML and LLM apps, infra, cloud, ops, testing, security, architecture, product domains, tools, games and hardware, building Claude Code plugins, hooks, skills and mods, practice (brainstorming, premortems, experiments, self-improvement loops), and a style shelf of twenty named visual looks with measured palettes.
 - Each card gives the exact commands that verify the work, a failing-test recipe, the mistakes models actually make, and a review checklist.
 - Cards cost no context until they are read. `fm lib` picks the ones that match your repo's manifests and files, and the session start names them.
 - `fm lib show fastapi pytest --section verify` reads just the parts you need.

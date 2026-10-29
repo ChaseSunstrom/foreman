@@ -1,5 +1,5 @@
 ---
-description: Your taste in looks: the twelve looks ranked by what you kept, a 12-pair calibration, or learn from files you name
+description: Your taste in looks: the twenty looks ranked by what you kept, a 12-pair calibration, or learn from files you name
 disable-model-invocation: true
 argument-hint: "[calibrate | keep LOOK | revert LOOK | not LOOK [why] | learn PATH… | tournament | opposite LOOK | book | roll | bisect | seance | history [PATH]]"
 ---

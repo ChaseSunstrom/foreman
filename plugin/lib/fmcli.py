@@ -7213,7 +7213,7 @@ def _build_parser(only=None):
     s.add_argument("--overwrites", action="store_true", help="files the user's own commits reworked soon after an "
                                                             "agent's (T-0655)")
     s = add("looks", lazy("fmtaste", "cmd_looks"), tier=("Reports", 1055),
-            help="your taste in looks (T-1537): the twelve ranked by what you kept; keep|revert|not LOOK; calibrate "
+            help="your taste in looks (T-1537): the twenty ranked by what you kept; keep|revert|not LOOK; calibrate "
                  "(12 A-or-B pairs: a keyboard picker on a terminal, --answers to record); learn PATH… (only files "
                  "you name, read-only, never the network)")
     s.add_argument("action", nargs="?", metavar="rank|keep|revert|not|calibrate|learn|tournament|opposite|book|roll|"
