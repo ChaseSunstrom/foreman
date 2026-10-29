@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix: `fm task finish` answers only for the closing task's own files: another task's uncommitted edits no longer run their linked tests at the close or trip the scope check (T-1968).
 - Fix: a file changed while `fm check` ran no longer gets that run's pass or evidence; an edit made during a full check gets a note (T-1963).
 - `fm task step ID edit N "<text>"` and `rm N` (T-1959); `fm ship --check [COMMIT…]` says whether main has those commits' changes without a grant (T-1960); fm focus's "Done needs" line names the task for `fm gates ID` (T-1961).
 - Feature: `fm gates T-…` lists that task's gates; `fm task finish --numbers "<metric>: <before> → <after>"` records a PERFORMANCE task's measurements in the closing call; `fm task new --json --focus` keeps stdout to one JSON document (T-1954, T-1955, T-1956).
