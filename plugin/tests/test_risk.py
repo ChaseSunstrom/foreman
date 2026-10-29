@@ -37,13 +37,16 @@ class Risk(HookCase):
             c.log_event(p, "guard_block", data=hit)
         c.log_event(p, "guard_block", data={"category": "core", "detail": "plugin/lib/x.py", "rule": "core:path-py"})
         c.log_event(p, "guard_block", data={"category": "state-direct", "detail": "state/x"})  # no rule: its category
+        c.log_event(p, "guard_block", data={"category": "brief", "detail": "/x/a.py", "rule": "brief:path-py"})
         # twice is not yet a habit
         self.assertNotIn("Guard collisions", self.ctx_of(self.hook("SessionStart", {"source": "startup"})))
         c.log_event(p, "guard_block", data=hit)
         hits = fmrisk.collisions(p)
         self.assertEqual([(h["rule"], h["n"], h["spends"]) for h in hits],
-                         [("rm-outside:unresolvable", 3, True), ("core:path-py", 1, False), ("state-direct", 1, False)])
+                         [("rm-outside:unresolvable", 3, True), ("core:path-py", 1, False), ("state-direct", 1, False),
+                          ("brief:path-py", 1, False)])
         self.assertIn("name the path literally", hits[0]["rewrite"])
+        self.assertIn("fm focus", hits[3]["rewrite"])  # T-1897: an edit with no task says how to start one
         out = self.fm("risk").stdout
         self.assertIn("3× rm-outside:unresolvable (spends risk) — If it is elsewhere, name the path literally", out)
         self.assertIn("  1× core:path-py — last: plugin/lib/x.py\n", out)  # review: no hint, so what was blocked

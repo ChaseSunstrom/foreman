@@ -100,13 +100,17 @@ class Block:
         return f"Block({self.category!r}, {self.detail!r})"
 
 
+_FILLER = {"a", "an", "the", "it", "its", "is", "of", "to", "this", "s", "t"}  # T-1897: words a rule name reads past
+
+
 def rule_id(category, detail):
     """T-0672: a stable name for the check behind a refusal: its category and the first words of its wording, with
-    paths, quoted text and numbers taken out (rm -rf ~ and rm -rf /x are one rule)."""
-    words = re.sub(r"\S*[/~$\\]\S*|\S*\d\S*|`[^`]*`|'[^']*'|\"[^\"]*\"", " ", detail.lower())
+    paths, quoted text, numbers and filler words taken out (rm -rf ~ and rm -rf /x are one rule)."""
+    # T-1897: a quote opens and closes outside a word, so command's and hasn't are not one quoted span
+    words = re.sub(r"\S*[/~$\\]\S*|\S*\d\S*|`[^`]*`|(?<!\w)'[^']*'(?!\w)|\"[^\"]*\"", " ", detail.lower())
     ext = os.path.splitext(detail.split()[0])[1].lstrip(".").lower() if "/" in detail else ""  # T-0894: kinds apart
     path = ("path-" + ext if ext.isalnum() else "path") if "/" in detail else "other"
-    return f"{category}:{'-'.join(re.findall(r'[a-z]+', words)[:4]) or path}"
+    return f"{category}:{'-'.join([w for w in re.findall(r'[a-z]+', words) if w not in _FILLER][:4]) or path}"
 
 
 def findings(tool_name, tool_input, ctx):
@@ -198,6 +202,10 @@ def _hint(detail, cat=""):
     if detail.endswith("; git merge)"):
         return (" On Foreman's own repo, land a reviewed builder branch with fm lane merge ID: it merges --no-ff and "
                 "checks each file it changes as that task's write.")
+    if cat == "core" and detail.endswith("(a tree write over it)"):  # T-1897: 21 in a week, none with a hint
+        return (" Foreman's own tree changes through a task: fm edit or the Edit tool per file, fm task finish to "
+                "commit. Run git checkout, reset, cherry-pick or rebase in a scratch worktree instead (git worktree "
+                "add <scratch>/x, then cd <scratch>/x && git …).")
     if detail.endswith("(written from interpreter code)"):
         return (" If the script only writes other files, keep it to builtin open() on literal paths with no import but "
                 "re, json, textwrap or sys, so only those count, or use the Edit tool.") + research
