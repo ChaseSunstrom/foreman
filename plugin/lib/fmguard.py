@@ -121,7 +121,6 @@ def findings(tool_name, tool_input, ctx):
         return [(cat, path) for cat in classify_write(path, ctx)]
     if tool_name == "Bash":
         _DISCARDS[:], _DISCARDS_OF[0] = [], tool_input["command"]  # T-1482: filled by this check only
-        _DCWD.clear()
         _COMMITS.clear()
         return check_bash(tool_input["command"], ctx)
     if tool_name == "Read":  # T-1224
@@ -3242,13 +3241,27 @@ def _track_vars(words, env, home=None):
     return None if _setter(name, words[words.index(word) + 1:] if word in words else []) else env
 
 
-def check_bash(cmd, ctx, depth=0, tails=True):
+def check_bash(cmd, ctx, depth=0, tails=True, at=False):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
     # T-1727 review: the folders the caller may be in when it runs this text (eval, sh -c, sh <<<), so a discarding
     # git command read here is saved where it runs, not in the hook's cwd
+    if not depth:
+        _DCWD.clear()  # T-1921 review: fmmcp calls this directly, in a process that lives on
     starts = _DCWD.get(depth - 1, [ctx.cwd]) if depth else [ctx.cwd]
+    if at is False and starts != [ctx.cwd]:  # T-1921: and judged there, once per folder (None: one it can't name,
+        out, seen = [], _DCWD.setdefault("seen", {})  # judged from here with every relative path unknown); a text a
+        for s in starts:  # loop repeats is judged once per folder, so only new pairs count toward the cap
+            if (cmd, s, depth, tails) not in seen:
+                if len(seen) >= 256:
+                    return [("rm-outside", "nested commands in too many folders to analyse: split the command")]
+                here = object.__new__(Ctx)
+                here.__dict__ = {**ctx.__dict__, "cwd": s or ctx.cwd}
+                seen[cmd, s, depth, tails] = check_bash(cmd, here, depth, tails, s)
+            out += [f for f in seen[cmd, s, depth, tails] if f not in out]
+        return out
+    starts = starts if at is False else [at]
     _DCWD[depth] = starts
     # the whole command only: a nested shell's text alone would miss what its caller set (BASH_ENV=… bash -c '…')
     cmd = _mktemp_literal(_join_continued(cmd)) if depth == 0 else _join_continued(cmd)
@@ -3261,15 +3274,24 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     # T-0345: what python code starts; a script only written with cat isn't run by writing it, unless the same
     # command also runs an interpreter (cat > t.py <<EOF … EOF; python3 t.py)
     dry = _drop_data_heredocs(cmd)
-    for spawned in (x for src in _python_sources(cmd if _INTERP.search(dry) else dry) for x in _spawned_commands(src)):
-        found += check_bash(spawned, ctx, depth + 1)
     shell = _strip_heredocs(cmd)
     # T-0158: every `…` and $( … ) a shell runs (unquoted heredoc bodies included), read as a command of its own
     # a tail (the text after a substitution opens) is read once as it stands: its own tails are suffixes of it already
     live = [x for t in _live_heredocs(cmd) for x in ([t, _unescape_ticks(t)] if "\\`" in t else [t])]  # T-0669: in
-    cmds = _split(_tokens(_lines(shell)))
-    _DCWD[depth] = list(dict.fromkeys(starts + [  # text read before the walk below (`…`, sh <<<): any folder a cd names
-        _cd_from(x.argv[1], s, ctx) for x in cmds if x.argv[:1] == ["cd"] and x.argv[1:2] for s in starts]))
+    cmds, top = _split(_tokens(_lines(shell))), _top(shell)
+    # T-1921: an && chain headed by a plain `cd /abs &&` runs nothing where it starts (a failed cd stops it all)
+    head = top[1] and re.match(r"\s*cd[ \t]+(/[^\s;&|<>()'\"`$*?\[\]{}\\!#~]*)[ \t]*&&", shell)
+    rest, prev = shell[head.end():] if head else "", None
+    while rest != prev:  # and nothing after it may move it (substitutions run in subshells: only a word they make may)
+        rest, prev = re.sub(r"`[^`]*`|\$\([^()]*\)", "$S", rest), rest
+    word = lambda a: next((w for w in a if not re.match(r"\w+=", w)), "")  # its review: the masking above isn't quote
+    head = head if head and not _moves_text(re.sub(r"\$\{\w+\}", "$V", rest)) and not any(  # aware, nor sees c$(…) or
+        _MOVERS.search(" ".join(x.argv)) or re.search(r"[^\w./+:@%,-]", word(x.argv)) for x in cmds[1:]) else None  # A=1 $C
+    _DCWD[depth] = [os.path.normpath(head[1])] if head else list(dict.fromkeys(starts + [  # text read before the walk
+        _cd_from(x.argv[1], s, ctx) for x in cmds if x.argv[:1] == ["cd"] and x.argv[1:2] for s in starts]))  # below
+    for spawned in (x for src in _python_sources(cmd if _INTERP.search(dry) else dry) for x in _spawned_commands(src)):
+        found += check_bash(spawned, ctx, depth + 1)  # T-0345, and its review: from those folders too (`…`, sh <<<,
+    # python -c): any folder a cd names
     for body in _subst_bodies(shell, tails) + [b for t in live for b in _subst_bodies(t, tails)]:  # `…` a \` is a `
         found += check_bash(body, ctx, depth + 1, tails=False)
     lits = _line_literals(shell)  # T-0587: literal values a computed name, eval or sh -c text may use
@@ -3283,7 +3305,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     outside, bare = _outside(shell, cmds, ctx, pre)  # T-0175: what it inherits and can't change
     # VAR → literal (T-0151); rm trusts no inherited value but HOME, a write target any (its review)
     env = {k: v for k, v in outside.items() if k == "HOME"} if raw is not None and len(raw) == len(cmds) else None
-    (straight, and_chain, mixed), cwds, lost, made = _top(shell), [ctx.cwd], [], set()  # where it may be (T-0175)
+    (straight, and_chain, mixed), cwds, lost, made = top, [ctx.cwd], [""] if at is None else [], set()  # (T-0175)
     base = None  # T-0339: (cwds, lost, made) where the current &&-segment of a mixed list began, and its folders
     # T-1727 review: the same walk for recording discards only (verdicts use cwds): from the caller's folders, None for
     # one a cd makes unknown; rbase is base's twin
