@@ -328,7 +328,8 @@ def session_start(pl):
     if sid and re.fullmatch(r"[\w-]{1,100}", sid):  # a new or compacted context: the next prompt restates the state,
         folder = os.path.join(c.state_dir(), "sessions")  # and one-shot notes (outline, thrash, tripwires) re-arm
         try:
-            names = [n for n in os.listdir(folder) if n.startswith(sid + ".") and not n.startswith(sid + ".taint.")]  # T-1053
+            keep = (sid + ".taint.", sid + ".keep.")  # T-1053; T-1889: what the session was told for good
+            names = [n for n in os.listdir(folder) if n.startswith(sid + ".") and not n.startswith(keep)]
         except OSError:
             names = []
         for name in names:
@@ -2120,6 +2121,9 @@ def _gate_pipe_note(pl):
     cmd = re.sub(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"", "''", ti.get("command") or "")  # T-1768: quoted text isn't a command
     if pl.get("tool_name") != "Bash" or "pipefail" in cmd or not _GATE_PIPE.search(cmd):
         return None
+    sid = pl.get("session_id")
+    if sid and not _first_time(sid, "keep.gate-pipe"):  # T-1889: the session heard it in full once; a compaction too
+        return "Foreman: fm check is piped: read its ✓/✗ line, not the exit status."
     return ("Foreman: fm check is piped here, so this call's exit status is the last program's, not the gates': read "
             "its ✓/✗ line before you push or close (or drop the pipe: fm check prints a short summary already).")
 
