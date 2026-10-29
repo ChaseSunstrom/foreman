@@ -544,6 +544,8 @@ class System(GuardCase):
             self.assertIsNone(self.bash(cmd, allow=("system",)), cmd)  # a program it read: the grant lifts it
         self.assertIsNone(g.check("Bash", {"command": "ls"}, self.ctx(allow=("rm-outside",)),
                                   found=[("rm-outside", "/x/can't read")]), "only system refusals are unread ones")
+        self.assertIsNone(g.check("Bash", {"command": "ls"}, self.ctx(allow=("system",)),
+                                  found=[("system", "writes /etc/can't read/x")]), "T-1934: a path, not the guard")
         big = os.path.join(os.path.dirname(self.home), "big1932.sh")  # T-1932 review: a script over the size limit is never read
         with open(big, "w") as f:
             f.write("echo hi\n" * 40000)
