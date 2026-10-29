@@ -12,7 +12,8 @@ Interface text that is short, specific and consistent: verbs on buttons, one ter
 - `grep -rnE ">(Submit|OK|Click here|Yes|No)<" src`: finds vague labels to replace with the real action.
 - `grep -rn "Please" src | wc -l`: count politeness filler; most can go.
 - Extract strings (`npx i18next-parser`) and read them in one list for tone and term drift.
-- A readability pass on help text: aim for grade 8 or below (`npx alex README.md` flags insensitive wording too).
+- `npx alex docs/help.md`: flags insensitive or non-inclusive wording (it does not measure reading level).
+- `npx write-good docs/help.md` or a Flesch-Kincaid check on help text: aim for grade 8 or below.
 
 ## Test first
 Lock the vocabulary so a rename cannot drift.

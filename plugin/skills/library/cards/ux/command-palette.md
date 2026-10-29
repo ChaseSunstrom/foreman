@@ -10,7 +10,7 @@ One keystroke to any action or page: fuzzy matched, ranked by recency, keyboard-
 
 ## Verify
 - `npx playwright test --grep palette`: opens with the shortcut, filters, runs a command, and closes with Esc.
-- `npx axe-core-cli http://localhost:3000`: palette is a labelled dialog with a combobox and listbox roles.
+- `npx @axe-core/cli http://localhost:3000`: palette is a labelled dialog with a combobox and listbox roles.
 - `grep -rn "metaKey\|ctrlKey" src/palette`: both Cmd (macOS) and Ctrl (others) are handled.
 - Open in a form field: the shortcut must not fire while typing a literal "k" without the modifier.
 

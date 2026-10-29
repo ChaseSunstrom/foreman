@@ -11,7 +11,7 @@ When an action cannot be undone, make it deliberate: name the target and consequ
 ## Verify
 - `npx playwright test --grep destructive`: tries to delete, cancels, then confirms and checks the outcome.
 - `grep -rnE "window\.confirm|confirm\(" src`: finds browser-native confirms to replace with a real dialog.
-- `npx axe-core-cli http://localhost:3000/settings/danger`: dialog role, label and focus pass.
+- `npx @axe-core/cli http://localhost:3000/settings/danger`: dialog role, label and focus pass.
 - Check the API: a delete endpoint requires auth, the right role and rejects replay (idempotency).
 
 ## Test first

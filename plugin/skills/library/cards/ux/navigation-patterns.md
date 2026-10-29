@@ -11,7 +11,7 @@ Pick one primary navigation pattern, keep it to 3-7 items, and always show where
 ## Verify
 - `npx playwright test --grep navigation`: asserts `aria-current="page"` on the active link on every route.
 - `grep -rn "<nav" src | wc -l`: each nav landmark exists; multiple navs carry distinct `aria-label`s.
-- `npx axe-core-cli http://localhost:3000`: landmark and link-name rules pass.
+- `npx @axe-core/cli http://localhost:3000`: landmark and link-name rules pass.
 - Tab through the header: focus order matches visual order and skip link is first.
 
 ## Test first

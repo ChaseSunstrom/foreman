@@ -12,7 +12,7 @@ Prefer undo to confirmation: make actions reversible, say how long, and make the
 - `npx playwright test --grep undo`: performs the action, presses undo, and asserts the data is restored.
 - `grep -rn "deleted_at\|softDelete" src db | wc -l`: deletes are soft or recoverable in the backing store.
 - Wait out the undo window and assert the action is final (hard delete or purge job ran).
-- `npx axe-core-cli http://localhost:3000/inbox`: the undo toast is announced and focusable.
+- `npx @axe-core/cli http://localhost:3000/inbox`: the undo toast is announced and focusable.
 
 ## Test first
 ```ts

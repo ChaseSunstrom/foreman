@@ -12,7 +12,7 @@ Notify only when it is timely, relevant and actionable; give users channel and f
 - `npx playwright test --grep notification`: triggers an event and checks the in-app item, badge and mark-as-read.
 - `grep -rn "unsubscribe" src/email templates | wc -l`: every marketing and digest email has a working unsubscribe.
 - Count notifications per active user per week from the event log; investigate anything above about 5 push per week.
-- `npx axe-core-cli http://localhost:3000/notifications`: the list is a labelled region with live updates polite.
+- `npx @axe-core/cli http://localhost:3000/notifications`: the list is a labelled region with live updates polite.
 
 ## Test first
 ```ts

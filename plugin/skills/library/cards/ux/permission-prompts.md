@@ -18,11 +18,18 @@ Browsers and OSes let you ask once. Explain first, ask in context, and design th
 ```ts
 import { test, expect } from '@playwright/test';
 
-test('pre-prompt appears and denial leaves the app usable', async ({ page, context }) => {
-  await context.clearPermissions();
+test('denied location falls back to manual entry', async ({ browser }) => {
+  const context = await browser.newContext({ permissions: [] });
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    navigator.geolocation.getCurrentPosition = (_ok, err) =>
+      err?.({ code: 1, message: 'denied' } as GeolocationPositionError);
+  });
   await page.goto('/map');
   await page.getByRole('button', { name: 'Use my location' }).click();
-  await expect(page.getByRole('region', { name: /find stores near you/i })).toBeVisible();
+  await expect(page.getByLabel(/enter your address/i)).toBeVisible();
+  await expect(page.getByText(/enable location in your browser settings/i)).toBeVisible();
+  await context.close();
 });
 
 test('granted location centres the map', async ({ page, context }) => {

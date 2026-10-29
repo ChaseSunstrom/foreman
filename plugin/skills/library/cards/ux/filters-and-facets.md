@@ -11,7 +11,7 @@ Let users narrow a large set with visible, reversible, countable filters whose s
 ## Verify
 - `npx playwright test --grep filter`: applies a filter, checks the count, reloads, and expects the same state.
 - `grep -rn "useSearchParams\|URLSearchParams" src/filters`: filter state is serialised to the URL.
-- `npx axe-core-cli http://localhost:3000/products`: filter groups are labelled and operable by keyboard.
+- `npx @axe-core/cli http://localhost:3000/products`: filter groups are labelled and operable by keyboard.
 - Throttle to Slow 3G: applying a filter shows progress, not a frozen list.
 
 ## Test first
