@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Library: 25 UX pattern cards in a new ux area (onboarding, empty states, navigation, UX writing, error messages, search, filters, command palette, settings, pricing, checkout, sign-up, notifications, dashboards, progressive disclosure, wizards, undo, destructive actions, mobile navigation, tooltips, feedback, permissions, information architecture, usability testing, dark patterns) (T-2039).
+- Library: 25 visual-design cards in the ux area (visual hierarchy, grids, spacing and type scales, palettes, tokens, icons, logos, brand, illustration, imagery, charts, landing pages, heroes, calls to action, social proof, bento layouts, gestalt, polish, handoff, art direction, app icons, share images, email) (T-2042).
+- Library: 28 frontend cards for motion, effects and modern CSS (scroll-driven animations, view transitions, springs, anchor positioning, popover, oklch, and more) (T-2043).
+- Library: 24 web cards for UI, motion and creative-coding libraries (GSAP, Lenis, Rive, lottie-web, React Spring, Anime.js, PixiJS, p5.js, Babylon.js, Spline, Theatre.js, Headless UI, Ark UI, Panda CSS, UnoCSS, Open Props, daisyUI, Mantine, Floating UI, Embla, Swiper, AutoAnimate, Tweakpane, Matter.js), each detected from package.json (T-2044).
+- Eight more named looks on the style shelf, twenty in all (swiss-poster, darkroom, botanical-press, letterpress, cinema-lobby, glacier, saltpan, pit-stop), each with a measured palette and a gallery specimen; calibration pairs now show every look without repeating a rival (T-2045).
 - Shader sketchbook (T-1784): fm scene sketchbook writes one page where every shader look card runs live with the preset its new Sketch section ships; thumbnails draw only while on screen, hold one still frame for readers who ask for less motion, and show the card's description without WebGL2. The site gains the same page.
 - Change: the survival line (fm digest, fm outcomes) gives the number of closes and the share lost; '24 survived, 45 lost' read as a 65% loss rate when it was 45 of about 1300 (T-2037).
 - Fix: a Python snippet drafted outside the project (in a scratch folder) is no longer blocked as unparsable; JSON drafts are still checked (T-2035).
