@@ -133,6 +133,19 @@ class Landing(unittest.TestCase):
     """T-2040: the landing page types no count by hand and no inline style, every animation has a still form, and the
     reel opens on the session, not on Claude Code's folder-trust question."""
 
+    def test_the_tab_icon_url_changes_with_the_logo(self):  # T-2060: a browser keeps a favicon by its URL
+        import hashlib
+        with open(os.path.join(ROOT, "site", "assets", "foreman.svg"), "rb") as f:
+            v = hashlib.sha256(f.read()).hexdigest()[:8]
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "o")
+            p = subprocess.run([sys.executable, os.path.join(ROOT, "site", "build.py"), out], capture_output=True,
+                               text=True, timeout=300)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            for rel in ("index.html", os.path.join("features", "index.html"), os.path.join("features", "benchmarks.html")):
+                self.assertRegex(read_text(os.path.join(out, rel)),
+                                 rf'<link rel="icon" href="(\.\./)?assets/foreman\.svg\?v={v}"', rel)
+
     def test_its_counts_come_from_the_build_and_its_styles_from_the_sheet(self):
         src = read_text(os.path.join(ROOT, "site", "index.html"))
         self.assertNotRegex(src, r"\sstyle=", "a class in style.css, not an inline style")
