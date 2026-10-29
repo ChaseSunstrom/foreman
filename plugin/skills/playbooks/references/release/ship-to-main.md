@@ -10,7 +10,8 @@ In Foreman's own repo a release ships with `fm release VERSION --push` and the t
 3. **Run the suite under the oldest supported runtime** there, once: the oldest Python in the CI matrix (.github/workflows/test.yml). Newer-runtime-only syntax and stdlib calls fail only on CI otherwise.
 4. **Main must be an ancestor of the commit to push** (fast-forward, or the tool's own no-ff merge): fetch again and check it; if main moved, start over from step 1. Never force-push main.
 5. **Read every exit code:** don't chain the push after `;` or pipe a gate through `tail`; a green-looking tail can hide a failed step.
-6. **When CI fails only there:** look for OS differences (paths, case, line endings), missing tools, suite deadlines on slow runners and stale action versions before touching the code.
-7. **Clean up:** remove the scratch worktree and refresh the remote-tracking ref so the next ship starts clean.
+6. **Watch CI on the pushed commit:** `fm ci-watch --commit SHA` in the background; a failure becomes a FIX brief with the failing lines. Without `gh` it reads a public repo's runs and annotations from GitHub's API.
+7. **When CI fails only there:** look for OS differences (paths, case, line endings), missing tools, suite deadlines on slow runners and stale action versions before touching the code.
+8. **Clean up:** remove the scratch worktree and refresh the remote-tracking ref so the next ship starts clean.
 
-Mined from T-1801, T-1805, T-1828, T-1840, T-1799.
+Mined from T-1801, T-1805, T-1828, T-1840, T-1799, T-1939.
