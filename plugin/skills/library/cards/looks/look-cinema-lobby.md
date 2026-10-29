@@ -6,20 +6,20 @@ tags: [look, style, palette, film, theatre, ticketing, events, dark]
 detect: []
 related: [look-night-market, look-broadcast-graphics, design-systems, typography, color-contrast]
 ---
-A single-screen picture house at night: oxblood-black walls, a warm cream marquee, one brass accent for the ticket counter.
+A single-screen picture house at night: true oxblood walls, a warm cream marquee, one brass accent for the ticket counter.
 
 ## Palette
 | Role | Hex | OKLCH | Measured |
 |---|---|---|---|
-| `--surface` | #17090C | 0.162 0.025 6 | page |
-| `--raised` | #241216 | 0.209 0.031 6 | posters, panels |
-| `--text` | #F3E6D8 | 0.931 0.023 70 | 15.8:1 on surface, 14.6:1 on raised |
-| `--text-muted` | #C4AB9B | 0.759 0.037 55 | 8.9:1 on surface, 8.2:1 on raised |
-| `--border` | #85686A | 0.547 0.037 14 | 3.9:1 on surface |
-| `--accent` | #D2C06A | 0.805 0.109 98 | 10.6:1 on surface |
-| `--on-accent` | #17090C | 0.162 0.025 6 | 10.6:1 on accent |
+| `--surface` | #2A0A12 | 0.203 0.054 8 | page |
+| `--raised` | #3A1019 | 0.246 0.067 10 | posters, panels |
+| `--text` | #F7E9DC | 0.942 0.023 65 | 15.3:1 on surface, 13.9:1 on raised |
+| `--text-muted` | #D2B7A8 | 0.799 0.038 51 | 9.6:1 on surface, 8.7:1 on raised |
+| `--border` | #98706F | 0.585 0.051 20 | 4.2:1 on surface |
+| `--accent` | #E3C94A | 0.835 0.145 98 | 11.1:1 on surface |
+| `--on-accent` | #2A0A12 | 0.203 0.054 8 | 11.1:1 on accent |
 
-Dark first: body text clears Foreman's 7:1 dark rule. Brass is a pale yellow-olive at chroma 0.11, readable on the dark wall without glowing; the red walls stay in the background and carry no meaning. Accent hue 98, 33° from the nearest status hue.
+Dark first: body text clears Foreman's 7:1 dark rule. Brass is a full yellow-gold at chroma 0.145, clear of the warning amber; the oxblood walls stay in the background and carry no meaning. Accent hue 98, 33° from the nearest status hue.
 
 ## Type
 Didone at 700 for show titles in capitals, tracked +0.04em; humanist sans at 400 for times, prices and body. Showtimes use tabular figures at 1.125rem so a column of times lines up.
@@ -53,9 +53,9 @@ def lum(h):
 
 
 def test_pairs():
-    for fg, bg, floor in [("#F3E6D8", "#17090C", 7), ("#F3E6D8", "#241216", 7), ("#C4AB9B", "#17090C", 4.5),
-                          ("#C4AB9B", "#241216", 4.5), ("#85686A", "#17090C", 3), ("#D2C06A", "#17090C", 4.5),
-                          ("#17090C", "#D2C06A", 4.5)]:
+    for fg, bg, floor in [("#F7E9DC", "#2A0A12", 7), ("#F7E9DC", "#3A1019", 7), ("#D2B7A8", "#2A0A12", 4.5),
+                          ("#D2B7A8", "#3A1019", 4.5), ("#98706F", "#2A0A12", 3), ("#E3C94A", "#2A0A12", 4.5),
+                          ("#2A0A12", "#E3C94A", 4.5)]:
         hi, lo = sorted((lum(fg), lum(bg)), reverse=True)
         assert (hi + 0.05) / (lo + 0.05) >= floor, (fg, bg, floor)
 ```

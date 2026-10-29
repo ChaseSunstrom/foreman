@@ -6,7 +6,7 @@ tags: [look, style, palette, print, books, craft, publishing, light]
 detect: []
 related: [look-archive-ledger, look-card-catalogue, design-systems, typography, color-contrast]
 ---
-A job off a hand press: heavy cotton stock, ink-black type pressed slightly into the page, one teal second-colour pass for rules and initials.
+A job off a hand press: heavy cotton stock, ink-black type pressed slightly into the page, one wine second-colour pass for rules and initials.
 
 ## Palette
 | Role | Hex | OKLCH | Measured |
@@ -16,13 +16,13 @@ A job off a hand press: heavy cotton stock, ink-black type pressed slightly into
 | `--text` | #1A1F26 | 0.237 0.015 257 | 14.3:1 on surface, 12.3:1 on sunken |
 | `--text-muted` | #4D535B | 0.44 0.015 256 | 6.7:1 on surface, 5.8:1 on sunken |
 | `--border` | #80858B | 0.614 0.011 253 | 3.2:1 on surface |
-| `--accent` | #0D6A73 | 0.48 0.079 205 | 5.4:1 on surface |
-| `--on-accent` | #FFFFFF | 1 0.000 90 | 6.3:1 on accent |
+| `--accent` | #8A1C58 | 0.431 0.154 353 | 7.6:1 on surface |
+| `--on-accent` | #FFFFFF | 1 0.000 90 | 8.8:1 on accent |
 
-Ink black is a blue-leaning near-black; teal is the second pass and is used for rules, drop caps and links only. Accent hue 205, 55° from the nearest status hue.
+Ink black is a blue-leaning near-black; wine is the second pass and is used for rules, drop caps and links only. Accent hue 353, 34° from the nearest status hue.
 
 ## Type
-Transitional serif at 400 for body at 1.15rem and 1.6 line height; the same face at 700 for titles in small caps; a mono is not used. Drop cap on the first paragraph of a section (three lines tall, in teal). Figures are old-style.
+Transitional serif at 400 for body at 1.15rem and 1.6 line height; the same face at 700 for titles in small caps; a mono is not used. Drop cap on the first paragraph of a section (three lines tall, in wine). Figures are old-style.
 
 ## Layout
 A single 34em column centred on the page, wide margins, running heads in small caps above a hairline. Footnotes sit at the foot of the column, not at the end. Ornaments are limited to a centred fleuron between sections (text, `aria-hidden`).
@@ -54,8 +54,8 @@ def lum(h):
 
 def test_pairs():
     for fg, bg, floor in [("#1A1F26", "#F1EEE6", 4.5), ("#1A1F26", "#E2DED2", 4.5), ("#4D535B", "#F1EEE6", 4.5),
-                          ("#4D535B", "#E2DED2", 4.5), ("#80858B", "#F1EEE6", 3), ("#0D6A73", "#F1EEE6", 4.5),
-                          ("#FFFFFF", "#0D6A73", 4.5)]:
+                          ("#4D535B", "#E2DED2", 4.5), ("#80858B", "#F1EEE6", 3), ("#8A1C58", "#F1EEE6", 4.5),
+                          ("#FFFFFF", "#8A1C58", 4.5)]:
         hi, lo = sorted((lum(fg), lum(bg)), reverse=True)
         assert (hi + 0.05) / (lo + 0.05) >= floor, (fg, bg, floor)
 ```
@@ -68,5 +68,5 @@ def test_pairs():
 
 ## Review
 - [ ] The measure never exceeds 34em.
-- [ ] Teal is used for rules, initials and links only.
+- [ ] Wine is used for rules, initials and links only.
 - [ ] The impression shadow is off on controls.

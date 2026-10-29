@@ -6,20 +6,20 @@ tags: [look, style, palette, photo, imaging, tools, dark]
 detect: []
 related: [look-observatory, look-night-market, design-systems, typography, color-contrast]
 ---
-A photographic darkroom: near-black walls with a red cast, the image the only bright thing, one pale-yellow stop-bath accent for the controls.
+A photographic darkroom: neutral grey-black walls, the image the only bright thing, one warm enlarger-light accent for the controls.
 
 ## Palette
 | Role | Hex | OKLCH | Measured |
 |---|---|---|---|
-| `--surface` | #120B0B | 0.159 0.012 19 | page |
-| `--raised` | #1D1313 | 0.2 0.017 19 | panels, dialogs |
-| `--text` | #F0E4E0 | 0.927 0.014 39 | 15.7:1 on surface, 14.6:1 on raised |
-| `--text-muted` | #BBA59F | 0.739 0.027 36 | 8.3:1 on surface, 7.8:1 on raised |
-| `--border` | #7A6560 | 0.526 0.028 34 | 3.6:1 on surface |
-| `--accent` | #D4D06F | 0.841 0.120 107 | 12.1:1 on surface |
-| `--on-accent` | #120B0B | 0.159 0.012 19 | 12.1:1 on accent |
+| `--surface` | #111111 | 0.178 0.000 90 | page |
+| `--raised` | #1B1B1B | 0.222 0.000 90 | panels, dialogs |
+| `--text` | #EDEDED | 0.946 0.000 90 | 16.1:1 on surface, 14.7:1 on raised |
+| `--text-muted` | #AFAFAF | 0.754 0.000 90 | 8.6:1 on surface, 7.9:1 on raised |
+| `--border` | #6E6E6E | 0.538 0.000 90 | 3.7:1 on surface |
+| `--accent` | #E9E1D0 | 0.911 0.024 86 | 14.5:1 on surface |
+| `--on-accent` | #111111 | 0.178 0.000 90 | 14.5:1 on accent |
 
-Dark first: body text clears Foreman's 7:1 dark rule. The surface leans warm so a photograph's neutrals stay neutral beside it; the accent is a dull chartreuse, never a glowing one. Accent hue 107, 42° from the nearest status hue.
+Dark first: body text clears Foreman's 7:1 dark rule. The wall is a true neutral so a photograph's colours read unshifted beside it; the accent is a warm off-white (chroma 0.024), a lamp, not a colour. Accent hue 86, 21° from the nearest status hue.
 
 ## Type
 Humanist sans at 400 for labels and body, 600 for panel titles; a mono for exposure values (f-stop, shutter, ISO, 12 px at least) with tabular figures. Small caps tracked +0.06em for panel names.
@@ -53,9 +53,9 @@ def lum(h):
 
 
 def test_pairs():
-    for fg, bg, floor in [("#F0E4E0", "#120B0B", 7), ("#F0E4E0", "#1D1313", 7), ("#BBA59F", "#120B0B", 4.5),
-                          ("#BBA59F", "#1D1313", 4.5), ("#7A6560", "#120B0B", 3), ("#D4D06F", "#120B0B", 4.5),
-                          ("#120B0B", "#D4D06F", 4.5)]:
+    for fg, bg, floor in [("#EDEDED", "#111111", 7), ("#EDEDED", "#1B1B1B", 7), ("#AFAFAF", "#111111", 4.5),
+                          ("#AFAFAF", "#1B1B1B", 4.5), ("#6E6E6E", "#111111", 3), ("#E9E1D0", "#111111", 4.5),
+                          ("#111111", "#E9E1D0", 4.5)]:
         hi, lo = sorted((lum(fg), lum(bg)), reverse=True)
         assert (hi + 0.05) / (lo + 0.05) >= floor, (fg, bg, floor)
 ```
