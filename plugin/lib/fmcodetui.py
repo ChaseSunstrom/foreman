@@ -2479,8 +2479,8 @@ class App:
 
     # -- commands
     def quit(self):
+        self.done = True  # T-2030: first, so a runner CLI that spawns while stop() runs sees it and ends itself
         self.stop()
-        self.done = True
         if self.used_path:  # T-1348: what this launch used, for the next one's tip
             import fmcore
             try:
@@ -3447,7 +3447,11 @@ class App:
             return
 
         def run():
-            spawned = lambda p: setattr(self, "runner_proc", p)  # noqa: E731
+            def spawned(p):
+                self.runner_proc = p
+                if self.done and p.poll() is None:  # T-2030: the quit landed before this; stop() saw no CLI
+                    with contextlib.suppress(OSError):
+                        os.killpg(p.pid, signal.SIGKILL)
             try:
                 if ping:
                     got = fmcode.ping_runner(item["name"], on_spawn=spawned)

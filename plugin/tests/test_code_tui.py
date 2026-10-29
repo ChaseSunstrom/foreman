@@ -3449,6 +3449,34 @@ class Editors(unittest.TestCase):
             time.sleep(0.02)
         self.assertFalse(alive(), "its CLI is gone too")
 
+    def test_quitting_before_the_app_has_seen_the_runner_cli_still_ends_it(self):
+        # T-2030: a loaded macOS runner quit after the CLI started but before on_spawn told the app: nothing was killed
+        import fmcode
+        pidfile = os.path.join(self.home, "pid")
+        self.runner(f"echo $$ > {pidfile}; exec sleep 90")
+        real = fmcode.test_runner
+
+        def late(name, on_spawn=None, **kw):
+            def spawned(p):
+                for _ in range(500):  # the quit lands first
+                    if app.done:
+                        break
+                    time.sleep(0.01)
+                on_spawn(p)
+            return real(name, timeout=60, on_spawn=spawned, **kw)
+        self.enterContext(unittest.mock.patch.object(fmcode, "test_runner", late))
+        app = self.app()
+        app.key("r")
+        app.item_index = [r["name"] for r in app.items].index("fake")
+        app.key("\n")
+        for _ in range(250):
+            if os.path.exists(pidfile) and os.path.getsize(pidfile):
+                break
+            time.sleep(0.02)
+        app.quit()
+        app.runner_test.join(30)
+        self.assertFalse(app.runner_test.is_alive(), "the CLI ends with the app, not at its 60 s timeout")
+
     def test_a_failure_between_the_two_layout_keys_writes_nothing_and_the_screen_shows_the_file(self):
         import fmsettings
         real = fmsettings._plan_app
