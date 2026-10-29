@@ -472,6 +472,10 @@ class Publish(GuardCase):
             ("npx vercel --prod", "publish"),
             ("fly deploy", "publish"),
             ("claude plugin tag --push", "publish"),
+            ("fm inbox ticket --post T-0003", "publish"),  # T-1881: a comment on someone's issue
+            ("fm inbox ticket --post=T-0003", "publish"),
+            ("python3 plugin/bin/fm inbox ticket --post T-0003", "publish"),
+            ("fm inbox ticket gh:o/r#3", None),
             ("cargo publish --dry-run", None),
             ("npm install", None),
             ("terraform plan", None),
