@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Perf: the PreToolUse hook takes 44 ms, down from 57, and the Notification hook 85 ms, down from 95. The hook modules' 191 module-level regular expressions now compile on first use, not at import; a PreToolUse call uses about 44 of them (T-2020).
 - Fix: test runs no longer fill /tmp. Each test class gets its own temp folder, removed when it ends, and the next run sweeps any a killed run left. Leaked folders had used 99% of /tmp's inodes (17 of them held over 60,000 files each), so `git worktree add` failed with "No space left on device" and a ship was refused (T-2019).
 
 - Perf: the PreToolUse hook takes 57 ms, down from 70, and the Notification hook 95 ms, down from 116. `plain()` passes printable text through without checking each character, a Bash command with no install word no longer loads the dependency check, and the last-change lookup parses only its own task's lines of the ledger tail: 5 ms, down from 21 (T-2017).

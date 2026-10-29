@@ -944,3 +944,50 @@ class WaitWhile(unittest.TestCase):
         self.assertTrue(c.wait_while(lambda: True, "the ambient test run", "fm t", limit=1, out=out, step=0.05))
         self.assertLess(time.time() - t0, 3)
         self.assertIn("the ambient test run is still running after 1 seconds; going ahead beside it", out.getvalue())
+
+
+class LazyPatterns(unittest.TestCase):
+    """T-2020: every hook spent ~25 ms compiling ~190 module-level patterns; a PreToolUse call uses about 44."""
+
+    def test_lazy_importing_the_hook_modules_compiles_no_module_level_pattern(self):
+        import sys
+        from helpers import LIB
+        code = ("import re, sys\nsys.path.insert(0, sys.argv[1])\norig, hits = re.compile, []\n"
+                "def counting(*a, **k):\n"
+                "    f = sys._getframe(1)\n"
+                "    while f and f.f_code.co_name != '<module>':\n"
+                "        f = f.f_back\n"
+                "    name = f.f_code.co_filename.rsplit('/', 1)[-1] if f else ''\n"
+                "    if name.startswith('fm'):\n"
+                "        hits.append(f'{name}:{f.f_lineno}')\n"
+                "    return orig(*a, **k)\n"
+                "re.compile = counting\nimport fmcore, fmguard, fmhooks\nprint(hits)\n")
+        out = subprocess.run([sys.executable, "-c", code, LIB], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.stdout.strip(), "[]", out.stderr)
+
+    def test_lazy_a_pattern_compiles_on_first_use_and_keeps_its_methods(self):
+        rx = c.lazy(r"a+", re.I)
+        self.assertEqual(rx.search("bAab").group(), "Aa")
+        self.assertIs(rx.search, rx.search)  # compiled once, then a plain attribute
+        self.assertEqual((rx.pattern, rx.flags & re.I), ("a+", re.I))
+
+    def test_lazy_every_deferred_pattern_still_compiles(self):
+        import fmguard
+        import fmhooks
+        found = []
+
+        def walk(v):
+            if type(v).__name__ == "lazy":
+                found.append(v)
+            elif isinstance(v, (list, tuple, set, frozenset)):
+                for x in v:
+                    walk(x)
+            elif isinstance(v, dict):
+                for x in v.values():
+                    walk(x)
+        for mod in (c, fmguard, fmhooks):
+            for v in list(vars(mod).values()):
+                walk(v)
+        for rx in found:
+            rx.flags  # a bad pattern raises re.error here, not at import
+        self.assertGreater(len(found), 150)
