@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Looks: darkroom and glacier drop their hue-distance note; below accent chroma 0.03 a hue is no colour to clash with a status (T-2051).
 - The pane replay SVG keeps a task title holding U+2028 on its own row: frames split on newlines only (T-2048).
 - fm lib check lints the cards of the checkout it runs in (a builder's worktree), not the installed plugin's, so a builder no longer gets a false clean result; --root names another checkout (T-2047).
 - A finished builder lane (its branch ahead, its tree clean, quiet for 30 minutes, its builder gone) is named for merge: fm next and the drive say fm lane merge ID instead of fm lane resume, so lane work no longer sits unmerged for days (T-2038).
