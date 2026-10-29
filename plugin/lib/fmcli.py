@@ -3219,6 +3219,10 @@ def cmd_queue(args):
         if why:  # T-0383: what fm relate inferred, and why
             lines.append("   ↳ " + " · ".join(why))
     lines = lines or ["Queue empty."]
+    if getattr(args, "cost", False) and order:  # T-1878
+        import fmcost
+        data["quote"] = fmcost.queue_quote(p, order)
+        lines.append(fmcost.quote_line(data["quote"]))
     if cycles:
         lines.append("Cycles: " + "; ".join(" ↔ ".join(x) for x in cycles))
     if dangling:
@@ -6184,6 +6188,8 @@ def _build_parser():
     s = add("queue", cmd_queue, tier=("Every task", 130), help="ordered queue")
     s.add_argument("--replan", action="store_true")
     s.add_argument("--preview", action="store_true", help="usual time per item here, and what each will need from you")
+    s.add_argument("--cost", action="store_true", help="a token quote before the queue starts: the median of finished "
+                                                        "tasks of each type and tier, summed (T-1878)")
 
     s = add("log", cmd_log, tier=("Every task", 170), help="append a ledger event")
     s.add_argument("event")
