@@ -425,12 +425,19 @@ def check_validate(home):
 CORE_PATHS = ("plugin/lib", "plugin/bin", "plugin/hooks", "plugin/evals", "plugin/rules/foreman.md", "BUILD_PROMPT.md")
 
 
-def check_core_integrity(home):
-    """Protected core that differs from the last commit: a half-applied edit, or a change nobody reviewed."""
+def check_core_integrity(home, task=None):
+    """Protected core that differs from the last commit: a half-applied edit, or a change nobody reviewed. T-1998: what
+    the active task (a brief) changes inside its own scope globs is its work in progress, not a warning."""
     if not os.path.exists(os.path.join(home, ".git")):  # a worktree's .git is a file
         return Result("core integrity", "PASS", "not a git checkout: nothing to compare")
     out = _run(["git", "-C", home, "status", "--porcelain", "--", *CORE_PATHS]).stdout
     changed = [l[3:] for l in out.splitlines() if len(l) > 3]
+    if task is not None and task.meta.get("scope"):
+        outside = c.scope_drift(task, changed)
+        if changed and not outside:
+            return Result("core integrity", "PASS", f"core differs only inside {task.id}'s scope "
+                          f"({', '.join(changed[:6])}): it commits them when it finishes")
+        changed = outside
     return Result("core integrity", "WARN" if changed else "PASS",
                   f"protected core differs from the last commit: {', '.join(changed[:6])}"
                   + (f" (+{len(changed) - 6} more)" if len(changed) > 6 else "")
@@ -2107,8 +2114,10 @@ def run_all(full=False, accept_supply=False):
     results.append(check_idle_stops(here))
     results.append(check_usage_burn())
     results.append(check_version_skew(c.all_projects()))
+    home_p = c.find_project(home)  # T-1998: its active task's in-scope core edits aren't a warning
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
-                check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
+                check_git_hygiene(home), check_core_integrity(home, home_p and c.active_brief_fast(home_p)),
+                check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full),
                 check_integrity(integrity_roots(projects), projects, current=c.find_project(os.getcwd()) or False),
                 check_routing(), check_cc_features(), check_upstream()]

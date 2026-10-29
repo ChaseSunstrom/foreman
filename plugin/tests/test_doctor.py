@@ -653,6 +653,31 @@ class CoreIntegrity(unittest.TestCase):
                 f.write("x = 3\n")
             self.assertEqual(d.check_core_integrity(wt).status, "WARN")
 
+    def test_core_the_active_task_changes_in_scope_passes_and_names_it(self):
+        # T-1998: every fm check of a core task warned "git checkout it back" about the task's own edits
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as t:
+            repo = git_repo(t, "fh")
+            os.makedirs(os.path.join(repo, "plugin", "lib"))
+            for n in ("fmx.py", "fmy.py"):
+                with open(os.path.join(repo, "plugin", "lib", n), "w") as f:
+                    f.write("x = 1\n")
+            subprocess.run(["git", "-C", repo, "add", "-A"], check=True)
+            subprocess.run(["git", "-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"],
+                           check=True)
+            with open(os.path.join(repo, "plugin", "lib", "fmx.py"), "w") as f:
+                f.write("x = 2\n")
+            task = SimpleNamespace(id="T-1", meta={"scope": ["plugin/lib/fmx.py"]})
+            r = d.check_core_integrity(repo, task)
+            self.assertEqual((r.status, "T-1" in r.detail), ("PASS", True), r.detail)
+            self.assertEqual(d.check_core_integrity(repo, SimpleNamespace(id="T-1", meta={})).status, "WARN")
+            with open(os.path.join(repo, "plugin", "lib", "fmy.py"), "w") as f:
+                f.write("y = 2\n")
+            r = d.check_core_integrity(repo, task)
+            self.assertEqual(r.status, "WARN")
+            self.assertIn("plugin/lib/fmy.py", r.detail)
+            self.assertNotIn("fmx.py", r.detail)
+
     def test_description_budget(self):
         with tempfile.TemporaryDirectory() as t:
             os.makedirs(os.path.join(t, "skills", "big"))
