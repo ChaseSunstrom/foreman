@@ -1870,7 +1870,8 @@ def _pre_tool_use(raw):
                     ("lessons", lambda: _tripwire_note(pl, p, act)), ("steps", lambda: _step_note(pl, p, act)),
                     ("ambient", lambda: _ambient_note(p)), ("bus", lambda: _bus_note(pl)),
                     ("cards", lambda: _card_note(pl, p, act)), ("test-first", lambda: _test_first_note(pl, p, act)),
-                    ("design", lambda: _design_note(pl, p, act)), ("gate-pipe", lambda: _gate_pipe_note(pl)))
+                    ("design", lambda: _design_note(pl, p, act)), ("gate-pipe", lambda: _gate_pipe_note(pl)),
+                    ("gates", lambda: _gates_note(pl, p)))
         off = c.ablated()  # T-1375: a bench arm's features switched off (never the guard, which spoke above)
         note = " ".join(_said_once(pl, list(filter(None, [made, saved, slow, warn]
                                                    + [_each(b) for name, b in builders if name not in off]))))
@@ -3760,15 +3761,28 @@ def _side_work(sd, briefs, work, full, offered, p):
     return None
 
 
-def _gates_running(p):
-    """T-1176: the task whose `fm check --evidence` runs in the background now (meta gates_running, live pid), else None;
-    a marker whose process is gone is stale and ignored."""
+def _gates_live(p):
+    """T-1176: meta gates_running while its fm check runs (live pid), else None; a marker whose process is gone is stale."""
     g = c.read_meta(p).get("gates_running") or {}
     try:
         os.kill(int(g["pid"]), 0)
-        return g.get("task")
+        return g
     except (KeyError, TypeError, ValueError, OSError):
         return None
+
+
+def _gates_running(p):
+    """T-1176: the task whose `fm check --evidence` runs in the background now, else None."""
+    return (_gates_live(p) or {}).get("task")
+
+
+def _gates_note(pl, p):
+    """T-1963: an edit while a full fm check runs lands in the tree it tests."""
+    g = _gates_live(p) if p and pl.get("tool_name") in FILE_TOOLS and _in_project(_edit_path(pl), p) else None
+    if not g or g.get("root") not in (None, p.root):  # another tree's run: fm ship's scratch one
+        return None
+    return (f"Foreman: fm check is running on this tree (pid {g['pid']}, since {g.get('at')}); this edit lands in "
+            "what it tests, so its pass won't count for the edited tree: wait for it, then rerun the gates.")
 
 
 def lanes_free(briefs, p=None):

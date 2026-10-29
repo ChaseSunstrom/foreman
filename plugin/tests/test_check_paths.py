@@ -71,10 +71,10 @@ class CheckPaths(ForemanTestCase):
         self.fm("check", "paths", "1", "src/**")
         self.fm("check")
         self.write("docs/a.md", "a\n")
-        self.fm("check")  # gate 1 skipped; gate 2 rewrote src/gen.py after it
+        self.fm("check")  # gate 2 rewrote src/gen.py after gate 1 ran
         self.write("docs/a.md", "b\n")
         self.fm("check")
-        self.assertEqual(self.count("src-gate"), 2)
+        self.assertEqual(self.count("src-gate"), 3, "T-1963: gate 1 never saw a src/gen.py gate 2 wrote, so it reruns")
 
 
 RED = "import unittest\n\n\nclass Red(unittest.TestCase):\n    def test_red(self):\n        self.fail('not yet')\n"
