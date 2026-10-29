@@ -2655,7 +2655,8 @@ class TokenFallback(GuardCase):
             start = time.process_time()  # T-1935: CPU time (stats count): other test runs on the box slow the wall
             self.assertIsNone(self.bash(line))
             self.assertBlocked(self.bash(line, cwd=self.fhome), "core")
-            self.assertLess(time.process_time() - start, 2, k)
+            # T-1938: under 0.5 s here, 2.6 s on a CI runner; the bug it guards cost 7-17 s
+            self.assertLess(time.process_time() - start, 6, k)
         self.run_table([  # the guesses still name a folder that exists below a word, .. included
             ('ls {fhome}; cd "$D"; cd plugin/lib; echo x > fmguard.py', "core"),
             ('ls {fhome}; cd "$D"; cd ../foreman/plugin; echo x > lib/fmguard.py', "core"),
