@@ -2023,6 +2023,7 @@ def task_prove_hunks(p, b, args):
 def task_prove(p, args):
     """T-0059: run a test on the tree the task started from with only this task's test files brought over (it must
     fail there) and on the current tree (it must pass). Both runs are recorded, so red→green holds for FIX tasks."""
+    import pathlib
     import shutil
     import tempfile
     import fmmap
@@ -2041,6 +2042,16 @@ def task_prove(p, args):
     tests = [f for f in fmmap.changed(p.root, base) if fmmap._TEST.search(f) and os.path.isfile(os.path.join(p.root, f))]
     if not tests:
         raise UsageError(f"{b.id} changed no test files since {base[:12]}: write the test that proves it first")
+    kept = []  # T-1919: tests-folder files the start tree has, not test-named (run.py): code under change stays there
+    named = [f for f in tests if c.TESTISH.search(os.path.basename(f))]
+    subjects = {re.sub(r"^test_|_test$|\.(?:test|spec)$", "", os.path.splitext(os.path.basename(f))[0]) for f in named}
+    src = "\n".join(pathlib.Path(p.root, f).read_text(errors="replace") for f in named)
+
+    def needed(f):  # review: one a new test imports comes over (its new code), unless a test is named for it (test_run
+        m = os.path.splitext(os.path.basename(f))[0]  # ↔ run.py: its subject); pytest loads conftest.py by itself
+        # ponytail: Python imports only; another language's helper stays at its start version (the kept note says so)
+        return m not in subjects and (m == "conftest" or bool(re.search(
+            rf"^\s*(?:from\s+{re.escape(m)}\s+import|import\s+(?:[\w.]+\s*,\s*)*{re.escape(m)}\b)", src, re.M)))
     with tempfile.TemporaryDirectory(prefix="fm-prove-") as t:
         wt = os.path.join(t, "base")
         c._git(p.root, "worktree", "add", "--detach", "-q", wt, base, timeout=120)
@@ -2048,6 +2059,9 @@ def task_prove(p, args):
             raise UsageError(f"git worktree add at {base[:12]} failed")
         try:
             for f in tests:
+                if f not in named and os.path.lexists(os.path.join(wt, f)) and not needed(f):
+                    kept.append(f)
+                    continue
                 os.makedirs(os.path.dirname(os.path.join(wt, f)), exist_ok=True)
                 shutil.copy2(os.path.join(p.root, f), os.path.join(wt, f))
             red = c.run_command(wt, args.run, args.timeout)
@@ -2061,17 +2075,19 @@ def task_prove(p, args):
         b.add_evidence(args.run, c.run_result(*red) + " (start tree + this task's tests)", step=args.step, ac=args.ac,
                        tree=tree, ran=True)
         b.add_evidence(args.run, c.run_result(*green), step=args.step, ac=args.ac, tree=tree, ran=True)
-    mutate(p, b.id, record, "prove", {"cmd": args.run[:200], "red": red[0], "green": green[0], "tests": tests[:10]})
+    mutate(p, b.id, record, "prove", {"cmd": args.run[:200], "red": red[0], "green": green[0],
+                                      "tests": [f for f in tests if f not in kept][:10], "kept": kept[:10]})
     proved = bool(red[0]) and not green[0]
     verdict = ("proved: fails without the change, passes with it" if proved else
                "not proved: it passes without the change too, so it doesn't test the fix" if not red[0] else
                "not proved: it fails on the current tree")
-    helpers = [f for f in tests if not re.search(r"(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$", f)]
-    if helpers and not red[0]:  # T-1845: a changed runner or helper in a tests folder went onto the start tree too
-        verdict += (f"\n  the start tree also got {', '.join(helpers[:5])} (in a tests folder, not test-named): if that "
-                    f"is the code under change, record its red run in the Regression test section instead")
-    out(args, {"proved": proved, "red": red[0], "green": green[0], "tests": tests},
-        f"{b.id}: {verdict}\n  start tree + {len(tests)} test file(s): {c.run_result(*red)}\n  current tree: "
+    if kept:  # T-1845 named them after a vacuous red run; T-1919 leaves them at the start
+        verdict += (f"\n  kept at its start version: {', '.join(kept[:5])} (in a tests folder and on the start tree, "
+                    f"not test-named: code under change). If the new tests need its new code, record the red run in "
+                    f"the Regression test section instead")
+    out(args, {"proved": proved, "red": red[0], "green": green[0], "tests": tests, "kept": kept},
+        f"{b.id}: {verdict}\n  start tree + {len(tests) - len(kept)} test file(s): {c.run_result(*red)}"
+        f"\n  current tree: "
         f"{c.run_result(*green)}")
     return 0 if proved else 1
 
