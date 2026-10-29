@@ -143,6 +143,34 @@ class Ship(ForemanTestCase):
         self.assertEqual(self.main_log()[:2], ["add c", "a and b squashed"])
         self.assertEqual(sh(self.repo, "rev-parse", "refs/foreman/shipped"), sh(self.repo, "rev-parse", "HEAD"))
 
+    def test_a_remembered_test_runs_when_test_is_left_out(self):
+        # T-1950: the oldest runtime's suite was retyped on every ship
+        mark = os.path.join(self.tmp, "ran")
+        self.grant()
+        self.assertEqual(self.ship("--test", f"touch {mark}").returncode, 0)
+        os.remove(mark)
+        with open(os.path.join(self.repo, "c.txt"), "w") as f:
+            f.write("c\n")
+        sh(self.repo, "add", "c.txt")
+        sh(self.repo, "commit", "-qm", "add c")
+        self.grant()
+        r = self.ship()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(os.path.exists(mark), "the remembered --test ran")
+        self.assertIn(f"touch {mark}", r.stdout)
+
+    def test_a_failed_ref_write_after_the_push_still_reports_the_ship(self):
+        # T-1951: main got the commits, so a refs/foreman/shipped lock must not read as a failed ship
+        lock = os.path.join(self.repo, ".git", "refs", "foreman", "shipped.lock")
+        os.makedirs(os.path.dirname(lock))
+        open(lock, "w").close()
+        self.grant()
+        r = self.ship("--test", "true")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.main_log()[:2], ["add b", "add a"])
+        self.assertIn("shipped 2 commits", r.stdout)
+        self.assertIn("refs/foreman/shipped", r.stdout + r.stderr)
+
     def test_watch_watches_the_pushed_commit(self):
         # T-1946: ship, then CI on the pushed sha, in one background job
         import sys

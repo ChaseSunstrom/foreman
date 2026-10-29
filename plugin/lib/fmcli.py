@@ -6240,7 +6240,7 @@ def _build_parser():
                  "grant; run it in the background (T-1943)")
     s.add_argument("commits", nargs="*", metavar="COMMIT", help="default: HEAD's commits main lacks (git cherry)")
     s.add_argument("--remote", metavar="URL", help="push to this remote instead of origin")
-    s.add_argument("--test", metavar="CMD", help="the check to run in the scratch tree (default: fm check)")
+    s.add_argument("--test", metavar="CMD", help="the check to run in the scratch tree (default: the last --test given here, else fm check)")
     s.add_argument("--watch", action="store_true", help="then watch CI on the pushed commit and exit with its result (T-1946)")
     add("release-check", lazy("fmdemo", "cmd_release_check"), tier=("Project and settings", 910),
         help="fm doctor and fm demo in a temporary HOME: a clean checkout passes before a release (T-0960)")

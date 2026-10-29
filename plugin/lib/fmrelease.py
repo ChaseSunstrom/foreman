@@ -349,7 +349,10 @@ def ship(p, args):
         print(f"nothing to ship: {remote} main already has HEAD's changes" + (f" after the last shipped commit {last[:8]}" if last else ""))
         return 0
     b = _grant(p) or _err(_NEED_GRANT.replace("--push", "fm ship", 1) + "; nothing was pushed")
-    test = shlex.split(args.test) if args.test else [*FM, "check"]
+    if args.test:  # T-1950: remembered per repo, so the oldest runtime's suite isn't retyped each ship
+        _git(root, "config", "--local", "foreman.shiptest", args.test, ok=True)
+    said = args.test or _git(root, "config", "--local", "--get", "foreman.shiptest", ok=True).strip()
+    test = shlex.split(said) if said else [*FM, "check"]
     files = sorted({f for s in picks for f in _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "-m", s).splitlines() if f})
     n = f"{len(picks)} commit{'s' if len(picks) > 1 else ''}"
     with tempfile.TemporaryDirectory() as tmp:
@@ -378,7 +381,8 @@ def ship(p, args):
             if c._git(root, "merge-base", "--is-ancestor", "FETCH_HEAD", tip, timeout=60, proc=True).returncode:
                 _err(f"{remote} main moved while testing; nothing was pushed: run fm ship again")
             _push_main(p, b.id, tip, remote, "fm ship")
-            _git(root, "update-ref", SHIPPED, picks[-1])
+            if c._git(root, "update-ref", SHIPPED, picks[-1], timeout=60, proc=True).returncode:  # T-1951: main has them
+                print(f"warning: couldn't move {SHIPPED} to {picks[-1][:8]}; the next plain fm ship may offer these again")
         finally:
             _git(root, "worktree", "remove", "--force", wt, ok=True)
     print(f"shipped {n} to {remote} main at {tip} (the publish grant is spent)."
