@@ -2323,11 +2323,13 @@ def _close_warnings_of(p, b, files):
     honest += [f"stale evidence: {path} changed after step {n}'s check last ran (`{c.fit(cmd, 60)}`): run it again"
                for n, path, cmd in _stale_evidence(p, b)[:3]]  # T-0634
     rates, said = catch_rates(p), []
+    proved = any(e.get("event") == "prove" and e.get("task") == b.id and (e.get("data") or {}).get("red")
+                 and not e["data"].get("green") for e in c.ledger_tail(p, 50000))  # T-1947: often a narrower command
     for _, cmd in b.verify_cmds():  # T-0653: has this check ever caught anything here?
         n, k = rates.get(cmd, (0, 0)) if cmd else (0, 0)
         if k:
             said.append(f"`{c.fit(cmd, 50)}` caught a failure in {k} task(s) here")
-        elif n >= 3:
+        elif n >= 3 and not proved:
             said.append(f"`{c.fit(cmd, 50)}` never failed in {n} run(s) here (does it test the change?)")
     if said:
         honest.append("Check track record: " + "; ".join(said[:4]))
