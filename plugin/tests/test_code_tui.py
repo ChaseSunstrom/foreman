@@ -130,6 +130,13 @@ class Core(unittest.TestCase):
         self.assertEqual((top.split(), floor.split()), (["██████"], ["▄▄▄▄▄▄", "██████", "██████"]),
                          "each call a column, the biggest the chart's full height")
 
+    def test_a_phase_stamped_before_the_run_stays_on_the_chart(self):
+        # T-1922: its bar's padding was " " * (width - start) with start far below 0: gigabytes, killed on macOS
+        evs = [dict(e, ts=1000 + 10 * i) for i, e in enumerate(RUN)]
+        evs[next(i for i, e in enumerate(evs) if e["event"] == "step")]["ts"] = 1000 - 10 ** 6
+        for line in tui()._time(self.state(evs), 80, 12, None):
+            self.assertLessEqual(sum(len(t) for t, _ in line), 80)
+
     def test_partial_runs_and_unknown_events_never_break_the_view(self):
         for n in range(len(RUN) + 1):
             tui().render(self.state(RUN[:n]), 80, 24, tui().DEFAULTS)
