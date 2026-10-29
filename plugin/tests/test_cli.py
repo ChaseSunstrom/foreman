@@ -242,6 +242,23 @@ class CaptureAndIntake(ForemanTestCase):
         self.assertEqual([x["text"] for x in got["criteria"]], ["old check"], "no --ac: the capture's own stay")
         self.assertEqual([x["text"] for x in got["steps"]], ["old step"])
 
+    def test_a_capture_given_criteria_and_steps_is_planned(self):
+        # T-1886: filled by fm task set, ac or step it stayed captured, so the drive kept offering it for planning
+        def status(tid):
+            return json.loads(self.fm("task", "show", tid, "--json").stdout)["status"]
+        self.fm("capture", "one")
+        self.fm("capture", "two")
+        self.fm("task", "set", "T-0001", "--section", "Acceptance criteria",
+                "--text", "- [ ] works — verify with `true`")
+        self.assertEqual(status("T-0001"), "captured")  # criteria alone: not yet
+        self.fm("task", "step", "T-0001", "add", "do it")
+        self.assertEqual(status("T-0001"), "planned")
+        self.fm("task", "set", "T-0002", "--section", "Steps", "--text", "1. [ ] go")
+        self.fm("task", "ac", "T-0002", "add", "works :: true")
+        self.assertEqual(status("T-0002"), "planned")
+        self.fm("task", "set", "T-0002", "status=captured")
+        self.assertEqual(status("T-0002"), "captured")  # set by hand: kept
+
     def test_a_planned_task_never_started_can_be_planned_again(self):
         # T-1862: an M task whose --focus was refused stays planned; --from refused it, so only status=captured got out
         self.fm("task", "new", "big one", "--type", "FIX", "--tier", "S", "--ac", "old :: true", "--step", "old")
