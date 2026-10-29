@@ -3259,7 +3259,8 @@ def gates(type_, tier):
                                            "caught it>\" (or none: why)"))
     need += {"FIX": [("red→green", "fm task prove ID --run \"<test>\" (or --section \"Regression test\" none: why)")],
              "PERFORMANCE": [("numbers", "fm task finish --numbers (or --section \"Measurements\"): <metric> before → after")],
-             "CLEAN": [("behaviour lock", "tests run (fm check --evidence ID --step 1) before the first edit")]
+             "CLEAN": [("behaviour lock", "tests run (fm check --evidence ID --step 1) before the first project-file "
+                                          "edit; none when it edits no project file (a ship task; T-1982)")]
              }.get(type_, [])
     need.append(("scope", "a reason for edits outside the scope globs (fm task log ID \"scope: …\")"))
     return need
