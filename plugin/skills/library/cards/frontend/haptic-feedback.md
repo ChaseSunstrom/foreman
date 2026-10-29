@@ -17,14 +17,23 @@ Short vibration cues through navigator.vibrate where available, optional, rate-l
 ```ts
 import { test, expect } from '@playwright/test';
 
-test('confirm tap vibrates once, and missing API does not throw', async ({ page }) => {
+test('confirm tap vibrates once with buzz(10)', async ({ page }) => {
   await page.addInitScript(() => {
     (window as any).__v = [];
     navigator.vibrate = (p: any) => ((window as any).__v.push(p), true);
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Confirm' }).click();
-  expect(await page.evaluate(() => (window as any).__v)).toEqual([[10]]);
+  expect(await page.evaluate(() => (window as any).__v)).toEqual([10]);
+});
+
+test('missing API does not throw', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { delete (Navigator.prototype as any).vibrate; });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Confirm' }).click();
+  expect(errors).toEqual([]);
 });
 ```
 

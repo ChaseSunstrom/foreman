@@ -10,7 +10,7 @@ Moving text that stays readable, searchable and accessible: split per word or le
 
 ## Verify
 - `npx playwright test --grep kinetic`: asserts the accessible name of the heading equals the full string.
-- `npx axe-cli http://localhost:3000`: flags split text that screen readers read letter by letter.
+- `npx @axe-core/cli http://localhost:3000`: flags split text that screen readers read letter by letter.
 - Devtools Rendering panel: enable layout shift regions to watch for reflow as letters move.
 
 ## Test first

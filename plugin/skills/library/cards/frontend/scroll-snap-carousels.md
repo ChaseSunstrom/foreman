@@ -10,7 +10,7 @@ Carousels built on overflow scrolling and scroll-snap: no JavaScript for the cor
 
 ## Verify
 - `npx playwright test --grep carousel`: scrolls the track, asserts the snapped slide, and drives it with the keyboard.
-- `npx axe-cli http://localhost:3000`: checks region labels and focusable scroll containers.
+- `npx @axe-core/cli http://localhost:3000`: checks region labels and focusable scroll containers.
 - `grep -rn "scroll-snap-type" src`: confirm each container pairs with `scroll-snap-align` on its children.
 
 ## Test first

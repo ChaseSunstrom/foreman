@@ -10,7 +10,7 @@ mix-blend-mode and background-blend-mode for duotones, overlays and inverted tex
 
 ## Verify
 - `npx playwright test --grep blend`: asserts computed `mixBlendMode` and that the parent creates an isolated stacking context.
-- `npx axe-cli http://localhost:3000`: contrast on blended text over a light and a dark backdrop.
+- `npx @axe-core/cli http://localhost:3000`: contrast on blended text over a light and a dark backdrop.
 - Devtools Performance panel: scroll with the effect; blending over video or animation costs frames.
 
 ## Test first
