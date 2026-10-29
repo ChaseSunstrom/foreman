@@ -87,3 +87,14 @@ class DriveSide(HookCase):
         done.wait()
         c.update_meta(p, gates_running={"task": busy, "pid": done.pid, "at": c.now()})
         self.assertIn(f"Start {busy}", self.offered())
+
+    def test_a_task_waiting_on_an_open_task_that_is_not_active_is_not_offered(self):
+        # T-1899: T-1898 depended on T-1877 (queued, not active) and was offered as side work on every Stop
+        self.fm("init")
+        dep = self.task("First in the chain", focus=False)
+        waits = self.task("Waits on it", focus=False)
+        self.fm("task", "set", waits, f"depends_on=[{dep}]")
+        self.task("Current work")
+        text = self.offered()
+        self.assertIn(f"Start {dep}", text)
+        self.assertNotIn(f"Start {waits}", text)
