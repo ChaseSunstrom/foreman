@@ -1103,6 +1103,8 @@ def task_finish(p, args):
                 x.add_audit(lens, args.audit, result, tree=tree)
             if args.docs:
                 x.set_section("Docs impact", c.redact(args.docs))
+            if getattr(args, "numbers", None):  # T-1956
+                x.set_section("Measurements", c.redact(c.plain(args.numbers).strip()))
             if getattr(args, "why_not_caught", None):  # T-0598
                 x.set_section("Why not caught", c.redact(args.why_not_caught))
             if getattr(args, "followups", None):  # T-0639: the questions the user will likely ask, answered
@@ -1567,6 +1569,8 @@ def _finish_gaps(b, args, lenses):
             if not g & given and any(r.startswith(f"audit missing: {' or '.join(sorted(g))}") for r in recorded)]
     if b.docs_gap() and not args.docs:
         gaps.append("docs impact missing: --docs \"<docs updated | none: why>\"")
+    if b.type == "PERFORMANCE" and not getattr(args, "numbers", None) and not b.section("Measurements").strip():
+        gaps.append("numbers missing: --numbers \"<metric>: <before> → <after> (<how measured>)\" (or \"none: <why>\")")
     if b.tier in ("M", "L") and not args.lesson and not b.section("Lessons").strip():
         gaps.append("lesson missing: --lesson \"<what the next similar task should know>\" (or \"none: <why>\")")
     if b.type == "FIX" and b.tier in ("M", "L") and not getattr(args, "why_not_caught", None) \
@@ -2878,7 +2882,9 @@ def task_new(p, args):
     out(args, c.brief_summary(b), f"{b.id} [{b.type} {b.tier}] {b.title} — planned ({b.path}){reused}"
         + ("" if args.from_id else _covered_note(p, b.id, " ".join(filter(None, [args.title, args.raw])))))
     if args.focus:
-        cmd_focus(argparse.Namespace(id=b.id, project=getattr(args, "project", None), json=False))
+        import contextlib  # T-1954: under --json, stdout stays one JSON document
+        with contextlib.redirect_stdout(sys.stderr) if getattr(args, "json", False) else contextlib.nullcontext():
+            cmd_focus(argparse.Namespace(id=b.id, project=getattr(args, "project", None), json=False))
 
 
 def _section_pairs(args):
@@ -3237,7 +3243,7 @@ def gates(type_, tier):
         need += [("docs impact", "--section \"Docs impact\" (updated docs, or none: why)"),
                  ("lesson", "fm task done ID --lesson \"…\"")]
     need += {"FIX": [("red→green", "fm task prove ID --run \"<test>\" (or --section \"Regression test\" none: why)")],
-             "PERFORMANCE": [("numbers", "--section \"Measurements\": <metric> before → after")],
+             "PERFORMANCE": [("numbers", "fm task finish --numbers (or --section \"Measurements\"): <metric> before → after")],
              "CLEAN": [("behaviour lock", "tests run (fm check --evidence ID --step 1) before the first edit")]
              }.get(type_, [])
     need.append(("scope", "a reason for edits outside the scope globs (fm task log ID \"scope: …\")"))
@@ -3246,7 +3252,12 @@ def gates(type_, tier):
 
 def cmd_gates(args):
     p = resolve(args)
-    act = c.active_brief(c.load_briefs(p), p.lane)
+    if args.type and re.fullmatch(r"T-\d+", args.type):  # T-1955: fm gates ID, as fm focus's "Done needs" line invites
+        act, args.type = need_brief(p, args.type), None
+    elif args.type and args.type not in c.TYPES:
+        raise UsageError(f"fm gates: {args.type!r} is neither a task id nor a type ({', '.join(c.TYPES)})")
+    else:
+        act = c.active_brief(c.load_briefs(p), p.lane)
     type_, tier = args.type or (act.type if act else "FEATURE"), args.tier or (act.tier if act else "S")
     need = gates(type_, tier)
     out(args, {"type": type_, "tier": tier, "gates": [{"gate": g, "how": h} for g, h in need]},
@@ -5820,6 +5831,7 @@ def _build_parser():
     t.add_argument("--result", default="no findings", help="the self audit's result (S)")
     t.add_argument("--lens", action="append", help="M/L: '<lens>: <result>' per audit lens (repeatable)")
     t.add_argument("--docs", help="Docs impact: the docs updated, or none: why")
+    t.add_argument("--numbers", help="PERFORMANCE: the Measurements, '<metric>: <before> → <after> (<how measured>)' (T-1956)")
     t.add_argument("--skip-affected", metavar="WHY", help="T-1117: close without the linked tests' verdict (a runner "
                                                          "fm can't read, a known-red suite), logged with WHY")
     t.add_argument("--lesson")
@@ -6095,8 +6107,8 @@ def _build_parser():
     s.add_argument("--tail", type=int, default=40)
     s.add_argument("--timeout", type=float, default=1800)
     s.add_argument("words", nargs=argparse.REMAINDER)
-    s = add("gates", cmd_gates, tier=("Every task", 100), help="what fm task done will require for a type and tier (default: the active task)")
-    s.add_argument("type", nargs="?", type=str.upper, choices=c.TYPES)
+    s = add("gates", cmd_gates, tier=("Every task", 100), help="what fm task done will require for a type and tier, or a task id (default: the active task)")
+    s.add_argument("type", nargs="?", type=str.upper, help=f"{', '.join(c.TYPES)}, or a task id")
     s.add_argument("tier", nargs="?", type=str.upper, choices=["S", "M", "L"])
     s = add("pr", lazy("fmcost", "cmd_pr"), tier=("Finding your way", 500), help="a pull-request description from a task's brief, with its proof "
                                                   "(red→green, lens verdicts, assumptions, bench replays; printed only); "
