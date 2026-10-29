@@ -149,6 +149,36 @@ class Session(_Stubbed):
         self.assertFalse(os.path.exists(self.log))
 
 
+class Cleanup(ForemanTestCase):
+    def test_a_child_still_writing_into_state_does_not_fail_the_cleanup(self):
+        # T-1901: the review session start ran detached wrote into state/ while tearDown removed the folder, so
+        # test_session_start_runs_it_in_the_background failed with Errno 39 (directory not empty) on CI
+        import tempfile
+        import threading
+        import time
+        d = os.path.join(self.home, "state", "projects", "app")
+        os.makedirs(d)
+        until = time.monotonic() + 0.5
+
+        def write():  # files into the folder until it's gone, as the child's writes fail once it is
+            for i in range(10 ** 9):
+                if time.monotonic() > until:
+                    return
+                try:
+                    open(os.path.join(d, f"f{i}"), "w").close()
+                except OSError:
+                    return
+
+        t = threading.Thread(target=write)
+        t.start()
+        try:
+            ForemanTestCase.tearDown(self)
+        finally:
+            t.join()
+            self._tmp = tempfile.TemporaryDirectory()  # the real tearDown cleans this one
+        self.assertFalse(os.path.exists(self.tmp))
+
+
 class Due(ForemanTestCase):
     def test_only_new_sessions_once_a_day_never_sensitive(self):
         import fmcore as c
