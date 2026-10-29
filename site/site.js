@@ -19,10 +19,8 @@
   });
 
   var still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var reel = document.getElementById("reel");
   var stations = document.querySelectorAll("#stations li");
   if (still || !("IntersectionObserver" in window)) {
-    if (reel) reel.setAttribute("controls", "");
     stations.forEach(function (li) { li.classList.add("on"); });
     return;
   }
@@ -30,13 +28,31 @@
   var ticked = false;
   var io = new IntersectionObserver(function (es) {
     es.forEach(function (e) {
-      if (e.target === reel) { e.isIntersecting ? reel.play().catch(function () { reel.setAttribute("controls", ""); }) : reel.pause(); }
       if (e.target.id === "stations" && e.isIntersecting && !ticked) {
         ticked = true;
         stations.forEach(function (li, i) { setTimeout(function () { li.classList.add("on"); }, 220 * i + 150); });
       }
     });
   }, { threshold: 0.35 });
+  // T-2040: the hero's session plays once, a line at a time, the pane's stations following, from its first view on
+  var sess = document.getElementById("session");
+  if (sess) {
+    var lines = [].slice.call(sess.querySelectorAll(".ln")), marks = sess.querySelectorAll(".stage li"), at = 0;
+    var mark = function (s) { marks.forEach(function (li, k) { li.className = k < s ? "done" : k === s ? "now" : ""; }); };
+    var step = function () {
+      var ln = lines[at];
+      setTimeout(function () {
+        if (at) lines[at - 1].classList.remove("cur");
+        ln.classList.add("on"); mark(+ln.getAttribute("data-s"));
+        if (++at < lines.length) { ln.classList.add("cur"); step(); }
+      }, +ln.getAttribute("data-w") || 700);
+    };
+    sess.querySelectorAll(".tx").forEach(function (t) { t.style.setProperty("--n", t.textContent.length); });
+    var sio = new IntersectionObserver(function (es) {
+      if (es[es.length - 1].isIntersecting) { sio.disconnect(); step(); }
+    }, { threshold: 0.1 });
+    sess.classList.add("live"); mark(-1); sio.observe(sess);
+  }
   // T-1615: each chart draws itself once, the first time it comes into view (CSS does the motion; seen still, it's whole)
   var charts = new IntersectionObserver(function (es) {
     es.forEach(function (e) {
@@ -48,7 +64,6 @@
     v.classList.add("armed");
     charts.observe(v);
   });
-  if (reel) io.observe(reel);
   var st = document.getElementById("stations");
   if (st) io.observe(st);
 })();

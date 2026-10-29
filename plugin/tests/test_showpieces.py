@@ -25,7 +25,7 @@ FILES = [  # fixture: what fmpage.city_files reads from a repo (path, lines, com
     {"path": "README.md", "lines": 400, "churn": 2},
     {"path": "MASTER.md", "lines": 90, "churn": 0},
 ] + [{"path": f"plugin/skills/library/cards/card{i}.md", "lines": 30 + i, "churn": i % 3} for i in range(24)]
-# The template's survival code, which the city copies (as site/hero-scene.js does): neither may drift alone.
+# The template's survival code, which the city copies (the site hero once did too): neither may drift alone.
 SURVIVAL = (r'"webglcontextlost", e => \{ e\.preventDefault\(\)', r'"webglcontextrestored"',
             r'Math\.min\(window\.devicePixelRatio \|\| 1, matchMedia\("\(pointer: coarse\)"\)\.matches \? 1\.5 : 2\)',
             r'on\(document, "visibilitychange"',
