@@ -4255,16 +4255,10 @@ def _cmd_check(args):
             pass
         raise UsageError(f"no checks configured for this project: fm check add '<cmd>' (tests, lint, fm doctor…){hint}")
     import time
-    if c.gates_live(p, here=True):  # T-1971: never two full suites on one tree; its pass is reused when nothing changed
-        print("fm check: waiting for another fm check on this tree to finish first (at most 10 minutes)", file=sys.stderr)
-        end = time.time() + 600
-        while c.gates_live(p, here=True) and time.time() < end:
-            time.sleep(1)
+    # T-1971: never two full suites on one tree; its pass is reused when nothing changed
+    c.wait_while(lambda: c.gates_live(p, here=True), "another fm check on this tree", "fm check")
     if (c.gates_live(p, key="ship_testing") or {}).get("root", p.root) != p.root:  # T-1978: not the ship's own check
-        print("fm check: waiting for fm ship's test run to finish first (at most 10 minutes)", file=sys.stderr)
-        end = time.time() + 600
-        while c.gates_live(p, key="ship_testing") and time.time() < end:
-            time.sleep(1)
+        c.wait_while(lambda: c.gates_live(p, key="ship_testing"), "fm ship's test run", "fm check")
     act = c.active_brief(c.load_briefs(p), p.lane)
     tree = c.worktree_id(p.root)
     skip = red_first_tests(p, act, checks)  # T-1101
@@ -4287,11 +4281,8 @@ def _cmd_check(args):
     if marked:  # T-1176: the drive reads this (a dead pid = stale) so it doesn't offer or leave the task meanwhile
         c.update_meta(p, gates_running={"task": args.evidence, "pid": os.getpid(), "at": c.now(), "root": p.root})
     import fmambient
-    if fmambient.running(p):  # T-1964: never two suites at once; edits meanwhile start none (gates_running is set)
-        print("fm check: waiting for the ambient test run to finish first (at most 5 minutes)", file=sys.stderr)
-        end = time.time() + 300
-        while fmambient.running(p) and time.time() < end:
-            time.sleep(1)
+    # T-1964: never two suites at once; edits meanwhile start none (gates_running is set)
+    c.wait_while(lambda: fmambient.running(p), "the ambient test run", "fm check", limit=300)
     before = _last_check_results(p, act.id if act else None)
     results, notes, skipped, reruns = [], {}, {}, []
     for cmd in _gate_order(p, checks):  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
@@ -6293,12 +6284,14 @@ def _build_parser():
                                                         "is red or over 7 days old; the waiver is logged (T-1401)")
     s = add("ship", lazy("fmrelease", "cmd_ship"), tier=("Project and settings", 907),
             help="land HEAD's unpushed commits (or the named ones) on the remote's main: cherry-picked onto the fetched "
-                 "main in a scratch worktree, tested there, pushed if main didn't move; needs the active task's publish "
+                 "main in a scratch worktree, tested there, pushed if main didn't move; needs the active task's (or --task ID's) publish "
                  "grant; run it in the background (T-1943)")
     s.add_argument("commits", nargs="*", metavar="COMMIT", help="default: HEAD's commits main lacks (git cherry)")
     s.add_argument("--remote", metavar="URL", help="push to this remote instead of origin")
     s.add_argument("--test", metavar="CMD", help="the check to run in the scratch tree (default: the last --test given here, else fm check)")
     s.add_argument("--watch", action="store_true", help="then watch CI on the pushed commit and exit with its result (T-1946)")
+    s.add_argument("--task", metavar="ID", help="ship on this task's publish grant (closed or active) instead of the "
+                                                "active task's, and spend it (T-2007)")
     s.add_argument("--check", action="store_true", help="push nothing: exit 0 when the remote's main has these commits' "
                                                         "changes (by patch), 1 naming the ones it lacks; no grant needed (T-1960)")
     add("release-check", lazy("fmdemo", "cmd_release_check"), tier=("Project and settings", 910),

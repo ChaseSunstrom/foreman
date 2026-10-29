@@ -47,9 +47,26 @@ def summary(p, ts, titles=True):
     return rows
 
 
-def line(p):
-    """One session-start line, or "" after a short gap or when nothing happened."""
-    s = since(p)
+def returned(p, n=500):
+    """T-2008: the away line for the prompt just logged, when the prompt before it came GAP or more earlier; else "".
+    Reads the ledger's tail; only when the previous prompt is further back does it scan the whole ledger."""
+    rows = c.ledger_tail(p, n)
+    at = [i for i, e in enumerate(rows) if e.get("event") == "prompt" and c.parse_ts(e.get("ts"))]
+    if any(e.get("event") == "session_start" and (e.get("data") or {}).get("source") in ("startup", "resume")
+           for e in rows[at[-2] if len(at) > 1 else 0:at[-1] if at else 0]):
+        return ""  # this session's start already carried the line
+    stamps = [c.parse_ts(rows[i].get("ts")).timestamp() for i in at]
+    if len(stamps) >= 2:
+        gap = stamps[-1] - stamps[-2]
+        return line(p, (c.iso(stamps[-2]), gap)) if gap >= GAP else ""
+    s = since(p, stamps[-1]) if stamps else None
+    ended = s and abs(c.parse_ts(s[0]).timestamp() + s[1] - stamps[-1]) < 2  # since() may find an older silence
+    return line(p, s) if ended else ""
+
+
+def line(p, s=None):
+    """One session-start line, or "" after a short gap or when nothing happened. s: since()'s (ts, gap) when known."""
+    s = s or since(p)
     if not s:
         return ""
     rows = summary(p, s[0], titles=False)

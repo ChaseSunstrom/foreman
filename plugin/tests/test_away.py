@@ -56,9 +56,39 @@ class Away(ForemanTestCase):
                          )["hookSpecificOutput"]["additionalContext"]
         self.assertNotIn("Away:", ctx)
 
+    def prompt(self, text="back"):
+        out = self.hook("UserPromptSubmit", {"prompt": text, "session_id": "s-away"}).stdout
+        return (json.loads(out).get("hookSpecificOutput") or {}).get("additionalContext", "") if out.strip() else ""
+
+    def test_the_away_line_rides_on_a_prompt(self):
+        # T-2008: back after a silence mid-session (no new session start): the first prompt carries the summary
+        self.gap()
+        ctx = self.prompt()
+        self.assertEqual(ctx.count("Away: 10 h since you last spoke"), 1, ctx)
+        self.assertIn("T-0003", ctx)
+        self.assertNotIn("Away:", self.prompt("and then"), "only the prompt that ends the silence")
+
+    def test_a_short_gap_adds_nothing_on_a_prompt(self):
+        self.seed([(0.2, "prompt", None, {"text": "go"}), (0.1, "task_done", "T-0003", {})])
+        self.assertNotIn("Away:", self.prompt())
+
     def start(self, source):
         return json.loads(self.hook("SessionStart", {"source": source}, env={"CLAUDE_ENV_FILE": self.env_file}).stdout
                           )["hookSpecificOutput"]["additionalContext"]
+
+    def test_a_new_sessions_first_prompt_leaves_the_line_to_its_start(self):
+        self.gap()
+        self.seed([(0, "session_start", None, {"source": "startup"})])
+        self.assertNotIn("Away:", self.prompt(), "the session start already said it")
+
+    def test_a_prompt_past_the_tail_reports_only_its_own_silence(self):
+        import fmaway
+        self.seed([(30, "prompt", None, {}), (20, "prompt", None, {}), (19, "task_done", "T-0001", {}),
+                   (1, "prompt", None, {}), (0.5, "task_done", "T-0003", {}), (0.4, "task_done", "T-0004", {}),
+                   (0, "prompt", None, {})])
+        self.assertEqual(fmaway.returned(self.p, n=3), "", "the 19 h silence ended an hour before this prompt")
+        self.seed([(-1, "task_done", "T-0005", {}), (-1, "task_done", "T-0006", {}), (-3, "prompt", None, {})])
+        self.assertIn("Away: 3 h since you last spoke", fmaway.returned(self.p, n=3))
 
     def test_a_compact_or_clear_start_after_a_gap_has_no_away_line(self):
         self.gap()

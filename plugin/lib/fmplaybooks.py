@@ -1077,13 +1077,25 @@ def _blame_text(rel, rows):
     return "\n".join(out)
 
 
+def _near(name, books, n=3):
+    """T-2009: up to n playbook names close to a misspelled one ("alpah" -> fix/alpha), best first."""
+    import difflib
+    names = [b.removeprefix("references/").removesuffix(".md") for b in books]
+    q = name.lower().removeprefix("references/").removesuffix(".md")
+    def score(x):
+        return 1.0 if q in x else max(difflib.SequenceMatcher(None, q, x).ratio(),
+                                      difflib.SequenceMatcher(None, q.rsplit("/", 1)[-1], x.rsplit("/", 1)[-1]).ratio())
+    return [x for sc, x in sorted(((score(x), x) for x in names), key=lambda t: -t[0]) if sc >= 0.6][:n]
+
+
 def _one(name, books):
     import fmcli
     hits = resolve(name, books)
     if len(hits) != 1:
+        near = [] if hits else _near(name, books)
         raise fmcli.UsageError(f"{name!r} names {len(hits)} playbooks: {', '.join(hits)}; give its stage too"
-                               if hits else f"no playbook {name!r}: name it as SKILL.md does (fix/sql or "
-                               f"references/fix/sql.md)")
+                               if hits else f"no playbook {name!r}: did you mean {' or '.join(near)}?" if near
+                               else f"no playbook {name!r}: name it as SKILL.md does (fix/sql or references/fix/sql.md)")
     return hits[0]
 
 
@@ -1399,11 +1411,9 @@ def cmd_eval(args):
         default = os.path.splitext(name)[0] + ".json"
         print(f"fm playbooks eval: reading {name} (not a library playbook)", file=sys.stderr)
     else:
-        if len(hits) != 1:
-            raise fmcli.UsageError(f"{args.name!r} names {len(hits)} playbooks: {', '.join(hits)}" if hits
-                                   else f"no playbook {args.name!r}")
-        name, book = hits[0], load(hits[0])
-        default = os.path.join(EVALS, hits[0][len("references/"):-len(".md")] + ".json")
+        name = _one(args.name, listed())
+        book = load(name)
+        default = os.path.join(EVALS, name[len("references/"):-len(".md")] + ".json")
     path = args.briefs or default
     if not os.path.isfile(path):
         raise fmcli.UsageError(f"no held-out briefs for {name}: write {path} "
