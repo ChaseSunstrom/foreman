@@ -189,6 +189,9 @@ def _hint(detail, cat=""):
         return " Write the script in one command, run it in the next command (Edit/Write tool or cat > f <<'EOF')."
     if detail == "script nests too deep to read":  # T-1298
         return " Run the innermost script directly, or fold the chain into fewer scripts, so the guard reads each one."
+    if detail.endswith(_DEEP):  # T-1931
+        return (" Flatten the script's nested bash -c / eval layers (run the inner command itself), so the guard "
+                "reads all of it.")
     if detail.endswith("the script was too long to parse in time)"):
         return " Run a shorter script (split it, or run the part you need directly): a shorter one is read in full."
     if detail.startswith("sed -f/--file"):  # T-1932
@@ -230,10 +233,13 @@ def unanalysed(detail):
     return isinstance(detail, str) and detail in UNANALYSED
 
 
+_DEEP = "nested too deep to read in full)"  # T-1931: a script's own nesting past the cap, scanned for literals only
+
+
 def _unread(detail):
     """A system refusal for a program the guard couldn't read (not for what a program does)."""
     return "can't read" in detail or detail == "script nests too deep to read" or detail.endswith(
-        "the script was too long to parse in time)") or "KB the guard reads: run its" in detail
+        ("the script was too long to parse in time)", _DEEP)) or "KB the guard reads: run its" in detail
 
 
 def unliftable(cat, detail):
@@ -4062,13 +4068,15 @@ def _check_script(text, ctx, depth, acc):
             got = check_bash("\n".join(state[-40:] + [chunk]), ctx, depth + 1)
         finally:
             _NO_GUESS.pop()
+        deep = False
         for f in got:
-            if f == ("system", "script nests too deep to read"):
-                pass  # from a script further down the chain: it keeps its way up
+            if f == ("system", "script nests too deep to read") or f[0] == "system" and f[1].endswith(_DEEP):
+                pass  # from a script further down the chain: it keeps its way up (T-1931 review)
             elif "too deep" in f[1]:
                 # a chain of scripts this deep hides its last one: refuse, never read as clean. Only from the third
                 # script in a chain: a script of its own deep $( … ) nesting is no chain (5 of 330 real scripts)
                 if len(_IN_SCRIPT) < 3:
+                    deep = True
                     continue
                 f = ("system", "script nests too deep to read")
             elif not ((f[0] in ("rm-outside", "self-authorize", "state-direct") or f[0] == "core" and "/state" in f[1]
@@ -4077,6 +4085,11 @@ def _check_script(text, ctx, depth, acc):
                 continue
             if f not in acc:  # the carried lines are read again with each piece
                 acc.append(f)
+        # T-1931: the part past the cap was never read: scan it for literals, as a script too long to parse.
+        # ponytail: literals only (rm -rf ~, a pipe into a shell, a state write): a core write that deep goes unseen
+        if deep:
+            acc += [f for f in dict.fromkeys(("system", f"{line[:80]} ({why}; {_DEEP}")
+                                             for _n, line, why in _literal_scan(chunk, ctx)) if f not in acc]
         state += _state_lines(chunk)
     return acc
 
