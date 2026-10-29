@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Tokens nobody uses (T-1874). `fm design lint` now ends with the DESIGN.md tokens no linted file uses — "DESIGN.md: 2 token(s) unused in the 14 file(s) linted: --accent-2, --shadow-deep" — so a palette that drifted from the code shows up. A definition isn't a use; a Tailwind theme name counts as used by its class (`--color-brand` by `bg-brand`). It only reports: the exit is the lint's. `--tokens FILE` names another tokens file; with no DESIGN.md or no `## Tokens` section it says nothing.
 - A queue's quote before it starts (T-1878). `fm queue --cost` adds "Quote: 4 task(s) ≈ 1.2M tokens (each the median of its type and tier; no history: T-0012) · last 24 h 9.8M · week 41% used." Each task counts as the median of this project's finished tasks of its type and tier (two or more, last 90 days), so a long run is weighed before it starts. A quote only: nothing is refused.
 - A failed gate says which test failed and how (T-1884): `fm check` names the failing tests (up to 5, then "+N more") and shows the first one's failure, not the last 10 lines of the summary.
 - `--follow` no longer misses a change made right after a line is printed (T-1882). `fm ui`, `fm projects`, `fm sessions` and `fm claude` followers took their file-time snapshot after building and printing the view, so a capture that landed in between waited for the 30 s refresh (and made a test flaky). The snapshot now comes before each build.

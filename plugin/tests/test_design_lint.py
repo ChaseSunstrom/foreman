@@ -157,7 +157,7 @@ class Allow(ForemanTestCase):  # and the edges of what gets linted
             self.write(f"{n}.html", '<img src="a">\n')
         old, fmdesign.MAX_FILES = fmdesign.MAX_FILES, 2
         try:
-            found, linted, skipped, _ = fmdesign.run([self.tmp])
+            found, linted, skipped, *_ = fmdesign.run([self.tmp])
         finally:
             fmdesign.MAX_FILES = old
         self.assertEqual((len(found), len(linted)), (2, 2))
@@ -201,6 +201,49 @@ class Allow(ForemanTestCase):  # and the edges of what gets linted
     def test_alt_in_a_value_is_not_an_alt(self):
         path = self.write("a.html", '<img src="alt.png" data-alt="x">\n')
         self.assertEqual([f["rule"] for f in fmdesign.lint([path])], ["img-alt"])
+
+
+class UnusedTokens(ForemanTestCase):
+    """T-1874: fm design lint names the DESIGN.md tokens no linted file uses; report only."""
+
+    def put(self, name, text):
+        path = os.path.join(self.repo, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
+
+    def test_lint_names_tokens_no_linted_file_uses_and_keeps_its_exit(self):
+        rows = "".join(f"| `--{n}` | colour | `#112233` | `#445566` |\n" for n in
+                       ("surface", "text", "color-brand", "spare", "color-ghost", "text-2"))
+        self.put("DESIGN.md", "# App\n\n## Tokens\n\n| Token | Kind | Light | Dark |\n|---|---|---|---|\n" + rows)
+        self.put("ui/app.css", ":root { --surface: #fff; --spare: #000; --text-2: #333; }\n"
+                               "body { background: var(--surface); color: var( --text , #111); }\n")
+        self.put("ui/App.jsx", 'export const A = () => <b className="bg-brand md:text-brand/50">hi</b>;\n')
+        r = self.fm("design", "lint", "ui")
+        self.assertEqual(r.returncode, 0, r.stdout)  # report only: a clean lint stays clean
+        self.assertIn("DESIGN.md: 3 token(s) unused in the 2 file(s) linted: --spare, --color-ghost, --text-2",
+                      r.stdout)  # a definition isn't a use; --text isn't --text-2; bg-brand uses --color-brand
+        d = json.loads(self.fm("design", "lint", "ui", "--json").stdout)
+        self.assertEqual(d["unused_tokens"], ["--spare", "--color-ghost", "--text-2"])
+        self.put("ui/more.css", "a { color: var(--spare); border-color: var(--text-2) }\n")
+        self.put("ui/tailwind.config.js", "module.exports = {theme: {colors: {ghost: 'hsl(var(--color-ghost))'}}}\n")
+        self.assertNotIn("unused", self.fm("design", "lint", "ui").stdout)
+        mine = self.put("elsewhere/TOKENS.md", "# Mine\n\n## Tokens\n\n| Token | Kind | Light | Dark |\n|---|---|---|---|\n"
+                                               "| `--only` | colour | `#000000` | `#ffffff` |\n")
+        self.assertIn("TOKENS.md: 1 token(s) unused", self.fm("design", "lint", "ui", "--tokens", mine).stdout)
+        os.remove(os.path.join(self.repo, "DESIGN.md"))
+        self.assertNotIn("token(s)", self.fm("design", "lint", "ui").stdout)  # no DESIGN.md: nothing said
+        self.put("DESIGN.md", "# App\n\n## Direction\n\nquiet\n")
+        self.assertNotIn("token(s)", self.fm("design", "lint", "ui").stdout)  # no ## Tokens: nothing said
+        r = self.fm("design", "lint", "ui", "--tokens", os.path.join(self.repo, "DESIGN.md"), check=False)
+        self.assertEqual((r.returncode, "--tokens:" in r.stderr, "Traceback" in r.stderr), (2, True, False), r.stderr)
+
+    def test_unused_tokens_reads_tailwind_theme_names_and_breakpoints(self):
+        texts = ['<div class="md:flex rounded-xl font-display max-sm:hidden">', ".a{color:var(--x)} .b{--y: 1px}"]
+        self.assertEqual(fmdesign.unused_tokens(["--breakpoint-md", "--radius-xl", "--font-display", "--x", "--y",
+                                                 "--breakpoint-lg", "--shadow-xl", "--breakpoint-sm"], texts),
+                         ["--y", "--breakpoint-lg"])  # rounded-xl ends -xl, so --shadow-xl reads as used (the ceiling)
 
 
 class Site(unittest.TestCase):
