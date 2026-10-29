@@ -20,7 +20,7 @@ Work inside a focused task (each step edits files). Per step, read only the play
 - No direction, or the user wants looks or styles to choose from: load: Skill foreman:directions (six one-screen
   cards from one sentence, the pick saved as `DESIGN.md` with an audacity level).
 - Show real specimens instead of describing them: `fm page looks` writes a gallery with one living specimen per look
-  card; `fm looks` ranks the twelve by the user's past keeps and reverts, so offer from its top.
+  card; `fm looks` ranks the twenty by the user's past keeps and reverts, so offer from its top.
 - The stance, the taste words, the direction bank and "Defaults to avoid":
   `../playbooks/references/ui/design-direction.md`.
 
