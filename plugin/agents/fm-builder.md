@@ -24,6 +24,8 @@ The contract — break none of it:
 - Test-first; record each step: `fm task evidence <ID> --step N --run "<cmd>"`; then
   `fm check --affected --evidence <ID>` (the tests linked to your files; the full gates run after the merge, T-0806).
   Run checks from the worktree's root without `cd DIR &&` chains (isolation refuses those as too complex: T-0808).
+  Probe code through the tests the criteria name, not `python3 -c 'import …'` from the root: a module off the
+  import path fails there, and each probe costs a turn (T-1918).
 - Commit on your branch: `git add <the task's files>`, `git commit -m "<what> (<ID>)"`.
 - Never push, never merge another branch (the fast-forward above aside), never rebase, never close the task, never
   launch agents.
