@@ -3,7 +3,7 @@ name: espresso
 title: Espresso
 area: jvm
 tags: [android, testing, ui, instrumented, idling, flaky, matchers]
-detect: [dep:espresso-core, dep:espresso-intents, dep:espresso-contrib, dep:espresso-idling-resource, dep:androidx.test.ext]
+detect: [dep:espresso-core, dep:espresso-intents, dep:espresso-contrib, dep:espresso-idling-resource, dep:androidx.test.ext:*, dep:androidx.test:*, dep:androidx.test.uiautomator:*]
 related: [android, jetpack-compose, hilt, android-navigation, android-workmanager, junit5]
 ---
 Espresso for Android View UI tests: synchronized interactions, idling resources instead of sleeps, stable matchers, and a clean device state.
@@ -39,6 +39,7 @@ class LoginTest {
 - Use Espresso-Intents (`Intents.init()`, `intended(hasComponent(...))`, `intending(...).respondWith(...)`) to stub external activities.
 - Run with the Android Test Orchestrator (`testOptions.execution = "ANDROIDX_TEST_ORCHESTRATOR"`) and `clearPackageData` for isolation.
 - Use `ViewAction` extensions for repeated interactions.
+- Reach outside the app (system dialogs, notifications, other apps) with UiAutomator's `UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())`; keep in-app checks in Espresso.
 
 ## Avoid
 - `Thread.sleep` to wait for UI: flaky and slow. Use idling resources or `waitUntil`-style polling in the rule.
