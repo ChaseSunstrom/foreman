@@ -63,6 +63,16 @@ class Risk(HookCase):
             c.log_event(p, "guard_block", data=bad)
         self.assertTrue(fmrisk.collisions(p)[0]["detail"].startswith(c.DEFANGED))
 
+    def test_spending_rules_show_first_in_fm_risk(self):
+        # T-1972: eight routine habits filled the list, so the blocks that spent the budget were hidden
+        self.fm("init")
+        p = self.project()
+        for i in range(9):
+            for _ in range(2):
+                c.log_event(p, "guard_block", data={"category": "core", "detail": "x", "rule": f"core:r{i}"})
+        c.log_event(p, "guard_block", data={"category": "rm-outside", "detail": "y", "rule": "rm-outside:z"})
+        self.assertIn("1× rm-outside:z (spends risk)", self.fm("risk").stdout)
+
     def test_points_cap_and_slowed(self):
         self.fm("init")
         self.spend(blocks=3, failed=1, routine=5)

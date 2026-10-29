@@ -73,6 +73,26 @@ class Ambient(HookCase):
         self.assertIn("waiting for the ambient test run", r.stderr)
         self.assertIsNotNone(busy.poll(), "it ran only after the ambient run ended")
 
+    def test_a_full_check_waits_for_another_on_this_tree(self):
+        # T-1971: a second full fm check ran a suite beside the first one and cleared its gates_running marker
+        import threading
+        self.fm("check", "add", "true")
+        busy = subprocess.Popen(["sleep", "2"])
+        threading.Thread(target=busy.wait, daemon=True).start()
+        p = self.project()
+        c.update_meta(p, gates_running={"task": None, "pid": busy.pid, "at": c.now(), "root": p.root})
+        r = self.fm("check")
+        self.assertIn("waiting for another fm check", r.stderr)
+        self.assertIsNotNone(busy.poll(), "it ran only after the other check ended")
+
+    def test_a_check_whose_tree_changed_mid_run_starts_an_ambient_run(self):
+        # T-1973: an edit made while full gates ran got no ambient run (T-1965) and no pass (T-1963): nothing tested it
+        self.fm("check", "ambient", "on")
+        self.write("brk.py", "open('calc.py', 'w').write('def add(a, b):\\n    return a - b\\n')\n")
+        self.fm("check", "add", "python3 brk.py")  # stands in for an edit made while the gates ran
+        self.fm("check", "--fresh", env=SYNC, check=False)
+        self.assertIn("now fail", self.note())
+
     def test_an_edit_during_full_gates_starts_no_ambient_run(self):
         # T-1965: an edit while fm check ran started an ambient suite beside it
         self.fm("check", "ambient", "on")
