@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The guard no longer reads `cd DIR && git checkout -- . && … || echo f` as a checkout over the folder it started in (T-1891). Any `||` in a line, including one in a loop body, made every `cd` in it uncertain. Now a command chained by `&&` after a `cd` is known to run in that folder. A `cd` after `||` (`true || cd X && y`) still counts as maybe skipped.
 - `fm tidy` no longer asks to re-plan a queued task just because CHANGELOG.md is in its scope and changed (T-1890). Every finished task appends to the changelog, so four queued plans were flagged in one round for nothing. Other scope files still flag as before.
 - The "fm check is piped here" note is given in full once per session (T-1889). Every compaction re-armed it, so the same two-line warning came back eight times in one session. After the first, a piped gate gets one line: read its ✓/✗ line, not the exit status. Session files named `<sid>.keep.*` now outlive a compaction, as `<sid>.taint.*` already did.
 - `W=$(mktemp -d -p DIR)` is a known folder in DIR (T-1888). The guard read only a bare `mktemp -d` as a fresh temp folder, so `W=$(mktemp -d -p <scratch>) && cd $W && git cherry-pick …` was guessed as a write anywhere, the repo included. Now `-d -p DIR`, `-p DIR -d` and `-d DIR/nameXXX` are read as that literal path when DIR is literal and has no `~`.

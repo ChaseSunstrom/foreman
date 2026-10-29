@@ -2523,8 +2523,9 @@ def _top(shell):
     s = _mask_quotes(s)  # T-0384: a quoted ( | or ; is text
     straight = "!" not in s and _straight_line(s)
     # T-0339: a ; list with && in it: each &&-segment is a chain of its own, the segments run in order; T-0355: its
-    # elements may be pipelines (a pipe runs in subshells, so only a cd outside one moves the shell)
-    mixed = not straight and "!" not in s and _straight_line(re.sub(r"&&|(?<!\|)\|&?(?!\|)", ";", s))
+    # elements may be pipelines (a pipe runs in subshells, so only a cd outside one moves the shell); T-1891: or ||
+    # (a new segment too; the caller never takes a cd after || as certain: `true || cd X && y` runs y here)
+    mixed = not straight and "!" not in s and _straight_line(re.sub(r"&&|\|\||(?<!\|)\|&?(?!\|)", ";", s))
     return straight, straight and "&&" in s, mixed
 
 
@@ -3258,7 +3259,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 d = "" if _unresolvable(tgt) else _expand(tgt, ctx)
                 can_fail = len(dirs) > 1 or not (os.path.isabs(d) and (os.path.normpath(d) in made or (  # review: cd a b
                     os.path.isdir(d) and os.access(d, os.X_OK))))  # fails with too many arguments
-                certain = not piped and (and_chain or in_chain or ((straight or mixed) and not can_fail))
+                certain = not piped and c.op != "||" and (  # T-1891: a cd after || may be skipped
+                    and_chain or in_chain or ((straight or mixed) and not can_fail))
                 cwds, lost = _moved(cwds, lost, tgt, certain, cdpath, ctx)
                 new = [_cd_from(tgt, r, ctx) for r in rd]
                 rd = list(dict.fromkeys(new if certain else rd + new))
