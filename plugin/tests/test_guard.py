@@ -2644,6 +2644,44 @@ class TokenFallback(GuardCase):
             ('ls {fhome}/nope; cd "$D"; cd plugin/lib; echo x > fmguard.py', None),
         ], self.bash)
 
+    def test_a_cd_the_guard_cannot_name_is_judged_where_bash_may_land(self):
+        # T-1923: bash makes a name neither set nor inherited empty: cd "$X" stays put, cd $X goes home, $X cd D is cd D;
+        # a computed command word may be cd; nested text after a CDPATH cd runs below the folder CDPATH names
+        os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)
+        self.run_table([
+            ('cd "$X" && tar xf -', "core"),
+            ('cd "${{X}}" && git reset --hard', "core"),
+            ("cd $X && tar xf -", "core"),
+            ("C=cd; $C plugin && rm -rf lib", "core"),
+            ("$X cd /tmp && tar xf -", "core"),  # unsure: X may be set where the guard can't see
+            ('cd "$(true)" && tar xf -', "core"),  # empty output: stays put
+        ], lambda line: self.bash(line, cwd=self.fhome))
+        self.run_table([
+            ("cd $X && git reset --hard", "core"),
+            ("cd $X {fhome} && git reset --hard", "core"),
+            ("C=cd; $C {fhome}; git reset --hard", "core"),
+            ("$C {fhome} && git reset --hard", "core"),
+            ("$X cd {fhome} && git reset --hard", "core"),
+            ("$(echo cd) {fhome} && git reset --hard", "core"),
+            ('"$(echo cd)" {fhome} && git reset --hard', "core"),
+            ('C="cd {fhome}"; $C && git reset --hard', "core"),
+            ("export CDPATH={fhome}; cd plugin && sh -c 'rm -rf lib'", "core"),
+            ("export CDPATH=.:{fhome}; cd plugin && sh -c 'rm -rf lib'", "core"),  # review: each entry of the list
+            ("C=cd; $C -P {fhome}/plugin && rm -rf lib", "core"),
+            ("C=; $C cd {fhome} && git reset --hard", "core"),
+            ('cd "$X" && git reset --hard', None),  # stays in scratch
+            ("$X cd /tmp && git reset --hard", None),  # review: in scratch or /tmp, never anywhere
+            ("export CDPATH={fhome}; cd ./plugin && sh -c 'rm -rf lib'", None),  # ./ skips CDPATH
+            ("C=cd; $C /tmp/x && rm -rf build", None),
+        ], lambda line: self.bash(line, cwd="/tmp"))
+        self.run_table([
+            ('cd "$(git rev-parse --show-toplevel)" && tar xf -', None),
+            ('cd "$X" && rm -rf build', None),
+            ("$PY -m pytest && rm -rf build", None),
+            ('"$PY" -m pytest; rm -rf build', None),
+            ("cd $X && rm -rf build", "rm-outside"),  # bash removes ~/build
+        ], self.bash)
+
     def test_a_line_too_tangled_to_analyse_is_refused_under_any_grant(self):
         # T-1929: the folder caps and the nesting cap refused as rm-outside, so a task's rm-outside grant lifted them
         # and the rest of the line, never read (here a tar over Foreman), ran
