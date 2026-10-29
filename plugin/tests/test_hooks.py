@@ -34,6 +34,20 @@ class GatePipe(unittest.TestCase):  # T-1759
         self.assertIsNone(fmhooks._gate_pipe_note({"tool_name": "Read", "tool_input": {"command": "fm check | tail"}}))
 
 
+class GatePipeOnce(ForemanTestCase):
+    def test_a_later_piped_gate_in_the_session_gets_the_one_line_form(self):
+        # T-1889: the full note came back after every compaction (8x in a week); the session already knows it
+        import fmhooks
+        pl = {"tool_name": "Bash", "tool_input": {"command": "fm check | tail -3"}, "session_id": "s1889"}
+        first = fmhooks._gate_pipe_note(pl)
+        self.assertIn("the last program's, not the gates'", first)
+        self.hook("SessionStart", {"source": "compact", "session_id": "s1889"})  # re-arms one-shot notes, not this
+        again = fmhooks._gate_pipe_note(pl)
+        self.assertIn("✓/✗", again)
+        self.assertLess(len(again), len(first) // 2)
+        self.assertIn("the last program's, not the gates'", fmhooks._gate_pipe_note(dict(pl, session_id="s2")))
+
+
 class HookCase(ForemanTestCase):
     def setUp(self):
         super().setUp()
