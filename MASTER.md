@@ -2,6 +2,11 @@
 
 Not loaded every session (`~/.claude/rules/foreman.md` points here). Read it when you're unsure where something lives or how the parts interact. `fm doctor` checks the file map below against disk.
 
+**Contents:** [What it is](#1-what-foreman-is) · [Prompting](#2-how-to-prompt-it) · [File map](#3-file-map) · [Interaction diagram](#4-interaction-diagram) · [Lifecycle](#5-lifecycle-walkthrough-a-fix-line-to-an-archived-task) · [Precedence](#6-source-of-truth-and-precedence) · [Integrations](#7-integrations) · [BUILD_PROMPT](#8-relationship-to-build_promptmd-and-the-repo) · [Operations](#9-operations) · [Limitations](#10-known-limitations) · [Deviations](#11-deviations-from-build_promptmd)
+
+<p align="center"><img src="site/assets/diagrams/loop.svg" width="880" alt="The Foreman loop: capture, expand, ground, plan, execute, verify, reflect, record, then the next queued task"></p>
+<p align="center"><img src="site/assets/diagrams/architecture.svg" width="880" alt="How the pieces fit: agents call Foreman's hooks and the fm CLI, which keep state on disk; every view reads fm's JSON"></p>
+
 ## 1. What Foreman is
 
 Foreman is a local Claude Code plugin (hooks, a small state CLI `fm`, skills, always-on rules, two read-only agents) that runs every request, however terse, through one loop:

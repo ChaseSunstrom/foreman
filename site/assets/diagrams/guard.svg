@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 380" width="880" height="380" role="img">
+<title>The guard: every command passes the guard hook first; most run, ones that would discard uncommitted work are snapshotted first, dangerous ones are refused until you grant them</title>
+<style>
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif}
+.t{font-size:19px;font-weight:700;fill:#E7ECF4}
+.u{font-size:13.5px;fill:#9AA8BC}
+.k{font-size:11px;font-weight:700;letter-spacing:.14em;fill:#7E8BA0}
+.m{font:13.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#D7DEE9}
+.h{font-size:15.5px;font-weight:600;fill:#E7ECF4}
+.s{font-size:12.5px;fill:#9AA8BC}
+.g{font-size:12px;font-weight:800;letter-spacing:.16em;fill:#0A1220;text-anchor:middle}
+.pulse{animation:p 2.4s ease-in-out infinite}
+@keyframes p{50%{opacity:.3}}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none}}
+</style>
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#18243A"/><stop offset="1" stop-color="#0B111C"/></linearGradient>
+<linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFD866"/><stop offset="1" stop-color="#F5A00B"/></linearGradient>
+<marker id="ok" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#47C98B"/></marker>
+<marker id="snap" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#FFC83D"/></marker>
+<marker id="stop" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#FF6B6B"/></marker>
+<marker id="in" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#7E8BA0"/></marker>
+</defs>
+<rect width="880" height="380" rx="16" fill="url(#bg)"/>
+<rect x=".5" y=".5" width="879" height="379" rx="15.5" fill="none" stroke="#fff" stroke-opacity=".08"/>
+<text class="t" x="32" y="44">The guard reads every command before it runs</text>
+<text class="u" x="32" y="67">Fail-closed and built for bypass mode. A speed bump, not a sandbox.</text>
+<rect x="32" y="126" width="232" height="156" rx="12" fill="#131C2B" stroke="#24324A"/>
+<text class="k" x="50" y="154">CLAUDE WANTS TO RUN</text>
+<circle cx="56" cy="180" r="4" fill="#47C98B"/><text class="m" x="70" y="185">pytest -q</text>
+<circle cx="56" cy="212" r="4" fill="#FFC83D"/><text class="m" x="70" y="217">git reset --hard</text>
+<circle cx="56" cy="244" r="4" fill="#FF6B6B"/><text class="m" x="70" y="249">rm -rf ~</text>
+<path d="M266 204H312" stroke="#7E8BA0" stroke-width="2" marker-end="url(#in)"/>
+<path class="pulse" d="M370 142l50 18v44c0 32-22 50-50 62c-28-12-50-30-50-62v-44z" fill="none" stroke="#FFC83D" stroke-width="7" stroke-opacity=".3"/>
+<path d="M370 142l50 18v44c0 32-22 50-50 62c-28-12-50-30-50-62v-44z" fill="url(#gold)"/>
+<text class="g" x="370" y="204">GUARD</text>
+<text x="370" y="221" text-anchor="middle" style="font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#3A2A00">PreToolUse</text>
+<path d="M424 192C452 192 450 134 478 134" fill="none" stroke="#47C98B" stroke-width="2" marker-end="url(#ok)"/>
+<path d="M424 204H478" stroke="#FFC83D" stroke-width="2" marker-end="url(#snap)"/>
+<path d="M424 216C452 216 450 274 478 274" fill="none" stroke="#FF6B6B" stroke-width="2" marker-end="url(#stop)"/>
+<rect x="484" y="104" width="364" height="60" rx="12" fill="#47C98B" fill-opacity=".08" stroke="#47C98B" stroke-opacity=".45"/>
+<circle cx="514" cy="134" r="12" fill="#47C98B"/><path d="M508 134.5l4 4l8-8.5" fill="none" stroke="#0A1220" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text class="h" x="538" y="130">Runs</text>
+<text class="s" x="538" y="150">tests, builds, reads, scoped edits</text>
+<rect x="484" y="174" width="364" height="60" rx="12" fill="#FFC83D" fill-opacity=".08" stroke="#FFC83D" stroke-opacity=".45"/>
+<circle cx="514" cy="204" r="12" fill="#FFC83D"/><path d="M508 200h12v9h-12zM511 200v-2.5h6v2.5" fill="none" stroke="#0A1220" stroke-width="2" stroke-linejoin="round"/>
+<text class="h" x="538" y="200">Saves your work, then runs</text>
+<text class="s" x="538" y="220">snapshot first; fm oops brings it back</text>
+<rect x="484" y="244" width="364" height="60" rx="12" fill="#FF6B6B" fill-opacity=".08" stroke="#FF6B6B" stroke-opacity=".5"/>
+<circle cx="514" cy="274" r="12" fill="#FF6B6B"/><path d="M509 269l10 10M519 269l-10 10" stroke="#0A1220" stroke-width="2.6" stroke-linecap="round"/>
+<text class="h" x="538" y="270">Refused, with how to grant it</text>
+<text class="s" x="538" y="290">wide deletes, force-push, curl | sh</text>
+<path d="M32 320H848" stroke="#24324A"/>
+<text class="s" x="32" y="345" style="font-size:13px">Granting takes your yes in Claude Code's own permission prompt, for that one thing on that one task.</text>
+<text class="s" x="32" y="364" style="font-size:13px">Nothing else can grant it: not a chat message, a skill or a scheduled prompt.</text>
+</svg>
