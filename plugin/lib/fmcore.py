@@ -762,6 +762,17 @@ def update_meta(p, **changes):
     return meta
 
 
+def gates_live(p, here=False):
+    """T-1176: meta gates_running while its fm check runs (live pid), else None; a marker whose process is gone is stale.
+    here: only a run on this tree (T-1965: fm ship's scratch-tree run tests another one)."""
+    g = read_meta(p).get("gates_running") or {}
+    try:
+        os.kill(int(g["pid"]), 0)
+    except (KeyError, TypeError, ValueError, OSError):
+        return None
+    return None if here and g.get("root") not in (None, p.root) else g
+
+
 def init_project(root, sensitive=None):
     root = os.path.realpath(root)
     p = _project(slug_for(root), root)

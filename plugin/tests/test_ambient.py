@@ -59,6 +59,31 @@ class Ambient(HookCase):
         b = c.find_brief(self.project(), self.tid)
         self.assertFalse(b.has_evidence(step=1), b.evidence())
 
+    def test_a_full_check_waits_for_an_ambient_run(self):
+        # T-1964: a full fm check started while an ambient run was going ran two suites at once
+        import threading
+        self.fm("check", "add", "true")
+        busy = subprocess.Popen(["sleep", "2"])
+        threading.Thread(target=busy.wait, daemon=True).start()  # reaped when it ends, so its pid dies
+        d = os.path.join(self.project().dir, "ambient")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "run.pid"), "w") as f:
+            f.write(str(busy.pid))
+        r = self.fm("check")
+        self.assertIn("waiting for the ambient test run", r.stderr)
+        self.assertIsNotNone(busy.poll(), "it ran only after the ambient run ended")
+
+    def test_an_edit_during_full_gates_starts_no_ambient_run(self):
+        # T-1965: an edit while fm check ran started an ambient suite beside it
+        self.fm("check", "ambient", "on")
+        p = self.project()
+        c.update_meta(p, gates_running={"task": None, "pid": os.getpid(), "at": c.now(), "root": p.root})
+        self.edit("def add(a, b):\n    return a - b\n")
+        self.assertNotIn("Ambient", self.note(), "the gates answer for this edit")
+        c.update_meta(p, gates_running={})
+        self.edit("def add(a, b):\n    return a - b\n")
+        self.assertIn("now fail", self.note())
+
     def test_a_failing_note_names_the_failing_tests_not_the_runners_timing(self):
         # T-1275: 'Ran 44 tests in 1.6s (12 classes …)' made these notes 23 KB over 92 edits
         self.fm("check", "ambient", "on")

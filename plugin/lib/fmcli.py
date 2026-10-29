@@ -4265,6 +4265,12 @@ def _cmd_check(args):
     marked = args.evidence or not getattr(args, "affected", False)  # T-1963: a full run, for the edit hook's note too
     if marked:  # T-1176: the drive reads this (a dead pid = stale) so it doesn't offer or leave the task meanwhile
         c.update_meta(p, gates_running={"task": args.evidence, "pid": os.getpid(), "at": c.now(), "root": p.root})
+    import fmambient
+    if fmambient.running(p):  # T-1964: never two suites at once; edits meanwhile start none (gates_running is set)
+        print("fm check: waiting for the ambient test run to finish first (at most 5 minutes)", file=sys.stderr)
+        end = time.time() + 300
+        while fmambient.running(p) and time.time() < end:
+            time.sleep(1)
     before = _last_check_results(p, act.id if act else None)
     results, notes, skipped, reruns = [], {}, {}, []
     for cmd in _gate_order(p, checks):  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
