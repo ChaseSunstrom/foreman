@@ -3516,8 +3516,9 @@ def _running(sid):
     """Background agents and commands of this session still running: their completion notification wakes the
     session, so drive waits instead of pushing busywork."""
     state = {}
-    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 1500):
-        if e.get("session_id") != sid or (c.age_days(e.get("ts")) or 0) * 86400 > BG_WAIT_S:
+    keep = (json.dumps(sid, ensure_ascii=False),) if isinstance(sid, str) and sid else ()  # T-2033: decode its lines only
+    for e in c._tail_rows(os.path.join(c.state_dir(), "events.jsonl"), 1500, keep):
+        if not isinstance(e, dict) or e.get("session_id") != sid or (c.age_days(e.get("ts")) or 0) * 86400 > BG_WAIT_S:
             continue
         kind, key = e.get("kind"), e.get("agent_id") or e.get("id")
         if kind in ("subagent_start", "bg_start"):
