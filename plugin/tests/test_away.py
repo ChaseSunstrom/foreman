@@ -109,3 +109,33 @@ class Away(ForemanTestCase):
         ctx = self.start("startup")
         self.assertIn("T-0009", ctx)
         self.assertNotIn("T-0001", ctx)
+
+    def test_since_finds_the_newest_silence_in_the_tail_without_scanning_every_ledger(self):
+        # T-2025: every session start parsed every prompt in every ledger file to find the newest 2 h silence
+        import fmaway
+        from unittest import mock
+        self.seed([(30, "prompt", None, {})] + [(29, "note", None, {})] * 20 + [(10, "prompt", None, {}),
+                                                                                (1, "prompt", None, {})])
+        want = fmaway.since(self.p)
+        self.assertAlmostEqual(want[1], 9 * 3600, delta=5)
+        with mock.patch.object(c, "ledger_events", side_effect=AssertionError("scanned every ledger")):
+            self.assertEqual(fmaway.since(self.p), want)
+
+    def test_since_widens_the_tail_until_it_holds_a_silence(self):
+        import fmaway
+        from unittest import mock
+        self.seed([(30, "prompt", None, {})] + [(1.5, "note", None, {})] * 20 + [(1.5, "prompt", None, {}),
+                                                                                 (1, "prompt", None, {})])
+        with mock.patch.object(c, "ledger_events", side_effect=AssertionError("scanned every ledger")):
+            got = fmaway.since(self.p, tail=6)  # the 4x tail (24 lines) reaches the 30 h prompt
+        self.assertAlmostEqual(got[1], 28.5 * 3600, delta=5, msg="the silence before the tail's first prompt")
+
+    def test_since_falls_back_to_every_ledger_when_the_live_one_holds_no_silence(self):
+        import fmaway
+        from unittest import mock
+        self.seed([(1.5, "prompt", None, {}), (1, "prompt", None, {})])
+        archived = [{"ts": c.iso(time.time() - 40 * 3600), "event": "prompt"}]
+        with mock.patch.object(c, "ledger_events", return_value=archived + [{"ts": c.iso(time.time() - h * 3600),
+                                                                            "event": "prompt"} for h in (1.5, 1)]):
+            got = fmaway.since(self.p)
+        self.assertAlmostEqual(got[1], 38.5 * 3600, delta=5, msg="the silence between the archive and the live file")

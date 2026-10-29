@@ -1112,7 +1112,7 @@ def ledger_events(p, kinds=None, since=""):
     """Every ledger event (of these kinds, at or after since), from the months fm tidy rolled into archive/ and the
     live file, oldest first: for reports over a window, which a fixed-size tail can't promise to cover. Archives
     wholly before since are skipped by name."""
-    marks = [f'"{k}"'.encode() for k in kinds] if kinds else None
+    marks = re.compile(b"|".join(re.escape(f'"{k}"'.encode()) for k in kinds)) if kinds else None  # T-2025: 1.6x any()
     out = []
     for path in ledger_files(p):
         name = os.path.basename(path)
@@ -1123,7 +1123,7 @@ def ledger_events(p, kinds=None, since=""):
                 if since:
                     _seek_since(f, str(since).encode())
                 for raw in f:
-                    if marks and not any(m in raw for m in marks):
+                    if marks and not marks.search(raw):
                         continue
                     try:
                         e = json.loads(raw)
@@ -1187,8 +1187,8 @@ def tail_jsonl(path, n=200):
 
 
 def _tail_rows(path, n, keep=()):
-    """[record or None for an unreadable line] for the last n lines; with keep, a line missing any of those strings is
-    None unparsed (T-2017: last_change wants a few lines of 5,000, and json.loads was most of its 20 ms)."""
+    """[record or None for an unreadable line] for the last n lines; with keep, only the records of lines holding every
+    one of those strings (T-2017: last_change wants a few lines of 5,000, and json.loads was most of its 20 ms)."""
     try:
         with open(path, "rb") as f:
             f.seek(0, os.SEEK_END)
@@ -1202,6 +1202,8 @@ def _tail_rows(path, n, keep=()):
                     break
                 # T-2017: aim at n from the line length seen so far, and count bytes, decoding once at the end
                 chunk = max(chunk * 2, int(chunk * (n + 1) / max(got, 1) * 1.25))
+            if keep:
+                return _kept(data, data.count(b"\n") - n, [k.encode() for k in keep])
             lines = data.decode("utf-8", "replace").splitlines()
             if start > 0:
                 lines = lines[1:]
@@ -1209,14 +1211,32 @@ def _tail_rows(path, n, keep=()):
         return []
     out = []
     for line in lines[-n:]:
-        if keep and not all(k in line for k in keep):
-            out.append(None)
-            continue
         try:
             e = json.loads(line)
         except ValueError:
             e = None
         out.append(e)
+    return out
+
+
+def _kept(data, skip, keys):
+    """T-2025: the records of data's lines, after the first skip, that hold every key; found in the bytes, so only those
+    lines are decoded (decoding and splitting a 4.7 MB tail was 12 of its 15 ms, to find 23 lines)."""
+    pos = 0
+    for _ in range(skip):  # a cut first line goes with the skipped ones
+        pos = data.find(b"\n", pos) + 1
+    out, first, rest = [], keys[0], keys[1:]
+    i = data.find(first, pos)
+    while i >= 0:
+        end = data.find(b"\n", i)
+        end = len(data) if end < 0 else end
+        line = data[data.rfind(b"\n", 0, i) + 1:end]
+        if all(k in line for k in rest):
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                pass
+        i = data.find(first, end)
     return out
 
 
