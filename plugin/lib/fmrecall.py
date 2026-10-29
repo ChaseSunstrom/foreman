@@ -339,19 +339,38 @@ def gist(text, question, width):
     return c.fit(("… " if i else "") + parts[i].rstrip(";,") + (" …" if i < len(parts) - 1 else ""), width)
 
 
+_PLAIN = re.compile(r'"([^"`·→]+)" → ([^·\n]+)')  # the rules' "plain words" → what they run, up to the next ·
+_VERB = re.compile(r'`fm ([\w-]+)(?: ([\w-]+))?')  # each `fm verb …` in it ("serve this repo": fm ask, then fm serve)
+
+
 def verb_docs():
-    """{command: (its help, its name, help and options' help as one text)} from fm's parser (fm which: T-1699)."""
+    """{command: (its help, one text of its name, help and options' help)} from fm's parser (fm which: T-1699). T-1908:
+    a subcommand with help is its own command ("task drop"), and the rules' plain words join their command's text."""
     import argparse
     import fmcli
     docs = {}
-    for a in fmcli.build_parser()._actions:
-        if isinstance(a, argparse._SubParsersAction):
-            helps = {ca.dest: ca.help or "" for ca in a._choices_actions}
-            for name, sub in a.choices.items():
-                if name in helps:
-                    words = [name.replace("-", " "), helps[name]] + [x.help for x in sub._actions
-                                                                    if x.help and x.help != argparse.SUPPRESS]
-                    docs[name] = (helps[name], " ".join(words))
+
+    def walk(parser, prefix):
+        for a in parser._actions:
+            if isinstance(a, argparse._SubParsersAction):
+                helps = {ca.dest: ca.help or "" for ca in a._choices_actions}
+                for name, sub in a.choices.items():
+                    if name in helps:
+                        words = [(prefix + name).replace("-", " "), helps[name]] + [
+                            x.help for x in sub._actions if x.help and x.help != argparse.SUPPRESS]
+                        docs[prefix + name] = (helps[name], " ".join(words))
+                        walk(sub, prefix + name + " ")
+    walk(fmcli.build_parser(), "")
+    try:
+        with open(os.path.join(c.PLUGIN_ROOT, "rules", "foreman.md"), encoding="utf-8") as f:
+            rules = f.read()
+    except OSError:
+        rules = ""
+    for phrase, said in _PLAIN.findall(rules):
+        for verb, more in _VERB.findall(said):
+            key = f"{verb} {more}" if f"{verb} {more}" in docs else verb
+            if key in docs:
+                docs[key] = (docs[key][0], docs[key][1] + " " + phrase)
     return docs
 
 
@@ -369,7 +388,7 @@ def can(question, n=3):
     for name, d in docs.items():
         shared = [w for w in want if w in d]
         if shared and 2 * len(shared) >= len(want):
-            named = any(_stem(x) in want for x in name.split("-"))  # the question names the command itself
+            named = any(_stem(x) in want for x in name.replace("-", " ").split())  # the question names the command
             hits.append((sum(math.log(len(docs) / df[w]) for w in shared) + 2 * named, name))
     return [(name, c.plain(" ".join(helps[name].split()))) for _, name in sorted(hits, reverse=True)[:n]]
 

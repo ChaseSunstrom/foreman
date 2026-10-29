@@ -87,7 +87,7 @@ def commands():
     import fmcli
     import fmrecall
     return [{"name": n, "load": f"fm {n}", "summary": fmcli._no_ids(" ".join(h.split())), "text": t}
-            for n, (h, t) in sorted(fmrecall.verb_docs().items()) if n not in SELF | FOREMAN_ONLY]
+            for n, (h, t) in sorted(fmrecall.verb_docs().items()) if n.split()[0] not in SELF | FOREMAN_ONLY]
 
 
 def rank(task, found=None):
@@ -126,7 +126,8 @@ def cmd(args):
                   "enough of its words.\nfm help --all lists every command; say what the work is in other words.")
         return 1
     lines = []
-    for kind, title in (("skills", "Skills"), ("playbooks", "Playbooks"), ("commands", "fm commands")):
+    kinds = (("skills", "Skills"), ("playbooks", "Playbooks"), ("commands", "fm commands"))
+    for kind, title in sorted(kinds, key=lambda k: -max((r["score"] for r in got[k[0]]), default=0)):  # T-1908
         if got[kind]:
             w = max(len(r["load"]) for r in got[kind]) + 2
             lines += [f"{title}:"] + [f"  {r['load']:<{w}}{fmrecall.gist(r['summary'], task, max(30, 98 - w))}"
