@@ -16,10 +16,10 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import time
 
 import fmcore as c
+from fmcore import subprocess  # T-2023: imported on first use
 
 HEAD = "# Known fixes\n\nWhat got past an obstacle here, one per line; kept by Foreman (`fm fix list`, `fm fix add`).\n\n"
 _REC = re.compile(r"<!-- fix (\{.*\}) -->\s*$")

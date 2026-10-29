@@ -2,9 +2,7 @@
 where argparse drops `fm task evidence ID --step N CMD RESULT`), re-run under a supported interpreter found on this
 machine. The first old-Python call searches once and saves the answer in state/python ("none" when there is none);
 `fm doctor` searches again. Standard library only, and syntax old interpreters still parse."""
-import glob
 import os
-import subprocess
 import sys
 
 NAMES = ("python3.14", "python3.13", "python3.12")
@@ -37,6 +35,8 @@ def _read():
 def find(names=NAMES, uv="python3.1[2-9]"):
     """A supported interpreter on this machine, or None: versioned names on PATH and in ~/.local/bin, then uv's.
     names, uv: only these (T-1805: fm check --python 3.12 passes ("python3.12",), "python3.12")."""
+    import glob  # T-2023: only a search, rare, pays for these
+    import subprocess
     dirs = os.environ.get("PATH", "").split(os.pathsep) + [os.path.join(os.path.expanduser("~"), ".local", "bin")]
     cands = [os.path.join(d, n) for n in names for d in dirs if d]
     cands += sorted(glob.glob(os.path.join(os.path.expanduser("~"), ".local", "share", "uv", "python",

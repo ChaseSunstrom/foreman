@@ -1093,3 +1093,46 @@ class BriefIndex(ForemanTestCase):
         stub2 = [x for x in c.load_briefs(self.p) if x.id == "T-0001"][0]
         stub2.sections = [["Only", "x\n"]]
         self.assertTrue(stub2.render().endswith("## Only\nx\n"))
+
+
+class LaterImports(ForemanTestCase):
+    """T-2023: every hook paid ~5 ms importing subprocess, shutil and glob, which an ordinary tool call never uses."""
+    HEAVY = ("subprocess", "glob")  # not shutil: tempfile imports it, and the guard needs tempfile each call
+
+    def loaded_after(self, event, payload):
+        site = os.path.join(self.tmp, "report")
+        os.makedirs(site, exist_ok=True)
+        out = os.path.join(site, "loaded")
+        with open(os.path.join(site, "sitecustomize.py"), "w") as f:
+            f.write(f"import atexit, sys\natexit.register(lambda: open({out!r}, 'w').write("
+                    f"' '.join(m for m in {self.HEAVY!r} if m in sys.modules)))\n")
+        r = self.hook(event, payload, env={"PYTHONPATH": site})
+        with open(out) as f:
+            return r, f.read().split()
+
+    def test_later_a_plain_tool_call_loads_no_heavy_module(self):
+        self.fm("init")
+        r, loaded = self.loaded_after("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "ls"}})
+        self.assertEqual((r.returncode, loaded), (0, []), r.stderr)
+
+    def test_later_a_stand_in_imports_on_first_use_and_mocks_still_reach_callers(self):
+        from unittest import mock
+        s = c._Later("subprocess")
+        self.assertIs(s.PIPE, subprocess.PIPE)
+        with mock.patch("subprocess.run", return_value="patched"):
+            self.assertEqual(s.run(["true"]), "patched")
+        with mock.patch.object(c.subprocess, "run", return_value="via fmcore"):
+            self.assertEqual(c.subprocess.run(["true"]), "via fmcore")
+        self.assertIs(c.subprocess.run, subprocess.run)
+
+    def test_later_claude_path_still_adds_the_native_folder_only_when_needed(self):
+        native = os.path.join(self.tmp, "native")
+        os.makedirs(native)
+        claude = os.path.join(native, "claude")
+        with open(claude, "w") as f:
+            f.write("#!/bin/sh\n")
+        os.chmod(claude, 0o755)
+        env = c.claude_path({"FOREMAN_NATIVE_BIN": native, "PATH": "/nonexistent"})
+        self.assertEqual(env["PATH"], native + os.pathsep + "/nonexistent")
+        on = native + os.pathsep + "/usr/bin"
+        self.assertEqual(c.claude_path({"FOREMAN_NATIVE_BIN": native, "PATH": on})["PATH"], on)
