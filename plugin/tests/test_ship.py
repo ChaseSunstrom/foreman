@@ -93,6 +93,25 @@ class Ship(ForemanTestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("nothing to ship", r.stdout)
 
+    def test_ship_on_a_named_tasks_grant(self):
+        # T-2007: a finished task ships on its own grant: no separate ship task focused to hold one
+        r = self.ship("--task", self.tid.lower(), "--test", "true")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn(f"{self.tid} has no publish grant", r.stdout + r.stderr)
+        self.assertNotIn("add a", self.main_log())
+        r = self.ship("--task", "T-9999", "--test", "true")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("no task T-9999", r.stdout + r.stderr)
+        self.grant()
+        other = json.loads(self.fm("task", "new", "other", "--type", "CLEAN", "--tier", "S", "--ac", "x :: true",
+                                    "--step", "x", "--json").stdout)["id"]
+        self.fm("checkpoint")
+        self.fm("focus", other)  # the active task has no grant; the named one does
+        r = self.ship("--task", self.tid, "--test", "true")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.main_log()[:2], ["add b", "add a"])
+        self.assertFalse(self.granted(), "the named task's yes is spent")
+
     def test_check_says_whether_main_has_the_commits_without_the_grant(self):
         # T-1960: a ship task's verify was git log -n3 | grep, which a later ship pushes out of view
         first = sh(self.repo, "rev-parse", "HEAD~1").strip()
