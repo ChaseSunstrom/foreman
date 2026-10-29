@@ -1424,6 +1424,7 @@ def _split(tokens):
 
 
 _KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "{", "!", "coproc"}  # words before a command
+_CDS = ("cd", "pushd", "popd")  # T-1923: the builtins that move the shell
 
 
 def _strip_wrappers(argv):
@@ -2596,6 +2597,18 @@ _WORD = re.compile(r"[^\s'\"`;|&<>()=]+")
 _PART = re.compile(r"\$(?:\{(\w+)\}|(\w+))|\$\{[^}]*\}?|\$\([^)]*\)?|`[^`]*`?|\$")  # what a shell fills in at run time
 
 
+def _only_unset(tok, bare):
+    """T-0374: every part a shell fills in is a name the line neither sets nor inherits: bash makes each empty."""
+    return bare is not None and not any(not (n := m.group(1) or m.group(2)) or n in bare or _SHELL_SET.match(n)
+                                        for m in _PART.finditer(tok))
+
+
+def _line_words(shell, known):
+    """T-0190: the words a line names, through the variables known here (a variable's name is no guess, its value is)."""
+    text = re.sub(r"(?<![\w$])[A-Za-z_]\w*\+?=", " ", shell)
+    return [w for w in dict.fromkeys(_with_vars(w, known) for w in _WORD.findall(text)) if not _unresolvable(w)]
+
+
 _COMP_BODY = r"(?:(?!\b(?:for|while|until|select|if|case|done|fi|esac)\b)[^{}])*?"
 _COMP_END = r"(?<![\\<>])[;\n&]\s*"  # an unescaped separator, not a redirect's (>&)
 # T-1920: a for/while/until/select/if/case/{ } compound with none inside it, where a command starts: the start, an
@@ -3120,8 +3133,7 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="",
             return found
     elif not guess:  # T-1224: reads and modes judge resolved paths only
         return found
-    elif not any(not (m.group(1) or m.group(2)) or bare is None or (m.group(1) or m.group(2)) in bare
-                 or _SHELL_SET.match(m.group(1) or m.group(2)) for m in _PART.finditer(t)):
+    elif _only_unset(t, bare):
         # only names it neither sets nor inherits: bash expands them to nothing (T-0374: echo x > $NOPE/<guard file>
         # wrote the guard file), so the target is the rest of the word
         e = _expand(_PART.sub("", t), ctx)
@@ -3129,8 +3141,7 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="",
             found += [(cat, f"{target}{note} (an unset name is empty: {path})") for cat in classify(path, ctx)
                       if cat in _GUARDED_BY_PATH]
         return found
-    text = re.sub(r"(?<![\w$])[A-Za-z_]\w*\+?=", " ", shell)  # T-0190: a variable's name is no guess, its value is
-    raw = [w for w in dict.fromkeys(_with_vars(w, known) for w in _WORD.findall(text)) if not _unresolvable(w)]
+    raw = _line_words(shell, known)
     if _unresolvable(t):
         # T-0183: words as written, one per unknown part, the first two paired (a word in every part guessed
         # <abs>/<abs>), the rest a neutral name; the whole guess is resolved after. T-0374: and every part empty,
@@ -3383,29 +3394,51 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
             chain = []
         name = os.path.basename(argv[0]) if argv else ""
         args = argv[1:]
+        cdn, cda, maybe, unsure = (name, args, [], False) if name in _CDS else ("", args, [], False)
+        if argv and not cdn and _unresolvable(argv[0]):  # T-1923: a computed command word: a cd if it names one
+            w0 = _with_vars(argv[0], known)  # (split as bash splits it), or any command
+            w0 = ([w0] if _unresolvable(w0) else w0.split() or [""]) + args
+            if w0[0] in _CDS:
+                cdn, cda = w0[0], w0[1:]
+            elif _unresolvable(w0[0]):  # a cd to its first word, or alone (C="cd /x"; $C, or the $ of an unquoted
+                maybe = [_with_vars(a, known) for a in args[:1]] or ["$OLDPWD"]  # $(…) whose words split off) anywhere
+                if args[:1] and args[0] in _CDS and not _PART.sub("", w0[0]):
+                    cdn, cda, unsure = args[0], args[1:], True  # $X cd D: X empty, eval or builtin moves it to D
         gone = gone or not _keeps_folders(c, argv)
         if name == "mkdir" and "-p" in args:  # a folder this command makes takes a cd as surely as one that exists,
             made.update(d for d in (os.path.normpath(_expand(_with_vars(a, known), ctx)) for a in args)  # when its
                         if os.path.isabs(d) and "$" not in d and _makeable(d))  # nearest existing folder lets it be made
-        if name in ("cd", "pushd", "popd"):
-            dirs = [a for a in args if a not in ("-P", "-L", "-e", "-@", "--")]
-            if name == "cd" or "-n" not in dirs:  # pushd/popd -n change only the stack
-                unknown = name == "popd" or dirs[:1] == ["-"] or (
-                    name == "pushd" and (not dirs or re.fullmatch(r"[+-]\d+", dirs[0])))  # rotations, a swap, cd -
+        if cdn:
+            dirs = [a for a in cda if a not in ("-P", "-L", "-e", "-@", "--")]
+            if cdn == "cd" or "-n" not in dirs:  # pushd/popd -n change only the stack
+                unknown = cdn == "popd" or dirs[:1] == ["-"] or (
+                    cdn == "pushd" and (not dirs or re.fullmatch(r"[+-]\d+", dirs[0])))  # rotations, a swap, cd -
                 tgt = "$OLDPWD" if unknown else _with_vars(dirs[0], known) if dirs else ctx.home
                 if not _unresolvable(tgt):
                     cwd = _resolve(_expand(tgt, ctx), cwd)
                 d = "" if _unresolvable(tgt) else _expand(tgt, ctx)
                 lands = [os.path.normpath(d)] if os.path.isabs(d) else [] if not d or lost or cdpath else [
                     _resolve(d, b) for b in cwds]  # T-1924: a relative one too, from folders it can name (each
-                child = any(a not in _KEYWORDS and a not in ("time", "command", "builtin", "noglob") and not re.match(
+                child = unsure or any(a not in _KEYWORDS and a not in ("time", "command", "builtin", "noglob") and not re.match(
                     r"[A-Za-z_]\w*\+?=", a) for a in c.argv[:len(c.argv) - len(argv)])  # review: nice cd X moves a child
                 can_fail = gone or child or len(dirs) > 1 or not lands or not all(x in made or (  # review: cd a b fails
                     os.path.isdir(x) and os.access(x, os.X_OK)) for x in lands)  # (too many arguments); `cd ..` doubled
                 certain = not child and not piped and c.op != "||" and (  # T-1891: a cd after || may be skipped
                     and_chain or in_chain or ((straight or mixed) and not can_fail))
+                before = cwds
                 cwds, lost = _moved(cwds, lost, tgt, certain, cdpath, ctx)
                 new = [_cd_from(tgt, r, ctx) for r in rd]
+                if dirs and not unknown and _unresolvable(tgt) and _only_unset(tgt, bare):  # T-1923: bash makes it
+                    rest = _PART.sub("", tgt)  # empty: cd "$X" stays put, cd $X goes home (or to the word after it)
+                    ws = [w for w in raw[idx] if _unquote(w) == dirs[0]] if raw is not None and len(raw) == len(cmds) else []
+                    to = [rest] if rest else ([] if ws and all(w == dirs[0] for w in ws) else ["."]) + (
+                        [] if ws and all(w != dirs[0] for w in ws) else [dirs[1] if len(dirs) > 1 else ctx.home])
+                    cwds = list(dict.fromkeys(cwds + [p for x in to for p in _moved(before, [], x, True, False, ctx)[0]]))
+                    new += [_cd_from(x, r, ctx) for x in to for r in rd]
+                if cdpath and d and not os.path.isabs(d) and not re.match(r"\.\.?(/|$)", d):  # T-1923: CDPATH may send
+                    new += [None] + [p for w in _line_words(scan, known) for s in w.split(":") if s for p in [_resolve(  # it
+                        d, _resolve(_expand(s, ctx), ctx.cwd))] if os.path.isdir(p)]  # below a folder the line names
+                    # (each entry of a CDPATH=a:b list): nested text runs there
                 rd = list(dict.fromkeys(new if certain else rd + new))
                 if base and c.op not in ("&&", "|", "|&") and not piped and not can_fail:
                     base = (list(cwds), list(lost), base[2])  # T-0384: a head cd that can't fail: the chain stops after
@@ -3414,7 +3447,8 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
                     base = (base[0] + cwds, base[1] + lost, base[2])
                     rbase = rbase + rd
         moves, places = (_moves_shell(name, args, cwds, ctx, shell) if name in ("eval", "source", ".", "trap",
-                                                                               "mapfile", "readarray") else (0, []))
+                                                                               "mapfile", "readarray") else
+                         (1, maybe) if maybe else (0, []))
         if moves:  # T-0384: it may cd here: anywhere, or any folder it names after a cd
             for d in ["$OLDPWD"] + places:
                 cwds, lost = _moved(cwds, lost, d, False, cdpath, ctx)
@@ -3629,8 +3663,9 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
         for nm in names:
             if nm == "rm" != name and not _rm_opts_only(args):  # GNU rm stops at an option it doesn't know
                 continue                                      # (-fwrapv, -Wno-unused…): nothing is deleted
-            found += _check_rm(nm, [_with_vars(a, rm_vars) for a in args] if rm_vars else args, via_xargs, chain, cwd, ctx,
-                               xodd)
+            for w in dict.fromkeys([cwd] + cwds):  # T-1923: in every folder the shell may be (cd $X: home, too)
+                found += [f for f in _check_rm(nm, [_with_vars(a, rm_vars) for a in args] if rm_vars else args,
+                                               via_xargs, chain, w, ctx, xodd) if f not in found]
             found += _check_git(nm, args, cwd, ctx)
             if nm == "git":  # T-1482: what the hook saves, in each folder it may run in, through known names
                 wargs = [_with_vars(a, known) for a in args]

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Security: the guard judges a tree write after a cd it can't name in every folder bash may land in. Bash makes a name the line neither sets nor inherits empty: `cd "$X"` stays put, `cd $X` goes home (or to the next word), and `$X cd D` may run `cd D`. A computed command word (`C=cd; $C D`, `$(echo cd) D`, `C="cd D"; $C`) may be a cd. Nested text after a `cd` that `CDPATH` may resolve runs below each folder a `CDPATH=a:b` list names. An rm is judged in every folder the guard can name for the shell. Common lines such as `cd "$(git rev-parse --show-toplevel)"` and `$PY -m pytest` still pass (T-1923).
 - Performance: the guard judges a line of repeated cds it can't follow before `$(…)` bodies in under half a second instead of 7–17 s, which could time out the hook. A guessed folder is now tested once before it is joined with every place a lost cd may lead, with the same verdicts (T-1930).
 - Security: a task's rm-outside grant no longer lifts the guard's refusals for a line too tangled to read to its end (nesting too deep, nested commands in too many folders, the line in too many folders, an `eval` of computed text). The rest of such a line was never read, so a grant let it run unchecked. Each refusal now names its way through: split the command, or run the text itself (T-1929).
 - Fix: the code view's Activity, Run and Checks panels draw an event whose `text`, `cmd` or `action` isn't a string, instead of replacing the whole panel with a "panel … failed" line. The fuzz test now asserts that no built-in panel fails (T-1926).
