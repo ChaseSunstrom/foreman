@@ -1892,6 +1892,39 @@ def _writes_unrun_source(line, cmd, ctx):
     return bool(_SOURCE_DIRS.match(rel)) and len(re.findall(rf"\b{stem}\b", _drop_data_heredocs(cmd))) == 1
 
 
+_DRAFT_EXT = (".txt", ".patch", ".diff", ".md", ".json")
+# review: only flags that take no value (-W/-X would take the script's place, leaving the draft to run)
+_DRAFT_USE = re.compile(r"\s*fm\s+edit\b.*|\s*python[0-9.]*\s+(?:-[BEIOPRSbdqsuv]+\s+)*([\w./~@+-]+\.py)\s.*")
+
+
+def _writes_unrun_draft(line, cmd, ctx):
+    """T-1917: a data heredoc writing a scratch draft (.txt/.patch…) is text, though it names Foreman's modules, when
+    the command names the draft again only as fm edit's input or a script's argument, never as code: no wider than the
+    two-command form (write the file, then run). Fails closed on anything that could spell its name another way (globs,
+    expansion, quotes, escapes), a cd, a second heredoc, or a script that isn't already a plain file on disk."""
+    m = _SOURCE_WRITE.fullmatch(line.strip())
+    if not m:
+        return False
+    path = os.path.realpath(_resolve(_expand(m.group(1), ctx), ctx.cwd))
+    if not path.endswith(_DRAFT_EXT) or not any(_strictly_under(path, os.path.realpath(s)) for s in ctx.scratch):
+        return False
+    # review: $? and 2>&1 only as whole words (d$?.txt is d0.txt to bash); any ( or ) fails closed (extglob's @(…))
+    rest = re.sub(r"(?<!\S)(?:\$\?|2>&1)(?!\S)", "", _drop_data_heredocs(cmd).replace(line, "", 1))
+    if "<<" in rest or re.search(r"[*?\[\]{}$`\\'\"()]|\balias\b|\bfunction\b|\bshopt\b|(?:^|[\s;&|])(?:cd|pushd)\b",
+                                 rest):
+        return False
+    name = re.compile(rf"(?<![\w.-]){re.escape(os.path.basename(path))}(?![\w.-])")
+    for seg in re.split(r"[;&|()\n]", rest):
+        if not name.search(seg):
+            continue
+        use = _DRAFT_USE.fullmatch(seg[:name.search(seg).start()] + " ")
+        script = use and use.group(1) and os.path.join(ctx.cwd, os.path.expanduser(use.group(1)))
+        if not use or script and (os.path.islink(script) or not os.path.isfile(script)
+                                  or os.path.realpath(script) == path or name.search(use.group(1))):
+            return False
+    return True
+
+
 def _run_dir(starter, cwd):
     """The folder `python -` runs in (its sys.path[0]) after the starter's `cd` chain, or None when it can't be known."""
     d = cwd
@@ -2097,7 +2130,8 @@ def _interpreter_writes(cmd, ctx):
     user's yes, rather than never-authorizable state-direct, because the text match can't tell code from test data."""
     if not _INTERP.search(_mask_fm(_drop_data_heredocs(cmd), ctx)):
         return []
-    if _drives_fm(_drop_data_heredocs(cmd, only=lambda line: _writes_unrun_source(line, cmd, ctx)), ctx.cwd):
+    if _drives_fm(_drop_data_heredocs(cmd, only=lambda line: _writes_unrun_source(line, cmd, ctx)
+                                      or _writes_unrun_draft(line, cmd, ctx)), ctx.cwd):
         # T-0740: 9 repeats in a day; T-0934: `cd DIR; python3 - <<EOF` is refused only because of the `;`. T-1171: 12
         # of 31 refusals in four days wrote a test with cat <<EOF and ran the tests in the same command
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI; to edit a Foreman source file "
