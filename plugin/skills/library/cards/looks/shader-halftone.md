@@ -53,6 +53,9 @@ Class: low. No noise, no loop: two rotations, one `fwidth`, a few multiplies a p
 ## Reduced motion
 Still: `uTime = 0.0`: the light pool rests at `uFocus`.
 
+## Sketch
+The sketchbook's preset (`fm scene sketchbook`): `uFocus=0.6,0.55 uIntensity=1 uCell=8 uAngle=0.2618 uReach=0.8 uInk=0.1,0.1,0.14 uPaper=0.97,0.95,0.9`
+
 ## Suits
 Newsletters and news products, comics and zines, sports and match pages, packaging and merch sites, a print-heritage brand.
 Not for: luxury, wellness, medical, anything behind long reading (dots under text tire the eye).
