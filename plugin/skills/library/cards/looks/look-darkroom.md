@@ -19,7 +19,7 @@ A photographic darkroom: neutral grey-black walls, the image the only bright thi
 | `--accent` | #E9E1D0 | 0.911 0.024 86 | 14.5:1 on surface |
 | `--on-accent` | #111111 | 0.178 0.000 90 | 14.5:1 on accent |
 
-Dark first: body text clears Foreman's 7:1 dark rule. The wall is a true neutral so a photograph's colours read unshifted beside it; the accent is a warm off-white (chroma 0.024), a lamp, not a colour. Accent hue 86, 21° from the nearest status hue.
+Dark first: body text clears Foreman's 7:1 dark rule. The wall is a true neutral so a photograph's colours read unshifted beside it; the accent is a warm off-white (chroma 0.024), a lamp, not a colour.
 
 ## Type
 Humanist sans at 400 for labels and body, 600 for panel titles; a mono for exposure values (f-stop, shutter, ISO, 12 px at least) with tabular figures. Small caps tracked +0.06em for panel names.

@@ -29,6 +29,15 @@ EXPECT = {"fastapi": {"fastapi", "pytest", "python"}, "nextjs": {"nextjs", "reac
 
 
 class LibraryCards(ForemanTestCase):
+    def test_a_near_neutral_accent_has_no_hue_note(self):  # T-2051: a hue distance means nothing below chroma 0.03
+        looks = os.path.join(fmlib.CARDS, "looks")
+        for name in os.listdir(looks):
+            with open(os.path.join(looks, name), encoding="utf-8") as f:
+                text = f.read()
+            m = re.search(r"^\| `--accent` \| \S+ \| [\d.]+ ([\d.]+) ", text, re.M)
+            if m and float(m.group(1)) < 0.03:
+                self.assertNotIn("from the nearest status hue", text, name)
+
     def test_every_card_passes_the_lint_and_the_library_is_large(self):
         problems, notes = fmlib.lint()
         self.assertEqual(problems, [], "\n".join(problems[:20]))
