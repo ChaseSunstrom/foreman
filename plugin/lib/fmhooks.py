@@ -3664,7 +3664,7 @@ def _drive(p, sd, briefs, pl, g):
                 f"audit lenses on the current diff (fm audit prep), docs, "
                 + (f"grounding and planning {', '.join(more)}, or an independent S/M task in a builder lane "
                    f"(fm lane brief ID). " if more else "planning what comes after this task. ")
-                + (f"Usage is ahead of pace ({pace}): side work is dropped; required gates still run. " if pace else "")
+                + (f"Optional work is dropped ({pace}): no side work; required gates still run. " if pace else "")
                 + "If nothing is independent of it, end the turn with one line naming what you wait on.")
     d.pop("waited", None)
     if pl.get("stop_hook_active") and d.get("marks") and not _progressed(p, d["marks"], sid):

@@ -88,6 +88,19 @@ class Risk(HookCase):
         self.assertEqual(c.effective_autonomy(p), "standard")
         self.assertIsNone(fmbudget.degrade(p))
 
+    def test_a_spent_budget_is_not_called_usage_pace(self):
+        # T-1969: the Stop drive said 'Usage is ahead of pace (today's risk budget is spent …)'
+        self.fm("init")
+        self.spend(blocks=2)
+        self.fm("risk", "set", "--day", "2", "--because", "test")
+        self.task("Current work")
+        self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer"})
+        r = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting for the review.",
+                               "session_id": "sess-1"})
+        reason = json.loads(r.stdout).get("reason", "")
+        self.assertIn("risk budget is spent", reason)
+        self.assertNotIn("ahead of pace", reason)
+
     def test_every_reader_of_autonomy_sees_the_step_down(self):
         # review: fm decide --ask read the stored autonomy and self-decided under a spent budget; fm autonomy blamed plans
         self.fm("init")
