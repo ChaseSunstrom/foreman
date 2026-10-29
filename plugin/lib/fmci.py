@@ -120,7 +120,8 @@ def watch(p, branch, retries, interval, max_polls=120, say=print, commit=None):
             if fails > retries:
                 return 1, f"gave up after {fails} failed runs (--max-retries {retries})."
         time.sleep(max(interval, PUBLIC_POLL) if via else interval)
-    return 1, f"gave up waiting: no new finished run in {max_polls} polls."
+    where = " (read through GitHub's public API: gh is missing or logged out)" if via else ""  # T-1940
+    return 1, f"gave up waiting: no new finished run in {max_polls} polls{where}."
 
 
 def cmd_ci_watch(args):

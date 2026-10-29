@@ -138,6 +138,11 @@ class CiWatch(ForemanTestCase):
         private = urllib.error.HTTPError("https://api.github.com/repos/o/r", 404, "Not Found", {}, None)
         with gh_out, mock.patch("urllib.request.urlopen", side_effect=private), self.assertRaisesRegex(UsageError, "not logged in.*404"):
             fmci.watch(p, "main", 3, 0, max_polls=1, **quiet)  # a private repo: gh's error at once, not an hour of polls
+        none_yet = lambda req, timeout=None: contextlib.nullcontext(io.BytesIO(b'{"workflow_runs": []}'))
+        with gh_out, mock.patch("urllib.request.urlopen", side_effect=none_yet), mock.patch.object(fmci, "time"):
+            code, msg = fmci.watch(p, "main", 3, 0, max_polls=1, **quiet)
+        self.assertEqual(code, 1)
+        self.assertIn("GitHub's public API", msg, "T-1940: a watch that saw nothing says where it looked")
         for off in ({"FOREMAN_NO_NET": "1"}, {"FOREMAN_NO_NET": ""}):
             if off["FOREMAN_NO_NET"] == "":
                 self.fm("sensitive", "on")
