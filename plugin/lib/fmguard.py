@@ -626,7 +626,8 @@ def classify_write(path, ctx, real=True):
             cats.append("plugin")  # installed plugins, or a new skill/agent/command: what runs in every session
         lane, main = getattr(ctx, "confine", None) or (None, None)
         rlane, rmain = getattr(ctx, "confine_real", None) or (lane, main)
-        if lane and not _under(p, lane) and not _under(p, rlane) and not (p.startswith("/dev/") and _SAFE_DEV.match(p)) \
+        if lane and not _under(p, lane) and not _under(p, rlane) and not _under(os.path.realpath(p), rlane) \
+                and not (p.startswith("/dev/") and _SAFE_DEV.match(p)) \
                 and (any(_under(p, m) for m in (main, rmain) if m) or not any(_under(p, s) for s in ctx.scratch)):
             cats.append("confine")
         root = getattr(ctx, "unbriefed", None)  # strictly inside: a checkout-wide git write (merge, pull) is no edit
