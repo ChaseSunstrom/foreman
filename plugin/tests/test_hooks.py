@@ -1649,6 +1649,16 @@ class PreToolUse(HookCase):
         self.pre("Bash", {"command": "npm publish"})  # a different block resets the count
         self.assertNotIn("Stop retrying", self.pre("Bash", cmd).stdout)
 
+    def test_third_unread_refusal_says_no_ask_helps(self):
+        # T-1932 review: no grant lifts a refusal for a program the guard never read, so asking for one is a dead end
+        self.fm("init")
+        self.task()
+        cmd = {"command": "cat cmds.txt | bash"}
+        text = [self.pre("Bash", cmd).stdout for _ in range(3)][2]
+        self.assertIn("Stop retrying", text)
+        self.assertIn("do what the refusal says", text)
+        self.assertNotIn("fm ask", text)
+
     def test_brief_refusal_names_the_task_to_resume(self):
         # T-0409 (JARVIS): after closing a lane task it edited docs before refocusing T-0278; the refusal offered
         # `fm task new` though the work in progress was right there in the queue
