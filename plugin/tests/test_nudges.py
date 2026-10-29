@@ -66,6 +66,11 @@ class Revisit(ForemanTestCase):
                 "customers' payment methods, add currency rounding, notify accounting, archive legacy exports")
         self.assertNotIn("tidy", [name for name, _ in __import__("fmrecall").covered(text)])  # hygiene, dry, default
 
+    def test_a_request_restating_a_subcommand_is_covered(self):
+        # T-1912: covered() read only the top-level commands, so `fm task prove` never warned
+        got = __import__("fmrecall").covered("a red to green proof: the tests fail on the start tree and pass now")
+        self.assertIn("task prove", [name for name, _ in got])
+
     def test_a_bad_trigger_is_refused(self):
         for bad in ("soon", "when missing.py changes", "after 2020-13-45", "when ../../etc/passwd changes"):
             self.assertNotEqual(self.fm("decide", "x", "--revisit", bad, check=False).returncode, 0, bad)
