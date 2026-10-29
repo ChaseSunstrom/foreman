@@ -150,6 +150,30 @@ class DiffGates(ForemanTestCase):
         self.assertEqual(p.returncode, 2)  # a usage error, before anything runs
         self.assertIn("repeat -k", p.stderr)
 
+    def test_lint_names_run_py_modules_and_k_filters_that_match_nothing(self):
+        # T-2027: a criterion naming a test module that doesn't exist, or a -k no test in it matches, fails every run,
+        # and once it has evidence it can't be edited: say so at fm task new, from the files, without importing them
+        tests = os.path.join(self.repo, "plugin", "tests")
+        os.makedirs(tests, exist_ok=True)
+        with open(os.path.join(tests, "test_widget.py"), "w") as f:
+            f.write("class Widget(Base):\n    def test_spins(self):\n        pass\n\n    def helper(self):\n        pass\n")
+        lint = lambda cmd: c.lint_verify(cmd, self.repo)  # noqa: E731
+        self.assertEqual(lint("python3 plugin/tests/run.py test_widget -k test_spins"), [])
+        self.assertEqual(lint("python3 plugin/tests/run.py test_widget -k Widget"), [], "-k matches the whole id")
+        self.assertEqual(lint("python3 plugin/tests/run.py test_wid"), [], "a name is a substring too")
+        got = lint("python3 plugin/tests/run.py test_widget -k test_wobbles")
+        self.assertTrue(any("test_widget" in x and "-k test_wobbles" in x for x in got), got)
+        self.assertTrue(lint("python3 plugin/tests/run.py test_widget -k helper"), "helper isn't a test")
+        got = lint("python3 plugin/tests/run.py test_gadget test_widget")
+        self.assertTrue(any("test_gadget" in x and "no test module" in x for x in got), got)
+        self.assertFalse(any("test_widget" in x for x in got), got)
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        t = time.time()
+        self.assertEqual(c.lint_verify("python3 plugin/tests/run.py test_diff_gates -k test_lint_names", root), [])
+        self.assertEqual(c.lint_verify("python3 plugin/tests/run.py test_tail_rows_with_keep 2>&1", root), [],
+                         "a test's name, found across every module; 2>&1 isn't a name")
+        self.assertLess(time.time() - t, 1.0)
+
     def test_run_py_repeats_p(self):
         # T-0389: `run.py -p a.py -p b.py` kept only the last -p and ran b.py alone, silently
         run = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.py")
