@@ -71,6 +71,7 @@ class Speed(ForemanTestCase):
                      "fm task prove", "scope", "why-not-caught"):  # T-1977: fm task finish refuses an M fix without it
             self.assertIn(want, out)
         self.assertNotIn("why-not-caught", self.fm("gates", "fix", "s").stdout)
+        self.assertIn("none when it edits no project file", self.fm("gates", "clean", "s").stdout)  # T-1982: a ship task
         self.fm("task", "new", "t", "--type", "CLEAN", "--tier", "S", "--step", "s", "--ac", "a")
         self.assertIn("Done needs: evidence, audits, behaviour lock, scope", self.fm("focus", "T-0001").stdout)
 
