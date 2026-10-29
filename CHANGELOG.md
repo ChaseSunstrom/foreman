@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix: `fm ship` marks its scratch-tree test run and first waits for a running full `fm check` or ambient run here; a full `fm check` waits for a live ship test run (up to 10 minutes each, saying so), so two suites never run at once. `fm batch` keeps each member's DONE-WHEN verify command, `fm gates` names why-not-caught for an M or L FIX, and a Write outside the project (a scratchpad note) no longer counts as a CLEAN task's first edit (T-1980: T-1976, T-1977, T-1978, T-1979).
 - Fix: one full `fm check` per tree: a second one waits (up to 10 minutes, saying so) for the live one and reuses its pass when nothing changed, and only the run that set the "gates running" marker clears it (T-1971). `fm risk` lists the guard rules that spend risk first, so routine habits no longer hide what spent the budget (T-1972). A full check whose tree changed while it ran starts one ambient run for those edits afterward (T-1973).
 - Fix: the Stop drive, `fm next` and `fm ideas --deepen` say "optional work is dropped (<why>)" instead of "usage is ahead of pace (<why>)", so a spent risk budget is no longer called usage pace (T-1969).
 - Never two test suites at once: a full `fm check` waits (up to 5 minutes, saying so) for a running ambient test run, and an edit made while full gates run starts no ambient run (T-1964, T-1965). A loop round run while optional work is dropped (usage ahead of pace, or the risk budget spent) skips the `fm ideas` fan-out for ideas made in the main thread (T-1966).
