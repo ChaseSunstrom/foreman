@@ -2906,7 +2906,10 @@ def task_set(p, args):
             raise UsageError(f"expected key=value, got {kv!r}")
         k, v = kv.split("=", 1)
         if k not in EDITABLE:
-            raise UsageError(f"can't set {k!r}; editable: {', '.join(sorted(EDITABLE))} (authorizations via --allow)")
+            sec = next((h.split(" (")[0].strip() for h, _ in need_brief(p, args.id).sections  # T-1925
+                        if h.split(" (")[0].strip().lower() == k.lower().replace("_", " ")), None)
+            raise UsageError(f"can't set {k!r}; editable: {', '.join(sorted(EDITABLE))} (authorizations via --allow)"
+                             + (f"; {sec} is a brief section: --section {sec!r} --text \"…\"" if sec else ""))
         if v == "" and k in CLEARABLE:  # T-1126: an empty value clears an optional field
             if k.startswith("predict_") and need_brief(p, args.id).meta.get("plan0_at"):
                 raise UsageError(f"{k} is fixed once work has started (fm focus); the close scores it as planned")
@@ -5768,8 +5771,9 @@ def _build_parser():
     t.add_argument("id")
     t.add_argument("assignments", nargs="*")
     t.add_argument("--allow", action="append")
-    t.add_argument("--section", action="append", help="repeatable: each --section takes the --text (or --file) "
-                                                       "given after it (T-1124)")
+    t.add_argument("--section", action="append", help="a brief section to fill (Interpretation, Assumptions, "
+                   "Acceptance criteria, Non-goals, Approach, Risks and rollback, Execution prompt, Docs impact); "
+                   "repeatable: each --section takes the --text (or --file) given after it (T-1124)")
     t.add_argument("--text", action="append")
     t.add_argument("--file")
     t = tadd("step")

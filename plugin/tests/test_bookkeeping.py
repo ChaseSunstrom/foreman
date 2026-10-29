@@ -75,6 +75,18 @@ class FinishGaps(HookCase):
         for gap in ("step 1", "intent", "docs", "lesson"):
             self.assertIn(gap, r.stderr + r.stdout)
 
+    def test_a_refused_field_naming_a_section_says_how_to_fill_it(self):
+        # T-1925: `fm task set ID interpretation=…` listed the editable fields and nothing else
+        self.fm("init")
+        tid = self.task(type_="FIX", tier="S", steps=("fix",))
+        for field, name in (("interpretation", "Interpretation"), ("risks_and_rollback", "Risks and rollback")):
+            r = self.fm("task", "set", tid, field + "=x", check=False)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn(f"--section '{name}' --text", r.stderr + r.stdout)
+        r = self.fm("task", "set", tid, "colour=x", check=False)
+        self.assertNotIn("brief section", r.stderr + r.stdout)
+        self.assertIn("task set", self.fm("which", "interpretation").stdout)
+
     def test_a_red_step_names_its_failed_run_and_the_command_while_a_bare_one_keeps_the_old_message(self):
         # T-1272: 'no verify command or evidence' was wrong for a step that had a (failed) run
         self.fm("init")
