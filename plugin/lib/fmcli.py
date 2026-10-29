@@ -2876,7 +2876,7 @@ def task_set(p, args):
             b.meta["allow"] = allow
             b.append_log(f"guard authorization added: {cat}")
         for sec, raw in pairs:
-            text = c.redact(raw)
+            text = _task_new_forms(sec, c.redact(raw))
             b.set_section(sec, b.keep_ticks(text) if sec == "Acceptance criteria" else text)
         if "status" not in changes:
             _filled(b)
@@ -2885,6 +2885,16 @@ def task_set(p, args):
     b, _ = mutate(p, args.id, apply, "task_set", {"changes": changes, "allow": args.allow or [],
                                                   "section": [sec for sec, _ in pairs] or None})
     out(args, c.brief_summary(b), f"{b.id} updated.")
+
+
+def _task_new_forms(sec, text):
+    """T-1894: criteria and steps given with --section in the forms fm task new takes ("done when :: cmd", "1. step"),
+    written as the brief keeps them; left as they were, they parsed as no verify command and no steps."""
+    if sec == "Acceptance criteria":
+        return re.sub(r"(?m)^(-\s+\[[ xX]\]\s+(?!.*— verify with `).*) :: (.+?)\s*$", r"\1 — verify with `\2`", text)
+    if sec == "Steps":
+        return re.sub(r"(?m)^(\d+)\.\s+(?!\[[ xX]\])(?=\S)", r"\1. [ ] ", text)
+    return text
 
 
 def _filled(b, result=None):
