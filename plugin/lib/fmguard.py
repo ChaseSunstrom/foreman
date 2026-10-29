@@ -133,7 +133,7 @@ def check(tool_name, tool_input, ctx, found=None):
     found = findings(tool_name, tool_input, ctx) if found is None else found
     for cat in CATEGORIES:
         for got, detail in found:
-            if got == cat and (got in NOT_AUTHORIZABLE or got not in ctx.allow or unanalysed(detail)):
+            if got == cat and (got in NOT_AUTHORIZABLE or got not in ctx.allow or unliftable(got, detail)):
                 if got == "core" and ("core" in ctx.standing and _standing_covers(detail, ctx)
                                       or ctx.trusted and _trust_covers(detail, ctx)):
                     continue
@@ -191,6 +191,10 @@ def _hint(detail, cat=""):
         return " Run the innermost script directly, or fold the chain into fewer scripts, so the guard reads each one."
     if detail.endswith("the script was too long to parse in time)"):
         return " Run a shorter script (split it, or run the part you need directly): a shorter one is read in full."
+    if detail.startswith("sed -f/--file"):  # T-1932
+        return " Pass the sed commands with -e (the guard reads them), or make the change with the Edit tool."
+    if detail.startswith("vim ") and "can't read" in detail:
+        return " Pass the commands with -c (the guard reads them), or make the change with the Edit tool."
     if detail.startswith("IFS") and "can't read" in detail:
         return " Leave IFS at its default on a line that splits words, or set it inside a script file the guard reads."
     if cat == "brief" and os.path.basename(detail).lower() == "changelog.md":  # T-1452
@@ -229,7 +233,12 @@ def unanalysed(detail):
 def _unread(detail):
     """A system refusal for a program the guard couldn't read (not for what a program does)."""
     return "can't read" in detail or detail == "script nests too deep to read" or detail.endswith(
-        "the script was too long to parse in time)")
+        "the script was too long to parse in time)") or "KB the guard reads: run its" in detail
+
+
+def unliftable(cat, detail):
+    """T-1932: no grant lifts a refusal for text the guard never read (to its end): it would run unchecked."""
+    return unanalysed(detail) or cat == "system" and isinstance(detail, str) and _unread(detail)
 
 
 def message(block, ctx):
@@ -259,9 +268,7 @@ def _message(block, ctx):
         return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
                 f"(fm task …, fm capture, fm checkpoint{f'; fm audit prep {diff[1]} rewrites it' if diff else ''}); "
                 f"direct writes are never authorized.")
-    if cat == "system" and _unread(detail):  # T-1298: the way through is a program the guard can read (the hint),
-        return f"Foreman guard: blocked system: {detail}."  # not --allow system, which lifts every system check
-    if unanalysed(detail):
+    if unliftable(cat, detail):  # T-1298, T-1929, T-1932: the way through is text the guard reads (the hint)
         return f"Foreman guard: blocked {cat}: {detail}; no grant lifts this."
     if ctx.task_id:
         how = f"fm task set {ctx.task_id} --allow {cat} (records it in the brief), then retry"
