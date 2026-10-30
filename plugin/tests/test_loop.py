@@ -84,6 +84,38 @@ class Loop(ForemanTestCase):
         for lens in fmloop.MAIN_LENSES:
             self.assertIn(lens, brief)
 
+    def test_a_round_lists_what_recent_work_left_behind_learned_from_history(self):
+        # T-2073: the user had to ask for the site, skills and playbooks to catch up; no folder list, the repo's own
+        # history says what usually moves with what
+        import subprocess
+        import fmloop
+
+        def commit(files, msg):
+            for path, text in files.items():
+                os.makedirs(os.path.dirname(os.path.join(self.repo, path)) or self.repo, exist_ok=True)
+                with open(os.path.join(self.repo, path), "a", encoding="utf-8") as f:
+                    f.write(text)
+            subprocess.run(["git", "-C", self.repo, "add", *files], check=True)
+            subprocess.run(["git", "-C", self.repo, "commit", "-qm", msg], check=True)
+        hub = {"CHANGELOG.md": "- x\n"}  # in every commit: its weak links must never add up to "owed"
+        for i in range(3):
+            commit({**hub, "old.txt": f"{i}\n"}, f"old {i}")
+        for i in range(4):
+            commit({**hub, "lib.py": f"x{i} = 1\n", "site/page.html": f"<p>{i}</p>\n"}, f"both {i}")
+        p = c.find_project(self.repo)
+        self.assertEqual(fmloop.lag(p), [], "everything that moves together just moved")
+        for i in range(4):  # the page now moves with the code half the time, and missed the last 4
+            commit({**hub, "lib.py": f"y{i} = 1\n"}, f"code {i}")
+        left = fmloop.lag(p)
+        self.assertEqual(left, ["- site/page.html: owes ~2.0 updates (lib.py changed in 4 commits since it last did; "
+                                "they move together 50% of the time)"])  # old.txt: 27% with the hub, 8 commits: noise
+        self.fm("loop", "on")
+        brief = fmloop.round_brief(p)
+        self.assertIn("- site/page.html: owes", brief)
+        self.assertIn("Surfaces: every area of this repo (CHANGELOG.md, README.md, lib.py, old.txt, site)", brief)
+        os.rename(os.path.join(self.repo, ".git"), os.path.join(self.repo, "git-gone"))
+        self.assertIsNone(fmloop.lag(p))  # no history is unknown, never "nothing owed"
+
     def test_a_budget_limited_round_leaves_the_dry_streak_alone(self):
         # T-1986: with optional work dropped there is no ideas fan-out; a spent budget ended the loop as "2 dry rounds"
         from unittest import mock
