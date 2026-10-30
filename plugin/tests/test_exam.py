@@ -47,7 +47,8 @@ class ExamGen(ForemanTestCase):
                 self.assertNotIn(d["text"], body)
 
     def test_oracle_scores_full_and_empty_scores_zero(self):
-        run = self.gen("--seed", "2", "--per-kind", "1", "--lang", "python")["run"]
+        g = self.gen("--seed", "2", "--per-kind", "1", "--lang", "python")
+        run = g["run"]
         o = self.fm_json("exam", "run", run, "--agent", "oracle")
         self.assertGreater(o["keyed"], 0)
         self.assertEqual((o["found"], o["false_alarms"]), (o["keyed"], 0))
@@ -61,11 +62,17 @@ class ExamGen(ForemanTestCase):
         self.assertGreater(o["missing_keyed"], 0)
         e = self.fm_json("exam", "run", run, "--agent", "empty")
         self.assertEqual((e["found"], e["fixed"], e["readings_hit"], e["missing_hit"]), (0, 0, 0, 0))
+        self.fm("genesis", "put", "gen-1/seed.md", "--file", "-", input="# Seed\n")  # a newer seed after the answers
         regrade = self.fm_json("exam", "grade", run, "--agent", "oracle")
         self.assertEqual(regrade["found"], o["found"])
         lines = read_text(os.path.join(self.fm_json("genesis")["dir"], "exam.jsonl")).splitlines()
         self.assertEqual([json.loads(x)["agent"] for x in lines], ["oracle", "empty", "oracle"])
-        self.assertIn("holdout", json.loads(lines[0]))
+        first = json.loads(lines[0])
+        self.assertIn("holdout", first)
+        want = {sp: sorted(s["id"] for s in g["scenarios"] if s["split"] == sp) for sp in ("train", "holdout")}
+        self.assertEqual(first["closed"], want)  # every scenario closed, filed under the run's own split
+        self.assertEqual(first["gen"], 0)  # no seed yet: the generation the line grades
+        self.assertEqual(json.loads(lines[2])["gen"], 0)  # the generation that answered, stamped at run, not at regrade
         self.assertIn("oracle", self.fm("genesis").stdout)  # the tower's status shows the last score
         self.assertIn("oracle", self.fm("exam").stdout)
 

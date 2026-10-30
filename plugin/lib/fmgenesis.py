@@ -77,6 +77,11 @@ def status(p, with_check=True):
     return out
 
 
+def current(p):
+    """The newest generation with a seed; 0 before gen-1's."""
+    return max((g["n"] for g in status(p, with_check=False)["generations"] if g["seed"]), default=0)
+
+
 CAP = re.compile(r"^(\d+)\. \*\*(.+?)\.\*\*\s*(.*)$", re.M)  # gen-0 §2: "1. **Initiative.** what it means"
 ROW = re.compile(r"^\|\s*(\d+)\s*\|\s*(mission-[a-z0-9][a-z0-9-]*)\.md\s*\|([^|]*)\|([^|]*)\|([^|]*)\|", re.M)
 TIERED = re.compile(r"(.+?)\s*\((\d)\)\W*$")  # "value ranking (3)." -> tier 3
@@ -130,16 +135,17 @@ def _cell(root, kind, rest):
 
 def coverage(p, text, gen0=""):
     """Standing rule 2: every area row has all stage × surface cells, each grounded; gen-0 §2's capabilities each have
-    a row. Returns areas, cells (expected), filled (valid), empty (missing) and problems."""
+    a row. Returns areas, cells (expected), filled (valid), empty (missing), problems, and per area rows: its valid
+    I cells (ideas), empty cells and bad lines, which rank fm genesis seed's Missions."""
     if text is None:
-        return {"areas": 0, "cells": 0, "filled": 0, "empty": 0,
+        return {"areas": 0, "cells": 0, "filled": 0, "empty": 0, "rows": [],
                 "problems": ["coverage.md doesn't exist (every generation fills the grid: fm genesis put coverage.md)"]}
-    root, probs, filled, empty = os.path.realpath(p.root), [], 0, 0
+    root, probs, filled, empty, rows = os.path.realpath(p.root), [], 0, 0, []
     secs = [(a, b) for a, b in _sections(text) if a]
     if not secs:
         probs.append("coverage.md has no '## <area>' rows")
     for area, body in secs:
-        seen = set()
+        seen, before, ideas = set(), len(probs), 0
         for line in (x.strip() for x in body.splitlines()):
             if not line.startswith("- "):
                 continue
@@ -162,13 +168,15 @@ def coverage(p, text, gen0=""):
                 probs.append(f"{area}: {stage} × {surface}: {c.plain(bad)}")
             else:
                 filled += 1
+                ideas += kind == "I"
         gone = [f"{s} × {f}" for s in STAGES for f in SURFACES if (s, f) not in seen]
+        rows.append({"area": area, "ideas": ideas, "empty": gone, "bad": len(probs) - before})
         empty += len(gone)
         probs += [f"{area}: {g}: empty" for g in gone]
     heads = " | ".join(a.lower() for a, _ in secs)
     probs += [f"no row for capability {n}. {name}" for n, name, _ in _caps(gen0) if name.lower() not in heads]
     return {"areas": len(secs), "cells": len(secs) * len(STAGES) * len(SURFACES), "filled": filled, "empty": empty,
-            "problems": probs}
+            "rows": rows, "problems": probs}
 
 
 def not_yet(text, gen):
@@ -203,10 +211,9 @@ def not_yet(text, gen):
 
 def check(p):
     """Standing rules 1-3 over the tower: the coverage grid and the not-yet ledger, against the newest generation."""
-    d, s = home(p), status(p, with_check=False)
-    gens = [g["n"] for g in s["generations"] if g["seed"]]
-    return {"gen": max(gens) if gens else None, "coverage": coverage(p, _doc(d, "coverage.md"), _doc(d, "gen-0.md") or ""),
-            "not_yet": not_yet(_doc(d, "not-yet.md"), max(gens) if gens else None)}
+    d, n = home(p), current(p) or None
+    return {"gen": n, "coverage": coverage(p, _doc(d, "coverage.md"), _doc(d, "gen-0.md") or ""),
+            "not_yet": not_yet(_doc(d, "not-yet.md"), n)}
 
 
 BLOCK = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)  # a mission's intake block: its first fence
@@ -223,7 +230,7 @@ def step(p):
         return {"stage": stage, "gen": gen, "action": action, "command": command, "kind": kind}
     if not os.path.isfile(os.path.join(d, "gen-0.md")):
         return act("gen-0", 0, "write gen-0 from the user's words", "fm genesis init --file -")
-    n = max((g["n"] for g in status(p, with_check=False)["generations"] if g["seed"]), default=0)
+    n = current(p)
     if os.path.isfile(os.path.join(d, "report.md")):
         return act("done", n, "the tower is finished: report.md is filed", "fm genesis", "done")
     if not n:
@@ -270,9 +277,9 @@ def step(p):
             return act("critique", n, f"{where}: write its critique (closed vs planned, outside signals, what failed)",
                        f"fm genesis put {pre}critique-{name}.md --file -")
     if not re.search(rf"^## gen-{n}\b", _doc(d, "lineage.md") or "", re.M):
-        return act("select", n, f"select: gen-{n}'s rewrite stays only if it closes more held-out exam scenarios than "
-                                f"its parent; fm decide it, then a '## gen-{n}' section in lineage.md",
-                   "fm genesis put lineage.md --file -")
+        return act("select", n, f"select: gen-{n}'s rewrite stays only if it closed more train exam scenarios than "
+                                f"its parent on the same run; the verdict goes to fm decide and a '## gen-{n}' section "
+                                "in lineage.md", f"fm genesis select {n}")
     for stage, what in (("drift", "drift check of the seed against gen-0's MUSTs and NEVERs (fm second)"),
                         ("sweep", "§7 sweep: fm state, queue, lanes, docs, doctor, full gates, exam rerun, fm genesis check")):
         if not os.path.isfile(os.path.join(d, f"{pre}{stage}.md")):
@@ -281,9 +288,10 @@ def step(p):
     if not rows and prev is not None and not ROW.findall(prev):
         return act("report", n, "two generations in a row found no tier 3-4 gap: write the final report (§8)",
                    "fm genesis put report.md --file -")
-    return act("seed", n + 1, f"write gen-{n + 1}/seed.md from gen-{n}'s seed, critiques, empty coverage cells and "
-                              f"not-yet items" + (" (every 3rd generation: fm evolve --runs 3 first)" if n % 3 == 0 else ""),
-               f"fm genesis put gen-{n + 1}/seed.md --file -")
+    return act("seed", n + 1, f"write gen-{n + 1}/seed.md from the kept ancestor's seed, gen-{n}'s critiques, open "
+                              f"coverage cells and not-yet items" + (" (every 3rd generation: fm evolve --runs 3 first)"
+                                                                     if n % 3 == 0 else ""),
+               f"fm genesis seed {n + 1}")
 
 
 def _check_lines(r, limit=6):
@@ -766,6 +774,169 @@ def spec(p, per_kind=9):
             "held": sum(s["split"] == "holdout" for s in meta["scenarios"]), "path": put(p, "spec.md", text)}
 
 
+def _exam(p, agent):
+    """exam.jsonl lines from one agent that carry closed ids (fm exam grade since T-2102)."""
+    out = []
+    for raw in (_doc(home(p), "exam.jsonl") or "").splitlines():
+        try:
+            x = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(x, dict) and x.get("agent") == agent and isinstance(x.get("closed"), dict):
+            out.append(x)
+    return out
+
+
+def _train(lines):
+    """The train ids every line closed: a scenario counts only if it held on each graded line of the run."""
+    sets = [set(t) if isinstance(t := x["closed"].get("train"), list) else set() for x in lines]
+    return set.intersection(*sets) if sets else set()
+
+
+def _cost(lines):
+    vals = [x["cost"] for x in lines if isinstance(x.get("cost"), (int, float))]
+    return round(sum(vals) / len(vals), 4) if vals else 0
+
+
+def _base(lineage, n):
+    """The seed base lineage.md names for gen n, or None."""
+    m = re.search(r"^- seed base: (gen-\d+)\s*$", dict(_sections(lineage or "")).get(f"gen-{n}", ""), re.M)
+    return m.group(1) if m else None
+
+
+def select(p, n, agent="foreman"):
+    with c.lock(os.path.join(p.dir, "genesis-lineage")):  # two selects can't interleave a read and its write
+        return _select(p, n, agent)
+
+
+def _select(p, n, agent):
+    """gen-0 §3.6: gen n's rewrite stays only if its generation closed more train scenarios than its parent's on the
+    same exam run; otherwise the parent's text comes back (a tie loses whatever the cost). Held-out scenarios never
+    count. A scenario the parent closed and the child reopens fails it; a one-scenario margin on a single graded line
+    asks for a rerun and writes nothing. Every other verdict is a '## gen-n' lineage section naming the seed base,
+    plus an fm decide."""
+    if n < 1:
+        raise ValueError("gen-0 is the user's own text: fm genesis select starts at 1")
+    d, rows = home(p), _exam(p, agent)
+    kid = [x for x in rows if x.get("gen") == n]
+    if not kid:
+        raise ValueError(f"no graded exam line for gen {n} from {agent}: fm exam run RUN --agent {agent}, then "
+                         f"fm exam grade RUN --agent {agent}")
+    mom = [x for x in rows if x.get("gen") == n - 1]
+    runs = {x.get("run") for x in mom}
+    run = next((x.get("run") for x in reversed(kid) if x.get("run") in runs), None) if mom else kid[-1].get("run")
+    if run is None:
+        raise ValueError(f"gen {n} was graded on {c.plain(str(kid[-1].get('run')))}, gen {n - 1} on "
+                         f"{c.plain(', '.join(sorted(map(str, runs))))}: grade gen {n} on the parent's run so the two "
+                         f"compare (fm exam run RUN --agent {agent})")
+    k, m = [x for x in kid if x.get("run") == run], [x for x in mom if x.get("run") == run]
+    a, b, shown = _train(k), _train(m), c.plain(str(run))
+    reopened, diff = sorted(b - a), len(a) - len(b)
+    res = {"gen": n, "run": run, "agent": agent, "closed": len(a), "parent": len(b) if mom else None,
+           "reopened": reopened, "cost": {"gen": _cost(k), "parent": _cost(m) if mom else None}}
+    if not mom:
+        verdict, why = "baseline", f"gen {n - 1} has no graded line from {agent}: gen {n} is the baseline"
+    elif reopened:
+        verdict, why = "revert", f"reopened {c.plain(', '.join(map(str, reopened)))[:300]}, which gen {n - 1} closed"
+    elif diff >= 2 or (diff == 1 and len(k) > 1):
+        verdict, why = "keep", f"closed {diff} more train scenario{'s' * (diff != 1)} than gen {n - 1}"
+    elif diff == 1:
+        return dict(res, verdict="rerun", base=None,
+                    reason=f"one scenario more on a single graded line: grade {shown} once more (fm exam run {shown} "
+                           f"--agent {agent}, then fm exam grade {shown} --agent {agent}) and select again")
+    else:
+        verdict, why = "revert", (f"closed {len(a)} train scenarios to gen {n - 1}'s {len(b)}: a rewrite stays only if "
+                                  "it closed more")
+    lineage = _doc(d, "lineage.md")
+    base = f"gen-{n}" if verdict != "revert" else (_base(lineage, n - 1) or f"gen-{n - 1}")
+    sec = (f"## gen-{n}\n- {dict(keep='kept', revert='reverted', baseline='baseline')[verdict]}: {why}\n"
+           f"- run {shown} (agent {agent}): train closed {len(a)}" + (f" vs parent {len(b)}" if mom else "")
+           + f"; reopened: {', '.join(map(str, reopened)) or 'none'}; held out never used; cost {res['cost']['gen']}"
+           + (f" vs {res['cost']['parent']}" if mom else "") + f"\n- seed base: {base}\n")
+    old = lineage or "# Lineage\n"
+    pat = re.compile(rf"^## gen-{n}\b.*?(?=^## |\Z)", re.M | re.S)
+    put(p, "lineage.md", pat.sub(lambda _: sec + "\n", old, count=1) if pat.search(old) else old.rstrip("\n") + "\n\n" + sec)
+    import fmcli
+    fmcli._write_decision(p, f"genesis select gen-{n}: {verdict} (seed base {base})", why)
+    return dict(res, verdict=verdict, base=base, reason=why)
+
+
+MADE = ("What this generation is for", "Missions", "Empty coverage cells (fill first)",
+        "Not-yet items (each retried this generation)", "Exam", "Lineage")  # seed() writes these; never carried twice
+ASKS = re.compile(r"What gen-\d+'s critiques said to change")
+
+
+def seed(p, n, agent="foreman"):
+    with c.lock(os.path.join(p.dir, "genesis-lineage")):  # the exists check and the write are one step
+        return _seed(p, n, agent)
+
+
+def _seed(p, n, agent):
+    """From gen 2 on the feature writes the Seed: a Missions table of the areas with the most open coverage cells
+    (≤ 8, ties in file order), every empty cell, every not-yet item, the critiques' asks, exam scores and lineage, then
+    the kept ancestor's own sections (a reverted generation's rewrite doesn't carry on)."""
+    d, name = home(p), f"gen-{n}/seed.md"
+    if n < 2:
+        raise ValueError("gen-1's seed is written from gen-0 by the session; fm genesis seed starts at 2")
+    if os.path.exists(os.path.join(d, name)):
+        raise ValueError(f"{name} already exists; fm genesis seed never overwrites a seed")
+    lineage = _doc(d, "lineage.md") or ""
+    base = _base(lineage, n - 1)
+    if not base:
+        raise ValueError(f"lineage.md names no seed base for gen-{n - 1}: fm genesis select {n - 1} first")
+    gen0 = _doc(d, "gen-0.md") or ""
+    text = gen0 if base == "gen-0" else _doc(d, f"{base}/seed.md")
+    if text is None:
+        raise ValueError(f"{base}/seed.md, the seed base, is missing")
+    cov = coverage(p, _doc(d, "coverage.md"), gen0)
+    caps = {nm.lower(): num for num, nm, _ in _caps(gen0)}
+    def open_(r):
+        return r["ideas"] + len(r["empty"]) + r["bad"]
+    table, ranked = [], sorted((r for r in cov["rows"] if open_(r)), key=lambda r: -open_(r))
+    wait = [f"{r['area']} ({open_(r)})" for r in ranked[8:]]  # past the cap, named so no area drops out unseen
+    for i, r in enumerate(ranked[:8], 1):
+        bare = re.sub(r"^\d+\.\s*", "", r["area"]).replace("|", "/")
+        slug = re.sub(r"[^a-z0-9]+", "-", bare.lower()).strip("-") or f"area-{i}"
+        label = f"#{caps[bare.lower()]} {bare}" if bare.lower() in caps else bare
+        table.append(f"| {i} | mission-{slug}.md | {label} | {open_(r)} open cells: {len(r['empty'])} empty, "
+                     f"{r['ideas']} ideas, {r['bad']} ungrounded | — |")
+    asks, sub = [], os.path.join(d, f"gen-{n - 1}")
+    for fn in sorted(os.listdir(sub)) if os.path.isdir(sub) else ():
+        if fn.startswith("critique-") and fn.endswith(".md"):
+            body = next((b for h, b in _sections(_doc(sub, fn) or "")
+                         if h.lower().startswith("what the next seed should change")), "").strip()
+            body = "\n".join(x for x in body.splitlines() if not x.lstrip().startswith("|"))  # rows would join the table
+            if body:
+                asks.append(f"From {fn[9:-3]}:\n{body[:1200]}")
+    ny = [f"- {h}: blocked on {f.get('blocker') or '?'}; unblocks with {f.get('unblocks-with') or '?'}"
+          for h, f in ((h, dict(NOT_YET.findall(b))) for h, b in _sections(_doc(d, "not-yet.md") or ""))
+          if h.lower() != "removed"]
+    newest = {x["gen"]: x for x in _exam(p, agent) if isinstance(x.get("gen"), int)}
+    exam = [f"- gen-{g}: run {c.plain(str(x.get('run')))}, train closed {len(_train([x]))}, cost {x.get('cost', 0)}"
+            for g, x in sorted(newest.items())]  # train only: held-out results never reach a Mission
+    verdicts = [f"- {h}: {m.group(1)}" for h, b in _sections(lineage) if (m := re.search(r"^- (.+)$", b, re.M))]
+    carried = [f"## {h}\n" + "\n".join(x for x in b.splitlines() if not x.lstrip().startswith("|")).strip("\n") + "\n"
+               for h, b in _sections(text) if h not in MADE and not ASKS.fullmatch(h)] if base != "gen-0" else []
+    parent = f"gen-{n - 1}" + ("" if base == f"gen-{n - 1}" else f", whose rewrite lost selection, so the text is {base}'s")
+    out = [f"# Seed — generation {n}", "",
+           f"Written by fm genesis seed {n} from {base}'s seed (parent {parent}), coverage.md, not-yet.md, "
+           f"gen-{n - 1}'s critiques, exam.jsonl and lineage.md.", "",
+           "## What this generation is for", "",
+           "Close the open coverage cells, most first, retry every not-yet item, and act on what the critiques asked; "
+           "the exam's train split decides whether this rewrite stays (fm genesis select).", "", "## Missions", "",
+           *(["| # | Mission file | Capabilities | Gaps closed (open cells) | Depends on |", "|---|---|---|---|---|", *table]
+             if table else ["No open coverage cell; no Missions this generation."]),
+           *(["", f"Past the 8-Mission cap, open cells wait in: {', '.join(wait)}"] if wait else []), "",
+           "## Empty coverage cells (fill first)", "",
+           *([f"- {r['area']}: {', '.join(r['empty'])}" for r in cov["rows"] if r["empty"]] or ["None."]), "",
+           "## Not-yet items (each retried this generation)", "", *(ny or ["None."]), "",
+           f"## What gen-{n - 1}'s critiques said to change", "", *("\n\n".join(asks) or "None.").splitlines(), "",
+           "## Exam", "", *(exam or ["No graded line yet."]), "", "## Lineage", "", *(verdicts or ["None."]), "",
+           *carried]
+    path = put(p, name, "\n".join(out).rstrip("\n") + "\n")
+    return {"gen": n, "path": path, "base": base, "missions": len(table)}
+
+
 def cmd_genesis(args):
     import fmcli
     p = fmcli.resolve(args)
@@ -816,6 +987,18 @@ def cmd_genesis(args):
                                       f"({r['held']} held out) in exam run {r['run']}"
                                       + (f"; no exam kind yet: {', '.join(r['unmapped'])}" if r["unmapped"] else "")
                                       + f"\n  {r['path']}")
+        if action in ("select", "seed"):
+            if not (args.path or "").isdigit():
+                raise fmcli.UsageError(f"fm genesis {action} N (the generation number)")
+            n = int(args.path)
+            r = (select if action == "select" else seed)(p, n, args.agent)
+            if action == "seed" or r["verdict"] != "rerun":
+                c.log_event(p, f"genesis_{action}", data={"gen": n, "base": r["base"]}, session=fmcli.session())
+                kick(p)
+            if action == "seed":
+                return fmcli.out(args, r, f"Seed: {r['path']} ({r['missions']} Missions, from {r['base']}'s seed)")
+            return fmcli.out(args, r, f"gen {n}: {r['verdict']}: {r['reason']}"
+                                      + (f"\n  seed base: {r['base']} (lineage.md)" if r["base"] else ""))
         if action == "check":
             r = check(p)
             fmcli.out(args, r, "\n".join(_check_lines(r)))

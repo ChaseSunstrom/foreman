@@ -480,13 +480,13 @@ class GenesisStep(ForemanTestCase):
         self.put("gen-1/mission-genesis.md", f"# Mission\n\nTask: {t}\n")  # no intake block: one brief is enough
         self.at("critique", "gen-1/critique-genesis.md")
         self.put("gen-1/critique-genesis.md", "# Critique\n")
-        self.at("select", "lineage.md", "fm decide")
+        self.at("select", "lineage.md", "fm decide", "fm genesis select 1")
         self.put("lineage.md", "# Lineage\n\n## gen-1\n- kept: the first generation\n")
         self.at("drift", "gen-1/drift.md", "fm second")
         self.put("gen-1/drift.md", "# Drift\n")
         self.at("sweep", "gen-1/sweep.md")
         self.put("gen-1/sweep.md", "# Sweep\n")
-        self.assertEqual(self.at("seed", "gen-2/seed.md")["gen"], 2)
+        self.assertEqual(self.at("seed", "gen-2/seed.md", "fm genesis seed 2")["gen"], 2)
 
     def test_a_blocked_brief_is_named_as_blocked(self):
         import fmgenesis
@@ -735,3 +735,147 @@ class GenesisDraft(ForemanTestCase):
                 "1. **Correctness.** Exam: bug.\n2. **Robustness.** Exam: bug.\n\n## 3. The tower\n")
         r = self.fm_json("genesis", "spec", "--per-kind", "3")
         self.assertEqual((r["total"], r["held"]), (3, 1))
+
+
+def line(run, gen, train, holdout=(), agent="foreman", cost=1.0):
+    """One exam.jsonl line as fm exam grade files it: the scenario ids fully closed, per the run's own split."""
+    import json
+    return json.dumps({"run": run, "agent": agent, "gen": gen, "cost": cost,
+                       "closed": {"train": sorted(train), "holdout": sorted(holdout)}}) + "\n"
+
+
+NY = ("# Not yet\n\n## Self-hosted model router\n- blocker: no local model\n- tried: ollama probe; llama.cpp spike\n"
+      "- unblocks-with: #5 getting tools\n- retried: gen-2 still no model on this box\n\n"
+      "## Voice intake\n- blocker: no microphone\n- tried: arecord; a phone bridge\n- unblocks-with: a USB mic\n"
+      "- added: gen-2\n")
+
+
+class GenesisSelect(ForemanTestCase):
+    """T-2102: fm genesis select keeps a generation's rewrite only if it closed more train scenarios than its parent on
+    the same run (gen-0 §3.6), else the parent's text comes back; fm genesis seed writes the next Seed from the kept
+    ancestor."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        import fmcore as c
+        import fmgenesis
+        self.p = c.find_project(self.repo)
+        self.tower = fmgenesis.home(self.p)
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        self.put("gen-1/seed.md", SEED + "\n## Rules\n- rule one\n")
+        self.put("gen-2/seed.md", SEED + "\n## Rules\n- child rule\n")
+
+    def put(self, name, text):
+        import fmgenesis
+        fmgenesis.put(self.p, name, text)
+
+    def read(self, name):
+        path = os.path.join(self.tower, name)
+        return read_text(path) if os.path.exists(path) else None
+
+    def decisions(self):
+        path = os.path.join(self.p.dir, "decisions.md")
+        return read_text(path) if os.path.exists(path) else ""
+
+    def test_fewer_tie_and_reopened_revert_and_two_more_keeps(self):
+        import fmgenesis
+        mom = line("r1", 1, ["a", "b"], cost=2.0)
+        for train, held, verdict in ((["a"], [], "revert"),  # fewer
+                                     (["a", "b"], ["h1", "h2", "h3"], "revert"),  # a tie: held out never breaks it
+                                     (["a", "c", "d", "e"], [], "revert"),  # three more, but b reopened
+                                     (["a", "b", "c", "d"], [], "keep")):  # two more, none reopened
+            self.put("exam.jsonl", mom + line("r1", 2, train, held))
+            r = fmgenesis.select(self.p, 2)
+            self.assertEqual(r["verdict"], verdict, (train, r))
+            self.assertEqual(r["base"], "gen-2" if verdict == "keep" else "gen-1")
+            self.assertEqual(r["reopened"], ["b"] if "b" not in train else [])
+            text = self.read("lineage.md")
+            self.assertEqual(text.count("## gen-2"), 1)  # a rerun of select replaces its section
+            self.assertIn(f"seed base: {r['base']}", text)
+        self.assertIn("genesis select gen-2: keep", self.decisions())
+
+    def test_a_one_scenario_margin_on_one_line_asks_for_a_rerun(self):
+        import fmgenesis
+        mom, before = line("r1", 1, ["a"]), self.decisions()
+        self.put("exam.jsonl", mom + line("r1", 2, ["a", "b"]))
+        r = fmgenesis.select(self.p, 2)
+        self.assertEqual(r["verdict"], "rerun")
+        self.assertIn("r1", r["reason"])
+        self.assertIsNone(self.read("lineage.md"))  # nothing is written on one noisy line
+        self.assertEqual(self.decisions(), before)
+        self.put("exam.jsonl", mom + line("r1", 2, ["a", "b"]) + line("r1", 2, ["a", "b", "c"]))
+        self.assertEqual(fmgenesis.select(self.p, 2)["verdict"], "keep")  # b held on a second line
+        self.put("exam.jsonl", mom + line("r1", 2, ["a", "b"]) + line("r1", 2, ["a", "c"]))
+        self.assertEqual(fmgenesis.select(self.p, 2)["verdict"], "revert")  # b closed only once: a tie
+
+    def test_no_parent_is_the_baseline_and_the_runs_must_match(self):
+        import fmgenesis
+        self.put("exam.jsonl", line("r1", 1, ["a"]) + line("r2", 2, ["a", "b", "c"]) +
+                 line("r1", 2, ["a", "b", "c"], agent="oracle"))
+        r = fmgenesis.select(self.p, 1)
+        self.assertEqual((r["verdict"], r["base"]), ("baseline", "gen-1"))
+        with self.assertRaises(ValueError) as e:
+            fmgenesis.select(self.p, 2)  # the newest foreman line is r2; the parent was graded on r1
+        self.assertIn("r1", str(e.exception))
+        with self.assertRaises(ValueError) as e:
+            fmgenesis.select(self.p, 3)
+        self.assertIn("fm exam", str(e.exception))
+        self.put("exam.jsonl", line("r1", 1, ["a"]) + line("r1", 2, ["a", "b", "c"]))
+        r = self.fm_json("genesis", "select", "2")
+        self.assertEqual((r["verdict"], r["closed"], r["parent"]), ("keep", 3, 1))
+        text = self.read("lineage.md")
+        self.assertLess(text.index("## gen-1"), text.index("## gen-2"))
+        self.assertIn("held out never used", text)
+
+    def test_seed_writes_the_next_seed_from_the_kept_ancestor(self):
+        import fmgenesis
+        with open(os.path.join(self.repo, "real.py"), "w") as f:
+            f.write("x = 1\n")
+        done = {(s, f): "F: real.py — done" for s in STAGES for f in SURFACES}
+        self.put("coverage.md", grid("1. Initiative") + grid("2. Exhaustive thinking", skip={("find", "MCP"), ("plan", "site")})
+                 + grid("Docs", skip={("ship", "CLI")}) + grid("Security", over=done)
+                 + "".join(grid(f"Extra {i}") for i in range(1, 7)))
+        self.put("not-yet.md", NY)
+        self.put("gen-2/critique-x.md", "# Critique\n\n## What failed\n- too timid\n\n"
+                                        "## What the next Seed should change\n- make it bolder\n"
+                                        "| 9 | mission-bogus.md | #1 | proposed (3) | — |\n")  # a row would pass the cap
+        self.put("lineage.md", "# Lineage\n\n## gen-1\n- baseline: first\n- seed base: gen-1\n\n"
+                               "## gen-2\n- reverted: a tie\n- seed base: gen-1\n")
+        self.put("exam.jsonl", line("r1", 1, ["a"]) + line("r1", 2, ["a"]))
+        fmgenesis.seed(self.p, 3)
+        text = self.read("gen-3/seed.md")
+        self.assertIn("rule one", text)
+        self.assertNotIn("child rule", text)  # gen 2 lost selection: its rewrite doesn't carry on
+        self.assertEqual([r[1] for r in fmgenesis.ROW.findall(text)],  # most open cells first, ties in file order, ≤ 8
+                         ["mission-exhaustive-thinking", "mission-initiative", "mission-docs"]
+                         + [f"mission-extra-{i}" for i in range(1, 6)])
+        for want in ("find × MCP", "plan × site", "ship × CLI", "Self-hosted model router", "Voice intake",
+                     "make it bolder", "#2 Exhaustive thinking"):
+            self.assertIn(want, text)
+        self.assertIn("Past the 8-Mission cap, open cells wait in: Extra 6 (21)", text)
+        self.assertNotIn("too timid", text)
+        self.assertNotIn("mission-security", text)  # nothing open there
+        s = fmgenesis.step(self.p)
+        self.assertEqual((s["stage"], s["gen"]), ("mission", 3))
+        self.assertIn("mission-exhaustive-thinking", s["command"])
+        with self.assertRaises(ValueError):
+            fmgenesis.seed(self.p, 3)  # never overwrites a seed
+        with self.assertRaises(ValueError):
+            fmgenesis.seed(self.p, 1)  # gen 1 comes from the session, from gen-0
+        with self.assertRaises(ValueError) as e:
+            fmgenesis.seed(self.p, 4)
+        self.assertIn("fm genesis select 3", str(e.exception))
+
+    def test_a_gen0_base_carries_no_prompt_text_and_the_agent_reaches_the_exam_section(self):
+        import fmgenesis
+        self.put("lineage.md", "# Lineage\n\n## gen-1\n- reverted: a tie\n- seed base: gen-0\n\n"
+                               "## gen-2\n- reverted: a tie\n- seed base: gen-0\n")
+        self.put("exam.jsonl", line("r1", 2, ["a"]) + line("r9", 2, ["a", "b"], agent="oracle"))
+        r = self.fm_json("genesis", "seed", "3", "--agent", "oracle")
+        text = self.read("gen-3/seed.md")
+        self.assertEqual(r["base"], "gen-0")
+        self.assertNotIn("Find the real bugs", text)  # the seed points to gen-0; it never repeats the user's prompt
+        self.assertIn("run r9, train closed 2", text)
+        self.assertNotIn("run r1", text)
+        with self.assertRaises(ValueError):
+            fmgenesis.select(self.p, 0)  # gen-0 is the user's text: nothing to select

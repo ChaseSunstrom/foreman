@@ -693,6 +693,8 @@ def run_agent(p, run, agent, split="all", limit=None, budget=2.0, model=None, ti
     if agent in SESSIONS:
         fmbudget.check("exam-arm", fmbudget.estimate("exam-arm", len(picked), min(budget, 0.5)), "a smaller --limit")
     shutil.rmtree(_answers(p, run, agent), ignore_errors=True)  # the grade is this run's answers only
+    import fmgenesis  # the generation that answers, so a later regrade still files it under that generation
+    c.write_atomic(os.path.join(_answers(p, run, agent), "gen"), str(fmgenesis.current(p)))
 
     def one(s):
         base, key = os.path.join(root(p), run, s["id"]), _key(p, run, s["id"])
@@ -721,6 +723,14 @@ COUNTS = ("keyed", "found", "false_alarms", "fixable", "fixed", "tf_keyed", "tf_
 def _known(agent):
     if agent not in AGENTS and agent not in SESSIONS:
         raise ValueError(f"unknown agent {agent!r} ({', '.join([*AGENTS, *SESSIONS])})")
+
+
+def _closed(n):
+    """A scenario is closed when every keyed thing in it was found, fixed and said, with no false alarm, false done or
+    error."""
+    return not (n["false_alarms"] or n["false_done"] or n["errors"]) and all(
+        n[have] == n[want] for want, have in (("keyed", "found"), ("fixable", "fixed"), ("tf_keyed", "tf_first"),
+                                              ("readings_keyed", "readings_hit"), ("missing_keyed", "missing_hit")))
 
 
 def grade(p, run, agent):
@@ -762,19 +772,29 @@ def grade(p, run, agent):
                 n[hit] += all(re.search(r, said, re.I) for r in want)
         n["false_done"] += bool(ans.get("done")) and not key["done_ok"]
         cost = ans.get("cost")
-        return s["split"], n, cost if isinstance(cost, (int, float)) else 0
+        return s["split"], s["id"], n, cost if isinstance(cost, (int, float)) else 0
 
     res = {"run": run, "agent": agent, **dict.fromkeys(COUNTS, 0),
-           "holdout": dict.fromkeys(COUNTS, 0), "train": dict.fromkeys(COUNTS, 0), "cost": 0}
-    for split, n, cost in _pool(one, answered):
+           "holdout": dict.fromkeys(COUNTS, 0), "train": dict.fromkeys(COUNTS, 0), "cost": 0,
+           "closed": {"train": [], "holdout": []}}
+    for split, sid, n, cost in _pool(one, answered):
         res["cost"] += cost
+        if _closed(n):  # fm genesis select compares these ids, train only, against the parent generation's
+            res["closed"][split].append(sid)
         for k, v in n.items():
             res[k] += v
             res[split][k] += v
     res["cost"] = round(res["cost"], 4)
+    for ids in res["closed"].values():
+        ids.sort()
     import fmgenesis
     splits = {s["split"] for s in answered}
-    line = dict(res, at=c.now(), split=splits.pop() if len(splits) == 1 else "all",
+    try:
+        with open(os.path.join(_answers(p, run, agent), "gen"), encoding="utf-8") as f:
+            gen = int(f.read())
+    except (OSError, ValueError):  # answers from before the stamp
+        gen = fmgenesis.current(p)
+    line = dict(res, at=c.now(), gen=gen, split=splits.pop() if len(splits) == 1 else "all",
                 kinds=sorted({s["kind"] for s in answered}),
                 author="+".join(sorted({s.get("author", "self") for s in answered})))
     path = os.path.join(fmgenesis.home(p), "exam.jsonl")
