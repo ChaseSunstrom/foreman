@@ -120,6 +120,11 @@ def _brief(p, n, since):
               "user meets it (commands, docs, site, demo, UI, install, CI). Files recent work left behind (git history):",
               *(["- unknown: git history unavailable"] if left is None else left
                 or ["- none: nothing that usually moves with recent work was left out"])]
+    import fmideas
+    missed = fmideas.misses(p, 5)  # T-2076: the user's asks no brainstorm saw coming
+    if missed:
+        lines += ["", "Asks no brainstorm predicted (blind spots: ask of the whole project the question that would have "
+                      "caught each, and build what else in that class is missing):", *[f"- {i}: {t}" for i, t in missed]]
     lines += ["", "Do, in order:",
               "1. Review what shipped above as its user would: what is weak, missing, slow or confusing now; "
               "then each surface: one gap each, and a task for every file listed (or fm decide why it stays).",
