@@ -1,5 +1,6 @@
 """fm genesis (T-2078): the Genesis tower's home under research/genesis: gen-0 kept verbatim and read-only, tower docs
 filed only in the tower's shape, and a status that shows every generation."""
+import json
 import os
 import re
 import stat
@@ -1149,3 +1150,108 @@ class GenesisPropose(ForemanTestCase):
                                     "site", "genesis", "genesis.js"))
         for want in ("g.drift", "g.sweep", '"Drift & sweep"', '["drift", "sweep"]'):
             self.assertIn(want, js)
+
+
+class GenesisExam(ForemanTestCase):
+    """T-2112: fm genesis exam grades #13 on generated projects: a line ("make this great" plus planted MUST/NEVER
+    lines), nothing, or "super improve this" in; a draft out, graded by cover against gen-0 plus the planted lines, a
+    §2 capability for the planted defect's kind, an assumed line when nothing was given and no unmapped capability."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        import fmcore as c
+        self.p = c.find_project(self.repo)
+        self.fm("genesis", "init", "--file", "-", input=read_text(SEED_PROMPT))
+
+    def exam(self, *args, env=None):
+        return self.fm_json("genesis", "exam", *args, env=env)
+
+    def child(self, reply=""):
+        bindir = os.path.join(self.tmp, "bin")
+        os.makedirs(bindir, exist_ok=True)
+        with open(os.path.join(bindir, "claude"), "w") as f:
+            f.write(CHILD)
+        os.chmod(os.path.join(bindir, "claude"), 0o755)
+        return {"PATH": bindir + os.pathsep + os.environ["PATH"], "STUB_LOG": os.path.join(self.tmp, "stub.log"),
+                "STUB_REPLY": reply}
+
+    def test_the_oracle_closes_every_scenario_and_empty_none(self):
+        import fmgenesis
+        r = self.exam("--arm", "oracle", "--per-kind", "3", "--split", "all")
+        self.assertEqual(r["scenarios"], 9)
+        self.assertEqual(len(r["closed"]["train"] + r["closed"]["holdout"]), 9, r["misses"])
+        self.assertEqual(r["given"], r["closed"])
+        run = self.fm("genesis", "exam", "--arm", "oracle", "--per-kind", "3")
+        self.assertEqual(run.stderr.count(": closed\n"), 3)  # one progress line per scenario
+        self.assertIn("1/3 ", run.stderr)
+        self.assertIn("3 held out + 0 train closed of 3 (3 on what it was given)", run.stdout)
+        self.assertNotEqual(self.fm("genesis", "exam", "--arm", "nope", check=False).returncode, 0)
+        e = self.exam("--arm", "empty", "--per-kind", "3", "--split", "all")
+        self.assertEqual(e["closed"], {"train": [], "holdout": []})
+        self.assertTrue(all(e["misses"].values()))
+        rows = fmgenesis._exam(self.p, "draft-empty")
+        self.assertEqual((len(rows), rows[0]["kinds"], rows[0]["split"]), (1, ["line", "none", "sweep"], "all"))
+
+    def test_dropping_any_checked_line_fails_the_oracle(self):
+        import fmexam
+        import fmgenesis
+        ref = read_text(SEED_PROMPT)
+        for s in fmexam.draw(0, fmgenesis.GEN_KINDS, fmexam.LANGS, 3)[::3]:  # one of each kind
+            line, planted, defect = fmgenesis._ask(s)
+            self.assertEqual(bool(planted), s["kind"] == "line")
+            chk = "\n".join([ref] + planted)
+            text = fmgenesis._oracle(chk, defect)
+            self.assertEqual(fmgenesis._misses(chk, text, s["kind"], defect), [])
+            lines = text.splitlines()
+            for i, ln in enumerate(lines):
+                if ln.startswith(("MUST:", "NEVER:", "## ", "1. **")) or (s["kind"] == "none" and ln.startswith("CONTEXT:")):
+                    self.assertTrue(fmgenesis._misses(chk, "\n".join(lines[:i] + lines[i + 1:]), s["kind"], defect), ln)
+            self.assertTrue(fmgenesis._misses(chk, text.replace(f"Exam: {defect}.", "Exam: none." if defect != "none"
+                                                                 else "Exam: bug."), s["kind"], defect))
+
+    def test_the_genesis_arm_closes_the_held_out_third_and_reads_no_train(self):
+        import fmexam
+        f = self.exam("--per-kind", "3")  # the default arm and split: genesis, held out; the lockout stub: fallback
+        self.assertEqual((f["arm"], f["agent"], f["scenarios"], f["errors"]), ("genesis", "draft-genesis", 3, 3))
+        self.assertEqual((f["closed"], f["given"]), ({"train": [], "holdout": []},) * 2)  # a fallback closes nothing
+        sid = sorted(f["misses"])[0]
+        with open(os.path.join(fmexam.root(self.p), f["run"], "genesis", sid + ".json")) as fh:
+            self.assertEqual(json.load(fh)["source"], "fallback")
+        caps = [{"name": f"Cap {i}", "test": "Checks it.", "exam": list(fmexam.KINDS[i::3])} for i in range(3)]
+        r = self.exam("--per-kind", "3", env=self.child(json.dumps({"capabilities": caps})))
+        self.assertEqual((len(r["closed"]["holdout"]), r["closed"]["train"], r["errors"]), (3, [], 0), r["misses"])
+        t = self.exam("--arm", "empty", "--per-kind", "3", "--split", "train")
+        self.assertEqual(t["scenarios"], 6)
+        self.assertFalse(any(fmexam.holdout(sid) for sid in t["misses"]))
+        self.assertTrue(all(fmexam.holdout(sid) for sid in r["misses"]))
+
+    def test_the_plain_arm_is_graded_on_what_it_was_given_too(self):
+        import fmexam
+        reply = ("# Plan\nCONTEXT: No goal was given, so this assumes: make it better.\n## 2. Capabilities\n"
+                 f"1. **Everything.** All of it. Exam: {', '.join(fmexam.KINDS)}.\n")
+        r = self.exam("--arm", "plain", "--per-kind", "3", "--split", "all", env=self.child(reply))
+        self.assertEqual((r["scenarios"], r["errors"], r["closed"]), (9, 0, {"train": [], "holdout": []}))  # no gen-0 lines
+        out = os.path.join(fmexam.root(self.p), r["run"], "plain")
+        got = [json.loads(read_text(os.path.join(out, sid + ".json")))["kind"]
+               for sid in r["given"]["train"] + r["given"]["holdout"]]
+        self.assertEqual(sorted(got), ["none"] * 3 + ["sweep"] * 3, r)  # line's planted MUST/NEVER are given, and missing
+        self.assertIn("<project>", read_text(os.path.join(self.tmp, "stub.log")))
+
+    def test_no_gen0_line_reaches_the_child(self):
+        import fmcore as c
+        bindir, log = os.path.join(self.tmp, "bin"), os.path.join(self.tmp, "stub.log")
+        os.makedirs(bindir)
+        with open(os.path.join(bindir, "claude"), "w") as f:
+            f.write(CHILD)
+        os.chmod(os.path.join(bindir, "claude"), 0o755)
+        self.fm("intake", "FEATURE: genesis\nMUST: full autonomy. Every decision through fm decide. Never ask me anything mid-run.")
+        self.exam("--per-kind", "3", env={"PATH": bindir + os.pathsep + os.environ["PATH"], "STUB_LOG": log})
+        seen = read_text(log)
+        self.assertIn("# Helpers", seen)  # the scenario's README, not this project's
+        for want in c.parse_intake(read_text(SEED_PROMPT)).constraints:
+            self.assertNotIn(want.split(":", 1)[1].strip()[:40], seen)
+
+    def test_a_draft_from_nothing_says_what_it_assumed(self):
+        text = self.fm_json("genesis", "draft")["text"]
+        self.assertRegex(text, r"(?m)^CONTEXT: No goal was given, so this assumes: super improve ")
+        self.assertNotIn("No goal was given", self.fm_json("genesis", "draft", "make it great")["text"])

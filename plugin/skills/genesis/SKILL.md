@@ -15,6 +15,9 @@ every choice goes through `fm decide`, and anything that leaves the machine need
    Show it; their MUST/NEVER lines stay verbatim, and anything it marks unconfirmed is kept or cut by them.
 2. `fm genesis init --file -` saves it read-only (refused if it holds a secret).
 3. `fm genesis spec` maps its §2 capabilities to an exam, a third held out for grading only.
+4. `fm genesis exam` grades Genesis itself (#13) on the held-out third: drafts from a line, nothing and "super
+   improve this" on generated projects; `--arm plain` is the baseline. `fm exam run --agent genesis` runs a whole
+   generation in a throwaway repo.
 
 ## Drive
 
