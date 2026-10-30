@@ -410,7 +410,12 @@ def check_backup(home):
     return Result("backup", "PASS", f"latest {tgz[-1]}: restore rehearsal read {files} files")
 
 
+NO_CC = "no Claude Code here (claude isn't on PATH): nothing to check"  # T-2174: CC is one surface, not a requirement
+
+
 def check_validate(home):
+    if not shutil.which("claude"):
+        return Result("plugin validate", "PASS", NO_CC)
     bad = []
     for target in (home, os.path.join(home, "plugin")):
         r = _run(["claude", "plugin", "validate", "--strict", target])
@@ -458,7 +463,8 @@ def check_git_hygiene(repo):
 
 def check_statusline(settings, manifest, wrapper):
     if manifest is None:
-        return Result("statusline", "WARN", "Foreman not wired into ~/.claude (fm install-user)")
+        return Result("statusline", *(("PASS", NO_CC) if not shutil.which("claude") else
+                                      ("WARN", "Foreman not wired into ~/.claude (fm install-user)")))
     cmd = ((settings or {}).get("statusLine") or {}).get("command")
     if cmd == wrapper and "statusLine_original" in manifest:
         orig = (manifest.get("statusLine_original") or {}).get("command")
@@ -468,7 +474,7 @@ def check_statusline(settings, manifest, wrapper):
 
 def check_deny_rules(settings, manifest):
     if not manifest:
-        return Result("deny rules", "WARN", "not wired")
+        return Result("deny rules", *(("PASS", NO_CC) if not shutil.which("claude") else ("WARN", "not wired")))
     deny = set(((settings or {}).get("permissions") or {}).get("deny") or [])
     missing = [r for r in manifest.get("deny_added", []) if r not in deny]
     return Result("deny rules", "FAIL" if missing else "PASS",
@@ -479,7 +485,8 @@ def check_rules_symlink(plugin=PLUGIN):
     link = os.path.join(os.path.expanduser("~"), ".claude", "rules", "foreman.md")
     target = os.path.join(plugin, "rules", "foreman.md")
     if not os.path.lexists(link):
-        return Result("rules symlink", "WARN", f"{link} missing (fm install-user)")
+        return Result("rules symlink", *(("PASS", NO_CC) if not shutil.which("claude") else
+                                         ("WARN", f"{link} missing (fm install-user)")))
     ok = os.path.realpath(link) == os.path.realpath(target)
     return Result("rules symlink", "PASS" if ok else "FAIL", f"{link} → {os.path.realpath(link)}")
 
@@ -516,8 +523,8 @@ def check_fm_link(link=None, target=None, path=None, shell=None):
     target = target or os.path.join(PLUGIN, "bin", "fm")
     path = os.environ.get("PATH", "") if path is None else path
     if not os.path.lexists(link):
-        return Result("fm link", "WARN", f"{link} is missing, so fm works only inside Claude Code: the next session "
-                                         "start makes it, or fm install-user")
+        return Result("fm link", "WARN", f"{link} is missing, so a shell can't find fm: rerun install.sh or "
+                                         "fm install-user (a Claude Code session start makes it too)")
     if os.path.realpath(link) != os.path.realpath(target):
         return Result("fm link", "WARN", f"{link} → {os.path.realpath(link)}, not this Foreman's {target}: move it "
                                          "aside and run fm install-user")

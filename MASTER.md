@@ -9,7 +9,7 @@ Not loaded every session (`~/.claude/rules/foreman.md` points here). Read it whe
 
 ## 1. What Foreman is
 
-Foreman is a local Claude Code plugin (hooks, a small state CLI `fm`, skills, always-on rules, two read-only agents) that runs every request, however terse, through one loop:
+Foreman is a local discipline layer for coding agents: a small state CLI `fm` and one hook dispatcher, packaged as a Claude Code plugin (hooks, skills, always-on rules, read-only agents) and wired into Codex, Gemini CLI and opencode by `fm agents install`, with `fm code` running the same loop on any model. It runs every request, however terse, through one loop:
 
 **capture → expand → ground → plan → execute → verify → reflect → record**
 
@@ -122,7 +122,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fmguard`
 - `fmhooks` (incl. chat approvals)
 - `fmtidy`
-- `fmdoctor` (also `fm wiring`, one screen of what is wired; checks the status views match the briefs, `--repair` regenerates them)
+- `fmdoctor` (also `fm wiring`, one screen of what is wired; checks the status views match the briefs, `--repair` regenerates them; with no `claude` on PATH the Claude Code-only checks — plugin validate, statusline, deny rules, rules symlink — pass as `NO_CC`, "no Claude Code here", T-2174)
 - `fmwatch` (`fm ui --demo`: a canned view from `ui-demo.json` with every key a real one has, T-0962)
 - `fmsetup`
 - `fmideas` (tool-less brainstorm children with a coverage map and holes per round, `--falsify` kill tests, `--crossbreed`, reframing and provocation lenses, and per-lens keep rates in `fm taste` from each brainstorm's `ideas.json`, T-0684; and `fm oracle`: behaviour examples from a task's spec alone)
