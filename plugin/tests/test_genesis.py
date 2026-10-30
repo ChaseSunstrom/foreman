@@ -4,6 +4,7 @@ import json
 import os
 import re
 import hashlib
+import itertools
 import stat
 import time
 
@@ -371,13 +372,17 @@ STAGES = ("find", "understand", "plan", "build", "verify", "ship", "operate", "l
 SURFACES = ("Claude Code", "fm code", "other agents", "MCP", "Desktop", "site", "CLI", "headless/server")
 
 
+_ids = itertools.count()
+
+
 def grid(area, skip=(), over=None):
     """One coverage.md row: every stage × surface cell filled, minus `skip`, with `over` replacing given cells."""
     over, lines = over or {}, [f"## {area}"]
     for i, (s, f) in enumerate((s, f) for s in STAGES for f in SURFACES):
         if (s, f) in skip:
             continue
-        cell = over.get((s, f)) or ("F: real.py — the feature", "I: a better probe (real.py)", "N/A: no stage here")[i % 3]
+        n = next(_ids)  # a distinct I and N/A cell each time: repeated ones are templated (T-2159)
+        cell = over.get((s, f)) or (f"F: real.py — the feature {n}", f"I: probe case {n} (real.py)", f"N/A: none for {n}")[i % 3]
         lines.append(f"- {s} × {f}: {cell}")
     return "\n".join(lines) + "\n"
 
@@ -429,6 +434,42 @@ class GenesisCheck(ForemanTestCase):
             self.assertIn(part, probs)
         self.assertEqual(res["coverage"]["empty"], 2)
         self.assertIn("✗ coverage:", self.fm("genesis", "check", check=False).stdout)
+
+    def test_a_templated_cell_is_a_problem_naming_its_twin(self):  # T-2159: filler doesn't fill the grid
+        frame = "I: an MCP tool that runs {} on demand for any client (real.py)"
+        one = {("plan", "MCP"): "I: a shim so the plan stage reaches every MCP client (real.py)",
+               ("ship", "MCP"): "I: a shim so the ship stage reaches every MCP client (real.py)",
+               ("verify", "site"): frame.format("initiative"),
+               ("find", "Desktop"): "N/A: Desktop has no view of this yet",
+               ("verify", "CLI"): "I: fm exam scorecard prints each capability's held-out pass rate (real.py)",
+               ("build", "CLI"): "I: fm edit refuses a draft whose old block matches twice (real.py)",
+               ("learn", "Claude Code"): "F: real.py — the scout feeds found work into the inbox",
+               ("learn", "CLI"): "F: real.py — the scout feeds found work into the inbox",  # the surface swapped
+               ("operate", "MCP"): "I: let an MCP client page through open criteria (real.py)",
+               ("operate", "Desktop"): "I: let a Desktop window page through open criteria (real.py)",
+               ("find", "fm code"): "N/A: Initiative"}  # nothing besides the area's own name
+        two = {("verify", "site"): frame.format("exhaustive thinking"),
+               ("find", "Desktop"): "N/A: Desktop has no view of this yet",
+               ("ship", "CLI"): "F: real.py — the scout feeds found work into the inbox"}  # an F cell counted twice
+        first, second = grid("1. Initiative", over=one), grid("2. Exhaustive thinking", over=two)
+        self.put("coverage.md", first + second)
+        code, res = self.check()
+        self.assertEqual(code, 1)
+        cov, probs = res["coverage"], res["coverage"]["problems"]
+        self.assertEqual((cov["templated"], cov["filled"], cov["empty"]), (10, 117, 0))  # concrete and F cells count
+        self.assertEqual([(r["ideas"], r["bad"]) for r in cov["rows"]],
+                         [(first.count(": I:") - 5, 8), (second.count(": I:") - 1, 3)])  # what seed's Mission table counts
+        line = next(x for x in probs if "1. Initiative: plan × MCP: templated" in x)
+        self.assertIn("1. Initiative: ship × MCP", line)  # names its twin
+        self.assertTrue(any("1. Initiative: verify × site: templated" in x and "2. Exhaustive thinking: verify × site"
+                            in x for x in probs))  # the area swapped
+        self.assertTrue(any("2. Exhaustive thinking: find × Desktop: templated" in x for x in probs))
+        self.assertEqual(sorted(x.split(": templated")[0] for x in probs if "× CLI" in x),
+                         ["1. Initiative: learn × CLI", "2. Exhaustive thinking: ship × CLI"])
+        self.assertFalse(any("learn × Claude Code: templated" in x for x in probs))  # the first F copy still counts
+        self.assertTrue(any("operate × MCP: templated" in x and "operate × Desktop" in x for x in probs))
+        self.assertIn("1. Initiative: find × fm code: too short", "\n".join(probs))
+        self.assertIn("10 templated", self.fm("genesis", "check", check=False).stdout)
 
     def test_every_capability_needs_its_row(self):
         self.put("coverage.md", grid("1. Initiative"))
@@ -995,7 +1036,7 @@ class GenesisSelect(ForemanTestCase):
         import fmgenesis
         with open(os.path.join(self.repo, "real.py"), "w") as f:
             f.write("x = 1\n")
-        done = {(s, f): "F: real.py — done" for s in STAGES for f in SURFACES}
+        done = {sf: f"F: real.py — shipped piece {k}" for k, sf in enumerate(itertools.product(STAGES, SURFACES))}
         self.put("coverage.md", grid("1. Initiative") + grid("2. Exhaustive thinking", skip={("find", "MCP"), ("plan", "site")})
                  + grid("Docs", skip={("ship", "CLI")}) + grid("Security", over=done)
                  + "".join(grid(f"Extra {i}") for i in range(1, 7)))
