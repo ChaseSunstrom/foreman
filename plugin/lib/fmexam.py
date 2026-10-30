@@ -1,6 +1,6 @@
 """fm exam (T-2079): a seeded exam of throwaway repos in six languages. Each scenario plants one defect (bug, vuln,
-untested, slow, docs, flaky, dep) or poses a request shape (vague, ambiguous, missing-tool, none) in a small app
-rendered from one spec. The answer key, the hidden checks and the clean render sit beside the repo, never in it; a
+untested, slow, docs, flaky, dep) or poses a request shape (vague, ambiguous, missing-tool, none, goal, resume) in a
+small app rendered from one spec. The answer key, the hidden checks and the clean render sit beside the repo, never in it; a
 third of each kind is held out by a hash of its id. Agents answer, the grader reads only key.json, scores go to the
 Genesis tower's exam.jsonl."""
 import concurrent.futures
@@ -18,7 +18,9 @@ import textwrap
 import fmbudget
 import fmcore as c
 
-KINDS = ("bug", "vuln", "untested", "slow", "docs", "flaky", "dep", "vague", "ambiguous", "missing-tool", "none", "clean", "rank")
+KINDS = ("bug", "vuln", "untested", "slow", "docs", "flaky", "dep", "vague", "ambiguous", "missing-tool", "none", "clean", "rank",
+         "goal", "resume")
+GOALS = ("goal", "resume")  # #4 (T-2140): graded on what a finished version holds, never on findings
 LANGS = ("python", "js", "ts", "ruby", "rust", "c")
 RUN_ID = re.compile(r"s\d+-(\d{3,})")
 BUILD_T, EXEC_T, SLOW_T = 120, 20, 5  # seconds; a timeout is a failure
@@ -31,7 +33,8 @@ REQUESTS = {"bug": "Something is off in the paging; find and fix it.", "vuln": "
             "dep": "The tests won't run; fix it.", "vague": "make this faster",
             "ambiguous": "make @total@() handle refunds",
             "missing-tool": "Match @page@()'s output to the layout in the team's Figma file", "none": "", "clean": "",
-            "rank": ""}
+            "rank": "", "goal": "Get these helpers to a finished state I could release; decide what that takes.",
+            "resume": "continue"}
 TEXTS = {"bug": "@page@() returns nothing for a short last page (the size guard drops it)",
          "vuln": "@query@() pastes the name into the SQL unescaped (SQL injection)",
          "slow": "@dedupe@() looks each item up in the output list, quadratic on big inputs",
@@ -290,10 +293,12 @@ SPEC = {"python": PY, "js": JS, "ts": TS, "ruby": RB, "rust": RS, "c": C}
 BASE = ("total", "page", "dedupe", "query", "label", "clamp")
 REGRESSION = ("page_partial", "query_quote", "dedupe_big")
 VARIANT = {"bug": ("bug",), "vuln": ("vuln",), "slow": ("slow",), "vague": ("slow",), "dep": ("dep",), "none": ("bug", "vuln"),
-           "rank": ("vuln",)}
+           "rank": ("vuln",), "goal": ("bug", "vuln"), "resume": ("bug",)}
 DEFECTS = {"bug": ("bug",), "vuln": ("vuln",), "slow": ("slow",), "vague": ("slow",), "dep": ("dep",),
            "untested": ("untested",), "docs": ("docs",), "flaky": ("flaky",), "none": ("bug", "vuln", "untested", "docs"),
-           "rank": ("vuln", "untested", "docs")}  # rank: the first outranks the rest
+           "rank": ("vuln", "untested", "docs"), "goal": ("bug", "vuln", "untested", "docs"),
+           "resume": ("bug", "vuln", "untested", "docs")}  # rank: the first outranks the rest
+DONE = {"resume": ("vuln", "docs")}  # met by the first session and ticked in PLAN.md: they must stay met
 RUN_CHECK = {"bug": "page_partial", "vuln": "query_quote", "slow": "dedupe_big", "dep": "label"}
 
 
@@ -376,12 +381,13 @@ def render(base, s, plant=None):
         if "build" in spec["cmd"] else spec["cmd"]["exec"]
     run = _fill(run.replace("@F@", suite), names)
     defects = (CHILD_DEFECTS if plant else {}).get(kind) or DEFECTS.get(kind, ())
+    done = [d for d in DONE.get(kind, ()) if d in defects]
     gap = "label" if plant and plant["function"] == "clamp" else "clamp"  # the untested one is never the planted one
     visible = [k for k in BASE if not (k == gap and "untested" in defects)]
     if kind == "flaky":
         visible = ["page_flaky" if k == "page" else k for k in visible]
     readme = README.replace("@RUN@", run)
-    planted_readme = readme.replace("@PAGEDOC@", "@alt@" if "docs" in defects else "@page@")
+    planted_readme = readme.replace("@PAGEDOC@", "@alt@" if "docs" in defects and "docs" not in done else "@page@")
     repo = os.path.join(base, "repo")
     _write(repo, dict(_app(spec, ("child",) if plant else VARIANT.get(kind, ())),
                       **{suite: _tests(spec, visible), "README.md": planted_readme}), names)
@@ -402,23 +408,27 @@ def render(base, s, plant=None):
             check = {"type": "static", "files": "readme", "must": [rf"\b{names['page']}\("], "never": [rf"\b{names['alt']}\("]}
         else:  # flaky
             check = {"type": "static", "files": test_re, "must": [rf"\b{names['page']}\("], "never": [r"random|rand\(|RandomState"]}
-        tf = d in ("bug", "vuln", "slow")
+        tf = d in ("bug", "vuln", "slow") and d not in done
         if tf:
             _write(os.path.join(base, "hidden", "planted", d), _app(spec, ("child",) if child else (d,)), names)
         symbols = [plant["function"]] if child else {"bug": ["page"], "vuln": ["query"], "slow": ["dedupe"], "dep": ["label"],
                                                     "untested": [gap], "docs": ["page", "alt"], "flaky": ["test_page", "page"]}[d]
         where = {"untested": [suite] + files, "docs": ["README.md"], "flaky": [suite]}.get(d, files)
         key_defects.append({"kind": d, "symbols": [names.get(x, x) for x in symbols], "files": where, "text": text,
-                            "tf": tf, "check": check})
+                            "tf": tf, "check": check, **({"done": True} if d in done else {})})
     readings = {"vague": [re.escape(names["dedupe"]), "set|hash|linear|quadratic"],
                 "ambiguous": ["negative|subtract", "skip|exclude|ignore|left out|drop"]}.get(kind, [])
     cmds = dict(spec["cmd"], app=files, suite=suite, check=check_name)
-    request = c.fit(c.plain(plant["request"]), 300) if plant and REQUESTS[kind] else _fill(REQUESTS[kind], names)
+    request = c.fit(c.plain(plant["request"]), 300) if plant and REQUESTS[kind] and kind not in GOALS \
+        else _fill(REQUESTS[kind], names)  # a goal kind's request is the goal, never the child's report
     key = {"id": s["id"], "kind": kind, "lang": lang, "split": s["split"], "request": request, "author": s.get("author", "self"),
            "names": names, "commands": cmds, "defects": key_defects, "readings": readings,
            "missing": ["figma"] if kind == "missing-tool" else [], "done_ok": kind != "missing-tool",
            "rank": [list(defects[:1]), list(defects[1:])] if kind == "rank" else []}
     c.write_atomic(os.path.join(base, "key.json"), json.dumps(key, indent=1))
+    if kind == "resume":  # the first session's plan, half met, is the only memory; the arm gets "continue"
+        c.write_atomic(os.path.join(repo, "PLAN.md"), f"# Plan\n\nGoal: {REQUESTS['goal']}\n\n" + "".join(
+            f"- [{'x' if d.get('done') else ' '}] {d['text']}\n" for d in key_defects))
     git = ["git", "-c", "init.defaultBranch=main", "-c", "user.name=exam", "-c", "user.email=exam@localhost",
            "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
     for a in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "helpers"]):
@@ -451,8 +461,9 @@ def _key(p, run, sid):
 
 
 CHILD_KINDS = {"bug": "a logic bug a user would hit", "vuln": "a security hole (injection, overflow, unchecked input)",
-               "none": "a logic bug a user would hit", "rank": "a security hole (injection, overflow, unchecked input)"}
-CHILD_DEFECTS = {"none": ("bug", "untested", "docs")}  # one child plant beside the template's untested and docs
+               "none": "a logic bug a user would hit", "rank": "a security hole (injection, overflow, unchecked input)",
+               **dict.fromkeys(GOALS, "gap a finished version must close (an input the function should handle and doesn't)")}
+CHILD_DEFECTS = dict.fromkeys(("none", *GOALS), ("bug", "untested", "docs"))  # one child plant beside the template's untested and docs
 AUTHOR = ("You write one exam scenario for a coding agent. Given a small {lang} module, its tests and a defect kind, plant "
           "one {what} in ONE of its functions and write the test that catches it. Reply with one JSON object only: "
           '{{"function": the function\'s name, "source": that whole function as planted, "test": the lines of one test '
@@ -476,8 +487,9 @@ def _author(s, model):
     except ValueError:
         raise ValueError("the author's reply holds no JSON object") from None
     fn = next((k for k in BASE if isinstance(plant, dict) and plant.get("function") in (k, names[k])), None)
+    asks = REQUESTS[s["kind"]] and s["kind"] not in GOALS  # else the scenario's request is the template's
     if not fn or not all(isinstance(plant.get(k), str) and 0 < len(plant[k]) <= 8000
-                         for k in ("source", "test", "says", "request")):
+                         for k in ("source", "test", "says") + ("request",) * bool(asks)):
         raise ValueError("the author's reply misses a field or names no function in the module")
     ind = re.match(r"[ \t]*", spec["tests"]["total"]).group()  # test bodies sit at the template's indent
     src = textwrap.dedent(plant["source"]).strip("\n") + "\n"
@@ -625,8 +637,8 @@ def _check_one(p, run, s):
         if ok == (s["kind"] == "dep"):
             probs.append(f"planted suite {'passed' if ok else 'failed: ' + why}")
     for d in key["defects"]:
-        if passes(base, key, d, s["repo"]):
-            probs.append(f"{d['kind']} check passes on the planted repo")
+        if passes(base, key, d, s["repo"]) != bool(d.get("done")):  # a done item (resume) is met already
+            probs.append(f"{d['kind']} check {'fails' if d.get('done') else 'passes'} on the planted repo")
         if not passes(base, key, d, clean):
             probs.append(f"{d['kind']} check fails on the clean render")
         if d["tf"] and suite(key, clean, os.path.join(base, "hidden", "planted", d["kind"]), slow=True)[0]:
@@ -639,8 +651,8 @@ def _check_one(p, run, s):
 
 def check(p, run):
     """The exam of the exam: per scenario the planted suite runs (a dep one must fail, a flaky one is skipped), each
-    hidden check fails on the planted repo and passes on the clean render, the clean suite passes, and the clean suite
-    with each test-first defect overlaid fails."""
+    hidden check fails on the planted repo (a done item's passes there) and passes on the clean render, the clean suite
+    passes, and the clean suite with each test-first defect overlaid fails."""
     meta = load(p, run)
     problems = [x for xs in _pool(lambda s: _check_one(p, run, s), meta["scenarios"]) for x in xs]
     return {"run": run, "ok": not problems, "problems": problems, "checked": len(meta["scenarios"])}
@@ -769,7 +781,7 @@ def run_agent(p, run, agent, split="all", limit=None, budget=2.0, model=None, ti
 
 
 COUNTS = ("keyed", "found", "false_alarms", "exam_defects", "fixable", "fixed", "tf_keyed", "tf_first", "readings_keyed", "readings_hit",
-          "missing_keyed", "missing_hit", "rank_keyed", "rank_hit", "false_done", "scenarios", "errors")
+          "missing_keyed", "missing_hit", "rank_keyed", "rank_hit", "false_done", "broken", "scenarios", "errors")
 
 
 def _in_order(found, key):
@@ -788,9 +800,9 @@ def _known(agent):
 
 
 def _closed(n):
-    """A scenario is closed when every keyed thing in it was found, fixed and said, with no false alarm, false done or
-    error."""
-    return not (n["false_alarms"] or n["false_done"] or n["errors"]) and all(
+    """A scenario is closed when every keyed thing in it was found, fixed and said, with no false alarm, false done,
+    broken item or error."""
+    return not (n["false_alarms"] or n["false_done"] or n["broken"] or n["errors"]) and all(
         n[have] == n[want] for want, have in (("keyed", "found"), ("fixable", "fixed"), ("tf_keyed", "tf_first"),
                                               ("readings_keyed", "readings_hit"), ("missing_keyed", "missing_hit"),
                                               ("rank_keyed", "rank_hit")))
@@ -840,15 +852,20 @@ def grade(p, run, agent):
         found = [f for f in ans.get("findings") or [] if isinstance(f, dict)]
         n = dict.fromkeys(COUNTS, 0)
         n["scenarios"], n["errors"] = 1, int(bool(ans.get("error")))
-        unkeyed = [f for f in found if not any(_matches(f, d) for d in key["defects"])]
+        goal = key["kind"] in GOALS  # graded on what the work holds: findings neither score nor alarm
+        unkeyed = [] if goal else [f for f in found if not any(_matches(f, d) for d in key["defects"])]
         tried = [f for f in unkeyed if f.get("test") and os.path.isdir(work)][:10]  # ponytail: 10 proofs a scenario
         proven = [f for f in tried if _exam_defect(base, key, work, f)]
         n["exam_defects"], n["false_alarms"] = len(proven), len(unkeyed) - len(proven)
         for d in key["defects"]:
-            n["keyed"] += 1
-            n["found"] += any(_matches(f, d) for f in found)
-            n["fixable"] += 1
             fixed = os.path.isdir(work) and passes(base, key, d, work)
+            if d.get("done"):  # met before the arm began: it must stay met
+                n["broken"] += os.path.isdir(work) and not fixed
+                continue
+            if not goal:
+                n["keyed"] += 1
+                n["found"] += any(_matches(f, d) for f in found)
+            n["fixable"] += 1
             n["fixed"] += fixed
             if d["tf"]:
                 n["tf_keyed"] += 1
@@ -862,7 +879,8 @@ def grade(p, run, agent):
                 n[hit] += all(re.search(r, said, re.I) for r in want)
         if key.get("rank"):  # keys from before T-2126 have none
             n["rank_keyed"], n["rank_hit"] = 1, int(_in_order(found, key))
-        n["false_done"] += bool(ans.get("done")) and not key["done_ok"]
+        unmet = goal and (n["fixed"] < n["fixable"] or n["broken"] > 0)  # #4: done, said with an item unmet
+        n["false_done"] += bool(ans.get("done")) and (not key["done_ok"] or unmet)
         cost = ans.get("cost")
         defect_lines = [c.fit(c.plain(f"{s['id']} {f.get('file')} {f.get('symbol')}: {f.get('says')}"), 200) for f in proven]
         return s["split"], s["id"], n, cost if isinstance(cost, (int, float)) else 0, defect_lines
@@ -918,6 +936,10 @@ def summary(r):
         parts.append(f"{r['rank_hit']}/{r['rank_keyed']} ranked")
     if r.get("exam_defects"):
         parts.append(f"{r['exam_defects']} exam defect" + "s" * (r["exam_defects"] != 1))
+    if r.get("false_done"):
+        parts.append(f"{r['false_done']} false done")
+    if r.get("broken"):
+        parts.append(f"{r['broken']} broken")
     h = r.get("holdout") or {}
     if h.get("scenarios"):
         parts.append(f"held out {h.get('found', 0)}/{h.get('keyed', 0)} found")

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm exam` gains two kinds for finishing a goal: `goal` (only a vague goal is given; graded on what a finished version holds) and `resume` (the same goal half done, with PLAN.md on disk and only "continue" given). Saying done with an item unmet is a false done, and breaking an item that was already met counts as broken. With `--author child`, a tool-less child writes the gap a finished version must close (no request needed); the other items come from the template. Genesis gives both kinds to Goal to finish.
 - When you've run `fm clauses` on a request, a reply that says it's done while parts of it still have no task is held once at Stop, naming them, so a sweeping request isn't called finished with pieces silently dropped.
 - `find` MCP tool: other agents and Claude Desktop get fm find's ranked leads for the project or a folder in it; the band shows when your drops have muted a finder; the site has an Initiative page.
 - `fm scout --slow` (and `fm night`) now runs `fm find` on your own projects: it files at most 3 leads a day and 3 open, only kinds that prove themselves (an undeclared import, a docs slip, a secret), never one you dropped, and skips trees whose recent commits aren't yours (where others commit too, each lead waits for your yes). Doctor failures seen in a project go to Foreman's own inbox, not yours.

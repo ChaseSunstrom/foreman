@@ -169,6 +169,8 @@ plant = {"function": name, "source": f"def {name}(x, lo, hi):\n    return max(lo
          "test": f"assert {name}(4, 0, 3) == {want}\n    assert {name}(2, 0, 3) == 2",  # only line 1 trimmed, as models send
          "says": f"{name}() lets hi + 1 through",
          "request": "Some values come back out of range; find and fix it."}
+if os.environ.get("STUB_MODE") == "norequest":
+    del plant["request"]
 print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.01, "result": json.dumps(plant)}))
 '''
 
@@ -230,6 +232,55 @@ class ExamAuthors(ForemanTestCase):
         self.assertFalse(fmexam._in_order(fs[1:] + fs[:1], rank))  # the vuln named last
         self.assertFalse(fmexam._in_order(fs[:2], rank))  # one missed
         self.assertIn("0/1 ranked", fmexam.summary({"found": 3, "keyed": 3, "rank_keyed": 1, "rank_hit": 0}))
+
+    def test_finish_kinds_goal_and_resume(self):
+        """#4's exam (T-2140): goal gets only a vague goal, resume a half-done PLAN.md and "continue"; the key is what a
+        finished version holds. The oracle closes all and empty none; saying done with an item unmet is a false done,
+        extra work is never a false alarm, and a done item that breaks is broken."""
+        import fmexam
+        r = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "3", "--lang", "python", "--kind", "goal,resume",
+                         "--author", "child", env=self.env)
+        self.assertEqual(r["dropped"], [])
+        self.assertEqual({s["author"] for s in r["scenarios"]}, {"child"})
+        keys = {s["id"]: json.loads(read_text(os.path.join(os.path.dirname(s["repo"]), "key.json"))) for s in r["scenarios"]}
+        goal = next(k for k in keys.values() if k["kind"] == "goal")
+        res = next(s for s in r["scenarios"] if s["kind"] == "resume")
+        resume = keys[res["id"]]
+        self.assertEqual([d["kind"] for d in goal["defects"]], ["bug", "untested", "docs"])
+        self.assertIn("lets hi + 1 through", goal["defects"][0]["text"])  # the child's missing piece
+        self.assertEqual(goal["request"], fmexam.REQUESTS["goal"])  # the template goal, never the child's report
+        self.assertEqual(resume["request"], "continue")
+        self.assertEqual([d.get("done", False) for d in resume["defects"]], [False, False, True])
+        plan = read_text(os.path.join(res["repo"], "PLAN.md"))
+        self.assertIn("Goal: " + fmexam.REQUESTS["goal"], plan)
+        self.assertEqual((plan.count("- [x] "), plan.count("- [ ] ")), (1, 2))
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual(sorted(o["closed"]["train"] + o["closed"]["holdout"]), sorted(keys))
+        self.assertEqual((o["keyed"], o["false_done"], o["broken"]), (0, 0, 0))
+        e = self.fm_json("exam", "run", r["run"], "--agent", "empty")
+        self.assertEqual((e["closed"], e["fixed"], e["broken"], e["false_done"]), ({"train": [], "holdout": []}, 0, 0, 0))
+        pl = self.fm_json("exam", "run", r["run"], "--agent", "plain", "--limit", "2", env=self.env)  # done, changed nothing
+        self.assertEqual((pl["false_done"], pl["false_alarms"], pl["closed"]), (2, 0, {"train": [], "holdout": []}))
+        self.assertIn("2 false done", fmexam.summary(pl))
+        self.assertIn("\ncontinue\n\n(Unattended", "\n" + read_text(self.log + ".prompt"))
+        work = os.path.join(os.path.dirname(os.path.dirname(res["repo"])), "work", "oracle", res["id"], "README.md")
+        names = resume["names"]
+        txt = read_text(work)
+        with open(work, "w") as f:  # the oracle's resume undoes the done README item
+            f.write(txt.replace(f"`{names['page']}(", f"`{names['alt']}("))
+        g = self.fm_json("exam", "grade", r["run"], "--agent", "oracle")
+        self.assertEqual((g["broken"], g["false_done"]), (1, 1))
+        self.assertNotIn(res["id"], g["closed"]["train"] + g["closed"]["holdout"])
+        self.assertIn("1 broken", fmexam.summary(g))
+        t = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "1", "--lang", "python", "--kind", "resume")
+        tk = json.loads(read_text(os.path.join(os.path.dirname(t["scenarios"][0]["repo"]), "key.json")))
+        self.assertEqual([(d["kind"], d.get("done", False)) for d in tk["defects"]],
+                         [("bug", False), ("vuln", True), ("untested", False), ("docs", True)])
+        self.assertTrue(self.fm_json("exam", "check", t["run"])["ok"])
+        nr = self.fm_json("exam", "gen", "--seed", "4", "--per-kind", "1", "--lang", "python", "--kind", "goal,bug",
+                          "--author", "child", env=dict(self.env, STUB_MODE="norequest"))
+        self.assertEqual(([s["kind"] for s in nr["scenarios"]], len(nr["dropped"])), (["goal"], 1))  # a bug needs its report
 
     def test_a_child_scenario_that_fails_check_is_dropped(self):
         r = self.fm_json("exam", "gen", "--seed", "1", "--per-kind", "2", "--lang", "python", "--kind", "bug",
