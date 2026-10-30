@@ -51,7 +51,7 @@ Each item has a test. A capability counts only when its exam scenarios pass (§4
 3. It grounds every idea against the code (nothing dropped silently) and tags it with an **ambition tier**: 1 tweak, 2 feature, 3 capability, 4 paradigm. At least 70% of what gets built is tier 3–4. Tier 1 goes to the inbox.
 4. It builds (§6) until its capability's exam passes.
 5. It writes `gen-N/critique-<capability>.md`: what in its Mission or the Seed was wrong or too timid, and a proposed rewrite of each.
-6. **Selection:** the next Seed is written from the critiques. A rewrite stays only if its generation closed more exam scenarios than its parent did; otherwise the parent text comes back. Lineage goes in `lineage.md`. Every 3rd generation, the Seed and mission templates go through `fm evolve --runs 3`.
+6. **Selection:** the next Seed is written from the critiques. A rewrite stays only if its generation closed more exam scenarios than its parent did; otherwise the parent text comes back (`fm genesis select N`, train scenarios only). Lineage goes in `lineage.md`. From generation 2 on, `fm genesis seed N` writes the Seed. Every 3rd generation, the Seed and mission templates go through `fm evolve --runs 3`.
 7. **Drift check:** an `fm second` read compares each new Seed to gen-0's goals, MUSTs and NEVERs, and undoes anything that drifted.
 8. **Structure caps:** at most 4 levels, at most 8 Missions per generation, one generation at a time, each finished before the next starts.
 
