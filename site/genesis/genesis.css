@@ -42,7 +42,7 @@ code, pre { font-family: var(--mono); font-size: .86em; }
 
 .top { border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 88%, transparent); position: sticky; top: 0; z-index: 5; backdrop-filter: blur(8px); }
 .top .in { display: flex; align-items: center; gap: 16px; height: 52px; }
-.top a { color: var(--ink-2); text-decoration: none; font: 600 .82rem var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.top a { color: var(--ink-2); text-decoration: none; font: 600 .82rem var(--mono); letter-spacing: .06em; text-transform: uppercase; transition: color .15s ease-out; }
 .top a:hover { color: var(--ink); }
 .top .brand { display: flex; align-items: center; gap: 8px; color: var(--ink); margin-right: auto; }
 .theme { appearance: none; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; width: 34px; height: 34px; display: grid; place-items: center; cursor: pointer; color: var(--ink-2); }
@@ -69,7 +69,7 @@ section { padding: 34px 0 6px; }
 @media (min-width: 1040px) { .grid2 { grid-template-columns: minmax(0, .88fr) minmax(0, 1fr); } }
 
 .gens { display: flex; gap: 8px; flex-wrap: wrap; margin: -4px 0 14px; }
-.gens button { appearance: none; border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 12px; cursor: pointer; font: 600 .78rem var(--mono); color: var(--ink-2); }
+.gens button { appearance: none; border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 12px; cursor: pointer; font: 600 .78rem var(--mono); color: var(--ink-2); transition: color .15s ease-out, background-color .15s ease-out, border-color .15s ease-out; }
 .gens button[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); background: var(--amber-bg); }
 
 /* A: the tower */
@@ -147,7 +147,7 @@ button.lvl:hover, .tile:hover, .trow:hover, .cap:hover, .doc:hover { border-colo
 .tier small { font: 500 .7rem var(--mono); color: var(--dim); }
 .tier.hi { border-color: var(--amber); background: var(--amber-bg); }
 .share { margin-top: 12px; position: relative; height: 26px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; }
-.share i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, color-mix(in srgb, var(--amber) 55%, transparent), var(--amber)); transition: width .8s cubic-bezier(.2, .8, .2, 1); }
+.share i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, color-mix(in srgb, var(--amber) 55%, transparent), var(--amber)); }
 .share u { position: absolute; top: -2px; bottom: -2px; left: 70%; width: 2px; background: var(--ink); text-decoration: none; }
 .share span { position: relative; font: 700 .76rem/26px var(--mono); padding-left: 10px; color: var(--ink); }
 .note { font: 500 .74rem var(--mono); color: var(--dim); margin: 6px 0 0; }
