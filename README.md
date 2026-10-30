@@ -431,7 +431,7 @@ Also: per-subagent rows, terminal titles and desktop notifications, `fm watch`, 
 - A config with comments (JSONC) is left alone with a note.
 - The files that load the hooks are protected core, like Claude Code's settings: `~/.codex/hooks.json` and `config.toml`, `~/.gemini/settings.json`, and opencode's `opencode.json` and `plugins/`, including their project-level copies. An agent that edits them, or runs `fm agents uninstall`, needs your yes.
 
-**MCP:** `fm mcp` serves the project read-only to any MCP client: its state, next action, recall, research and briefs, the stack library (`lib_suggest`, `lib_search`, `lib_show`) and the instruments (`outline`, `sym`, `impact`, `why`, `fail` on given text, `logs`, `data`, `trace`), `find`, and `exam_scorecard` (Genesis' done gate).
+**MCP:** `fm mcp` serves the project read-only to any MCP client: its state, next action, recall, research and briefs, the stack library (`lib_suggest`, `lib_search`, `lib_show`) and the instruments (`outline`, `sym`, `impact`, `why`, `fail` on given text, `logs`, `data`, `trace`), `find`, `exam_scorecard` (Genesis' done gate) and `genesis_status` (the tower's stage and next action).
 - Paths must resolve inside the project, values can't start with `-`, each is length-capped, each call has a timeout, and everything sent is redacted. `fm mcp register claude` prints the `claude mcp add` line.
 - `fm mcp new NAME --wrap 'CMD' [--sub a,b]` writes a stdlib-only MCP server for any CLI, plus a test that drives it over stdio. The server runs argv, never a shell; it has a timeout and an output cap; and it refuses to wrap destructive commands (`rm`, `git push`, a shell…). Register it with `fm mcp register claude DIR`.
 
