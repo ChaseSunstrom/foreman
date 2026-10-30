@@ -174,3 +174,125 @@ class GenesisExport(ForemanTestCase):
         self.assertEqual(links(html), links(landing))
         self.assertIn('href="index.html" aria-current="page">Genesis</a>', html)
         self.assertNotRegex(read_text(os.path.join(root, "site", "genesis", "genesis.css")), r"(?m)--bg:\s*#|Inter|\.sheet|^\.head\b")
+
+
+LIVE_WAIT_FLOOR = 200  # seconds: well inside the 300 s window
+
+
+class GenesisLive(ForemanTestCase):
+    """T-2090: fm genesis live on keeps the site's Genesis page current: tower changes are pushed to main as data only."""
+
+    def setUp(self):
+        import subprocess
+        super().setUp()
+        self.fm("init")
+        self.fm("genesis", "init", "--file", "-", input=GEN0_CAPS)
+        self.fm("genesis", "put", "gap-map.md", "--file", "-", input=GAPS)
+        self.origin = os.path.join(self.tmp, "origin.git")
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", self.origin], check=True)
+        self.git("remote", "add", "origin", self.origin)
+        self.git("push", "-q", "origin", "main")
+
+    def git(self, *a, at=None):
+        import subprocess
+        return subprocess.run(["git", "-C", at or self.repo, *a], capture_output=True, text=True, check=True).stdout
+
+    def granted(self):
+        tid = self.fm_json("task", "new", "go live", "--type", "FEATURE", "--tier", "S", "--step", "one",
+                           "--ac", "live :: true")["id"]
+        self.fm("task", "set", tid, "--allow", "publish")
+        self.fm("focus", tid)
+        return tid
+
+    def test_live_on_needs_and_spends_a_publish_grant(self):
+        import fmcore as c
+        bad = self.fm("genesis", "live", "on", check=False)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("publish grant", bad.stderr + bad.stdout)
+        self.assertFalse(self.fm_json("genesis")["live"])
+        tid = self.granted()
+        self.git("remote", "set-url", "origin", os.path.join(self.tmp, "gone.git"))
+        nowhere = self.fm("genesis", "live", "on", check=False)  # nowhere to publish: refused, the grant kept
+        self.assertNotEqual(nowhere.returncode, 0)
+        p0 = c.find_project(self.repo)
+        self.assertIn("publish", c.find_brief(p0, tid).meta.get("allow") or [])
+        self.git("remote", "set-url", "origin", self.origin)
+        self.fm("genesis", "live", "on")
+        p = c.find_project(self.repo)
+        self.assertNotIn("publish", c.find_brief(p, tid).meta.get("allow") or [])  # one yes, spent on switching on
+        self.assertEqual(self.fm_json("genesis")["live"]["remote"], "origin")
+        self.fm("genesis", "live", "on")  # already on: no second grant needed or spent
+        self.assertIn("site: live", self.fm("genesis").stdout)
+        self.fm("genesis", "live", "off")
+        self.assertFalse(self.fm_json("genesis")["live"])
+        self.assertIn("site: off", self.fm("genesis").stdout)
+
+    def test_publish_pushes_tower_data_to_main_only_when_it_changed(self):
+        off = self.fm("genesis", "publish", check=False)
+        self.assertNotEqual(off.returncode, 0)
+        self.assertIn("live on", off.stderr + off.stdout)
+        self.granted()
+        self.fm("genesis", "live", "on")
+        with open(os.path.join(self.repo, "local.txt"), "w") as f:
+            f.write("not for main\n")
+        self.git("add", "local.txt")
+        self.git("commit", "-qm", "local only")
+        first = self.fm_json("genesis", "publish")
+        self.assertEqual(first["result"], "pushed")
+        main = self.git("rev-parse", "main", at=self.origin).strip()
+        self.assertEqual(first["sha"], main)
+        files = self.git("diff", "--name-only", "main~1", "main", at=self.origin).split()
+        self.assertIn("site/genesis/genesis.json", files)
+        self.assertIn("site/genesis/gap-map.md", files)
+        self.assertTrue(all(f.startswith("site/genesis/") for f in files), files)
+        self.assertNotIn("local only", self.git("log", "--format=%s", "main", at=self.origin))
+        self.assertEqual(self.fm_json("genesis", "publish")["result"], "up to date")
+        self.assertEqual(self.git("rev-parse", "main", at=self.origin).strip(), main)
+        self.fm("genesis", "put", "gen-1/seed.md", "--file", "-", input=SEED)
+        again = self.fm_json("genesis", "publish")
+        self.assertEqual(again["result"], "pushed")
+        self.assertIn("site/genesis/gen-1/seed.md", self.git("diff", "--name-only", "main~1", "main", at=self.origin))
+        self.assertIn("last push", self.fm("genesis").stdout)
+
+    def test_kick_schedules_one_trailing_publish_per_window(self):
+        import fmcore as c
+        import fmgenesis
+        p = c.find_project(self.repo)
+        pending = os.path.join(p.dir, "genesis-publish.pending")
+        self.assertFalse(fmgenesis.kick(p))
+        self.assertFalse(os.path.exists(pending))
+        self.granted()
+        self.fm("genesis", "live", "on")
+        self.assertTrue(fmgenesis.kick(p))
+        self.assertFalse(fmgenesis.kick(p))  # one publish waits already, however many puts and turns follow
+        self.assertEqual(self.fm_json("genesis", "publish", "--settle")["result"], "pushed")
+        self.assertFalse(os.path.exists(pending))
+        self.assertGreater(fmgenesis._wait(p), LIVE_WAIT_FLOOR)  # the next one waits out the window...
+        self.fm("genesis", "put", "gen-1/seed.md", "--file", "-", input=SEED)
+        self.assertTrue(os.path.exists(pending))  # ...but a change right after a publish is still scheduled
+        os.utime(os.path.join(p.dir, "genesis-publish.last"), (0, 0))
+        self.assertEqual(fmgenesis._wait(p), 0)
+        self.assertEqual(self.fm_json("genesis", "publish", "--settle")["result"], "pushed")
+        self.assertIn("site/genesis/gen-1/seed.md", self.git("diff", "--name-only", "main~1", "main", at=self.origin))
+        self.assertTrue(fmgenesis.kick(p))
+        os.utime(pending, (0, 0))  # a waiter that died: its leftover doesn't block the next change
+        self.assertTrue(fmgenesis.kick(p))
+
+    def test_failed_publish_shows_in_status_and_the_next_one_retries(self):
+        self.granted()
+        self.fm("genesis", "live", "on")
+        self.git("remote", "set-url", "origin", os.path.join(self.tmp, "gone.git"))
+        bad = self.fm("genesis", "publish", check=False)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("failed:", self.fm("genesis").stdout)
+        self.git("remote", "set-url", "origin", self.origin)
+        self.assertEqual(self.fm_json("genesis", "publish")["result"], "pushed")
+
+    def test_turn_end_kicks_a_publish(self):
+        import fmcore as c
+        self.granted()
+        self.fm("genesis", "live", "on")
+        pending = os.path.join(c.find_project(self.repo).dir, "genesis-publish.pending")
+        self.assertFalse(os.path.exists(pending))
+        self.hook("Stop", {"last_assistant_message": "done"})
+        self.assertTrue(os.path.exists(pending))

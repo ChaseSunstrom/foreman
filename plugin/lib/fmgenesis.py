@@ -3,6 +3,7 @@ read-only; the other tower docs (gap map, lineage, exam results, each generation
 filed only in the tower's shape; the status lists every generation."""
 import os
 import re
+import time
 import sys
 
 import fmcore as c
@@ -62,7 +63,8 @@ def status(p):
             for x in ("gen-0.md", "gap-map.md", "lineage.md", "not-yet.md", "coverage.md")}
     return {"dir": d, "gen0": have["gen-0.md"], "gap_map": have["gap-map.md"], "lineage": have["lineage.md"],
             "not_yet": have["not-yet.md"], "coverage": have["coverage.md"],
-            "exam_lines": exam, "generations": sorted(gens, key=lambda g: g["n"])}
+            "exam_lines": exam, "generations": sorted(gens, key=lambda g: g["n"]),
+            "live": c.read_meta(p).get("genesis_live") or False}
 
 
 CAP = re.compile(r"^(\d+)\. \*\*(.+?)\.\*\*\s*(.*)$", re.M)  # gen-0 §2: "1. **Initiative.** what it means"
@@ -174,6 +176,152 @@ def export(p, out):
     return {"path": path, "docs": len(docs), "generations": len(gens)}
 
 
+LIVE_EVERY = 300  # seconds between auto publishes; a change inside the window goes out when it ends
+STAMP = "genesis-publish.last"  # mtime: the last publish that reached the network
+PENDING = "genesis-publish.pending"  # a detached publish waits out the window; one at a time
+REF = "refs/foreman/genesis-main"  # main fetched here, never FETCH_HEAD, which any other fetch rewrites
+
+
+def live(p, on, tid=None):
+    """T-2090: switch auto publishing on, spending one publish grant (the active task's, or tid's), or off."""
+    if not on:
+        c.update_meta(p, genesis_live=None)
+        return None
+    cur = c.read_meta(p).get("genesis_live")
+    if cur:
+        return cur  # already on: no second grant spent
+    import fmrelease
+    b = fmrelease._named_grant(p, tid) if tid else fmrelease._grant(p)
+    if not b:
+        raise ValueError("fm genesis live on needs a publish grant: fm task set ID --allow publish on the active task, "
+                         "or name it with --task ID")
+    try:  # before the grant is spent: nowhere to publish keeps it
+        fmrelease._git(p.root, "ls-remote", "--exit-code", "origin", "refs/heads/main")
+    except Exception as e:
+        raise ValueError(f"no origin main to publish to ({c.fit(c.redact(c.plain(str(e))), 160)}); the grant is kept") from None
+    fmrelease._spend(p, b.id, "fm genesis live on")
+    state = {"remote": "origin", "since": c.now(), "task": b.id}
+    c.update_meta(p, genesis_live=state)
+    return state
+
+
+def kick(p):
+    """Schedule one detached fm genesis publish --settle while live is on: it waits out the rest of the LIVE_EVERY
+    window, then publishes whatever changed by then. True when scheduled; False when off or one already waits."""
+    if not c.read_meta(p).get("genesis_live"):
+        return False
+    pending = os.path.join(p.dir, PENDING)
+    try:
+        if time.time() - os.path.getmtime(pending) < LIVE_EVERY + 600:
+            return False  # older than any wait: a dead waiter's leftover
+    except OSError:
+        pass
+    try:
+        open(pending, "w").close()
+    except OSError:
+        return False  # no marker, no spawn: never one per call
+    if not os.environ.get("FOREMAN_NO_BACKGROUND"):  # tests: publish() is run directly
+        import subprocess
+        try:
+            subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "genesis", "publish", "--settle"], cwd=p.root,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+        except OSError:
+            pass
+    return True
+
+
+def _wait(p):
+    """Seconds left in the window since the last publish reached the network."""
+    try:
+        return max(0.0, LIVE_EVERY - (time.time() - os.path.getmtime(os.path.join(p.dir, STAMP))))
+    except OSError:
+        return 0.0
+
+
+def _body(path):
+    import json
+    with open(path, encoding="utf-8") as f:
+        return {k: v for k, v in json.load(f).items() if k not in ("updated", "rev")}  # these change every export
+
+
+def _record(p, result, digest=None, sha=None):
+    with c.lock(p.dir):
+        meta = c.read_meta(p)
+        lv = meta.get("genesis_live")
+        if lv:  # switched off meanwhile: stays off
+            lv["last"] = {"at": c.now(), "result": result}
+            if digest:
+                lv["hash"] = digest
+            if sha:
+                lv["pushed"] = {"at": c.now(), "sha": sha}
+            c.write_meta(p, meta)
+    return {"result": result, **({"sha": sha} if sha else {})}
+
+
+def publish(p, settle=False):
+    """Push the tower's export to the remote's main as one data-only commit (site/genesis only), from a scratch
+    worktree at the fetched main, when it differs from what main has (the per-export updated/rev fields aside).
+    One run at a time; an unchanged tower costs one export and no network. settle: the detached form kick starts,
+    which first waits out the window, then frees the next kick, so a change from then on schedules its own."""
+    import hashlib
+    import json
+    import shutil
+    import tempfile
+    import fmrelease
+    if settle:
+        time.sleep(_wait(p))
+        try:
+            os.remove(os.path.join(p.dir, PENDING))
+        except OSError:
+            pass
+    lv = c.read_meta(p).get("genesis_live")
+    if not lv:
+        raise ValueError("live publishing is off: fm genesis live on (spends one publish grant)")
+    if c.gates_live(p, key="ship_testing"):
+        return _record(p, "waiting: fm ship is testing")  # a push now would send it back to the start
+    remote, git = lv.get("remote") or "origin", fmrelease._git
+    try:
+        with c.lock(os.path.join(p.dir, "genesis-publish"), timeout=120 if settle else 0), \
+                tempfile.TemporaryDirectory() as tmp:
+            out, wt = os.path.join(tmp, "export"), os.path.join(tmp, "main")
+            export(p, out)
+            new = _body(os.path.join(out, "genesis.json"))
+            digest = hashlib.sha256(json.dumps(new, sort_keys=True).encode()).hexdigest()
+            if digest == lv.get("hash"):
+                return _record(p, "up to date")
+            open(os.path.join(p.dir, STAMP), "w").close()
+            git(p.root, "fetch", "-q", remote, f"+refs/heads/main:{REF}")
+            base = git(p.root, "rev-parse", REF).strip()
+            git(p.root, "worktree", "add", "-q", "--detach", wt, base)
+            try:
+                dest = os.path.join(wt, "site", "genesis")
+                try:
+                    old = _body(os.path.join(dest, "genesis.json"))
+                except (OSError, ValueError):
+                    old = None
+                if old == new:
+                    return _record(p, "up to date", digest)
+                shutil.copytree(out, dest, dirs_exist_ok=True)
+                git(wt, "add", "--", "site/genesis")
+                git(wt, "commit", "-q", "-m", "Genesis: tower update (fm genesis live)")
+                sha = git(wt, "rev-parse", "HEAD").strip()
+                stray = [f for f in git(wt, "diff", "--name-only", base, sha).splitlines() if not f.startswith("site/genesis/")]
+                if stray:
+                    raise ValueError(f"refusing to push: the commit touches {stray[:3]} outside site/genesis")
+                git(p.root, "push", "-q", remote, f"{sha}:refs/heads/main")
+            finally:
+                git(p.root, "worktree", "remove", "--force", wt, ok=True)
+    except c.LockTimeout:
+        return {"result": "already publishing"}
+    except Exception as e:  # a moved main, no network: recorded; the next kick tries again
+        why = c.fit(c.redact(c.plain(str(e))), 200)
+        _record(p, f"failed: {why}")
+        raise ValueError(f"genesis publish failed: {why}") from None
+    c.log_event(p, "genesis_publish", data={"sha": sha, "remote": remote})
+    return _record(p, "pushed", digest, sha)
+
+
 def _text(s):
     def n(k, xs):
         return f"{len(xs)} {k}{'s' * (len(xs) != 1)}" + (f" ({', '.join(xs)})" if xs else "")
@@ -183,7 +331,16 @@ def _text(s):
                         (("gap map", "gap_map"), ("lineage", "lineage"), ("coverage", "coverage"), ("not-yet", "not_yet")))]
     lines += [f"gen-{g['n']}: {'seed' if g['seed'] else 'no seed'}, {n('mission', g['missions'])}, "
               f"{n('critique', g['critiques'])}" for g in s["generations"]]
-    return "\n".join(lines + [f"exam: {s['exam_lines']} results"])
+    lv = s["live"]
+    if lv:
+        site = f"site: live → {lv['remote']} main"
+        if lv.get("pushed"):
+            site += f", last push {lv['pushed']['at']} ({lv['pushed']['sha'][:8]})"
+        if lv.get("last"):
+            site += f", last check {lv['last']['at']}: {lv['last']['result']}"
+    else:
+        site = "site: off (fm genesis live on pushes every tower change to the site)"
+    return "\n".join(lines + [f"exam: {s['exam_lines']} results", site])
 
 
 def cmd_genesis(args):
@@ -201,6 +358,7 @@ def cmd_genesis(args):
         if action == "init":
             path = init(p, read(binary=True))
             c.log_event(p, "genesis_init", data={"path": path}, session=fmcli.session())
+            kick(p)
             return fmcli.out(args, {"dir": home(p), "path": path}, f"gen-0 saved, read-only: {path}")
         if action == "put":
             if not args.path:
@@ -208,8 +366,20 @@ def cmd_genesis(args):
             text = read()
             path, kinds = put(p, args.path, text), c.secret_kinds(text)
             c.log_event(p, "genesis_put", data={"name": args.path}, session=fmcli.session())
+            kick(p)
             return fmcli.out(args, {"dir": home(p), "path": path, "redacted": kinds},
                              f"Filed: {path}" + (f" (redacted: {', '.join(kinds)})" if kinds else ""))
+        if action == "live":
+            if args.path not in ("on", "off"):
+                raise fmcli.UsageError("fm genesis live on|off")
+            state = live(p, args.path == "on", args.task)
+            c.log_event(p, "genesis_live", data={"on": bool(state)}, session=fmcli.session())
+            return fmcli.out(args, {"live": state or False},
+                             "Live: every tower change reaches the site within minutes (undo: fm genesis live off)"
+                             if state else "Live publishing off.")
+        if action == "publish":
+            res = publish(p, settle=args.settle)
+            return fmcli.out(args, res, f"Genesis publish: {res['result']}" + (f" ({res['sha'][:8]})" if "sha" in res else ""))
         if action == "export":
             if not args.path:
                 raise fmcli.UsageError("fm genesis export DIR (site/genesis in the Foreman repo)")

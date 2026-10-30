@@ -6910,10 +6910,13 @@ def _build_parser(only=None):
     s.add_argument("--request", help="the user's words, verbatim")
     s = add("genesis", lazy("fmgenesis", "cmd_genesis"), tier=("Finding your way", 455), help="the Genesis tower's "
             "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
-    s.add_argument("action", nargs="?", choices=("status", "init", "put", "export"))
-    s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; export: the folder "
+    s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish"))
+    s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; live: on|off; export: the folder "
                                           "for genesis.json and the docs (site/genesis here)")
     s.add_argument("--file", help="init/put: read the text from this file")
+    s.add_argument("--task", help="live on: the task whose publish grant switches it on (default: the active task)")
+    s.add_argument("--settle", action="store_true", help="publish: wait out the rest of the window first (the detached "
+                                                         "publish a tower change starts)")
     s = add("demo", lazy("fmdemo", "cmd_demo"), tier=("Finding your way", 210), help="see Foreman work on a seeded bug in a throwaway repo, with no "
                                                       "model calls and nothing left behind (T-0870)")
     s.add_argument("--pace", type=float, default=0, metavar="SECONDS",

@@ -2,6 +2,10 @@ name: tests
 
 on:
   push:
+    paths-ignore:  # T-2090: fm genesis live's data-only pushes; the page's code still runs the suite
+      - site/genesis/genesis.json
+      - site/genesis/*.md
+      - site/genesis/gen-*/**
   pull_request:
 
 permissions:
