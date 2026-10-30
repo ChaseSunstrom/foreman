@@ -151,3 +151,157 @@ class FindCli(ForemanTestCase):
                            "--kind", "slow,vuln,untested")["run"]
         r = self.fm_json("exam", "run", run, "--agent", "finders")
         self.assertEqual((r["keyed"], r["found"], r["false_alarms"]), (3, 3, 0))
+
+    def test_exam_finders_arm_names_the_worst_first(self):
+        """T-2125: the arm lists fm find's ranked leads, so a rank scenario (a vuln beside a missing test and a docs
+        slip) closes on order, not only on what was found."""
+        self.fm("init")
+        run = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "2", "--lang", "python", "--kind", "rank")["run"]
+        r = self.fm_json("exam", "run", run, "--agent", "finders")
+        self.assertEqual((r["rank_keyed"], r["rank_hit"]), (2, 2), r)
+
+
+class FindRank(ForemanTestCase):
+    """T-2125: --rank puts the worst first (severity x reach x the finder's precision); a finder under the floor is muted."""
+
+    def lead(self, finder, kind, file="app.py", symbol="x"):
+        return {"finder": finder, "kind": kind, "file": file, "line": 1, "symbol": symbol, "says": kind}
+
+    def test_vuln_and_bug_outrank_slow_and_docs_even_with_reach(self):
+        found = [self.lead("docs", "docs", "README.md", "go"), self.lead("slow", "slow", "a.py", "go"),
+                 self.lead("sql", "vuln", "b.py", "q"), self.lead("probe", "bug", "c.py", "p"),
+                 self.lead("untested", "untested", "d.py", "u")]
+        texts = {f"m{i}.py": "go()\n" for i in range(20)}  # go is named everywhere: reach can't lift slow past a vuln
+        got = fmfind.rank(found, texts, {})
+        self.assertEqual([f["kind"] for f in got[:2]], ["vuln", "bug"])
+        self.assertEqual({f["kind"] for f in got[2:]}, {"slow", "docs", "untested"})
+        self.assertTrue(all(f["score"] >= g["score"] for f, g in zip(got, got[1:])))
+        self.assertGreater(next(f for f in got if f["kind"] == "slow")["reach"], 1)
+
+    def test_a_finder_under_the_floor_is_muted_not_dropped(self):
+        found = [self.lead("slow", "slow"), self.lead("sql", "vuln")]
+        got = fmfind.rank(found, {}, {"slow": 0.2})
+        self.assertEqual([(f["finder"], f.get("held")) for f in got], [("sql", None), ("slow", "muted")])
+
+    def test_rank_flag_prints_scores_best_first(self):
+        root = os.path.join(self.tmp, "r")
+        write(root, {"app.py": ("def q(db, a):\n    return db.execute(\"SELECT * FROM t WHERE a = '\" + a + \"'\")\n\n\n"
+                                "def orphan(x):\n    return x\n"),
+                     "test_app.py": "from app import *\n\n\ndef test_q():\n    assert q\n"})
+        r = self.fm("find", root, "--rank", "--json", check=False)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        got = json.loads(r.stdout)["findings"]
+        self.assertEqual([f["kind"] for f in got], ["vuln", "untested"])
+        self.assertIn("score", got[0])
+
+
+SQL = "def q(db, a):\n    return db.execute(\"SELECT * FROM t WHERE a = '\" + a + \"'\")\n"
+
+
+class FindLearns(ForemanTestCase):
+    """T-2125: --capture files the top findings as tasks tagged with their finder; what became of those tasks is the
+    finder's precision (prior 0.5 over 10): a dropped one counts against it, and under the floor it is muted."""
+
+    def test_capture_tags_the_finder_and_dropped_tasks_mute_it(self):
+        import fmcli
+        import fmcore as c
+        self.fm("init")
+        write(os.path.join(self.repo, "app"), {"app.py": SQL + "\n\ndef orphan(x):\n    return x\n",
+                                               "test_app.py": "from app import *\n\n\ndef test_q():\n    assert q\n"})
+        ids = json.loads(self.fm("find", "app", "--rank", "--capture", "5", "--json", check=False).stdout)["captured"]
+        p = c.find_project(self.repo)
+        briefs = {b.id: b for b in c.load_briefs(p)}
+        self.assertEqual([briefs[i].meta.get("finder") for i in ids], ["sql", "untested"])
+        self.assertEqual(briefs[ids[0]].type, "SECURITY")
+        self.assertFalse(briefs[ids[0]].meta.get("confirm"))  # this project's own tree: no outside text
+        again = self.fm("find", "app", "--capture", "5", "--json", check=False)
+        self.assertEqual(json.loads(again.stdout)["captured"], [])  # the same finding is never filed twice
+        self.assertEqual(fmfind.precision(p), {})  # open tasks say nothing yet
+        for i in range(7):
+            b = fmcli._create(p, f"untested lead {i}", "FIX", "S", "dropped", source="discovered")
+            b.meta["finder"] = "untested"
+            c.save_brief(p, b, touch=False)
+        self.assertLess(fmfind.precision(p)["untested"], fmfind.FLOOR)
+        got = json.loads(self.fm("find", "app", "--rank", "--json", check=False).stdout)["findings"]
+        self.assertEqual([(f["finder"], f.get("held")) for f in got], [("sql", None), ("untested", "muted")])
+        # a muted finder's lead is never filed
+        briefs[ids[1]].meta["status"] = "dropped"
+        c.save_brief(p, briefs[ids[1]], touch=False)
+        self.assertEqual(json.loads(self.fm("find", "app", "--capture", "5", "--json", check=False).stdout)["captured"], [])
+
+    def test_done_tasks_that_held_raise_precision(self):
+        import fmcli
+        import fmcore as c
+        self.fm("init")
+        p = c.find_project(self.repo)
+        for status in ("done",) * 6 + ("dropped",):
+            b = fmcli._create(p, "sql lead", "SECURITY", "S", status, source="discovered")
+            b.meta["finder"] = "sql"
+            c.save_brief(p, b, touch=False)
+        self.assertEqual(fmfind.precision(p), {"sql": round(11 / 17, 3)})
+
+    def test_twin_leads_both_file_a_drop_is_never_refiled_a_fixed_one_that_returns_is(self):
+        import fmcore as c
+        self.fm("init")
+        write(os.path.join(self.repo, "app"), {"keys.py": f'A = "{AWS}"\nB = "{AWS[:-1]}Q"\n'})
+        ids = json.loads(self.fm("find", "app", "--capture", "5", "--json", check=False).stdout)["captured"]
+        self.assertEqual(len(ids), 2)  # two leaks in one file are two tasks, not one key
+        p = c.find_project(self.repo)
+        briefs = {b.id: b for b in c.load_briefs(p)}
+        briefs[ids[0]].meta["status"] = "dropped"
+        briefs[ids[1]].meta["status"] = "done"
+        for i in ids:
+            c.save_brief(p, briefs[i], touch=False)
+        again = json.loads(self.fm("find", "app", "--capture", "5", "--json", check=False).stdout)["captured"]
+        self.assertEqual(len(again), 1)  # the dismissed one stays refuted; the done one came back: a regression
+        self.assertEqual(c.load_briefs(p)[-1].meta["find_key"], briefs[ids[1]].meta["find_key"])
+
+    def test_held_leads_leave_the_exit_clean_and_old_drops_fade(self):
+        import fmcli
+        import fmcore as c
+        from unittest import mock
+        import fmoutcomes
+        self.fm("init")
+        write(os.path.join(self.repo, "app"), {"app.py": "def main():\n    return 1\n\n\ndef orphan(x):\n    return x\n",
+                                               "test_app.py": "from app import *\n\n\ndef test_main():\n    assert main()\n"})
+        p = c.find_project(self.repo)
+        made = []
+        for i in range(7):
+            b = fmcli._create(p, f"untested lead {i}", "FIX", "S", "dropped", source="discovered")
+            b.meta["finder"] = "untested"
+            c.save_brief(p, b, touch=False)
+            made.append(b)
+        r = self.fm("find", "app", "--rank", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout)  # the only lead is muted: nothing to act on
+        self.assertIn("held back", r.stdout)
+        for b in made:  # a year on, the drops weigh little: the finder is heard again
+            b.meta["updated"] = "2025-01-01T00:00:00Z"
+            c.save_brief(p, b, touch=False)
+        self.assertGreaterEqual(fmfind.precision(p)["untested"], fmfind.FLOOR)
+        b = fmcli._create(p, "sql lead", "SECURITY", "S", "done", source="discovered")
+        b.meta["finder"] = "sql"
+        c.save_brief(p, b, touch=False)
+        with mock.patch.object(fmoutcomes, "outcomes", return_value={b.id: {"fate": "reverted"}}):
+            self.assertEqual(fmfind.precision(p)["sql"], round(5 / 11, 3))  # a reverted fix was no real find
+
+    def test_capture_needs_a_count_and_a_project(self):
+        self.fm("init")
+        write(os.path.join(self.repo, "app"), {"q.py": SQL})
+        for n in ("0", "-1"):
+            self.assertEqual(self.fm("find", "app", "--capture", n, check=False).returncode, 2)
+        out = os.path.join(self.tmp, "bare")
+        write(out, {"q.py": SQL})
+        r = self.fm("find", ".", "--capture", "1", cwd=out, check=False)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("inside a Foreman project", r.stderr + r.stdout)
+        self.assertEqual(self.fm("find", "nope", check=False).returncode, 2)
+
+    def test_a_tree_outside_the_project_waits_for_a_yes(self):
+        import fmcore as c
+        self.fm("init")
+        out = os.path.join(self.tmp, "elsewhere")
+        write(out, {"q.py": SQL})
+        ids = json.loads(self.fm("find", out, "--capture", "1", "--json", check=False).stdout)["captured"]
+        b = next(b for b in c.load_briefs(c.find_project(self.repo)) if b.id == ids[0])
+        self.assertTrue(b.meta.get("confirm"))
+        self.assertEqual(b.meta.get("finder"), "sql")
