@@ -714,9 +714,10 @@ def _readlines(path):
 
 def putback(base, kind, work):
     """T-2203: a copy of the arm's work with only the defect's lines planted back: per file the clean-to-planted line
-    diff, each changed region with context, replaced where that clean text occurs exactly once in the arm's file. (tmp,
-    dst), or None when a region no longer applies (the arm rewrote it, or the file is gone): its tests can't be said
-    to catch the defect, so no test-first credit."""
+    diff; each changed region is anchored on the unchanged clean lines just before and after it (each found exactly once
+    in the arm's file, in order) and whatever the arm has between them becomes the planted lines, so a fix worded
+    differently still applies. (tmp, dst), or None when an anchor is missing, not unique or out of order (or the file is
+    gone): no test-first credit."""
     clean, planted = os.path.join(base, "hidden", "clean"), os.path.join(base, "hidden", "planted", kind)
     if not os.path.isdir(work):
         return None
@@ -733,17 +734,20 @@ def putback(base, kind, work):
                 for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, c, p, autojunk=False).get_opcodes():
                     if op == "equal":
                         continue
-                    pad = 1  # one line of context, more while the clean text isn't unique in the clean file
-                    while True:
-                        lo, hi = max(i1 - pad, 0), min(i2 + pad, len(c))
-                        old = "".join(c[lo:hi])
-                        if "".join(c).count(old) == 1 or (lo == 0 and hi == len(c)):
-                            break
-                        pad += 1
-                    new = "".join(c[lo:i1] + p[j1:j2] + c[i2:hi])
-                    if arm.count(old) != 1:
+                    whole = "".join(c)
+                    lo, hi = max(i1 - 1, 0), min(i2 + 1, len(c))  # one line each side, more while not unique in clean
+                    while lo > 0 and whole.count("".join(c[lo:i1])) != 1:
+                        lo -= 1
+                    while hi < len(c) and whole.count("".join(c[i2:hi])) != 1:
+                        hi += 1
+                    before, after = "".join(c[lo:i1]), "".join(c[i2:hi])
+                    if (before and arm.count(before) != 1) or (after and arm.count(after) != 1):
                         raise LookupError(rel)
-                    arm = arm.replace(old, new)
+                    start = arm.index(before) + len(before) if before else 0
+                    end = arm.index(after) if after else len(arm)
+                    if end < start:
+                        raise LookupError(rel)
+                    arm = arm[:start] + "".join(p[j1:j2]) + arm[end:]
                 with open(os.path.join(dst, rel), "w", encoding="utf-8", newline="") as fh:
                     fh.write(arm)
         return tmp, dst

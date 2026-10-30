@@ -1,6 +1,7 @@
 """fm exam (T-2079): a generated exam of throwaway repos in six languages with planted defects and request shapes,
 answer keys kept outside each repo, a held-out third per kind, agents graded against the keys, scores to the Genesis
 tower's exam.jsonl."""
+import difflib
 import json
 import os
 import re
@@ -137,7 +138,7 @@ class ExamGen(ForemanTestCase):
         s = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug")["scenarios"][0]
         base = os.path.dirname(s["repo"])
         key = json.loads(read_text(os.path.join(base, "key.json")))
-        clean, kind = os.path.join(base, "hidden", "clean"), key["defects"][0]["kind"]
+        clean, kind = os.path.join(base, "hidden", "clean"), next(x for x in key["defects"] if x["tf"])["kind"]  # a code defect
         planted = os.path.join(base, "hidden", "planted", kind)
         arm = os.path.join(self.tmp, "arm")
         shutil.copytree(clean, arm)
@@ -151,8 +152,25 @@ class ExamGen(ForemanTestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
         self.assertTrue(fmexam.suite(key, clean)[0])
-        self.assertIsNone(fmexam.putback(base, kind, planted))  # the clean lines are gone: nothing to put back onto
         self.assertIsNone(fmexam.putback(base, kind, os.path.join(self.tmp, "nowhere")))
+        # the arm fixed the defect in other words but kept the lines around it: the region is replaced by the planted one
+        c, p = read_text(os.path.join(clean, "app.py")).splitlines(True), read_text(os.path.join(planted, "app.py")).splitlines(True)
+        op, i1, i2, j1, j2 = next(o for o in difflib.SequenceMatcher(None, c, p, autojunk=False).get_opcodes() if o[0] != "equal")
+        helper = "\n\ndef extra_helper():\n    return 1\n"
+        for name, lines, ok in (("reworded", c[:i1] + ["# reworded\n"] + [x.rstrip("\n") + "  # reworded\n" for x in c[i1:i2]] + c[i2:], True),
+                                ("anchors", c[:i1 - 1] + [c[i1 - 1].rstrip("\n") + "  # moved\n"] + c[i1:i2] + c[i2:], False)):
+            arm = os.path.join(self.tmp, name)
+            shutil.copytree(clean, arm)
+            with open(os.path.join(arm, "app.py"), "w") as f:
+                f.write("".join(lines) + helper)
+            got = fmexam.putback(base, kind, arm)
+            if not ok:
+                self.assertIsNone(got, name)
+                continue
+            try:
+                self.assertEqual(read_text(os.path.join(got[1], "app.py")), "".join(p) + helper)
+            finally:
+                shutil.rmtree(got[0], ignore_errors=True)
 
     def test_an_unkeyed_finding_proved_only_by_the_arms_own_test_stays_a_false_alarm(self):
         # T-2170: the arm wrote the change and the test, so its proof is the arm grading itself; with no outside check
