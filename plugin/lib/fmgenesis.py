@@ -1640,14 +1640,16 @@ def _norm(s):
 
 
 def _named(reply, tag, lines):
-    """What a cold reader named after TAG: (and the WHY: under it), as [(the file's lines holding the quote, why)]. The
+    """What a cold reader named after TAG: (and the WHY: under it), as [(the file's lines holding the quote, why, the
+    quote as matched)]. The
     reply is untrusted: an empty list marks a stray quote, and the why is plain and cut short. T-2228: a quote matches
     with markdown dropped and an ellipsis cut off either end."""
     reply = re.sub(rf"\*\*({tag}|WHY):\*\*", r"\1:", reply)
     out = []
     for m in re.finditer(rf"^[\s>*-]*{tag}:(.*)$(?:\n[\s>*-]*WHY:(.*)$)?", reply, re.M):
         q = _norm(c.plain(m[1])).strip(" \"'.…")
-        out.append(([s for s in lines if q in _norm(s)] if len(q) >= 8 else [], c.fit(" ".join(c.plain(m[2] or "").split()), 160)))
+        out.append(([s for s in lines if q in _norm(s)] if len(q) >= 8 else [], c.fit(" ".join(c.plain(m[2] or "").split()), 160),
+                    q))
     return out
 
 
@@ -1760,12 +1762,12 @@ def _read(p, name, text):
         named, why = [], f"it didn't run: {c.fit(c.plain(str(e)), 160)}"
     else:
         named = _named(reply, "FAIL", lines)
-        stray = sum(not h for h, _ in named)
+        stray = sum(not h for h, *_ in named)
         why = (f"it named {stray} line(s) {name} doesn't hold" if stray else "" if named
                else "" if re.search(r"^[\s*]*CLEAN\b", reply, re.M) else "no CLEAN or FAIL line came back")
     occ = _context(text)
     keys = lambda hs: set().union(set(), *(occ.get(h, set()) for h in hs))
-    hits = [(h, w, keys(h)) for h, w in named if h]  # a quote several lines hold carries only if all are accepted
+    hits = [(h, w, keys(h)) for h, w, _ in named if h]  # a quote several lines hold carries only if all are accepted
     carried = [(h[0], w) for h, w, k in hits if k and k <= ok]  # T-2207: accepted and unchanged: shown, not blocking
     held = [(h[0], w) for h, w, k in hits if not (k and k <= ok)]
     verdict = "fail" if held else "unread" if why else "pass"
@@ -1790,7 +1792,8 @@ def _read(p, name, text):
         raise ValueError(f"{name} wasn't filed: its cold read " + (f"failed {len(held)} line(s)" if held else
                          f"didn't pass ({why})") + "".join(f"\n  ✗ {h}" + (f" — reader: {w}" if w else "")
                                                           for h, w in held)
-                         + "".join(f"\n  ? a line {name} doesn't hold — reader: {w}" for h, w in named if not h and w)
+                         + "".join(f"\n  ? \"{c.fit(q, 80)}\" names no line {name} holds" + (f" — reader: {w}" if w else "")
+                                   for h, w, q in named if not h)  # T-2229: its words, so a misquote shows
                          + note
                          + "\nRevise it and put it again: a tower file counts only once a cold read passes it.")
 
@@ -1840,8 +1843,8 @@ def drift(p, n):
             read = f"didn't run: {c.fit(c.plain(str(e)), 160)}"
         else:  # the reply is untrusted: only a seed line it names verbatim goes into drift.md, never the reader's words
             named = _named(reply, "DRIFT", lines)
-            hits = list(dict.fromkeys(s for h, _ in named for s in h))
-            stray = sum(not h for h, _ in named)
+            hits = list(dict.fromkeys(s for h, *_ in named for s in h))
+            stray = sum(not h for h, *_ in named)
             found += [f"seed.md (cold read): {s}" for s in hits]
             read = (f"{len(hits)} drifted line(s)" if hits  # fail closed: only a plain CLEAN with no stray quote passes
                     else f"didn't count: it named {stray} line(s) the seed doesn't hold" if stray
