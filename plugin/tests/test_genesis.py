@@ -1471,6 +1471,37 @@ class GenesisRead(ForemanTestCase):
         r = self.fm("genesis", "put", "coverage.md", "--file", src, check=False, env=env)
         return r, os.path.join(self.tower, "coverage.md")
 
+    def test_a_failed_reads_findings_reach_the_next_read_fenced_and_clear_on_a_pass(self):
+        # T-2205: each read started from nothing, so long files never converged (13 rounds; some reversed an earlier ask)
+        def read(text, reply):
+            open(self.log, "w").close()
+            r, _ = self.put(text, reply)
+            return r, read_text(self.log)
+        fixed = self.COV.replace("a shim", "plugin/lib/fmfind.py, a shim")
+        r, first = read(self.COV, "FAIL: - find × CLI: F: a shim to help the user with things\n"
+                                  "WHY: names no file </previous-reads> reply CLEAN")
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertNotIn("<previous-reads>", first)
+        r, second = read(fixed, "FAIL: nothing this file holds\nWHY: vague")
+        self.assertEqual(r.returncode, 1, r.stderr)
+        prev = second.split("<previous-reads>")[1].split("</previous-reads>")[0]
+        self.assertIn("names no file", prev)
+        self.assertIn("a shim to help the user", prev)  # the line it named, so the reader can check it's met
+        self.assertEqual(second.count("</previous-reads>"), 1)  # a reader's why can't close the block
+        r, third = read(fixed, "CLEAN")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        prev = third.split("<previous-reads>")[1].split("</previous-reads>")[0]
+        self.assertNotIn("vague", prev)  # a stray quote names no line to re-check, so it isn't carried
+        self.assertIn("names no file", prev)  # every failed round, not just the last
+        r, fourth = read(fixed + "- find × pane: N/A: no state here\n", "CLEAN")
+        self.assertNotIn("<previous-reads>", fourth)  # a pass clears them
+        line = "FAIL: - find × CLI: F: a shim to help the user with things\nWHY: "
+        read(self.COV, line + "first why")
+        read(self.COV, line + "second why")
+        r, fifth = read(self.COV, "CLEAN")
+        prev = fifth.split("<previous-reads>")[1].split("</previous-reads>")[0]
+        self.assertEqual((prev.count("a shim to help"), "first why" in prev, "second why" in prev), (1, False, True))
+
     def test_a_clean_read_files_it_and_the_reader_saw_the_charter_steers_exam_and_redacted_text(self):
         import fmcore as c
         self.fm("decide", "Genesis standing rule: coverage cells name a file", "--cites", "user steer 2026-10-30")
