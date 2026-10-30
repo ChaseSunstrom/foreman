@@ -62,15 +62,17 @@ h3 { font-size: 1.45rem; font-weight: 600; line-height: 1.1; }
 /* header */
 .top { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(10px); }
 .top .wrap { display: flex; align-items: center; gap: 20px; height: 64px; }
-.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font: condensed 700 1.6rem/1 var(--display); }
+.brand { display: flex; flex: none; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font: condensed 700 1.6rem/1 var(--display); }
 .brand img { width: 28px; height: 28px; }
 .nav { margin-left: auto; display: flex; align-items: center; gap: 22px; }
 .nav a { color: var(--ink-2); text-decoration: none; font-weight: 500; transition: color .15s; }
 .nav a:hover { color: var(--ink); }
 .nav .hide-sm { display: none; }
 @media (min-width: 760px) { .nav .hide-sm { display: inline; } }
-/* T-1683: at 320-359 px the brand, Install, GitHub and the theme button need tighter gaps and a smaller brand */
-@media (max-width: 359px) { .top .wrap { gap: 10px; } .nav { gap: 14px; } .brand { font-size: 1.3rem; gap: 8px; } }
+/* T-1683, T-2089: without Barlow the fallback face is wider, so under 420 px the gaps and brand tighten, and under
+   360 px the header GitHub link goes (the footer keeps one); the brand never shrinks, so its text can't spill */
+@media (max-width: 419px) { .top .wrap { gap: 10px; } .nav { gap: 14px; } .brand { font-size: 1.3rem; gap: 8px; } }
+@media (max-width: 359px) { .nav a[href*="//github"] { display: none; } }
 .theme { appearance: none; border: 1px solid var(--rule); background: var(--panel); color: var(--ink); width: 38px; height: 38px; border-radius: 10px; cursor: pointer; display: grid; place-items: center; }
 .theme svg { width: 18px; height: 18px; }
 
