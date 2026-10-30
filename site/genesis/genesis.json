@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T02:29:35Z",
- "rev": "aafc340d",
+ "updated": "2026-10-30T03:31:33Z",
+ "rev": "0b64215c",
  "capabilities": [
   {
    "n": 1,
@@ -328,12 +328,12 @@
       {
        "id": "T-2080",
        "title": "Genesis on the site: fm genesis export + a live interactive tower graph page, shipped to main",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
-       "done": 3,
-       "current": "red test for export + page"
+       "done": 4,
+       "current": ""
       }
      ]
     },
