@@ -333,8 +333,7 @@ def step(p):
     if not rows and prev is not None and not ROW.findall(prev):
         return act("report", n, "two generations in a row found no tier 3-4 gap: write the final report (§8)",
                    "fm genesis put report.md --file -")
-    verdicts = {h: body.lstrip() for h, body in _sections(_doc(d, "lineage.md") or "")}
-    if n >= 3 and all(verdicts.get(f"gen-{k}", "").startswith("- reverted") for k in (n - 2, n - 1, n)):  # T-2105
+    if _stopped(_doc(d, "lineage.md") or "", n):
         return act("stopped", n, f"gens {n - 2}-{n} were all reverted: the rewrites stopped closing scenarios. Read "
                                  "lineage.md and the critiques, then write the next seed by hand or file the report",
                    f"fm genesis put gen-{n + 1}/seed.md --file -", "stopped")
@@ -1029,6 +1028,12 @@ def _cost(lines):
     return round(sum(vals) / len(vals), 4) if vals else 0
 
 
+def _stopped(lineage, n):
+    """T-2105: gens n-2..n were all reverted, so the rewrites stopped closing scenarios."""
+    verdicts = {h: body.lstrip() for h, body in _sections(lineage)}
+    return n >= 3 and all(verdicts.get(f"gen-{k}", "").startswith("- reverted") for k in (n - 2, n - 1, n))
+
+
 def _base(lineage, n):
     """The seed base lineage.md names for gen n, or None."""
     m = re.search(r"^- seed base: (gen-\d+)\s*$", dict(_sections(lineage or "")).get(f"gen-{n}", ""), re.M)
@@ -1112,6 +1117,9 @@ def _seed(p, n, agent):
     if os.path.exists(os.path.join(d, name)):
         raise ValueError(f"{name} already exists; fm genesis seed never overwrites a seed")
     lineage = _doc(d, "lineage.md") or ""
+    if _stopped(lineage, n - 1):  # T-2110: the breaker holds, not just advises; a hand-written seed (put) still goes
+        raise ValueError(f"the tower stopped: gens {n - 3}-{n - 1} were all reverted. Read lineage.md and the "
+                         f"critiques, then write gen-{n}/seed.md by hand (fm genesis put) or file the report")
     base = _base(lineage, n - 1)
     if not base:
         raise ValueError(f"lineage.md names no seed base for gen-{n - 1}: fm genesis select {n - 1} first")
