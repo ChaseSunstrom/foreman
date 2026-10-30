@@ -519,6 +519,9 @@ class GenesisCheck(ForemanTestCase):
             self.assertEqual(fmcli.main(["genesis", "check"]), 1)  # a reach problem alone fails the check
         self.assertEqual(fmgenesis._literals("# fm bus watch\ndef f():\n    '''fm doc verb'''\n    return f'fm find {1}'\n"),
                          ["fm find "])  # comments and docstrings aren't session paths
+        self.assertEqual(fmgenesis._literals("WORDS = {'fm status', 'status'}\ndef cmd_guard(args):\n    return 'fm replay'\n"
+                                             "def note():\n    return 'fm next'\n"),
+                         ["fm next"])  # T-2196: a matcher set and a verb's own output aren't shown to a session unasked
 
     def test_a_lineage_choice_is_provisional_until_the_end_of_run_exam(self):
         # T-2171 (steer 2026-10-30 rule 4): selection rests on cheap signals until the end-of-run exam confirms or
