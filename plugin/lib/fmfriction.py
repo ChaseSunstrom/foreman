@@ -177,8 +177,10 @@ def digest(p, recheck=True):
         errs = []
     if errs:
         top = collections.Counter((e[0].split(" ") + ["?"])[1] for e in errs).most_common(1)[0]
+        at = re.findall(r'File "([^"]+)", line (\d+)', "\n".join(errs[-1]))  # the innermost frame is the last
+        where = f"{c.plain(os.path.basename(at[-1][0]))}:{at[-1][1]}, " if at else ""
         out["errors the hooks swallowed"] = [f"{len(errs)} in the last 24 h, most in {top[0]} ({top[1]}); latest: "
-                                             f"{c.fit(c.plain(errs[-1][-1].strip()), 160)} (state/logs/hooks.log)"]
+                                             f"{c.fit(c.plain(errs[-1][-1].strip()), 160)} ({where}state/logs/hooks.log)"]
 
     steer = lambda e: e.get("event") == "note" and str((e.get("data") or {}).get("text") or "").startswith("steer:")
     said = [label(lp) + c.fit(c.plain(str((e.get("data") or {}).get("text") or "")), 200) for lp, e in ledger
