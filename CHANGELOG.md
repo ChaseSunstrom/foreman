@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm genesis check`'s reach no longer counts an fm verb as shown to a session just because a hook's matcher list or a command's own output names it: only text a session sees without asking counts. Live reach still 27 of 27.
 - `fm exam run` no longer caps each exam session at $2: a production-model session on a hard scenario was cut off mid-proof and scored as errored. Sessions now run uncapped unless `--budget USD` is given; the per-session timeout still stops a runaway, and your own `fm budget` limit still applies.
 - Haiku exam scores never decide: each exam line now records the model its session ran on, `fm exam scorecard` (the done gate) leaves out lines from a Haiku session and says how many it left out, `fm genesis select` still reads them (its choice is provisional until the end-of-run exam) but names the model, and a top gap from a Haiku run says so. `fm exam grade RUN --agent A --model M` stamps answers from before this change; the s31-006 smoke run is stamped, so the live scorecard skips its 4 foreman lines.
 - `fm exam grade` no longer takes an arm's own test as proof that a finding the key lacks is the exam's fault: the arm wrote both the change and the test, so the finding stays a false alarm. The exam line shows how many had the arm's own proof (`7 false alarms (1 with the arm's own proof)`), and they stay listed for reading; the site's exam table shows the same. A scenario that used to close on such a finding now stays open, so earlier exam lines aren't comparable on this point (T-2170)
