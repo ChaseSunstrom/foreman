@@ -89,7 +89,8 @@ def build(p):
     return {"version": VERSION, "head": _git(root, "rev-parse", "HEAD").strip(), "gates": _gates(root, files, c.read_meta(p).get("checks") or []),
             "layout": layout.most_common(12), "entry": [f for f in files if _ENTRY.search(f)][:8],
             "hot": [f for f, _ in churn.most_common(HOT)], "tests": links, "files": len(files),
-            "ci": _ci(root, files), "pairs": _co_change(root, set(files)), "fixy": _fixy(root, set(files)), "lib": [x["name"] for x in lib],
+            "ci": _ci(root, files), "pairs": _co_change(root, set(files)), "fixy": _fixy(root, set(files)),
+            "broke": _broke(p, set(files)), "lib": [x["name"] for x in lib],
             "lib_cards": lib, "lib_stamp": _cards_stamp()}
 
 
@@ -201,7 +202,47 @@ def _fixy(root, files):
     return {f: k for f, k in n.most_common(50) if k >= 3}
 
 
-VERSION = 9 # bump when build() changes, so older maps are rebuilt
+def _broke(p, files):
+    """T-2148: {file: [test files]} from closed baseline-red tasks: each file its fix commit (subject naming "(ID)")
+    changed outside tests, pointed at the tests the gate named failing. A hub file (MASTER.md, in every task's pairs)
+    carries no co-change signal, yet an edit to it broke test_docs once (T-2147): this brings that test back.
+    A fix's docs (its CHANGELOG line) are a record, not the cause, unless docs were all the fix changed; then a doc
+    links only to a test whose source names it (test_docs reads MASTER.md, not CHANGELOG.md). Archived tasks count."""
+    named, tests = {}, [f for f in files if _TEST.search(f)]
+    for b in c.load_briefs(p, include_archive=True):
+        if not (b.meta.get("baseline") and b.status == "done"):
+            continue
+        m = re.search(r"` fails (.+?)\. Captured", b.section("Raw request"))
+        segs = set()
+        for n in (m.group(1).replace(" …", "").split(", ") if m else []):  # a/test_x.py::t, tests.test_x.C.t
+            segs |= {n.split("::")[0], *re.split(r"[./:]+", n)}
+        hit = [f for f in tests if f in segs or os.path.basename(f).rsplit(".", 1)[0] in segs]
+        if hit:
+            named[b.id] = hit
+    out = collections.defaultdict(set)
+    if named:
+        for commit in _git(p.root, "log", "--since=365.days", "--name-only", "--format=%x00%s").split("\0")[1:]:
+            subject, _, rest = commit.partition("\n")
+            changed = [f for f in rest.split("\n") if f]
+            for tid in set(re.findall(r"\((T-\d+)\)", subject)) & set(named) if len(changed) <= 20 else ():
+                fixed = [f for f in changed if f in files and not _TEST.search(f)]
+                code = [f for f in fixed if not f.endswith(".md")]
+                for f in code:
+                    out[f].update(named[tid])
+                for f in [] if code else fixed:
+                    out[f].update(t for t in named[tid] if os.path.basename(f) in _source(p.root, t))
+    return {f: sorted(ts) for f, ts in out.items() if ts}
+
+
+def _source(root, rel):
+    try:
+        with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+VERSION = 10  # bump when build() changes, so older maps are rebuilt
 
 
 def load(p, rebuild=False):
