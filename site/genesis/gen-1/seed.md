@@ -1,8 +1,11 @@
 # Seed — generation 1
 
 Parent: gen-0.md (read it; this Seed never overrides a MUST or NEVER there). Inputs: gap-map.md (13 recon passes at
-ae98159e), not-yet.md and coverage.md (both in this tower). No exam results yet: generation 1 builds the exam, so its
-own scores are the baseline the next Seed beats.
+ae98159e), not-yet.md and coverage.md (both in this tower). Exam so far (generation 1 built it; every score is smoke under rule 6
+and none decides done): Foreman's finders arm found 90/108 planted defects on s0-001 (30/36 held out, 0 false alarms)
+after `fm find` shipped, from a 0/108 baseline; on s31-006's 9 scenarios foreman found 6/18 with 7 false alarms and fixed
+9/18, plain found 6/18 with 6 false alarms and fixed 11/18. That is the baseline the next Seed beats, and it says Foreman's
+session arm doesn't yet beat plain.
 
 ## What this generation is for
 Gen 0's cross-cutting finding is that Foreman *advises* and stops: the parts exist, the trigger and the closed loop
@@ -22,7 +25,11 @@ to the inbox.
    other agents, MCP, Desktop, site, CLI, headless/server) × every stage (find, understand, plan, build, verify, ship,
    operate, learn). Every cell holds one of: `F: <path>` an existing feature, `I: <idea> (<file it grounds in>)` a
    grounded idea, or `N/A: <reason>`. Format: one `## <area>` per row, then one line per cell,
-   `- <stage> × <surface>: F|I|N/A: …`, so a checker can count empty cells. Every generation fills empty cells first.
+   `- <stage> × <surface>: F|I|N/A: …`, so a checker can count empty cells. A cell counts only when it names a concrete
+   capability grounded in a file or a real gap (rule 6b): `fm genesis check` refuses a path that doesn't exist,
+   a cell under 3 words and templated twins (the same words with the area or surface swapped), and every coverage.md
+   write gets the cold read (rule 7), which fails a cell that would read the same in another row. Every generation fills empty
+   cells first.
 3. **Done** adds to gen-0's DONE-WHEN: no empty coverage cell and no not-yet item untried in the current generation.
 4. Tower files live only in this tower (`fm genesis put NAME --file -`), never in a scratchpad, so a fresh Mission
    session can read them.
@@ -32,6 +39,29 @@ to the inbox.
    Exam scenarios are authored by a separate tool-less child (`fm exam gen --author child`) that never sees Foreman's
    code or the Missions; template scenarios (`--author self`) are a free fixture, never the score that ranks gaps.
    A capability that looks strong on self-checks but weak on these outside signals is a **top gap** in the next Seed.
+6. **Proof only where it decides** (the user's testing-cadence steer, 2026-10-29). (a) Always: red-first unit tests,
+   `fm check` and `fm task finish` audits. Every generation: only the zero-token arms (finders, oracle, empty) on all
+   scenarios, plus at most a Haiku smoke run of foreman vs plain on ≤ 9 held-out scenarios. Haiku scores are smoke
+   only: they never decide done, selection or a lean/cost change. The full foreman-vs-plain exam and the long-horizon
+   tier run on the production model once Missions 1–8 are built, then again after the fixes they trigger; a
+   capability the smoke or finders arm shows regressing gets its full arms right then. (b) Coverage is real: rule 2.
+   (c) The long-horizon tier is the deciding end-of-run score for every capability except pure finders: a real repo
+   (Foreman's own history included) rolled back to a past commit, the multi-task change that followed as the goal
+   and its shipped tests as the hidden checks; faults planted mid-run (forced compaction, killed session, usage-limit
+   pause, a misleading test); foreman vs plain on the same goals. Scored per finished goal: true-done rate, false-done
+   claims, regressions and later reverts, interventions needed, hours to the first, guard-worthy actions attempted,
+   cost. Small single-defect scenarios are a smoke test; no lean or cost change is accepted on them alone if it could
+   lower the long-horizon score. (d) Until the end-of-run exam, selection between rewritten Seeds and Mission
+   templates reads the free arms, fm outcomes and cold fm second reads, with the Haiku smoke run as a breakage
+   signal, and lineage.md marks each choice "provisional" until the final exam confirms or reverses it.
+7. **Every tower file gets a cold read when it's written** (the user's steer, 2026-10-30). Seeds, Missions,
+   critiques, coverage, not-yet and exam entries go through a cold Haiku read against gen-0's MUSTs and NEVERs and for
+   metric-gaming (filler, templated text, a check that measures format not substance, progress claimed with no exam
+   movement); a failure goes back to the writer and the file doesn't count until a read passes (`fm genesis put`,
+   T-2166). Every user steer becomes a standing rule here plus an automatic check in the same task (T-2167).
+A user grant (the push-to-main one of 2026-10-29) is not a rule here: a steer only adds to gen-0, so grants live in
+decisions.md, each is spent through its own guard (`fm ship` takes a per-task publish grant), and every use goes
+into the §8 report as gen-0's "leaves the machine" MUST asks.
 
 ## Selection rule for this generation
 Largest open tier 3–4 gaps first, dependencies honoured, ≤ 8 Missions, #13 included (gen-0 §3). The exam comes
@@ -54,13 +84,20 @@ scenarios all passing, held-out included, and their completeness list met), the 
 gen 2 as its own Mission — it is never folded silently into "partly done".
 
 ## Every Mission carries these (do not restate gen-0; point to it)
-- **Shape**: capability spec (from gen-0 §2), the gap-map rows it closes, the coverage cells it fills, exam scenarios
-  with answer keys (≥ 9 per capability, so the held-out third is ≥ 3), 3+ approaches with the choice and why, tier
-  3–4 share ≥ 70%, an `fm intake` block (L3), done-when.
+- **Shape**: capability spec (from gen-0 §2), the gap-map rows it closes, the coverage cells it fills, the exam
+  kinds it adds and how each is graded (the scenarios and answer keys are not the Mission's: `fm exam gen` renders
+  them, a tool-less child that never sees the Missions authors the outside third with `--author child`, and genesis
+  drafts are graded on the user's own gen-0; ≥ 9 per capability, so the held-out third is ≥ 3), the long-horizon goal
+  it is decided on at the end of the run (rule 6c; pure finders excepted), 3+ approaches with the choice and why, tier
+  3–4 share ≥ 70% (gen-0 §3's ambition rule; a tier is set by the gap the work closes, and the critique re-tiers any
+  label it can't back with that gap), an `fm intake` block (L3), done-when.
 - **Process**: `fm mission` for the pillars; `fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen <earlier
   ideas.md>` with fitted lenses + inversion + sci-fi (2030 worked back) + self-modification + ≥ 2 invented lenses;
   first re-read not-yet.md for items in its area; tier 4 or uncertain → `fm lane new ID --spike`; two credible
-  designs → `fm lane race`; tests red first; close with `fm task finish` and its audits.
+  designs → `fm lane race`; tests red first; close with `fm task finish` and its audits. Testing cadence (rule 6):
+  each generation runs only the zero-token arms (finders, oracle, empty) and at most a Haiku smoke run of foreman vs
+  plain on ≤ 9 held-out scenarios, which never decides done, selection or a lean/cost change; the full exam and the
+  long-horizon tier wait for the end of the run.
 - **Lean** (gen-0 §6): subtract as you add; hook p95, rules size and injected context may not grow. A new verb that
   replaces an old path removes the old path in the same task.
 - **gen-0's MUSTs and NEVERs, verbatim** (quoted, never paraphrased: a paraphrase is drift):
@@ -75,7 +112,8 @@ NEVER: grant yourself anything or lower your own guard. Protected core gets a bu
 ## Order of work
 1 → 2 → 3, then 4–8 in that order, one at a time. After each Mission: its critique (gen-1/critique-<cap>.md: exam
 scenarios closed vs planned, outside signals (fm outcomes, fm second, plain vs foreman on held-out), coverage cells filled, not-yet items added or retried, what failed, what the next Seed
-should change). After all: selection against the exam, lineage.md, drift check against gen-0, completeness sweep
+should change). After all: selection (until the end-of-run exam it reads the free arms, fm outcomes and cold fm
+second reads, the Haiku smoke run only as a breakage signal, and lineage.md marks each choice provisional: rule 6d), drift check against gen-0, completeness sweep
 (§7, plus empty coverage cells and untried not-yet items), then gen 2's Seed — written by `fm genesis` itself (gen-0
 §3: from generation 2 on, the feature writes the Seed).
 
