@@ -6911,13 +6911,18 @@ def _build_parser(only=None):
     s = add("genesis", lazy("fmgenesis", "cmd_genesis"), tier=("Finding your way", 455), help="the Genesis tower's "
             "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
     s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish", "check", "step",
-                                                 "draft", "spec", "select", "seed", "drift", "sweep"))
+                                                 "draft", "spec", "select", "seed", "drift", "sweep", "exam"))
     s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; live: on|off; export: the folder "
                                           "for genesis.json and the docs (site/genesis here); draft: the goal line (none: "
                                           "a whole gen-0 anyway); select/seed/drift/sweep: the generation N")
     s.add_argument("--agent", default="foreman", help="select/sweep: whose graded exam lines count (default foreman)")
     s.add_argument("--file", help="init/put/draft: read the text from this file (- is stdin)")
-    s.add_argument("--per-kind", type=int, default=9, help="spec: exam scenarios per kind; a third is held out")
+    s.add_argument("--per-kind", type=int, default=9, help="spec/exam: exam scenarios per kind; a third is held out")
+    s.add_argument("--arm", choices=("genesis", "plain", "oracle", "empty"), default="genesis",
+                   help="exam: who drafts (genesis: fm genesis draft; plain: a model with the format only; oracle/empty: "
+                        "the scoring's own bounds)")
+    s.add_argument("--split", choices=("holdout", "train", "all"), default="holdout", help="exam: which scenarios")
+    s.add_argument("--seed", type=int, default=0, help="exam: the scenario draw")
     s.add_argument("--task", help="live on: the task whose publish grant switches it on (default: the active task)")
     s.add_argument("--settle", action="store_true", help="publish: wait out the rest of the window first (the detached "
                                                          "publish a tower change starts)")
@@ -6930,12 +6935,14 @@ def _build_parser(only=None):
     s.add_argument("--lang", help="comma list (default all: python,js,ts,ruby,rust,c)")
     s.add_argument("--kind", help="comma list (default all eleven)")
     s.add_argument("--split", choices=("train", "holdout", "all"), default="all", help="gen: which to render; run: which to answer")
-    s.add_argument("--agent", help="run/grade: oracle | empty | finders | foreman | plain (claude sessions, cost recorded)")
+    s.add_argument("--agent", help="run/grade: oracle | empty | finders | foreman | plain | genesis (claude sessions, "
+                                  "cost recorded; genesis runs one Genesis generation)")
     s.add_argument("--author", choices=("self", "child"), default="self",
                    help="gen: child = a tool-less model writes the bug and vuln plants (kept only when fm exam check passes)")
     s.add_argument("--model", help="gen: the child author's model (default sonnet); run: the session's model")
     s.add_argument("--limit", type=int, help="run: answer the first N picked scenarios (session arms default to 3)")
     s.add_argument("--budget", type=float, default=2.0, help="run: USD cap per session")
+    s.add_argument("--request", help="run: session arms get these words instead of each scenario's request")
     s = add("demo", lazy("fmdemo", "cmd_demo"), tier=("Finding your way", 210), help="see Foreman work on a seeded bug in a throwaway repo, with no "
                                                       "model calls and nothing left behind (T-0870)")
     s.add_argument("--pace", type=float, default=0, metavar="SECONDS",

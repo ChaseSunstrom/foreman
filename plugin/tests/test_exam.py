@@ -88,6 +88,8 @@ class ExamGen(ForemanTestCase):
             self.assertNotEqual(r.returncode, 0, args)
         r = self.fm("exam", "run", "no-such-run", "--agent", "oracle", check=False)
         self.assertNotEqual(r.returncode, 0)
+        r = self.fm("exam", "run", "no-such-run", "--agent", "oracle", "--request", "x", check=False)
+        self.assertIn("--request goes with a session agent", r.stderr)
 
 
 STUB = r'''#!/usr/bin/env python3
@@ -98,6 +100,8 @@ if "--permission-mode" in argv:  # a session arm: it answers in its reply and ch
         f.write(("plugin" if "--plugin-dir" in argv else "bare") + "\n")
     with open(os.environ["STUB_LOG"] + ".cwd", "a") as f:
         f.write(os.getcwd() + "\n")
+    with open(os.environ["STUB_LOG"] + ".prompt", "a") as f:
+        f.write(argv[argv.index("-p") + 1] + "\n---\n")
     reply = 'Looked.\n{"findings": [{"file": "app.py", "symbol": "nothing", "says": "a guess"}], "notes": [], "done": true}'
     if os.environ.get("STUB_MODE") == "error":  # rate-limited mid-run: an error result, no answer
         print(json.dumps({"type": "result", "is_error": True, "total_cost_usd": 0.05, "result": "rate limited"}))
@@ -163,6 +167,22 @@ class ExamAuthors(ForemanTestCase):
             self.assertFalse(os.path.realpath(cwd).startswith(os.path.realpath(state)), cwd)
         spend = read_text(os.path.join(self.home, "state", "spend.jsonl"))
         self.assertEqual(spend.count('"exam-arm"'), 2)  # each session's cost lands in fm cost / fm budget
+
+    def test_the_genesis_arm_runs_one_generation_on_the_given_request(self):
+        run = self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "3", "--lang", "python", "--kind", "bug")["run"]
+        r = self.fm_json("exam", "run", run, "--agent", "genesis", "--split", "holdout", "--limit", "1", env=self.env)
+        self.assertEqual((r["scenarios"], r["request"]), (1, "make this great"))  # the default request is recorded
+        self.assertEqual(read_text(self.log).split(), ["plugin"])
+        prompt = read_text(self.log + ".prompt")
+        self.assertTrue(prompt.startswith("make this great"), prompt[:80])
+        self.assertIn("fm genesis draft", prompt)
+        self.assertIn("fm genesis step", prompt)
+        row = json.loads(read_text(os.path.join(self.fm_json("genesis")["dir"], "exam.jsonl")).splitlines()[-1])
+        self.assertEqual((row["agent"], row["request"]), ("genesis", "make this great"))
+        p = self.fm_json("exam", "run", run, "--agent", "plain", "--split", "holdout", "--limit", "1",
+                         "--request", "make this great", env=self.env)
+        self.assertEqual(p["request"], "make this great")
+        self.assertTrue(read_text(self.log + ".prompt").split("---\n")[1].startswith("make this great"))
 
     def test_errored_sessions_are_counted_and_the_sample_spans_kinds(self):
         run = self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "3", "--lang", "python", "--kind", "bug,docs")["run"]
