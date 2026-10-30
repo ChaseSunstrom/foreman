@@ -6917,6 +6917,21 @@ def _build_parser(only=None):
     s.add_argument("--task", help="live on: the task whose publish grant switches it on (default: the active task)")
     s.add_argument("--settle", action="store_true", help="publish: wait out the rest of the window first (the detached "
                                                          "publish a tower change starts)")
+    s = add("exam", lazy("fmexam", "cmd_exam"), tier=("Finding your way", 456), help="a seeded exam of throwaway repos in six "
+            "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
+    s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check"))
+    s.add_argument("run", nargs="?", help="run/grade/check: the run id fm exam gen printed")
+    s.add_argument("--seed", type=int, default=0)
+    s.add_argument("--per-kind", type=int, default=9, help="scenarios per kind; a third (rounded) is held out")
+    s.add_argument("--lang", help="comma list (default all: python,js,ts,ruby,rust,c)")
+    s.add_argument("--kind", help="comma list (default all eleven)")
+    s.add_argument("--split", choices=("train", "holdout", "all"), default="all", help="gen: which to render; run: which to answer")
+    s.add_argument("--agent", help="run/grade: oracle | empty | finders | foreman | plain (claude sessions, cost recorded)")
+    s.add_argument("--author", choices=("self", "child"), default="self",
+                   help="gen: child = a tool-less model writes the bug and vuln plants (kept only when fm exam check passes)")
+    s.add_argument("--model", help="gen: the child author's model (default sonnet); run: the session's model")
+    s.add_argument("--limit", type=int, help="run: answer the first N picked scenarios (session arms default to 3)")
+    s.add_argument("--budget", type=float, default=2.0, help="run: USD cap per session")
     s = add("demo", lazy("fmdemo", "cmd_demo"), tier=("Finding your way", 210), help="see Foreman work on a seeded bug in a throwaway repo, with no "
                                                       "model calls and nothing left behind (T-0870)")
     s.add_argument("--pace", type=float, default=0, metavar="SECONDS",
