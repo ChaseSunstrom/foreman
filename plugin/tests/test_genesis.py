@@ -747,6 +747,13 @@ class GenesisDraft(ForemanTestCase):
         r = self.fm_json("genesis", "spec", "--per-kind", "3")
         self.assertEqual((r["total"], r["held"]), (3, 1))
 
+    def test_goal_to_finish_maps_to_the_goal_and_resume_exam_kinds(self):
+        import fmgenesis  # T-2140: #4's exam kinds reach a gen-0 with no Exam: line, and the fallback spec
+        self.assertEqual(fmgenesis._kinds("Goal to finish", "Gets a goal finished, or continues a half-done plan."),
+                         ["goal", "resume"])
+        self.assertEqual(fmgenesis._kinds("Builds", "Keeps continuous integration green."), [])  # not a resume
+        self.assertIn("goal, resume", dict((n, k) for n, _, k in fmgenesis.FALLBACK)["Goal to finish"])
+
 
 def line(run, gen, train, holdout=(), agent="foreman", cost=1.0):
     """One exam.jsonl line as fm exam grade files it: the scenario ids fully closed, per the run's own split."""
