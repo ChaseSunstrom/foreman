@@ -6942,7 +6942,7 @@ def _build_parser(only=None):
     s.add_argument("--agent", help="run/grade: oracle | empty | finders | foreman | plain | genesis (claude sessions, "
                                   "cost recorded; genesis runs one Genesis generation)")
     s.add_argument("--author", choices=("self", "child"), default="self",
-                   help="gen: child = a tool-less model writes the bug and vuln plants (kept only when fm exam check passes)")
+                   help="gen: child = a tool-less model writes the bug, vuln, none and rank plants (kept only when fm exam check passes)")
     s.add_argument("--model", help="gen: the child author's model (default sonnet); run: the session's model")
     s.add_argument("--limit", type=int, help="run: answer the first N picked scenarios (session arms default to 3)")
     s.add_argument("--budget", type=float, default=2.0, help="run: USD cap per session")
