@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm prove PATH --capture N` files each proven finding as a ready task whose check is `fm prove PATH --only ID`: red while the finding stands, green once it's fixed, so `fm run` can work them on lanes. When nothing is proven it writes a receipt (research/prove-receipt.md) listing each lead and why. New user-only `/foreman:initiative` runs the whole pipeline: map, find, prove, fix, receipt.
 - `fm exam grade`'s test-first credit is fairer: it puts back only the planted defect's lines in the arm's own work (anchored on the unchanged lines around each one, so a fix worded differently still counts) instead of the whole planted file, which also wiped the arm's other edits; a suite that fails only because it can't load a name earns no credit.
 - `fm mcp` serves `genesis_status`: Desktop and other agents read where the Genesis tower stands (its generation, files, coverage, the next action and the last exam result), beside `exam_scorecard`.
 - `fm genesis put`'s cold read now sees what earlier failed reads of the same file named: it checks those were met instead of starting over, so a long file stops getting a fresh batch of objections (some reversing the last round's) every time. The revised file is the answer to each finding. An unmet finding still fails, new problems (metric gaming included) are still found, and the list clears once the file passes.
