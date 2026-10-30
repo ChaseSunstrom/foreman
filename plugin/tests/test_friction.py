@@ -159,6 +159,19 @@ class Friction(ForemanTestCase):
         self.assertIn("same note", repeated)
         self.assertNotIn("done also changed this file", repeated)
 
+    def test_a_note_averaging_over_1500_chars_is_named_even_every_turn(self):
+        # T-2109: the repeat line skips SessionStart/UserPromptSubmit, so the biggest per-turn note was never flagged
+        import fmcore as c
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            for key, chars in (("session map", 1900), ("prompt hint", 300)):
+                for i in range(4):
+                    f.write(json.dumps({"ts": c.now(), "kind": "inject", "event": "SessionStart", "key": key,
+                                        "h": f"h{i}", "chars": chars}) + "\n")
+        out = self.fm("friction").stdout
+        big = out.split("notes averaging over 1,500 characters", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("SessionStart: session map — 1,900 chars avg × 4", big)
+        self.assertNotIn("prompt hint", big)
+
     def test_the_digest_rechecks_guard_blocks_and_shows_the_trend(self):
         # T-0187: 'done since: T-0178' said nothing of whether the fix removed its friction. Each guard block is re-run
         # through today's guard (its full command from the session's transcript); a mark keeps the window's counts
