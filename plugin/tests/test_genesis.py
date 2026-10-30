@@ -1038,15 +1038,15 @@ class GenesisDraft(ForemanTestCase):
                          [("pass", 3, 3), ("no outside author", 0, 0)])  # neither erases nor forges a child result
 
     def test_a_capability_partly_without_an_outside_author_never_passes(self):
-        import fmgenesis  # T-2204 review: bug's child results can't speak for docs, which no child writes yet
+        import fmgenesis  # T-2204 review: bug's child results can't speak for missing-tool, which no child writes
         self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
-                "1. **Correctness.** Fixes what's broken. Exam: bug, docs.\n\n## 3. The tower\n")
+                "1. **Correctness.** Fixes what's broken. Exam: bug, missing-tool.\n\n## 3. The tower\n")
         kid = [f"bug-python-{i:06x}" for i in range(3)]
         fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": kid, "child": kid},
                                      "closed": {"holdout": kid}})
         (row,) = fmgenesis.scorecard(self.p)["rows"]
         self.assertEqual((row["state"], row["closed"], row["graded"]), ("partial", 3, 3))
-        self.assertIn("docs", row["why"])
+        self.assertIn("missing-tool", row["why"])
         self.assertIn("1. Correctness: partial 3/3", self.fm("exam", "scorecard", check=False).stdout)
 
     def test_review_fixes_fallback_reason_secret_lines_fenced_readme_and_spec_limits(self):
