@@ -1,0 +1,466 @@
+"""fm find (T-2121): deterministic, language-agnostic finders over a tree. Untested public functions, docs naming code
+that doesn't exist, imports no manifest declares, SQL built from a parameter, list membership inside a loop, unseeded
+randomness in tests, credentials. Each is a candidate until proven; every finder reports nothing on every clean exam
+render (test_find)."""
+import bisect
+import functools
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import tomllib
+
+import fmcore as c
+
+LANG = {".py": "py", ".js": "js", ".mjs": "js", ".cjs": "js", ".jsx": "js", ".ts": "ts", ".tsx": "ts", ".mts": "ts",
+        ".cts": "ts", ".rb": "rb", ".rs": "rs", ".c": "c", ".h": "c", ".cc": "c", ".cpp": "c", ".hpp": "c"}
+SKIP = {"node_modules", "vendor", "target", "build", "dist", "__pycache__", "third_party", "site-packages",
+        "fixtures", "testdata", "__fixtures__", "__snapshots__", "venv", "env"}  # fixtures are planted on purpose
+TEST = re.compile(r"(?:^|/)(?:tests?|spec|__tests__)/|(?:^|/)(?:test_[^/]*|conftest\.py)$|[_.](?:test|spec)\.\w+$")
+_JSFN = r"^([ \t]*)(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)"
+_JSARROW = r"^([ \t]*)(?:export\s+)?(?:const|let|var)\s+(\w+)\s*(?::[^=]+)?=\s*(?:async\s*)?\(([^)]*)\)[^=]*=>"
+DEFS = {"py": [r"^([ \t]*)(?:async\s+)?def\s+(\w+)\s*\(([^)]*)"], "js": [_JSFN, _JSARROW], "ts": [_JSFN, _JSARROW],
+        "rb": [r"^([ \t]*)def\s+(?:self\.)?(\w+[?!=]?)\s*\(?([^)\n#]*)"],
+        "rs": [r"^([ \t]*)(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:unsafe\s+)?(?:const\s+)?fn\s+(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)"],
+        "c": [r"^()(?:\w+[ \t*]+)+?(\w+)\s*\(([^;{)]*)\)\s*\{?\s*$"]}
+DEFS = {k: [re.compile(r) for r in v] for k, v in DEFS.items()}
+KEYWORDS = {"if", "for", "while", "switch", "return", "sizeof", "else", "do", "case", "defined", "elif", "and", "or",
+            "not", "in", "unless", "until", "def", "fn", "function", "match", "catch", "typeof", "new", "await", "yield"}
+IMPORT = re.compile(r"""^\s*(?:import\b|from\s+\S+\s+import\b|(?:pub\s+)?use\s|extern\s+crate\b|mod\s+\w+\s*;|#\s*include\b|#\[path)"""
+                    r"""|\brequire(?:_relative)?\s*\(?\s*["']""")
+LOOP = re.compile(r"\b(?:for|while|loop)\b|\.(?:each|forEach|map|filter|times|iter)\b")
+SQL = re.compile(r"(?i)\b(?:select\s.*\bfrom|insert\s+into|update\s+\w+\s+set|delete\s+from)\b")
+INIT = {"py": r"^\s*(\w+)(?:\s*:[^=]+)?\s*=\s*\[\]", "rb": r"^\s*(\w+)\s*=\s*\[\]",
+        "js": r"\b(?:const|let|var)\s+(\w+)(?:\s*:[^=]+)?\s*=\s*\[\]",
+        "rs": r"\blet\s+mut\s+(\w+)(?:\s*:[^=]+)?\s*=\s*(?:Vec::new\(\)|vec!\[\])"}
+INIT["ts"] = INIT["js"]
+USE = {"py": r"\bin\s+{v}\b", "js": r"\b{v}\.(?:includes|indexOf)\(", "rb": r"\b{v}\.(?:include\?|index\b)",
+       "rs": r"\b{v}\.(?:contains\(|iter\(\)\.any\()"}
+USE["ts"] = USE["js"]
+RAND = {"py": r"\brandom\.(?:random|randint|choice|choices|shuffle|uniform|randrange|sample)\(", "js": r"\bMath\.random\(",
+        "rb": r"(?<![\w.])rand\(|\.(?:sample|shuffle)\b", "rs": r"\bRandomState::new\(|\bthread_rng\(|\brand::random\b",
+        "c": r"(?<!\w)rand\(\s*\)"}
+RAND["ts"] = RAND["js"]
+SEED = {"py": r"\brandom\.seed\(", "rb": r"\bsrand\(\s*\d|Random\.new\(\s*\d", "c": r"\bsrand\((?!.*\b(?:time|clock|getpid)\s*\()"}
+NODE = set("assert async_hooks buffer child_process cluster console constants crypto dgram diagnostics_channel dns events "
+           "fs http http2 https inspector module net os path perf_hooks process punycode querystring readline repl stream "
+           "string_decoder test timers tls trace_events tty url util v8 vm wasi worker_threads zlib".split())
+RUBY = set("abbrev base64 benchmark bigdecimal bundler cgi coverage csv date delegate digest english erb etc fiddle "
+           "fileutils find forwardable getoptlong io ipaddr json logger matrix minitest mkmf monitor net objspace observer "
+           "open-uri open3 openssl optparse ostruct pathname pp prettyprint prime pstore psych racc rake rbconfig readline "
+           "resolv ripper rubygems securerandom set shellwords singleton socket stringio strscan tempfile test thread time "
+           "timeout tmpdir tsort uri weakref yaml zlib".split())
+RUST = {"std", "core", "alloc", "crate", "self", "super", "proc_macro", "test"}
+CH = set("assert complex ctype errno fenv float inttypes iso646 limits locale math setjmp signal stdalign stdarg stdatomic "
+         "stdbool stddef stdint stdio stdlib stdnoreturn string tgmath threads time uchar wchar wctype aio dirent dlfcn "
+         "fcntl fnmatch ftw getopt glob grp iconv ifaddrs langinfo libgen malloc mqueue netdb nl_types poll pthread pwd "
+         "regex sched search semaphore spawn strings syslog termios unistd utime utmpx wordexp windows winsock2".split())
+CDIRS = {"sys", "netinet", "arpa", "net", "linux", "asm", "bits"}
+BUILTIN = set("printf fprintf snprintf sprintf puts putchar malloc calloc realloc free strlen strcmp strncmp strcpy strncpy "
+              "strcat memcpy memmove memset memcmp abs labs exit abort assert rand srand time clock qsort atoi atol strtol "
+              "fopen fclose fread fwrite fgets getchar perror strchr strrchr strstr isalpha isdigit isspace tolower toupper "
+              "puts print p pp raise require format sprintf loop lambda proc Integer Float String Array Hash rand "
+              "attr_reader attr_accessor include extend private".split())
+PY_ALIAS = {"bs4": "beautifulsoup4", "pil": "pillow", "cv2": "opencv", "sklearn": "scikit-learn", "gi": "pygobject"}
+
+
+class Src:
+    def __init__(self, rel, text):
+        self.rel, self.text = rel, text
+        self.lines = [x if len(x) <= 2000 else "" for x in text.split("\n")]  # minified or hostile: data, not code
+        self.lang, self.test = LANG[os.path.splitext(rel)[1].lower()], bool(TEST.search(rel))
+        self.instr, quote = set(), None  # Python lines inside a triple-quoted string: code there is data
+        for i, line in enumerate(self.lines if self.lang == "py" else ()):
+            if quote:
+                self.instr.add(i)
+            for m in re.finditer(r'"""|\'\'\'', line):
+                quote = m.group() if quote is None else None if m.group() == quote else quote
+        self.defs = []  # (line, indent, name, params)
+        for i, line in enumerate(self.lines):
+            if i in self.instr:
+                continue
+            for rx in DEFS[self.lang]:
+                m = rx.match(line)
+                if m and m.group(2) not in KEYWORDS:
+                    self.defs.append((i, len(m.group(1)), m.group(2), set(re.findall(r"[A-Za-z_]\w*", m.group(3)))))
+                    break
+        self._at = [d[0] for d in self.defs]
+
+    def fn(self, i):
+        """The definition enclosing line i: the nearest one above. ponytail: top-level code after a function counts as
+        that function's; brace-matching would fix it."""
+        k = bisect.bisect_right(self._at, i) - 1
+        return self.defs[k] if k >= 0 else None
+
+    def body(self, d):
+        k = self.defs.index(d)
+        return range(d[0], self.defs[k + 1][0] if k + 1 < len(self.defs) else len(self.lines))
+
+    def own(self, d):
+        """The words of d's own lines: the def line and the lines indented under it, nested functions included; code
+        after it at its own indent or less isn't."""
+        rows = [self.lines[d[0]]]
+        for j in range(d[0] + 1, len(self.lines)):
+            row = self.lines[j]
+            ind = len(row) - len(row.lstrip())
+            if row.strip() and ind <= d[1] and j not in self.instr and not re.match(r"\s*(?:[})\]]|end\b)", row):
+                break
+            rows.append(row)
+        return _words("\n".join(rows))
+
+
+def _in_str(line, pos):
+    """Whether pos sits inside a quoted string on its line (odd count of one quote kind before it)."""
+    return any(line[:pos].count(q) % 2 for q in "\"'`")
+
+
+def _found(finder, kind, s, line, symbol, says):
+    return {"finder": finder, "kind": kind, "file": s if isinstance(s, str) else s.rel, "line": line, "symbol": symbol,
+            "says": says}
+
+
+def _word(name):
+    return re.compile(rf"(?<!\w){re.escape(name)}(?![\w?!])")
+
+
+def _words(text):
+    """The whole words of a text, as _word sees them: one set lookup per name instead of one scan."""
+    return set(re.findall(r"\w+[?!]?", text))
+
+
+def _files(root):
+    """([(rel, text)], every path listed): git's view of the tree when it's a checkout, else a walk; hidden and vendored directories,
+    generated files, binaries and files over 1 MB are left out."""
+    try:  # the repo isn't trusted: none of its config may run code (fsmonitor, hooks)
+        r = subprocess.run(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C", root,
+                            "ls-files", "-co", "--exclude-standard", "-z"], capture_output=True, timeout=60)
+        rels = [os.fsdecode(p) for p in r.stdout.split(b"\0") if p] if r.returncode == 0 else []
+    except (OSError, subprocess.SubprocessError):
+        rels = []
+    if not rels:  # not a checkout, no git, or a folder the parent repo ignores
+        for d, dirs, names in os.walk(root):
+            dirs[:] = sorted(x for x in dirs if not x.startswith(".") and x not in SKIP)
+            rels += [os.path.relpath(os.path.join(d, n), root).replace(os.sep, "/") for n in sorted(names)]
+    import fmmap
+    out, gen = [], []
+    for rel in rels:
+        p = os.path.join(root, rel)
+        if any(x.startswith(".") or x in SKIP for x in rel.split("/")[:-1]):
+            continue
+        try:  # regular files only: a symlink may point at /dev/zero, a FIFO or a file outside the tree
+            st = os.lstat(p)
+            if not stat.S_ISREG(st.st_mode) or st.st_size > 1 << 20:
+                continue
+            with open(p, "rb") as f:
+                data = f.read((1 << 20) + 1)
+        except OSError:
+            continue
+        if b"\0" not in data[:8192]:
+            (gen if fmmap.is_generated(p) else out).append((rel, data.decode("utf-8", "replace")))
+    return out, rels, gen
+
+
+def _untested(code):
+    tests = [s for s in code if s.test or s.lang == "rs" and "#[test]" in s.text]  # Rust unit tests live inline
+    if not tests:
+        return []
+    said = _words("\n".join(line for s in tests for line in s.lines if not IMPORT.search(line)))
+    whole = _words("\n".join(s.text for s in tests))
+    bodies = {}  # a function a test reaches covers what it calls: black-box (CLI, HTTP) tests reach code by name
+    for s in code:
+        for d in s.defs:
+            if not s.test:
+                bodies.setdefault(d[2], set()).update(s.own(d))
+    reached, todo = set(), list(said | {"main"})
+    while todo:
+        n = todo.pop()
+        if n not in reached:
+            reached.add(n)
+            todo += bodies.get(n, ())
+    out = []
+    for s in code:
+        if s.test or s.lang == "c" and not s.rel.endswith((".c", ".cc", ".cpp")):
+            continue
+        lists = re.findall(r"(?:module\.exports\s*=|export)\s*\{([^}]*)\}", s.text)
+        exported = set(re.findall(r"\w+", " ".join(lists))) | set(re.findall(r"exports\.(\w+)\s*=", s.text))
+        pub = []
+        for i, ind, name, _ in s.defs:
+            line = s.lines[i]
+            if ind or name == "main" or name.startswith(("test", "_")):
+                continue
+            if {"py": True, "rb": True, "rs": line.startswith("pub"), "c": not line.startswith(("static", "inline")),
+                    "js": line.startswith("export") or name in exported,
+                    "ts": line.startswith("export") or name in exported}[s.lang]:
+                pub.append((i, name))
+        stem = os.path.splitext(os.path.basename(s.rel))[0]
+        if pub and stem not in whole | reached and not any(n in reached for _, n in pub):  # lazy("fmx", …) names it too
+            out.append(_found("untested", "untested", s, pub[0][0] + 1, stem, f"no test names the module {stem}"))
+            continue
+        out += [_found("untested", "untested", s, i + 1, name, f"{name} is public and no test calls it")
+                for i, name in pub if name not in reached]
+    return out
+
+
+def _docs(files, code, root):
+    import fmdocs
+    text = _words("\n".join(s.text for s in code))
+    defined = {d[2] for s in code for d in s.defs}
+    out = []
+    for rel, body in files:
+        if not rel.lower().endswith((".md", ".markdown")):
+            continue
+        body = fmdocs._FENCE.sub(lambda m: "\n" * m.group(0).count("\n"), body)
+        spans = {}
+        for m in re.finditer(r"`(\w+)\(", body):
+            spans.setdefault(m.group(1), body.count("\n", 0, m.start()) + 1)
+        if len(set(spans) & defined) * 2 > len(spans):  # the doc is about this code: most of what it names is defined
+            out += [_found("docs", "docs", rel, line, n, f"the docs name {n}(), which no code has")
+                    for n, line in spans.items() if n not in text]
+    try:
+        out += [_found("docs", "docs", f["file"], f.get("line") or 0, f["detail"], f"docs {f['kind']}: {f['detail']}")
+                for f in fmdocs.scan(root)]
+    except (OSError, ValueError):
+        pass
+    return out
+
+
+def _sql(s):
+    out, seen = [], set()
+    for i, line in enumerate(s.lines):
+        d = s.fn(i)
+        if not d or not SQL.search(line) or not re.search(r"[\"'`]", line):
+            continue
+        names = set(re.findall(r"\+\s*([A-Za-z_]\w*)\b(?!\s*[.(\[])", line))
+        names |= set(re.findall(r"(?<![.\w])([A-Za-z_]\w*)\s*\+\s*[\"'`]", line))
+        names |= set(re.findall(r"\{\s*([A-Za-z_]\w*)\s*\}", line))  # f-string, ${…}, #{…}, format!("{x}")
+        tail = line[max(line.rfind('"'), line.rfind("'"), line.rfind("`")) + 1:]
+        if re.search(r"format|printf", line):
+            names |= set(re.findall(r",\s*([A-Za-z_]\w*)\s*(?=[,)])", tail))
+        names |= set(re.findall(r"%\s*\(?\s*([A-Za-z_]\w*)\b(?!\s*[.(\[])", tail))
+        hit = sorted(names & d[3])
+        if hit and d[2] not in seen:
+            seen.add(d[2])
+            out.append(_found("sql", "vuln", s, i + 1, d[2], f"SQL built from the parameter {hit[0]} (injection)"))
+    return out
+
+
+def _slow(s):
+    out = []
+    if s.lang == "c":
+        for d in s.defs:
+            rows = [s.lines[j] for j in s.body(d)]
+            ks = set(re.findall(r"\[(\w+)\+\+\]", "\n".join(rows)))
+            for j, line in enumerate(rows):
+                m = re.search(r"\bfor\s*\([^;]*;\s*\w+\s*<\s*(\w+)\s*;", line)
+                if m and m.group(1) in ks and "==" in line + (rows[j + 1] if j + 1 < len(rows) else "") and \
+                        any(LOOP.search(r) for r in rows[1:j]):
+                    out.append(_found("slow", "slow", s, d[0] + j + 1, d[2], "a linear scan of the output for each "
+                                      "input item (quadratic): a hash set"))
+                    break
+        return out
+    for i, line in enumerate(s.lines):
+        m, d = re.search(INIT[s.lang], line), s.fn(i)
+        if not m or not d:
+            continue
+        use, looped = re.compile(USE[s.lang].format(v=re.escape(m.group(1)))), False
+        for j in range(i + 1, s.body(d).stop):
+            row = s.lines[j]
+            looped = looped or bool(LOOP.search(row) and any(_word(p).search(row) for p in d[3]))
+            u = use.search(row)
+            if looped and u and not (s.lang == "py" and re.search(r"\bfor\s+[\w\s,()]+$", row[:u.start()])):
+                out.append(_found("slow", "slow", s, j + 1, d[2], f"membership test on the list {m.group(1)} inside a "
+                                  "loop over the input (quadratic): a set"))
+                break
+    return out
+
+
+def _flaky(s):
+    if s.lang not in RAND or s.lang in SEED and re.search(SEED[s.lang], s.text):
+        return []
+    out, seen = [], set()
+    for i, line in enumerate(s.lines):
+        m = re.search(RAND[s.lang], line)
+        if m and not _in_str(line, m.start()):
+            d = s.fn(i)
+            name = d[2] if d else ""
+            if name not in seen:
+                seen.add(name)
+                out.append(_found("flaky", "flaky", s, i + 1, name, "unseeded randomness in a test: it passes or "
+                                  "fails by chance"))
+    return out
+
+
+def _norm(name):
+    return re.sub(r"[-_.]+", "-", name.lower())
+
+
+@functools.lru_cache(maxsize=1)
+def _dists():
+    import importlib.metadata
+    try:
+        return importlib.metadata.packages_distributions()
+    except Exception:  # noqa: BLE001 — a broken install's metadata never stops a scan
+        return {}
+
+
+def _manifest(b, text):
+    """The package names one manifest declares."""
+    names = set()
+    if re.match(r"(?:requirements|constraints).*\.txt$", b):
+        names |= set(re.findall(r"(?m)^\s*([A-Za-z0-9][\w.-]*)", text))
+    elif b == "package.json":
+        try:
+            pkg = json.loads(text)
+        except (ValueError, RecursionError):
+            return set()
+        for key in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+            names |= set((pkg.get(key) or {}) if isinstance(pkg, dict) else ())
+        names.add(str(pkg.get("name") or "") if isinstance(pkg, dict) else "")
+    elif b in ("pyproject.toml", "Cargo.toml"):
+        t = tomllib.loads(text)
+        proj, poetry = t.get("project") or {}, (t.get("tool") or {}).get("poetry") or {}
+        reqs = list(proj.get("dependencies") or []) + [x for v in (proj.get("optional-dependencies") or {}).values()
+                                                       for x in v] + \
+            [x for v in (t.get("dependency-groups") or {}).values() for x in v if isinstance(x, str)]
+        names |= {m.group(0) for m in (re.match(r"[A-Za-z0-9][\w.-]*", str(r)) for r in reqs) if m}
+        for table in (poetry.get("dependencies"), poetry.get("dev-dependencies"), t.get("dependencies"),
+                      t.get("dev-dependencies"), t.get("build-dependencies"), (t.get("workspace") or {}).get("dependencies"),
+                      *[g.get("dependencies") for g in (poetry.get("group") or {}).values()]):
+            names |= set(table or {})
+        names |= {str(proj.get("name") or ""), str(poetry.get("name") or ""), str((t.get("package") or {}).get("name") or "")}
+    elif b == "Gemfile" or b.endswith(".gemspec"):
+        names |= set(re.findall(r"""(?m)^\s*(?:gem|\w+\.add_(?:runtime_|development_)?dependency)\s*\(?\s*["']([^"']+)""", text))
+    return names
+
+
+def _declared(root, files):
+    names = set()
+    for rel, text in files:
+        try:
+            names |= _manifest(os.path.basename(rel), text)
+        except (ValueError, TypeError, AttributeError, RecursionError):  # a malformed manifest declares nothing
+            pass
+    return {_norm(n) for n in names if n}
+
+
+def _imports(s, local, mods):
+    """[(line, module, bindings)] for the third-party-looking imports of a file."""
+    out = []
+    for i, line in enumerate(s.lines):
+        if s.lang == "py":
+            m = re.match(r"^(\s*)(?:from\s+([\w.]+)\s+import\s+([^#]+)|import\s+([^#]+))", line)
+            if not m or i in s.instr or (m.group(2) or "").startswith("."):
+                continue
+            if m.group(1):  # nested: an optional (try:) or conditional (if …:) import isn't a hard dependency
+                up = next((s.lines[k] for k in range(i - 1, -1, -1) if s.lines[k].strip() and
+                           len(s.lines[k]) - len(s.lines[k].lstrip()) < len(m.group(1))), "")
+                if re.match(r"\s*(?:try|if|elif|else|except)\b", up):
+                    continue
+            if m.group(2):
+                tops = [(m.group(2).split(".")[0], [x.split()[-1] for x in m.group(3).strip("()\\ ").split(",") if x.strip() not in ("", "*")])]
+            else:
+                tops = [(x.split()[0].split(".")[0], [x.split()[-1].split(".")[0]]) for x in m.group(4).split(",") if x.strip()]
+            out += [(i, t, b) for t, b in tops if t not in sys.stdlib_module_names and t != "__future__" and t not in local]
+        elif s.lang in ("js", "ts"):
+            for m in re.finditer(r"""(?:\b(?:const|let|var)\s+([^=]+?)\s*=\s*)?\brequire\s*\(\s*["']([^"']+)["']\s*\)|"""
+                                 r"""^\s*(?:import|export)\s+(?:(.+?)\s+from\s+)?["']([^"']+)["']""", line):
+                spec, clause = m.group(2) or m.group(4), m.group(1) or m.group(3) or ""
+                if spec.startswith(("npm:",)):
+                    spec = spec[4:]
+                if spec.startswith((".", "/", "~", "@/", "#")) or ":" in spec:
+                    continue
+                name = "/".join(spec.split("/")[:2]) if spec.startswith("@") else spec.split("/")[0]
+                if name not in NODE and name not in local:
+                    out.append((i, name, [w for w in re.findall(r"\w+", clause) if w not in ("as", "type")]))
+        elif s.lang == "rb":
+            m = re.match(r"""^\s*require\s*\(?\s*["']([^"']+)["']""", line)
+            if m and m.group(1).split("/")[0] not in RUBY and os.path.basename(m.group(1)) not in local:
+                out.append((i, m.group(1).split("/")[0], []))
+        elif s.lang == "rs":
+            m = re.match(r"^\s*(?:pub\s+)?(?:use\s+(?:::)?(\w+)(?:::(.*?))?|extern\s+crate\s+(\w+))\s*;", line)
+            top = m and (m.group(1) or m.group(3))
+            if top and top not in RUST and not top[0].isupper() and top not in local and top not in mods:
+                out.append((i, top, [w for w in re.findall(r"\w+", (m.group(2) or top).split("::")[-1]) if w not in ("self", "as")] or [top]))
+        elif s.lang == "c":
+            m = re.match(r"^\s*#\s*include\s*<([^>]+)>", line)
+            h = m and m.group(1)
+            if h and h.endswith((".h", ".hpp")) and h[:-2].split(".")[0] not in CH and h.split("/")[0] not in CDIRS:
+                out.append((i, h, []))
+    return out
+
+
+def _deps(root, files, code, rels):
+    declared = _declared(root, files)
+    local = {os.path.splitext(os.path.basename(r))[0] for r in rels} | {p for r in rels for p in r.split("/")[:-1]}
+    headers = {os.path.basename(r) for r, _ in files if r.endswith((".h", ".hpp"))}
+    build = "\n".join(t for r, t in files if os.path.basename(r) in ("Makefile", "makefile", "CMakeLists.txt",
+                                                                    "meson.build", "configure.ac"))
+    mods = {m for s in code if s.lang == "rs" for m in re.findall(r"(?m)^\s*(?:pub\s+)?mod\s+(\w+)", s.text)}
+    defined = {d[2] for s in code for d in s.defs}
+    out = []
+    for s in code:
+        for i, mod, binds in _imports(s, local, mods):
+            n = _norm(mod)
+            if s.lang == "c":
+                stem = os.path.splitext(os.path.basename(mod))[0]
+                if os.path.basename(mod) in headers or re.search(rf"\b{re.escape(stem)}\b", build):
+                    continue
+            elif s.lang == "py":
+                alias = _norm(PY_ALIAS.get(mod.lower(), "")) or None
+                cands = {n, alias} | {_norm(x) for x in _dists().get(mod, [])}
+                # ponytail: substring match (yaml in pyyaml) can hide an undeclared import (req vs requests);
+                # a full import-name → distribution table if a miss shows up in the exam
+                if any(x and (x in declared or len(x) >= 3 and any(x in d for d in declared)) for x in cands):
+                    continue
+            elif n in declared:
+                continue
+            if binds:
+                users = {s.fn(j)[2] for j, row in enumerate(s.lines) if j != i and s.fn(j) and not IMPORT.search(row)
+                         and any(_word(b).search(row) for b in binds)}
+            else:  # Ruby and C bind no name: the functions calling something defined nowhere in the repo
+                users = {s.fn(j)[2] for j, row in enumerate(s.lines) if s.fn(j) and j != s.fn(j)[0] and any(
+                    x not in defined and x not in BUILTIN and x not in KEYWORDS
+                    for x in re.findall(r"(?<![\w.:>$@])([A-Za-z_]\w*[?!]?)\s*\(", row))}
+            out.append(_found("deps", "dep", s, i + 1, " ".join(sorted(users)) or mod,
+                              f"imports {mod}, which no manifest declares and the standard library doesn't have"))
+    return out
+
+
+def scan(root):
+    """(files scanned, findings)."""
+    files, rels, gen = _files(root)
+    code = [Src(r, t) for r, t in files if os.path.splitext(r)[1].lower() in LANG]
+    import fmsecrets
+    out = _untested(code) + _docs(files, code, root) + _deps(root, files, code, rels)
+    for s in code:
+        out += _flaky(s) if s.test else _sql(s) + _slow(s)
+    for rel, text in files + gen:  # a generated file can still hold a pasted key
+        if TEST.search(rel):  # a test's credentials are fakes by design
+            continue
+        out += [_found("secrets", "secret", rel, n, "", f"credential: {kind}")
+                for n, kind in fmsecrets.scan_text(text, config=bool(fmsecrets.CONFIG.search(rel)))]
+    return len(files), sorted(out, key=lambda f: (f["file"], f["line"], f["finder"]))
+
+
+def find(root):
+    return scan(root)[1]
+
+
+def cmd_find(args):
+    import fmcli
+    root = os.path.abspath(args.path)
+    if not os.path.isdir(root):
+        raise fmcli.UsageError(f"not a directory: {args.path}")
+    try:
+        n, found = scan(root)
+    except Exception as e:  # noqa: BLE001 — exit 1 means findings; a scan that dies must read as an error (2)
+        print(f"fm find: the scan failed under {root}: {type(e).__name__}: {c.plain(str(e))[:300]}", file=sys.stderr)
+        return 2
+    rows = [f"{f['file']}:{f['line']}  {f['kind']}  {f['symbol'] or '-'}: {f['says']}" for f in found]
+    fmcli.out(args, {"root": root, "files": n, "findings": found}, c.plain_lines(
+        f"{len(found)} candidate(s) in {n} files under {root}; each is unproven until a failing test shows it.\n"
+        + "\n".join(rows) if found else f"Nothing found in {n} files under {root}." if n else
+        f"No files to read under {root} (nothing tracked, or all of it skipped)."))
+    return 1 if found else 0

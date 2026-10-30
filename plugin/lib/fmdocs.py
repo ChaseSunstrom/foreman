@@ -5,6 +5,7 @@ Report-only. Reuses tidy's detectors; paths may be relative to the file or to th
 """
 import os
 import re
+import stat
 import subprocess
 
 from fmtidy import dead_paths, stale_commands
@@ -28,11 +29,19 @@ def _markdown(root):
         rels = sorted({f for f in r.stdout.split("\0") if f})
         yield from (os.path.join(root, f) for f in rels
                     if not any(part in SKIP_DIRS or part.startswith(".") for part in f.split("/")[:-1])
-                    and os.path.isfile(os.path.join(root, f)))
+                    and _regular(os.path.join(root, f)))
         return
     for d, dirs, files in os.walk(root):
         dirs[:] = sorted(x for x in dirs if x not in SKIP_DIRS and not x.startswith("."))
-        yield from (os.path.join(d, f) for f in sorted(files) if f.endswith(".md"))
+        yield from (os.path.join(d, f) for f in sorted(files) if f.endswith(".md") and _regular(os.path.join(d, f)))
+
+
+def _regular(path):
+    """A regular file, not a link: a link may point at /dev/zero, a FIFO or a file outside the tree (fm find)."""
+    try:
+        return stat.S_ISREG(os.lstat(path).st_mode)
+    except OSError:
+        return False
 
 
 def _ignored(root, rels):
