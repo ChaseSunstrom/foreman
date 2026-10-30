@@ -4,15 +4,16 @@ Status: `fm genesis check` counts this file's cells (each `- stage × surface:` 
 
 ## 1. Initiative
 - find × MCP: F: plugin/lib/fmmcp.py — the `find` tool hands any MCP client fm find's ranked candidates, so other agents and Desktop read the same leads
-- verify × CLI: F: plugin/lib/fmprove.py — `fm prove` re-checks each fm find lead on a throwaway copy (an untested function no test runs; docs, dep and secret findings found again cold) and writes a receipt for the rest
+- find × CLI: F: plugin/lib/fmfind.py — `fm find --rank` runs deterministic finders over a repo with no request and ranks their candidates; the MCP find tool runs it
+- verify × CLI: F: plugin/lib/fmprove.py — `fm prove` re-checks fm find leads on a throwaway copy (an untested function only in a tree you said yes to; docs, dep and secret findings found again cold); the other kinds stay leads
 - build × Claude Code: F: plugin/lib/fmfind.py — `fm prove --capture` files each proven lead as a planned S task whose criterion is red until fixed, so the session's own fm next loop fixes it
-- operate × Claude Code: F: plugin/lib/fmscout.py — when a full-autonomy queue drains, the Stop hook's scout runs fm find on the user's own project and files at most 3 proven leads a day
+- operate × Claude Code: F: plugin/lib/fmscout.py — when a full-autonomy queue drains and the quick probes find nothing, the Stop hook asks the session to run `fm scout --slow`, whose find probe files at most 3 proven leads a day on the user's own project
 - plan × Claude Code: F: plugin/skills/brainstorm/SKILL.md — grounded, scored ideas turned into queued tasks
 - build × CLI: F: plugin/lib/fmdraft.py — a headless claude drafts the top queued S task in a throwaway worktree
 - operate × CLI: F: plugin/lib/fmorders.py — standing orders capture a task on a schedule or when a file changes
 
 ## 2. Exhaustive thinking
-- find × CLI: F: plugin/lib/fmideas.py — lens children read the code and return ideas marked new, partial or built
+- find × CLI: F: plugin/lib/fmideas.py — `fm ideas` runs tool-less lens children whose ideas come back deduplicated, each naming the finished task it may repeat
 - understand × CLI: F: plugin/lib/fmmission.py — mission lenses and surfaces enumerate every reading of an open request
 - plan × CLI: F: plugin/lib/fmsecond.py — cold second opinion, debate and dissent kept open in the brief
 - verify × Claude Code: F: plugin/agents/fm-reviewer.md — one read-only reviewer per audit lens (intent, adversary, edge, operator, maintainer)
@@ -20,7 +21,7 @@ Status: `fm genesis check` counts this file's cells (each `- stage × surface:` 
 - learn × CLI: F: plugin/lib/fmtaste.py — lens keep rates feed which lenses get more weight next brainstorm
 
 ## 3. Anticipation
-- find × Claude Code: F: plugin/lib/fmforesight.py — session-start sweep notes a changed model, window or Claude Code version before it bites
+- find × Claude Code: F: plugin/lib/fmforesight.py — the Stop hook's sweep caches a changed model, window or Claude Code version, and session start names it before it bites
 - understand × MCP: F: plugin/lib/fmmcp.py — the impact and why tools answer blast radius and history read-only
 - understand × CLI: F: plugin/lib/fmgraph.py — fm graph blast shows a change's blast radius from one local graph
 - verify × CLI: F: plugin/lib/fmreverify.py — fm sentinel re-queues old passing criteria when a later commit touches their files
@@ -94,7 +95,7 @@ Status: `fm genesis check` counts this file's cells (each `- stage × surface:` 
 - learn × CLI: F: plugin/lib/fmfriction.py — fm friction --every N triggers a self-improvement digest
 
 ## 12. Staying lean and safe
-- plan × CLI: F: plugin/lib/fmbudget.py — subagents wait at 90% of the 5-hour window, or when weekly usage past 75% runs 10+ points ahead of the week's pace
+- plan × CLI: F: plugin/lib/fmbudget.py — subagents wait at 90% of the 5-hour window, or when weekly usage reaches 90% or, past 75%, runs 10+ points ahead of the week's pace
 - build × CLI: F: plugin/lib/fmreplay.py — fm replay scores the guard on real past commands
 - operate × CLI: F: plugin/lib/fmcost.py — fm cost and fm burden account tokens per task, session and version
 
