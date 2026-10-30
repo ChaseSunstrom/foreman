@@ -1,6 +1,7 @@
 """fm genesis (T-2078): the Genesis tower's home under research/genesis: gen-0 kept verbatim and read-only, tower docs
 filed only in the tower's shape, and a status that shows every generation."""
 import os
+import re
 import stat
 
 from helpers import ForemanTestCase, read_text
@@ -163,5 +164,13 @@ class GenesisExport(ForemanTestCase):
         self.assertIn("genesis.json", read_text(os.path.join(root, "site", "genesis", "genesis.js")))
         self.assertIn('<script src="genesis.js"', html)
         self.assertEqual(build.outside_hosts(os.path.join(root, "site", "genesis")), [])
-        self.assertIn("prefers-color-scheme: dark", html + read_text(os.path.join(root, "site", "genesis", "genesis.css")))
-        self.assertIn("genesis/index.html", read_text(os.path.join(root, "site", "index.html")))  # linked from the site
+        landing = read_text(os.path.join(root, "site", "index.html"))
+        self.assertIn("genesis/index.html", landing)  # linked from the site
+        # T-2087: one site, not two: the shared stylesheet (its dark palette too) and the landing page's own nav
+        self.assertIn('<link rel="stylesheet" href="../style.css">', html)
+        self.assertIn("prefers-color-scheme: dark", read_text(os.path.join(root, "site", "style.css")))
+        nav = lambda page: re.search(r'<nav class="nav".*?</nav>', page, re.S).group(0)
+        links = lambda page: re.findall(r">([^<>]+)</a>", nav(page))
+        self.assertEqual(links(html), links(landing))
+        self.assertIn('href="index.html" aria-current="page">Genesis</a>', html)
+        self.assertNotRegex(read_text(os.path.join(root, "site", "genesis", "genesis.css")), r"(?m)--bg:\s*#|Inter|\.sheet|^\.head\b")

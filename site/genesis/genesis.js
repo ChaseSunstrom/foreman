@@ -138,7 +138,7 @@
   var CRANE = '<svg class="crane" viewBox="0 0 64 800" preserveAspectRatio="none" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">' +
     '<path vector-effect="non-scaling-stroke" d="M18 40V800M40 40V800M4 40H64M18 40L29 12L40 40M29 12L64 40"/>' +
     '<path vector-effect="non-scaling-stroke" d="M18 70L40 100L18 130L40 160L18 190L40 220L18 250L40 280L18 310L40 340L18 370L40 400L18 430L40 460L18 490L40 520L18 550L40 580L18 610L40 640L18 670L40 700L18 730L40 760L18 790"/>' +
-    '<path vector-effect="non-scaling-stroke" d="M58 40V260" stroke-dasharray="4 4" stroke="var(--amber)"/>' +
+    '<path vector-effect="non-scaling-stroke" d="M58 40V260" stroke-dasharray="4 4" stroke="var(--signal)"/>' +
     '<rect x="6" y="46" width="10" height="18" fill="currentColor" opacity=".5"/></svg>';
   function tower() {
     var g = G, ts = allTasks(g), live = ts.filter(function (x) { return x.t.status !== "done"; }).length;

@@ -515,6 +515,14 @@ def build(out):
         raise SystemExit("build.py: site/index.html has an unknown {{count}}: " + page[page.index("{{"):][:40])
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
         f.write(page)
+    gpath = os.path.join(out, "genesis", "index.html")  # T-2087: the Genesis page shares the site's stylesheet and icon
+    with open(gpath, encoding="utf-8") as f:
+        gpage = f.read()
+    if 'href="../style.css"' not in gpage:
+        raise SystemExit('build.py: site/genesis/index.html lost href="../style.css"')
+    gpage = gpage.replace('href="../style.css"', f'href="../{CSS}"').replace('"../assets/foreman.svg"', f'"../{ICON}"')
+    with open(gpath, "w", encoding="utf-8") as f:
+        f.write(gpage)
     os.makedirs(os.path.join(out, "demo"), exist_ok=True)
     for f in ("live.mp4", "demo.svg"):
         shutil.copy2(os.path.join(ROOT, "demo", f), os.path.join(out, "demo", f))
