@@ -1,6 +1,7 @@
 """fm genesis (T-2078): the Genesis tower's home, research/genesis in the project's state. gen-0 is kept byte for byte and
 read-only; the other tower docs (gap map, lineage, exam results, each generation's seed, missions and critiques) are
 filed only in the tower's shape; the status lists every generation."""
+import json
 import os
 import re
 import time
@@ -56,14 +57,19 @@ def status(p):
                      "critiques": [f[9:-3] for f in files if f.startswith("critique-") and f.endswith(".md")]})
     try:
         with open(os.path.join(d, "exam.jsonl"), encoding="utf-8", errors="replace") as f:
-            exam = sum(1 for line in f if line.strip())
+            rows = [line for line in f if line.strip()]
     except OSError:
-        exam = 0
+        rows = []
+    exam, last = len(rows), None
+    try:
+        last = json.loads(rows[-1]) if rows else None
+    except ValueError:
+        pass
     have = {x: os.path.isfile(os.path.join(d, x))
             for x in ("gen-0.md", "gap-map.md", "lineage.md", "not-yet.md", "coverage.md")}
     return {"dir": d, "gen0": have["gen-0.md"], "gap_map": have["gap-map.md"], "lineage": have["lineage.md"],
             "not_yet": have["not-yet.md"], "coverage": have["coverage.md"],
-            "exam_lines": exam, "generations": sorted(gens, key=lambda g: g["n"]),
+            "exam_lines": exam, "exam_last": last if isinstance(last, dict) else None, "generations": sorted(gens, key=lambda g: g["n"]),
             "live": c.read_meta(p).get("genesis_live") or False}
 
 
@@ -340,7 +346,11 @@ def _text(s):
             site += f", last check {lv['last']['at']}: {lv['last']['result']}"
     else:
         site = "site: off (fm genesis live on pushes every tower change to the site)"
-    return "\n".join(lines + [f"exam: {s['exam_lines']} results", site])
+    exam = f"exam: {s['exam_lines']} results"
+    if s.get("exam_last"):
+        import fmexam
+        exam += f", last: {fmexam.summary(s['exam_last'])}"
+    return "\n".join(lines + [exam, site])
 
 
 def cmd_genesis(args):
