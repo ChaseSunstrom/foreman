@@ -66,4 +66,24 @@
   });
   var st = document.getElementById("stations");
   if (st) io.observe(st);
+  // T-2063: the proof figures count up once as the hero rises, ending on the exact text the build wrote
+  document.querySelectorAll(".proof dd").forEach(function (dd) {
+    var end = dd.textContent, n = +end.replace(/,/g, ""), t0 = performance.now() + 300;
+    if (!/^[\d,]+$/.test(end)) return;
+    var tick = function (now) {
+      var k = Math.min(Math.max((now - t0) / 1200, 0), 1);
+      dd.textContent = k < 1 ? Math.round(n * (1 - Math.pow(1 - k, 3))).toLocaleString("en-US") : end;
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    setTimeout(function () { t0 = -1e9; dd.textContent = end; }, 1700);  // frames can stall (a hidden tab, a renderer); the text can't stay wrong
+  });
+  // T-2063: a feature card's light follows the pointer (style.css draws it on hover)
+  document.addEventListener("pointermove", function (e) {
+    var c = e.target.closest && e.target.closest(".fcard");
+    if (!c) return;
+    var r = c.getBoundingClientRect();
+    c.style.setProperty("--mx", e.clientX - r.left + "px");
+    c.style.setProperty("--my", e.clientY - r.top + "px");
+  }, { passive: true });
 })();
