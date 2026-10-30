@@ -487,24 +487,35 @@ def precision(p):
     return {fd: round((real[fd] + 5) / (k + 10), 3) for fd, k in n.items()}
 
 
-def capture(p, found, n, root):
-    """Up to n new leads not held back, best first, as discovered tasks tagged finder= and keyed (finder, file, symbol,
-    says, and which twin) so a line shift never refiles one. Refuted for good: a key whose task was dropped or whose fix
-    was reverted. A fixed one that comes back is a regression and is filed again. A tree outside the project is text it
-    doesn't trust: those tasks wait for the user's yes."""
-    import fmcli
+def keyed(found, root, home):
+    """(find_key, lead) pairs: finder, file from home, symbol, message, and which twin when one function says it twice."""
+    twins = {}
+    for f in found:
+        key = f"{f['finder']}:{os.path.relpath(os.path.join(root, f['file']), home)}:{f['symbol']}:{f['says']}"
+        twins[key] = twins.get(key, 0) + 1
+        yield key + (f"#{twins[key]}" if twins[key] > 1 else ""), f
+
+
+def settled(p):
+    """find_keys never filed again: still open, dropped (the refutation ledger) or fixed and then reverted. A fix that
+    held and then comes back is a regression, so it may be filed again."""
     import fmoutcomes
+    tagged = [b for b in c.load_briefs(p, include_archive=True) if b.meta.get("find_key")]
+    fate = fmoutcomes.outcomes(p) if any(b.status == "done" for b in tagged) else {}
+    return {b.meta["find_key"] for b in tagged if b.status != "done" or fate.get(b.id, {}).get("fate") == "reverted"}
+
+
+def capture(p, found, n, root):
+    """Up to n new leads not held back, best first, as discovered tasks tagged finder= and keyed (keyed()) so a line
+    shift never refiles one, and never a settled() key. A tree outside the project is text it doesn't trust: those
+    tasks wait for the user's yes."""
+    import fmcli
     root, home = os.path.realpath(root), os.path.realpath(p.root)
     outside = os.path.commonpath([root, home]) != home
-    made, twins = [], {}
+    made = []
     with c.lock(p.dir):
-        keyed = [b for b in c.load_briefs(p, include_archive=True) if b.meta.get("find_key")]
-        fate = fmoutcomes.outcomes(p) if any(b.status == "done" for b in keyed) else {}
-        seen = {b.meta["find_key"] for b in keyed if b.status != "done" or fate.get(b.id, {}).get("fate") == "reverted"}
-        for f in found:
-            key = f"{f['finder']}:{os.path.relpath(os.path.join(root, f['file']), home)}:{f['symbol']}:{f['says']}"
-            twins[key] = twins.get(key, 0) + 1
-            key += f"#{twins[key]}" if twins[key] > 1 else ""
+        seen = settled(p)
+        for key, f in keyed(found, root, home):
             if len(made) >= n or f.get("held") or key in seen:
                 continue
             what = c.plain(f"{f['file']}:{f['line']} {f['symbol'] or '-'}: {f['says']}")
