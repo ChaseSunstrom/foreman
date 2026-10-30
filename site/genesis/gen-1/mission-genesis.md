@@ -1,6 +1,6 @@
 # Mission — Genesis as a feature (gen 1, #13)
 
-Task: T-2093 (brief 1, fm genesis check), T-2095 (brief 2, fm genesis step), T-2099 (brief 3, fm genesis draft/spec), T-2102 (brief 4, fm genesis select/seed), T-2104 (brief 5, fm genesis drift/sweep), T-2105 (brief 6, scout offer, revert stop, /foreman:genesis skill, site verdicts), T-2112 (brief 7, fm genesis exam: #13's held-out exam, G-tower session arm). Brief 8 is added here as it is intaken.
+Task: T-2093 (brief 1, fm genesis check), T-2095 (brief 2, fm genesis step), T-2099 (brief 3, fm genesis draft/spec), T-2102 (brief 4, fm genesis select/seed), T-2104 (brief 5, fm genesis drift/sweep), T-2105 (brief 6, scout offer, revert stop, /foreman:genesis skill, site verdicts), T-2112 (brief 7, fm genesis exam: #13's held-out exam, G-tower session arm), T-2113 (brief 8, charter seal + privilege diff in the sweep).
 
 Self-contained for a fresh `fm run` in ~/.claude/foreman. Parent: gen-1/seed.md → gen-0.md §2 #13, §3.
 Ideas: 606 from `fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen` (brainstorm-20261029-233136), lenses
