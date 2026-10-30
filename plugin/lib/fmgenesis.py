@@ -273,10 +273,10 @@ def step(p):
     import fmcli
     pre, briefs, seed = f"gen-{n}/", None, _doc(d, f"gen-{n}/seed.md") or ""
     rows = ROW.findall(seed)
-    if not rows and re.search(r"^\|.*\bmission-[a-z0-9]", seed, re.M):  # else a typo'd table reads as a dry generation
-        return act("fatal", n, f"{pre}seed.md's Missions table doesn't parse: each row is "
-                               "| N | mission-NAME.md | capabilities | gaps | depends on |",
-                   f"fm genesis put {pre}seed.md --file -", "fatal")
+    if not rows and not re.search(r"no Missions this generation", seed, re.I):  # T-2119: dry only when it says so
+        return act("fatal", n, f"{pre}seed.md lists no Missions: each row is "
+                               "| N | mission-NAME.md | capabilities | gaps | depends on |, or it says 'no Missions this "
+                               "generation' and why", f"fm genesis put {pre}seed.md --file -", "fatal")
     if len(rows) > 8:
         return act("fatal", n, f"{pre}seed.md lists {len(rows)} Missions; the cap is 8: merge or drop rows",
                    f"fm genesis put {pre}seed.md --file -", "fatal")

@@ -511,7 +511,7 @@ class GenesisStep(ForemanTestCase):
         fmgenesis.init(self.p, GEN0_CAPS.encode())
         lineage = "# Lineage\n"
         for n in (1, 2):
-            self.put(f"gen-{n}/seed.md", DRY if n > 1 else SEED.split("| 1 |")[0])  # gen 1: a table with no rows
+            self.put(f"gen-{n}/seed.md", DRY if n > 1 else SEED.split("| 1 |")[0] + "No Missions this generation.\n")
             self.at("select")
             lineage += f"\n## gen-{n}\n- dry\n"
             self.put("lineage.md", lineage)
@@ -558,7 +558,10 @@ class GenesisStep(ForemanTestCase):
         import fmgenesis
         fmgenesis.init(self.p, GEN0_CAPS.encode())
         self.put("gen-1/seed.md", "# Seed\n\n| 1 | `mission-a.md` | #1 | g (3) | — |\n")
-        self.assertEqual(self.at("fatal", "parse", "gen-1/seed.md")["kind"], "fatal")
+        self.assertEqual(self.at("fatal", "no Missions", "gen-1/seed.md")["kind"], "fatal")
+        for seed in ("# Seed\n\n## Missions\n1. initiative: scout probes\n", SEED.split("| 1 |")[0]):
+            self.put("gen-1/seed.md", seed)  # T-2119: a list, or a header with no rows, is not a dry generation
+            self.assertEqual(self.at("fatal", "no Missions")["kind"], "fatal")
 
     def test_a_kill_after_fm_intake_names_its_briefs_not_another_intake(self):
         import fmgenesis
@@ -909,7 +912,7 @@ class GenesisDrift(ForemanTestCase):
 
     def drift(self, seed, reply="CLEAN", stub=True, **files):
         import fmgenesis
-        fmgenesis.put(self.p, "gen-1/seed.md", seed)
+        fmgenesis.put(self.p, "gen-1/seed.md", seed + "No Missions this generation.\n")  # T-2119: dry says so
         for name, text in files.items():
             fmgenesis.put(self.p, f"gen-1/{name}.md", text)
         env = {"PATH": self.bindir + os.pathsep + os.environ["PATH"], "STUB_LOG": self.log,
@@ -1059,7 +1062,7 @@ class GenesisSweep(ForemanTestCase):
         self.p = c.find_project(self.repo)
         self.tower = fmgenesis.home(self.p)
         fmgenesis.init(self.p, GEN0.encode())
-        for name, text in (("lineage.md", "# Lineage\n\n## gen-1\n- baseline\n"), ("gen-1/seed.md", "# Seed\ngen-0\n"),
+        for name, text in (("lineage.md", "# Lineage\n\n## gen-1\n- baseline\n"), ("gen-1/seed.md", "# Seed\ngen-0\nNo Missions this generation.\n"),
                            ("gen-1/drift.md", "# Drift\n\nVerdict: clean\n")):
             fmgenesis.put(self.p, name, text)
 
@@ -1214,7 +1217,7 @@ class GenesisPropose(ForemanTestCase):
         fmgenesis.init(self.p, GEN0.encode())
         clean = "# x\n\nVerdict: clean\n"
         for n in (1, 2, 3):  # gen 2's seed still names a gap, so no report is due: the tower would seed gen 4
-            for name, text in (("seed.md", SEED if n == 2 else "# Seed\ngen-0\n"), ("drift.md", clean),
+            for name, text in (("seed.md", SEED if n == 2 else "# Seed\ngen-0\nNo Missions this generation.\n"), ("drift.md", clean),
                                ("sweep.md", clean)):
                 fmgenesis.put(self.p, f"gen-{n}/{name}", text)
         sec = "## gen-{n}\n- {v}: why\n- seed base: gen-1\n\n"
