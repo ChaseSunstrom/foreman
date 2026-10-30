@@ -6910,7 +6910,7 @@ def _build_parser(only=None):
     s.add_argument("--request", help="the user's words, verbatim")
     s = add("genesis", lazy("fmgenesis", "cmd_genesis"), tier=("Finding your way", 455), help="the Genesis tower's "
             "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
-    s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish"))
+    s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish", "check"))
     s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; live: on|off; export: the folder "
                                           "for genesis.json and the docs (site/genesis here)")
     s.add_argument("--file", help="init/put: read the text from this file")

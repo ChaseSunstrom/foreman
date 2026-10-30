@@ -296,3 +296,124 @@ class GenesisLive(ForemanTestCase):
         self.assertFalse(os.path.exists(pending))
         self.hook("Stop", {"last_assistant_message": "done"})
         self.assertTrue(os.path.exists(pending))
+
+
+STAGES = ("find", "understand", "plan", "build", "verify", "ship", "operate", "learn")
+SURFACES = ("Claude Code", "fm code", "other agents", "MCP", "Desktop", "site", "CLI", "headless/server")
+
+
+def grid(area, skip=(), over=None):
+    """One coverage.md row: every stage × surface cell filled, minus `skip`, with `over` replacing given cells."""
+    over, lines = over or {}, [f"## {area}"]
+    for i, (s, f) in enumerate((s, f) for s in STAGES for f in SURFACES):
+        if (s, f) in skip:
+            continue
+        cell = over.get((s, f)) or ("F: real.py — the feature", "I: a better probe (real.py)", "N/A: no stage here")[i % 3]
+        lines.append(f"- {s} × {f}: {cell}")
+    return "\n".join(lines) + "\n"
+
+
+class GenesisCheck(ForemanTestCase):
+    """Standing rules 1-3 (gen-1 seed): coverage.md has no empty or ungrounded cell; not-yet.md items were tried two
+    ways and retried this generation."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.fm("genesis", "init", "--file", "-", input=GEN0_CAPS)
+        self.fm("genesis", "put", "gen-1/seed.md", "--file", "-", input=SEED)
+        with open(os.path.join(self.repo, "real.py"), "w") as f:
+            f.write("x = 1\n")
+
+    def put(self, name, text):
+        self.fm("genesis", "put", name, "--file", "-", input=text)
+
+    def check(self):
+        p = self.fm("genesis", "check", "--json", check=False)
+        import json
+        return p.returncode, json.loads(p.stdout)
+
+    def test_a_full_grid_and_a_tried_ledger_pass(self):
+        self.put("coverage.md", "# Coverage\n\n" + grid("1. Initiative") + "\n" + grid("2. Exhaustive thinking") + grid("UX"))
+        self.put("not-yet.md", "# Not yet\n\n## Self-hosted model router\n- blocker: no local model\n"
+                               "- tried: ollama probe; llama.cpp spike\n- unblocks-with: #5 getting tools\n"
+                               "- retried: gen-1 still no model on this box\n")
+        code, res = self.check()
+        self.assertEqual(code, 0, res)
+        self.assertEqual((res["coverage"]["areas"], res["coverage"]["cells"], res["coverage"]["filled"]), (3, 192, 192))
+        self.assertEqual((res["not_yet"]["items"], res["not_yet"]["open"]), (1, 0))
+        text = self.fm("genesis", "check").stdout
+        self.assertIn("✓ coverage: 3 areas, 192 of 192 cells filled", text)
+        self.assertIn("✓ not-yet: 1 item", text)
+
+    def test_empty_ungrounded_and_unknown_cells_are_flagged(self):
+        bad = {("find", "MCP"): "F: nope.py", ("plan", "site"): "I: a dashboard", ("ship", "CLI"): "N/A:",
+               ("learn", "Desktop"): "F: ../outside.py", ("build", "fm code"): "I: idea (gone.py)"}
+        row2 = grid("2. Exhaustive thinking", skip={("verify", "MCP"), ("operate", "site")}, over=bad)
+        self.put("coverage.md", grid("1. Initiative") + row2 + "- verify × Slack: F: real.py\n- just prose\n")
+        code, res = self.check()
+        self.assertEqual(code, 1)
+        probs = "\n".join(res["coverage"]["problems"])
+        for part in ("verify × MCP: empty", "operate × site: empty", "find × MCP: nope.py doesn't exist",
+                     "plan × site: an I cell names the file it builds on", "ship × CLI: N/A needs its reason",
+                     "learn × Desktop: ../outside.py", "build × fm code: gone.py doesn't exist", "verify × Slack isn't",
+                     "just prose"):
+            self.assertIn(part, probs)
+        self.assertEqual(res["coverage"]["empty"], 2)
+        self.assertIn("✗ coverage:", self.fm("genesis", "check", check=False).stdout)
+
+    def test_every_capability_needs_its_row(self):
+        self.put("coverage.md", grid("1. Initiative"))
+        code, res = self.check()
+        self.assertEqual(code, 1)
+        self.assertIn("no row for capability 2. Exhaustive thinking", "\n".join(res["coverage"]["problems"]))
+
+    def test_no_grid_at_all_is_a_failure(self):
+        code, res = self.check()
+        self.assertEqual(code, 1)
+        self.assertIn("coverage.md doesn't exist", "\n".join(res["coverage"]["problems"]))
+        self.assertEqual(res["not_yet"]["items"], 0)  # no ledger is an empty ledger
+
+    def test_not_yet_items_need_two_tries_and_this_generations_retry(self):
+        self.put("coverage.md", grid("1. Initiative") + grid("2. Exhaustive thinking"))
+        self.put("not-yet.md", "# Not yet\n\n## A\n- blocker: x\n- tried: one way\n- unblocks-with: y\n- added: gen-1\n\n"
+                               "## B\n- tried: p; q\n- retried: gen-1 no\n\n"
+                               "## C\n- blocker: z\n- tried: p; q\n- unblocks-with: w\n- added: gen-1\n\n"
+                               "## Removed\n- D: duplicate of C\n- E: too hard\n")
+        code, res = self.check()
+        self.assertEqual(code, 1)
+        probs = "\n".join(res["not_yet"]["problems"])
+        for part in ("A: tried 1 approach", "B: no blocker", "B: no unblocks-with", "E: removed only for proven harm or "
+                     "an exact duplicate"):
+            self.assertIn(part, probs)
+        self.assertNotIn("C:", probs)
+        self.assertNotIn("D:", probs)
+        self.assertEqual((res["not_yet"]["items"], res["not_yet"]["open"]), (3, 2))
+        self.put("gen-2/seed.md", SEED)  # a new generation: C was only tried in gen 1
+        code, res = self.check()
+        self.assertIn("C: not retried in gen-2", "\n".join(res["not_yet"]["problems"]))
+
+    def test_an_empty_field_never_borrows_the_next_line_and_tries_must_differ(self):
+        self.put("coverage.md", grid("1. Initiative") + grid("2. Exhaustive thinking"))
+        self.put("not-yet.md", "# Not yet\n\n## F\n- blocker:\n- notes: x\n- tried: a; b\n- unblocks-with: y\n- added: gen-1\n\n"
+                               "## G\n- blocker: z\n- tried: same; Same \n- unblocks-with: w\n- added: gen-1\n\n"
+                               + "".join(f"## H{i}\n- tried: one\n\n" for i in range(4)))
+        code, res = self.check()
+        probs = "\n".join(res["not_yet"]["problems"])
+        self.assertIn("F: no blocker", probs)
+        self.assertIn("G: tried 1 approach", probs)
+        self.assertIn("more (--json lists all)", self.fm("genesis", "check", check=False).stdout)
+
+    def test_a_grid_without_rows_and_punctuated_paths(self):
+        self.put("coverage.md", "# Coverage\n\n### Initiative\n- find × CLI: F: real.py\n")
+        code, res = self.check()
+        self.assertIn("coverage.md has no '## <area>' rows", "\n".join(res["coverage"]["problems"]))
+        cells = grid("1. Initiative").replace("F: real.py — the feature", "F: real.py, the feature")
+        self.put("coverage.md", cells + grid("2. Exhaustive thinking"))
+        code, res = self.check()
+        self.assertEqual(res["coverage"]["problems"], [])
+
+    def test_status_shows_the_check(self):
+        self.put("coverage.md", grid("1. Initiative", skip={("find", "MCP")}))
+        res = self.fm_json("genesis")
+        self.assertEqual(res["check"]["coverage"]["empty"], 1)
+        self.assertIn("coverage: 63 of 64 cells filled, 1 empty", self.fm("genesis").stdout)

@@ -44,7 +44,7 @@ def put(p, name, text):
     return path
 
 
-def status(p):
+def status(p, with_check=True):
     d = home(p)
     gens = []
     for name in os.listdir(d) if os.path.isdir(d) else ():
@@ -67,15 +67,164 @@ def status(p):
         pass
     have = {x: os.path.isfile(os.path.join(d, x))
             for x in ("gen-0.md", "gap-map.md", "lineage.md", "not-yet.md", "coverage.md")}
-    return {"dir": d, "gen0": have["gen-0.md"], "gap_map": have["gap-map.md"], "lineage": have["lineage.md"],
+    out = {"dir": d, "gen0": have["gen-0.md"], "gap_map": have["gap-map.md"], "lineage": have["lineage.md"],
             "not_yet": have["not-yet.md"], "coverage": have["coverage.md"],
             "exam_lines": exam, "exam_last": last if isinstance(last, dict) else None, "generations": sorted(gens, key=lambda g: g["n"]),
             "live": c.read_meta(p).get("genesis_live") or False}
+    if with_check and have["gen-0.md"]:
+        out["check"] = check(p)
+    return out
 
 
 CAP = re.compile(r"^(\d+)\. \*\*(.+?)\.\*\*\s*(.*)$", re.M)  # gen-0 §2: "1. **Initiative.** what it means"
 ROW = re.compile(r"^\|\s*(\d+)\s*\|\s*(mission-[a-z0-9][a-z0-9-]*)\.md\s*\|([^|]*)\|([^|]*)\|([^|]*)\|", re.M)
 TIERED = re.compile(r"(.+?)\s*\((\d)\)\W*$")  # "value ranking (3)." -> tier 3
+
+# Standing rule 2 (gen-1 seed): coverage.md is one '## <area>' per row and one '- <stage> × <surface>: F|I|N/A: …' line
+# per cell; F names an existing path, I an idea plus the existing (file) it builds on, N/A its reason.
+STAGES = ("find", "understand", "plan", "build", "verify", "ship", "operate", "learn")
+SURFACES = ("Claude Code", "fm code", "other agents", "MCP", "Desktop", "site", "CLI", "headless/server")
+CELL = re.compile(r"- (.+?) × (.+?):\s*(F|I|N/A):\s*(.*)")
+NOT_YET = re.compile(r"^- (blocker|tried|unblocks-with|retried|added):[ \t]*(.*?)[ \t]*$", re.M)
+
+
+def _doc(d, name):
+    try:
+        with open(os.path.join(d, name), encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _sections(text):
+    """[(heading, body)] for each '## ' section."""
+    return [(s[3:].partition("\n")[0].strip(), s.partition("\n")[2]) for s in re.split(r"^(?=## )", text, flags=re.M)
+            if s.startswith("## ")]
+
+
+def _caps(gen0):
+    sec2 = re.search(r"^## 2\..*?(?=^## |\Z)", gen0 or "", re.M | re.S)
+    return CAP.findall(sec2.group(0) if sec2 else "")
+
+
+def _cell(root, kind, rest):
+    """What's wrong with one filled cell, or ''."""
+    if kind == "N/A":
+        return "" if re.search(r"\w", rest) else "N/A needs its reason"
+    if kind == "I":
+        m = re.search(r"\(([^()\s]+)\)\s*\W*$", rest)
+        if not m:
+            return "an I cell names the file it builds on: I: <idea> (<file>)"
+        path = m.group(1)
+    else:
+        path = (rest.split() or [""])[0].strip("`").rstrip(",;.")
+        if not path:
+            return "F needs the feature's path"
+    path = re.sub(r":\d+$", "", path)
+    full = os.path.realpath(os.path.join(root, path))
+    if not (full == root or full.startswith(root.rstrip("/") + "/")):
+        return f"{path} is outside the project"
+    return "" if os.path.exists(full) else f"{path} doesn't exist"
+
+
+def coverage(p, text, gen0=""):
+    """Standing rule 2: every area row has all stage × surface cells, each grounded; gen-0 §2's capabilities each have
+    a row. Returns areas, cells (expected), filled (valid), empty (missing) and problems."""
+    if text is None:
+        return {"areas": 0, "cells": 0, "filled": 0, "empty": 0,
+                "problems": ["coverage.md doesn't exist (every generation fills the grid: fm genesis put coverage.md)"]}
+    root, probs, filled, empty = os.path.realpath(p.root), [], 0, 0
+    secs = [(a, b) for a, b in _sections(text) if a]
+    if not secs:
+        probs.append("coverage.md has no '## <area>' rows")
+    for area, body in secs:
+        seen = set()
+        for line in (x.strip() for x in body.splitlines()):
+            if not line.startswith("- "):
+                continue
+            m = CELL.fullmatch(line)
+            if not m:
+                probs.append(f"{area}: not a cell line: {c.plain(line)[:80]}")
+                continue
+            stage, kind, rest = m.group(1).strip().lower(), m.group(3), m.group(4)
+            surface = next((s for s in SURFACES if s.lower() == m.group(2).strip().lower()), None)
+            if stage not in STAGES or not surface:
+                probs.append(f"{area}: {c.plain(m.group(1).strip())} × {c.plain(m.group(2).strip())} isn't a stage × "
+                             "surface of the grid")
+                continue
+            if (stage, surface) in seen:
+                probs.append(f"{area}: {stage} × {surface} appears twice")
+                continue
+            seen.add((stage, surface))
+            bad = _cell(root, kind, rest.strip())
+            if bad:
+                probs.append(f"{area}: {stage} × {surface}: {c.plain(bad)}")
+            else:
+                filled += 1
+        gone = [f"{s} × {f}" for s in STAGES for f in SURFACES if (s, f) not in seen]
+        empty += len(gone)
+        probs += [f"{area}: {g}: empty" for g in gone]
+    heads = " | ".join(a.lower() for a, _ in secs)
+    probs += [f"no row for capability {n}. {name}" for n, name, _ in _caps(gen0) if name.lower() not in heads]
+    return {"areas": len(secs), "cells": len(secs) * len(STAGES) * len(SURFACES), "filled": filled, "empty": empty,
+            "problems": probs}
+
+
+def not_yet(text, gen):
+    """Standing rule 1: each open item has a blocker, 2+ different tried approaches (split on ';'), what unblocks it,
+    and a try in the current generation (added or retried there); removals are only for proven harm or a duplicate."""
+    probs, items, open_ = [], 0, 0
+    for head, body in _sections(text or ""):
+        if head.lower() == "removed":
+            for line in re.findall(r"^- (.+)$", body, re.M):
+                if not re.search(r"\b(harm|duplicate)", line, re.I):
+                    probs.append(f"{c.plain(line.partition(':')[0])[:60]}: removed only for proven harm or an exact duplicate")
+            continue
+        items += 1
+        f = {}
+        for k, v in NOT_YET.findall(body):
+            f.setdefault(k, []).append(v)
+        mine = []
+        if not any(f.get("blocker", [])):
+            mine.append("no blocker")
+        tries = {t.strip().lower() for t in ";".join(f.get("tried", [])).split(";")} - {""}
+        if len(tries) < 2:
+            mine.append(f"tried {len(tries)} approach{'es' if len(tries) != 1 else ''}; 2 different ones first")
+        if not any(f.get("unblocks-with", [])):
+            mine.append("no unblocks-with")
+        if gen and not any(re.match(rf"gen-{gen}\b", v) for v in f.get("retried", []) + f.get("added", [])):
+            mine.append(f"not retried in gen-{gen}")
+        if mine:
+            open_ += 1
+            probs += [f"{c.plain(head)[:60]}: {m}" for m in mine]
+    return {"items": items, "open": open_, "problems": probs}
+
+
+def check(p):
+    """Standing rules 1-3 over the tower: the coverage grid and the not-yet ledger, against the newest generation."""
+    d, s = home(p), status(p, with_check=False)
+    gens = [g["n"] for g in s["generations"] if g["seed"]]
+    return {"gen": max(gens) if gens else None, "coverage": coverage(p, _doc(d, "coverage.md"), _doc(d, "gen-0.md") or ""),
+            "not_yet": not_yet(_doc(d, "not-yet.md"), max(gens) if gens else None)}
+
+
+def _check_lines(r, limit=6):
+    cov, ny, out = r["coverage"], r["not_yet"], []
+    if cov["problems"]:
+        more = len(cov["problems"]) - limit
+        out.append(f"✗ coverage: {cov['empty']} empty, {len(cov['problems']) - cov['empty']} other problem(s); "
+                   f"{cov['filled']} of {cov['cells']} cells filled")
+        out += [f"    {x}" for x in cov["problems"][:limit]] + ([f"    … {more} more (--json lists all)"] if more > 0 else [])
+    else:
+        out.append(f"✓ coverage: {cov['areas']} areas, {cov['filled']} of {cov['cells']} cells filled")
+    n, more = ny["items"], len(ny["problems"]) - limit
+    if ny["problems"]:
+        out.append(f"✗ not-yet: {ny['open']} of {n} item{'s' if n != 1 else ''} need work")
+        out += [f"    {x}" for x in ny["problems"][:limit]] + ([f"    … {more} more (--json lists all)"] if more > 0 else [])
+    else:
+        out.append(f"✓ not-yet: {n} item{'s' if n != 1 else ''}" + (f", each tried twice and retried in gen-{r['gen']}"
+                                                                   if n and r["gen"] else ""))
+    return out
 
 
 def _tiered(parts):
@@ -129,9 +278,8 @@ def export(p, out):
     def tasks(text):
         return [_task(briefs[t]) for t in dict.fromkeys(re.findall(r"\bT-\d{4,}\b", text)) if t in briefs]
     gen0 = docs.get("gen-0.md", "")
-    sec2 = re.search(r"^## 2\..*?(?=^## |\Z)", gen0, re.M | re.S)
     gens = []
-    for g in status(p)["generations"]:
+    for g in status(p, with_check=False)["generations"]:
         pre = f"gen-{g['n']}/"
         seed = docs.get(pre + "seed.md", "")
         missions, seen = [], set()
@@ -163,14 +311,13 @@ def export(p, out):
                     exam.append(row)
     except OSError:
         pass
-    cov = docs.get("coverage.md", "")
-    cells = re.findall(r"^- [^:\n]+ × [^:\n]+:(.*)$", cov, re.M)
+    chk = check(p)
+    chk["coverage"]["problems"] = chk["coverage"]["problems"][:50]
     rev = c.run_command(p.root, "git rev-parse --short HEAD", timeout=10)[1].strip()
-    data = {"updated": c.now(), "rev": rev, "capabilities": [{"n": int(n), "name": name, "text": t.strip()} for n, name, t in
-                                                            CAP.findall(sec2.group(0) if sec2 else "")],
+    data = {"updated": c.now(), "rev": rev,
+            "capabilities": [{"n": int(n), "name": name, "text": t.strip()} for n, name, t in _caps(gen0)],
             "gaps": _gaps(docs.get("gap-map.md", "")), "generations": gens, "exam": exam,
-            "coverage": {"cells": len(cells), "filled": sum(bool(re.match(r"\s*(F|I|N/A):", x)) for x in cells)},
-            "not_yet": len([h for h in re.findall(r"^## (.+)$", docs.get("not-yet.md", ""), re.M) if h.strip() != "Removed"]),
+            "coverage": chk["coverage"], "not_yet": chk["not_yet"]["items"], "not_yet_open": chk["not_yet"]["open"],
             "docs": docs}
     data = scrub(data)
     for rel, text in data["docs"].items():
@@ -350,6 +497,12 @@ def _text(s):
     if s.get("exam_last"):
         import fmexam
         exam += f", last: {fmexam.summary(s['exam_last'])}"
+    if s.get("check"):
+        cov, ny = s["check"]["coverage"], s["check"]["not_yet"]
+        lines.append(f"coverage: {cov['filled']} of {cov['cells']} cells filled, {cov['empty']} empty"
+                     + (f", {len(cov['problems'])} problem(s)" if cov["problems"] else "")
+                     + f" · not-yet: {ny['items']} item(s), {ny['open']} need work"
+                     + (" (fm genesis check)" if cov["problems"] or ny["problems"] else ""))
     return "\n".join(lines + [exam, site])
 
 
@@ -387,6 +540,10 @@ def cmd_genesis(args):
             return fmcli.out(args, {"live": state or False},
                              "Live: every tower change reaches the site within minutes (undo: fm genesis live off)"
                              if state else "Live publishing off.")
+        if action == "check":
+            r = check(p)
+            fmcli.out(args, r, "\n".join(_check_lines(r)))
+            return 1 if r["coverage"]["problems"] or r["not_yet"]["problems"] else 0
         if action == "publish":
             res = publish(p, settle=args.settle)
             return fmcli.out(args, res, f"Genesis publish: {res['result']}" + (f" ({res['sha'][:8]})" if "sha" in res else ""))
