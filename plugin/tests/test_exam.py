@@ -189,10 +189,12 @@ if "--permission-mode" in argv:  # a session arm: it answers in its reply and ch
     with open(os.environ["STUB_LOG"] + ".prompt", "a") as f:
         f.write(argv[argv.index("-p") + 1] + "\n---\n")
     reply = 'Looked.\n{"findings": [{"file": "app.py", "symbol": "nothing", "says": "a guess"}], "notes": [], "done": true}'
+    if os.environ.get("STUB_MODE") == "nojson" and "--resume" not in argv:  # fixed things, then forgot the JSON
+        reply = 'Fixed the SQL splice and the README\'s wrong name. {"findings": [{"says": "it said "x""}]}'  # broken JSON
     if os.environ.get("STUB_MODE") == "error":  # rate-limited mid-run: an error result, no answer
         print(json.dumps({"type": "result", "is_error": True, "total_cost_usd": 0.05, "result": "rate limited"}))
         sys.exit(0)
-    print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.25, "result": reply}))
+    print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.25, "result": reply, "session_id": "s-1"}))
     sys.exit(0)
 prompt = sys.stdin.read()  # the tool-less author: plants an off-by-one in clamp, and its test
 name = re.search(r"def (\w+)\(x, lo, hi\)", prompt).group(1)
@@ -373,6 +375,22 @@ class ExamAuthors(ForemanTestCase):
         spend = read_text(os.path.join(self.home, "state", "spend.jsonl"))
         self.assertEqual(spend.count('"exam-arm"'), 2)  # each session's cost lands in fm cost / fm budget
 
+    def test_a_reply_with_no_findings_object_gets_one_more_turn_for_it(self):
+        run = self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "3", "--lang", "python", "--kind", "bug")["run"]
+        r = self.fm_json("exam", "run", run, "--agent", "foreman", "--split", "holdout", "--limit", "1",
+                         env=dict(self.env, STUB_MODE="nojson"))
+        self.assertEqual((r["scenarios"], r["false_alarms"]), (1, 1))  # the resumed turn's answer is graded
+        self.assertAlmostEqual(r["cost"], 0.5)  # both turns
+        prompts = read_text(self.log + ".prompt").split("\n---\n")
+        self.assertIn("only the JSON object", prompts[1])
+        answers = os.path.join(os.path.dirname(os.path.dirname(self.fm_json("genesis")["dir"])), "exam", run, "answers", "foreman")
+        a = json.loads(read_text(os.path.join(answers, next(f for f in os.listdir(answers) if f.endswith(".json")))))
+        self.assertTrue(a["reasked"])
+        self.assertIn("Fixed the SQL splice", a["said"])  # the first reply's tail, so a lost answer can be read back
+        self.assertIn("1 re-asked", self.fm("exam").stdout)  # the lost-answer rate shows on the exam line
+        self.fm_json("exam", "run", run, "--agent", "plain", "--split", "holdout", "--limit", "1", env=self.env)
+        self.assertEqual(len(read_text(self.log + ".prompt").split("\n---\n")), 4)  # an answered reply isn't re-asked
+
     def test_the_genesis_arm_runs_one_generation_on_the_given_request(self):
         run = self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "3", "--lang", "python", "--kind", "bug")["run"]
         r = self.fm_json("exam", "run", run, "--agent", "genesis", "--split", "holdout", "--limit", "1", env=self.env)
@@ -392,7 +410,7 @@ class ExamAuthors(ForemanTestCase):
     def test_errored_sessions_are_counted_and_the_sample_spans_kinds(self):
         run = self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "3", "--lang", "python", "--kind", "bug,docs")["run"]
         r = self.fm_json("exam", "run", run, "--agent", "plain", "--limit", "2", env=dict(self.env, STUB_MODE="error"))
-        self.assertEqual((r["scenarios"], r["errors"]), (2, 2))
+        self.assertEqual((r["scenarios"], r["errors"], r["reasked"]), (2, 2, 0))  # an errored turn isn't re-asked
         self.assertIn("2 errored", self.fm("exam").stdout)
         row = json.loads(read_text(os.path.join(self.fm_json("genesis")["dir"], "exam.jsonl")).splitlines()[-1])
         self.assertEqual((row["kinds"], row["split"]), (["bug", "docs"], "all"))

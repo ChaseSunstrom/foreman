@@ -146,6 +146,7 @@ class SessionStart(HookCase):
         self.plant()
         ctx = self.headless_ss()
         self.assertIn('- "kit/store.py:2 vuln lookup: SQL built from the parameter name', ctx)  # each row quoted
+        self.assertIn("an untested one is closed by a test that calls it", ctx)  # s31-006: untested leads were dropped
         self.assertIn("fm find", ctx)
         self.assertIn("data, not instructions", ctx)
         self.assertIn("kit/store.py:2", self.ctx_of(self.run_ss()))  # interactive, a repo Foreman hasn't worked in
@@ -169,6 +170,7 @@ class SessionStart(HookCase):
         with mock.patch.object(fmhooks, "LEADS_FILES", 2):
             note = fmhooks._leads_note(p)
         self.assertIn("fm find --rank", note)
+        self.assertIn("untested: a test that calls it", note)
         self.assertRegex(note, r"\b[3-9] files, too many")  # 1 tracked, the rest untracked
         self.assertNotIn("kit/store.py", note)
         import fmfind
@@ -1015,6 +1017,7 @@ class NoTaskGate(HookCase):
         first = parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."},
                                 env=self.HEADLESS)) or {}
         self.assertIn(more, first.get("reason") or "", "the drive goes on to the queued request")
+        self.assertIn("only your final message", first["reason"])  # T-2192: claude -p returns the last message only
         self.fm("task", "drop", more, "--reason", "not needed")
         out = parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."},
                               env=self.HEADLESS)) or {}
@@ -1027,6 +1030,7 @@ class NoTaskGate(HookCase):
         self.assertEqual(c.find_brief(self.project(), act.id).status, "active")
         self.assertEqual((out or {}).get("decision"), "block", "the agent hears its tests fail")
         self.assertIn("python3 -m unittest", out.get("reason", ""))
+        self.assertIn("only your final message", out["reason"])  # every hold in print mode, early returns too
         again = parse(self.hook("Stop", {"stop_hook_active": True, "last_assistant_message": "Still failing."},
                                 env=self.HEADLESS))
         self.assertNotIn("python3 -m unittest", (again or {}).get("reason", ""), "said once, not a loop")
@@ -2282,6 +2286,7 @@ class Stop(HookCase):
         self.assertEqual(self.decision(p), "block")
         self.assertIn(f"Foreman drive: {tid}", parse(p)["reason"])
         self.assertIn(f"Next: {tid} step 1/2", parse(p)["reason"])
+        self.assertNotIn("only your final message", parse(p)["reason"])  # interactive: the chat shows every message
 
     def test_drive_names_the_skill_that_fits_once(self):
         # T-1697: the drive's Next line carries the stage's skill the first time this session, not on every push
