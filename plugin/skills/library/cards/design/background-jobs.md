@@ -9,7 +9,7 @@ related: [idempotency, retries-backoff, event-driven, concurrency, sagas]
 Work moved off the request path: durable queues, idempotent handlers, bounded retries, visible failures.
 
 ## Verify
-- `celery -A app inspect active` (or `npx bullmq-cli`, `sidekiq` web UI): workers are alive and consuming.
+- `celery -A app inspect active` (or the `sidekiq` web UI): workers are alive and consuming.
 - `pytest -q tests/jobs`: handlers run synchronously in tests, including the duplicate and failure cases.
 - `redis-cli llen queue:default` (Redis-backed queues, adjust the key): backlog is not growing without bound.
 
