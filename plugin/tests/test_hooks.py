@@ -48,6 +48,24 @@ class GatePipeOnce(ForemanTestCase):
         self.assertIn("the last program's, not the gates'", fmhooks._gate_pipe_note(dict(pl, session_id="s2")))
 
 
+class BatchNoteOnce(ForemanTestCase):
+    def test_the_third_edit_note_is_said_in_full_once_a_session(self):
+        # T-2108: the full fm edit paragraph came back for every file and after every compaction
+        self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--step", "s", "--ac", "a", "--focus")
+
+        def third(name, sid="s2108"):
+            pl = {"tool_name": "Edit", "tool_input": {"file_path": os.path.join(self.repo, name)}, "session_id": sid}
+            return [self.hook("PostToolUse", pl).stdout for _ in range(3)][-1]
+        full = third("a.py")
+        self.assertIn("fm edit applies them all", full)
+        short = third("b.py")
+        self.assertIn("fm edit", short)
+        self.assertLess(len(short), len(full) // 2)
+        self.hook("SessionStart", {"source": "compact", "session_id": "s2108"})
+        self.assertNotIn("applies them all", third("c.py"))
+        self.assertIn("applies them all", third("d.py", sid="s2"))
+
+
 class HookCase(ForemanTestCase):
     def setUp(self):
         super().setUp()
