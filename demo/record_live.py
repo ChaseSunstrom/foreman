@@ -48,6 +48,31 @@ def only_foreman(path=os.path.expanduser("~/.claude/settings.json")):
     return json.dumps({"enabledPlugins": off})
 
 
+NOTICE = re.compile(r"Your login expires in|Your \w+ plan includes|clau\.de/api-credits|tmux focus-events off"
+                    r"|hooks\.json: unknown keys|\w\" in hooks\.\w+\[\d+\]")  # Claude Code's startup notices, not Foreman's
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")  # every CSI, not shot._SGR's colours alone: a cast event opens with \x1b[H\x1b[2J
+
+
+def quiet(s, sep="\n"):
+    """T-2055: blank each startup notice (an installed but disabled plugin's hooks.json warning still prints; the login
+    expiry, plan promo and tmux tip are account or harness noise): its characters up to the Foreman panel's │ become
+    spaces, so the panel beside it and the screen's layout hold."""
+    out = []
+    for x in s.split(sep):
+        plain = ANSI.sub("", x)
+        m = NOTICE.search(plain)
+        if m:
+            end = plain.find("│", m.end())
+            end, i, parts = len(plain) if end < 0 else end, 0, []
+            for tok in re.split(f"({ANSI.pattern})", x):
+                if not tok.startswith("\x1b"):  # ponytail: one space per character; a wide one would shift the row
+                    tok, i = "".join(" " if i + k < end else c for k, c in enumerate(tok)), i + len(tok)
+                parts.append(tok)
+            x = "".join(parts)
+        out.append(x)
+    return sep.join(out)
+
+
 def scrubber():
     """What must not reach a published recording: the home folder, the user and real name, the account e-mail."""
     home, me = os.path.expanduser("~"), pwd.getpwuid(os.getuid())
@@ -69,7 +94,7 @@ def scrubber():
     pat = re.compile(r"(?<![\w.@-])(?:" + "|".join(map(re.escape, names)) + r")(?![\w@-])", re.I) if names else None
 
     def scrub(s):
-        s = s.replace(home, "~")
+        s = quiet(s).replace(home, "~")
         return pat.sub("you", s) if pat else s
     return scrub
 
@@ -112,7 +137,7 @@ def main():
     if a.from_cast:
         with open(os.path.join(HERE, "live.cast"), encoding="utf-8") as f:
             head, *events = [json.loads(ln) for ln in f]
-        events = thin(kept(events), a.max_frames)
+        events = [e[:2] + [quiet(e[2], "\r\n")] + e[3:] for e in thin(kept(events), a.max_frames)]
         with open(os.path.join(HERE, "live.cast"), "w", encoding="utf-8") as f:
             f.write(json.dumps(head) + "\n" + "".join(json.dumps(e) + "\n" for e in events))
         return render(events, a)
