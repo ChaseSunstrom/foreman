@@ -3291,10 +3291,7 @@ def stop(pl):
             import fmscout
             made, slow = fmscout.idle(p) if fmscout.due(p) else ([], False)
             if made:
-                reason = ((reason + "\n\n") if reason else "") + (
-                    f"Foreman scout found work nobody asked for yet: {', '.join(made)} (fm task show ID says why). "
-                    f"Plan it and work it (fm next); drop one that isn't worth it with its reason. One that waits on the "
-                    f"user's yes stays until they give it (fm ask ID confirm).")
+                reason = ((reason + "\n\n") if reason else "") + _scout_note(p, made)
             elif slow:
                 reason = ((reason + "\n\n") if reason else "") + (
                     "Foreman scout: the queue is empty. Run `fm scout --slow` (zero tokens: a newer Claude Code, "
@@ -3416,6 +3413,18 @@ def _cc_version():
         return tuple(int(x) for x in m.groups())
     except (OSError, subprocess.SubprocessError):
         return ()
+
+
+def _scout_note(p, made):
+    """T-2111: an ordinary find is planned and worked; one that waits on the user's yes is asked once, never worked."""
+    wait = [t for t in made if getattr(c.find_brief(p, t), "meta", {}).get("confirm")]
+    work = [t for t in made if t not in wait]
+    lines = [f"Foreman scout found work nobody asked for yet: {', '.join(work)} (fm task show ID says why). Plan it and "
+             f"work it (fm next); drop one that isn't worth it with its reason."] if work else []
+    if wait:
+        lines.append(f"Foreman scout filed {', '.join(wait)} for the user's own yes (fm task show ID says why): leave it "
+                     f"unstarted and ask once with " + " / ".join(f"fm ask {t} confirm" for t in wait) + ".")
+    return "\n".join(lines)
 
 
 def _headless_wait(pl):

@@ -383,6 +383,26 @@ class ScoutDrive(ForemanTestCase):
         again = json.loads(self.hook("Stop", {"session_id": "s1", "last_assistant_message": "done"}, env=env).stdout or "{}")
         self.assertNotIn("scout", again.get("reason", "").lower())
 
+    def test_a_find_that_waits_on_the_users_yes_is_asked_not_worked(self):
+        """T-2111: 'plan it and work it' is for ordinary finds; a confirm item gets one ask."""
+        import fmcli
+        import fmhooks
+        self.fm("init")
+        p = c.find_project(self.repo, create=False)
+        work = fmcli._create(p, "ordinary", "FIX", "S", "captured", raw="x", source="scout")
+        wait = fmcli._create(p, "theirs", "FIX", "S", "captured", raw="x", source="scout")
+        wait.meta.update(confirm=True, confirm_why="others commit here")
+        c.save_brief(p, wait, touch=False)
+        both = fmhooks._scout_note(p, [work.id, wait.id])
+        first, second = both.split("\n")
+        self.assertIn(work.id, first)
+        self.assertIn("Plan it and work it", first)
+        self.assertNotIn(wait.id, first)
+        self.assertIn(f"fm ask {wait.id} confirm", second)
+        self.assertNotIn("work it", second)
+        self.assertNotIn("\n", fmhooks._scout_note(p, [work.id]))
+        self.assertNotIn("Plan it", fmhooks._scout_note(p, [wait.id]))
+
     def test_a_drain_with_no_quick_find_asks_for_the_slow_probes_once(self):
         self.fm("init")
         self.fm("autonomy", "full")
