@@ -417,3 +417,172 @@ class GenesisCheck(ForemanTestCase):
         res = self.fm_json("genesis")
         self.assertEqual(res["check"]["coverage"]["empty"], 1)
         self.assertIn("coverage: 63 of 64 cells filled, 1 empty", self.fm("genesis").stdout)
+
+
+MISSION = "# Mission\n\n{task}\n```\nFEATURE: one\nFEATURE: two\n```\n"
+DRY = "# Seed\n\nNo tier 3-4 gap left; no Missions this generation.\n"
+
+
+class GenesisStep(ForemanTestCase):
+    """T-2095: fm genesis step names the tower's one next action from its files alone, so a kill anywhere resumes."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        import fmcore as c
+        self.p = c.find_project(self.repo)
+
+    def put(self, name, text):
+        import fmgenesis
+        fmgenesis.put(self.p, name, text)
+
+    def step(self):
+        import fmgenesis
+        return fmgenesis.step(self.p)
+
+    def at(self, stage, *bits):
+        import fmgenesis
+        d = fmgenesis.home(self.p)
+        before = {r: os.stat(os.path.join(r, f)).st_mtime_ns for r, _, fs in os.walk(d) for f in fs}
+        s = self.step()
+        self.assertEqual(s["stage"], stage, s)
+        for b in bits:
+            self.assertIn(b, s["action"] + " → " + s["command"])
+        self.assertEqual(s, self.step())  # a kill and a rerun give the same action
+        self.assertEqual(before, {r: os.stat(os.path.join(r, f)).st_mtime_ns for r, _, fs in os.walk(d) for f in fs})
+        return s
+
+    def task(self):
+        return self.fm_json("task", "new", "a brief", "--type", "FEATURE", "--tier", "S", "--step", "one",
+                            "--ac", "ok :: true")["id"]
+
+    def test_walks_every_stage_in_order_from_the_files_alone(self):
+        import fmgenesis
+        self.at("gen-0", "fm genesis init")
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        self.assertEqual(self.at("seed", "gen-1/seed.md")["gen"], 1)
+        self.put("gen-1/seed.md", SEED)
+        self.at("mission", "mission-exam", "fm mission", "fm ideas")
+        self.put("gen-1/mission-exam.md", MISSION.format(task=""))
+        self.at("intake", "0 of 2", "fm intake")
+        a, b = self.task(), self.task()
+        self.put("gen-1/mission-exam.md", MISSION.format(task=f"Task: {a} (brief 1)\n"))
+        self.at("build", f"fm focus {a}")
+        self.fm("task", "drop", a, "done elsewhere")
+        self.at("intake", "1 of 2")
+        self.put("gen-1/mission-exam.md", MISSION.format(task=f"Task: {a} (brief 1), {b} (brief 2)\n"))
+        self.at("build", f"fm focus {b}")
+        self.fm("task", "drop", b, "done elsewhere")
+        self.at("critique", "gen-1/critique-exam.md")
+        self.put("gen-1/critique-exam.md", "# Critique\n")
+        self.at("mission", "mission-genesis")
+        t = self.task()
+        self.fm("task", "drop", t, "done elsewhere")
+        self.put("gen-1/mission-genesis.md", f"# Mission\n\nTask: {t}\n")  # no intake block: one brief is enough
+        self.at("critique", "gen-1/critique-genesis.md")
+        self.put("gen-1/critique-genesis.md", "# Critique\n")
+        self.at("select", "lineage.md", "fm decide")
+        self.put("lineage.md", "# Lineage\n\n## gen-1\n- kept: the first generation\n")
+        self.at("drift", "gen-1/drift.md", "fm second")
+        self.put("gen-1/drift.md", "# Drift\n")
+        self.at("sweep", "gen-1/sweep.md")
+        self.put("gen-1/sweep.md", "# Sweep\n")
+        self.assertEqual(self.at("seed", "gen-2/seed.md")["gen"], 2)
+
+    def test_a_blocked_brief_is_named_as_blocked(self):
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        self.put("gen-1/seed.md", SEED)
+        t = self.task()
+        self.fm("focus", t)
+        self.fm("task", "block", t, "waits on a usage reset")
+        self.put("gen-1/mission-exam.md", f"Task: {t}\n")
+        self.assertEqual(self.at("build", f"fm focus {t}")["kind"], "blocked")
+
+    def test_two_dry_generations_end_in_the_report_then_done(self):
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        lineage = "# Lineage\n"
+        for n in (1, 2):
+            self.put(f"gen-{n}/seed.md", DRY if n > 1 else SEED.split("| 1 |")[0])  # gen 1: a table with no rows
+            self.at("select")
+            lineage += f"\n## gen-{n}\n- dry\n"
+            self.put("lineage.md", lineage)
+            self.put(f"gen-{n}/drift.md", "ok\n")
+            self.put(f"gen-{n}/sweep.md", "clean\n")
+            if n == 1:
+                self.assertEqual(self.at("seed")["gen"], 2)  # one dry generation isn't two in a row
+        s = self.at("report", "report.md")
+        self.assertEqual(s["gen"], 2)
+        self.put("report.md", "# Report\n")
+        self.assertEqual(self.at("done")["kind"], "done")
+
+    def test_every_third_generation_names_fm_evolve(self):
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        for n in (1, 2, 3):
+            self.put(f"gen-{n}/seed.md", SEED.split("| 2 |")[0].replace("mission-exam.md", "mission-x.md"))
+            t = self.task()
+            self.fm("task", "drop", t, "x")
+            for f, text in ((f"gen-{n}/mission-x.md", f"Task: {t}\n"), (f"gen-{n}/critique-x.md", "c\n"),
+                            (f"gen-{n}/drift.md", "d\n"), (f"gen-{n}/sweep.md", "s\n")):
+                self.put(f, text)
+            self.put("lineage.md", "".join(f"## gen-{i}\n- kept\n" for i in range(1, n + 1)))
+        s = self.at("seed", "fm evolve --runs 3")
+        self.assertEqual(s["gen"], 4)
+
+    def test_caps_and_unknown_tasks_stop_the_tower(self):
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        rows = "".join(f"| {i} | mission-m{i}.md | #1 | g (3) | — |\n" for i in range(1, 10))
+        self.put("gen-1/seed.md", SEED.split("| 1 |")[0] + rows)
+        s = self.at("fatal", "9 Missions", "8")
+        self.assertEqual(s["kind"], "fatal")
+        bad = self.fm("genesis", "step", check=False)
+        self.assertEqual(bad.returncode, 1)
+        self.assertIn("9 Missions", bad.stdout)
+        self.put("gen-1/seed.md", SEED)
+        self.put("gen-1/mission-exam.md", "Task: T-9999\n")
+        self.assertIn("T-9999", self.at("fatal")["action"])
+        with self.assertRaises(ValueError):
+            self.put("gen-1/deeper/seed.md", "x")  # only gen-N/<doc>.md fits the tower's shape
+
+    def test_a_missions_table_that_does_not_parse_is_fatal_not_dry(self):
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        self.put("gen-1/seed.md", "# Seed\n\n| 1 | `mission-a.md` | #1 | g (3) | — |\n")
+        self.assertEqual(self.at("fatal", "parse", "gen-1/seed.md")["kind"], "fatal")
+
+    def test_a_kill_after_fm_intake_names_its_briefs_not_another_intake(self):
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        self.put("gen-1/seed.md", SEED)
+        self.put("gen-1/mission-exam.md", MISSION.format(task="FIX: an example line in prose, not a brief\n"))
+        self.at("intake", "0 of 2")
+        made = self.fm_json("intake", "FEATURE: one\nFEATURE: two\n")
+        ids = [b["id"] for b in made["created"]] if isinstance(made, dict) else [b["id"] for b in made]
+        s = self.at("intake", *ids, "Task:", "fm genesis put gen-1/mission-exam.md")
+        self.assertNotIn("fm intake", s["command"])
+
+    def test_fm_next_falls_through_when_step_breaks(self):
+        import fmcore as c
+        import fmgenesis
+        from unittest import mock
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        with mock.patch.object(fmgenesis, "step", side_effect=OSError("unreadable")):
+            b, kind, _text = c.next_for(self.p)
+        self.assertIsNone(b)
+        self.assertNotEqual(kind, "genesis")
+
+    def test_cli_status_export_and_fm_next_name_it(self):
+        import json
+        self.assertNotIn("fm genesis step", self.fm("next").stdout)  # no tower, no Genesis step
+        self.fm("genesis", "init", "--file", "-", input=GEN0_CAPS)
+        out = self.fm("genesis", "step").stdout
+        self.assertIn("gen 1 · seed", out)
+        self.assertIn("→ fm genesis put gen-1/seed.md", out)
+        self.assertEqual(self.fm_json("genesis", "step")["stage"], "seed")
+        self.assertIn("next: write gen-1/seed.md", self.fm("genesis").stdout)
+        self.assertIn("fm genesis step", self.fm("next").stdout)
+        res = self.fm_json("genesis", "export", os.path.join(self.tmp, "site"))
+        with open(res["path"]) as f:
+            self.assertEqual(json.load(f)["next"]["stage"], "seed")

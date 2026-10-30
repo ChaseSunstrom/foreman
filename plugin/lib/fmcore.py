@@ -3457,6 +3457,15 @@ def _next_for(p, briefs=None):
         if retry:
             return None, "idle", (f"queue is empty, but what {len(retry)} blocked task(s) waited on changed "
                                   f"({', '.join(retry[:4])}): fm tidy --apply reopens them" + waits)
+        if os.path.isfile(os.path.join(p.dir, "research", "genesis", "gen-0.md")):  # T-2095: an open tower goes on
+            import fmgenesis
+            try:
+                g = fmgenesis.step(p)
+            except Exception:  # an unreadable tower never costs the next action
+                g = {"kind": "done"}
+            if g["kind"] != "done":
+                return None, "genesis", (f"Genesis gen {g['gen']}: {g['action']} → {g['command']} (fm genesis step)"
+                                         + waits)
         import fmloop  # T-1057: with the forever loop on, an empty queue starts the next round
         import fmcontract  # T-1158: no next round past an ended contract (read-only: callers may hold the lock)
         if fmloop.on(p) and not fmcontract.over(p, freeze=False):

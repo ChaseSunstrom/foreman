@@ -129,6 +129,7 @@
       [D.not_yet, "not-yet ideas waiting"],
       [1, "message from you"]];
     $("stats").innerHTML = rows.map(function (r) { return "<dt>" + esc(r[1]) + "</dt><dd>" + esc(r[0]) + "</dd>"; }).join("") +
+      (D.next ? '<dd class="rev">next: ' + esc(D.next.action) + "</dd>" : "") +
       '<dd class="rev">rev ' + esc(D.rev) + " · updated " + esc(ago(D.updated)) + "</dd>";
     $("gen-label").textContent = "generation " + g.n + " · live";
     $("foot").textContent = "Exported by fm genesis export · " + D.rev;

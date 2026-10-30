@@ -12,7 +12,7 @@ import fmcore as c
 # not-yet.md: ideas no approach has landed yet, with their blockers (retried each generation, never dropped);
 # coverage.md: the capability-area x surface x stage grid every generation fills.
 SHAPE = re.compile(r"(gap-map|lineage|catalogue|report|not-yet|coverage)\.md|exam\.jsonl"
-                   r"|gen-[1-9][0-9]*/(seed|(mission|critique)-[a-z0-9][a-z0-9-]*)\.md")
+                   r"|gen-[1-9][0-9]*/(seed|drift|sweep|(mission|critique)-[a-z0-9][a-z0-9-]*)\.md")
 GEN = re.compile(r"gen-([1-9][0-9]*)")
 
 
@@ -37,7 +37,8 @@ def init(p, data):
 def put(p, name, text):
     if not SHAPE.fullmatch(name):
         raise ValueError(f"{name!r} isn't a tower doc: gap-map.md, lineage.md, catalogue.md, report.md, exam.jsonl, "
-                         "not-yet.md, coverage.md, or gen-N/seed.md, gen-N/mission-NAME.md, gen-N/critique-NAME.md (N from 1)")
+                         "not-yet.md, coverage.md, or gen-N/seed.md, drift.md, sweep.md, mission-NAME.md, critique-NAME.md "
+                         "(N from 1)")
     path = os.path.join(home(p), name)
     with c.lock(p.dir):
         c.write_atomic(path, c.redact(text))
@@ -72,7 +73,7 @@ def status(p, with_check=True):
             "exam_lines": exam, "exam_last": last if isinstance(last, dict) else None, "generations": sorted(gens, key=lambda g: g["n"]),
             "live": c.read_meta(p).get("genesis_live") or False}
     if with_check and have["gen-0.md"]:
-        out["check"] = check(p)
+        out["check"], out["next"] = check(p), step(p)
     return out
 
 
@@ -208,6 +209,83 @@ def check(p):
             "not_yet": not_yet(_doc(d, "not-yet.md"), max(gens) if gens else None)}
 
 
+BLOCK = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)  # a mission's intake block: its first fence
+TASKS = re.compile(r"^Task:(.*)$", re.M)  # a mission's 'Task: T-2093 (brief 1), …' lines: the briefs intaken so far
+IDEAS = "fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen"
+
+
+def step(p):
+    """The tower's one next action from its files alone, in gen-0 §3's order (gen-0, seed, each Mission's doc, briefs
+    and critique, selection, drift, sweep, then the next seed or the report). Read-only, so a rerun after a kill at any
+    point names the same action. kind: ok, blocked (the brief waits), fatal (the tower can't go on as filed), done."""
+    d = home(p)
+    def act(stage, gen, action, command, kind="ok"):
+        return {"stage": stage, "gen": gen, "action": action, "command": command, "kind": kind}
+    if not os.path.isfile(os.path.join(d, "gen-0.md")):
+        return act("gen-0", 0, "write gen-0 from the user's words", "fm genesis init --file -")
+    n = max((g["n"] for g in status(p, with_check=False)["generations"] if g["seed"]), default=0)
+    if os.path.isfile(os.path.join(d, "report.md")):
+        return act("done", n, "the tower is finished: report.md is filed", "fm genesis", "done")
+    if not n:
+        return act("seed", 1, "write gen-1/seed.md from gen-0 (≤ 8 Missions)", "fm genesis put gen-1/seed.md --file -")
+    import fmcli
+    pre, briefs, seed = f"gen-{n}/", None, _doc(d, f"gen-{n}/seed.md") or ""
+    rows = ROW.findall(seed)
+    if not rows and re.search(r"^\|.*\bmission-[a-z0-9]", seed, re.M):  # else a typo'd table reads as a dry generation
+        return act("fatal", n, f"{pre}seed.md's Missions table doesn't parse: each row is "
+                               "| N | mission-NAME.md | capabilities | gaps | depends on |",
+                   f"fm genesis put {pre}seed.md --file -", "fatal")
+    if len(rows) > 8:
+        return act("fatal", n, f"{pre}seed.md lists {len(rows)} Missions; the cap is 8: merge or drop rows",
+                   f"fm genesis put {pre}seed.md --file -", "fatal")
+    for num, file, caps, _gaps, _deps in rows:  # in table order, which keeps each row's Depends on satisfied
+        name, doc = file[8:], _doc(d, f"{pre}{file}.md")
+        where = f"Mission {num} ({name})"
+        if doc is None:
+            return act("mission", n, f"{where}, {caps.strip()}: fm mission, then {IDEAS}; file it as {pre}{file}.md",
+                       f"fm genesis put {pre}{file}.md --file -")
+        ids = list(dict.fromkeys(re.findall(r"\bT-\d{4,}\b", " ".join(TASKS.findall(doc)))))
+        block = BLOCK.search(doc)
+        items = c.parse_intake(block.group(1) if block else doc).items
+        if (ids or items) and briefs is None:
+            briefs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
+        for t in ids:
+            if t not in briefs:
+                return act("fatal", n, f"{pre}{file}.md names {t}, which isn't a task here",
+                           f"fm genesis put {pre}{file}.md --file -", "fatal")
+            if briefs[t].status not in c.CLOSED:
+                return act("build", n, f"{where}: finish {t}", f"fm focus {t}",
+                           "blocked" if briefs[t].status == "blocked" else "ok")
+        want = max(1, len(items))
+        if len(ids) < want:
+            titles = {fmcli._title(i.text) for i in items}
+            made = [b.id for b in (briefs or {}).values()
+                    if b.status not in c.CLOSED and b.id not in ids and b.title in titles]
+            if made:  # a kill between fm intake and the put: name them, never a second intake that duplicates them
+                return act("intake", n, f"{where}: {', '.join(made)} came from its intake block; add them to its "
+                                        f"Task: line", f"fm genesis put {pre}{file}.md --file -")
+            return act("intake", n, f"{where}: {len(ids)} of {want} briefs intaken; fm intake the next line of its "
+                                    "block, then add its id to the Task: line at once", "fm intake")
+        if not os.path.isfile(os.path.join(d, f"{pre}critique-{name}.md")):
+            return act("critique", n, f"{where}: write its critique (closed vs planned, outside signals, what failed)",
+                       f"fm genesis put {pre}critique-{name}.md --file -")
+    if not re.search(rf"^## gen-{n}\b", _doc(d, "lineage.md") or "", re.M):
+        return act("select", n, f"select: gen-{n}'s rewrite stays only if it closes more held-out exam scenarios than "
+                                f"its parent; fm decide it, then a '## gen-{n}' section in lineage.md",
+                   "fm genesis put lineage.md --file -")
+    for stage, what in (("drift", "drift check of the seed against gen-0's MUSTs and NEVERs (fm second)"),
+                        ("sweep", "§7 sweep: fm state, queue, lanes, docs, doctor, full gates, exam rerun, fm genesis check")):
+        if not os.path.isfile(os.path.join(d, f"{pre}{stage}.md")):
+            return act(stage, n, what, f"fm genesis put {pre}{stage}.md --file -")
+    prev = _doc(d, f"gen-{n - 1}/seed.md")
+    if not rows and prev is not None and not ROW.findall(prev):
+        return act("report", n, "two generations in a row found no tier 3-4 gap: write the final report (§8)",
+                   "fm genesis put report.md --file -")
+    return act("seed", n + 1, f"write gen-{n + 1}/seed.md from gen-{n}'s seed, critiques, empty coverage cells and "
+                              f"not-yet items" + (" (every 3rd generation: fm evolve --runs 3 first)" if n % 3 == 0 else ""),
+               f"fm genesis put gen-{n + 1}/seed.md --file -")
+
+
 def _check_lines(r, limit=6):
     cov, ny, out = r["coverage"], r["not_yet"], []
     if cov["problems"]:
@@ -318,7 +396,7 @@ def export(p, out):
             "capabilities": [{"n": int(n), "name": name, "text": t.strip()} for n, name, t in _caps(gen0)],
             "gaps": _gaps(docs.get("gap-map.md", "")), "generations": gens, "exam": exam,
             "coverage": chk["coverage"], "not_yet": chk["not_yet"]["items"], "not_yet_open": chk["not_yet"]["open"],
-            "docs": docs}
+            "next": step(p), "docs": docs}
     data = scrub(data)
     for rel, text in data["docs"].items():
         path = os.path.join(out, rel)
@@ -503,6 +581,8 @@ def _text(s):
                      + (f", {len(cov['problems'])} problem(s)" if cov["problems"] else "")
                      + f" · not-yet: {ny['items']} item(s), {ny['open']} need work"
                      + (" (fm genesis check)" if cov["problems"] or ny["problems"] else ""))
+    if s.get("next"):
+        lines.append(f"next: {s['next']['action']} → {s['next']['command']}")
     return "\n".join(lines + [exam, site])
 
 
@@ -544,6 +624,10 @@ def cmd_genesis(args):
             r = check(p)
             fmcli.out(args, r, "\n".join(_check_lines(r)))
             return 1 if r["coverage"]["problems"] or r["not_yet"]["problems"] else 0
+        if action == "step":
+            r = step(p)
+            fmcli.out(args, r, f"gen {r['gen']} · {r['stage']}: {r['action']}\n  → {r['command']}")
+            return 1 if r["kind"] == "fatal" else 0
         if action == "publish":
             res = publish(p, settle=args.settle)
             return fmcli.out(args, res, f"Genesis publish: {res['result']}" + (f" ({res['sha'][:8]})" if "sha" in res else ""))
