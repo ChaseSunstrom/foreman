@@ -20,8 +20,12 @@ import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-with open(os.path.join(HERE, "assets", "foreman.svg"), "rb") as _f:  # T-2060: browsers keep a favicon by its URL
-    ICON = "assets/foreman.svg?v=" + hashlib.sha256(_f.read()).hexdigest()[:8]
+def _v(rel):  # T-2060, T-2063: browsers keep a file by its URL, so the URL carries its content's hash
+    with open(os.path.join(HERE, rel), "rb") as f:
+        return rel + "?v=" + hashlib.sha256(f.read()).hexdigest()[:8]
+
+
+ICON, CSS, JS = _v("assets/foreman.svg"), _v("style.css"), _v("site.js")
 SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "share.html", "__pycache__"}
 TYPES = ["FEATURE", "FIX", "CLEAN", "PERFORMANCE", "SECURITY", "RESEARCH"]
 esc = html.escape
@@ -294,12 +298,12 @@ def layout(title, desc, body, pages, here, depth=1):
 <meta property="og:description" content="{esc(desc)}">
 <meta property="og:image" content="https://chasesunstrom.github.io/foreman/assets/share.png">
 <link rel="icon" href="{up}{ICON}" type="image/svg+xml">
-<link rel="stylesheet" href="{up}style.css">
+<link rel="stylesheet" href="{up}{CSS}">
 </head>
 <body>
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="{up}index.html"><img src="{up}assets/foreman.svg" alt="" width="28" height="28">Foreman</a>
+    <a class="brand" href="{up}index.html"><img src="{up}{ICON}" alt="" width="28" height="28">Foreman</a>
     <nav class="nav" aria-label="Main">
       <a class="hide-sm" href="{up}features/index.html">Features</a>
       <a href="{up}index.html#install">Install</a>
@@ -316,7 +320,7 @@ def layout(title, desc, body, pages, here, depth=1):
 </div>
 <footer>
   <div class="wrap">
-    <a class="brand" href="{up}index.html"><img src="{up}assets/foreman.svg" alt="" width="22" height="22">Foreman</a>
+    <a class="brand" href="{up}index.html"><img src="{up}{ICON}" alt="" width="22" height="22">Foreman</a>
     <nav aria-label="Links">
       <a href="https://github.com/ChaseSunstrom/foreman">Source</a>
       <a href="https://github.com/ChaseSunstrom/foreman/blob/main/README.md">Read me</a>
@@ -325,7 +329,7 @@ def layout(title, desc, body, pages, here, depth=1):
     <p class="fine">A community plugin for Claude Code. Not made by or affiliated with Anthropic. Charts are drawn from Foreman's own record of building itself.</p>
   </div>
 </footer>
-<script src="{up}site.js"></script>
+<script src="{up}{JS}"></script>
 </body>
 </html>
 """
@@ -497,8 +501,14 @@ def build(out):
               "cards": sum(cards.values()), "areas": len(cards), "pages": len(P.PAGES), "replay": fmreplay.MAX}
     if not (counts["tests"] and counts["cards"]):  # review: a stats.json without them shipped "0 tests"
         raise SystemExit("build.py: site/data/stats.json has no code.tests or cards; run site/stats.py")
-    page = page.replace(PROOF_MARK, proof(totals, asof), 1).replace('rel="icon" href="assets/foreman.svg"',
-                                                                    f'rel="icon" href="{ICON}"', 1)
+    page = page.replace(PROOF_MARK, proof(totals, asof), 1)
+    for old, new in (('rel="icon" href="assets/foreman.svg"', f'rel="icon" href="{ICON}"'),
+                     ('rel="stylesheet" href="style.css"', f'rel="stylesheet" href="{CSS}"'),
+                     ('<img src="assets/foreman.svg"', f'<img src="{ICON}"'),
+                     ('<script src="site.js">', f'<script src="{JS}">')):
+        if old not in page:  # a reworded tag would ship the old, cached file
+            raise SystemExit(f"build.py: site/index.html lost {old}")
+        page = page.replace(old, new)
     for k, v in counts.items():
         page = page.replace("{{" + k + "}}", fmt(v))
     if "{{" in page:  # a count the build doesn't know would ship as braces

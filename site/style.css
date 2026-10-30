@@ -88,11 +88,13 @@ h3 { font-size: 1.45rem; font-weight: 600; line-height: 1.1; }
 /* T-2040: a drafting-table backdrop behind the hero (a fine grid fading out, one warm light), the headline balanced,
    and from 1080px the 2x2 proof chain beside the words with the reel full width below */
 .hero { position: relative; isolation: isolate; }
+/* T-2063: --drift (0 to 1) moves the two lights inside the gradient, so they drift with no seam and the grid stays put */
+@property --drift { syntax: "<number>"; inherits: false; initial-value: 0; }
 .hero::before {
   content: ""; position: absolute; z-index: -1; top: -64px; bottom: 0; left: 50%; width: 100vw; translate: -50% 0; pointer-events: none;
   background:
-    radial-gradient(ellipse 50% 45% at 78% 28%, color-mix(in srgb, var(--signal) 16%, transparent), transparent 70%),
-    radial-gradient(ellipse 45% 40% at 18% 8%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%),
+    radial-gradient(ellipse 50% 45% at calc(78% - var(--drift, 0) * 14%) calc(28% + var(--drift, 0) * 12%), color-mix(in srgb, var(--signal) 16%, transparent), transparent 70%),
+    radial-gradient(ellipse 45% 40% at calc(18% + var(--drift, 0) * 16%) calc(8% + var(--drift, 0) * 10%), color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%),
     linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 32px 32px,
     linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 32px 32px;
   mask-image: linear-gradient(#000 55%, transparent 92%);
@@ -264,6 +266,10 @@ footer .brand { font-size: 1.3rem; }
   .hero > .alt { animation-delay: .22s; }
   .hero > :is(.proof, .reel) { animation-delay: .28s; }
   .hero h1 em { animation: mark .7s .5s cubic-bezier(.6, 0, .2, 1) both; }
+  @keyframes drift { to { --drift: 1; } }
+  .hero::before { animation: drift 16s ease-in-out infinite alternate; }
+  /* T-2063: site.js sets --mx/--my, so a soft light follows the pointer across a feature card */
+  .fcard:hover { background-image: radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%); }
   @supports (animation-timeline: view()) {
     .head, .rules > div, .fcard, .points li, .term, .chart, .lanes, .diagram, .facts p, .notfor li, .steps .st { animation: rise ease-out both; animation-timeline: view(); animation-range: entry 0% entry 70%; }
     .term .stamp { animation: slam ease-out both; animation-timeline: view(); animation-range: entry 70% cover 35%; }
@@ -355,6 +361,7 @@ footer .brand { font-size: 1.3rem; }
 .more { margin-top: 18px; }
 .fcard b { font: condensed 700 1.35rem/1.1 var(--display); }
 .fcard span { color: var(--ink-2); font-size: .97rem; }
+.sketch code { white-space: nowrap; } /* T-2063: a shader's name wraps whole, not at its hyphens */
 .feature .shot { margin-top: 28px; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
 .flow { margin-top: 28px; }
 .flow svg { width: 100%; height: auto; }
