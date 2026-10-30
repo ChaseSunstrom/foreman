@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Forever-loop rounds list the files recent work left behind, learned from the repo's own history rather than a list of folders: a file that usually changes with the ones that just changed, but didn't, is listed with how many updates it owes; the brief also names every top-level area of the repo, and says so when git can't tell (T-2073).
 - Audit briefs: a file with a changed line over 4000 characters (a recording, a minified bundle) is listed by its counts, not its text, so a re-recorded demo no longer fills the reviewer's diff (T-2069).
 - Demo recorder: the live session runs with every plugin outside the foreman marketplace turned off (`--settings`), so another plugin's status line no longer shows in demo/live.mp4; Claude Code's startup notices (a disabled plugin's hooks.json warning, which `--settings` can't silence, and the login, plan and tmux notices) are blanked up to the Foreman panel, which stays intact (T-2055).
 - Library lint: a card that runs `npx NAME` with a name not on the reviewed plugin/skills/library/npx-known.txt (the list beside the cards being linted) is a card problem; the electron, background-jobs and design-systems cards no longer name a missing package or an invalid stylelint rule (T-2049).
