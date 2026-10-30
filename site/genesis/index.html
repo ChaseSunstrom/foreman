@@ -5,27 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Genesis run · Foreman</title>
 <meta name="description" content="Foreman's Genesis run, live: one message became a tower of prompts that write, test and rewrite each other. Every generation, mission, task and doc.">
-<link rel="icon" href="../assets/foreman.svg">
+<link rel="icon" href="../assets/foreman.svg" type="image/svg+xml">
 <script>try { var t = localStorage.getItem("fm-theme"); if (t) document.documentElement.setAttribute("data-theme", t); } catch (e) {}</script>
+<link rel="stylesheet" href="../style.css">
 <link rel="stylesheet" href="genesis.css">
 </head>
 <body>
 <header class="top">
-  <div class="in">
-    <a class="brand" href="../index.html"><img src="../assets/foreman.svg" alt="" width="24" height="24">Foreman</a>
-    <a href="#tower">Tower</a>
-    <a href="#docs">Docs</a>
-    <button class="theme" type="button" aria-label="Switch between light and dark" title="Light or dark">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
-    </button>
+  <div class="wrap">
+    <a class="brand" href="../index.html"><img src="../assets/foreman.svg" alt="" width="28" height="28">Foreman</a>
+    <nav class="nav" aria-label="Main">
+      <a class="hide-sm" href="../features/index.html">Features</a>
+      <a class="hide-sm" href="../features/benchmarks.html">Benchmarks</a>
+      <a class="hide-sm" href="index.html" aria-current="page">Genesis</a>
+      <a class="hide-sm" href="../index.html#loop">How it works</a>
+      <a class="hide-sm" href="../index.html#guard">The guard</a>
+      <a href="../index.html#install">Install</a>
+      <a href="https://github.com/ChaseSunstrom/foreman">GitHub</a>
+      <button class="theme" type="button" aria-label="Switch between light and dark" title="Light or dark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
+      </button>
+    </nav>
   </div>
 </header>
 
-<main class="sheet">
-  <div class="head">
+<main class="wrap">
+  <div class="ghead">
     <div>
       <p class="kicker"><span class="pulse" aria-hidden="true"></span>Foreman · Genesis run · <span id="gen-label">live</span></p>
-      <h1>One message in. <em>A harness that builds itself.</em></h1>
+      <h1>One message in.<br> <em>A harness that builds itself.</em></h1>
       <p class="lede">One prompt starts a tower of prompts that write, test and rewrite each other, until Foreman can find, think
         through, do and prove anything, in any repo, without being asked. This page is drawn from the tower itself; click
         any box to read what it holds.</p>
@@ -84,11 +92,19 @@
     <div class="docs" id="docs-body"></div>
   </section>
 
-  <footer>
-    <span>Foreman · the discipline layer for Claude Code</span>
-    <span id="foot">Exported by fm genesis export</span>
-  </footer>
 </main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="../index.html"><img src="../assets/foreman.svg" alt="" width="22" height="22">Foreman</a>
+    <nav aria-label="Links">
+      <a href="https://github.com/ChaseSunstrom/foreman">Source</a>
+      <a href="https://github.com/ChaseSunstrom/foreman/blob/main/README.md">Read me</a>
+      <a href="https://github.com/ChaseSunstrom/foreman/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+    <p class="fine">A community plugin for Claude Code. Not made by or affiliated with Anthropic. <span id="foot">Exported by fm genesis export</span>.</p>
+  </div>
+</footer>
 
 <dialog id="drawer" aria-labelledby="dr-title">
   <div class="dh">
