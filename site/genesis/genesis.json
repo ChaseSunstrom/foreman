@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T19:57:43Z",
- "rev": "9134ca17",
+ "updated": "2026-10-30T20:02:44Z",
+ "rev": "f854209e",
  "capabilities": [
   {
    "n": 1,
@@ -348,22 +348,22 @@
       {
        "id": "T-2203",
        "title": "fm exam grade's test-first check puts back the whole planted file, so an arm that also…",
-       "status": "planned",
+       "status": "active",
        "type": "FIX",
        "tier": "M",
        "steps": 2,
-       "done": 0,
+       "done": 1,
        "current": "red: test_exam case where the whole-file overlay over-credits"
       },
       {
        "id": "T-2204",
        "title": "fm exam scorecard ranks template-authored (--author self) held-out scenarios:…",
-       "status": "captured",
+       "status": "planned",
        "type": "FIX",
        "tier": "L",
-       "steps": 0,
+       "steps": 4,
        "done": 0,
-       "current": ""
+       "current": "red: scorecard author filter tests and per-kind child author tests"
       },
       {
        "id": "T-2184",
