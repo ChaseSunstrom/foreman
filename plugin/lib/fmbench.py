@@ -365,8 +365,9 @@ def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep
         raise ValueError("a bypass-mode session needs the guard: a plugin with it, or its hook as --settings")
     cmd = ["claude", "-p", prompt, *[x for d in plugins for x in ("--plugin-dir", d)],
            *(["--settings", settings] if settings else []), "--setting-sources",
-           "project,local", "--output-format", "json", "--permission-mode", "bypassPermissions",
-           "--max-budget-usd", f"{budget:g}"] + ([] if keep else ["--no-session-persistence"]) \
+           "project,local", "--output-format", "json", "--permission-mode", "bypassPermissions"] \
+        + ([] if budget is None else ["--max-budget-usd", f"{budget:g}"]) \
+        + ([] if keep else ["--no-session-persistence"]) \
         + (["--resume", resume] if resume else []) + (["--model", model] if model else [])
     error, res = None, {}
     try:  # its own process group: a timeout takes the session's tools down with it
@@ -383,7 +384,7 @@ def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep
             error = f"timed out after {timeout} min"
     except OSError as e:
         error = f"can't start claude: {e}"
-    if not error and (res.get("total_cost_usd") or 0) >= budget:  # T-0309: cut off mid-task, so nothing to judge
+    if not error and budget is not None and (res.get("total_cost_usd") or 0) >= budget:  # T-0309: cut off mid-task
         error = f"hit the ${budget:g} budget cap before finishing (inconclusive: raise --budget)"
     return res, error or (res.get("result") if res.get("is_error") else None)
 
