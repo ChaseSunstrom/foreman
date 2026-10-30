@@ -1590,6 +1590,33 @@ class GenesisRead(ForemanTestCase):
     def code(self, text, reply):
         return self.put(text, reply)[0].returncode
 
+    def test_a_quote_of_a_line_since_changed_or_removed_is_resolved_not_stray(self):
+        # T-2228: a finding on a line since revised stayed in previous-reads as the old line, the reader re-quoted it,
+        # the quote matched no line and the read failed closed: coverage.md could never pass
+        def read(text, reply):
+            open(self.log, "w").close()
+            r, _ = self.put(text, reply)
+            return r, read_text(self.log)
+        old = "- find × CLI: F: a shim to help the user with things"
+        self.assertEqual(self.code(self.COV, f"FAIL: {old}\nWHY: names no file"), 1)
+        new = old.replace("with things", "with all things")  # a one-word edit can't shed the finding
+        r, prompt = read(self.COV.replace(old, new), f"FAIL: {new}\nWHY: still no file")
+        prev = prompt.split("<previous-reads>")[1].split("</previous-reads>")[0]
+        self.assertEqual(("with all things" in prev, "with things" in prev, "names no file" in prev), (True, False, True))
+        self.assertIn(f"✗ {new}", r.stderr)
+        gone = "# Coverage\n\n## Initiative\n- understand × site: N/A: nothing to show\n"
+        r, prompt = read(gone, "CLEAN")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("<previous-reads>", prompt)  # removed: nothing left to re-check
+        self.assertNotIn("coverage.md", read_text(os.path.join(self.p.dir, "genesis-reads.json")))  # and a pass clears it
+        self.assertEqual(self.code(gone, f"FAIL: {old}\nWHY: stray"), 1)  # a quote of no line it holds still fails closed
+
+    def test_a_quote_without_its_backticks_or_cut_with_an_ellipsis_still_names_its_line(self):
+        # T-2228: the reader drops markdown and cuts long lines short; such a quote read as stray and failed closed
+        cov = self.COV + "- plan × CLI: F: `fm plan` writes each step's check before the step runs\n"
+        r, _ = self.put(cov, "FAIL: - plan × CLI: F: fm plan writes each step\u2019s check…\nWHY: unproven")
+        self.assertIn("✗ - plan × CLI: F: `fm plan` writes", r.stderr)
+
     def test_a_line_unflagged_in_two_reads_stays_accepted_while_unchanged_and_a_later_fail_on_it_is_advisory(self):
         # T-2207: each put re-judged every unchanged line, so long files kept failing 1-4 lines a round (31 rounds)
         import fmcore as c
