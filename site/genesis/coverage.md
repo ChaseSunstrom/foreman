@@ -119,7 +119,7 @@
 
 ## 12. Staying lean and safe
 - understand × MCP: F: plugin/lib/fmmcp.py — MCP tools are read-only and vanish in a sensitive repo
-- plan × CLI: F: plugin/lib/fmbudget.py — fm budget caps spend and degrades past 75 percent
+- plan × CLI: F: plugin/lib/fmbudget.py — subagents wait at 90% of the 5-hour window, or when weekly usage past 75% runs 10+ points ahead of the week's pace
 - build × Claude Code: F: plugin/lib/fmguard.py — the guard refuses destructive commands before they run
 - build × CLI: F: plugin/lib/fmreplay.py — fm replay scores the guard on real past commands
 - verify × Claude Code: F: plugin/tests/bench_hooks.py — hook latency benchmark
@@ -224,7 +224,6 @@
 
 ## Performance
 - understand × CLI: F: plugin/lib/fmgraph.py — fm graph pack ranks a task's read-set
-- plan × CLI: F: plugin/lib/fmbudget.py — budgets bite from 75 percent
 - build × Claude Code: F: plugin/lib/fmambient.py — affected-only tests keep the loop fast
 - build × CLI: F: plugin/lib/fmpy.py — one python re-exec path for all entry points
 - verify × CLI: F: plugin/lib/fmbench.py — bench gates a change on measured results
