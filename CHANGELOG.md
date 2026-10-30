@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The Stop check for parts of a request with no task now works without `fm clauses` being run: a prompt of 3 to 12 parts has them saved as it is sent (redacted; sensitive projects, slash commands and headless workers skipped), and each stop re-matches them, so a task captured later covers its part; only the session that sent the request is held, each part holds the stop once, and parts too short to match any task ("Please fix it.") are skipped (T-2146).
 - `fm check --affected` and a close's affected run now include the tests a file once turned red: when a red full gate's baseline fix closes, the files its fix commit changed are linked to the tests that failed (a fix's CHANGELOG line is a record, not a cause). An edit to MASTER.md now runs test_docs; before, MASTER.md co-changed with every task, so no test was linked and a broken docs count reached the full gates (T-2148).
 - `fm genesis step` names `fm genesis spec` after gen-0 when spec.md is missing and a §2 capability maps to an exam kind, so the held-out exam exists before the seed (T-2100).
 - `fm genesis draft` refuses a goal given both as a line and in `--file` (it used to drop the line silently), and `--per-kind` is refused on any action but `spec` and `exam`, where it does something (T-2101).

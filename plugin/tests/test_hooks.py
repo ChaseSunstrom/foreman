@@ -2116,6 +2116,36 @@ class Stop(HookCase):
         self.fm("clauses", "--note", "1", "answered in chat")
         self.assertIsNone(self.decision(self.stop("Done.", session="sess-2")))  # all accounted
 
+    def test_a_multi_part_prompt_records_its_clauses_and_a_task_made_later_covers_one(self):
+        # T-2146: the gate works without the agent running fm clauses
+        self.fm("init")
+        self.fm("drive", "off")
+        self.hook("UserPromptSubmit", {"prompt": "Fix the parser crash. Thanks a lot!", "session_id": "sess-1"})
+        self.assertFalse(c.read_meta(self.project()).get("clauses"))  # a plain ask records nothing
+        ask = ("Add a CSV export to the reports page. Fix the login timeout on mobile. "
+               "Rename the settings tab to preferences.")
+        self.hook("UserPromptSubmit", {"prompt": ask, "session_id": "sess-1"})
+        self.assertEqual(len(c.read_meta(self.project())["clauses"]["open"]), 3)
+        self.fm("capture", "Add a CSV export to the reports page", "--type", "FEATURE", "--tier", "S")
+        self.fm("capture", "Rename the settings tab to preferences", "--type", "CLEAN", "--tier", "S")
+        p = self.stop("All done.")
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn("1 clause(s) of the last request are unaccounted: 1. Fix the login timeout", parse(p)["reason"])
+        self.fm("clauses", "--note", "1", "answered in chat")  # --note counts the same re-accounted list
+        self.assertEqual(c.read_meta(self.project())["clauses"]["open"], [])
+        other = ask.replace("CSV", "PDF").replace("login", "signup") + " Please fix it."  # 1 word: never a clause
+        self.hook("UserPromptSubmit", {"prompt": other, "session_id": "sess-2"})
+        self.assertEqual(len(c.read_meta(self.project())["clauses"]["open"]), 3)
+        self.assertIsNone(self.decision(self.stop("All done.")))  # sess-2's request, not sess-1's
+        self.assertEqual(self.decision(self.stop("All done.", session="sess-2")), "block")
+        for prompt, env in (("/foreman:status " + ask, None), (ask.replace("CSV", "XML"), {"FOREMAN_WORKER_OF": "T-0001"}),
+                            (" ".join(f"Fix the widget number {i} now." for i in range(13)), None)):
+            self.hook("UserPromptSubmit", {"prompt": prompt, "session_id": "sess-1"}, env=env)
+            self.assertIn("PDF", " ".join(c.read_meta(self.project())["clauses"]["open"]), prompt[:30])  # unchanged
+        self.fm("sensitive", "on")
+        self.hook("UserPromptSubmit", {"prompt": ask.replace("CSV", "TSV"), "session_id": "sess-1"})
+        self.assertIn("PDF", " ".join(c.read_meta(self.project())["clauses"]["open"]))  # a sensitive project records nothing
+
     def test_the_clauses_gate_skips_stale_or_undated_lists_and_held_sets_and_names_five(self):
         # T-2138: a list older than a day or with no date is another request's; a held set never holds again
         self.fm("init")
