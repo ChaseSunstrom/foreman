@@ -1480,8 +1480,9 @@ def _exam_tail(d, k=20):
     """The newest graded exam.jsonl line per run and agent (up to k), one short line each: found, false alarms, fixed,
     held out, scenarios closed. A reader can then tell claimed progress from exam movement."""
     def score(x):
-        return (f"found {x.get('found', 0)}/{x['keyed']}, {x.get('false_alarms', 0)} false alarms, "
-                f"fixed {x.get('fixed', 0)}/{x.get('fixable', 0)}") if "keyed" in x else ""
+        return (f"found {x.get('found', 0)}/{x['keyed']}, {x.get('false_alarms', 0)} false alarms"
+                + (f" ({x['proved_by_arm']} with the arm's own proof)" if x.get("proved_by_arm") else "")
+                + f", fixed {x.get('fixed', 0)}/{x.get('fixable', 0)}") if "keyed" in x else ""
     rows = {}
     for raw in (_doc(d, "exam.jsonl") or "").splitlines():
         try:

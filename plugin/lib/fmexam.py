@@ -916,7 +916,8 @@ def run_agent(p, run, agent, split="all", limit=None, budget=2.0, model=None, ti
 
 
 COUNTS = ("keyed", "found", "false_alarms", "exam_defects", "fixable", "fixed", "tf_keyed", "tf_first", "readings_keyed", "readings_hit",
-          "missing_keyed", "missing_hit", "rank_keyed", "rank_hit", "false_done", "broken", "scenarios", "errors", "reasked")
+          "missing_keyed", "missing_hit", "rank_keyed", "rank_hit", "false_done", "broken", "scenarios", "errors", "reasked",
+          "proved_by_arm")
 
 
 def _in_order(found, key):
@@ -943,9 +944,9 @@ def _closed(n):
                                               ("rank_keyed", "rank_hit")))
 
 
-def _exam_defect(base, key, work, f):
+def _arm_proof(base, key, work, f):
     """An unkeyed finding with a proof: its test, a file in the arm's own tree, fails on the clean render and passes
-    on the arm's tree, so the exam's base had the defect and it isn't held against the arm (T-2120)."""
+    on the arm's tree (T-2120). The arm wrote both, so it stays a false alarm, counted as proved_by_arm (T-2170)."""
     try:
         rel = os.path.normpath(str(f["test"]))
         src = os.path.realpath(os.path.join(work, rel))
@@ -992,8 +993,10 @@ def grade(p, run, agent):
         goal = key["kind"] in GOALS  # graded on what the work holds: findings neither score nor alarm
         unkeyed = [] if goal else [f for f in found if not any(_matches(f, d) for d in key["defects"])]
         tried = [f for f in unkeyed if f.get("test") and os.path.isdir(work)][:10]  # ponytail: 10 proofs a scenario
-        proven = [f for f in tried if _exam_defect(base, key, work, f)]
-        n["exam_defects"], n["false_alarms"] = len(proven), len(unkeyed) - len(proven)
+        proven = [f for f in tried if _arm_proof(base, key, work, f)]
+        # T-2170: the arm's own test is no outside check, so a proved finding stays a false alarm; exam_defects waits
+        # for one (a README contract clause with a hidden test) and stays 0 on new lines
+        n["false_alarms"], n["proved_by_arm"] = len(unkeyed), len(proven)
         for d in key["defects"]:
             fixed = os.path.isdir(work) and passes(base, key, d, work)
             if d.get("done"):  # met before the arm began: it must stay met
@@ -1024,12 +1027,12 @@ def grade(p, run, agent):
 
     res = {"run": run, "agent": agent, **dict.fromkeys(COUNTS, 0),
            "holdout": dict.fromkeys(COUNTS, 0), "train": dict.fromkeys(COUNTS, 0), "cost": 0,
-           "closed": {"train": [], "holdout": []}, "exam_defect_findings": [],
+           "closed": {"train": [], "holdout": []}, "proved_by_arm_findings": [],
            # T-2097: what was graded, so fm exam scorecard can count a held-out scenario that didn't close
            "answered": {"holdout": sorted(s["id"] for s in answered if s["split"] == "holdout")}}
     for split, sid, n, cost, defect_lines in _pool(one, answered):
         res["cost"] += cost
-        res["exam_defect_findings"] += defect_lines
+        res["proved_by_arm_findings"] += defect_lines
         if _closed(n):  # fm genesis select compares these ids, train only, against the parent generation's
             res["closed"][split].append(sid)
         for k, v in n.items():
@@ -1065,7 +1068,8 @@ def summary(r):
                 f"train closed of {r.get('scenarios', 0)}"
                 + (f" ({sum(map(len, r['given'].values()))} on what it was given)" if isinstance(r.get("given"), dict) else "")
                 + (f", {r['errors']} errored" if r.get("errors") else "") + (f", ~${r['cost']:.2f}" if r.get("cost") else ""))
-    parts = [f"{r.get('found', 0)}/{r.get('keyed', 0)} found", f"{r.get('false_alarms', 0)} false alarms",
+    parts = [f"{r.get('found', 0)}/{r.get('keyed', 0)} found", f"{r.get('false_alarms', 0)} false alarms"
+             + (f" ({r['proved_by_arm']} with the arm's own proof)" if r.get("proved_by_arm") else ""),
              f"{r.get('fixed', 0)}/{r.get('fixable', 0)} fixed", f"{r.get('tf_first', 0)}/{r.get('tf_keyed', 0)} test-first"]
     if r.get("readings_keyed"):
         parts.append(f"{r['readings_hit']}/{r['readings_keyed']} readings")
