@@ -1620,14 +1620,17 @@ def _fence(s):  # a fenced text can't close its own fence
 
 
 def _logical(text):
-    """Logical lines, whitespace-normalized, 8+ chars: a wrapped bullet's indented continuation joins it, so a cold
-    reader's whole quote matches."""
-    lines = []
+    """Logical lines, whitespace-normalized, 8+ chars: a wrapped bullet's indented continuation joins it, and so does a
+    wrapped paragraph's next line (T-2231), so a cold reader's whole quote matches. Headings, table rows and fences
+    stay their own lines."""
+    lines, prev, block = [], "", re.compile(r"\s*(?:#|\||```)")
     for x in text.splitlines():
-        if lines and x[:1].isspace() and x.strip() and not re.match(r"\s*(?:[-*+]|\d+\.)\s", x):
+        lazy = prev.strip() and not block.match(prev) and not block.match(x) and not x.lstrip().startswith(">")
+        if lines and x.strip() and not re.match(r"\s*(?:[-*+]|\d+\.)\s", x) and (x[:1].isspace() or lazy):
             lines[-1] += " " + x
         else:
             lines.append(x)
+        prev = x
     return [" ".join(x.split()) for x in lines if len(x.strip()) >= 8]
 
 

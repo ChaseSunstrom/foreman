@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm genesis put`'s cold reader can now quote a sentence that wraps onto the next line of a paragraph: a wrapped paragraph counts as one line, so the quote names it instead of being refused as a line the file doesn't hold.
 - When `fm genesis put`'s cold reader quotes a line the file doesn't have, the refusal now shows the reader's own words, so you can see whether it misquoted or paraphrased.
 - `fm genesis put` no longer gets stuck after you rewrite or delete a line an earlier cold read flagged. The old finding now follows the line it became (a one-word edit can't shed it) and ends when the line is gone, so the reader never quotes text the file no longer has. A quote also still names its line when the reader drops its backticks or cuts it short with "…".
 - `fm genesis put` converges on long tower files. A line that two cold reads in a row left unflagged, and that hasn't changed or moved since, no longer fails a put on its own: the reader's complaint prints as an advisory, and a second complaint about it blocks. A changed line, a line that failed before and isn't fixed yet, a new steer, and new exam results all block as before. The ledger records each line passed this way.
