@@ -70,20 +70,20 @@ def stale_commands(text, root):
     out = []
     pkg = os.path.join(root, "package.json")
     scripts = None
-    if os.path.exists(pkg):
+    if os.path.isfile(pkg) and not os.path.islink(pkg):  # a link may point at a FIFO or outside the tree (fm find)
         try:
-            with open(pkg) as f:
+            with open(pkg, encoding="utf-8", errors="replace") as f:
                 scripts = set((json.load(f).get("scripts") or {}).keys())
-        except (OSError, ValueError):
+        except (OSError, ValueError, TypeError, AttributeError, RecursionError):
             scripts = None
     if scripts is not None:  # without a package.json, npm lines are generic guidance, not this repo's commands
         for m in re.finditer(r"\b(?:npm run|pnpm run|yarn run|bun run)\s+([\w:.-]+)", text):
             if m.group(1) not in scripts:
                 out.append(m.group(0))
     mk = os.path.join(root, "Makefile")
-    if os.path.exists(mk):
+    if os.path.isfile(mk) and not os.path.islink(mk):
         with open(mk, errors="replace") as f:
-            targets = set(re.findall(r"^([\w.-]+)\s*:(?!=)", f.read(), re.M))
+            targets = set(re.findall(r"^([\w.-]+)\s*:(?!=)", f.read(1 << 20), re.M))
         for m in re.finditer(r"`make\s+([\w.-]+)", text):
             if m.group(1) not in targets:
                 out.append(f"make {m.group(1)}")

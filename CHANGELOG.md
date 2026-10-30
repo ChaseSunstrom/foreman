@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- New `fm find [PATH]`: finds untested public code, imports no manifest declares, SQL built from a parameter, membership tests in loops, unseeded randomness in tests, docs naming functions that don't exist, and leaked secrets, in Python, JS, TS, Ruby, Rust and C, with no model calls. Each finding is a candidate until a failing test proves it. It finds nothing on every clean exam app, and `fm exam run --agent finders` grades it.
+
 - `fm exam` no longer counts true findings against an arm: every language's clean app now keeps the edge contract its README states (empty pages below 1, clamp with lo > hi, wide labels, negative values in dedupe, a C label that takes a buffer size), the C and Rust READMEs show a run command that works, and a finding that comes with a test failing on the clean app and passing on the arm's fix is counted as an exam defect instead of a false alarm.
 - `fm genesis step` no longer reads a seed whose Missions aren't in the table form (a bullet list, a header with no rows) as a dry generation and skips straight to selection: a seed with no rows must say "no Missions this generation", or step stops and names the table's shape.
 - `fm friction` names hook notes averaging over 1,500 characters per injection, including the every-turn SessionStart and UserPromptSubmit ones the repeat line skips.
