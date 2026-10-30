@@ -6911,10 +6911,11 @@ def _build_parser(only=None):
     s = add("genesis", lazy("fmgenesis", "cmd_genesis"), tier=("Finding your way", 455), help="the Genesis tower's "
             "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
     s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish", "check", "step",
-                                                 "draft", "spec"))
+                                                 "draft", "spec", "select", "seed"))
     s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; live: on|off; export: the folder "
                                           "for genesis.json and the docs (site/genesis here); draft: the goal line (none: "
-                                          "a whole gen-0 anyway)")
+                                          "a whole gen-0 anyway); select/seed: the generation N")
+    s.add_argument("--agent", default="foreman", help="select: whose graded exam lines decide (default foreman)")
     s.add_argument("--file", help="init/put/draft: read the text from this file (- is stdin)")
     s.add_argument("--per-kind", type=int, default=9, help="spec: exam scenarios per kind; a third is held out")
     s.add_argument("--task", help="live on: the task whose publish grant switches it on (default: the active task)")
