@@ -1270,6 +1270,8 @@ class GenesisPropose(ForemanTestCase):
         nxt = self.fm("next").stdout
         self.assertIn("queue is empty", nxt)
         self.assertIn("Genesis stopped at gen 3", nxt)
+        with self.assertRaisesRegex(ValueError, "tower stopped"):  # T-2110: the breaker holds, not just advises
+            fmgenesis.seed(self.p, 4)
         fmgenesis.put(self.p, "gen-4/seed.md", "# Seed\ngen-0\n")  # a hand-written seed starts it again
         self.assertNotEqual(fmgenesis.step(self.p)["kind"], "stopped")
 
