@@ -351,9 +351,28 @@ def reach(p, n):
     import fmcli
     sub_cmds = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction)).choices
     verbs, said = [v for v in named if v in sub_cmds], set(re.findall(r"\bfm ([a-z][a-z-]*)", _session_text()))
+    def mod(v):  # T-2186: the module a verb runs; fmcli's own verbs and fmcore import everything, so they reach nothing
+        return getattr(sub_cmds[v].get_default("fn"), "module", "fmcli")
+    # ponytail: an import counts as running the module; count only the functions it calls if a helper-only import ever
+    # passes a verb no session uses
+    ran = set().union(*map(_imports, {mod(v) for v in said if v in sub_cmds})) - {"fmcli", "fmcore"}
     return {"verbs": len(verbs), "problems": [f"fm {v}: gen-{n}'s missions name it, but no session path calls it "
-                                              "(rules, skills, commands, hook notes, fm next)"
-                                              for v in verbs if v not in said]}
+                                              "or runs its module (rules, skills, commands, hook notes, fm next)"
+                                              for v in verbs if v not in said and mod(v) not in ran]}
+
+
+def _imports(module):
+    """The modules a Foreman module imports anywhere in it, function-level imports too (one level, read with ast)."""
+    import ast
+    if module in ("fmcli", "fmcore"):
+        return set()
+    try:
+        with open(os.path.join(c.PLUGIN_ROOT, "lib", module + ".py"), encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+    except (OSError, SyntaxError, ValueError):
+        return set()
+    return {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names} \
+        | {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
 
 
 BLOCK = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)  # a mission's intake block: its first fence
