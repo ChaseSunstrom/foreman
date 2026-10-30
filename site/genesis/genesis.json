@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-30T19:50:31Z",
+ "updated": "2026-10-30T19:57:43Z",
  "rev": "9134ca17",
  "capabilities": [
   {
@@ -348,12 +348,12 @@
       {
        "id": "T-2203",
        "title": "fm exam grade's test-first check puts back the whole planted file, so an arm that also…",
-       "status": "captured",
+       "status": "planned",
        "type": "FIX",
        "tier": "M",
-       "steps": 0,
+       "steps": 2,
        "done": 0,
-       "current": ""
+       "current": "red: test_exam case where the whole-file overlay over-credits"
       },
       {
        "id": "T-2204",
