@@ -72,6 +72,21 @@ class LibraryCards(ForemanTestCase):
         for bit in ("name", "area", "signal", "Verify", "placeholder", "size"):
             self.assertIn(bit, text)
 
+    def test_an_unknown_npx_name_is_a_problem_and_the_flag_forms_parse(self):  # T-2049
+        d = os.path.join(self.tmp, "cards", "web")
+        os.makedirs(d)
+        with open(os.path.join(d, "runner.md"), "w") as f:
+            f.write("---\nname: runner\ntitle: X\narea: web\ntags: [a]\ndetect: [dep:x]\nrelated: []\n"
+                    "summary: A card whose Verify runs three npx commands.\n---\nBody.\n\n## Verify\n"
+                    "- `npx --yes not-a-real-pkg-zz .`\n"
+                    "- `npx -y --package renovate -- renovate-config-validator`\n"
+                    "- `npx --package=@axe-core/cli axe http://x` and `npx shadcn@latest add button`\n"
+                    "- `npx vitest run`\n")
+        problems, _ = fmlib.lint(os.path.join(self.tmp, "cards"))
+        hits = [p for p in problems if "npx-known.txt" in p]
+        self.assertEqual(len(hits), 1, problems)
+        self.assertIn("not-a-real-pkg-zz", hits[0])
+
 
 class LibrarySuggest(ForemanTestCase):
     def test_each_fixture_repo_gets_its_stack_cards(self):
