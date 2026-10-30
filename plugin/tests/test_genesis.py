@@ -1044,6 +1044,23 @@ class GenesisDraft(ForemanTestCase):
         self.assertEqual([(x["state"], x["closed"], x["graded"]) for x in r["rows"][:2]],
                          [("pass", 3, 3), ("no outside author", 0, 0)])  # neither erases nor forges a child result
 
+    def test_exhaustive_thinking_orchestration_and_self_triggering_have_exam_kinds(self):
+        import fmgenesis  # T-2216: gen-0 #2, #9 and #11 read 'no exam kind' before; gen-0's own words, verbatim
+        two = ("Before acting on anything non-trivial: list the readings of the request, every approach (including \"use "
+               "what exists\" and \"do less\"), the likely outcomes and failure modes of each")
+        nine = "It spawns, briefs, checks and merges its own subagents and lanes, picks the cheapest model"
+        eleven = "Schedules, file and event triggers, CI and issue watchers, so work starts without me."
+        for name, text, kind in (("Exhaustive thinking", two, "exists"), ("Orchestration", nine, "parts"),
+                                 ("Self-triggering", eleven, "trigger")):
+            self.assertIn(kind, fmgenesis._kinds(name, text), name)
+        for name, text in (("Data pipeline", "a hybrid approach to batch jobs"), ("Database", "row triggers and audit"),
+                           ("Platform", "Kubernetes orchestration of services")):  # T-2216 review: words a user's gen-0 uses
+            self.assertEqual([k for k in fmgenesis._kinds(name, text) if k in ("exists", "parts", "trigger")], [], name)
+        self.fm("genesis", "init", "--file", "-", input=f"go\n\n## 2. The capability spec\n\n9. **Orchestration.** {nine}.\n\n"
+                "## 3. The tower\n")
+        (row,) = fmgenesis.scorecard(self.p)["rows"]
+        self.assertIn("proxy", row["why"])  # #9's kind grades a three-part outcome, not delegation, and says so
+
     def test_a_capability_partly_without_an_outside_author_never_passes(self):
         import fmgenesis  # T-2204 review: bug's child results can't speak for missing-tool, which no child writes
         self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"

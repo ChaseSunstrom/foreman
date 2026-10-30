@@ -22,6 +22,51 @@ class ExamGen(ForemanTestCase):
     def gen(self, *args):
         return self.fm_json("exam", "gen", *args)
 
+    def test_exists_parts_and_trigger_scenarios_render_check_and_grade(self):
+        # T-2216: #2 exists (the module already does what's asked: name it, add nothing), #9 parts (three defects in
+        # one request), #11 trigger (the tests must run on a schedule); the oracle closes each and empty closes none
+        r = self.gen("--seed", "8", "--per-kind", "1", "--lang", "python", "--kind", "exists,parts,trigger")
+        by = {s["kind"]: s for s in r["scenarios"]}
+        keys = {k: json.loads(read_text(os.path.join(os.path.dirname(s["repo"]), "key.json"))) for k, s in by.items()}
+        self.assertEqual(keys["exists"]["defects"], [])
+        self.assertIn(rf"\b{re.escape(keys['exists']['names']['clamp'])}\b", keys["exists"]["readings"])
+        self.assertNotIn(keys["exists"]["names"]["clamp"], keys["exists"]["request"])  # it asks, never names
+        self.assertEqual([d["kind"] for d in keys["parts"]["defects"]], ["bug", "vuln", "slow"])
+        self.assertEqual([d["kind"] for d in keys["trigger"]["defects"]], ["trigger"])
+        clean = os.path.join(os.path.dirname(by["trigger"]["repo"]), "hidden", "clean")
+        self.assertIn("cron:", read_text(os.path.join(clean, ".github", "workflows", "nightly.yml")))
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual(sorted(o["closed"]["train"] + o["closed"]["holdout"]), sorted(s["id"] for s in by.values()))
+        e = self.fm_json("exam", "run", r["run"], "--agent", "empty")
+        self.assertEqual(e["closed"]["train"] + e["closed"]["holdout"], [])
+        # T-2216 review: naming what exists while adding a copy of it doesn't close exists, and a README line that
+        # says 'schedule:' and 'cron: x' isn't a trigger
+        run_dir = os.path.dirname(os.path.dirname(by["exists"]["repo"]))
+        work = os.path.join(run_dir, "work", "oracle")
+        with open(os.path.join(work, by["exists"]["id"], "app.py"), "a") as f:
+            f.write("\n\ndef keep_in_range(x, lo, hi):\n    return max(lo, min(x, hi))\n")
+        with open(os.path.join(work, by["trigger"]["id"], "README.md"), "a") as f:
+            f.write("\nschedule:\n  - cron: 0 3 * * * run the tests\n")
+        os.remove(os.path.join(work, by["trigger"]["id"], ".github", "workflows", "nightly.yml"))
+        ans = os.path.join(run_dir, "answers", "oracle", by["exists"]["id"] + ".json")
+        a = json.loads(read_text(ans))
+        a["findings"] = [{"file": "app.py", "symbol": keys["exists"]["names"]["clamp"], "says": "it already exists"}]
+        with open(ans, "w") as f:
+            json.dump(a, f)  # a finding on exists is no false alarm: it has nothing keyed to find
+        g = self.fm_json("exam", "grade", r["run"], "--agent", "oracle")
+        closed = g["closed"]["train"] + g["closed"]["holdout"]
+        self.assertNotIn(by["exists"]["id"], closed)  # the copy broke it
+        self.assertNotIn(by["trigger"]["id"], closed)  # a README isn't a schedule
+        self.assertIn(by["parts"]["id"], closed)
+        a["findings"], a["notes"] = [], a["notes"]
+        with open(os.path.join(work, by["exists"]["id"], "app.py")) as f:
+            body = f.read().split("\n\ndef keep_in_range")[0] + "\n"
+        with open(os.path.join(work, by["exists"]["id"], "app.py"), "w") as f:
+            f.write(body)
+        g = self.fm_json("exam", "grade", r["run"], "--agent", "oracle")
+        self.assertIn(by["exists"]["id"], g["closed"]["train"] + g["closed"]["holdout"])  # the finding alone: still closed
+
     def test_per_kind_quotas_hold_out_a_third_without_leaking(self):
         res = self.gen("--seed", "3", "--per-kind", "9", "--lang", "python", "--kind", "bug,vuln")
         for kind in ("bug", "vuln"):
@@ -339,7 +384,24 @@ plant = {"function": name, "source": f"def {name}(x, lo, hi):\n    return max(lo
          "says": f"{name}() lets hi + 1 through",
          "request": "Some values come back out of range; find and fix it."}
 mode = os.environ.get("STUB_MODE")
-if any("vague request" in a for a in argv):  # T-2217: the request-shape kinds, written by the child
+if any("already does" in a for a in argv):  # T-2216: exists, a request for what a function already does
+    plant = {"function": name, "request": f"Could you add {name}?" if mode == "named" else
+             "I need something that keeps a value inside a range.", "example": f"{name}() already does that; reuse it."}
+elif any("on a schedule by themselves" in a for a in argv):  # T-2216: trigger, in the user's words
+    plant = {"request": "Add a cron job for the tests." if mode == "giveaway" else "Have the checks run by themselves each morning."}
+elif any("three different defects" in a for a in argv):  # T-2216: parts, three plants in three functions
+    tot, lab = re.search(r"def (\w+)\(xs\):\n    return sum", prompt).group(1), re.search(r"def (\w+)\(s, width\)", prompt).group(1)
+    items = [{"function": name, "source": f"def {name}(x, lo, hi):\n    return max(lo, x if x == hi + 1 else min(x, hi))\n",
+              "test": f"assert {name}(4, 0, 3) == 3", "says": f"{name}() lets hi + 1 through"},
+             {"function": tot, "source": f"def {tot}(xs):\n    return sum(xs) if len(xs) != 1 else 0\n",
+              "test": f"assert {tot}([7]) == 7", "says": f"{tot}() drops a lone item"},
+             {"function": lab, "source": f"def {lab}(s, width):\n    return s if len(s) == 1 else s.rjust(width)\n",
+              "test": f"assert {lab}('a', 3) == '  a'", "says": f"{lab}() doesn't pad a one-letter label"}]
+    if mode == "samefn":
+        items[2] = dict(items[0], says="again")
+    plant = {"request": "Three problems: ranges leak past the top, a one-item total is zero, and one-letter labels "
+                        "don't pad. Fix all three.", "items": items}
+elif any("vague request" in a for a in argv):  # T-2217: the request-shape kinds, written by the child
     plant = {"request": "make it nicer", "example": "Did you mean faster on big lists, or clearer to read?",
              "readings": {"echo": ["nicer", "faster"], "empty": ["x?", "clearer"], "group": ["(ab)+c", "clearer"],
                           "one": ["faster"], "dup": ["faster", "faster"], "broad": ["\\.", "clearer"]}.get(
@@ -464,6 +526,29 @@ class ExamAuthors(ForemanTestCase):
                              "--author", "child", env=dict(self.env, STUB_MODE=mode))
             self.assertEqual(d["scenarios"], [], mode)
             self.assertIn(why, d["dropped"][0]["why"], mode)
+
+    def test_children_author_exists_trigger_and_parts_scenarios(self):
+        # T-2216: #2, #9 and #11's kinds have an outside author too; a giveaway or a malformed reply is dropped
+        kinds = ("exists", "trigger", "parts")
+        r = self.fm_json("exam", "gen", "--seed", "9", "--per-kind", "1", "--lang", "python", "--kind", ",".join(kinds),
+                         "--author", "child", env=self.env)
+        self.assertEqual(r["dropped"], [])
+        by = {s["kind"]: s for s in r["scenarios"]}
+        self.assertEqual({k: s["author"] for k, s in by.items()}, dict.fromkeys(kinds, "child"))
+        keys = {k: json.loads(read_text(os.path.join(os.path.dirname(s["repo"]), "key.json"))) for k, s in by.items()}
+        self.assertEqual(keys["exists"]["request"], "I need something that keeps a value inside a range.")
+        self.assertEqual(keys["trigger"]["request"], "Have the checks run by themselves each morning.")
+        self.assertEqual(len(keys["parts"]["defects"]), 3)
+        self.assertTrue(all(d["tf"] for d in keys["parts"]["defects"]))
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual(sorted(o["closed"]["train"] + o["closed"]["holdout"]), sorted(s["id"] for s in r["scenarios"]))
+        for kind, mode, why in (("exists", "named", "names the function"), ("trigger", "giveaway", "gives the fix away"),
+                                ("parts", "samefn", "two plants on one function")):
+            d = self.fm_json("exam", "gen", "--seed", "9", "--per-kind", "1", "--lang", "python", "--kind", kind,
+                             "--author", "child", env=dict(self.env, STUB_MODE=mode))
+            self.assertEqual(d["scenarios"], [], (kind, mode))
+            self.assertIn(why, d["dropped"][0]["why"], (kind, mode))
 
     def test_children_write_the_vague_ambiguous_and_missing_tool_requests(self):
         # T-2217: the child writes the ask and what a good answer names; repeating the request names none of it
