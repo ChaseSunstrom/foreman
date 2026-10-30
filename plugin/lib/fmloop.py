@@ -54,6 +54,16 @@ def shipped(p, since):
     return done, commits
 
 
+def lag(p):
+    """T-2073: the files recent work would normally have brought along but didn't, learned from this repo's own
+    history (fmmap.drift), never a list of folders: one line each, most owed first; None when git can't say."""
+    import fmmap
+    got = fmmap.drift(p.root)
+    return None if got is None else [c.defang(c.plain(  # file names are repo content: data, never instructions
+        f"- {b}: owes ~{owed:.1f} updates ({a} changed in {n} commits since it last did; they move together {pr:.0%} "
+        f"of the time)")) for b, owed, a, n, pr in got]
+
+
 def made_since(p, since):
     """How many tasks were made since `since`: a round's yield when nobody recorded one."""
     t0 = c.parse_ts(since)
@@ -104,8 +114,15 @@ def _brief(p, n, since):
            f"at least one grounded idea per lens ({', '.join(MAIN_LENSES)})."] if pace else [
         f"2. fm mission --request \"forever loop round {n}: improve past everything shipped\", add the review to "
         "the pack, then:", f"   fm ideas --pack <pack> --rounds 2 --deepen 2 {seen_args}".rstrip()]
+    left = lag(p)
+    areas = c.plain(", ".join(c._git(p.root, "ls-tree", "--name-only", "HEAD", timeout=10).splitlines()[:30]))
+    lines += ["", f"Surfaces: every area of this repo ({areas or 'its top-level folders and docs'}), and every way its "
+              "user meets it (commands, docs, site, demo, UI, install, CI). Files recent work left behind (git history):",
+              *(["- unknown: git history unavailable"] if left is None else left
+                or ["- none: nothing that usually moves with recent work was left out"])]
     lines += ["", "Do, in order:",
-              "1. Review what shipped above as its user would: what is weak, missing, slow or confusing now.",
+              "1. Review what shipped above as its user would: what is weak, missing, slow or confusing now; "
+              "then each surface: one gap each, and a task for every file listed (or fm decide why it stays).",
               *fan,
               "3. Cluster and ground every idea against the code (fm-recon for a big set); keep what is real and new.",
               "4. Queue every grounded idea with one fm intake block, then work the queue.",
