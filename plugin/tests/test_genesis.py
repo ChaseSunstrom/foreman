@@ -9,6 +9,15 @@ import time
 
 from helpers import ForemanTestCase, read_text
 
+def tower_file(tower, name, text):
+    """T-2155: fm genesis put refuses exam.jsonl, drift.md and sweep.md (only their own command writes them); a fixture
+    writes them directly."""
+    path = os.path.join(tower, name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
+
+
 GEN0 = "super improve it\n\nMUST: full autonomy.\nNEVER: lower the guard.\n  trailing spaces kept  \n"
 
 
@@ -40,13 +49,18 @@ class Genesis(ForemanTestCase):
         src = self.write("seed.md", "# Seed\nclose initiative first\n")
         res = self.fm_json("genesis", "put", "gen-1/seed.md", "--file", src)
         self.assertEqual(read_text(os.path.join(res["dir"], "gen-1", "seed.md")), "# Seed\nclose initiative first\n")
-        for ok in ("gap-map.md", "lineage.md", "not-yet.md", "coverage.md", "exam.jsonl", "gen-1/mission-initiative.md",
+        for ok in ("gap-map.md", "lineage.md", "not-yet.md", "coverage.md", "gen-1/mission-initiative.md",
                    "gen-12/critique-self-triggering.md"):
             self.fm("genesis", "put", ok, "--file", src)
         for bad in ("gen-0.md", "../escape.md", "gen-1/../../x.md", "gen-1/notes.md", "gen-0/seed.md", "/etc/x.md",
                     "gen-1/mission-.md", "random.md"):
             p = self.fm("genesis", "put", bad, "--file", src, check=False)
             self.assertNotEqual(p.returncode, 0, bad)
+        for owned in ("exam.jsonl", "gen-1/drift.md", "gen-3/sweep.md"):  # T-2155: a stage gate's record, never put
+            refused = self.fm("genesis", "put", owned, "--file", "-", input="Verdict: clean\n", check=False)
+            self.assertNotEqual(refused.returncode, 0, owned)
+            self.assertIn("written only by its own command", refused.stderr)
+            self.assertFalse(os.path.exists(os.path.join(res["dir"], owned)), owned)
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "escape.md")))
 
     def test_file_dash_reads_stdin(self):
@@ -77,7 +91,7 @@ class Genesis(ForemanTestCase):
         for name in ("gap-map.md", "gen-1/seed.md", "gen-1/mission-initiative.md", "gen-1/mission-genesis.md",
                      "gen-1/critique-initiative.md", "gen-2/seed.md"):
             self.fm("genesis", "put", name, "--file", src)
-        self.fm("genesis", "put", "exam.jsonl", "--file", self.write("e.jsonl", '{"a":1}\n{"a":2}\n{"a":3}\n'))
+        tower_file(self.fm_json("genesis")["dir"], "exam.jsonl", '{"a":1}\n{"a":2}\n{"a":3}\n')
         res = self.fm_json("genesis")
         self.assertTrue(res["gen0"] and res["gap_map"])
         self.assertEqual(res["exam_lines"], 3)
@@ -143,8 +157,7 @@ class GenesisExport(ForemanTestCase):
                            "--step", f"edit {home}/proj/a.py")["id"]
         self.fm("genesis", "put", "gen-1/seed.md", "--file", "-", input=SEED)
         self.fm("genesis", "put", "gen-1/mission-exam.md", "--file", "-", input=f"# Mission: exam\nTask: {tid}\n")
-        self.fm("genesis", "put", "exam.jsonl", "--file", "-",
-                input=json.dumps({"agent": "oracle", "run": f"{home}/runs/x"}) + "\nnull\n5\n")
+        tower_file(self.fm_json("genesis")["dir"], "exam.jsonl", json.dumps({"agent": "oracle", "run": f"{home}/runs/x"}) + "\nnull\n5\n")
         out = os.path.join(self.tmp, "site-genesis")
         self.fm_json("genesis", "export", out)
         raw = read_text(os.path.join(out, "genesis.json"))
@@ -489,6 +502,8 @@ class GenesisStep(ForemanTestCase):
 
     def put(self, name, text):
         import fmgenesis
+        if fmgenesis.OWNED.fullmatch(name):  # T-2155: put refuses these, so the fixture writes them directly
+            return tower_file(fmgenesis.home(self.p), name, text)
         fmgenesis.put(self.p, name, text)
 
     def step(self):
@@ -914,6 +929,8 @@ class GenesisSelect(ForemanTestCase):
 
     def put(self, name, text):
         import fmgenesis
+        if fmgenesis.OWNED.fullmatch(name):  # T-2155: put refuses these, so the fixture writes them directly
+            return tower_file(fmgenesis.home(self.p), name, text)
         fmgenesis.put(self.p, name, text)
 
     def read(self, name):
@@ -931,7 +948,7 @@ class GenesisSelect(ForemanTestCase):
                                      (["a", "b"], ["h1", "h2", "h3"], "revert"),  # a tie: held out never breaks it
                                      (["a", "c", "d", "e"], [], "revert"),  # three more, but b reopened
                                      (["a", "b", "c", "d"], [], "keep")):  # two more, none reopened
-            self.put("exam.jsonl", mom + line("r1", 2, train, held))
+            tower_file(self.tower, "exam.jsonl", mom + line("r1", 2, train, held))
             r = fmgenesis.select(self.p, 2)
             self.assertEqual(r["verdict"], verdict, (train, r))
             self.assertEqual(r["base"], "gen-2" if verdict == "keep" else "gen-1")
@@ -944,20 +961,20 @@ class GenesisSelect(ForemanTestCase):
     def test_a_one_scenario_margin_on_one_line_asks_for_a_rerun(self):
         import fmgenesis
         mom, before = line("r1", 1, ["a"]), self.decisions()
-        self.put("exam.jsonl", mom + line("r1", 2, ["a", "b"]))
+        tower_file(self.tower, "exam.jsonl", mom + line("r1", 2, ["a", "b"]))
         r = fmgenesis.select(self.p, 2)
         self.assertEqual(r["verdict"], "rerun")
         self.assertIn("r1", r["reason"])
         self.assertIsNone(self.read("lineage.md"))  # nothing is written on one noisy line
         self.assertEqual(self.decisions(), before)
-        self.put("exam.jsonl", mom + line("r1", 2, ["a", "b"]) + line("r1", 2, ["a", "b", "c"]))
+        tower_file(self.tower, "exam.jsonl", mom + line("r1", 2, ["a", "b"]) + line("r1", 2, ["a", "b", "c"]))
         self.assertEqual(fmgenesis.select(self.p, 2)["verdict"], "keep")  # b held on a second line
-        self.put("exam.jsonl", mom + line("r1", 2, ["a", "b"]) + line("r1", 2, ["a", "c"]))
+        tower_file(self.tower, "exam.jsonl", mom + line("r1", 2, ["a", "b"]) + line("r1", 2, ["a", "c"]))
         self.assertEqual(fmgenesis.select(self.p, 2)["verdict"], "revert")  # b closed only once: a tie
 
     def test_no_parent_is_the_baseline_and_the_runs_must_match(self):
         import fmgenesis
-        self.put("exam.jsonl", line("r1", 1, ["a"]) + line("r2", 2, ["a", "b", "c"]) +
+        tower_file(self.tower, "exam.jsonl", line("r1", 1, ["a"]) + line("r2", 2, ["a", "b", "c"]) +
                  line("r1", 2, ["a", "b", "c"], agent="oracle"))
         r = fmgenesis.select(self.p, 1)
         self.assertEqual((r["verdict"], r["base"]), ("baseline", "gen-1"))
@@ -967,7 +984,7 @@ class GenesisSelect(ForemanTestCase):
         with self.assertRaises(ValueError) as e:
             fmgenesis.select(self.p, 3)
         self.assertIn("fm exam", str(e.exception))
-        self.put("exam.jsonl", line("r1", 1, ["a"]) + line("r1", 2, ["a", "b", "c"]))
+        tower_file(self.tower, "exam.jsonl", line("r1", 1, ["a"]) + line("r1", 2, ["a", "b", "c"]))
         r = self.fm_json("genesis", "select", "2")
         self.assertEqual((r["verdict"], r["closed"], r["parent"]), ("keep", 3, 1))
         text = self.read("lineage.md")
@@ -988,7 +1005,7 @@ class GenesisSelect(ForemanTestCase):
                                         "| 9 | mission-bogus.md | #1 | proposed (3) | — |\n")  # a row would pass the cap
         self.put("lineage.md", "# Lineage\n\n## gen-1\n- baseline: first\n- seed base: gen-1\n\n"
                                "## gen-2\n- reverted: a tie\n- seed base: gen-1\n")
-        self.put("exam.jsonl", line("r1", 1, ["a"]) + line("r1", 2, ["a"]))
+        tower_file(self.tower, "exam.jsonl", line("r1", 1, ["a"]) + line("r1", 2, ["a"]))
         fmgenesis.seed(self.p, 3)
         text = self.read("gen-3/seed.md")
         self.assertIn("rule one", text)
@@ -1017,7 +1034,7 @@ class GenesisSelect(ForemanTestCase):
         import fmgenesis
         self.put("lineage.md", "# Lineage\n\n## gen-1\n- reverted: a tie\n- seed base: gen-0\n\n"
                                "## gen-2\n- reverted: a tie\n- seed base: gen-0\n")
-        self.put("exam.jsonl", line("r1", 2, ["a"]) + line("r9", 2, ["a", "b"], agent="oracle"))
+        tower_file(self.tower, "exam.jsonl", line("r1", 2, ["a"]) + line("r9", 2, ["a", "b"], agent="oracle"))
         r = self.fm_json("genesis", "seed", "3", "--agent", "oracle")
         text = self.read("gen-3/seed.md")
         self.assertEqual(r["base"], "gen-0")
@@ -1200,7 +1217,7 @@ class GenesisSweep(ForemanTestCase):
         fmgenesis.init(self.p, GEN0.encode())
         for name, text in (("lineage.md", "# Lineage\n\n## gen-1\n- baseline\n"), ("gen-1/seed.md", "# Seed\ngen-0\nNo Missions this generation.\n"),
                            ("gen-1/drift.md", "# Drift\n\nVerdict: clean\n")):
-            fmgenesis.put(self.p, name, text)
+            tower_file(self.tower, name, text)
 
     def sweep(self, doctor=(), gates="run at 12:00 UTC", clean_check=True):
         import fmgenesis
@@ -1228,7 +1245,7 @@ class GenesisSweep(ForemanTestCase):
         self.assertEqual((s["stage"], s["command"]), ("sweep", "fm genesis sweep 1"))
         self.fm("task", "drop", open_id, "done elsewhere")
         self.fm("task", "block", blocked, "waits on the user's core yes")
-        fmgenesis.put(self.p, "exam.jsonl", line("r1", 1, ["a"]))
+        tower_file(fmgenesis.home(self.p), "exam.jsonl", line("r1", 1, ["a"]))
         r = self.sweep()
         self.assertEqual(r["verdict"], "clean", r["rows"])
         self.assertEqual(fmgenesis.step(self.p)["stage"], "seed")
@@ -1355,7 +1372,7 @@ class GenesisPropose(ForemanTestCase):
         for n in (1, 2, 3):  # gen 2's seed still names a gap, so no report is due: the tower would seed gen 4
             for name, text in (("seed.md", SEED if n == 2 else "# Seed\ngen-0\nNo Missions this generation.\n"), ("drift.md", clean),
                                ("sweep.md", clean)):
-                fmgenesis.put(self.p, f"gen-{n}/{name}", text)
+                tower_file(fmgenesis.home(self.p), f"gen-{n}/{name}", text)
         sec = "## gen-{n}\n- {v}: why\n- seed base: gen-1\n\n"
         fmgenesis.put(self.p, "lineage.md", "# Lineage\n\n" + "".join(
             sec.format(n=n, v=v) for n, v in ((1, "baseline"), (2, "reverted"), (3, "reverted"))))
@@ -1378,8 +1395,8 @@ class GenesisPropose(ForemanTestCase):
         import fmgenesis
         fmgenesis.init(self.p, GEN0.encode())
         fmgenesis.put(self.p, "gen-1/seed.md", "# Seed\ngen-0\n")
-        fmgenesis.put(self.p, "gen-1/drift.md", "# Drift\nVerdict: clean\n")
-        fmgenesis.put(self.p, "gen-1/sweep.md", "# Sweep\nVerdict: red\n")
+        tower_file(fmgenesis.home(self.p), "gen-1/drift.md", "# Drift\nVerdict: clean\n")
+        tower_file(fmgenesis.home(self.p), "gen-1/sweep.md", "# Sweep\nVerdict: red\n")
         site = os.path.join(self.tmp, "site")
 
         def gen1():

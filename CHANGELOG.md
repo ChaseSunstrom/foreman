@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm genesis put` refuses the stage gates' own records: `exam.jsonl` (appended only by `fm exam grade` and `fm genesis exam`) and `gen-N/drift.md` and `sweep.md` (written only by `fm genesis drift N` and `sweep N`), so a hand-written line can't fake a held-out pass and a forged `Verdict: clean` can't pass a stage (T-2155).
 - `fm exam scorecard` grades each gen-0 capability on its held-out exam: per §2 capability, the newest result of each held-out scenario of its kinds from graded runs (`--agent`, default foreman), the genesis capability from `fm genesis exam`'s drafts, marked pass, under, too few (under 3 graded) or no exam kind, and exits 1 unless all pass (`--bar`, default 0.8). `fm exam grade` and `fm genesis exam` now record which scenarios they graded, so a held-out miss counts (T-2097).
 - A task's close now runs the tests that read a whole folder when it changes a file there: `fm map` links a test to every file under a top-level folder it names as a string (`"site"`), so a `site/genesis/genesis.css` edit runs `test_design_lint` at close instead of first failing at `fm ship` (T-2086).
 - `fm tidy` finds projects whose folder is gone: one that lived under a temp dir (a throwaway trial) has its state moved to `state/archive/projects/` on `--apply`; one elsewhere is only reported, since its disk may just be unplugged (T-2091).
