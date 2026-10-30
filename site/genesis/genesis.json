@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T09:47:52Z",
- "rev": "fafad9f5",
+ "updated": "2026-10-30T10:16:01Z",
+ "rev": "b38b99cc",
  "capabilities": [
   {
    "n": 1,
@@ -540,17 +540,17 @@
       {
        "id": "T-2124",
        "title": "Scout project probes: fm find + prove on the user's own project, at most 3 a day, proven only, refutation ledger, doctor faults to the self-inbox (Mission 3 brief 5)",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 2,
-       "done": 0,
-       "current": "probe_find with cap and ownership"
+       "done": 2,
+       "current": ""
       },
       {
        "id": "T-2125",
        "title": "Value ranking: severity x proof x reach / effort, per-finder precision from outcomes, a mute floor, abstain below a threshold (Mission 3 brief 6)",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
