@@ -3840,7 +3840,8 @@ def genesis_line(g):
     """T-2118: the tower's health as one line: 'gen 1 · build (blocked): Mission 3 (initiative): finish T-2122 → fm
     focus T-2122'."""
     kind = "" if g["kind"] == "ok" else f" ({g['kind']})"  # defanged: the action quotes the seed, which a session writes
-    return defang(f"gen {g['gen']} · {g['stage']}{kind}: {plain(g['action'])[:200]} → {plain(g['command'])}")
+    exam = f" · exam {plain(g['exam'])}" if g.get("exam") else ""  # T-2172: the held-out scorecard
+    return defang(f"gen {g['gen']}{exam} · {g['stage']}{kind}: {plain(g['action'])[:200]} → {plain(g['command'])}")
 
 
 def badge_text(sd):
