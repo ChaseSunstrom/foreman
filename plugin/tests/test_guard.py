@@ -591,11 +591,14 @@ class StateDirect(GuardCase):
         path = "{fhome}/state/projects/x/STATE.md"
         self.assertBlocked(self.write(path), "state-direct")
         self.assertBlocked(self.write(path, allow=["state-direct", "core"]), "state-direct")
+        self.assertBlocked(self.write("{fhome}/state/prove-trusted.json", allow=["state-direct", "core"]),
+                           "state-direct")  # T-2202: only fm prove --yes-run (the user's) adds a tree
 
     def test_bash(self):
         self.run_table([
             ("echo x >> {fhome}/state/projects/x/ledger.jsonl", "state-direct"),
             ("rm -rf {fhome}/state", "state-direct"),
+            ("echo '[\"/tmp/x\"]' > {fhome}/state/prove-trusted.json", "state-direct"),  # T-2202: the user's yes
             ("fm capture 'new idea'", None),
             ("cat {fhome}/state/projects/x/STATE.md", None),
         ], self.bash)
