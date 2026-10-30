@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T10:16:01Z",
- "rev": "b38b99cc",
+ "updated": "2026-10-30T10:21:01Z",
+ "rev": "183de795",
  "capabilities": [
   {
    "n": 1,
@@ -540,7 +540,7 @@
       {
        "id": "T-2124",
        "title": "Scout project probes: fm find + prove on the user's own project, at most 3 a day, proven only, refutation ledger, doctor faults to the self-inbox (Mission 3 brief 5)",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 2,
@@ -570,7 +570,7 @@
       {
        "id": "T-2127",
        "title": "Initiative surfaces: fm code, MCP tool, site page, pane line, MASTER, README, CHANGELOG (Mission 3 brief 8)",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 2,
