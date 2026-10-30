@@ -1,6 +1,6 @@
 # Mission — Genesis as a feature (gen 1, #13)
 
-Task: T-2093 (brief 1, fm genesis check), T-2095 (brief 2, fm genesis step), T-2099 (brief 3, fm genesis draft/spec). Briefs 3–8 are added here as they are intaken.
+Task: T-2093 (brief 1, fm genesis check), T-2095 (brief 2, fm genesis step), T-2099 (brief 3, fm genesis draft/spec), T-2102 (brief 4, fm genesis select/seed). Briefs 3–8 are added here as they are intaken.
 
 Self-contained for a fresh `fm run` in ~/.claude/foreman. Parent: gen-1/seed.md → gen-0.md §2 #13, §3.
 Ideas: 606 from `fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen` (brainstorm-20261029-233136), lenses
@@ -73,12 +73,13 @@ D. Make the tower a `fm loop` mode. Rejected: the loop is open-ended by design (
    with no exam, flagged. Tests: the hand gen-0's own text yields every MUST and NEVER; empty input gives a valid
    draft; a planted absurd MUST in the history is marked unconfirmed, not adopted.
 4. **Selection, lineage, Seed — `fm genesis select N`, `fm genesis seed N`** (tier 3). Selection reads exam.jsonl's
-   held-out lines: a generation's rewrite stays only if it closes more scenarios than its parent, with cost per
-   verified result as the tie-break (a tie at 3× the cost loses); no reopening what the parent closed (ratchet);
-   reruns for variance when the margin is one scenario. Every decision is a lineage.md line and a `fm decide`.
+   train ids only (built: gen-0 §4 keeps the held-out third out of selection): a generation's rewrite stays only if
+   it closes more scenarios than its parent on the same run; a tie reverts whatever the cost (cost is reported, never
+   a tie-break; both fm decide, T-2102); no reopening what the parent closed (ratchet); reruns for variance when the
+   margin is one scenario on a single line. Every decision is a lineage.md line and a `fm decide`.
    The exam's held-out ids are hash-locked for the generation. `seed N` writes gen-N/seed.md from the parent seed,
    its critiques, empty coverage cells (first), not-yet items (each retried), exam scores and lineage; the Seed's
-   size is capped. Tests: a child that closes fewer loses; a tie at higher cost loses; a reopened scenario fails.
+   size is capped. Tests: a child that closes fewer loses; a tie loses; a reopened scenario fails.
 5. **Drift + sweep — `fm genesis drift`, `fm genesis sweep`** (tier 3). Drift: every MUST/NEVER line of gen-0 must be
    present (verbatim or flagged as reworded) in each seed; one `fm second` cold read of the newest seed against
    gen-0. Sweep: §7's list in one command — fm state, queue, lane list, docs drift, doctor, full gates, exam rerun,
