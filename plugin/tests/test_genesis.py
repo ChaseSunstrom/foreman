@@ -1611,6 +1611,18 @@ class GenesisRead(ForemanTestCase):
         self.assertNotIn("coverage.md", read_text(os.path.join(self.p.dir, "genesis-reads.json")))  # and a pass clears it
         self.assertEqual(self.code(gone, f"FAIL: {old}\nWHY: stray"), 1)  # a quote of no line it holds still fails closed
 
+    def test_a_quote_across_a_wrapped_paragraphs_line_break_names_the_paragraph(self):
+        # T-2231: critiques wrap paragraphs at 120 columns; a quoted sentence spanning the break named no line (stray)
+        import fmgenesis
+        doc = ("# Critique\n\n## Coverage\nT-2223 re-filed coverage.md through its cold read. Initiative now has 7\n"
+               "cells filled and no ideas.\n| a | b |\n| c | d |\n- one bullet here\nlazy text after it\n")
+        self.assertEqual(fmgenesis._logical(doc), [
+            "# Critique", "## Coverage",
+            "T-2223 re-filed coverage.md through its cold read. Initiative now has 7 cells filled and no ideas.",
+            "| a | b |", "| c | d |", "- one bullet here lazy text after it"])
+        r, _ = self.put(doc, "FAIL: Initiative now has 7 cells filled and no ideas\nWHY: dropped cells")
+        self.assertIn("✗ T-2223 re-filed coverage.md", r.stderr)
+
     def test_a_stray_quote_is_shown_so_the_writer_can_see_what_it_misquoted(self):
         # T-2229: "? a line coverage.md doesn't hold" hid the quote, so 8 strays a read couldn't be told apart
         r, _ = self.put(self.COV, "FAIL: - plan row 11: the planner\nWHY: templated")
