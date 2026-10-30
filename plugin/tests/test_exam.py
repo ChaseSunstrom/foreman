@@ -108,9 +108,11 @@ class ExamGen(ForemanTestCase):
         self.fm_json("exam", "run", g["run"], "--agent", "oracle", "--split", "holdout")
         line = json.loads(read_text(os.path.join(self.fm_json("genesis")["dir"], "exam.jsonl")).splitlines()[-1])
         held = sorted(s["id"] for s in g["scenarios"] if s["split"] == "holdout")
-        self.assertEqual(line["answered"], {"holdout": held})
-        r = self.fm_json("exam", "scorecard", "--agent", "oracle")
-        self.assertEqual([(x["state"], x["closed"], x["graded"]) for x in r["rows"]], [("pass", 3, 3)])
+        self.assertEqual(line["answered"], {"holdout": held, "child": []})
+        r = json.loads(self.fm("exam", "scorecard", "--agent", "oracle", "--json", check=False).stdout)  # T-2204: the template decides nothing
+        self.assertEqual([(x["state"], x["closed"], x["graded"], x["selfmade"]) for x in r["rows"]], [("too few", 0, 0, 3)])
+        self.assertIn("3 self-authored held-out results not counted", self.fm("exam", "scorecard", "--agent", "oracle",
+                                                                             check=False).stdout)
 
     def test_the_clean_app_keeps_the_edge_contract_and_its_suite_proves_it(self):
         import fmexam  # T-2120: page n or size < 1 is empty, lo wins in clamp, label keeps a long s, total of none is 0
@@ -336,6 +338,18 @@ plant = {"function": name, "source": f"def {name}(x, lo, hi):\n    return max(lo
          "test": f"assert {name}(4, 0, 3) == {want}\n    assert {name}(2, 0, 3) == 2",  # only line 1 trimmed, as models send
          "says": f"{name}() lets hi + 1 through",
          "request": "Some values come back out of range; find and fix it."}
+if any("big input" in a for a in argv):  # T-2204: slow, shown by a big input timing out
+    d = re.search(r"def (\w+)\(xs\):\n    seen", prompt).group(1)
+    plant = {"function": d, "source": f"def {d}(xs):\n    out = []\n    for x in xs:\n        if x not in out:\n"
+                                      f"            out.append(x)\n    return out\n",
+             "test": f"assert {d}(list(range(60000))) == list(range(60000))",
+             "says": f"{d}() scans its output list for each item, quadratic on big inputs",
+             "request": "Deduping a big list hangs."}
+elif any("isn't installed" in a for a in argv):  # T-2204: dep, an import that isn't there
+    lab = re.search(r"def (\w+)\(s, width\)", prompt).group(1)
+    plant = {"function": lab, "source": f"def {lab}(s, width):\n    from strpad import pad_left\n    return pad_left(s, width)\n",
+             "test": f"assert {lab}('ab', 4) == '  ab'", "says": f"{lab}() imports strpad, which isn't installed",
+             "request": "Labels crash."}
 if os.environ.get("STUB_MODE") == "norequest":
     del plant["request"]
 print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.01, "result": json.dumps(plant)}))
@@ -372,6 +386,23 @@ class ExamAuthors(ForemanTestCase):
         self.assertEqual((o["found"], o["fixed"], o["tf_first"]), (o["keyed"], o["fixable"], o["tf_keyed"]))
         lines = read_text(os.path.join(self.fm_json("genesis")["dir"], "exam.jsonl")).splitlines()
         self.assertEqual(json.loads(lines[-1])["author"], "child+self")
+
+    def test_children_author_slow_and_dep_scenarios_too(self):
+        # T-2204: a slow plant shows by its big-input test timing out, a dep plant by an import that isn't installed;
+        # the exam line names them as an outside author's, so the scorecard counts them
+        r = self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "1", "--lang", "python", "--kind", "slow,dep",
+                         "--author", "child", env=self.env)
+        self.assertEqual(r["dropped"], [])
+        self.assertEqual({s["kind"]: s["author"] for s in r["scenarios"]}, {"slow": "child", "dep": "child"})
+        keys = {s["kind"]: json.loads(read_text(os.path.join(os.path.dirname(s["repo"]), "key.json"))) for s in r["scenarios"]}
+        self.assertTrue(keys["slow"]["defects"][0]["check"]["slow"])
+        self.assertIn("quadratic", keys["slow"]["defects"][0]["text"])
+        self.assertIn("strpad", keys["dep"]["defects"][0]["text"])
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual((o["found"], o["fixed"], o["tf_first"]), (o["keyed"], o["fixable"], o["tf_keyed"]))
+        line = json.loads(read_text(os.path.join(self.fm_json("genesis")["dir"], "exam.jsonl")).splitlines()[-1])
+        self.assertEqual(line["answered"]["child"], sorted(s["id"] for s in r["scenarios"] if s["split"] == "holdout"))
 
     def test_initiative_kinds_none_rank_clean(self):
         """#1's exam (T-2126): none and rank are child-authored with no request, clean is the app as is; the oracle

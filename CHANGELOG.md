@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The capability scorecard now counts only held-out scenarios an outside author wrote (`fm exam gen --author child`): results on Foreman's own template scenarios are shown as "self-authored, not counted", and a capability no outside author can write scenarios for yet reads `no outside author`, never pass. Child authors now also write slow and missing-dependency scenarios.
 - `fm prove PATH --capture N` files each proven finding as a ready task whose check is `fm prove PATH --only ID`: red while the finding stands, green once it's fixed, so `fm run` can work them on lanes. When nothing is proven it writes a receipt (research/prove-receipt.md) listing each lead and why. New user-only `/foreman:initiative` runs the whole pipeline: map, find, prove, fix, receipt.
 - `fm exam grade`'s test-first credit is fairer: it puts back only the planted defect's lines in the arm's own work (anchored on the unchanged lines around each one, so a fix worded differently still counts) instead of the whole planted file, which also wiped the arm's other edits; a suite that fails only because it can't load a name earns no credit.
 - `fm mcp` serves `genesis_status`: Desktop and other agents read where the Genesis tower stands (its generation, files, coverage, the next action and the last exam result), beside `exam_scorecard`.
