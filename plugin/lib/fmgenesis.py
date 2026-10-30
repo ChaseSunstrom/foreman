@@ -504,6 +504,16 @@ def export(p, out):
             "coverage": chk["coverage"], "not_yet": chk["not_yet"]["items"], "not_yet_open": chk["not_yet"]["open"],
             "next": step(p), "docs": docs, "seal": sealed(p) or seal(p)[:8]}
     data = scrub(data)
+    try:  # T-2084: a doc the last export listed and the tower lost goes; nothing else in DIR is ours to remove
+        with open(os.path.join(out, "genesis.json"), encoding="utf-8") as f:
+            before = json.load(f)["docs"]
+    except (OSError, ValueError, KeyError, TypeError):
+        before = {}
+    for rel in set(before if isinstance(before, dict) else ()) - set(data["docs"]):
+        path = os.path.join(out, rel)
+        if (rel == "gen-0.md" or SHAPE.fullmatch(rel) and rel.endswith(".md")) and os.path.isfile(path) \
+                and os.path.realpath(path) == os.path.normpath(os.path.join(os.path.realpath(out), rel)):  # no symlinks
+            os.remove(path)
     for rel, text in data["docs"].items():
         path = os.path.join(out, rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)
