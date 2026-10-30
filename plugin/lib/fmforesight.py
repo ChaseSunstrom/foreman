@@ -166,12 +166,10 @@ def pile_lines(sd):
     if blocked:
         dated = sorted((x["updated"], x["id"]) for x in blocked if c.age_days(x.get("updated")) is not None)
         days = c.age_days(dated[0][0]) if dated else 0
-        out.append(f"Blocked: {len(blocked)} ({', '.join(x['id'] for x in blocked[:5])})"
-                   + (f", oldest untouched {days:.0f} days ({dated[0][1]}) → fm tidy names the ones now worth "
-                      "retrying; drop or defer the rest" if days > STALE_DAYS else "") + ".")
+        out.append(f"{len(blocked)} blocked" + (f", oldest untouched {days:.0f} days ({dated[0][1]})"
+                                                if days > STALE_DAYS else "") + " → fm tidy")  # T-2117: short items
     if sd.get("tidy_overdue_days"):
-        out.append(f"Tidy overdue: last tidy {sd.get('last_tidy') or 'never'} ({sd['tidy_overdue_days']} days) → fm tidy "
-                   "(dry run), then fm tidy --apply.")
+        out.append(f"tidy overdue {sd['tidy_overdue_days']} days → fm tidy")
     return out
 
 
