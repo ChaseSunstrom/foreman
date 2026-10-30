@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Brainstorms learn from what they missed: an ask the user had to make that no earlier idea predicted is listed in the next `fm ideas` pack, `fm mission` run and forever-loop round, with a "blind spots" lens that turns each into the question a brainstorm should have asked and asks it of the whole project; each lens ends with a `Next question:` for the next brainstorm, saved in ideas.json and carried into the next pack (T-2076).
 - Forever-loop rounds list the files recent work left behind, learned from the repo's own history rather than a list of folders: a file that usually changes with the ones that just changed, but didn't, is listed with how many updates it owes; the brief also names every top-level area of the repo, and says so when git can't tell (T-2073).
 - Audit briefs: a file with a changed line over 4000 characters (a recording, a minified bundle) is listed by its counts, not its text, so a re-recorded demo no longer fills the reviewer's diff (T-2069).
 - Demo recorder: the live session runs with every plugin outside the foreman marketplace turned off (`--settings`), so another plugin's status line no longer shows in demo/live.mp4; Claude Code's startup notices (a disabled plugin's hooks.json warning, which `--settings` can't silence, and the login, plan and tmux notices) are blanked up to the Foreman panel, which stays intact (T-2055).
