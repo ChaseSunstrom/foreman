@@ -319,6 +319,9 @@ class UninstallScript(SetupCase):
         self.assertTrue(os.path.isdir(alt), "dry run removes nothing")
 
 
+AGENT_CLIS = ("codex", "gemini", "opencode", "aider")  # T-2176 review: a machine's real agents never leak into these PATHs
+
+
 class InstallScript(unittest.TestCase):
     """install.sh with stub claude and setup-plugins.sh: plugin-dev (--build-tools) only when building."""
 
@@ -374,6 +377,62 @@ class InstallScript(unittest.TestCase):
 
     def test_build_install_adds_build_tools(self):
         self.assertIn("--build-tools", self.setup_args("--build"))
+
+    def no_claude(self, *agents):
+        """T-2174: this machine's tools with no claude anywhere on PATH, the running python3 first, and a stub for
+        each named agent CLI."""
+        farm = os.path.join(self.env["HOME"], "noclaude")
+        os.makedirs(farm)
+        os.symlink(sys.executable, os.path.join(farm, "python3"))
+        for a in agents:
+            with open(os.path.join(farm, a), "w") as f:
+                f.write("#!/usr/bin/env bash\nexit 0\n")
+            os.chmod(os.path.join(farm, a), 0o755)
+        for d in os.environ["PATH"].split(os.pathsep):
+            for n in (os.listdir(d) if os.path.isdir(d) else []):
+                if n != "claude" and n not in AGENT_CLIS and not os.path.lexists(os.path.join(farm, n)):
+                    os.symlink(os.path.join(d, n), os.path.join(farm, n))
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(FM)))
+        os.symlink(os.path.join(repo, "plugin"), os.path.join(self.fhome, "plugin"))
+        return dict(self.env, PATH=farm)
+
+    def install_without_claude(self, *agents, flags=()):
+        env = self.no_claude(*agents)
+        p = subprocess.run(["bash", os.path.join(self.fhome, "install.sh"), *flags], capture_output=True, text=True,
+                           env=env, stdin=subprocess.DEVNULL, timeout=120, start_new_session=True)
+        return p, p.stdout + p.stderr
+
+    def test_without_claude_code_it_installs_fm_and_wires_the_agents_it_finds(self):
+        p, out = self.install_without_claude("codex")
+        self.assertEqual(p.returncode, 0, out)
+        home = self.env["HOME"]
+        link = os.path.join(home, ".local", "bin", "fm")
+        self.assertEqual(os.path.realpath(link), os.path.realpath(os.path.join(self.fhome, "plugin", "bin", "fm")))
+        self.assertIn("Foreman wired into codex", out)
+        self.assertFalse(os.path.exists(os.path.join(home, ".claude", "settings.json")), out)  # no CC wiring
+        self.assertFalse(os.path.exists(self.args_file), "the Claude Code plugins aren't set up")
+
+    def test_a_dangling_fm_link_of_foremans_is_repaired_not_fatal(self):
+        # T-2176 review: [ -e ] is false for a dangling link, ln -s then failed and set -e ended the install
+        link = os.path.join(self.env["HOME"], ".local", "bin", "fm")
+        os.makedirs(os.path.dirname(link))
+        os.symlink("/gone/foreman/plugin/bin/fm", link)
+        p, out = self.install_without_claude("codex")
+        self.assertEqual(p.returncode, 0, out)
+        self.assertEqual(os.path.realpath(link), os.path.realpath(os.path.join(self.fhome, "plugin", "bin", "fm")))
+        self.assertIn("Foreman wired into codex", out)
+
+    def test_without_any_agent_it_points_at_fm_code(self):
+        p, out = self.install_without_claude()
+        self.assertEqual(p.returncode, 0, out)
+        self.assertIn("fm code", out)
+        self.assertIn("fm agents install", out)
+
+    def test_build_without_claude_code_says_why_it_cant(self):
+        p, out = self.install_without_claude(flags=("--build",))
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("--build", out)
+        self.assertIn("Claude Code", out)
 
     def install_python(self, system):
         """install.sh where python3 is 3.12.3 (Ubuntu 24.04's, too old) until brew or uv installs one; uname says
@@ -512,3 +571,58 @@ class SetupPluginsInSession(unittest.TestCase):
         p = self.run_script()
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertTrue(self.installs(), "the curated plugins are installed")
+
+
+class NoClaude(ForemanTestCase):
+    """T-2174: Foreman with no claude anywhere on PATH (not even the tests' lockout): a task goes from brief to done
+    on fm alone, and fm code says how to give it a model instead of reaching for a CLI that isn't there."""
+
+    def setUp(self):
+        super().setUp()
+        farm = os.path.join(self.tmp, "noclaude")
+        os.makedirs(farm)
+        os.symlink(sys.executable, os.path.join(farm, "python3"))
+        for d in os.environ["PATH"].split(os.pathsep):
+            for n in (os.listdir(d) if os.path.isdir(d) else []):
+                if n != "claude" and n not in AGENT_CLIS and not os.path.lexists(os.path.join(farm, n)):
+                    os.symlink(os.path.join(d, n), os.path.join(farm, n))
+        self.env = {"PATH": farm, "HOME": self.tmp}
+
+    def test_a_task_closes_on_evidence_fm_ran(self):
+        self.fm("init", env=self.env)
+        tid = json.loads(self.fm("task", "new", "add a greeting", "--type", "FIX", "--tier", "S", "--ac",
+                                 "greets :: python3 -c pass", "--step", "write it", "--json", env=self.env).stdout)["id"]
+        self.fm("task", "set", tid, "--section", "Raw request", "--text", "> add a greeting", env=self.env)
+        self.fm("focus", tid, env=self.env)
+        self.fm("task", "evidence", tid, "--step", "1", "--run", "python3 -c pass", env=self.env)
+        self.fm("task", "evidence", tid, "--ac", "1", "--run", "python3 -c pass", env=self.env)
+        self.fm("task", "ac", tid, "check", "1", env=self.env)
+        self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: fixture", env=self.env)
+        self.fm("task", "finish", tid, "--audit", "self: ok", "--lens", "intent: it greets", env=self.env, timeout=120)
+        self.assertEqual(json.loads(self.fm("task", "show", tid, "--json", env=self.env).stdout)["status"], "done")
+
+    def test_doctor_has_no_claude_code_failures_or_wiring_nags(self):
+        # T-2174: plugin validate shelled out to a missing claude (FAIL); the ~/.claude wiring checks told you to wire it
+        self.fm("init", env=self.env)
+        r = self.fm("doctor", "--json", check=False, env=dict(self.env, FOREMAN_DOCTOR_BENCH="0"), timeout=120)
+        got = {x["name"]: x for x in json.loads(r.stdout)["results"]}
+        for name in ("plugin validate", "statusline", "deny rules", "rules symlink"):
+            self.assertEqual(got[name]["status"], "PASS", got[name])
+            self.assertIn("no Claude Code here", got[name]["detail"])
+        self.assertNotIn("only inside Claude Code", got["fm link"]["detail"])
+
+    def test_fm_code_with_no_model_and_no_cli_says_how_to_add_one(self):
+        import socket
+        import urllib.parse
+        import fmmodels
+        for _, url in fmmodels.LOCAL:  # a model server running on this machine is a model: fm code would use it
+            u = urllib.parse.urlparse(url)
+            with socket.socket() as sock:
+                sock.settimeout(0.3)
+                if sock.connect_ex((u.hostname, u.port)) == 0:
+                    self.skipTest(f"a local model server answers at {url}")
+        self.fm("init", env=self.env)
+        r = self.fm("code", "make it greet", "--stale-ok", "fresh test home", check=False,
+                    env=dict(self.env, FOREMAN_MODEL="", **{cl[4]: "" for cl in fmmodels.CLOUD}))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("no model", (r.stdout + r.stderr).lower())

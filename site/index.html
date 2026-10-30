@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>try { var t = localStorage.getItem("fm-theme"); if (t) document.documentElement.setAttribute("data-theme", t); } catch (e) {}</script>
-<title>Foreman for Claude Code</title>
-<meta name="description" content="Foreman is the discipline layer for Claude Code: it plans before it edits, proves its work with commands it ran, stays on one task, and keeps going until the queue is done.">
-<meta property="og:title" content="Foreman for Claude Code">
+<title>Foreman — the discipline layer for coding agents</title>
+<meta name="description" content="Foreman is the discipline layer for coding agents (Claude Code, Codex, Gemini CLI, opencode, or fm code on any model): it plans before it edits, proves its work with commands it ran, stays on one task, and keeps going until the queue is done.">
+<meta property="og:title" content="Foreman — the discipline layer for coding agents">
 <meta property="og:description" content="Plans before it edits. Proves its work with commands it ran. Stays on one task. Keeps going until the queue is done.">
 <meta property="og:image" content="https://chasesunstrom.github.io/foreman/assets/share.png">
 <meta property="og:type" content="website">
@@ -37,8 +37,8 @@
 
 <main>
   <div class="wrap hero">
-    <h1>Claude Code, with a <em>foreman</em> on the job.</h1>
-    <p class="lede">Foreman is the discipline layer for Claude Code. It makes Claude plan before it edits, prove its work with commands it actually ran, stay on one task at a time, and keep going through the queue until the work is done or needs you.</p>
+    <h1>Your coding agent, with a <em>foreman</em> on the job.</h1>
+    <p class="lede">Foreman is the discipline layer for coding agents: Claude Code, Codex, Gemini CLI, opencode, or its own fm code on any model. It makes the agent plan before it edits, prove its work with commands it actually ran, stay on one task at a time, and keep going through the queue until the work is done or needs you.</p>
     <div class="install">
       <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/ChaseSunstrom/foreman/main/<wbr>install.sh | bash</code>
       <button class="copy" type="button" data-copy="cmd-install">Copy</button>
@@ -108,7 +108,7 @@
   <section id="rules">
     <div class="wrap">
       <div class="head">
-        <h2>What it holds Claude to</h2>
+        <h2>What it holds your agent to</h2>
         <p class="prose">Left to itself, a coding agent edits before it understands, says tests pass without running them and chases every new idea halfway. Foreman's hooks make the right way the only way.</p>
       </div>
       <dl class="rules">
@@ -116,7 +116,7 @@
         <div><dt>Proves it</dt><dd>Evidence is a command Foreman ran and recorded, not a sentence. A fix needs a test that failed first. A reply claiming the tests pass is checked against the turn's own runs.</dd></div>
         <div><dt>Guards bypass mode</dt><dd>A fail-closed guard reads every command before it runs. Destructive git commands get your uncommitted work snapshotted first.</dd></div>
         <div><dt>Stays on task</dt><dd>One active task. New requests go to the inbox instead of being chased; <code>NOW:</code> switches on purpose.</dd></div>
-        <div><dt>Never loses its place</dt><dd>State lives on disk, so after <code>/compact</code> or in a new session Claude resumes at the exact step.</dd></div>
+        <div><dt>Never loses its place</dt><dd>State lives on disk, so after <code>/compact</code> or in a new session the agent resumes at the exact step.</dd></div>
         <div><dt>Keeps going</dt><dd>Drive mode works through the whole queue. In full auto it decides, records why, and saves what only you can approve for one summary at the end.</dd></div>
         <div><dt>Learns</dt><dd>Your corrections, its own friction and every reviewer's findings turn into fixes, tripwires and lessons the next task reads.</dd></div>
       </dl>
@@ -236,11 +236,11 @@
   <section id="more">
     <div class="wrap">
       <div class="head">
-        <h2>Knows your stack, works beyond Claude Code</h2>
+        <h2>Knows your stack, works with every agent</h2>
         <p class="prose">{{cards}} stack cards give the exact commands that verify the work, a failing-test recipe and the mistakes models actually make, for {{areas}} areas from Python and Rust to infrastructure and games. They cost no context until a matching file is edited. The same guard, context and MCP server install into other agents with one command.</p>
       </div>
       <p><code>fm agents install codex</code> <span class="muted">or</span> <code>gemini</code> <span class="muted">or</span> <code>opencode</code></p>
-      <div class="agents" aria-label="Supported agents"><span>Claude Code</span><span>Codex CLI</span><span>Gemini CLI</span><span>opencode</span></div>
+      <div class="agents" aria-label="Supported agents"><span>Claude Code</span><span>Codex CLI</span><span>Gemini CLI</span><span>opencode</span><span>fm code</span></div>
       <figure class="diagram"><img src="assets/diagrams/architecture.svg" width="880" height="410" loading="lazy" alt="How the pieces fit: Claude Code, other agents, fm code and headless runs call Foreman's hooks and the fm CLI, which keep state on disk; the foreman-ui pane, the status line, Foreman Desktop and MCP clients read fm's JSON"></figure>
     </div>
   </section>
@@ -287,9 +287,9 @@
       <div>
         <div class="head">
           <h2>Install</h2>
-          <p>One command, then ask Claude for something.</p>
+          <p>One command, then ask your agent for something.</p>
         </div>
-        <p class="req">Needs Linux, macOS or WSL, <code>git</code>, Claude Code and Python 3.12.7 or newer. The installer asks before it changes your settings, and <code>fm demo</code> shows Foreman working on a seeded bug in a throwaway repo before you trust it with yours.</p>
+        <p class="req">Needs Linux, macOS or WSL, <code>git</code> and Python 3.12.7 or newer, plus an agent: Claude Code, Codex, Gemini CLI or opencode, or a model for <code>fm code</code>. The installer asks before it changes your settings, and <code>fm demo</code> shows Foreman working on a seeded bug in a throwaway repo before you trust it with yours.</p>
       </div>
       <div class="steps">
         <div class="st">
@@ -324,7 +324,7 @@
       <a href="https://github.com/ChaseSunstrom/foreman/blob/main/INSTALL.md">Install guide</a>
       <a href="https://github.com/ChaseSunstrom/foreman/blob/main/CHANGELOG.md">Changelog</a>
     </nav>
-    <p class="fine">A community plugin for Claude Code. Not made by or affiliated with Anthropic.</p>
+    <p class="fine">A community project for coding agents. Not made by or affiliated with Anthropic or any agent's maker.</p>
   </div>
 </footer>
 

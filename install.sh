@@ -40,7 +40,15 @@ done
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf 'foreman: %s\n' "$*" >&2; exit 1; }
-for bin in git claude; do command -v "$bin" >/dev/null 2>&1 || die "'$bin' is required but not on PATH"; done
+command -v git >/dev/null 2>&1 || die "'git' is required but not on PATH"
+# Claude Code is one surface, not a requirement (T-2174): without it the CC-only steps (plugins, the plugin itself,
+# the permission mode, ~/.claude wiring) are skipped and Foreman goes into whichever other agents are here.
+CLAUDE=1; command -v claude >/dev/null 2>&1 || CLAUDE=0
+if [ "$CLAUDE" = 0 ]; then
+  [ "$BUILD" = 1 ] && die "--build runs Claude Code on BUILD_PROMPT.md; install Claude Code first, or drop --build"
+  [ "$PLUGINS" = 1 ] && [ ${#PASS[@]} -gt 0 ] && echo "foreman: no Claude Code, so its plugin flags are ignored: ${PASS[*]}"
+  PLUGINS=0 BYPASS=0
+fi
 
 # 0. Python: fm and every hook run on the python3 on PATH. Foreman needs 3.12.7+: older ones break `communicate()`
 #    on a closed stdin, and argparse before 3.12.7 (and in 3.13.0) drops `fm task evidence ID --ac N CMD RESULT`.
@@ -98,6 +106,7 @@ if [ "$PLUGINS" = 1 ]; then
 fi
 
 # 3. The Foreman plugin itself, from this repo as a local marketplace (loads in place: edits apply on /reload-plugins)
+if [ "$CLAUDE" = 1 ]; then
 say "Installing the Foreman plugin"
 claude plugin marketplace add "$FOREMAN_HOME" >/dev/null 2>&1 || true
 claude plugin install foreman@foreman --scope user >/dev/null 2>&1 || die "couldn't install foreman@foreman (run: claude plugin validate $FOREMAN_HOME)"
@@ -108,6 +117,7 @@ if [ "$MOD" = 1 ]; then
   else
     say "  (foreman-ui not installed: this Claude Code build has no mods; the statusline and fm watch still work)"
   fi
+fi
 fi
 
 # 4. Permission mode: bypass is Foreman's recommended mode (its guard hook + deny rules are the brakes; BUILD_PROMPT.md
@@ -157,9 +167,21 @@ PY
 fi
 
 # 5. Foreman user wiring (reversible: plugin/uninstall.sh or `fm uninstall-user`)
-if [ "$WIRING" = 1 ]; then
+if [ "$WIRING" = 1 ] && [ "$CLAUDE" = 1 ]; then
   say "Wiring Foreman into ~/.claude (statusLine wrapper, deny rules, CLAUDE.md block, rules symlink)"
   python3 "$FOREMAN_HOME/plugin/bin/fm" install-user || say "Wiring failed; run: $FOREMAN_HOME/plugin/bin/fm install-user --dry-run"
+elif [ "$WIRING" = 1 ]; then
+  say "No Claude Code here: putting fm on PATH and wiring the agents found"
+  # fmsetup.ensure_fm_link: makes the link, repairs a dangling one of Foreman's, leaves anyone else's fm alone
+  python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import fmsetup; fmsetup.ensure_fm_link()' "$FOREMAN_HOME/plugin/lib" || true
+  case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) say "Add ~/.local/bin to your PATH so any shell finds fm" ;; esac
+  found=0
+  for agent in codex gemini opencode; do
+    command -v "$agent" >/dev/null 2>&1 || continue
+    found=1
+    python3 "$FOREMAN_HOME/plugin/bin/fm" agents install "$agent" || say "Couldn't wire $agent; run: fm agents install $agent"
+  done
+  [ "$found" = 1 ] || say "No coding agent found: fm code runs Foreman's loop on any model (fm code --help); fm agents install codex|gemini|opencode wires one later"
 fi
 
 # 6. Foreman Desktop (--desktop): the newest release's build for this machine, no Rust or bun needed here
@@ -200,4 +222,8 @@ if [ "$BUILD" = 1 ] && (: </dev/tty) 2>/dev/null; then   # a terminal we can act
   cd "$FOREMAN_HOME"
   exec claude "Run the Foreman build: read $FOREMAN_HOME/BUILD_PROMPT.md in full and execute it. If $FOREMAN_HOME/local/PLAN.md exists, resume from it instead of starting over." </dev/tty
 fi
-printf '\nNext: start Claude Code in any repo and give it a request (e.g. FIX: ...).\n      /foreman:status shows where things stand; %s/MASTER.md explains everything.\n' "$FOREMAN_HOME"
+if [ "$CLAUDE" = 1 ]; then
+  printf '\nNext: start Claude Code in any repo and give it a request (e.g. FIX: ...).\n      /foreman:status shows where things stand; %s/MASTER.md explains everything.\n' "$FOREMAN_HOME"
+else
+  printf '\nNext: start your agent in any repo and give it a request (e.g. FIX: ...), or run fm code "<request>".\n      fm status shows where things stand; %s/MASTER.md explains everything.\n' "$FOREMAN_HOME"
+fi
