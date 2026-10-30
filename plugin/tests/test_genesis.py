@@ -505,7 +505,7 @@ class GenesisCheck(ForemanTestCase):
         with mock.patch.object(fmgenesis, "_session_text", return_value="run fm decide first"):
             r = fmgenesis.check(p)
         self.assertEqual(r["reach"]["problems"], ["fm find: gen-1's missions name it, but no session path calls it "
-                                                  "(rules, skills, commands, hook notes, fm next)"])
+                                                  "or runs its module (rules, skills, commands, hook notes, fm next)"])
         self.assertIn("✗ reach", "\n".join(fmgenesis._check_lines(r)))
         self.put("coverage.md", "# Coverage\n\n" + grid("1. Initiative") + "\n" + grid("2. Exhaustive thinking") + grid("UX"))
         self.put("not-yet.md", "# Not yet\n")
@@ -519,6 +519,28 @@ class GenesisCheck(ForemanTestCase):
             self.assertEqual(fmcli.main(["genesis", "check"]), 1)  # a reach problem alone fails the check
         self.assertEqual(fmgenesis._literals("# fm bus watch\ndef f():\n    '''fm doc verb'''\n    return f'fm find {1}'\n"),
                          ["fm find "])  # comments and docstrings aren't session paths
+
+    def test_a_verb_whose_module_a_reached_verbs_module_imports_is_reached(self):
+        # T-2186: fm find runs fmoutcomes' and fmdocs' code, so a session that runs fm find uses fm outcomes and fm docs;
+        # reach read only words, so it named them unreached while it missed fm adopt and fm mandate, which nothing ran
+        import fmcore as c
+        import fmgenesis
+        from unittest import mock
+        self.put("gen-1/mission-x.md", "# Mission\ngen-0\nfm outcomes, fm docs, fm adopt and fm mandate feed it.\n")
+        p = c.find_project(self.repo)
+        with mock.patch.object(fmgenesis, "_session_text", return_value="run fm find first"):
+            self.assertEqual([x.split(":")[0] for x in fmgenesis.check(p)["reach"]["problems"]], ["fm adopt", "fm mandate"])
+        with mock.patch.object(fmgenesis, "_session_text", return_value="run fm decide first"):
+            self.assertEqual(len(fmgenesis.check(p)["reach"]["problems"]), 4)  # fmcli imports everything: never counted
+        self.assertEqual(fmgenesis.check(p)["reach"]["problems"], [])  # the real session paths
+        os.makedirs(os.path.join(self.tmp, "lib"))
+        with open(os.path.join(self.tmp, "lib", "fmx.py"), "w") as f:
+            f.write("import fmw\n\ndef g():\n    from fmy import z\n    from . import q\n")
+        with open(os.path.join(self.tmp, "lib", "fmbad.py"), "w") as f:
+            f.write("def (:\n")
+        with mock.patch.object(c, "PLUGIN_ROOT", self.tmp):
+            self.assertEqual(fmgenesis._imports("fmx"), {"fmw", "fmy"})  # function-level from-imports count too
+            self.assertEqual(fmgenesis._imports("fmbad") | fmgenesis._imports("fmnone"), set())  # unreadable: nothing
 
     def test_not_yet_items_need_two_tries_and_this_generations_retry(self):
         self.put("coverage.md", grid("1. Initiative") + grid("2. Exhaustive thinking"))
