@@ -1008,7 +1008,9 @@ def grade(p, run, agent):
 
     res = {"run": run, "agent": agent, **dict.fromkeys(COUNTS, 0),
            "holdout": dict.fromkeys(COUNTS, 0), "train": dict.fromkeys(COUNTS, 0), "cost": 0,
-           "closed": {"train": [], "holdout": []}, "exam_defect_findings": []}
+           "closed": {"train": [], "holdout": []}, "exam_defect_findings": [],
+           # T-2097: what was graded, so fm exam scorecard can count a held-out scenario that didn't close
+           "answered": {"holdout": sorted(s["id"] for s in answered if s["split"] == "holdout")}}
     for split, sid, n, cost, defect_lines in _pool(one, answered):
         res["cost"] += cost
         res["exam_defect_findings"] += defect_lines
@@ -1129,6 +1131,17 @@ def cmd_exam(args):
             res = check(p, args.run)
             fmcli.out(args, res, f"{args.run}: {res['checked']} scenarios checked, "
                                  + ("all sound" if res["ok"] else f"{len(res['problems'])} problems:\n  " + "\n  ".join(res["problems"])))
+            return 0 if res["ok"] else 1
+        if action == "scorecard":
+            import fmgenesis
+            res = fmgenesis.scorecard(p, args.agent or "foreman", args.bar)
+            rows = res["rows"]
+            fmcli.out(args, res, f"scorecard ({res['agent']}, held out, bar {res['bar']:.0%}): "
+                                 f"{sum(r['state'] == 'pass' for r in rows)}/{len(rows)} pass\n" + "\n".join(
+                f"  {r['n']:>2}. {r['name']}: {r['state']}" + (f" {r['closed']}/{r['graded']}" if r["graded"] else "")
+                + (f" ({', '.join(r['kinds'])})" if r["kinds"] else "") for r in rows)
+                + ("" if res["seen"] else f"\n  no graded held-out lines from {res['agent']!r}: fm exam run RUN --agent "
+                                          f"{res['agent']} --split holdout"))
             return 0 if res["ok"] else 1
     except ValueError as e:
         raise fmcli.UsageError(str(e)) from None
