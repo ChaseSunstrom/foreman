@@ -3282,7 +3282,8 @@ def stop(pl):
             if made:
                 reason = ((reason + "\n\n") if reason else "") + (
                     f"Foreman scout found work nobody asked for yet: {', '.join(made)} (fm task show ID says why). "
-                    f"Plan it and work it (fm next); drop one that isn't worth it with its reason.")
+                    f"Plan it and work it (fm next); drop one that isn't worth it with its reason. One that waits on the "
+                    f"user's yes stays until they give it (fm ask ID confirm).")
             elif slow:
                 reason = ((reason + "\n\n") if reason else "") + (
                     "Foreman scout: the queue is empty. Run `fm scout --slow` (zero tokens: a newer Claude Code, "
