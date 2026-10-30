@@ -2349,6 +2349,18 @@ test('review (T-0989): with nothing urgent, a signal the band used to show takes
   await calm.unmount()
 })
 
+for (const kind of ['ok', 'done']) {
+  test(`a Genesis tower takes the calm attention row while it goes, not once done (T-2118): ${kind}`, async ($, on) => {
+    const genesis = { gen: 1, stage: 'build', kind, action: 'Mission 3 (initiative): finish T-2122', command: 'fm focus T-2122' }
+    world(on, [{ ...CALM, checks: undefined, signals: [], genesis }])
+    await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+    const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+    const found = await pane.find({ type: 'Text', text: /⌂ genesis gen 1 · build: Mission 3 \(initiative\)/ })
+    expect(!!found).toBe(kind === 'ok')
+    await pane.unmount()
+  })
+}
+
 test('the chat is a tree: your prompt the root, each row a branch on one rail, finished calls compact, the turn line the tip (T-1040)', async ($, on) => {
   // 'it needs to be more of like a tree similar to the agents in the panel … so the text doesn't scroll the chat' / 'the full
   // claude code chat here, like what is above the banner, the scrolling stuff'

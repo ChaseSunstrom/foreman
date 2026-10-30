@@ -613,6 +613,8 @@ def session_context(p, sd, other_note=None, sid=None):
     q = sd["queue"]
     queue = [("Queue: " + "; ".join(f"{x['id']} {x['type']} {x['tier']} {x['title'][:40]}" for x in q[:3])  # T-2117
               + (f" (+{len(q) - 3} more)" if len(q) > 3 else "") + ".") if q else "Queue: empty."]
+    if sd.get("genesis"):  # T-2118: the tower's next action, even while the queue hides it from Next
+        queue.append(f"Genesis: {c.genesis_line(sd['genesis'])}.")
     inbox = sd["inbox"]
     tail = [f"Inbox: {len(inbox)}" + (" — " + "; ".join(f"{x['id']} {x['title'][:40]}" for x in inbox[:3]) if inbox else "") + "."]
     try:  # T-1800/T-1810: problems nobody raised, from caches only, each with its action

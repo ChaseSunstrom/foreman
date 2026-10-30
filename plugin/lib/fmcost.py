@@ -1159,6 +1159,12 @@ def agents_md(p, target="agents"):
     mark = AGENTS_MARK.replace("fm export agents", f"fm export {target}")
     parts = ["# " + os.path.basename(EXPORTS[target]), mark, "", AGENTS_RULES]
     private = bool(c.read_meta(p).get("sensitive"))  # a sensitive project shares no one's words: rules, map, playbooks
+    import fmgenesis
+    g = None if private else fmgenesis.health(p)
+    if g:  # T-2118: another agent drives the tower the same way
+        parts += ["", "## Genesis (a self-improvement tower runs here)",
+                  f"Now: {c.genesis_line(g).replace('`', chr(39))}. `fm genesis step` names its next action; "
+                  "its files change only through `fm genesis put`."]
     said = [] if private else [c.fit(c.defang(c.plain(str((e.get("data") or {}).get("text") or ""))), 200)
                                for e in c.ledger_tail(p, 3000) if e.get("event") == "correction"][-10:]
     if said:

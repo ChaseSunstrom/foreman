@@ -62,6 +62,8 @@ export type FmView = {
   mode?: { autonomy: string; drive: boolean; sensitive: boolean; trust?: boolean; standing?: string[] }
   active?: FmActive | null
   next?: string | null
+  // T-2118: the Genesis tower's next action (fmgenesis.step, cached); kind ok|blocked|fatal|stopped|done
+  genesis?: { stage: string; gen: number; action: string; command: string; kind: string } | null
   queue?: FmItem[]
   inbox?: FmItem[]
   inbox_total?: number
