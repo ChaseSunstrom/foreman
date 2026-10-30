@@ -195,6 +195,8 @@ if "--permission-mode" in argv:  # a session arm: it answers in its reply and ch
         f.write(("plugin" if "--plugin-dir" in argv else "bare") + "\n")
     with open(os.environ["STUB_LOG"] + ".cwd", "a") as f:
         f.write(os.getcwd() + "\n")
+    with open(os.environ["STUB_LOG"] + ".budget", "a") as f:
+        f.write((argv[argv.index("--max-budget-usd") + 1] if "--max-budget-usd" in argv else "none") + "\n")
     with open(os.environ["STUB_LOG"] + ".prompt", "a") as f:
         f.write(argv[argv.index("-p") + 1] + "\n---\n")
     reply = 'Looked.\n{"findings": [{"file": "app.py", "symbol": "nothing", "says": "a guess"}], "notes": [], "done": true}'
@@ -383,6 +385,10 @@ class ExamAuthors(ForemanTestCase):
             self.assertFalse(os.path.realpath(cwd).startswith(os.path.realpath(state)), cwd)
         spend = read_text(os.path.join(self.home, "state", "spend.jsonl"))
         self.assertEqual(spend.count('"exam-arm"'), 2)  # each session's cost lands in fm cost / fm budget
+        self.assertEqual(read_text(self.log + ".budget").split(), ["none", "none"])  # T-2179: no dollar cap on proving
+        self.fm_json("exam", "run", run, "--agent", "plain", "--split", "holdout", "--limit", "1", "--budget", "1",
+                     env=self.env)
+        self.assertEqual(read_text(self.log + ".budget").split()[-1], "1")  # a cap the run names still holds
 
     def test_a_reply_with_no_findings_object_gets_one_more_turn_for_it(self):
         run = self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "3", "--lang", "python", "--kind", "bug")["run"]

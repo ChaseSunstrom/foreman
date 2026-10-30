@@ -6978,7 +6978,8 @@ def _build_parser(only=None):
                    help="gen: child = a tool-less model writes the bug, vuln, none and rank plants (kept only when fm exam check passes)")
     s.add_argument("--model", help="gen: the child author's model (default sonnet); run: the session's model")
     s.add_argument("--limit", type=int, help="run: answer the first N picked scenarios (session arms default to 3)")
-    s.add_argument("--budget", type=float, default=2.0, help="run: USD cap per session")
+    s.add_argument("--budget", type=float, help="run: USD cap per session (default none: gen-0 puts no cap on proving; "
+                                                "the timeout stops a runaway)")
     s.add_argument("--request", help="run: session arms get these words instead of each scenario's request")
     s = add("demo", lazy("fmdemo", "cmd_demo"), tier=("Finding your way", 210), help="see Foreman work on a seeded bug in a throwaway repo, with no "
                                                       "model calls and nothing left behind (T-0870)")
