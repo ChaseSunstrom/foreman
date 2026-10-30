@@ -338,7 +338,25 @@ plant = {"function": name, "source": f"def {name}(x, lo, hi):\n    return max(lo
          "test": f"assert {name}(4, 0, 3) == {want}\n    assert {name}(2, 0, 3) == 2",  # only line 1 trimmed, as models send
          "says": f"{name}() lets hi + 1 through",
          "request": "Some values come back out of range; find and fix it."}
-if any("big input" in a for a in argv):  # T-2204: slow, shown by a big input timing out
+mode = os.environ.get("STUB_MODE")
+if any("new helper" in a for a in argv):  # T-2211: untested and clean, a function the module didn't have
+    plant = {"name": name if mode == "collide" else "middle", "source": "def middle(xs):\n    return sorted(xs)[len(xs) // 2]\n",
+             "test": "assert middle([3, 1, 2]) == 2", "says": "middle() gives the middle value",
+             "request": "Look over the tests."}
+elif any("false sentence" in a for a in argv):  # T-2211: docs, a README line the code contradicts
+    pg = re.search(r"def (\w+)\(xs, n, size\)", prompt).group(1)
+    plant = {"function": pg, "wrong": "Pages are numbered from zero.", "right": "Pages are numbered from one.",
+             "never": {"bothmatch": "numbered from", "badre": "(zero", "greedy": "n.*u.*m.*zero"}.get(mode, "numbered from zero"),
+             "must": "numbered from one",
+             "says": f"the README says {pg}() numbers pages from zero", "request": "The docs seem off about paging."}
+elif any("flaky test" in a for a in argv):  # T-2211: flaky, a test that sums random numbers
+    tot = re.search(r"def (\w+)\(xs\):\n    return sum", prompt).group(1)
+    plant = {"function": tot, "test": f"import random\n    xs = [random.randint(0, 9) for _ in range(3)]\n    assert {tot}(xs) < 20",
+             "fixed": f"assert {tot}([9, 9, 1]) == 19", "never": "random",
+             "says": f"test_{tot} sums random numbers and fails when they reach 20", "request": "CI fails now and then."}
+    if mode == "nofixed":
+        del plant["fixed"]
+elif any("big input" in a for a in argv):  # T-2204: slow, shown by a big input timing out
     d = re.search(r"def (\w+)\(xs\):\n    seen", prompt).group(1)
     plant = {"function": d, "source": f"def {d}(xs):\n    out = []\n    for x in xs:\n        if x not in out:\n"
                                       f"            out.append(x)\n    return out\n",
@@ -372,12 +390,12 @@ class ExamAuthors(ForemanTestCase):
         self.fm("init")
 
     def test_child_authored_scenarios_are_kept_only_when_sound(self):
-        r = self.fm_json("exam", "gen", "--seed", "1", "--per-kind", "3", "--lang", "python", "--kind", "bug,docs",
+        r = self.fm_json("exam", "gen", "--seed", "1", "--per-kind", "3", "--lang", "python", "--kind", "bug,vague",
                          "--author", "child", env=self.env)
         bugs = [s for s in r["scenarios"] if s["kind"] == "bug"]
         self.assertEqual((len(bugs), r["dropped"]), (3, []))
         self.assertTrue(all(s["author"] == "child" for s in bugs))
-        self.assertTrue(all(s["author"] == "self" for s in r["scenarios"] if s["kind"] == "docs"))
+        self.assertTrue(all(s["author"] == "self" for s in r["scenarios"] if s["kind"] == "vague"))  # no child shape
         key = json.loads(read_text(os.path.join(os.path.dirname(bugs[0]["repo"]), "key.json")))
         self.assertIn("lets hi + 1 through", key["defects"][0]["text"])
         self.assertEqual(key["request"], "Some values come back out of range; find and fix it.")
@@ -404,6 +422,64 @@ class ExamAuthors(ForemanTestCase):
         line = json.loads(read_text(os.path.join(self.fm_json("genesis")["dir"], "exam.jsonl")).splitlines()[-1])
         self.assertEqual(line["answered"]["child"], sorted(s["id"] for s in r["scenarios"] if s["split"] == "holdout"))
 
+    def test_children_author_untested_docs_flaky_and_clean_scenarios(self):
+        # T-2211: each kind's own reply shape, rendered and gated by fm exam check; a malformed reply drops its scenario
+        kinds = ("untested", "docs", "flaky", "clean")
+        r = self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", "python", "--kind", ",".join(kinds),
+                         "--author", "child", env=self.env)
+        self.assertEqual(r["dropped"], [])
+        by = {s["kind"]: s for s in r["scenarios"]}
+        self.assertEqual({k: s["author"] for k, s in by.items()}, dict.fromkeys(kinds, "child"))
+        keys = {k: json.loads(read_text(os.path.join(os.path.dirname(s["repo"]), "key.json"))) for k, s in by.items()}
+        self.assertEqual(keys["untested"]["defects"][0]["symbols"], ["middle"])
+        self.assertNotIn("middle", read_text(os.path.join(by["untested"]["repo"], "test_app.py")))
+        self.assertIn("def middle", read_text(os.path.join(by["clean"]["repo"], "app.py")))  # novel code, still clean
+        self.assertEqual(keys["clean"]["defects"], [])
+        self.assertIn("numbered from zero", read_text(os.path.join(by["docs"]["repo"], "README.md")))
+        self.assertIn("random", read_text(os.path.join(by["flaky"]["repo"], "test_app.py")))
+        self.assertEqual(keys["docs"]["request"], "The docs seem off about paging.")
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual(sorted(o["closed"]["train"] + o["closed"]["holdout"]), sorted(s["id"] for s in r["scenarios"]))
+        e = self.fm_json("exam", "run", r["run"], "--agent", "empty")
+        self.assertEqual(e["closed"]["train"] + e["closed"]["holdout"], [by["clean"]["id"]])
+        for mode, kind, why in (("collide", "untested", "isn't a plain name"), ("bothmatch", "docs", "tell its two lines apart"),
+                                ("badre", "docs", "bad never regex"), ("greedy", "docs", "open-ended repeats"),
+                                ("nofixed", "flaky", "fixed")):
+            d = self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", "python", "--kind", kind,
+                             "--author", "child", env=dict(self.env, STUB_MODE=mode))
+            self.assertEqual(d["scenarios"], [], mode)
+            self.assertIn(why, d["dropped"][0]["why"], mode)
+
+    def test_a_new_function_is_exported_and_declared_where_the_language_needs_it(self):
+        import fmexam  # T-2211: JS exports and imports it, TS exports it, Rust makes it pub, C declares it in app.h
+        for lang, src, test in (("js", "function middle(xs) {\n  return xs[0];\n}\n", "  assert.strictEqual(middle([1]), 1);\n"),
+                                ("ts", "function middle(xs: number[]): number {\n  return xs[0];\n}\n",
+                                 "  assert.strictEqual(middle([1]), 1);\n"),
+                                ("c", "long middle(const long *xs, int n) {\n    return n ? xs[0] : 0;\n}\n",
+                                 "    long xs[] = {1};\n    assert(middle(xs, 1) == 1);\n"),
+                                ("rust", "fn middle(xs: &[i64]) -> i64 {\n    xs[0]\n}\n", "    assert_eq!(middle(&[1]), 1);\n")):
+            base = os.path.join(self.tmp, "shaped-" + lang)
+            s = {"id": f"clean-{lang}-000001", "kind": "clean", "lang": lang, "split": "train", "author": "child"}
+            fmexam.render(base, s, {"shape": "clean", "says": "x", "request": "", "name": "middle", "source": src, "test": test})
+            repo = os.path.join(base, "repo")
+            app = read_text(os.path.join(repo, fmexam.SPEC[lang]["files"][0]))
+            if lang == "js":
+                self.assertRegex(app, r"module\.exports = \{[^}]*\bmiddle\b")
+                self.assertRegex(read_text(os.path.join(repo, "test_app.js")), r"const \{[^}]*\bmiddle\b[^}]*\} = require")
+            elif lang == "ts":
+                self.assertIn("export function middle", app)
+                self.assertRegex(read_text(os.path.join(repo, "test_app.ts")), r"import \{[^}]*\bmiddle\b")
+            elif lang == "rust":
+                self.assertIn("pub fn middle", app)
+            else:
+                self.assertIn("long middle(const long *xs, int n);", read_text(os.path.join(repo, "app.h")))
+        bad = {"shape": "clean", "says": "x", "request": "", "name": "middle", "test": "    assert(middle(0) == 0);\n",
+               "source": "typedef struct { long a; } S; long middle(S s) { return s.a; }\n"}  # a brace before it: refused
+        with self.assertRaises(ValueError):
+            fmexam.render(os.path.join(self.tmp, "shaped-bad"), {"id": "clean-c-000002", "kind": "clean", "lang": "c",
+                                                                  "split": "train", "author": "child"}, bad)
+
     def test_initiative_kinds_none_rank_clean(self):
         """#1's exam (T-2126): none and rank are child-authored with no request, clean is the app as is; the oracle
         closes all, empty closes only clean, and rank closes only when the vuln is named before the low ones."""
@@ -413,7 +489,7 @@ class ExamAuthors(ForemanTestCase):
         self.assertEqual(r["dropped"], [])
         by = {k: [s for s in r["scenarios"] if s["kind"] == k] for k in ("none", "rank", "clean")}
         self.assertEqual({k: {s["author"] for s in v} for k, v in by.items()},
-                         {"none": {"child"}, "rank": {"child"}, "clean": {"self"}})
+                         {"none": {"child"}, "rank": {"child"}, "clean": {"child"}})  # T-2211: clean too
         keys = {s["id"]: json.loads(read_text(os.path.join(os.path.dirname(s["repo"]), "key.json"))) for s in r["scenarios"]}
         none, rank = keys[by["none"][0]["id"]], keys[by["rank"][0]["id"]]
         self.assertEqual(([d["kind"] for d in none["defects"]], none["request"]), (["bug", "untested", "docs"], ""))
