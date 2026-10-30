@@ -24,7 +24,11 @@ SOURCES_STALE_S = 7 * 86400
 _VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 SLOW_GAP_S = 6 * 3600  # the drain asks for the slow probes at most this often
 
-Finding = collections.namedtuple("Finding", "key title type tier why confirm", defaults=("",))  # confirm: why it waits on the user's own yes
+FIND_DAY = 3  # T-2124: fm find leads filed per project per day, across runs
+PROVEN = {"dep", "docs", "secret"}  # kinds whose finding is its own proof; the rest wait for a failing test (T-2122)
+
+# confirm: why it waits on the user's own yes; home: file it in Foreman's own inbox; meta: fields set on the task
+Finding = collections.namedtuple("Finding", "key title type tier why confirm home meta", defaults=("", False, None))
 
 
 def _ver(v):
@@ -133,6 +137,49 @@ def probe_friction(p, ctx):
                     + fmfriction.ACTION)]
 
 
+def _is_home(p):
+    return os.path.realpath(p.root or "") == os.path.realpath(c.foreman_home())
+
+
+def probe_find(p, ctx):
+    """T-2124: fm find on the user's own project (Foreman's home runs it by hand): proven kinds only, FIND_DAY a day,
+    never a key in fmfind.settled (dropped, a reverted fix, still open). Refused, with the reason, in a tree whose last
+    50 commits have none by git's user.email: a clone isn't the user's to file work in. An email is only a claim, so
+    where others commit too each lead waits for your yes. At most FIND_DAY open and FIND_DAY in any 24 hours."""
+    import fmfind
+    root = os.path.realpath(p.root or "")
+    if not p.root or _is_home(p):
+        return []
+    git = lambda *a: c._git(root, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", *a, timeout=30)
+    me, authors = git("config", "user.email").strip().lower(), set(git("log", "-50", "--format=%ae").lower().split())
+    if not authors:  # no commits, or no git: nothing here is provably yours, and nothing to say about it
+        return []
+    if not me or me not in authors:
+        raise PermissionError(f"not scanned: no recent commit here is by {c.plain(me) or 'you (no git user.email)'}; "
+                              f"authors: {c.fit(c.plain(', '.join(sorted(authors))), 120) or 'none'}")
+    others = sorted(authors - {me})
+    confirm = (f"others commit here too ({c.fit(c.plain(', '.join(others)), 120)}): file it only if this tree is yours"
+               if others else "")
+    keys = c.read_meta(p).get("scout_keys") or {}
+    mine = {i for k, i in keys.items() if k.startswith("find:")}
+    ours = [b for b in c.load_briefs(p, include_archive=True) if b.id in mine]
+    ages = [c.age_days(b.meta.get("created")) for b in ours]
+    left = FIND_DAY - max(sum(a is not None and a < 1 for a in ages), sum(b.status not in c.CLOSED for b in ours))
+    if left <= 0:
+        return []
+    done, out = fmfind.settled(p), []
+    for key, f in fmfind.keyed(fmfind.scan(root, fmfind.precision(p))[1], root, root):
+        if len(out) >= left:
+            break
+        if f.get("held") or f["kind"] not in PROVEN or key in done or "find:" + key in keys:
+            continue
+        what = c.plain(f"{f['file']}:{f['line']} {f['symbol'] or '-'}: {f['says']}")
+        out.append(Finding("find:" + key, c.fit(f"{f['kind']}: {what}", 120), "SECURITY" if f["kind"] == "secret"
+                           else "FIX", "S", f"fm find ({f['finder']}), quoted as data:\n> {what}", confirm=confirm,
+                           meta={"finder": f["finder"], "find_key": key}))
+    return out
+
+
 def probe_doctor(p, ctx):
     try:
         r = subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "doctor", "--json"], cwd=p.root,
@@ -145,7 +192,8 @@ def probe_doctor(p, ctx):
         if isinstance(row, dict) and row.get("status") == "FAIL":
             detail = c.plain(str(row.get("detail", "")))
             key = "doctor:" + str(row.get("name")) + ":" + hashlib.sha1(detail.encode()).hexdigest()[:8]
-            out.append(Finding(key, f"Fix the doctor's {row.get('name')} check", "FIX", "S", c.fit(detail, 300)))
+            out.append(Finding(key, f"Fix the doctor's {row.get('name')} check", "FIX", "S", c.fit(detail, 300),
+                               home=not _is_home(p)))  # T-2124: Foreman's fault, so Foreman's inbox, not the user's
     return out
 
 
@@ -268,7 +316,7 @@ QUICK = [("claude-code", probe_claude_code), ("friction", probe_friction), ("bra
          ("genesis", probe_genesis)]
 SLOW = [("claude-code", probe_claude_code), ("cc changelog", probe_cc_changelog), ("library gaps", probe_lib_gaps),
         ("doctor", probe_doctor), ("sources", probe_sources), ("friction", probe_friction),
-        ("brainstorm", probe_brainstorm)]
+        ("brainstorm", probe_brainstorm), ("find", probe_find)]
 
 
 # ---------------------------------------------------------------- running and capturing
@@ -343,6 +391,8 @@ def capture(p, findings, dry=False):
                               source="scout")
             if f.confirm:
                 b.meta.update(confirm=True, confirm_why=f.confirm)
+            if f.confirm or f.meta:
+                b.meta.update(f.meta or {})
                 c.save_brief(p, b, touch=False)
             c.log_event(p, "capture", task=b.id, data={"source": "scout", "key": f.key})
             keys[f.key] = b.id
@@ -371,7 +421,14 @@ def run(p, slow=False, dry=False):
         if m:  # T-1400: what's found while it stands says so
             found = [f._replace(why=f"{f.why} (found under the standing mandate: {c.fit(m['text'], 80)})")
                      for f in found]
-    made = capture(p, found, dry=dry)
+    away = [f for f in found if f.home and not dry]
+    made = capture(p, [f for f in found if f not in away], dry=dry)
+    if away:  # T-2124: one inbox for Foreman's own faults, deduped across every project that saw them
+        home = c.foreman_home()
+        try:
+            made += capture(c.find_project(home, create=True) or c.init_project(home), away)
+        except OSError as e:
+            errors.append(f"home inbox: {type(e).__name__}: {c.fit(str(e), 120)}")
     if not dry:
         c.update_meta(p, scout_at=time.time(), **({"scout_slow_at": time.time()} if slow else {}))
         c.log_event(p, "scout", data={"slow": slow, "captured": made, "errors": errors})

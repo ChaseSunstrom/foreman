@@ -255,6 +255,90 @@ class ScoutProbes(ForemanTestCase):
         self.assertEqual(fmscout.probe_friction(p, {}), [])
 
 
+class ScoutFind(ForemanTestCase):  # T-2124
+    LEADS = {"requirements.txt": "flask==3.0\n", "q.py": "def get(db, name):\n    return db.execute(\"SELECT * FROM t WHERE a = '\" + name + \"'\")\n",
+             **{f"m{i}.py": f"import {m}\n\n\ndef use{i}():\n    return {m}.go()\n" for i, m in enumerate(("zorblax", "quuxlib", "frobnitz", "wibblepkg", "gronklib", "blarnex"))}}
+
+    def _p(self, files):
+        self.fm("init")
+        for name, text in files.items():
+            with open(os.path.join(self.repo, name), "w") as f:
+                f.write(text)
+        subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "code", "--allow-empty"], check=True)
+        return c.find_project(self.repo, create=False)
+
+    def _filed(self, p):
+        return [b for b in c.load_briefs(p, include_archive=True) if b.meta.get("finder")]
+
+    def test_proven_leads_only_three_a_day_and_never_one_you_dropped(self):
+        p = self._p(self.LEADS)
+        for _ in range(2):  # two runs the same day still file three in all
+            fmscout.capture(p, fmscout.probe_find(p, {}))
+        filed = self._filed(p)
+        self.assertEqual(len(filed), 3)
+        self.assertEqual({b.meta["finder"] for b in filed}, {"deps"})  # the SQL lead waits for a failing test
+        self.assertTrue(all(b.meta.get("find_key") for b in filed))
+        gone = filed[0]
+        gone.meta["status"] = "dropped"
+        for b in filed:
+            b.meta["created"] = "2000-01-01T00:00:00Z"
+            c.save_brief(p, b, touch=False)
+        fmscout.capture(p, fmscout.probe_find(p, {}))  # a new day: the fourth, never the dropped one again
+        keys = [b.meta["find_key"] for b in self._filed(p)]
+        self.assertEqual(len(keys), 4)
+        self.assertEqual(keys.count(gone.meta["find_key"]), 1)
+        for b in self._filed(p):
+            b.meta["created"] = "2000-01-01T00:00:00Z"
+            c.save_brief(p, b, touch=False)
+        self.assertEqual(fmscout.probe_find(p, {}), [])  # three still open: no more until you work one
+
+    def test_a_key_fm_find_filed_and_you_dropped_is_never_filed_by_scout(self):
+        import fmcli
+        import fmfind
+        p = self._p(self.LEADS)
+        root = os.path.realpath(self.repo)
+        for i, (key, f) in enumerate(k for k in fmfind.keyed(fmfind.scan(root, {})[1], root, root) if k[1]["kind"] == "dep"):
+            b = fmcli._create(p, f"lead {i}", "FIX", "S", "captured", raw="x", source="discovered")
+            b.meta.update(finder=f["finder"], find_key=key, status="dropped" if i % 2 else "captured")
+            c.save_brief(p, b, touch=False)
+        self.assertEqual(fmscout.probe_find(p, {}), [])  # no scout_keys entry: settled() alone keeps them out
+
+    def test_a_tree_others_commit_to_files_its_leads_for_your_yes(self):
+        p = self._p(self.LEADS)
+        subprocess.run(["git", "-C", self.repo, "-c", "user.email=other@else.test", "-c", "user.name=O", "commit", "-qm",
+                        "theirs", "--allow-empty"], check=True)
+        fmscout.capture(p, fmscout.probe_find(p, {}))
+        filed = self._filed(p)
+        self.assertTrue(filed)
+        self.assertTrue(all(b.meta.get("confirm") for b in filed))
+        self.assertIn("other@else.test", filed[0].meta["confirm_why"])
+
+    def test_a_tree_you_never_committed_to_is_refused_with_a_reason(self):
+        p = self._p(self.LEADS)
+        subprocess.run(["git", "-C", self.repo, "config", "user.email", "someone@else.test"], check=True)
+        found, errors = fmscout.run_probes(p, [("find", fmscout.probe_find)], {})
+        self.assertEqual(found, [])
+        self.assertIn("someone@else.test", errors[0])
+
+    def test_foremans_own_home_is_left_to_fm_find(self):
+        sp = c.find_project(c.foreman_home(), create=True) or c.init_project(c.foreman_home())
+        self.assertEqual(fmscout.probe_find(sp, {}), [])
+
+    def test_doctor_faults_in_a_user_project_go_to_foremans_own_inbox(self):
+        p = self._p({})
+        rows = {"ok": False, "results": [{"name": "footprint", "status": "FAIL", "detail": "rules 6059 chars"}]}
+        done = subprocess.CompletedProcess([], 1, json.dumps(rows), "")
+        with unittest.mock.patch.object(fmscout, "SLOW", [("doctor", fmscout.probe_doctor)]), \
+                unittest.mock.patch.object(fmscout.subprocess, "run", return_value=done), \
+                unittest.mock.patch.dict(os.environ, _env(FOREMAN_SCOUT_LATEST="2.1.301", FOREMAN_SCOUT_INSTALLED="2.1.301")):
+            made, _, errors = fmscout.run(p, slow=True)
+        self.assertEqual(errors, [])
+        sp = c.find_project(c.foreman_home(), create=False)
+        self.assertEqual([b.title for b in c.load_briefs(sp) if b.id in made], ["Fix the doctor's footprint check"])
+        self.assertFalse([b for b in c.load_briefs(p) if b.meta.get("source") == "scout"])
+
+
 class Mandate(ForemanTestCase):  # T-1400
     def test_an_ended_mandate_is_one_decision_and_nothing_more_is_captured_under_it(self):
         import fmmandate

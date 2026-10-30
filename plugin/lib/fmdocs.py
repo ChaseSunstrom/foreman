@@ -15,14 +15,15 @@ _FENCE = re.compile(r"```.*?```", re.S)
 # T-1817: paths in other trees: a stack card's are the detected project's (./gradlew), a changelog's files as they were
 _FRONT = re.compile(r"---\n(.*?)\n---\n", re.S)
 _HISTORY = re.compile(r"(?i)(changelog|changes|history|news)(\.\w+)?\.md")
+_SAFE = ("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null")  # T-2124: fm find scans untrusted trees
 
 
 def _markdown(root):
     """The repo's markdown: tracked, or untracked and not ignored (ignored notes, like Foreman's state/, are
     point-in-time records, not docs). Outside git, every .md not in a skipped or hidden folder."""
     try:
-        r = subprocess.run(["git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--",
-                            "*.md"], capture_output=True, text=True, timeout=30)
+        r = subprocess.run(["git", "-C", root, *_SAFE, "ls-files", "-z", "--cached", "--others", "--exclude-standard",
+                            "--", "*.md"], capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         r = None
     if r and r.returncode == 0:
@@ -48,8 +49,8 @@ def _ignored(root, rels):
     if not rels:
         return set()
     try:
-        p = subprocess.run(["git", "-C", root, "check-ignore", "--stdin"], input="\n".join(rels), capture_output=True,
-                           text=True, timeout=30)
+        p = subprocess.run(["git", "-C", root, *_SAFE, "check-ignore", "--stdin"], input="\n".join(rels),
+                           capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return set()
     return set(p.stdout.splitlines())
@@ -59,7 +60,7 @@ def _top_level(root):
     """Top-level names that hold repo content (tracked, or untracked and not ignored); every name outside git. A
     folder with only ignored files (Claude Code's .claude/scheduled_tasks.lock) doesn't make `.claude/…` a repo path."""
     try:
-        r = subprocess.run(["git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard"],
+        r = subprocess.run(["git", "-C", root, *_SAFE, "ls-files", "--cached", "--others", "--exclude-standard"],
                            capture_output=True, text=True, timeout=30)
         if r.returncode == 0:
             return {line.split("/", 1)[0] for line in r.stdout.splitlines() if line}
@@ -85,7 +86,7 @@ def scan(root):
     for md in _markdown(root):
         try:
             with open(md, encoding="utf-8", errors="replace") as f:
-                text = _FENCE.sub("", f.read())
+                text = _FENCE.sub("", f.read(1_000_000))  # ponytail: a doc past 1 MB is checked in its first MB
         except OSError:
             continue
         front = _FRONT.match(text)

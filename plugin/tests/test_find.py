@@ -96,6 +96,9 @@ class FindHostile(ForemanTestCase):
                      "venv/lib/x.py": "def nope(q):\n    return \"SELECT * FROM t WHERE a = '\" + q + \"'\"\n"})
         os.symlink("/dev/zero", os.path.join(root, "zero.py"))
         os.symlink(os.path.join(outside, "creds.py"), os.path.join(root, "leak.py"))
+        write(outside, {"notes.md": "See `./nowhere/setup.md` and `ghost()`.\n"})  # flagged if the link were followed
+        os.symlink(os.path.join(outside, "notes.md"), os.path.join(root, "leak.md"))  # T-2124: fmdocs too
+        os.symlink("/dev/zero", os.path.join(root, "zero.md"))
         os.mkfifo(os.path.join(root, "pipe.py"))
         with open(os.path.join(root, "caf\udce9.py".encode("utf-8", "surrogateescape").decode("utf-8", "surrogateescape")), "w") as f:
             f.write("x = 1\n")
@@ -107,7 +110,7 @@ class FindHostile(ForemanTestCase):
                 r = self.fm("find", root, "--json", check=False)
                 self.assertIn(r.returncode, (0, 1), r.stderr)
                 found = json.loads(r.stdout)["findings"]
-                self.assertFalse([f for f in found if f["file"] in ("leak.py", "zero.py", "pipe.py")
+                self.assertFalse([f for f in found if f["file"] in ("leak.py", "zero.py", "pipe.py", "leak.md", "zero.md")
                                   or f["file"].startswith("venv/")], found)
 
     def test_secret_in_a_generated_file_is_still_found(self):
