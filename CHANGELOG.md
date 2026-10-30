@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Genesis now maps a capability to the right exam kind for working unasked: `none` (problems planted, no request: find them on your own), `clean` (nothing planted: change nothing; Calibrated judgment gets it) and `rank` (several planted: fix the worst first). Before, it gave a clean repo the `none` kind, which now plants problems (T-2131).
 - A new session's first note is shorter: the usage burn, the blocked pile, an overdue tidy and a guard rule hit again and again now share one `Watch:` line, each pointing at the command with the detail (`fm digest`, `fm tidy`, `fm risk`), and the queue names 3 tasks. On this repo it went from about 1,900 characters to about 1,450 (T-2117).
 - The note on a file's 3rd edit in a row (use `fm edit` for the rest) is said in full once a session; later files, and the same session after a compaction, get a one-line form (T-2108).
 - `fm friction`'s line for the errors the hooks swallowed now names where the latest one was raised (its innermost file and line, such as `fmhooks.py:1474`), so the digest points at the code, not just the log (T-2107).
