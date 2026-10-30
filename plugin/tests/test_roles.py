@@ -30,12 +30,17 @@ class Noticed(ForemanTestCase):
         report = os.path.join(self.tmp, "report.md")
         with open(report, "w") as f:
             f.write("Verdict: approve\nNoticed: the CSV parser drops a BOM line\nNoticed: none\n"
-                    "Noticed: no test covers an empty export\n")
+                    "Noticed: no test covers an empty export\nNoticed: None (T-2186 already covers the reach check)\n"
+                    "Noticed: nothing - all of it was inside the brief\nNoticed: N/A.\n"
+                    "Noticed: None of the lock's callers check its return\nNoticed: None found.\n"
+                    "Noticed: Nothing else to report\nNoticed: Nothing validates the port\nNoticed: None observed\n"
+                    "Noticed: None at this time\nNoticed: None, but the retry loop never backs off\n")
         out = self.fm("research", "add", "T-review", "--from-agent", report).stdout
-        self.assertIn("2 noticed", out)
+        self.assertIn("5 noticed", out)  # T-2190: "None (…)", "None found." are no item; "None of the …" is one
         titles = [b.title for b in c.load_briefs(c.find_project(self.repo)) if b.meta.get("source") == "discovered"]
-        self.assertTrue(any("BOM" in t for t in titles), titles)
-        self.assertTrue(any("empty export" in t for t in titles), titles)
+        for want in ("BOM", "empty export", "lock's callers", "validates the port", "backs off"):
+            self.assertTrue(any(want in t for t in titles), (want, titles))
+        self.assertEqual(len(titles), 5, titles)  # and no "None …" line among them
 
     def test_a_noticed_line_close_to_an_open_task_is_logged_onto_it(self):  # T-1726
         self.fm("init")
