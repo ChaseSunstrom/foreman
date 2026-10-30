@@ -165,7 +165,7 @@
       '<div class="legend"><span class="p">planned</span><span class="w">written</span><span class="a">building</span><span class="d">built</span><span class="c">critiqued</span></div></div>' +
       '<button type="button" class="lvl l1" data-doc="' + seed + '"' + (D.docs[seed] ? "" : " disabled") + '><span class="k">Level 1</span><h3>Seed · generation ' + g.n + "</h3>" +
       "<p>Biggest gaps, lenses, order · " + plural(g.missions.length, "mission") + ", " + plural(g.rules.length, "standing rule") + "</p></button>" +
-      '<button type="button" class="lvl l0" data-doc="gen-0.md"><span class="k">Level 0 · foundation</span><h3>Your message</h3><p>Goals, MUSTs, NEVERs. Sent once, never edited.</p></button>' +
+      '<button type="button" class="lvl l0" data-doc="gen-0.md"><span class="k">Level 0 · foundation</span><h3>Your message</h3><p>Goals, MUSTs, NEVERs. Sent once, never edited.' + (D.seal ? " Seal: " + esc(D.seal) + "." : "") + '</p></button>' +
       "</div></div>" +
       '<div class="genesis-box"><code>fm genesis</code><p>' + (g.n < 2 ? "Gen 1's Seed was written by hand from your message. From gen 2 on, fm genesis writes every Seed (#13)."
         : "Gen " + g.n + "'s Seed is written by fm genesis itself (#13).") + "</p></div>";

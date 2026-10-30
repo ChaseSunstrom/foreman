@@ -3,7 +3,9 @@ filed only in the tower's shape, and a status that shows every generation."""
 import json
 import os
 import re
+import hashlib
 import stat
+import time
 
 from helpers import ForemanTestCase, read_text
 
@@ -112,6 +114,7 @@ class GenesisExport(ForemanTestCase):
         res = self.fm_json("genesis", "export", out)
         data = json.loads(read_text(os.path.join(out, "genesis.json")))
         self.assertEqual(res["path"], os.path.join(out, "genesis.json"))
+        self.assertEqual(data["seal"], hashlib.sha256(GEN0_CAPS.encode()).hexdigest()[:8])  # T-2113: the page shows it
         self.assertEqual([(c["n"], c["name"]) for c in data["capabilities"]], [(1, "Initiative"), (2, "Exhaustive thinking")])
         self.assertTrue(data["capabilities"][0]["text"].startswith("Find the real bugs"))
         self.assertEqual(data["gaps"]["1"], [{"text": "project scout", "tier": 3}, {"text": "find→prove→fix", "tier": 4},
@@ -946,6 +949,63 @@ class GenesisDrift(ForemanTestCase):
             for name in files:
                 os.remove(os.path.join(self.tower, "gen-1", f"{name}.md"))
 
+    def test_the_charter_is_sealed_and_drift_fails_when_gen0_changes(self):
+        """T-2113 (brief 8): init seals gen-0 (gen-0.sha256, read-only); drift fails on any later edit or a lost seal,
+        even an edit that blesses the seed's new MUST; the same bytes reseal an unsealed gen-0, nothing else does."""
+        import fmgenesis
+        g0, sealf = os.path.join(self.tower, "gen-0.md"), os.path.join(self.tower, "gen-0.sha256")
+        want = hashlib.sha256(GEN0.encode()).hexdigest()
+        self.assertEqual(read_text(sealf), want + "  gen-0.md\n")
+        self.assertFalse(os.stat(sealf).st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
+        self.assertEqual(fmgenesis.status(self.p, with_check=False)["seal"], want[:8])
+        os.chmod(g0, 0o644)
+        with open(g0, "a") as f:
+            f.write("MUST: ask before each merge.\n")
+        code, r, text = self.drift("# Seed\nParent: gen-0.md\n\nMUST: ask before each merge.\n")
+        self.assertEqual((code, r["verdict"]), (1, "drifted"), r)
+        self.assertIn("gen-0.md: changed since init", text)
+        self.assertIn("changed since init", fmgenesis.status(self.p, with_check=False)["seal"])
+        with open(g0, "w") as f:
+            f.write(GEN0)
+        code, r, _ = self.drift("# Seed\nParent: gen-0.md\n")
+        self.assertEqual((code, r["verdict"]), (0, "clean"), r)
+        import fmcore as c
+        c.log_event(self.p, "genesis_init", data={"path": g0, "sha256": want})  # as fm genesis init logs it
+        os.chmod(sealf, 0o644)
+        with open(g0, "a") as f:
+            f.write("x\n")
+        with open(sealf, "w") as f:  # a forged pair: gen-0 edited and a seal file to match it
+            f.write(hashlib.sha256((GEN0 + "x\n").encode()).hexdigest() + "  gen-0.md\n")
+        code, r, text = self.drift("# Seed\nParent: gen-0.md\n")
+        self.assertEqual((code, r["verdict"]), (1, "drifted"), r)
+        self.assertIn("gen-0.md: changed since init", text)  # the seal init logged wins over the file
+        with open(g0, "w") as f:
+            f.write(GEN0)
+        os.remove(sealf)
+        self.assertEqual(self.drift("# Seed\nParent: gen-0.md\n")[1]["verdict"], "clean")  # the ledger still holds it
+        with self.assertRaises(ValueError):
+            fmgenesis.init(self.p, GEN0.encode())  # logged once: no reseal, even with the file gone
+
+    def test_a_gen0_saved_before_seals_reseals_only_with_its_own_bytes(self):
+        import fmgenesis
+        g0 = os.path.join(self.tower, "gen-0.md")
+        os.remove(os.path.join(self.tower, "gen-0.sha256"))
+        with open(os.path.join(self.p.dir, "ledger.jsonl")) as f:  # as a tower saved before seals: no logged hash
+            kept = [x for x in f if '"genesis_init"' not in x]
+        with open(os.path.join(self.p.dir, "ledger.jsonl"), "w") as f:
+            f.writelines(kept)
+        self.assertTrue(fmgenesis.sealed(self.p).startswith("unsealed"))
+        code, r, text = self.drift("# Seed\nParent: gen-0.md\n")
+        self.assertEqual((code, r["verdict"]), (1, "drifted"), r)
+        self.assertIn("gen-0.md: unsealed", text)
+        with self.assertRaises(ValueError):
+            fmgenesis.init(self.p, b"other\n")
+        self.assertEqual(read_text(g0), GEN0)
+        fmgenesis.init(self.p, GEN0.encode())
+        self.assertEqual(fmgenesis.sealed(self.p), "")
+        with self.assertRaises(ValueError):
+            fmgenesis.init(self.p, GEN0.encode())  # sealed: even the same bytes again are refused
+
     def test_a_cold_read_counts_only_seed_lines_and_no_read_fails(self):
         seed = "# Seed\nSee gen-0.\n- Ship weekly whatever the tests say.\n"
         code, r, text = self.drift(seed, reply="DRIFT: Ship weekly whatever the tests say.\n"
@@ -1043,6 +1103,30 @@ class GenesisSweep(ForemanTestCase):
         self.fm("task", "block", q, "core: queued for the user's merge")
         rows = {x["check"]: x for x in self.sweep()["rows"]}
         self.assertTrue(rows["lanes"]["ok"], rows["lanes"])
+
+    def test_a_grant_kind_no_earlier_generation_used_turns_the_sweep_red(self):
+        """T-2113 (brief 8): the privileges row lists the grant kinds gen-N used (from gen-0's save for gen 1); a kind no
+        earlier generation used is red until the user grants it in this one."""
+        import fmcore as c
+        tid = self.fm_json("task", "new", "x", "--type", "FIX", "--tier", "S", "--step", "x")["id"]
+        t = time.time() - 3600
+        os.utime(os.path.join(self.tower, "gen-0.md"), (t, t))
+        os.makedirs(os.path.join(self.p.dir, "archive"), exist_ok=True)
+        with open(os.path.join(self.p.dir, "archive", "ledger-2026-01.jsonl"), "w") as f:  # fm tidy rolled it
+            f.write(json.dumps({"ts": "2026-01-05T00:00:00Z", "event": "grant_spent", "task": tid,
+                                "data": {"allow": "publish", "by": "fm ship"}}) + "\n")
+        def priv():
+            return {x["check"]: x for x in self.sweep()["rows"]}["privileges"]
+        self.assertEqual((priv()["ok"], priv()["detail"]), (True, "no grant used"))
+        c.log_event(self.p, "grant_spent", task=tid, data={"allow": "publish", "by": "fm ship"})
+        self.assertEqual((priv()["ok"], priv()["detail"]), (True, "publish 1×; no new kind"))
+        c.log_event(self.p, "task_set", task=tid, data={"changes": {}, "allow": ["plugin"]})
+        r = priv()
+        self.assertFalse(r["ok"])
+        self.assertIn("plugin: used 1×", r["detail"])
+        self.assertIn("✗ privileges: plugin", read_text(os.path.join(self.tower, "gen-1", "sweep.md")))
+        c.log_event(self.p, "approval_granted", task=tid, data={"allow": ["plugin"], "via": "ask"})
+        self.assertEqual((priv()["ok"], priv()["detail"]), (True, "plugin 1×, publish 1×; no new kind"))
 
     def test_sweep_needs_its_seed_and_names_each_docs_finding(self):
         import fmgenesis

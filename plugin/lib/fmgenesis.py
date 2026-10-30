@@ -1,6 +1,8 @@
 """fm genesis (T-2078): the Genesis tower's home, research/genesis in the project's state. gen-0 is kept byte for byte and
 read-only; the other tower docs (gap map, lineage, exam results, each generation's seed, missions and critiques) are
 filed only in the tower's shape; the status lists every generation."""
+import collections
+import hashlib
 import json
 import os
 import re
@@ -21,17 +23,48 @@ def home(p):
 
 
 def init(p, data):
-    """Save gen-0 as given (bytes) and make it read-only; refuses a second one."""
+    """Save gen-0 as given (bytes), read-only, and seal it: gen-0.sha256 beside it (brief 8), so drift fails on any later
+    edit. Refuses a second one; the same bytes again only seal a gen-0 saved before seals existed."""
     path = os.path.join(home(p), "gen-0.md")
     kinds = c.secret_kinds(data.decode("utf-8", "replace"))
     if kinds:  # gen-0 is never redacted, so a secret would sit in it for good
         raise ValueError(f"gen-0 holds what looks like {', '.join(kinds)}; reword that line first (gen-0 is kept verbatim)")
     with c.lock(p.dir):  # the check sits inside the lock: two inits can't both pass it
         if os.path.exists(path):
-            raise ValueError(f"gen-0 is already saved ({path}) and is never edited")
-        c.write_atomic(path, data)
-        os.chmod(path, 0o444)
+            with open(path, "rb") as f:
+                if seal(p) or f.read() != data:
+                    raise ValueError(f"gen-0 is already saved ({path}) and is never edited")
+        else:
+            c.write_atomic(path, data)
+            os.chmod(path, 0o444)
+        c.write_atomic(path[:-3] + ".sha256", f"{hashlib.sha256(data).hexdigest()}  gen-0.md\n")
+        os.chmod(path[:-3] + ".sha256", 0o444)
     return path
+
+
+def seal(p):
+    """The sha256 init logged for gen-0 (the ledger: a seal file can be deleted or forged beside an edit), else
+    gen-0.sha256's, else ''."""
+    for e in c.ledger_events(p, kinds=["genesis_init"]):
+        if (e.get("data") or {}).get("sha256"):
+            return str(e["data"]["sha256"])
+    try:
+        with open(os.path.join(home(p), "gen-0.sha256"), encoding="utf-8") as f:
+            return f.read().split()[0]
+    except (OSError, IndexError):
+        return ""
+
+
+def sealed(p):
+    """'' when gen-0 matches its seal, else what's wrong (drift and status read it)."""
+    want = seal(p)
+    if not want:
+        return "unsealed: fm genesis init --file <the same gen-0> seals it"
+    try:
+        with open(os.path.join(home(p), "gen-0.md"), "rb") as f:
+            return "" if hashlib.sha256(f.read()).hexdigest() == want else "changed since init (its seal no longer matches)"
+    except OSError:
+        return "missing"
 
 
 def put(p, name, text):
@@ -71,7 +104,8 @@ def status(p, with_check=True):
     out = {"dir": d, "gen0": have["gen-0.md"], "gap_map": have["gap-map.md"], "lineage": have["lineage.md"],
             "not_yet": have["not-yet.md"], "coverage": have["coverage.md"],
             "exam_lines": exam, "exam_last": last if isinstance(last, dict) else None, "generations": sorted(gens, key=lambda g: g["n"]),
-            "live": c.read_meta(p).get("genesis_live") or False}
+            "live": c.read_meta(p).get("genesis_live") or False,
+            "seal": (sealed(p) or seal(p)[:8]) if have["gen-0.md"] else ""}
     if with_check and have["gen-0.md"]:
         out["check"], out["next"] = check(p), step(p)
     return out
@@ -429,7 +463,7 @@ def export(p, out):
             "capabilities": [{"n": int(n), "name": name, "text": t.strip()} for n, name, t in _caps(gen0)],
             "gaps": _gaps(docs.get("gap-map.md", "")), "generations": gens, "exam": exam,
             "coverage": chk["coverage"], "not_yet": chk["not_yet"]["items"], "not_yet_open": chk["not_yet"]["open"],
-            "next": step(p), "docs": docs}
+            "next": step(p), "docs": docs, "seal": sealed(p) or seal(p)[:8]}
     data = scrub(data)
     for rel, text in data["docs"].items():
         path = os.path.join(out, rel)
@@ -1126,7 +1160,7 @@ def drift(p, n):
     allowed, t0 = set(_constraints(gen0)), time.time()  # drift.md is dated t0: an edit during the read reruns it
     files = ["seed.md"] + sorted(f for f in os.listdir(os.path.join(d, f"gen-{n}"))
                                  if f.startswith("mission-") and f.endswith(".md"))
-    found = []
+    found = [f"gen-0.md: {x}" for x in [sealed(p)] if x]  # brief 8: the charter itself is checked first
     for fn in files:
         mine = _constraints(_doc(d, pre + fn))
         found += [f"{fn}: {x} (not one of gen-0's, verbatim)" for x in mine if x not in allowed]
@@ -1181,6 +1215,32 @@ def _block_reason(b):
     return last[-1][1].strip() if last and last[-1][0] == "blocked" else ""
 
 
+GRANT_EVENTS = ("task_set", "approval_granted", "standing_granted", "grant_spent", "approval_used")
+
+
+def privileges(p, n):
+    """Brief 8: the grant kinds (fm ask, --allow, standing) gen-n used, from the ledger since its start (gen-0 saved for
+    gen 1, else gen-(n-1)'s sweep); ([a kind no earlier generation used and the user didn't grant in this one], detail)."""
+    d = home(p)
+    starts = [os.path.join(d, f"gen-{n - 1}", "sweep.md")] if n > 1 else []
+    start = next((os.path.getmtime(x) for x in starts + [os.path.join(d, "gen-0.md")] if os.path.exists(x)), 0)
+    before, used, granted = set(), collections.Counter(), set()
+    for e in c.ledger_events(p, kinds=GRANT_EVENTS):  # archived months too: a kind used long ago is still known
+        a, t = (e.get("data") or {}).get("allow"), c.parse_ts(e.get("ts"))
+        if not a or not t:
+            continue
+        for k in map(str, [a] if isinstance(a, str) else a if isinstance(a, list) else []):
+            if t.timestamp() < start:
+                before.add(k)
+            elif e["event"] in ("approval_granted", "standing_granted"):
+                granted.add(k)
+            else:
+                used[k] += 1
+    new = [f"{k}: used {used[k]}×, a kind no earlier generation used, and the user didn't grant it in this one"
+           for k in sorted(used) if k not in before | granted]  # ponytail: a grant for any task exempts the kind
+    return new, (", ".join(f"{k} {x}×" for k, x in sorted(used.items())) + "; no new kind") if used else "no grant used"
+
+
 def sweep(p, n, agent="foreman"):
     """gen-0 §7 in one command (T-2104): each line ✓ or ✗ into gen-N/sweep.md; verdict clean or red."""
     import fmdocs
@@ -1220,6 +1280,7 @@ def sweep(p, n, agent="foreman"):
     row("gates", [] if ran else ["no full fm check pass recorded on this exact tree: run fm check" if c.read_meta(p).get("checks")
                                  else "no gates configured: fm check add '<cmd>', then fm check"],
         f"full gates green on this tree, {ran}")
+    row("privileges", *privileges(p, n))
     graded = [x for x in _exam(p, agent) if x.get("gen") == n]
     row("exam", [] if graded else [f"no {agent} exam line graded for gen {n}: fm exam run, then fm exam grade"],
         f"{len(graded)} {agent} line(s) graded for gen {n}")
@@ -1246,7 +1307,7 @@ def cmd_genesis(args):
     try:
         if action == "init":
             path = init(p, read(binary=True))
-            c.log_event(p, "genesis_init", data={"path": path}, session=fmcli.session())
+            c.log_event(p, "genesis_init", data={"path": path, "sha256": seal(p)}, session=fmcli.session())
             kick(p)
             return fmcli.out(args, {"dir": home(p), "path": path}, f"gen-0 saved, read-only: {path}")
         if action == "put":
