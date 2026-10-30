@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-30T10:21:01Z",
+ "updated": "2026-10-30T10:26:02Z",
  "rev": "183de795",
  "capabilities": [
   {
@@ -574,8 +574,8 @@
        "type": "FEATURE",
        "tier": "M",
        "steps": 2,
-       "done": 0,
-       "current": "MCP + fm code + pane"
+       "done": 2,
+       "current": ""
       }
      ]
     },
