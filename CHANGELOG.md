@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Library lint: a card that runs `npx NAME` with a name not on the reviewed plugin/skills/library/npx-known.txt (the list beside the cards being linted) is a card problem; the electron, background-jobs and design-systems cards no longer name a missing package or an invalid stylelint rule (T-2049).
 - Site: style.css and site.js URLs carry their content's hash, so browsers fetch the new ones; the hero's two lights drift slowly, the proof figures count up once, a feature card's light follows the pointer, and shader names wrap whole; all still under reduced motion (T-2063).
 - Site: the landing runs four shader cards live (aurora bands, soft caustics, grain gradient, halftone) from each card's own GLSL, drawn only while on screen, one still frame under reduced motion and the card's words without WebGL2; it links to all eight (T-2062).
 - Site: the fm code page draws its tour from today's TUI at every build (assets/code-tui-tour.svg, the still under reduced motion) in place of a video recorded once, lists every key from the app's own key map grouped as its keys poster groups them, and gains a block for the queue, asking beside a run, follow-ups, undo and PR, fm code why and --chaos; the README's demo links point at the site's tour (T-2061).

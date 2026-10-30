@@ -81,11 +81,22 @@ class LibraryCards(ForemanTestCase):
                     "- `npx --yes not-a-real-pkg-zz .`\n"
                     "- `npx -y --package renovate -- renovate-config-validator`\n"
                     "- `npx --package=@axe-core/cli axe http://x` and `npx shadcn@latest add button`\n"
-                    "- `npx vitest run`\n")
+                    "- `npx vitest run` then `npx vitest;`\n")
         problems, _ = fmlib.lint(os.path.join(self.tmp, "cards"))
         hits = [p for p in problems if "npx-known.txt" in p]
         self.assertEqual(len(hits), 1, problems)
         self.assertIn("not-a-real-pkg-zz", hits[0])
+        # the list beside the linted cards wins: a checkout that adds a name lints clean with its own list
+        with open(os.path.join(self.tmp, "npx-known.txt"), "w") as f:
+            f.write("not-a-real-pkg-zz\nrenovate\n@axe-core/cli\nshadcn\nvitest  # a comment\n")
+        fmlib._npx_known.cache_clear()  # read once per process (fm is one-shot)
+        problems, _ = fmlib.lint(os.path.join(self.tmp, "cards"))
+        self.assertEqual([p for p in problems if "npx-known.txt" in p], [], problems)
+        # only a folder named cards has a list beside it: fm lib admit lints in a temp folder under a writable /tmp
+        os.renames(os.path.join(self.tmp, "cards"), os.path.join(self.tmp, "draft"))
+        fmlib._npx_known.cache_clear()
+        problems, _ = fmlib.lint(os.path.join(self.tmp, "draft"))
+        self.assertEqual(len([p for p in problems if "npx-known.txt" in p]), 1, problems)
 
 
 class LibrarySuggest(ForemanTestCase):
