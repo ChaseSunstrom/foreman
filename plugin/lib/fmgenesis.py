@@ -2,6 +2,7 @@
 read-only; the other tower docs (gap map, lineage, exam results, each generation's seed, missions and critiques) are
 filed only in the tower's shape; the status lists every generation."""
 import collections
+import difflib
 import hashlib
 import json
 import os
@@ -178,14 +179,47 @@ def _cell(root, kind, rest):
     return "" if os.path.exists(full) else f"{path} doesn't exist"
 
 
+def _words(rest, area):
+    """A cell's words without its trailing (file) or its area's own name, so cells that differ only there compare equal."""
+    drop = {w for w in re.findall(r"[\w./-]+", area.lower()) if len(w) > 3}
+    rest = re.sub(r"\s*\([^()\s]+\)\s*\W*$", "", rest).lower()
+    return [w for w in re.findall(r"[\w./-]+", rest) if w not in drop]
+
+
+def _twins(cells):
+    """{i: j}: cell i reads the same as cell j: in its surface column but another slot (the area or stage swapped in),
+    or in its slot under another surface (the surface swapped in). The same words, or 4+ matched words at a difflib
+    ratio of 0.6 or more. Both twins are flagged, except that of two F cells only the later copy is: one shipped path
+    can serve two areas, but counting it twice says nothing new. Learned from the grid itself, no list of frames.
+    cells: (row, area, stage, surface, kind, words)."""
+    out, groups = {}, {}
+    for i, cell in enumerate(cells):
+        groups.setdefault(("col", cell[3]), []).append(i)
+        groups.setdefault(("slot", cell[1], cell[2]), []).append(i)
+    for key, idx in groups.items():  # ponytail: pairwise per group, 0.28 s on a full 1,408-cell grid (measured); index by n-gram if it grows
+        for x, i in enumerate(idx):
+            for j in idx[x + 1:]:
+                a, b = cells[i][5], cells[j][5]
+                if not (a and b) or (key[0] == "col" and cells[i][1:3] == cells[j][1:3]):
+                    continue
+                sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+                if a == b or (sm.real_quick_ratio() >= .6 and sm.quick_ratio() >= .6 and sm.ratio() >= .6
+                              and sum(k.size for k in sm.get_matching_blocks()) >= 4):
+                    out.setdefault(j, i)
+                    if not cells[i][4] == cells[j][4] == "F":
+                        out.setdefault(i, j)
+    return out
+
+
 def coverage(p, text, gen0=""):
-    """Standing rule 2: every area row has all stage × surface cells, each grounded; gen-0 §2's capabilities each have
-    a row. Returns areas, cells (expected), filled (valid), empty (missing), problems, and per area rows: its valid
-    I cells (ideas), empty cells and bad lines, which rank fm genesis seed's Missions."""
+    """Standing rule 2: every area row has all stage × surface cells, each grounded and concrete; gen-0 §2's
+    capabilities each have a row. Returns areas, cells (expected), filled (valid), empty (missing), templated (an I or
+    N/A cell that reads the same as another slot's, not filled), problems, and per area rows: its valid I cells
+    (ideas), empty cells and bad lines, which rank fm genesis seed's Missions."""
     if text is None:
-        return {"areas": 0, "cells": 0, "filled": 0, "empty": 0, "rows": [],
+        return {"areas": 0, "cells": 0, "filled": 0, "empty": 0, "templated": 0, "rows": [],
                 "problems": ["coverage.md doesn't exist (every generation fills the grid: fm genesis put coverage.md)"]}
-    root, probs, filled, empty, rows = os.path.realpath(p.root), [], 0, 0, []
+    root, probs, filled, empty, rows, loose, empties = os.path.realpath(p.root), [], 0, 0, [], [], []
     secs = [(a, b) for a, b in _sections(text) if a]
     if not secs:
         probs.append("coverage.md has no '## <area>' rows")
@@ -208,20 +242,32 @@ def coverage(p, text, gen0=""):
                 probs.append(f"{area}: {stage} × {surface} appears twice")
                 continue
             seen.add((stage, surface))
-            bad = _cell(root, kind, rest.strip())
+            bad, words = _cell(root, kind, rest.strip()), _words(rest, area)
+            if not bad and kind != "F" and len(words) < 3:
+                bad = "too short to name anything concrete (3+ words besides the area's name)"
             if bad:
                 probs.append(f"{area}: {stage} × {surface}: {c.plain(bad)}")
             else:
                 filled += 1
                 ideas += kind == "I"
+                loose.append((len(rows), area, stage, surface, kind, words))
         gone = [f"{s} × {f}" for s in STAGES for f in SURFACES if (s, f) not in seen]
         rows.append({"area": area, "ideas": ideas, "empty": gone, "bad": len(probs) - before})
         empty += len(gone)
-        probs += [f"{area}: {g}: empty" for g in gone]
+        empties += [f"{area}: {g}: empty" for g in gone]
+    twins = _twins(loose)
+    for i, j in twins.items():
+        r, area, stage, surface, kind, _ = loose[i]
+        filled -= 1
+        rows[r]["ideas"] -= kind == "I"
+        rows[r]["bad"] += 1
+        probs.append(f"{area}: {stage} × {surface}: templated: reads the same as {loose[j][1]}: {loose[j][2]} × "
+                     f"{loose[j][3]} with the area, stage or surface swapped; name something concrete")
     heads = " | ".join(a.lower() for a, _ in secs)
     probs += [f"no row for capability {n}. {name}" for n, name, _ in _caps(gen0) if name.lower() not in heads]
+    probs += empties  # last, so a short listing shows the bad and templated cells first
     return {"areas": len(secs), "cells": len(secs) * len(STAGES) * len(SURFACES), "filled": filled, "empty": empty,
-            "rows": rows, "problems": probs}
+            "templated": len(twins), "rows": rows, "problems": probs}
 
 
 def not_yet(text, gen):
@@ -401,7 +447,8 @@ def _check_lines(r, limit=6):
     cov, ny, out = r["coverage"], r["not_yet"], []
     if cov["problems"]:
         more = len(cov["problems"]) - limit
-        out.append(f"✗ coverage: {cov['empty']} empty, {len(cov['problems']) - cov['empty']} other problem(s); "
+        out.append(f"✗ coverage: {cov['empty']} empty, {cov['templated']} templated, "
+                   f"{len(cov['problems']) - cov['empty'] - cov['templated']} other problem(s); "
                    f"{cov['filled']} of {cov['cells']} cells filled")
         out += [f"    {x}" for x in cov["problems"][:limit]] + ([f"    … {more} more (--json lists all)"] if more > 0 else [])
     else:
@@ -703,6 +750,7 @@ def _text(s):
     if s.get("check"):
         cov, ny = s["check"]["coverage"], s["check"]["not_yet"]
         lines.append(f"coverage: {cov['filled']} of {cov['cells']} cells filled, {cov['empty']} empty"
+                     + (f", {cov['templated']} templated" if cov["templated"] else "")
                      + (f", {len(cov['problems'])} problem(s)" if cov["problems"] else "")
                      + f" · not-yet: {ny['items']} item(s), {ny['open']} need work"
                      + (" (fm genesis check)" if cov["problems"] or ny["problems"] else ""))
@@ -1200,7 +1248,7 @@ def _seed(p, n, agent):
         slug = re.sub(r"[^a-z0-9]+", "-", bare.lower()).strip("-") or f"area-{i}"
         label = f"#{caps[bare.lower()]} {bare}" if bare.lower() in caps else bare
         table.append(f"| {i} | mission-{slug}.md | {label} | {open_(r)} open cells: {len(r['empty'])} empty, "
-                     f"{r['ideas']} ideas, {r['bad']} ungrounded | — |")
+                     f"{r['ideas']} ideas, {r['bad']} ungrounded or templated | — |")
     asks, sub = [], os.path.join(d, f"gen-{n - 1}")
     for fn in sorted(os.listdir(sub)) if os.path.isdir(sub) else ():
         if fn.startswith("critique-") and fn.endswith(".md"):
