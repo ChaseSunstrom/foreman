@@ -7,10 +7,11 @@ import unittest
 from helpers import PLUGIN, read_text, read_json
 
 SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks", "brainstorm",
-          "directions", "design-extract", "ui-design", "genesis"]
+          "directions", "design-extract", "ui-design", "genesis", "initiative"]
 # everything else Claude may start itself when the user asks in plain words; design-extract: the 2,000-character
 # listing has no room for it, so Claude reaches its verbs through the directions skill and the UI playbooks (T-1507)
-USER_ONLY = {"capture", "design-extract", "tidy", "doctor", "genesis"}  # T-1705: the rules map these plain words to the fm verbs, not the skills
+# T-1705: the rules map these plain words to the fm verbs, not the skills; initiative: no listing room left (T-2123)
+USER_ONLY = {"capture", "design-extract", "tidy", "doctor", "genesis", "initiative"}
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
 EDITING_AGENTS = {"fm-builder.md": {"Edit", "Write", "Bash"},  # T-0234: the exceptions, worktree-bound
                   "fm-reproducer.md": {"Edit", "Write", "Bash"}}  # T-0608

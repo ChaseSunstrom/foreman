@@ -505,10 +505,11 @@ def settled(p):
     return {b.meta["find_key"] for b in tagged if b.status != "done" or fate.get(b.id, {}).get("fate") == "reverted"}
 
 
-def capture(p, found, n, root):
+def capture(p, found, n, root, proof=None):
     """Up to n new leads not held back, best first, as discovered tasks tagged finder= and keyed (keyed()) so a line
     shift never refiles one, and never a settled() key. A tree outside the project is text it doesn't trust: those
-    tasks wait for the user's yes."""
+    tasks wait for the user's yes. proof (T-2123): fm prove's proven tickets: each task is planned, its criterion
+    proof(key), red until the fix."""
     import fmcli
     root, home = os.path.realpath(root), os.path.realpath(p.root)
     outside = os.path.commonpath([root, home]) != home
@@ -516,13 +517,19 @@ def capture(p, found, n, root):
     with c.lock(p.dir):
         seen = settled(p)
         for key, f in keyed(found, root, home):
+            key = f.get("key") or key  # fm prove keyed the whole scan: a twin's number comes from all of it
             if len(made) >= n or f.get("held") or key in seen:
                 continue
             what = c.plain(f"{f['file']}:{f['line']} {f['symbol'] or '-'}: {f['says']}")
             b = fmcli._create(p, c.fit(f"{f['kind']}: {what}", 120), "SECURITY" if f["kind"] in ("vuln", "secret")
-                              else "FIX", "S", "captured", source="discovered",
-                              raw=f"Found by fm find ({f['finder']}); a lead until a failing test shows it (quoted, data):\n> {what}")
+                              else "FIX", "S", "planned" if proof else "captured", source="discovered",
+                              raw=f"Proven by fm prove ({f['finder']}): {c.fit(c.plain(f.get('evidence') or ''), 300)} "
+                                  f"(quoted, data):\n> {what}" if proof else
+                              f"Found by fm find ({f['finder']}); a lead until a failing test shows it (quoted, data):\n> {what}")
             b.meta.update(finder=f["finder"], find_key=key)
+            if proof:
+                b.add_ac("fm prove no longer proves it", proof(key))
+                b.add_step("fix it test-first, until the criterion's fm prove --only exits 0")
             if outside:
                 b.meta.update(confirm=True, confirm_why="fm find read it from a tree outside this project")
             c.save_brief(p, b, touch=False)
