@@ -35,6 +35,19 @@ BUG = "def add(a, b):\n    return a - b\n"
 MAX_GAP = 1.2  # seconds a still screen is held at most (the model thinking), so the video stays watchable
 
 
+def only_foreman(path=os.path.expanduser("~/.claude/settings.json")):
+    """T-2055: --settings JSON that turns off every plugin the user enabled outside the foreman marketplace (another
+    plugin's hook warning or status line must not reach a recording); login, permissions and env stay. None when the
+    settings file is missing or unreadable."""
+    try:
+        with open(path) as f:
+            on = json.load(f).get("enabledPlugins", {})
+        off = {k: False for k, v in on.items() if v is True and k.rsplit("@", 1)[-1] != "foreman"}
+    except (OSError, ValueError, AttributeError):
+        return None
+    return json.dumps({"enabledPlugins": off})
+
+
 def scrubber():
     """What must not reach a published recording: the home folder, the user and real name, the account e-mail."""
     home, me = os.path.expanduser("~"), pwd.getpwuid(os.getuid())
@@ -114,7 +127,7 @@ def main():
     repo, scrub = (clone(work, a.repo) if a.repo else seed(work)), scrubber()
     os.environ["FOREMAN_STATE"] = os.path.join(work, "state")  # shot.start hands it to the session alone
     shot.CLEAN["DISABLE_AUTOUPDATER"] = "1"  # its banner ("Auto-update failed…") is this machine's, not the product's
-    shot.start(argparse.Namespace(dir=repo, cols=COLS, rows=ROWS, model=a.model))
+    shot.start(argparse.Namespace(dir=repo, cols=COLS, rows=ROWS, model=a.model, settings=only_foreman()))
     frames, t0 = [], time.time()
 
     def grab():
