@@ -1631,15 +1631,32 @@ def _logical(text):
     return [" ".join(x.split()) for x in lines if len(x.strip()) >= 8]
 
 
+CURLY = str.maketrans("‘’“”", "''\"\"")
+
+
+def _norm(s):
+    """T-2228: text as a reader quotes it: no backticks, asterisks, backslashes or curly quotes; spaces collapsed."""
+    return " ".join(re.sub(r"[`*\\]", "", s).translate(CURLY).split())
+
+
 def _named(reply, tag, lines):
     """What a cold reader named after TAG: (and the WHY: under it), as [(the file's lines holding the quote, why)]. The
-    reply is untrusted: an empty list marks a stray quote, and the why is plain and cut short."""
+    reply is untrusted: an empty list marks a stray quote, and the why is plain and cut short. T-2228: a quote matches
+    with markdown dropped and an ellipsis cut off either end."""
     reply = re.sub(rf"\*\*({tag}|WHY):\*\*", r"\1:", reply)
     out = []
     for m in re.finditer(rf"^[\s>*-]*{tag}:(.*)$(?:\n[\s>*-]*WHY:(.*)$)?", reply, re.M):
-        q = " ".join(c.plain(m[1]).strip(" `\"'*").split())
-        out.append(([s for s in lines if q in s] if len(q) >= 8 else [], c.fit(" ".join(c.plain(m[2] or "").split()), 160)))
+        q = _norm(c.plain(m[1])).strip(" \"'.…")
+        out.append(([s for s in lines if q in _norm(s)] if len(q) >= 8 else [], c.fit(" ".join(c.plain(m[2] or "").split()), 160)))
     return out
+
+
+def _successor(old, lines):
+    """T-2228: the line a revised one became (the closest, at least 80% alike: distinct coverage rows run to 77%), or
+    None once it's removed or rewritten past that, when the reader judges the new line fresh. ponytail: a false match
+    only shows the reader a stale finding (it can add a block, never lose one); key on the row's label if it bites."""
+    import difflib
+    return (difflib.get_close_matches(old, lines, 1, 0.8) or [None])[0]
 
 
 def _charter(p, gen0):
@@ -1726,6 +1743,8 @@ def _read(p, name, text):
     text, reads = c.redact(text), _reads(p)
     before = [x for x in reads.get(name) or [] if isinstance(x, list) and len(x) == 2
               and all(isinstance(y, str) for y in x) and x[0]]
+    lines, stored = _logical(text), before  # T-2228: a finding follows its line when edited and ends when it's gone;
+    before = list({s: [s, w] for q, w in before if (s := q if q in lines else _successor(q, lines))}.values())  # newest
     prev = "".join(f"\n- {_fence(c.plain(q))} — WHY: {_fence(c.plain(w))}" for q, w in before)
     charter, tail = _charter(p, gen0), _exam_tail(d)
     ck = _key(READ_CHILD + charter + tail)  # a new reader prompt, steer or exam line voids what earlier reads accepted
@@ -1740,7 +1759,7 @@ def _read(p, name, text):
     except ValueError as e:
         named, why = [], f"it didn't run: {c.fit(c.plain(str(e)), 160)}"
     else:
-        named = _named(reply, "FAIL", _logical(text))
+        named = _named(reply, "FAIL", lines)
         stray = sum(not h for h, _ in named)
         why = (f"it named {stray} line(s) {name} doesn't hold" if stray else "" if named
                else "" if re.search(r"^[\s*]*CLEAN\b", reply, re.M) else "no CLEAN or FAIL line came back")
@@ -1758,7 +1777,7 @@ def _read(p, name, text):
         clear = set().union(set(), *occ.values()) - flagged
         c.write_atomic(os.path.join(p.dir, ACCEPTED), json.dumps(dict(_reads(p, ACCEPTED), **{
             name: {"charter": ck, "lines": sorted(clear & (seen | ok)), "seen": sorted(clear)}})))
-    if after != before:  # reloaded: another put may have filed its own findings during this read
+    if after != stored:  # reloaded: another put may have filed its own findings during this read
         reads = dict(_reads(p), **{name: after})
         c.write_atomic(os.path.join(p.dir, READS), json.dumps({k: v for k, v in reads.items() if v}))
     c.log_event(p, "genesis_read", data={"name": name, "verdict": verdict, "lines": len(held), "carried": len(carried),
