@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T20:02:44Z",
- "rev": "f854209e",
+ "updated": "2026-10-30T22:50:57Z",
+ "rev": "eec15541",
  "capabilities": [
   {
    "n": 1,
@@ -348,22 +348,22 @@
       {
        "id": "T-2203",
        "title": "fm exam grade's test-first check puts back the whole planted file, so an arm that also…",
-       "status": "active",
+       "status": "done",
        "type": "FIX",
        "tier": "M",
        "steps": 2,
-       "done": 1,
-       "current": "red: test_exam case where the whole-file overlay over-credits"
+       "done": 2,
+       "current": ""
       },
       {
        "id": "T-2204",
        "title": "fm exam scorecard ranks template-authored (--author self) held-out scenarios:…",
-       "status": "planned",
+       "status": "done",
        "type": "FIX",
        "tier": "L",
        "steps": 4,
-       "done": 0,
-       "current": "red: scorecard author filter tests and per-kind child author tests"
+       "done": 4,
+       "current": ""
       },
       {
        "id": "T-2184",
@@ -600,12 +600,12 @@
       {
        "id": "T-2123",
        "title": "Initiative pipeline + /foreman:initiative skill: map, find, prove, rank, fix on lanes test-first, a clean receipt (Mission 3 brief 4)",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "L",
        "steps": 2,
-       "done": 0,
-       "current": "fm find --fix tasks with proof as red"
+       "done": 2,
+       "current": ""
       },
       {
        "id": "T-2124",
@@ -4329,10 +4329,10 @@
  "not_yet": 0,
  "not_yet_open": 0,
  "next": {
-  "stage": "build",
+  "stage": "critique",
   "gen": 1,
-  "action": "Mission 3 (initiative): finish T-2123",
-  "command": "fm focus T-2123",
+  "action": "Mission 3 (initiative): write its critique (closed vs planned, outside signals, what failed)",
+  "command": "fm genesis put gen-1/critique-initiative.md --file -",
   "kind": "ok"
  },
  "docs": {
