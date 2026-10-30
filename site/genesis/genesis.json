@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T07:03:15Z",
- "rev": "48c55896",
+ "updated": "2026-10-30T07:19:47Z",
+ "rev": "581a3820",
  "capabilities": [
   {
    "n": 1,
@@ -447,12 +447,12 @@
       {
        "id": "T-2112",
        "title": "fm genesis exam: #13's held-out exam (draft kinds graded by cover; G-tower as a genesis session arm)",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
-       "done": 2,
-       "current": "Docs, skill, site check; run the held-out third for real (genesis vs plain, with cost); gates; review"
+       "done": 4,
+       "current": ""
       }
      ]
     },
@@ -1080,6 +1080,106 @@
     "none",
     "sweep"
    ]
+  },
+  {
+   "run": "genesis-s0",
+   "arm": "genesis",
+   "agent": "draft-genesis",
+   "scenarios": 9,
+   "closed": {
+    "train": [],
+    "holdout": [
+     "line-rust-e1dca3",
+     "line-c-8d6e69",
+     "line-ruby-4c432b",
+     "none-rust-858e0f",
+     "none-ruby-0802d4",
+     "none-rust-8e0ce0",
+     "sweep-js-b103f1",
+     "sweep-ruby-50d2c8",
+     "sweep-js-f6a169"
+    ]
+   },
+   "given": {
+    "train": [],
+    "holdout": [
+     "line-rust-e1dca3",
+     "line-c-8d6e69",
+     "line-ruby-4c432b",
+     "none-rust-858e0f",
+     "none-ruby-0802d4",
+     "none-rust-8e0ce0",
+     "sweep-js-b103f1",
+     "sweep-ruby-50d2c8",
+     "sweep-js-f6a169"
+    ]
+   },
+   "misses": {
+    "line-rust-e1dca3": 0,
+    "line-c-8d6e69": 0,
+    "line-ruby-4c432b": 0,
+    "none-rust-858e0f": 0,
+    "none-ruby-0802d4": 0,
+    "none-rust-8e0ce0": 0,
+    "sweep-js-b103f1": 0,
+    "sweep-ruby-50d2c8": 0,
+    "sweep-js-f6a169": 0
+   },
+   "errors": 0,
+   "cost": 0.087,
+   "at": "2026-10-30T07:09:45Z",
+   "gen": 1,
+   "split": "holdout",
+   "kinds": [
+    "line",
+    "none",
+    "sweep"
+   ]
+  },
+  {
+   "run": "genesis-s0",
+   "arm": "plain",
+   "agent": "draft-plain",
+   "scenarios": 9,
+   "closed": {
+    "train": [],
+    "holdout": []
+   },
+   "given": {
+    "train": [],
+    "holdout": [
+     "line-rust-e1dca3",
+     "line-c-8d6e69",
+     "line-ruby-4c432b",
+     "none-rust-858e0f",
+     "none-ruby-0802d4",
+     "none-rust-8e0ce0",
+     "sweep-js-b103f1",
+     "sweep-ruby-50d2c8",
+     "sweep-js-f6a169"
+    ]
+   },
+   "misses": {
+    "line-rust-e1dca3": 15,
+    "line-c-8d6e69": 15,
+    "line-ruby-4c432b": 15,
+    "none-rust-858e0f": 15,
+    "none-ruby-0802d4": 15,
+    "none-rust-8e0ce0": 15,
+    "sweep-js-b103f1": 15,
+    "sweep-ruby-50d2c8": 15,
+    "sweep-js-f6a169": 15
+   },
+   "errors": 0,
+   "cost": 0.2351,
+   "at": "2026-10-30T07:12:30Z",
+   "gen": 1,
+   "split": "holdout",
+   "kinds": [
+    "line",
+    "none",
+    "sweep"
+   ]
   }
  ],
  "coverage": {
@@ -1226,10 +1326,10 @@
  "not_yet": 0,
  "not_yet_open": 0,
  "next": {
-  "stage": "build",
+  "stage": "intake",
   "gen": 1,
-  "action": "Mission 2 (genesis): finish T-2112",
-  "command": "fm focus T-2112",
+  "action": "Mission 2 (genesis): 7 of 8 briefs intaken; fm intake the next line of its block, then add its id to the Task: line at once",
+  "command": "fm intake",
   "kind": "ok"
  },
  "docs": {
