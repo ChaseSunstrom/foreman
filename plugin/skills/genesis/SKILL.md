@@ -13,7 +13,8 @@ every choice goes through `fm decide`, and anything that leaves the machine need
 
 1. The user's own words are gen-0. Given only a line, or nothing: `fm genesis draft "<line>"` prints a whole gen-0.
    Show it; their MUST/NEVER lines stay verbatim, and anything it marks unconfirmed is kept or cut by them.
-2. `fm genesis init --file -` saves it read-only (refused if it holds a secret).
+2. `fm genesis init --file -` saves it read-only and sealed by its hash (refused if it holds a secret); drift fails
+   if gen-0 ever changes, and the sweep turns red on a grant kind no earlier generation used.
 3. `fm genesis spec` maps its §2 capabilities to an exam, a third held out for grading only.
 4. `fm genesis exam` grades Genesis itself (#13) on the held-out third: drafts from a line, nothing and "super
    improve this" on generated projects; `--arm plain` is the baseline. `fm exam run --agent genesis` runs a whole
