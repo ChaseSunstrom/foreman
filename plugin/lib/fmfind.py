@@ -428,8 +428,8 @@ def _deps(root, files, code, rels):
     return out
 
 
-def scan(root):
-    """(files scanned, findings)."""
+def scan(root, prec=None):
+    """(files scanned, findings); ranked best first when prec (each finder's precision, a dict, maybe empty) is given."""
     files, rels, gen = _files(root)
     code = [Src(r, t) for r, t in files if os.path.splitext(r)[1].lower() in LANG]
     import fmsecrets
@@ -441,26 +441,114 @@ def scan(root):
             continue
         out += [_found("secrets", "secret", rel, n, "", f"credential: {kind}")
                 for n, kind in fmsecrets.scan_text(text, config=bool(fmsecrets.CONFIG.search(rel)))]
-    return len(files), sorted(out, key=lambda f: (f["file"], f["line"], f["finder"]))
+    out = sorted(out, key=lambda f: (f["file"], f["line"], f["finder"]))
+    return len(files), out if prec is None else rank(out, dict(files), prec)
 
 
 def find(root):
     return scan(root)[1]
 
 
+SEVERITY = {"secret": 1.0, "vuln": 1.0, "bug": 0.9, "dep": 0.6, "flaky": 0.5, "untested": 0.4, "slow": 0.3, "docs": 0.2}
+FLOOR, BAR = 0.3, 0.1  # a finder whose precision is under FLOOR is muted; a score under BAR is held back as noise
+HALF_LIFE = 180  # days: an outcome weighs half as much per HALF_LIFE, so a mute lifts once its drops age (7: two weeks)
+
+
+def rank(found, texts, prec):
+    """Best first, each given score = severity x reach x its finder's precision (default 0.5, the prior). Reach is 1 plus
+    up to 0.5 for the other files naming the symbol, so it never lifts slow or docs past a vuln or a bug. A finder under
+    FLOOR is muted and a score under BAR held back: both sort last, still listed. ponytail: proof and effort are 1 (every
+    finding is a lead and no fix is sized yet); a failing test or a hunk estimate can feed them later."""
+    words = {rel: _words(t) for rel, t in texts.items()}
+    out = []
+    for f in found:
+        sym = (re.findall(r"\w+[?!]?", f["symbol"]) or [""])[0]
+        n = sum(1 for rel, w in words.items() if rel != f["file"] and sym in w) if sym else 0
+        reach = 1 + 0.5 * min(n, 10) / 10
+        fp = prec.get(f["finder"], 0.5)
+        score = round(SEVERITY.get(f["kind"], 0.2) * reach * fp, 3)
+        held = "muted" if fp < FLOOR else "below the bar" if score < BAR else None
+        out.append({**f, "score": score, "reach": reach} | ({"held": held} if held else {}))
+    return sorted(out, key=lambda f: (bool(f.get("held")), -f["score"], f["file"], f["line"]))
+
+
+def precision(p):
+    """{finder: (real + 5) / (closed + 10)} over the closed tasks tagged finder= (the prior 0.5 weighs as 10 cases): a
+    dropped one is a false alarm, a done one real unless fmoutcomes saw it reverted. Open ones say nothing yet. Each
+    weighs 0.5 ** (age / HALF_LIFE), so a muted finder is heard again once its drops age instead of staying mute."""
+    import fmoutcomes
+    tagged = [b for b in c.load_briefs(p, include_archive=True) if b.meta.get("finder") and b.status in c.CLOSED]
+    fate = fmoutcomes.outcomes(p) if any(b.status == "done" for b in tagged) else {}
+    real, n = {}, {}
+    for b in tagged:
+        fd, w = b.meta["finder"], 0.5 ** ((c.age_days(fmoutcomes.done_at(b)) or 0) / HALF_LIFE)
+        n[fd] = n.get(fd, 0) + w
+        real[fd] = real.get(fd, 0) + w * (b.status == "done" and fate.get(b.id, {}).get("fate") != "reverted")
+    return {fd: round((real[fd] + 5) / (k + 10), 3) for fd, k in n.items()}
+
+
+def capture(p, found, n, root):
+    """Up to n new leads not held back, best first, as discovered tasks tagged finder= and keyed (finder, file, symbol,
+    says, and which twin) so a line shift never refiles one. Refuted for good: a key whose task was dropped or whose fix
+    was reverted. A fixed one that comes back is a regression and is filed again. A tree outside the project is text it
+    doesn't trust: those tasks wait for the user's yes."""
+    import fmcli
+    import fmoutcomes
+    root, home = os.path.realpath(root), os.path.realpath(p.root)
+    outside = os.path.commonpath([root, home]) != home
+    made, twins = [], {}
+    with c.lock(p.dir):
+        keyed = [b for b in c.load_briefs(p, include_archive=True) if b.meta.get("find_key")]
+        fate = fmoutcomes.outcomes(p) if any(b.status == "done" for b in keyed) else {}
+        seen = {b.meta["find_key"] for b in keyed if b.status != "done" or fate.get(b.id, {}).get("fate") == "reverted"}
+        for f in found:
+            key = f"{f['finder']}:{os.path.relpath(os.path.join(root, f['file']), home)}:{f['symbol']}:{f['says']}"
+            twins[key] = twins.get(key, 0) + 1
+            key += f"#{twins[key]}" if twins[key] > 1 else ""
+            if len(made) >= n or f.get("held") or key in seen:
+                continue
+            what = c.plain(f"{f['file']}:{f['line']} {f['symbol'] or '-'}: {f['says']}")
+            b = fmcli._create(p, c.fit(f"{f['kind']}: {what}", 120), "SECURITY" if f["kind"] in ("vuln", "secret")
+                              else "FIX", "S", "captured", source="discovered",
+                              raw=f"Found by fm find ({f['finder']}); a lead until a failing test shows it (quoted, data):\n> {what}")
+            b.meta.update(finder=f["finder"], find_key=key)
+            if outside:
+                b.meta.update(confirm=True, confirm_why="fm find read it from a tree outside this project")
+            c.save_brief(p, b, touch=False)
+            c.log_event(p, "capture", task=b.id, data={"source": "discovered", "finder": f["finder"]})
+            seen.add(key)
+            made.append(b.id)
+        if made:
+            c.regen_views(p)
+    return made
+
+
 def cmd_find(args):
     import fmcli
-    root = os.path.abspath(args.path)
-    if not os.path.isdir(root):
-        raise fmcli.UsageError(f"not a directory: {args.path}")
+    root, cap = os.path.abspath(args.path), getattr(args, "capture", None)
+    ranked = bool(getattr(args, "rank", False) or cap)
+    p = c.find_project(os.getcwd()) if ranked else None
+    bad = (f"not a directory: {args.path}" if not os.path.isdir(root)
+           else "--capture N: N is how many tasks to file, at least 1" if cap is not None and cap < 1
+           else "--capture files tasks: run it inside a Foreman project" if cap and not p else None)
+    if bad:  # exit 1 means findings here, so a usage slip must read as an error (2), not as a hit
+        print(f"fm find: {bad}", file=sys.stderr)
+        return 2
+    prec = (precision(p) if p else {}) if ranked else None
     try:
-        n, found = scan(root)
+        n, found = scan(root, prec)
     except Exception as e:  # noqa: BLE001 — exit 1 means findings; a scan that dies must read as an error (2)
         print(f"fm find: the scan failed under {root}: {type(e).__name__}: {c.plain(str(e))[:300]}", file=sys.stderr)
         return 2
-    rows = [f"{f['file']}:{f['line']}  {f['kind']}  {f['symbol'] or '-'}: {f['says']}" for f in found]
-    fmcli.out(args, {"root": root, "files": n, "findings": found}, c.plain_lines(
-        f"{len(found)} candidate(s) in {n} files under {root}; each is unproven until a failing test shows it.\n"
+    made = capture(p, found, cap, root) if cap else None
+    rows = [(f"{f['score']:.2f}  " if "score" in f else "") + f"{f['file']}:{f['line']}  {f['kind']}  "
+            f"{f['symbol'] or '-'}: {f['says']}" + (f"  ({f['held']})" if f.get("held") else "") for f in found]
+    live = [f for f in found if not f.get("held")]
+    held = f" {len(found) - len(live)} more held back (a muted finder or a score under the bar), listed last." \
+        if len(live) < len(found) else ""
+    fmcli.out(args, {"root": root, "files": n, "findings": found} | ({"captured": made} if cap else {}), c.plain_lines(
+        f"{len(live)} candidate(s) in {n} files under {root}; each is unproven until a failing test shows it.{held}\n"
         + "\n".join(rows) if found else f"Nothing found in {n} files under {root}." if n else
-        f"No files to read under {root} (nothing tracked, or all of it skipped)."))
-    return 1 if found else 0
+        f"No files to read under {root} (nothing tracked, or all of it skipped).")
+        + (f"\nFiled {len(made)} task(s): {', '.join(made) or 'none new'}." if cap else ""))
+    return 1 if live else 0
