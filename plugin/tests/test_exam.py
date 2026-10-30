@@ -7,7 +7,9 @@ import re
 import shutil
 import subprocess
 
-from helpers import ForemanTestCase, read_text
+from helpers import CLEAN_READER, ForemanTestCase, read_text
+
+CLEAN = {"PATH": CLEAN_READER + os.pathsep + os.environ["PATH"]}  # T-2166: the put's cold read passes
 
 
 class ExamGen(ForemanTestCase):
@@ -80,7 +82,8 @@ class ExamGen(ForemanTestCase):
         self.assertGreater(o["missing_keyed"], 0)
         e = self.fm_json("exam", "run", run, "--agent", "empty")
         self.assertEqual((e["found"], e["fixed"], e["readings_hit"], e["missing_hit"]), (0, 0, 0, 0))
-        self.fm("genesis", "put", "gen-1/seed.md", "--file", "-", input="# Seed\n")  # a newer seed after the answers
+        self.fm("genesis", "init", "--file", "-", input="Ship it.\nMUST: tests pass.\n")  # T-2166: a put is read against gen-0
+        self.fm("genesis", "put", "gen-1/seed.md", "--file", "-", input="# Seed\n", env=CLEAN)  # a newer seed after the answers
         regrade = self.fm_json("exam", "grade", run, "--agent", "oracle")
         self.assertEqual(regrade["found"], o["found"])
         lines = read_text(os.path.join(self.fm_json("genesis")["dir"], "exam.jsonl")).splitlines()
