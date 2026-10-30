@@ -633,9 +633,12 @@ def _finders(base, key):
 
 
 AGENTS = {"oracle": _oracle, "empty": _empty, "finders": _finders}
-SESSIONS = ("foreman", "plain")  # a claude session in a copy of the repo: Foreman loaded, or Claude with the guard only
+SESSIONS = ("foreman", "plain", "genesis")  # a claude session in a copy of the repo: Foreman loaded, or Claude with the
+# guard only; genesis: Foreman loaded, running one Genesis generation on the request (G-tower, T-2112)
 ASK = ("\n\n(Unattended exam run: the user is away; work in this repo, deciding with your defaults. End your reply with one "
        'JSON object: {"findings": [{"file": ..., "symbol": ..., "says": ...}], "notes": [...], "done": true or false}.)')
+GENESIS = ("\n\n(Run one Genesis generation on this repo for the request above: fm genesis draft with the request, piped to "
+           "fm genesis init --file -, then follow fm genesis step until it names select for gen 1.)")
 
 
 def _reply(text):
@@ -652,7 +655,7 @@ def _reply(text):
             "notes": out["notes"] if isinstance(out.get("notes"), list) else [], "done": out.get("done") is True}
 
 
-def _session_arm(agent, base, key, work, model, budget, timeout):
+def _session_arm(agent, base, key, work, model, budget, timeout, request=None):
     """One session in a temp copy of the repo (with .git), outside Foreman's state where the guard blocks edits; the
     tree it leaves is copied back to work for grading."""
     import fmbench
@@ -660,12 +663,14 @@ def _session_arm(agent, base, key, work, model, budget, timeout):
         wt, state = os.path.join(tmp, "repo"), os.path.join(tmp, "state")
         shutil.copytree(os.path.join(base, "repo"), wt)
         env = fmbench._env(c.PLUGIN_ROOT, state)
-        if agent == "foreman":
+        ask = (request or key["request"]) + (
+            GENESIS if agent == "genesis" else "") + ASK
+        if agent in ("foreman", "genesis"):
             fmbench._seed(c.PLUGIN_ROOT, wt, env)
-            res, err = fmbench._session(wt, env, [c.PLUGIN_ROOT], key["request"] + ASK, model, budget, timeout)
+            res, err = fmbench._session(wt, env, [c.PLUGIN_ROOT], ask, model, budget, timeout)
         else:
             env.update(FOREMAN_QUIET="1", PATH=os.environ.get("PATH", ""))
-            res, err = fmbench._session(wt, env, [], key["request"] + ASK, model, budget, timeout,
+            res, err = fmbench._session(wt, env, [], ask, model, budget, timeout,
                                         settings=fmbench._bare_guard(c.PLUGIN_ROOT))
         shutil.copytree(wt, work, symlinks=True, ignore=shutil.ignore_patterns(".git"))
     cost = res.get("total_cost_usd")
@@ -676,11 +681,14 @@ def _answers(p, run, agent):
     return os.path.join(root(p), run, "answers", agent)
 
 
-def run_agent(p, run, agent, split="all", limit=None, budget=2.0, model=None, timeout=20):
+def run_agent(p, run, agent, split="all", limit=None, budget=2.0, model=None, timeout=20, request=None):
     """Answers from one agent on the run's scenarios (split, then the first `limit`), then the grade. A session arm runs
     one scenario at a time and defaults to 3 (ponytail: a spend guard; --limit raises it); kinds take turns, so a short
     sample still spans them."""
     _known(agent)
+    if request and agent not in SESSIONS:
+        raise ValueError(f"--request goes with a session agent ({', '.join(SESSIONS)}); {agent} answers from the key")
+    request = request or ("make this great" if agent == "genesis" else None)  # recorded, so the row says what was asked
     seen = {}
 
     def turn(s):  # the nth scenario of its kind; a stable sort on it interleaves the kinds
@@ -695,13 +703,15 @@ def run_agent(p, run, agent, split="all", limit=None, budget=2.0, model=None, ti
     shutil.rmtree(_answers(p, run, agent), ignore_errors=True)  # the grade is this run's answers only
     import fmgenesis  # the generation that answers, so a later regrade still files it under that generation
     c.write_atomic(os.path.join(_answers(p, run, agent), "gen"), str(fmgenesis.current(p)))
+    if request and agent in SESSIONS:  # --request: the user's words replace each scenario's own
+        c.write_atomic(os.path.join(_answers(p, run, agent), "request"), request)
 
     def one(s):
         base, key = os.path.join(root(p), run, s["id"]), _key(p, run, s["id"])
         work = os.path.join(root(p), run, "work", agent, s["id"])
         shutil.rmtree(work, ignore_errors=True)
         if agent in SESSIONS:
-            answer = _session_arm(agent, base, key, work, model, budget, timeout)
+            answer = _session_arm(agent, base, key, work, model, budget, timeout, request)
             fmbudget.record("exam-arm", answer["cost"], project=p.slug, detail=f"{agent} {s['id']}")
         else:
             answer, src = AGENTS[agent](base, key)
@@ -794,20 +804,26 @@ def grade(p, run, agent):
             gen = int(f.read())
     except (OSError, ValueError):  # answers from before the stamp
         gen = fmgenesis.current(p)
+    try:
+        with open(os.path.join(_answers(p, run, agent), "request"), encoding="utf-8") as f:
+            res["request"] = f.read()
+    except OSError:
+        pass
     line = dict(res, at=c.now(), gen=gen, split=splits.pop() if len(splits) == 1 else "all",
                 kinds=sorted({s["kind"] for s in answered}),
                 author="+".join(sorted({s.get("author", "self") for s in answered})))
-    path = os.path.join(fmgenesis.home(p), "exam.jsonl")
-    with c.lock(p.dir):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(line) + "\n")
-    fmgenesis.kick(p)  # live on: the site's exam table catches up
+    fmgenesis.exam_line(p, line)
     return res
 
 
 def summary(r):
     """One line for a score row (fm exam, fm genesis)."""
+    if str(r.get("agent", "")).startswith("draft-"):  # fm genesis exam: drafts graded by cover
+        cl = r.get("closed") or {}
+        return (f"{r['agent']} {r.get('run', '?')}: {len(cl.get('holdout', []))} held out + {len(cl.get('train', []))} "
+                f"train closed of {r.get('scenarios', 0)}"
+                + (f" ({sum(map(len, r['given'].values()))} on what it was given)" if isinstance(r.get("given"), dict) else "")
+                + (f", {r['errors']} errored" if r.get("errors") else "") + (f", ~${r['cost']:.2f}" if r.get("cost") else ""))
     parts = [f"{r.get('found', 0)}/{r.get('keyed', 0)} found", f"{r.get('false_alarms', 0)} false alarms",
              f"{r.get('fixed', 0)}/{r.get('fixable', 0)} fixed", f"{r.get('tf_first', 0)}/{r.get('tf_keyed', 0)} test-first"]
     if r.get("readings_keyed"):
@@ -872,7 +888,8 @@ def cmd_exam(args):
                              f"{os.path.join(root(p), meta['run'])}"
                              + (f"; {len(meta['dropped'])} child-authored dropped (failed fm exam check)" if meta["dropped"] else ""))
         if action == "run":
-            res = run_agent(p, args.run, args.agent or "oracle", args.split, args.limit, args.budget, args.model)
+            res = run_agent(p, args.run, args.agent or "oracle", args.split, args.limit, args.budget, args.model,
+                            request=args.request)
             return fmcli.out(args, res, summary(res))
         if action == "grade":
             res = grade(p, args.run, args.agent or "oracle")
