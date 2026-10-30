@@ -131,12 +131,14 @@ class ExamGen(ForemanTestCase):
                 f.write("\n\n" + old)  # the later def wins: one clause broken, the rest as clean
             self.assertFalse(fmexam.suite(key, mutant)[0], f"the clean suite misses a broken {fn} clause")
 
-    def test_a_proven_unkeyed_finding_is_an_exam_defect_not_a_false_alarm(self):
+    def test_an_unkeyed_finding_proved_only_by_the_arms_own_test_stays_a_false_alarm(self):
+        # T-2170: the arm wrote the change and the test, so its proof is the arm grading itself; with no outside check
+        # agreeing, the finding stays a false alarm, counted apart (proved_by_arm) and listed so a real one gets read
         s = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug")["scenarios"][0]
         run_dir = os.path.dirname(os.path.dirname(s["repo"]))
         run, sid = os.path.basename(run_dir), s["id"]
         o = self.fm_json("exam", "run", run, "--agent", "oracle")
-        self.assertEqual((o["false_alarms"], o["exam_defects"]), (0, 0))
+        self.assertEqual((o["false_alarms"], o["exam_defects"], o["proved_by_arm"]), (0, 0, 0))
         work, ans_path = os.path.join(run_dir, "work", "oracle", sid), os.path.join(run_dir, "answers", "oracle", sid + ".json")
         q, bs = json.loads(read_text(os.path.join(run_dir, sid, "key.json")))["names"]["query"], chr(92)
         with open(os.path.join(work, "app.py"), "a") as f:  # the arm also escapes backslashes, a dialect the base ignores
@@ -158,9 +160,16 @@ class ExamGen(ForemanTestCase):
         with open(ans_path, "w") as f:
             json.dump(ans, f)
         g = self.fm_json("exam", "grade", run, "--agent", "oracle")
-        self.assertEqual((g["exam_defects"], g["false_alarms"]), (1, 6))
-        self.assertIn("backslashes", " ".join(g["exam_defect_findings"]))
-        self.assertIn("1 exam defect", self.fm("exam").stdout)
+        self.assertEqual((g["exam_defects"], g["false_alarms"], g["proved_by_arm"]), (0, 7, 1))
+        self.assertIn("backslashes", " ".join(g["proved_by_arm_findings"]))  # listed, to read and fix the generator by
+        self.assertNotIn("exam_defect_findings", g)  # old lines' key meant a defect; this one lists false alarms
+        import fmcore as c
+        import fmgenesis
+        tail = fmgenesis._exam_tail(fmgenesis.home(c.find_project(self.repo)))
+        self.assertIn("7 false alarms (1 with the arm's own proof)", tail)  # what a genesis cold read sees, too
+        line = self.fm("exam").stdout
+        self.assertIn("7 false alarms (1 with the arm's own proof)", line)
+        self.assertNotIn("exam defect", line)
 
     def test_finders_arm_runs_without_a_session_and_fixes_nothing(self):
         run = self.gen("--seed", "4", "--per-kind", "1", "--lang", "python", "--kind", "docs,vuln,bug")["run"]
