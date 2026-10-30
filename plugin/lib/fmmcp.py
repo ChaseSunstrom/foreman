@@ -90,6 +90,8 @@ TOOLS = [
     ("exam_scorecard", "Genesis' done gate for the user (fm exam scorecard): each gen-0 §2 capability's state on its "
      "held-out exam, the top gaps, and how many Haiku smoke lines it left out.", _TEXT,
      lambda a, p: ["exam", "scorecard"]),
+    ("genesis_status", "The Genesis tower's status (fm genesis status): which generation it's on, its files, coverage, "
+     "the one next action and its command, the last exam result.", _TEXT, lambda a, p: ["genesis", "status"]),  # T-2201
 ]
 MAX_LINE = 1_000_000
 
