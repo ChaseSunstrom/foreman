@@ -1587,6 +1587,51 @@ class GenesisRead(ForemanTestCase):
         prev = fifth.split("<previous-reads>")[1].split("</previous-reads>")[0]
         self.assertEqual((prev.count("a shim to help"), "first why" in prev, "second why" in prev), (1, False, True))
 
+    def code(self, text, reply):
+        return self.put(text, reply)[0].returncode
+
+    def test_a_line_unflagged_in_two_reads_stays_accepted_while_unchanged_and_a_later_fail_on_it_is_advisory(self):
+        # T-2207: each put re-judged every unchanged line, so long files kept failing 1-4 lines a round (31 rounds)
+        import fmcore as c
+        cov = self.COV + "- plan × CLI: F: plugin/lib/fmplan.py, plans each task\n"
+        shim = "FAIL: - find × CLI: F: a shim to help the user with things\nWHY: names no file"
+        plan = "FAIL: - plan × CLI: F: plugin/lib/fmplan.py, plans each task\nWHY: noise"
+        self.assertEqual([self.code(cov, shim), self.code(cov, shim)], [1, 1])  # the plan line went unflagged twice
+        r, _ = self.put(cov, plan)
+        self.assertEqual(r.returncode, 0, r.stderr)  # its one fail is on an accepted line: filed, the fail shown
+        self.assertIn("advisory", r.stderr)
+        self.assertIn("plans each task", r.stderr)
+        self.assertEqual(self.code(cov, plan), 1)  # a second fail on it is evidence, not noise: it blocks
+        ev = [e["data"] for e in c.ledger_tail(self.p, 50) if e.get("event") == "genesis_read"]
+        self.assertEqual([(e["verdict"], e["lines"], e["carried"]) for e in ev],
+                         [("fail", 1, 0), ("fail", 1, 0), ("pass", 0, 1), ("fail", 1, 0)])
+        self.assertIn("plans each task", ev[2]["carried_lines"][0])  # what was waved through stays on record
+
+    def test_acceptance_ends_with_an_unmet_fail_a_change_a_move_a_new_steer_or_new_exam_lines(self):
+        cov = ("# Coverage\n\n## Initiative\n- find × CLI: F: plugin/lib/fmfind.py, finds leads\n"
+               "- plan × CLI: F: plugin/lib/fmplan.py, plans each task\n## Learning\n"
+               "- learn × CLI: F: plugin/lib/fmlearn.py, keeps lessons\n")
+        find = "FAIL: - find × CLI: F: plugin/lib/fmfind.py, finds leads\nWHY: names no test"
+        plan = "FAIL: - plan × CLI: F: plugin/lib/fmplan.py, plans each task\nWHY: vague"
+        learn = "FAIL: - learn × CLI: F: plugin/lib/fmlearn.py, keeps lessons\nWHY: vague"
+        # find failed, then went unnamed twice while plan drew the fails: still unmet, so it can't turn advisory
+        self.assertEqual([self.code(cov, x) for x in (find, plan, plan, find)], [1, 1, 1, 1])
+        warm = lambda text: [self.code(text, "CLEAN"), self.code(text, "CLEAN")]
+        self.assertEqual(warm(cov) + [self.code(cov, learn)], [0, 0, 0])  # accepted: advisory
+        warm(cov)
+        self.assertEqual(self.code(cov.replace("keeps lessons", "keeps every lesson"),
+                                   learn.replace("keeps lessons", "keeps every lesson")), 1)  # changed: read anew
+        warm(cov)
+        moved = cov.replace("## Learning\n", "").replace("## Initiative\n", "## Initiative\n## Done\n")
+        self.assertEqual(self.code(moved, learn), 1)  # under another heading it's a new line
+        warm(cov)
+        self.fm("decide", "Genesis standing rule: coverage cells name a test", "--cites", "user steer 2026-10-31")
+        self.assertEqual(self.code(cov, learn), 1)  # a new steer voids what earlier reads accepted
+        warm(cov)
+        tower_file(self.tower, "exam.jsonl", json.dumps({"run": "r7", "agent": "foreman", "keyed": 4, "found": 3,
+                                                         "scenarios": 2, "closed": {"train": ["a", "b"], "holdout": []}}) + "\n")
+        self.assertEqual(self.code(cov, learn), 1)  # so do new exam lines: a claim they stale is read again
+
     def test_a_clean_read_files_it_and_the_reader_saw_the_charter_steers_exam_and_redacted_text(self):
         import fmcore as c
         self.fm("decide", "Genesis standing rule: coverage cells name a file", "--cites", "user steer 2026-10-30")

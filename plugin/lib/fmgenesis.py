@@ -1679,21 +1679,45 @@ def _exam_tail(d, k=20):
 
 
 READS, READ_KEEP = "genesis-reads.json", 40  # T-2205: failed reads' findings per tower file, newest kept, until a pass
+# T-2207: per tower file, a key of the reader, charter and exam tail, the lines the last read left unflagged ("seen")
+# and those left unflagged by two reads in a row ("lines", accepted): an accepted line, unchanged under its heading
+# and the same key, can't block a later put; one fail on it is advisory and ends its acceptance. Lines are hashed.
+ACCEPTED = "genesis-accepted.json"
 
 
-def _reads(p):
+def _reads(p, f=READS):
     try:
-        with open(os.path.join(p.dir, READS)) as f:
-            r = json.load(f)
+        with open(os.path.join(p.dir, f)) as fh:
+            r = json.load(fh)
     except (OSError, ValueError):
         return {}
     return r if isinstance(r, dict) else {}
 
 
+def _key(s):
+    return hashlib.sha256(s.encode()).hexdigest()[:16]
+
+
+def _set(v):
+    return {str(x) for x in v} if isinstance(v, list) else set()
+
+
+def _context(text):
+    """T-2207 review: each logical line's keys, each hashed with the nearest heading above it, so a moved line is new.
+    ponytail: a heading under 8 characters isn't a logical line, so it doesn't count as one."""
+    out, head = {}, ""
+    for x in _logical(text):
+        head = x if x.startswith("#") else head
+        out.setdefault(x, set()).add(_key(head + "\n" + x))
+    return out
+
+
 def _read(p, name, text):
     """T-2166 (steer 2026-10-30): one cold Haiku read of a tower doc before it's filed, against gen-0 and the user's
     steers and for metric-gaming. Only a plain CLEAN with no FAIL passes; anything else is a ValueError naming what to
-    revise, and nothing is written. The reader sees the redacted text; only lines the doc holds are named back."""
+    revise, and nothing is written. The reader sees the redacted text; only lines the doc holds are named back.
+    T-2207: a FAIL on a line an earlier read didn't fail, unchanged under the same charter, is printed as advisory and
+    doesn't block: each line still gets a whole-file cold read, and the put converges."""
     import fmideas
     d = home(p)
     gen0 = _doc(d, "gen-0.md")
@@ -1703,7 +1727,12 @@ def _read(p, name, text):
     before = [x for x in reads.get(name) or [] if isinstance(x, list) and len(x) == 2
               and all(isinstance(y, str) for y in x) and x[0]]
     prev = "".join(f"\n- {_fence(c.plain(q))} — WHY: {_fence(c.plain(w))}" for q, w in before)
-    prompt = (_charter(p, gen0) + f"\n<exam>\n{_exam_tail(d)}\n</exam>"
+    charter, tail = _charter(p, gen0), _exam_tail(d)
+    ck = _key(READ_CHILD + charter + tail)  # a new reader prompt, steer or exam line voids what earlier reads accepted
+    acc = _reads(p, ACCEPTED).get(name)
+    acc = acc if isinstance(acc, dict) and acc.get("charter") == ck else {}
+    ok, seen = _set(acc.get("lines")), _set(acc.get("seen"))
+    prompt = (charter + f"\n<exam>\n{tail}\n</exam>"
               + (f"\n<previous-reads>{prev}\n</previous-reads>" if prev else "")
               + f"\n<file name=\"{name}\">\n{_fence(text)}\n</file>")
     try:
@@ -1715,20 +1744,35 @@ def _read(p, name, text):
         stray = sum(not h for h, _ in named)
         why = (f"it named {stray} line(s) {name} doesn't hold" if stray else "" if named
                else "" if re.search(r"^[\s*]*CLEAN\b", reply, re.M) else "no CLEAN or FAIL line came back")
-    held = [(h[0], w) for h, w in named if h]
+    occ = _context(text)
+    keys = lambda hs: set().union(set(), *(occ.get(h, set()) for h in hs))
+    hits = [(h, w, keys(h)) for h, w in named if h]  # a quote several lines hold carries only if all are accepted
+    carried = [(h[0], w) for h, w, k in hits if k and k <= ok]  # T-2207: accepted and unchanged: shown, not blocking
+    held = [(h[0], w) for h, w, k in hits if not (k and k <= ok)]
     verdict = "fail" if held else "unread" if why else "pass"
     # only findings on a line the file holds: a stray quote has nothing to re-check; a line failed again keeps its newest why
     again = {q for q, _ in held}
     after = [] if verdict == "pass" else ([x for x in before if x[0] not in again] + [list(x) for x in held])[-READ_KEEP:]
+    if verdict != "unread":  # flagged now, carried included, or failed earlier and still unmet: not accepted
+        flagged = set().union(set(), *(k for _, _, k in hits)) | keys([q for q, _ in after])
+        clear = set().union(set(), *occ.values()) - flagged
+        c.write_atomic(os.path.join(p.dir, ACCEPTED), json.dumps(dict(_reads(p, ACCEPTED), **{
+            name: {"charter": ck, "lines": sorted(clear & (seen | ok)), "seen": sorted(clear)}})))
     if after != before:  # reloaded: another put may have filed its own findings during this read
         reads = dict(_reads(p), **{name: after})
         c.write_atomic(os.path.join(p.dir, READS), json.dumps({k: v for k, v in reads.items() if v}))
-    c.log_event(p, "genesis_read", data={"name": name, "verdict": verdict, "lines": len(held)})
+    c.log_event(p, "genesis_read", data={"name": name, "verdict": verdict, "lines": len(held), "carried": len(carried),
+                                         "carried_lines": [c.fit(c.plain(h), 60) for h, _ in carried][:10]})
+    note = "".join(f"\n  ~ {h} — reader: {w} (advisory: two earlier reads left it unflagged; a second fail blocks)"
+                   for h, w in carried)
+    if verdict == "pass" and note:
+        print(f"{name}: its cold read passed; on lines earlier reads passed:" + note, file=sys.stderr)
     if verdict != "pass":
         raise ValueError(f"{name} wasn't filed: its cold read " + (f"failed {len(held)} line(s)" if held else
                          f"didn't pass ({why})") + "".join(f"\n  ✗ {h}" + (f" — reader: {w}" if w else "")
                                                           for h, w in held)
                          + "".join(f"\n  ? a line {name} doesn't hold — reader: {w}" for h, w in named if not h and w)
+                         + note
                          + "\nRevise it and put it again: a tower file counts only once a cold read passes it.")
 
 
