@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-30T09:27:50Z",
+ "updated": "2026-10-30T09:27:53Z",
  "rev": "6a4e7c18",
  "capabilities": [
   {
@@ -1726,6 +1726,84 @@
      "rank-js-8414e5",
      "rank-python-09ccc9",
      "rank-rust-981449"
+    ]
+   },
+   "exam_defect_findings": [],
+   "at": "2026-10-30T09:27:50Z",
+   "gen": 1,
+   "split": "holdout",
+   "kinds": [
+    "clean",
+    "none",
+    "rank"
+   ],
+   "author": "child+self"
+  },
+  {
+   "run": "s31-006",
+   "agent": "finders",
+   "keyed": 18,
+   "found": 16,
+   "false_alarms": 0,
+   "exam_defects": 0,
+   "fixable": 18,
+   "fixed": 0,
+   "tf_keyed": 6,
+   "tf_first": 0,
+   "readings_keyed": 0,
+   "readings_hit": 0,
+   "missing_keyed": 0,
+   "missing_hit": 0,
+   "rank_keyed": 3,
+   "rank_hit": 0,
+   "false_done": 0,
+   "scenarios": 9,
+   "errors": 0,
+   "holdout": {
+    "keyed": 18,
+    "found": 16,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 18,
+    "fixed": 0,
+    "tf_keyed": 6,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 3,
+    "rank_hit": 0,
+    "false_done": 0,
+    "scenarios": 9,
+    "errors": 0
+   },
+   "train": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "scenarios": 0,
+    "errors": 0
+   },
+   "cost": 0,
+   "closed": {
+    "train": [],
+    "holdout": [
+     "clean-python-8d2424",
+     "clean-ruby-24a9a4",
+     "clean-rust-6bacb3"
     ]
    },
    "exam_defect_findings": [],
