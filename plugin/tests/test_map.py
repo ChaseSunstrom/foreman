@@ -41,6 +41,23 @@ class Map(ForemanTestCase):
         self.assertIn("src/cli.py", out)
         self.assertNotIn("src/report.py", out)
 
+    def test_a_test_naming_a_top_level_folder_runs_when_a_file_under_it_changes(self):
+        # T-2086: test_design_lint lints all of site/, linked to nothing by name, so a site/genesis/genesis.css
+        # change ran no linked test at close; a folder the test lives in (tests/) links nothing
+        files = {"site/genesis/look.css": "a{}\n", "tests/test_lint.py": 'SITE = os.path.join(ROOT, "site")\n',
+                 "tests/test_walk.py": 'for d in ("tests", "src"): pass\n'}
+        for rel, text in files.items():
+            os.makedirs(os.path.join(self.repo, os.path.dirname(rel)), exist_ok=True)
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write(text)
+        self.commit("lint")
+        out = self.fm("impact", "site/genesis/look.css").stdout
+        self.assertIn("tests/test_lint.py", out)
+        self.assertNotIn("tests/test_walk.py", out)
+        out = self.fm("impact", "tests/test_parser.py").stdout
+        self.assertNotIn("tests/test_walk.py", out, "a test's own folder links nothing")
+        self.assertIn("tests/test_walk.py", self.fm("impact", "src/report.py").stdout)
+
     def test_the_map_is_rebuilt_only_when_head_moves(self):
         self.fm("map")
         path = os.path.join(c.find_project(self.repo).dir, "map.json")

@@ -76,6 +76,7 @@ def build(p):
         del layout[big]
         layout.update("/".join(f.split("/")[:2]) + "/" if f.count("/") >= 2 else big for f in files if f.startswith(big))
     sources = [f for f in files if _CODE.search(f) and not _TEST.search(f)]
+    tops = {f.split("/", 1)[0] for f in files if "/" in f}
     links = {}
     for t in (f for f in files if _TEST.search(f) and _CODE.search(f)):
         stem, ext = _name_stem(t), os.path.splitext(t)[1]
@@ -83,6 +84,7 @@ def build(p):
         # T-0709: a short name links when only a short prefix comes before it (test_bus.py → fmbus.py)
         srcs = [s for s in sources if s.endswith(ext) and (_name_stem(s) == stem or (_name_stem(s).endswith(stem) and (
             len(stem) >= 4 or len(_name_stem(s)) - len(stem) <= 2)))]
+        srcs += _folders(root, t, tops)
         if srcs:
             links[t] = srcs
     lib = _lib(root, files)
@@ -242,7 +244,7 @@ def _source(root, rel):
         return ""
 
 
-VERSION = 10  # bump when build() changes, so older maps are rebuilt
+VERSION = 11  # bump when build() changes, so older maps are rebuilt
 
 
 def load(p, rebuild=False):
@@ -259,12 +261,27 @@ def load(p, rebuild=False):
     return m
 
 
+def _folders(root, test, tops):
+    """T-2086: top-level folders a test names as a string literal ("site"), as "site/" links: test_design_lint lints
+    all of site/ and is named after no file in it. The test's own folder (tests/, plugin/) would link everything."""
+    path = os.path.join(root, test)
+    try:
+        if os.path.islink(path) or not _TEST.search(os.path.basename(test)):  # a fixture or helper under tests/
+            return []
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read(200_000)
+    except OSError:
+        return []
+    named = set(re.findall(r"""["']([^"'/\s]+)["']""", text)) & (tops - {test.split("/", 1)[0]})
+    return [d + "/" for d in sorted(named)]
+
+
 def tests_for(m, paths):
-    """Tests linked by name to any of paths (files or globs)."""
+    """Tests linked by name to any of paths (files or globs), or naming a folder that holds one (T-2086)."""
     import fnmatch
     return sorted({t for t, srcs in m["tests"].items()
                    if any(fnmatch.fnmatch(s, g) or s == g.rstrip("/") or s.startswith(g.rstrip("*/") + "/")
-                          for s in srcs for g in paths)})
+                          or (s.endswith("/") and g.startswith(s)) for s in srcs for g in paths)})
 
 
 def render(m):
