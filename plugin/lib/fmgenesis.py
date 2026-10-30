@@ -1288,12 +1288,16 @@ def free_beats(p, agent="foreman", split="holdout"):
         h = x.get("holdout")
         return (num(h, "found"), num(h, "keyed")) if split == "holdout" else \
             (num(x, "found") - num(h, "found"), num(x, "keyed") - num(h, "keyed"))
+    def same(x, s):  # T-2219: only the same scenarios compare; a session line that answered fewer is no gap
+        ids = [(y.get("answered") or {}).get("holdout") if isinstance(y.get("answered"), dict) else None for y in (x, s)]
+        return ids[0] == ids[1] if split == "holdout" and all(isinstance(i, list) for i in ids) else got(x)[1] == got(s)[1]
+
     out, label = [], "held-out" if split == "holdout" else "train"
     for (run, who), x in newest.items():
         s = newest.get((run, agent))
-        if who in free and s and got(x)[1] and got(x)[0] > got(s)[0]:
+        if who in free and s and got(x)[1] and same(x, s) and got(x)[0] > got(s)[0]:
             out.append(f"{who} found {got(x)[0]}/{got(x)[1]} {label} defects on {c.plain(run)} where {agent} found "
-                       f"{got(s)[0]}/{got(x)[1]}: the session doesn't use what Foreman built"
+                       f"{got(s)[0]}/{got(s)[1]}: the session doesn't use what Foreman built"
                        + (" (from a Haiku smoke run)" if smoke(s) else ""))  # T-2158: a building signal, labelled
     return out
 

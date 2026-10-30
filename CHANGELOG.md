@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The scorecard's "top gap" now compares a free arm with the session only on the same scenarios: a session that answered 1 of 36 no longer reads as finding 1 of 36.
 - `fm ship` with no commits named now ships a lane that was merged after settling a conflict even when `main` moved since the last ship, as long as `main` only changed files the branch left alone (like the site's auto-published Genesis data). If `main` touched the same files it still refuses and pushes nothing.
 - Child authors now also write untested, clean, docs and flaky exam scenarios: a new helper whose test is missing (or present, for a clean repo Foreman never saw), a README sentence the code contradicts, and a test that passes by chance. Each is checked before it's kept, so every exam kind but vague, ambiguous and missing-tool can be scored on scenarios Foreman didn't write.
 - `fm genesis step` reads a Mission's whole `Task:` paragraph, wrapped lines included: a long one no longer made it count briefs as never filed and ask for a second `fm intake` of them.
