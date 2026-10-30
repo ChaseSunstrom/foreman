@@ -12,7 +12,7 @@ Task: T-2079 (done, shipped to main at 1a78a3f). Mission: gen-1/mission-exam.md.
 | ≥ 9 scenarios per kind, ≥ 3 held out | closed — `--per-kind 9` → 6 train + 3 held out per kind |
 | Tool-less child author (standing rule 5) | closed — `fm exam gen --author child`; real run: 1 kept, 1 dropped by the exam of the exam |
 | Foreman vs plain session arms with cost | closed — both arms run the same held-out scenarios; cost in `fm cost` under `exam-arm`, capped by `fm budget` |
-| Finders baseline in exam.jsonl | closed — 0/108 (decision recorded 2026-10-28, revisit 2026-10-30) |
+| Finders baseline in exam.jsonl | closed — 0/108 (decision recorded 2026-10-28); revisited 2026-10-30 after fm find (T-2121): 90/108 found, 0 false alarms, held out 30/36, 0 fixed (finders find, never fix; T-2157) |
 
 All 8 planned items closed; none waits on the user.
 
@@ -22,7 +22,7 @@ All 8 planned items closed; none waits on the user.
   ranking; but the only signal there is says **Foreman costs ~3× for no measured gain** on a single planted bug. That
   is a #12 Lean gap and a #6/#1 gap: Foreman's value has to show on scenarios plain Claude misses (vague, none,
   missing-tool), and nothing has measured those yet.
-- **Finders arm 0/108:** Foreman's deterministic finders (fmdocs.scan + fmsecrets) find none of the planted defects.
+- **Finders arm 0/108:** Foreman's deterministic finders (fmdocs.scan + fmsecrets) find none of the planted defects. Re-run 2026-10-30 (T-2157) with fm find in the arm: 90/108 found, 0 false alarms, held out 30/36 (zero tokens).
   Self-checks call those finders healthy (their own tests pass); the outside signal says they find nothing. By standing
   rule 4 that makes **#1 Initiative's finders a top gap** → Mission 3.
 - **fm outcomes (all time):** 1292 of 1337 finished tasks held (96.6%), 44 fixed later, 1 reverted. Close warnings on
