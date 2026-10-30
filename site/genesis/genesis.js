@@ -157,7 +157,8 @@
     $("tower-body").className = "";
     $("tower-body").innerHTML = '<div class="tower">' + CRANE + '<div class="levels"><div class="loop" aria-hidden="true"><span>↻ rewrites the Seed every round</span></div>' +
       '<button type="button" class="lvl l4" data-l4="1"><span class="flag">only better rewrites survive</span><span class="k">Level 4</span><h3>Exam &amp; critique</h3>' +
-      "<p>" + plural(D.exam.length, "exam result") + " · " + plural(g.critiques.length, "critique") + " · lineage " + (D.docs["lineage.md"] ? "kept" : "starts after gen 1") + "</p></button>" +
+      "<p>" + plural(D.exam.length, "exam result") + " · " + plural(g.critiques.length, "critique") + " · lineage " + (D.docs["lineage.md"] ? "kept" : "starts after gen 1") +
+      " · drift " + esc(g.drift || "–") + " · sweep " + esc(g.sweep || "–") + "</p></button>" +
       '<div class="lvl l3"><span class="k">Level 3</span><h3>Tasks, built &amp; proved</h3><p>' + plural(ts.length, "task") + ", " + live + " open · red tests first, spikes and races in lanes</p>" + trows + "</div>" +
       '<div class="lvl l2"><span class="k">Level 2</span><h3>Missions, up to 8</h3><p>One prompt per gap cluster, each its own session. Hover one to see what it waits on.</p>' +
       '<div class="tiles" id="tiles">' + tiles + "</div>" +
@@ -334,7 +335,11 @@
   function openL4() {
     var g = G, crit = g.critiques.map(function (n) { return '<button type="button" class="doc" data-doc="gen-' + g.n + "/critique-" + esc(n) + '.md">critique-' + esc(n) + ".md</button>"; }).join("");
     show("level 4", "Exam & critique · generation " + g.n,
-      box("Exam", plural(D.exam.length, "result") + " logged. A rewrite survives only if it closes more held-out scenarios than its parent.") +
+      box("Exam", plural(D.exam.length, "result") + " logged. A rewrite stays only if its generation closed more exam scenarios than its parent did; the held-out third only grades a capability as done.") +
+      box("Drift & sweep", ["drift", "sweep"].map(function (k) {
+        var n = "gen-" + g.n + "/" + k + ".md";
+        return D.docs[n] ? '<button type="button" class="doc" data-doc="' + n + '">' + k + ".md · " + esc(g[k] || "no verdict") + "</button>" : "";
+      }).join("") || "When the missions close: a cold read checks the seed against your message (drift), then the §7 sweep.") +
       box("Critiques", crit || "Each mission is critiqued when it closes: scenarios closed vs planned, outside signals, coverage cells filled.") +
       box("Lineage", D.docs["lineage.md"] ? '<button type="button" class="doc" data-doc="lineage.md">lineage.md</button>' : "Starts when generation 1 closes."),
       "", "l4");
