@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T16:10:43Z",
- "rev": "98381382",
+ "updated": "2026-10-30T16:15:43Z",
+ "rev": "f50cd7a6",
  "capabilities": [
   {
    "n": 1,
@@ -815,12 +815,12 @@
     {
      "id": "T-2167",
      "title": "Every user steer is a standing rule plus an automatic check: fm decide takes --check…",
-     "status": "planned",
+     "status": "active",
      "type": "FEATURE",
      "tier": "M",
      "steps": 4,
-     "done": 0,
-     "current": "red tests: --check records the tag and refuses an off-list command; steer_checks fails a rule with no check and one whose check fails; sweep and doctor show it"
+     "done": 2,
+     "current": "back-fill: a check for each steer rule (215-217, 250-256, the push grant) via fm decide --check --revisited; fm genesis sweep 1 shows the row green"
     }
    ],
    "rules": [
