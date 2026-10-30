@@ -1216,9 +1216,10 @@ def scorecard(p, agent="foreman", bar=0.8):
     kinds, from exam.jsonl lines that name what they graded (answered ids; older lines carry none: regrade them). A
     capability naming genesis (#13) scores on fm genesis exam's draft-genesis lines. T-2204: only a scenario an outside
     author wrote counts (answered.child, of a kind fmexam.CHILD_KINDS holds); a template-written one is counted apart
-    (selfmade) and never erases a child result for the same id. pass: at least 3 graded, a rate at or over bar and an
-    outside author for every kind; else partial (some kinds have none: `why` names them), under, too few, no outside
-    author or no exam kind. {agent, bar, rows, ok, seen, selfmade}: the agent's counted and template-written results."""
+    (selfmade) and never erases a child result for the same id. pass: at least 3 graded, a rate at or over bar, and
+    for every kind an outside author and a graded result (T-2217); else partial (`why` names the kinds without),
+    under, too few, no outside author or no exam kind. {agent, bar, rows, ok, seen, selfmade}: the agent's counted
+    and template-written results."""
     if not 0 < bar <= 1:  # also refuses nan
         raise ValueError(f"--bar is a rate over 0 and at most 1, not {bar}")
     caps = _caps(_doc(home(p), "gen-0.md"))
@@ -1255,11 +1256,14 @@ def scorecard(p, agent="foreman", bar=0.8):
         graded, closed = len(got), sum(got)
         # fm genesis spec renders only template projects, so #13 has no outside author until it can
         bare = list(kinds) if who == "draft-genesis" else [k for k in kinds if k not in fmexam.CHILD_KINDS]
+        seen_kinds = {sid.rsplit("-", 2)[0] for sid, v in pools[who].items() if v is not None}
+        unseen = [k for k in kinds if k not in bare and k not in seen_kinds]  # T-2217: one kind can't speak for another
         why = ("fm genesis spec renders template projects only" if who == "draft-genesis" and kinds else
-               f"no outside author writes {', '.join(bare)} scenarios yet" if bare else "")
+               "; ".join(x for x in (f"no outside author writes {', '.join(bare)} scenarios yet" if bare else "",
+                                     f"no graded {', '.join(unseen)} scenarios yet" if unseen else "") if x))
         state = ("no exam kind" if not kinds else "no outside author" if len(bare) == len(kinds) else
                  "too few" if graded < 3 else  # 3: the fewest held out per capability
-                 "under" if closed / graded < bar else "partial" if bare else "pass")
+                 "under" if closed / graded < bar else "partial" if bare or unseen else "pass")
         rows.append({"n": int(n), "name": name, "kinds": kinds, "agent": who, "graded": graded, "closed": closed,
                      "rate": round(closed / graded, 3) if graded else 0, "state": state,
                      "selfmade": len(mine) - graded, "why": why})
