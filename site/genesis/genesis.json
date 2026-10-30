@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T06:15:15Z",
- "rev": "6433fd26",
+ "updated": "2026-10-30T06:58:15Z",
+ "rev": "48c55896",
  "capabilities": [
   {
    "n": 1,
@@ -427,12 +427,12 @@
       {
        "id": "T-2104",
        "title": "fm genesis drift/sweep — gen-0 MUST/NEVER drift check with a cold read, the §7 sweep in…",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 5,
-       "done": 4,
-       "current": "gates, review, finish, ship"
+       "done": 5,
+       "current": ""
       }
      ]
     },
@@ -616,6 +616,8 @@
    "critiques": [
     "exam"
    ],
+   "drift": "stale",
+   "sweep": null,
    "tasks": [],
    "rules": [
     "**No idea is killed for ambition.** A failed spike gets at least two genuinely different approaches (different mechanism, not a retuned parameter). If all fail, the idea goes to `not-yet.md` (`fm genesis put not-yet.md`) with what blocked it, the approaches tried and the capability that would unblock it — never dropped. Every Seed re-reads not-yet.md and retries each item whose blocker a capability built since may have removed. Only proven harm or an exact duplicate removes an idea for good, and the reason is recorded in not-yet.md's \"Removed\" section.",
@@ -986,6 +988,47 @@
    "at": "2026-10-30T04:19:54Z",
    "split": "all",
    "author": "self"
+  },
+  {
+   "run": "genesis-s0",
+   "arm": "genesis",
+   "agent": "draft-genesis",
+   "scenarios": 9,
+   "closed": {
+    "train": [],
+    "holdout": [
+     "line-rust-e1dca3",
+     "line-c-8d6e69",
+     "line-ruby-4c432b",
+     "none-rust-858e0f",
+     "none-ruby-0802d4",
+     "none-rust-8e0ce0",
+     "sweep-js-b103f1",
+     "sweep-ruby-50d2c8",
+     "sweep-js-f6a169"
+    ]
+   },
+   "misses": {
+    "line-rust-e1dca3": 0,
+    "line-c-8d6e69": 0,
+    "line-ruby-4c432b": 0,
+    "none-rust-858e0f": 0,
+    "none-ruby-0802d4": 0,
+    "none-rust-8e0ce0": 0,
+    "sweep-js-b103f1": 0,
+    "sweep-ruby-50d2c8": 0,
+    "sweep-js-f6a169": 0
+   },
+   "errors": 0,
+   "cost": 0.1217,
+   "at": "2026-10-30T06:58:14Z",
+   "gen": 1,
+   "split": "holdout",
+   "kinds": [
+    "line",
+    "none",
+    "sweep"
+   ]
   }
  ],
  "coverage": {
@@ -1132,10 +1175,10 @@
  "not_yet": 0,
  "not_yet_open": 0,
  "next": {
-  "stage": "build",
+  "stage": "intake",
   "gen": 1,
-  "action": "Mission 2 (genesis): finish T-2104",
-  "command": "fm focus T-2104",
+  "action": "Mission 2 (genesis): 5 of 8 briefs intaken; fm intake the next line of its block, then add its id to the Task: line at once",
+  "command": "fm intake",
   "kind": "ok"
  },
  "docs": {
