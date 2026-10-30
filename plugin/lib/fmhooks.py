@@ -1472,6 +1472,8 @@ def _thrash_note(pl, p, act, path):
     key = hashlib.sha1(path.encode()).hexdigest()[:10]
     # T-1089: one call for the rest
     if n == BATCH_AT and _first_time(pl.get("session_id"), "batch-" + key):
+        if not _first_time(pl.get("session_id"), "keep.batch"):  # T-2108: heard in full once a session; a compaction too
+            return f"Foreman: the {BATCH_AT}rd edit of {os.path.basename(path)} in a row: fm edit takes the rest in one call."
         return (f"Foreman: the {BATCH_AT}rd edit of {os.path.basename(path)} in a row. When more spots in it (or in other "
                 f"files) are known, fm edit applies them all in one call: JSON on stdin "
                 f"([{{\"file\", \"old\", \"new\"}}]) or @@ file / <<< old / === new / >>> blocks, all or none, inside "
