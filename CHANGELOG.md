@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm check --affected` and a close's affected run now include the tests a file once turned red: when a red full gate's baseline fix closes, the files its fix commit changed are linked to the tests that failed (a fix's CHANGELOG line is a record, not a cause). An edit to MASTER.md now runs test_docs; before, MASTER.md co-changed with every task, so no test was linked and a broken docs count reached the full gates (T-2148).
 - `fm genesis step` names `fm genesis spec` after gen-0 when spec.md is missing and a §2 capability maps to an exam kind, so the held-out exam exists before the seed (T-2100).
 - `fm genesis draft` refuses a goal given both as a line and in `--file` (it used to drop the line silently), and `--per-kind` is refused on any action but `spec` and `exam`, where it does something (T-2101).
 - Genesis now maps a capability to the right exam kind for working unasked: `none` (problems planted, no request: find them on your own), `clean` (nothing planted: change nothing; Calibrated judgment gets it) and `rank` (several planted: fix the worst first). Before, it gave a clean repo the `none` kind, which now plants problems (T-2131).
