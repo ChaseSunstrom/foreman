@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm exam` now reports how many planted defects each arm found per language and per defect kind (overall and held out), not just one total, so a finder that's blind in one language or to one kind of bug shows up.
 - `fm genesis put`'s cold reader can now quote a sentence that wraps onto the next line of a paragraph: a wrapped paragraph counts as one line, so the quote names it instead of being refused as a line the file doesn't hold.
 - When `fm genesis put`'s cold reader quotes a line the file doesn't have, the refusal now shows the reader's own words, so you can see whether it misquoted or paraphrased.
 - `fm genesis put` no longer gets stuck after you rewrite or delete a line an earlier cold read flagged. The old finding now follows the line it became (a one-word edit can't shed it) and ends when the line is gone, so the reader never quotes text the file no longer has. A quote also still names its line when the reader drops its backticks or cuts it short with "…".

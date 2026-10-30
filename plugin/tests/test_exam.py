@@ -316,6 +316,22 @@ class ExamGen(ForemanTestCase):
         self.assertEqual((r["agent"], r["keyed"], r["fixed"], r["tf_first"]), ("finders", 3, 0, 0))
         self.assertLessEqual(r["found"], r["keyed"])
 
+    def test_recall_is_reported_per_language_and_per_defect_kind(self):
+        # T-2233 (steer: detection ladder): #1's recall was one total, so a finder blind in one language hid in it
+        run = self.gen("--seed", "4", "--per-kind", "3", "--lang", "python,js", "--kind", "docs,vuln")["run"]
+        r = self.fm_json("exam", "run", run, "--agent", "finders")
+        by = r["recall"]
+        self.assertEqual(sorted(by["lang"]), ["js", "python"])
+        self.assertEqual(sorted(by["kind"]), ["docs", "vuln"])
+        for axis in ("lang", "kind"):  # each axis splits the same totals
+            self.assertEqual([sum(v[i] for v in by[axis].values()) for i in (0, 1)], [r["found"], r["keyed"]])
+        h = r["holdout"]["recall"]
+        self.assertEqual((sum(v[1] for v in h["lang"].values()) > 0, sum(v[1] for v in h["lang"].values())),
+                         (True, r["holdout"]["keyed"]))
+        text = self.fm("exam", "run", run, "--agent", "finders").stdout
+        self.assertRegex(text, r"by language: js \d+/\d+ · python \d+/\d+")
+        self.assertRegex(text, r"by kind: docs \d+/\d+ · vuln \d+/\d+")
+
     def test_unknown_language_or_kind_is_refused(self):
         for args in (("--lang", "cobol"), ("--kind", "nonsense"), ("--per-kind", "0")):
             r = self.fm("exam", "gen", *args, check=False)
