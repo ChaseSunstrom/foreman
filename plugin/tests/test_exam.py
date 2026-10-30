@@ -339,7 +339,22 @@ plant = {"function": name, "source": f"def {name}(x, lo, hi):\n    return max(lo
          "says": f"{name}() lets hi + 1 through",
          "request": "Some values come back out of range; find and fix it."}
 mode = os.environ.get("STUB_MODE")
-if any("new helper" in a for a in argv):  # T-2211: untested and clean, a function the module didn't have
+if any("vague request" in a for a in argv):  # T-2217: the request-shape kinds, written by the child
+    plant = {"request": "make it nicer", "example": "Did you mean faster on big lists, or clearer to read?",
+             "readings": {"echo": ["nicer", "faster"], "empty": ["x?", "clearer"], "group": ["(ab)+c", "clearer"],
+                          "one": ["faster"], "dup": ["faster", "faster"], "broad": ["\\.", "clearer"]}.get(
+                 mode, ["\\bfast(er)?\\b|speed", "clear(er)?|readab"])}  # \b and a group: no oracle split survives them
+    if mode == "noexample":
+        del plant["example"]
+elif any("two sensible readings" in a for a in argv):
+    tot = re.search(r"def (\w+)\(xs\):\n    return sum", prompt).group(1)
+    plant = {"request": f"make {tot}() skip bad values", "readings": ["negative (amounts?|totals?)|refund", "null|missing values?"],
+             "example": "Skip negative amounts, or skip missing values?"}
+elif any("can't reach" in a for a in argv):
+    plant = {"request": "Match the labels to the brand guide in our Notion page",
+             "missing": {"echo": ["trello"], "broad": ["o"]}.get(mode, ["notion"]),
+             "example": "I can't open the Notion page from here; paste the guide or export it."}
+elif any("new helper" in a for a in argv):  # T-2211: untested and clean, a function the module didn't have
     plant = {"name": name if mode == "collide" else "middle", "source": "def middle(xs):\n    return sorted(xs)[len(xs) // 2]\n",
              "test": "assert middle([3, 1, 2]) == 2", "says": "middle() gives the middle value",
              "request": "Look over the tests."}
@@ -390,12 +405,11 @@ class ExamAuthors(ForemanTestCase):
         self.fm("init")
 
     def test_child_authored_scenarios_are_kept_only_when_sound(self):
-        r = self.fm_json("exam", "gen", "--seed", "1", "--per-kind", "3", "--lang", "python", "--kind", "bug,vague",
+        r = self.fm_json("exam", "gen", "--seed", "1", "--per-kind", "3", "--lang", "python", "--kind", "bug",
                          "--author", "child", env=self.env)
         bugs = [s for s in r["scenarios"] if s["kind"] == "bug"]
         self.assertEqual((len(bugs), r["dropped"]), (3, []))
-        self.assertTrue(all(s["author"] == "child" for s in bugs))
-        self.assertTrue(all(s["author"] == "self" for s in r["scenarios"] if s["kind"] == "vague"))  # no child shape
+        self.assertTrue(all(s["author"] == "child" for s in bugs))  # T-2217: every kind has a child shape now
         key = json.loads(read_text(os.path.join(os.path.dirname(bugs[0]["repo"]), "key.json")))
         self.assertIn("lets hi + 1 through", key["defects"][0]["text"])
         self.assertEqual(key["request"], "Some values come back out of range; find and fix it.")
@@ -403,7 +417,7 @@ class ExamAuthors(ForemanTestCase):
         o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
         self.assertEqual((o["found"], o["fixed"], o["tf_first"]), (o["keyed"], o["fixable"], o["tf_keyed"]))
         lines = read_text(os.path.join(self.fm_json("genesis")["dir"], "exam.jsonl")).splitlines()
-        self.assertEqual(json.loads(lines[-1])["author"], "child+self")
+        self.assertEqual(json.loads(lines[-1])["author"], "child")
 
     def test_children_author_slow_and_dep_scenarios_too(self):
         # T-2204: a slow plant shows by its big-input test timing out, a dep plant by an import that isn't installed;
@@ -450,6 +464,34 @@ class ExamAuthors(ForemanTestCase):
                              "--author", "child", env=dict(self.env, STUB_MODE=mode))
             self.assertEqual(d["scenarios"], [], mode)
             self.assertIn(why, d["dropped"][0]["why"], mode)
+
+    def test_children_write_the_vague_ambiguous_and_missing_tool_requests(self):
+        # T-2217: the child writes the ask and what a good answer names; repeating the request names none of it
+        kinds = ("vague", "ambiguous", "missing-tool")
+        r = self.fm_json("exam", "gen", "--seed", "6", "--per-kind", "1", "--lang", "python", "--kind", ",".join(kinds),
+                         "--author", "child", env=self.env)
+        self.assertEqual(r["dropped"], [])
+        by = {s["kind"]: s for s in r["scenarios"]}
+        self.assertEqual({k: s["author"] for k, s in by.items()}, dict.fromkeys(kinds, "child"))
+        keys = {k: json.loads(read_text(os.path.join(os.path.dirname(s["repo"]), "key.json"))) for k, s in by.items()}
+        self.assertEqual((keys["vague"]["request"], keys["vague"]["readings"]),
+                         ("make it nicer", ["\\bfast(er)?\\b|speed", "clear(er)?|readab"]))
+        self.assertEqual([d["kind"] for d in keys["vague"]["defects"]], ["slow"])  # the template's code stays
+        self.assertEqual((keys["missing-tool"]["missing"], keys["missing-tool"]["done_ok"]), (["notion"], False))
+        for k in ("vague", "ambiguous"):
+            self.assertFalse(any(re.search(x, keys[k]["request"], re.I) for x in keys[k]["readings"]), k)
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual(sorted(o["closed"]["train"] + o["closed"]["holdout"]), sorted(s["id"] for s in r["scenarios"]))
+        for kind, mode, why in (("vague", "echo", "matches the request"), ("missing-tool", "echo", "misses the request"),
+                                ("vague", "empty", "matches anything"), ("vague", "group", "repeats a group"),
+                                ("vague", "one", "isn't 2 different"), ("vague", "dup", "isn't 2 different"),
+                                ("vague", "broad", "a filler answer"), ("missing-tool", "broad", "a filler answer"),
+                                ("vague", "noexample", "example")):
+            d = self.fm_json("exam", "gen", "--seed", "6", "--per-kind", "1", "--lang", "python", "--kind", kind,
+                             "--author", "child", env=dict(self.env, STUB_MODE=mode))
+            self.assertEqual(d["scenarios"], [], (kind, mode))
+            self.assertIn(why, d["dropped"][0]["why"], (kind, mode))
 
     def test_a_new_function_is_exported_and_declared_where_the_language_needs_it(self):
         import fmexam  # T-2211: JS exports and imports it, TS exports it, Rust makes it pub, C declares it in app.h
