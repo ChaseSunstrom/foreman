@@ -966,7 +966,9 @@ def grade(p, run, agent):
             with open(os.path.join(_answers(p, run, agent), f"{s['id']}.json"), encoding="utf-8") as f:
                 ans = json.load(f)
         except (OSError, ValueError):
-            ans = {}
+            ans = None
+        if not isinstance(ans, dict):  # T-2103: a corrupt answer is an errored session, not an empty answer that closes
+            ans = {"error": "unreadable answer"}
         work = os.path.join(root(p), run, "work", agent, s["id"])
         found = [f for f in ans.get("findings") or [] if isinstance(f, dict)]
         n = dict.fromkeys(COUNTS, 0)

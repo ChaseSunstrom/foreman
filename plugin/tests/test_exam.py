@@ -32,6 +32,22 @@ class ExamGen(ForemanTestCase):
         self.assertTrue(all(s["split"] == "train" for s in train["scenarios"]))
         self.assertTrue(all(os.path.isdir(s["repo"]) for s in train["scenarios"]))
 
+    def test_an_unreadable_answer_is_an_error_not_a_quiet_close(self):
+        """T-2103: a corrupt or non-object answer file grades as an errored session, never as an empty answer that
+        closes a scenario whose right move is to find nothing."""
+        res = self.gen("--seed", "4", "--per-kind", "3", "--lang", "python", "--kind", "clean")
+        run, s0 = res["run"], res["scenarios"][0]
+        e = self.fm_json("exam", "run", run, "--agent", "empty")
+        ids = sorted(e["closed"]["train"] + e["closed"]["holdout"])
+        self.assertEqual(len(ids), 3)
+        answers = os.path.join(os.path.dirname(os.path.dirname(s0["repo"])), "answers", "empty")
+        for sid, body in zip(ids, ("{", "[]")):
+            with open(os.path.join(answers, f"{sid}.json"), "w") as f:
+                f.write(body)
+        g = self.fm_json("exam", "grade", run, "--agent", "empty")
+        self.assertEqual(sorted(g["closed"]["train"] + g["closed"]["holdout"]), ids[2:])
+        self.assertEqual(g["errors"], 2)
+
     def test_key_and_hidden_checks_sit_outside_a_one_commit_repo(self):
         res = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug,docs")
         for s in res["scenarios"]:

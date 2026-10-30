@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm exam grade` counts a corrupt or non-object answer file as an errored session instead of an empty answer, which quietly closed scenarios where the right move is to find nothing (a JSON list crashed it) (T-2103).
 - A stopped Genesis tower now really stops: `fm genesis seed` refuses to write the next seed until you write one by hand or file the report, instead of only warning (T-2110).
 - A Genesis tower now shows on every surface: `fm state` and a new session's note name its next action, the statusline shows `⌂ gen N · stage` (amber when it can't go on), fm code and the pane get a genesis row, `fm ui` raises a signal when it's blocked, and AGENTS.md tells other agents to drive it with `fm genesis step`. The step is cached until a tower file or a task's status changes (T-2118).
 - The Stop check for parts of a request with no task now works without `fm clauses` being run: a prompt of 3 to 12 parts has them saved as it is sent (redacted; sensitive projects, slash commands and headless workers skipped), and each stop re-matches them, so a task captured later covers its part; only the session that sent the request is held, each part holds the stop once, and parts too short to match any task ("Please fix it.") are skipped (T-2146).
