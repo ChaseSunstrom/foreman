@@ -705,11 +705,11 @@ class GenesisDraft(ForemanTestCase):
             f.write("print(1)\n")
         self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
                 "1. **Correctness.** Fixes what's broken. Exam: bug.\n2. **Docs match code.** Keeps docs true.\n"
-                "3. **Initiative.** Finds the work.\n\n## 3. The tower\n")
+                "3. **Taste.** Picks good names.\n\n## 3. The tower\n")  # T-2131: initiative maps to none
         r = self.fm_json("genesis", "spec", "--per-kind", "3")
         self.assertEqual([(x["name"], x["kinds"], x["scenarios"], x["holdout"]) for x in r["rows"]],
-                         [("Correctness", ["bug"], 3, 1), ("Docs match code", ["docs"], 3, 1), ("Initiative", [], 0, 0)])
-        self.assertEqual(r["unmapped"], ["Initiative"])
+                         [("Correctness", ["bug"], 3, 1), ("Docs match code", ["docs"], 3, 1), ("Taste", [], 0, 0)])
+        self.assertEqual(r["unmapped"], ["Taste"])
         self.assertEqual(r["langs"], ["python"])
         spec = read_text(os.path.join(fmgenesis.home(self.p), "spec.md"))
         self.assertIn(r["run"], spec)
@@ -753,6 +753,16 @@ class GenesisDraft(ForemanTestCase):
                          ["goal", "resume"])
         self.assertEqual(fmgenesis._kinds("Builds", "Keeps continuous integration green."), [])  # not a resume
         self.assertIn("goal, resume", dict((n, k) for n, _, k in fmgenesis.FALLBACK)["Goal to finish"])
+
+    def test_clean_none_and_rank_map_to_their_own_exam_kinds(self):
+        import fmgenesis  # T-2131: "none" plants defects with no request; "clean" plants nothing (T-2126)
+        self.assertEqual(fmgenesis._kinds("Calibrated judgment", "Leaves a clean repo alone: no false alarms."), ["clean"])
+        self.assertEqual(fmgenesis._kinds("Initiative", "Finds and fixes problems on its own, unasked."), ["none"])
+        self.assertEqual(fmgenesis._kinds("Triage", "Ranks what it finds and does the worst first."), ["rank"])
+        self.assertEqual(fmgenesis._kinds("Triage", "Prioritizes the worst finding."), ["rank"])
+        self.assertEqual(dict((n, k) for n, _, k in fmgenesis.FALLBACK)["Calibrated judgment"], "clean")
+        self.assertIn('"clean" is a clean repo', fmgenesis.CHILD)
+        self.assertIn('"none" plants', fmgenesis.CHILD)
 
 
 def line(run, gen, train, holdout=(), agent="foreman", cost=1.0):
