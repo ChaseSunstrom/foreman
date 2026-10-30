@@ -168,6 +168,21 @@ class Landing(unittest.TestCase):
         for cmd in set(fmcodetui.DEFAULTS["keys"].values()):
             self.assertIn(build_esc(labels.get(cmd, cmd)), page, f"the key for {cmd} isn't on the page")
 
+    def test_the_landing_runs_shader_cards_live(self):  # T-2062: the shaders only ran on their own page
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "o")
+            p = subprocess.run([sys.executable, os.path.join(ROOT, "site", "build.py"), out], capture_output=True,
+                               text=True, timeout=300)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            page = read_text(os.path.join(out, "index.html"))
+        tiles = re.findall(r'<figure class="sketch" data-shader="(sh-shader-[a-z-]+)"', page)
+        self.assertEqual(len(tiles), 4, "four live tiles on the landing")
+        for sid in tiles:
+            self.assertIn(f'<script type="x-shader/x-fragment" id="{sid}">', page, f"{sid} has no source")
+        self.assertEqual(page.count('class="fallback"'), 4, "each tile keeps its card's words for no WebGL2")
+        self.assertIn("prefers-reduced-motion: reduce", page, "one still frame for a reader who asked for less motion")
+        self.assertIn('href="features/shaders.html"', page)
+
     def test_its_counts_come_from_the_build_and_its_styles_from_the_sheet(self):
         src = read_text(os.path.join(ROOT, "site", "index.html"))
         self.assertNotRegex(src, r"\sstyle=", "a class in style.css, not an inline style")
