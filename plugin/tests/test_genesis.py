@@ -1364,14 +1364,15 @@ class GenesisExam(ForemanTestCase):
 
     def test_the_genesis_arm_closes_the_held_out_third_and_reads_no_train(self):
         import fmexam
-        import fmgenesis
         f = self.exam("--per-kind", "3")  # the default arm and split: genesis, held out; the lockout stub: fallback
         self.assertEqual((f["arm"], f["agent"], f["scenarios"], f["errors"]), ("genesis", "draft-genesis", 3, 3))
         self.assertEqual((f["closed"], f["given"]), ({"train": [], "holdout": []},) * 2)  # a fallback closes nothing
         sid = sorted(f["misses"])[0]
         with open(os.path.join(fmexam.root(self.p), f["run"], "genesis", sid + ".json")) as fh:
             self.assertEqual(json.load(fh)["source"], "fallback")
-        caps = [{"name": f"Cap {i}", "test": "Checks it.", "exam": list(fmgenesis.GEN_DEFECTS[i::3])} for i in range(3)]
+        groups = (["bug", "slow", "dep", "missing-tool"], ["vuln", "docs", "vague", "none"],
+                  ["untested", "flaky", "ambiguous"])  # T-2130: pinned, so a new defect kind doesn't reshuffle them
+        caps = [{"name": f"Cap {i}", "test": "Checks it.", "exam": g} for i, g in enumerate(groups)]
         r = self.exam("--per-kind", "3", env=self.child(json.dumps({"capabilities": caps})))
         self.assertEqual((len(r["closed"]["holdout"]), r["closed"]["train"], r["errors"]), (3, [], 0), r["misses"])
         t = self.exam("--arm", "empty", "--per-kind", "3", "--split", "train")
