@@ -258,6 +258,7 @@
 
   /* the drawer */
   var dlg = $("drawer");
+  $("dr-title").tabIndex = -1;
   function box(title, html) { return html ? '<div class="box"><b>' + esc(title) + "</b>" + html + "</div>" : ""; }
   function show(kicker, title, meta, body, hash) {
     $("dr-kicker").textContent = kicker;
@@ -265,7 +266,8 @@
     $("dr-meta").innerHTML = meta || "";
     $("dr-body").innerHTML = body || "";
     dlg.scrollTop = 0;
-    if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", ""); }
+    if (dlg.open) $("dr-title").focus();  // T-2083: the chip that was clicked is gone; keep focus in the drawer
+    else if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", "");
     try { history.replaceState(null, "", hash ? "#" + hash : location.pathname); } catch (e) {}
   }
   function close() { if (dlg.close) dlg.close(); else dlg.removeAttribute("open"); }
