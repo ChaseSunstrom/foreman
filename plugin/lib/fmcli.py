@@ -4954,7 +4954,8 @@ def affected(p, b=None, skipped=None):
     by = meta.get("affected_by") or {}  # T-1135: extension -> its own runner's template
     if not template and not by:
         raise UsageError("no affected-tests command: fm check affected '<cmd with {tests} or {names}>'")
-    every = sorted(set(fmmap.tests_for(m, sorted(changed))) | own | paired)
+    broke = {t for f in changed for t in (m.get("broke") or {}).get(f, [])}  # T-2148: tests a file once turned red
+    every = sorted(set(fmmap.tests_for(m, sorted(changed))) | own | paired | broke)
     fill = lambda tpl, ts: tpl.replace("{tests}", " ".join(shlex.quote(t) for t in ts)).replace(  # noqa: E731
         "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in ts))
 

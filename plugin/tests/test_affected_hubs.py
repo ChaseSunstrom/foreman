@@ -36,3 +36,33 @@ class AffectedHubs(ForemanTestCase):
             f.write('{"n": 9}\n')
         _, tests, _ = fmcli.affected(p)
         self.assertIn("tests/test_wiring.py", tests)
+
+    def test_a_hub_file_that_once_turned_the_gates_red_brings_the_test_it_broke(self):
+        # T-2148: MASTER.md co-changes with every task, so no pair links it, yet an edit to it broke test_docs (T-2147)
+        import fmcli
+        self.fm("init")
+        self.fm("check", "affected", "python3 -m pytest -q {tests}")
+        for n in range(12):
+            self.commit({f"tests/test_part{n}.py": "N = 1\n", f"src/part{n}.py": "N = 1\n", "MASTER.md": f"# {n}\n"},
+                        f"part {n}")
+        self.commit({"tests/test_docs.py": "def test_count():\n    open('MASTER.md')\n"}, "docs test")
+        p = c.find_project(self.repo, create=False)
+        fmcli._baseline(p, [("python3 -m pytest -q", 1, "FAILED tests/test_docs.py::test_count - AssertionError\n"
+                             "==== 1 failed in 0.1s ====\n", None)])
+        bid = next(b.id for b in c.load_briefs(p) if b.meta.get("baseline"))
+        self.commit({"MASTER.md": "# fixed\n", "CHANGELOG.md": "- count\n"}, f"MASTER map table count ({bid})")
+        self.commit({"src/count.py": "N = 3\n", "CHANGELOG.md": "- count fixed\n"}, f"count fix ({bid})")
+        self.fm("task", "new", "note it", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s", "--focus")
+        with open(os.path.join(self.repo, "MASTER.md"), "a") as f:
+            f.write("- a line\n")
+        _, tests, _ = fmcli.affected(p)
+        self.assertNotIn("tests/test_docs.py", tests)  # the baseline task is still open: nothing learned yet
+        fmcli.mutate(p, bid, lambda x: x.meta.update(status="done"), "test_done")  # its fix shipped
+        self.commit({"src/other.py": "N = 2\n"}, "other")  # HEAD moves, so the map is rebuilt
+        _, tests, _ = fmcli.affected(p)
+        self.assertIn("tests/test_docs.py", tests)
+        self.assertFalse([t for t in tests if "test_part" in t], tests)
+        import fmmap
+        broke = fmmap.load(p)["broke"]  # the code fix links; its changelog line, a record, doesn't
+        self.assertEqual(broke.get("src/count.py"), ["tests/test_docs.py"], broke)
+        self.assertNotIn("CHANGELOG.md", broke)
