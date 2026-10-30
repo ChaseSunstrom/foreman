@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T09:37:55Z",
- "rev": "6a4e7c18",
+ "updated": "2026-10-30T09:47:52Z",
+ "rev": "fafad9f5",
  "capabilities": [
   {
    "n": 1,
@@ -550,17 +550,17 @@
       {
        "id": "T-2125",
        "title": "Value ranking: severity x proof x reach / effort, per-finder precision from outcomes, a mute floor, abstain below a threshold (Mission 3 brief 6)",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 0,
-       "current": "score + reach + --rank ordering (vuln/secret/bug above slow/docs) test-first"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2126",
        "title": "#1 held-out exam: I-none, I-clean, I-rank child-authored kinds; finders, foreman and plain arms (Mission 3 brief 7)",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 2,
