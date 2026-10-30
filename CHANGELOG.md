@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A task's close now runs the tests that read a whole folder when it changes a file there: `fm map` links a test to every file under a top-level folder it names as a string (`"site"`), so a `site/genesis/genesis.css` edit runs `test_design_lint` at close instead of first failing at `fm ship` (T-2086).
 - `fm tidy` finds projects whose folder is gone: one that lived under a temp dir (a throwaway trial) has its state moved to `state/archive/projects/` on `--apply`; one elsewhere is only reported, since its disk may just be unplugged (T-2091).
 - The site header fits at 320 to 419 px without the Barlow font: the brand no longer shrinks under its own text ("Foreman" ran into "Install" at 360 px with the wider fallback face), gaps tighten under 420 px, and under 360 px the header's GitHub link gives way to the footer's; the header test now measures the text, not just its box, on the landing and genesis pages (T-2089).
 - `fm genesis export DIR` removes a doc it wrote last time that the tower no longer has; only files its previous `genesis.json` listed, in the tower's shape and not behind a symlink, so the rest of DIR stays yours (T-2084).
