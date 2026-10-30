@@ -179,6 +179,30 @@ class GenesisExport(ForemanTestCase):
         self.assertIn('href="index.html" aria-current="page">Genesis</a>', html)
         self.assertNotRegex(read_text(os.path.join(root, "site", "genesis", "genesis.css")), r"(?m)--bg:\s*#|Inter|\.sheet|^\.head\b")
 
+    def test_the_page_markdown_escapes_and_keeps_only_safe_links(self):
+        """T-2083: the drawer's md() renders tower text: HTML is escaped, only https, # and relative links survive."""
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("no node to run the page's renderer")
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        src = read_text(os.path.join(root, "site", "genesis", "genesis.js"))
+        lib = (src[src.index("  function esc(s)"):src.index("  function plural(")] +
+               src[src.index("  /* A small markdown renderer"):src.index("  /* data helpers */")])
+        docs = ["# T <b>x</b>\n\n[a](javascript:alert(1)) [b](https://ok.example) <img src=x onerror=1>",
+                "| a | b |\n|---|---|\n| 1 | **2** |\n", "```\n<script>\n```"]
+        out = subprocess.run([node, "-e", lib + f"console.log(JSON.stringify({json.dumps(docs)}.map(md)))"],
+                             capture_output=True, text=True, timeout=30)
+        head, table, code = json.loads(out.stdout)
+        self.assertIn("<h3>T &lt;b&gt;x&lt;/b&gt;</h3>", head)
+        self.assertIn('<a href="https://ok.example">b</a>', head)
+        self.assertNotIn("javascript", head)
+        self.assertNotIn("<img", head)
+        self.assertIn("<th>a</th>", table)
+        self.assertIn("<td><b>2</b></td>", table)
+        self.assertIn("<pre><code>&lt;script&gt;</code></pre>", code)
+
 
 LIVE_WAIT_FLOOR = 200  # seconds: well inside the 300 s window
 
@@ -459,6 +483,16 @@ class GenesisStep(ForemanTestCase):
         return self.fm_json("task", "new", "a brief", "--type", "FEATURE", "--tier", "S", "--step", "one",
                             "--ac", "ok :: true")["id"]
 
+    def test_a_hand_written_seed_row_reads_with_backticks_or_no_trailing_pipe(self):
+        """T-2083: one row per line, the file name bare or in backticks, the closing pipe optional."""
+        import fmgenesis
+        seed = ("| # | Mission file | Capabilities | Gaps | Depends on |\n|---|---|---|---|---|\n"
+                "| 1 | `mission-exam.md` | #13 | grader (3) | — |\n"
+                "| 2 | mission-genesis.md | #13 | tower (4) | 1\n"
+                "| 3 | mission-finish.md | #4 | ledger (4) | — |\n")
+        self.assertEqual([(r[0], r[1], r[4].strip()) for r in fmgenesis.ROW.findall(seed)],
+                         [("1", "mission-exam", "—"), ("2", "mission-genesis", "1"), ("3", "mission-finish", "—")])
+
     def test_walks_every_stage_in_order_from_the_files_alone(self):
         import fmgenesis
         self.at("gen-0", "fm genesis init")
@@ -559,7 +593,7 @@ class GenesisStep(ForemanTestCase):
     def test_a_missions_table_that_does_not_parse_is_fatal_not_dry(self):
         import fmgenesis
         fmgenesis.init(self.p, GEN0_CAPS.encode())
-        self.put("gen-1/seed.md", "# Seed\n\n| 1 | `mission-a.md` | #1 | g (3) | — |\n")
+        self.put("gen-1/seed.md", "# Seed\n\n| 1 | a.md | #1 | g (3) | — |\n")  # T-2083: backticks parse now
         self.assertEqual(self.at("fatal", "no Missions", "gen-1/seed.md")["kind"], "fatal")
         for seed in ("# Seed\n\n## Missions\n1. initiative: scout probes\n", SEED.split("| 1 |")[0]):
             self.put("gen-1/seed.md", seed)  # T-2119: a list, or a header with no rows, is not a dry generation
