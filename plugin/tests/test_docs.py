@@ -997,5 +997,37 @@ class ReadmeShape(unittest.TestCase):  # T-2052
             self.assertNotIn(tile.get("fill"), (None, "none"), f"{name}: an opaque tile reads on light and dark pages")
 
 
+class MasterShape(unittest.TestCase):  # T-2053
+    root = os.path.dirname(PLUGIN)
+
+    def section(self, text, n):
+        return re.search(rf"(?ms)^## {n}\. .*?(?=^## \d+\. |\Z)", text).group(0)
+
+    def test_master_sections_are_grouped_folded_and_keep_every_note(self):
+        text = read_text(os.path.join(self.root, "MASTER.md"))
+        ops = self.section(text, 9)
+        groups = re.findall(r"(?m)^### (.+)$", ops)
+        self.assertGreaterEqual(len(groups), 8, "section 9 needs ### groups for fm outline")
+        for g in groups:  # the map table links every group
+            self.assertIn("(#" + re.sub(r"[^a-z0-9 -]", "", g.lower()).replace(" ", "-") + ")", ops, g)
+        for g, count in re.findall(r"(?m)^\| \[([^\]]+)\]\(#[^)]*\) \| .* \| (\d+) \|$", ops):  # the map's count is true
+            body = re.search(rf"(?ms)^### {re.escape(g)}$(.*?)(?=^### |\Z)", ops).group(1)
+            self.assertEqual(len(re.findall(r"(?m)^- ", body)), int(count), f"{g}: the map table's count")
+        notes = re.findall(r"(?m)^- .*$", ops)
+        self.assertGreaterEqual(len(notes), 152, "a note was dropped")  # T-2053: 152 when grouped
+        self.assertEqual(len(notes), len(set(notes)), "a note is there twice")
+        for m in re.finditer(r"</summary>", text):  # GitHub renders markdown inside only after a blank line
+            self.assertTrue(text[m.end():].startswith("\n\n"), text[max(0, m.start() - 40):m.end()])
+        for m in re.finditer(r"</details>", text):
+            self.assertTrue(text[:m.start()].endswith("\n\n"), text[max(0, m.start() - 40):m.end()])
+        self.assertGreaterEqual(len(re.findall(r"(?m)^### ", self.section(text, 3))), 4, "section 3 by area")
+        self.assertRegex(self.section(text, 11), r"(?m)^\| Deviation \| Why \|$")
+
+    def test_install_md_has_a_flags_table(self):
+        text = read_text(os.path.join(self.root, "INSTALL.md"))
+        flags = set(re.findall(r"(?m)^\s*\| `(--[a-z-]+)", text))
+        self.assertTrue({"--no-plugins", "--no-mod", "--no-wiring", "--bypass", "--no-bypass"} <= flags, flags)
+
+
 if __name__ == "__main__":
     unittest.main()
