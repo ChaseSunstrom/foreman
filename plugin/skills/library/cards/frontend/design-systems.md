@@ -12,7 +12,7 @@ A shared component library driven by design tokens, with documented variants, th
 - `npx storybook build`: every story compiles and renders.
 - `npx playwright test --project=visual`: screenshot diffs of stories across themes (set up with `toHaveScreenshot`).
 - `npx tsc --noEmit`: component prop types and variant unions agree.
-- `npx stylelint "src/**/*.css" --rule '{"color-no-hex":true}'`: raw hex values slipping past tokens.
+- `grep -rnE "#[0-9a-fA-F]{3,8}\b" src --include=*.css`: raw hex values slipping past tokens.
 
 ## Test first
 Test the component contract: variants, states, accessible name.
