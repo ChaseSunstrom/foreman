@@ -355,6 +355,12 @@ class ScriptCache(GuardCase):
         self.assertBlocked(self.bash(f"echo x > {path}"), "state-direct")
         self.assertBlocked(self.bash(f"cp /tmp/x {path}"), "state-direct")
 
+    def test_the_cold_reads_accepted_lines_are_state_bash_cannot_forge(self):
+        # T-2207 review: a forged genesis-accepted.json would let any tower line through the cold read
+        path = os.path.join(self.fhome, "state", "projects", "demo-1", "genesis-accepted.json")
+        self.assertBlocked(self.bash(f"echo x > {path}"), "state-direct")
+        self.assertBlocked(self.bash(f"cp /tmp/x {path}"), "state-direct")
+
     def test_a_cached_outer_script_is_read_again_when_a_nested_one_changes(self):
         lib = self.script("lib.sh", "echo lib\n")
         outer = self.script("outer.sh", f"echo hi\nsource {lib}\n")
