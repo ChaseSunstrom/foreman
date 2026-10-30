@@ -1,8 +1,11 @@
 """fm prove (T-2122): fm find's candidates become proof tickets a person can rerun, or leads. An untested candidate is
 instrumented on a throwaway copy to leave a marker file when it runs. It is proven when the suite stays green, a
 control function the tests name leaves its marker, and the candidate leaves none: no test runs it. Repo code runs only
-on the copy, and only when HEAD is the user's own commit (their global git email) or the user passes --yes-run, a flag
-the guard keeps the user's. The isolation is the environment's only: credential, Foreman, Claude, D-Bus, XDG and GPG
+on the copy, and only in a tree the user said yes to with --yes-run (a flag the guard keeps the user's; the yes is kept
+per tree path, not per version of its code, in Foreman state, which only fm writes). Anything inside a tree, a commit's
+author email included, is only a claim, so elsewhere untested candidates stay leads (T-2202). The yes governs Foreman's
+own initiative; it isn't a sandbox against a session set on running the code, which could run the tests directly.
+The isolation is the environment's only: credential, Foreman, Claude, D-Bus, XDG and GPG
 variables are dropped and HOME is the throwaway folder, but the code still runs as the user, with the network. fm find
 itself never runs repo code, and this verb never touches the tree it reads."""
 import ast
@@ -145,17 +148,26 @@ def _last(out):
     return json.dumps(c.fit(c.plain(next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "")), 120))
 
 
-def own_tree(root):
-    """'' when HEAD is the user's own commit (their global git user.email: a repo's own config can't set it), else why
-    not. git runs with the repo's code-running config neutralised."""
-    git = lambda *a: c._git(root, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c",
-                            "log.showSignature=false", *a, timeout=30)
-    me, head = git("config", "--global", "user.email").strip().lower(), \
-        git("log", "-1", "--no-show-signature", "--format=%ae").strip().lower()
-    if not head:
-        return "no git history here"
-    return "" if me and head == me else \
-        f"HEAD's author is {c.plain(head)}, not you ({c.plain(me) or 'no global git user.email'})"
+TRUST = "prove-trusted.json"  # T-2202: trees the user ran fm prove --yes-run in (state: never written but by fm)
+NO_RUN = "running this tree's tests needs the user's yes, once per tree: fm prove PATH --yes-run"
+
+
+def _trusted():
+    try:
+        with open(os.path.join(c.state_dir(), TRUST)) as f:
+            return {x for x in json.load(f) if isinstance(x, str)}
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
+def trusted(root):
+    """A tree the user said yes to. Nothing in a tree can say it's the user's (an author email is anyone's to write),
+    and no environment variable either: FOREMAN_HOME is a session's to set (T-2202)."""
+    return os.path.realpath(root) in _trusted()
+
+
+def remember(root):
+    c.write_atomic(os.path.join(c.state_dir(), TRUST), json.dumps(sorted(_trusted() | {os.path.realpath(root)})))
 
 
 def _pick(root, code, flagged):
@@ -211,13 +223,14 @@ def _untested(root, f, suite, control):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def prove(root, found, limit=10, deadline=DEADLINE):
+def prove(root, found, limit=10, deadline=DEADLINE, run=True):
     """One ticket per live candidate, best first, up to limit: {verdict: proven|lead, evidence, kind, file, line,
-    symbol, says, finder}. untested: instrumented (above). docs, dep, secret: re-found on a fresh copy. Other kinds need
-    a failing test that shows them (T-2199): leads here."""
+    symbol, says, finder}. untested: instrumented (above), only when run (the tree's code runs). docs, dep, secret:
+    re-found on a fresh copy, no code run. Other kinds need a failing test that shows them (T-2199): leads here."""
     import fmfind
     _sweep()
-    t0, live = time.time(), [f for f in found if not f.get("held")][:limit]
+    t0, live = time.time(), sorted((f for f in found if not f.get("held")),  # stable: best first within each group
+                                   key=lambda f: not run and f["kind"] == "untested")[:limit]  # unrun ones go last
     flagged = {f["symbol"] for f in found if f["kind"] == "untested"}
     suite = control = why = None
     tickets = []
@@ -236,6 +249,8 @@ def prove(root, found, limit=10, deadline=DEADLINE):
                      evidence="re-found on a fresh copy by the same deterministic check: the tree itself holds it, not "
                               "its surroundings" if again else
                               "not re-found on a fresh copy: it depends on something outside the tree")
+        elif f["kind"] == "untested" and not run:
+            t.update(verdict="lead", evidence=NO_RUN)
         elif f["kind"] == "untested":
             if suite is None and why is None:
                 suite, control, why = _pick(root, _code(root), flagged)
@@ -254,14 +269,15 @@ def cmd_prove(args):
     if not os.path.isdir(root):
         print(f"fm prove: not a directory: {args.path}", file=sys.stderr)
         return 2
-    why = "" if args.yes_run else own_tree(root)
-    if why:  # proving runs the tree's tests: only the user decides to run a tree that isn't theirs
-        print(f"fm prove: not run: {why}. Proving runs this tree's tests on a throwaway copy, so it runs only where "
-              "HEAD is your own commit; the user can run it anyway with fm prove PATH --yes-run", file=sys.stderr)
-        return 2
+    if args.yes_run:  # the user's yes (the guard keeps the flag theirs), kept for this tree
+        try:
+            remember(root)
+        except OSError as e:
+            print(f"fm prove: ran on your yes, but couldn't keep it for {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
     p = c.find_project(os.getcwd())
     try:
-        res = prove(root, fmfind.scan(root, fmfind.precision(p) if p else {})[1], args.limit)
+        res = prove(root, fmfind.scan(root, fmfind.precision(p) if p else {})[1], args.limit,
+                    run=args.yes_run or trusted(root))
     except (OSError, shutil.Error) as e:
         print(f"fm prove: couldn't copy {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
         return 2
