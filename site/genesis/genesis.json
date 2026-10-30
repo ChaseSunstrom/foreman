@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T18:08:25Z",
- "rev": "65aca49e",
+ "updated": "2026-10-30T18:17:03Z",
+ "rev": "9f7875f3",
  "capabilities": [
   {
    "n": 1,
@@ -580,7 +580,7 @@
       {
        "id": "T-2170",
        "title": "fm exam grade's exam-defect rule (_exam_defect, T-2120) takes the arm's own test as…",
-       "status": "active",
+       "status": "done",
        "type": "FIX",
        "tier": "M",
        "steps": 2,
@@ -2538,6 +2538,108 @@
     ]
    },
    "at": "2026-10-30T17:13:41Z",
+   "gen": 1,
+   "split": "holdout",
+   "kinds": [
+    "clean",
+    "none",
+    "rank"
+   ],
+   "author": "child+self"
+  },
+  {
+   "run": "s31-006",
+   "agent": "foreman",
+   "keyed": 18,
+   "found": 15,
+   "false_alarms": 4,
+   "exam_defects": 0,
+   "fixable": 18,
+   "fixed": 17,
+   "tf_keyed": 6,
+   "tf_first": 6,
+   "readings_keyed": 0,
+   "readings_hit": 0,
+   "missing_keyed": 0,
+   "missing_hit": 0,
+   "rank_keyed": 3,
+   "rank_hit": 2,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 9,
+   "errors": 0,
+   "reasked": 4,
+   "proved_by_arm": 0,
+   "holdout": {
+    "keyed": 18,
+    "found": 15,
+    "false_alarms": 4,
+    "exam_defects": 0,
+    "fixable": 18,
+    "fixed": 17,
+    "tf_keyed": 6,
+    "tf_first": 6,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 3,
+    "rank_hit": 2,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 9,
+    "errors": 0,
+    "reasked": 4,
+    "proved_by_arm": 0
+   },
+   "train": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0
+   },
+   "cost": 0.3846,
+   "closed": {
+    "train": [],
+    "holdout": [
+     "clean-python-8d2424",
+     "clean-ruby-24a9a4",
+     "none-python-248f5e",
+     "rank-python-09ccc9"
+    ]
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [
+     "clean-python-8d2424",
+     "clean-ruby-24a9a4",
+     "clean-rust-6bacb3",
+     "none-python-248f5e",
+     "none-python-37ffb1",
+     "none-rust-65ff1a",
+     "rank-js-8414e5",
+     "rank-python-09ccc9",
+     "rank-rust-981449"
+    ]
+   },
+   "model": "haiku",
+   "at": "2026-10-30T18:17:02Z",
    "gen": 1,
    "split": "holdout",
    "kinds": [
