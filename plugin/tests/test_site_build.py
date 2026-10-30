@@ -138,18 +138,25 @@ class Landing(unittest.TestCase):
     """T-2040: the landing page types no count by hand and no inline style, every animation has a still form, and the
     reel opens on the session, not on Claude Code's folder-trust question."""
 
-    def test_the_tab_icon_url_changes_with_the_logo(self):  # T-2060: a browser keeps a favicon by its URL
+    def test_asset_urls_change_with_their_content(self):  # T-2060, T-2063: a browser keeps a file by its URL
         import hashlib
-        with open(os.path.join(ROOT, "site", "assets", "foreman.svg"), "rb") as f:
-            v = hashlib.sha256(f.read()).hexdigest()[:8]
+        def v(rel):
+            with open(os.path.join(ROOT, "site", rel), "rb") as f:
+                return hashlib.sha256(f.read()).hexdigest()[:8]
+        tags = (rf'<link rel="icon" href="(\.\./)?assets/foreman\.svg\?v={v("assets/foreman.svg")}"',
+                rf'<img src="(\.\./)?assets/foreman\.svg\?v={v("assets/foreman.svg")}"',
+                rf'<link rel="stylesheet" href="(\.\./)?style\.css\?v={v("style.css")}"',
+                rf'<script src="(\.\./)?site\.js\?v={v("site.js")}"')
         with tempfile.TemporaryDirectory() as tmp:
             out = os.path.join(tmp, "o")
             p = subprocess.run([sys.executable, os.path.join(ROOT, "site", "build.py"), out], capture_output=True,
                                text=True, timeout=300)
             self.assertEqual(p.returncode, 0, p.stderr)
-            for rel in ("index.html", os.path.join("features", "index.html"), os.path.join("features", "benchmarks.html")):
-                self.assertRegex(read_text(os.path.join(out, rel)),
-                                 rf'<link rel="icon" href="(\.\./)?assets/foreman\.svg\?v={v}"', rel)
+            for rel in ("index.html", os.path.join("features", "index.html"), os.path.join("features", "benchmarks.html"),
+                        os.path.join("stories", "fix.html")):
+                page = read_text(os.path.join(out, rel))
+                for tag in tags:
+                    self.assertRegex(page, tag, rel)
 
     def test_the_code_page_is_drawn_from_todays_tui(self):  # T-2061: a committed recording goes stale
         sys.path.insert(0, os.path.join(PLUGIN, "lib"))
@@ -212,6 +219,10 @@ class Landing(unittest.TestCase):
         for use in uses:
             self.assertIn(use.strip(), allowed, "an animation outside @media (prefers-reduced-motion: no-preference)")
         self.assertRegex(allowed, r"animation-timeline:\s*view\(\)", "reveals ride the scroll, not a script")
+        js = read_text(os.path.join(ROOT, "site", "site.js"))  # T-2063: script motion too waits past the still return
+        guard = js.index("prefers-reduced-motion: reduce")
+        for motion in ("requestAnimationFrame", "pointermove", "setTimeout(function () { li.classList"):
+            self.assertGreater(js.index(motion), js.index("return;", guard), motion)
 
     def test_the_reel_opens_on_the_session_not_the_trust_question(self):
         spec = importlib.util.spec_from_file_location("record_live", os.path.join(ROOT, "demo", "record_live.py"))
