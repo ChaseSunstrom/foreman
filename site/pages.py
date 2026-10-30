@@ -538,6 +538,24 @@ PAGES = [
           "shows how often a rule change would have fired on your real sessions before it ships.</li><li><strong>"
           "Foreman on Foreman.</strong> It is built with itself; the charts on these pages are that record.</li></ul>"),
          ("chart", _tests)]},
+    {"slug": "initiative", "nav": "Initiative", "title": "It finds the work before you ask",  # T-2127
+     "desc": "fm find ranks likely defects worst first; fm scout files the proven ones from your own projects.",
+     "lede": "Foreman reads your tree for likely defects: imports no manifest declares, docs naming files or code "
+             "that aren't there, secrets, untested public code, SQL built from a parameter. Nothing in the tree runs, "
+             "and each lead stays unproven until a failing test shows it.",
+     "blocks": [
+         ("text", "Useful, not noisy", "<ul><li><strong>Worst first.</strong> <code>fm find --rank</code> orders "
+          "leads by severity, reach and each finder's track record.</li><li><strong>Your drops teach it.</strong> A "
+          "finder whose leads you mostly drop is muted, and the band says so.</li><li><strong>A few a day.</strong> "
+          "<code>fm scout --slow</code> files at most 3 leads open and 3 a day, only kinds that prove themselves, "
+          "never one you dropped.</li><li><strong>Only your trees.</strong> A tree whose recent commits aren't yours "
+          "is skipped; where others commit too, each lead waits for your yes.</li><li><strong>Everywhere.</strong> "
+          "The terminal, the <code>find</code> MCP tool for other agents and Desktop, and Foreman Code through its "
+          "run tool.</li></ul>"),
+         ("term", "$ fm find --rank\n2 candidate(s) in 2 files under ~/app; each is unproven until a failing test "
+                  "shows it.\n0.30  src/m.py:1  dep  use: imports zorblax, which no manifest declares\n0.10  README.md:0  "
+                  "docs  ./nowhere/setup.md: docs path: ./nowhere/setup.md"),
+         ("chart", lambda s: _totals(s, ["captures", "tasks_done", "proofs"]))]},
     {"slug": "tools", "nav": "Tools", "title": "Small tools that save whole turns",
      "desc": "Batch edits, history tracing, time travel and branch tours.",
      "lede": "A handful of commands do in one call what usually takes several turns.",

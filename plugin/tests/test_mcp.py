@@ -38,7 +38,7 @@ class RoundTrip(_Mcp):
         names = {t["name"] for t in by[2]["result"]["tools"]}
         self.assertEqual(names, {"state", "next", "recall", "research_list", "research_read", "task_show", "checks",
                                  "lib_suggest", "lib_search", "lib_show", "outline", "sym", "impact", "why", "fail",
-                                 "logs", "data", "trace"})
+                                 "logs", "data", "trace", "find"})
         for t in by[2]["result"]["tools"]:
             self.assertEqual(t["inputSchema"]["type"], "object")
         self.assertIn("Parse dates in the importer", by[3]["result"]["content"][0]["text"])
@@ -205,6 +205,50 @@ class McpTools(_Mcp):
         self.assertTrue(by[1]["result"]["isError"])
         self.assertIn("timed out", _text(by[1]))
         self.assertEqual(by[2]["result"], {})
+
+
+class McpFind(_Mcp):  # T-2127
+    def test_find_ranks_leads_in_the_project_or_a_folder_and_never_takes_a_flag(self):
+        import fmcore as c
+        self.fm("init")
+        os.makedirs(os.path.join(self.repo, "src"))
+        os.makedirs(os.path.join(self.repo, "empty"))
+        for name, text in {"requirements.txt": "flask==3.0\n",
+                           "src/m.py": "import zorblax\n\n\ndef use():\n    return zorblax.go()\n"}.items():
+            with open(os.path.join(self.repo, name), "w") as f:
+                f.write(text)
+        out, _ = self.talk(self.call(1, "find"), self.call(2, "find", path="src"), self.call(3, "find", path=".."),
+                           self.call(4, "find", path="--capture"), self.call(5, "find", path="empty"))
+        by = {m["id"]: m["result"] for m in out}
+        for i in (1, 2):
+            self.assertFalse(by[i]["isError"], by[i])
+            self.assertIn("zorblax", by[i]["content"][0]["text"])
+        self.assertTrue(by[3]["isError"])
+        self.assertIn("outside the project", by[3]["content"][0]["text"])
+        self.assertTrue(by[4]["isError"])  # ./--capture: a folder that isn't there, never the flag
+        self.assertFalse([b for b in c.load_briefs(c.find_project(self.repo, create=False), include_archive=True)
+                          if b.meta.get("finder")])
+        self.assertFalse(by[5]["isError"], by[5])
+
+    def test_find_caps_at_200_leads_and_names_the_rest(self):
+        self.fm("init")
+        os.makedirs(os.path.join(self.repo, "src"))
+        with open(os.path.join(self.repo, "src", "m.py"), "w") as f:
+            f.write("".join(f"import zz{i}\n" for i in range(205)))
+        out, _ = self.talk(self.call(1, "find", path="src"))
+        rows = out[0]["result"]["content"][0]["text"].splitlines()
+        self.assertEqual(len(rows), 202)
+        self.assertRegex(rows[-1], r"^… \d+ more: fm find \./src --rank --json lists all$")
+
+    def test_an_allowed_exit_with_nothing_on_stdout_is_an_error(self):
+        import fmcore as c
+        import fmmcp
+        from unittest import mock
+        self.fm("init")
+        crash = subprocess.CompletedProcess([], 1, stdout="", stderr="Traceback: boom")
+        with mock.patch.object(fmmcp.subprocess, "run", return_value=crash):
+            self.assertEqual(fmmcp._fm(c.find_project(self.repo, create=False), ["find"], ok=(0, 1)),
+                             ("Traceback: boom", True))
 
 
 class McpNew(_Mcp):
