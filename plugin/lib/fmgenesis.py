@@ -15,6 +15,7 @@ import fmcore as c
 # coverage.md: the capability-area x surface x stage grid every generation fills.
 SHAPE = re.compile(r"(gap-map|lineage|catalogue|report|not-yet|coverage|spec)\.md|exam\.jsonl"
                    r"|gen-[1-9][0-9]*/(seed|drift|sweep|(mission|critique)-[a-z0-9][a-z0-9-]*)\.md")
+OWNED = re.compile(r"exam\.jsonl|gen-[1-9][0-9]*/(drift|sweep)\.md")  # T-2155: the stage gates' records, never put
 GEN = re.compile(r"gen-([1-9][0-9]*)")
 
 
@@ -68,10 +69,18 @@ def sealed(p):
 
 
 def put(p, name, text):
+    if OWNED.fullmatch(name):
+        raise ValueError(f"{name!r} is written only by its own command (exam.jsonl: fm exam grade and fm genesis exam; "
+                         "gen-N/drift.md and sweep.md: fm genesis drift N and fm genesis sweep N), so a hand-written "
+                         "line can't pass a stage")
     if not SHAPE.fullmatch(name):
-        raise ValueError(f"{name!r} isn't a tower doc: gap-map.md, lineage.md, catalogue.md, report.md, exam.jsonl, "
-                         "not-yet.md, coverage.md, spec.md, or gen-N/seed.md, drift.md, sweep.md, mission-NAME.md, critique-NAME.md "
-                         "(N from 1)")
+        raise ValueError(f"{name!r} isn't a tower doc: gap-map.md, lineage.md, catalogue.md, report.md, "
+                         "not-yet.md, coverage.md, spec.md, or gen-N/seed.md, mission-NAME.md, critique-NAME.md (N from 1)")
+    return _file(p, name, text)
+
+
+def _file(p, name, text):
+    """A tower file written as is (redacted): put after its checks, and drift and sweep for the files only they write."""
     path = os.path.join(home(p), name)
     with c.lock(p.dir):
         c.write_atomic(path, c.redact(text))
@@ -1308,7 +1317,7 @@ def drift(p, n):
     if verdict != "clean":
         out += ["", "Undo the lines named here (a generation never rewrites the user's MUSTs or NEVERs), then rerun "
                     f"fm genesis drift {n}." if found else f"Rerun fm genesis drift {n}: no countable cold read, no pass."]
-    path = put(p, f"{pre}drift.md", "\n".join(out) + "\n")
+    path = _file(p, f"{pre}drift.md", "\n".join(out) + "\n")
     os.utime(path, (t0, t0))
     return {"gen": n, "verdict": verdict, "found": found, "read": read, "path": path,
             "lines": [f"  ✗ {x}" for x in found] + [f"  cold read: {read}"]}
@@ -1404,7 +1413,7 @@ def sweep(p, n, agent="foreman"):
     out = [f"# Sweep — gen-{n} (gen-0 §7)", "", f"Verdict: {verdict}", "", *lines]
     if verdict != "clean":
         out += ["", f"Fix the ✗ lines, then rerun fm genesis sweep {n}; the next generation waits on a clean sweep."]
-    path = put(p, f"gen-{n}/sweep.md", "\n".join(out) + "\n")
+    path = _file(p, f"gen-{n}/sweep.md", "\n".join(out) + "\n")
     return {"gen": n, "verdict": verdict, "rows": rows, "path": path, "lines": [f"  {x}" for x in lines]}
 
 
