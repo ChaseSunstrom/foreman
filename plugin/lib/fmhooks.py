@@ -944,7 +944,8 @@ def _leads_note(p):
     string (repo text is data). On held-out run s31-006 the foreman arm found 6/18 where fm find alone found 16/18:
     nothing a session read named it. The cap counts the listing fm find reads (tracked plus untracked, not ignored);
     past it, or past LEADS_SECONDS of scanning, the command instead, so session start stays inside its timeout."""
-    pointer = ("Leads: `fm find --rank` lists Foreman's own finders' candidates here ({}); prove each before fixing it "
+    pointer = ("Leads: `fm find --rank` lists Foreman's own finders' candidates here ({}); `fm prove` proves what it can on "
+               "a throwaway copy; prove the rest before fixing "
                "(a bug: a failing test; untested: a test that calls it; docs: against the code)."
                + ("" if c.worked_in(p) else " `fm adopt` first takes the baseline (gates, map, secrets)."))
     try:  # the same listing fm find reads, with the repo's config kept from running code

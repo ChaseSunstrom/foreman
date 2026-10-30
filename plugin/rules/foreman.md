@@ -7,7 +7,7 @@ capture → expand → ground → plan → execute → verify → reflect → re
 - A plain request is intake: classify it and say so in one line ("Treating this as FIX, tier S.").
 - No edits without a brief (hooks refuse them): `fm task new "<title>" --type T --tier S --ac "<done when> :: <verify cmd>" --step "<step>" --focus`, or `/foreman:intake` for more.
 - Follow `fm next` (each turn's "Next: …"): the one required action and its procedure.
-- Unfamiliar repo or no request: `fm find --rank` first; prove each lead before fixing it (a bug red; untested, a test; docs, against the code).
+- Unfamiliar repo or no request: `fm find --rank` first; `fm prove` each lead before fixing (a bug red; untested, a test; docs, against the code).
 - Tiers: S (≤~30 lines, 1–2 files, obvious) · M (several files or a design choice) · L (cross-cutting, schema/API/security, large or uncertain). Unsure → one tier up.
 - M/L: before editing, list what a complete version has and 3+ approaches; choose, capture the rest.
 - Procedures: `/foreman:intake`; stage playbooks `/foreman:playbooks`. Open-ended, exhaustive or broad ("super improve it", "limitless", "a ton of …") → `/foreman:brainstorm`.
