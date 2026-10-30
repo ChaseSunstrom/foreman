@@ -229,6 +229,48 @@ class Ship(ForemanTestCase):
         self.assertEqual(self.main_log()[:2], ["Merge lane", "branch writes shared"])
         self.assertEqual(sh(self.repo, "rev-parse", "refs/foreman/shipped"), sh(self.repo, "rev-parse", "HEAD"))
 
+    def _merged_lane_then_main_moves(self, name):
+        # T-2212: the T-2054 setup, then someone pushes a commit to origin main touching `name` after the last ship
+        self.grant()
+        self.assertEqual(self.ship("--test", "true").returncode, 0)
+        shipped = sh(self.repo, "rev-parse", "HEAD").strip()
+        for branch, text, msg in (("work", "one\n", "branch writes shared"), ("lane", "two\n", "lane writes shared")):
+            if branch == "lane":
+                sh(self.repo, "checkout", "-q", "-b", "lane", shipped)
+            with open(os.path.join(self.repo, "shared.txt"), "w") as f:
+                f.write(text)
+            sh(self.repo, "add", "shared.txt")
+            sh(self.repo, "commit", "-qm", msg)
+        sh(self.repo, "checkout", "-q", "work")
+        subprocess.run(["git", "-C", self.repo, "merge", "-q", "lane"], capture_output=True)
+        with open(os.path.join(self.repo, "shared.txt"), "w") as f:
+            f.write("one\ntwo\n")
+        sh(self.repo, "add", "shared.txt")
+        sh(self.repo, "commit", "-qm", "Merge lane")
+        other = os.path.join(self.tmp, "other")
+        subprocess.run(["git", "clone", "-q", self.origin, other], check=True)
+        os.makedirs(os.path.dirname(os.path.join(other, name)), exist_ok=True)
+        with open(os.path.join(other, name), "w") as f:
+            f.write("main moved\n")
+        sh(other, "add", ".")
+        sh(other, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "main moves")
+        sh(other, "push", "-q", "origin", "HEAD:main")
+        self.grant()
+
+    def test_a_merged_lane_ships_when_main_moved_only_in_other_files(self):
+        self._merged_lane_then_main_moves("site/genesis.json")
+        r = self.ship("--test", "true")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(sh(self.origin, "show", "main:shared.txt"), "one\ntwo\n")
+        self.assertEqual(sh(self.origin, "show", "main:site/genesis.json"), "main moved\n")
+
+    def test_a_merged_lane_is_refused_when_main_touched_the_branchs_files(self):
+        self._merged_lane_then_main_moves("shared.txt")
+        before = sh(self.origin, "rev-parse", "main")
+        r = self.ship("--test", "true")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(sh(self.origin, "rev-parse", "main"), before)
+
     def test_a_remembered_test_runs_when_test_is_left_out(self):
         # T-1950: the oldest runtime's suite was retyped on every ship
         mark = os.path.join(self.tmp, "ran")
