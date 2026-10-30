@@ -1,6 +1,6 @@
 # Mission — Genesis as a feature (gen 1, #13)
 
-Task: T-2093 (fm genesis check: coverage grid + not-yet ledger). Briefs 2–8 below are intaken as they start.
+Task: T-2093 (brief 1, fm genesis check), T-2095 (brief 2, fm genesis step). Briefs 3–8 are added here as they are intaken.
 
 Self-contained for a fresh `fm run` in ~/.claude/foreman. Parent: gen-1/seed.md → gen-0.md §2 #13, §3.
 Ideas: 606 from `fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen` (brainstorm-20261029-233136), lenses
@@ -131,6 +131,7 @@ and not-yet.md are in the tower and `fm genesis check` exits 0; MASTER.md + CHAN
 it; the `/foreman:genesis` skill works in Claude Code; the routing candidate waits on `fm ask core`.
 
 ```
+FEATURE: fm genesis check — coverage grid + not-yet ledger, exit 1 on any gap
 FEATURE: fm genesis step — the tower's next action from its files alone, resumable after any kill
 DONE-WHEN: killing after every stage and rerunning gives the same next action; caps and lock hold
 FEATURE: fm genesis draft/spec — gen-0 from a line or nothing; per-project spec with a held-out exam
