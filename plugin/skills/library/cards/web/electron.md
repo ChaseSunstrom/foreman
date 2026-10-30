@@ -12,7 +12,7 @@ Electron desktop apps: a privileged main process, sandboxed renderers, and a pre
 - `npx tsc --noEmit`: main, preload and renderer types.
 - `npx electron .`: the app launches (a manual smoke; end-to-end tests below automate it).
 - `npx playwright test`: drives the app through `_electron.launch` (Playwright's Electron support is experimental).
-- `npx electronegativity -i .`: scans for common Electron security misconfigurations, if installed.
+- `npx @doyensec/electronegativity -i .`: scans for common Electron security misconfigurations, if installed.
 
 ## Test first
 Unit-test main-process logic and IPC handlers as plain functions; test the window with Playwright.
