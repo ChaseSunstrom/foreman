@@ -886,13 +886,18 @@ def _author_key(s, model):
     return {"items": out}
 
 
+def child(s, model):
+    """T-2215: the tool-less child's plant for any child-authored kind (its own author per shape), for render(..., plant).
+    ValueError when it can't run or its reply isn't one."""
+    return (_author_key if s["kind"] in GOALS else _author_shaped if s["kind"] in SHAPED else _author)(s, model)
+
+
 def _authored(p, run, s, model):
     """Render one scenario by a child author: (scenario, None) when fm exam check passes it, else (None, why) and its
     folder is gone. ponytail: one child per scenario, no retry; a dropped one shrinks the run and says so."""
     base = os.path.join(root(p), run, s["id"])
     try:
-        made = render(base, s, (_author_key if s["kind"] in GOALS else _author_shaped if s["kind"] in SHAPED else
-                                _author)(s, model))
+        made = render(base, s, child(s, model))
         probs = _check_one(p, run, made)
     except (ValueError, OSError, subprocess.SubprocessError) as e:  # model text can break git or the file write too
         made, probs = None, [str(e)]

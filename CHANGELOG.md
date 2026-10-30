@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm genesis exam --author child` scores Genesis on projects Foreman didn't write: what a draft reads, the project's README and the MUST/NEVER lines in the "make this great" request, comes from a model with no tools, written once per scenario so every arm is graded on the same input. The planted code defect is still Foreman's, but no draft reads code. `--lang` limits the languages it draws from.
 - New `.fmproved` file: list the paths in your repo whose changes always need a failing-then-passing test (billing, auth, scoring), one glob a line, and `fm task finish` refuses to close any task that changed one without that proof or a note saying why there is none. Foreman's own repo lists its exam and scorecard code.
 - Three new exam kinds give the last capabilities without an exam one: `exists` (asks for something the code already does; a good answer names it instead of adding a copy), `parts` (three problems in one request) and `trigger` (make the tests run on a schedule). Child authors write all three. `exists` fails an answer that adds a copy of the function, `trigger` only counts a real CI workflow, timer or crontab, and #9's row says its exam is a proxy for delegation. A default `fm exam gen` now renders 18 kinds, about a fifth more scenarios.
 - Child authors now write the vague, ambiguous and missing-tool requests too, with what a good answer must name, so every exam kind can be scored on scenarios Foreman didn't write. A capability that hasn't been graded on each of its kinds yet reads "partial", not pass.
