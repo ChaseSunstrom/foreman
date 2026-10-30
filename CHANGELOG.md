@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm exam` no longer counts true findings against an arm: every language's clean app now keeps the edge contract its README states (empty pages below 1, clamp with lo > hi, wide labels, negative values in dedupe, a C label that takes a buffer size), the C and Rust READMEs show a run command that works, and a finding that comes with a test failing on the clean app and passing on the arm's fix is counted as an exam defect instead of a false alarm.
 - `fm genesis step` no longer reads a seed whose Missions aren't in the table form (a bullet list, a header with no rows) as a dry generation and skips straight to selection: a seed with no rows must say "no Missions this generation", or step stops and names the table's shape.
 - `fm friction` names hook notes averaging over 1,500 characters per injection, including the every-turn SessionStart and UserPromptSubmit ones the repeat line skips.
 - `fm genesis drift`'s cold read also sees the standing rules you gave after gen-0 (decisions cited `user steer`), so a Seed that follows them isn't flagged; a steer can only add to gen-0. A drifted line the reader quotes across a wrapped bullet now counts instead of voiding the read.

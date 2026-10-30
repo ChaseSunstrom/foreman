@@ -42,12 +42,13 @@ README = """# Helpers
 
 Small list and string helpers.
 
-- `@total@(xs)`: the sum of xs.
-- `@PAGEDOC@(xs, n, size)`: page n (from 1) of xs, size items per page; the last page may be short.
-- `@dedupe@(xs)`: xs without repeats, first occurrences kept in order.
-- `@query@(name)`: the SQL that looks a user up by name.
-- `@label@(s, width)`: s right-aligned in width columns.
-- `@clamp@(x, lo, hi)`: x limited to lo..hi.
+- `@total@(xs)`: the sum of xs; 0 for none.
+- `@PAGEDOC@(xs, n, size)`: page n (from 1) of xs, size items per page; the last page may be short, and n or size
+  below 1 gives an empty page.
+- `@dedupe@(xs)`: xs without repeats, first occurrences kept in order; any values, negative ones too.
+- `@query@(name)`: the SQL that looks a user up by name, quoted the standard SQL way (a ' doubled).
+- `@label@(s, width)`: s right-aligned in width columns; s itself when it's already that wide.
+- `@clamp@(x, lo, hi)`: x limited to lo..hi; lo wins when lo > hi.
 
 Run the tests: `@RUN@`
 """
@@ -59,14 +60,14 @@ PY = {
     "ext": "py", "files": ["app.py"], "cmd": {"exec": "python3 @F@"},
     "app": {
         "total": "def @total@(xs):\n    return sum(xs)\n",
-        "page": "def @page@(xs, n, size):\n    start = (n - 1) * size\n    return xs[start:start + size]\n",
+        "page": "def @page@(xs, n, size):\n    if n < 1 or size < 1:\n        return []\n    start = (n - 1) * size\n    return xs[start:start + size]\n",
         "dedupe": "def @dedupe@(xs):\n    seen, out = set(), []\n    for x in xs:\n        if x not in seen:\n"
                   "            seen.add(x)\n            out.append(x)\n    return out\n",
         "query": "def @query@(name):\n    return \"SELECT * FROM users WHERE name = '\" + name.replace(\"'\", \"''\") + \"'\"\n",
         "label": "def @label@(s, width):\n    return s.rjust(width)\n",
         "clamp": "def @clamp@(x, lo, hi):\n    return max(lo, min(x, hi))\n"},
     "planted": {
-        "bug": ("page", "def @page@(xs, n, size):\n    start = (n - 1) * size\n    if start + size > len(xs):\n"
+        "bug": ("page", "def @page@(xs, n, size):\n    if n < 1 or size < 1:\n        return []\n    start = (n - 1) * size\n    if start + size > len(xs):\n"
                         "        return []\n    return xs[start:start + size]\n"),
         "slow": ("dedupe", "def @dedupe@(xs):\n    out = []\n    for x in xs:\n        if x not in out:\n"
                            "            out.append(x)\n    return out\n"),
@@ -75,12 +76,14 @@ PY = {
     "sep": "\n\n", "head": "from app import *\n\n\n",
     "test": "def test_@K@():\n@B@",
     "tests": {
-        "total": "    assert @total@([3, 4, 5]) == 12\n",
-        "page": "    assert @page@(list(range(10)), 2, 5) == [5, 6, 7, 8, 9]\n    assert @page@(list(range(10)), 3, 5) == []\n",
-        "dedupe": "    assert @dedupe@([3, 1, 3, 2, 1]) == [3, 1, 2]\n",
+        "total": "    assert @total@([3, 4, 5]) == 12\n    assert @total@([]) == 0\n",
+        "page": "    assert @page@(list(range(10)), 2, 5) == [5, 6, 7, 8, 9]\n    assert @page@(list(range(10)), 3, 5) == []\n"
+                "    assert @page@(list(range(10)), 0, 5) == @page@(list(range(10)), -1, 5) == @page@(list(range(10)), 1, 0) == []\n",
+        "dedupe": "    assert @dedupe@([3, 1, 3, 2, 1]) == [3, 1, 2]\n    assert @dedupe@([-2, 5, -2]) == [-2, 5]\n",
         "query": "    assert @query@(\"bob\") == \"SELECT * FROM users WHERE name = 'bob'\"\n",
-        "label": "    assert @label@(\"ab\", 4) == \"  ab\"\n",
-        "clamp": "    assert @clamp@(5, 0, 3) == 3\n    assert @clamp@(-1, 0, 3) == 0\n    assert @clamp@(2, 0, 3) == 2\n",
+        "label": "    assert @label@(\"ab\", 4) == \"  ab\"\n    assert @label@(\"abcdef\", 3) == \"abcdef\"\n",
+        "clamp": "    assert @clamp@(5, 0, 3) == 3\n    assert @clamp@(-1, 0, 3) == 0\n    assert @clamp@(2, 0, 3) == 2\n"
+                 "    assert @clamp@(5, 3, 0) == 3\n",
         "page_flaky": "    import random\n    n = random.randint(1, 11)\n    assert len(@page@(list(range(50)), n, 5)) == 5\n",
         "page_partial": "    assert @page@(list(range(12)), 3, 5) == [10, 11]\n",
         "query_quote": "    assert @query@(\"o'brien\") == \"SELECT * FROM users WHERE name = 'o''brien'\"\n",
@@ -89,28 +92,29 @@ PY = {
 
 _JS_APP = {
     "total": "function @total@(xs) {\n  return xs.reduce((a, b) => a + b, 0);\n}\n",
-    "page": "function @page@(xs, n, size) {\n  const start = (n - 1) * size;\n  return xs.slice(start, start + size);\n}\n",
+    "page": "function @page@(xs, n, size) {\n  if (n < 1 || size < 1) return [];\n  const start = (n - 1) * size;\n  return xs.slice(start, start + size);\n}\n",
     "dedupe": "function @dedupe@(xs) {\n  const seen = new Set();\n  const out = [];\n  for (const x of xs) {\n"
               "    if (!seen.has(x)) {\n      seen.add(x);\n      out.push(x);\n    }\n  }\n  return out;\n}\n",
     "query": "function @query@(name) {\n  return \"SELECT * FROM users WHERE name = '\" + name.replaceAll(\"'\", \"''\") + \"'\";\n}\n",
     "label": "function @label@(s, width) {\n  return s.padStart(width);\n}\n",
     "clamp": "function @clamp@(x, lo, hi) {\n  return Math.max(lo, Math.min(x, hi));\n}\n"}
 _JS_PLANTED = {
-    "bug": ("page", "function @page@(xs, n, size) {\n  const start = (n - 1) * size;\n  if (start + size > xs.length) return [];\n"
+    "bug": ("page", "function @page@(xs, n, size) {\n  if (n < 1 || size < 1) return [];\n  const start = (n - 1) * size;\n  if (start + size > xs.length) return [];\n"
                     "  return xs.slice(start, start + size);\n}\n"),
     "slow": ("dedupe", "function @dedupe@(xs) {\n  const out = [];\n  for (const x of xs) {\n    if (!out.includes(x)) out.push(x);\n"
                        "  }\n  return out;\n}\n"),
     "vuln": ("query", "function @query@(name) {\n  return \"SELECT * FROM users WHERE name = '\" + name + \"'\";\n}\n"),
     "dep": ("label", "const leftPad = require(\"left-pad\");\n\nfunction @label@(s, width) {\n  return leftPad(s, width);\n}\n")}
 _JS_TESTS = {
-    "total": "  assert.strictEqual(@total@([3, 4, 5]), 12);\n",
+    "total": "  assert.strictEqual(@total@([3, 4, 5]), 12);\n  assert.strictEqual(@total@([]), 0);\n",
     "page": "  assert.deepStrictEqual(@page@([...Array(10).keys()], 2, 5), [5, 6, 7, 8, 9]);\n"
-            "  assert.deepStrictEqual(@page@([...Array(10).keys()], 3, 5), []);\n",
-    "dedupe": "  assert.deepStrictEqual(@dedupe@([3, 1, 3, 2, 1]), [3, 1, 2]);\n",
+            "  assert.deepStrictEqual(@page@([...Array(10).keys()], 3, 5), []);\n"
+            "  for (const [n, size] of [[0, 5], [-1, 5], [1, 0]]) assert.deepStrictEqual(@page@([...Array(10).keys()], n, size), []);\n",
+    "dedupe": "  assert.deepStrictEqual(@dedupe@([3, 1, 3, 2, 1]), [3, 1, 2]);\n  assert.deepStrictEqual(@dedupe@([-2, 5, -2]), [-2, 5]);\n",
     "query": "  assert.strictEqual(@query@(\"bob\"), \"SELECT * FROM users WHERE name = 'bob'\");\n",
-    "label": "  assert.strictEqual(@label@(\"ab\", 4), \"  ab\");\n",
+    "label": "  assert.strictEqual(@label@(\"ab\", 4), \"  ab\");\n  assert.strictEqual(@label@(\"abcdef\", 3), \"abcdef\");\n",
     "clamp": "  assert.strictEqual(@clamp@(5, 0, 3), 3);\n  assert.strictEqual(@clamp@(-1, 0, 3), 0);\n"
-             "  assert.strictEqual(@clamp@(2, 0, 3), 2);\n",
+             "  assert.strictEqual(@clamp@(2, 0, 3), 2);\n  assert.strictEqual(@clamp@(5, 3, 0), 3);\n",
     "page_flaky": "  const n = Math.floor(Math.random() * 11) + 1;\n  assert.strictEqual(@page@([...Array(50).keys()], n, 5).length, 5);\n",
     "page_partial": "  assert.deepStrictEqual(@page@([...Array(12).keys()], 3, 5), [10, 11]);\n",
     "query_quote": "  assert.strictEqual(@query@(\"o'brien\"), \"SELECT * FROM users WHERE name = 'o''brien'\");\n",
@@ -142,14 +146,14 @@ RB = {
     "ext": "rb", "files": ["app.rb"], "cmd": {"exec": "ruby @F@"}, "sep": "\n",
     "app": {
         "total": "def @total@(xs)\n  xs.sum\nend\n",
-        "page": "def @page@(xs, n, size)\n  start = (n - 1) * size\n  xs[start, size] || []\nend\n",
+        "page": "def @page@(xs, n, size)\n  return [] if n < 1 || size < 1\n\n  start = (n - 1) * size\n  xs[start, size] || []\nend\n",
         "dedupe": "def @dedupe@(xs)\n  seen = {}\n  out = []\n  xs.each do |x|\n    next if seen.key?(x)\n\n"
                   "    seen[x] = true\n    out << x\n  end\n  out\nend\n",
         "query": "def @query@(name)\n  \"SELECT * FROM users WHERE name = '\" + name.gsub(\"'\", \"''\") + \"'\"\nend\n",
         "label": "def @label@(s, width)\n  s.rjust(width)\nend\n",
         "clamp": "def @clamp@(x, lo, hi)\n  [lo, [x, hi].min].max\nend\n"},
     "planted": {
-        "bug": ("page", "def @page@(xs, n, size)\n  start = (n - 1) * size\n  return [] if start + size > xs.length\n\n"
+        "bug": ("page", "def @page@(xs, n, size)\n  return [] if n < 1 || size < 1\n\n  start = (n - 1) * size\n  return [] if start + size > xs.length\n\n"
                         "  xs[start, size] || []\nend\n"),
         "slow": ("dedupe", "def @dedupe@(xs)\n  out = []\n  xs.each { |x| out << x unless out.include?(x) }\n  out\nend\n"),
         "vuln": ("query", "def @query@(name)\n  \"SELECT * FROM users WHERE name = '\" + name + \"'\"\nend\n"),
@@ -157,12 +161,13 @@ RB = {
     "head": "require_relative \"app\"\n\ndef eq(a, b)\n  raise \"expected #{b.inspect}, got #{a.inspect}\" unless a == b\nend\n\n",
     "test": "def test_@K@\n@B@end\n",
     "tests": {
-        "total": "  eq(@total@([3, 4, 5]), 12)\n",
-        "page": "  eq(@page@((0...10).to_a, 2, 5), [5, 6, 7, 8, 9])\n  eq(@page@((0...10).to_a, 3, 5), [])\n",
-        "dedupe": "  eq(@dedupe@([3, 1, 3, 2, 1]), [3, 1, 2])\n",
+        "total": "  eq(@total@([3, 4, 5]), 12)\n  eq(@total@([]), 0)\n",
+        "page": "  eq(@page@((0...10).to_a, 2, 5), [5, 6, 7, 8, 9])\n  eq(@page@((0...10).to_a, 3, 5), [])\n"
+                "  [[0, 5], [-1, 5], [1, 0]].each { |n, size| eq(@page@((0...10).to_a, n, size), []) }\n",
+        "dedupe": "  eq(@dedupe@([3, 1, 3, 2, 1]), [3, 1, 2])\n  eq(@dedupe@([-2, 5, -2]), [-2, 5])\n",
         "query": "  eq(@query@(\"bob\"), \"SELECT * FROM users WHERE name = 'bob'\")\n",
-        "label": "  eq(@label@(\"ab\", 4), \"  ab\")\n",
-        "clamp": "  eq(@clamp@(5, 0, 3), 3)\n  eq(@clamp@(-1, 0, 3), 0)\n  eq(@clamp@(2, 0, 3), 2)\n",
+        "label": "  eq(@label@(\"ab\", 4), \"  ab\")\n  eq(@label@(\"abcdef\", 3), \"abcdef\")\n",
+        "clamp": "  eq(@clamp@(5, 0, 3), 3)\n  eq(@clamp@(-1, 0, 3), 0)\n  eq(@clamp@(2, 0, 3), 2)\n  eq(@clamp@(5, 3, 0), 3)\n",
         "page_flaky": "  n = rand(1..11)\n  eq(@page@((0...50).to_a, n, 5).length, 5)\n",
         "page_partial": "  eq(@page@((0...12).to_a, 3, 5), [10, 11])\n",
         "query_quote": "  eq(@query@(\"o'brien\"), \"SELECT * FROM users WHERE name = 'o''brien'\")\n",
@@ -174,8 +179,9 @@ RS = {
     "cmd": {"build": "rustc --edition 2021 -o @OUT@/t @F@", "exec": "@OUT@/t"},
     "app": {
         "total": "pub fn @total@(xs: &[i64]) -> i64 {\n    xs.iter().sum()\n}\n",
-        "page": "pub fn @page@(xs: &[i64], n: usize, size: usize) -> Vec<i64> {\n    let start = (n - 1) * size;\n"
-                "    if start >= xs.len() {\n        return Vec::new();\n    }\n    xs[start..(start + size).min(xs.len())].to_vec()\n}\n",
+        "page": "pub fn @page@(xs: &[i64], n: usize, size: usize) -> Vec<i64> {\n    if n < 1 || size < 1 {\n        return Vec::new();\n"
+                "    }\n    let start = (n - 1).saturating_mul(size);\n    if start >= xs.len() {\n        return Vec::new();\n    }\n"
+                "    xs[start..start.saturating_add(size).min(xs.len())].to_vec()\n}\n",
         "dedupe": "pub fn @dedupe@(xs: &[i64]) -> Vec<i64> {\n    let mut seen = std::collections::HashSet::new();\n"
                   "    let mut out = Vec::new();\n    for &x in xs {\n        if seen.insert(x) {\n            out.push(x);\n"
                   "        }\n    }\n    out\n}\n",
@@ -184,8 +190,9 @@ RS = {
         "label": "pub fn @label@(s: &str, width: usize) -> String {\n    format!(\"{:>width$}\", s, width = width)\n}\n",
         "clamp": "pub fn @clamp@(x: i64, lo: i64, hi: i64) -> i64 {\n    x.min(hi).max(lo)\n}\n"},
     "planted": {
-        "bug": ("page", "pub fn @page@(xs: &[i64], n: usize, size: usize) -> Vec<i64> {\n    let start = (n - 1) * size;\n"
-                        "    if start + size > xs.len() {\n        return Vec::new();\n    }\n"
+        "bug": ("page", "pub fn @page@(xs: &[i64], n: usize, size: usize) -> Vec<i64> {\n    if n < 1 || size < 1 {\n"
+                        "        return Vec::new();\n    }\n    let start = (n - 1).saturating_mul(size);\n"
+                        "    if start.saturating_add(size) > xs.len() {\n        return Vec::new();\n    }\n"
                         "    xs[start..(start + size).min(xs.len())].to_vec()\n}\n"),
         "slow": ("dedupe", "pub fn @dedupe@(xs: &[i64]) -> Vec<i64> {\n    let mut out = Vec::new();\n    for &x in xs {\n"
                            "        if !out.contains(&x) {\n            out.push(x);\n        }\n    }\n    out\n}\n"),
@@ -194,13 +201,15 @@ RS = {
     "head": "#![allow(dead_code, unused_imports)]\n#[path = \"app.rs\"]\nmod app;\nuse app::*;\n\n",
     "test": "fn test_@K@() {\n@B@}\n",
     "tests": {
-        "total": "    assert_eq!(@total@(&[3, 4, 5]), 12);\n",
+        "total": "    assert_eq!(@total@(&[3, 4, 5]), 12);\n    assert_eq!(@total@(&[]), 0);\n",
         "page": "    let xs: Vec<i64> = (0..10).collect();\n    assert_eq!(@page@(&xs, 2, 5), vec![5, 6, 7, 8, 9]);\n"
-                "    assert_eq!(@page@(&xs, 3, 5), Vec::<i64>::new());\n",
-        "dedupe": "    assert_eq!(@dedupe@(&[3, 1, 3, 2, 1]), vec![3, 1, 2]);\n",
+                "    assert_eq!(@page@(&xs, 3, 5), Vec::<i64>::new());\n"
+                "    for (n, size) in [(0, 5), (1, 0), (usize::MAX, 5)] {\n        assert_eq!(@page@(&xs, n, size), Vec::<i64>::new());\n    }\n",
+        "dedupe": "    assert_eq!(@dedupe@(&[3, 1, 3, 2, 1]), vec![3, 1, 2]);\n    assert_eq!(@dedupe@(&[-2, 5, -2]), vec![-2, 5]);\n",
         "query": "    assert_eq!(@query@(\"bob\"), \"SELECT * FROM users WHERE name = 'bob'\");\n",
-        "label": "    assert_eq!(@label@(\"ab\", 4), \"  ab\");\n",
-        "clamp": "    assert_eq!(@clamp@(5, 0, 3), 3);\n    assert_eq!(@clamp@(-1, 0, 3), 0);\n    assert_eq!(@clamp@(2, 0, 3), 2);\n",
+        "label": "    assert_eq!(@label@(\"ab\", 4), \"  ab\");\n    assert_eq!(@label@(\"abcdef\", 3), \"abcdef\");\n",
+        "clamp": "    assert_eq!(@clamp@(5, 0, 3), 3);\n    assert_eq!(@clamp@(-1, 0, 3), 0);\n    assert_eq!(@clamp@(2, 0, 3), 2);\n"
+                 "    assert_eq!(@clamp@(5, 3, 0), 3);\n",
         "page_flaky": "    use std::collections::hash_map::RandomState;\n    use std::hash::{BuildHasher, Hasher};\n"
                       "    let n = (RandomState::new().build_hasher().finish() % 11 + 1) as usize;\n"
                       "    let xs: Vec<i64> = (0..50).collect();\n    assert_eq!(@page@(&xs, n, 5).len(), 5);\n",
@@ -214,42 +223,57 @@ C = {
     "cmd": {"build": "gcc -I. -o @OUT@/t @F@ app.c", "exec": "@OUT@/t"},
     "header": "#include <stddef.h>\n\nlong @total@(const long *xs, int n);\nint @page@(const long *xs, int n, int pg, int size, long *out);\n"
               "int @dedupe@(const long *xs, int n, long *out);\nvoid @query@(const char *name, char *out, size_t cap);\n"
-              "void @label@(const char *s, int width, char *out);\nlong @clamp@(long x, long lo, long hi);\n",
+              "void @label@(const char *s, int width, char *out, size_t cap);\nlong @clamp@(long x, long lo, long hi);\n"
+              "/* @dedupe@ returns -1 when out of memory. */\n",
     "app_head": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include \"app.h\"\n\n",
     "app": {
         "total": "long @total@(const long *xs, int n) {\n    long t = 0;\n    for (int i = 0; i < n; i++) t += xs[i];\n    return t;\n}\n",
-        "page": "int @page@(const long *xs, int n, int pg, int size, long *out) {\n    int start = (pg - 1) * size, k = 0;\n"
-                "    for (int i = start; i < start + size && i < n; i++) out[k++] = xs[i];\n    return k;\n}\n",
-        "dedupe": "int @dedupe@(const long *xs, int n, long *out) {\n    long max = 0;\n"
-                  "    for (int i = 0; i < n; i++) if (xs[i] > max) max = xs[i];\n    char *seen = calloc(max + 1, 1);\n"
-                  "    int k = 0;\n    for (int i = 0; i < n; i++) {\n        if (!seen[xs[i]]) {\n            seen[xs[i]] = 1;\n"
-                  "            out[k++] = xs[i];\n        }\n    }\n    free(seen);\n    return k;\n}\n",
+        "page": "int @page@(const long *xs, int n, int pg, int size, long *out) {\n    if (pg < 1 || size < 1) return 0;\n"
+                "    long start = (long)(pg - 1) * size;\n    int k = 0;\n"
+                "    for (long i = start; i < start + size && i < n; i++) out[k++] = xs[i];\n    return k;\n}\n",
+        "dedupe": "int @dedupe@(const long *xs, int n, long *out) {\n    if (n <= 0) return 0;\n    int bits = 4;\n"
+                  "    while (((size_t)1 << bits) < 2 * (size_t)n) bits++;\n    size_t cap = (size_t)1 << bits;\n"
+                  "    long *slot = malloc(cap * sizeof *slot);\n    char *used = calloc(cap, 1);\n"
+                  "    if (!slot || !used) {\n        free(slot);\n        free(used);\n        return -1;\n    }\n"
+                  "    int k = 0;\n    for (int i = 0; i < n; i++) {\n"
+                  "        size_t h = (size_t)((unsigned long long)xs[i] * 11400714819323198485ull >> (64 - bits));\n"
+                  "        while (used[h] && slot[h] != xs[i]) h = (h + 1) & (cap - 1);\n"
+                  "        if (!used[h]) {\n            used[h] = 1;\n            slot[h] = xs[i];\n            out[k++] = xs[i];\n"
+                  "        }\n    }\n    free(slot);\n    free(used);\n    return k;\n}\n",
         "query": "void @query@(const char *name, char *out, size_t cap) {\n    char esc[256];\n    size_t k = 0;\n"
                  "    for (const char *c = name; *c && k + 2 < sizeof esc; c++) {\n        if (*c == '\\'') esc[k++] = '\\'';\n"
                  "        esc[k++] = *c;\n    }\n    esc[k] = 0;\n    snprintf(out, cap, \"SELECT * FROM users WHERE name = '%s'\", esc);\n}\n",
-        "label": "void @label@(const char *s, int width, char *out) {\n    sprintf(out, \"%*s\", width, s);\n}\n",
-        "clamp": "long @clamp@(long x, long lo, long hi) {\n    return x < lo ? lo : x > hi ? hi : x;\n}\n"},
+        "label": "void @label@(const char *s, int width, char *out, size_t cap) {\n"
+                 "    snprintf(out, cap, \"%*s\", width > 0 ? width : 0, s);\n}\n",
+        "clamp": "long @clamp@(long x, long lo, long hi) {\n    if (x > hi) x = hi;\n    return x < lo ? lo : x;\n}\n"},
     "planted": {
-        "bug": ("page", "int @page@(const long *xs, int n, int pg, int size, long *out) {\n    int start = (pg - 1) * size, k = 0;\n"
-                        "    if (start + size > n) return 0;\n    for (int i = start; i < start + size && i < n; i++) out[k++] = xs[i];\n"
-                        "    return k;\n}\n"),
+        "bug": ("page", "int @page@(const long *xs, int n, int pg, int size, long *out) {\n    if (pg < 1 || size < 1) return 0;\n"
+                        "    long start = (long)(pg - 1) * size;\n    int k = 0;\n    if (start + size > n) return 0;\n"
+                        "    for (long i = start; i < start + size && i < n; i++) out[k++] = xs[i];\n    return k;\n}\n"),
         "slow": ("dedupe", "int @dedupe@(const long *xs, int n, long *out) {\n    int k = 0;\n    for (int i = 0; i < n; i++) {\n"
                            "        int dup = 0;\n        for (int j = 0; j < k; j++) if (out[j] == xs[i]) dup = 1;\n"
                            "        if (!dup) out[k++] = xs[i];\n    }\n    return k;\n}\n"),
         "vuln": ("query", "void @query@(const char *name, char *out, size_t cap) {\n"
                           "    snprintf(out, cap, \"SELECT * FROM users WHERE name = '%s'\", name);\n}\n"),
-        "dep": ("label", "#include <strpad.h>\n\nvoid @label@(const char *s, int width, char *out) {\n    pad_left(s, width, out);\n}\n")},
+        "dep": ("label", "#include <strpad.h>\n\nvoid @label@(const char *s, int width, char *out, size_t cap) {\n"
+                          "    pad_left(s, width, out, cap);\n}\n")},
     "head": "#include <assert.h>\n#include <stdlib.h>\n#include <string.h>\n#include <time.h>\n#include \"app.h\"\n\n",
     "test": "static void test_@K@(void) {\n@B@}\n",
     "tests": {
-        "total": "    long xs[] = {3, 4, 5};\n    assert(@total@(xs, 3) == 12);\n",
+        "total": "    long xs[] = {3, 4, 5};\n    assert(@total@(xs, 3) == 12);\n    assert(@total@(xs, 0) == 0);\n",
         "page": "    long xs[10], out[10];\n    for (int i = 0; i < 10; i++) xs[i] = i;\n"
-                "    assert(@page@(xs, 10, 2, 5, out) == 5 && out[0] == 5 && out[4] == 9);\n    assert(@page@(xs, 10, 3, 5, out) == 0);\n",
-        "dedupe": "    long xs[] = {3, 1, 3, 2, 1}, out[5];\n    assert(@dedupe@(xs, 5, out) == 3 && out[0] == 3 && out[1] == 1 && out[2] == 2);\n",
+                "    assert(@page@(xs, 10, 2, 5, out) == 5 && out[0] == 5 && out[4] == 9);\n    assert(@page@(xs, 10, 3, 5, out) == 0);\n"
+                "    assert(@page@(xs, 10, 0, 5, out) == 0 && @page@(xs, 10, -1, 5, out) == 0 && @page@(xs, 10, 1, 0, out) == 0);\n",
+        "dedupe": "    long xs[] = {3, 1, 3, 2, 1}, out[5];\n    assert(@dedupe@(xs, 5, out) == 3 && out[0] == 3 && out[1] == 1 && out[2] == 2);\n"
+                  "    long ys[] = {-2, 5, -2};\n    assert(@dedupe@(ys, 3, out) == 2 && out[0] == -2 && out[1] == 5);\n",
         "query": "    char out[256];\n    @query@(\"bob\", out, sizeof out);\n"
                  "    assert(strcmp(out, \"SELECT * FROM users WHERE name = 'bob'\") == 0);\n",
-        "label": "    char out[64];\n    @label@(\"ab\", 4, out);\n    assert(strcmp(out, \"  ab\") == 0);\n",
-        "clamp": "    assert(@clamp@(5, 0, 3) == 3);\n    assert(@clamp@(-1, 0, 3) == 0);\n    assert(@clamp@(2, 0, 3) == 2);\n",
+        "label": "    char out[64];\n    @label@(\"ab\", 4, out, sizeof out);\n    assert(strcmp(out, \"  ab\") == 0);\n"
+                 "    @label@(\"abcdef\", 3, out, sizeof out);\n    assert(strcmp(out, \"abcdef\") == 0);\n"
+                 "    @label@(\"ab\", -3, out, sizeof out);\n    assert(strcmp(out, \"ab\") == 0);\n"
+                 "    @label@(\"abcdef\", 3, out, 4);\n    assert(strcmp(out, \"abc\") == 0);\n",
+        "clamp": "    assert(@clamp@(5, 0, 3) == 3);\n    assert(@clamp@(-1, 0, 3) == 0);\n    assert(@clamp@(2, 0, 3) == 2);\n"
+                 "    assert(@clamp@(5, 3, 0) == 3);\n",
         "page_flaky": "    long xs[50], out[50];\n    for (int i = 0; i < 50; i++) xs[i] = i;\n"
                       "    srand((unsigned)time(NULL) ^ (unsigned)clock());\n    assert(@page@(xs, 50, rand() % 11 + 1, 5, out) == 5);\n",
         "page_partial": "    long xs[12], out[12];\n    for (int i = 0; i < 12; i++) xs[i] = i;\n"
@@ -345,7 +369,7 @@ def render(base, s, plant=None):
         spec = dict(spec, planted=dict(spec["planted"], child=(plant["function"], plant["source"])),
                     tests=dict(spec["tests"], child=plant["test"]))
     ext, suite, check_name = spec["ext"], f"test_app.{spec['ext']}", f"zz_exam_check.{spec['ext']}"
-    run = shlex.join((spec["cmd"].get("build", "").replace("-o @OUT@/t", "-o t") + " &&").split()) + " ./t" \
+    run = shlex.join(spec["cmd"]["build"].replace("-o @OUT@/t", "-o t").split()) + " && ./t" \
         if "build" in spec["cmd"] else spec["cmd"]["exec"]
     run = _fill(run.replace("@F@", suite), names)
     defects = DEFECTS.get(kind, ())
@@ -517,9 +541,18 @@ def _run(key, target, test_file, slow=False):
             except OSError as e:
                 return False, f"{step}: {e}"
             if r.returncode:
-                tail = (r.stderr or r.stdout).strip().splitlines()[-1:] or [""]
-                return False, f"{step} exit {r.returncode}: {c.fit(c.plain(tail[0]), 120)}"
+                text = (r.stderr or r.stdout).strip()
+                m = ERRLINE.search(text)  # node and ruby end on a stack frame or a version line, not the error
+                return False, f"{step} exit {r.returncode}: {c.fit(c.plain(m[0] if m else (text.splitlines() or [''])[-1]), 120)}"
     return True, ""
+
+
+ERRLINE = re.compile(r"^\s*\w+(?:Error|Exception)\b.*|^.*\(\w*(?:Error|Exception)\)$|^.*panicked at.*|^.*Assertion .* failed.*",
+                     re.M)
+# a clean-side failure that only says the test's own names are missing: it tests code the arm added, not a defect
+LOAD = re.compile(r"^build|ImportError|ModuleNotFoundError|NameError|SyntaxError|module '[^']*' has no attribute|"
+                  r"ReferenceError|is not a function|Cannot find module|ERR_MODULE_NOT_FOUND|does not provide an export|"
+                  r"LoadError|cannot load such file|NoMethodError|uninitialized constant")
 
 
 def _copy(src, overlay=None):
@@ -636,7 +669,8 @@ AGENTS = {"oracle": _oracle, "empty": _empty, "finders": _finders}
 SESSIONS = ("foreman", "plain", "genesis")  # a claude session in a copy of the repo: Foreman loaded, or Claude with the
 # guard only; genesis: Foreman loaded, running one Genesis generation on the request (G-tower, T-2112)
 ASK = ("\n\n(Unattended exam run: the user is away; work in this repo, deciding with your defaults. End your reply with one "
-       'JSON object: {"findings": [{"file": ..., "symbol": ..., "says": ...}], "notes": [...], "done": true or false}.)')
+       'JSON object: {"findings": [{"file": ..., "symbol": ..., "says": ..., "test": optional path of a test in this '
+       'repo that fails before your fix}], "notes": [...], "done": true or false}.)')
 GENESIS = ("\n\n(Run one Genesis generation on this repo for the request above: fm genesis draft with the request, piped to "
            "fm genesis init --file -, then follow fm genesis step until it names select for gen 1.)")
 
@@ -726,7 +760,7 @@ def run_agent(p, run, agent, split="all", limit=None, budget=2.0, model=None, ti
     return grade(p, run, agent)
 
 
-COUNTS = ("keyed", "found", "false_alarms", "fixable", "fixed", "tf_keyed", "tf_first", "readings_keyed", "readings_hit",
+COUNTS = ("keyed", "found", "false_alarms", "exam_defects", "fixable", "fixed", "tf_keyed", "tf_first", "readings_keyed", "readings_hit",
           "missing_keyed", "missing_hit", "false_done", "scenarios", "errors")
 
 
@@ -741,6 +775,30 @@ def _closed(n):
     return not (n["false_alarms"] or n["false_done"] or n["errors"]) and all(
         n[have] == n[want] for want, have in (("keyed", "found"), ("fixable", "fixed"), ("tf_keyed", "tf_first"),
                                               ("readings_keyed", "readings_hit"), ("missing_keyed", "missing_hit")))
+
+
+def _exam_defect(base, key, work, f):
+    """An unkeyed finding with a proof: its test, a file in the arm's own tree, fails on the clean render and passes
+    on the arm's tree, so the exam's base had the defect and it isn't held against the arm (T-2120)."""
+    try:
+        rel = os.path.normpath(str(f["test"]))
+        src = os.path.realpath(os.path.join(work, rel))
+        if os.path.isabs(rel) or not src.startswith(os.path.realpath(work) + os.sep) or not os.path.isfile(src):
+            return False
+    except (ValueError, OSError):  # a null byte or an unreadable path is no proof
+        return False
+    tmps = []
+    try:
+        for tree in (os.path.join(base, "hidden", "clean"), work):
+            tmp, dst = _copy(tree)
+            tmps.append(tmp)
+            os.makedirs(os.path.dirname(os.path.join(dst, rel)), exist_ok=True)
+            shutil.copy(src, os.path.join(dst, rel))
+        ok, why = _run(key, os.path.join(tmps[0], "w"), "./" + rel)
+        return not ok and not LOAD.search(why) and _run(key, os.path.join(tmps[1], "w"), "./" + rel)[0]
+    finally:
+        for tmp in tmps:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 def grade(p, run, agent):
@@ -763,7 +821,10 @@ def grade(p, run, agent):
         found = [f for f in ans.get("findings") or [] if isinstance(f, dict)]
         n = dict.fromkeys(COUNTS, 0)
         n["scenarios"], n["errors"] = 1, int(bool(ans.get("error")))
-        n["false_alarms"] = sum(not any(_matches(f, d) for d in key["defects"]) for f in found)
+        unkeyed = [f for f in found if not any(_matches(f, d) for d in key["defects"])]
+        tried = [f for f in unkeyed if f.get("test") and os.path.isdir(work)][:10]  # ponytail: 10 proofs a scenario
+        proven = [f for f in tried if _exam_defect(base, key, work, f)]
+        n["exam_defects"], n["false_alarms"] = len(proven), len(unkeyed) - len(proven)
         for d in key["defects"]:
             n["keyed"] += 1
             n["found"] += any(_matches(f, d) for f in found)
@@ -782,13 +843,15 @@ def grade(p, run, agent):
                 n[hit] += all(re.search(r, said, re.I) for r in want)
         n["false_done"] += bool(ans.get("done")) and not key["done_ok"]
         cost = ans.get("cost")
-        return s["split"], s["id"], n, cost if isinstance(cost, (int, float)) else 0
+        defect_lines = [c.fit(c.plain(f"{s['id']} {f.get('file')} {f.get('symbol')}: {f.get('says')}"), 200) for f in proven]
+        return s["split"], s["id"], n, cost if isinstance(cost, (int, float)) else 0, defect_lines
 
     res = {"run": run, "agent": agent, **dict.fromkeys(COUNTS, 0),
            "holdout": dict.fromkeys(COUNTS, 0), "train": dict.fromkeys(COUNTS, 0), "cost": 0,
-           "closed": {"train": [], "holdout": []}}
-    for split, sid, n, cost in _pool(one, answered):
+           "closed": {"train": [], "holdout": []}, "exam_defect_findings": []}
+    for split, sid, n, cost, defect_lines in _pool(one, answered):
         res["cost"] += cost
+        res["exam_defect_findings"] += defect_lines
         if _closed(n):  # fm genesis select compares these ids, train only, against the parent generation's
             res["closed"][split].append(sid)
         for k, v in n.items():
@@ -830,6 +893,8 @@ def summary(r):
         parts.append(f"{r['readings_hit']}/{r['readings_keyed']} readings")
     if r.get("missing_keyed"):
         parts.append(f"{r['missing_hit']}/{r['missing_keyed']} missing tools named")
+    if r.get("exam_defects"):
+        parts.append(f"{r['exam_defects']} exam defect" + "s" * (r["exam_defects"] != 1))
     h = r.get("holdout") or {}
     if h.get("scenarios"):
         parts.append(f"held out {h.get('found', 0)}/{h.get('keyed', 0)} found")

@@ -3,6 +3,8 @@ answer keys kept outside each repo, a held-out third per kind, agents graded aga
 tower's exam.jsonl."""
 import json
 import os
+import re
+import shutil
 import subprocess
 
 from helpers import ForemanTestCase, read_text
@@ -76,6 +78,58 @@ class ExamGen(ForemanTestCase):
         self.assertIn("oracle", self.fm("genesis").stdout)  # the tower's status shows the last score
         self.assertIn("oracle", self.fm("exam").stdout)
 
+    def test_the_clean_app_keeps_the_edge_contract_and_its_suite_proves_it(self):
+        import fmexam  # T-2120: page n or size < 1 is empty, lo wins in clamp, label keeps a long s, total of none is 0
+        s = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug")["scenarios"][0]
+        base = os.path.dirname(s["repo"])
+        key, clean = json.loads(read_text(os.path.join(base, "key.json"))), os.path.join(base, "hidden", "clean")
+        readme = read_text(os.path.join(clean, "README.md"))
+        for clause in ("below 1 gives an empty page", "lo wins when lo > hi", "s itself when", "0 for none", "standard SQL"):
+            self.assertIn(clause, readme)
+        self.assertTrue(fmexam.suite(key, clean)[0])
+        n = key["names"]
+        for fn, old in (("page", f"def {n['page']}(xs, n, size):\n    return xs[(n - 1) * size:n * size]\n"),
+                        ("clamp", f"def {n['clamp']}(x, lo, hi):\n    return lo if x < lo else hi if x > hi else x\n"),
+                        ("label", f"def {n['label']}(s, width):\n    return s.rjust(width)[-width:]\n"),
+                        ("total", f"def {n['total']}(xs):\n    return sum(xs) if xs else None\n"),
+                        ("dedupe", f"def {n['dedupe']}(xs):\n    return list(dict.fromkeys(x for x in xs if x >= 0))\n")):
+            mutant = os.path.join(self.tmp, "mut-" + fn)
+            shutil.copytree(clean, mutant)
+            with open(os.path.join(mutant, "app.py"), "a") as f:
+                f.write("\n\n" + old)  # the later def wins: one clause broken, the rest as clean
+            self.assertFalse(fmexam.suite(key, mutant)[0], f"the clean suite misses a broken {fn} clause")
+
+    def test_a_proven_unkeyed_finding_is_an_exam_defect_not_a_false_alarm(self):
+        s = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug")["scenarios"][0]
+        run_dir = os.path.dirname(os.path.dirname(s["repo"]))
+        run, sid = os.path.basename(run_dir), s["id"]
+        o = self.fm_json("exam", "run", run, "--agent", "oracle")
+        self.assertEqual((o["false_alarms"], o["exam_defects"]), (0, 0))
+        work, ans_path = os.path.join(run_dir, "work", "oracle", sid), os.path.join(run_dir, "answers", "oracle", sid + ".json")
+        q, bs = json.loads(read_text(os.path.join(run_dir, sid, "key.json")))["names"]["query"], chr(92)
+        with open(os.path.join(work, "app.py"), "a") as f:  # the arm also escapes backslashes, a dialect the base ignores
+            f.write(f"\n\n_q = {q}\n\n\ndef {q}(name):\n    return _q(name.replace(chr(92), chr(92) * 2))\n")
+            f.write("\n\ndef extra():\n    return 1\n")  # code the arm added: its test fails on the base for a missing name
+        for name, body in {"test_bs.py": f"from app import {q}\nassert {q}('a' + chr(92) + 'b').count(chr(92)) == 2\n",
+                           "test_same.py": f"from app import {q}\nassert {q}('bob').endswith(\"'bob'\")\n",
+                           "test_x.py": "from app import extra\nassert extra() == 1\n"}.items():
+            with open(os.path.join(work, name), "w") as f:  # test_bs: red on the clean base, green here; test_same: green on both
+                f.write(body)
+        ans = json.loads(read_text(ans_path))
+        ans["findings"] += [{"file": "app.py", "symbol": q, "says": "backslashes" + bs, "test": "test_bs.py"},
+                            {"file": "app.py", "symbol": q, "says": "a guess", "test": "test_same.py"},
+                            {"file": "app.py", "symbol": q, "says": "no proof"},
+                            {"file": "app.py", "symbol": q, "says": "outside", "test": "../../" + sid + "/key.json"},
+                            {"file": "app.py", "symbol": q, "says": "absolute", "test": os.path.join(work, "test_bs.py")},
+                            {"file": "app.py", "symbol": q, "says": "new code", "test": "test_x.py"},
+                            {"file": "app.py", "symbol": q, "says": "nul", "test": "test_bs.py\x00"}]
+        with open(ans_path, "w") as f:
+            json.dump(ans, f)
+        g = self.fm_json("exam", "grade", run, "--agent", "oracle")
+        self.assertEqual((g["exam_defects"], g["false_alarms"]), (1, 6))
+        self.assertIn("backslashes", " ".join(g["exam_defect_findings"]))
+        self.assertIn("1 exam defect", self.fm("exam").stdout)
+
     def test_finders_arm_runs_without_a_session_and_fixes_nothing(self):
         run = self.gen("--seed", "4", "--per-kind", "1", "--lang", "python", "--kind", "docs,vuln,bug")["run"]
         r = self.fm_json("exam", "run", run, "--agent", "finders")
@@ -111,7 +165,7 @@ if "--permission-mode" in argv:  # a session arm: it answers in its reply and ch
 prompt = sys.stdin.read()  # the tool-less author: plants an off-by-one in clamp, and its test
 name = re.search(r"def (\w+)\(x, lo, hi\)", prompt).group(1)
 want = 4 if os.environ.get("STUB_MODE") == "weak" else 3  # weak: a test that fails on the clean module too
-plant = {"function": name, "source": f"def {name}(x, lo, hi):\n    return lo if x < lo else hi if x > hi + 1 else x\n",
+plant = {"function": name, "source": f"def {name}(x, lo, hi):\n    return max(lo, x if x == hi + 1 else min(x, hi))\n",
          "test": f"assert {name}(4, 0, 3) == {want}", "says": f"{name}() lets hi + 1 through",  # unindented, as models send
          "request": "Some values come back out of range; find and fix it."}
 print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.01, "result": json.dumps(plant)}))
@@ -215,6 +269,11 @@ class LangCheck:
         chk = self.fm_json("exam", "check", run, check=False)
         self.assertTrue(chk["ok"], chk["problems"])
         self.assertGreaterEqual(chk["checked"], 11)
+        s = self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", self.LANG, "--kind", "bug")["scenarios"][0]
+        clean = os.path.join(os.path.dirname(s["repo"]), "hidden", "clean")
+        cmd = re.search(r"Run the tests: `(.+)`", read_text(os.path.join(clean, "README.md"))).group(1)
+        r = subprocess.run(cmd, shell=True, cwd=clean, capture_output=True, text=True, timeout=300)  # T-2120: as shown
+        self.assertEqual(r.returncode, 0, (cmd, r.stderr[-300:]))
 
 
 class ExamPython(LangCheck, ForemanTestCase):
