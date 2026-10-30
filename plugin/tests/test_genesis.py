@@ -754,6 +754,18 @@ class GenesisDraft(ForemanTestCase):
         self.assertEqual(fmgenesis._kinds("Builds", "Keeps continuous integration green."), [])  # not a resume
         self.assertIn("goal, resume", dict((n, k) for n, _, k in fmgenesis.FALLBACK)["Goal to finish"])
 
+    def test_draft_refuses_a_goal_twice_and_per_kind_is_only_for_spec_and_exam(self):
+        # T-2101: the goal line was dropped silently beside --file; --per-kind did nothing on the other actions
+        r = self.fm("genesis", "draft", "ship it", "--file", "-", input="other goal\n", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("not both", r.stderr)
+        for action in ("status", "draft", "step"):
+            r = self.fm("genesis", action, "--per-kind", "4", check=False)
+            self.assertEqual(r.returncode, 1, action)
+            self.assertIn("--per-kind is for fm genesis spec or exam", r.stderr)
+        r = self.fm("genesis", "spec", "--per-kind", "2", check=False)  # still checked there, not swapped for the default
+        self.assertIn("at least 3", r.stderr + r.stdout)
+
     def test_clean_none_and_rank_map_to_their_own_exam_kinds(self):
         import fmgenesis  # T-2131: "none" plants defects with no request; "clean" plants nothing (T-2126)
         self.assertEqual(fmgenesis._kinds("Calibrated judgment", "Leaves a clean repo alone: no false alarms."), ["clean"])

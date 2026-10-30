@@ -1315,6 +1315,11 @@ def cmd_genesis(args):
     action = args.action or "status"
     if action in ("init", "put") and not args.file:
         raise fmcli.UsageError(f"fm genesis {action} needs --file F")
+    if args.per_kind is not None and action not in ("spec", "exam"):  # T-2101: not silently ignored
+        raise fmcli.UsageError("--per-kind is for fm genesis spec or exam")
+    if action == "draft" and args.file and args.path:
+        raise fmcli.UsageError("fm genesis draft takes the goal as a line or in --file, not both")
+    per_kind = 9 if args.per_kind is None else args.per_kind
     def read(binary=False):  # --file - reads stdin, so a tower doc never needs a draft file first
         if args.file == "-":
             return sys.stdin.buffer.read() if binary else sys.stdin.read()
@@ -1352,7 +1357,7 @@ def cmd_genesis(args):
                       + "; ".join(r["unconfirmed"]), file=sys.stderr)
             return fmcli.out(args, r, r["text"].rstrip("\n"))
         if action == "spec":
-            r = spec(p, args.per_kind)
+            r = spec(p, per_kind)
             c.log_event(p, "genesis_spec", data={"run": r["run"]}, session=fmcli.session())
             kick(p)
             return fmcli.out(args, r, f"Spec: {len(r['rows'])} capabilities, {r['total']} scenarios "
@@ -1360,7 +1365,7 @@ def cmd_genesis(args):
                                       + (f"; no exam kind yet: {', '.join(r['unmapped'])}" if r["unmapped"] else "")
                                       + f"\n  {r['path']}")
         if action == "exam":
-            r = exam(p, args.arm, args.split, args.per_kind, args.seed)
+            r = exam(p, args.arm, args.split, per_kind, args.seed)
             import fmexam
             return fmcli.out(args, r, fmexam.summary(r) + f"\n  {os.path.join(fmexam.root(p), r['run'], r['arm'])}")
         if action in ("select", "seed", "drift", "sweep") and not (args.path or "").isdigit():

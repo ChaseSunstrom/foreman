@@ -6917,7 +6917,7 @@ def _build_parser(only=None):
                                           "a whole gen-0 anyway); select/seed/drift/sweep: the generation N")
     s.add_argument("--agent", default="foreman", help="select/sweep: whose graded exam lines count (default foreman)")
     s.add_argument("--file", help="init/put/draft: read the text from this file (- is stdin)")
-    s.add_argument("--per-kind", type=int, default=9, help="spec/exam: exam scenarios per kind; a third is held out")
+    s.add_argument("--per-kind", type=int, help="spec/exam: exam scenarios per kind (default 9); a third is held out")
     s.add_argument("--arm", choices=("genesis", "plain", "oracle", "empty"), default="genesis",
                    help="exam: who drafts (genesis: fm genesis draft; plain: a model with the format only; oracle/empty: "
                         "the scoring's own bounds)")
