@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-30T16:15:43Z",
+ "updated": "2026-10-30T16:21:06Z",
  "rev": "f50cd7a6",
  "capabilities": [
   {
@@ -819,8 +819,8 @@
      "type": "FEATURE",
      "tier": "M",
      "steps": 4,
-     "done": 2,
-     "current": "back-fill: a check for each steer rule (215-217, 250-256, the push grant) via fm decide --check --revisited; fm genesis sweep 1 shows the row green"
+     "done": 4,
+     "current": ""
     }
    ],
    "rules": [
