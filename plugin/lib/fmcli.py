@@ -6966,6 +6966,11 @@ def _build_parser(only=None):
     s.add_argument("path", nargs="?", default=".", help="the tree to prove in (default: here)")
     s.add_argument("--limit", type=int, default=10, help="prove the best N candidates (default 10)")
     s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests, kept for this tree")
+    s.add_argument("--capture", type=int, metavar="N", help="file up to N proven findings as planned tasks fm run works, "
+                   "each red until fixed (its criterion is fm prove --only ID); nothing proven writes "
+                   "research/prove-receipt.md (T-2123)")
+    s.add_argument("--only", metavar="ID", help="prove only the finding with this id (a task's criterion); exit 0 once it "
+                   "is gone or no longer proven")
     s = add("exam", lazy("fmexam", "cmd_exam"), tier=("Finding your way", 456), help="a seeded exam of throwaway repos in six "
             "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
     s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard"),

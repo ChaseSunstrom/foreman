@@ -227,7 +227,7 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 | **Learns a fix once** | A failure that was fixed before gets its fix offered next time, in any project | `fm fix list` |
 | **Changes many spots** | Batches of exact replacements, applied all or none, inside the task's scope | `fm edit` · `fm sub` |
 | **Improves itself** | Rule changes backtested on your real sessions; self-improvement kept only when evals agree | `/foreman:improve` |
-| **Finds problems unasked** | Untested code, undeclared imports, SQL built from input, slow loops, flaky tests, stale docs, leaked keys: deterministic, no model, worst first; a session with nothing to do starts from its leads, proven on a copy | `fm find --rank`, `--capture N`, `fm prove` |
+| **Finds problems unasked** | Untested code, undeclared imports, SQL built from input, slow loops, flaky tests, stale docs, leaked keys: no model, worst first; proven on a copy, each a task red until fixed | `fm find --rank`, `fm prove --capture N`, `/foreman:initiative` |
 | **Seeds itself** | Genesis: generations toward one goal you write; a rewrite stays only if it closed more exam scenarios | `fm genesis step` |
 | **Stays light** | Only the guard and write validators run in line; hooks take about 20 ms | `fm doctor` |
 

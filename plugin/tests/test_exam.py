@@ -1,10 +1,12 @@
 """fm exam (T-2079): a generated exam of throwaway repos in six languages with planted defects and request shapes,
 answer keys kept outside each repo, a held-out third per kind, agents graded against the keys, scores to the Genesis
 tower's exam.jsonl."""
+import difflib
 import json
 import os
 import re
 import shutil
+import sys
 import subprocess
 
 from helpers import CLEAN_READER, ForemanTestCase, read_text
@@ -130,6 +132,96 @@ class ExamGen(ForemanTestCase):
             with open(os.path.join(mutant, "app.py"), "a") as f:
                 f.write("\n\n" + old)  # the later def wins: one clause broken, the rest as clean
             self.assertFalse(fmexam.suite(key, mutant)[0], f"the clean suite misses a broken {fn} clause")
+
+    def test_test_first_puts_back_only_the_defects_lines(self):
+        # T-2203: an arm that also edited other code in the file keeps that edit; a defect region it rewrote credits nothing
+        import fmexam
+        s = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug")["scenarios"][0]
+        base = os.path.dirname(s["repo"])
+        key = json.loads(read_text(os.path.join(base, "key.json")))
+        clean, kind = os.path.join(base, "hidden", "clean"), next(x for x in key["defects"] if x["tf"])["kind"]  # a code defect
+        planted = os.path.join(base, "hidden", "planted", kind)
+        arm = os.path.join(self.tmp, "arm")
+        shutil.copytree(clean, arm)
+        with open(os.path.join(arm, "app.py"), "a") as f:
+            f.write("\n\ndef extra_helper():\n    return 1\n")
+        tmp, dst = fmexam.putback(base, kind, arm)
+        try:
+            body = read_text(os.path.join(dst, "app.py"))
+            self.assertIn("extra_helper", body)  # the arm's other edit survives
+            self.assertEqual(body.replace("\n\ndef extra_helper():\n    return 1\n", ""), read_text(os.path.join(planted, "app.py")))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        self.assertTrue(fmexam.suite(key, clean)[0])
+        self.assertIsNone(fmexam.putback(base, kind, os.path.join(self.tmp, "nowhere")))
+        # the arm fixed the defect in other words but kept the lines around it: the region is replaced by the planted one
+        c, p = read_text(os.path.join(clean, "app.py")).splitlines(True), read_text(os.path.join(planted, "app.py")).splitlines(True)
+        op, i1, i2, j1, j2 = next(o for o in difflib.SequenceMatcher(None, c, p, autojunk=False).get_opcodes() if o[0] != "equal")
+        helper = "\n\ndef extra_helper():\n    return 1\n"
+        for name, lines, ok in (("reworded", c[:i1] + ["# reworded\n"] + [x.rstrip("\n") + "  # reworded\n" for x in c[i1:i2]] + c[i2:], True),
+                                ("anchors", c[:i1 - 1] + [c[i1 - 1].rstrip("\n") + "  # moved\n"] + c[i1:i2] + c[i2:], False)):
+            arm = os.path.join(self.tmp, name)
+            shutil.copytree(clean, arm)
+            with open(os.path.join(arm, "app.py"), "w") as f:
+                f.write("".join(lines) + helper)
+            got = fmexam.putback(base, kind, arm)
+            if not ok:
+                self.assertIsNone(got, name)
+                continue
+            try:
+                self.assertEqual(read_text(os.path.join(got[1], "app.py")), "".join(p) + helper)
+            finally:
+                shutil.rmtree(got[0], ignore_errors=True)
+
+    def test_putback_replaces_each_reworded_region_between_its_anchors(self):
+        # T-2203: two replaced regions in one file, an anchor widened past a line the clean file repeats, one at the end
+        import fmexam
+        base = os.path.join(self.tmp, "synthetic")
+        g = "def g(y):\n    if y is None:\n        return 0\n    return 1\n"
+        tail = "\n\ndef z():\n    return 0\n"
+        clean = "def f(x):\n    return x + 1\n\n\n" + g + "\n\ndef h(y):\n    if y is None:\n        return 0\n    return y * 2\n" + tail
+        planted = clean.replace("x + 1", "x").replace("y * 2", "y")
+        doc = g.replace("def g(y):\n", "def g(y):\n    \"\"\"doc\"\"\"\n")
+        arm = os.path.join(self.tmp, "armwork")
+        for path, text in ((os.path.join(base, "hidden", "clean"), clean), (os.path.join(base, "hidden", "planted", "k"), planted),
+                           (arm, clean.replace("    return x + 1\n", "    return 1 + x\n").replace(g, doc)
+                            .replace("    return y * 2\n", "    result = y * 2\n    return result\n"))):
+            os.makedirs(path)
+            with open(os.path.join(path, "app.py"), "w") as f:
+                f.write(text)
+        os.chmod(os.path.join(arm, "app.py"), 0o444)  # a read-only file is replaced in the copy, not written through
+        tmp, dst = fmexam.putback(base, "k", arm)
+        try:
+            self.assertEqual(read_text(os.path.join(dst, "app.py")), planted.replace(g, doc))  # both defects back, the doc kept
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        # a region on the file's last line anchors on the file's end: what the arm added past it goes too (a test
+        # that imports it then fails to load, which _caught never credits)
+        for path, text in ((os.path.join(base, "hidden", "clean"), clean + "    # end\n"),
+                           (os.path.join(base, "hidden", "planted", "k"), planted + "    # END\n")):
+            with open(os.path.join(path, "app.py"), "w") as f:
+                f.write(text)
+        os.chmod(os.path.join(arm, "app.py"), 0o644)
+        with open(os.path.join(arm, "app.py"), "a") as f:
+            f.write("    # end\n\n\ndef helper():\n    return 1\n")
+        tmp, dst = fmexam.putback(base, "k", arm)
+        try:
+            self.assertEqual(read_text(os.path.join(dst, "app.py")), planted.replace(g, doc) + "    # END\n")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_a_red_from_a_name_the_putback_removed_is_not_the_arms_test_catching_the_defect(self):
+        # T-2203: a suite that fails only because it can't load (the region held a name it imports) caught nothing
+        import fmexam
+        key = {"commands": {"suite": "t.py", "exec": sys.executable + " -I @F@"}}
+        for name, body, caught in (("assert", "assert 1 == 2\n", True), ("load", "from app import gone\n", False),
+                                   ("green", "assert 1 == 1\n", False)):
+            target = os.path.join(self.tmp, "caught-" + name)
+            os.makedirs(target)
+            for fname, text in (("t.py", body), ("app.py", "x = 1\n")):
+                with open(os.path.join(target, fname), "w") as f:
+                    f.write(text)
+            self.assertEqual(fmexam._caught(key, target), caught, name)
 
     def test_an_unkeyed_finding_proved_only_by_the_arms_own_test_stays_a_false_alarm(self):
         # T-2170: the arm wrote the change and the test, so its proof is the arm grading itself; with no outside check

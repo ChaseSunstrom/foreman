@@ -357,6 +357,81 @@ class FindProve(ForemanTestCase):
         self.assertEqual(t["verdict"], "lead", t)  # a marker, not a raise: a swallowed error can't fake a proof
         self.assertIn('a test runs "unused"', t["evidence"])
 
+    def test_capture_files_each_proven_finding_as_a_planned_task_red_until_fixed(self):
+        # T-2123: fm prove --capture N files a task per proven ticket whose criterion is fm prove --only <id>: exit 1
+        # while the finding stands, 0 once it's fixed; nothing proven leaves a receipt instead
+        import shlex
+        import fmcore as c
+        self.fm("init")
+        root = os.path.join(self.repo, "app")
+        write(root, {"app.py": APP, "tests/test_app.py": SUITE})
+        r = json.loads(self.fm("prove", "app", "--yes-run", "--capture", "5", "--json", check=False).stdout)
+        self.assertEqual([t["symbol"] for t in r["tickets"] if t["verdict"] == "proven"], ["unused"])
+        p = c.find_project(self.repo)
+        (tid,) = r["captured"]
+        b = c.find_brief(p, tid)
+        self.assertEqual((b.status, b.tier, b.meta["finder"]), ("planned", "S", "untested"))
+        self.assertEqual(c.plan_gaps(b), [])  # fm run and fm focus take it as filed
+        ((_, verify),) = b.verify_cmds()
+        argv = shlex.split(verify)
+        self.assertEqual(argv[:3], ["fm", "prove", "app"])  # from the checkout's root, so a lane re-proves its copy
+        self.assertRegex(argv[-1], r"^[0-9a-f]{12}$")  # an id, never the repo's text, reaches a shell
+        self.assertEqual(self.fm(*argv[1:], check=False).returncode, 1)  # red: the finding stands
+        again = self.fm("prove", "app", "--capture", "5", "--json", check=False)  # the yes is kept for this tree
+        self.assertEqual(json.loads(again.stdout)["captured"], [])  # never filed twice
+        import subprocess
+        git = lambda *a, cwd=self.repo: subprocess.run(["git", "-C", cwd, *a], check=True, capture_output=True)
+        git("add", "-A")
+        git("commit", "-qm", "app")
+        lane = os.path.join(self.tmp, "lane")
+        git("worktree", "add", "-q", lane)
+        r = self.fm(*argv[1:], cwd=lane, check=False)  # a builder lane re-proves its own copy, on the user's yes for app
+        self.assertEqual(r.returncode, 1, r.stdout)
+        with open(os.path.join(lane, "app", "tests", "test_app.py"), "a") as f:
+            f.write("\n    def test_unused(self):\n        self.assertEqual(app.unused(), 2)\n")
+        r = self.fm(*argv[1:], cwd=lane, check=False)
+        self.assertEqual(r.returncode, 0, r.stdout)  # fixed in the lane, shown there
+        self.assertIn("fixed", r.stdout)
+        suite = os.path.join(root, "tests", "test_app.py")
+        with open(suite, "a") as f:
+            f.write("\n    def test_broken(self):\n        self.fail('an edit that broke the suite')\n")
+        r = self.fm(*argv[1:], check=False)
+        self.assertEqual(r.returncode, 1, r.stdout)  # a red suite shows nothing: the criterion stays red
+        self.assertIn("still open", r.stdout)
+        with open(suite) as f:
+            body = f.read().split("\n    def test_broken")[0]
+        with open(suite, "w") as f:  # gone from fm find once a test names it; the full gates run the suite
+            f.write(body + "\n    def test_unused(self):\n        self.assertEqual(app.unused(), 2)\n")
+        self.assertEqual(self.fm(*argv[1:], check=False).returncode, 0)  # green once a test runs it
+        gone = self.fm("prove", "app", "--only", "0" * 12, check=False)  # no finding with that id: gone
+        self.assertEqual(gone.returncode, 0)
+        self.assertIn("no longer reports it", gone.stdout)
+        write(os.path.join(self.repo, "empty"), {"notes.txt": "nothing to prove\n"})
+        out = self.fm("prove", "empty", "--capture", "3", check=False)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        receipt = os.path.join(p.dir, "research", "prove-receipt.md")
+        self.assertIn(receipt, out.stdout)
+        with open(receipt) as f:
+            self.assertRegex(f.read(), r"nothing proven .*: fm find reported \d+ finding\(s\), \d+ held back, \d+ tried")
+        odd = os.path.join(self.repo, "a\nb")
+        write(odd, {"app.py": APP, "tests/test_app.py": SUITE})
+        self.assertEqual(self.fm("prove", odd, "--capture", "1", check=False).returncode, 2)  # it would split a criterion
+        self.assertEqual(self.fm("prove", "app", "--capture", "0", check=False).returncode, 2)
+        self.assertEqual(self.fm("prove", root, "--capture", "1", cwd=self.tmp, check=False).returncode, 2)  # no project
+        out = self.proj()  # a tree outside the project: its task waits for the user's yes and names the tree in full
+        (oid,) = json.loads(self.fm("prove", out, "--yes-run", "--capture", "1", "--json", check=False).stdout)["captured"]
+        ob = c.find_brief(p, oid)
+        self.assertTrue(ob.meta.get("confirm"))
+        self.assertEqual(shlex.split(ob.verify_cmds()[0][1])[2], os.path.realpath(out))
+
+    def test_provable_kinds_take_the_limit_before_leads_no_check_here_can_prove(self):
+        # T-2123 review: a lead no check here can prove (SQL, slow, flaky) must not fill --limit before what can
+        root = self.proj({"app.py": APP + "\n\n" + SQL, "tests/test_app.py": SUITE.replace(  # SQL ranks first
+            "    def test_used", "    def test_q(self):\n        app.q(type('D', (), {'execute': lambda s, x: x})(), 'a')\n\n"
+            "    def test_used")})
+        r = json.loads(self.fm("prove", root, "--yes-run", "--limit", "1", "--json", check=False).stdout)
+        self.assertEqual([t["kind"] for t in r["tickets"]], ["untested"], r["tickets"])
+
     def test_a_red_suite_or_none_proves_nothing(self):
         root = self.proj({"app.py": APP, "tests/test_app.py": SUITE.replace("app.used(), 1", "app.used(), 9")})
         r = json.loads(self.fm("prove", root, "--yes-run", "--json", check=False).stdout)

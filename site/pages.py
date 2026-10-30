@@ -548,7 +548,10 @@ PAGES = [
           "leads by severity, reach and each finder's track record.</li><li><strong>Your drops teach it.</strong> A "
           "finder whose leads you mostly drop is muted, and the band says so.</li><li><strong>A few a day.</strong> "
           "<code>fm scout --slow</code> files at most 3 leads open and 3 a day, only kinds that prove themselves, "
-          "never one you dropped.</li><li><strong>Only your trees.</strong> A tree whose recent commits aren't yours "
+          "never one you dropped.</li><li><strong>Proven, then fixed.</strong> <code>fm prove --capture 5</code> "
+          "proves what it can on a throwaway copy and files each proven lead as a task whose check stays red until "
+          "it's fixed; nothing proven leaves a receipt. <code>/foreman:initiative</code> runs map, find, prove and "
+          "fix end to end.</li><li><strong>Only your trees.</strong> A tree whose recent commits aren't yours "
           "is skipped; where others commit too, each lead waits for your yes.</li><li><strong>Everywhere.</strong> "
           "The terminal, the <code>find</code> MCP tool for other agents and Desktop, and Foreman Code through its "
           "run tool.</li></ul>"),

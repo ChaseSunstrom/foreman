@@ -4,6 +4,7 @@ small app rendered from one spec. The answer key, the hidden checks and the clea
 third of each kind is held out by a hash of its id. Agents answer, the grader reads only key.json, scores go to the
 Genesis tower's exam.jsonl."""
 import concurrent.futures
+import difflib
 import hashlib
 import json
 import os
@@ -706,6 +707,67 @@ def _copy(src, overlay=None):
     return tmp, dst
 
 
+def _readlines(path):
+    with open(path, encoding="utf-8", newline="") as f:
+        return f.read().splitlines(True)
+
+
+def putback(base, kind, work):
+    """T-2203: a copy of the arm's work with only the defect's lines planted back: per file the clean-to-planted line
+    diff; each changed region is anchored on the unchanged clean lines just before and after it (each found exactly once
+    in the arm's file, in order) and whatever the arm has between them becomes the planted lines, so a fix worded
+    differently still applies. A region at the file's start or end anchors on the edge, so what the arm added past it
+    goes too (a goal's missing function is often the file's last): grade credits only a red that isn't a load error
+    (_caught). (tmp, dst), or None when an anchor is missing, not unique or out of order (or the file is gone): no
+    test-first credit."""
+    clean, planted = os.path.join(base, "hidden", "clean"), os.path.join(base, "hidden", "planted", kind)
+    if not os.path.isdir(work):
+        return None
+    tmp, dst = _copy(work)
+    try:
+        for d, _, files in os.walk(planted):
+            for f in files:
+                rel = os.path.relpath(os.path.join(d, f), planted)
+                try:
+                    c, p = _readlines(os.path.join(clean, rel)), _readlines(os.path.join(planted, rel))
+                    arm = "".join(_readlines(os.path.join(dst, rel)))
+                except (OSError, ValueError):
+                    raise LookupError(rel)
+                for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, c, p, autojunk=False).get_opcodes():
+                    if op == "equal":
+                        continue
+                    whole = "".join(c)
+                    lo, hi = max(i1 - 1, 0), min(i2 + 1, len(c))  # one line each side, more while not unique in clean
+                    while lo > 0 and whole.count("".join(c[lo:i1])) != 1:
+                        lo -= 1
+                    while hi < len(c) and whole.count("".join(c[i2:hi])) != 1:
+                        hi += 1
+                    before, after = "".join(c[lo:i1]), "".join(c[i2:hi])
+                    if (before and arm.count(before) != 1) or (after and arm.count(after) != 1):
+                        raise LookupError(rel)
+                    # ponytail: an edge region runs to the file's edge; a wiped name fails to load (no credit), a
+                    # wiped side effect would still read as red: keep the arm's tail when that shows up in real arms
+                    start = arm.index(before) + len(before) if before else 0
+                    end = arm.index(after) if after else len(arm)
+                    if end < start:
+                        raise LookupError(rel)
+                    arm = arm[:start] + "".join(p[j1:j2]) + arm[end:]
+                os.unlink(os.path.join(dst, rel))  # a read-only file or a link: replaced in the copy, never written through
+                with open(os.path.join(dst, rel), "w", encoding="utf-8", newline="") as fh:
+                    fh.write(arm)
+        return tmp, dst
+    except (LookupError, OSError):
+        shutil.rmtree(tmp, ignore_errors=True)
+        return None
+
+
+def _caught(key, target):
+    """T-2203: the suite failed on the defect, not on loading (a name the putback removed). A timeout counts: a slow
+    defect shows that way."""
+    ok, why = _run(key, target, key["commands"]["suite"], slow=True)
+    return not ok and not LOAD.search(why)
+
+
 def _static(target, chk):
     texts = []
     for d, dirs, files in os.walk(target):
@@ -1012,8 +1074,11 @@ def grade(p, run, agent):
             n["fixed"] += fixed
             if d["tf"]:
                 n["tf_keyed"] += 1
-                n["tf_first"] += bool(fixed and suite(key, work)[0] and not suite(
-                    key, work, os.path.join(base, "hidden", "planted", d["kind"]), slow=True)[0])
+                if fixed and suite(key, work)[0] and (pb := putback(base, d["kind"], work)):  # T-2203
+                    try:
+                        n["tf_first"] += _caught(key, pb[1])
+                    finally:
+                        shutil.rmtree(pb[0], ignore_errors=True)
         said = "\n".join([str(x) for x in ans.get("notes") or []] + [str(f.get("says") or "") for f in found])
         for want, kw, hit in ((key["readings"], "readings_keyed", "readings_hit"),
                               (key["missing"], "missing_keyed", "missing_hit")):
