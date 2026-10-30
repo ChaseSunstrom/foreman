@@ -78,11 +78,12 @@ class Friction(ForemanTestCase):
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         with open(log, "w") as f:
             for event in ("PreToolUse", "PreToolUse", "Stop"):
-                f.write(f"{now} {event} Traceback (most recent call last):\n  File \"x.py\", line 1\nNameError: boom\n")
+                f.write(f"{now} {event} Traceback (most recent call last):\n  File \"/a/fmcore.py\", line 9, in x\n"
+                        f"  File \"/a/plugin/lib/fmhooks.py\", line 1474, in run\nNameError: boom\n")
             f.write(f"{now} Stop paused for 10 min after 3 failures in a row\n")  # the breaker's note isn't an error
         out = self.fm("friction").stdout
         self.assertIn("3 in the last 24 h, most in PreToolUse (2)", out)
-        self.assertIn("NameError: boom", out)
+        self.assertIn("NameError: boom (fmhooks.py:1474, state/logs/hooks.log)", out)  # T-2107: the innermost frame
 
     def test_slow_gate_ignores_reused_passes(self):
         # T-0424: a reused pass records 0.0 s; counting it dragged the median to 0 ("12s vs usual 0s")
