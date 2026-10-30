@@ -5431,6 +5431,7 @@ def cmd_autonomy(args):
 def lazy(module, func):
     def run(args):
         return getattr(__import__(module), func)(args)
+    run.module = module  # T-2186: fm genesis check's reach maps a verb to the module it runs
     return run
 
 

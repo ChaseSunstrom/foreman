@@ -3543,7 +3543,7 @@ def _next_for(p, briefs=None):
         if fmloop.on(p) and not fmcontract.over(p, freeze=False):
             return None, "loop", fmloop.action(p) + waits
         if not worked_in(p, briefs):
-            return None, "idle", "queue is empty in a repo Foreman hasn't worked in: fm find --rank, then prove each lead" \
+            return None, "idle", "queue is empty, repo new to Foreman: fm adopt, fm find --rank, then prove each lead" \
                 + waits  # short: the prompt hook's 400-character note still fits a skill hint beside it
         return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)" + waits
     if b.status == "active" and b.meta.get("replan"):  # T-0603

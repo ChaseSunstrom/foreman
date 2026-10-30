@@ -171,6 +171,11 @@ class SessionStart(HookCase):
             note = fmhooks._leads_note(p)
         self.assertIn("fm find --rank", note)
         self.assertIn("untested: a test that calls it", note)
+        self.assertIn("fm adopt", note)  # T-2186: a repo new to Foreman starts from its baseline
+        tid = self.fm_json("task", "new", "x", "--type", "FIX", "--tier", "S", "--step", "x")["id"]
+        self.fm("task", "drop", tid, "done elsewhere")
+        with mock.patch.object(fmhooks, "LEADS_FILES", 2):
+            self.assertNotIn("fm adopt", fmhooks._leads_note(p))  # worked in: no gate run for a one-shot request
         self.assertRegex(note, r"\b[3-9] files, too many")  # 1 tracked, the rest untracked
         self.assertNotIn("kit/store.py", note)
         import fmfind
@@ -183,11 +188,31 @@ class SessionStart(HookCase):
     def test_fm_next_in_a_repo_foreman_hasnt_worked_in_names_fm_find(self):
         self.fm("init")
         self.assertIn("fm find --rank", self.fm("next").stdout)
+        self.assertIn("fm adopt", self.fm("next").stdout)  # T-2186: the baseline a lead's failing test is read against
         tid = self.fm_json("task", "new", "x", "--type", "FIX", "--tier", "S", "--step", "x")["id"]
         self.fm("task", "drop", tid, "done elsewhere")
         out = self.fm("next").stdout
         self.assertIn("queue is empty", out)
         self.assertNotIn("fm find --rank", out)
+
+    def test_session_start_shows_a_standing_mandate(self):
+        # T-2186: fm mandate keeps a sweeping request standing, but only fm scout and fm night read it; no session saw it
+        import time
+        import fmcore as c
+        self.fm("init")
+        self.fm("mandate", "set", "cover the CSV importer's edge cases", "--until",
+                time.strftime("%Y-%m-%d", time.localtime(time.time() + 3 * 86400)))
+        ctx = self.ctx_of(self.run_ss())
+        self.assertIn('"cover the CSV importer\'s edge cases"', ctx)  # quoted: the user's words, as data
+        self.assertIn("fm mandate", ctx)
+        p = c.find_project(self.repo)
+        c.update_meta(p, mandate=dict(c.read_meta(p)["mandate"], until=c.iso(time.time() - 60)))
+        ctx = self.ctx_of(self.run_ss("resume"))
+        self.assertNotIn("CSV importer", ctx)  # ended: renew it or let it lapse, not work under it
+        self.assertIn("fm mandate off", ctx)
+        self.assertIn("the user's call, never yours", ctx)  # a session never renews its own authority
+        self.fm("mandate", "off")
+        self.assertNotIn("fm mandate", self.ctx_of(self.run_ss()))
 
     def test_an_unattended_run_is_told_to_end_with_its_checks(self):
         # T-1228: the duel's judge read only the final reply; Foreman's evidence sat in its ledger, not in the reply
