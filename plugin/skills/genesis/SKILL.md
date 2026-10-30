@@ -16,6 +16,8 @@ A user steer mid-run becomes a standing rule plus its check in the same task:
 
 1. The user's own words are gen-0. Given only a line, or nothing: `fm genesis draft "<line>"` prints a whole gen-0.
    Show it; their MUST/NEVER lines stay verbatim, and anything it marks unconfirmed is kept or cut by them.
+   It carries the user's standing intent (`plugin/templates/standing-intent.md`): under gen-0, over every later
+   steer, read by every cold read and seed, and #13's exam fails a draft missing a clause.
 2. `fm genesis init --file -` saves it read-only and sealed by its hash (refused if it holds a secret); drift fails
    if gen-0 ever changes, and the sweep turns red on a grant kind no earlier generation used.
 3. `fm genesis spec` maps its §2 capabilities to an exam, a third held out for grading only.
