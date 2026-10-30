@@ -265,6 +265,8 @@ def tiles(pairs, cls=""):
 
 
 PROOF_MARK = "<!-- proof: build.py fills it from data/stats.json (T-1609) -->"
+SHADER_MARK = "<!-- shaders: build.py fills it with four shader cards running live (T-2062) -->"
+LANDING_SHADERS = ("shader-aurora-bands", "shader-soft-caustics", "shader-grain-gradient", "shader-halftone")
 STATIONS = [("tasks_done", "tasks done"), ("evidence", "evidence runs"), ("proofs", "proofs"), ("commits", "commits")]
 
 
@@ -478,12 +480,18 @@ def build(out):
     shutil.copytree(HERE, out, ignore=lambda d, names: [n for n in names if n in SOURCE_ONLY])
     with open(os.path.join(out, "index.html"), encoding="utf-8") as f:  # T-1609: the hero's poster
         page = f.read()
-    if PROOF_MARK not in page:  # review: a lost mark shipped a hero with no proof
-        raise SystemExit("build.py: site/index.html lost the proof mark: " + PROOF_MARK)
+    for what, mark in (("proof", PROOF_MARK), ("shaders", SHADER_MARK)):  # review: a lost mark shipped a hero with no proof
+        if mark not in page:
+            raise SystemExit(f"build.py: site/index.html lost the {what} mark: {mark}")
     totals, asof = stats.get("totals") or {}, str(stats.get("generated") or "")
     sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))  # T-1283: fm code tui draws its own picture
     import fmcodetui
     import fmreplay
+    import fmscene
+    looks = [c for c in fmscene.sketch_cards() if c["name"] in LANDING_SHADERS]
+    if len(looks) != len(LANDING_SHADERS):  # a renamed card would ship a short strip
+        raise SystemExit("build.py: a landing shader card is missing: " + ", ".join(LANDING_SHADERS))
+    page = page.replace(SHADER_MARK, fmscene.sketchbook_html(looks, page=False), 1)
     cards = stats.get("cards") or {}
     counts = {"tasks": totals.get("tasks_done", 0), "tests": (stats.get("code") or {}).get("tests", 0),  # T-2040
               "cards": sum(cards.values()), "areas": len(cards), "pages": len(P.PAGES), "replay": fmreplay.MAX}
