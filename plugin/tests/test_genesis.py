@@ -993,7 +993,7 @@ class GenesisDraft(ForemanTestCase):
         rows = json.loads(r.stdout)["rows"]
         self.assertEqual([(x["name"], x["state"], x["closed"], x["graded"]) for x in rows],
                          [("Correctness", "pass", 4, 4), ("Security", "under", 2, 4), ("Speed", "too few", 2, 2),
-                          ("Taste", "no exam kind", 0, 0), ("Genesis as a feature", "no outside author", 0, 0)])
+                          ("Taste", "no exam kind", 0, 0), ("Genesis as a feature", "partial", 3, 3)])  # no 'none' graded
         self.assertEqual(rows[4]["agent"], "draft-genesis")
         self.assertEqual(json.loads(r.stdout)["smoke"], 2)  # the older s9 line takes the stamp its regrade gave
         self.assertIn("2 Haiku smoke lines not counted", self.fm("exam", "scorecard", check=False).stdout)
@@ -1027,11 +1027,10 @@ class GenesisDraft(ForemanTestCase):
             r = fmgenesis.scorecard(self.p)
             self.assertEqual([(x["name"], x["state"], x["closed"], x["graded"], x["selfmade"]) for x in r["rows"]],
                              [("Correctness", "pass", 3, 3, 6), ("Tools", "no outside author", 0, 0, 3),
-                              ("Genesis as a feature", "no outside author", 0, 0, 1)])
+                              ("Genesis as a feature", "too few", 0, 0, 1)])  # T-2215: #13 can have one now
         self.assertEqual((r["selfmade"], r["ok"]), (9, False))
-        self.assertIn("template", r["rows"][2]["why"])  # #13: fm genesis spec renders only template projects
         text = self.fm("exam", "scorecard", check=False).stdout
-        self.assertIn("3. Genesis as a feature: no outside author", text)
+        self.assertIn("3. Genesis as a feature: too few", text)
         self.assertIn("9 self-authored held-out results not counted", text)
         self.assertIn("1/3 pass, 9 self-authored skipped", fmgenesis._exam_count(self.p))
         fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": kid, "child": []},
@@ -1885,6 +1884,23 @@ class GenesisPropose(ForemanTestCase):
             self.assertIn(want, js)
 
 
+GEN_STUB = r'''#!/usr/bin/env python3
+import json, os, re, sys
+argv, prompt = sys.argv[1:], sys.stdin.read()
+fail = os.environ.get("STUB_FAIL", "")
+if fail == "always" or (fail and not os.path.exists(fail)):  # this call fails, so its scenario keeps the template
+    if fail != "always":
+        open(fail, "w").close()
+    print(json.dumps({"type": "result", "is_error": True, "result": "overloaded"}))
+    sys.exit(1)
+spans = re.findall(r"`([^`\n]+)`", prompt)
+x = {"readme": "# What this is\n\nA handful of helpers a small app leans on.\n\n" + "".join(f"- `{s}` stays\n" for s in spans)}
+if any("one MUST: line and one NEVER: line" in a for a in argv):  # G-line's lines too
+    x.update(must="MUST: keep every helper's name as it is", never="NEVER: print from inside a helper")
+print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.01, "result": json.dumps(x)}))
+'''  # T-2215: the tool-less author of a G-scenario's README and lines
+
+
 class GenesisExam(ForemanTestCase):
     """T-2112: fm genesis exam grades #13 on generated projects: a line ("make this great" plus planted MUST/NEVER
     lines), nothing, or "super improve this" in; a draft out, graded by cover against gen-0 plus the planted lines, a
@@ -1907,6 +1923,54 @@ class GenesisExam(ForemanTestCase):
         os.chmod(os.path.join(bindir, "claude"), 0o755)
         return {"PATH": bindir + os.pathsep + os.environ["PATH"], "STUB_LOG": os.path.join(self.tmp, "stub.log"),
                 "STUB_REPLY": reply}
+
+    def gen_child(self, fail=""):
+        bindir = os.path.join(self.tmp, "cbin")
+        os.makedirs(bindir, exist_ok=True)
+        with open(os.path.join(bindir, "claude"), "w") as f:
+            f.write(GEN_STUB)
+        os.chmod(os.path.join(bindir, "claude"), 0o755)
+        return {"PATH": bindir + os.pathsep + os.environ["PATH"], "STUB_FAIL": fail}
+
+    def test_a_child_writes_what_the_drafts_read_and_13_counts_it(self):
+        # T-2215: #13 read 'no outside author' while every G-scenario was Foreman's own; review: a code plant no draft
+        # reads isn't outside authorship, so the child writes the README and G-line's lines
+        import fmexam
+        import fmgenesis
+        r = self.exam("--arm", "oracle", "--per-kind", "3", "--author", "child", "--lang", "python", env=self.gen_child())
+        self.assertEqual((len(r["closed"]["holdout"]), r["child"]), (3, 3), r["misses"])  # the oracle still closes each
+        last = fmgenesis._exam(self.p, "draft-oracle")[-1]
+        self.assertEqual(sorted(last["answered"]["child"]), sorted(last["answered"]["holdout"]))
+        self.assertEqual((last["author"], last["model"]), ("child", "sonnet"))
+        line_id = next(i for i in last["answered"]["holdout"] if i.startswith("line-"))
+        kept = os.path.join(fmexam.root(self.p), "genesis-s0", "authored")
+        made = json.loads(read_text(os.path.join(kept, line_id + ".json")))
+        self.assertTrue(made["readme"].startswith("# What this is"))
+        saved = json.loads(read_text(os.path.join(fmexam.root(self.p), "genesis-s0", "oracle", line_id + ".json")))
+        self.assertIn("MUST: keep every helper's name as it is", saved["line"])  # the child's lines, not the pool's
+        fmgenesis.exam_line(self.p, dict(last, agent="draft-genesis"))  # a genesis arm's line with the same results
+        row = next(x for x in fmgenesis.scorecard(self.p)["rows"] if x["agent"] == "draft-genesis")
+        self.assertEqual((row["state"], row["graded"]), ("pass", 3))
+        # another arm reads the same authored input, even with the child gone
+        r2 = self.exam("--arm", "empty", "--per-kind", "3", "--author", "child", "--lang", "python",
+                       env=self.gen_child("always"))
+        self.assertEqual(r2["child"], 3)
+        self.assertEqual(json.loads(read_text(os.path.join(fmexam.root(self.p), "genesis-s0", "empty", line_id + ".json")))
+                         ["line"], saved["line"])
+
+    def test_a_failed_child_keeps_that_scenario_foremans_own(self):
+        import fmexam
+        import fmgenesis
+        r = self.exam("--arm", "oracle", "--per-kind", "3", "--author", "child", "--lang", "python",
+                      env=self.gen_child(os.path.join(self.tmp, "failed-once")))
+        self.assertEqual((r["child"], len(r["closed"]["holdout"])), (2, 3), r["misses"])
+        last = fmgenesis._exam(self.p, "draft-oracle")[-1]
+        (lost,) = set(last["answered"]["holdout"]) - set(last["answered"]["child"])
+        self.assertEqual(last["author"], "child+self")
+        self.assertFalse(os.path.exists(os.path.join(fmexam.root(self.p), "genesis-s0", "authored", lost + ".json")))
+        if lost.startswith("line-"):  # the template's own lines, whole
+            saved = json.loads(read_text(os.path.join(fmexam.root(self.p), "genesis-s0", "oracle", lost + ".json")))
+            self.assertTrue(any(x in saved["line"] for x in fmgenesis.PLANT[0]))
 
     def test_the_oracle_closes_every_scenario_and_empty_none(self):
         import fmgenesis

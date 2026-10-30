@@ -6967,6 +6967,11 @@ def _build_parser(only=None):
                         "the scoring's own bounds)")
     s.add_argument("--split", choices=("holdout", "train", "all"), default="holdout", help="exam: which scenarios")
     s.add_argument("--seed", type=int, default=0, help="exam: the scenario draw")
+    s.add_argument("--author", choices=("self", "child"), default="self",
+                   help="exam: child = each project's defect and G-line's MUST/NEVER lines come from a tool-less model, "
+                        "so #13 scores on scenarios Foreman didn't write (T-2215)")
+    s.add_argument("--model", help="exam: the child author's model (default sonnet)")
+    s.add_argument("--lang", help="exam: comma list of languages to draw projects in (default all six)")
     s.add_argument("--task", help="live on: the task whose publish grant switches it on (default: the active task)")
     s.add_argument("--settle", action="store_true", help="publish: wait out the rest of the window first (the detached "
                                                          "publish a tower change starts)")
