@@ -305,7 +305,22 @@ def check(p):
     """Standing rules 1-3 over the tower: the coverage grid and the not-yet ledger, against the newest generation."""
     d, n = home(p), current(p) or None
     return {"gen": n, "coverage": coverage(p, _doc(d, "coverage.md"), _doc(d, "gen-0.md") or ""),
-            "not_yet": not_yet(_doc(d, "not-yet.md"), n), "reach": reach(p, n)}
+            "not_yet": not_yet(_doc(d, "not-yet.md"), n), "reach": reach(p, n), "lineage": marks(_doc(d, "lineage.md"))}
+
+
+def marks(lineage):
+    """T-2171 (steer 2026-10-30 rule 4): selection rests on cheap signals until the end-of-run exam on the production
+    model, so each '## gen-N' lineage choice carries a '- provisional:', '- confirmed:' or '- reversed:' line."""
+    gens = [(h, b) for h, b in _sections(lineage or "") if re.match(r"gen-\d+\b", h)]  # select's own stage test
+    return {"choices": len(gens), "problems": [f"{c.plain(h)[:60]}: no provisional, confirmed or reversed line (a "
+                                               "choice stays provisional until the end-of-run exam: rerun fm genesis "
+                                               "select N, or add a '- provisional:' line)" for h, b in gens
+                                               if not re.search(r"^- (provisional|confirmed|reversed):", b, re.M)]}
+
+
+def _bad(r):
+    """Every problem fm genesis check reports, in its order."""
+    return [x for part in ("coverage", "not_yet", "reach", "lineage") for x in (r.get(part) or {}).get("problems", [])]
 
 
 def _literals(src):
@@ -535,6 +550,12 @@ def _check_lines(r, limit=6):
         out += [f"    {x}" for x in reach_["problems"][:limit]] + ([f"    … {more} more (--json lists all)"] if more > 0 else [])
     else:
         out.append(f"✓ reach: {reach_['verbs']} fm verb(s) the missions name, each on a session path")
+    lin = r.get("lineage") or {"choices": 0, "problems": []}
+    if lin["problems"]:
+        out.append(f"✗ lineage: {len(lin['problems'])} of {lin['choices']} choice(s) unmarked")
+        out += [f"    {x}" for x in lin["problems"][:limit]]
+    else:
+        out.append(f"✓ lineage: {lin['choices']} choice(s), each provisional, confirmed or reversed")
     return out
 
 
@@ -1307,7 +1328,10 @@ def _select(p, n, agent):
     sec = (f"## gen-{n}\n- {dict(keep='kept', revert='reverted', baseline='baseline')[verdict]}: {why}\n"
            f"- run {shown} (agent {agent}): train closed {len(a)}" + (f" vs parent {len(b)}" if mom else "")
            + f"; reopened: {', '.join(map(str, reopened)) or 'none'}; held out never used; cost {res['cost']['gen']}"
-           + (f" vs {res['cost']['parent']}" if mom else "") + f"\n- seed base: {base}\n")
+           + (f" vs {res['cost']['parent']}" if mom else "")
+           + f"\n- provisional: until the end-of-run exam on the production model confirms or reverses it; rests on exam "
+             f"run {shown} only ({len(k)} graded line{'s' * (len(k) != 1)} from {agent}, train only; no other signal "
+             f"recorded)\n- seed base: {base}\n")
     old = lineage or "# Lineage\n"
     pat = re.compile(rf"^## gen-{n}\b.*?(?=^## |\Z)", re.M | re.S)
     put(p, "lineage.md", pat.sub(lambda _: sec + "\n", old, count=1) if pat.search(old) else old.rstrip("\n") + "\n\n" + sec)
@@ -1623,8 +1647,7 @@ def sweep(p, n, agent="foreman"):
         rows.append({"check": name, "ok": not bad, "detail": "; ".join(bad[:8]) + (f"; … {len(bad) - 8} more"
                                                                                     if len(bad) > 8 else "") or good})
     r = check(p)
-    row("genesis check", r["coverage"]["problems"] + r["not_yet"]["problems"] + r["reach"]["problems"],
-        "coverage, not-yet and reach are whole")
+    row("genesis check", _bad(r), "coverage, not-yet, reach and lineage are whole")
     row("steer checks", c.steer_checks(p), "every rule from a user steer has a check, and each passes")  # T-2167
     briefs = c.load_briefs(p)
     by_id = {b.id: b for b in c.load_briefs(p, include_archive=True)}  # fm tidy archives closed briefs after 14 days
@@ -1747,7 +1770,7 @@ def cmd_genesis(args):
         if action == "check":
             r = check(p)
             fmcli.out(args, r, "\n".join(_check_lines(r)))
-            return 1 if r["coverage"]["problems"] or r["not_yet"]["problems"] or r["reach"]["problems"] else 0
+            return 1 if _bad(r) else 0
         if action == "step":
             r = step(p)
             fmcli.out(args, r, f"gen {r['gen']} · {r['stage']}: {r['action']}\n  → {r['command']}")

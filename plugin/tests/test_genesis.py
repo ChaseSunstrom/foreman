@@ -520,6 +520,31 @@ class GenesisCheck(ForemanTestCase):
         self.assertEqual(fmgenesis._literals("# fm bus watch\ndef f():\n    '''fm doc verb'''\n    return f'fm find {1}'\n"),
                          ["fm find "])  # comments and docstrings aren't session paths
 
+    def test_a_lineage_choice_is_provisional_until_the_end_of_run_exam(self):
+        # T-2171 (steer 2026-10-30 rule 4): selection rests on cheap signals until the end-of-run exam confirms or
+        # reverses it, so a lineage section with no such mark reads as final when nothing final backs it
+        import contextlib
+        import io
+        import fmcore as c
+        import fmcli
+        import fmgenesis
+        from unittest import mock
+        p = c.find_project(self.repo)
+        tower_file(fmgenesis.home(p), "lineage.md", "# Lineage\n\n## gen-1\n- baseline: first\n- seed base: gen-1\n\n"
+                   "## gen-2\n- kept: more\n- provisional: until the end-of-run exam; run r1\n- seed base: gen-2\n\n"
+                   "## gen-3\n- reverted: fewer\n- reversed: the end-of-run exam e1\n- seed base: gen-2\n\n"
+                   "## gen-4 (kept by hand)\n- kept: x\n- seed base: gen-4\n")
+        r = fmgenesis.check(p)
+        why = ("no provisional, confirmed or reversed line (a choice stays provisional until the end-of-run exam: "
+               "rerun fm genesis select N, or add a '- provisional:' line)")
+        self.assertEqual(r["lineage"], {"choices": 4, "problems": [f"gen-1: {why}", f"gen-4 (kept by hand): {why}"]})
+        self.assertIn("✗ lineage: 2 of 4 choice(s) unmarked", "\n".join(fmgenesis._check_lines(r)))
+        with mock.patch.object(fmgenesis, "check", return_value=dict(r, coverage={**r["coverage"], "problems": []},
+                                                                      not_yet={**r["not_yet"], "problems": []},
+                                                                      reach={"verbs": 0, "problems": []})), \
+                contextlib.chdir(self.repo), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(fmcli.main(["genesis", "check"]), 1)  # an unmarked choice alone fails the check
+
     def test_a_verb_whose_module_a_reached_verbs_module_imports_is_reached(self):
         # T-2186: fm find runs fmoutcomes' and fmdocs' code, so a session that runs fm find uses fm outcomes and fm docs;
         # reach read only words, so it named them unreached while it missed fm adopt and fm mandate, which nothing ran
@@ -1068,6 +1093,9 @@ class GenesisSelect(ForemanTestCase):
             text = self.read("lineage.md")
             self.assertEqual(text.count("## gen-2"), 1)  # a rerun of select replaces its section
             self.assertIn(f"seed base: {r['base']}", text)
+            self.assertRegex(text, r"(?m)^- provisional: until the end-of-run exam .*exam run r1 only \(1 graded line "
+                                   r"from foreman, train only; no other signal recorded\)")  # T-2171: steer 1 rule 4
+            self.assertEqual(fmgenesis.check(self.p)["lineage"]["problems"], [])
         self.assertIn("genesis select gen-2: keep", self.decisions())
 
     def test_a_one_scenario_margin_on_one_line_asks_for_a_rerun(self):
@@ -1519,6 +1547,11 @@ class GenesisSweep(ForemanTestCase):
                 mock.patch.object(fmgenesis, "_gates", return_value="run at 12:00 UTC"):
             row = next(x for x in fmgenesis.sweep(self.p, 1)["rows"] if x["check"] == "genesis check")
         self.assertEqual((row["ok"], row["detail"]), (False, "fm find: unreached"))
+        bad = dict(bad, reach={"problems": []}, lineage={"choices": 1, "problems": ["gen-1: unmarked"]})  # T-2171
+        with mock.patch.object(fmgenesis, "check", return_value=bad), mock.patch.object(fmgenesis, "_doctor", return_value=[]), \
+                mock.patch.object(fmgenesis, "_gates", return_value="run at 12:00 UTC"):
+            row = next(x for x in fmgenesis.sweep(self.p, 1)["rows"] if x["check"] == "genesis check")
+        self.assertEqual((row["ok"], row["detail"]), (False, "gen-1: unmarked"))
 
     def test_an_archived_mission_task_counts_and_an_unmerged_lane_is_red_until_queued(self):
         import subprocess
