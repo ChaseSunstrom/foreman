@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm genesis live on` keeps the site's Genesis page current: after one publish grant, every tower change and each turn end starts a background publish (at most every 5 minutes; a change inside that window goes out when it ends) that exports the tower into a scratch copy of main and pushes the data (site/genesis only) when something changed; `fm genesis publish` runs one now, `fm genesis` shows the last push, `fm genesis live off` stops it. The test workflow skips data-only pushes (T-2090).
 - The Genesis page is part of the site: the same header, nav, footer, stylesheet, type and light/dark palette as every other page, with the tower's own shades mixed from the site's tokens (T-2087).
 - Genesis on the site: `fm genesis export DIR` writes the tower's docs (home paths shown as ~, secrets redacted) and a genesis.json of its capabilities, rated gaps, generations, missions, their tasks' progress, exam results and coverage; site/genesis draws it live as the prompt tower (hover a mission to see what it waits on), capability cards, the ambition scale, the exam table, the run's rules and every doc, each box opening a drawer with its full text, in light and dark and at phone width, loading nothing from another host; linked from the landing page (T-2080).
 - `fm genesis put` also files not-yet.md and coverage.md, and `--file -` reads stdin (T-2080).

@@ -3227,6 +3227,11 @@ def stop(pl):
         fmcost.sweep_detached(p)
     except Exception:
         log_error("Stop", _tb())
+    try:  # T-2090: fm genesis live: task progress and exam results reach the site's Genesis page too
+        import fmgenesis
+        fmgenesis.kick(p)
+    except Exception:
+        log_error("Stop", _tb())
     briefs = c.load_briefs(p)
     act = c.active_brief(briefs, p.lane)
     if act:
