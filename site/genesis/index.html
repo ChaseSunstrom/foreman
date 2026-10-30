@@ -60,7 +60,7 @@
 
   <section aria-labelledby="e-label">
     <h2 class="label" id="e-label">D · The exam · held-out repos decide "done"</h2>
-    <p class="muted"><code>fm exam gen</code> plants defects in throwaway repos in six languages (Python, JS, TS, Ruby, Rust, C) and keeps the answer key outside each repo; a third of every kind is held out. Each agent's answers are graded against the keys: found, false alarms, fixed, tests written first. A model with no tools writes some of the bugs itself (kept only when the exam's own check passes them), and Claude with and without Foreman answer the same held-out repos, each score with its cost.</p>
+    <p class="muted"><code>fm exam gen</code> plants defects in throwaway repos in six languages (Python, JS, TS, Ruby, Rust, C) and keeps the answer key outside each repo; a third of every kind is held out. Each agent's answers are graded against the keys: found, false alarms, fixed, tests written first. A model with no tools writes some of the scenarios itself (kept only when the exam's own check passes them), and only those decide the scorecard: Foreman's own templates never grade Foreman. Claude with and without Foreman answer the same held-out repos, each score with its cost.</p>
     <div id="exam"></div>
   </section>
 

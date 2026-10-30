@@ -951,17 +951,17 @@ class GenesisDraft(ForemanTestCase):
     def test_scorecard_grades_each_capability_on_its_newest_held_out_results(self):
         import fmgenesis  # T-2097: the §8 scorecard, read from graded exam.jsonl lines
         self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
-                "1. **Correctness.** Fixes what's broken. Exam: bug.\n2. **Docs match code.** Keeps docs true. Exam: docs.\n"
+                "1. **Correctness.** Fixes what's broken. Exam: bug.\n2. **Security.** Closes holes. Exam: vuln.\n"
                 "3. **Speed.** Fast. Exam: slow.\n4. **Taste.** Picks good names.\n"
                 "5. **Genesis as a feature.** Seeds itself.\n\n## 3. The tower\n")
 
         def ids(kind, n):
             return [f"{kind}-python-{i:06x}" for i in range(n)]
 
-        def line(agent, held, closed, train=()):
-            fmgenesis.exam_line(self.p, {"agent": agent, "answered": {"train": list(train), "holdout": held},
+        def line(agent, held, closed, train=()):  # T-2204: each scenario an outside (child) author's
+            fmgenesis.exam_line(self.p, {"agent": agent, "answered": {"train": list(train), "holdout": held, "child": held},
                                          "closed": {"train": list(train), "holdout": closed}})
-        bug, docs, slow = ids("bug", 4), ids("docs", 4), ids("slow", 2)
+        bug, docs, slow = ids("bug", 4), ids("vuln", 4), ids("slow", 2)
         line("foreman", bug + docs, bug + docs)  # an older run closed all of them
         line("foreman", docs[:2], [])  # the newest result for two docs scenarios: not closed
         line("foreman", [], [], train=ids("slow", 9))  # train results never grade a capability
@@ -979,8 +979,8 @@ class GenesisDraft(ForemanTestCase):
         self.assertEqual(r.returncode, 1, "not every capability passes")
         rows = json.loads(r.stdout)["rows"]
         self.assertEqual([(x["name"], x["state"], x["closed"], x["graded"]) for x in rows],
-                         [("Correctness", "pass", 4, 4), ("Docs match code", "under", 2, 4), ("Speed", "too few", 2, 2),
-                          ("Taste", "no exam kind", 0, 0), ("Genesis as a feature", "pass", 3, 3)])
+                         [("Correctness", "pass", 4, 4), ("Security", "under", 2, 4), ("Speed", "too few", 2, 2),
+                          ("Taste", "no exam kind", 0, 0), ("Genesis as a feature", "no outside author", 0, 0)])
         self.assertEqual(rows[4]["agent"], "draft-genesis")
         self.assertEqual(json.loads(r.stdout)["smoke"], 2)  # the older s9 line takes the stamp its regrade gave
         self.assertIn("2 Haiku smoke lines not counted", self.fm("exam", "scorecard", check=False).stdout)
@@ -995,6 +995,47 @@ class GenesisDraft(ForemanTestCase):
         text = self.fm("exam", "scorecard", check=False).stdout
         for part in ("Correctness", "4/4", "too few", "no exam kind"):
             self.assertIn(part, text)
+
+    def test_the_scorecard_counts_only_an_outside_authors_held_out_scenarios(self):
+        import fmgenesis  # T-2204: Foreman's own templates can't grade Foreman; a child-authored scenario can
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
+                "1. **Correctness.** Fixes what's broken. Exam: bug.\n2. **Tools.** Says what it lacks. Exam: missing-tool.\n"
+                "3. **Genesis as a feature.** Seeds itself.\n\n## 3. The tower\n")
+        kid, mine = [f"bug-python-{i:06x}" for i in range(3)], [f"bug-python-{i:06x}" for i in range(3, 9)]
+        tools = [f"missing-tool-python-{i:06x}" for i in range(3)]
+        fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": kid + mine + tools, "child": kid},
+                                     "closed": {"holdout": kid + tools}})  # the template's six didn't close: not counted
+        fmgenesis.exam_line(self.p, {"agent": "draft-genesis", "answered": {"holdout": ["line-python-000001"]},
+                                     "closed": {"holdout": ["line-python-000001"]}})
+        r = fmgenesis.scorecard(self.p)
+        self.assertEqual([(x["name"], x["state"], x["closed"], x["graded"], x["selfmade"]) for x in r["rows"]],
+                         [("Correctness", "pass", 3, 3, 6), ("Tools", "no outside author", 0, 0, 3),
+                          ("Genesis as a feature", "no outside author", 0, 0, 1)])
+        self.assertEqual((r["selfmade"], r["ok"]), (9, False))
+        self.assertIn("template", r["rows"][2]["why"])  # #13: fm genesis spec renders only template projects
+        text = self.fm("exam", "scorecard", check=False).stdout
+        self.assertIn("2. Tools: no outside author", text)
+        self.assertIn("9 self-authored held-out results not counted", text)
+        self.assertIn("1/3 pass, 9 self-authored skipped", fmgenesis._exam_count(self.p))
+        fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": kid, "child": []},
+                                     "closed": {"holdout": []}})  # a later template run of the same ids
+        fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": tools, "child": tools},
+                                     "closed": {"holdout": tools}})  # forged: no outside author writes missing-tool
+        r = fmgenesis.scorecard(self.p)
+        self.assertEqual([(x["state"], x["closed"], x["graded"]) for x in r["rows"][:2]],
+                         [("pass", 3, 3), ("no outside author", 0, 0)])  # neither erases nor forges a child result
+
+    def test_a_capability_partly_without_an_outside_author_never_passes(self):
+        import fmgenesis  # T-2204 review: bug's child results can't speak for docs, which no child writes yet
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
+                "1. **Correctness.** Fixes what's broken. Exam: bug, docs.\n\n## 3. The tower\n")
+        kid = [f"bug-python-{i:06x}" for i in range(3)]
+        fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": kid, "child": kid},
+                                     "closed": {"holdout": kid}})
+        (row,) = fmgenesis.scorecard(self.p)["rows"]
+        self.assertEqual((row["state"], row["closed"], row["graded"]), ("partial", 3, 3))
+        self.assertIn("docs", row["why"])
+        self.assertIn("1. Correctness: partial 3/3", self.fm("exam", "scorecard", check=False).stdout)
 
     def test_review_fixes_fallback_reason_secret_lines_fenced_readme_and_spec_limits(self):
         import fmcore as c
