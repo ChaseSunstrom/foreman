@@ -80,11 +80,16 @@ D. Make the tower a `fm loop` mode. Rejected: the loop is open-ended by design (
    The exam's held-out ids are hash-locked for the generation. `seed N` writes gen-N/seed.md from the parent seed,
    its critiques, empty coverage cells (first), not-yet items (each retried), exam scores and lineage; the Seed's
    size is capped. Tests: a child that closes fewer loses; a tie loses; a reopened scenario fails.
-5. **Drift + sweep — `fm genesis drift`, `fm genesis sweep`** (tier 3). Drift: every MUST/NEVER line of gen-0 must be
-   present (verbatim or flagged as reworded) in each seed; one `fm second` cold read of the newest seed against
-   gen-0. Sweep: §7's list in one command — fm state, queue, lane list, docs drift, doctor, full gates, exam rerun,
-   `fm genesis check` — plus features built but never run, and exits 1 on any red. Tests: a dropped MUST fails; a
-   reworded MUST is flagged.
+5. **Drift + sweep — `fm genesis drift N`, `fm genesis sweep N`** (tier 3). Drift: every unfenced MUST:/NEVER: line
+   in gen-N's seed and mission files is one of gen-0's verbatim (reworded or added is drift; fenced intake blocks are
+   briefs, whose MUSTs are task constraints), each file quotes gen-0's constraints or points to gen-0 (a seed points,
+   never restates), and one tool-less cold read of the seed against gen-0's goal, MUSTs, NEVERs and DONE-WHEN names
+   drifted lines, counted only when the seed holds them. Verdict clean, drifted or unread (no read is no pass). Sweep:
+   §7's list in one command — fm genesis check, mission tasks closed or blocked with a reason, no planned/active task,
+   no unreasoned block, no unmerged lane, fm docs, fm doctor, a full fm check pass on this exact tree (read, never
+   rerun), an exam line for gen N — into gen-N/sweep.md, exit 1 on any red. step stays on either until its Verdict is
+   clean. Tests: a reworded MUST, an added NEVER and an unpointed file drift; a clean seed passes; no read fails; a
+   red sweep keeps step on it, a clean one moves to the next seed.
 6. **Auto-start** (tier 3). When user-origin work is dry and the gap map has tier 3–4 gaps, the idle path proposes a
    blocked task "Start Genesis here?" (never a silent run), with a cooldown and a breaker on Genesis's own failure
    and revert rate; `fm pause --now` stops it. `/foreman:genesis` skill drives `fm genesis step`. The routing line in
