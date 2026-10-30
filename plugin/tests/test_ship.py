@@ -125,7 +125,7 @@ class Ship(ForemanTestCase):
         r = self.ship("--check")
         self.assertEqual(r.returncode, 1, "add b is still missing")
         self.assertIn("add b", r.stdout)
-        self.assertNotIn("add a", r.stdout)
+        self.assertNotRegex(r.stdout, r"\badd a\b", "a word: a hash ending in 'add' before 'add b' reads as 'add a'")
 
     def test_a_named_commit_ships_alone(self):
         self.grant()
