@@ -7,6 +7,7 @@ import collections
 import datetime
 import errno
 import fnmatch
+import functools
 import glob
 import json
 import os
@@ -272,6 +273,38 @@ def lint_card(path):
         [f"{rel}: {why}" for why in _card_problems(path, x)]
 
 
+NPX_KNOWN = os.path.join(os.path.dirname(CARDS), "npx-known.txt")
+
+
+@functools.cache
+def _npx_known():
+    try:
+        with open(NPX_KNOWN, encoding="utf-8") as f:
+            return {w for w in (ln.split("#")[0].strip() for ln in f) if w}
+    except OSError:
+        return set()
+
+
+def _npx_names(text):
+    """T-2049: the package each backticked `npx ...` runs: past -y/--yes and other flags, the name after
+    --package/-p (or --package=NAME), else the first word; `name@version` is `name`, a scope stays whole."""
+    names = []
+    for span in re.findall(r"```.*?```|`[^`\n]+`", text, re.S):
+        for m in re.finditer(r"\bnpx[ \t]+([^\n]*)", span):
+            words = m.group(1).split()
+            for i, w in enumerate(words):
+                if w.startswith("--package="):
+                    names.append(w[10:])
+                elif w in ("--package", "-p") and i + 1 < len(words):
+                    names.append(words[i + 1])
+                elif w.startswith("-"):
+                    continue
+                else:
+                    names.append(w)
+                break
+    return {re.sub(r"(?<=.)@[^@/]*$", "", n.strip("`'\"")) for n in names}
+
+
 def _card_problems(path, x):
     """A parsed card's own problems (all but a name shared with another card)."""
     problems = []
@@ -300,6 +333,8 @@ def _card_problems(path, x):
     verify = re.search(r"(?ms)^## Verify\n(.*?)(?=^## |\Z)", text)
     if not verify or "`" not in verify.group(1):
         bad("Verify needs at least one backticked command")
+    for n in sorted(_npx_names(text) - _npx_known())[:3]:
+        bad(f"npx {n[:40]!r} is not in plugin/skills/library/npx-known.txt: check it exists on npm, then add it")
     if len(re.findall(r"(?m)^- \[ \] ", text)) < 2:
         bad("Review needs at least two '- [ ]' checks")
     if not (SIZE[0] <= x["size"] <= SIZE[1]):
