@@ -39,6 +39,17 @@ class Signals(Base):
         self.assertTrue(any("pytest -q" in x["text"] for x in sig))
         self.assertTrue(any("1 blocked" in x["text"] for x in sig))
 
+    def test_a_finder_your_drops_muted_shows_amber(self):  # T-2127
+        import fmcli
+        for i in range(7):  # (0 + 5) / (7 + 10) is under fmfind.FLOOR
+            b = fmcli._create(self.p, f"lead {i}", "FIX", "S", "captured", raw="x", source="discovered")
+            b.meta.update(finder="docs", status="dropped")
+            c.save_brief(self.p, b, touch=False)
+        sig = self.ui()["signals"]
+        self.assertIn({"level": "amber", "text": "fm find muted (docs): you dropped most of its leads"}, sig)
+        with open(c.os.path.join(self.p.dir, "find-muted.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["value"], ["docs"])  # kept: the next poll skips the archive and git log
+
 
 class BlockSegment(Base):
     def test_a_long_commands_refusal_quotes_the_part_that_matched(self):
