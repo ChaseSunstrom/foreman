@@ -238,6 +238,9 @@ def digest(p, recheck=True):
     out["notes repeated 3+ times (a candidate for a hard check instead of prose: T-0470)"] = [
         f"{k} ({most[(ev, k)]}× from {ev})" for (ev, k), (n, _) in budget.items()
         if most[(ev, k)] >= 3 and ev not in ("SessionStart", "UserPromptSubmit")][:MAX_LINES]  # those two: every turn
+    out["notes averaging over 1,500 characters per injection (trim them: T-2109)"] = [
+        f"{ev}: {k} — {ch // n:,} chars avg × {n}" for (ev, k), (n, ch) in sorted(budget.items(), key=lambda x: -x[1][1])
+        if n and ch / n > 1500][:MAX_LINES]
     out.update(_mine(ledger, label))  # T-0658
     try:  # T-0620: where this project's work hasn't held, for the pass to look at first
         import fmoutcomes
