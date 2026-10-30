@@ -60,7 +60,7 @@ def _books(stage):
 
 
 def gallery():
-    """T-1785: each UI playbook's worked example, from its `Example: \`references/ui/...html\`` line:
+    """T-1785: each UI playbook's worked example, from its "Example: `references/ui/...html`" line:
     [(name, title, when-to-use line, source path)]; a playbook without the line stops the build."""
     out = []
     for name, title, use, text in _books("ui"):
