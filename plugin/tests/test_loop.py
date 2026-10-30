@@ -116,6 +116,22 @@ class Loop(ForemanTestCase):
         os.rename(os.path.join(self.repo, ".git"), os.path.join(self.repo, "git-gone"))
         self.assertIsNone(fmloop.lag(p))  # no history is unknown, never "nothing owed"
 
+    def test_a_round_lists_the_asks_no_brainstorm_predicted(self):
+        # T-2076: the round brief carries the brainstorms' misses, so the main thread asks what would have caught them
+        import re
+        import fmloop
+        p = c.find_project(self.repo)
+        d = os.path.join(p.dir, "research", "brainstorm-20250101-000000")
+        os.makedirs(d)
+        with open(os.path.join(d, "ideas.json"), "w") as f:
+            json.dump({"lenses": {"user value": ["Speed up the parser"]}, "created": "2025-01-01T00:00:00Z"}, f)
+        out = self.fm("capture", "Add more playbooks for every stage", "--source", "user").stdout
+        tid = re.search(r"T-\d+", out).group(0)
+        self.fm("loop", "on")
+        brief = fmloop.round_brief(p)
+        self.assertIn("Asks no brainstorm predicted", brief)
+        self.assertIn(f"- {tid}: Add more playbooks for every stage", brief)
+
     def test_a_budget_limited_round_leaves_the_dry_streak_alone(self):
         # T-1986: with optional work dropped there is no ideas fan-out; a spent budget ended the loop as "2 dry rounds"
         from unittest import mock
