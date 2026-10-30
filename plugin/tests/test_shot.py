@@ -55,6 +55,42 @@ class OneOff(unittest.TestCase):
         self.assertIn("FOREMAN_STATE=/tmp/fm-demo-state", own)
         self.assertNotIn("FOREMAN_ONEOFF", own)
 
+    def test_settings_reach_claude_as_one_quoted_argument(self):
+        # T-2055: the demo recorder turns off every non-Foreman plugin through --settings, so a recording shows Foreman alone
+        import argparse
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("shot_t2055", SHOT)
+        shot = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(shot)
+        seen = []
+        shot.tmux = lambda *args, check=True: seen.append(args)
+        shot.answer_trust = lambda *a, **k: False
+        js = '{"enabledPlugins": {"x@y": false}}'
+        shot.start(argparse.Namespace(dir=".", cols=10, rows=5, model=None, settings=js))
+        self.assertTrue(seen[-1][-1].endswith(" --settings '" + js + "'"), seen[-1][-1])
+        shot.start(argparse.Namespace(dir=".", cols=10, rows=5, model=None))
+        self.assertNotIn("--settings", seen[-1][-1])
+
+    def test_only_foreman_turns_off_every_other_plugin(self):
+        import importlib.util
+        import json
+        import tempfile
+        spec = importlib.util.spec_from_file_location("record_live_t2055",
+                                                      os.path.join(os.path.dirname(SHOT), "..", "..", "..", "demo", "record_live.py"))
+        rl = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rl)
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "settings.json")
+            self.assertIsNone(rl.only_foreman(p))  # missing
+            with open(p, "w") as f:
+                f.write("{not json")
+            self.assertIsNone(rl.only_foreman(p))  # unreadable
+            with open(p, "w") as f:
+                json.dump({"enabledPlugins": {"ponytail@x": True, "foreman@foreman": True, "foreman-ui@foreman": True,
+                                              "old@y": False, "claude-hud@z": True}}, f)
+            got = json.loads(rl.only_foreman(p))
+        self.assertEqual(got, {"enabledPlugins": {"ponytail@x": False, "claude-hud@z": False}})
+
     def test_the_harness_keeps_true_color(self):
         # T-1209: Claude Code drops to 256 colours whenever TMUX is set unless CLAUDE_CODE_TMUX_TRUECOLOR is; the demo
         # was recorded with every colour on the 256 palette, so the pane's tinted chart wells became neutral gray blocks
