@@ -6980,13 +6980,14 @@ def _build_parser(only=None):
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--per-kind", type=int, default=9, help="scenarios per kind; a third (rounded) is held out")
     s.add_argument("--lang", help="comma list (default all: python,js,ts,ruby,rust,c)")
-    s.add_argument("--kind", help="comma list (default all eleven)")
+    s.add_argument("--kind", help="comma list (default all of fmexam.KINDS)")
     s.add_argument("--split", choices=("train", "holdout", "all"), default="all", help="gen: which to render; run: which to answer")
     s.add_argument("--agent", help="run/grade: oracle | empty | finders | foreman | plain | genesis (claude sessions, "
                                   "cost recorded; genesis runs one Genesis generation); scorecard: whose runs (default foreman)")
     s.add_argument("--bar", type=float, default=0.8, help="scorecard: the held-out rate a capability needs to pass")
     s.add_argument("--author", choices=("self", "child"), default="self",
-                   help="gen: child = a tool-less model writes the bug, vuln, none and rank plants (kept only when fm exam check passes)")
+                   help="gen: child = a tool-less model writes the bug, vuln, slow, dep, none and rank plants and the goal "
+                        "and resume keys (kept only when fm exam check passes); only these decide fm exam scorecard")
     s.add_argument("--model", help="gen: the child author's model (default sonnet); run: the session's model")
     s.add_argument("--limit", type=int, help="run: answer the first N picked scenarios (session arms default to 3)")
     s.add_argument("--budget", type=float, help="run: USD cap per session (default none: gen-0 puts no cap on proving; "

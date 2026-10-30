@@ -493,10 +493,11 @@ def _exam_count(p):
         r = scorecard(p)
     except Exception:  # no §2 spec yet, or an odd line: the surface loses this part, never its line
         return None
-    if not (r["seen"] or r["smoke"]):
+    if not (r["seen"] or r["smoke"] or r["selfmade"]):
         return None
     return (f"{sum(x['state'] == 'pass' for x in r['rows'])}/{len(r['rows'])} pass"
-            + (f", {r['smoke']} Haiku skipped" if r["smoke"] else ""))
+            + (f", {r['smoke']} Haiku skipped" if r["smoke"] else "")
+            + (f", {r['selfmade']} self-authored skipped" if r["selfmade"] else ""))
 
 
 def health(p, briefs=None):
@@ -1211,9 +1212,11 @@ def exam(p, arm="genesis", split="holdout", per_kind=9, seed=0):
 def scorecard(p, agent="foreman", bar=0.8):
     """T-2097: §8's scorecard. Per gen-0 §2 capability, the newest graded result of each held-out scenario of its
     kinds, from exam.jsonl lines that name what they graded (answered ids; older lines carry none: regrade them). A
-    capability naming genesis (#13) scores on fm genesis exam's draft-genesis lines. pass: at least 3 graded and a
-    rate at or over bar; else under, too few, or no exam kind. The rate is over graded scenarios, not all held out.
-    {agent, bar, rows, ok, seen}: seen counts the agent's graded held-out scenarios."""
+    capability naming genesis (#13) scores on fm genesis exam's draft-genesis lines. T-2204: only a scenario an outside
+    author wrote counts (answered.child, of a kind fmexam.CHILD_KINDS holds); a template-written one is counted apart
+    (selfmade) and never erases a child result for the same id. pass: at least 3 graded, a rate at or over bar and an
+    outside author for every kind; else partial (some kinds have none: `why` names them), under, too few, no outside
+    author or no exam kind. {agent, bar, rows, ok, seen, selfmade}: the agent's counted and template-written results."""
     if not 0 < bar <= 1:  # also refuses nan
         raise ValueError(f"--bar is a rate over 0 and at most 1, not {bar}")
     caps = _caps(_doc(home(p), "gen-0.md"))
@@ -1221,32 +1224,47 @@ def scorecard(p, agent="foreman", bar=0.8):
         raise ValueError("no gen-0 with a numbered §2 yet: fm genesis draft, then fm genesis init --file -")
 
     def newest(who):
+        """{scenario id: closed?, or None when Foreman's own template wrote it} (T-2204)."""
         out = {}
         for x in _exam(p, who):  # file order is time order: a later result for a scenario wins
             if smoke(x):  # T-2158: steer 1, Haiku never decides
                 continue
             a, won = x.get("answered"), x["closed"].get("holdout")
-            held = a.get("holdout") if isinstance(a, dict) else None
+            held, kids = (a.get("holdout"), a.get("child")) if isinstance(a, dict) else (None, None)
             if isinstance(held, list):
                 won = set(won) if isinstance(won, list) else set()
-                out.update({sid: sid in won for sid in held if isinstance(sid, str)})
+                kids = set(kids) if isinstance(kids, list) else set()  # lines from before T-2204 name none
+                for sid in (x for x in held if isinstance(x, str)):
+                    if sid in kids and sid.rsplit("-", 2)[0] in fmexam.CHILD_KINDS:
+                        out[sid] = sid in won
+                    elif out.get(sid) is None:  # a template run of the same id never erases a child's result
+                        out[sid] = None
         return out
 
+    import fmexam
     pools, rows = {}, []
     for n, name, text in caps:
         who = "draft-genesis" if re.search(r"genesis", name, re.I) else agent
         kinds = list(GEN_KINDS) if who == "draft-genesis" else _kinds(name, text)
         if who not in pools:
             pools[who] = newest(who)
-        got = [v for sid, v in pools[who].items() if sid.rsplit("-", 2)[0] in kinds]  # ids are kind-lang-hash
+        mine = [v for sid, v in pools[who].items() if sid.rsplit("-", 2)[0] in kinds]  # ids are kind-lang-hash
+        got = [v for v in mine if v is not None]
         graded, closed = len(got), sum(got)
-        state = ("no exam kind" if not kinds else "too few" if graded < 3 else  # 3: the fewest held out per capability
-                 "pass" if closed / graded >= bar else "under")
+        # fm genesis spec renders only template projects, so #13 has no outside author until it can
+        bare = list(kinds) if who == "draft-genesis" else [k for k in kinds if k not in fmexam.CHILD_KINDS]
+        why = ("fm genesis spec renders template projects only" if who == "draft-genesis" and kinds else
+               f"no outside author writes {', '.join(bare)} scenarios yet" if bare else "")
+        state = ("no exam kind" if not kinds else "no outside author" if len(bare) == len(kinds) else
+                 "too few" if graded < 3 else  # 3: the fewest held out per capability
+                 "under" if closed / graded < bar else "partial" if bare else "pass")
         rows.append({"n": int(n), "name": name, "kinds": kinds, "agent": who, "graded": graded, "closed": closed,
-                     "rate": round(closed / graded, 3) if graded else 0, "state": state})
+                     "rate": round(closed / graded, 3) if graded else 0, "state": state,
+                     "selfmade": len(mine) - graded, "why": why})
+    pool = pools[agent] if agent in pools else newest(agent)
     return {"agent": agent, "bar": bar, "rows": rows, "ok": all(r["state"] == "pass" for r in rows),
-            "seen": len(pools.get(agent) or newest(agent)), "gaps": free_beats(p, agent),
-            "smoke": sum(map(smoke, _exam(p, agent)))}
+            "seen": sum(v is not None for v in pool.values()), "selfmade": sum(v is None for v in pool.values()),
+            "gaps": free_beats(p, agent), "smoke": sum(map(smoke, _exam(p, agent)))}
 
 
 def free_beats(p, agent="foreman", split="holdout"):
