@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm genesis`: the Genesis tower's home under the project's research/genesis. `fm genesis init --file F` saves gen-0 byte for byte and read-only, once; `fm genesis put NAME --file F` files a tower doc only in the tower's shape (gap-map.md, lineage.md, catalogue.md, report.md, exam.jsonl, gen-N/seed.md, gen-N/mission-NAME.md, gen-N/critique-NAME.md); `fm genesis` lists gen-0, the gap map, each generation's seed, missions and critiques, and the exam result count (T-2078).
 - Brainstorms learn from what they missed: an ask the user had to make that no earlier idea predicted is listed in the next `fm ideas` pack, `fm mission` run and forever-loop round, with a "blind spots" lens that turns each into the question a brainstorm should have asked and asks it of the whole project; each lens ends with a `Next question:` for the next brainstorm, saved in ideas.json and carried into the next pack (T-2076).
 - Forever-loop rounds list the files recent work left behind, learned from the repo's own history rather than a list of folders: a file that usually changes with the ones that just changed, but didn't, is listed with how many updates it owes; the brief also names every top-level area of the repo, and says so when git can't tell (T-2073).
 - Audit briefs: a file with a changed line over 4000 characters (a recording, a minified bundle) is listed by its counts, not its text, so a re-recorded demo no longer fills the reviewer's diff (T-2069).

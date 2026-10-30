@@ -6908,6 +6908,11 @@ def _build_parser(only=None):
     s = add("mission", lazy("fmmission", "cmd_mission"), tier=("Finding your way", 450), help="the mission and brainstorm seeds for an open-ended "
                                                                "request, composed from the project (T-0375)")
     s.add_argument("--request", help="the user's words, verbatim")
+    s = add("genesis", lazy("fmgenesis", "cmd_genesis"), tier=("Finding your way", 455), help="the Genesis tower's "
+            "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
+    s.add_argument("action", nargs="?", choices=("status", "init", "put"))
+    s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md")
+    s.add_argument("--file", help="init/put: read the text from this file")
     s = add("demo", lazy("fmdemo", "cmd_demo"), tier=("Finding your way", 210), help="see Foreman work on a seeded bug in a throwaway repo, with no "
                                                       "model calls and nothing left behind (T-0870)")
     s.add_argument("--pace", type=float, default=0, metavar="SECONDS",
