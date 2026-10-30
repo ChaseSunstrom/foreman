@@ -38,7 +38,7 @@ class RoundTrip(_Mcp):
         names = {t["name"] for t in by[2]["result"]["tools"]}
         self.assertEqual(names, {"state", "next", "recall", "research_list", "research_read", "task_show", "checks",
                                  "lib_suggest", "lib_search", "lib_show", "outline", "sym", "impact", "why", "fail",
-                                 "logs", "data", "trace", "find", "exam_scorecard"})
+                                 "logs", "data", "trace", "find", "exam_scorecard", "genesis_status"})
         for t in by[2]["result"]["tools"]:
             self.assertEqual(t["inputSchema"]["type"], "object")
         self.assertIn("Parse dates in the importer", by[3]["result"]["content"][0]["text"])
@@ -109,6 +109,10 @@ class Review(_Mcp):
         out, _ = self.talk(self.call(1, "exam_scorecard"))
         self.assertFalse(out[0]["result"]["isError"])
         self.assertIn("Correctness", _text(out[0]))
+        out, _ = self.talk(self.call(2, "genesis_status"))  # T-2201: the tower's stage and next action too
+        self.assertFalse(out[0]["result"]["isError"])
+        self.assertIn("gen-0: saved", _text(out[0]))
+        self.assertIn("next:", _text(out[0]))
 
 
 SECRET = "ghp_" + "a1B2" * 9  # a GitHub token shape c.redact knows
