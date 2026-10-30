@@ -3732,21 +3732,32 @@ def cmd_decide(args):
         except ValueError:
             raise UsageError("--sunset takes YYYY-MM-DD")
         revisit += f"[sunset: {sunset}] "
+    if getattr(args, "check", None) and not c.CHECK_PENDING.fullmatch(args.check):  # T-2167: refused here, not later
+        try:
+            c.check_argv(args.check)
+        except ValueError as e:
+            raise UsageError(f"{e}, or `pending T-NNNN` while its task builds the enforcement")
+    cites = getattr(args, "cites", None) or ""
+    if re.search(r"steer|user", cites, re.I) and not c.STEER.search("cites: " + cites):
+        print(f"fm: warning: --cites {c.plain(cites)[:60]!r} doesn't read as a user steer ('user steer …' or "
+              "\"the user's steer …\"), so no check is asked of this rule", file=sys.stderr)
     _write_decision(p, args.decision, args.why, args.rejected, args.kind, args.reverses, args.task,
-                    getattr(args, "revisited", None), revisit, cites=getattr(args, "cites", None))
+                    getattr(args, "revisited", None), revisit, cites=getattr(args, "cites", None),
+                    check=getattr(args, "check", None))
     out(args, {"decision": args.decision},
         f"Decision recorded in {path}." + (" Its sunset is already expired." if sunset and sunset <= c.now()[:10] else ""))
 
 
 def _write_decision(p, decision, why="", rejected="", kind="reversible", reverses=None, task=None, settles=None,
-                    revisit="", locked=False, cites=None):
+                    revisit="", locked=False, cites=None, check=None):
     def cell(v):
         return c.redact((v or "").replace("|", "\\|").replace("\n", " ").strip())
     words = lambda v: cell(v).replace("]", ")")  # a tag's words can't close the tag early
     tags = ("" if kind == "reversible" else f"[{kind}] ") + (
         f"[reverses: {words(reverses)}] " if reverses else "") + (
         f"[revisited: {words(settles)}] " if settles else "") + (
-        f"[cites: {words(cites)}] " if cites else "") + revisit  # T-0654: what the decision rests on
+        f"[cites: {words(cites)}] " if cites else "") + (
+        f"[check: {words(check)}] " if check else "") + revisit  # T-0654: what it rests on; T-2167: what proves it
     text = re.sub(r"^\[", "(", cell(decision))  # review: free text can't open with a tag fm would read
     row = f"| {c.now()[:10]} | {tags}{text} | {cell(why)} | {cell(rejected)} |\n"
     path = os.path.join(p.dir, "decisions.md")
@@ -5715,6 +5726,9 @@ def _build_parser(only=None):
                    help="costly/outward: listed for the user's review (fm decide --review)")
     s.add_argument("--reverses", help="words from the earlier decision this one undoes")
     s.add_argument("--cites", metavar="REF", help="what it rests on: the user's message, a veto or a decision (T-0654)")
+    s.add_argument("--check", metavar="CMD", help="what proves a standing rule holds: fm genesis check, fm exam "
+                                                  "scorecard or python3 plugin/tests/run.py test_…; fm genesis sweep "
+                                                  "runs it (T-2167)")
     s.add_argument("--revisit", metavar="TRIGGER",
                    help='"after YYYY-MM-DD" or "when PATH changes": fm next brings the decision back then')
     s.add_argument("--sunset", metavar="YYYY-MM-DD", help="the decision expires then: fm tidy lists it as expired (T-1084)")

@@ -8,6 +8,9 @@ disable-model-invocation: true
 
 A tower of generations toward one goal the user wrote (gen-0). Tower files change only through `fm genesis put`,
 every choice goes through `fm decide`, and anything that leaves the machine needs its grant.
+A user steer mid-run becomes a standing rule plus its check in the same task:
+`fm decide "<rule>" --cites "user steer <date>" --check "python3 plugin/tests/run.py test_…"` (or
+`fm genesis check`, `fm exam scorecard`); the sweep stays red while a steer rule has no check or its check fails.
 
 ## Start (no gen-0 yet)
 
