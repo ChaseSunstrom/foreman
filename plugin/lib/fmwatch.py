@@ -604,6 +604,7 @@ def view(p):
                  "trust": bool(c.trusted()), "standing": sorted(meta.get("standing") or {})},
         "active": active,
         "next": c.plain(c.next_for(p, briefs)[2]),
+        "genesis": sd.get("genesis"),  # T-2118: the tower's next action (fmgenesis.health)
         "queue": [item(s) for s in sd["queue"]][:20],
         "inbox": [item(s) for s in sd["inbox"]][:10], "inbox_total": len(sd["inbox"]),
         "blocked_total": len(sd["blocked"]),  # T-1026: the pane's work bar
@@ -691,6 +692,10 @@ def _signals(sd, d, p=None):
         out.append({"level": "amber", "text": f"usage ahead of pace ({c.plain(str(pace))[:80]})"})
     if sd.get("blocked"):
         out.append({"level": "amber", "text": f"{len(sd['blocked'])} blocked"})
+    g = sd.get("genesis") or {}
+    if g.get("kind") in ("blocked", "stopped", "fatal"):  # T-2118: the tower can't go on by itself
+        out.append({"level": "red" if g["kind"] == "fatal" else "amber",
+                    "text": f"genesis gen {g['gen']} {g['kind']}: {c.plain(g['action'])[:120]}"})
     errors = len(fmdoctor.recent_hook_errors())
     if errors:
         out.append({"level": "amber", "text": f"{errors} hook error(s)"})

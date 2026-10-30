@@ -272,7 +272,6 @@ def step(p):
         if not os.path.isfile(os.path.join(d, "spec.md")) and any(_kinds(nm, t) for _, nm, t in _caps(_doc(d, "gen-0.md"))):
             return act("spec", 1, "turn gen-0 §2 into a held-out exam (spec.md)", "fm genesis spec")  # T-2100
         return act("seed", 1, "write gen-1/seed.md from gen-0 (≤ 8 Missions)", "fm genesis put gen-1/seed.md --file -")
-    import fmcli
     pre, briefs, seed = f"gen-{n}/", None, _doc(d, f"gen-{n}/seed.md") or ""
     rows = ROW.findall(seed)
     if not rows and not re.search(r"no Missions this generation", seed, re.I):  # T-2119: dry only when it says so
@@ -302,6 +301,7 @@ def step(p):
                            "blocked" if briefs[t].status == "blocked" else "ok")
         want = max(1, len(items))
         if len(ids) < want:
+            import fmcli  # here, not at the top: health() calls step() on every prompt and stays light
             titles = {fmcli._title(i.text) for i in items}
             made = [b.id for b in (briefs or {}).values()
                     if b.status not in c.CLOSED and b.id not in ids and b.title in titles]
@@ -342,6 +342,42 @@ def step(p):
                               f"coverage cells and not-yet items" + (" (every 3rd generation: fm evolve --runs 3 first)"
                                                                      if n % 3 == 0 else ""),
                f"fm genesis seed {n + 1}")
+
+
+def health(p, briefs=None):
+    """T-2118: step(p) for the statusline, fm state, fm code, AGENTS.md and the pane, cached until a tower file or a
+    task's status changes (step reads every doc, ~80 ms; this is a stat walk). None without a tower or when step
+    crashes: a surface loses its line, never its caller."""
+    d = home(p)
+    if not os.path.isfile(os.path.join(d, "gen-0.md")):
+        return None
+    briefs = c.load_briefs(p) if briefs is None else briefs
+    marks = []
+    for root, _, files in os.walk(d):
+        for f in files:
+            try:
+                st = os.stat(os.path.join(root, f))
+            except OSError:
+                continue
+            marks.append((os.path.relpath(os.path.join(root, f), d), st.st_mtime_ns, st.st_size, st.st_ino))
+    key = hashlib.sha1(json.dumps([sorted(marks), sorted((b.id, b.status) for b in briefs)]).encode()).hexdigest()
+    path = os.path.join(p.dir, "genesis-step.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            got = json.load(f)
+        if got.get("key") == key:
+            return got.get("step")
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        g = step(p)
+    except Exception:
+        return None  # not cached: a half-written tower file may read fine on the next call
+    try:
+        c.write_atomic(path, json.dumps({"key": key, "step": g}))
+    except OSError:
+        pass
+    return g
 
 
 def _stale(d, pre):
@@ -1407,5 +1443,8 @@ def cmd_genesis(args):
             return fmcli.out(args, res, f"Exported {res['docs']} docs and {res['generations']} generation(s): {res['path']}")
     except (OSError, ValueError) as e:
         raise fmcli.UsageError(str(e))
+    finally:  # T-2118 review: a tower edit reaches status.json, so the statusline's ⌂ segment follows it
+        if action in ("init", "put", "spec", "drift", "sweep", "select", "seed"):
+            c.regen_views(p)
     s = status(p)
     return fmcli.out(args, s, _text(s))

@@ -268,6 +268,9 @@ def foreman_segs(st, mode):
             segs += [sep, (f"audits {a['audits'][0]}/{need}", fg(OK if a["audits"][0] >= need else DIM))]
     else:
         segs = [("▌", fg(ACCENT)), ("foreman", BOLD + fg(ACCENT)), sep, ("idle", fg(DIM))]
+    g = st.get("genesis")
+    if isinstance(g, dict):  # T-2118: the tower's health, amber when it can't go on by itself
+        segs += [sep, (f"⌂ gen {g.get('gen')} · {g.get('stage')}", fg(WARN if g.get("kind") in ("blocked", "stopped", "fatal") else DIM))]
     segs += [sep, (f"q{st.get('queue', 0)} in{st.get('inbox', 0)}", fg(DIM)), sep,
              ("⚡ full auto" if st.get("autonomy") == "full" else "standard", fg(WARN if st.get("autonomy") == "full" else DIM)),
              sep, (f"guard on · {mode}", fg(DIM))]

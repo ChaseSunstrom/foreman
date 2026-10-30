@@ -1645,6 +1645,7 @@ export const register: Register = (on, options) => {
       if (doneSince.length) return row(C.ok, `✔ since your last message: ${doneSince.length} done (${doneSince.slice(-6).join(' ')})`)
       const sl = signalLine(v) // T-0472: usage ahead of pace, tasks blocked …: the band's glyph, here while the pane is open
       if (sl) return row(sl.level === 'red' ? C.err : C.warn, `${sl.level === 'red' ? '●' : '◐'} ${sl.text}`)
+      if (v.genesis && v.genesis.kind !== 'done') return row(C.dim, `⌂ genesis gen ${v.genesis.gen} · ${v.genesis.stage}: ${v.genesis.action}`) // T-2118
       return row(C.dim, '✓ nothing needs you')
     })()
 

@@ -3056,6 +3056,14 @@ class SettingsScreen(unittest.TestCase):
         self.assertFalse(os.path.exists(settings))
         self.assertFalse(fmsettings.in_claude_code(), "the user's own terminal writes directly")
 
+    def test_a_genesis_tower_heads_the_project_view(self):  # T-2118
+        app = self.app()
+        app.key("\x1b")
+        app.state_source = lambda p: {"genesis": {"gen": 1, "stage": "build", "kind": "ok", "action": "Mission 3",
+                                                  "command": "fm focus T-1"}, "queue": [{"id": "T-0001", "title": "x"}]}
+        app.open_project({"project": "a", "root": self.home})
+        self.assertEqual([r["kind"] for r in app.project_items[:2]], ["genesis", "task"])
+
     def test_leaving_settings_returns_to_the_view_it_came_from_where_it_was(self):
         app = self.app()
         app.key("\x1b")

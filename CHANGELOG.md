@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A Genesis tower now shows on every surface: `fm state` and a new session's note name its next action, the statusline shows `⌂ gen N · stage` (amber when it can't go on), fm code and the pane get a genesis row, `fm ui` raises a signal when it's blocked, and AGENTS.md tells other agents to drive it with `fm genesis step`. The step is cached until a tower file or a task's status changes (T-2118).
 - The Stop check for parts of a request with no task now works without `fm clauses` being run: a prompt of 3 to 12 parts has them saved as it is sent (redacted; sensitive projects, slash commands and headless workers skipped), and each stop re-matches them, so a task captured later covers its part; only the session that sent the request is held, each part holds the stop once, and parts too short to match any task ("Please fix it.") are skipped (T-2146).
 - `fm check --affected` and a close's affected run now include the tests a file once turned red: when a red full gate's baseline fix closes, the files its fix commit changed are linked to the tests that failed (a fix's CHANGELOG line is a record, not a cause). An edit to MASTER.md now runs test_docs; before, MASTER.md co-changed with every task, so no test was linked and a broken docs count reached the full gates (T-2148).
 - `fm genesis step` names `fm genesis spec` after gen-0 when spec.md is missing and a §2 capability maps to an exam kind, so the held-out exam exists before the seed (T-2100).
