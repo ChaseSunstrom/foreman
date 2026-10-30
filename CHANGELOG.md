@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The site header fits at 320 to 419 px without the Barlow font: the brand no longer shrinks under its own text ("Foreman" ran into "Install" at 360 px with the wider fallback face), gaps tighten under 420 px, and under 360 px the header's GitHub link gives way to the footer's; the header test now measures the text, not just its box, on the landing and genesis pages (T-2089).
 - `fm genesis export DIR` removes a doc it wrote last time that the tower no longer has; only files its previous `genesis.json` listed, in the tower's shape and not behind a symlink, so the rest of DIR stays yours (T-2084).
 - When the queue drains and scout files a find that waits on your yes, the Stop hook tells the session to ask once (`fm ask ID confirm`) and leave it unstarted, instead of the "plan it and work it" meant for ordinary finds (T-2111).
 - Genesis seed rows read when the file name is in backticks or the closing pipe is missing (one used to swallow the next row), and a drawer link on the Genesis page that switches generation keeps keyboard focus in the drawer (T-2083).

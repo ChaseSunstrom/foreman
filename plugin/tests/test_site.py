@@ -14,8 +14,10 @@ import fmshot
 SITE = os.path.join(os.path.dirname(PLUGIN), "site")
 RECTS = """JSON.stringify([...document.querySelectorAll('header.top .brand, header.top .nav > *')]
   .filter(e => getComputedStyle(e).display !== 'none')
-  .map(e => { const r = e.getBoundingClientRect(); return [e.textContent.trim() || e.className, r.left, r.right,
-                                                           r.top, r.bottom]; })
+  .map(e => { const r = e.getBoundingClientRect(), g = document.createRange(); g.selectNodeContents(e);
+              const t = g.getBoundingClientRect();  // T-2089: the text, which can spill past a shrunk box
+              return [e.textContent.trim() || e.className, Math.min(r.left, t.left), Math.max(r.right, t.right),
+                      r.top, r.bottom]; })
   .concat([['page', 0, document.documentElement.scrollWidth, 0, 0]]))"""
 
 
@@ -37,19 +39,19 @@ class Header(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
 
-    def rects(self, width):
+    def rects(self, width, page="index.html"):
         b = fmshot.Browser(self.browser, (width, 640))
         try:
-            fmshot.load(b, f"http://127.0.0.1:{self.server.server_address[1]}/index.html")
+            fmshot.load(b, f"http://127.0.0.1:{self.server.server_address[1]}/{page}")
             got = b.call("Runtime.evaluate", b.sid, expression=RECTS, returnByValue=True)
             return json.loads(got["result"]["value"])
         finally:
             b.close()
 
     def test_nothing_in_the_header_overlaps_or_overflows_at_phone_widths(self):
-        for width in (320, 360, 390):
-            with self.subTest(width=width):
-                *items, page = self.rects(width)
+        for width, name in ((w, n) for w in (320, 360, 390) for n in ("index.html", "genesis/index.html")):
+            with self.subTest(width=width, page=name):  # T-2089: without Barlow the wider fallback spilled at 360
+                *items, page = self.rects(width, name)
                 self.assertLessEqual(page[2], width, "the page scrolls sideways")
                 for (a, al, ar, at, ab), (b, bl, br, bt, bb) in zip(items, items[1:]):
                     self.assertLessEqual(ar, bl + 0.5, f"{a!r} overlaps {b!r} at {width} px")
