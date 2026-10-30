@@ -269,6 +269,8 @@ def step(p):
     if os.path.isfile(os.path.join(d, "report.md")):
         return act("done", n, "the tower is finished: report.md is filed", "fm genesis", "done")
     if not n:
+        if not os.path.isfile(os.path.join(d, "spec.md")) and any(_kinds(nm, t) for _, nm, t in _caps(_doc(d, "gen-0.md"))):
+            return act("spec", 1, "turn gen-0 §2 into a held-out exam (spec.md)", "fm genesis spec")  # T-2100
         return act("seed", 1, "write gen-1/seed.md from gen-0 (≤ 8 Missions)", "fm genesis put gen-1/seed.md --file -")
     import fmcli
     pre, briefs, seed = f"gen-{n}/", None, _doc(d, f"gen-{n}/seed.md") or ""

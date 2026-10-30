@@ -25,8 +25,8 @@ every choice goes through `fm decide`, and anything that leaves the machine need
 Repeat until the kind is done or stopped (on blocked, work the rest of the queue and come back):
 
 1. `fm genesis step --json` names the one next action: {stage, gen, action, command, kind}.
-2. Do it. Stages in order: seed (≤ 8 Missions), mission (`fm mission`, `fm ideas`), intake, build (each brief closed
-   with `fm task finish`), critique, select (`fm genesis select N`), drift (`fm genesis drift N`), sweep
+2. Do it. Stages in order: spec (when spec.md is missing), seed (≤ 8 Missions), mission (`fm mission`,
+   `fm ideas`), intake, build (each brief closed with `fm task finish`), critique, select (`fm genesis select N`), drift (`fm genesis drift N`), sweep
    (`fm genesis sweep N`), then the next seed (`fm genesis seed N+1`) or the report.
 3. After a tower edit, `fm genesis check` (exit 1 names every empty cell and not-yet gap).
 
