@@ -3222,6 +3222,65 @@ def _settled(parsed, i):
     return any(len(w) >= 4 and re.search(r"(?<!\w)" + re.escape(w) + r"(?!\w)", decision) for w in words)
 
 
+STEER = lazy(r"cites: (?:the )?user(?:'s)? steer", re.I)  # T-2114, T-2167: a rule the user's steer asked for
+CHECK_TAG = lazy(r"\[check: ([^\]]+)\]")
+CHECK_PENDING = lazy(r"pending (T-\d{4,})")  # a rule whose check waits on a named task: the sweep stays red
+CHECK_FM = (["fm", "genesis", "check"], ["fm", "exam", "scorecard"])
+TEST_ID = lazy(r"test_\w+(?:\.\w+)*")
+
+
+def check_argv(cmd):
+    """T-2167: a steer rule's check as argv, else ValueError. A check runs later from fm genesis sweep and fm doctor,
+    outside the PreToolUse guard, so only fm genesis check, fm exam scorecard or the test runner on test ids pass, and
+    none ever goes through a shell."""
+    try:
+        argv = shlex.split(cmd)
+    except ValueError:
+        argv = []
+    if argv in CHECK_FM or (argv[:2] == ["python3", "plugin/tests/run.py"] and len(argv) > 2
+                            and all(TEST_ID.fullmatch(a) for a in argv[2:])):
+        return argv
+    raise ValueError(f"a check is `fm genesis check`, `fm exam scorecard` or `python3 plugin/tests/run.py test_…`, "
+                     f"not {plain(cmd)[:120]!r}")
+
+
+def steer_checks(p, run=True, pending=True, timeout=900):
+    """T-2167: one line per unsettled decision row cited from a user steer that has no [check: …], or (run) whose check
+    fails, or (pending) whose check waits on a task; a check several rules share runs once. run=False only looks for
+    missing checks (cheap, for fm doctor). Only a later row that itself cites a user steer settles a steer rule, so a
+    session can't retire the user's rule with its own --reverses.
+    ponytail: a check is any allowlisted test set, not one tied to its rule; a cold read of the pair is the upgrade."""
+    import subprocess  # lazy: the hooks import fmcore and never run a check (T-2023)
+    parsed, out, ran = _decision_rows(p), [], {}
+    for i, (date, tags, decision) in enumerate(parsed):
+        if not STEER.search(tags) or _settled([parsed[i]] + [r for r in parsed[i + 1:] if STEER.search(r[1])], 0):
+            continue
+        name, m = fit(plain(decision), 80), CHECK_TAG.search(tags)
+        if not m:
+            out.append(f"{date} {name}: no check (fm decide … --check CMD --revisited WORDS)")
+            continue
+        cmd, wait = m.group(1), CHECK_PENDING.fullmatch(m.group(1))
+        if wait:
+            if pending:
+                out.append(f"{date} {name}: check pending {wait.group(1)}")
+            continue
+        if not run:
+            continue
+        if cmd not in ran:
+            try:
+                argv = check_argv(cmd)
+                argv = ([sys.executable, os.path.join(PLUGIN_ROOT, "bin", "fm")] + argv[1:] if argv[0] == "fm"
+                        else [sys.executable] + argv[1:])
+                r = subprocess.run(argv, cwd=p.root, capture_output=True, timeout=timeout)
+                tail = (r.stderr or r.stdout).decode(errors="replace").strip().splitlines()[-1:]
+                ran[cmd] = f"exit {r.returncode}" + (f": {fit(plain(tail[0]), 100)}" if r.returncode and tail else "")
+            except (ValueError, OSError, subprocess.TimeoutExpired) as e:
+                ran[cmd] = fit(plain(str(e)), 120)
+        if ran[cmd] != "exit 0":
+            out.append(f"{date} {name}: check `{cmd}` → {ran[cmd]}")
+    return out
+
+
 def fired_decisions(p):
     """T-0247: [(date, decision, why)] for decisions whose revisit trigger fired and no later row settled
     (fm decide … --revisited WORDS, or --reverses WORDS)."""

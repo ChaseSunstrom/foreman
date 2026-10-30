@@ -1418,6 +1418,23 @@ class GenesisSweep(ForemanTestCase):
         self.assertEqual(r["verdict"], "clean", r["rows"])
         self.assertEqual(fmgenesis.step(self.p)["stage"], "seed")
 
+    def test_a_steer_rule_without_a_passing_check_turns_the_sweep_red(self):
+        # T-2167: every user steer becomes a standing rule plus an automatic check, and the sweep holds it to that
+        import fmgenesis
+        tower_file(fmgenesis.home(self.p), "exam.jsonl", line("r1", 1, ["a"]))
+        self.fm("decide", "rule: coverage cells name a file", "--cites", "user steer 2026-10-30")
+        r = self.sweep()
+        row = next(x for x in r["rows"] if x["check"] == "steer checks")
+        self.assertEqual((r["verdict"], row["ok"]), ("red", False))
+        self.assertIn("no check", row["detail"])
+        os.makedirs(os.path.join(self.repo, "plugin", "tests"))
+        with open(os.path.join(self.repo, "plugin", "tests", "run.py"), "w") as f:
+            f.write("import sys\nsys.exit(0)\n")
+        self.fm("decide", "rule: coverage cells name a file, now proved", "--cites", "user steer 2026-10-30",
+                "--revisited", "coverage cells name", "--check", "python3 plugin/tests/run.py test_genesis")
+        r = self.sweep()
+        self.assertEqual(r["verdict"], "clean", r["rows"])
+
     def test_an_archived_mission_task_counts_and_an_unmerged_lane_is_red_until_queued(self):
         import subprocess
         import fmcore as c
