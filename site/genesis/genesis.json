@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-30T18:17:03Z",
+ "updated": "2026-10-30T18:17:06Z",
  "rev": "9f7875f3",
  "capabilities": [
   {
@@ -2622,6 +2622,106 @@
      "clean-ruby-24a9a4",
      "none-python-248f5e",
      "rank-python-09ccc9"
+    ]
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [
+     "clean-python-8d2424",
+     "clean-ruby-24a9a4",
+     "clean-rust-6bacb3",
+     "none-python-248f5e",
+     "none-python-37ffb1",
+     "none-rust-65ff1a",
+     "rank-js-8414e5",
+     "rank-python-09ccc9",
+     "rank-rust-981449"
+    ]
+   },
+   "model": "haiku",
+   "at": "2026-10-30T18:17:02Z",
+   "gen": 1,
+   "split": "holdout",
+   "kinds": [
+    "clean",
+    "none",
+    "rank"
+   ],
+   "author": "child+self"
+  },
+  {
+   "run": "s31-006",
+   "agent": "plain",
+   "keyed": 18,
+   "found": 6,
+   "false_alarms": 6,
+   "exam_defects": 0,
+   "fixable": 18,
+   "fixed": 11,
+   "tf_keyed": 6,
+   "tf_first": 6,
+   "readings_keyed": 0,
+   "readings_hit": 0,
+   "missing_keyed": 0,
+   "missing_hit": 0,
+   "rank_keyed": 3,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 9,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "holdout": {
+    "keyed": 18,
+    "found": 6,
+    "false_alarms": 6,
+    "exam_defects": 0,
+    "fixable": 18,
+    "fixed": 11,
+    "tf_keyed": 6,
+    "tf_first": 6,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 3,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 9,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0
+   },
+   "train": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0
+   },
+   "cost": 1.1677,
+   "closed": {
+    "train": [],
+    "holdout": [
+     "clean-ruby-24a9a4",
+     "clean-rust-6bacb3"
     ]
    },
    "proved_by_arm_findings": [],
