@@ -117,7 +117,9 @@ def current(p):
 
 
 CAP = re.compile(r"^(\d+)\. \*\*(.+?)\.\*\*\s*(.*)$", re.M)  # gen-0 §2: "1. **Initiative.** what it means"
-ROW = re.compile(r"^\|\s*(\d+)\s*\|\s*(mission-[a-z0-9][a-z0-9-]*)\.md\s*\|([^|]*)\|([^|]*)\|([^|]*)\|", re.M)
+# T-2083: one row per line; the file name bare or in backticks; the closing pipe optional
+ROW = re.compile(r"^\|\s*(\d+)\s*\|\s*`?(mission-[a-z0-9][a-z0-9-]*)\.md`?\s*\|([^|\n]*)\|([^|\n]*)\|([^|\n]*)(?:\||$)",
+                 re.M)
 TIERED = re.compile(r"(.+?)\s*\((\d)\)\W*$")  # "value ranking (3)." -> tier 3
 
 # Standing rule 2 (gen-1 seed): coverage.md is one '## <area>' per row and one '- <stage> × <surface>: F|I|N/A: …' line

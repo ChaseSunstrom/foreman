@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Genesis seed rows read when the file name is in backticks or the closing pipe is missing (one used to swallow the next row), and a drawer link on the Genesis page that switches generation keeps keyboard focus in the drawer (T-2083).
 - `fm exam grade` counts a corrupt or non-object answer file as an errored session instead of an empty answer, which quietly closed scenarios where the right move is to find nothing (a JSON list crashed it) (T-2103).
 - A stopped Genesis tower now really stops: `fm genesis seed` refuses to write the next seed until you write one by hand or file the report, instead of only warning (T-2110).
 - A Genesis tower now shows on every surface: `fm state` and a new session's note name its next action, the statusline shows `⌂ gen N · stage` (amber when it can't go on), fm code and the pane get a genesis row, `fm ui` raises a signal when it's blocked, and AGENTS.md tells other agents to drive it with `fm genesis step`. The step is cached until a tower file or a task's status changes (T-2118).
