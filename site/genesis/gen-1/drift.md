@@ -1,9 +1,9 @@
 # Drift — gen-1
 
-Verdict: drifted
+Verdict: unread
 
-Checked seed.md, mission-exam.md, mission-genesis.md against gen-0's 6 MUST/NEVER line(s); cold read: 1 drifted line(s).
+Checked seed.md, mission-exam.md, mission-genesis.md against gen-0's 6 MUST/NEVER line(s); cold read: didn't count: it named 1 line(s) the seed doesn't hold.
 
-- seed.md (cold read): ## Standing rules (user steers, recorded with fm decide; every later Seed and Mission carries them)
+Nothing drifted.
 
-Undo the lines named here (a generation never rewrites the user's MUSTs or NEVERs), then rerun fm genesis drift 1.
+Rerun fm genesis drift 1: no countable cold read, no pass.
