@@ -463,6 +463,8 @@ class GenesisStep(ForemanTestCase):
         import fmgenesis
         self.at("gen-0", "fm genesis init")
         fmgenesis.init(self.p, GEN0_CAPS.encode())
+        self.assertEqual(self.at("spec", "spec.md", "fm genesis spec")["gen"], 1)  # T-2100: the exam before the seed
+        self.put("spec.md", "# Spec\n")
         self.assertEqual(self.at("seed", "gen-1/seed.md")["gen"], 1)
         self.put("gen-1/seed.md", SEED)
         self.at("mission", "mission-exam", "fm mission", "fm ideas")
@@ -584,10 +586,17 @@ class GenesisStep(ForemanTestCase):
         self.assertIsNone(b)
         self.assertNotEqual(kind, "genesis")
 
+    def test_a_gen0_with_no_examinable_capability_goes_straight_to_the_seed(self):
+        import fmgenesis
+        fmgenesis.init(self.p, b"go\n\n## 2. The capability spec\n\n1. **Taste.** Picks good names.\n\n## 3. The tower\n")
+        self.at("seed", "gen-1/seed.md")  # T-2100: fm genesis spec would refuse it, so it isn't named
+
     def test_cli_status_export_and_fm_next_name_it(self):
         import json
         self.assertNotIn("fm genesis step", self.fm("next").stdout)  # no tower, no Genesis step
         self.fm("genesis", "init", "--file", "-", input=GEN0_CAPS)
+        self.assertIn("→ fm genesis spec", self.fm("genesis", "step").stdout)  # T-2100
+        self.fm("genesis", "spec")
         out = self.fm("genesis", "step").stdout
         self.assertIn("gen 1 · seed", out)
         self.assertIn("→ fm genesis put gen-1/seed.md", out)
@@ -638,7 +647,7 @@ class GenesisDraft(ForemanTestCase):
         self.assertGreaterEqual(len(c.parse_intake(r["text"]).constraints), 6)
         self.assertNotIn("{{", r["text"])
         self.fm("genesis", "init", "--file", "-", input=r["text"])  # it pipes straight into init: no secrets, one gen-0
-        self.assertEqual(self.fm_json("genesis", "step")["stage"], "seed")
+        self.assertEqual(self.fm_json("genesis", "step")["stage"], "spec")  # T-2100: its caps map to exam kinds
 
     def test_nothing_given_still_drafts_a_whole_gen0_with_the_users_corrections(self):
         import fmcore as c
