@@ -1,17 +1,17 @@
 # Coverage — gen 1
 
+Status, as `fm genesis check` counts this file (each `- stage × surface:` line is one cell): 161 of the 1408 cells hold a concrete cell; the other 1247 are open (T-2159 emptied the templated ones and T-2166's cold read emptied cells that repeated another row's feature), listed by `fm genesis check`. Open is not done: no row here counts as covered until its cells are filled.
+
 ## 1. Initiative
 - find × fm code: I: run the scout finders on fm code's idle turn (plugin/lib/fmcode.py)
 - find × other agents: I: run idle scouts from the Codex Stop event and capture findings (plugin/lib/fmagents.py)
 - find × MCP: I: let an MCP client read what the scouts found (plugin/lib/fmmcp.py)
 - find × Desktop: I: list scout findings in the Desktop inbox for one-click accept (plugin/lib/fmwatch.py)
-- find × CLI: F: plugin/lib/fmscout.py — idle-turn scouts capture discovered work nobody asked for
-- find × headless/server: F: plugin/lib/fmnight.py — fm night runs standing orders that capture tasks on a schedule while the user is away
-- understand × CLI: F: plugin/lib/fmmission.py — fm mission turns an open-ended request into surfaces, lenses and a pack
+- find × CLI: F: plugin/lib/fmfind.py — `fm find` runs deterministic, language-agnostic finders over a repo with no request
+- find × headless/server: F: plugin/lib/fmnight.py — fm night spends a --max-usd budget while the user is away on the sentinel, a landscape scan and one research-debt question, and the morning digest says what it found
 - plan × Claude Code: F: plugin/skills/brainstorm/SKILL.md — grounded, scored ideas turned into queued tasks
 - build × CLI: F: plugin/lib/fmdraft.py — a headless claude drafts the top queued S task in a throwaway worktree
 - operate × CLI: F: plugin/lib/fmorders.py — standing orders capture a task on a schedule or when a file changes
-- learn × CLI: F: plugin/lib/fmtaste.py — per-lens keep rates from each brainstorm show which finders earn their cost
 
 ## 2. Exhaustive thinking
 - find × CLI: F: plugin/lib/fmideas.py — lens children read the code and return ideas marked new, partial or built
@@ -27,7 +27,6 @@
 - understand × CLI: F: plugin/lib/fmgraph.py — fm graph blast shows a change's blast radius from one local graph
 - plan × Claude Code: I: inject a pre-mortem of likely failures from fm recall into each new brief (plugin/lib/fmhooks.py)
 - plan × fm code: I: have fm code list foreseeable failures from failure memory before its PLAN slot (plugin/lib/fmcode.py)
-- build × Claude Code: F: plugin/lib/fmdeps.py — a package new to the project gets a typosquat and age look before install
 - verify × CLI: F: plugin/lib/fmreverify.py — fm sentinel re-queues old passing criteria when a later commit touches their files
 - operate × CLI: F: plugin/lib/fmrisk.py — the daily risk budget steps autonomy down after destructive blocks and reverts
 - learn × CLI: F: plugin/lib/fmrecall.py — fm recall and fm dream keep failure memory so a repeat is foreseen
@@ -40,7 +39,6 @@
 - build × other agents: F: plugin/lib/fmagents.py — Codex gets the Stop drive and done-gate; Gemini and opencode have no Stop
 - build × Desktop: I: show open criteria and the next required action for every project in Desktop (plugin/lib/fmwatch.py)
 - verify × CLI: F: plugin/lib/fmcore.py — fm task finish closes only on fresh evidence for every criterion
-- operate × CLI: F: plugin/lib/fmloop.py — an empty queue starts an improvement round instead of ending the run
 
 ## 5. Getting the tools it lacks
 - find × fm code: F: plugin/lib/fmcode.py — fm code offers one matching indexed skill at a run's start
@@ -56,9 +54,8 @@
 ## 6. Verifying anything
 - understand × CLI: F: plugin/lib/fmdebug.py — fm whyred ranks suspects and minimal failing hunks for a red run
 - verify × fm code: F: plugin/lib/fmcode.py — fm code's steps close through the same evidence runs
-- verify × other agents: I: give Gemini and opencode a done-gate through a polled fm check since they have no Stop (plugin/lib/fmagents.py)
 - verify × MCP: F: plugin/lib/fmmcp.py — the checks tool returns the project's last fm check gate run, each command with its exit and time
-- verify × CLI: F: plugin/lib/fmcore.py — fm task evidence --run records a fresh run per criterion and step
+- verify × CLI: F: plugin/lib/fmcore.py — fm task evidence --run runs the command itself and stores its exit and output, so a pass is never typed in
 - verify × headless/server: F: plugin/lib/fmserve.py — fm run sessions close tasks through the same gates
 - ship × CLI: F: plugin/lib/fmledger.py — fm verify-ledger proves the hash-chained record line by line
 - operate × CLI: F: plugin/lib/fmsmoke.py — fm smoke crawls the web UI at desktop and phone width
@@ -76,13 +73,10 @@
 
 ## 8. Calibrated judgment
 - understand × CLI: F: plugin/lib/fmexam.py — the generated exam grades agents on held-out tasks
-- plan × MCP: I: serve the track record by type and tier as an MCP tool so any agent can calibrate (plugin/lib/fmmcp.py)
-- plan × CLI: F: plugin/lib/fmsecond.py — a cold second read argues against the plan before it is approved
+- plan × MCP: I: an MCP tool that returns past finish rates for a task's type and tier, so any agent can size its estimate (plugin/lib/fmmcp.py)
 - verify × site: F: site/pages.py — bench pages publish pass rates and where Foreman loses
 - verify × CLI: F: plugin/lib/fmoutcomes.py — stated confidence scored per bucket with a Brier score, shown at focus
-- operate × CLI: F: plugin/lib/fmreverify.py — the re-verify queue rechecks past closes against later commits
 - learn × Claude Code: F: plugin/lib/fmhooks.py — the track record by type and tier is injected at focus
-- learn × CLI: F: plugin/lib/fmtrials.py — self-changes are judged by measured before-and-after rates
 
 ## 9. Orchestration
 - find × Claude Code: F: plugin/agents/fm-debugger.md — fresh-eyes debugger returns ranked hypotheses with a probe each
@@ -92,7 +86,6 @@
 - build × fm code: I: let fm code fan a task out to fm lane worktrees and merge the children (plugin/lib/fmcode.py)
 - build × other agents: F: plugin/lib/fmsession.py — fm session runs detached claude, codex, gemini and opencode sessions
 - build × CLI: F: plugin/lib/fmlanes.py — fm lane runs git worktrees as lanes with their own active task
-- verify × Claude Code: F: plugin/agents/fm-reviewer.md — one independent reviewer pass over a named diff
 - verify × CLI: F: plugin/lib/fmstack.py — stacked commits each checked alone in a scratch worktree
 - ship × CLI: F: plugin/lib/fmpr.py — fm pr train merges approved green PRs in order
 - operate × CLI: F: plugin/lib/fmbus.py — fm bus passes messages and leases between sessions on a machine
@@ -109,22 +102,16 @@
 
 ## 11. Self-triggering
 - find × Claude Code: F: plugin/lib/fmscout.py — the idle-turn hook runs scouts and captures findings
-- find × fm code: I: start fm code scouts on idle without a prompt (plugin/lib/fmcode.py)
 - build × CLI: F: plugin/lib/fmloop.py — fm loop on starts an improvement round when the queue empties
 - build × headless/server: F: plugin/lib/fmserve.py — fm run works the queue in fresh headless sessions, one task each
 - verify × Claude Code: F: plugin/lib/fmambient.py — tests run detached after each edit with no prompt
-- operate × other agents: F: plugin/lib/fmagents.py — hooks on Codex start the drive from the stop event
-- operate × CLI: F: plugin/lib/fmnight.py — fm night does budgeted background work while the user is away
 - learn × CLI: F: plugin/lib/fmfriction.py — fm friction --every N triggers a self-improvement digest
 
 ## 12. Staying lean and safe
-- understand × MCP: F: plugin/lib/fmmcp.py — MCP tools are read-only and vanish in a sensitive repo
 - plan × CLI: F: plugin/lib/fmbudget.py — subagents wait at 90% of the 5-hour window, or when weekly usage past 75% runs 10+ points ahead of the week's pace
-- build × Claude Code: F: plugin/lib/fmguard.py — the guard refuses destructive commands before they run
 - build × CLI: F: plugin/lib/fmreplay.py — fm replay scores the guard on real past commands
-- verify × Claude Code: F: plugin/tests/bench_hooks.py — hook latency benchmark
+- verify × Claude Code: F: plugin/tests/bench_hooks.py — times each Claude Code hook over its fixture payloads and exits 1 when a p95 runs past its budget, so a hook that slows every turn fails before it ships
 - verify × CLI: F: plugin/lib/fmmutate.py — guard mutation tests prove each rule bites
-- ship × CLI: F: plugin/lib/fmsecrets.py — fm secrets scans files before fm task finish --commit
 - operate × CLI: F: plugin/lib/fmcost.py — fm cost and fm burden account tokens per task, session and version
 - learn × CLI: F: plugin/lib/fmbacktest.py — fm backtest shows where a changed rule would have fired
 
@@ -138,7 +125,7 @@
 - plan × site: F: site/genesis/gen-1/seed.md — generation 1's seed is published
 - plan × CLI: F: plugin/lib/fmgenesis.py — fm genesis put stores a self-written seed for the next generation
 - build × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — the mission, intake and build stages, each brief closed with fm task finish
-- build × CLI: F: plugin/lib/fmexam.py — fm exam gen builds a generated exam from the repo
+- build × CLI: F: plugin/lib/fmexam.py — fm exam gen renders throwaway projects in six languages with planted defects and the keys kept outside each; `--author child` has a tool-less model write the planted defects of the kinds it can author
 - verify × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — drift, sweep and fm genesis exam on the held-out third
 - verify × site: F: site/genesis/genesis.js — each generation's drift and sweep verdicts on the Genesis page
 - verify × CLI: F: plugin/lib/fmgenesis.py — fm genesis drift (seal + cold read), sweep (§7 + privilege diff) and exam score each generation (T-2104, T-2112, T-2113)
@@ -147,16 +134,13 @@
 - operate × CLI: F: plugin/lib/fmgenesis.py — fm genesis live on republishes after each tower change
 - learn × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — select writes lineage.md; a stopped tower reads lineage and critiques before the next seed
 - learn × site: F: site/genesis/gen-0.md — the previous generation is published beside the next
-- learn × CLI: F: plugin/lib/fmevolve.py — bench-gated revisions feed the next generation
 
 ## Onboarding
-- find × CLI: F: plugin/lib/fmwhich.py — fm which points a new user at the skill or verb that fits
 - understand × site: F: site/index.html — the home page explains the loop
 - understand × CLI: F: plugin/lib/fmdemo.py — fm demo fixes a seeded bug in a throwaway repo with no model calls
 - plan × CLI: F: plugin/lib/fmsetup.py — fm setup configures a project
 - build × CLI: F: install.sh — one-line install, with --desktop for the app
 - verify × Claude Code: F: plugin/skills/doctor/SKILL.md — the doctor skill checks the install
-- verify × CLI: F: plugin/lib/fmdoctor.py — fm doctor checks wiring and repairs it
 - operate × CLI: F: plugin/lib/fmaway.py — fm away summarises on return after a long gap
 - learn × CLI: F: plugin/lib/fmdojo.py — fm dojo drills the guard's rules
 
@@ -180,7 +164,6 @@
 - learn × CLI: F: plugin/lib/fmplaybooks.py — fm playbooks draft turns a done task into a playbook
 
 ## Ecosystem
-- find × CLI: F: plugin/lib/fmplugins.py — fm plugins find searches plugins
 - understand × other agents: F: plugin/lib/fmagents.py — fm agents list prints what each harness enforces
 - understand × MCP: F: plugin/lib/fmmcp.py — fm mcp serves Foreman read-only over stdio
 - understand × Desktop: F: plugin/lib/fmclaude.py — fm claude lists every Claude Code session for the desktop app
@@ -188,7 +171,6 @@
 - build × Claude Code: F: mods/foreman-ui — the foreman-ui mod for Claude Code
 - build × other agents: F: plugin/lib/fmagents.py — fm agents install wires Codex, Gemini and opencode
 - verify × CLI: F: plugin/lib/fmci.py — fm ci-watch polls GitHub Actions after a push
-- ship × CLI: F: plugin/lib/fmpr.py — fm pr threads and train work on GitHub PRs
 - operate × CLI: F: plugin/lib/fmintegrations.py — fm timeline exports Perfetto and OTLP JSON
 
 ## Multi-user
@@ -197,20 +179,14 @@
 - understand × CLI: F: plugin/lib/fmsync.py — fm sync keeps tasks and fixes with the repo so clones and teammates see them
 - plan × CLI: I: add per-user attribution and an approval handoff to the brief so a teammate can pick up a task (plugin/lib/fmcli.py)
 - build × Claude Code: F: plugin/lib/fmbus.py — hooks deliver bus mail between sessions on a machine
-- build × CLI: F: plugin/lib/fmbus.py — fm lease and bus keep two sessions off one file
 - operate × CLI: F: plugin/lib/fmeco.py — fm machine and version skew checks across machines
 - operate × headless/server: F: plugin/lib/fmserve.py — fm serve runs Remote Control for a repo on a server
 - learn × CLI: I: share the taste and fixes ledgers between teammates through fm sync (plugin/lib/fmcli.py)
 
 ## Observability
-- understand × Claude Code: F: plugin/hooks/statusline — statusline and per-subagent rows
 - understand × MCP: F: plugin/lib/fmmcp.py — logs, trace and fail tools read run data
-- understand × Desktop: F: plugin/lib/fmclaude.py — every session on the device from its own store
 - understand × CLI: F: plugin/lib/fminstr.py — zero-token instruments: sym, fail, logs, data, trace
-- verify × CLI: F: plugin/lib/fmledger.py — the ledger is hash-chained and verifiable
-- operate × CLI: F: plugin/lib/fmwatch.py — fm watch is a live view of tasks and runs
 - operate × headless/server: F: plugin/lib/fmserve.py — fm run keeps a rotating run log
-- learn × CLI: F: plugin/lib/fmfriction.py — the friction digest summarises process-mining of past runs
 
 ## Security
 - understand × MCP: F: plugin/lib/fmmcp.py — read-only tools, argument caps and a sensitive-repo off switch
@@ -219,23 +195,14 @@
 - verify × fm code: I: run the guard mutation tests against fm code's own tool path (plugin/lib/fmcode.py)
 - verify × CLI: F: plugin/lib/fmoracle.py — the guard's oracle runs a line in a bwrap sandbox
 - ship × CLI: F: plugin/lib/fmsecrets.py — secret scan before commit; credential audit
-- operate × CLI: F: plugin/lib/fmreplay.py — replay of past commands against the guard
-- learn × CLI: F: plugin/lib/fmdojo.py — drill people on what the guard refuses
 
 ## Performance
 - understand × CLI: F: plugin/lib/fmgraph.py — fm graph pack ranks a task's read-set
 - build × Claude Code: F: plugin/lib/fmambient.py — affected-only tests keep the loop fast
-- build × CLI: F: plugin/lib/fmpy.py — one python re-exec path for all entry points
-- verify × CLI: F: plugin/lib/fmbench.py — bench gates a change on measured results
-- operate × CLI: F: plugin/lib/fmcost.py — fm burden measures Foreman's own cost per session
 - learn × CLI: F: plugin/lib/fmcodebench.py — fm code bench grades a model on seeded tasks
 
 ## Portability
-- understand × CLI: F: plugin/lib/fmintegrations.py — exports open formats
 - build × fm code: F: plugin/lib/fmmodels.py — fm code runs on any OpenAI-compatible or Anthropic profile
 - build × other agents: F: plugin/lib/fmagents.py — one hook dispatcher for Codex, Gemini and opencode
 - build × Desktop: I: ship a Windows build of Foreman Desktop and a Windows path for fm and the hooks (plugin/lib/fmwatch.py)
 - build × CLI: F: plugin/lib/fmpy.py — re-exec under a supported interpreter
-- verify × CLI: F: plugin/lib/fmdoctor.py — fm doctor checks the install on this machine
-- ship × CLI: F: install.sh — a one-line installer for Linux and macOS
-- operate × CLI: F: plugin/lib/fmsync.py — state travels with the repo

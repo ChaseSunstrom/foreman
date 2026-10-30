@@ -1,10 +1,15 @@
 # Mission — Goal to finish (gen 1, #4)
 
-Task: T-2135…T-2141 (briefs 1–7 in order; T-2135 is L and waits for approval after the risk-budget reset).
+Task: T-2135…T-2141 (briefs 1–7 in order). T-2135 is L: today's spent risk budget is Foreman's own guard, which
+gen-0 forbids lowering, and it holds L self-approval until it resets on 2026-10-31; no question goes to the user,
+and then the plan takes the normal L path under full autonomy (a self-critique, then `fm decide`). Nothing is
+granted around the guard while it's spent; the run waits it out, as it would a usage limit.
 
 Self-contained for a fresh `fm run` in ~/.claude/foreman. Parent: gen-1/seed.md → gen-0.md §2 #4, §3.
 Ideas: 308 from `fm ideas --rounds 4 --falsify --crossbreed --seen` (mission pack research/mission-20261030-053122.md;
-`--deepen` was dropped by the spent risk budget and reruns after the reset, decided), lenses below; placed by tier
+`--deepen` didn't run: the spent risk budget drops optional rounds, a guard Foreman never lowers itself; decisions.md
+2026-10-30 "Mission 4 brainstorm ran without --deepen", revisit after 2026-10-31: the deepen rounds rerun and merge
+here), lenses below; placed by tier
 after merging duplicates.
 
 ## Capability (gen-0 §2 #4)
@@ -30,7 +35,7 @@ stopped.
   that tries to prove the work merely stopped: usage limit, drive cap, no-progress stop, crash, the model saying done).
 - Fitted: user value, reliability, simplicity, bold bets, blind spots.
 
-## Gaps closed (gap map #4)
+## Gaps this Mission targets (gap map #4; planned briefs, open until the exam shows them closed)
 | Gap | Tier | Brief |
 |---|---|---|
 | A goal ledger: contents → tasks → done-when → coverage, one record a goal lives in; epics | 4 | 1 |
@@ -64,8 +69,10 @@ D. Several standing goals per project. Captured: revisit when a user replaces an
    (fmmission.surfaces: tests, exam scenarios, MASTER/README/CHANGELOG, a site page if user-facing, a pane line if it
    has state, each surface it belongs on; source `standard`); and a tool-less child's best-in-class list from the
    mission pack (source `model`), kept only when it names a file, symbol or surface the repo has or a user clause
-   implies; the rest are shown as proposals, never items. Misses learn: an item added after the goal's first done
-   claim, or a task reopened within 7 days of its close, is a miss recorded by surface; `fm goal plan` adds the
+   implies; the rest are shown as proposals, never items. Naming a real file is only the grounding floor, not proof
+   the item matters: whether the list was right is scored by misses and by the goal exam kind (brief 6). Misses learn:
+   an item added after the goal's first done claim, or a revert, re-fix or correction within 30 days of a task's close
+   (fm outcomes' window), is a miss recorded by surface; `fm goal plan` adds the
    project's top misses as checklist lines and says how many past goals missed each.
 3. **Done-vs-stopped verdict — `fm goal verdict`** (tier 4, M). Deterministic. **Finished** only when every item has a
    task and every task is done (a dropped one needs its logged reason), every done-when command passes on a fresh
@@ -73,7 +80,8 @@ D. Several standing goals per project. Captured: revisit when a user replaces an
    Otherwise **stopped**, with the cause read from the ledger and the session events: usage limit, drive cap
    (DRIVE_MAX), no-progress stop, contract bound spent, waiting on the user (an open `fm ask`), paused, crash (a
    session start with no Stop after the last edit), or the model saying done with items open. Prints what's left in
-   order.
+   order. The verdict is Foreman's own check, so it never counts as outside proof: the goal and resume exam kinds
+   (brief 6) score its false-done rate against a hidden key it never sees, and fm outcomes scores it after 30 days.
 4. **Stop wired to the goal and the clauses** (tier 3, M). In `stop()`: a done claim (claims_done) while the last
    request has unaccounted clauses (fm clauses' `open`) blocks once with them; while a goal stands and its verdict is
    stopped, a done claim blocks once with the items left. Both count toward DRIVE_MAX and the no-progress stop, so
@@ -82,7 +90,8 @@ D. Several standing goals per project. Captured: revisit when a user replaces an
 5. **Goal across days** (tier 3, M). SessionStart and the PreCompact checkpoint carry one line: the goal, items
    done/total, the next item and its task; `fm resume` prints it; `fm run` takes the next item's task when the queue
    is empty. A goal set by a past session is re-injected every session until its verdict is finished or it is cleared.
-6. **#4 exam kinds** (tier 3, M). `goal`: a tool-less child writes a vague goal for the module and a hidden contents
+6. **#4 exam kinds** (tier 3, M). `goal`: a tool-less child, shown only the scenario's generated module and the
+   scenario format (never Foreman's code or the Missions), writes a vague goal for that module and a hidden contents
    key (4–6 items: each a test body or a README pattern), the arm gets only the goal; graded on key items met, 0
    regressions, and whether the arm's final claim matches the truth (said done with a key item unmet = a false done).
    `resume`: the same goal with half its items done and the plan on disk, the first session killed; a fresh session
@@ -100,6 +109,7 @@ D. Several standing goals per project. Captured: revisit when a user replaces an
 | G-resume | the goal half done, the plan on disk, the first session killed; "continue" | remaining items met; none redone |
 Arms: foreman (fm goal + Stop), plain ("" plugin), on the held-out third, with cost. The oracle meets every key item;
 empty meets none and must never be graded done.
+These kinds are the smoke tier (gen-1/seed.md rule 6): small single-defect scenarios never decide #4 on their own. The deciding end-of-run score is the long-horizon tier, on the production model: a goal replayed from Foreman's own history (the repo rolled back to the parent of a past multi-task change, that change's request as the goal, its shipped tests as the hidden checks), with a killed session and a forced compaction planted mid-run. Scored per finished goal on true-done rate, false-done claims, regressions and later reverts, interventions needed and cost per finished goal.
 
 ## Exam of the exam
 1. Every key item's test passes on the oracle's render and fails on the base, in all six languages.
@@ -108,7 +118,7 @@ empty meets none and must never be graded done.
 
 ## Spikes (tier 4, local, throwaway)
 Relay race: kill a session at five random points of a goal, a fresh one resumes from disk alone; count redone and lost
-items. Reopened-ticket miner: in git history, commits within 7 days of a task's close touching its files are misses;
+items. Reopened-ticket miner: in git history, commits within 30 days of a task's close touching its files are misses;
 does `fm goal plan`'s list predict them? Done-vs-stopped adversary: craft states that make the verdict say finished
 wrongly (a done-when that passes vacuously, a dropped task with no reason).
 
@@ -141,5 +151,7 @@ FEATURE: Stop wiring — unaccounted clauses and an unfinished goal block a done
 FEATURE: goal across days — SessionStart, PreCompact, fm resume and fm run carry the goal line
 FEATURE: #4 exam — G-goal and G-resume, child-authored, foreman vs plain
 FEATURE: goal surfaces — fm code, MCP, AGENTS.md, site page, pane line, docs
-DONE-WHEN: the held-out #4 exam runs both arms and no arm is graded done while a key item is unmet
+DONE-WHEN: #4's held-out exam passes at the end-of-run exam (the production-model foreman-vs-plain and long-horizon runs
+decide, gen-1/seed.md rule 6); until then the free arms and the Haiku smoke run show no regression, and no arm is graded done while
+a key item is unmet
 ```
