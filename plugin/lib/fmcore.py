@@ -3481,6 +3481,17 @@ def digest_due(d):
     return bool(t) and t <= datetime.datetime.now(datetime.timezone.utc)
 
 
+def worked_in(p, briefs=None):
+    """T-2184: Foreman has closed a task here (a closed brief, or anything archived): not an unfamiliar repo. init
+    makes the archive folder, so only something in it counts."""
+    try:
+        if os.listdir(os.path.join(p.dir, "archive")):
+            return True
+    except OSError:
+        pass
+    return any(b.status in CLOSED for b in (load_briefs(p) if briefs is None else briefs))
+
+
 def _next_for(p, briefs=None):
     briefs = lane_view(load_briefs(p) if briefs is None else briefs, p.lane)  # T-0134: not another lane's work
     autonomy = "standard" if panicked() else effective_autonomy(p)
@@ -3531,6 +3542,9 @@ def _next_for(p, briefs=None):
         import fmcontract  # T-1158: no next round past an ended contract (read-only: callers may hold the lock)
         if fmloop.on(p) and not fmcontract.over(p, freeze=False):
             return None, "loop", fmloop.action(p) + waits
+        if not worked_in(p, briefs):
+            return None, "idle", "queue is empty in a repo Foreman hasn't worked in: fm find --rank, then prove a lead red" \
+                + waits  # short: the prompt hook's 400-character note still fits a skill hint beside it
         return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)" + waits
     if b.status == "active" and b.meta.get("replan"):  # T-0603
         return b, "replan", (f"replan {b.id}: {b.meta['replan']} — re-read Steps and the Execution prompt, change what "

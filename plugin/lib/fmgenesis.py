@@ -305,7 +305,55 @@ def check(p):
     """Standing rules 1-3 over the tower: the coverage grid and the not-yet ledger, against the newest generation."""
     d, n = home(p), current(p) or None
     return {"gen": n, "coverage": coverage(p, _doc(d, "coverage.md"), _doc(d, "gen-0.md") or ""),
-            "not_yet": not_yet(_doc(d, "not-yet.md"), n)}
+            "not_yet": not_yet(_doc(d, "not-yet.md"), n), "reach": reach(p, n)}
+
+
+def _literals(src):
+    """The string literals a module can print (f-string parts too), never its comments or docstrings."""
+    import ast
+    tree = ast.parse(src)
+    docs = {id(x.value) for x in ast.walk(tree) if isinstance(x, ast.Expr) and isinstance(x.value, ast.Constant)}
+    return [x.value for x in ast.walk(tree) if isinstance(x, ast.Constant) and isinstance(x.value, str)
+            and id(x) not in docs]
+
+
+def _session_text():
+    """What a session reads or runs unasked: the operating rules, skills and commands whole, and the strings the hook
+    notes and fm next can print (their comments and docstrings don't count)."""
+    import glob
+    import inspect
+    import textwrap
+    root = c.PLUGIN_ROOT
+    text = _literals(textwrap.dedent(inspect.getsource(c._next_for)))
+    with open(os.path.join(root, "lib", "fmhooks.py"), encoding="utf-8") as f:
+        text += _literals(f.read())
+    for path in [os.path.join(root, "rules", "foreman.md"), *sorted(glob.glob(os.path.join(root, "skills", "*", "SKILL.md"))),
+                 *sorted(glob.glob(os.path.join(root, "commands", "*.md")))]:
+        try:
+            with open(path, encoding="utf-8") as f:
+                text.append(f.read())
+        except OSError:
+            continue
+    return "\n".join(text)
+
+
+def reach(p, n):
+    """T-2184 (steer 2026-10-30 #3): every capability Genesis builds is called by a real session path. Each fm verb
+    gen n's missions name (a real fm subcommand) must be named where a session reads or runs it unasked. A capability
+    nobody calls scores like none: the foreman arm found 6/18 where fm find, never called, found 16/18."""
+    sub = os.path.join(home(p), f"gen-{n}")
+    text = "\n".join(_doc(sub, f) or "" for f in sorted(os.listdir(sub)) if f.startswith("mission-")) \
+        if n and os.path.isdir(sub) else ""
+    named = list(dict.fromkeys(re.findall(r"\bfm ([a-z][a-z-]*)", text)))
+    if not named:
+        return {"verbs": 0, "problems": []}
+    import argparse
+    import fmcli
+    sub_cmds = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction)).choices
+    verbs, said = [v for v in named if v in sub_cmds], set(re.findall(r"\bfm ([a-z][a-z-]*)", _session_text()))
+    return {"verbs": len(verbs), "problems": [f"fm {v}: gen-{n}'s missions name it, but no session path calls it "
+                                              "(rules, skills, commands, hook notes, fm next)"
+                                              for v in verbs if v not in said]}
 
 
 BLOCK = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)  # a mission's intake block: its first fence
@@ -461,6 +509,13 @@ def _check_lines(r, limit=6):
     else:
         out.append(f"✓ not-yet: {n} item{'s' if n != 1 else ''}" + (f", each tried twice and retried in gen-{r['gen']}"
                                                                    if n and r["gen"] else ""))
+    reach_, more = r.get("reach") or {"verbs": 0, "problems": []}, len((r.get("reach") or {}).get("problems", [])) - limit
+    if reach_["problems"]:
+        out.append(f"✗ reach: {len(reach_['problems'])} of {reach_['verbs']} fm verb(s) the missions name have no "
+                   "session path calling them")
+        out += [f"    {x}" for x in reach_["problems"][:limit]] + ([f"    … {more} more (--json lists all)"] if more > 0 else [])
+    else:
+        out.append(f"✓ reach: {reach_['verbs']} fm verb(s) the missions name, each on a session path")
     return out
 
 
@@ -1108,7 +1163,35 @@ def scorecard(p, agent="foreman", bar=0.8):
         rows.append({"n": int(n), "name": name, "kinds": kinds, "agent": who, "graded": graded, "closed": closed,
                      "rate": round(closed / graded, 3) if graded else 0, "state": state})
     return {"agent": agent, "bar": bar, "rows": rows, "ok": all(r["state"] == "pass" for r in rows),
-            "seen": len(pools.get(agent) or newest(agent))}
+            "seen": len(pools.get(agent) or newest(agent)), "gaps": free_beats(p, agent)}
+
+
+def free_beats(p, agent="foreman", split="holdout"):
+    """T-2184 (steer 2026-10-30 #3): a capability whose free arm beats the session arm is a top gap. Per run, each free
+    capability arm (fmexam.AGENTS but the oracle and empty yardsticks) whose newest line found more `split` defects
+    than the agent's newest line on that run. A Seed reads split train only: held-out results never reach a Mission."""
+    import fmexam
+    free, newest = [a for a in fmexam.AGENTS if a not in ("oracle", "empty")], {}
+    for raw in (_doc(home(p), "exam.jsonl") or "").splitlines():
+        try:
+            x = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(x, dict) and isinstance(x.get("run"), str):
+            newest[(x["run"], x.get("agent"))] = x
+
+    def got(x):
+        num = lambda d, k: d.get(k) if isinstance(d, dict) and isinstance(d.get(k), int) else 0
+        h = x.get("holdout")
+        return (num(h, "found"), num(h, "keyed")) if split == "holdout" else \
+            (num(x, "found") - num(h, "found"), num(x, "keyed") - num(h, "keyed"))
+    out, label = [], "held-out" if split == "holdout" else "train"
+    for (run, who), x in newest.items():
+        s = newest.get((run, agent))
+        if who in free and s and got(x)[1] and got(x)[0] > got(s)[0]:
+            out.append(f"{who} found {got(x)[0]}/{got(x)[1]} {label} defects on {c.plain(run)} where {agent} found "
+                       f"{got(s)[0]}/{got(x)[1]}: the session doesn't use what Foreman built")
+    return out
 
 
 def exam_line(p, line):
@@ -1279,6 +1362,7 @@ def _seed(p, n, agent):
            f"gen-{n - 1}'s critiques, exam.jsonl and lineage.md. The goal, MUSTs, NEVERs and DONE-WHEN stay gen-0.md's, "
            "verbatim (fm genesis drift checks).", "",
            "## What this generation is for", "",
+           *[f"Top gap: {g}\n" for g in free_beats(p, agent, "train")],  # T-2184: before any cell or Mission
            "Close the open coverage cells, most first, retry every not-yet item, and act on what the critiques asked; "
            "the exam's train split decides whether this rewrite stays (fm genesis select).", "", "## Missions", "",
            *(["| # | Mission file | Capabilities | Gaps closed (open cells) | Depends on |", "|---|---|---|---|---|", *table]
@@ -1520,7 +1604,8 @@ def sweep(p, n, agent="foreman"):
         rows.append({"check": name, "ok": not bad, "detail": "; ".join(bad[:8]) + (f"; … {len(bad) - 8} more"
                                                                                     if len(bad) > 8 else "") or good})
     r = check(p)
-    row("genesis check", r["coverage"]["problems"] + r["not_yet"]["problems"], "coverage and not-yet are whole")
+    row("genesis check", r["coverage"]["problems"] + r["not_yet"]["problems"] + r["reach"]["problems"],
+        "coverage, not-yet and reach are whole")
     row("steer checks", c.steer_checks(p), "every rule from a user steer has a check, and each passes")  # T-2167
     briefs = c.load_briefs(p)
     by_id = {b.id: b for b in c.load_briefs(p, include_archive=True)}  # fm tidy archives closed briefs after 14 days
@@ -1643,7 +1728,7 @@ def cmd_genesis(args):
         if action == "check":
             r = check(p)
             fmcli.out(args, r, "\n".join(_check_lines(r)))
-            return 1 if r["coverage"]["problems"] or r["not_yet"]["problems"] else 0
+            return 1 if r["coverage"]["problems"] or r["not_yet"]["problems"] or r["reach"]["problems"] else 0
         if action == "step":
             r = step(p)
             fmcli.out(args, r, f"gen {r['gen']} · {r['stage']}: {r['action']}\n  → {r['command']}")

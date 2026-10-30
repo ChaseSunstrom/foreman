@@ -1137,7 +1137,8 @@ def cmd_exam(args):
             res = fmgenesis.scorecard(p, args.agent or "foreman", args.bar)
             rows = res["rows"]
             fmcli.out(args, res, f"scorecard ({res['agent']}, held out, bar {res['bar']:.0%}): "
-                                 f"{sum(r['state'] == 'pass' for r in rows)}/{len(rows)} pass\n" + "\n".join(
+                                 f"{sum(r['state'] == 'pass' for r in rows)}/{len(rows)} pass\n"
+                                 + "".join(f"  top gap: {g}\n" for g in res["gaps"]) + "\n".join(
                 f"  {r['n']:>2}. {r['name']}: {r['state']}" + (f" {r['closed']}/{r['graded']}" if r["graded"] else "")
                 + (f" ({', '.join(r['kinds'])})" if r["kinds"] else "") for r in rows)
                 + ("" if res["seen"] else f"\n  no graded held-out lines from {res['agent']!r}: fm exam run RUN --agent "

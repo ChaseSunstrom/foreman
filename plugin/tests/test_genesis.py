@@ -494,6 +494,32 @@ class GenesisCheck(ForemanTestCase):
         self.assertIn("coverage.md doesn't exist", "\n".join(res["coverage"]["problems"]))
         self.assertEqual(res["not_yet"]["items"], 0)  # no ledger is an empty ledger
 
+    def test_a_verb_the_missions_name_must_be_on_a_session_path(self):
+        # T-2184 (steer 2026-10-30 #3): every capability Genesis builds is called by a real session path
+        import fmcore as c
+        import fmgenesis
+        from unittest import mock
+        self.put("gen-1/mission-x.md", "# Mission\ngen-0\nBuild `fm find` and wire it; fm decide records it; fm bogus "
+                                      "isn't a verb.\n")
+        p = c.find_project(self.repo)
+        with mock.patch.object(fmgenesis, "_session_text", return_value="run fm decide first"):
+            r = fmgenesis.check(p)
+        self.assertEqual(r["reach"]["problems"], ["fm find: gen-1's missions name it, but no session path calls it "
+                                                  "(rules, skills, commands, hook notes, fm next)"])
+        self.assertIn("✗ reach", "\n".join(fmgenesis._check_lines(r)))
+        self.put("coverage.md", "# Coverage\n\n" + grid("1. Initiative") + "\n" + grid("2. Exhaustive thinking") + grid("UX"))
+        self.put("not-yet.md", "# Not yet\n")
+        code, res = self.check()  # the real session paths: fm find is wired (the operating rules, session start)
+        self.assertEqual((code, res["reach"]["problems"]), (0, []))
+        import contextlib
+        import io
+        import fmcli
+        with mock.patch.object(fmgenesis, "_session_text", return_value="run fm decide first"), \
+                contextlib.chdir(self.repo), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(fmcli.main(["genesis", "check"]), 1)  # a reach problem alone fails the check
+        self.assertEqual(fmgenesis._literals("# fm bus watch\ndef f():\n    '''fm doc verb'''\n    return f'fm find {1}'\n"),
+                         ["fm find "])  # comments and docstrings aren't session paths
+
     def test_not_yet_items_need_two_tries_and_this_generations_retry(self):
         self.put("coverage.md", grid("1. Initiative") + grid("2. Exhaustive thinking"))
         self.put("not-yet.md", "# Not yet\n\n## A\n- blocker: x\n- tried: one way\n- unblocks-with: y\n- added: gen-1\n\n"
@@ -1077,6 +1103,34 @@ class GenesisSelect(ForemanTestCase):
         self.assertIsNone(self.read("gen-3/seed.md"))
         self.assertEqual(self.read("lineage.md"), before)
 
+    def test_a_free_arm_beating_the_session_tops_the_scorecard_and_on_train_the_seed(self):
+        # T-2184 (steer 2026-10-30 #3): a capability whose free arm beats the session arm is a top gap
+        import fmgenesis
+
+        def line(run, agent, train, held):
+            fmgenesis.exam_line(self.p, {"run": run, "agent": agent, "gen": 2, "found": train + held, "keyed": 12,
+                                         "holdout": {"found": held, "keyed": 6}, "closed": {"train": [], "holdout": []}})
+        for agent, train, held in (("finders", 5, 6), ("oracle", 6, 6), ("empty", 0, 0), ("foreman", 2, 1), ("plain", 1, 1)):
+            line("r1", agent, train, held)
+        line("r2", "finders", 1, 6)  # beats the session on held-out only
+        line("r2", "foreman", 3, 2)
+        line("r3", "finders", 6, 6)  # an older finders line on r3 ...
+        line("r3", "foreman", 4, 4)
+        line("r3", "finders", 0, 0)  # ... the newest one on a run counts
+        r = fmgenesis.scorecard(self.p)
+        self.assertEqual(r["gaps"], ["finders found 6/6 held-out defects on r1 where foreman found 1/6: the session "
+                                     "doesn't use what Foreman built",
+                                     "finders found 6/6 held-out defects on r2 where foreman found 2/6: the session "
+                                     "doesn't use what Foreman built"])
+        self.put("lineage.md", "# Lineage\n\n## gen-1\n- baseline: first\n- seed base: gen-1\n\n"
+                               "## gen-2\n- kept: closed more\n- seed base: gen-2\n")
+        fmgenesis.seed(self.p, 3)
+        text = self.read("gen-3/seed.md")
+        top = text.split("## What this generation is for", 1)[1].split("## Missions", 1)[0]
+        self.assertIn("Top gap: finders found 5/6 train defects on r1 where foreman found 2/6", top)
+        self.assertNotIn("held-out", top)  # held-out results never reach a Mission
+        self.assertNotIn("r2", top)
+
     def test_seed_writes_the_next_seed_from_the_kept_ancestor(self):
         import fmgenesis
         with open(os.path.join(self.repo, "real.py"), "w") as f:
@@ -1390,7 +1444,7 @@ class GenesisSweep(ForemanTestCase):
     def sweep(self, doctor=(), gates="run at 12:00 UTC", clean_check=True):
         import fmgenesis
         from unittest import mock
-        ok = {"coverage": {"problems": []}, "not_yet": {"problems": []}}
+        ok = {"coverage": {"problems": []}, "not_yet": {"problems": []}, "reach": {"problems": []}}
         with mock.patch.object(fmgenesis, "_doctor", return_value=list(doctor)), \
                 mock.patch.object(fmgenesis, "_gates", return_value=gates), \
                 mock.patch.object(fmgenesis, "check", return_value=ok) if clean_check else mock.MagicMock():
@@ -1434,6 +1488,15 @@ class GenesisSweep(ForemanTestCase):
                 "--revisited", "coverage cells name", "--check", "python3 plugin/tests/run.py test_genesis")
         r = self.sweep()
         self.assertEqual(r["verdict"], "clean", r["rows"])
+
+    def test_a_reach_problem_turns_the_sweep_red(self):
+        import fmgenesis
+        from unittest import mock
+        bad = {"coverage": {"problems": []}, "not_yet": {"problems": []}, "reach": {"problems": ["fm find: unreached"]}}
+        with mock.patch.object(fmgenesis, "check", return_value=bad), mock.patch.object(fmgenesis, "_doctor", return_value=[]), \
+                mock.patch.object(fmgenesis, "_gates", return_value="run at 12:00 UTC"):
+            row = next(x for x in fmgenesis.sweep(self.p, 1)["rows"] if x["check"] == "genesis check")
+        self.assertEqual((row["ok"], row["detail"]), (False, "fm find: unreached"))
 
     def test_an_archived_mission_task_counts_and_an_unmerged_lane_is_red_until_queued(self):
         import subprocess

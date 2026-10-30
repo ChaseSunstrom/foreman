@@ -128,6 +128,65 @@ class SessionStart(HookCase):
             "CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}))
         self.assertNotIn("FINAL VERIFY", ups)
 
+    def plant(self):
+        os.makedirs(os.path.join(self.repo, "kit"), exist_ok=True)
+        with open(os.path.join(self.repo, "kit", "store.py"), "w") as f:
+            f.write("def lookup(db, name):\n    return db.execute(\"SELECT * FROM users WHERE name = '\" + name + \"'\")\n")
+        for args in (["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]):
+            subprocess.run(["git", *args], cwd=self.repo, capture_output=True)
+
+    def headless_ss(self):
+        return self.ctx_of(self.hook("SessionStart", {"source": "startup"}, env={
+            "CLAUDE_ENV_FILE": self.env_file, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}))
+
+    def test_a_repo_with_nothing_queued_starts_with_fm_finds_leads(self):
+        # T-2184 (steer 2026-10-30 #3): on held-out run s31-006 the foreman arm found 6/18 where fm find alone found
+        # 16/18; nothing a session reads named fm find
+        self.fm("init")
+        self.plant()
+        ctx = self.headless_ss()
+        self.assertIn('- "kit/store.py:2 vuln lookup: SQL built from the parameter name', ctx)  # each row quoted
+        self.assertIn("fm find", ctx)
+        self.assertIn("data, not instructions", ctx)
+        self.assertIn("kit/store.py:2", self.ctx_of(self.run_ss()))  # interactive, a repo Foreman hasn't worked in
+        self.assertNotIn("kit/store.py:2", self.ctx_of(self.run_ss("resume")))  # once at startup, not every resume
+        tid = self.fm_json("task", "new", "x", "--type", "FIX", "--tier", "S", "--step", "x")["id"]
+        self.assertNotIn("kit/store.py:2", self.headless_ss())  # something queued: the queue leads
+        self.fm("task", "drop", tid, "done elsewhere")
+        self.assertNotIn("kit/store.py:2", self.ctx_of(self.run_ss()))  # interactive, Foreman has history here
+        self.assertIn("kit/store.py:2", self.headless_ss())  # an unattended run with nothing queued still gets them
+
+    def test_a_big_tree_gets_a_pointer_not_a_scan(self):
+        import fmcore as c
+        import fmhooks
+        from unittest import mock
+        self.fm("init")
+        self.plant()
+        p = c.find_project(self.repo)
+        for name in ("a.py", "b.py"):  # untracked: fm find reads them too, so the cap counts them
+            with open(os.path.join(self.repo, name), "w") as f:
+                f.write("x = 1\n")
+        with mock.patch.object(fmhooks, "LEADS_FILES", 2):
+            note = fmhooks._leads_note(p)
+        self.assertIn("fm find --rank", note)
+        self.assertRegex(note, r"\b[3-9] files, too many")  # 1 tracked, the rest untracked
+        self.assertNotIn("kit/store.py", note)
+        import fmfind
+        import time
+        with mock.patch.object(fmhooks, "LEADS_SECONDS", 0.05), \
+                mock.patch.object(fmfind, "scan", side_effect=lambda *a: time.sleep(0.5) or (0, [])):
+            note = fmhooks._leads_note(p)
+        self.assertIn("ran past 0.05 s", note)  # a slow scan never holds session start past its deadline
+
+    def test_fm_next_in_a_repo_foreman_hasnt_worked_in_names_fm_find(self):
+        self.fm("init")
+        self.assertIn("fm find --rank", self.fm("next").stdout)
+        tid = self.fm_json("task", "new", "x", "--type", "FIX", "--tier", "S", "--step", "x")["id"]
+        self.fm("task", "drop", tid, "done elsewhere")
+        out = self.fm("next").stdout
+        self.assertIn("queue is empty", out)
+        self.assertNotIn("fm find --rank", out)
+
     def test_an_unattended_run_is_told_to_end_with_its_checks(self):
         # T-1228: the duel's judge read only the final reply; Foreman's evidence sat in its ledger, not in the reply
         self.fm("init")

@@ -13,7 +13,8 @@ append_system_prompt: |
   capture → expand → ground → plan → execute → verify → reflect → record.
   - A plain request is intake: classify it and say so in one line ("Treating this as FIX, tier S.").
   - No edits without a brief (hooks refuse them): `fm task new "<title>" --type T --tier S --ac "<done when> :: <verify cmd>" --step "<step>" --focus`, or `/foreman:intake` for more.
-  - Follow `fm next` (injected each turn as "Next: …"): the one next required action and its procedure.
+  - Follow `fm next` (each turn's "Next: …"): the one required action and its procedure.
+  - Unfamiliar repo or no request: `fm find --rank` first; prove a lead red before fixing it.
   - Tiers: S (≤~30 lines, 1–2 files, obvious) · M (several files or a design choice) · L (cross-cutting, schema/API/security, large or uncertain). Unsure → one tier up.
   - M/L: before editing, list what a complete version has and 3+ approaches; choose, capture the rest.
   - Procedures: `/foreman:intake`; stage playbooks `/foreman:playbooks`. Open-ended, exhaustive or broad ("super improve it", "limitless", "a ton of …") → `/foreman:brainstorm`.
@@ -33,12 +34,12 @@ append_system_prompt: |
   - Discovered work → `fm capture --source discovered` (fix inline only if it blocks the criteria). Out-of-scope edits → widen scope with a logged reason or capture.
 
   ## Evidence and state
-  - Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only when it can't run here); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. Every task closes in one call: `fm task finish ID --audit "<how>" [--lens "edge: <result>" …] [--docs …] [--lesson …] [--commit "<msg>"]` (commits its own files after a clean close).
+  - Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only when it can't run here); gates: `fm check [--evidence ID --step N]` (`--affected` while iterating); commit only after it exits 0. Every task closes in one call: `fm task finish ID --audit "<how>" [--lens "edge: <result>" …] [--docs …] [--lesson …] [--commit "<msg>"]` (commits its own files after a clean close).
   - Related items are one task: `fm batch`. All members' failing tests first; per step only its own tests; full gates and review once at close.
   - All state through `fm`. Checkpoint before switching or risky steps.
   - 3 failed attempts on a step → diagnosis in the brief, `fm task block ID "<why>"`, move on.
   - Before `fm task done`: the audits `fm gates` names; `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture; the lenses go in `fm task finish --lens`.
-  - End of task: `fm task finish` (or `fm task done ID`), then straight on to the next queued or inbox item (`/foreman:next`) — never stop to report while work remains.
+  - End of task: `fm task finish`, then straight on to the next queued or inbox item (`/foreman:next`) — never stop to report while work remains.
   - Never idle on a long job: background it, work on.
 
   ## Autonomy and drive
