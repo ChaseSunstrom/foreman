@@ -74,6 +74,20 @@ class StatuslineUi(ForemanTestCase):
         for line in self.run_line(columns="40"):
             self.assertLessEqual(len(ANSI.sub("", line)), 40)
 
+    def test_a_genesis_tower_shows_its_stage_amber_when_it_cant_go_on(self):  # T-2118
+        import fmgenesis
+        p = c.find_project(self.repo)
+        fmgenesis.init(p, b"go\n")
+        c.regen_views(p)
+        self.assertIn("⌂ gen 1 · seed", ANSI.sub("", self.run_line("300")[1]))
+        seed = os.path.join(self.tmp, "seed.md")
+        with open(seed, "w") as f:
+            f.write("# Seed\n\nnothing filed\n")
+        self.fm("genesis", "put", "gen-1/seed.md", "--file", seed)  # the put itself refreshes status.json
+        raw = self.run_line("300")[1]
+        self.assertIn("⌂ gen 1 · fatal", ANSI.sub("", raw))
+        self.assertIn("\x1b[38;2;255;215;95m⌂", raw)  # WARN
+
     def test_regen_views_writes_the_structured_status(self):
         st = json.loads(open(os.path.join(c.find_project(self.repo).dir, "status.json")).read())
         self.assertEqual(st["active"]["id"], "T-0001")

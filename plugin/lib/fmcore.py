@@ -3602,7 +3602,16 @@ def state_dict(p, briefs=None):
         "last_tidy": meta.get("last_tidy"),
         "tidy_overdue_days": int(days) if days is not None and days > TIDY_EVERY_DAYS else None,
         "session": meta.get("session") or {},
+        "genesis": _genesis(p, everything),  # T-2118: the tower's next action, on every surface that reads this
     }
+
+
+def _genesis(p, briefs):
+    try:
+        import fmgenesis
+        return fmgenesis.health(p, briefs)
+    except Exception:  # a broken tower costs its line, never the state
+        return None
 
 
 def _more(n, shown):
@@ -3641,6 +3650,9 @@ def render_state(sd, ts=None):
         out.append("Dangling deps: " + ", ".join(f"{a}→{b}" for a, b in sd["dangling"])[:200])
     out += ["", "## Notes", f"Sensitive: {'yes' if sd['sensitive'] else 'no'} · Drive: {'on' if sd['drive'] else 'off'}"
             + (" · PAUSED" if sd["paused"] else "")]
+    g = sd.get("genesis")
+    if g:  # T-2118
+        out.append(f"Genesis: {genesis_line(g)}")
     return "\n".join(out[:60]) + "\n"
 
 
@@ -3747,7 +3759,15 @@ def status_dict(sd):
                              "step": plain(a["step"]["text"]) if a.get("step") else "",
                              "audits": [a["audits"]["done"], a["audits"]["required"]]},
             "queue": len(sd["queue"]), "inbox": len(sd["inbox"]), "autonomy": sd["autonomy"],
-            "drive": bool(sd["drive"]), "asks": sd.get("asks") or []}
+            "drive": bool(sd["drive"]), "asks": sd.get("asks") or [],
+            "genesis": sd.get("genesis") and {k: sd["genesis"][k] for k in ("gen", "stage", "kind")}}  # T-2118
+
+
+def genesis_line(g):
+    """T-2118: the tower's health as one line: 'gen 1 · build (blocked): Mission 3 (initiative): finish T-2122 → fm
+    focus T-2122'."""
+    kind = "" if g["kind"] == "ok" else f" ({g['kind']})"  # defanged: the action quotes the seed, which a session writes
+    return defang(f"gen {g['gen']} · {g['stage']}{kind}: {plain(g['action'])[:200]} → {plain(g['command'])}")
 
 
 def badge_text(sd):

@@ -1733,6 +1733,11 @@ def _work_row(it):
         return [(" ERROR ", "chip_bad"), ("  " + str(it.get("text")), "bad")]
     if it.get("kind") == "run":
         return _history_row(it)
+    if it.get("kind") == "genesis":  # T-2118: the tower's next action, first in its project's view
+        g = it.get("genesis") or {}
+        import fmcore
+        return [(" GENESIS ", "chip_accent" if g.get("kind") in ("ok", "done") else "chip_bad"),
+                ("  " + fmcore.genesis_line(g), "text")]
     t = it.get("task") or {}
     why = f"  ({t['reason']})" if t.get("reason") else ""
     return [_SECTION.get(it.get("section"), (" TASK    ", "chip_todo")), ("  " + pad(t.get("id") or "?", 7), "strong"),
@@ -2854,6 +2859,8 @@ class App:
             st = self.state_source(proj) or {}
         except Exception as e:  # its state can't be read: say why here, home still draws
             st, rows = {}, [{"kind": "error", "text": f"can't read {proj.get('project')}'s state: {e}"}]
+        if isinstance(st.get("genesis"), dict):
+            rows.append({"kind": "genesis", "genesis": st["genesis"]})
         if isinstance(st.get("active"), dict):
             rows.append({"kind": "task", "section": "active", "task": st["active"]})
         for sec in ("queue", "inbox", "blocked"):
