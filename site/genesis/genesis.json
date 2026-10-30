@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T17:13:41Z",
- "rev": "46e8661e",
+ "updated": "2026-10-30T18:08:25Z",
+ "rev": "65aca49e",
  "capabilities": [
   {
    "n": 1,
@@ -580,11 +580,11 @@
       {
        "id": "T-2170",
        "title": "fm exam grade's exam-defect rule (_exam_defect, T-2120) takes the arm's own test as…",
-       "status": "captured",
+       "status": "active",
        "type": "FIX",
        "tier": "M",
-       "steps": 0,
-       "done": 0,
+       "steps": 2,
+       "done": 2,
        "current": ""
       }
      ]
