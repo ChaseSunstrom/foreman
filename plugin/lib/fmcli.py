@@ -6926,6 +6926,10 @@ def _build_parser(only=None):
     s.add_argument("--task", help="live on: the task whose publish grant switches it on (default: the active task)")
     s.add_argument("--settle", action="store_true", help="publish: wait out the rest of the window first (the detached "
                                                          "publish a tower change starts)")
+    s = add("find", lazy("fmfind", "cmd_find"), tier=("Finding your way", 457), help="deterministic finders over a tree: "
+            "untested functions, docs naming missing code, undeclared deps, SQL from a parameter, list membership in a loop, "
+            "unseeded test randomness, credentials; exit 1 on findings (T-2121)")
+    s.add_argument("path", nargs="?", default=".", help="the tree to scan (default: here)")
     s = add("exam", lazy("fmexam", "cmd_exam"), tier=("Finding your way", 456), help="a seeded exam of throwaway repos in six "
             "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
     s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check"))

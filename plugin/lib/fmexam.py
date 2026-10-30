@@ -654,14 +654,11 @@ def _empty(base, key):
 
 
 def _finders(base, key):
-    """Foreman's own deterministic finders over the repo, no session: docs drift (fmdocs.scan) and credentials in the
-    tree (fmsecrets). They find, never fix, so the work is the repo as planted. Code-defect finders don't exist yet;
-    this arm's score is the baseline they're measured against."""
-    import fmdocs
-    import fmsecrets
+    """Foreman's deterministic finders over the repo (fm find, T-2121), no session. They find, never fix, so the work
+    is the repo as planted."""
+    import fmfind
     repo = os.path.join(base, "repo")
-    found = [{"file": f["file"], "symbol": f["detail"], "says": f"docs {f['kind']}: {f['detail']}"} for f in fmdocs.scan(repo)]
-    found += [{"file": f["path"], "symbol": "", "says": f"credential: {f['kind']}"} for f in fmsecrets._tree(repo)]
+    found = [{"file": f["file"], "symbol": f["symbol"], "says": f["says"]} for f in fmfind.find(repo)]
     return {"findings": found, "notes": [], "done": False}, repo
 
 
