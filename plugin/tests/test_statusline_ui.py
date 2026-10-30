@@ -6,7 +6,7 @@ import os
 import re
 import subprocess
 
-from helpers import ForemanTestCase
+from helpers import CLEAN_READER, ForemanTestCase
 
 import fmcore as c
 
@@ -83,7 +83,9 @@ class StatuslineUi(ForemanTestCase):
         seed = os.path.join(self.tmp, "seed.md")
         with open(seed, "w") as f:
             f.write("# Seed\n\nnothing filed\n")
-        self.fm("genesis", "put", "gen-1/seed.md", "--file", seed)  # the put itself refreshes status.json
+        # the put itself refreshes status.json; T-2166: CLEAN_READER makes its cold read pass
+        self.fm("genesis", "put", "gen-1/seed.md", "--file", seed,
+                env={"PATH": CLEAN_READER + os.pathsep + os.environ["PATH"]})
         raw = self.run_line("300")[1]
         self.assertIn("⌂ gen 1 · fatal", ANSI.sub("", raw))
         self.assertIn("\x1b[38;2;255;215;95m⌂", raw)  # WARN
