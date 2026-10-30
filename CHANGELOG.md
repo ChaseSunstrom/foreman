@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Genesis carries your standing intent everywhere it reads: every cold read and drift check sees it beside gen-0 and your steers and asks what you would say, each seed and spec.md quote it, `fm genesis draft` puts it in any repo's gen-0, the Genesis page lists its nine clauses, and #13's exam fails a draft that drops one.
 - The Genesis line (session start, `fm state`, the pane, `fm code`) now shows the held-out exam scorecard, e.g. `gen 1 · exam 0/13 pass, 4 Haiku skipped · build: …`, and `fm mcp` serves it as `exam_scorecard`, so Desktop and other agents can read the done gate. The line also refreshes after a Foreman update instead of waiting for a tower file to change.
 - `fm genesis check`'s reach no longer counts an fm verb as shown to a session just because a hook's matcher list or a command's own output names it: only text a session sees without asking counts. Live reach still 27 of 27.
 - `fm exam run` no longer caps each exam session at $2: a production-model session on a hard scenario was cut off mid-proof and scored as errored. Sessions now run uncapped unless `--budget USD` is given; the per-session timeout still stops a runaway, and your own `fm budget` limit still applies.
