@@ -402,28 +402,55 @@ class FindProve(ForemanTestCase):
         self.assertNotIn(env["HOME"], (os.path.expanduser("~"), self.home))
         self.assertIn("fm-prove-", env["HOME"])
 
-    def test_a_tree_whose_head_is_yours_runs_and_a_local_email_cant_forge_it(self):
+    def test_your_email_on_head_is_no_consent_only_your_yes_run_is_and_it_is_remembered(self):
         import subprocess
-        root, home = self.proj(), os.path.join(self.tmp, "githome")
+        import fmprove
+        ran = os.path.join(self.tmp, "suite-ran")
+        root, home = self.proj({"app.py": APP, "tests/test_app.py": f"open({ran!r}, 'w').close()\n" + SUITE}), \
+            os.path.join(self.tmp, "githome")
         write(home, {".gitconfig": "[user]\n\temail = me@example.com\n\tname = Me\n"})
         genv = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")} | {"HOME": home, "GIT_CONFIG_NOSYSTEM": "1"}
         git = lambda *a: subprocess.run(["git", "-C", root, *a], env=genv, check=True, capture_output=True)
         git("init", "-q")
         git("add", ".")
-        git("commit", "-qm", "mine")
-        self.assertEqual(self.fm("prove", root, check=False, env={"HOME": home}).returncode, 1)  # proven, no --yes-run
-        git("config", "user.email", "other@example.com")  # the repo's own config names someone else ...
-        git("commit", "-q", "--allow-empty", "-m", "theirs")
-        r = self.fm("prove", root, check=False, env={"HOME": home})
-        self.assertEqual(r.returncode, 2)  # ... and HEAD is theirs: the global email decides, so nothing ran
-        self.assertIn("HEAD's author is other@example.com", r.stderr)
+        git("commit", "-qm", "anyone can write this email into a commit")
+        r = self.fm("prove", root, "--json", check=False, env={"HOME": home})
+        self.assertEqual(r.returncode, 0, r.stderr)  # still runs, proves nothing that needs the tree's code ...
+        t = next(t for t in json.loads(r.stdout)["tickets"] if t["symbol"] == "unused")
+        self.assertEqual(t["verdict"], "lead")
+        self.assertIn("fm prove PATH --yes-run", t["evidence"])
+        self.assertFalse(os.path.exists(ran))  # ... and none of it ran
+        self.assertEqual(self.fm("prove", root, "--yes-run", check=False, env={"HOME": home}).returncode, 1)
+        os.remove(ran)
+        r = self.fm("prove", root, "--json", check=False, env={"HOME": home})  # the user's yes holds for this tree
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertEqual(next(t for t in json.loads(r.stdout)["tickets"] if t["symbol"] == "unused")["verdict"], "proven")
+        self.assertTrue(os.path.exists(ran))
+        other = root + "2"  # a sibling sharing the path's prefix
+        write(other, {"app.py": APP, "tests/test_app.py": f"open({ran!r} + '2', 'w').close()\n" + SUITE})
+        self.fm("prove", other, check=False)
+        self.assertFalse(os.path.exists(ran + "2"))  # a yes is per tree
+        self.fm("prove", other, check=False, env={"FOREMAN_HOME": other})  # naming it Foreman's home is no yes
+        self.assertFalse(os.path.exists(ran + "2"))
+        import fmcore as c
+        with open(os.path.join(c.state_dir(), "prove-trusted.json"), "w") as f:
+            f.write("{not json")
+        r = self.fm("prove", root, "--json", check=False, env={"HOME": home})
+        self.assertEqual(next(t for t in json.loads(r.stdout)["tickets"] if t["symbol"] == "unused")["evidence"],
+                         fmprove.NO_RUN)  # a broken trust list trusts nothing
 
-    def test_repo_code_runs_only_in_a_tree_that_is_yours_or_with_yes_run(self):
-        root = self.proj()
-        r = self.fm("prove", root, check=False)
-        self.assertEqual(r.returncode, 2)
-        self.assertIn("--yes-run", r.stderr)  # not provably the user's tree: nothing ran
-        self.assertNotIn("fm prove stub", open(os.path.join(root, "app.py")).read())
+    def test_a_tree_without_consent_still_proves_what_runs_none_of_its_code(self):
+        root = self.proj({"app.py": APP, "tests/test_app.py": SUITE,
+                          "README.md": "Call `used()` and `unused()`, then `missing_fn()`.\n"})
+        r = self.fm("prove", root, "--json", check=False)
+        self.assertEqual(r.returncode, 1, r.stderr)  # the docs claim is re-found cold: proven without a run
+        kinds = {t["kind"]: t["verdict"] for t in json.loads(r.stdout)["tickets"]}
+        self.assertEqual((kinds.get("docs"), kinds.get("untested")), ("proven", "lead"))
+        r = json.loads(self.fm("prove", root, "--limit", "1", "--json", check=False).stdout)
+        self.assertEqual([t["kind"] for t in r["tickets"]], ["docs"])  # an unrun candidate can't take a provable slot
+        r = json.loads(self.fm("prove", root, "--limit", "1", "--yes-run", "--json", check=False).stdout)
+        self.assertEqual([t["kind"] for t in r["tickets"]], ["untested"])  # fm find ranks it first
+        self.assertNotIn("fm prove", open(os.path.join(root, "app.py")).read())
 
     def test_the_copy_drops_links_credentials_and_home(self):
         import fmprove
