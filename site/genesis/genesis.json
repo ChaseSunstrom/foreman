@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T19:04:59Z",
- "rev": "e09f12f0",
+ "updated": "2026-10-30T19:15:49Z",
+ "rev": "265c2417",
  "capabilities": [
   {
    "n": 1,
@@ -520,12 +520,12 @@
       {
        "id": "T-2122",
        "title": "fm find prove: proof tickets, red 3/3 for an assertion and mutate-to-confirm; unproven candidates become leads (Mission 3 brief 3)",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "L",
        "steps": 2,
-       "done": 0,
-       "current": "proof ticket: run 3x on an untouched copy, classify the failure"
+       "done": 2,
+       "current": ""
       },
       {
        "id": "T-2123",
