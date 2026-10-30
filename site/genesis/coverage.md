@@ -1,0 +1,1453 @@
+# Coverage — gen 1
+
+## 1. Initiative
+- find × Claude Code: F: plugin/lib/fmscout.py — idle-turn scouts capture discovered work nobody asked for
+- find × fm code: I: run the scout finders on fm code's idle turn (plugin/lib/fmcode.py)
+- find × other agents: I: run idle scouts from the Codex Stop event and capture findings (plugin/lib/fmagents.py)
+- find × MCP: I: let an MCP client read what the scouts found (plugin/lib/fmmcp.py)
+- find × Desktop: I: list scout findings in the Desktop inbox for one-click accept (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in unasked work (site/pages.py)
+- find × CLI: F: plugin/lib/fmscout.py — idle-turn scouts capture discovered work nobody asked for
+- find × headless/server: F: plugin/lib/fmnight.py — fm night runs standing orders that capture tasks on a schedule while the user is away
+- understand × Claude Code: F: plugin/lib/fmmission.py — fm mission turns an open-ended request into surfaces, lenses and a pack
+- understand × fm code: I: Have fm code explain what is known about unasked work (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about unasked work (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about unasked work (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about unasked work (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about unasked work (site/pages.py)
+- understand × CLI: F: plugin/lib/fmmission.py — fm mission turns an open-ended request into surfaces, lenses and a pack
+- understand × headless/server: I: Have fm run and fm serve explain what is known about unasked work (plugin/lib/fmserve.py)
+- plan × Claude Code: F: plugin/skills/brainstorm/SKILL.md — grounded, scored ideas turned into queued tasks
+- plan × fm code: I: Have fm code plan unasked work up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan unasked work up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan unasked work up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan unasked work up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan unasked work up front (site/pages.py)
+- plan × CLI: F: plugin/skills/brainstorm/SKILL.md — grounded, scored ideas turned into queued tasks
+- plan × headless/server: I: Have fm run and fm serve plan unasked work up front (plugin/lib/fmserve.py)
+- build × Claude Code: I: Add a hook or command to act on unasked work while building (plugin/lib/fmhooks.py)
+- build × fm code: I: Have fm code act on unasked work while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on unasked work while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on unasked work while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on unasked work while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: F: plugin/lib/fmdraft.py — a headless claude drafts the top queued S task in a throwaway worktree
+- build × headless/server: F: plugin/lib/fmdraft.py — a headless claude drafts the top queued S task in a throwaway worktree
+- verify × Claude Code: I: Add a hook or command to check unasked work with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: Have fm code check unasked work with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check unasked work with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check unasked work with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check unasked work with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check unasked work with evidence (site/pages.py)
+- verify × CLI: I: Add an fm verb to check unasked work with evidence (plugin/lib/fmcli.py)
+- verify × headless/server: I: Have fm run and fm serve check unasked work with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate unasked work before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate unasked work before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate unasked work before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate unasked work before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate unasked work before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate unasked work before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate unasked work before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate unasked work before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch unasked work while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch unasked work while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch unasked work while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch unasked work while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch unasked work while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmorders.py — standing orders capture a task on a schedule or when a file changes
+- operate × headless/server: I: Have fm run and fm serve watch unasked work while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what unasked work taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what unasked work taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what unasked work taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what unasked work taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what unasked work taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what unasked work taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmtaste.py — per-lens keep rates from each brainstorm show which finders earn their cost
+- learn × headless/server: I: Have fm run and fm serve record what unasked work taught (plugin/lib/fmserve.py)
+
+## 2. Exhaustive thinking
+- find × Claude Code: F: plugin/lib/fmideas.py — lens children read the code and return ideas marked new, partial or built
+- find × fm code: I: Have fm code surface gaps in every reading, approach and lens (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in every reading, approach and lens (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in every reading, approach and lens (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in every reading, approach and lens (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in every reading, approach and lens (site/pages.py)
+- find × CLI: F: plugin/lib/fmideas.py — lens children read the code and return ideas marked new, partial or built
+- find × headless/server: I: Have fm run and fm serve surface gaps in every reading, approach and lens (plugin/lib/fmserve.py)
+- understand × Claude Code: F: plugin/lib/fmmission.py — mission lenses and surfaces enumerate every reading of an open request
+- understand × fm code: I: Have fm code explain what is known about every reading, approach and lens (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about every reading, approach and lens (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about every reading, approach and lens (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about every reading, approach and lens (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about every reading, approach and lens (site/pages.py)
+- understand × CLI: F: plugin/lib/fmmission.py — mission lenses and surfaces enumerate every reading of an open request
+- understand × headless/server: I: Have fm run and fm serve explain what is known about every reading, approach and lens (plugin/lib/fmserve.py)
+- plan × Claude Code: F: plugin/lib/fmsecond.py — cold second opinion, debate and dissent kept open in the brief
+- plan × fm code: F: plugin/lib/fmsecond.py — cold second opinion, debate and dissent kept open in the brief
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan every reading, approach and lens up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan every reading, approach and lens up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan every reading, approach and lens up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan every reading, approach and lens up front (site/pages.py)
+- plan × CLI: F: plugin/lib/fmsecond.py — cold second opinion, debate and dissent kept open in the brief
+- plan × headless/server: I: Have fm run and fm serve plan every reading, approach and lens up front (plugin/lib/fmserve.py)
+- build × Claude Code: I: Add a hook or command to act on every reading, approach and lens while building (plugin/lib/fmhooks.py)
+- build × fm code: I: Have fm code act on every reading, approach and lens while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on every reading, approach and lens while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on every reading, approach and lens while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on every reading, approach and lens while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: I: Add an fm verb to act on every reading, approach and lens while building (plugin/lib/fmcli.py)
+- build × headless/server: I: Have fm run and fm serve act on every reading, approach and lens while building (plugin/lib/fmserve.py)
+- verify × Claude Code: F: plugin/agents/fm-reviewer.md — one read-only reviewer per audit lens (intent, adversary, edge, operator, maintainer)
+- verify × fm code: I: Have fm code check every reading, approach and lens with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check every reading, approach and lens with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check every reading, approach and lens with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check every reading, approach and lens with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check every reading, approach and lens with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmauditrun.py — fm audit run runs the audit lenses as headless read-only reviewers
+- verify × headless/server: F: plugin/lib/fmauditrun.py — fm audit run runs the audit lenses as headless read-only reviewers
+- ship × Claude Code: I: Add a hook or command to gate every reading, approach and lens before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate every reading, approach and lens before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate every reading, approach and lens before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate every reading, approach and lens before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate every reading, approach and lens before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate every reading, approach and lens before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate every reading, approach and lens before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate every reading, approach and lens before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch every reading, approach and lens while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch every reading, approach and lens while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch every reading, approach and lens while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch every reading, approach and lens while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch every reading, approach and lens while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: I: Add an fm verb to watch every reading, approach and lens while running (plugin/lib/fmcli.py)
+- operate × headless/server: I: Have fm run and fm serve watch every reading, approach and lens while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what every reading, approach and lens taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what every reading, approach and lens taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what every reading, approach and lens taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what every reading, approach and lens taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what every reading, approach and lens taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what every reading, approach and lens taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmtaste.py — lens keep rates feed which lenses get more weight next brainstorm
+- learn × headless/server: I: Have fm run and fm serve record what every reading, approach and lens taught (plugin/lib/fmserve.py)
+
+## 3. Anticipation
+- find × Claude Code: F: plugin/lib/fmforesight.py — session-start sweep notes a changed model, window or Claude Code version before it bites
+- find × fm code: I: Have fm code surface gaps in foreseeable problems (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in foreseeable problems (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in foreseeable problems (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in foreseeable problems (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in foreseeable problems (site/pages.py)
+- find × CLI: I: Add an fm verb to surface gaps in foreseeable problems (plugin/lib/fmcli.py)
+- find × headless/server: I: Have fm run and fm serve surface gaps in foreseeable problems (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about foreseeable problems (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about foreseeable problems (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about foreseeable problems (plugin/lib/fmagents.py)
+- understand × MCP: F: plugin/lib/fmmcp.py — the impact and why tools answer blast radius and history read-only
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about foreseeable problems (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about foreseeable problems (site/pages.py)
+- understand × CLI: F: plugin/lib/fmgraph.py — fm graph blast shows a change's blast radius from one local graph
+- understand × headless/server: I: Have fm run and fm serve explain what is known about foreseeable problems (plugin/lib/fmserve.py)
+- plan × Claude Code: I: inject a pre-mortem of likely failures from fm recall into each new brief (plugin/lib/fmhooks.py)
+- plan × fm code: I: have fm code list foreseeable failures from failure memory before its PLAN slot (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan foreseeable problems up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan foreseeable problems up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan foreseeable problems up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan foreseeable problems up front (site/pages.py)
+- plan × CLI: I: Add an fm verb to plan foreseeable problems up front (plugin/lib/fmcli.py)
+- plan × headless/server: I: Have fm run and fm serve plan foreseeable problems up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: plugin/lib/fmdeps.py — a package new to the project gets a typosquat and age look before install
+- build × fm code: I: Have fm code act on foreseeable problems while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on foreseeable problems while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on foreseeable problems while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on foreseeable problems while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: I: Add an fm verb to act on foreseeable problems while building (plugin/lib/fmcli.py)
+- build × headless/server: I: Have fm run and fm serve act on foreseeable problems while building (plugin/lib/fmserve.py)
+- verify × Claude Code: I: Add a hook or command to check foreseeable problems with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: Have fm code check foreseeable problems with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check foreseeable problems with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check foreseeable problems with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check foreseeable problems with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check foreseeable problems with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmreverify.py — fm sentinel re-queues old passing criteria when a later commit touches their files
+- verify × headless/server: I: Have fm run and fm serve check foreseeable problems with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate foreseeable problems before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate foreseeable problems before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate foreseeable problems before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate foreseeable problems before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate foreseeable problems before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate foreseeable problems before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate foreseeable problems before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate foreseeable problems before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch foreseeable problems while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch foreseeable problems while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch foreseeable problems while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch foreseeable problems while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch foreseeable problems while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmrisk.py — the daily risk budget steps autonomy down after destructive blocks and reverts
+- operate × headless/server: I: Have fm run and fm serve watch foreseeable problems while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what foreseeable problems taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what foreseeable problems taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what foreseeable problems taught (plugin/lib/fmagents.py)
+- learn × MCP: F: plugin/lib/fmrecall.py — fm recall and fm dream keep failure memory so a repeat is foreseen
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what foreseeable problems taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what foreseeable problems taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmrecall.py — fm recall and fm dream keep failure memory so a repeat is foreseen
+- learn × headless/server: I: Have fm run and fm serve record what foreseeable problems taught (plugin/lib/fmserve.py)
+
+## 4. Goal to finish
+- find × Claude Code: I: Add a hook or command to surface gaps in finishing every criterion (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in finishing every criterion (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in finishing every criterion (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in finishing every criterion (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in finishing every criterion (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in finishing every criterion (site/pages.py)
+- find × CLI: I: Add an fm verb to surface gaps in finishing every criterion (plugin/lib/fmcli.py)
+- find × headless/server: I: Have fm run and fm serve surface gaps in finishing every criterion (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about finishing every criterion (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about finishing every criterion (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about finishing every criterion (plugin/lib/fmagents.py)
+- understand × MCP: F: plugin/lib/fmmcp.py — state and next tools show the one next required action
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about finishing every criterion (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about finishing every criterion (site/pages.py)
+- understand × CLI: I: Add an fm verb to explain what is known about finishing every criterion (plugin/lib/fmcli.py)
+- understand × headless/server: I: Have fm run and fm serve explain what is known about finishing every criterion (plugin/lib/fmserve.py)
+- plan × Claude Code: F: plugin/lib/fmcore.py — briefs with acceptance criteria and steps, each tied to a verify command
+- plan × fm code: I: Have fm code plan finishing every criterion up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan finishing every criterion up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan finishing every criterion up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan finishing every criterion up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan finishing every criterion up front (site/pages.py)
+- plan × CLI: F: plugin/lib/fmcore.py — briefs with acceptance criteria and steps, each tied to a verify command
+- plan × headless/server: I: Have fm run and fm serve plan finishing every criterion up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: plugin/lib/fmhooks.py — the Stop hook drives on while open work remains and refuses a premature done
+- build × fm code: F: plugin/lib/fmcode.py — fm code runs Foreman's loop on the open task to the end of its plan
+- build × other agents: F: plugin/lib/fmagents.py — Codex gets the Stop drive and done-gate; Gemini and opencode have no Stop
+- build × MCP: I: Add a read-only MCP tool to act on finishing every criterion while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: show open criteria and the next required action for every project in Desktop (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: I: Add an fm verb to act on finishing every criterion while building (plugin/lib/fmcli.py)
+- build × headless/server: F: plugin/lib/fmhooks.py — the Stop hook drives on while open work remains and refuses a premature done
+- verify × Claude Code: F: plugin/lib/fmcore.py — fm task finish closes only on fresh evidence for every criterion
+- verify × fm code: I: Have fm code check finishing every criterion with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check finishing every criterion with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check finishing every criterion with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check finishing every criterion with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check finishing every criterion with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmcore.py — fm task finish closes only on fresh evidence for every criterion
+- verify × headless/server: I: Have fm run and fm serve check finishing every criterion with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate finishing every criterion before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate finishing every criterion before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate finishing every criterion before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate finishing every criterion before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate finishing every criterion before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate finishing every criterion before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate finishing every criterion before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate finishing every criterion before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch finishing every criterion while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch finishing every criterion while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch finishing every criterion while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch finishing every criterion while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch finishing every criterion while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmloop.py — an empty queue starts an improvement round instead of ending the run
+- operate × headless/server: F: plugin/lib/fmloop.py — an empty queue starts an improvement round instead of ending the run
+- learn × Claude Code: I: Add a hook or command to record what finishing every criterion taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what finishing every criterion taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what finishing every criterion taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what finishing every criterion taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what finishing every criterion taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what finishing every criterion taught (site/pages.py)
+- learn × CLI: I: Add an fm verb to record what finishing every criterion taught (plugin/lib/fmcli.py)
+- learn × headless/server: I: Have fm run and fm serve record what finishing every criterion taught (plugin/lib/fmserve.py)
+
+## 5. Getting the tools it lacks
+- find × Claude Code: I: Add a hook or command to surface gaps in missing tools (plugin/lib/fmhooks.py)
+- find × fm code: F: plugin/lib/fmcode.py — fm code offers one matching indexed skill at a run's start
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in missing tools (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in missing tools (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in missing tools (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in missing tools (site/pages.py)
+- find × CLI: F: plugin/lib/fmplugins.py — fm plugins find searches for a plugin that covers a missing need
+- find × headless/server: I: Have fm run and fm serve surface gaps in missing tools (plugin/lib/fmserve.py)
+- understand × Claude Code: F: plugin/skills/library/SKILL.md — stack cards with verify commands before coding in a framework
+- understand × fm code: I: Have fm code explain what is known about missing tools (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about missing tools (plugin/lib/fmagents.py)
+- understand × MCP: F: plugin/lib/fmmcp.py — lib_suggest, lib_search and lib_show serve stack cards read-only
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about missing tools (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about missing tools (site/pages.py)
+- understand × CLI: I: Add an fm verb to explain what is known about missing tools (plugin/lib/fmcli.py)
+- understand × headless/server: I: Have fm run and fm serve explain what is known about missing tools (plugin/lib/fmserve.py)
+- plan × Claude Code: F: plugin/lib/fmwhich.py — fm which names the skill, playbook or command that fits a task
+- plan × fm code: I: Have fm code plan missing tools up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan missing tools up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan missing tools up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan missing tools up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan missing tools up front (site/pages.py)
+- plan × CLI: F: plugin/lib/fmwhich.py — fm which names the skill, playbook or command that fits a task
+- plan × headless/server: I: Have fm run and fm serve plan missing tools up front (plugin/lib/fmserve.py)
+- build × Claude Code: I: Add a hook or command to act on missing tools while building (plugin/lib/fmhooks.py)
+- build × fm code: I: let fm code build a missing stdlib tool as a task and register it (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on missing tools while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on missing tools while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on missing tools while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: F: plugin/lib/fmplugins.py — fm plugins install adds a pinned plugin after a recorded ask
+- build × headless/server: I: Have fm run and fm serve act on missing tools while building (plugin/lib/fmserve.py)
+- verify × Claude Code: I: Add a hook or command to check missing tools with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: Have fm code check missing tools with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check missing tools with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check missing tools with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check missing tools with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check missing tools with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmdeps.py — fm deps checks installed versions and import sites locally
+- verify × headless/server: I: Have fm run and fm serve check missing tools with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate missing tools before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate missing tools before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate missing tools before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate missing tools before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate missing tools before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate missing tools before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate missing tools before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate missing tools before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch missing tools while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch missing tools while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch missing tools while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch missing tools while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch missing tools while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: I: Add an fm verb to watch missing tools while running (plugin/lib/fmcli.py)
+- operate × headless/server: I: Have fm run and fm serve watch missing tools while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what missing tools taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what missing tools taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what missing tools taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what missing tools taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what missing tools taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what missing tools taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmrepeats.py — fm repeats drafts a playbook from repeated manual step sequences
+- learn × headless/server: I: Have fm run and fm serve record what missing tools taught (plugin/lib/fmserve.py)
+
+## 6. Verifying anything
+- find × Claude Code: I: Add a hook or command to surface gaps in verifiable results of any kind (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in verifiable results of any kind (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in verifiable results of any kind (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in verifiable results of any kind (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in verifiable results of any kind (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in verifiable results of any kind (site/pages.py)
+- find × CLI: I: Add an fm verb to surface gaps in verifiable results of any kind (plugin/lib/fmcli.py)
+- find × headless/server: I: Have fm run and fm serve surface gaps in verifiable results of any kind (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about verifiable results of any kind (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about verifiable results of any kind (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about verifiable results of any kind (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about verifiable results of any kind (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about verifiable results of any kind (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about verifiable results of any kind (site/pages.py)
+- understand × CLI: F: plugin/lib/fmdebug.py — fm whyred ranks suspects and minimal failing hunks for a red run
+- understand × headless/server: I: Have fm run and fm serve explain what is known about verifiable results of any kind (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan verifiable results of any kind up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan verifiable results of any kind up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan verifiable results of any kind up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan verifiable results of any kind up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan verifiable results of any kind up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan verifiable results of any kind up front (site/pages.py)
+- plan × CLI: I: Add an fm verb to plan verifiable results of any kind up front (plugin/lib/fmcli.py)
+- plan × headless/server: I: Have fm run and fm serve plan verifiable results of any kind up front (plugin/lib/fmserve.py)
+- build × Claude Code: I: Add a hook or command to act on verifiable results of any kind while building (plugin/lib/fmhooks.py)
+- build × fm code: I: Have fm code act on verifiable results of any kind while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on verifiable results of any kind while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on verifiable results of any kind while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on verifiable results of any kind while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: I: Add an fm verb to act on verifiable results of any kind while building (plugin/lib/fmcli.py)
+- build × headless/server: I: Have fm run and fm serve act on verifiable results of any kind while building (plugin/lib/fmserve.py)
+- verify × Claude Code: F: plugin/lib/fmcore.py — fm task evidence records a run per criterion; the checks tool reads them
+- verify × fm code: F: plugin/lib/fmcode.py — fm code's steps close through the same evidence runs
+- verify × other agents: I: give Gemini and opencode a done-gate through a polled fm check since they have no Stop (plugin/lib/fmagents.py)
+- verify × MCP: F: plugin/lib/fmcore.py — fm task evidence records a run per criterion; the checks tool reads them
+- verify × Desktop: I: Show in Foreman Desktop a panel to check verifiable results of any kind with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check verifiable results of any kind with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmcore.py — fm task evidence records a run per criterion; the checks tool reads them
+- verify × headless/server: F: plugin/lib/fmserve.py — fm run sessions close tasks through the same gates
+- ship × Claude Code: I: Add a hook or command to gate verifiable results of any kind before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate verifiable results of any kind before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate verifiable results of any kind before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate verifiable results of any kind before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate verifiable results of any kind before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate verifiable results of any kind before shipping (site/pages.py)
+- ship × CLI: F: plugin/lib/fmledger.py — fm verify-ledger proves the hash-chained record line by line
+- ship × headless/server: I: Have fm run and fm serve gate verifiable results of any kind before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch verifiable results of any kind while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch verifiable results of any kind while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch verifiable results of any kind while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch verifiable results of any kind while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch verifiable results of any kind while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmsmoke.py — fm smoke crawls the web UI at desktop and phone width
+- operate × headless/server: I: Have fm run and fm serve watch verifiable results of any kind while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what verifiable results of any kind taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what verifiable results of any kind taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what verifiable results of any kind taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what verifiable results of any kind taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what verifiable results of any kind taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what verifiable results of any kind taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmoutcomes.py — each finished task's fate (reverted, fixed later, held) scores its verification
+- learn × headless/server: I: Have fm run and fm serve record what verifiable results of any kind taught (plugin/lib/fmserve.py)
+
+## 7. Self-repair and self-improvement
+- find × Claude Code: I: Add a hook or command to surface gaps in Foreman's own faults and gaps (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in Foreman's own faults and gaps (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in Foreman's own faults and gaps (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in Foreman's own faults and gaps (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in Foreman's own faults and gaps (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in Foreman's own faults and gaps (site/pages.py)
+- find × CLI: F: plugin/lib/fmfriction.py — fm friction mines stage paths, weak closes and give-up points
+- find × headless/server: I: Have fm run and fm serve surface gaps in Foreman's own faults and gaps (plugin/lib/fmserve.py)
+- understand × Claude Code: F: plugin/lib/fmdoctor.py — fm doctor and fm wiring show what is wired and what is broken
+- understand × fm code: I: Have fm code explain what is known about Foreman's own faults and gaps (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about Foreman's own faults and gaps (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about Foreman's own faults and gaps (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about Foreman's own faults and gaps (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about Foreman's own faults and gaps (site/pages.py)
+- understand × CLI: F: plugin/lib/fmdoctor.py — fm doctor and fm wiring show what is wired and what is broken
+- understand × headless/server: I: Have fm run and fm serve explain what is known about Foreman's own faults and gaps (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan Foreman's own faults and gaps up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan Foreman's own faults and gaps up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan Foreman's own faults and gaps up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan Foreman's own faults and gaps up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan Foreman's own faults and gaps up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan Foreman's own faults and gaps up front (site/pages.py)
+- plan × CLI: F: plugin/lib/fmevolve.py — fm evolve revises one instruction file on its own branch from bench and friction
+- plan × headless/server: I: Have fm run and fm serve plan Foreman's own faults and gaps up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: plugin/skills/improve/SKILL.md — eval-gated changes to Foreman itself in a worktree
+- build × fm code: I: Have fm code act on Foreman's own faults and gaps while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on Foreman's own faults and gaps while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on Foreman's own faults and gaps while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on Foreman's own faults and gaps while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: I: Add an fm verb to act on Foreman's own faults and gaps while building (plugin/lib/fmcli.py)
+- build × headless/server: I: Have fm run and fm serve act on Foreman's own faults and gaps while building (plugin/lib/fmserve.py)
+- verify × Claude Code: I: Add a hook or command to check Foreman's own faults and gaps with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: Have fm code check Foreman's own faults and gaps with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check Foreman's own faults and gaps with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check Foreman's own faults and gaps with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check Foreman's own faults and gaps with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check Foreman's own faults and gaps with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmbench.py — fm bench replays finished tasks and gates a candidate plugin
+- verify × headless/server: I: Have fm run and fm serve check Foreman's own faults and gaps with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate Foreman's own faults and gaps before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate Foreman's own faults and gaps before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate Foreman's own faults and gaps before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate Foreman's own faults and gaps before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate Foreman's own faults and gaps before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate Foreman's own faults and gaps before shipping (site/pages.py)
+- ship × CLI: F: plugin/lib/fmrollback.py — a snapshot before each new version and fm rollback to restore it
+- ship × headless/server: I: Have fm run and fm serve gate Foreman's own faults and gaps before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch Foreman's own faults and gaps while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch Foreman's own faults and gaps while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch Foreman's own faults and gaps while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch Foreman's own faults and gaps while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch Foreman's own faults and gaps while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmtidy.py — fm tidy repairs drift and dead state
+- operate × headless/server: I: Have fm run and fm serve watch Foreman's own faults and gaps while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what Foreman's own faults and gaps taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what Foreman's own faults and gaps taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what Foreman's own faults and gaps taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what Foreman's own faults and gaps taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what Foreman's own faults and gaps taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what Foreman's own faults and gaps taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmtrials.py — a self-change is a pre-registered trial graded on ledger event rates
+- learn × headless/server: I: Have fm run and fm serve record what Foreman's own faults and gaps taught (plugin/lib/fmserve.py)
+
+## 8. Calibrated judgment
+- find × Claude Code: I: Add a hook or command to surface gaps in stated confidence against outcomes (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in stated confidence against outcomes (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in stated confidence against outcomes (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in stated confidence against outcomes (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in stated confidence against outcomes (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in stated confidence against outcomes (site/pages.py)
+- find × CLI: I: Add an fm verb to surface gaps in stated confidence against outcomes (plugin/lib/fmcli.py)
+- find × headless/server: I: Have fm run and fm serve surface gaps in stated confidence against outcomes (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about stated confidence against outcomes (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about stated confidence against outcomes (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about stated confidence against outcomes (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about stated confidence against outcomes (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about stated confidence against outcomes (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about stated confidence against outcomes (site/pages.py)
+- understand × CLI: F: plugin/lib/fmexam.py — the generated exam grades agents on held-out tasks
+- understand × headless/server: I: Have fm run and fm serve explain what is known about stated confidence against outcomes (plugin/lib/fmserve.py)
+- plan × Claude Code: F: plugin/lib/fmsecond.py — a cold second read argues against the plan before it is approved
+- plan × fm code: F: plugin/lib/fmsecond.py — a cold second read argues against the plan before it is approved
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan stated confidence against outcomes up front (plugin/lib/fmagents.py)
+- plan × MCP: I: serve the track record by type and tier as an MCP tool so any agent can calibrate (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan stated confidence against outcomes up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan stated confidence against outcomes up front (site/pages.py)
+- plan × CLI: F: plugin/lib/fmsecond.py — a cold second read argues against the plan before it is approved
+- plan × headless/server: I: Have fm run and fm serve plan stated confidence against outcomes up front (plugin/lib/fmserve.py)
+- build × Claude Code: I: Add a hook or command to act on stated confidence against outcomes while building (plugin/lib/fmhooks.py)
+- build × fm code: I: Have fm code act on stated confidence against outcomes while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on stated confidence against outcomes while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on stated confidence against outcomes while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on stated confidence against outcomes while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: I: Add an fm verb to act on stated confidence against outcomes while building (plugin/lib/fmcli.py)
+- build × headless/server: I: Have fm run and fm serve act on stated confidence against outcomes while building (plugin/lib/fmserve.py)
+- verify × Claude Code: F: plugin/lib/fmoutcomes.py — stated confidence scored per bucket with a Brier score, shown at focus
+- verify × fm code: I: Have fm code check stated confidence against outcomes with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check stated confidence against outcomes with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check stated confidence against outcomes with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check stated confidence against outcomes with evidence (plugin/lib/fmwatch.py)
+- verify × site: F: site/pages.py — bench pages publish pass rates and where Foreman loses
+- verify × CLI: F: plugin/lib/fmoutcomes.py — stated confidence scored per bucket with a Brier score, shown at focus
+- verify × headless/server: I: Have fm run and fm serve check stated confidence against outcomes with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate stated confidence against outcomes before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate stated confidence against outcomes before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate stated confidence against outcomes before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate stated confidence against outcomes before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate stated confidence against outcomes before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate stated confidence against outcomes before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate stated confidence against outcomes before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate stated confidence against outcomes before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch stated confidence against outcomes while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch stated confidence against outcomes while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch stated confidence against outcomes while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch stated confidence against outcomes while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch stated confidence against outcomes while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmreverify.py — the re-verify queue rechecks past closes against later commits
+- operate × headless/server: I: Have fm run and fm serve watch stated confidence against outcomes while running (plugin/lib/fmserve.py)
+- learn × Claude Code: F: plugin/lib/fmhooks.py — the track record by type and tier is injected at focus
+- learn × fm code: I: Have fm code record what stated confidence against outcomes taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what stated confidence against outcomes taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what stated confidence against outcomes taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what stated confidence against outcomes taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what stated confidence against outcomes taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmtrials.py — self-changes are judged by measured before-and-after rates
+- learn × headless/server: I: Have fm run and fm serve record what stated confidence against outcomes taught (plugin/lib/fmserve.py)
+
+## 9. Orchestration
+- find × Claude Code: F: plugin/agents/fm-debugger.md — fresh-eyes debugger returns ranked hypotheses with a probe each
+- find × fm code: I: Have fm code surface gaps in subagents, lanes and parallel work (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in subagents, lanes and parallel work (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in subagents, lanes and parallel work (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in subagents, lanes and parallel work (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in subagents, lanes and parallel work (site/pages.py)
+- find × CLI: I: Add an fm verb to surface gaps in subagents, lanes and parallel work (plugin/lib/fmcli.py)
+- find × headless/server: I: Have fm run and fm serve surface gaps in subagents, lanes and parallel work (plugin/lib/fmserve.py)
+- understand × Claude Code: F: plugin/agents/fm-recon.md — read-only recon subagent with a bounded, cited summary
+- understand × fm code: I: Have fm code explain what is known about subagents, lanes and parallel work (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about subagents, lanes and parallel work (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about subagents, lanes and parallel work (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about subagents, lanes and parallel work (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about subagents, lanes and parallel work (site/pages.py)
+- understand × CLI: I: Add an fm verb to explain what is known about subagents, lanes and parallel work (plugin/lib/fmcli.py)
+- understand × headless/server: I: Have fm run and fm serve explain what is known about subagents, lanes and parallel work (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan subagents, lanes and parallel work up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan subagents, lanes and parallel work up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan subagents, lanes and parallel work up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan subagents, lanes and parallel work up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan subagents, lanes and parallel work up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan subagents, lanes and parallel work up front (site/pages.py)
+- plan × CLI: F: plugin/lib/fmsplit.py — fm task split partitions a task's files into child tasks
+- plan × headless/server: I: Have fm run and fm serve plan subagents, lanes and parallel work up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: plugin/agents/fm-builder.md — one S/M task built test-first in a worktree on its own branch
+- build × fm code: I: let fm code fan a task out to fm lane worktrees and merge the children (plugin/lib/fmcode.py)
+- build × other agents: F: plugin/lib/fmsession.py — fm session runs detached claude, codex, gemini and opencode sessions
+- build × MCP: I: Add a read-only MCP tool to act on subagents, lanes and parallel work while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on subagents, lanes and parallel work while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: F: plugin/lib/fmlanes.py — fm lane runs git worktrees as lanes with their own active task
+- build × headless/server: F: plugin/lib/fmlanes.py — fm lane runs git worktrees as lanes with their own active task
+- verify × Claude Code: F: plugin/agents/fm-reviewer.md — one independent reviewer pass over a named diff
+- verify × fm code: I: Have fm code check subagents, lanes and parallel work with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check subagents, lanes and parallel work with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check subagents, lanes and parallel work with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check subagents, lanes and parallel work with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check subagents, lanes and parallel work with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmstack.py — stacked commits each checked alone in a scratch worktree
+- verify × headless/server: I: Have fm run and fm serve check subagents, lanes and parallel work with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate subagents, lanes and parallel work before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate subagents, lanes and parallel work before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate subagents, lanes and parallel work before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate subagents, lanes and parallel work before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate subagents, lanes and parallel work before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate subagents, lanes and parallel work before shipping (site/pages.py)
+- ship × CLI: F: plugin/lib/fmpr.py — fm pr train merges approved green PRs in order
+- ship × headless/server: I: Have fm run and fm serve gate subagents, lanes and parallel work before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch subagents, lanes and parallel work while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch subagents, lanes and parallel work while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch subagents, lanes and parallel work while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch subagents, lanes and parallel work while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch subagents, lanes and parallel work while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmbus.py — fm bus passes messages and leases between sessions on a machine
+- operate × headless/server: I: Have fm run and fm serve watch subagents, lanes and parallel work while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what subagents, lanes and parallel work taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what subagents, lanes and parallel work taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what subagents, lanes and parallel work taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what subagents, lanes and parallel work taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what subagents, lanes and parallel work taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what subagents, lanes and parallel work taught (site/pages.py)
+- learn × CLI: I: Add an fm verb to record what subagents, lanes and parallel work taught (plugin/lib/fmcli.py)
+- learn × headless/server: I: Have fm run and fm serve record what subagents, lanes and parallel work taught (plugin/lib/fmserve.py)
+
+## 10. Beyond code
+- find × Claude Code: F: plugin/skills/research/SKILL.md — cited research before building, saved as one note
+- find × fm code: I: Have fm code surface gaps in non-code work (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in non-code work (plugin/lib/fmagents.py)
+- find × MCP: F: plugin/lib/fmmcp.py — research_list and research_read serve saved notes
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in non-code work (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in non-code work (site/pages.py)
+- find × CLI: F: plugin/skills/research/SKILL.md — cited research before building, saved as one note
+- find × headless/server: I: Have fm run and fm serve surface gaps in non-code work (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about non-code work (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about non-code work (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about non-code work (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about non-code work (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about non-code work (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about non-code work (site/pages.py)
+- understand × CLI: F: plugin/lib/fmresearch.py — fm research stores and finds cited notes
+- understand × headless/server: I: Have fm run and fm serve explain what is known about non-code work (plugin/lib/fmserve.py)
+- plan × Claude Code: F: plugin/skills/directions/SKILL.md — six style directions, the pick saved as DESIGN.md
+- plan × fm code: I: Have fm code plan non-code work up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan non-code work up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan non-code work up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan non-code work up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan non-code work up front (site/pages.py)
+- plan × CLI: I: Add an fm verb to plan non-code work up front (plugin/lib/fmcli.py)
+- plan × headless/server: I: Have fm run and fm serve plan non-code work up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: plugin/skills/ui-design/SKILL.md — direction, tokens, motion and QA for pages and scenes
+- build × fm code: I: Have fm code act on non-code work while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on non-code work while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on non-code work while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on non-code work while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: I: Add an fm verb to act on non-code work while building (plugin/lib/fmcli.py)
+- build × headless/server: I: Have fm run and fm serve act on non-code work while building (plugin/lib/fmserve.py)
+- verify × Claude Code: I: Add a hook or command to check non-code work with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: Have fm code check non-code work with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check non-code work with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check non-code work with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check non-code work with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check non-code work with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmoffice.py — fm check office asserts spreadsheet and Word deliverables
+- verify × headless/server: I: Have fm run and fm serve check non-code work with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate non-code work before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate non-code work before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate non-code work before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate non-code work before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate non-code work before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate non-code work before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate non-code work before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate non-code work before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch non-code work while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch non-code work while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch non-code work while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch non-code work while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch non-code work while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmdocs.py — fm docs reports doc drift against the code
+- operate × headless/server: I: Have fm run and fm serve watch non-code work while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what non-code work taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what non-code work taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what non-code work taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what non-code work taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what non-code work taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what non-code work taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmtaste.py — the taste ledger learns which looks the user kept or reverted
+- learn × headless/server: I: Have fm run and fm serve record what non-code work taught (plugin/lib/fmserve.py)
+
+## 11. Self-triggering
+- find × Claude Code: F: plugin/lib/fmscout.py — the idle-turn hook runs scouts and captures findings
+- find × fm code: I: start fm code scouts on idle without a prompt (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in work that starts without a prompt (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in work that starts without a prompt (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in work that starts without a prompt (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in work that starts without a prompt (site/pages.py)
+- find × CLI: F: plugin/lib/fmorders.py — standing orders fire on a schedule or a changed file
+- find × headless/server: F: plugin/lib/fmorders.py — standing orders fire on a schedule or a changed file
+- understand × Claude Code: I: Add a hook or command to explain what is known about work that starts without a prompt (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about work that starts without a prompt (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about work that starts without a prompt (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about work that starts without a prompt (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about work that starts without a prompt (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about work that starts without a prompt (site/pages.py)
+- understand × CLI: I: Add an fm verb to explain what is known about work that starts without a prompt (plugin/lib/fmcli.py)
+- understand × headless/server: I: Have fm run and fm serve explain what is known about work that starts without a prompt (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan work that starts without a prompt up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan work that starts without a prompt up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan work that starts without a prompt up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan work that starts without a prompt up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan work that starts without a prompt up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan work that starts without a prompt up front (site/pages.py)
+- plan × CLI: I: Add an fm verb to plan work that starts without a prompt up front (plugin/lib/fmcli.py)
+- plan × headless/server: I: Have fm run and fm serve plan work that starts without a prompt up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: plugin/lib/fmloop.py — fm loop on starts an improvement round when the queue empties
+- build × fm code: I: Have fm code act on work that starts without a prompt while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on work that starts without a prompt while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on work that starts without a prompt while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on work that starts without a prompt while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: F: plugin/lib/fmloop.py — fm loop on starts an improvement round when the queue empties
+- build × headless/server: F: plugin/lib/fmserve.py — fm run works the queue in fresh headless sessions, one task each
+- verify × Claude Code: F: plugin/lib/fmambient.py — tests run detached after each edit with no prompt
+- verify × fm code: I: Have fm code check work that starts without a prompt with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check work that starts without a prompt with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check work that starts without a prompt with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check work that starts without a prompt with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check work that starts without a prompt with evidence (site/pages.py)
+- verify × CLI: I: Add an fm verb to check work that starts without a prompt with evidence (plugin/lib/fmcli.py)
+- verify × headless/server: I: Have fm run and fm serve check work that starts without a prompt with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate work that starts without a prompt before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate work that starts without a prompt before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate work that starts without a prompt before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate work that starts without a prompt before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate work that starts without a prompt before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate work that starts without a prompt before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate work that starts without a prompt before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate work that starts without a prompt before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch work that starts without a prompt while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch work that starts without a prompt while running (plugin/lib/fmcode.py)
+- operate × other agents: F: plugin/lib/fmagents.py — hooks on Codex start the drive from the stop event
+- operate × MCP: I: Add a read-only MCP tool to watch work that starts without a prompt while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch work that starts without a prompt while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmnight.py — fm night does budgeted background work while the user is away
+- operate × headless/server: F: plugin/lib/fmnight.py — fm night does budgeted background work while the user is away
+- learn × Claude Code: I: Add a hook or command to record what work that starts without a prompt taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what work that starts without a prompt taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what work that starts without a prompt taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what work that starts without a prompt taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what work that starts without a prompt taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what work that starts without a prompt taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmfriction.py — fm friction --every N triggers a self-improvement digest
+- learn × headless/server: I: Have fm run and fm serve record what work that starts without a prompt taught (plugin/lib/fmserve.py)
+
+## 12. Staying lean and safe
+- find × Claude Code: I: Add a hook or command to surface gaps in token cost, hook latency and the guard (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in token cost, hook latency and the guard (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in token cost, hook latency and the guard (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in token cost, hook latency and the guard (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in token cost, hook latency and the guard (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in token cost, hook latency and the guard (site/pages.py)
+- find × CLI: I: Add an fm verb to surface gaps in token cost, hook latency and the guard (plugin/lib/fmcli.py)
+- find × headless/server: I: Have fm run and fm serve surface gaps in token cost, hook latency and the guard (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about token cost, hook latency and the guard (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about token cost, hook latency and the guard (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about token cost, hook latency and the guard (plugin/lib/fmagents.py)
+- understand × MCP: F: plugin/lib/fmmcp.py — MCP tools are read-only and vanish in a sensitive repo
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about token cost, hook latency and the guard (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about token cost, hook latency and the guard (site/pages.py)
+- understand × CLI: I: Add an fm verb to explain what is known about token cost, hook latency and the guard (plugin/lib/fmcli.py)
+- understand × headless/server: I: Have fm run and fm serve explain what is known about token cost, hook latency and the guard (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan token cost, hook latency and the guard up front (plugin/lib/fmhooks.py)
+- plan × fm code: F: plugin/lib/fmbudget.py — fm budget caps spend and degrades past 75 percent
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan token cost, hook latency and the guard up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan token cost, hook latency and the guard up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan token cost, hook latency and the guard up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan token cost, hook latency and the guard up front (site/pages.py)
+- plan × CLI: F: plugin/lib/fmbudget.py — fm budget caps spend and degrades past 75 percent
+- plan × headless/server: F: plugin/lib/fmbudget.py — fm budget caps spend and degrades past 75 percent
+- build × Claude Code: F: plugin/lib/fmguard.py — the guard refuses destructive commands before they run
+- build × fm code: F: plugin/lib/fmguard.py — the guard refuses destructive commands before they run
+- build × other agents: F: plugin/lib/fmguard.py — the guard refuses destructive commands before they run
+- build × MCP: I: Add a read-only MCP tool to act on token cost, hook latency and the guard while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on token cost, hook latency and the guard while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: F: plugin/lib/fmreplay.py — fm replay scores the guard on real past commands
+- build × headless/server: F: plugin/lib/fmguard.py — the guard refuses destructive commands before they run
+- verify × Claude Code: F: plugin/tests/bench_hooks.py — hook latency benchmark
+- verify × fm code: I: Have fm code check token cost, hook latency and the guard with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check token cost, hook latency and the guard with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check token cost, hook latency and the guard with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check token cost, hook latency and the guard with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check token cost, hook latency and the guard with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmmutate.py — guard mutation tests prove each rule bites
+- verify × headless/server: I: Have fm run and fm serve check token cost, hook latency and the guard with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: F: plugin/lib/fmsecrets.py — fm secrets scans files before fm task finish --commit
+- ship × fm code: I: Have fm code gate token cost, hook latency and the guard before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate token cost, hook latency and the guard before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate token cost, hook latency and the guard before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate token cost, hook latency and the guard before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate token cost, hook latency and the guard before shipping (site/pages.py)
+- ship × CLI: F: plugin/lib/fmsecrets.py — fm secrets scans files before fm task finish --commit
+- ship × headless/server: I: Have fm run and fm serve gate token cost, hook latency and the guard before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch token cost, hook latency and the guard while running (plugin/lib/fmhooks.py)
+- operate × fm code: F: plugin/lib/fmcost.py — fm cost and fm burden account tokens per task, session and version
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch token cost, hook latency and the guard while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch token cost, hook latency and the guard while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch token cost, hook latency and the guard while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmcost.py — fm cost and fm burden account tokens per task, session and version
+- operate × headless/server: F: plugin/lib/fmcost.py — fm cost and fm burden account tokens per task, session and version
+- learn × Claude Code: I: Add a hook or command to record what token cost, hook latency and the guard taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what token cost, hook latency and the guard taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what token cost, hook latency and the guard taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what token cost, hook latency and the guard taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what token cost, hook latency and the guard taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what token cost, hook latency and the guard taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmbacktest.py — fm backtest shows where a changed rule would have fired
+- learn × headless/server: I: Have fm run and fm serve record what token cost, hook latency and the guard taught (plugin/lib/fmserve.py)
+
+## 13. Genesis as a feature
+- find × Claude Code: I: Add a hook or command to surface gaps in the genesis tower, exam and self-written seeds (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in the genesis tower, exam and self-written seeds (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in the genesis tower, exam and self-written seeds (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in the genesis tower, exam and self-written seeds (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in the genesis tower, exam and self-written seeds (plugin/lib/fmwatch.py)
+- find × site: F: site/genesis/gap-map.md — the gap map is published on the Genesis page
+- find × CLI: F: plugin/lib/fmgenesis.py — fm genesis check enforces the tower's gap-map shape
+- find × headless/server: I: Have fm run and fm serve surface gaps in the genesis tower, exam and self-written seeds (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about the genesis tower, exam and self-written seeds (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about the genesis tower, exam and self-written seeds (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about the genesis tower, exam and self-written seeds (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about the genesis tower, exam and self-written seeds (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about the genesis tower, exam and self-written seeds (plugin/lib/fmwatch.py)
+- understand × site: F: plugin/lib/fmgenesis.py — fm genesis status and export show the tower and its generations
+- understand × CLI: F: plugin/lib/fmgenesis.py — fm genesis status and export show the tower and its generations
+- understand × headless/server: I: Have fm run and fm serve explain what is known about the genesis tower, exam and self-written seeds (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan the genesis tower, exam and self-written seeds up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan the genesis tower, exam and self-written seeds up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan the genesis tower, exam and self-written seeds up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan the genesis tower, exam and self-written seeds up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan the genesis tower, exam and self-written seeds up front (plugin/lib/fmwatch.py)
+- plan × site: F: site/genesis/gen-1/seed.md — generation 1's seed is published
+- plan × CLI: F: plugin/lib/fmgenesis.py — fm genesis put stores a self-written seed for the next generation
+- plan × headless/server: I: Have fm run and fm serve plan the genesis tower, exam and self-written seeds up front (plugin/lib/fmserve.py)
+- build × Claude Code: I: Add a hook or command to act on the genesis tower, exam and self-written seeds while building (plugin/lib/fmhooks.py)
+- build × fm code: I: Have fm code act on the genesis tower, exam and self-written seeds while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on the genesis tower, exam and self-written seeds while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on the genesis tower, exam and self-written seeds while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on the genesis tower, exam and self-written seeds while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: F: plugin/lib/fmexam.py — fm exam gen builds a generated exam from the repo
+- build × headless/server: I: Have fm run and fm serve act on the genesis tower, exam and self-written seeds while building (plugin/lib/fmserve.py)
+- verify × Claude Code: I: Add a hook or command to check the genesis tower, exam and self-written seeds with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: Have fm code check the genesis tower, exam and self-written seeds with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check the genesis tower, exam and self-written seeds with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check the genesis tower, exam and self-written seeds with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check the genesis tower, exam and self-written seeds with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check the genesis tower, exam and self-written seeds with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmexam.py — fm exam run and grade score Foreman against plain Claude arms with cost
+- verify × headless/server: I: Have fm run and fm serve check the genesis tower, exam and self-written seeds with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate the genesis tower, exam and self-written seeds before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate the genesis tower, exam and self-written seeds before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate the genesis tower, exam and self-written seeds before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate the genesis tower, exam and self-written seeds before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate the genesis tower, exam and self-written seeds before shipping (plugin/lib/fmwatch.py)
+- ship × site: F: plugin/lib/fmgenesis.py — fm genesis export writes the live tower page
+- ship × CLI: F: plugin/lib/fmgenesis.py — fm genesis export writes the live tower page
+- ship × headless/server: I: Have fm run and fm serve gate the genesis tower, exam and self-written seeds before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch the genesis tower, exam and self-written seeds while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch the genesis tower, exam and self-written seeds while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch the genesis tower, exam and self-written seeds while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch the genesis tower, exam and self-written seeds while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch the genesis tower, exam and self-written seeds while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmgenesis.py — fm genesis live on republishes after each tower change
+- operate × headless/server: I: Have fm run and fm serve watch the genesis tower, exam and self-written seeds while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what the genesis tower, exam and self-written seeds taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what the genesis tower, exam and self-written seeds taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what the genesis tower, exam and self-written seeds taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what the genesis tower, exam and self-written seeds taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what the genesis tower, exam and self-written seeds taught (plugin/lib/fmwatch.py)
+- learn × site: F: site/genesis/gen-0.md — the previous generation is published beside the next
+- learn × CLI: F: plugin/lib/fmevolve.py — bench-gated revisions feed the next generation
+- learn × headless/server: I: Have fm run and fm serve record what the genesis tower, exam and self-written seeds taught (plugin/lib/fmserve.py)
+
+## Onboarding
+- find × Claude Code: I: Add a hook or command to surface gaps in a new user's first hour (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in a new user's first hour (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in a new user's first hour (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in a new user's first hour (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in a new user's first hour (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in a new user's first hour (site/pages.py)
+- find × CLI: F: plugin/lib/fmwhich.py — fm which points a new user at the skill or verb that fits
+- find × headless/server: I: Have fm run and fm serve surface gaps in a new user's first hour (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about a new user's first hour (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about a new user's first hour (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about a new user's first hour (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about a new user's first hour (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about a new user's first hour (plugin/lib/fmwatch.py)
+- understand × site: F: site/index.html — the home page explains the loop
+- understand × CLI: F: plugin/lib/fmdemo.py — fm demo fixes a seeded bug in a throwaway repo with no model calls
+- understand × headless/server: I: Have fm run and fm serve explain what is known about a new user's first hour (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan a new user's first hour up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan a new user's first hour up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan a new user's first hour up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan a new user's first hour up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan a new user's first hour up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan a new user's first hour up front (site/pages.py)
+- plan × CLI: F: plugin/lib/fmsetup.py — fm setup configures a project
+- plan × headless/server: I: Have fm run and fm serve plan a new user's first hour up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: install.sh — one-line install, with --desktop for the app
+- build × fm code: I: Have fm code act on a new user's first hour while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on a new user's first hour while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on a new user's first hour while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on a new user's first hour while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: F: install.sh — one-line install, with --desktop for the app
+- build × headless/server: I: Have fm run and fm serve act on a new user's first hour while building (plugin/lib/fmserve.py)
+- verify × Claude Code: F: plugin/skills/doctor/SKILL.md — the doctor skill checks the install
+- verify × fm code: I: Have fm code check a new user's first hour with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check a new user's first hour with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check a new user's first hour with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check a new user's first hour with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check a new user's first hour with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmdoctor.py — fm doctor checks wiring and repairs it
+- verify × headless/server: I: Have fm run and fm serve check a new user's first hour with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate a new user's first hour before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate a new user's first hour before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate a new user's first hour before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate a new user's first hour before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate a new user's first hour before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate a new user's first hour before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate a new user's first hour before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate a new user's first hour before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch a new user's first hour while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch a new user's first hour while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch a new user's first hour while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch a new user's first hour while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch a new user's first hour while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmaway.py — fm away summarises on return after a long gap
+- operate × headless/server: I: Have fm run and fm serve watch a new user's first hour while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what a new user's first hour taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what a new user's first hour taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what a new user's first hour taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what a new user's first hour taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what a new user's first hour taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what a new user's first hour taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmdojo.py — fm dojo drills the guard's rules
+- learn × headless/server: I: Have fm run and fm serve record what a new user's first hour taught (plugin/lib/fmserve.py)
+
+## UX
+- find × Claude Code: I: Add a hook or command to surface gaps in what the user sees and feels (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in what the user sees and feels (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in what the user sees and feels (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in what the user sees and feels (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in what the user sees and feels (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in what the user sees and feels (site/pages.py)
+- find × CLI: I: Add an fm verb to surface gaps in what the user sees and feels (plugin/lib/fmcli.py)
+- find × headless/server: I: Have fm run and fm serve surface gaps in what the user sees and feels (plugin/lib/fmserve.py)
+- understand × Claude Code: F: plugin/hooks/statusline — statusline shows task, progress and cost
+- understand × fm code: F: plugin/lib/fmcodetui.py — fm code tui draws the run from its event stream
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about what the user sees and feels (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about what the user sees and feels (plugin/lib/fmmcp.py)
+- understand × Desktop: F: plugin/lib/fmwatch.py — fm projects feeds Foreman Desktop's project list
+- understand × site: F: site/style.css — the site's shared palette and type
+- understand × CLI: F: plugin/lib/fmwatch.py — fm watch and fm ui show live task state
+- understand × headless/server: I: Have fm run and fm serve explain what is known about what the user sees and feels (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan what the user sees and feels up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan what the user sees and feels up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan what the user sees and feels up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan what the user sees and feels up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan what the user sees and feels up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan what the user sees and feels up front (site/pages.py)
+- plan × CLI: F: plugin/lib/fmsettings.py — one schema for every setting the TUI and mod read
+- plan × headless/server: I: Have fm run and fm serve plan what the user sees and feels up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: plugin/output-styles/foreman.md — the Foreman output style keeps replies short
+- build × fm code: F: plugin/lib/fmcodeterm.py — an ANSI terminal without curses, changed cells only
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on what the user sees and feels while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on what the user sees and feels while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on what the user sees and feels while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: F: plugin/lib/fmdesign.py — fm design sprint checks brief, look and tokens in order
+- build × headless/server: I: Have fm run and fm serve act on what the user sees and feels while building (plugin/lib/fmserve.py)
+- verify × Claude Code: I: Add a hook or command to check what the user sees and feels with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: Have fm code check what the user sees and feels with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check what the user sees and feels with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check what the user sees and feels with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check what the user sees and feels with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check what the user sees and feels with evidence (site/pages.py)
+- verify × CLI: I: Add an fm verb to check what the user sees and feels with evidence (plugin/lib/fmcli.py)
+- verify × headless/server: I: Have fm run and fm serve check what the user sees and feels with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate what the user sees and feels before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate what the user sees and feels before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate what the user sees and feels before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate what the user sees and feels before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate what the user sees and feels before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate what the user sees and feels before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate what the user sees and feels before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate what the user sees and feels before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch what the user sees and feels while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch what the user sees and feels while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch what the user sees and feels while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch what the user sees and feels while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch what the user sees and feels while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: I: Add an fm verb to watch what the user sees and feels while running (plugin/lib/fmcli.py)
+- operate × headless/server: F: plugin/lib/fmsettingsserve.py — the control room serves settings as a page
+- learn × Claude Code: I: Add a hook or command to record what what the user sees and feels taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what what the user sees and feels taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what what the user sees and feels taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what what the user sees and feels taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what what the user sees and feels taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what what the user sees and feels taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmtaste.py — the taste ledger adapts looks to what the user keeps
+- learn × headless/server: I: Have fm run and fm serve record what what the user sees and feels taught (plugin/lib/fmserve.py)
+
+## Docs
+- find × Claude Code: I: Add a hook or command to surface gaps in documentation (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in documentation (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in documentation (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in documentation (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in documentation (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in documentation (site/pages.py)
+- find × CLI: F: plugin/lib/fmdocs.py — fm docs finds doc drift against the code
+- find × headless/server: I: Have fm run and fm serve surface gaps in documentation (plugin/lib/fmserve.py)
+- understand × Claude Code: F: MASTER.md — the system map lists every module
+- understand × fm code: I: Have fm code explain what is known about documentation (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about documentation (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about documentation (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about documentation (plugin/lib/fmwatch.py)
+- understand × site: F: site/pages.py — site pages are generated from the real data
+- understand × CLI: I: Add an fm verb to explain what is known about documentation (plugin/lib/fmcli.py)
+- understand × headless/server: I: Have fm run and fm serve explain what is known about documentation (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan documentation up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan documentation up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan documentation up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan documentation up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan documentation up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan documentation up front (site/pages.py)
+- plan × CLI: F: plugin/lib/fmplaybooks.py — the playbook library's lint: index, budget, duplicates
+- plan × headless/server: I: Have fm run and fm serve plan documentation up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: plugin/skills/playbooks/SKILL.md — stage playbooks for refactor, ADR, TDD and the like
+- build × fm code: I: Have fm code act on documentation while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on documentation while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on documentation while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on documentation while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: I: Add an fm verb to act on documentation while building (plugin/lib/fmcli.py)
+- build × headless/server: I: Have fm run and fm serve act on documentation while building (plugin/lib/fmserve.py)
+- verify × Claude Code: I: Add a hook or command to check documentation with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: Have fm code check documentation with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check documentation with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check documentation with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check documentation with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check documentation with evidence (site/pages.py)
+- verify × CLI: I: Add an fm verb to check documentation with evidence (plugin/lib/fmcli.py)
+- verify × headless/server: I: Have fm run and fm serve check documentation with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate documentation before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate documentation before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate documentation before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate documentation before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate documentation before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate documentation before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate documentation before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate documentation before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch documentation while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch documentation while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch documentation while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch documentation while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch documentation while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmtidy.py — fm tidy lints CLAUDE.md and state
+- operate × headless/server: I: Have fm run and fm serve watch documentation while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what documentation taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what documentation taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what documentation taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what documentation taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what documentation taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what documentation taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmplaybooks.py — fm playbooks draft turns a done task into a playbook
+- learn × headless/server: I: Have fm run and fm serve record what documentation taught (plugin/lib/fmserve.py)
+
+## Ecosystem
+- find × Claude Code: I: Add a hook or command to surface gaps in other tools and plugins around Foreman (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in other tools and plugins around Foreman (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in other tools and plugins around Foreman (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in other tools and plugins around Foreman (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in other tools and plugins around Foreman (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in other tools and plugins around Foreman (site/pages.py)
+- find × CLI: F: plugin/lib/fmplugins.py — fm plugins find searches plugins
+- find × headless/server: I: Have fm run and fm serve surface gaps in other tools and plugins around Foreman (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about other tools and plugins around Foreman (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about other tools and plugins around Foreman (plugin/lib/fmcode.py)
+- understand × other agents: F: plugin/lib/fmagents.py — fm agents list prints what each harness enforces
+- understand × MCP: F: plugin/lib/fmmcp.py — fm mcp serves Foreman read-only over stdio
+- understand × Desktop: F: plugin/lib/fmclaude.py — fm claude lists every Claude Code session for the desktop app
+- understand × site: I: Publish a site page to explain what is known about other tools and plugins around Foreman (site/pages.py)
+- understand × CLI: I: Add an fm verb to explain what is known about other tools and plugins around Foreman (plugin/lib/fmcli.py)
+- understand × headless/server: I: Have fm run and fm serve explain what is known about other tools and plugins around Foreman (plugin/lib/fmserve.py)
+- plan × Claude Code: F: plugin/lib/fmlib.py — stack cards for languages and frameworks
+- plan × fm code: I: Have fm code plan other tools and plugins around Foreman up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan other tools and plugins around Foreman up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan other tools and plugins around Foreman up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan other tools and plugins around Foreman up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan other tools and plugins around Foreman up front (site/pages.py)
+- plan × CLI: I: Add an fm verb to plan other tools and plugins around Foreman up front (plugin/lib/fmcli.py)
+- plan × headless/server: I: Have fm run and fm serve plan other tools and plugins around Foreman up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: mods/foreman-ui — the foreman-ui mod for Claude Code
+- build × fm code: I: Have fm code act on other tools and plugins around Foreman while building (plugin/lib/fmcode.py)
+- build × other agents: F: plugin/lib/fmagents.py — fm agents install wires Codex, Gemini and opencode
+- build × MCP: I: Add a read-only MCP tool to act on other tools and plugins around Foreman while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on other tools and plugins around Foreman while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: I: Add an fm verb to act on other tools and plugins around Foreman while building (plugin/lib/fmcli.py)
+- build × headless/server: I: Have fm run and fm serve act on other tools and plugins around Foreman while building (plugin/lib/fmserve.py)
+- verify × Claude Code: I: Add a hook or command to check other tools and plugins around Foreman with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: Have fm code check other tools and plugins around Foreman with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check other tools and plugins around Foreman with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check other tools and plugins around Foreman with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check other tools and plugins around Foreman with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check other tools and plugins around Foreman with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmci.py — fm ci-watch polls GitHub Actions after a push
+- verify × headless/server: I: Have fm run and fm serve check other tools and plugins around Foreman with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate other tools and plugins around Foreman before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate other tools and plugins around Foreman before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate other tools and plugins around Foreman before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate other tools and plugins around Foreman before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate other tools and plugins around Foreman before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate other tools and plugins around Foreman before shipping (site/pages.py)
+- ship × CLI: F: plugin/lib/fmpr.py — fm pr threads and train work on GitHub PRs
+- ship × headless/server: I: Have fm run and fm serve gate other tools and plugins around Foreman before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch other tools and plugins around Foreman while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch other tools and plugins around Foreman while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch other tools and plugins around Foreman while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch other tools and plugins around Foreman while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch other tools and plugins around Foreman while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmintegrations.py — fm timeline exports Perfetto and OTLP JSON
+- operate × headless/server: I: Have fm run and fm serve watch other tools and plugins around Foreman while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what other tools and plugins around Foreman taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what other tools and plugins around Foreman taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what other tools and plugins around Foreman taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what other tools and plugins around Foreman taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what other tools and plugins around Foreman taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what other tools and plugins around Foreman taught (site/pages.py)
+- learn × CLI: I: Add an fm verb to record what other tools and plugins around Foreman taught (plugin/lib/fmcli.py)
+- learn × headless/server: I: Have fm run and fm serve record what other tools and plugins around Foreman taught (plugin/lib/fmserve.py)
+
+## Multi-user
+- find × Claude Code: I: Add a hook or command to surface gaps in more than one person or machine (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in more than one person or machine (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in more than one person or machine (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in more than one person or machine (plugin/lib/fmmcp.py)
+- find × Desktop: I: show teammates' open tasks from synced repos in Desktop (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in more than one person or machine (site/pages.py)
+- find × CLI: F: plugin/lib/fmeco.py — fm inbox gh reads a repo's open issues as work
+- find × headless/server: I: Have fm run and fm serve surface gaps in more than one person or machine (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about more than one person or machine (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about more than one person or machine (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about more than one person or machine (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about more than one person or machine (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about more than one person or machine (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about more than one person or machine (site/pages.py)
+- understand × CLI: F: plugin/lib/fmsync.py — fm sync keeps tasks and fixes with the repo so clones and teammates see them
+- understand × headless/server: I: Have fm run and fm serve explain what is known about more than one person or machine (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan more than one person or machine up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan more than one person or machine up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan more than one person or machine up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan more than one person or machine up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan more than one person or machine up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan more than one person or machine up front (site/pages.py)
+- plan × CLI: I: add per-user attribution and an approval handoff to the brief so a teammate can pick up a task (plugin/lib/fmcli.py)
+- plan × headless/server: I: Have fm run and fm serve plan more than one person or machine up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: plugin/lib/fmbus.py — hooks deliver bus mail between sessions on a machine
+- build × fm code: I: Have fm code act on more than one person or machine while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on more than one person or machine while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on more than one person or machine while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on more than one person or machine while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: F: plugin/lib/fmbus.py — fm lease and bus keep two sessions off one file
+- build × headless/server: I: Have fm run and fm serve act on more than one person or machine while building (plugin/lib/fmserve.py)
+- verify × Claude Code: I: Add a hook or command to check more than one person or machine with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: Have fm code check more than one person or machine with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check more than one person or machine with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check more than one person or machine with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check more than one person or machine with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check more than one person or machine with evidence (site/pages.py)
+- verify × CLI: I: Add an fm verb to check more than one person or machine with evidence (plugin/lib/fmcli.py)
+- verify × headless/server: I: Have fm run and fm serve check more than one person or machine with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate more than one person or machine before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate more than one person or machine before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate more than one person or machine before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate more than one person or machine before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate more than one person or machine before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate more than one person or machine before shipping (site/pages.py)
+- ship × CLI: F: plugin/lib/fmpr.py — fm pr train merges approved green PRs in order
+- ship × headless/server: I: Have fm run and fm serve gate more than one person or machine before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch more than one person or machine while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch more than one person or machine while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch more than one person or machine while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch more than one person or machine while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch more than one person or machine while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmeco.py — fm machine and version skew checks across machines
+- operate × headless/server: F: plugin/lib/fmserve.py — fm serve runs Remote Control for a repo on a server
+- learn × Claude Code: I: Add a hook or command to record what more than one person or machine taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what more than one person or machine taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what more than one person or machine taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what more than one person or machine taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what more than one person or machine taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what more than one person or machine taught (site/pages.py)
+- learn × CLI: I: share the taste and fixes ledgers between teammates through fm sync (plugin/lib/fmcli.py)
+- learn × headless/server: I: Have fm run and fm serve record what more than one person or machine taught (plugin/lib/fmserve.py)
+
+## Observability
+- find × Claude Code: I: Add a hook or command to surface gaps in seeing what Foreman is doing (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in seeing what Foreman is doing (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in seeing what Foreman is doing (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in seeing what Foreman is doing (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in seeing what Foreman is doing (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in seeing what Foreman is doing (site/pages.py)
+- find × CLI: I: Add an fm verb to surface gaps in seeing what Foreman is doing (plugin/lib/fmcli.py)
+- find × headless/server: I: Have fm run and fm serve surface gaps in seeing what Foreman is doing (plugin/lib/fmserve.py)
+- understand × Claude Code: F: plugin/hooks/statusline — statusline and per-subagent rows
+- understand × fm code: I: Have fm code explain what is known about seeing what Foreman is doing (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about seeing what Foreman is doing (plugin/lib/fmagents.py)
+- understand × MCP: F: plugin/lib/fmmcp.py — logs, trace and fail tools read run data
+- understand × Desktop: F: plugin/lib/fmclaude.py — every session on the device from its own store
+- understand × site: I: Publish a site page to explain what is known about seeing what Foreman is doing (site/pages.py)
+- understand × CLI: F: plugin/lib/fminstr.py — zero-token instruments: sym, fail, logs, data, trace
+- understand × headless/server: I: Have fm run and fm serve explain what is known about seeing what Foreman is doing (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan seeing what Foreman is doing up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan seeing what Foreman is doing up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan seeing what Foreman is doing up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan seeing what Foreman is doing up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan seeing what Foreman is doing up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan seeing what Foreman is doing up front (site/pages.py)
+- plan × CLI: I: Add an fm verb to plan seeing what Foreman is doing up front (plugin/lib/fmcli.py)
+- plan × headless/server: I: Have fm run and fm serve plan seeing what Foreman is doing up front (plugin/lib/fmserve.py)
+- build × Claude Code: I: Add a hook or command to act on seeing what Foreman is doing while building (plugin/lib/fmhooks.py)
+- build × fm code: I: Have fm code act on seeing what Foreman is doing while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on seeing what Foreman is doing while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on seeing what Foreman is doing while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on seeing what Foreman is doing while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: I: Add an fm verb to act on seeing what Foreman is doing while building (plugin/lib/fmcli.py)
+- build × headless/server: I: Have fm run and fm serve act on seeing what Foreman is doing while building (plugin/lib/fmserve.py)
+- verify × Claude Code: I: Add a hook or command to check seeing what Foreman is doing with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: Have fm code check seeing what Foreman is doing with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check seeing what Foreman is doing with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check seeing what Foreman is doing with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check seeing what Foreman is doing with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check seeing what Foreman is doing with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmledger.py — the ledger is hash-chained and verifiable
+- verify × headless/server: I: Have fm run and fm serve check seeing what Foreman is doing with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate seeing what Foreman is doing before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate seeing what Foreman is doing before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate seeing what Foreman is doing before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate seeing what Foreman is doing before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate seeing what Foreman is doing before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate seeing what Foreman is doing before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate seeing what Foreman is doing before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate seeing what Foreman is doing before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch seeing what Foreman is doing while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch seeing what Foreman is doing while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch seeing what Foreman is doing while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch seeing what Foreman is doing while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch seeing what Foreman is doing while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmwatch.py — fm watch is a live view of tasks and runs
+- operate × headless/server: F: plugin/lib/fmserve.py — fm run keeps a rotating run log
+- learn × Claude Code: I: Add a hook or command to record what seeing what Foreman is doing taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what seeing what Foreman is doing taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what seeing what Foreman is doing taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what seeing what Foreman is doing taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what seeing what Foreman is doing taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what seeing what Foreman is doing taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmfriction.py — the friction digest summarises process-mining of past runs
+- learn × headless/server: I: Have fm run and fm serve record what seeing what Foreman is doing taught (plugin/lib/fmserve.py)
+
+## Security
+- find × Claude Code: I: Add a hook or command to surface gaps in keeping the user's machine and secrets safe (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in keeping the user's machine and secrets safe (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in keeping the user's machine and secrets safe (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in keeping the user's machine and secrets safe (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in keeping the user's machine and secrets safe (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in keeping the user's machine and secrets safe (site/pages.py)
+- find × CLI: I: Add an fm verb to surface gaps in keeping the user's machine and secrets safe (plugin/lib/fmcli.py)
+- find × headless/server: I: Have fm run and fm serve surface gaps in keeping the user's machine and secrets safe (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about keeping the user's machine and secrets safe (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about keeping the user's machine and secrets safe (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about keeping the user's machine and secrets safe (plugin/lib/fmagents.py)
+- understand × MCP: F: plugin/lib/fmmcp.py — read-only tools, argument caps and a sensitive-repo off switch
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about keeping the user's machine and secrets safe (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about keeping the user's machine and secrets safe (site/pages.py)
+- understand × CLI: I: Add an fm verb to explain what is known about keeping the user's machine and secrets safe (plugin/lib/fmcli.py)
+- understand × headless/server: I: Have fm run and fm serve explain what is known about keeping the user's machine and secrets safe (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan keeping the user's machine and secrets safe up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan keeping the user's machine and secrets safe up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan keeping the user's machine and secrets safe up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan keeping the user's machine and secrets safe up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan keeping the user's machine and secrets safe up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan keeping the user's machine and secrets safe up front (site/pages.py)
+- plan × CLI: F: plugin/lib/fmdeps.py — typosquat, registry and age look on a new package
+- plan × headless/server: I: Have fm run and fm serve plan keeping the user's machine and secrets safe up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: plugin/lib/fmguard.py — guard blocks destructive categories on every harness
+- build × fm code: F: plugin/lib/fmguard.py — guard blocks destructive categories on every harness
+- build × other agents: F: plugin/lib/fmguard.py — guard blocks destructive categories on every harness
+- build × MCP: I: Add a read-only MCP tool to act on keeping the user's machine and secrets safe while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on keeping the user's machine and secrets safe while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: I: Add an fm verb to act on keeping the user's machine and secrets safe while building (plugin/lib/fmcli.py)
+- build × headless/server: F: plugin/lib/fmguard.py — guard blocks destructive categories on every harness
+- verify × Claude Code: I: Add a hook or command to check keeping the user's machine and secrets safe with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: run the guard mutation tests against fm code's own tool path (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check keeping the user's machine and secrets safe with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check keeping the user's machine and secrets safe with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check keeping the user's machine and secrets safe with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check keeping the user's machine and secrets safe with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmoracle.py — the guard's oracle runs a line in a bwrap sandbox
+- verify × headless/server: I: Have fm run and fm serve check keeping the user's machine and secrets safe with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: F: plugin/lib/fmsecrets.py — secret scan before commit; credential audit
+- ship × fm code: I: Have fm code gate keeping the user's machine and secrets safe before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate keeping the user's machine and secrets safe before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate keeping the user's machine and secrets safe before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate keeping the user's machine and secrets safe before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate keeping the user's machine and secrets safe before shipping (site/pages.py)
+- ship × CLI: F: plugin/lib/fmsecrets.py — secret scan before commit; credential audit
+- ship × headless/server: I: Have fm run and fm serve gate keeping the user's machine and secrets safe before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch keeping the user's machine and secrets safe while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch keeping the user's machine and secrets safe while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch keeping the user's machine and secrets safe while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch keeping the user's machine and secrets safe while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch keeping the user's machine and secrets safe while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmreplay.py — replay of past commands against the guard
+- operate × headless/server: I: Have fm run and fm serve watch keeping the user's machine and secrets safe while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what keeping the user's machine and secrets safe taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what keeping the user's machine and secrets safe taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what keeping the user's machine and secrets safe taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what keeping the user's machine and secrets safe taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what keeping the user's machine and secrets safe taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what keeping the user's machine and secrets safe taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmdojo.py — drill people on what the guard refuses
+- learn × headless/server: I: Have fm run and fm serve record what keeping the user's machine and secrets safe taught (plugin/lib/fmserve.py)
+
+## Performance
+- find × Claude Code: I: Add a hook or command to surface gaps in speed of Foreman and its hooks (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in speed of Foreman and its hooks (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in speed of Foreman and its hooks (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in speed of Foreman and its hooks (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in speed of Foreman and its hooks (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in speed of Foreman and its hooks (site/pages.py)
+- find × CLI: I: Add an fm verb to surface gaps in speed of Foreman and its hooks (plugin/lib/fmcli.py)
+- find × headless/server: I: Have fm run and fm serve surface gaps in speed of Foreman and its hooks (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about speed of Foreman and its hooks (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about speed of Foreman and its hooks (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about speed of Foreman and its hooks (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about speed of Foreman and its hooks (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about speed of Foreman and its hooks (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about speed of Foreman and its hooks (site/pages.py)
+- understand × CLI: F: plugin/lib/fmgraph.py — fm graph pack ranks a task's read-set
+- understand × headless/server: I: Have fm run and fm serve explain what is known about speed of Foreman and its hooks (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan speed of Foreman and its hooks up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan speed of Foreman and its hooks up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan speed of Foreman and its hooks up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan speed of Foreman and its hooks up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan speed of Foreman and its hooks up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan speed of Foreman and its hooks up front (site/pages.py)
+- plan × CLI: F: plugin/lib/fmbudget.py — budgets bite from 75 percent
+- plan × headless/server: I: Have fm run and fm serve plan speed of Foreman and its hooks up front (plugin/lib/fmserve.py)
+- build × Claude Code: F: plugin/lib/fmambient.py — affected-only tests keep the loop fast
+- build × fm code: I: Have fm code act on speed of Foreman and its hooks while building (plugin/lib/fmcode.py)
+- build × other agents: I: Give Codex, Gemini and opencode a shim to act on speed of Foreman and its hooks while building (plugin/lib/fmagents.py)
+- build × MCP: I: Add a read-only MCP tool to act on speed of Foreman and its hooks while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: Show in Foreman Desktop a panel to act on speed of Foreman and its hooks while building (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: F: plugin/lib/fmpy.py — one python re-exec path for all entry points
+- build × headless/server: I: Have fm run and fm serve act on speed of Foreman and its hooks while building (plugin/lib/fmserve.py)
+- verify × Claude Code: F: plugin/tests/bench_hooks.py — hook latency benchmark
+- verify × fm code: I: Have fm code check speed of Foreman and its hooks with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check speed of Foreman and its hooks with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check speed of Foreman and its hooks with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check speed of Foreman and its hooks with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check speed of Foreman and its hooks with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmbench.py — bench gates a change on measured results
+- verify × headless/server: I: Have fm run and fm serve check speed of Foreman and its hooks with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate speed of Foreman and its hooks before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate speed of Foreman and its hooks before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate speed of Foreman and its hooks before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate speed of Foreman and its hooks before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate speed of Foreman and its hooks before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate speed of Foreman and its hooks before shipping (site/pages.py)
+- ship × CLI: I: Add an fm verb to gate speed of Foreman and its hooks before shipping (plugin/lib/fmcli.py)
+- ship × headless/server: I: Have fm run and fm serve gate speed of Foreman and its hooks before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch speed of Foreman and its hooks while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch speed of Foreman and its hooks while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch speed of Foreman and its hooks while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch speed of Foreman and its hooks while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch speed of Foreman and its hooks while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmcost.py — fm burden measures Foreman's own cost per session
+- operate × headless/server: I: Have fm run and fm serve watch speed of Foreman and its hooks while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what speed of Foreman and its hooks taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what speed of Foreman and its hooks taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what speed of Foreman and its hooks taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what speed of Foreman and its hooks taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what speed of Foreman and its hooks taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what speed of Foreman and its hooks taught (site/pages.py)
+- learn × CLI: F: plugin/lib/fmcodebench.py — fm code bench grades a model on seeded tasks
+- learn × headless/server: I: Have fm run and fm serve record what speed of Foreman and its hooks taught (plugin/lib/fmserve.py)
+
+## Portability
+- find × Claude Code: I: Add a hook or command to surface gaps in running on other machines, OSes and harnesses (plugin/lib/fmhooks.py)
+- find × fm code: I: Have fm code surface gaps in running on other machines, OSes and harnesses (plugin/lib/fmcode.py)
+- find × other agents: I: Give Codex, Gemini and opencode a shim to surface gaps in running on other machines, OSes and harnesses (plugin/lib/fmagents.py)
+- find × MCP: I: Add a read-only MCP tool to surface gaps in running on other machines, OSes and harnesses (plugin/lib/fmmcp.py)
+- find × Desktop: I: Show in Foreman Desktop a panel to surface gaps in running on other machines, OSes and harnesses (plugin/lib/fmwatch.py)
+- find × site: I: Publish a site page to surface gaps in running on other machines, OSes and harnesses (site/pages.py)
+- find × CLI: I: Add an fm verb to surface gaps in running on other machines, OSes and harnesses (plugin/lib/fmcli.py)
+- find × headless/server: I: Have fm run and fm serve surface gaps in running on other machines, OSes and harnesses (plugin/lib/fmserve.py)
+- understand × Claude Code: I: Add a hook or command to explain what is known about running on other machines, OSes and harnesses (plugin/lib/fmhooks.py)
+- understand × fm code: I: Have fm code explain what is known about running on other machines, OSes and harnesses (plugin/lib/fmcode.py)
+- understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about running on other machines, OSes and harnesses (plugin/lib/fmagents.py)
+- understand × MCP: I: Add a read-only MCP tool to explain what is known about running on other machines, OSes and harnesses (plugin/lib/fmmcp.py)
+- understand × Desktop: I: Show in Foreman Desktop a panel to explain what is known about running on other machines, OSes and harnesses (plugin/lib/fmwatch.py)
+- understand × site: I: Publish a site page to explain what is known about running on other machines, OSes and harnesses (site/pages.py)
+- understand × CLI: F: plugin/lib/fmintegrations.py — exports open formats
+- understand × headless/server: I: Have fm run and fm serve explain what is known about running on other machines, OSes and harnesses (plugin/lib/fmserve.py)
+- plan × Claude Code: I: Add a hook or command to plan running on other machines, OSes and harnesses up front (plugin/lib/fmhooks.py)
+- plan × fm code: I: Have fm code plan running on other machines, OSes and harnesses up front (plugin/lib/fmcode.py)
+- plan × other agents: I: Give Codex, Gemini and opencode a shim to plan running on other machines, OSes and harnesses up front (plugin/lib/fmagents.py)
+- plan × MCP: I: Add a read-only MCP tool to plan running on other machines, OSes and harnesses up front (plugin/lib/fmmcp.py)
+- plan × Desktop: I: Show in Foreman Desktop a panel to plan running on other machines, OSes and harnesses up front (plugin/lib/fmwatch.py)
+- plan × site: I: Publish a site page to plan running on other machines, OSes and harnesses up front (site/pages.py)
+- plan × CLI: I: Add an fm verb to plan running on other machines, OSes and harnesses up front (plugin/lib/fmcli.py)
+- plan × headless/server: I: Have fm run and fm serve plan running on other machines, OSes and harnesses up front (plugin/lib/fmserve.py)
+- build × Claude Code: I: Add a hook or command to act on running on other machines, OSes and harnesses while building (plugin/lib/fmhooks.py)
+- build × fm code: F: plugin/lib/fmmodels.py — fm code runs on any OpenAI-compatible or Anthropic profile
+- build × other agents: F: plugin/lib/fmagents.py — one hook dispatcher for Codex, Gemini and opencode
+- build × MCP: I: Add a read-only MCP tool to act on running on other machines, OSes and harnesses while building (plugin/lib/fmmcp.py)
+- build × Desktop: I: ship a Windows build of Foreman Desktop and a Windows path for fm and the hooks (plugin/lib/fmwatch.py)
+- build × site: N/A: the marketing site builds none of the user's work
+- build × CLI: F: plugin/lib/fmpy.py — re-exec under a supported interpreter
+- build × headless/server: I: Have fm run and fm serve act on running on other machines, OSes and harnesses while building (plugin/lib/fmserve.py)
+- verify × Claude Code: I: Add a hook or command to check running on other machines, OSes and harnesses with evidence (plugin/lib/fmhooks.py)
+- verify × fm code: I: Have fm code check running on other machines, OSes and harnesses with evidence (plugin/lib/fmcode.py)
+- verify × other agents: I: Give Codex, Gemini and opencode a shim to check running on other machines, OSes and harnesses with evidence (plugin/lib/fmagents.py)
+- verify × MCP: I: Add a read-only MCP tool to check running on other machines, OSes and harnesses with evidence (plugin/lib/fmmcp.py)
+- verify × Desktop: I: Show in Foreman Desktop a panel to check running on other machines, OSes and harnesses with evidence (plugin/lib/fmwatch.py)
+- verify × site: I: Publish a site page to check running on other machines, OSes and harnesses with evidence (site/pages.py)
+- verify × CLI: F: plugin/lib/fmdoctor.py — fm doctor checks the install on this machine
+- verify × headless/server: I: Have fm run and fm serve check running on other machines, OSes and harnesses with evidence (plugin/lib/fmserve.py)
+- ship × Claude Code: I: Add a hook or command to gate running on other machines, OSes and harnesses before shipping (plugin/lib/fmhooks.py)
+- ship × fm code: I: Have fm code gate running on other machines, OSes and harnesses before shipping (plugin/lib/fmcode.py)
+- ship × other agents: I: Give Codex, Gemini and opencode a shim to gate running on other machines, OSes and harnesses before shipping (plugin/lib/fmagents.py)
+- ship × MCP: I: Add a read-only MCP tool to gate running on other machines, OSes and harnesses before shipping (plugin/lib/fmmcp.py)
+- ship × Desktop: I: Show in Foreman Desktop a panel to gate running on other machines, OSes and harnesses before shipping (plugin/lib/fmwatch.py)
+- ship × site: I: Publish a site page to gate running on other machines, OSes and harnesses before shipping (site/pages.py)
+- ship × CLI: F: install.sh — a one-line installer for Linux and macOS
+- ship × headless/server: I: Have fm run and fm serve gate running on other machines, OSes and harnesses before shipping (plugin/lib/fmserve.py)
+- operate × Claude Code: I: Add a hook or command to watch running on other machines, OSes and harnesses while running (plugin/lib/fmhooks.py)
+- operate × fm code: I: Have fm code watch running on other machines, OSes and harnesses while running (plugin/lib/fmcode.py)
+- operate × other agents: I: Give Codex, Gemini and opencode a shim to watch running on other machines, OSes and harnesses while running (plugin/lib/fmagents.py)
+- operate × MCP: I: Add a read-only MCP tool to watch running on other machines, OSes and harnesses while running (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Show in Foreman Desktop a panel to watch running on other machines, OSes and harnesses while running (plugin/lib/fmwatch.py)
+- operate × site: N/A: a static site cannot watch a running project
+- operate × CLI: F: plugin/lib/fmsync.py — state travels with the repo
+- operate × headless/server: I: Have fm run and fm serve watch running on other machines, OSes and harnesses while running (plugin/lib/fmserve.py)
+- learn × Claude Code: I: Add a hook or command to record what running on other machines, OSes and harnesses taught (plugin/lib/fmhooks.py)
+- learn × fm code: I: Have fm code record what running on other machines, OSes and harnesses taught (plugin/lib/fmcode.py)
+- learn × other agents: I: Give Codex, Gemini and opencode a shim to record what running on other machines, OSes and harnesses taught (plugin/lib/fmagents.py)
+- learn × MCP: I: Add a read-only MCP tool to record what running on other machines, OSes and harnesses taught (plugin/lib/fmmcp.py)
+- learn × Desktop: I: Show in Foreman Desktop a panel to record what running on other machines, OSes and harnesses taught (plugin/lib/fmwatch.py)
+- learn × site: I: Publish a site page to record what running on other machines, OSes and harnesses taught (site/pages.py)
+- learn × CLI: I: Add an fm verb to record what running on other machines, OSes and harnesses taught (plugin/lib/fmcli.py)
+- learn × headless/server: I: Have fm run and fm serve record what running on other machines, OSes and harnesses taught (plugin/lib/fmserve.py)
