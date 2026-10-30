@@ -487,6 +487,18 @@ def step(p):
                f"fm genesis seed {n + 1}")
 
 
+def _exam_count(p):
+    """T-2172: the held-out scorecard in a few words for every status surface; None before any graded line."""
+    try:
+        r = scorecard(p)
+    except Exception:  # no §2 spec yet, or an odd line: the surface loses this part, never its line
+        return None
+    if not (r["seen"] or r["smoke"]):
+        return None
+    return (f"{sum(x['state'] == 'pass' for x in r['rows'])}/{len(r['rows'])} pass"
+            + (f", {r['smoke']} Haiku skipped" if r["smoke"] else ""))
+
+
 def health(p, briefs=None):
     """T-2118: step(p) for the statusline, fm state, fm code, AGENTS.md and the pane, cached until a tower file or a
     task's status changes (step reads every doc, ~80 ms; this is a stat walk). None without a tower or when step
@@ -503,7 +515,11 @@ def health(p, briefs=None):
             except OSError:
                 continue
             marks.append((os.path.relpath(os.path.join(root, f), d), st.st_mtime_ns, st.st_size, st.st_ino))
-    key = hashlib.sha1(json.dumps([sorted(marks), sorted((b.id, b.status) for b in briefs)]).encode()).hexdigest()
+    try:  # T-2172: a Foreman update changes what step says, so it refreshes too
+        code = os.stat(__file__).st_mtime_ns
+    except OSError:  # mid-update: a surface loses its line, never its caller
+        code = 0
+    key = hashlib.sha1(json.dumps([sorted(marks), sorted((b.id, b.status) for b in briefs), code]).encode()).hexdigest()
     path = os.path.join(p.dir, "genesis-step.json")
     try:
         with open(path, encoding="utf-8") as f:
@@ -516,6 +532,8 @@ def health(p, briefs=None):
         g = step(p)
     except Exception:
         return None  # not cached: a half-written tower file may read fine on the next call
+    if exam := _exam_count(p):  # before any graded line the step stays as it was
+        g["exam"] = exam
     try:
         c.write_atomic(path, json.dumps({"key": key, "step": g}))
     except OSError:

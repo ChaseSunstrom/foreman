@@ -87,6 +87,9 @@ TOOLS = [
     ("data", _say("data"), _instr("data"), lambda a, p: ["data", _inside(p, a, "file")]),
     ("trace", _say("trace"), dict(_instr("trace"), required=["file"]),  # no stdin here: the file is required
      lambda a, p: ["trace", _inside(p, a, "file")]),
+    ("exam_scorecard", "Genesis' done gate for the user (fm exam scorecard): each gen-0 §2 capability's state on its "
+     "held-out exam, the top gaps, and how many Haiku smoke lines it left out.", _TEXT,
+     lambda a, p: ["exam", "scorecard"]),
 ]
 MAX_LINE = 1_000_000
 
@@ -187,6 +190,8 @@ def _call(p, name, args):
             if not isinstance(text, str) or not text.strip() or len(text) > TEXT_CAP:
                 return f"text: the failure output, 1 to {TEXT_CAP} characters", True
             return _fm(p, ["fail"], text)
+        if name == "exam_scorecard":  # T-2172: exit 1 means not every capability passes yet, an answer
+            return _fm(p, tool[3](args, p), ok=(0, 1))
         if name == "find":  # T-2127: exit 1 means findings, an answer; the 200 worst are plenty for one turn
             argv = tool[3](args, p)
             text, err = _fm(p, argv, ok=(0, 1))

@@ -38,7 +38,7 @@ class RoundTrip(_Mcp):
         names = {t["name"] for t in by[2]["result"]["tools"]}
         self.assertEqual(names, {"state", "next", "recall", "research_list", "research_read", "task_show", "checks",
                                  "lib_suggest", "lib_search", "lib_show", "outline", "sym", "impact", "why", "fail",
-                                 "logs", "data", "trace", "find"})
+                                 "logs", "data", "trace", "find", "exam_scorecard"})
         for t in by[2]["result"]["tools"]:
             self.assertEqual(t["inputSchema"]["type"], "object")
         self.assertIn("Parse dates in the importer", by[3]["result"]["content"][0]["text"])
@@ -101,6 +101,14 @@ class Review(_Mcp):
         self.assertIn("✗", by[4]["result"]["content"][0]["text"])
         self.assertEqual(by[None]["error"]["code"], -32600)  # the oversized line, refused
         self.assertFalse(by[6]["result"]["isError"])  # and the next request still served
+
+    def test_the_exam_scorecard_is_served_with_its_exit_one(self):
+        self.fm("init")  # T-2172: Desktop and other agents read the done gate; 'not every capability passes' answers
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
+                "1. **Correctness.** Fixes what's broken. Exam: bug.\n\n## 3. The tower\n")
+        out, _ = self.talk(self.call(1, "exam_scorecard"))
+        self.assertFalse(out[0]["result"]["isError"])
+        self.assertIn("Correctness", _text(out[0]))
 
 
 SECRET = "ghp_" + "a1B2" * 9  # a GitHub token shape c.redact knows
