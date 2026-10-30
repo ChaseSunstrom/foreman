@@ -14,6 +14,9 @@ NEVER: grant yourself anything or lower your own guard. Protected files get a bu
 {{done}}
 DONE-WHEN: every capability in §2 passes its held-out exam, the completeness sweep (§7) is clean, and two generations in a row find no remaining tier 3–4 gap. It ends with one report (§8).
 
+STANDING INTENT: the user's, under this gen-0 and over every later steer.
+{{intent}}
+
 ---
 
 ## 0. Set up

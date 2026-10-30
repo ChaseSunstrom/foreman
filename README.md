@@ -332,7 +332,7 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 <details>
 <summary><b>Seeds itself</b></summary>
 
-- Genesis runs generations toward one goal you write once (gen-0: your goals, MUST and NEVER lines). `fm genesis draft "<line>"` writes a whole gen-0 from one line to start from; `fm genesis init` saves it and `/foreman:genesis` drives it.
+- Genesis runs generations toward one goal you write once (gen-0: your goals, MUST and NEVER lines). `fm genesis draft "<line>"` writes a whole gen-0 from one line to start from, carrying your standing intent; `fm genesis init` saves it and `/foreman:genesis` drives it.
 - `fm genesis step` names the next action from the tower's files alone, so a killed session picks up where it stopped. gen-0 is sealed by its hash, and each generation's seed is checked against it word for word (`fm genesis drift`), then the whole project is swept (`fm genesis sweep`, which also turns red on a grant kind no earlier generation used); a rewrite is kept only if it closed more exam scenarios than its parent (`fm genesis select`), and three reverted generations in a row stop the tower and hand it back to you. `fm genesis exam` grades Genesis itself: drafts from "make this great", from nothing and from "super improve this" on generated projects, scored against your gen-0 on a held-out third, beside a plain model.
 - With 10 or more tasks done and the queue drained, `fm scout` offers Genesis once (by itself under full autonomy). It waits on your own yes whatever the autonomy, and a no is never asked again. The site's Genesis page shows every generation live (`fm genesis live on`).
 

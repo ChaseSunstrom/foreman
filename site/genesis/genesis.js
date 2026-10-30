@@ -239,7 +239,10 @@
       var m = /^\*\*(.+?)\*\*\s*(.*)$/.exec(r), title = m ? m[1].replace(/\.$/, "") : "Standing rule " + (i + 1), rest = m ? m[2] : r;
       return '<button type="button" class="rule steer" data-rule="' + i + '"><b>' + inline(title) + "</b>" + inline(firstSentence(rest)) + "</button>";
     });
-    $("rules").innerHTML = RUN.map(function (r) { return '<div class="rule"><b>' + esc(r[0]) + "</b>" + esc(r[1]) + "</div>"; }).join("") + steer.join("");
+    var intent = (Array.isArray(D.intent) ? D.intent : []).map(function (r) {  // [head, rest], parsed by fm genesis export
+      return '<div class="rule intent"><b>' + esc(r[0]) + "</b>" + esc(r[1]) + "</div>";
+    });
+    $("rules").innerHTML = intent.join("") + RUN.map(function (r) { return '<div class="rule"><b>' + esc(r[0]) + "</b>" + esc(r[1]) + "</div>"; }).join("") + steer.join("");
   }
 
   /* G: docs */
