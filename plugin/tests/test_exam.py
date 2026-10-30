@@ -172,6 +172,27 @@ class ExamGen(ForemanTestCase):
             finally:
                 shutil.rmtree(got[0], ignore_errors=True)
 
+    def test_putback_replaces_each_reworded_region_between_its_anchors(self):
+        # T-2203: two replaced regions in one file, an anchor widened past a line the clean file repeats, one at the end
+        import fmexam
+        base = os.path.join(self.tmp, "synthetic")
+        g = "def g(y):\n    if y is None:\n        return 0\n    return 1\n"
+        clean = "def f(x):\n    return x + 1\n\n\n" + g + "\n\ndef h(y):\n    if y is None:\n        return 0\n    return y * 2\n"
+        planted = clean.replace("x + 1", "x").replace("y * 2", "y")
+        doc = g.replace("def g(y):\n", "def g(y):\n    \"\"\"doc\"\"\"\n")
+        arm = os.path.join(self.tmp, "armwork")
+        for path, text in ((os.path.join(base, "hidden", "clean"), clean), (os.path.join(base, "hidden", "planted", "k"), planted),
+                           (arm, clean.replace("    return x + 1\n", "    return 1 + x\n").replace(g, doc)
+                            .replace("    return y * 2\n", "    result = y * 2\n    return result\n"))):
+            os.makedirs(path)
+            with open(os.path.join(path, "app.py"), "w") as f:
+                f.write(text)
+        tmp, dst = fmexam.putback(base, "k", arm)
+        try:
+            self.assertEqual(read_text(os.path.join(dst, "app.py")), planted.replace(g, doc))  # both defects back, the doc kept
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def test_an_unkeyed_finding_proved_only_by_the_arms_own_test_stays_a_false_alarm(self):
         # T-2170: the arm wrote the change and the test, so its proof is the arm grading itself; with no outside check
         # agreeing, the finding stays a false alarm, counted apart (proved_by_arm) and listed so a real one gets read
