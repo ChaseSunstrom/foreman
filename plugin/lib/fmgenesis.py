@@ -324,12 +324,16 @@ def _bad(r):
 
 
 def _literals(src):
-    """The string literals a module can print (f-string parts too), never its comments or docstrings."""
+    """The string literals a module can print unasked (f-string parts too): never its comments or docstrings, a set
+    display (a matcher, such as the words a prompt is checked for) or a cmd_* body (it prints only to a session that
+    already ran that verb) (T-2196)."""
     import ast
     tree = ast.parse(src)
-    docs = {id(x.value) for x in ast.walk(tree) if isinstance(x, ast.Expr) and isinstance(x.value, ast.Constant)}
+    skip = {id(x.value) for x in ast.walk(tree) if isinstance(x, ast.Expr) and isinstance(x.value, ast.Constant)}
+    skip |= {id(y) for x in ast.walk(tree) if isinstance(x, ast.Set) or isinstance(x, ast.FunctionDef)
+             and x.name.startswith("cmd_") for y in ast.walk(x)}
     return [x.value for x in ast.walk(tree) if isinstance(x, ast.Constant) and isinstance(x.value, str)
-            and id(x) not in docs]
+            and id(x) not in skip]
 
 
 def _session_text():
