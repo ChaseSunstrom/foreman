@@ -110,7 +110,6 @@
 ## 11. Self-triggering
 - find × Claude Code: F: plugin/lib/fmscout.py — the idle-turn hook runs scouts and captures findings
 - find × fm code: I: start fm code scouts on idle without a prompt (plugin/lib/fmcode.py)
-- find × CLI: F: plugin/lib/fmorders.py — standing orders fire on a schedule or a changed file
 - build × CLI: F: plugin/lib/fmloop.py — fm loop on starts an improvement round when the queue empties
 - build × headless/server: F: plugin/lib/fmserve.py — fm run works the queue in fresh headless sessions, one task each
 - verify × Claude Code: F: plugin/lib/fmambient.py — tests run detached after each edit with no prompt
@@ -130,7 +129,7 @@
 - learn × CLI: F: plugin/lib/fmbacktest.py — fm backtest shows where a changed rule would have fired
 
 ## 13. Genesis as a feature
-- find × Claude Code: F: plugin/lib/fmscout.py — the idle scout offers "Start Genesis here?" when the queue is dry and the gap map has tier 3–4 gaps (T-2105)
+- find × Claude Code: F: plugin/lib/fmscout.py — the idle scout offers "Start Genesis here?" once, when the queue is drained, 10+ briefs are done and no gen-0 exists
 - find × site: F: site/genesis/gap-map.md — the gap map is published on the Genesis page
 - find × CLI: F: plugin/lib/fmgenesis.py — fm genesis check enforces the tower's gap-map shape
 - understand × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — See it: fm genesis status prints the tower
@@ -141,7 +140,7 @@
 - build × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — the mission, intake and build stages, each brief closed with fm task finish
 - build × CLI: F: plugin/lib/fmexam.py — fm exam gen builds a generated exam from the repo
 - verify × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — drift, sweep and fm genesis exam on the held-out third
-- verify × site: F: site/genesis/genesis.js — each generation's drift and sweep verdicts on the Genesis page (T-2105)
+- verify × site: F: site/genesis/genesis.js — each generation's drift and sweep verdicts on the Genesis page
 - verify × CLI: F: plugin/lib/fmgenesis.py — fm genesis drift (seal + cold read), sweep (§7 + privilege diff) and exam score each generation (T-2104, T-2112, T-2113)
 - ship × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — the next seed waits on a clean sweep
 - ship × site: F: plugin/lib/fmgenesis.py — fm genesis export writes the live tower page
@@ -172,15 +171,12 @@
 - build × fm code: F: plugin/lib/fmcodeterm.py — an ANSI terminal without curses, changed cells only
 - build × CLI: F: plugin/lib/fmdesign.py — fm design sprint checks brief, look and tokens in order
 - operate × headless/server: F: plugin/lib/fmsettingsserve.py — the control room serves settings as a page
-- learn × CLI: F: plugin/lib/fmtaste.py — the taste ledger adapts looks to what the user keeps
 
 ## Docs
-- find × CLI: F: plugin/lib/fmdocs.py — fm docs finds doc drift against the code
 - understand × Claude Code: F: MASTER.md — the system map lists every module
 - understand × site: F: site/pages.py — site pages are generated from the real data
 - plan × CLI: F: plugin/lib/fmplaybooks.py — the playbook library's lint: index, budget, duplicates
 - build × Claude Code: F: plugin/skills/playbooks/SKILL.md — stage playbooks for refactor, ADR, TDD and the like
-- operate × CLI: F: plugin/lib/fmtidy.py — fm tidy lints CLAUDE.md and state
 - learn × CLI: F: plugin/lib/fmplaybooks.py — fm playbooks draft turns a done task into a playbook
 
 ## Ecosystem
@@ -202,7 +198,6 @@
 - plan × CLI: I: add per-user attribution and an approval handoff to the brief so a teammate can pick up a task (plugin/lib/fmcli.py)
 - build × Claude Code: F: plugin/lib/fmbus.py — hooks deliver bus mail between sessions on a machine
 - build × CLI: F: plugin/lib/fmbus.py — fm lease and bus keep two sessions off one file
-- ship × CLI: F: plugin/lib/fmpr.py — fm pr train merges approved green PRs in order
 - operate × CLI: F: plugin/lib/fmeco.py — fm machine and version skew checks across machines
 - operate × headless/server: F: plugin/lib/fmserve.py — fm serve runs Remote Control for a repo on a server
 - learn × CLI: I: share the taste and fixes ledgers between teammates through fm sync (plugin/lib/fmcli.py)
@@ -232,7 +227,6 @@
 - plan × CLI: F: plugin/lib/fmbudget.py — budgets bite from 75 percent
 - build × Claude Code: F: plugin/lib/fmambient.py — affected-only tests keep the loop fast
 - build × CLI: F: plugin/lib/fmpy.py — one python re-exec path for all entry points
-- verify × Claude Code: F: plugin/tests/bench_hooks.py — hook latency benchmark
 - verify × CLI: F: plugin/lib/fmbench.py — bench gates a change on measured results
 - operate × CLI: F: plugin/lib/fmcost.py — fm burden measures Foreman's own cost per session
 - learn × CLI: F: plugin/lib/fmcodebench.py — fm code bench grades a model on seeded tasks
