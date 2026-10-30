@@ -91,7 +91,7 @@ def compose(p, request=""):
     """{path, pack, surfaces, lenses, ideas, mission} — the files written under the project's research/."""
     import fmmap
     found = surfaces(p.root)
-    chosen = lenses(found)
+    chosen = lenses(found) + ["blind spots"] * bool(fmideas.misses(p))  # T-2076
     briefs = c.load_briefs(p)
     open_work = [b for b in briefs if b.status not in c.CLOSED]
     log = c._git(p.root, "log", "-10", "--format=%s")

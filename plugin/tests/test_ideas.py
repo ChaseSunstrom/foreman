@@ -32,6 +32,8 @@ if os.environ.get("STUB_JSON"):  # T-1265: claude -p's json, with the prompt cac
                       "usage": {"cache_read_input_tokens": 200, "cache_creation_input_tokens": 100}}))
 else:
     print(idea)
+if os.environ.get("STUB_QUESTION"):  # T-2076: the question this lens says the next brainstorm should ask
+    print("Next question: " + os.environ["STUB_QUESTION"])
 sys.exit(2 if lens == os.environ.get("STUB_PARTIAL_LENS") else 0)
 '''
 
@@ -174,6 +176,53 @@ class Ideas(Stubbed):
                                    os.path.join(res["dir"], "ideas.md"), "--json", env=self.env).stdout)
         self.assertIn("- Idea for user value\n", self.calls()[-1]["stdin"], "the note isn't part of the title")
         self.assertEqual(again["ideas"], 0)
+
+    def test_brainstorms_learn_from_the_asks_they_missed(self):
+        # T-2076: the user had to ask for skills, playbooks and a site refresh that 104 brainstorms never surfaced; the
+        # asks no idea predicted feed the next brainstorm, with a lens that turns each into the question that would have
+        # caught it, and each run leaves questions for the next ("prompt yourself on how to prompt yourself")
+        import re
+        import fmideas
+        p = c.find_project(self.repo)
+        d = os.path.join(p.dir, "research", "brainstorm-20250101-000000")
+        os.makedirs(d)
+        with open(os.path.join(d, "ideas.json"), "w") as f:
+            json.dump({"lenses": {"user value": ["Add a skills catalogue Claude reaches for"]},
+                       "questions": ["What does a user meet first?"], "created": "2025-01-01T00:00:00Z"}, f)
+        cap = lambda text, src="user": re.search(r"T-\d+", self.fm("capture", text, "--source", src).stdout).group(0)
+        old = cap("Refresh the onboarding tour")
+        import glob  # before any brainstorm: nothing could predict it
+        path = glob.glob(os.path.join(p.dir, "tasks", old + "-*.md"))[0]
+        with open(path) as f:
+            text = re.sub(r"(?m)^created: .*$", "created: 2020-01-01T00:00:00Z", f.read(), count=1)
+        with open(path, "w") as f:
+            f.write(text)
+        cap("Add a skills catalogue that Claude reaches for")  # predicted
+        miss = cap("Refresh the website docs for the code UI")
+        cap("Clean the cache folder", "discovered")  # not the user's ask
+        self.assertEqual(fmideas.misses(p), [(miss, "Refresh the website docs for the code UI")])
+        import fmmission  # fm mission passes its own lenses, so it adds the blind-spots one itself
+        self.assertIn("blind spots", fmmission.compose(p)["lenses"])
+        self.env["STUB_QUESTION"] = "Which screen did nobody open?"
+        res = json.loads(self.fm("ideas", "--pack", self.pack, "--json", env=self.env).stdout)
+        lenses = {next(l for l in x["stdin"].splitlines() if l.startswith("Lens: "))[6:].split(" — ")[0]
+                  for x in self.calls()}
+        self.assertIn("blind spots", lenses)
+        stdin = self.calls()[0]["stdin"]
+        missed = stdin.split("## What earlier brainstorms missed", 1)[1].split("\n## ", 1)[0]
+        self.assertIn(f"- {miss}: Refresh the website docs for the code UI", missed)
+        self.assertNotIn("onboarding", missed)
+        self.assertNotIn("skills catalogue", missed)
+        self.assertIn("- What does a user meet first?", stdin.split("## Questions earlier brainstorms left", 1)[1])
+        with open(os.path.join(res["dir"], "ideas.json")) as f:
+            self.assertEqual(json.load(f)["questions"], ["Which screen did nobody open?"])
+        self.fm("ideas", "--pack", self.pack, "--lens", "user value", env=self.env)
+        last = self.calls()[-1]["stdin"]
+        self.assertIn("- Which screen did nobody open?", last)
+        self.assertNotIn("Lens: blind spots", last, "a caller's own lenses stay as given")
+        prompt = read_text(fmideas.PROMPT)
+        self.assertIn("Next question:", prompt)
+        self.assertIn('"blind spots"', prompt)
 
     def test_default_lenses(self):
         self.fm("ideas", "--pack", self.pack, env=self.env)
