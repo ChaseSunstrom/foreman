@@ -42,6 +42,14 @@ class CompactDiff(ForemanTestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("a.py", found[0])
 
+    def test_a_file_with_a_changed_line_over_4000_chars_is_left_out(self):
+        long = "x" * 20000
+        out = fmcli._compact_diff(block("demo/live.cast", f"@@ -0,0 +1,2 @@\n+{long}\n+short\n")
+                                  + block("a.py", "@@ -1 +1 @@\n-x = 1\n+x = 2\n"))
+        self.assertIn("demo/live.cast: generated or minified (a changed line over 4000 characters), +2 −0 lines, left out", out)
+        self.assertNotIn("x" * 100, out)
+        self.assertIn("+x = 2", out)
+
     def test_a_plain_diff_is_unchanged(self):
         diff = block("a.py", "@@ -1 +1 @@\n-x = 1\n+x = 2\n")
         self.assertEqual(fmcli._compact_diff(diff), diff)
