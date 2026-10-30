@@ -90,6 +90,18 @@ class OneOff(unittest.TestCase):
                                               "old@y": False, "claude-hud@z": True}}, f)
             got = json.loads(rl.only_foreman(p))
         self.assertEqual(got, {"enabledPlugins": {"ponytail@x": False, "claude-hud@z": False}})
+        # a disabled plugin's hooks.json warning still prints at startup: blanked up to the Foreman panel's │
+        screen = ("\x1b[1mClaude Code\x1b[0m v2\n\x1b[33m⚠\x1b[39m Your login expires in 2 days · run /login\n"
+                  "│ Your Max plan includes $200 a month in API credi│ foreman-ui\n"
+                  "│ at https://clau.de/api-credits\n"
+                  "● ecc: hooks.json: unknown keys \"description\" in hooks.PreToolUse[0] │ Next  queue is empty\n"
+                  "  hooks.PreToolUse[0], \"description\" in hooks.PreToolUse[1] and 43 more ignored\n> FIX: calc.add")
+        for sep in ("\n", "\r\n"):
+            got = rl.quiet(screen.replace("\n", sep), sep).split(sep)
+            plain = [rl.ANSI.sub("", x) for x in got]
+            self.assertEqual([len(x) for x in plain], [len(rl.ANSI.sub("", x)) for x in screen.split("\n")])
+            self.assertEqual([x.strip() for x in plain if x.strip()],
+                             ["Claude Code v2", "│ foreman-ui", "│ Next  queue is empty", "> FIX: calc.add"])
 
     def test_the_harness_keeps_true_color(self):
         # T-1209: Claude Code drops to 256 colours whenever TMUX is set unless CLAUDE_CODE_TMUX_TRUECOLOR is; the demo
