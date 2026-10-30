@@ -18,7 +18,9 @@ Both session arms found every planted defect and closed no scenario: genesis 13 
 answers, part of those "false alarms" are true latent defects of the exam's own clean base app (C `label` sprintf with
 no capacity, C `dedupe` indexing on negatives, `page` with pg < 1 giving a negative start, `clamp` with lo > hi left
 undefined), and the C and Rust READMEs show a broken run command (`shlex.join` quotes the `&&`). So the exam is fixed
-first, and the lever for #1 is precision: **report only what is proven**.
+first, and the lever for #1 is precision: **report only what is proven**. Limit: the exam was repaired after reading
+the arms' answers, so the repair is judged only on scenarios rendered after it (new seeds) and on the child-authored
+set, never on the runs that prompted it.
 
 ## Lenses (pack: fitted + required + invented)
 - Required: **inversion** (how initiative fails: floods the inbox, "fixes" what was intended, files Foreman's own setup
@@ -31,7 +33,7 @@ first, and the lever for #1 is precision: **report only what is proven**.
   prove it); **night shift** (what runs unattended between sessions, with what budget and what it may touch).
 - Fitted: user value, reliability, simplicity, bold bets, blind spots.
 
-## Gaps closed (gap map #1)
+## Gaps this Mission targets (gap map #1; planned briefs, open until the exam shows them closed)
 | Gap | Tier | Brief |
 |---|---|---|
 | The exam punishes true findings: latent base-app defects and a broken README command | 3 | 1 |
@@ -46,7 +48,9 @@ first, and the lever for #1 is precision: **report only what is proven**.
 A. **Chosen — finders propose, a test judges.** Deterministic finders (and later a model finder) emit candidates; a
    candidate becomes a finding only when the prove gate gives it a proof ticket: a test that is red on the untouched
    tree for an assertion reason, red 3 runs of 3, and green once the defect's line is reverted or fixed. Unproven
-   candidates are leads (kept, never shown as findings). Precision by construction; recall is the finders' job.
+   candidates are leads (kept, never shown as findings). The gate shows the candidate's line makes a check fail, not
+   that the check tests what the user wanted, so the precision it buys is the exam's false-alarm column to show on
+   held-out scenarios, not assumed; recall is the finders' job.
 B. A better prompt for a model-only finder (the session arms today). Not the primary: the arms already find 3/3 and
    lose on precision; kept as a feeder into A's gate (brief 4 runs it as one finder).
 C. Per-language static analysers (semgrep, clippy, eslint, bandit). Not now: each needs an install (that's #5) and
@@ -59,8 +63,14 @@ D. Prosecutor and defender agents per finding. A spike (cold refuter): if a defe
    the README states the edge contract every language's clean app follows: page n < 1 or size < 1 is empty, clamp
    with lo > hi returns lo, label writes at most `width` columns plus the string and the C one takes a capacity,
    dedupe takes any long (no index by value), total of nothing is 0. Hidden edge tests for each clause run on the
-   clean render in all six languages (exam of the exam). Grading: an unkeyed finding whose proof test fails on the
-   clean base is an **exam defect** (counted, logged, not a false alarm); without a proof, it stays a false alarm.
+   clean render in all six languages (exam of the exam). The grading rule (T-2120; it moves no exam
+   score until a run exercises it): an unkeyed finding whose test fails
+   on the clean base and passes on the arm's tree is an **exam defect** (counted, logged, not a false alarm); without
+   one, it stays a false alarm. Limit: that test is the arm's own, so an arm can move its own finding out of the
+   false-alarm column with a test that asserts its own change. T-2170 makes an outside check decide (the finding
+   must break a README edge-contract clause whose hidden test fails on clean); until then exam_defects is read
+   beside false_alarms, never as a precision gain, and since the proof gate (brief 3) writes exactly that kind of test,
+   no #1 score subtracts exam defects from false alarms before T-2170.
    Re-run the oracle, empty and finders arms; the oracle stays 100%.
 2. **`fm find [PATH] [--json]`** (tier 3, new fmfind.py). Deterministic, language-agnostic finders over a tree, each a
    function returning candidates `{finder, kind, file, symbol, line, says, probe}`: untested (a public function no
@@ -105,6 +115,9 @@ D. Prosecutor and defender agents per finding. A spike (cold refuter): if a defe
 | I-rank | 3 planted defects of different severity | the proven order puts the vuln and the bug above slow/docs |
 Each kind 9 scenarios (6 train, 3 held out; `fm exam gen --author child`), 6 languages. Arms: finders (`fm find`),
 foreman (the initiative skill), plain ("" request, no plugin), on the held-out third, with cost.
+Initiative is find, prove, rank and fix, not a pure finder, so these kinds are the smoke tier (gen-1/seed.md rule 6): small single-defect scenarios never decide #1 on their own. The deciding end-of-run score is the long-horizon tier, on the production model: a repo rolled back to a past commit with no request, the multi-task change that followed as the hidden goal and
+its shipped checks as the grade, with faults planted mid-run (a misleading test, a killed session); what it finds and
+fixes unasked is graded against that change. Scored per finished goal on true-done rate, false-done claims, regressions and later reverts, interventions needed and cost per finished goal.
 
 ## Exam of the exam
 1. The oracle closes every scenario; empty closes only I-clean; each edge-contract clause has a hidden test the clean
@@ -132,7 +145,8 @@ Built here: 8 briefs, 2 at tier 4 and 6 at tier 3 (100% tier 3–4) plus 4 tier-
 The exam's clean renders pass their edge contract in six languages and the README command runs; `fm find`, `fm find
 prove` and `--rank` work and are tested; scout captures only proven findings in a user project, capped, with Foreman's
 faults routed to the self-inbox; the `/foreman:initiative` skill works in Claude Code and `fm find` in fm code and MCP;
-the #1 exam runs the finders, foreman and plain arms on its held-out third; MASTER.md, README, CHANGELOG and the site's
+the #1 exam's zero-token finders arm runs on every scenario every generation and the foreman and plain arms run at the
+end-of-run exam on the production model (gen-1/seed.md rule 6); MASTER.md, README, CHANGELOG and the site's
 Initiative page show it.
 
 ```
@@ -143,6 +157,6 @@ FEATURE: initiative pipeline + /foreman:initiative skill — map → find → pr
 FEATURE: scout project probes — proven only, ≤ 3 a day, refutation ledger, Foreman faults to the self-inbox
 FEATURE: value ranking — severity × proof × reach ÷ effort, per-finder precision floor
 FEATURE: #1 exam — I-none, I-clean, I-rank, child-authored, finders vs foreman vs plain
-FEATURE: initiative surfaces — fm code, MCP, site page, pane line, docs
+FEATURE: initiative surfaces — fm code, MCP (Claude Desktop reaches it through the same server), AGENTS.md for other agents, site page, pane line, docs
 DONE-WHEN: the held-out #1 exam runs all three arms and the clean renders file nothing
 ```
