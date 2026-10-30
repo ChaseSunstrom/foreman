@@ -2239,6 +2239,10 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
             ("fm decide yes --ans 1", "self-authorize", "fm decide ANSWER --answer N"),
             ("fm risk set --day 20 --because more", "self-authorize", "fm risk set"),  # T-1080
             ("fm home import x.tgz", "self-authorize", "fm home import is the user's to run"),  # T-1665
+            ("fm prove . --yes-run", "self-authorize", "fm prove --yes-run is the user's to run"),  # T-2122
+            ("fm prove --yes-r /tmp/x", "self-authorize", "fm prove --yes-run"),
+            ("fm prove --yes-run=1 .", "self-authorize", "fm prove --yes-run"),
+            ("fm --json prove --yes-run", "self-authorize", "fm prove --yes-run"),
             ("cat list | xargs rm -rf", "rm-outside", "recursive rm with targets from stdin"),
         ]:
             with self.subTest(cmd=cmd):
@@ -2247,7 +2251,7 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
                 self.assertIn(why, str(r.detail))
 
     def test_near_misses_stay_allowed(self):
-        for cmd in ("fm posture", "fm pause on", "fm approve-reads off", "fm rule list", "fm vetoes", "fm vetoes --json", "fm rollback --list", "fm taste compile 1", "fm home export", "eval \"$(echo hi)\"", "dd if=x of=./file.img", "ufw status", "firewall-cmd --list-all",
+        for cmd in ("fm prove .", "fm prove --limit 3 /tmp/x", "fm posture", "fm pause on", "fm approve-reads off", "fm rule list", "fm vetoes", "fm vetoes --json", "fm rollback --list", "fm taste compile 1", "fm home export", "eval \"$(echo hi)\"", "dd if=x of=./file.img", "ufw status", "firewall-cmd --list-all",
                     "cryptsetup --version", "git config core.hooksPath", "git config --get core.hooksPath"):
             with self.subTest(cmd=cmd):
                 self.assertIsNone(self.bash(cmd))

@@ -313,3 +313,130 @@ class FindLearns(ForemanTestCase):
         b = next(b for b in c.load_briefs(c.find_project(self.repo)) if b.id == ids[0])
         self.assertTrue(b.meta.get("confirm"))
         self.assertEqual(b.meta.get("finder"), "sql")
+
+
+FAKE_TOKEN = "ghp_" + "x1Y2" * 9  # a GitHub token shape, never real
+APP = ("def used():\n    return 1\n\n\ndef unused():\n    return 2\n\n\ndef by_name():\n    return 3\n\n\n"
+       "def one(): return 4\n")
+SUITE = ("import unittest\nimport app\n\n\nclass T(unittest.TestCase):\n    def test_used(self):\n"
+         "        self.assertEqual(app.used(), 1)\n\n    def test_by_name(self):\n"
+         "        self.assertEqual(getattr(app, 'by_' + 'name')(), 3)\n")
+
+
+class FindProve(ForemanTestCase):
+    """T-2122: fm prove turns fm find's candidates into proof tickets a person can rerun, or leads."""
+
+    def proj(self, files=None):
+        root = os.path.join(self.tmp, "proj")
+        write(root, files or {"app.py": APP, "tests/test_app.py": SUITE})
+        return root
+
+    def test_a_stub_the_suite_never_notices_is_proven_and_one_it_notices_is_a_lead(self):
+        root = self.proj()
+        r = self.fm("prove", root, "--yes-run", "--json", check=False)
+        self.assertEqual(r.returncode, 1, r.stderr)  # something proven: findings
+        res = json.loads(r.stdout)
+        by = {t["symbol"]: t for t in res["tickets"]}
+        self.assertEqual(by["unused"]["verdict"], "proven", by)
+        self.assertIn("stayed green", by["unused"]["evidence"])
+        self.assertIn("python3 -m unittest", by["unused"]["evidence"])  # the command a person reruns
+        self.assertEqual(by["by_name"]["verdict"], "lead")  # fm find's guess was wrong: a test reaches it by name
+        self.assertIn('a test runs "by_name"', by["by_name"]["evidence"])
+        self.assertEqual(by["one"]["verdict"], "lead")  # a one-line def can't be instrumented safely
+        self.assertIn("couldn't instrument", by["one"]["evidence"])
+        self.assertNotIn("used", by)
+        with open(os.path.join(root, "app.py")) as f:
+            self.assertEqual(f.read(), APP)  # the tree itself is never touched
+        swallow = SUITE + ("\n    def test_swallows(self):  # reaches it by name and swallows whatever it raises\n"
+                           "        try:\n            getattr(app, 'un' + 'used')()\n        except Exception:\n"
+                           "            pass\n")
+        root2 = os.path.join(self.tmp, "swallow")
+        write(root2, {"app.py": APP, "tests/test_app.py": swallow})
+        r = json.loads(self.fm("prove", root2, "--yes-run", "--json", check=False).stdout)
+        t = next(t for t in r["tickets"] if t["symbol"] == "unused")
+        self.assertEqual(t["verdict"], "lead", t)  # a marker, not a raise: a swallowed error can't fake a proof
+        self.assertIn('a test runs "unused"', t["evidence"])
+
+    def test_a_red_suite_or_none_proves_nothing(self):
+        root = self.proj({"app.py": APP, "tests/test_app.py": SUITE.replace("app.used(), 1", "app.used(), 9")})
+        r = json.loads(self.fm("prove", root, "--yes-run", "--json", check=False).stdout)
+        self.assertTrue(r["tickets"] and all(t["verdict"] == "lead" for t in r["tickets"]))
+        self.assertIn("isn't green untouched", r["tickets"][0]["evidence"])
+        bare = os.path.join(self.tmp, "bare")
+        write(bare, {"app.py": APP, "README.md": "Call `used()` and `unused()`, then `missing_fn()`.\n"})
+        r = json.loads(self.fm("prove", bare, "--yes-run", "--json", check=False).stdout)
+        docs = [t for t in r["tickets"] if t["kind"] == "docs"]
+        self.assertEqual(docs[0]["verdict"], "proven")  # its finder's own check, re-run cold on a fresh copy
+        self.assertIn("re-found", docs[0]["evidence"])
+
+    def test_a_planted_untested_function_is_proven_where_the_tests_run_themselves(self):
+        tc = fmexam.toolchains()
+        for lang, tool in (("python", "python"), ("js", "js"), ("ruby", "ruby")):
+            if not tc[tool]:
+                continue
+            base = os.path.join(self.tmp, lang)
+            fmexam.render(base, {"id": f"untested-{lang}-000", "kind": "untested", "lang": lang, "split": "train"})
+            r = json.loads(self.fm("prove", os.path.join(base, "repo"), "--yes-run", "--json", check=False).stdout)
+            with self.subTest(lang=lang):
+                self.assertEqual([t["verdict"] for t in r["tickets"]], ["proven"], r)
+
+    def test_a_suite_that_cannot_fail_proves_nothing(self):
+        # mutate to confirm: a function the tests name is stubbed first; a suite that stays green can't show an absence
+        root = self.proj({"app.py": APP, "tests/test_app.py": "import unittest\n\n\nclass T(unittest.TestCase):\n"
+                          "    def test_nothing(self):  # used\n        pass\n"})
+        r = json.loads(self.fm("prove", root, "--yes-run", "--json", check=False).stdout)
+        self.assertTrue(r["tickets"] and all(t["verdict"] == "lead" for t in r["tickets"]), r)
+        self.assertIn("can't show a function goes unrun", r["tickets"][0]["evidence"])
+
+    def test_the_suite_runs_without_credentials_or_the_users_home(self):
+        seen = os.path.join(self.tmp, "seen.json")
+        suite = SUITE + ("\n\nclass E(unittest.TestCase):\n    def test_env(self):\n        import json, os\n"
+                         f"        json.dump({{k: os.environ.get(k) for k in ('HOME', 'GITHUB_TOKEN', 'FOREMAN_HOME')}}, "
+                         f"open({seen!r}, 'w'))\n")
+        root = self.proj({"app.py": APP, "tests/test_app.py": suite})
+        self.fm("prove", root, "--yes-run", check=False, env={"GITHUB_TOKEN": FAKE_TOKEN})
+        with open(seen) as f:
+            env = json.load(f)
+        self.assertIsNone(env["GITHUB_TOKEN"])
+        self.assertIsNone(env["FOREMAN_HOME"])  # nothing of Foreman's state reaches repo code
+        self.assertNotIn(env["HOME"], (os.path.expanduser("~"), self.home))
+        self.assertIn("fm-prove-", env["HOME"])
+
+    def test_a_tree_whose_head_is_yours_runs_and_a_local_email_cant_forge_it(self):
+        import subprocess
+        root, home = self.proj(), os.path.join(self.tmp, "githome")
+        write(home, {".gitconfig": "[user]\n\temail = me@example.com\n\tname = Me\n"})
+        genv = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")} | {"HOME": home, "GIT_CONFIG_NOSYSTEM": "1"}
+        git = lambda *a: subprocess.run(["git", "-C", root, *a], env=genv, check=True, capture_output=True)
+        git("init", "-q")
+        git("add", ".")
+        git("commit", "-qm", "mine")
+        self.assertEqual(self.fm("prove", root, check=False, env={"HOME": home}).returncode, 1)  # proven, no --yes-run
+        git("config", "user.email", "other@example.com")  # the repo's own config names someone else ...
+        git("commit", "-q", "--allow-empty", "-m", "theirs")
+        r = self.fm("prove", root, check=False, env={"HOME": home})
+        self.assertEqual(r.returncode, 2)  # ... and HEAD is theirs: the global email decides, so nothing ran
+        self.assertIn("HEAD's author is other@example.com", r.stderr)
+
+    def test_repo_code_runs_only_in_a_tree_that_is_yours_or_with_yes_run(self):
+        root = self.proj()
+        r = self.fm("prove", root, check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--yes-run", r.stderr)  # not provably the user's tree: nothing ran
+        self.assertNotIn("fm prove stub", open(os.path.join(root, "app.py")).read())
+
+    def test_the_copy_drops_links_credentials_and_home(self):
+        import fmprove
+        root = self.proj({"app.py": APP, "tests/test_app.py": SUITE})
+        os.symlink(os.path.expanduser("~"), os.path.join(root, "home-link"))
+        os.mkfifo(os.path.join(root, "pipe"))  # copytree would block or fail on it
+        tmp, dst = fmprove._copy(root)
+        try:
+            self.assertFalse(os.path.lexists(os.path.join(dst, "home-link")))  # a link could reach outside the copy
+            self.assertFalse(os.path.lexists(os.path.join(dst, "pipe")))
+            env = fmprove._env(tmp)
+            self.assertEqual(env["HOME"], tmp)
+            self.assertFalse([k for k in env if k.startswith(("FOREMAN_", "CLAUDE_")) or k.endswith("_TOKEN")])
+        finally:
+            import shutil
+            shutil.rmtree(tmp)

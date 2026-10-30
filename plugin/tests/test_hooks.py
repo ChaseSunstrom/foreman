@@ -172,6 +172,7 @@ class SessionStart(HookCase):
         self.assertIn("fm find --rank", note)
         self.assertIn("untested: a test that calls it", note)
         self.assertIn("fm adopt", note)  # T-2186: a repo new to Foreman starts from its baseline
+        self.assertIn("fm prove", note)  # T-2122: the proving step is a verb a session runs, not a chore it skips
         tid = self.fm_json("task", "new", "x", "--type", "FIX", "--tier", "S", "--step", "x")["id"]
         self.fm("task", "drop", tid, "done elsewhere")
         with mock.patch.object(fmhooks, "LEADS_FILES", 2):
