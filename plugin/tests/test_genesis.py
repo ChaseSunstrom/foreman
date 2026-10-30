@@ -152,6 +152,34 @@ class GenesisExport(ForemanTestCase):
         data = json.loads(raw)
         self.assertEqual([e["run"] for e in data["exam"]], ["~/runs/x"])  # only objects; null and 5 dropped
 
+    def test_a_re_export_drops_docs_the_tower_lost_and_nothing_else(self):
+        """T-2084: only a file the last export listed, in the tower's shape and not a symlink, is removed."""
+        import fmcore
+        import fmgenesis
+        self.fm("init")
+        self.fm("genesis", "init", "--file", "-", input=GEN0_CAPS)
+        self.fm("genesis", "put", "gen-1/seed.md", "--file", "-", input=SEED)
+        self.fm("genesis", "put", "gen-1/mission-exam.md", "--file", "-", input="# Mission: exam\n")
+        out = os.path.join(self.tmp, "site-genesis")
+        self.fm_json("genesis", "export", out)
+        stale = os.path.join(out, "gen-1", "mission-exam.md")
+        self.assertTrue(os.path.isfile(stale))
+        mine, outside = os.path.join(out, "gen-1", "mission-mine.md"), os.path.join(self.tmp, "keep.md")
+        for path in (mine, outside):
+            with open(path, "w") as f:
+                f.write("x\n")
+        link = os.path.join(out, "gen-1", "critique-x.md")
+        os.symlink(outside, link)
+        data = json.loads(read_text(os.path.join(out, "genesis.json")))
+        data["docs"].update({"../keep.md": "x", "gen-1/critique-x.md": "x"})  # tampered: outside the shape, a symlink
+        with open(os.path.join(out, "genesis.json"), "w") as f:
+            json.dump(data, f)
+        os.remove(os.path.join(fmgenesis.home(fmcore.find_project(self.repo, create=False)), "gen-1", "mission-exam.md"))
+        self.fm_json("genesis", "export", out)
+        self.assertFalse(os.path.exists(stale))
+        self.assertTrue(os.path.isfile(mine) and os.path.isfile(outside) and os.path.islink(link))
+        self.assertTrue(os.path.isfile(os.path.join(out, "gen-1", "seed.md")))
+
     def test_export_without_a_tower_is_refused(self):
         self.fm("init")
         r = self.fm("genesis", "export", os.path.join(self.tmp, "out"), check=False)

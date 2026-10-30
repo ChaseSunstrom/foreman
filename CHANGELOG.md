@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm genesis export DIR` removes a doc it wrote last time that the tower no longer has; only files its previous `genesis.json` listed, in the tower's shape and not behind a symlink, so the rest of DIR stays yours (T-2084).
 - When the queue drains and scout files a find that waits on your yes, the Stop hook tells the session to ask once (`fm ask ID confirm`) and leave it unstarted, instead of the "plan it and work it" meant for ordinary finds (T-2111).
 - Genesis seed rows read when the file name is in backticks or the closing pipe is missing (one used to swallow the next row), and a drawer link on the Genesis page that switches generation keeps keyboard focus in the drawer (T-2083).
 - `fm exam grade` counts a corrupt or non-object answer file as an errored session instead of an empty answer, which quietly closed scenarios where the right move is to find nothing (a JSON list crashed it) (T-2103).
