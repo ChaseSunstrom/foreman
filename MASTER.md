@@ -382,7 +382,7 @@ The notes below are grouped; each group folds. `fm outline MASTER.md` lists the 
 | [Dev loop and install](#dev-loop-and-install) | Edit, reload, test; the shell, time travel, MCP, plugin workflows, integrations, install and health checks, plugins, Claude Code and portability notes | 15 |
 | [Tasks, batches and backlog](#tasks-batches-and-backlog) | Batches, capture nudges, inbox and backlog tools, waits, many ids at once, tours, away and todo, queue preview and ranking | 15 |
 | [Lanes and builders](#lanes-and-builders) | Linked worktrees, defect classes, merge-prone files, stalled and dropped builders, claims, racing builders | 7 |
-| [Evidence, gates and verification](#evidence-gates-and-verification) | Evidence, gate runs and reuse, affected tests, close gates, hunk proofs, audits, second reads, test claims | 16 |
+| [Evidence, gates and verification](#evidence-gates-and-verification) | Evidence, gate runs and reuse, affected tests, close gates, hunk proofs, audits, second reads, test claims | 17 |
 | [Guard and security](#guard-and-security) | The guard's reads, scripts, oracle, mutation and ratchets; credentials, stored commands, install checks, approvals, outbound, sandbox | 19 |
 | [Hooks, notes and steering](#hooks-notes-and-steering) | What the hooks say and when: steering as data, session map, tripwires, write validators, outside text, breakers, postures | 9 |
 | [Recall, lessons and self-improvement](#recall-lessons-and-self-improvement) | Recall, lessons, taste, trials, drafts, friction, evolve, scout, backtests, repeated work, forge, outside view | 21 |
