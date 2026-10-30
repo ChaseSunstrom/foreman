@@ -395,7 +395,9 @@ def _imports(module):
 
 
 BLOCK = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)  # a mission's intake block: its first fence
-TASKS = re.compile(r"^Task:(.*)$", re.M)  # a mission's 'Task: T-2093 (brief 1), …' lines: the briefs intaken so far
+# a mission's 'Task: T-2093 (brief 1), …' paragraph: the briefs intaken so far. T-2213: its wrapped lines too, up to a
+# blank line, a heading or a code fence (an intake block right under it names its own #T-ids)
+TASKS = re.compile(r"^Task:(.*(?:\n(?!```|#+ |\s*$).+)*)", re.M)
 IDEAS = "fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen"
 
 
