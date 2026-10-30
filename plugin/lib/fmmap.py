@@ -145,6 +145,47 @@ def _co_change(root, files, min_together=3, share=0.6):
     return {a: sorted(bs)[:3] for a, bs in pairs.items()}
 
 
+def drift(root, top=8, owed_min=2.0, min_together=3, share=0.5):
+    """T-2073: files the recent commits would normally have brought along, learned from the repo's history, not a
+    list: for each commit since file B last changed, B is owed max P(B|A) over that commit's files A (P from the last
+    year's commits of at most 20 files, pairs seen 3+ times, B in at least half of A's commits: a file in every commit, like a
+    changelog, says nothing about the rest). [(B, owed, the A that owes most, how many of those
+    commits had it, P(B|A))] for files still present and owed at least owed_min, most owed first; None when git fails."""
+    r = c._git(root, "log", "--since=365.days", "--name-only", "--pretty=format:%x00", timeout=30, proc=True)
+    if r.returncode != 0:
+        return None  # no git or no history: unknown, never "nothing owed"
+    log = r.stdout
+    commits = [x for x in (sorted(set(filter(None, s.split("\n")))) for s in log.split("\0")) if x]  # newest first
+    alone, together = collections.Counter(), collections.Counter()
+    for names in commits:
+        alone.update(names)
+        if len(names) <= 20:  # a sweeping commit says nothing about companions
+            together.update((a, b) for a in names for b in names if a != b)
+    partners = collections.defaultdict(dict)
+    for (a, b), n in together.items():
+        if n >= min_together and n / alone[a] >= share:
+            partners[a][b] = n / alone[a]
+    owed, why, seen = collections.Counter(), collections.defaultdict(collections.Counter), set()
+    for names in commits:
+        seen.update(names)  # a file changed here or later owes nothing for this commit
+        best = {}
+        for a in names:
+            for b, pr in partners.get(a, {}).items():
+                if b not in seen and pr > best.get(b, (0, ""))[0]:
+                    best[b] = (pr, a)
+        for b, (pr, a) in best.items():
+            owed[b] += pr
+            why[b][a] += 1
+    out = []
+    for b, n in owed.most_common():
+        if n < owed_min or len(out) >= top:
+            break
+        if os.path.exists(os.path.join(root, b)):
+            a, k = why[b].most_common(1)[0]
+            out.append((b, n, a, k, partners[a][b]))
+    return out
+
+
 _FIXY = re.compile(r"\b(fix(es|ed)?|revert(ed)?|bugs?|hotfix)\b", re.I)
 
 

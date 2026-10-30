@@ -157,6 +157,9 @@ class Landing(unittest.TestCase):
                 page = read_text(os.path.join(out, rel))
                 for tag in tags:
                     self.assertRegex(page, tag, rel)
+            page = read_text(os.path.join(out, "genesis", "index.html"))  # T-2087: it shares style.css, not site.js
+            for tag in tags[:3]:
+                self.assertRegex(page, tag, "genesis")
 
     def test_the_code_page_is_drawn_from_todays_tui(self):  # T-2061: a committed recording goes stale
         sys.path.insert(0, os.path.join(PLUGIN, "lib"))

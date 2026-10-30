@@ -35,6 +35,10 @@ LENS_NOTES = {
     "devil's idea": "propose what a rival who wanted this project to win would ship that its owner would never dare to",
     "worst-bugs persona": "be the user who hits the worst bugs: what breaks, confuses or loses work, and what would "
                           "have prevented it",
+    # T-2076: added when earlier brainstorms missed asks the user then had to make
+    "blind spots": "the pack lists asks the user had to make that no earlier brainstorm predicted: for each, name the "
+                   "question a brainstorm should have asked to catch it, ask that question of the whole project now, and "
+                   "give the ideas it surfaces (what else in that class is still missing)",
 }
 # T-0605: the capability axes a complete catalogue covers; thin ones are named for the next round
 AXES = ["user value", "reliability", "performance", "security", "privacy", "ui", "devices", "agents", "simplicity",
@@ -391,6 +395,61 @@ def lens_rates(p, briefs):
     return rates
 
 
+def _content(title):
+    return {w[:5] for w in _WORD.findall(str(title).lower()) if w not in fmrecall._STOP}
+
+
+def _brainstorms(p):
+    """T-2076: every saved brainstorm's ideas.json as (created, data), oldest first; one without a date sorts first."""
+    out = []
+    for path in glob.glob(os.path.join(p.dir, "research", "brainstorm-*", "ideas.json")):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            out.append((str(data.get("created") or ""), data))
+    return sorted(out, key=lambda x: x[0])
+
+
+def misses(p, n=8):
+    """T-2076: the asks the user had to make that no brainstorm predicted, newest last, as (id, title): a request they
+    captured after the first brainstorm whose words no earlier idea title shares half of (at least two). Each is a
+    question the brainstorms never asked; learned from the data, so no list of areas goes stale."""
+    runs = _brainstorms(p)
+    if not runs:
+        return []
+    index, made = {}, []  # content word -> idea numbers; idea number -> its brainstorm's date
+    for created, data in runs:
+        for titles in (data.get("lenses") or {}).values():
+            for t in titles if isinstance(titles, list) else ():
+                for w in _content(t):
+                    index.setdefault(w, []).append(len(made))
+                made.append(created)
+    out = []
+    for b in sorted(c.load_briefs(p, include_archive=True), key=lambda b: str(b.meta.get("created") or "")):
+        when, words = str(b.meta.get("created") or ""), _content(b.title)
+        if b.meta.get("source") != "user" or when <= runs[0][0] or not words:
+            continue
+        hits = Counter(i for w in words for i in index.get(w, ()) if made[i] < when)
+        if max(hits.values(), default=0) < max(min(2, len(words)), (len(words) + 1) // 2):
+            out.append((b.id, c.fit(c.plain(b.title).strip(), 120)))
+    return out[-n:]
+
+
+def questions(p, n=8):
+    """T-2076: the questions earlier brainstorms said the next one should ask, newest last, each once."""
+    seen = {}
+    for _, data in _brainstorms(p):
+        for q in data.get("questions") or []:
+            q = c.fit(c.plain(str(q)).strip(), 200)
+            seen.pop(q.lower(), None)
+            if q:
+                seen[q.lower()] = q
+    return list(seen.values())[-n:]
+
+
 # T-0439: a no the user keeps steering with becomes a veto to propose; their other steers and finished requests say
 # which option they'd pick
 TASTE_REPEATS = 3
@@ -639,6 +698,7 @@ _CATEGORY = re.compile(r"(?m)^\s*[-*]\s*\*\*(.+?)\*\*.*?category:?\s*([\w][\w &/
 
 
 _TITLE = re.compile(r"(?m)^\s*[-*]\s*\*\*(.+?)\*\*")
+_QUESTION = re.compile(r"(?mi)^[\s*_>-]*Next question[*_]*:[*_]*\s*(.+?)\s*$")  # T-2076: one for the next brainstorm
 NEAR = re.compile(r" — near T-\d+ \(done\).*$")
 _WORD = re.compile(r"[a-z0-9]{3,}")
 
@@ -735,7 +795,8 @@ def _run_round(lenses, pack, system, args, out_dir, prefix, fmcli, cache=None):
                     + (text if ok else f"FAILED: {why}") + "\n")
         results.append({"lens": lens, "file": path, "ok": ok, "partial": partial, "error": why,
                         "titles": [c.plain(t).strip() for t in _TITLE.findall(text)],
-                        "categories": {c.plain(t).strip(): cat.strip().lower() for t, cat in _CATEGORY.findall(text)}})
+                        "categories": {c.plain(t).strip(): cat.strip().lower() for t, cat in _CATEGORY.findall(text)},
+                        "questions": [q for q in (c.fit(c.plain(x).strip(), 200) for x in _QUESTION.findall(text)) if q][:2]})
     return results
 
 
@@ -748,7 +809,13 @@ def cmd_ideas(args):
     pack = sys.stdin.read() if args.pack == "-" else open(args.pack, encoding="utf-8").read()
     pack_sha = hashlib.sha256(pack.encode()).hexdigest()  # T-0959: the pack as given, for the manifest
     pack += user_voice(p)
-    lenses = list(dict.fromkeys(args.lens or DEFAULT_LENSES))
+    missed, left = misses(p), questions(p)  # T-2076: what earlier brainstorms failed to predict, and asked to ask next
+    if missed:
+        pack += ("\n\n## What earlier brainstorms missed (asks the user had to make that no idea predicted; data)\n"
+                 + "\n".join(f"- {i}: {t}" for i, t in missed))
+    if left:
+        pack += "\n\n## Questions earlier brainstorms left (answer them through your lens)\n" + "\n".join(f"- {q}" for q in left)
+    lenses = list(dict.fromkeys(args.lens or DEFAULT_LENSES + ["blind spots"] * bool(missed)))
     if "oblique provocation" in lenses:  # T-0628: its provocations are the project's own lessons
         lessons = [ln.strip("- ").strip() for b in sorted(c.load_briefs(p), key=lambda b: b.meta.get("updated") or "")
                    for ln in b.section("Lessons").splitlines() if ln.strip()][-8:]
@@ -851,7 +918,8 @@ def cmd_ideas(args):
                    + "".join(f"- {t} — {k}\n" for t, k in kills.items()) if kills else ""))
     with open(os.path.join(out_dir, "ideas.json"), "w", encoding="utf-8") as f:  # T-0607: for fm taste's keep rates
         json.dump({"lenses": {r["lens"]: r["titles"] for r in results if r["ok"]}, "crossbred": bred,
-                   "kills": kills, "created": c.now()}, f)
+                   "kills": kills, "created": c.now(),
+                   "questions": list(dict.fromkeys(q for r in results if r["ok"] for q in r.get("questions", [])))}, f)
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:  # T-0959: what made this run
         json.dump({"pack_sha256": pack_sha, "model": args.model, "lenses": lenses, "seen": args.seen or [],
                    "rounds": rounds, "created": c.now(), **({"cache": cache} if any(cache.values()) else {})}, f)

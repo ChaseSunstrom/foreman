@@ -224,6 +224,7 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 | **Learns a fix once** | A failure that was fixed before gets its fix offered next time, in any project | `fm fix list` |
 | **Changes many spots** | Batches of exact replacements, applied all or none, inside the task's scope | `fm edit` · `fm sub` |
 | **Improves itself** | Rule changes backtested on your real sessions; self-improvement kept only when evals agree | `/foreman:improve` |
+| **Seeds itself** | Genesis: generations toward one goal you write; a rewrite stays only if it closed more exam scenarios | `fm genesis step` |
 | **Stays light** | Only the guard and write validators run in line; hooks take about 20 ms | `fm doctor` |
 
 <details>
@@ -321,6 +322,15 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 - `fm backtest --rule/--fix/--card` shows how often a change would have fired on your real recent sessions before it ships; `fm rule add … --moves corrections --by 30` makes a change a trial the digest grades later; `fm adopt` learns from a repo's history of reverts and fixes.
 - `fm friction` digests Foreman's own friction (`--minutes`: an estimate of the minutes it cost this week), and `fm burden --by-verb` lists the verbs nobody calls. Lessons come back as tripwires on related work.
 - `/foreman:improve` builds candidates in a separate git worktree, runs the `claude plugin eval` suite against the live version, and only proposes changes that score at least as well. You approve every merge, and it can't edit its own guard, permission settings, rules or eval suite without your authorization.
+
+</details>
+
+<details>
+<summary><b>Seeds itself</b></summary>
+
+- Genesis runs generations toward one goal you write once (gen-0: your goals, MUST and NEVER lines). `fm genesis draft "<line>"` writes a whole gen-0 from one line to start from; `fm genesis init` saves it and `/foreman:genesis` drives it.
+- `fm genesis step` names the next action from the tower's files alone, so a killed session picks up where it stopped. Each generation's seed is checked against gen-0 word for word (`fm genesis drift`), then the whole project is swept (`fm genesis sweep`); a rewrite is kept only if it closed more exam scenarios than its parent (`fm genesis select`), and three reverted generations in a row stop the tower and hand it back to you.
+- With 10 or more tasks done and the queue drained, `fm scout` offers Genesis once (by itself under full autonomy). It waits on your own yes whatever the autonomy, and a no is never asked again. The site's Genesis page shows every generation live (`fm genesis live on`).
 
 </details>
 
