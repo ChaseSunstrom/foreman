@@ -3516,7 +3516,8 @@ def _claims_gate(pl, g):
 
 
 def _clauses_gate(p, pl, g, closed=()):
-    """T-2138: a done claim while the last request has clauses fm clauses mapped to no task, held once per set."""
+    """T-2138: a done claim while the last request has clauses no task covers, held once per clause (T-2146): a
+    stale list can't hold later turns again, so a new prompt needn't clear it (T-2151)."""
     if pl.get("stop_hook_active") or not claims_done(pl.get("last_assistant_message"), closed=closed):
         return None
     meta = c.read_meta(p).get("clauses") or {}
