@@ -35,7 +35,7 @@ class FindRenders(ForemanTestCase):
                         for f in found:
                             self.assertTrue(any(fmexam._matches(f, d) for d in key["defects"]), f)
                         for d in key["defects"]:
-                            if d["kind"] in COVERED:
+                            if d["kind"] in COVERED and not d.get("done"):  # a done item (resume) isn't planted
                                 self.assertTrue(any(fmexam._matches(f, d) for f in found), (d, found))
 
 
