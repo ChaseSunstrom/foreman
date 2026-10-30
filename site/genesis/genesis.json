@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T15:39:54Z",
- "rev": "b38f9f3a",
+ "updated": "2026-10-30T16:10:43Z",
+ "rev": "98381382",
  "capabilities": [
   {
    "n": 1,
@@ -805,22 +805,22 @@
     {
      "id": "T-2166",
      "title": "Cold read on every tower write: fm genesis put (and the tower's own writers: exam_line,…",
-     "status": "active",
+     "status": "done",
      "type": "FEATURE",
      "tier": "M",
      "steps": 4,
-     "done": 3,
-     "current": "re-put the live tower files through the read; revise failures"
+     "done": 4,
+     "current": ""
     },
     {
      "id": "T-2167",
      "title": "Every user steer is a standing rule plus an automatic check: fm decide takes --check…",
-     "status": "captured",
+     "status": "planned",
      "type": "FEATURE",
      "tier": "M",
-     "steps": 0,
+     "steps": 4,
      "done": 0,
-     "current": ""
+     "current": "red tests: --check records the tag and refuses an off-list command; steer_checks fails a rule with no check and one whose check fails; sweep and doctor show it"
     }
    ],
    "rules": [
