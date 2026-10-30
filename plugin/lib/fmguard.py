@@ -54,6 +54,8 @@ USER_ONLY_FM = {
                     "move", "fm risk set --day N --because \"<why>\""),  # T-1080
     "home": ("import", "fm home import is the user's to run: it writes a whole Foreman state, settings included, from "
                        "a file", "fm home import FILE"),  # T-1665
+    "prove": ("--yes-run", "fm prove --yes-run is the user's to run: it runs the tests of a tree whose HEAD isn't "
+                           "their commit, as them, with the network", "fm prove PATH --yes-run"),  # T-2122
 }
 def _user_only_hit(word, arg):
     """A word matches itself; a --flag also matches argparse's abbreviations (--y, --ye) and --flag=value."""

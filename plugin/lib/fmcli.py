@@ -6960,6 +6960,12 @@ def _build_parser(only=None):
                    "under the floor is muted (T-2125)")
     s.add_argument("--capture", type=int, metavar="N", help="file up to N new leads, best first (none held back), as "
                    "discovered tasks tagged finder=; what becomes of them is that finder's precision")
+    s = add("prove", lazy("fmprove", "cmd_prove"), tier=("Finding your way", 458), help="fm find's candidates as proof "
+            "tickets or leads: an untested function stubbed on a throwaway copy while the suite stays green, docs/dep/secret "
+            "re-found cold; runs the tree's tests, so only in a tree you commit to (T-2122); exit 1 when one is proven")
+    s.add_argument("path", nargs="?", default=".", help="the tree to prove in (default: here)")
+    s.add_argument("--limit", type=int, default=10, help="prove the best N candidates (default 10)")
+    s.add_argument("--yes-run", action="store_true", help="run even in a tree with none of your recent commits")
     s = add("exam", lazy("fmexam", "cmd_exam"), tier=("Finding your way", 456), help="a seeded exam of throwaway repos in six "
             "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
     s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard"),
