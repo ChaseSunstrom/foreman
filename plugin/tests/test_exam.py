@@ -164,6 +164,36 @@ if "--permission-mode" in argv:  # a session arm: it answers in its reply and ch
     sys.exit(0)
 prompt = sys.stdin.read()  # the tool-less author: plants an off-by-one in clamp, and its test
 name = re.search(r"def (\w+)\(x, lo, hi\)", prompt).group(1)
+if any("4 to 6 items" in a for a in argv):  # T-2149: a goal or resume key, 5 items (or a broken one per STUB_MODE)
+    tot, lab = re.search(r"def (\w+)\(xs\):\n    return sum", prompt).group(1), re.search(r"def (\w+)\(s, width\)", prompt).group(1)
+    items = [{"kind": "code", "function": name, "source": f"def {name}(x, lo, hi):\n    return max(lo, x if x == hi + 1 else min(x, hi))\n",
+              "test": f"assert {name}(4, 0, 3) == 3", "says": f"{name}() lets hi + 1 through"},
+             {"kind": "code", "function": tot, "source": f"def {tot}(xs):\n    return sum(xs) if len(xs) != 1 else 0\n",
+              "test": f"assert {tot}([7]) == 7", "says": f"{tot}() drops a lone item"},
+             {"kind": "test", "function": lab, "says": f"nothing tests {lab}()"},
+             {"kind": "readme", "line": "Every helper raises nothing on empty input.", "pattern": "raises nothing", "says": "the README skips empty input"},
+             {"kind": "readme", "line": "Needs no packages beyond the standard library.", "pattern": "(?i)needs no packages", "says": "the README skips setup"}]
+    mode = os.environ.get("STUB_MODE")
+    if mode == "few":
+        items = items[:3]
+    elif mode == "samefn":
+        items[1] = dict(items[0], says="again")
+    elif mode == "badre":
+        items[3]["pattern"] = "("
+    elif mode == "readmematch":
+        items[3]["pattern"] = "Helpers|raises nothing"
+    elif mode == "many":
+        items += items[3:5]
+    elif mode == "nokind":
+        del items[2]
+    elif mode == "badkind":
+        items[2]["kind"] = "docs"
+    elif mode == "dupreadme":
+        items[4] = dict(items[3])
+    elif mode == "nested":
+        items[3]["pattern"] = "(r+)+aises nothing"
+    print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.01, "result": json.dumps({"items": items})}))
+    sys.exit(0)
 want = 4 if os.environ.get("STUB_MODE") == "weak" else 3  # weak: a test that fails on the clean module too
 plant = {"function": name, "source": f"def {name}(x, lo, hi):\n    return max(lo, x if x == hi + 1 else min(x, hi))\n",
          "test": f"assert {name}(4, 0, 3) == {want}\n    assert {name}(2, 0, 3) == 2",  # only line 1 trimmed, as models send
@@ -246,14 +276,15 @@ class ExamAuthors(ForemanTestCase):
         goal = next(k for k in keys.values() if k["kind"] == "goal")
         res = next(s for s in r["scenarios"] if s["kind"] == "resume")
         resume = keys[res["id"]]
-        self.assertEqual([d["kind"] for d in goal["defects"]], ["bug", "untested", "docs"])
-        self.assertIn("lets hi + 1 through", goal["defects"][0]["text"])  # the child's missing piece
+        self.assertEqual([d["kind"] for d in goal["defects"]], ["code1", "code2", "test3", "readme4", "readme5"])
+        self.assertIn("lets hi + 1 through", goal["defects"][0]["text"])  # the child's key, no template item (T-2149)
+        self.assertEqual([d["tf"] for d in goal["defects"]], [True, True, False, False, False])
         self.assertEqual(goal["request"], fmexam.REQUESTS["goal"])  # the template goal, never the child's report
         self.assertEqual(resume["request"], "continue")
-        self.assertEqual([d.get("done", False) for d in resume["defects"]], [False, False, True])
+        self.assertEqual([d.get("done", False) for d in resume["defects"]], [False, False, True, False, False])
         plan = read_text(os.path.join(res["repo"], "PLAN.md"))
         self.assertIn("Goal: " + fmexam.REQUESTS["goal"], plan)
-        self.assertEqual((plan.count("- [x] "), plan.count("- [ ] ")), (1, 2))
+        self.assertEqual((plan.count("- [x] "), plan.count("- [ ] ")), (1, 4))
         self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
         o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
         self.assertEqual(sorted(o["closed"]["train"] + o["closed"]["holdout"]), sorted(keys))
@@ -264,11 +295,11 @@ class ExamAuthors(ForemanTestCase):
         self.assertEqual((pl["false_done"], pl["false_alarms"], pl["closed"]), (2, 0, {"train": [], "holdout": []}))
         self.assertIn("2 false done", fmexam.summary(pl))
         self.assertIn("\ncontinue\n\n(Unattended", "\n" + read_text(self.log + ".prompt"))
-        work = os.path.join(os.path.dirname(os.path.dirname(res["repo"])), "work", "oracle", res["id"], "README.md")
+        work = os.path.join(os.path.dirname(os.path.dirname(res["repo"])), "work", "oracle", res["id"], "test_app.py")
         names = resume["names"]
         txt = read_text(work)
-        with open(work, "w") as f:  # the oracle's resume undoes the done README item
-            f.write(txt.replace(f"`{names['page']}(", f"`{names['alt']}("))
+        with open(work, "w") as f:  # the oracle's resume undoes the done test item; the suite still passes
+            f.write(txt.replace(f"{names['label']}(", f"{names['label']} ("))
         g = self.fm_json("exam", "grade", r["run"], "--agent", "oracle")
         self.assertEqual((g["broken"], g["false_done"]), (1, 1))
         self.assertNotIn(res["id"], g["closed"]["train"] + g["closed"]["holdout"])
@@ -281,6 +312,15 @@ class ExamAuthors(ForemanTestCase):
         nr = self.fm_json("exam", "gen", "--seed", "4", "--per-kind", "1", "--lang", "python", "--kind", "goal,bug",
                           "--author", "child", env=dict(self.env, STUB_MODE="norequest"))
         self.assertEqual(([s["kind"] for s in nr["scenarios"]], len(nr["dropped"])), (["goal"], 1))  # a bug needs its report
+        for mode, why in (("few", "3 items, not 4 to 6"), ("samefn", "two code items on one function"),
+                          ("badre", "bad README regex"), ("readmematch", "readme4 check passes on the planted repo"),
+                          ("many", "7 items, not 4 to 6"), ("nokind", "one code, one test and one README item"),
+                          ("badkind", "no code, test or README item"), ("dupreadme", "two README items close with one line"),
+                          ("nested", "repeats a group")):
+            d = self.fm_json("exam", "gen", "--seed", "4", "--per-kind", "1", "--lang", "python", "--kind", "goal",
+                             "--author", "child", env=dict(self.env, STUB_MODE=mode))
+            self.assertEqual(d["scenarios"], [], mode)
+            self.assertIn(why, d["dropped"][0]["why"], mode)
 
     def test_a_child_scenario_that_fails_check_is_dropped(self):
         r = self.fm_json("exam", "gen", "--seed", "1", "--per-kind", "2", "--lang", "python", "--kind", "bug",
