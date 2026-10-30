@@ -23,7 +23,20 @@ assume yes.
 
 3. **Ask which of those they want**, and build the command from the answers, for example
    `curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash -s -- --no-plugins --bypass`.
-   Run it only after they agree.
+   Run it only after they agree. The options (`install.sh --help` prints the same):
+
+   | Flag | What it does |
+   |---|---|
+   | `--no-plugins` | skip the third-party plugin setup |
+   | `--no-mod` | skip the foreman-ui mod (status band, dashboard pane, toasts) |
+   | `--no-wiring` | leave `~/.claude` alone: no status line wrapper, deny rules, `CLAUDE.md` block, rules link or `fm` link |
+   | `--bypass` | make `bypassPermissions` the default permission mode without asking |
+   | `--no-bypass` | don't set it and don't ask |
+   | `--desktop` | also install Foreman Desktop from its newest release |
+   | `--build` | open Claude Code on the Foreman build (rebuild or resume from `BUILD_PROMPT.md`) |
+   | anything else | passed through to `setup-plugins.sh` (for example `--security`, `--docs`, `--apply-conflicts`) |
+
+   Environment: `FOREMAN_REPO` (git URL to clone), `FOREMAN_HOME` (where to put it, default `~/.claude/foreman`).
 
 4. **Check it worked:** `~/.claude/foreman/plugin/bin/fm doctor`. It lists only warnings and failures; "fm doctor: OK"
    at the end means it's healthy. Fix or explain anything it reports.
