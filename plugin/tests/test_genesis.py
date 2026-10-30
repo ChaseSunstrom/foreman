@@ -1611,6 +1611,12 @@ class GenesisRead(ForemanTestCase):
         self.assertNotIn("coverage.md", read_text(os.path.join(self.p.dir, "genesis-reads.json")))  # and a pass clears it
         self.assertEqual(self.code(gone, f"FAIL: {old}\nWHY: stray"), 1)  # a quote of no line it holds still fails closed
 
+    def test_a_stray_quote_is_shown_so_the_writer_can_see_what_it_misquoted(self):
+        # T-2229: "? a line coverage.md doesn't hold" hid the quote, so 8 strays a read couldn't be told apart
+        r, _ = self.put(self.COV, "FAIL: - plan row 11: the planner\nWHY: templated")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('? "- plan row 11: the planner" names no line coverage.md holds — reader: templated', r.stderr)
+
     def test_a_quote_without_its_backticks_or_cut_with_an_ellipsis_still_names_its_line(self):
         # T-2228: the reader drops markdown and cuts long lines short; such a quote read as stray and failed closed
         cov = self.COV + "- plan × CLI: F: `fm plan` writes each step's check before the step runs\n"
