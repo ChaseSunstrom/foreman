@@ -801,7 +801,7 @@
 - find × site: F: site/genesis/gap-map.md — the gap map is published on the Genesis page
 - find × CLI: F: plugin/lib/fmgenesis.py — fm genesis check enforces the tower's gap-map shape
 - find × headless/server: I: Have fm run and fm serve surface gaps in the genesis tower, exam and self-written seeds (plugin/lib/fmserve.py)
-- understand × Claude Code: F: /foreman:genesis skill (plugin/skills/genesis/SKILL.md) — See it: fm genesis status prints the tower
+- understand × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — See it: fm genesis status prints the tower
 - understand × fm code: I: Have fm code explain what is known about the genesis tower, exam and self-written seeds (plugin/lib/fmcode.py)
 - understand × other agents: I: Give Codex, Gemini and opencode a shim to explain what is known about the genesis tower, exam and self-written seeds (plugin/lib/fmagents.py)
 - understand × MCP: I: Add a read-only MCP tool to explain what is known about the genesis tower, exam and self-written seeds (plugin/lib/fmmcp.py)
@@ -809,7 +809,7 @@
 - understand × site: F: plugin/lib/fmgenesis.py — fm genesis status and export show the tower and its generations
 - understand × CLI: F: plugin/lib/fmgenesis.py — fm genesis status and export show the tower and its generations
 - understand × headless/server: I: Have fm run and fm serve explain what is known about the genesis tower, exam and self-written seeds (plugin/lib/fmserve.py)
-- plan × Claude Code: F: /foreman:genesis skill (plugin/skills/genesis/SKILL.md) — draft, init, spec and the seed stage, driven by fm genesis step
+- plan × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — draft, init, spec and the seed stage, driven by fm genesis step
 - plan × fm code: I: Have fm code plan the genesis tower, exam and self-written seeds up front (plugin/lib/fmcode.py)
 - plan × other agents: I: Give Codex, Gemini and opencode a shim to plan the genesis tower, exam and self-written seeds up front (plugin/lib/fmagents.py)
 - plan × MCP: I: Add a read-only MCP tool to plan the genesis tower, exam and self-written seeds up front (plugin/lib/fmmcp.py)
@@ -817,7 +817,7 @@
 - plan × site: F: site/genesis/gen-1/seed.md — generation 1's seed is published
 - plan × CLI: F: plugin/lib/fmgenesis.py — fm genesis put stores a self-written seed for the next generation
 - plan × headless/server: I: Have fm run and fm serve plan the genesis tower, exam and self-written seeds up front (plugin/lib/fmserve.py)
-- build × Claude Code: F: /foreman:genesis skill (plugin/skills/genesis/SKILL.md) — the mission, intake and build stages, each brief closed with fm task finish
+- build × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — the mission, intake and build stages, each brief closed with fm task finish
 - build × fm code: I: Have fm code act on the genesis tower, exam and self-written seeds while building (plugin/lib/fmcode.py)
 - build × other agents: I: Give Codex, Gemini and opencode a shim to act on the genesis tower, exam and self-written seeds while building (plugin/lib/fmagents.py)
 - build × MCP: I: Add a read-only MCP tool to act on the genesis tower, exam and self-written seeds while building (plugin/lib/fmmcp.py)
@@ -825,7 +825,7 @@
 - build × site: N/A: the marketing site builds none of the user's work
 - build × CLI: F: plugin/lib/fmexam.py — fm exam gen builds a generated exam from the repo
 - build × headless/server: I: Have fm run and fm serve act on the genesis tower, exam and self-written seeds while building (plugin/lib/fmserve.py)
-- verify × Claude Code: F: /foreman:genesis skill (plugin/skills/genesis/SKILL.md) — drift, sweep and fm genesis exam on the held-out third
+- verify × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — drift, sweep and fm genesis exam on the held-out third
 - verify × fm code: I: Have fm code check the genesis tower, exam and self-written seeds with evidence (plugin/lib/fmcode.py)
 - verify × other agents: I: Give Codex, Gemini and opencode a shim to check the genesis tower, exam and self-written seeds with evidence (plugin/lib/fmagents.py)
 - verify × MCP: I: Add a read-only MCP tool to check the genesis tower, exam and self-written seeds with evidence (plugin/lib/fmmcp.py)
@@ -833,7 +833,7 @@
 - verify × site: F: site/genesis/genesis.js — each generation's drift and sweep verdicts on the Genesis page (T-2105)
 - verify × CLI: F: plugin/lib/fmgenesis.py — fm genesis drift (seal + cold read), sweep (§7 + privilege diff) and exam score each generation (T-2104, T-2112, T-2113)
 - verify × headless/server: I: Have fm run and fm serve check the genesis tower, exam and self-written seeds with evidence (plugin/lib/fmserve.py)
-- ship × Claude Code: F: /foreman:genesis skill (plugin/skills/genesis/SKILL.md) — the next seed waits on a clean sweep
+- ship × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — the next seed waits on a clean sweep
 - ship × fm code: I: Have fm code gate the genesis tower, exam and self-written seeds before shipping (plugin/lib/fmcode.py)
 - ship × other agents: I: Give Codex, Gemini and opencode a shim to gate the genesis tower, exam and self-written seeds before shipping (plugin/lib/fmagents.py)
 - ship × MCP: I: Add a read-only MCP tool to gate the genesis tower, exam and self-written seeds before shipping (plugin/lib/fmmcp.py)
@@ -849,7 +849,7 @@
 - operate × site: N/A: a static site cannot watch a running project
 - operate × CLI: F: plugin/lib/fmgenesis.py — fm genesis live on republishes after each tower change
 - operate × headless/server: I: Have fm run and fm serve watch the genesis tower, exam and self-written seeds while running (plugin/lib/fmserve.py)
-- learn × Claude Code: F: /foreman:genesis skill (plugin/skills/genesis/SKILL.md) — select writes lineage.md; a stopped tower reads lineage and critiques before the next seed
+- learn × Claude Code: F: plugin/skills/genesis/SKILL.md (the /foreman:genesis skill) — select writes lineage.md; a stopped tower reads lineage and critiques before the next seed
 - learn × fm code: I: Have fm code record what the genesis tower, exam and self-written seeds taught (plugin/lib/fmcode.py)
 - learn × other agents: I: Give Codex, Gemini and opencode a shim to record what the genesis tower, exam and self-written seeds taught (plugin/lib/fmagents.py)
 - learn × MCP: I: Add a read-only MCP tool to record what the genesis tower, exam and self-written seeds taught (plugin/lib/fmmcp.py)
