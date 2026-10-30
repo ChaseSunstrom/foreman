@@ -224,7 +224,8 @@ IDEAS = "fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen"
 def step(p):
     """The tower's one next action from its files alone, in gen-0 §3's order (gen-0, seed, each Mission's doc, briefs
     and critique, selection, drift, sweep, then the next seed or the report). Read-only, so a rerun after a kill at any
-    point names the same action. kind: ok, blocked (the brief waits), fatal (the tower can't go on as filed), done."""
+    point names the same action. kind: ok, blocked (the brief waits), fatal (the tower can't go on as filed), stopped
+    (three reverted generations in a row: no new seed by itself), done."""
     d = home(p)
     def act(stage, gen, action, command, kind="ok"):
         return {"stage": stage, "gen": gen, "action": action, "command": command, "kind": kind}
@@ -287,9 +288,7 @@ def step(p):
         doc, path = _doc(d, f"{pre}{stage}.md"), os.path.join(d, f"{pre}{stage}.md")
         if doc is None:
             return act(stage, n, f"{what} into {pre}{stage}.md", f"fm genesis {stage} {n}")
-        if stage == "drift" and any(os.path.getmtime(os.path.join(d, pre, f)) > os.path.getmtime(path)
-                                    for f in os.listdir(os.path.join(d, pre))
-                                    if f == "seed.md" or f.startswith("mission-")):
+        if stage == "drift" and _stale(d, pre):
             return act(stage, n, "the seed or a Mission changed after drift.md: rerun the drift check",
                        f"fm genesis drift {n}")
         if not CLEAN.search(doc):
@@ -298,10 +297,22 @@ def step(p):
     if not rows and prev is not None and not ROW.findall(prev):
         return act("report", n, "two generations in a row found no tier 3-4 gap: write the final report (§8)",
                    "fm genesis put report.md --file -")
+    verdicts = {h: body.lstrip() for h, body in _sections(_doc(d, "lineage.md") or "")}
+    if n >= 3 and all(verdicts.get(f"gen-{k}", "").startswith("- reverted") for k in (n - 2, n - 1, n)):  # T-2105
+        return act("stopped", n, f"gens {n - 2}-{n} were all reverted: the rewrites stopped closing scenarios. Read "
+                                 "lineage.md and the critiques, then write the next seed by hand or file the report",
+                   f"fm genesis put gen-{n + 1}/seed.md --file -", "stopped")
     return act("seed", n + 1, f"write gen-{n + 1}/seed.md from the kept ancestor's seed, gen-{n}'s critiques, open "
                               f"coverage cells and not-yet items" + (" (every 3rd generation: fm evolve --runs 3 first)"
                                                                      if n % 3 == 0 else ""),
                f"fm genesis seed {n + 1}")
+
+
+def _stale(d, pre):
+    """The seed or a Mission changed after drift.md: its verdict no longer counts."""
+    path = os.path.join(d, pre, "drift.md")
+    return os.path.isfile(path) and any(os.path.getmtime(os.path.join(d, pre, f)) > os.path.getmtime(path)
+                                        for f in os.listdir(os.path.join(d, pre)) if f == "seed.md" or f.startswith("mission-"))
 
 
 def _check_lines(r, limit=6):
@@ -391,7 +402,11 @@ def export(p, out):
             doc = docs.get(f"{pre}mission-{m['name']}.md", "")
             m.update(written=bool(doc), critiqued=m["name"] in g["critiques"], tasks=tasks(doc))
         rules = re.search(r"^## Standing rules.*?\n(.*?)(?=^## |\Z)", seed, re.M | re.S)
-        gens.append({"n": g["n"], "seed": g["seed"], "missions": missions, "critiques": g["critiques"],
+        verdict = {k: (re.findall(r"^Verdict: (\w+)", docs.get(f"{pre}{k}.md", ""), re.M) or [None])[0]
+                   for k in ("drift", "sweep")}
+        if verdict["drift"] and _stale(d, pre):  # step reruns it, so the page doesn't call it clean
+            verdict["drift"] = "stale"
+        gens.append({"n": g["n"], "seed": g["seed"], "missions": missions, "critiques": g["critiques"], **verdict,
                      "tasks": tasks(seed),
                      "rules": [" ".join(r.split()) for r in re.split(r"^\d+\. ", rules.group(1), flags=re.M)[1:]]
                      if rules else []})

@@ -24,7 +24,7 @@ SOURCES_STALE_S = 7 * 86400
 _VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 SLOW_GAP_S = 6 * 3600  # the drain asks for the slow probes at most this often
 
-Finding = collections.namedtuple("Finding", "key title type tier why")
+Finding = collections.namedtuple("Finding", "key title type tier why confirm", defaults=("",))  # confirm: why it waits on the user's own yes
 
 
 def _ver(v):
@@ -95,6 +95,25 @@ def probe_brainstorm(p, ctx):
     return [Finding(f"brainstorm:{week}", "Brainstorm round: what Foreman should build or fix next", "RESEARCH", "M",
                     "the queue and inbox are empty and no brainstorm ran this week: /foreman:brainstorm, a cheap "
                     "probe first (two lenses), ground every idea, queue the ones worth building")]
+
+
+def probe_genesis(p, ctx):
+    """T-2105: a drained queue in a project with a track record (10+ done tasks) and no Genesis tower: offer one, once
+    ever (the key never repeats). It waits on the user's own yes (meta confirm) whatever the autonomy. Blocked and
+    deferred work doesn't hold it back: that waits on the user too, and so does the offer."""
+    import fmgenesis
+    if "genesis:start" in (c.read_meta(p).get("scout_keys") or {}):  # spent: skip loading the archive
+        return []
+    briefs = c.load_briefs(p, include_archive=True)
+    if any(b.status in c.RUNNABLE or b.status == "captured" for b in briefs) or \
+            os.path.isfile(os.path.join(fmgenesis.home(p), "gen-0.md")) or sum(b.status == "done" for b in briefs) < 10:
+        return []
+    return [Finding("genesis:start", "Start Genesis here? Generations toward one goal you write, to a final report",
+                    "FEATURE", "L", "the queue is drained and this project has a track record: Genesis runs generations "
+                    "toward one goal the user writes (gen-0). Ask for their goal and MUST/NEVER lines; with only a line, "
+                    "fm genesis draft \"<line>\" prints a whole gen-0 to show them; fm genesis init saves it, then "
+                    "/foreman:genesis drives it. A no is a drop: it is never offered again",
+                    confirm="Genesis is a long run toward a goal only you can write")]
 
 
 def probe_friction(p, ctx):
@@ -245,7 +264,8 @@ def probe_cc_changelog(p, ctx):
     return out
 
 
-QUICK = [("claude-code", probe_claude_code), ("friction", probe_friction), ("brainstorm", probe_brainstorm)]
+QUICK = [("claude-code", probe_claude_code), ("friction", probe_friction), ("brainstorm", probe_brainstorm),
+         ("genesis", probe_genesis)]
 SLOW = [("claude-code", probe_claude_code), ("cc changelog", probe_cc_changelog), ("library gaps", probe_lib_gaps),
         ("doctor", probe_doctor), ("sources", probe_sources), ("friction", probe_friction),
         ("brainstorm", probe_brainstorm)]
@@ -321,6 +341,9 @@ def capture(p, findings, dry=False):
                 continue
             b = fmcli._create(p, c.fit(f.title, 120), f.type, f.tier, "captured", raw=f"Found by fm scout: {f.why}",
                               source="scout")
+            if f.confirm:
+                b.meta.update(confirm=True, confirm_why=f.confirm)
+                c.save_brief(p, b, touch=False)
             c.log_event(p, "capture", task=b.id, data={"source": "scout", "key": f.key})
             keys[f.key] = b.id
             made.append(b.id)

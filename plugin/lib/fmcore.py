@@ -3463,6 +3463,8 @@ def _next_for(p, briefs=None):
                 g = fmgenesis.step(p)
             except Exception:  # an unreadable tower never costs the next action
                 g = {"kind": "done"}
+            if g["kind"] == "stopped":  # T-2105: the breaker hands the tower back instead of driving it
+                return None, "idle", f"queue is empty; Genesis stopped at gen {g['gen']}: {g['action']}" + waits
             if g["kind"] != "done":
                 return None, "genesis", (f"Genesis gen {g['gen']}: {g['action']} → {g['command']} (fm genesis step)"
                                          + waits)

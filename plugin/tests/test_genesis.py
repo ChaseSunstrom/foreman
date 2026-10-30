@@ -1058,3 +1058,94 @@ class GenesisSweep(ForemanTestCase):
         r = self.fm("genesis", "sweep", "1", check=False)
         self.assertEqual(r.returncode, 1)
         self.assertIn("Verdict: red", read_text(os.path.join(self.tower, "gen-1", "sweep.md")))
+
+
+class GenesisPropose(ForemanTestCase):
+    """T-2105: Genesis offers itself once, through fm scout, when a project with a track record drains its queue; the
+    offer waits on the user's own yes. A tower whose rewrites keep failing stops instead of seeding forever."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        import fmcore as c
+        self.p = c.find_project(self.repo)
+
+    def done(self, n):
+        import fmcli
+        for i in range(n):
+            fmcli._create(self.p, f"shipped {i}", "FIX", "S", "done")
+
+    def probe(self):
+        import fmscout
+        return fmscout.probe_genesis(self.p, {})
+
+    def test_offered_once_after_ten_done_tasks_and_it_waits_on_the_users_yes(self):
+        import fmcore as c
+        import fmscout
+        self.done(9)
+        self.assertEqual(self.probe(), [])  # nine is no track record yet
+        self.done(1)
+        found = self.probe()
+        self.assertEqual([(f.key, f.type, f.tier) for f in found], [("genesis:start", "FEATURE", "L")])
+        self.assertIn("fm genesis draft", found[0].why)
+        tid, = fmscout.capture(self.p, found)
+        b = c.find_brief(self.p, tid)
+        self.assertTrue(b.meta.get("confirm"))
+        self.assertIn("goal only you can write", b.meta.get("confirm_why"))  # the reason fm next shows, not a stock one
+        self.assertTrue(c.needs_approval(b, "full"))  # full autonomy never starts it on its own
+        self.assertEqual(self.probe(), [])  # the offer is open: nothing more
+        self.fm("task", "drop", tid, "not here")
+        self.assertEqual(self.probe(), [])  # a no stays a no: the key is spent, so the archive isn't even loaded
+
+    def test_no_offer_with_work_queued_or_a_tower_filed(self):
+        import fmgenesis
+        self.done(10)
+        tid = self.fm_json("task", "new", "more work", "--type", "FIX", "--tier", "S", "--step", "x")["id"]
+        self.assertEqual(self.probe(), [])
+        self.fm("task", "block", tid, "waits on a vendor")
+        self.assertEqual(len(self.probe()), 1)  # a blocked task doesn't hold the queue
+        fmgenesis.init(self.p, GEN0.encode())
+        self.assertEqual(self.probe(), [])
+
+    def test_three_reverted_generations_stop_the_tower_and_fm_next_says_so(self):
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0.encode())
+        clean = "# x\n\nVerdict: clean\n"
+        for n in (1, 2, 3):  # gen 2's seed still names a gap, so no report is due: the tower would seed gen 4
+            for name, text in (("seed.md", SEED if n == 2 else "# Seed\ngen-0\n"), ("drift.md", clean),
+                               ("sweep.md", clean)):
+                fmgenesis.put(self.p, f"gen-{n}/{name}", text)
+        sec = "## gen-{n}\n- {v}: why\n- seed base: gen-1\n\n"
+        fmgenesis.put(self.p, "lineage.md", "# Lineage\n\n" + "".join(
+            sec.format(n=n, v=v) for n, v in ((1, "baseline"), (2, "reverted"), (3, "reverted"))))
+        self.assertEqual(fmgenesis.step(self.p)["stage"], "seed")  # two reverts in a row: it keeps trying
+        fmgenesis.put(self.p, "lineage.md", "# Lineage\n\n" + "".join(
+            sec.format(n=n, v="reverted") for n in (1, 2, 3)))
+        s = fmgenesis.step(self.p)
+        self.assertEqual((s["stage"], s["kind"], s["gen"]), ("stopped", "stopped", 3), s)
+        self.assertIn("reverted", s["action"])
+        nxt = self.fm("next").stdout
+        self.assertIn("queue is empty", nxt)
+        self.assertIn("Genesis stopped at gen 3", nxt)
+        fmgenesis.put(self.p, "gen-4/seed.md", "# Seed\ngen-0\n")  # a hand-written seed starts it again
+        self.assertNotEqual(fmgenesis.step(self.p)["kind"], "stopped")
+
+    def test_the_site_shows_each_generations_drift_and_sweep_verdict(self):
+        import json
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0.encode())
+        fmgenesis.put(self.p, "gen-1/seed.md", "# Seed\ngen-0\n")
+        fmgenesis.put(self.p, "gen-1/drift.md", "# Drift\nVerdict: clean\n")
+        fmgenesis.put(self.p, "gen-1/sweep.md", "# Sweep\nVerdict: red\n")
+        site = os.path.join(self.tmp, "site")
+
+        def gen1():
+            with open(fmgenesis.export(self.p, site)["path"]) as f:
+                return {k: g.get(k) for g in json.load(f)["generations"] if g["n"] == 1 for k in ("drift", "sweep")}
+        self.assertEqual(gen1(), {"drift": "clean", "sweep": "red"})
+        seed = os.path.join(fmgenesis.home(self.p), "gen-1", "seed.md")
+        os.utime(seed, (os.path.getmtime(seed) + 60,) * 2)  # edited after its drift check: step reruns it
+        self.assertEqual(gen1()["drift"], "stale")
+        js = read_text(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                    "site", "genesis", "genesis.js"))
+        for want in ("g.drift", "g.sweep", '"Drift & sweep"', '["drift", "sweep"]'):
+            self.assertIn(want, js)
