@@ -810,13 +810,15 @@ SESSIONS = ("foreman", "plain", "genesis")  # a claude session in a copy of the 
 ASK = ("\n\n(Unattended exam run: the user is away; work in this repo, deciding with your defaults. End your reply with one "
        'JSON object: {"findings": [{"file": ..., "symbol": ..., "says": ..., "test": optional path of a test in this '
        'repo that fails before your fix}], "notes": [...], "done": true or false}.)')
+AGAIN = ('Reply now with only the JSON object the task asked for: {"findings": [{"file": ..., "symbol": ..., "says": ..., '
+         '"test": optional}], "notes": [...], "done": true or false}, listing every defect you found or fixed here.')
 GENESIS = ("\n\n(Run one Genesis generation on this repo for the request above: fm genesis draft with the request, piped to "
            "fm genesis init --file -, then follow fm genesis step until it names select for gen 1.)")
 
 
-def _reply(text):
-    """The last JSON object with findings in a session's reply, else an empty answer."""
-    dec, out = json.JSONDecoder(), {}
+def _answer(text):
+    """The last JSON object with a findings key in a session's reply, or None."""
+    dec, out = json.JSONDecoder(), None
     for m in re.finditer(r"\{", text):
         try:
             v = dec.raw_decode(text, m.start())[0]
@@ -824,14 +826,22 @@ def _reply(text):
             continue
         if isinstance(v, dict) and "findings" in v:
             out = v
+    return out
+
+
+def _reply(text):
+    """The last JSON object with findings in a session's reply, else an empty answer."""
+    out = _answer(text) or {}
     return {"findings": [f for f in out.get("findings") or [] if isinstance(f, dict)] if isinstance(out.get("findings"), list) else [],
             "notes": out["notes"] if isinstance(out.get("notes"), list) else [], "done": out.get("done") is True}
 
 
 def _session_arm(agent, base, key, work, model, budget, timeout, request=None):
     """One session in a temp copy of the repo (with .git), outside Foreman's state where the guard blocks edits; the
-    tree it leaves is copied back to work for grading."""
+    tree it leaves is copied back to work for grading. T-2192: a reply with no findings object (s31-006's Rust
+    sessions fixed the planted bugs, then ended on prose) gets one resumed turn for the JSON, the same for every arm."""
     import fmbench
+    num = lambda r: r.get("total_cost_usd") if isinstance(r.get("total_cost_usd"), (int, float)) else 0
     with tempfile.TemporaryDirectory() as tmp:
         wt, state = os.path.join(tmp, "repo"), os.path.join(tmp, "state")
         shutil.copytree(os.path.join(base, "repo"), wt)
@@ -840,14 +850,20 @@ def _session_arm(agent, base, key, work, model, budget, timeout, request=None):
             GENESIS if agent == "genesis" else "") + ASK
         if agent in ("foreman", "genesis"):
             fmbench._seed(c.PLUGIN_ROOT, wt, env)
-            res, err = fmbench._session(wt, env, [c.PLUGIN_ROOT], ask, model, budget, timeout)
+            plugins, settings = [c.PLUGIN_ROOT], None
         else:
             env.update(FOREMAN_QUIET="1", PATH=os.environ.get("PATH", ""))
-            res, err = fmbench._session(wt, env, [], ask, model, budget, timeout,
-                                        settings=fmbench._bare_guard(c.PLUGIN_ROOT))
+            plugins, settings = [], fmbench._bare_guard(c.PLUGIN_ROOT)
+        res, err = fmbench._session(wt, env, plugins, ask, model, budget, timeout, keep=True, settings=settings)
+        said, cost = str(res.get("result") or ""), num(res)
+        reasked = not err and bool(res.get("session_id")) and _answer(said) is None  # broken JSON counts as none
+        if reasked:
+            again, err = fmbench._session(wt, env, plugins, AGAIN, model, budget, timeout, resume=res["session_id"],
+                                          keep=True, settings=settings)
+            res, cost = again, cost + num(again)
         shutil.copytree(wt, work, symlinks=True, ignore=shutil.ignore_patterns(".git"))
-    cost = res.get("total_cost_usd")
-    return dict(_reply(str(res.get("result") or "")), cost=cost if isinstance(cost, (int, float)) else 0, error=err)
+    return dict(_reply(str(res.get("result") or "")), cost=cost, error=err, reasked=reasked,
+                said=c.redact(said)[-400:])  # the tail: where the answer should have been
 
 
 def _answers(p, run, agent):
@@ -900,7 +916,7 @@ def run_agent(p, run, agent, split="all", limit=None, budget=2.0, model=None, ti
 
 
 COUNTS = ("keyed", "found", "false_alarms", "exam_defects", "fixable", "fixed", "tf_keyed", "tf_first", "readings_keyed", "readings_hit",
-          "missing_keyed", "missing_hit", "rank_keyed", "rank_hit", "false_done", "broken", "scenarios", "errors")
+          "missing_keyed", "missing_hit", "rank_keyed", "rank_hit", "false_done", "broken", "scenarios", "errors", "reasked")
 
 
 def _in_order(found, key):
@@ -972,7 +988,7 @@ def grade(p, run, agent):
         work = os.path.join(root(p), run, "work", agent, s["id"])
         found = [f for f in ans.get("findings") or [] if isinstance(f, dict)]
         n = dict.fromkeys(COUNTS, 0)
-        n["scenarios"], n["errors"] = 1, int(bool(ans.get("error")))
+        n["scenarios"], n["errors"], n["reasked"] = 1, int(bool(ans.get("error"))), int(ans.get("reasked") is True)
         goal = key["kind"] in GOALS  # graded on what the work holds: findings neither score nor alarm
         unkeyed = [] if goal else [f for f in found if not any(_matches(f, d) for d in key["defects"])]
         tried = [f for f in unkeyed if f.get("test") and os.path.isdir(work)][:10]  # ponytail: 10 proofs a scenario
@@ -1068,6 +1084,8 @@ def summary(r):
         parts.append(f"held out {h.get('found', 0)}/{h.get('keyed', 0)} found")
     if r.get("errors"):
         parts.append(f"{r['errors']} errored")
+    if r.get("reasked"):  # T-2192: answers lost to prose and asked for again, so a format loss stays visible
+        parts.append(f"{r['reasked']} re-asked")
     if r.get("cost"):
         parts.append(f"${r['cost']:.2f}")
     return f"{r.get('agent', '?')} {r.get('run', '?')}: " + ", ".join(parts)
