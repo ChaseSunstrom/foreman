@@ -1343,7 +1343,7 @@ def grade(p, run, agent):
             ans = {"error": "unreadable answer"}
         work = os.path.join(root(p), run, "work", agent, s["id"])
         found = [f for f in ans.get("findings") or [] if isinstance(f, dict)]
-        n = dict.fromkeys(COUNTS, 0)
+        n, recall = dict.fromkeys(COUNTS, 0), []
         n["scenarios"], n["errors"], n["reasked"] = 1, int(bool(ans.get("error"))), int(ans.get("reasked") is True)
         goal = key["kind"] in GOALS  # graded on what the work holds: findings neither score nor alarm
         quiet = goal or key.get("alarms") is False  # T-2216 review: exists has nothing keyed, so a finding isn't wrong
@@ -1361,8 +1361,10 @@ def grade(p, run, agent):
                 n["broken"] += os.path.isdir(work) and not fixed
                 continue
             if not goal:
+                hit = any(_matches(f, d) for f in found)
                 n["keyed"] += 1
-                n["found"] += any(_matches(f, d) for f in found)
+                n["found"] += hit
+                recall.append((key["lang"], d["kind"], hit))  # T-2233: recall per language and per defect kind
             n["fixable"] += 1
             n["fixed"] += fixed
             if d["tf"]:
@@ -1384,16 +1386,24 @@ def grade(p, run, agent):
         n["false_done"] += bool(ans.get("done")) and (not key["done_ok"] or unmet)
         cost = ans.get("cost")
         defect_lines = [c.fit(c.plain(f"{s['id']} {f.get('file')} {f.get('symbol')}: {f.get('says')}"), 200) for f in proven]
-        return s["split"], s["id"], n, cost if isinstance(cost, (int, float)) else 0, defect_lines
+        return s["split"], s["id"], n, cost if isinstance(cost, (int, float)) else 0, defect_lines, recall
 
-    res = {"run": run, "agent": agent, **dict.fromkeys(COUNTS, 0),
-           "holdout": dict.fromkeys(COUNTS, 0), "train": dict.fromkeys(COUNTS, 0), "cost": 0,
+    def tally(into, lang, kind, hit):  # T-2233: {"lang": {lang: [found, keyed]}, "kind": {kind: [found, keyed]}}
+        for axis, k in (("lang", lang), ("kind", kind)):
+            v = into.setdefault(axis, {}).setdefault(k, [0, 0])
+            v[0], v[1] = v[0] + hit, v[1] + 1
+
+    res = {"run": run, "agent": agent, **dict.fromkeys(COUNTS, 0), "recall": {},
+           "holdout": dict(dict.fromkeys(COUNTS, 0), recall={}), "train": dict(dict.fromkeys(COUNTS, 0), recall={}), "cost": 0,
            "closed": {"train": [], "holdout": []}, "proved_by_arm_findings": [],
            # T-2097: what was graded, so fm exam scorecard can count a held-out scenario that didn't close
            "answered": {"holdout": sorted(s["id"] for s in answered if s["split"] == "holdout"),
                         # T-2204: the held-out ones an outside author wrote; only these decide the scorecard
                         "child": sorted(s["id"] for s in answered if s["split"] == "holdout" and s.get("author") == "child")}}
-    for split, sid, n, cost, defect_lines in _pool(one, answered):
+    for split, sid, n, cost, defect_lines, recall in _pool(one, answered):
+        for hit in recall:
+            tally(res["recall"], *hit)
+            tally(res[split]["recall"], *hit)
         res["cost"] += cost
         res["proved_by_arm_findings"] += defect_lines
         if _closed(n):  # fm genesis select compares these ids, train only, against the parent generation's
@@ -1452,6 +1462,11 @@ def summary(r):
     h = r.get("holdout") or {}
     if h.get("scenarios"):
         parts.append(f"held out {h.get('found', 0)}/{h.get('keyed', 0)} found")
+    for axis, word in (("lang", "language"), ("kind", "kind")):  # T-2233: a finder blind in one can't hide in the total
+        by = (r.get("recall") or {}).get(axis) or {}
+        if by:
+            parts.append(f"by {word}: " + " · ".join(f"{c.plain(str(k))[:20]} {v[0]}/{v[1]}" for k, v in sorted(by.items())
+                                                       if isinstance(v, list) and len(v) == 2))
     if r.get("errors"):
         parts.append(f"{r['errors']} errored")
     if r.get("reasked"):  # T-2192: answers lost to prose and asked for again, so a format loss stays visible
