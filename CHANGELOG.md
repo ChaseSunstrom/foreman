@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+- Audit briefs: a file with a changed line over 4000 characters (a recording, a minified bundle) is listed by its counts, not its text, so a re-recorded demo no longer fills the reviewer's diff (T-2069).
 - Demo recorder: the live session runs with every plugin outside the foreman marketplace turned off (`--settings`), so another plugin's status line no longer shows in demo/live.mp4; Claude Code's startup notices (a disabled plugin's hooks.json warning, which `--settings` can't silence, and the login, plan and tmux notices) are blanked up to the Foreman panel, which stays intact (T-2055).
 - Library lint: a card that runs `npx NAME` with a name not on the reviewed plugin/skills/library/npx-known.txt (the list beside the cards being linted) is a card problem; the electron, background-jobs and design-systems cards no longer name a missing package or an invalid stylelint rule (T-2049).
 - Site: style.css and site.js URLs carry their content's hash, so browsers fetch the new ones; the hero's two lights drift slowly, the proof figures count up once, a feature card's light follows the pointer, and shader names wrap whole; all still under reduced motion (T-2063).
