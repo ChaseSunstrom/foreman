@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T08:09:02Z",
- "rev": "2f8236c6",
+ "updated": "2026-10-30T09:04:08Z",
+ "rev": "b4f9e0e2",
  "capabilities": [
   {
    "n": 1,
@@ -500,22 +500,22 @@
       {
        "id": "T-2120",
        "title": "Exam contract repair: README run command, an edge contract every clean app follows, a proven unkeyed finding counts as an exam defect (Mission 3 brief 1)",
-       "status": "planned",
+       "status": "done",
        "type": "FIX",
        "tier": "M",
        "steps": 3,
-       "done": 0,
-       "current": "README run command: the && unquoted"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2121",
        "title": "fm find: deterministic language-agnostic finders (untested, docs, deps, sql, slow, flaky, secrets, gates), zero on every clean render (Mission 3 brief 2)",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "L",
        "steps": 2,
-       "done": 0,
-       "current": "fmfind.py finders + fm find verb"
+       "done": 2,
+       "current": ""
       },
       {
        "id": "T-2122",
@@ -1402,6 +1402,82 @@
     "vuln"
    ],
    "author": "self"
+  },
+  {
+   "run": "s7-004",
+   "agent": "finders",
+   "keyed": 24,
+   "found": 20,
+   "false_alarms": 0,
+   "exam_defects": 0,
+   "fixable": 24,
+   "fixed": 0,
+   "tf_keyed": 12,
+   "tf_first": 0,
+   "readings_keyed": 4,
+   "readings_hit": 0,
+   "missing_keyed": 2,
+   "missing_hit": 0,
+   "false_done": 0,
+   "scenarios": 22,
+   "errors": 0,
+   "holdout": {
+    "keyed": 12,
+    "found": 10,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 12,
+    "fixed": 0,
+    "tf_keyed": 6,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 0,
+    "false_done": 0,
+    "scenarios": 11,
+    "errors": 0
+   },
+   "train": {
+    "keyed": 12,
+    "found": 10,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 12,
+    "fixed": 0,
+    "tf_keyed": 6,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 0,
+    "false_done": 0,
+    "scenarios": 11,
+    "errors": 0
+   },
+   "cost": 0,
+   "closed": {
+    "train": [],
+    "holdout": []
+   },
+   "exam_defect_findings": [],
+   "at": "2026-10-30T09:04:08Z",
+   "gen": 1,
+   "split": "all",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "none",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
   }
  ],
  "coverage": {
@@ -1550,8 +1626,8 @@
  "next": {
   "stage": "build",
   "gen": 1,
-  "action": "Mission 3 (initiative): finish T-2120",
-  "command": "fm focus T-2120",
+  "action": "Mission 3 (initiative): finish T-2121",
+  "command": "fm focus T-2121",
   "kind": "ok"
  },
  "docs": {
