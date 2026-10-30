@@ -6930,6 +6930,10 @@ def _build_parser(only=None):
             "untested functions, docs naming missing code, undeclared deps, SQL from a parameter, list membership in a loop, "
             "unseeded test randomness, credentials; exit 1 on findings (T-2121)")
     s.add_argument("path", nargs="?", default=".", help="the tree to scan (default: here)")
+    s.add_argument("--rank", action="store_true", help="best first: severity x reach x the finder's precision; a finder "
+                   "under the floor is muted (T-2125)")
+    s.add_argument("--capture", type=int, metavar="N", help="file up to N new leads, best first (none held back), as "
+                   "discovered tasks tagged finder=; what becomes of them is that finder's precision")
     s = add("exam", lazy("fmexam", "cmd_exam"), tier=("Finding your way", 456), help="a seeded exam of throwaway repos in six "
             "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
     s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check"))

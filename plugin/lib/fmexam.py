@@ -666,10 +666,10 @@ def _empty(base, key):
 
 def _finders(base, key):
     """Foreman's deterministic finders over the repo (fm find, T-2121), no session. They find, never fix, so the work
-    is the repo as planted."""
+    is the repo as planted. Listed worst first (fm find --rank at the prior, T-2125), so a rank scenario grades order."""
     import fmfind
     repo = os.path.join(base, "repo")
-    found = [{"file": f["file"], "symbol": f["symbol"], "says": f["says"]} for f in fmfind.find(repo)]
+    found = [{"file": f["file"], "symbol": f["symbol"], "says": f["says"]} for f in fmfind.scan(repo, {})[1]]
     return {"findings": found, "notes": [], "done": False}, repo
 
 
