@@ -1344,8 +1344,7 @@ def _named(reply, tag, lines):
 
 def _charter(p, gen0):
     """gen-0's goal, MUST/NEVER and DONE-WHEN lines and the user's later steers (T-2114), fenced for a cold reader."""
-    steers = "\n".join(f"- {_fence(c.plain(d))}" for _, t, d in c._decision_rows(p)
-                       if re.search(r"cites: (?:the )?user(?:'s)? steer", t, re.I))
+    steers = "\n".join(f"- {_fence(c.plain(d))}" for _, t, d in c._decision_rows(p) if c.STEER.search(t))
     return (f"<gen-0>\nGoal: {gen0.splitlines()[0] if gen0.strip() else ''}\n" + "\n".join(sorted(set(_constraints(gen0))))
             + "".join(f"\n{x}" for x in DONE_WHEN.findall(gen0)) + f"\n</gen-0>\n<user-steers>\n{steers}\n</user-steers>")
 
@@ -1522,6 +1521,7 @@ def sweep(p, n, agent="foreman"):
                                                                                     if len(bad) > 8 else "") or good})
     r = check(p)
     row("genesis check", r["coverage"]["problems"] + r["not_yet"]["problems"], "coverage and not-yet are whole")
+    row("steer checks", c.steer_checks(p), "every rule from a user steer has a check, and each passes")  # T-2167
     briefs = c.load_briefs(p)
     by_id = {b.id: b for b in c.load_briefs(p, include_archive=True)}  # fm tidy archives closed briefs after 14 days
     ids = [t for f in sorted(os.listdir(os.path.join(d, f"gen-{n}")) if os.path.isdir(os.path.join(d, f"gen-{n}")) else [])

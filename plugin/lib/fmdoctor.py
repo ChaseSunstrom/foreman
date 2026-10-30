@@ -413,6 +413,19 @@ def check_backup(home):
 NO_CC = "no Claude Code here (claude isn't on PATH): nothing to check"  # T-2174: CC is one surface, not a requirement
 
 
+def check_steers(p, run=False):
+    """T-2167: in a Genesis tower project every rule cited from a user steer has a check (--full runs them; fm genesis
+    sweep always does). A FAIL, so fm check stops a commit that leaves a steer rule unchecked; a rule whose
+    enforcement is still being built carries `--check "pending T-NNNN"`, which passes here and keeps the sweep red."""
+    import fmgenesis  # lazy: only a tower project needs it, and it loads the exam modules
+    if not p or not os.path.exists(os.path.join(fmgenesis.home(p), "gen-0.md")):
+        return Result("steer checks", "PASS", "no Genesis tower here")
+    bad = c.steer_checks(p, run=run, pending=False)
+    return Result("steer checks", "FAIL" if bad else "PASS",
+                  "; ".join(bad[:4]) + (f"; … {len(bad) - 4} more" if len(bad) > 4 else "") if bad else
+                  "every rule from a user steer has a check" + (" and it passes" if run else " (--full runs them)"))
+
+
 def check_validate(home):
     if not shutil.which("claude"):
         return Result("plugin validate", "PASS", NO_CC)
@@ -2118,6 +2131,7 @@ def run_all(full=False, accept_supply=False):
                                       os.path.join(claude, "plugins", "installed_plugins.json")))
     results.append(check_product(here))
     results.append(check_enforce(here))
+    results.append(check_steers(here, run=full))
     results.append(check_idle_stops(here))
     results.append(check_usage_burn())
     results.append(check_version_skew(c.all_projects()))
