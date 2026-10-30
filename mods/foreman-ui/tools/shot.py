@@ -20,6 +20,7 @@ Local commands (/fm, /reload-plugins) send the model nothing; a typed prompt is 
 import argparse
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -47,8 +48,10 @@ def start(a, cmd=None):
     # T-1209: Claude Code drops to 256 colours inside tmux unless told the server passes true colour through
     env = ["-e", "COLORTERM=truecolor", "-e", "CLAUDE_CODE_TMUX_TRUECOLOR=1",
            "-e", f"FOREMAN_STATE={own}" if own else "FOREMAN_ONEOFF=1"]
+    # T-2055: settings = a JSON string for --settings (the demo recorder turns off every non-Foreman plugin with it)
     tmux("new-session", "-d", "-s", SESSION, "-x", str(a.cols), "-y", str(a.rows), "-c", os.path.abspath(a.dir), *env,
-         cmd or f"claude --plugin-dir {MOD}" + (f" --model {a.model}" if getattr(a, "model", None) else ""))
+         cmd or f"claude --plugin-dir {MOD}" + (f" --model {a.model}" if getattr(a, "model", None) else "")
+         + (f" --settings {shlex.quote(a.settings)}" if getattr(a, "settings", None) else ""))
     print(f"started {SESSION} ({a.cols}x{a.rows}) in {a.dir}")
     if cmd is None and answer_trust(a.dir):
         print("answered Claude Code's folder-trust prompt (a folder Foreman made)")
