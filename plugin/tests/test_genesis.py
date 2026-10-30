@@ -1020,21 +1020,27 @@ class GenesisDraft(ForemanTestCase):
                                      "closed": {"holdout": kid + tools}})  # the template's six didn't close: not counted
         fmgenesis.exam_line(self.p, {"agent": "draft-genesis", "answered": {"holdout": ["line-python-000001"]},
                                      "closed": {"holdout": ["line-python-000001"]}})
-        r = fmgenesis.scorecard(self.p)
-        self.assertEqual([(x["name"], x["state"], x["closed"], x["graded"], x["selfmade"]) for x in r["rows"]],
-                         [("Correctness", "pass", 3, 3, 6), ("Tools", "no outside author", 0, 0, 3),
-                          ("Genesis as a feature", "no outside author", 0, 0, 1)])
+        import fmexam
+        from unittest import mock
+        with mock.patch.dict(fmexam.CHILD_KINDS):  # T-2217: every kind has a child shape now; one without, as a kind
+            del fmexam.CHILD_KINDS["missing-tool"]  # T-2216 adds would read before its own child shape
+            r = fmgenesis.scorecard(self.p)
+            self.assertEqual([(x["name"], x["state"], x["closed"], x["graded"], x["selfmade"]) for x in r["rows"]],
+                             [("Correctness", "pass", 3, 3, 6), ("Tools", "no outside author", 0, 0, 3),
+                              ("Genesis as a feature", "no outside author", 0, 0, 1)])
         self.assertEqual((r["selfmade"], r["ok"]), (9, False))
         self.assertIn("template", r["rows"][2]["why"])  # #13: fm genesis spec renders only template projects
         text = self.fm("exam", "scorecard", check=False).stdout
-        self.assertIn("2. Tools: no outside author", text)
+        self.assertIn("3. Genesis as a feature: no outside author", text)
         self.assertIn("9 self-authored held-out results not counted", text)
         self.assertIn("1/3 pass, 9 self-authored skipped", fmgenesis._exam_count(self.p))
         fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": kid, "child": []},
                                      "closed": {"holdout": []}})  # a later template run of the same ids
         fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": tools, "child": tools},
-                                     "closed": {"holdout": tools}})  # forged: no outside author writes missing-tool
-        r = fmgenesis.scorecard(self.p)
+                                     "closed": {"holdout": tools}})  # forged, while no outside author writes missing-tool
+        with mock.patch.dict(fmexam.CHILD_KINDS):
+            del fmexam.CHILD_KINDS["missing-tool"]
+            r = fmgenesis.scorecard(self.p)
         self.assertEqual([(x["state"], x["closed"], x["graded"]) for x in r["rows"][:2]],
                          [("pass", 3, 3), ("no outside author", 0, 0)])  # neither erases nor forges a child result
 
@@ -1045,10 +1051,15 @@ class GenesisDraft(ForemanTestCase):
         kid = [f"bug-python-{i:06x}" for i in range(3)]
         fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": kid, "child": kid},
                                      "closed": {"holdout": kid}})
-        (row,) = fmgenesis.scorecard(self.p)["rows"]
+        import fmexam
+        from unittest import mock
+        with mock.patch.dict(fmexam.CHILD_KINDS):  # T-2217: as a kind T-2216 adds reads before its child shape
+            del fmexam.CHILD_KINDS["missing-tool"]
+            (row,) = fmgenesis.scorecard(self.p)["rows"]
         self.assertEqual((row["state"], row["closed"], row["graded"]), ("partial", 3, 3))
         self.assertIn("missing-tool", row["why"])
-        self.assertIn("1. Correctness: partial 3/3", self.fm("exam", "scorecard", check=False).stdout)
+        self.assertIn("1. Correctness: partial 3/3 (bug, missing-tool): no graded missing-tool scenarios yet",
+                      self.fm("exam", "scorecard", check=False).stdout)  # an author for each kind, but none graded yet
 
     def test_review_fixes_fallback_reason_secret_lines_fenced_readme_and_spec_limits(self):
         import fmcore as c
