@@ -273,16 +273,19 @@ def lint_card(path):
         [f"{rel}: {why}" for why in _card_problems(path, x)]
 
 
-NPX_KNOWN = os.path.join(os.path.dirname(CARDS), "npx-known.txt")
+NPX_KNOWN = "npx-known.txt"  # beside the cards folder
 
 
 @functools.cache
-def _npx_known():
-    try:
-        with open(NPX_KNOWN, encoding="utf-8") as f:
-            return {w for w in (ln.split("#")[0].strip() for ln in f) if w}
-    except OSError:
-        return set()
+def _npx_known(cards_root):
+    """The reviewed names beside the cards being linted (a checkout lints its own list), else the shipped list."""
+    for d in (os.path.dirname(cards_root), os.path.dirname(CARDS)):
+        try:
+            with open(os.path.join(d, NPX_KNOWN), encoding="utf-8") as f:
+                return {w for w in (ln.split("#")[0].strip() for ln in f) if w}
+        except OSError:
+            pass
+    return set()
 
 
 def _npx_names(text):
@@ -333,7 +336,7 @@ def _card_problems(path, x):
     verify = re.search(r"(?ms)^## Verify\n(.*?)(?=^## |\Z)", text)
     if not verify or "`" not in verify.group(1):
         bad("Verify needs at least one backticked command")
-    for n in sorted(_npx_names(text) - _npx_known())[:3]:
+    for n in sorted(_npx_names(text) - _npx_known(os.path.dirname(os.path.dirname(path))))[:3]:
         bad(f"npx {n[:40]!r} is not in plugin/skills/library/npx-known.txt: check it exists on npm, then add it")
     if len(re.findall(r"(?m)^- \[ \] ", text)) < 2:
         bad("Review needs at least two '- [ ]' checks")
