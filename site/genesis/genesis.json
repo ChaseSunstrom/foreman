@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T16:21:06Z",
- "rev": "f50cd7a6",
+ "updated": "2026-10-30T16:42:51Z",
+ "rev": "dcfcea29",
  "capabilities": [
   {
    "n": 1,
@@ -815,7 +815,7 @@
     {
      "id": "T-2167",
      "title": "Every user steer is a standing rule plus an automatic check: fm decide takes --check…",
-     "status": "active",
+     "status": "done",
      "type": "FEATURE",
      "tier": "M",
      "steps": 4,
