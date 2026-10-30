@@ -351,9 +351,12 @@ def ship(p, args):
     last = _git(root, "rev-parse", "--verify", "-q", SHIPPED, ok=True).strip()  # T-1945: main may hold these under another patch
     if last and c._git(root, "merge-base", "--is-ancestor", last, "HEAD", timeout=60, proc=True).returncode:
         last = ""  # rebased or another branch: git cherry alone
-    if not picks and last and not c._git(root, "diff", "--quiet", last, base, timeout=60, proc=True).returncode:
-        # T-2054: main is where the last ship left it, so replay the branch's own history: a merged lane's commit
-        # may not apply alone (its merge settled a conflict), but each first-parent step applies in turn
+    def _files(a, b):
+        return set(_git(root, "diff", "--name-only", a, b).splitlines())
+    if not picks and last and not (_files(last, base) & _files(last, "HEAD")):
+        # T-2054: main is where the last ship left it (T-2212: or moved only in files the branch left alone), so replay
+        # the branch's own history: a merged lane's commit may not apply alone (its merge settled a conflict), but each
+        # first-parent step applies in turn
         picks = _git(root, "rev-list", "--first-parent", "--reverse", f"{last}..HEAD").split()
     picks = picks or [ln[2:] for ln in _git(root, "cherry", base, "HEAD", *([last] if last else [])).splitlines() if ln.startswith("+ ")]
     if not picks:
