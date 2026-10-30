@@ -3917,6 +3917,16 @@ def _agent_report(path):
     return (report or raw).rstrip("\n") + "\n"
 
 
+def _no_item(x):
+    """T-2190: a Noticed line that only says there's nothing ("None (T-2186 covers it)", "None observed", "nothing - all
+    in the brief", "N/A.") is no item; "None of the callers …", "Nothing validates the port" and "None, but X" are."""
+    if re.search(r"(?i)\b(but|however|though|although|except)\b", x):
+        return False
+    return bool(re.fullmatch(r"(?is)none\b(?!\s+of\b).*|(?:nothing|n/a)(?:\s+(?:found|noted|observed|identified|else|new"
+                             r"|further|more|additional|so far|at this time|to (?:add|report|note|flag|mention)"
+                             r"|outside (?:the |this )?(?:brief|scope)))*\b\W*(?:[(\[:;,.—–-].*)?", x))
+
+
 def cmd_research(args):
     p = resolve(args)
     name = args.name[:-3] if args.name.endswith(".md") else args.name
@@ -3931,7 +3941,7 @@ def cmd_research(args):
     # T-0629: what an agent noticed outside its brief becomes a discovered capture, not a line lost in a report
     noticed = [c.fit(c.plain(c.redact(m.group(1))).strip(" .`*"), 200)
                for m in re.finditer(r"(?mi)^\W*noticed:?\**\s*(.+)$", text)] if args.from_agent else []
-    noticed = [x for x in dict.fromkeys(noticed) if x and x.lower() not in ("none", "nothing", "n/a")][:10]
+    noticed = [x for x in dict.fromkeys(noticed) if x and not _no_item(x)][:10]
     with c.lock(p.dir):
         new = c.defang(c.redact(text))
         if args.append and os.path.isfile(path):  # T-1288: inside the lock, so two appends can't lose one
