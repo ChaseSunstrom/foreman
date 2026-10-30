@@ -65,7 +65,9 @@ class Follow(ForemanTestCase):
         self.assertEqual(self.read_line(proc)["inbox_total"], 0)
         time.sleep(0.05)
         self.fm("capture", "Merge the date helpers")
-        self.assertEqual(self.read_line(proc)["inbox_total"], 1)
+        deadline = time.monotonic() + 10  # capture writes more than once, so a line can land between its writes
+        while self.read_line(proc, max(0.1, deadline - time.monotonic()))["inbox_total"] != 1:
+            pass
 
     def test_a_change_while_the_view_is_built_is_not_missed(self):  # T-1882: the snapshot comes before the build
         import contextlib
