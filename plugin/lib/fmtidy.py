@@ -661,6 +661,7 @@ def check_global(apply, actions, plugins=False):
                     except OSError:  # gone meanwhile
                         pass
                 actions.append(("global", kind))
+    out += _dead_projects(apply, actions)
     projects = os.path.join(home_claude, "projects")  # T-0856: shells Claude Code made for Foreman's child folders
     shells = [os.path.join(projects, d) for d in (os.listdir(projects) if os.path.isdir(projects) else [])
               if re.match(r"-(run-user-\d+|tmp)-fm-", d)
@@ -674,6 +675,33 @@ def check_global(apply, actions, plugins=False):
             actions.append(("global", "child_shells"))
     if plugins:
         out += _check_plugins()
+    return out
+
+
+def _dead_projects(apply, actions):
+    """T-2091: a project whose root folder is gone. Under a temp dir it was a throwaway trial: --apply moves its state
+    to state/archive/projects/ (nothing deleted). Anywhere else the folder may only be unplugged or moved: reported."""
+    import tempfile
+    temps = {os.path.realpath(d) for d in ("/tmp", "/var/tmp", tempfile.gettempdir())}
+    out = []
+    for p, _ in c.all_projects():
+        if os.path.isdir(p.root):
+            continue
+        root = os.path.realpath(p.root)
+        temp = any(os.path.commonpath([root, t]) == t for t in temps)
+        out.append(finding(None, "dead_project", "action" if temp else "warn", f"{p.slug} {c.plain(p.root)} is gone",
+                           "move its state to state/archive/projects/" if temp else
+                           "folder moved or unplugged? fm tidy leaves it", auto=temp))
+        if apply and temp:
+            dest = os.path.join(c.state_dir(), "archive", "projects", p.slug)
+            if os.path.exists(dest):
+                dest += time.strftime("-%Y%m%d-%H%M%S")
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            try:
+                shutil.move(os.path.join(c.projects_dir(), p.slug), dest)
+            except OSError:  # another tidy moved it first
+                continue
+            actions.append(("global", f"dead_project {p.slug}"))
     return out
 
 
