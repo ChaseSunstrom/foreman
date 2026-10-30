@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The Genesis page is part of the site: the same header, nav, footer, stylesheet, type and light/dark palette as every other page, with the tower's own shades mixed from the site's tokens (T-2087).
 - Genesis on the site: `fm genesis export DIR` writes the tower's docs (home paths shown as ~, secrets redacted) and a genesis.json of its capabilities, rated gaps, generations, missions, their tasks' progress, exam results and coverage; site/genesis draws it live as the prompt tower (hover a mission to see what it waits on), capability cards, the ambition scale, the exam table, the run's rules and every doc, each box opening a drawer with its full text, in light and dark and at phone width, loading nothing from another host; linked from the landing page (T-2080).
 - `fm genesis put` also files not-yet.md and coverage.md, and `--file -` reads stdin (T-2080).
 - `fm genesis`: the Genesis tower's home under the project's research/genesis. `fm genesis init --file F` saves gen-0 byte for byte and read-only, once; `fm genesis put NAME --file F` files a tower doc only in the tower's shape (gap-map.md, lineage.md, catalogue.md, report.md, exam.jsonl, gen-N/seed.md, gen-N/mission-NAME.md, gen-N/critique-NAME.md); `fm genesis` lists gen-0, the gap map, each generation's seed, missions and critiques, and the exam result count (T-2078).
