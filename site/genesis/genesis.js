@@ -218,11 +218,12 @@
   function frac(a, b) { return b ? esc(a + "/" + b) : "–"; }
   function exam() {
     var rows = D.exam.slice(-12).reverse();
-    $("exam").innerHTML = rows.length ? '<div class="tbl"><table><thead><tr><th>agent</th><th>run</th><th>found</th><th>false alarms</th><th>fixed</th><th>tests first</th><th>readings</th><th>missing tool</th><th>split</th></tr></thead><tbody>' +
+    $("exam").innerHTML = rows.length ? '<div class="tbl"><table><thead><tr><th>agent</th><th>run</th><th>found</th><th>false alarms</th><th>fixed</th><th>tests first</th><th>readings</th><th>missing tool</th><th>cost</th><th>split</th></tr></thead><tbody>' +
       rows.map(function (e) {
         return "<tr><td><b>" + esc(e.agent) + "</b></td><td><code>" + esc(e.run || "") + "</code></td><td>" + frac(e.found, e.keyed) + "</td><td>" + esc(e.false_alarms == null ? "–" : e.false_alarms) +
           "</td><td>" + frac(e.fixed, e.fixable) + "</td><td>" + frac(e.tf_first, e.tf_keyed) + "</td><td>" + frac(e.readings_hit, e.readings_keyed) + "</td><td>" + frac(e.missing_hit, e.missing_keyed) +
-          "</td><td>" + esc(e.holdout ? "held out" : e.split || "train") + "</td></tr>";
+          "</td><td>" + (typeof e.cost === "number" && e.cost > 0 ? "$" + e.cost.toFixed(2) : "–") +
+          "</td><td>" + esc(e.split || "all") + (e.author && e.author !== "self" ? " · by " + esc(e.author) : "") + (e.holdout && e.holdout.scenarios ? " · held out " + frac(e.holdout.found, e.holdout.keyed) + " found" : "") + (typeof e.errors === "number" && e.errors > 0 ? " · " + e.errors + " errored" : "") + "</td></tr>";
       }).join("") + "</tbody></table></div>"
       : '<div class="rule"><b>No exam run yet.</b>Mission 1 (fm exam) is building it: throwaway repos in six languages with planted defects, vague, ambiguous and missing-tool requests, a held-out third, and plain Claude Code run beside Foreman on the same repos. Every result lands here.</div>';
   }
