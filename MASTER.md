@@ -236,7 +236,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fmmutate` (T-1066: mutation tests for the guard, one ast mutant per rule site in fmguard.py)
 - `fmoracle` (T-1553: the guard's oracle, a line run in a throwaway bwrap sandbox that records each command it would run)
 - `fmpr` (T-1087: `fm pr threads` turns a PR's unresolved comments into steps; `fm pr train` merges approved green PRs in order)
-- `fmrelease` (T-1188: `fm release VERSION`, the release ritual as named, resumable steps; Foreman's own repo only; T-1943: `fm ship`)
+- `fmrelease` (T-1188: `fm release VERSION`, the release ritual as named, resumable steps; Foreman's own repo only; T-1943: `fm ship`; T-2054/T-2212: with no commits named it replays the branch's first-parent steps since the last ship when origin main hasn't touched the files they change, so a lane merged after a conflict ships)
 - `fmrisk` (T-1080: the daily risk budget: destructive blocks, failed closes and reverts spend points; past the cap autonomy steps down)
 - `fmroll` (T-1648: `fm design roll`, a seeded, coherent pick of one look card's palette, type, motion and texture)
 - `fmrollback` (T-1085: a snapshot of every project's record before a new version runs, and `fm rollback` to restore it)
