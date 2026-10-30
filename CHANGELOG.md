@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Site: the landing runs four shader cards live (aurora bands, soft caustics, grain gradient, halftone) from each card's own GLSL, drawn only while on screen, one still frame under reduced motion and the card's words without WebGL2; it links to all eight (T-2062).
 - Site: the fm code page draws its tour from today's TUI at every build (assets/code-tui-tour.svg, the still under reduced motion) in place of a video recorded once, lists every key from the app's own key map grouped as its keys poster groups them, and gains a block for the queue, asking beside a run, follow-ups, undo and PR, fm code why and --chaos; the README's demo links point at the site's tour (T-2061).
 - Site: the tab icon's URL carries the logo's content hash, so a browser that kept the old favicon fetches the new one; the share image is a new card with the current logo (site/share.html, assets/share.png); the header logo loses its pixel-art rendering (T-2060).
 - Looks: darkroom and glacier drop their hue-distance note; below accent chroma 0.03 a hue is no colour to clash with a status (T-2051).
