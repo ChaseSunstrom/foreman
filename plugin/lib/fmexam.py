@@ -4,6 +4,7 @@ small app rendered from one spec. The answer key, the hidden checks and the clea
 third of each kind is held out by a hash of its id. Agents answer, the grader reads only key.json, scores go to the
 Genesis tower's exam.jsonl."""
 import concurrent.futures
+import difflib
 import hashlib
 import json
 import os
@@ -706,6 +707,51 @@ def _copy(src, overlay=None):
     return tmp, dst
 
 
+def _readlines(path):
+    with open(path, encoding="utf-8", newline="") as f:
+        return f.read().splitlines(True)
+
+
+def putback(base, kind, work):
+    """T-2203: a copy of the arm's work with only the defect's lines planted back: per file the clean-to-planted line
+    diff, each changed region with context, replaced where that clean text occurs exactly once in the arm's file. (tmp,
+    dst), or None when a region no longer applies (the arm rewrote it, or the file is gone): its tests can't be said
+    to catch the defect, so no test-first credit."""
+    clean, planted = os.path.join(base, "hidden", "clean"), os.path.join(base, "hidden", "planted", kind)
+    if not os.path.isdir(work):
+        return None
+    tmp, dst = _copy(work)
+    try:
+        for d, _, files in os.walk(planted):
+            for f in files:
+                rel = os.path.relpath(os.path.join(d, f), planted)
+                try:
+                    c, p = _readlines(os.path.join(clean, rel)), _readlines(os.path.join(planted, rel))
+                    arm = "".join(_readlines(os.path.join(dst, rel)))
+                except (OSError, ValueError):
+                    raise LookupError(rel)
+                for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, c, p, autojunk=False).get_opcodes():
+                    if op == "equal":
+                        continue
+                    pad = 1  # one line of context, more while the clean text isn't unique in the clean file
+                    while True:
+                        lo, hi = max(i1 - pad, 0), min(i2 + pad, len(c))
+                        old = "".join(c[lo:hi])
+                        if "".join(c).count(old) == 1 or (lo == 0 and hi == len(c)):
+                            break
+                        pad += 1
+                    new = "".join(c[lo:i1] + p[j1:j2] + c[i2:hi])
+                    if arm.count(old) != 1:
+                        raise LookupError(rel)
+                    arm = arm.replace(old, new)
+                with open(os.path.join(dst, rel), "w", encoding="utf-8", newline="") as fh:
+                    fh.write(arm)
+        return tmp, dst
+    except LookupError:
+        shutil.rmtree(tmp, ignore_errors=True)
+        return None
+
+
 def _static(target, chk):
     texts = []
     for d, dirs, files in os.walk(target):
@@ -1012,8 +1058,11 @@ def grade(p, run, agent):
             n["fixed"] += fixed
             if d["tf"]:
                 n["tf_keyed"] += 1
-                n["tf_first"] += bool(fixed and suite(key, work)[0] and not suite(
-                    key, work, os.path.join(base, "hidden", "planted", d["kind"]), slow=True)[0])
+                if fixed and suite(key, work)[0] and (pb := putback(base, d["kind"], work)):  # T-2203
+                    try:
+                        n["tf_first"] += not _run(key, pb[1], key["commands"]["suite"], slow=True)[0]
+                    finally:
+                        shutil.rmtree(pb[0], ignore_errors=True)
         said = "\n".join([str(x) for x in ans.get("notes") or []] + [str(f.get("says") or "") for f in found])
         for want, kw, hit in ((key["readings"], "readings_keyed", "readings_hit"),
                               (key["missing"], "missing_keyed", "missing_hit")):

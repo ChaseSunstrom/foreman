@@ -131,6 +131,29 @@ class ExamGen(ForemanTestCase):
                 f.write("\n\n" + old)  # the later def wins: one clause broken, the rest as clean
             self.assertFalse(fmexam.suite(key, mutant)[0], f"the clean suite misses a broken {fn} clause")
 
+    def test_test_first_puts_back_only_the_defects_lines(self):
+        # T-2203: an arm that also edited other code in the file keeps that edit; a defect region it rewrote credits nothing
+        import fmexam
+        s = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug")["scenarios"][0]
+        base = os.path.dirname(s["repo"])
+        key = json.loads(read_text(os.path.join(base, "key.json")))
+        clean, kind = os.path.join(base, "hidden", "clean"), key["defects"][0]["kind"]
+        planted = os.path.join(base, "hidden", "planted", kind)
+        arm = os.path.join(self.tmp, "arm")
+        shutil.copytree(clean, arm)
+        with open(os.path.join(arm, "app.py"), "a") as f:
+            f.write("\n\ndef extra_helper():\n    return 1\n")
+        tmp, dst = fmexam.putback(base, kind, arm)
+        try:
+            body = read_text(os.path.join(dst, "app.py"))
+            self.assertIn("extra_helper", body)  # the arm's other edit survives
+            self.assertEqual(body.replace("\n\ndef extra_helper():\n    return 1\n", ""), read_text(os.path.join(planted, "app.py")))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        self.assertTrue(fmexam.suite(key, clean)[0])
+        self.assertIsNone(fmexam.putback(base, kind, planted))  # the clean lines are gone: nothing to put back onto
+        self.assertIsNone(fmexam.putback(base, kind, os.path.join(self.tmp, "nowhere")))
+
     def test_an_unkeyed_finding_proved_only_by_the_arms_own_test_stays_a_false_alarm(self):
         # T-2170: the arm wrote the change and the test, so its proof is the arm grading itself; with no outside check
         # agreeing, the finding stays a false alarm, counted apart (proved_by_arm) and listed so a real one gets read
