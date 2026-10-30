@@ -963,6 +963,7 @@ def exam(p, arm="genesis", split="holdout", per_kind=9, seed=0):
     run, t0 = f"genesis-s{seed}", c.now()
     out = os.path.join(fmexam.root(p), run, arm)
     closed, given, misses, errors = {"train": [], "holdout": []}, {"train": [], "holdout": []}, {}, 0
+    held = []  # T-2097: every held-out draft is graded; one that errored closes nothing
     picked = [s for s in fmexam.draw(seed, GEN_KINDS, fmexam.LANGS, per_kind) if split in ("all", s["split"])]
     for i, s in enumerate(picked, 1):
         line, planted, defect = _ask(s)
@@ -985,6 +986,8 @@ def exam(p, arm="genesis", split="holdout", per_kind=9, seed=0):
                 text, source = (_oracle(chk, defect) if arm == "oracle" else ""), arm
         ok = source not in ("fallback", "error")
         errors += not ok
+        if s["split"] == "holdout":
+            held.append(s["id"])
         misses[s["id"]] = m = _misses(chk, text, s["kind"], defect)
         mine = [x for x in m if x not in set(cover(ref, text))]  # misses on what the writer was handed
         if ok and not m:
@@ -1001,9 +1004,47 @@ def exam(p, arm="genesis", split="holdout", per_kind=9, seed=0):
                      and e.get("project") == p.slug and str(e.get("ts", "")) >= t0), 4)
     r = {"run": run, "arm": arm, "agent": f"draft-{arm}", "scenarios": len(misses), "closed": closed, "given": given, "misses": misses,
          "errors": errors, "cost": cost}
-    exam_line(p, dict(r, misses={k: len(v) for k, v in misses.items()}, at=c.now(), gen=current(p), split=split,
-                      kinds=list(GEN_KINDS)))
+    exam_line(p, dict(r, misses={k: len(v) for k, v in misses.items()}, answered={"holdout": held}, at=c.now(), gen=current(p),
+                      split=split, kinds=list(GEN_KINDS)))
     return r
+
+
+def scorecard(p, agent="foreman", bar=0.8):
+    """T-2097: §8's scorecard. Per gen-0 §2 capability, the newest graded result of each held-out scenario of its
+    kinds, from exam.jsonl lines that name what they graded (answered ids; older lines carry none: regrade them). A
+    capability naming genesis (#13) scores on fm genesis exam's draft-genesis lines. pass: at least 3 graded and a
+    rate at or over bar; else under, too few, or no exam kind. The rate is over graded scenarios, not all held out.
+    {agent, bar, rows, ok, seen}: seen counts the agent's graded held-out scenarios."""
+    if not 0 < bar <= 1:  # also refuses nan
+        raise ValueError(f"--bar is a rate over 0 and at most 1, not {bar}")
+    caps = _caps(_doc(home(p), "gen-0.md"))
+    if not caps:
+        raise ValueError("no gen-0 with a numbered §2 yet: fm genesis draft, then fm genesis init --file -")
+
+    def newest(who):
+        out = {}
+        for x in _exam(p, who):  # file order is time order: a later result for a scenario wins
+            a, won = x.get("answered"), x["closed"].get("holdout")
+            held = a.get("holdout") if isinstance(a, dict) else None
+            if isinstance(held, list):
+                won = set(won) if isinstance(won, list) else set()
+                out.update({sid: sid in won for sid in held if isinstance(sid, str)})
+        return out
+
+    pools, rows = {}, []
+    for n, name, text in caps:
+        who = "draft-genesis" if re.search(r"genesis", name, re.I) else agent
+        kinds = list(GEN_KINDS) if who == "draft-genesis" else _kinds(name, text)
+        if who not in pools:
+            pools[who] = newest(who)
+        got = [v for sid, v in pools[who].items() if sid.rsplit("-", 2)[0] in kinds]  # ids are kind-lang-hash
+        graded, closed = len(got), sum(got)
+        state = ("no exam kind" if not kinds else "too few" if graded < 3 else  # 3: the fewest held out per capability
+                 "pass" if closed / graded >= bar else "under")
+        rows.append({"n": int(n), "name": name, "kinds": kinds, "agent": who, "graded": graded, "closed": closed,
+                     "rate": round(closed / graded, 3) if graded else 0, "state": state})
+    return {"agent": agent, "bar": bar, "rows": rows, "ok": all(r["state"] == "pass" for r in rows),
+            "seen": len(pools.get(agent) or newest(agent))}
 
 
 def exam_line(p, line):

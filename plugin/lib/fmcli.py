@@ -6937,7 +6937,9 @@ def _build_parser(only=None):
                    "discovered tasks tagged finder=; what becomes of them is that finder's precision")
     s = add("exam", lazy("fmexam", "cmd_exam"), tier=("Finding your way", 456), help="a seeded exam of throwaway repos in six "
             "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
-    s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check"))
+    s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard"),
+                   help="scorecard: each gen-0 §2 capability's held-out pass rate from graded runs; exit 1 unless all "
+                        "pass (T-2097)")
     s.add_argument("run", nargs="?", help="run/grade/check: the run id fm exam gen printed")
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--per-kind", type=int, default=9, help="scenarios per kind; a third (rounded) is held out")
@@ -6945,7 +6947,8 @@ def _build_parser(only=None):
     s.add_argument("--kind", help="comma list (default all eleven)")
     s.add_argument("--split", choices=("train", "holdout", "all"), default="all", help="gen: which to render; run: which to answer")
     s.add_argument("--agent", help="run/grade: oracle | empty | finders | foreman | plain | genesis (claude sessions, "
-                                  "cost recorded; genesis runs one Genesis generation)")
+                                  "cost recorded; genesis runs one Genesis generation); scorecard: whose runs (default foreman)")
+    s.add_argument("--bar", type=float, default=0.8, help="scorecard: the held-out rate a capability needs to pass")
     s.add_argument("--author", choices=("self", "child"), default="self",
                    help="gen: child = a tool-less model writes the bug, vuln, none and rank plants (kept only when fm exam check passes)")
     s.add_argument("--model", help="gen: the child author's model (default sonnet); run: the session's model")

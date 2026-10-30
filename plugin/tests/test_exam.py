@@ -94,6 +94,19 @@ class ExamGen(ForemanTestCase):
         self.assertIn("oracle", self.fm("genesis").stdout)  # the tower's status shows the last score
         self.assertIn("oracle", self.fm("exam").stdout)
 
+    def test_a_graded_held_out_run_lands_on_the_capability_scorecard(self):
+        # T-2097: grade files the ids it graded, so a capability scores on its held-out scenarios
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
+                "1. **Correctness.** Fixes what's broken. Exam: bug.\n\n## 3. The tower\n")
+        g = self.gen("--seed", "4", "--per-kind", "9", "--lang", "python", "--kind", "bug")
+        self.assertNotEqual(self.fm("exam", "scorecard", check=False).returncode, 0, "nothing graded yet")
+        self.fm_json("exam", "run", g["run"], "--agent", "oracle", "--split", "holdout")
+        line = json.loads(read_text(os.path.join(self.fm_json("genesis")["dir"], "exam.jsonl")).splitlines()[-1])
+        held = sorted(s["id"] for s in g["scenarios"] if s["split"] == "holdout")
+        self.assertEqual(line["answered"], {"holdout": held})
+        r = self.fm_json("exam", "scorecard", "--agent", "oracle")
+        self.assertEqual([(x["state"], x["closed"], x["graded"]) for x in r["rows"]], [("pass", 3, 3)])
+
     def test_the_clean_app_keeps_the_edge_contract_and_its_suite_proves_it(self):
         import fmexam  # T-2120: page n or size < 1 is empty, lo wins in clamp, label keeps a long s, total of none is 0
         s = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug")["scenarios"][0]

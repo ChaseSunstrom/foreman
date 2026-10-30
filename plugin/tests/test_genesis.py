@@ -786,6 +786,42 @@ class GenesisDraft(ForemanTestCase):
         self.assertIn(r["run"], spec)
         self.assertIn("| 1 | Correctness | bug | 3 | 1 |", spec)
 
+    def test_scorecard_grades_each_capability_on_its_newest_held_out_results(self):
+        import fmgenesis  # T-2097: the §8 scorecard, read from graded exam.jsonl lines
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
+                "1. **Correctness.** Fixes what's broken. Exam: bug.\n2. **Docs match code.** Keeps docs true. Exam: docs.\n"
+                "3. **Speed.** Fast. Exam: slow.\n4. **Taste.** Picks good names.\n"
+                "5. **Genesis as a feature.** Seeds itself.\n\n## 3. The tower\n")
+
+        def ids(kind, n):
+            return [f"{kind}-python-{i:06x}" for i in range(n)]
+
+        def line(agent, held, closed, train=()):
+            fmgenesis.exam_line(self.p, {"agent": agent, "answered": {"train": list(train), "holdout": held},
+                                         "closed": {"train": list(train), "holdout": closed}})
+        bug, docs, slow = ids("bug", 4), ids("docs", 4), ids("slow", 2)
+        line("foreman", bug + docs, bug + docs)  # an older run closed all of them
+        line("foreman", docs[:2], [])  # the newest result for two docs scenarios: not closed
+        line("foreman", [], [], train=ids("slow", 9))  # train results never grade a capability
+        line("foreman", slow, slow)
+        line("oracle", ids("slow", 6), ids("slow", 6))  # another agent's lines
+        fmgenesis.exam_line(self.p, {"agent": "foreman", "closed": {"holdout": ids("slow", 6)}})  # no answered ids
+        line("draft-genesis", ids("line", 2) + ids("sweep", 1), ids("line", 2) + ids("sweep", 1))
+        r = self.fm("exam", "scorecard", "--json", check=False)
+        self.assertEqual(r.returncode, 1, "not every capability passes")
+        rows = json.loads(r.stdout)["rows"]
+        self.assertEqual([(x["name"], x["state"], x["closed"], x["graded"]) for x in rows],
+                         [("Correctness", "pass", 4, 4), ("Docs match code", "under", 2, 4), ("Speed", "too few", 2, 2),
+                          ("Taste", "no exam kind", 0, 0), ("Genesis as a feature", "pass", 3, 3)])
+        self.assertEqual(rows[4]["agent"], "draft-genesis")
+        low = self.fm_json("exam", "scorecard", "--bar", "0.5", check=False)["rows"]
+        self.assertEqual(low[1]["state"], "pass")
+        self.assertIn("--bar is a rate", self.fm("exam", "scorecard", "--bar", "80", check=False).stderr)  # not a percent
+        self.assertIn("no graded held-out lines from 'nobody'", self.fm("exam", "scorecard", "--agent", "nobody", check=False).stdout)
+        text = self.fm("exam", "scorecard", check=False).stdout
+        for part in ("Correctness", "4/4", "too few", "no exam kind"):
+            self.assertIn(part, text)
+
     def test_review_fixes_fallback_reason_secret_lines_fenced_readme_and_spec_limits(self):
         import fmcore as c
         import fmgenesis
@@ -1392,6 +1428,9 @@ class GenesisExam(ForemanTestCase):
         self.assertEqual(run.stderr.count(": closed\n"), 3)  # one progress line per scenario
         self.assertIn("1/3 ", run.stderr)
         self.assertIn("3 held out + 0 train closed of 3 (3 on what it was given)", run.stdout)
+        last = fmgenesis._exam(self.p, "draft-oracle")[-1]  # T-2097: the scorecard counts what it graded
+        self.assertEqual(sorted(last["answered"]["holdout"]), sorted(last["closed"]["holdout"]))
+        self.assertEqual(len(last["answered"]["holdout"]), 3)
         self.assertNotEqual(self.fm("genesis", "exam", "--arm", "nope", check=False).returncode, 0)
         e = self.exam("--arm", "empty", "--per-kind", "3", "--split", "all")
         self.assertEqual(e["closed"], {"train": [], "holdout": []})
