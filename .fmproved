@@ -1,0 +1,4 @@
+# Paths whose changes need a red→green proof whatever the task type (fm task finish refuses without one, T-2222):
+# the exam and the scorecard decide "done", so a change to how they score needs the test that would catch it.
+plugin/lib/fmexam.py
+plugin/lib/fmgenesis.py

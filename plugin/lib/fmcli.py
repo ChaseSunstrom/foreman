@@ -1086,6 +1086,7 @@ def task_finish(p, args):
             for n in red] + ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or "
                               f"evidence of its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b) \
         + _file_map_gaps(p, b) + [g for g in [b.proof_gap(then=[cmd for _, _, cmd in todo] + [args.run])] if g] \
+        + _proved_gaps(p, b, then=[cmd for _, _, cmd in todo] + [args.run]) \
         + _adversary_gaps(p, b, lenses)  # T-1906, T-1907: asked before anything runs
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
@@ -1599,6 +1600,23 @@ def _self_docs_gaps(p, b):
         return []
     res = fmdoctor.check_self_docs()
     return [f"self docs: {res.detail}"] if res.status == "FAIL" else []
+
+
+def _proved_gaps(p, b, then=()):
+    """T-2222: a close that changed a path the repo's .fmproved lists (globs, one a line, # comments) needs a red→green
+    proof whatever its type: scores, grades, money, auth, whatever the repo names. A FIX has its own gate."""
+    import fnmatch
+    import fmmap
+    try:
+        with open(os.path.join(p.root, ".fmproved"), encoding="utf-8") as f:
+            globs = [x.strip() for x in f if x.strip() and not x.lstrip().startswith("#")]
+    except OSError:
+        return []
+    base = c.task_base(p.root, b) if globs and b.type != "FIX" and c.git_root(p.root) else None
+    hit = sorted(x for x in fmmap.changed(p.root, base) if any(fnmatch.fnmatch(x, g) for g in globs)) if base else []
+    gap = b.proof_gap(then=then, force=True) if hit else None
+    return [f"{', '.join(hit[:3])}{' …' if len(hit) > 3 else ''} {'is' if len(hit) == 1 else 'are'} listed in "
+            f".fmproved: {gap}"] if gap else []
 
 
 def _file_map_gaps(p, b):

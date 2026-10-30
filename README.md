@@ -265,7 +265,7 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 - `fm task evidence --run` records a command's real exit code and output.
 - Test first at edit time: in a fix or feature task that has changed no test and recorded no failing run, the first edit of a source file brings one line saying to write and run the failing test first. Once per task, never a block.
 - `fm task prove` shows a test failing on the start tree and passing now. `--hunks` reverts each hunk to show the tests notice it.
-- `fm task finish` closes a task in one call, but only with fresh evidence and the audits, docs note and lesson its size needs. It counts its warnings in one line first (a leftover `breakpoint()` or conflict marker among them) and ends by saying where the work landed: committed and pushed, or not.
+- `fm task finish` closes a task in one call, but only with fresh evidence and the audits, docs note and lesson its size needs. It counts its warnings in one line first (a leftover `breakpoint()` or conflict marker among them) and ends by saying where the work landed: committed and pushed, or not. Paths you list in a `.fmproved` file (one glob a line) can't change without a test that failed first and passes now.
 - The suite runs in CI on every push.
 
 </details>

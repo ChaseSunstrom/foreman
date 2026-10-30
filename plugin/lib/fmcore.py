@@ -1859,10 +1859,10 @@ class Brief:
         """A command fm ran that failed and later passed (T-0045): the test proves the fix."""
         return self.red_green_cmd() is not None
 
-    def proof_gap(self, then=()):
+    def proof_gap(self, then=(), force=False):
         """A FIX's missing red→green proof, said with how to give it, or None; then: commands about to run, counted as
-        passing (T-1906: fm task finish asks before its checks run, not after)."""
-        if self.type != "FIX" or self.section("Regression test").strip() or self.red_green_cmd(then):
+        passing (T-1906: fm task finish asks before its checks run, not after). force: any type (T-2222, .fmproved)."""
+        if (self.type != "FIX" and not force) or self.section("Regression test").strip() or self.red_green_cmd(then):
             return None
         return (f"no red→green proof: fm task prove {self.id} --run \"<test cmd>\" (runs it on the start tree with this "
                 f"task's tests, then now), or record it failing before the fix and passing after (fm task evidence "
