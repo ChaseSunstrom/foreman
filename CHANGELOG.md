@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Child authors now also write untested, clean, docs and flaky exam scenarios: a new helper whose test is missing (or present, for a clean repo Foreman never saw), a README sentence the code contradicts, and a test that passes by chance. Each is checked before it's kept, so every exam kind but vague, ambiguous and missing-tool can be scored on scenarios Foreman didn't write.
 - `fm genesis step` reads a Mission's whole `Task:` paragraph, wrapped lines included: a long one no longer made it count briefs as never filed and ask for a second `fm intake` of them.
 - The capability scorecard now counts only held-out scenarios an outside author wrote (`fm exam gen --author child`): results on Foreman's own template scenarios are shown as "self-authored, not counted", and a capability no outside author can write scenarios for yet reads `no outside author`, never pass. Child authors now also write slow and missing-dependency scenarios.
 - `fm prove PATH --capture N` files each proven finding as a ready task whose check is `fm prove PATH --only ID`: red while the finding stands, green once it's fixed, so `fm run` can work them on lanes. When nothing is proven it writes a receipt (research/prove-receipt.md) listing each lead and why. New user-only `/foreman:initiative` runs the whole pipeline: map, find, prove, fix, receipt.
