@@ -1188,11 +1188,14 @@ def user_prompt_submit(pl):
     except Exception:  # unknown: no approval from this prompt (the permission dialog still grants)
         log_error("UserPromptSubmit", _tb())
         program, claude = True, None
+    asks = _asks(text)
     try:
         hashes = _pin_hashes(a.get("pin") for a in c.read_meta(p).get("pending_approvals") or [] if isinstance(a, dict))
         with c.lock(p.dir, timeout=LOCK_WORDS):
             meta = c.read_meta(p)
             approvals = [] if program else _resolve_approvals(p, meta, sid, text, hashes, claude)
+            if asks and not meta.get("sensitive"):  # T-2146: the Stop clauses gate needs no fm clauses run
+                meta["clauses"] = {"at": c.now(), "open": asks, "session": sid}
             prompts = _load_list(_prompts_path(p))  # a dialog still open when the user speaks was refused or ignored
             if any(a.get("session") == sid for a in prompts):
                 c.write_atomic(_prompts_path(p), json.dumps([a for a in prompts if a.get("session") != sid]))
@@ -3360,6 +3363,20 @@ def _headless():
     return os.environ.get("FOREMAN_DRIVE_TASK") or os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli"
 
 
+def _asks(text):
+    """T-2146: a multi-part request's clauses, redacted: 3 to 12 (fewer is a plain ask, more a paste). A worker's
+    prompt and a slash command are Foreman's words, not a request."""
+    if os.environ.get("FOREMAN_WORKER_OF") or text.startswith("/"):
+        return []
+    try:
+        import fmrecall
+        parts = fmrecall.clauses(c.redact(text))
+    except Exception:  # never drop the prompt's yes over a note
+        log_error("UserPromptSubmit", _tb())
+        return []
+    return parts if 3 <= len(parts) <= 12 else []
+
+
 def _oneoff():
     """T-0775: a claude -p session Foreman didn't start (fm run sets FOREMAN_DRIVE_TASK) answers its prompt: no queue
     in its context, no drive, no claim on the project's session. The guard still applies."""
@@ -3505,12 +3522,16 @@ def _clauses_gate(p, pl, g, closed=()):
     meta = c.read_meta(p).get("clauses") or {}
     loose = meta.get("open") or []
     age = c.age_days(meta.get("at"))
-    if not loose or age is None or age > 1:  # a day-old (or undated) list is another request's
+    if not loose or age is None or age > 1 or meta.get("session") not in (None, pl.get("session_id")):
+        return None  # a day-old (or undated) list is another request's; another session's prompt isn't this one's
+    import fmrecall
+    loose = fmrecall.unaccounted(p, loose)  # T-2146: a clause recorded at submit predates the task made for it
+    if not loose:
         return None
-    key = hashlib.sha1(json.dumps(loose).encode()).hexdigest()[:12]  # a partial --note makes a new set
-    if key in g.setdefault("clauses", []):
+    held, keys = g.setdefault("clauses", []), [hashlib.sha1(x.encode()).hexdigest()[:12] for x in loose]
+    if all(k in held for k in keys):  # each clause holds once: covering one doesn't hold the rest again
         return None
-    g["clauses"] = (g["clauses"] + [key])[-50:]
+    g["clauses"] = (held + [k for k in keys if k not in held])[-50:]
     c.log_event(p, "stop_gate", data={"clauses": len(loose)}, session=pl.get("session_id"))
     return (f"Foreman: the reply says it's done, but {len(loose)} clause(s) of the last request are unaccounted: "
             + "; ".join(f"{i}. {c.fit(c.plain(x), 80)}" for i, x in enumerate(loose[:5], 1))

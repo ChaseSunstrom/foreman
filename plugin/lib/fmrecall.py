@@ -539,7 +539,7 @@ _CLAUSE_SPLIT = re.compile(r"\n+|(?<=[.?!;])\s+|\s+(?:and also|as well as|plus)\
 def clauses(text):
     """T-0595: a message cut into its asks: lines, sentences, "and also" joins; list markers and short bits dropped."""
     parts = [re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", x).strip() for x in _CLAUSE_SPLIT.split(text or "") if x]
-    return [x for x in parts if len(x.split()) >= 3]
+    return [x for x in parts if len(x.split()) >= 3 and len(set(_tokens(x))) >= 2]  # T-2146: account() needs 2 shared
 
 
 def account(p, parts):
@@ -555,11 +555,16 @@ def account(p, parts):
     return out
 
 
+def unaccounted(p, loose):
+    """T-2146: the clauses no task covers now (the hook records a request's clauses before its tasks exist)."""
+    return [x for x, t in account(p, loose) if not t]
+
+
 def cmd_clauses(args):
     import fmcli
     p = fmcli.resolve(args)
     meta = c.read_meta(p).get("clauses") or {}
-    loose = meta.get("open") or []
+    loose = unaccounted(p, meta.get("open") or [])
     if args.note is not None:
         if not 1 <= args.note <= len(loose):
             raise fmcli.UsageError(f"no unaccounted clause {args.note} (fm clauses --show lists {len(loose)})")
