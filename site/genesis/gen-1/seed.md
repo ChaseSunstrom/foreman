@@ -61,13 +61,16 @@ gen 2 as its own Mission — it is never folded silently into "partly done".
   ideas.md>` with fitted lenses + inversion + sci-fi (2030 worked back) + self-modification + ≥ 2 invented lenses;
   first re-read not-yet.md for items in its area; tier 4 or uncertain → `fm lane new ID --spike`; two credible
   designs → `fm lane race`; tests red first; close with `fm task finish` and its audits.
-- **Completeness** (gen-0 MUST): tests, its exam scenarios passing, MASTER.md + CHANGELOG (+ README where it belongs),
-  a site page if user-facing, a pane/status line if it has state, and every surface it belongs on (Claude Code plugin
-  is the floor; fm code and MCP where an agent would call it).
 - **Lean** (gen-0 §6): subtract as you add; hook p95, rules size and injected context may not grow. A new verb that
   replaces an old path removes the old path in the same task.
-- **Safety** (gen-0 NEVER): unprompted actions stay local and reversible; protected core goes to a worktree candidate
-  plus `fm ask ID core` at the end; nothing leaves the machine without a grant.
+- **gen-0's MUSTs and NEVERs, verbatim** (quoted, never paraphrased: a paraphrase is drift):
+
+MUST: full autonomy. Every decision through fm decide. Never ask me anything mid-run.
+MUST: no spend cap on building and proving. Tokens go into Foreman's code and its tests, not into sweeping the outside world. Waiting out a usage limit is fine.
+MUST: everything finishes completely. A capability is done only when it has its tests, its exam scenarios passing (§4), docs (MASTER.md, README where it belongs, CHANGELOG), a site page if it's user-facing, a pane/status surface if it has state, and it works on every surface it belongs on (Claude Code, fm code, other agents, Desktop).
+MUST: unprompted actions stay local and reversible (a lane, a branch, a spike, a throwaway folder). Anything that leaves the machine needs its grant, so it goes into the final report.
+NEVER: clone or sweep outside repos to brainstorm or to benchmark. Outside material is only allowed in the targeted form in §5.
+NEVER: grant yourself anything or lower your own guard. Protected core gets a built, evaluated candidate in a worktree plus `fm ask ID core` at the end. Merging Foreman changes stays my call.
 
 ## Order of work
 1 → 2 → 3, then 4–8 in that order, one at a time. After each Mission: its critique (gen-1/critique-<cap>.md: exam
