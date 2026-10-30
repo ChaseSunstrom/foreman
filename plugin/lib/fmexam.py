@@ -870,7 +870,7 @@ def _answers(p, run, agent):
     return os.path.join(root(p), run, "answers", agent)
 
 
-def run_agent(p, run, agent, split="all", limit=None, budget=2.0, model=None, timeout=20, request=None):
+def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, timeout=20, request=None):
     """Answers from one agent on the run's scenarios (split, then the first `limit`), then the grade. A session arm runs
     one scenario at a time and defaults to 3 (ponytail: a spend guard; --limit raises it); kinds take turns, so a short
     sample still spans them."""
@@ -888,7 +888,8 @@ def run_agent(p, run, agent, split="all", limit=None, budget=2.0, model=None, ti
     if not picked:
         raise ValueError(f"no {split} scenarios in {run}")
     if agent in SESSIONS:
-        fmbudget.check("exam-arm", fmbudget.estimate("exam-arm", len(picked), min(budget, 0.5)), "a smaller --limit")
+        fmbudget.check("exam-arm", fmbudget.estimate("exam-arm", len(picked), min(budget or 0.5, 0.5)),
+                       "a smaller --limit")  # the user's own fm budget cap; T-2179: no per-session dollar cap by default
     shutil.rmtree(_answers(p, run, agent), ignore_errors=True)  # the grade is this run's answers only
     import fmgenesis  # the generation that answers, so a later regrade still files it under that generation
     c.write_atomic(os.path.join(_answers(p, run, agent), "gen"), str(fmgenesis.current(p)))
