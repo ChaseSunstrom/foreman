@@ -5,7 +5,6 @@ isn't one."""
 import json
 import math
 import os
-import re
 import time
 
 import fmcore as c
@@ -143,12 +142,12 @@ def collisions(p, days=7):
 
 
 def collision_line(p, least=3):
-    """T-1875: one SessionStart line for the week's most-hit guard rule when it fired least times or more, else None."""
+    """T-1875: one SessionStart item for the week's most-hit guard rule when it fired least times or more, else None;
+    fm risk has the rewrite (T-2117)."""
     top = next(iter(collisions(p)), None)
     if not top or top["n"] < least:
         return None
-    say = re.split(r"(?<=[.!?])\s", top["rewrite"], maxsplit=1)[0] or f"Last: {top['detail']}."  # review: keep it short
-    return c.fit(f"Guard collisions: {top['rule']} blocked {top['n']}× in 7 days. {say} fm risk lists them.", 240)
+    return c.fit(f"{top['rule']} blocked {top['n']}× in 7 days → fm risk", 160)
 
 
 def cmd_risk(args):

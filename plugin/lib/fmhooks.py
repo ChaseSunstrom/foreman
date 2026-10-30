@@ -611,8 +611,8 @@ def session_context(p, sd, other_note=None, sid=None):
     except Exception:  # a malformed brief costs the Next line, not the whole session context
         log_error("SessionStart", _tb())
     q = sd["queue"]
-    queue = [("Queue: " + "; ".join(f"{x['id']} {x['type']} {x['tier']} {x['title'][:50]}" for x in q[:5])
-              + (f" (+{len(q) - 5} more)" if len(q) > 5 else "") + ".") if q else "Queue: empty."]
+    queue = [("Queue: " + "; ".join(f"{x['id']} {x['type']} {x['tier']} {x['title'][:40]}" for x in q[:3])  # T-2117
+              + (f" (+{len(q) - 3} more)" if len(q) > 3 else "") + ".") if q else "Queue: empty."]
     inbox = sd["inbox"]
     tail = [f"Inbox: {len(inbox)}" + (" — " + "; ".join(f"{x['id']} {x['title'][:40]}" for x in inbox[:3]) if inbox else "") + "."]
     try:  # T-1800/T-1810: problems nobody raised, from caches only, each with its action
@@ -624,11 +624,14 @@ def session_context(p, sd, other_note=None, sid=None):
     except Exception:
         log_error("SessionStart", _tb())
         parts = ()
-    for part in parts:  # one bad cache costs only its own line
+    watch = []  # T-2117: after the first part's lines, each part's short items share one pointer line
+    for i, part in enumerate(parts):  # one bad cache costs only its own line
         try:
-            tail += part()
+            (watch if i else tail).extend(part())
         except Exception:
             log_error("SessionStart", _tb())
+    if watch:
+        tail.append("Watch: " + "; ".join(watch) + ".")
     if sd["cycles"]:
         tail.append("Dependency cycles: " + "; ".join("↔".join(x) for x in sd["cycles"])[:150] + ".")
     if sd["sensitive"]:

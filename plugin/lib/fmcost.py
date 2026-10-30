@@ -224,7 +224,8 @@ def write_burn(found):
 
 
 def burn_line(max_age=86400):
-    """The session-start line from the last cached scan (the Stop hook's detached refresh writes it): never a scan."""
+    """The session-start item from the last cached scan (the Stop hook's detached refresh writes it): never a scan;
+    fm digest names every finding with its fix (T-2117)."""
     try:
         with open(_burn_path(), encoding="utf-8") as f:
             d = json.load(f)
@@ -232,7 +233,8 @@ def burn_line(max_age=86400):
         return ""
     if not d.get("found") or time.time() - d.get("ts", 0) > max_age:
         return ""
-    return "Usage burn: " + "; ".join(f"{a} → {b}" for a, b in d["found"]) + "."
+    f = d["found"]
+    return f"usage burn: {c.fit(f[0][0], 90)}" + (f" (+{len(f) - 1} more)" if len(f) > 1 else "") + " → fm digest"
 
 
 IDLE_S = 600  # a gap longer than this between two entries is time away, not work

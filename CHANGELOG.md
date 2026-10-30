@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A new session's first note is shorter: the usage burn, the blocked pile, an overdue tidy and a guard rule hit again and again now share one `Watch:` line, each pointing at the command with the detail (`fm digest`, `fm tidy`, `fm risk`), and the queue names 3 tasks. On this repo it went from about 1,900 characters to about 1,450 (T-2117).
 - The note on a file's 3rd edit in a row (use `fm edit` for the rest) is said in full once a session; later files, and the same session after a compaction, get a one-line form (T-2108).
 - `fm friction`'s line for the errors the hooks swallowed now names where the latest one was raised (its innermost file and line, such as `fmhooks.py:1474`), so the digest points at the code, not just the log (T-2107).
 - `fm exam` gains two kinds for finishing a goal: `goal` (only a vague goal is given; graded on what a finished version holds) and `resume` (the same goal half done, with PLAN.md on disk and only "continue" given). Saying done with an item unmet is a false done, and breaking an item that was already met counts as broken. With `--author child`, a tool-less child writes the gap a finished version must close (no request needed); the other items come from the template. Genesis gives both kinds to Goal to finish.

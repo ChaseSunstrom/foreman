@@ -102,7 +102,7 @@ class Foresight(ForemanTestCase):
         self.assertIn("CI on main is red at aaaaaaa", fmhooks.session_context(self.p, sd))
         sd["tidy_overdue_days"], sd["last_tidy"] = 12, None
         with mock.patch.object(fs, "lines", side_effect=KeyError("sha")):
-            self.assertIn("Tidy overdue", fmhooks.session_context(self.p, sd))
+            self.assertIn("Watch: tidy overdue 12 days → fm tidy.", fmhooks.session_context(self.p, sd))
 
     def test_every_projects_stop_hook_spawns_the_sweep_at_most_every_sweep_every(self):
         stamp = os.path.join(self.p.dir, "sweep.spawned")
@@ -140,7 +140,7 @@ class Foresight(ForemanTestCase):
         self.assertIn("oldest untouched", text)
         self.assertIn("T-0001", text)
         self.assertIn("fm tidy", text)
-        self.assertIn("Tidy overdue", text)
+        self.assertIn("tidy overdue", text)
         self.assertEqual(fs.pile_lines({"blocked": [], "tidy_overdue_days": None, "last_tidy": None}), [])
 
 
