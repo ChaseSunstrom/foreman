@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-30T03:31:33Z",
- "rev": "0b64215c",
+ "updated": "2026-10-30T04:07:57Z",
+ "rev": "b1553311",
  "capabilities": [
   {
    "n": 1,
@@ -318,12 +318,12 @@
       {
        "id": "T-2079",
        "title": "fm exam: generated multi-language exam with hidden keys, holdout third, finders and claude arms, scores to exam.jsonl",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
-       "done": 1,
-       "current": "generator: one app spec rendered in six languages, defect variants, key and hidden checks outside the repo"
+       "done": 4,
+       "current": "baseline: finders arm over a full generation recorded in exam.jsonl"
       },
       {
        "id": "T-2080",
@@ -573,7 +573,60 @@
    ]
   }
  ],
- "exam": [],
+ "exam": [
+  {
+   "run": "s0-001",
+   "agent": "finders",
+   "keyed": 108,
+   "found": 0,
+   "false_alarms": 0,
+   "fixable": 108,
+   "fixed": 0,
+   "tf_keyed": 54,
+   "tf_first": 0,
+   "readings_keyed": 18,
+   "readings_hit": 0,
+   "missing_keyed": 9,
+   "missing_hit": 0,
+   "false_done": 0,
+   "scenarios": 99,
+   "holdout": {
+    "keyed": 36,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 36,
+    "fixed": 0,
+    "tf_keyed": 18,
+    "tf_first": 0,
+    "readings_keyed": 6,
+    "readings_hit": 0,
+    "missing_keyed": 3,
+    "missing_hit": 0,
+    "false_done": 0,
+    "scenarios": 33
+   },
+   "train": {
+    "keyed": 72,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 72,
+    "fixed": 0,
+    "tf_keyed": 36,
+    "tf_first": 0,
+    "readings_keyed": 12,
+    "readings_hit": 0,
+    "missing_keyed": 6,
+    "missing_hit": 0,
+    "false_done": 0,
+    "scenarios": 66
+   },
+   "at": "2026-10-30T04:07:57Z",
+   "split": "all",
+   "author": "self",
+   "cost": 0,
+   "tokens": 0
+  }
+ ],
  "coverage": {
   "cells": 0,
   "filled": 0
