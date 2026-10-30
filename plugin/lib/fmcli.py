@@ -5085,6 +5085,7 @@ SPLIT_SUGGEST = 800  # diff lines past which an L review suggests --split
 _BULK = re.compile(r"(^|/)(fixtures?|testdata|__snapshots__)/|(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|"
                    r"Cargo\.lock|poetry\.lock|go\.sum|uv\.lock)$|\.lock$|\.min\.(js|css)$")
 CONTEXT_MAX = 200
+GENERATED_LINE = 4000  # T-2069: a changed line this long is a recording or minified output, not code to read
 
 
 def _compact_diff(diff):
@@ -5100,10 +5101,13 @@ def _compact_diff(diff):
             continue
         path = m.group(2)
         lines = hunks.splitlines()
-        if _BULK.search(path):
+        what = ("a fixture or lockfile" if _BULK.search(path) else  # T-2069: one 27 MB diff was mostly a .cast
+                f"generated or minified (a changed line over {GENERATED_LINE} characters)"
+                if any(len(x) > GENERATED_LINE for x in lines if x[:1] in "+-") else None)
+        if what:
             plus = sum(1 for x in lines if x.startswith("+"))
             minus = sum(1 for x in lines if x.startswith("-"))
-            out.append(f"diff --git a/{path} b/{path}\n{path}: a fixture or lockfile, +{plus} −{minus} lines, left out\n")
+            out.append(f"diff --git a/{path} b/{path}\n{path}: {what}, +{plus} −{minus} lines, left out\n")
             continue
         if hunks in seen:
             out.append(f"diff --git a/{path} b/{path}\n{path}: the same change as {seen[hunks]}\n")
