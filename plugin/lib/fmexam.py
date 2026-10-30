@@ -18,7 +18,7 @@ import textwrap
 import fmbudget
 import fmcore as c
 
-KINDS = ("bug", "vuln", "untested", "slow", "docs", "flaky", "dep", "vague", "ambiguous", "missing-tool", "none")
+KINDS = ("bug", "vuln", "untested", "slow", "docs", "flaky", "dep", "vague", "ambiguous", "missing-tool", "none", "clean", "rank")
 LANGS = ("python", "js", "ts", "ruby", "rust", "c")
 RUN_ID = re.compile(r"s\d+-(\d{3,})")
 BUILD_T, EXEC_T, SLOW_T = 120, 20, 5  # seconds; a timeout is a failure
@@ -30,7 +30,8 @@ REQUESTS = {"bug": "Something is off in the paging; find and fix it.", "vuln": "
             "docs": "Check the docs are right.", "flaky": "CI fails now and then; find out why.",
             "dep": "The tests won't run; fix it.", "vague": "make this faster",
             "ambiguous": "make @total@() handle refunds",
-            "missing-tool": "Match @page@()'s output to the layout in the team's Figma file", "none": ""}
+            "missing-tool": "Match @page@()'s output to the layout in the team's Figma file", "none": "", "clean": "",
+            "rank": ""}
 TEXTS = {"bug": "@page@() returns nothing for a short last page (the size guard drops it)",
          "vuln": "@query@() pastes the name into the SQL unescaped (SQL injection)",
          "slow": "@dedupe@() looks each item up in the output list, quadratic on big inputs",
@@ -288,9 +289,11 @@ C = {
 SPEC = {"python": PY, "js": JS, "ts": TS, "ruby": RB, "rust": RS, "c": C}
 BASE = ("total", "page", "dedupe", "query", "label", "clamp")
 REGRESSION = ("page_partial", "query_quote", "dedupe_big")
-VARIANT = {"bug": ("bug",), "vuln": ("vuln",), "slow": ("slow",), "vague": ("slow",), "dep": ("dep",), "none": ("bug", "vuln")}
+VARIANT = {"bug": ("bug",), "vuln": ("vuln",), "slow": ("slow",), "vague": ("slow",), "dep": ("dep",), "none": ("bug", "vuln"),
+           "rank": ("vuln",)}
 DEFECTS = {"bug": ("bug",), "vuln": ("vuln",), "slow": ("slow",), "vague": ("slow",), "dep": ("dep",),
-           "untested": ("untested",), "docs": ("docs",), "flaky": ("flaky",), "none": ("bug", "vuln", "untested", "docs")}
+           "untested": ("untested",), "docs": ("docs",), "flaky": ("flaky",), "none": ("bug", "vuln", "untested", "docs"),
+           "rank": ("vuln", "untested", "docs")}  # rank: the first outranks the rest
 RUN_CHECK = {"bug": "page_partial", "vuln": "query_quote", "slow": "dedupe_big", "dep": "label"}
 
 
@@ -372,8 +375,9 @@ def render(base, s, plant=None):
     run = shlex.join(spec["cmd"]["build"].replace("-o @OUT@/t", "-o t").split()) + " && ./t" \
         if "build" in spec["cmd"] else spec["cmd"]["exec"]
     run = _fill(run.replace("@F@", suite), names)
-    defects = DEFECTS.get(kind, ())
-    visible = [k for k in BASE if not (k == "clamp" and "untested" in defects)]
+    defects = (CHILD_DEFECTS if plant else {}).get(kind) or DEFECTS.get(kind, ())
+    gap = "label" if plant and plant["function"] == "clamp" else "clamp"  # the untested one is never the planted one
+    visible = [k for k in BASE if not (k == gap and "untested" in defects)]
     if kind == "flaky":
         visible = ["page_flaky" if k == "page" else k for k in visible]
     readme = README.replace("@RUN@", run)
@@ -387,31 +391,33 @@ def render(base, s, plant=None):
     files, test_re = spec["files"], "test"
     key_defects = []
     for d in defects:
-        text = c.fit(c.plain(plant["says"]), 300) if plant else _fill(TEXTS[d], names)
+        child = plant and d in RUN_CHECK
+        text = c.fit(c.plain(plant["says"]), 300) if child else _fill(TEXTS[d].replace("@clamp@", f"@{gap}@"), names)
         if d in RUN_CHECK:
-            _write(os.path.join(base, "hidden", "checks"), {f"{d}.{ext}": _tests(spec, ["child" if plant else RUN_CHECK[d]])}, names)
+            _write(os.path.join(base, "hidden", "checks"), {f"{d}.{ext}": _tests(spec, ["child" if child else RUN_CHECK[d]])}, names)
             check = {"type": "run", "file": f"checks/{d}.{ext}", "slow": d == "slow"}
         elif d == "untested":
-            check = {"type": "static", "files": test_re, "must": [rf"\b{names['clamp']}\("], "never": []}
+            check = {"type": "static", "files": test_re, "must": [rf"\b{names[gap]}\("], "never": []}
         elif d == "docs":
             check = {"type": "static", "files": "readme", "must": [rf"\b{names['page']}\("], "never": [rf"\b{names['alt']}\("]}
         else:  # flaky
             check = {"type": "static", "files": test_re, "must": [rf"\b{names['page']}\("], "never": [r"random|rand\(|RandomState"]}
         tf = d in ("bug", "vuln", "slow")
         if tf:
-            _write(os.path.join(base, "hidden", "planted", d), _app(spec, ("child",) if plant else (d,)), names)
-        symbols = [plant["function"]] if plant else {"bug": ["page"], "vuln": ["query"], "slow": ["dedupe"], "dep": ["label"],
-                                                    "untested": ["clamp"], "docs": ["page", "alt"], "flaky": ["test_page", "page"]}[d]
+            _write(os.path.join(base, "hidden", "planted", d), _app(spec, ("child",) if child else (d,)), names)
+        symbols = [plant["function"]] if child else {"bug": ["page"], "vuln": ["query"], "slow": ["dedupe"], "dep": ["label"],
+                                                    "untested": [gap], "docs": ["page", "alt"], "flaky": ["test_page", "page"]}[d]
         where = {"untested": [suite] + files, "docs": ["README.md"], "flaky": [suite]}.get(d, files)
         key_defects.append({"kind": d, "symbols": [names.get(x, x) for x in symbols], "files": where, "text": text,
                             "tf": tf, "check": check})
     readings = {"vague": [re.escape(names["dedupe"]), "set|hash|linear|quadratic"],
                 "ambiguous": ["negative|subtract", "skip|exclude|ignore|left out|drop"]}.get(kind, [])
     cmds = dict(spec["cmd"], app=files, suite=suite, check=check_name)
-    request = c.fit(c.plain(plant["request"]), 300) if plant else _fill(REQUESTS[kind], names)
+    request = c.fit(c.plain(plant["request"]), 300) if plant and REQUESTS[kind] else _fill(REQUESTS[kind], names)
     key = {"id": s["id"], "kind": kind, "lang": lang, "split": s["split"], "request": request, "author": s.get("author", "self"),
            "names": names, "commands": cmds, "defects": key_defects, "readings": readings,
-           "missing": ["figma"] if kind == "missing-tool" else [], "done_ok": kind != "missing-tool"}
+           "missing": ["figma"] if kind == "missing-tool" else [], "done_ok": kind != "missing-tool",
+           "rank": [list(defects[:1]), list(defects[1:])] if kind == "rank" else []}
     c.write_atomic(os.path.join(base, "key.json"), json.dumps(key, indent=1))
     git = ["git", "-c", "init.defaultBranch=main", "-c", "user.name=exam", "-c", "user.email=exam@localhost",
            "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
@@ -444,7 +450,9 @@ def _key(p, run, sid):
         return json.load(f)
 
 
-CHILD_KINDS = {"bug": "a logic bug a user would hit", "vuln": "a security hole (injection, overflow, unchecked input)"}
+CHILD_KINDS = {"bug": "a logic bug a user would hit", "vuln": "a security hole (injection, overflow, unchecked input)",
+               "none": "a logic bug a user would hit", "rank": "a security hole (injection, overflow, unchecked input)"}
+CHILD_DEFECTS = {"none": ("bug", "untested", "docs")}  # one child plant beside the template's untested and docs
 AUTHOR = ("You write one exam scenario for a coding agent. Given a small {lang} module, its tests and a defect kind, plant "
           "one {what} in ONE of its functions and write the test that catches it. Reply with one JSON object only: "
           '{{"function": the function\'s name, "source": that whole function as planted, "test": the lines of one test '
@@ -473,7 +481,10 @@ def _author(s, model):
         raise ValueError("the author's reply misses a field or names no function in the module")
     ind = re.match(r"[ \t]*", spec["tests"]["total"]).group()  # test bodies sit at the template's indent
     src = textwrap.dedent(plant["source"]).strip("\n") + "\n"
-    test = textwrap.indent(textwrap.dedent(plant["test"]).strip("\n") + "\n", ind)
+    first, _, rest = textwrap.dedent(plant["test"]).strip("\n").partition("\n")
+    if rest and not first[:1].isspace() and not re.search(r"(:|\{|\bdo(\s*\|[^|]*\|)?)\s*$", first):
+        rest = textwrap.dedent(rest)  # models copying the indented body style trim only line 1; a block opener keeps its nesting
+    test = textwrap.indent("\n".join(x for x in (first, rest) if x) + "\n", ind)
     return dict(plant, function=fn, source=src, test=test)
 
 
@@ -758,7 +769,17 @@ def run_agent(p, run, agent, split="all", limit=None, budget=2.0, model=None, ti
 
 
 COUNTS = ("keyed", "found", "false_alarms", "exam_defects", "fixable", "fixed", "tf_keyed", "tf_first", "readings_keyed", "readings_hit",
-          "missing_keyed", "missing_hit", "false_done", "scenarios", "errors")
+          "missing_keyed", "missing_hit", "rank_keyed", "rank_hit", "false_done", "scenarios", "errors")
+
+
+def _in_order(found, key):
+    """Every keyed defect found, and each rank tier's first mention before the next tier's: the vuln named ahead of a
+    missing test or a docs slip. Strict: one finding that matches two tiers ties and fails (a false negative)."""
+    idx = {d["kind"]: next((i for i, f in enumerate(found) if _matches(f, d)), None) for d in key["defects"]}
+    if None in idx.values():
+        return False
+    tiers = [[idx[k] for k in t] for t in key["rank"]]
+    return all(max(a) < min(b) for a, b in zip(tiers, tiers[1:]))
 
 
 def _known(agent):
@@ -771,7 +792,8 @@ def _closed(n):
     error."""
     return not (n["false_alarms"] or n["false_done"] or n["errors"]) and all(
         n[have] == n[want] for want, have in (("keyed", "found"), ("fixable", "fixed"), ("tf_keyed", "tf_first"),
-                                              ("readings_keyed", "readings_hit"), ("missing_keyed", "missing_hit")))
+                                              ("readings_keyed", "readings_hit"), ("missing_keyed", "missing_hit"),
+                                              ("rank_keyed", "rank_hit")))
 
 
 def _exam_defect(base, key, work, f):
@@ -838,6 +860,8 @@ def grade(p, run, agent):
             if want:
                 n[kw] += 1
                 n[hit] += all(re.search(r, said, re.I) for r in want)
+        if key.get("rank"):  # keys from before T-2126 have none
+            n["rank_keyed"], n["rank_hit"] = 1, int(_in_order(found, key))
         n["false_done"] += bool(ans.get("done")) and not key["done_ok"]
         cost = ans.get("cost")
         defect_lines = [c.fit(c.plain(f"{s['id']} {f.get('file')} {f.get('symbol')}: {f.get('says')}"), 200) for f in proven]
@@ -890,6 +914,8 @@ def summary(r):
         parts.append(f"{r['readings_hit']}/{r['readings_keyed']} readings")
     if r.get("missing_keyed"):
         parts.append(f"{r['missing_hit']}/{r['missing_keyed']} missing tools named")
+    if r.get("rank_keyed"):
+        parts.append(f"{r['rank_hit']}/{r['rank_keyed']} ranked")
     if r.get("exam_defects"):
         parts.append(f"{r['exam_defects']} exam defect" + "s" * (r["exam_defects"] != 1))
     h = r.get("holdout") or {}

@@ -166,7 +166,8 @@ prompt = sys.stdin.read()  # the tool-less author: plants an off-by-one in clamp
 name = re.search(r"def (\w+)\(x, lo, hi\)", prompt).group(1)
 want = 4 if os.environ.get("STUB_MODE") == "weak" else 3  # weak: a test that fails on the clean module too
 plant = {"function": name, "source": f"def {name}(x, lo, hi):\n    return max(lo, x if x == hi + 1 else min(x, hi))\n",
-         "test": f"assert {name}(4, 0, 3) == {want}", "says": f"{name}() lets hi + 1 through",  # unindented, as models send
+         "test": f"assert {name}(4, 0, 3) == {want}\n    assert {name}(2, 0, 3) == 2",  # only line 1 trimmed, as models send
+         "says": f"{name}() lets hi + 1 through",
          "request": "Some values come back out of range; find and fix it."}
 print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.01, "result": json.dumps(plant)}))
 '''
@@ -202,6 +203,33 @@ class ExamAuthors(ForemanTestCase):
         self.assertEqual((o["found"], o["fixed"], o["tf_first"]), (o["keyed"], o["fixable"], o["tf_keyed"]))
         lines = read_text(os.path.join(self.fm_json("genesis")["dir"], "exam.jsonl")).splitlines()
         self.assertEqual(json.loads(lines[-1])["author"], "child+self")
+
+    def test_initiative_kinds_none_rank_clean(self):
+        """#1's exam (T-2126): none and rank are child-authored with no request, clean is the app as is; the oracle
+        closes all, empty closes only clean, and rank closes only when the vuln is named before the low ones."""
+        import fmexam
+        r = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "3", "--lang", "python", "--kind", "none,rank,clean",
+                         "--author", "child", env=self.env)
+        self.assertEqual(r["dropped"], [])
+        by = {k: [s for s in r["scenarios"] if s["kind"] == k] for k in ("none", "rank", "clean")}
+        self.assertEqual({k: {s["author"] for s in v} for k, v in by.items()},
+                         {"none": {"child"}, "rank": {"child"}, "clean": {"self"}})
+        keys = {s["id"]: json.loads(read_text(os.path.join(os.path.dirname(s["repo"]), "key.json"))) for s in r["scenarios"]}
+        none, rank = keys[by["none"][0]["id"]], keys[by["rank"][0]["id"]]
+        self.assertEqual(([d["kind"] for d in none["defects"]], none["request"]), (["bug", "untested", "docs"], ""))
+        self.assertNotEqual(none["defects"][0]["symbols"], none["defects"][1]["symbols"])  # the stub plants clamp
+        self.assertEqual(rank["rank"], [["vuln"], ["untested", "docs"]])
+        self.assertEqual(keys[by["clean"][0]["id"]]["defects"], [])
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual(sorted(o["closed"]["train"] + o["closed"]["holdout"]), sorted(keys))
+        e = self.fm_json("exam", "run", r["run"], "--agent", "empty")
+        self.assertEqual(sorted(e["closed"]["train"] + e["closed"]["holdout"]), sorted(s["id"] for s in by["clean"]))
+        fs = [{"file": d["files"][0], "symbol": d["symbols"][0]} for d in rank["defects"]]  # vuln, untested, docs
+        self.assertTrue(fmexam._in_order(fs, rank))
+        self.assertFalse(fmexam._in_order(fs[1:] + fs[:1], rank))  # the vuln named last
+        self.assertFalse(fmexam._in_order(fs[:2], rank))  # one missed
+        self.assertIn("0/1 ranked", fmexam.summary({"found": 3, "keyed": 3, "rank_keyed": 1, "rank_hit": 0}))
 
     def test_a_child_scenario_that_fails_check_is_dropped(self):
         r = self.fm_json("exam", "gen", "--seed", "1", "--per-kind", "2", "--lang", "python", "--kind", "bug",

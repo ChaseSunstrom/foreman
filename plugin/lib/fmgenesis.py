@@ -842,6 +842,8 @@ def _kinds(name, text):
 
 # T-2112: #13's exam. G-line, G-none and G-sweep (mission-genesis.md) here; G-tower is fm exam's genesis session arm.
 GEN_KINDS = ("line", "none", "sweep")
+# frozen: a kind added to fmexam.KINDS must not move any G-scenario to a new defect (T-2126)
+GEN_DEFECTS = ("bug", "vuln", "untested", "slow", "docs", "flaky", "dep", "vague", "ambiguous", "missing-tool", "none")
 REQUEST = {"line": "make this great", "none": "", "sweep": "super improve this"}
 PLANT = (("MUST: keep the public API stable across releases", "MUST: ship each change with a changelog entry",
           "MUST: work offline without a network"),
@@ -860,7 +862,7 @@ def _ask(s):
     import fmexam
     h = int(fmexam._sha(s["id"]), 16)
     planted = [PLANT[0][h // 11 % 3], PLANT[1][h // 33 % 3]] if s["kind"] == "line" else []
-    return "\n".join([REQUEST[s["kind"]]] + planted), planted, fmexam.KINDS[h % len(fmexam.KINDS)]
+    return "\n".join([REQUEST[s["kind"]]] + planted), planted, GEN_DEFECTS[h % len(GEN_DEFECTS)]
 
 
 def _oracle(chk, defect):

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm exam` gains three kinds for initiative with no request at all: `none` (a child-planted bug beside an untested function and a docs slip), `clean` (nothing to find; any finding is a false alarm) and `rank` (a vuln, a missing test and a docs slip; it closes only when the vuln is named first). `--author child` now writes the `none` and `rank` plants too.
 - New `fm find [PATH]`: finds untested public code, imports no manifest declares, SQL built from a parameter, membership tests in loops, unseeded randomness in tests, docs naming functions that don't exist, and leaked secrets, in Python, JS, TS, Ruby, Rust and C, with no model calls. Each finding is a candidate until a failing test proves it. It finds nothing on every clean exam app, and `fm exam run --agent finders` grades it.
 
 - `fm exam` no longer counts true findings against an arm: every language's clean app now keeps the edge contract its README states (empty pages below 1, clamp with lo > hi, wide labels, negative values in dedupe, a C label that takes a buffer size), the C and Rust READMEs show a run command that works, and a finding that comes with a test failing on the clean app and passing on the arm's fix is counted as an exam defect instead of a false alarm.

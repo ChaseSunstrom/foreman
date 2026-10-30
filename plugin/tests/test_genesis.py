@@ -1314,15 +1314,24 @@ class GenesisExam(ForemanTestCase):
             self.assertTrue(fmgenesis._misses(chk, text.replace(f"Exam: {defect}.", "Exam: none." if defect != "none"
                                                                  else "Exam: bug."), s["kind"], defect))
 
+    def test_g_scenario_defects_stay_put_when_exam_kinds_grow(self):
+        """T-2126 grew fmexam.KINDS; each G-scenario id keeps the defect it had, so earlier draft-* scores still compare."""
+        import fmexam
+        import fmgenesis
+        old = ("bug", "vuln", "untested", "slow", "docs", "flaky", "dep", "vague", "ambiguous", "missing-tool", "none")
+        for s in fmexam.draw(0, fmgenesis.GEN_KINDS, fmexam.LANGS, 9):
+            self.assertEqual(fmgenesis._ask(s)[2], old[int(fmexam._sha(s["id"]), 16) % 11], s["id"])
+
     def test_the_genesis_arm_closes_the_held_out_third_and_reads_no_train(self):
         import fmexam
+        import fmgenesis
         f = self.exam("--per-kind", "3")  # the default arm and split: genesis, held out; the lockout stub: fallback
         self.assertEqual((f["arm"], f["agent"], f["scenarios"], f["errors"]), ("genesis", "draft-genesis", 3, 3))
         self.assertEqual((f["closed"], f["given"]), ({"train": [], "holdout": []},) * 2)  # a fallback closes nothing
         sid = sorted(f["misses"])[0]
         with open(os.path.join(fmexam.root(self.p), f["run"], "genesis", sid + ".json")) as fh:
             self.assertEqual(json.load(fh)["source"], "fallback")
-        caps = [{"name": f"Cap {i}", "test": "Checks it.", "exam": list(fmexam.KINDS[i::3])} for i in range(3)]
+        caps = [{"name": f"Cap {i}", "test": "Checks it.", "exam": list(fmgenesis.GEN_DEFECTS[i::3])} for i in range(3)]
         r = self.exam("--per-kind", "3", env=self.child(json.dumps({"capabilities": caps})))
         self.assertEqual((len(r["closed"]["holdout"]), r["closed"]["train"], r["errors"]), (3, [], 0), r["misses"])
         t = self.exam("--arm", "empty", "--per-kind", "3", "--split", "train")
