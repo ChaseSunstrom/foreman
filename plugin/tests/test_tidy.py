@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import shutil
 import time
 
 from helpers import ForemanTestCase, read_text
@@ -186,6 +187,26 @@ class Apply(TidyCase):
         self.assertFalse(os.path.exists(os.path.dirname(shell)))
         self.assertTrue(os.path.exists(kept))
         self.assertTrue(os.path.exists(mine), "the user's own project folders are never touched")
+
+    def test_archives_a_temp_projects_state_once_its_folder_is_gone(self):
+        # T-2091: throwaway trials under /tmp left 11 state dirs behind; a root elsewhere may only be unplugged
+        temp = os.path.join(self.tmp, "trial")
+        os.makedirs(temp)
+        self.fm("init", cwd=temp)
+        dead = c.find_project(temp, create=False).slug
+        shutil.rmtree(temp)
+        away = os.path.join(c.projects_dir(), "away-1a2b3c")
+        os.makedirs(away)
+        with open(os.path.join(away, "meta.json"), "w") as f:
+            json.dump({"path": "/nonexistent-fm-disk/app"}, f)
+        found = {f["detail"].split()[0]: f for f in self.tidy()["findings"] if f["kind"] == "dead_project"}
+        self.assertEqual((found[dead]["severity"], found["away-1a2b3c"]["severity"]), ("action", "warn"))
+        self.assertNotIn(self.p.slug, found)
+        self.tidy("--apply")
+        self.assertFalse(os.path.exists(os.path.join(c.projects_dir(), dead)))
+        self.assertTrue(os.path.isfile(os.path.join(c.state_dir(), "archive", "projects", dead, "meta.json")))
+        self.assertTrue(os.path.isdir(away), "a root outside temp is only reported")
+        self.assertTrue(os.path.isdir(self.p.dir))
 
     def test_rolls_large_ledger_by_month(self):
         ledger = os.path.join(self.p.dir, "ledger.jsonl")

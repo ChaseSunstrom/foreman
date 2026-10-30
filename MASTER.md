@@ -285,6 +285,7 @@ Made on a machine, not shipped in the repo.
 | `state/projects/<slug>/research/` | saved recon/research summaries (runtime) | fm (`fm research add`, `fm research ask`) | on demand | — |
 | `state/projects/<slug>/ledger.jsonl` | append-only event log (runtime; rolled monthly by tidy); each line carries `prev`, the hash of the line before it (T-1065: `fm verify-ledger [--head H]` walks the archives then the live file and names the first edited, removed or cut line; `fm task finish` prints the head) | fm, hooks | never wholesale | roll > 1 MB |
 | `state/projects/<slug>/archive/` | archived briefs, ledgers, memory copies (runtime) | fm tidy | on demand | — |
+| `state/archive/projects/<slug>/` | a project's whole state once its root folder under a temp dir is gone (T-2091; a root elsewhere is only reported, as it may be unplugged) | fm tidy --apply | on demand | — |
 | `state/projects/<slug>/gate.json` | Stop-gate/drive bookkeeping; with `state.line`, `badge.txt` caches (runtime) | hooks, fm | per hook | — |
 | `~/.claude/rules/foreman.md` | symlink to `plugin/rules/foreman.md` (runtime, created by `fm install-user`) | fm | every session | — |
 | `~/.claude/CLAUDE.md` | your preferences + a 4-line Foreman block between markers (runtime) | you (+ fm block) | every session | ≤ 50 lines |
