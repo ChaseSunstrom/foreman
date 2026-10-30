@@ -341,22 +341,26 @@ def brainstorm(p):
 LEARNED_TTL_S = 120
 
 
-def _learned_line(p):
-    """T-1045: what Foreman learned this week, the pane's idle line. A week's ledger and briefs cost ~0.45 s to count and
-    every pane poll is a new process (no in-process memo helps), so the line is kept in the project's state for
-    LEARNED_TTL_S: a count that is two minutes old is the same news."""
-    path = os.path.join(p.dir, "learned-line.json")
+def _kept(p, name, build):
+    """build(), kept in the project's state for LEARNED_TTL_S: every pane poll is a new process (no in-process memo
+    helps), and a count two minutes old is the same news."""
+    path = os.path.join(p.dir, name)
     try:
         with open(path, encoding="utf-8") as f:
             hit = json.load(f)
         if time.time() - hit["at"] < LEARNED_TTL_S:
-            return hit["line"]
+            return hit["value"]
     except (OSError, ValueError, KeyError, TypeError):
         pass
+    value = build()
+    c.write_atomic(path, json.dumps({"at": time.time(), "value": value}))
+    return value
+
+
+def _learned_line(p):
+    """T-1045: what Foreman learned this week, the pane's idle line (a week's ledger and briefs cost ~0.45 s to count)."""
     import fmcost
-    line = fmcost.learned(p, 7, len(fmcost._week(p, 7)[0]))["line"]
-    c.write_atomic(path, json.dumps({"at": time.time(), "line": line}))
-    return line
+    return _kept(p, "learned-line.json", lambda: fmcost.learned(p, 7, len(fmcost._week(p, 7)[0]))["line"])
 
 
 _PATHS = ("watch", "trust_file", "root")  # paths a surface stats or writes: kept as they are
@@ -609,7 +613,7 @@ def view(p):
                     "grade": b.meta.get("verified") if b.status == "done" else None,
                     "lenses": sorted({lens for lens, _, _ in b.audits()}) if b.status == "done" else []}
                    for b in closed],
-        "signals": _guarded(lambda: _signals(sd, d)) or [],  # T-0472
+        "signals": _guarded(lambda: _signals(sd, d, p)) or [],  # T-0472
         "fleet": _guarded(_fleet) or [],  # T-0711
         "today_done": today_done,
         "learned": _guarded(lambda: _learned_line(p)),  # T-1045
@@ -672,11 +676,12 @@ def _fleet():
     return fmbus.fleet()
 
 
-def _signals(sd, d):
+def _signals(sd, d, p=None):
     """T-0472: what the band shows as one quiet glyph, only when something is amber or red: a gate failing now, usage
-    ahead of its pace, blocked tasks, hook errors. Calm: []."""
+    ahead of its pace, blocked tasks, hook errors, a finder your drops muted (T-2127). Calm: []."""
     import fmbudget
     import fmdoctor
+    import fmfind
     out = []
     for r in ((d.get("checks") or {}).get("data") or {}).get("results") or []:
         if r.get("exit"):
@@ -689,6 +694,11 @@ def _signals(sd, d):
     errors = len(fmdoctor.recent_hook_errors())
     if errors:
         out.append({"level": "amber", "text": f"{errors} hook error(s)"})
+    # precision() reads the archive and, once a lead is done, git log for reverts: ~180 ms, kept like the learned line
+    muted = _kept(p, "find-muted.json", lambda: sorted(k for k, v in fmfind.precision(p).items() if v < fmfind.FLOOR)) \
+        if p else []
+    if muted:
+        out.append({"level": "amber", "text": f"fm find muted ({', '.join(muted)}): you dropped most of its leads"})
     return out
 
 

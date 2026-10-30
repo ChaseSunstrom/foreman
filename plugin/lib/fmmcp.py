@@ -58,6 +58,10 @@ TOOLS = [
      {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
      lambda a, p: ["task", "show", _need(a, "id", r"T-[0-9]{4,}")]),
     ("checks", "The project's last gate run (fm check): each command, its exit and time.", _TEXT, None),
+    ("find", "Likely defects in the project or a folder in it, worst first: untested public code, imports no manifest "
+     "declares, SQL built from a parameter, docs naming code that doesn't exist, secrets. Each is unproven until a "
+     "failing test shows it; nothing in the tree runs.", _obj(path=_str("a folder inside the project (default: its root)")),
+     lambda a, p: ["find", os.path.join(".", _inside(p, a, "path")) if a.get("path") else ".", "--rank"]),  # ./: never a flag
     # T-0946: the stack library
     ("lib_suggest", "Stack-library cards that fit this project's languages, frameworks and tools.", _TEXT,
      lambda a, p: ["lib", "suggest"]),
@@ -138,12 +142,14 @@ def _timeout():
         return 120.0
 
 
-def _fm(p, argv, stdin=""):
+def _fm(p, argv, stdin="", ok=(0,)):
     # T-0946: stdin is given (empty by default), so a tool never reads the server's own message stream
     r = subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), *argv], cwd=p.root, input=stdin,
                        capture_output=True, text=True, errors="replace", timeout=_timeout(),
                        env=dict(os.environ, FOREMAN_NO_BACKGROUND="1"))
-    return (r.stdout if r.returncode == 0 else (r.stderr or r.stdout)), r.returncode != 0
+    # an allowed non-zero exit (fm find's 1, findings) with nothing on stdout is a crash's traceback, not an answer
+    bad = r.returncode not in ok or (r.returncode != 0 and not r.stdout.strip())
+    return ((r.stderr or r.stdout) if bad else r.stdout), bad
 
 
 def _call(p, name, args):
@@ -181,6 +187,12 @@ def _call(p, name, args):
             if not isinstance(text, str) or not text.strip() or len(text) > TEXT_CAP:
                 return f"text: the failure output, 1 to {TEXT_CAP} characters", True
             return _fm(p, ["fail"], text)
+        if name == "find":  # T-2127: exit 1 means findings, an answer; the 200 worst are plenty for one turn
+            argv = tool[3](args, p)
+            text, err = _fm(p, argv, ok=(0, 1))
+            rows = text.splitlines()
+            more = f"… {len(rows) - 201} more: fm find {argv[1]} --rank --json lists all"
+            return "\n".join(rows[:201] + [more] * (len(rows) > 201)), err
         return _fm(p, tool[3](args, p))
     except _Bad as e:
         return str(e), True

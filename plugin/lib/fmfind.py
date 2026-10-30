@@ -545,8 +545,8 @@ def cmd_find(args):
     if bad:  # exit 1 means findings here, so a usage slip must read as an error (2), not as a hit
         print(f"fm find: {bad}", file=sys.stderr)
         return 2
-    prec = (precision(p) if p else {}) if ranked else None
     try:
+        prec = (precision(p) if p else {}) if ranked else None
         n, found = scan(root, prec)
     except Exception as e:  # noqa: BLE001 — exit 1 means findings; a scan that dies must read as an error (2)
         print(f"fm find: the scan failed under {root}: {type(e).__name__}: {c.plain(str(e))[:300]}", file=sys.stderr)
