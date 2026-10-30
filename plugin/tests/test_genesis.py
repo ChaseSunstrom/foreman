@@ -986,7 +986,8 @@ class GenesisDraft(ForemanTestCase):
         fmgenesis.exam_line(self.p, {"agent": "finders", "run": "s9", "holdout": {"found": 3, "keyed": 4},
                                      "closed": {}})
         fmgenesis.exam_line(self.p, {"agent": "foreman", "run": "s9", "model": "claude-haiku-5-5", "answered":
-                                     {"holdout": docs}, "closed": {"holdout": docs}})  # T-2158: Haiku never decides
+                                     {"holdout": docs}, "closed": {"holdout": docs},
+                                     "holdout": {"found": 0, "keyed": 4}})  # T-2158: Haiku never decides
         r = self.fm("exam", "scorecard", "--json", check=False)
         self.assertEqual(r.returncode, 1, "not every capability passes")
         rows = json.loads(r.stdout)["rows"]
@@ -1251,6 +1252,10 @@ class GenesisSelect(ForemanTestCase):
         line("r3", "finders", 6, 6)  # an older finders line on r3 ...
         line("r3", "foreman", 4, 4)
         line("r3", "finders", 0, 0)  # ... the newest one on a run counts
+        fmgenesis.exam_line(self.p, {"run": "r4", "agent": "finders", "found": 6, "keyed": 6, "closed": {},
+                                     "holdout": {"found": 6, "keyed": 6}, "answered": {"holdout": ["a", "b", "c"]}})
+        fmgenesis.exam_line(self.p, {"run": "r4", "agent": "foreman", "found": 1, "keyed": 1, "closed": {},
+                                     "holdout": {"found": 1, "keyed": 1}, "answered": {"holdout": ["a"]}})  # T-2219: 1 of 3
         r = fmgenesis.scorecard(self.p)
         self.assertEqual(r["gaps"], ["finders found 6/6 held-out defects on r1 where foreman found 1/6: the session "
                                      "doesn't use what Foreman built",
