@@ -1,6 +1,6 @@
 # Mission — Genesis as a feature (gen 1, #13)
 
-Task: T-2093 (brief 1, fm genesis check), T-2095 (brief 2, fm genesis step), T-2099 (brief 3, fm genesis draft/spec), T-2102 (brief 4, fm genesis select/seed). Briefs 3–8 are added here as they are intaken.
+Task: T-2093 (brief 1, fm genesis check), T-2095 (brief 2, fm genesis step), T-2099 (brief 3, fm genesis draft/spec), T-2102 (brief 4, fm genesis select/seed), T-2104 (brief 5, fm genesis drift/sweep). Briefs 6–8 are added here as they are intaken.
 
 Self-contained for a fresh `fm run` in ~/.claude/foreman. Parent: gen-1/seed.md → gen-0.md §2 #13, §3.
 Ideas: 606 from `fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen` (brainstorm-20261029-233136), lenses
