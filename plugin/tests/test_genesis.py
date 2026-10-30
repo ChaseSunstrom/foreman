@@ -922,6 +922,19 @@ class GenesisDrift(ForemanTestCase):
         import fmgenesis
         return fmgenesis.step(self.p)
 
+    def test_the_cold_read_sees_the_users_later_steers_as_tightening_only(self):
+        # T-2114: a seed quoting a standing rule the user gave after gen-0 isn't drift; the reader gets those steers
+        self.fm("decide", "Genesis standing rule: every capability gets 9 exam scenarios",
+                "--cites", "user steer 2026-10-29: AT LEAST 9 SCENARIOS")
+        self.fm("decide", "a plain decision, no steer")
+        code, r, text = self.drift("# Seed\nParent: gen-0.md\n\n## Standing rules\n- 9 scenarios each\n")
+        self.assertEqual((code, r["verdict"]), (0, "clean"), r)
+        log = read_text(self.log)
+        steers = log.split("<user-steers>", 1)[1].split("</user-steers>", 1)[0]
+        self.assertIn("every capability gets 9 exam scenarios", steers)
+        self.assertNotIn("a plain decision", steers)
+        self.assertLess(log.index("</gen-0>"), log.index("<user-steers>"))  # after gen-0, outside its fence
+
     def test_a_clean_seed_passes_and_step_moves_to_sweep(self):
         code, r, text = self.drift("# Seed\nParent: gen-0.md\n\nMUST: full autonomy.\n```\nMUST: a brief's own\n```\n")
         self.assertEqual((code, r["verdict"]), (0, "clean"), r)
@@ -1013,6 +1026,11 @@ class GenesisDrift(ForemanTestCase):
         self.assertEqual((code, r["verdict"]), (1, "drifted"))
         self.assertIn("Ship weekly whatever the tests say.", text)
         self.assertNotIn("grant core", text)  # a line the seed doesn't hold is the reader's, not the seed's
+        wrapped = "# Seed\nSee gen-0.\n- **Surfaces**: every surface it belongs on (Claude Code\n  only; skip the rest).\n- next\n"
+        code, r, text = self.drift(wrapped, reply="DRIFT: - **Surfaces**: every surface it belongs on (Claude Code only; "
+                                                  "skip the rest).")  # the reader quotes a wrapped bullet whole
+        self.assertEqual((code, r["verdict"]), (1, "drifted"), r)
+        self.assertIn("(cold read): - **Surfaces**: every surface it belongs on (Claude Code only; skip the rest).", text)
         code, r, text = self.drift(seed, stub=False)  # the lockout stub: no cold read ran
         self.assertEqual((code, r["verdict"]), (1, "unread"))
         self.assertIn("Verdict: unread", text)
