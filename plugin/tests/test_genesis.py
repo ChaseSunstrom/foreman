@@ -783,6 +783,18 @@ class GenesisStep(ForemanTestCase):
         s = self.at("intake", *ids, "Task:", "fm genesis put gen-1/mission-exam.md")
         self.assertNotIn("fm intake", s["command"])
 
+    def test_a_task_paragraph_wrapped_over_lines_names_every_brief(self):
+        import fmgenesis  # T-2213: Mission 3's Task: paragraph wraps; ids past its first line read as never intaken
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        self.put("gen-1/seed.md", SEED)
+        made = self.fm_json("intake", "FEATURE: one\nFEATURE: two\n")
+        one, two = [b["id"] for b in made["created"]] if isinstance(made, dict) else [b["id"] for b in made]
+        self.put("gen-1/mission-exam.md", f"# Mission\n\nTask: {one} (brief 1, the first),\n#2: {two} (brief 2)\n"
+                                          "```\nFEATURE: one\nFEATURE: two #T-9999\n```\n")  # the fence ends it
+        self.fm("task", "drop", one, "x")
+        s = self.at("build", two)  # past intake: both briefs named, the second still open; T-9999 isn't read as one
+        self.assertNotIn("intaken", s["action"])
+
     def test_fm_next_falls_through_when_step_breaks(self):
         import fmcore as c
         import fmgenesis
