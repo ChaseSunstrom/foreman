@@ -278,12 +278,15 @@ NPX_KNOWN = "npx-known.txt"  # beside the cards folder
 
 @functools.cache
 def _npx_known(cards_root):
-    """The reviewed names beside the cards being linted (a checkout lints its own list), else the shipped list."""
-    for d in (os.path.dirname(cards_root), os.path.dirname(CARDS)):
+    """The reviewed names beside the cards being linted (a checkout lints its own list), else the shipped list. Only
+    a folder named cards has a list beside it: fm lib admit lints a draft in a temp folder, whose parent (/tmp) anyone
+    can write to."""
+    beside = (os.path.dirname(cards_root),) if os.path.basename(cards_root) == "cards" else ()
+    for d in beside + (os.path.dirname(CARDS),):
         try:
             with open(os.path.join(d, NPX_KNOWN), encoding="utf-8") as f:
                 return {w for w in (ln.split("#")[0].strip() for ln in f) if w}
-        except OSError:
+        except (OSError, ValueError):
             pass
     return set()
 
@@ -305,7 +308,7 @@ def _npx_names(text):
                 else:
                     names.append(w)
                 break
-    return {re.sub(r"(?<=.)@[^@/]*$", "", n.strip("`'\"")) for n in names}
+    return {re.sub(r"(?<=.)@[^@/]*$", "", n.strip("`'\";|&\\")) for n in names}
 
 
 def _card_problems(path, x):
