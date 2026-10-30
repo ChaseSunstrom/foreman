@@ -1887,6 +1887,14 @@ class GenesisHealth(ForemanTestCase):
             fmgenesis.health(self.p)
         finally:
             fmgenesis.step = real
+        newer = os.path.join(self.tmp, "fmgenesis.py")  # T-2172: an updated fmgenesis says something new: refresh
+        with open(newer, "w") as f:
+            f.write("")
+        os.utime(newer, ns=(1, 1))
+        from unittest import mock
+        with mock.patch.object(fmgenesis, "__file__", newer), \
+                mock.patch.object(fmgenesis, "step", lambda p: {"gen": 1, "stage": "new code", "kind": "ok"}):
+            self.assertEqual(fmgenesis.health(self.p)["stage"], "new code")
         self.fm("task", "block", t, "waits on a grant")
         self.assertEqual(fmgenesis.health(self.p)["kind"], "blocked")  # a task's status refreshes it
         fmgenesis.put(self.p, "gen-1/mission-exam.md", "# Mission\n\nTask: T-9999\n")
@@ -1933,6 +1941,11 @@ class GenesisHealth(ForemanTestCase):
         ctx = (json.loads(self.hook("SessionStart", {"source": "startup"}).stdout).get("hookSpecificOutput") or {}).get(
             "additionalContext", "")
         self.assertIn("Genesis: gen 1 · build (blocked)", ctx)
+        import fmgenesis  # T-2172: the held-out scorecard rides on the same line, so every surface shows it
+        fmgenesis.exam_line(self.p, {"agent": "foreman", "run": "s1", "model": "haiku", "answered": {"holdout": ["x"]},
+                                     "closed": {"holdout": []}})
+        self.assertRegex(self.fm("state").stdout, r"Genesis: gen 1 · exam 0/\d+ pass, 1 Haiku skipped · build \(blocked\)")
+        self.assertRegex(self.fm_json("ui")["genesis"]["exam"], r"^0/\d+ pass, 1 Haiku skipped$")
         self.fm("sensitive", "on")
         self.fm("export", "agents", "--out", out)
         self.assertNotIn("## Genesis", read_text(out))  # a sensitive project shares no tower text

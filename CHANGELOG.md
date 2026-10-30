@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The Genesis line (session start, `fm state`, the pane, `fm code`) now shows the held-out exam scorecard, e.g. `gen 1 · exam 0/13 pass, 4 Haiku skipped · build: …`, and `fm mcp` serves it as `exam_scorecard`, so Desktop and other agents can read the done gate. The line also refreshes after a Foreman update instead of waiting for a tower file to change.
 - `fm genesis check`'s reach no longer counts an fm verb as shown to a session just because a hook's matcher list or a command's own output names it: only text a session sees without asking counts. Live reach still 27 of 27.
 - `fm exam run` no longer caps each exam session at $2: a production-model session on a hard scenario was cut off mid-proof and scored as errored. Sessions now run uncapped unless `--budget USD` is given; the per-session timeout still stops a runaway, and your own `fm budget` limit still applies.
 - Haiku exam scores never decide: each exam line now records the model its session ran on, `fm exam scorecard` (the done gate) leaves out lines from a Haiku session and says how many it left out, `fm genesis select` still reads them (its choice is provisional until the end-of-run exam) but names the model, and a top gap from a Haiku run says so. `fm exam grade RUN --agent A --model M` stamps answers from before this change; the s31-006 smoke run is stamped, so the live scorecard skips its 4 foreman lines.
