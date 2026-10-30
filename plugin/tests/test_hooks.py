@@ -2081,6 +2081,38 @@ class Stop(HookCase):
         self.assertIn(f"{tid} step 1/2 has no recorded verification evidence", parse(p)["reason"])
         self.assertIsNone(self.decision(self.stop("Done.")))
 
+    def test_a_done_claim_with_unaccounted_clauses_blocks_once_naming_them(self):
+        # T-2138: a sweeping request's dropped parts hold "done" once; never a trap
+        self.fm("init")
+        self.fm("drive", "off")
+        self.fm("capture", "Add a CSV export to the reports page", "--type", "FEATURE", "--tier", "S")
+        self.fm("clauses", "Add a CSV export to the reports page. Also fix the login timeout on mobile.")
+        self.assertIsNone(self.decision(self.stop("Done.", active=True)))  # a held stop ends the turn
+        p = self.stop("All done, the export is implemented.")
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn("1 clause(s) of the last request are unaccounted: 1. ", parse(p)["reason"])
+        self.assertIn("login timeout", parse(p)["reason"])
+        self.assertIsNone(self.decision(self.stop("All done.")))  # the same set holds once
+        self.fm("clauses", "Fix the parser crash on empty input today.")
+        self.assertEqual(self.decision(self.stop("Done.")), "block")  # a new set holds again
+        self.fm("clauses", "--note", "1", "answered in chat")
+        self.assertIsNone(self.decision(self.stop("Done.", session="sess-2")))  # all accounted
+
+    def test_the_clauses_gate_skips_stale_or_undated_lists_and_held_sets_and_names_five(self):
+        # T-2138: a list older than a day or with no date is another request's; a held set never holds again
+        self.fm("init")
+        self.fm("drive", "off")
+        p, loose = self.project(), [f"clause number {i}" for i in range(1, 7)]
+        for at in ("2026-01-01T00:00:00Z", None, "garbage"):
+            c.update_meta(p, clauses={"at": at, "open": loose})
+            self.assertIsNone(self.decision(self.stop("All done.")), at)
+        c.update_meta(p, clauses={"at": c.now(), "open": loose})
+        reason = parse(self.stop("All done."))["reason"]
+        self.assertIn("6 clause(s)", reason)
+        self.assertIn("5. clause number 5", reason)
+        self.assertNotIn("clause number 6", reason)
+        self.assertIsNone(self.decision(self.stop("All done.", session="sess-2")))  # the same set, another session
+
     def test_claims_about_other_steps_or_tasks_do_not_trip_the_gate(self):
         # T-0027: "steps 1–3 are done" is about finished steps, not the current one
         self.fm("init")

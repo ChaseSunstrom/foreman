@@ -3258,8 +3258,9 @@ def stop(pl):
         # T-0147: a turn ending on purpose for a mod reload isn't held by the nudges; the resumed turn records evidence
         reload_due = sd["drive"] and _ui_changed(sid, _turn_began(p, sid, d0), d0.get("ui_mtime"))
         oneoff = _oneoff()  # T-0775: only its own background work holds a one-off headless session
+        closed = {b.id for b in briefs if b.status in c.CLOSED}
         nudge = None if reload_due else _headless_wait(pl) if oneoff else (
-            _evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED}) or _claims_gate(pl, g)
+            _evidence_gate(p, act, pl, g, closed) or _clauses_gate(p, pl, g, closed) or _claims_gate(pl, g)
             or _question_nudge(pl)
             or _headless_wait(pl))
         reason = nudge or (None if oneoff or "drive" in c.ablated() else _drive(p, sd, briefs, pl, g))  # T-1375
@@ -3490,6 +3491,25 @@ def _claims_gate(pl, g):
     g["claims"] = (g["claims"] + [key])[-50:]
     return (f"Foreman: the reply says \"{m.group(0)}\", but {why} this turn. Run the tests and quote the result, or "
             "say they weren't run.")
+
+
+def _clauses_gate(p, pl, g, closed=()):
+    """T-2138: a done claim while the last request has clauses fm clauses mapped to no task, held once per set."""
+    if pl.get("stop_hook_active") or not claims_done(pl.get("last_assistant_message"), closed=closed):
+        return None
+    meta = c.read_meta(p).get("clauses") or {}
+    loose = meta.get("open") or []
+    age = c.age_days(meta.get("at"))
+    if not loose or age is None or age > 1:  # a day-old (or undated) list is another request's
+        return None
+    key = hashlib.sha1(json.dumps(loose).encode()).hexdigest()[:12]  # a partial --note makes a new set
+    if key in g.setdefault("clauses", []):
+        return None
+    g["clauses"] = (g["clauses"] + [key])[-50:]
+    c.log_event(p, "stop_gate", data={"clauses": len(loose)}, session=pl.get("session_id"))
+    return (f"Foreman: the reply says it's done, but {len(loose)} clause(s) of the last request are unaccounted: "
+            + "; ".join(f"{i}. {c.fit(c.plain(x), 80)}" for i, x in enumerate(loose[:5], 1))
+            + ". Capture each, answer it, or fm clauses --note N \"<why>\".")
 
 
 def _evidence_gate(p, act, pl, g, closed=()):
