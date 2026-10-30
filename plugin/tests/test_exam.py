@@ -397,8 +397,20 @@ class ExamAuthors(ForemanTestCase):
         self.assertTrue(a["reasked"])
         self.assertIn("Fixed the SQL splice", a["said"])  # the first reply's tail, so a lost answer can be read back
         self.assertIn("1 re-asked", self.fm("exam").stdout)  # the lost-answer rate shows on the exam line
-        self.fm_json("exam", "run", run, "--agent", "plain", "--split", "holdout", "--limit", "1", env=self.env)
+        r = self.fm_json("exam", "run", run, "--agent", "plain", "--split", "holdout", "--limit", "1", "--model", "haiku",
+                         env=self.env)
         self.assertEqual(len(read_text(self.log + ".prompt").split("\n---\n")), 4)  # an answered reply isn't re-asked
+        self.assertEqual(r["model"], "haiku")  # T-2158: the line says which model answered, so smoke never decides
+        self.assertIsNone(self.fm_json("exam", "run", run, "--agent", "oracle").get("model"))  # no session, no model
+        self.assertEqual(read_text(os.path.join(answers, "model")), "default")  # no --model: the configured one
+        self.assertEqual(self.fm_json("exam", "grade", run, "--agent", "foreman", "--model", "haiku")["model"], "haiku")
+        os.remove(os.path.join(answers, "model"))  # answers from before the stamp name their model at the regrade
+        self.assertEqual(self.fm_json("exam", "grade", run, "--agent", "foreman", "--model", "haiku")["model"], "haiku")
+        self.assertIn("model haiku", self.fm("exam").stdout)  # the exam line says it too
+        self.assertNotEqual(self.fm("exam", "grade", run, "--agent", "foreman", "--model", "opus", check=False).returncode,
+                            0)  # a named stamp is a fact: a regrade never rewrites it
+        self.assertIn("session arm", self.fm("exam", "grade", run, "--agent", "oracle", "--model", "haiku",
+                                             check=False).stderr)  # no session, nothing to stamp
 
     def test_the_genesis_arm_runs_one_generation_on_the_given_request(self):
         run = self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "3", "--lang", "python", "--kind", "bug")["run"]

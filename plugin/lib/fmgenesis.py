@@ -1183,6 +1183,8 @@ def scorecard(p, agent="foreman", bar=0.8):
     def newest(who):
         out = {}
         for x in _exam(p, who):  # file order is time order: a later result for a scenario wins
+            if smoke(x):  # T-2158: steer 1, Haiku never decides
+                continue
             a, won = x.get("answered"), x["closed"].get("holdout")
             held = a.get("holdout") if isinstance(a, dict) else None
             if isinstance(held, list):
@@ -1203,7 +1205,8 @@ def scorecard(p, agent="foreman", bar=0.8):
         rows.append({"n": int(n), "name": name, "kinds": kinds, "agent": who, "graded": graded, "closed": closed,
                      "rate": round(closed / graded, 3) if graded else 0, "state": state})
     return {"agent": agent, "bar": bar, "rows": rows, "ok": all(r["state"] == "pass" for r in rows),
-            "seen": len(pools.get(agent) or newest(agent)), "gaps": free_beats(p, agent)}
+            "seen": len(pools.get(agent) or newest(agent)), "gaps": free_beats(p, agent),
+            "smoke": sum(map(smoke, _exam(p, agent)))}
 
 
 def free_beats(p, agent="foreman", split="holdout"):
@@ -1230,7 +1233,8 @@ def free_beats(p, agent="foreman", split="holdout"):
         s = newest.get((run, agent))
         if who in free and s and got(x)[1] and got(x)[0] > got(s)[0]:
             out.append(f"{who} found {got(x)[0]}/{got(x)[1]} {label} defects on {c.plain(run)} where {agent} found "
-                       f"{got(s)[0]}/{got(x)[1]}: the session doesn't use what Foreman built")
+                       f"{got(s)[0]}/{got(x)[1]}: the session doesn't use what Foreman built"
+                       + (" (from a Haiku smoke run)" if smoke(s) else ""))  # T-2158: a building signal, labelled
     return out
 
 
@@ -1244,6 +1248,12 @@ def exam_line(p, line):
     kick(p)
 
 
+def smoke(x):
+    """T-2158 (steer 2026-10-30 rule 1): a graded line from a Haiku session is a smoke signal, never a decision. A line
+    stamped "default" ran on the configured model, which is the production one unless --model said otherwise."""
+    return bool(re.search(r"haiku", str(x.get("model") or ""), re.I))
+
+
 def _exam(p, agent):
     """exam.jsonl lines from one agent that carry closed ids (fm exam grade since T-2102)."""
     out = []
@@ -1254,6 +1264,12 @@ def _exam(p, agent):
             continue
         if isinstance(x, dict) and x.get("agent") == agent and isinstance(x.get("closed"), dict):
             out.append(x)
+    stamp = {}
+    for x in reversed(out):  # T-2158: a line from before the model stamp takes the one a later regrade of its run gave
+        if x.get("model"):
+            stamp[x.get("run")] = x["model"]
+        elif x.get("run") and x.get("run") in stamp:
+            x["model"] = stamp[x["run"]]
     return out
 
 
@@ -1330,8 +1346,10 @@ def _select(p, n, agent):
            + f"; reopened: {', '.join(map(str, reopened)) or 'none'}; held out never used; cost {res['cost']['gen']}"
            + (f" vs {res['cost']['parent']}" if mom else "")
            + f"\n- provisional: until the end-of-run exam on the production model confirms or reverses it; rests on exam "
-             f"run {shown} only ({len(k)} graded line{'s' * (len(k) != 1)} from {agent}, train only; no other signal "
-             f"recorded)\n- seed base: {base}\n")
+             f"run {shown} only ({len(k)} graded line{'s' * (len(k) != 1)} from {agent}"
+             + "".join(sorted({f", model {c.plain(str(x['model']))[:40]}" + (": a smoke signal" if smoke(x) else "")
+                               for x in k if x.get("model")}))
+             + f", train only; no other signal recorded)\n- seed base: {base}\n")
     old = lineage or "# Lineage\n"
     pat = re.compile(rf"^## gen-{n}\b.*?(?=^## |\Z)", re.M | re.S)
     put(p, "lineage.md", pat.sub(lambda _: sec + "\n", old, count=1) if pat.search(old) else old.rstrip("\n") + "\n\n" + sec)
@@ -1499,7 +1517,8 @@ def _exam_tail(d, k=20):
                   if isinstance(x.get(key), dict)]
         key = (x["run"], x.get("agent", "?"))
         rows.pop(key, None)
-        rows[key] = f"{x['run']} ({key[1]}): " + "; ".join(s for s in parts if s)
+        rows[key] = (f"{x['run']} ({key[1]}" + (f", model {x['model']}" + (": a smoke signal" if smoke(x) else "")
+                                                 if x.get("model") else "") + "): " + "; ".join(s for s in parts if s))
     return "\n".join(_fence(c.plain(r)) for r in list(rows.values())[-k:]) or "no graded exam line yet"
 
 

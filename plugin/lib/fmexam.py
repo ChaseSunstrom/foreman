@@ -894,6 +894,8 @@ def run_agent(p, run, agent, split="all", limit=None, budget=2.0, model=None, ti
     c.write_atomic(os.path.join(_answers(p, run, agent), "gen"), str(fmgenesis.current(p)))
     if request and agent in SESSIONS:  # --request: the user's words replace each scenario's own
         c.write_atomic(os.path.join(_answers(p, run, agent), "request"), request)
+    if agent in SESSIONS:  # T-2158: which model answered, so a Haiku smoke line never decides (steer 1)
+        c.write_atomic(os.path.join(_answers(p, run, agent), "model"), c.plain(model or "default")[:60])
 
     def one(s):
         base, key = os.path.join(root(p), run, s["id"]), _key(p, run, s["id"])
@@ -1048,11 +1050,12 @@ def grade(p, run, agent):
             gen = int(f.read())
     except (OSError, ValueError):  # answers from before the stamp
         gen = fmgenesis.current(p)
-    try:
-        with open(os.path.join(_answers(p, run, agent), "request"), encoding="utf-8") as f:
-            res["request"] = f.read()
-    except OSError:
-        pass
+    for name in ("request", "model"):
+        try:
+            with open(os.path.join(_answers(p, run, agent), name), encoding="utf-8") as f:
+                res[name] = f.read()
+        except OSError:
+            pass
     line = dict(res, at=c.now(), gen=gen, split=splits.pop() if len(splits) == 1 else "all",
                 kinds=sorted({s["kind"] for s in answered}),
                 author="+".join(sorted({s.get("author", "self") for s in answered})))
@@ -1081,6 +1084,8 @@ def summary(r):
         parts.append(f"{r['exam_defects']} exam defect" + "s" * (r["exam_defects"] != 1))
     if r.get("false_done"):
         parts.append(f"{r['false_done']} false done")
+    if r.get("model"):  # T-2158: which model answered; a Haiku line is a smoke signal
+        parts.append(f"model {c.plain(str(r['model']))[:40]}")
     if r.get("broken"):
         parts.append(f"{r['broken']} broken")
     h = r.get("holdout") or {}
@@ -1147,6 +1152,20 @@ def cmd_exam(args):
                             request=args.request)
             return fmcli.out(args, res, summary(res))
         if action == "grade":
+            if args.model:  # T-2158: answers from before the stamp, or stamped "default", name their model here
+                who = args.agent or "oracle"
+                if who not in SESSIONS:
+                    raise ValueError(f"--model goes with a session arm ({', '.join(SESSIONS)}); {who} runs no session")
+                f, new = os.path.join(_answers(p, args.run, who), "model"), c.plain(args.model)[:60]
+                try:
+                    with open(f, encoding="utf-8") as fh:
+                        old = fh.read()
+                except OSError:
+                    old = "default"
+                if old not in ("default", new):
+                    raise ValueError(f"{args.run}'s {who} answers already name their model ({c.plain(old)}); a named "
+                                     "stamp is never rewritten")
+                c.write_atomic(f, new)
             res = grade(p, args.run, args.agent or "oracle")
             return fmcli.out(args, res, summary(res))
         if action == "check":
@@ -1159,7 +1178,9 @@ def cmd_exam(args):
             res = fmgenesis.scorecard(p, args.agent or "foreman", args.bar)
             rows = res["rows"]
             fmcli.out(args, res, f"scorecard ({res['agent']}, held out, bar {res['bar']:.0%}): "
-                                 f"{sum(r['state'] == 'pass' for r in rows)}/{len(rows)} pass\n"
+                                 f"{sum(r['state'] == 'pass' for r in rows)}/{len(rows)} pass"
+                                 + (f" · {res['smoke']} Haiku smoke line{'s' * (res['smoke'] != 1)} not counted (Haiku "
+                                    "never decides)" if res["smoke"] else "") + "\n"
                                  + "".join(f"  top gap: {g}\n" for g in res["gaps"]) + "\n".join(
                 f"  {r['n']:>2}. {r['name']}: {r['state']}" + (f" {r['closed']}/{r['graded']}" if r["graded"] else "")
                 + (f" ({', '.join(r['kinds'])})" if r["kinds"] else "") for r in rows)

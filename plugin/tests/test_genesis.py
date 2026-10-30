@@ -959,6 +959,12 @@ class GenesisDraft(ForemanTestCase):
         line("oracle", ids("slow", 6), ids("slow", 6))  # another agent's lines
         fmgenesis.exam_line(self.p, {"agent": "foreman", "closed": {"holdout": ids("slow", 6)}})  # no answered ids
         line("draft-genesis", ids("line", 2) + ids("sweep", 1), ids("line", 2) + ids("sweep", 1))
+        fmgenesis.exam_line(self.p, {"agent": "foreman", "run": "s9", "answered": {"holdout": docs},
+                                     "closed": {"holdout": docs}})  # graded before the model stamp
+        fmgenesis.exam_line(self.p, {"agent": "finders", "run": "s9", "holdout": {"found": 3, "keyed": 4},
+                                     "closed": {}})
+        fmgenesis.exam_line(self.p, {"agent": "foreman", "run": "s9", "model": "claude-haiku-5-5", "answered":
+                                     {"holdout": docs}, "closed": {"holdout": docs}})  # T-2158: Haiku never decides
         r = self.fm("exam", "scorecard", "--json", check=False)
         self.assertEqual(r.returncode, 1, "not every capability passes")
         rows = json.loads(r.stdout)["rows"]
@@ -966,6 +972,12 @@ class GenesisDraft(ForemanTestCase):
                          [("Correctness", "pass", 4, 4), ("Docs match code", "under", 2, 4), ("Speed", "too few", 2, 2),
                           ("Taste", "no exam kind", 0, 0), ("Genesis as a feature", "pass", 3, 3)])
         self.assertEqual(rows[4]["agent"], "draft-genesis")
+        self.assertEqual(json.loads(r.stdout)["smoke"], 2)  # the older s9 line takes the stamp its regrade gave
+        self.assertIn("2 Haiku smoke lines not counted", self.fm("exam", "scorecard", check=False).stdout)
+        self.assertIn("top gap: finders found 3/4 held-out defects on s9 where foreman found 0/4: the session doesn't use "
+                      "what Foreman built (from a Haiku smoke run)", self.fm("exam", "scorecard", check=False).stdout)
+        self.assertIn("s9 (foreman, model claude-haiku-5-5: a smoke signal): ",
+                      fmgenesis._exam_tail(fmgenesis.home(self.p)))  # what a cold read and the site table see
         low = self.fm_json("exam", "scorecard", "--bar", "0.5", check=False)["rows"]
         self.assertEqual(low[1]["state"], "pass")
         self.assertIn("--bar is a rate", self.fm("exam", "scorecard", "--bar", "80", check=False).stderr)  # not a percent
@@ -1097,6 +1109,15 @@ class GenesisSelect(ForemanTestCase):
                                    r"from foreman, train only; no other signal recorded\)")  # T-2171: steer 1 rule 4
             self.assertEqual(fmgenesis.check(self.p)["lineage"]["problems"], [])
         self.assertIn("genesis select gen-2: keep", self.decisions())
+
+    def test_a_haiku_line_is_named_on_the_provisional_choice(self):
+        # T-2158 (steer 2026-10-30 rule 1): selection may rest on the Haiku smoke run, but it says so
+        import json
+        import fmgenesis
+        kid = json.loads(line("r1", 2, ["a", "b", "c", "d"]))
+        tower_file(self.tower, "exam.jsonl", line("r1", 1, ["a", "b"]) + json.dumps(dict(kid, model="haiku")) + "\n")
+        fmgenesis.select(self.p, 2)
+        self.assertRegex(self.read("lineage.md"), r"(?m)^- provisional: .*from foreman, model haiku: a smoke signal")
 
     def test_a_one_scenario_margin_on_one_line_asks_for_a_rerun(self):
         import fmgenesis
