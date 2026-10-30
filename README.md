@@ -2,7 +2,8 @@
 
 <h1 align="center">Foreman</h1>
 
-<p align="center"><b>The discipline layer for Claude Code.</b><br>
+<p align="center"><b>The discipline layer for coding agents.</b><br>
+Claude Code, Codex, Gemini CLI, opencode, or its own <code>fm code</code> on any model.<br>
 It plans before it edits, proves its work with commands it really ran, keeps to one task at a time<br>
 and works through the queue, while a guard stops the commands you'd never want run in bypass mode.</p>
 
@@ -25,7 +26,9 @@ and works through the queue, while a guard stops the commands you'd never want r
 
 ## Why
 
-Claude Code is fast. Left alone, it also edits before it understands, says "tests pass" without running them, chases new ideas mid-task, loses its place after `/compact`, and in bypass mode it will run the one command you'd never type. Foreman is the foreman on that job site.
+Coding agents are fast. Left alone, they also edit before they understand, say "tests pass" without running them, chase new ideas mid-task, lose their place after a compaction, and in bypass mode will run the one command you'd never type.
+
+Foreman is the foreman on that job site, whichever agent works it: Claude Code, Codex, Gemini CLI, opencode, or `fm code` on a model of your choice.
 
 | Foreman | So that |
 |---|---|
@@ -95,7 +98,7 @@ The plugin-system install changes nothing outside the plugin: the hooks and the 
 gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh
 ```
 
-**Requirements:** Linux, macOS or WSL (not native Windows), `git`, `claude` (tested on 2.1.304; the pane needs 2.1.299 or later), and Python 3.12.7 or newer as `python3`. When Python is older or missing, the installer gets it with Homebrew on macOS or with `uv` elsewhere (no sudo; `python3` goes in `~/.local/bin`).
+**Requirements:** Linux, macOS or WSL (not native Windows), `git`, and Python 3.12.7 or newer as `python3`. Claude Code (`claude`, tested on 2.1.304; the pane needs 2.1.299 or later) is optional: without it the installer skips the Claude Code plugin and settings, puts `fm` on your PATH and wires Codex, Gemini CLI or opencode if it finds them (or points you at `fm code`). When Python is older or missing, the installer gets it with Homebrew on macOS or with `uv` elsewhere (no sudo; `python3` goes in `~/.local/bin`).
 
 **Flags:**
 
@@ -444,7 +447,7 @@ The app never talks to a server: it runs `fm … --json` on this machine, and on
 
 </details>
 
-## Beyond Claude Code
+## Every harness: headless, other agents and fm code
 
 ### Headless on a server
 

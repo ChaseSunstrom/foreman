@@ -240,5 +240,21 @@ class Landing(unittest.TestCase):
         self.assertNotIn(">trust?<", svg, "live.svg is rendered from the cast: render it again")
 
 
+class ProductLines(unittest.TestCase):
+    """T-2173: Foreman is a discipline layer for coding agents; Claude Code is one surface, so no product line (README
+    headline, the site's title and fine print, the marketplace entry, INSTALL.md) says it is for Claude Code alone."""
+
+    def test_no_product_line_is_claude_code_only(self):
+        for path in ("README.md", "site/index.html", "site/build.py", "site/genesis/index.html",
+                     ".claude-plugin/marketplace.json", "INSTALL.md", "MASTER.md"):
+            text = read_text(os.path.join(ROOT, path))
+            for line in ("discipline layer for Claude Code", "Foreman for Claude Code", "community plugin for Claude Code",
+                         "local Claude Code plugin", "`claude` (Claude Code) and"):
+                self.assertNotIn(line, text, path)
+        self.assertIn("discipline layer for coding agents", read_text(os.path.join(ROOT, "README.md")))
+        self.assertIn("<span>fm code</span>", read_text(os.path.join(ROOT, "site", "index.html")))
+
+
 if __name__ == "__main__":
     unittest.main()
+

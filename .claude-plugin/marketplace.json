@@ -4,7 +4,7 @@
     "name": "ChaseSunstrom"
   },
   "metadata": {
-    "description": "Foreman: a discipline layer for Claude Code (intake, planning, focus, evidence, guard, memory hygiene).",
+    "description": "Foreman: a discipline layer for coding agents, here as a Claude Code plugin (intake, planning, focus, evidence, guard, memory hygiene).",
     "version": "1.2.50"
   },
   "plugins": [

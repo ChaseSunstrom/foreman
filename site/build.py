@@ -326,7 +326,7 @@ def layout(title, desc, body, pages, here, depth=1):
       <a href="https://github.com/ChaseSunstrom/foreman/blob/main/README.md">Read me</a>
       <a href="https://github.com/ChaseSunstrom/foreman/blob/main/CHANGELOG.md">Changelog</a>
     </nav>
-    <p class="fine">A community plugin for Claude Code. Not made by or affiliated with Anthropic. Charts are drawn from Foreman's own record of building itself.</p>
+    <p class="fine">A community project for coding agents. Not made by or affiliated with Anthropic or any agent's maker. Charts are drawn from Foreman's own record of building itself.</p>
   </div>
 </footer>
 <script src="{up}{JS}"></script>
