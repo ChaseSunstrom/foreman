@@ -385,7 +385,7 @@ class LangCheck:
         if not self.fm_json("exam")["toolchains"].get(self.LANG):
             self.skipTest(f"no {self.LANG} toolchain here")
         run = self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", self.LANG)["run"]
-        chk = self.fm_json("exam", "check", run, check=False)
+        chk = self.fm_json("exam", "check", run, check=False, timeout=300)  # T-2152: builds and runs every suite
         self.assertTrue(chk["ok"], chk["problems"])
         self.assertGreaterEqual(chk["checked"], 11)
         s = self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", self.LANG, "--kind", "bug")["scenarios"][0]

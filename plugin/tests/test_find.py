@@ -1,5 +1,6 @@
 """fm find (T-2121): deterministic, language-agnostic finders over a tree. Zero findings on every clean exam render,
 every planted defect of a covered kind found, nothing found that the key doesn't hold."""
+import errno
 import json
 import os
 
@@ -100,8 +101,12 @@ class FindHostile(ForemanTestCase):
         os.symlink(os.path.join(outside, "notes.md"), os.path.join(root, "leak.md"))  # T-2124: fmdocs too
         os.symlink("/dev/zero", os.path.join(root, "zero.md"))
         os.mkfifo(os.path.join(root, "pipe.py"))
-        with open(os.path.join(root, "caf\udce9.py".encode("utf-8", "surrogateescape").decode("utf-8", "surrogateescape")), "w") as f:
-            f.write("x = 1\n")
+        try:
+            with open(os.path.join(root, "caf\udce9.py"), "w") as f:
+                f.write("x = 1\n")
+        except OSError as e:  # T-2152: APFS refuses a name that isn't UTF-8 (EILSEQ); the rest of the repo still runs
+            if e.errno != errno.EILSEQ:
+                raise
         for git in (False, True):
             if git:
                 subprocess.run(["git", "init", "-q", root], check=True)

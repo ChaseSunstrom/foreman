@@ -82,4 +82,4 @@ class ReadHookSafety(Base):
         small = self.write("small.py", "x = 1\n")
         t0 = time.monotonic()
         self.pre({"file_path": small})
-        self.assertLess(time.monotonic() - t0, 2.0)
+        self.assertLess(time.monotonic() - t0, read[0]["hooks"][0]["timeout"])  # T-2152: inside what CC gives it

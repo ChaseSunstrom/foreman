@@ -290,13 +290,13 @@ class ForemanTestCase(unittest.TestCase):
                     raise
                 time.sleep(0.1)
 
-    def fm(self, *args, cwd=None, check=True, env=None, input=None):
+    def fm(self, *args, cwd=None, check=True, env=None, input=None, timeout=30):
         # fm run never takes a real inhibitor lock; T-1379: fm doctor skips its hook bench (no test reads its timings)
         e = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_INHIBITED="1", FOREMAN_DOCTOR_BENCH="0")
         e.pop("CLAUDE_CODE_SESSION_ID", None)  # tests may run inside a live Claude Code session
         e.update(env or {})
         p = subprocess.run([sys.executable, FM, *args], cwd=cwd or self.repo, env=e,
-                           capture_output=True, text=True, input=input, timeout=30 * busy_factor())
+                           capture_output=True, text=True, input=input, timeout=timeout * busy_factor())
         if check and p.returncode != 0:
             raise AssertionError(f"fm {' '.join(args)} exited {p.returncode}\nstdout:{p.stdout}\nstderr:{p.stderr}")
         return p
