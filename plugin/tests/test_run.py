@@ -1,4 +1,5 @@
 """T-0808: run.py takes test module names positionally, so fm check affected can hand it {names}."""
+import contextlib
 import os
 import sys
 import unittest
@@ -222,7 +223,7 @@ class Hang(unittest.TestCase):
             try:
                 with open(f"/proc/{pid}/stat") as f:
                     return f.read().rsplit(")", 1)[1].split()[0] == "Z"  # dead, not yet reaped
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):  # T-2115: /proc reads ESRCH while the task exits
                 return True
 
         with tempfile.TemporaryDirectory() as d:
@@ -253,7 +254,8 @@ class Hang(unittest.TestCase):
             finally:
                 boss.kill()
                 if pid and not gone(pid):
-                    os.kill(pid, 9)
+                    with contextlib.suppress(ProcessLookupError):  # it may exit between the check and the kill
+                        os.kill(pid, 9)
 
     def test_the_run_deadline_kills_a_running_class_and_skips_unstarted_ones(self):
         # T-1809: macOS hit its 35 min job cap with no annotation at all; the run now ends itself first
