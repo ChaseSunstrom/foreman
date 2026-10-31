@@ -3185,6 +3185,14 @@ def task_ac(p, args):
 def cmd_focus(args):
     p = resolve(args)
     warn = None
+    blast = ""  # T-2277: git and sqlite waits happen before the project lock every verb queues on
+    try:
+        peek = need_brief(p, args.id)
+        if peek.tier in ("M", "L") and "Blast radius (fm graph blast)" not in peek.section("Risks and rollback"):
+            import fmgraph
+            blast = fmgraph.blast_line(p, peek.meta.get("scope"))
+    except Exception:  # a hint; the locked read below reports a missing task
+        pass
     with c.lock(p.dir):
         target = need_brief(p, args.id)
         if target.status in c.CLOSED:
@@ -3259,6 +3267,9 @@ def cmd_focus(args):
         if moved:  # R2/R3 preflight: the plan was grounded on files that have changed since (kept for fresh sessions)
             related = (related + "\n" if related else "") + moved
             target.set_section("Preflight", moved + "\n")
+        if blast and "Blast radius (fm graph blast)" not in target.section("Risks and rollback"):
+            old = target.section("Risks and rollback").strip()  # T-2277: written once into the plan
+            target.set_section("Risks and rollback", (old + "\n" if old else "") + blast)
         if not target.meta.get("plan0_at"):  # T-1061: the plan at first focus, which the close is scored against
             target.meta.update(plan0_at=c.now(), plan0_scope=list(target.meta.get("scope") or []))
         c.save_brief(p, target)
