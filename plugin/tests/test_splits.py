@@ -16,7 +16,7 @@ class Splits(ForemanTestCase):
         import fmcore as c
         self.fm("init")
         tid = "T-0001"
-        self.fm("task", "new", "slow one", "--type", "FIX", "--tier", "M", "--interpretation", "x", "--approach", "x",
+        self.fm("task", "new", "slow one", "--type", "FIX", "--tier", "M", "--interpretation", "x", "--approach", "1) a 2) b 3) c Choice 1: a",
                 "--ac", "x :: true", "--step", "s", "--focus")
         p = c.find_project(self.repo)
         rows = []

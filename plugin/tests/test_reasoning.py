@@ -15,7 +15,7 @@ class Base(ForemanTestCase):
 
     def task(self, tier="S"):
         self.fm("task", "new", "Parser", "--type", "FEATURE", "--tier", tier, "--interpretation", "x", "--approach",
-                "a vs b: a", "--ac", "ok :: true", "--step", "s", "--focus")
+                "1) a 2) b 3) c Choice 1: a", "--ac", "ok :: true", "--step", "s", "--focus")
         return "T-0001"
 
     def fail_runs(self, tid, *outputs):

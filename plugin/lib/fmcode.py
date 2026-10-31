@@ -2768,7 +2768,8 @@ def _make_task(run, profile):
     after = f" (a follow-up to {run.after_tid})" if getattr(run, "after_tid", None) else ""  # T-1340
     a = ["task", "new", pl["title"], "--type", pl["type"], "--tier", pl["tier"], f"--raw={run.request}{after}",
          f"--interpretation={run.request}",
-         f"--approach=fm code ({_who(run, None if run.worker else profile)}): the harness runs the stations; " + (
+         f"--approach=fm code ({_who(run, None if run.worker else profile)}): 1) one free-form model run; 2) a human "
+         "plan first; 3) the harness runs the stations. Choice 3: " + (  # T-2269: the plan gate counts 3+ options and a choice
              "the worker CLI does each step, the harness judges its diff and runs the verify" if run.worker else
              "the model filled the plan and picks one action at a time"), "--focus", "--json"]
     a += [f"--ac={cr['text'].strip()} :: {cr['verify'].strip()}" for cr in pl["criteria"]]
