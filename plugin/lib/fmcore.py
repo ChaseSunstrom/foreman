@@ -4557,6 +4557,18 @@ def _need_claimed(x):
 PROOF_KINDS["claimed"] = _kind(_need_claimed, "{cmd}")
 
 
+def _need_meaning(x):
+    """T-2393: a clause of the request no green, failable criterion checks (fmrecall.bind); a label, never a block."""
+    import fmrecall
+    left = fmrecall.meaning_unproven(x["b"])
+    return {"why": "; ".join(f"meaning unproven: {fit(plain(cl), 70)} ({why})" for cl, why in left[:3]),
+            "fmt": {"cmd": f'fm task ac {x["b"].id} add "<what {fit(plain(left[0][0]), 40)} means> :: <a check that can fail>"'}} \
+        if left else None
+
+
+PROOF_KINDS["meaning"] = _kind(_need_meaning, "{cmd}")
+
+
 _DONE_STATUS = lazy(r"(?m)^status:\s*[\"']?done\b")
 PROOF_DAYS = 30  # the window fm status, digest and the exam keep in unproven.json; another --days is computed, not kept
 

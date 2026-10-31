@@ -685,6 +685,41 @@ def account(p, parts):
     return out
 
 
+_VACUOUS_AC = re.compile(r"^- \S+ vacuous checks: (.*)")
+
+
+def bind(b):
+    """T-2393: [(clause, criterion n or None, why unproven or '')]: each clause of the brief's Raw request (CONTEXT lines
+    aside) bound to the criterion sharing the most words (2+, by _tokens), unproven when none does, when that criterion
+    has no green fm run, or when fm task prove --vacuous found its check passing on the start tree (it couldn't fail).
+    A DONE-WHEN line binds like any clause: its criterion is the user's own check."""
+    raw = "\n".join(x[2:] if x.startswith("> ") else x for x in b.section("Raw request").splitlines()
+                    if not re.match(r"(?:> )?\s*CONTEXT:", x))
+    words = {a.n: set(_tokens(c.strip_verify(a.text))) for a in b.acceptance()}
+    green = {n for n in words if any(x.startswith(f"- (ac {n}) ") and c._RAN_MARK in x and "→ exit 0" in x
+                                     for x in b.evidence())}
+    runs = [m.group(1) for x in b.section("Log").splitlines() if (m := _VACUOUS_AC.search(x))]
+    hollow = {int(n) for n in re.findall(r"\bac (\d+)", runs[-1])} if runs else set()
+    out = []
+    for part in clauses(raw):
+        mine = set(_tokens(part))
+        best = max(words, key=lambda n: len(mine & words[n]), default=None)
+        if best is None or len(mine & words[best]) < 2:
+            out.append((part, None, "no criterion checks it"))
+        elif best in hollow:
+            out.append((part, best, f"criterion {best}'s check passed on the start tree, so it couldn't fail"))
+        elif best not in green:
+            out.append((part, best, f"criterion {best} has no green run"))
+        else:
+            out.append((part, best, ""))
+    return out
+
+
+def meaning_unproven(b):
+    """T-2393: [(clause, why)] of bind(b) with no green, failable check behind it."""
+    return [(part, why) for part, _, why in bind(b) if why]
+
+
 def unaccounted(p, loose):
     """T-2146: the clauses no task covers now (the hook records a request's clauses before its tasks exist)."""
     return [x for x, t in account(p, loose) if not t]

@@ -908,6 +908,12 @@ def cmd_task(args):
                         for n in c.proof_needs(p, b, files, live=True) if n["kind"] not in ("typed", "red", "inconclusive")]
         except Exception:  # the close is recorded already; a rollup read must never fail it
             pass
+        try:  # T-2393: each clause of the request with no green, failable criterion behind it
+            import fmrecall
+            by_hand += [f"meaning unproven: {c.fit(c.plain(cl), 80)} ({why})"
+                        for cl, why in fmrecall.meaning_unproven(c.find_brief(p, b.id) or b)]
+        except Exception:
+            pass
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed,
                               check_by_hand=by_hand, **({"ledger": _ledger_head(p)} if getattr(args, "json", False)
                                                         else {}),
