@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm audit prep`: a `--base` value can no longer act as a git option (`--output=FILE` wrote a file); both sides are resolved to tree ids with `rev-parse --verify --end-of-options`, and the diff runs with no ext-diff, textconv, fsmonitor or hooks (T-2318).
 - run.py's last line names the failing classes ("FAILED (2 classes: test_x.A, test_y.B)", up to 5, then +N more), so a red run says what failed even through a tail (T-2319).
 - `fm lane merge` and `fm audit prep` name every function a branch changes (git's hunk context plus the hunk's own definitions, secrets redacted), so a stray edit stands out (T-2312).
 - A batch host held by a builder lane keeps its members out of the main inbox, so the drive no longer offers them as new work (T-2317).
