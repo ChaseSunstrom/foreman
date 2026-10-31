@@ -856,6 +856,11 @@ def cmd_task(args):
         import fmoutcomes
         fmoutcomes.record_close(p, logged)  # T-1061
         fmoutcomes.maintain(p)  # T-2337: the calibration ledger's due outcomes and bar check, each close
+        try:  # T-2351: a task a trigger filed is a trial on its trigger's own key
+            import fmtrials
+            fmtrials.register_fix(p, b)
+        except Exception as e:  # the task is done already; a missing trial must not make that look failed
+            print(f"fm: warning: self-fix trial not registered: {e}", file=sys.stderr)
         if b.meta.get("batch"):
             _settle_batch(p, b, done=True)
         chose = " ".join(b.section("Decision").split()) if b.type == "RESEARCH" else ""
