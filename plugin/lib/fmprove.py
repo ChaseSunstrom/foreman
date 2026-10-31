@@ -33,7 +33,10 @@ FLAKY_K = 6  # T-2199: reruns of a flaky test's suite
 SENTINEL = "FM_SENTINEL"
 RED = re.compile(r"^FM_RED: ", re.M)  # the line a model-written test prints when the defect shows (an assertion)
 TESTER = {"py": ("python3", "py"), "js": ("node", "js"), "rb": ("ruby", "rb")}
-RAISE = {"py": f"raise RuntimeError({SENTINEL!r})", "js": f"throw new Error('{SENTINEL}');", "rb": f"raise '{SENTINEL}'"}
+_S = "'FM_SEN' + 'TINEL'"  # joined at run time: a syntax error that echoes the stubbed source never shows the sentinel
+RAISE = {"py": f"raise RuntimeError({_S})", "js": f"throw new Error({_S});", "rb": f"raise {_S}"}
+BENIGN = {"py": "return None", "js": "return null;", "rb": "return nil"}
+RED_LINES = re.compile(r"^FM_RED: .*", re.M)  # the reasons, not just their count
 MODEL = {"vuln", "slow", "bug"}  # proven by a model-written test
 TEST_SYSTEM = (
     "You write ONE small standalone {lang} test script for a suspected defect in the function named. The source is "
@@ -145,7 +148,7 @@ def _instrument(path, line, lang, marker, stmt=None):
             return False
     elif lang == "rb":
         head = lines[line - 1]
-        if "=" in head.split("def", 1)[-1].split(")")[-1]:  # def x = expr: an endless method has no body to open
+        if re.search(r"\bend\b|;", head) or "=" in head.split("def", 1)[-1].split(")")[-1]:  # one-line or endless: no body to open
             return False
         lines.insert(line, head[:len(head) - len(head.lstrip())] + "  " + stmt)
     else:  # brace languages: the body's '{', before any ';' that would end an expression-bodied definition
@@ -254,28 +257,38 @@ def _untested(root, f, suite, control, end=None):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _parses(path, lang):
+    """False when the interpreter's own syntax check rejects the file; True where there is no check to run."""
+    cmd = {"js": "node --check", "rb": "ruby -c"}.get(lang)
+    if not cmd or not shutil.which(cmd.split()[0]):
+        return True
+    return not c.run_command(os.path.dirname(path), f"{cmd} {shlex.quote(os.path.basename(path))}", timeout=20,
+                             env=_env(tempfile.gettempdir()))[0]
+
+
 def _flaky(root, f, end=None):
     """T-2199: the tree's suite run FLAKY_K times on a copy: proven only when it both passed and failed, and a failing
     run named the flagged test. (verdict, evidence)."""
     cmds = _suites(root, _code(root))
     if not cmds:
         return "lead", "no test command found here (fm check add '<cmd>' names one)"
-    tmp, dst = _copy(root)
-    try:
-        runs = []
-        for _ in range(FLAKY_K):
-            if end and time.time() >= end:
-                return "lead", f"fm prove's budget ran out after {len(runs)} of {FLAKY_K} runs of `{cmds[0]}`"
+    runs = []
+    for _ in range(FLAKY_K):
+        if end and time.time() >= end:
+            return "lead", f"fm prove's budget ran out after {len(runs)} of {FLAKY_K} runs of `{cmds[0]}`"
+        tmp, dst = _copy(root)  # a fresh copy per run: state a run leaves behind can't fake flakiness
+        try:
             runs.append(c.run_command(dst, cmds[0], timeout=_t(end), env=_env(tmp)))
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
     red = [o for r, o in runs if r]
     said = f"`{cmds[0]}` ran {FLAKY_K} times on a copy: {len(runs) - len(red)} green, {len(red)} red"
     if not red:
         return "lead", f"{said}: it never failed, so the chance didn't show"
     if len(red) == len(runs):
         return "lead", f"{said}: it never passed, so it fails for a reason other than chance (exit {runs[0][0]}: {_last(red[0])})"
-    if f["symbol"] and not any(f["symbol"] in o for o in red):
+    fail = re.compile(r"^.*(?:FAIL|ERROR|✗|✘|not ok).*" + re.escape(f["symbol"]), re.M)  # a verbose run lists passes too
+    if f["symbol"] and not any(fail.search(o) for o in red):
         return "lead", f"{said}, but no red run named {json.dumps(f['symbol'])}: another test may be the flaky one"
     return "proven", said
 
@@ -287,10 +300,17 @@ def _fence(text):
 
 def _written(root, f, end=None):
     """T-2199: one tool-less child writes one failing test for the candidate from its source; it runs on a copy with
-    no credentials. Proven when it's red 3 of 3 on an assertion (FM_RED) and stubbing the candidate to raise changes
-    the failure. (verdict, evidence); the reply is untrusted and lands only in the copy."""
+    no credentials. Proven when it's red 3 of 3 on an assertion (FM_RED), stubbing the candidate to raise changes the
+    failure (the test calls it), and stubbing it to return a benign value ends the red (the red depends on what it
+    does). (verdict, evidence); the reply is untrusted and lands only in the copy. A trusted tree's own code could
+    print the markers: that only matters in a tree the user already trusts."""
     import fmfind
     import fmideas
+    p = c.find_project(os.getcwd())
+    if p and c.read_meta(p).get("sensitive"):
+        return "lead", "sensitive project: no model-written test"
+    if end and time.time() >= end:
+        return "lead", "not tried: fm prove's budget ran out"
     lang = fmfind.LANG.get(os.path.splitext(f["file"])[1].lower())
     if lang not in TESTER:
         return "lead", f"no way to run a {lang or 'this'} test here (py, js and rb run as scripts)"
@@ -316,26 +336,44 @@ def _written(root, f, end=None):
     try:
         folder = os.path.join(dst, os.path.dirname(f["file"]))
         name, env = f"fm_prove_test.{ext}", dict(_env(tmp), PYTHONDONTWRITEBYTECODE="1")
-        if os.path.lexists(os.path.join(folder, name)):
-            return "lead", f"{name} already exists beside {f['file']}"
-        with open(os.path.join(folder, name), "w", encoding="utf-8") as fh:
-            fh.write(code)
+        if not os.path.isdir(folder) or os.path.lexists(os.path.join(folder, name)):
+            return "lead", f"no room for {name} beside {f['file']} in the copy"
+        try:
+            with open(os.path.join(folder, name), "w", encoding="utf-8") as fh:
+                fh.write(code)
+        except OSError as e:
+            return "lead", f"couldn't write the test into the copy: {e.strerror}"
         cmd = f"{run} {name}"
-        t = min(60, _t(end))
-        runs = [c.run_command(folder, cmd, timeout=t, env=env) for _ in range(3)]
-        reds = [r and RED.search(o) for r, o in runs]
+
+        def go():
+            return c.run_command(folder, cmd, timeout=min(60, _t(end)), env=env)
+        runs = [go() for _ in range(3)]
+        reds = [bool(r and RED.search(o)) for r, o in runs]
         if not all(reds):
             r, o = next(x for x, ok in zip(runs, reds) if not ok)
-            return "lead", (f"the child's test wasn't red 3 of 3 on an assertion ({reds.count(None) + reds.count(False)} "
-                            f"of 3 weren't; exit {r}: {_last(o)})")
-        if not _instrument(os.path.join(dst, f["file"]), d[0] + 1, lang, "", stmt=RAISE[lang]):
-            return "lead", f"red 3 of 3, but couldn't stub {json.dumps(d[2])} safely to see whether the test runs it"
-        r, o = c.run_command(folder, cmd, timeout=t, env=env)
-        if SENTINEL not in o and RED.findall(o) == RED.findall(runs[0][1]):
+            return "lead", (f"the child's test wasn't red 3 of 3 on an assertion ({reds.count(False)} of 3 weren't; "
+                            f"exit {r}: {_last(o)})")
+        target, orig, shown = os.path.join(dst, f["file"]), None, RED_LINES.findall(runs[0][1])
+        with open(target, encoding="utf-8", errors="replace") as fh:
+            orig = fh.read()
+        outs = {}
+        for how, stmt in (("raise", RAISE[lang]), ("benign", BENIGN[lang])):
+            with open(target, "w", encoding="utf-8") as fh:
+                fh.write(orig)
+            if not _instrument(target, d[0] + 1, lang, "", stmt=stmt) or not _parses(target, lang):
+                return "lead", f"red 3 of 3, but couldn't stub {json.dumps(d[2])} safely ({how} stub) to test the test"
+            outs[how] = go()
+        r, o = outs["raise"]
+        if SENTINEL not in o and RED_LINES.findall(o) == shown:
             return "lead", (f"red 3 of 3, but stubbing {json.dumps(d[2])} to raise changed nothing: the test fails for "
                             "its own reason")
+        r, o = outs["benign"]
+        if r and RED_LINES.findall(o) == shown:
+            return "lead", (f"red 3 of 3, but stubbing {json.dumps(d[2])} to return a benign value left it red the same "
+                            "way: the red doesn't depend on what the function does")
         return "proven", (f"a model-written test (`{cmd}` beside {f['file']}) was red 3 of 3 on an assertion "
-                          f"({_last(runs[0][1])}) and its failure changed when {json.dumps(d[2])} was stubbed to raise")
+                          f"({_last(runs[0][1])}); stubbed to raise, its failure changed; stubbed to return a benign "
+                          "value, it stopped being red the same way")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

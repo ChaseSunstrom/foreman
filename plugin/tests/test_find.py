@@ -9,6 +9,7 @@ from helpers import ForemanTestCase
 
 import fmexam
 import fmfind
+import fmprove
 
 COVERED = {"vuln", "slow", "dep", "untested", "docs", "flaky"}
 
@@ -670,8 +671,12 @@ STUB_CLAUDE = ("#!/usr/bin/env python3\nimport json, os, sys\nsys.stdin.read()\n
                "print(json.dumps({'type': 'result', 'is_error': False, 'total_cost_usd': 0,\n"
                "                  'result': open(os.environ['STUB_REPLY']).read()}))\n")
 FLIP = ("import os\nimport random\nimport unittest\n\n\nclass T(unittest.TestCase):\n    def test_flip(self):\n"
-        "        random.random()\n        n = int(open('n').read()) if os.path.exists('n') else 0\n"
-        "        open('n', 'w').write(str(n + 1))\n        self.assertEqual(n % {mod}, 0)\n")
+        "        random.random()\n        p = os.environ['FLIP_FILE']\n        n = int(open(p).read()) if os.path.exists(p) else 0\n"
+        "        open(p, 'w').write(str(n + 1))\n        self.assertEqual(n % {mod}, 0)\n")
+JS_DB = ("function findUser(name, opts = {}) {\n  return \"SELECT * FROM users WHERE name = '\" + name + \"'\";\n}\n"
+         "module.exports = { findUser };\n")
+JS_TEST = ("```js\nconst q = require('./app').findUser(\"x' OR '1'='1\");\nif (q.includes(\"x' OR\")) {\n"
+           "  console.log('FM_RED: the quote reached the SQL');\n  process.exit(1);\n}\n```\n")
 DB = "def find_user(name):\n    return \"SELECT * FROM users WHERE name = '\" + name + \"'\"\n"
 DEDUPE = ("def dedupe(items):\n    seen = []\n    out = []\n    for x in items:\n        if x not in seen:\n"
           "            seen.append(x)\n            out.append(x)\n    return out\n")
@@ -697,7 +702,10 @@ class FindProveKinds(ForemanTestCase):
         bindir = os.path.join(self.tmp, "bin")
         write(bindir, {"claude": STUB_CLAUDE})
         os.chmod(os.path.join(bindir, "claude"), 0o755)
-        env = {"PATH": bindir + os.pathsep + os.environ["PATH"], "STUB_REPLY": os.path.join(self.tmp, "reply")}
+        env = {"PATH": bindir + os.pathsep + os.environ["PATH"], "STUB_REPLY": os.path.join(self.tmp, "reply"),
+               "FLIP_FILE": os.path.join(self.tmp, "flips")}  # outside the copy: each rerun gets a fresh copy
+        if os.path.exists(env["FLIP_FILE"]):
+            os.remove(env["FLIP_FILE"])
         write(self.tmp, {"reply": reply or ""})
         r = self.fm("prove", root, *(["--yes-run"] if yes else []), "--json", check=False, env=env, timeout=120)
         return {t["kind"]: t for t in json.loads(r.stdout)["tickets"]}
@@ -738,3 +746,36 @@ class FindProveKinds(ForemanTestCase):
         self.assertEqual(green["verdict"], "lead", green)  # never red
         no = self.prove(self.proj({"db.py": DB}, "other"), VULN_TEST, yes=False)["vuln"]
         self.assertEqual((no["verdict"], "--yes-run" in no["evidence"]), ("lead", True))  # an untrusted tree's code never runs
+
+    def test_a_test_that_calls_the_function_then_prints_red_whatever_it_returns_stays_a_lead(self):
+        t = self.prove(self.proj({"db.py": DB}), "```python\nimport db\ndb.find_user('a')\nprint('FM_RED: always')\n"
+                       "raise SystemExit(1)\n```\n")["vuln"]
+        self.assertEqual(t["verdict"], "lead", t)  # the raise stub changes it, the benign stub doesn't
+        self.assertIn("benign", t["evidence"])
+
+    def test_a_stub_that_leaves_a_syntax_error_is_a_lead_not_a_proof(self):
+        import shutil as sh
+        if not sh.which("node"):
+            self.skipTest("no node")
+        t = self.prove(self.proj({"app.js": JS_DB}), JS_TEST)["vuln"]  # the throw would land inside `opts = {}`
+        self.assertEqual(t["verdict"], "lead", t)
+        self.assertIn("stub", t["evidence"])
+        self.assertNotIn("FM_SENTINEL", fmprove.RAISE["js"])  # the literal is built at runtime, never in the source
+
+    def test_flaky_counts_only_failure_lines_that_name_the_test(self):
+        from unittest import mock
+        root = self.proj({"tests/test_flip.py": FLIP.format(mod=2)})
+        outs = iter([(0, "test_flip ... ok"), (1, "test_flip ... ok\nFAIL: test_other (t.T)"), (0, "test_flip ... ok")] * 2)
+        f = {"symbol": "test_flip"}
+        with mock.patch.object(fmprove.c, "run_command", side_effect=lambda *a, **k: next(outs)):
+            v, e = fmprove._flaky(root, f)
+        self.assertEqual(v, "lead", e)
+        self.assertIn("another test", e)
+
+    def test_a_sensitive_project_gets_no_model_written_test(self):
+        self.fm("init")
+        self.fm("sensitive", "on")
+        t = self.prove(self.proj({"db.py": DB}), VULN_TEST)["vuln"]
+        self.assertEqual((t["verdict"], t["evidence"]), ("lead", "sensitive project: no model-written test"))
+        flips = self.prove(self.proj({"tests/test_flip.py": FLIP.format(mod=2)}))["flaky"]
+        self.assertEqual(flips["verdict"], "proven", flips)  # reruns run no model code
