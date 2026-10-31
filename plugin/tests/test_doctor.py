@@ -839,15 +839,68 @@ class FootprintRatchet(unittest.TestCase):  # T-2281
         r = self.check(1021)
         self.assertEqual(r.status, "WARN")
         self.assertIn("rules chars", r.detail)
-        self.assertIn("fm decide", r.detail)
+        self.assertIn("cut", r.detail)
+        self.assertNotIn("fm decide", r.detail)
 
-    def test_a_decision_since_the_ship_naming_the_metric_clears_it(self):
+    def test_a_decision_naming_the_metric_no_longer_clears_it(self):  # T-2358: a session can't waive its own gate
         d.record_footprint(self.p, self.rules(1000), self.plugin)
-        self.decide("2000-01-01", "footprint: rules chars +5% before the ship")  # too old
-        self.decide("2999-01-01", "footprint: descriptions chars +5%")  # names another metric
-        self.assertEqual(self.check(1050).status, "WARN")
         self.decide("2999-01-01", "footprint: rules chars +5% for the reply format")
-        self.assertEqual(self.check(1050).status, "PASS")
+        self.assertEqual(self.check(1050).status, "WARN")
+
+    BENCH = {"PreToolUse:Bash": {"p95": 40.0, "cpu_p95": 30.0, "load": 0.2},
+             "Stop": {"p95": 90.0, "cpu_p95": 60.0, "load": 2.5}}
+
+    def test_measured_metrics_are_injected_chars_and_each_hooks_p95(self):  # T-2358: what gen-0 section 6 names
+        got = d.measured(self.BENCH, {"SessionStart": 1200, "UserPromptSubmit": 0})
+        self.assertEqual(got, {"SessionStart chars": 1200, "PreToolUse:Bash p95 ms": 40.0})
+        # T-2358 review: a loaded run's timing is another basis and a 0 size is a hook that failed: neither is measured
+        self.assertEqual(d.measured(None, None), {})
+
+    def record(self, rules=1000, **m):
+        d.record_footprint(self.p, self.rules(rules), self.plugin, extra=m)
+
+    def checkm(self, rules=1000, **m):
+        return d.check_footprint(self.rules(rules), self.md, plugin=self.plugin, project=self.p, extra=m)
+
+    def test_a_hooks_p95_has_a_fifteen_percent_band_and_counts_only_when_measured(self):
+        self.record(**{"Stop p95 ms": 40.0})
+        self.assertEqual(self.checkm(**{"Stop p95 ms": 45.0}).status, "PASS")  # +12.5%: jitter
+        r = self.checkm(**{"Stop p95 ms": 47.0})
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("Stop p95 ms", r.detail)
+        self.assertEqual(self.checkm().status, "PASS")  # not measured this time: not judged
+
+    def test_injected_chars_ride_the_two_percent_band(self):
+        self.record(**{"SessionStart chars": 2000})
+        self.assertEqual(self.checkm(**{"SessionStart chars": 2040}).status, "PASS")
+        self.assertIn("SessionStart chars", self.checkm(**{"SessionStart chars": 2041}).detail)
+
+    def test_only_a_cut_of_at_least_the_growth_in_the_same_unit_clears_it(self):  # T-2358
+        self.record(**{"SessionStart chars": 2000, "Stop p95 ms": 100.0})
+        self.assertEqual(self.checkm(1050, **{"SessionStart chars": 1960}).status, "WARN")  # cut 40 < grew 50
+        self.assertEqual(self.checkm(1050, **{"SessionStart chars": 1950}).status, "PASS")  # cut 50 pays for 50
+        self.assertEqual(self.checkm(1050, **{"SessionStart chars": 2000, "Stop p95 ms": 10.0}).status,
+                         "WARN")  # ms saved don't pay for chars added
+
+    def test_a_hook_slower_is_never_paid_by_another_hook_or_a_skill_trim(self):  # T-2358 review
+        self.record(**{"Stop p95 ms": 100.0, "PreToolUse:Bash p95 ms": 200.0})
+        self.assertEqual(self.checkm(**{"Stop p95 ms": 150.0, "PreToolUse:Bash p95 ms": 100.0}).status, "WARN")
+        rec = os.path.join(self.t, "footprint.json")
+        with open(rec, "w") as f:
+            json.dump({"at": "2000-01-01", "metrics": {"rules chars": 1000, "largest SKILL chars": 5000}}, f)
+        # no SKILL in this plugin: largest SKILL reads 0, as a trimmed lazily loaded body would
+        self.assertEqual(self.check(1050).status, "WARN")  # a SKILL body isn't always-on: its trim pays for nothing
+
+    def test_the_record_is_a_ratchet_growth_with_no_cut_keeps_the_old_value(self):  # T-2358 review
+        rec = os.path.join(self.t, "footprint.json")
+        self.record(1000)
+        self.record(1050)
+        with open(rec) as f:
+            self.assertEqual(json.load(f)["metrics"]["rules chars"], 1000)  # the next ship can't absorb it
+        self.assertEqual(self.checkm(1050).status, "WARN")
+        self.record(990)
+        with open(rec) as f:
+            self.assertEqual(json.load(f)["metrics"]["rules chars"], 990)
 
     def test_shrinking_passes_and_the_fixed_cap_still_fails(self):
         d.record_footprint(self.p, self.rules(1000), self.plugin)
@@ -915,9 +968,9 @@ class ScanCache(ForemanTestCase):
         return t
 
     def grow(self, path, seconds=2 * 3600):  # default: the mtime crosses an hour boundary
-        with open(path, "a") as f:
+        t = os.stat(path).st_mtime + seconds  # T-2429: from the mtime before the append, which resets it to now (in
+        with open(path, "a") as f:  # an hour's last minute, now + 60 s was the next hour: a cache miss)
             f.write("{}\n")
-        t = os.stat(path).st_mtime + seconds
         os.utime(path, (t, t))
 
     def test_an_append_within_the_hour_still_hits(self):
