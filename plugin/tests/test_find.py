@@ -1481,3 +1481,102 @@ class FindToolRung(ForemanTestCase):
         r = self.fm("find", self.tree, "--ladder", check=False)
         self.assertIn("tool rung skipped: not a trusted tree", r.stdout + r.stderr)
         self.assertEqual(self.calls(), [])
+
+
+class FindTreeSitterRung(ForemanTestCase):
+    """T-2240: fm find --ladder runs Foreman's own .scm rules over tracked files of their language through an optional
+    tree_sitter binding (a stub here: a node per line holding BUG); no binding is one capability-miss and a note."""
+
+    def setUp(self):
+        super().setUp()
+        import sys
+        import types
+        from unittest import mock
+        import fmcore as c
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        self.tree = os.path.join(self.tmp, "tree")
+        write(self.tree, {"a.py": "x = 1\nBUG\n", "b.js": "BUG\nBUG\n", "c.txt": "BUG\n"})
+        self.seen, self.queries = [], []
+        me = self
+        Node = type("Node", (), {"__init__": lambda s, n: setattr(s, "start_point", (n, 0))})
+        Tree = type("Tree", (), {"__init__": lambda s, src: setattr(s, "root_node", src)})
+        Query = type("Query", (), {"captures": lambda s, root: {"m": [Node(i) for i, l in enumerate(root.split(b"\n")) if b"BUG" in l]}})
+        Lang = type("Lang", (), {"__init__": lambda s, n: setattr(s, "name", n),
+                                 "query": lambda s, src: me.queries.append((s.name, src)) or Query()})
+        Parser = type("Parser", (), {"__init__": lambda s, lang: None,
+                                     "parse": lambda s, data: me.seen.append(data) or Tree(data)})
+        self.ts = types.ModuleType("tree_sitter")
+        self.ts.Parser = Parser
+        self.pack = types.ModuleType("tree_sitter_language_pack")
+        self.pack.get_language = Lang
+        patch = mock.patch.dict(sys.modules, {"tree_sitter": self.ts, "tree_sitter_language_pack": self.pack})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def run_rung(self):
+        found, notes = fmfind.ladder(self.tree, self.p)
+        return [(f["finder"], f["file"], f["line"]) for f in found if f["finder"].startswith("ts:")], notes
+
+    def test_rules_run_over_files_of_their_language_and_report_ts_findings(self):
+        got, notes = self.run_rung()  # an untrusted tree: parsing runs no repo code, so no trust is asked
+        self.assertIn(("ts:bare-except", "a.py", 2), got, notes)
+        self.assertTrue(all(f[1] != "c.txt" for f in got))
+        self.assertTrue(any(f[1] == "b.js" and f[2] == 1 for f in got))
+        self.assertEqual({n for n, _ in self.queries} - {"python", "javascript"}, set())
+
+    def test_findings_join_the_scan_with_a_learned_precision_key(self):
+        found, _ = fmfind.ladder(self.tree, self.p)
+        _, rows = fmfind.scan(self.tree, extra=found)
+        self.assertTrue(any(f["finder"] == "ts:bare-except" for f in rows))
+
+    def test_absent_binding_is_one_capability_miss_and_a_note(self):
+        import fmcore as c
+        import sys
+        from unittest import mock
+        with mock.patch.dict(sys.modules, {"tree_sitter": None}):
+            for _ in range(2):
+                got, notes = self.run_rung()
+        self.assertEqual(got, [])
+        self.assertTrue(any("tree-sitter" in n and "skipped" in n for n in notes), notes)
+        mine = [b for b in c.load_briefs(self.p, include_archive=True) if "capability-miss: tree-sitter" in b.section("Raw request")]
+        self.assertEqual(len(mine), 1)
+
+    def test_absent_language_pack_is_the_same_miss(self):
+        import sys
+        from unittest import mock
+        with mock.patch.dict(sys.modules, {"tree_sitter_language_pack": None}):
+            got, notes = self.run_rung()
+        self.assertEqual(got, [])
+        self.assertTrue(any("tree-sitter" in n for n in notes), notes)
+
+    def test_no_file_of_a_rule_language_means_no_miss(self):
+        import fmcore as c
+        import sys
+        from unittest import mock
+        os.remove(os.path.join(self.tree, "a.py"))
+        os.remove(os.path.join(self.tree, "b.js"))
+        with mock.patch.dict(sys.modules, {"tree_sitter": None}):
+            got, notes = self.run_rung()
+        self.assertEqual((got, [n for n in notes if "tree-sitter" in n]), ([], []))
+        self.assertEqual([b for b in c.load_briefs(self.p, include_archive=True) if "capability-miss: tree-sitter" in b.section("Raw request")], [])
+
+    def test_symlinks_and_oversize_files_are_not_parsed_and_the_tree_cannot_add_rules(self):
+        from unittest import mock
+        os.remove(os.path.join(self.tree, "b.js"))
+        os.symlink("a.py", os.path.join(self.tree, "link.py"))
+        write(self.tree, {"big.py": "BUG\n" + "#" * 200, "ladder_rules/python/own.scm": "; kind: bug\n(x) @m\n", ".fm-ladder/python/own2.scm": "(y) @m\n"})
+        with mock.patch.object(fmfind, "TS_MAX", 100):
+            got, _ = self.run_rung()
+        self.assertEqual({f[1] for f in got}, {"a.py"})
+        self.assertFalse(any("(x)" in q or "(y)" in q for _, q in self.queries))
+
+    def test_a_binding_that_raises_is_a_note_not_a_crash(self):
+        self.ts.Parser.parse = lambda s, d: 1 / 0
+        got, notes = self.run_rung()
+        self.assertEqual(got, [])
+        self.assertTrue(any("ts:" in n and "ZeroDivisionError" in n for n in notes), notes)
+
+    def test_rule_headers_name_kind_and_message(self):
+        rules = fmfind._ts_rules("python")
+        self.assertTrue(rules and all(r["kind"] in ("bug", "vuln", "perf", "flaky") and r["says"] for r in rules), rules)
