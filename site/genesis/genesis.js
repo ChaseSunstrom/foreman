@@ -230,6 +230,24 @@
       : '<div class="rule"><b>No exam run yet.</b>Mission 1 (fm exam) is building it: throwaway repos in six languages with planted defects, vague, ambiguous and missing-tool requests, a held-out third, and plain Claude Code run beside Foreman on the same repos. Every result lands here.</div>';
   }
 
+  /* T-2154: the held-out scorecard, one row per capability; every cell is textContent, never markup */
+  function scorecard() {
+    var box = $("scorecard"), rows = D.scorecard, t = document.createElement("table"), tr, h;
+    box.textContent = "";
+    if (!Array.isArray(rows) || !rows.length) { box.textContent = "Scorecard: not graded yet."; return; }
+    tr = t.appendChild(document.createElement("tr"));
+    ["#", "capability", "state", "closed of held out", "why"].forEach(function (w) {
+      h = tr.appendChild(document.createElement("th")); h.textContent = w;
+    });
+    rows.forEach(function (r) {
+      tr = t.appendChild(document.createElement("tr"));
+      [r.n, r.name, r.state, r.graded == null ? "–" : r.closed + " of " + r.graded, r.why || ""].forEach(function (v) {
+        tr.appendChild(document.createElement("td")).textContent = String(v == null ? "" : v);
+      });
+    });
+    box.appendChild(t);
+  }
+
   /* E: rules */
   var RUN = [["Held-out exam", "A third of the practice repos are never trained on. They decide \"done\"."], ["Subtract as you add", "Each round cuts as much as it adds. Hooks can't get slower."],
     ["Spikes, not vetoes", "\"Too ambitious\" is never a reason. A failed prototype is."], ["Two new tries, then move on", "Stuck tasks get two fresh angles, then a recorded diagnosis."],
@@ -384,7 +402,7 @@
     D = data;
     if (!D.generations.length) D.generations = [{ n: 1, seed: false, missions: [], critiques: [], tasks: [], rules: [] }];
     selectGen(D.generations[D.generations.length - 1].n);
-    exam(); docs();
+    exam(); scorecard(); docs();
     var h = location.hash.slice(1);
     try { h = decodeURIComponent(h); } catch (e) { h = ""; }  // a malformed hash (#doc=%) opens nothing, breaks nothing
     var m = /^(doc|cap|mission|task)=(.+)$/.exec(h);
