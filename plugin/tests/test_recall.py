@@ -1,6 +1,7 @@
 """fm recall (T-0043) and lessons (T-0048): related past work surfaces when a task is planned or focused."""
 import json
 import os
+import time
 
 from helpers import ForemanTestCase
 
@@ -396,21 +397,68 @@ class Recurring(ForemanTestCase):  # T-2272: one obstacle in many tasks is fixed
                 self.assertIsNone(fmrecall.note_own(self.p, line, who))
         self.assertEqual(c.load_briefs(self.p), [])
 
-    def test_the_first_note_replays_failures_that_crossed_three_tasks_before_and_only_once(self):  # T-2349
-        import fmrecall
-        path = os.path.join(self.p.dir, "failures.jsonl")
+    def rows(self, sig, tasks):
+        with open(os.path.join(self.p.dir, "failures.jsonl"), "a") as f:
+            f.write("".join(json.dumps({"sig": sig, "task": t, "at": c.now()}) + "\n" for t in tasks))
 
-        def rows(sig, tasks):
-            with open(path, "a") as f:
-                f.write("".join(json.dumps({"sig": sig, "task": t, "at": c.now()}) + "\n" for t in tasks))
-        rows("sed: char 0: unknown command: ','", ("T-0801", "T-0802", "T-0803", "T-0803"))
-        rows("awk: line 0: cannot open file for reading", ("T-0801", "T-0802"))
+    def marker(self):
+        return os.path.exists(os.path.join(self.p.dir, "failures.replayed"))
+
+    def test_a_replay_files_failures_that_crossed_three_tasks_before_and_only_once(self):  # T-2349
+        import fmrecall
+        self.rows("sed: char 0: unknown command: ','", ("T-0801", "T-0802", "T-0803", "T-0803"))
+        self.rows("awk: line 0: cannot open file for reading", ("T-0801", "T-0802"))
         fmrecall.note_failure(self.p, "T-0950", "ZeroDivisionError: division by zero in stats")
+        self.assertEqual(self.caps(), [], "a failure noted in a hook never replays: that runs under the project lock")
+        fmrecall.replay(self.p)
         self.assertEqual([b.title for b in self.caps()],
                          ["Recurring failure across 3 tasks: sed: char 0: unknown command: ','"])
-        rows("git: pathspec 'x' did not match: not found", ("T-0811", "T-0812", "T-0813"))
-        fmrecall.note_failure(self.p, "T-0951", "ZeroDivisionError: division by zero in stats")
+        self.rows("git: pathspec 'x' did not match: not found", ("T-0811", "T-0812", "T-0813"))
+        fmrecall.replay(self.p)
         self.assertEqual(len(self.caps()), 1, "the second run replays nothing")
+
+    def test_a_replay_files_five_at_a_time_most_tasks_first_and_marks_itself_done_when_none_remain(self):  # T-2349 review
+        import fmrecall
+        for i in range(7):  # signature i hit 3 + i tasks; the filtered one is never a capture and must not hold the marker
+            self.rows(f"tool{'x' * i}: cannot open the file: no such device", [f"T-{i}{j:02d}" for j in range(3 + i)])
+        self.rows("assertionerror: 0 != 0", ("T-0701", "T-0702", "T-0703", "T-0704"))
+        self.assertEqual(len(fmrecall.replay(self.p)), 5)
+        self.assertEqual(sorted(int(b.title.split()[3]) for b in self.caps()), [5, 6, 7, 8, 9], "most tasks first")
+        self.assertFalse(self.marker(), "two are left")
+        self.assertEqual(len(fmrecall.replay(self.p)), 2)
+        self.assertEqual(len(self.caps()), 7)
+        self.assertTrue(self.marker())
+        self.assertEqual(fmrecall.replay(self.p), [])
+
+    def test_a_replay_that_raises_partway_leaves_no_marker_and_still_files_the_rest(self):  # T-2349 review
+        import fmrecall
+        from unittest import mock
+        for i in range(2):
+            self.rows(f"tool{'x' * i}: cannot open the file: no such device", [f"T-{i}{j:02d}" for j in range(3 + i)])
+        real = fmrecall._recurring
+
+        def boom(p, sig, *a, **k):
+            if sig.startswith("toolx:"):
+                raise RuntimeError("disk full")
+            return real(p, sig, *a, **k)
+        with mock.patch.object(fmrecall, "_recurring", boom):
+            fmrecall.replay(self.p)
+        self.assertEqual(len(self.caps()), 1, "the other signature was still filed")
+        self.assertFalse(self.marker(), "the one that raised replays next time")
+        fmrecall.replay(self.p)
+        self.assertEqual(len(self.caps()), 2)
+        self.assertTrue(self.marker())
+
+    def test_a_hook_run_before_the_fix_closed_is_not_one_that_did_not_hold(self):  # T-2349 review
+        import fmrecall
+        line = "hook Stop traceback: keyerror: 'drive'"
+        for who in ("hook-hour 1", "hook-hour 2", "hook-hour 3"):
+            made = fmrecall.note_own(self.p, line, who, at="2020-01-01T00:00:00Z")
+        self.close(made)
+        fmrecall.note_own(self.p, line, "hook-hour 4", at="2020-01-01T00:00:00Z")
+        self.assertEqual(self.held(), [], "that traceback was logged long before the fix closed")
+        fmrecall.note_own(self.p, line, "hook-hour 5", at=c.iso(time.time() + 60))
+        self.assertEqual(len(self.held()), 1)
 
     def test_test_assertions_tallies_and_wordless_signatures_never_capture(self):
         import fmrecall

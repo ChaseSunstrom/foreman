@@ -853,16 +853,30 @@ def recent_hook_errors(days=1):
 
 def feed_self_failures(p, results, sid):
     """T-2349: Foreman's own failures enter the signal-to-fix loop: each FAIL of this run (a hook over its latency budget
-    is one), a hook SLO miss, and each hook traceback of the last week still live in hooks.log (one per hook run).
-    fmrecall.note_own files one FIX when a signature recurs across 3+ runs. Ids of the FIXes this call filed."""
+    is one), a hook SLO miss, and each hook traceback of the last week still live in hooks.log (one run per hour: a
+    storm of one bug in one session is one run). fmrecall.note_own files one FIX when a signature recurs across 3+
+    runs; a feed that raises is told on stderr and the others still go. The first doctor run also replays old failures
+    (fmrecall.replay, 5 captures a run). Ids of the FIXes this call filed."""
     import fmrecall
-    made = [fmrecall.note_own(p, f"fm doctor FAIL {r.name}: {r.detail}", sid)
-            for r in results if r.status == "FAIL" or (r.name == "hook SLO" and r.status == "WARN")]
+    made = []
+
+    def feed(*a, **k):
+        try:
+            made.append(fmrecall.note_own(*a, **k))
+        except Exception as e:
+            print(f"fm doctor: one self-failure feed failed: {c.plain(repr(e))[:120]}", file=sys.stderr)
+    for r in results:
+        if r.status == "FAIL" or (r.name == "hook SLO" and r.status == "WARN"):
+            feed(p, f"fm doctor FAIL {r.name}: {r.detail}", sid)
     for e in recent_hook_errors(7)[-20:]:  # a storm of one error is 20 runs, not thousands of locked appends
         ts, event, *rest = (e[0].split(" ") + ["", ""])
         if rest and rest[0] == "Traceback" and not _stale(e):
             last = next((l.strip() for l in reversed(e) if l.strip()), "")
-            made.append(fmrecall.note_own(p, f"hook {c.plain(event)} traceback: {c.plain(last)}", f"hook-run {ts}"))
+            feed(p, f"hook {c.plain(event)} traceback: {c.plain(last)}", f"hook-hour {ts[:13]}", at=ts)
+    try:
+        made += fmrecall.replay(p)
+    except Exception as e:
+        print(f"fm doctor: the failure replay failed: {c.plain(repr(e))[:120]}", file=sys.stderr)
     return [m for m in made if m]
 
 

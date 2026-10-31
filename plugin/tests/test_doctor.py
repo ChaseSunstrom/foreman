@@ -651,9 +651,9 @@ class HookErrors(ForemanTestCase):
         p = c.find_project(self.repo)
         log = os.path.join(self.home, "state", "logs", "hooks.log")
         os.makedirs(os.path.dirname(log), exist_ok=True)
-        with open(log, "w") as f:  # three separate hook runs hit one traceback; a paused-line is not a traceback
+        with open(log, "w") as f:  # three hook runs in three hours hit one traceback; a paused-line is not a traceback
             for i in range(3):
-                f.write(f"{c.iso(time.time() - 60 * (i + 1))} Stop Traceback (most recent call last):\n  File \"x\", line 1\n"
+                f.write(f"{c.iso(time.time() - 7200 * (i + 1))} Stop Traceback (most recent call last):\n  File \"x\", line 1\n"
                         "KeyError: 'drive'\n")
             f.write(f"{c.now()} Stop paused for 10 min after 3 failures in a row (it runs again at 10:00)\n")
         results = [d.Result("hook latency", "FAIL", "PreToolUse p95 41ms > 25ms"),
@@ -666,6 +666,32 @@ class HookErrors(ForemanTestCase):
         self.assertFalse([t for t in titles if "footprint" in t or "paused" in t], "a WARN or a pause is not a failure")
         self.assertEqual(len(made), 1, "the third session filed the latency one (the tracebacks were filed at the first)")
         self.assertEqual(d.feed_self_failures(p, results, "s4"), [], "a fourth session files nothing more")
+
+    def test_one_hours_tracebacks_of_one_bug_are_one_run_and_a_failing_feed_does_not_stop_the_rest(self):  # T-2349 review
+        from unittest import mock
+        import fmrecall
+        self.fm("init")
+        p = c.find_project(self.repo)
+        log = os.path.join(self.home, "state", "logs", "hooks.log")
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        with open(log, "w") as f:  # a storm: five tracebacks of one bug inside one hour is one run, not five
+            for i in range(5):
+                f.write(f"2099-01-01T00:0{i}:00Z Stop Traceback (most recent call last):\n  File \"x\", line 1\n"
+                        "KeyError: 'drive'\n")
+        d.feed_self_failures(p, [], "s1")
+        self.assertEqual([b for b in c.load_briefs(p) if "keyerror" in b.title], [])
+        open(log, "w").close()
+        seen, real = [], fmrecall.note_own
+
+        def flaky(pp, text, who, *a, **k):
+            seen.append(text)
+            if len(seen) == 1:
+                raise RuntimeError("lock gone")
+            return real(pp, text, who, *a, **k)
+        results = [d.Result("one", "FAIL", "a"), d.Result("two", "FAIL", "b")]
+        with mock.patch.object(fmrecall, "note_own", flaky):
+            d.feed_self_failures(p, results, "s1")
+        self.assertEqual(len(seen), 2, "the second feed ran after the first raised")
 
     def test_an_error_from_code_changed_since_is_stale(self):
         # T-1139: NameError BATCH_AT came from a half-written edit; the line it names no longer reads that way
