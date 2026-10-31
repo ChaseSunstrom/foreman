@@ -591,11 +591,13 @@ def precision(p):
 
 def keyed(found, root, home):
     """(find_key, lead) pairs: finder, file from home, symbol, message, and which twin when one function says it twice."""
-    twins = {}
-    for f in found:
+    twins, keys = {}, {}
+    for i in sorted(range(len(found)), key=lambda i: (found[i]["file"], found[i]["line"], found[i]["finder"])):
+        f = found[i]  # twins number in (file, line, finder) order whatever order found comes in: rank, capture and prove agree
         key = f"{f['finder']}:{os.path.relpath(os.path.join(root, f['file']), home)}:{f['symbol']}:{f['says']}"
         twins[key] = twins.get(key, 0) + 1
-        yield key + (f"#{twins[key]}" if twins[key] > 1 else ""), f
+        keys[i] = key + (f"#{twins[key]}" if twins[key] > 1 else "")
+    return [(keys[i], f) for i, f in enumerate(found)]
 
 
 def settled(p):

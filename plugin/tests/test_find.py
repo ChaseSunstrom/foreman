@@ -289,6 +289,18 @@ class FindLearns(ForemanTestCase):
         self.assertEqual(len(again), 1)  # the dismissed one stays refuted; the done one came back: a regression
         self.assertEqual(c.load_briefs(p)[-1].meta["find_key"], briefs[ids[1]].meta["find_key"])
 
+    def test_twin_keys_follow_file_line_order_whatever_the_rank_order(self):
+        """T-2250: capture gets leads ranked (a short function's lead first), prove gets them sorted: same keys."""
+        long_, short = ("def f(x):\n" + "    y = 1\n" * 60), "def f(x):\n    return x\n"
+        twin = dict(finder="untested", symbol="f", says="no test", kind="slow", file="a.py")
+        a, b = dict(twin, line=1), dict(twin, line=62)
+        scan_order = [(k, f["line"]) for k, f in fmfind.keyed([a, b], ".", ".")]
+        self.assertEqual([k for k, _ in scan_order], [scan_order[0][0], scan_order[0][0] + "#2"])
+        texts = {"a.py": long_ + short}
+        ranked = fmfind.rank([a, b], texts, {})
+        self.assertEqual([f["line"] for f in ranked], [62, 1])  # effort puts the short function first
+        self.assertEqual([(k, f["line"]) for k, f in fmfind.keyed(ranked, ".", ".")], scan_order[::-1])
+
     def test_held_leads_leave_the_exit_clean_and_old_drops_fade(self):
         import fmcli
         import fmcore as c
