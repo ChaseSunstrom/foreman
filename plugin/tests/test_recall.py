@@ -181,6 +181,10 @@ class FailureMemory(ForemanTestCase):
         first = self.task("Tidy the YAML loader")
         sighting = json.loads(self.failing().stdout or "null") or {}
         self.assertNotIn("came up in", json.dumps(sighting), "first sighting: no earlier task to point to")
+        import time
+        time.sleep(1.05)  # a miss resolves only on a run strictly later, in whole seconds
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "python3 x.py"},
+                                  "tool_response": {"stdout": "ok", "stderr": "", "interrupted": False}})  # T-2369: the rerun resolves the miss
         self.fm("task", "step", first, "done", "1", "--evidence", "x", "ok")
         self.fm("task", "ac", first, "check", "1", "--evidence", "x", "ok")
         self.fm("task", "audit", first, "self", "x", "ok")
