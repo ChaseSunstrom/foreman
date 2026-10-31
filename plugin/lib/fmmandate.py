@@ -40,6 +40,7 @@ def put(p, text, until, usd=None, status="overwritten"):
         meta = c.read_meta(p)
         _archive(meta, status)
         meta["mandate"] = m
+        meta.pop("goal_verdict", None)  # T-2137: a verdict belongs to the goal it judged
         c.write_meta(p, meta)
     c.log_event(p, "mandate", data={"text": c.fit(m["text"], 200), "until": m["until"]})
     return m
@@ -50,6 +51,7 @@ def clear(p):
         meta = c.read_meta(p)
         _archive(meta, "cleared")
         had = meta.pop("mandate", None)
+        meta.pop("goal_verdict", None)
         c.write_meta(p, meta)
     return had
 
@@ -247,10 +249,62 @@ def show(p, args, key="goal", run=True):
     return 1 if outside or uncovered or unmet else 0
 
 
+def verdict(p, m):
+    """T-2137: the causes a goal isn't finished (empty: finished). Reuses drift's guarded checks; deterministic."""
+    import fmrecall
+    items = m.get("items") or []
+    briefs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
+    _, uncovered, unmet, unchecked = drift(p, m)
+    causes = [] if items else ["the goal has no items"]
+    causes += [f"item {i['n']} has no task" for i in uncovered]
+    # an item is done when a linked task is done and none is open; dropped tasks don't count (T-2137)
+    st = {i["n"]: [briefs[t].status for t in i["tasks"] if t in briefs] for i in items}
+    causes += [f"item {i['n']} has open tasks" for i in items if any(s not in c.CLOSED for s in st[i["n"]])]
+    causes += [f"item {i['n']} has no done task" for i in items
+               if st[i["n"]] and all(s in c.CLOSED for s in st[i["n"]]) and "done" not in st[i["n"]]]
+    causes += [f"item {i['n']} check fails ({how})" for i, how in unmet]
+    causes += [f"item {i['n']} check not run" for i in unchecked]
+    # a clause is accounted when an item (text, done-when, task titles) shares 2 of its words (1 if it has one)
+    bags = [set(fmrecall.words(" ".join([i["text"], i["done_when"]] + [briefs[t].title for t in i["tasks"] if t in briefs])))
+            for i in items]
+    for x in m.get("clauses") or []:
+        cw = set(fmrecall.words(x))
+        if not any(len(cw & b) >= min(2, len(cw)) for b in bags):
+            causes.append(f"clause unaccounted: {c.fit(x, 80)}")
+    runs = c.ledger_events(p, kinds=["check_run"])
+    last = runs[-1].get("data") or {} if runs else None
+    if last is None:
+        causes.append("gates never run (fm check)")
+    elif last.get("tree") != c.worktree_id(p.root):
+        causes.append("gates not run on this tree (fm check)")
+    elif any((r or {}).get("exit") for r in last.get("results") or []):
+        causes.append("gates red (fm check)")
+    return causes
+
+
+def cmd_verdict(p, args):
+    import fmcli
+    m = get(p)
+    if not m or m["expired"]:
+        c.update_meta(p, goal_verdict=None)
+        fmcli.out(args, {"verdict": None}, "no goal")
+        return 2  # finished is 0, stopped 1
+    causes = verdict(p, m)
+    word = "finished" if not causes else "stopped"
+    # the tree is the worktree id; root lets Stop (which runs no git) tell another checkout's verdict from this one's
+    c.update_meta(p, goal_verdict={"verdict": word, "causes": causes[:10], "at": c.now(),
+                                   "tree": c.worktree_id(p.root) or "", "root": p.root,
+                                   "set_at": m.get("set_at")})
+    fmcli.out(args, {"verdict": word, "causes": causes}, word + (": " + "; ".join(causes) if causes else ""))
+    return 1 if causes else 0
+
+
 def cmd_goal(args):
     import fmcli
     p = fmcli.resolve(args)
     words = args.text or []
+    if args.action == "verdict":
+        return cmd_verdict(p, args)
     if args.action == "set":
         if not words or not (args.until or args.no_end):  # an endless goal is said so, never a default
             raise fmcli.UsageError('fm goal set "<the request>" --until YYYY-MM-DD | --no-end [--usd N] [--replace]')

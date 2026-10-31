@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Genesis keeps one moonshot Mission each generation from gen 2: ideas outside every coverage cell, a far-domain lens, a frontier digest from your own research notes (`fm genesis frontier N`), and a cold novelty read (`fm genesis novelty N`) that marks the obvious ones. `fm genesis check` holds each idea to prior-art and better-by lines, keeps a failed spike in not-yet.md, and makes the report say which shipped moonshots you asked for
+- `fm goal verdict` says `finished` only when every item has a done task and none open, its check passes now, every goal clause is covered and `fm check` last ran green on this tree; otherwise `stopped` with each cause (exit 1, no goal 2); a done claim on a stopped goal blocks once at Stop, counted toward DRIVE_MAX (T-2137)
 - `fm find --capture`, `--rank` and `fm prove` give twin leads the same keys, so a capture's dedupe and a proof's lift name the same lead
 - `fm goal` turns the standing mandate into a goal ledger: items, each with a check command and the tasks that build it (`fm goal link`, or `fm task new --goal N`); `fm goal show` lists open work outside the goal, items with no task, and items whose tasks closed while the check still fails, exiting 1 when any. A plain mandate prints as before
 - `fm mandate` shows its end date as the day you typed; it printed the next day west of UTC
