@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import time
 
 import fmcore as c
@@ -140,6 +141,29 @@ def _edges(con, as_of, where="", args=()):
 BLAST_BUDGET = 1.0  # seconds fm focus gives the graph query (T-2277)
 
 
+BUILD_LOCK_S = 600  # a build in flight this young is left alone; an older lock file is a dead build's
+
+
+def _build_in_background(p):
+    """A detached `fm graph build` like fmmap.compact's `fm map`, never two at once (the lock file's age)."""
+    if os.environ.get("FOREMAN_NO_BACKGROUND"):
+        return
+    lock = os.path.join(p.dir, "graph.building")
+    try:
+        if time.time() - os.path.getmtime(lock) < BUILD_LOCK_S:
+            return
+    except OSError:
+        pass
+    try:
+        with open(lock, "w") as f:
+            f.write(str(os.getpid()))
+        subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "graph", "build"], cwd=p.root,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except OSError:
+        pass
+
+
 def blast_line(p, scope, budget=BLAST_BUDGET):
     """T-2277: the plan's one-line blast radius for a task's literal scope files, or "" when there is nothing to say.
     Reads the graph only if it is built and fresh (focus never rebuilds it: a build runs git log over 3000 commits) and
@@ -153,12 +177,17 @@ def blast_line(p, scope, budget=BLAST_BUDGET):
                 and f not in paths:
             paths.append(f)
     db_path = os.path.join(p.dir, "graph.sqlite")
-    if not paths or not os.path.exists(db_path):
+    if not paths:
         return ""
     try:
-        con = sqlite3.connect(db_path)
-        if (con.execute("SELECT v FROM meta WHERE k='stamp'").fetchone() or [None])[0] != _stamp(p):
-            return ""
+        con = sqlite3.connect(db_path) if os.path.exists(db_path) else None
+        fresh = con is not None and (con.execute("SELECT v FROM meta WHERE k='stamp'").fetchone() or [None])[0] == _stamp(p)
+    except Exception:
+        fresh = False
+    if not fresh:
+        _build_in_background(p)  # the next focus has the line
+        return ""
+    try:
         end = time.monotonic() + budget
         con.set_progress_handler(lambda: int(time.monotonic() > end), 10000)
         r = blast(p, paths[:20], con=con)

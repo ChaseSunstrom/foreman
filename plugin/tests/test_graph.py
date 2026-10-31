@@ -98,6 +98,44 @@ class BlastInPlan(Base):
         self.assertNotIn("Blast radius", self.risks())
 
 
+class BlastBuild(Base):
+    """T-2277: a missing or stale graph at focus starts one detached fm graph build and writes no line."""
+
+    def run_line(self, background):
+        from unittest import mock
+        import fmcore as c
+        import fmgraph
+        p = c.find_project(self.repo)
+        env = {} if background else {"FOREMAN_NO_BACKGROUND": "1"}
+        with mock.patch.dict(os.environ, env), mock.patch("subprocess.Popen") as pop:
+            if background:
+                os.environ.pop("FOREMAN_NO_BACKGROUND", None)
+            line = [fmgraph.blast_line(p, ["app/session.py"]) for _ in range(2)]
+        pop.builds = [x for x in pop.call_args_list if x.args[0][-2:] == ["graph", "build"]]  # git runs through Popen too
+        pop.call_count = len(pop.builds)
+        pop.call_args = pop.builds[-1] if pop.builds else None
+        return line, pop
+
+    def test_a_missing_graph_starts_one_build_and_no_line(self):
+        line, pop = self.run_line(True)
+        self.assertEqual(line, ["", ""])
+        self.assertEqual(pop.call_count, 1)  # the second call sees the build in flight
+        args, kw = pop.call_args
+        self.assertEqual(args[0][-2:], ["graph", "build"])
+        self.assertTrue(kw["start_new_session"])
+
+    def test_a_stale_graph_starts_a_build(self):
+        self.fm("graph", "build")
+        self.write("app/new.py", "x = 1\n")
+        self.commit("move head", "2026-04-01T10:00:00Z")
+        line, pop = self.run_line(True)
+        self.assertEqual((line, pop.call_count), (["", ""], 1))
+
+    def test_no_background_starts_none(self):
+        line, pop = self.run_line(False)
+        self.assertEqual((line, pop.call_count), (["", ""], 0))
+
+
 class Pack(Base):
     def test_a_tasks_words_reach_files_through_past_tasks(self):
         data = json.loads(self.fm("graph", "pack", "login token refresh is broken", "--json").stdout)
