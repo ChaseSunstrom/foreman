@@ -173,6 +173,28 @@ class GenesisExport(ForemanTestCase):
         self.assertEqual(read_text(os.path.join(out, "gen-1", "mission-exam.md")), doc)  # readable on GitHub too
         self.assertEqual(data["docs"]["gen-0.md"], GEN0_CAPS)
         self.assertIn("exam", data)
+        self.assertNotIn("scorecard", data)  # T-2154: no graded line yet, so the optional key is left out
+
+    def test_the_scorecard_rows_ride_in_genesis_json_plain_and_cut(self):  # T-2154
+        from unittest import mock
+        import fmcore as c
+        import fmgenesis
+        self.fm("init")
+        self.fm("genesis", "init", "--file", "-", input=GEN0_CAPS)
+        p, out = c.find_project(self.repo), os.path.join(self.tmp, "site")
+        row = {"n": 1, "name": "Initiative", "state": "partial", "closed": 2, "graded": 4,
+               "why": "<img src=x onerror=alert(1)> " + os.path.expanduser("~") + "/x " + "x" * 300}
+        card = {"rows": [row, dict(row, n=2, name="Exhaustive thinking", state="too few", closed=0, graded=0, why="")],
+                "seen": 1, "smoke": 0, "selfmade": 0}
+        with mock.patch.object(fmgenesis, "scorecard", return_value=card):
+            fmgenesis.export(p, out)
+        got = json.loads(read_text(os.path.join(out, "genesis.json")))["scorecard"]
+        self.assertEqual([(r["name"], r["state"], r["closed"], r["graded"]) for r in got],
+                         [("Initiative", "partial", 2, 4), ("Exhaustive thinking", "too few", None, None)])
+        self.assertTrue(got[0]["why"].startswith("<img src=x onerror=alert(1)>"))  # text stays text: the page escapes it
+        self.assertLessEqual(len(got[0]["why"]), 200)
+        self.assertIn(" ~/x ", got[0]["why"])  # the home path is scrubbed before the cut
+        self.assertNotIn(os.path.expanduser("~") + "/x", json.dumps(got))
 
     def test_export_scrubs_every_field_and_skips_junk_exam_lines(self):
         import json
@@ -2439,6 +2461,18 @@ class GenesisHealth(ForemanTestCase):
         finally:
             fmgenesis.step = real
         self.assertEqual(fmgenesis.health(self.p)["kind"], "fatal")  # the crash wasn't cached
+
+    def test_status_prints_one_line_per_capability_after_the_count(self):  # T-2154
+        import fmgenesis
+        self.tower()
+        self.assertNotIn("held out)", self.fm("genesis").stdout)  # nothing graded: no lines
+        fmgenesis.exam_line(self.p, {"agent": "foreman", "run": "s1", "model": "haiku", "answered": {"holdout": ["x"]},
+                                     "closed": {"holdout": []}})
+        out = self.fm("genesis").stdout.splitlines()
+        i = next(i for i, l in enumerate(out) if l.startswith("exam: "))
+        self.assertRegex(out[i + 1], r"^1\. Initiative: [a-z ]+ \(not graded\)$")
+        self.assertRegex(out[i + 2], r"^2\. Exhaustive thinking: [a-z ]+ \(not graded\)$")
+        self.assertEqual(len(self.fm_json("genesis")["scorecard"]), 2)
 
     def test_a_seed_row_that_reads_as_an_instruction_stays_data(self):
         import fmcore as c

@@ -119,6 +119,7 @@ def status(p, with_check=True):
             "seal": (sealed(p) or seal(p)[:8]) if have["gen-0.md"] else ""}
     if with_check and have["gen-0.md"]:
         out["check"], out["next"] = check(p), step(p)
+        out["scorecard"] = card(p)  # T-2154
     return out
 
 
@@ -504,6 +505,25 @@ def _exam_count(p):
             + (f", {r['selfmade']} self-authored skipped" if r["selfmade"] else ""))
 
 
+def card(p):
+    """T-2154: scorecard(p)'s rows for fm genesis status and genesis.json, text plain'd and cut; [] before any graded line.
+    closed and graded are None when nothing was graded."""
+    try:
+        r = scorecard(p)
+    except Exception:  # no §2 spec yet, or an odd line: the surface loses this part, never its line
+        return []
+    if not (r["seen"] or r["smoke"] or r["selfmade"]):
+        return []
+    home_dir = os.path.expanduser("~")
+
+    def t(s):  # scrub, then cut: a cut first could split a home path or a token the scrub then misses
+        s = c.redact(c.plain(s))
+        return c.fit(s.replace(home_dir, "~") if len(home_dir) > 1 else s, 200)
+    return [{"n": x["n"], "name": t(x["name"]), "state": t(x["state"]),
+             "closed": x["closed"] if x["graded"] else None, "graded": x["graded"] or None,
+             "why": t(x["why"])} for x in r["rows"]]
+
+
 def health(p, briefs=None):
     """T-2118: step(p) for the statusline, fm state, fm code, AGENTS.md and the pane, cached until a tower file or a
     task's status changes (step reads every doc, ~80 ms; this is a stat walk). None without a tower or when step
@@ -682,6 +702,8 @@ def export(p, out):
             "gaps": _gaps(docs.get("gap-map.md", "")), "generations": gens, "exam": exam,
             "coverage": chk["coverage"], "not_yet": chk["not_yet"]["items"], "not_yet_open": chk["not_yet"]["open"],
             "next": step(p), "docs": docs, "seal": sealed(p) or seal(p)[:8], "intent": intent_clauses()}
+    if rows := card(p):  # T-2154: optional; absent before any graded line
+        data["scorecard"] = rows
     data = scrub(data)
     try:  # T-2084: a doc the last export listed and the tower lost goes; nothing else in DIR is ours to remove
         with open(os.path.join(out, "genesis.json"), encoding="utf-8") as f:
@@ -879,7 +901,10 @@ def _text(s):
                      + (" (fm genesis check)" if cov["problems"] or ny["problems"] else ""))
     if s.get("next"):
         lines.append(f"next: {s['next']['action']} → {s['next']['command']}")
-    return "\n".join(lines + [exam, site])
+    lines.append(exam)
+    lines += [f"{x['n']}. {x['name']}: {x['state']} " + ("(not graded)" if x["graded"] is None else
+              f"(closed {x['closed']} of {x['graded']} held out)") for x in s.get("scorecard") or ()]
+    return "\n".join(lines + [site])
 
 
 # T-2099: fm genesis draft writes a gen-0 from a line or nothing; fm genesis spec turns its §2 into a held-out exam.
