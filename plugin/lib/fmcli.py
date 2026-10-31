@@ -7248,10 +7248,12 @@ def _build_parser(only=None):
     s.add_argument("files", nargs="*", help="--docs: the docs files to check (default: all the repo's markdown)")
     s.add_argument("--docs", action="store_true", help="instead: check what the docs say about the repo's own CLI "
                    "(paths, make/npm targets, flags, subcommands, fenced commands) against its files, each claim proven, "
-                   "failed or unproven; a flag or subcommand no non-doc file has fails in any tree; in a trusted tree "
-                   "fenced commands are checked against --help and run on a throwaway copy; exit 0 none failed, 1 a "
-                   "failure, 2 nothing checkable (T-2381)")
-    s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests, kept for this tree")
+                   "failed or unproven; a flag or subcommand no non-doc file has fails in any tree, one a file only "
+                   "mentions is unproven; in a trusted tree fenced commands are checked against --help and run on a "
+                   "throwaway copy, and a run that exits 0 proves its flags; exit 0 none failed and one proven, 1 a "
+                   "failure, 2 nothing checkable or provable (T-2381)")
+    s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests (--docs: its "
+                   "documented commands), kept for this tree")
     s.add_argument("--migration", action="store_true", help="instead: run the tree's plain SQL NAME.up.sql/NAME.down.sql "
                    "migrations up, down, up on a throwaway sqlite file and compare the schema each time; trusted trees "
                    "only; exit 0 pass, 1 fail, 2 refused or no known tool (T-2288)")

@@ -642,6 +642,8 @@ DOCS_RUN_T, DOCS_RUNS = 20, 30  # T-2381: seconds one documented command may tak
 PYRUN = ("import sys,importlib;t=sys.argv[1];sys.argv=sys.argv[2:];m,_,f=t.partition(':');"
          "sys.exit(getattr(importlib.import_module(m),f)())")
 # what a CLI says when it doesn't have the subcommand or flag it was given
+DOCS_NO_RUN = "running the documented commands needs the user's yes, once per tree: fm prove --docs PATH --yes-run"
+OUTSIDE = re.compile(r"(^|=)(/|~|\.\.(/|$))|/\.\./")  # an absolute, home or parent path in a command's words
 NOT_THERE = re.compile(r"(?i)unrecogni[sz]ed (arguments|option|command)|invalid choice|unknown (command|option|flag|"
                        r"subcommand|argument)|no such (command|option)|unexpected argument|invalid (option|subcommand)")
 
@@ -663,10 +665,17 @@ def docs_proof(root, files, allowed, limit=RUN_T):
     import fmdocs
     claims, cmds = fmdocs.claims(root, files)
     res = {"root": root, "claims": claims, "ran": 0}
-    todo = [x for x in cmds if not x["shell"]]
+    todo = []
+    for x in cmds:
+        if x["shell"]:
+            continue
+        if any(OUTSIDE.search(t) for t in x["rest"]):  # a command run on a copy still reaches the real /etc or ~
+            x["claim"]["why"] = "not run: it names a path outside the copy"
+        else:
+            todo.append(x)
     if not allowed:
         for x in todo:
-            x["claim"]["why"] = "not run: " + NO_RUN
+            x["claim"]["why"] = "not run: " + DOCS_NO_RUN
     if not allowed or not todo:
         return res
     by = {(x["file"], x["kind"], x["detail"]): x for x in claims}
@@ -684,7 +693,7 @@ def docs_proof(root, files, allowed, limit=RUN_T):
             claim, sub_path, flags = x["claim"], *fmdocs.words(x["rest"])
             pre = _prefix(x["spec"], x["cli"], work)
             if pre is None:
-                claim["why"] = "not run: it needs a build (or its entry point is outside the tree)"
+                claim["why"] = "not run: it needs a build, hands over to another tool, or its entry point is outside the tree"
                 continue
             if time.time() >= end:
                 claim["why"] = "not run: fm prove's budget ran out"
@@ -719,31 +728,35 @@ def docs_proof(root, files, allowed, limit=RUN_T):
             rc, o = run(pre + x["rest"])
             claim.update(verdict="proven" if rc == 0 else "failed" if NOT_THERE.search(o) else "unproven",
                          why="ran, exit 0" if rc == 0 else f"exit {rc}: {_last(o)}")
+            if rc == 0:  # a run that exits 0 with the flags in --help is the proof of the flags and subcommand it used
+                used = [by.get((claim["file"], "flag", f)) for f in flags]
+                used.append(n and by.get((claim["file"], "subcommand", f"{x['cli']} {sub_path[0]}")))
+                for u in used:
+                    if u and u["verdict"] != "failed":  # a failure from another line of the docs sticks
+                        u.update(verdict="proven", why=f"`{claim['detail']}` exited 0 and --help lists it")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return res
 
 
 def cmd_docs_proof(args):
-    """T-2381: fm prove --docs [FILE...]: exit 0 none failed, 1 a failure, 2 nothing checkable."""
+    """T-2381: fm prove --docs [FILE...]: exit 0 none failed and one proven, 1 a failure, 2 nothing checkable or provable."""
     import fmcli
     import fmdocs
-    given = [a for a in [args.path if args.path != "." else None] + list(args.files) if a]
-    first = given[0] if given else None
-    start = os.path.abspath(first if first and os.path.isdir(first) else os.getcwd())
-    root = c.git_root(start) or start
+    # the named folder is the tree (as for every fm prove rung): trust and the copy never widen to the git root, which
+    # from a subfolder could be a whole repo, or $HOME for a dotfiles repo
+    tree = os.path.isdir(args.path)
+    root = os.path.realpath(args.path if tree else os.getcwd())
+    given = list(args.files) + ([] if tree or args.path == "." else [args.path])
     files = None
-    if first and not os.path.isdir(first) or len(given) > 1:
-        real = os.path.realpath(root)
+    if given:  # files resolve against the tree
         files = []
         for g in given:
-            p = os.path.abspath(g)
-            if os.path.isdir(p):
-                print(f"fm prove --docs: {g} is a folder: name the docs files, or only the tree", file=sys.stderr)
-            elif not fmdocs._regular(p) or os.path.commonpath([os.path.realpath(p), real]) != real:
+            p = os.path.realpath(os.path.join(root, g))
+            if not fmdocs.regular(os.path.join(root, g)) or os.path.commonpath([p, root]) != root:
                 print(f"fm prove --docs: {g} is not a regular file in {root}", file=sys.stderr)
             else:
-                files.append(p)
+                files.append(os.path.join(root, g))
         if not files:
             return 2
     allowed = _yes(args, root)

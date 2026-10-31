@@ -31,14 +31,14 @@ def _markdown(root):
         rels = sorted({f for f in r.stdout.split("\0") if f})
         yield from (os.path.join(root, f) for f in rels
                     if not any(part in SKIP_DIRS or part.startswith(".") for part in f.split("/")[:-1])
-                    and _regular(os.path.join(root, f)))
+                    and regular(os.path.join(root, f)))
         return
     for d, dirs, files in os.walk(root):
         dirs[:] = sorted(x for x in dirs if x not in SKIP_DIRS and not x.startswith("."))
-        yield from (os.path.join(d, f) for f in sorted(files) if f.endswith(".md") and _regular(os.path.join(d, f)))
+        yield from (os.path.join(d, f) for f in sorted(files) if f.endswith(".md") and regular(os.path.join(d, f)))
 
 
-def _regular(path):
+def regular(path):
     """A regular file, not a link: a link may point at /dev/zero, a FIFO or a file outside the tree (fm find)."""
     try:
         return stat.S_ISREG(os.lstat(path).st_mode)
@@ -131,7 +131,7 @@ def _tree_files(root):
 
 def _load(root, rel, kind):
     path = os.path.join(root, rel)
-    if not _regular(path):
+    if not regular(path):
         return {}
     try:
         with open(path, "rb") as f:
@@ -178,23 +178,36 @@ def cli_names(root, rels):
     if "src/main.rs" in rels:
         add(_dict(cargo.get("package")).get("name"), ("cargo", None))
     for rel in rels:
-        if re.fullmatch(r"(?:[^/]+/)?bin/[^/]+", rel) and _regular(os.path.join(root, rel)) \
+        if re.fullmatch(r"(?:[^/]+/)?bin/[^/]+", rel) and regular(os.path.join(root, rel)) \
                 and os.access(os.path.join(root, rel), os.X_OK):
             name = os.path.basename(rel)
-            add(name, ("bin", rel))
-            add(os.path.splitext(name)[0], ("bin", rel))
+            kind = "shim" if _shim(os.path.join(root, rel)) else "bin"
+            add(name, (kind, rel))
+            add(os.path.splitext(name)[0], (kind, rel))
     return out
 
 
+def _shim(path):
+    """A bin/ file that only hands over to another tool (bin/rails, a bundler binstub): a few lines, one of them an exec,
+    require or load. Its flags and subcommands are that tool's, so the docs' claims about them are not the repo's."""
+    try:
+        with open(path, "rb") as f:
+            lines = [x.strip() for x in f.read(4096).decode("utf-8", "replace").splitlines()]
+    except OSError:
+        return False
+    code = [x for x in lines if x and not x.startswith("#")]
+    return len(code) <= 8 and any(re.match(r"(exec|require|require_relative|load)\b", x) for x in code)
+
+
 def _corpus(root, rels):
-    """(text of the repo's non-doc files, rust text, truncated): what a flag or subcommand must appear in."""
-    parts, rust, size, seen = [], [], 0, 0
+    """(text of the repo's non-doc files, rust text, python text, truncated): what a flag or subcommand must appear in."""
+    parts, rust, py, size, seen = [], [], [], 0, 0
     for rel in rels:
-        if rel.lower().endswith(DOC_EXT) or not _regular(os.path.join(root, rel)):
+        if rel.lower().endswith(DOC_EXT) or not regular(os.path.join(root, rel)):
             continue
         seen += 1
         if seen > CORPUS_FILES or size > CORPUS_BYTES:
-            return "\n".join(parts), "\n".join(rust), True
+            return "\n".join(parts), "\n".join(rust), "\n".join(py), True
         try:
             with open(os.path.join(root, rel), "rb") as f:
                 raw = f.read(CORPUS_FILE)
@@ -207,16 +220,21 @@ def _corpus(root, rels):
         parts.append(text)
         if rel.endswith(".rs"):
             rust.append(text)
-    return "\n".join(parts), "\n".join(rust), False
+        elif rel.endswith(".py"):
+            py.append(text)
+    return "\n".join(parts), "\n".join(rust), "\n".join(py), False
 
 
-def _flag_in(name, text, rust):
+def _flag_in(name, text, rust, py):
     """A long flag the code could define: literal --name, "name" or 'name' (Go's flag, cobra), name_with_underscores
-    (a dest), or, in a Rust tree, name as a word (clap derives the flag from a field)."""
+    (a dest), in a Rust tree name as a word (clap derives the flag from a field), or in a Python one a parameter of
+    that name (Typer and Fire derive --verbose from `verbose`)."""
     n = name[2:]
     if name in text or f'"{n}"' in text or f"'{n}'" in text or ("-" in n and n.replace("-", "_") in text):
         return True
-    return bool(rust) and bool(re.search(rf"(?<![\w-]){re.escape(n.replace('-', '_'))}(?![\w-])", rust))
+    w = re.escape(n.replace("-", "_"))
+    return bool(rust and re.search(rf"(?<![\w-]){w}(?![\w-])", rust)
+                or py and re.search(rf"(?m)^(?:[ \t]*def\s.*?|[ \t]+)(?<![\w]){w}\s*[:=,)]", py))
 
 
 def invocations(text, names):
@@ -247,13 +265,15 @@ def invocations(text, names):
 
 def words(rest):
     """(subcommand path, flags) of a command's words: the leading lowercase words, and every --long flag
-    (--help is every parser's own, never a claim; a value after = is dropped)."""
+    (--help is every parser's own, never a claim; a value after = is dropped; after a bare -- the words are another
+    tool's)."""
     path = []
     for t in rest:
         if not _SUB.fullmatch(t):
             break
         path.append(t)
-    flags = list(dict.fromkeys(m.group(0) for t in rest if t.startswith("--") for m in [_FLAG.match(t)]
+    ours = rest[:rest.index("--")] if "--" in rest else rest
+    flags = list(dict.fromkeys(m.group(0) for t in ours if t.startswith("--") for m in [_FLAG.match(t)]
                                if m and m.group(0) != "--help"))
     return path, flags
 
@@ -261,19 +281,29 @@ def words(rest):
 def claims(root, files=None):
     """(claims, cmds) of the docs (all the repo's markdown, or the absolute paths in files). A claim is {file, kind, detail,
     verdict, why}: kind path, target (a make or npm command), flag or subcommand of the repo's own CLI, or command (a
-    fenced line of it). verdict proven or failed, from the files alone; command claims start unproven (run them with
-    fmprove.docs_proof). cmds: the fenced commands, each {claim, cli, spec, rest, shell}."""
+    fenced line of it). verdict, from the files alone: a path or target is proven or failed; a flag or subcommand
+    the files lack fails and one they have is unproven (text in a file is not a working flag); command claims start
+    unproven (fmprove.docs_proof runs them and proves what they use). cmds: the fenced commands, each {claim, cli, spec, rest, shell}."""
     rels = _tree_files(root)
     names = cli_names(root, rels)
-    tops, out, cmds, seen = _top_level(root), [], [], set()
-    corpus = []
+    tops, out, cmds, seen = _top_level(root), [], [], {}
+    corpus, subs = [], {}  # subs: cli -> {(file, word): found}, judged once every doc is read
 
     def add(rel, kind, detail, verdict, why=""):
-        if (rel, kind, detail) in seen:
-            return next(x for x in out if (x["file"], x["kind"], x["detail"]) == (rel, kind, detail))
-        seen.add((rel, kind, detail))
-        out.append({"file": rel, "kind": kind, "detail": detail, "verdict": verdict, "why": why})
-        return out[-1]
+        if (rel, kind, detail) not in seen:
+            out.append(seen.setdefault((rel, kind, detail),
+                                       {"file": rel, "kind": kind, "detail": detail, "verdict": verdict, "why": why}))
+        return seen[(rel, kind, detail)]
+
+    def judge(found, shim):
+        """Text in a file is never a working flag: found is unproven. Not found fails, unless the search was cut short
+        or the CLI is another tool's shim."""
+        if found:
+            return "unproven", "text in a file; a run of a documented command proves it (--yes-run)"
+        why = "no non-doc file has it"
+        if shim:
+            return "unproven", why + " (bin/ only runs another tool, so its flags are that tool's)"
+        return ("unproven", why + " (the search was cut short)") if corpus[3] else ("failed", why)
     for md in files if files is not None else _markdown(root):
         try:
             with open(md, encoding="utf-8", errors="replace") as f:
@@ -298,20 +328,26 @@ def claims(root, files=None):
             if not corpus:
                 corpus = _corpus(root, rels)
             sub, flags = words(rest)
+            shim = names[cli][0] == "shim"
             if sub:
-                found = bool(re.search(rf"(?<![\w-]){re.escape(sub[0])}(?![\w-])", corpus[0]))
-                add(rel, "subcommand", f"{cli} {sub[0]}", "proven" if found else "unproven" if corpus[2] else "failed",
-                    "in the code" if found else "no non-doc file has it" + (" (the search was cut short)" if corpus[2] else ""))
+                subs.setdefault(cli, {})[(rel, sub[0])] = bool(re.search(rf"(?<![\w-]){re.escape(sub[0])}(?![\w-])", corpus[0]))
             for fl in flags:
-                found = _flag_in(fl, corpus[0], corpus[1])
-                add(rel, "flag", fl, "proven" if found else "unproven" if corpus[2] else "failed",
-                    "in the code" if found else "no non-doc file has it" + (" (the search was cut short)" if corpus[2] else ""))
+                add(rel, "flag", fl, *judge(_flag_in(fl, *corpus[:3]), shim))
             if fenced and rest:
                 detail = " ".join([cli] + rest)
                 if (rel, "command", detail) not in seen:
                     cmds.append({"claim": add(rel, "command", detail, "unproven",
                                               "pipes, placeholders and continuations are not run" if shell else "not run"),
                                  "cli": cli, "spec": names[cli], "rest": rest, "shell": shell})
+    for cli, found in subs.items():
+        # a lone lowercase word after the CLI's name may be an argument (a file), so only a CLI the docs show more than
+        # one subcommand of can fail on a word it doesn't have (ponytail: the docs read stand in for the CLI's own list)
+        many = len({w for _, w in found}) > 1
+        for (rel, word), hit in found.items():
+            v, why = judge(hit, names[cli][0] == "shim")
+            if v == "failed" and not many:
+                v, why = "unproven", why + " (the only subcommand the docs name: it may be an argument)"
+            add(rel, "subcommand", f"{cli} {word}", v, why)
     return out, cmds
 
 
@@ -363,7 +399,7 @@ def task_docs(root, docs_impact):
             notes.append(line)
     # T-2381: a flag or subcommand of the repo's own CLI that the lines it added name and no file has
     docs = [os.path.join(root, n) for n in sorted(named - set(gone)) if not n.startswith(("..", "/"))
-            and _regular(os.path.join(root, n))]
+            and regular(os.path.join(root, n))]
     for cl in claims(root, docs)[0] if docs else []:
         if cl["verdict"] != "failed" or cl["kind"] not in ("flag", "subcommand"):
             continue

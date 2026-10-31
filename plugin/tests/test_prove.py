@@ -109,7 +109,7 @@ class DocsProof(ForemanTestCase):
     def by(self, out):
         return {(c["kind"], c["detail"]): c["verdict"] for c in out["claims"]}
 
-    def test_docs_proof_a_flag_or_subcommand_no_file_has_fails_in_any_tree(self):
+    def test_docs_proof_static_a_flag_or_subcommand_no_file_has_fails_and_text_in_a_file_is_unproven(self):
         self.tree("Use `mycli build --out x`, `mycli build --gone` and `mycli frobnicate`.\n"
                   "See `src/missing.py` and `src/mycli.py`.\n")
         write(self.repo, {"src/mycli.py": "x = 1\n"})
@@ -119,19 +119,51 @@ class DocsProof(ForemanTestCase):
         self.assertEqual(got[("flag", "--gone")], "failed")
         self.assertEqual(got[("subcommand", "mycli frobnicate")], "failed")
         self.assertEqual(got[("path", "src/missing.py")], "failed")
-        self.assertEqual(got[("flag", "--out")], "proven")
-        self.assertEqual(got[("subcommand", "mycli build")], "proven")
+        self.assertEqual(got[("flag", "--out")], "unproven")  # text in a file is not a working flag
+        self.assertEqual(got[("subcommand", "mycli build")], "unproven")
+        self.assertIn("text in a file", next(c for c in out["claims"] if c["detail"] == "--out")["why"])
         self.assertEqual(got[("path", "src/mycli.py")], "proven")
         self.assertFalse(os.path.exists(self.mark), "an untrusted tree's command ran")
 
-    def test_docs_proof_a_correct_readme_passes_and_a_fenced_command_waits_for_trust(self):
+    def test_docs_proof_static_text_in_a_file_alone_is_not_a_pass(self):
         self.tree("Build:\n\n```\n$ mycli build --out dist\n```\n")
         code, out = self.prove()
-        self.assertEqual(code, 0, out)
+        self.assertEqual(code, 2, out)  # nothing failed, but nothing was proven either
         got = self.by(out)
         self.assertEqual(got[("command", "mycli build --out dist")], "unproven")
-        self.assertEqual(got[("flag", "--out")], "proven")
+        self.assertEqual(got[("flag", "--out")], "unproven")
         self.assertFalse(os.path.exists(self.mark))
+
+    def test_docs_proof_static_a_lone_positional_may_be_an_argument_not_a_subcommand(self):
+        self.tree("Run `mycli frobnicate`.\n")
+        code, out = self.prove()
+        self.assertEqual((code, self.by(out)[("subcommand", "mycli frobnicate")]), (2, "unproven"))  # one word: maybe a file name
+        self.tree("Run `mycli frobnicate` or `mycli other`.\n")
+        self.assertEqual(self.by(self.prove()[1])[("subcommand", "mycli frobnicate")], "failed")
+
+    def test_docs_proof_static_words_after_a_double_dash_are_another_tools(self):
+        self.tree("Run `mycli run -- pytest --maxfail=1`.\n")
+        got = self.by(self.prove()[1])
+        self.assertNotIn(("flag", "--maxfail"), got)
+
+    def test_docs_proof_static_a_flag_from_a_parameter_name_is_in_the_code(self):
+        write(self.repo, {"pyproject.toml": "[project.scripts]\napp = 'pkg.cli:main'\n",
+                          "pkg/cli.py": "def main(\n    name: str,\n    verbose: bool = False,\n):\n    pass\n",
+                          "README.md": "Run `app --verbose` or `app --nope`.\n"})
+        code, out = self.prove()
+        got = self.by(out)
+        self.assertEqual(got[("flag", "--verbose")], "unproven")  # Typer/Fire derive --verbose from the parameter
+        self.assertEqual(got[("flag", "--nope")], "failed")
+
+    def test_docs_proof_static_a_bin_shim_that_runs_another_tool_is_not_the_repos_cli(self):
+        write(self.repo, {"bin/rails": "#!/usr/bin/env ruby\nAPP_PATH = File.expand_path('../config/application', __dir__)\n"
+                                       "require_relative '../config/boot'\nrequire 'rails/commands'\n",
+                          "README.md": "Run `rails server --fancy` and `rails about`.\n"})
+        os.chmod(os.path.join(self.repo, "bin", "rails"), 0o755)
+        code, out = self.prove()
+        got = self.by(out)
+        self.assertEqual(got.get(("flag", "--fancy"), "unproven"), "unproven")
+        self.assertNotIn("failed", got.values())
 
     def test_docs_proof_prose_and_other_tools_give_nothing_to_check(self):
         self.tree("Some prose about the app. Run `git status`; pass `--force` to git.\n")
@@ -148,19 +180,45 @@ class DocsProof(ForemanTestCase):
         self.assertEqual(got[("command", "mycli build --ghost")], "failed")
         self.assertEqual(got[("flag", "--ghost")], "failed")  # in the code, not in `mycli build --help`
         self.assertEqual(got[("command", "mycli clean --out x")], "failed")
+        self.assertEqual(got[("flag", "--out")], "failed")  # a later failure sticks: `mycli clean --help` lacks it
         self.assertTrue(os.path.exists(self.mark), "the trusted run never ran the command")
         code, again = self.prove()  # the yes was kept for the tree
         self.assertEqual(self.by(again)[("command", "mycli build --out dist")], "proven")
 
+    def test_docs_proof_a_run_that_exits_0_with_the_flag_in_help_proves_the_flag_and_subcommand(self):
+        self.tree("```\nmycli build --out dist\n```\n")
+        code, out = self.prove("--yes-run")
+        got = self.by(out)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((got[("flag", "--out")], got[("subcommand", "mycli build")]), ("proven", "proven"))
+
     def test_docs_proof_files_limit_what_is_read_and_shell_syntax_is_not_run(self):
         self.tree("`mycli build --gone`\n")
-        write(self.repo, {"docs/ok.md": "```\nmycli build | tee log\nmycli build <dir>\n```\n"})
+        write(self.repo, {"docs/ok.md": "```\nmycli build | tee log\nmycli build <dir>\nmycli build /etc/passwd\n"
+                                        "mycli build ~/x\n```\n"})
         code, out = self.prove("--yes-run", "docs/ok.md")
-        self.assertEqual(code, 0, out)  # README's lie is not in the named file
-        self.assertFalse(os.path.exists(self.mark))  # a pipe and a placeholder are never run
+        self.assertEqual(code, 2, out)  # README's lie is not in the named file; nothing here is run or proven
+        self.assertFalse(os.path.exists(self.mark))  # a pipe, a placeholder, an absolute path and ~ are never run
         self.assertNotIn(("flag", "--gone"), self.by(out))
         self.assertEqual({v for (k, _), v in self.by(out).items() if k == "command"}, {"unproven"})
         self.assertEqual(self.fm("prove", "--docs", "../nope.md", check=False).returncode, 2)
+
+    def test_docs_proof_a_folder_then_files_resolve_against_the_folder_without_a_folder_error(self):
+        self.tree("`mycli build --gone`\n")
+        write(self.repo, {"docs/ok.md": "`mycli build --gone2`\n"})
+        r = self.fm("prove", "--docs", "--json", self.repo, "docs/ok.md", check=False, cwd=self.tmp)
+        self.assertNotIn("folder", r.stderr)
+        got = self.by(json.loads(r.stdout))
+        self.assertEqual(got[("flag", "--gone2")], "failed")
+        self.assertNotIn(("flag", "--gone"), got)
+
+    def test_docs_proof_yes_run_from_a_subfolder_trusts_that_folder_not_the_whole_repo(self):
+        self.tree("`mycli build`\n")
+        sub = os.path.join(self.repo, "sub")
+        write(self.repo, {"sub/README.md": "`mycli build`\n"})
+        self.fm("prove", "--docs", "--yes-run", check=False, cwd=sub)
+        self.assertTrue(fmprove.trusted(sub))
+        self.assertFalse(fmprove.trusted(self.repo))
 
 
 if __name__ == "__main__":
