@@ -7775,6 +7775,8 @@ def _build_parser(only=None):
     s.add_argument("--unverified", metavar="REASON", help="merge: merge although the criteria's re-run is red, with the "
                                                           "reason on the ledger (main thread only, T-0948)")
     s.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="brief: the builder's model, over the history's pick (T-2291)")
+    s.add_argument("--revert-route", metavar="DATE", help="brief, no id: put back the dearer picks the probe-down route "
+                                                          "promoted since DATE (YYYY-MM-DD), probing paused 20 lanes (T-2353)")
     s.add_argument("--why", metavar="REASON", help="rm: drop the builder's work (its branch is kept, a locked worktree "
                                                    "goes); the next fm lane brief starts from this (T-1823)")
     s = add("session", lazy("fmsession", "cmd_session"), tier=("Running elsewhere", 1160), help="agent sessions on this device (claude, codex, gemini, "

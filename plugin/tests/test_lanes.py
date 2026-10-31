@@ -1737,5 +1737,181 @@ class SelfChangeGate(ForemanTestCase):
         self.assertIn(f"fm ask {self.tid} core", r.stderr)
 
 
+class RouteBase(ForemanTestCase):
+    """T-2353: seeded lane histories for the probe-down route (closed S tasks with a builder model, fates passed in)."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        self.n, self.outs = 0, {}
+
+    def lane(self, model, bad=False, probe=False, tier="S"):
+        """One closed lane-built task, closing after the ones seeded before it; bad: a later FIX / revert names it."""
+        self.fm("task", "new", f"t{self.n}", "--type", "FEATURE", "--tier", tier, "--ac", "ok :: true", "--step", "s")
+        tid = c.load_briefs(self.p)[-1].id
+        b = c.find_brief(self.p, tid)
+        stamp, self.n = f"2026-01-01T{self.n // 3600:02d}:{self.n // 60 % 60:02d}:{self.n % 60:02d}Z", self.n + 1
+        extra = f"builder_model: {model}\n" + ("route_probe: 1\n" if probe else "")
+        text = re.sub(r"(?m)^updated: .*$", lambda m: f"updated: {stamp}\n{extra}".rstrip("\n"), read_text(b.path), 1)
+        text = re.sub(r"(?m)^status: .*$", "status: done", text, 1)  # done, so fm's own outcomes see it too
+        with open(b.path, "w", encoding="utf-8") as f:
+            f.write(text)
+        self.outs[tid] = {"fate": "reverted" if bad else "held"}
+        return tid
+
+    def lanes(self, model, n, bad=0, probe=False):
+        for i in range(n):
+            self.lane(model, bad=i < bad, probe=probe)
+
+    def route(self, tid=None, tier="S"):
+        return fmlanes.route(self.p, tier, tid=tid, outs=self.outs)
+
+    def state(self):
+        with open(os.path.join(self.p.dir, "route.json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def decisions(self):
+        path = os.path.join(self.p.dir, "decisions.md")
+        return read_text(path) if os.path.exists(path) else ""
+
+
+def probe_id(yes=True):
+    """A task id the stable hash does (or does not) pick as a probe."""
+    return next(f"T-{i:04d}" for i in range(900, 999) if fmlanes.is_probe(f"T-{i:04d}") == yes)
+
+
+class ProbeDown(RouteBase):
+    def test_the_hash_picks_about_a_fifth_of_the_ids_and_not_by_arrival_order(self):
+        hits = [fmlanes.is_probe(f"T-{i:04d}") for i in range(1, 201)]
+        self.assertTrue(30 <= sum(hits) <= 50, sum(hits))
+        self.assertNotEqual(hits[:10], [False] * 4 + [True] + [False] * 4 + [True])  # not every 5th in a row
+
+    def test_a_pick_that_holds_over_five_lanes_probes_one_model_down_on_the_hash_lanes_only(self):
+        self.lanes("sonnet", 5)
+        model, line, probe = self.route(probe_id())
+        self.assertEqual((model, probe), ("haiku", True))
+        self.assertIn("probe", line)
+        self.assertEqual(self.route(probe_id(False))[::2], ("sonnet", False))
+
+    def test_no_probe_before_five_lanes_or_when_the_pick_reworks_more_than_a_tenth(self):
+        self.lanes("sonnet", 4)
+        self.assertEqual(self.route(probe_id())[::2], ("sonnet", False))
+        self.lanes("sonnet", 1, bad=1)  # 1 in 5 reworked: 0.2
+        self.assertEqual(self.route(probe_id())[::2], ("sonnet", False))
+
+    def test_five_good_probes_make_the_cheaper_model_the_pick(self):
+        self.lanes("sonnet", 5)
+        self.lanes("haiku", 4, probe=True)
+        self.assertEqual(self.route(probe_id(False))[0], "sonnet")  # four probes are too few
+        self.lanes("haiku", 1, probe=True)
+        model, line, probe = self.route(probe_id(False))
+        self.assertEqual((model, probe), ("haiku", False))
+        self.assertIn("provisional", line)
+
+    def test_the_band_is_one_sided_and_one_reworked_probe_in_five_is_too_many_unless_the_pick_reworks(self):
+        self.lanes("sonnet", 5)
+        self.lanes("haiku", 4, probe=True)
+        self.lane("haiku", bad=True, probe=True)  # 1/5 = 0.2 against a 0 pick: past 0.1
+        self.assertEqual(self.route(probe_id(False))[0], "sonnet")
+        self.lanes("sonnet", 5, bad=1)  # the pick now reworks 1/10 = 0.1: the probes' 0.2 is within 0.1 of it
+        self.assertEqual(self.route(probe_id(False))[0], "haiku")
+
+    def test_a_reworked_probe_puts_the_next_lanes_back_up_and_probing_returns_after_five_closes(self):
+        self.lanes("sonnet", 5)
+        self.lane("haiku", bad=True, probe=True)
+        self.assertEqual(self.route(probe_id())[::2], ("sonnet", False))
+        self.lanes("sonnet", 4)
+        self.assertEqual(self.route(probe_id())[::2], ("sonnet", False))
+        self.lanes("sonnet", 1)
+        self.assertEqual(self.route(probe_id())[::2], ("haiku", True))
+
+    def test_a_probe_red_after_merge_counts_as_reworked(self):
+        self.lanes("sonnet", 5)
+        self.lanes("haiku", 4, probe=True)
+        tid = self.lane("haiku", probe=True)
+        self.outs[tid] = {"fate": "held", "survival": "lost"}
+        self.assertEqual(self.route(probe_id(False))[0], "sonnet")
+
+    def test_an_opus_pick_probes_sonnet(self):
+        self.lanes("opus", 5)
+        self.lanes("sonnet", 6, bad=5)  # sonnet reworks 5/6 against opus's 0/5: the base rule picks opus
+        self.assertEqual(self.route(probe_id(False))[0], "opus")
+        self.assertEqual(self.route(probe_id())[::2], ("sonnet", True))  # its own probes are what count, not those lanes
+
+    def test_a_racing_task_is_never_a_probe(self):
+        self.lanes("sonnet", 5)
+        self.assertEqual(fmlanes.route(self.p, "S", tid=probe_id(), outs=self.outs, racing=True)[::2], ("sonnet", False))
+
+
+class ProbeProvisional(RouteBase):
+    def promoted(self):
+        self.lanes("sonnet", 5)
+        self.lanes("haiku", 5, probe=True)
+        self.assertEqual(self.route(probe_id(False))[0], "haiku")
+
+    def test_a_promotion_is_a_decision_row_and_provisional_in_route_json_and_on_the_line(self):
+        self.promoted()
+        st = self.state()["S"]
+        self.assertEqual((st["pick"], st["provisional"], st["from"]), ("haiku", True, "sonnet"))
+        self.assertIn("Route S lanes to haiku", self.decisions())
+        self.assertEqual(self.decisions().count("Route S lanes to haiku"), 1)
+        self.route(probe_id(False))  # a second look promotes nothing twice
+        self.assertEqual(self.decisions().count("Route S lanes to haiku"), 1)
+
+    def long_run(self, goals, at="2026-12-01T00:00:00Z", agent="foreman"):
+        return {"tier": "long", "agent": agent, "model": None, "at": at, "goals": [{"id": g, "true_done": d} for g, d in goals]}
+
+    def seed_exam(self, goals, at="2000-01-01T00:00:00Z"):
+        import fmgenesis
+        fmgenesis.exam_line(self.p, self.long_run(goals, at=at))
+
+    def test_a_long_run_at_least_as_good_as_the_run_before_confirms_it(self):
+        tids = [self.lane("sonnet") for _ in range(2)]
+        self.seed_exam([(tids[0], True), (tids[1], False)])
+        self.promoted()
+        done = fmlanes.confirm_routes(self.p, self.long_run([(tids[0], True), (tids[1], False)]))
+        self.assertEqual(len(done), 1)
+        st = self.state()["S"]
+        self.assertEqual((st["pick"], st["provisional"]), ("haiku", False))
+        self.assertIn("Confirm S lanes on haiku", self.decisions())
+        self.assertNotIn("provisional", self.route(probe_id(False))[1])
+
+    def test_a_worse_long_run_reverts_the_promotion_and_the_old_probes_do_not_promote_it_again(self):
+        tids = [self.lane("sonnet") for _ in range(2)]
+        self.seed_exam([(tids[0], True), (tids[1], True)])
+        self.promoted()
+        fmlanes.confirm_routes(self.p, self.long_run([(tids[0], True), (tids[1], False)]))
+        self.assertIsNone(self.state()["S"]["pick"])
+        self.assertIn("Revert S lanes to sonnet", self.decisions())
+        self.assertEqual(self.route(probe_id(False))[0], "sonnet")
+
+    def test_a_long_run_that_cannot_judge_leaves_it_provisional(self):
+        tids = [self.lane("sonnet") for _ in range(2)]
+        self.promoted()  # no run before the promotion to compare with
+        self.assertEqual(fmlanes.confirm_routes(self.p, self.long_run([(tids[0], True)])), [])
+        self.seed_exam([(tids[0], True)])
+        self.assertEqual(fmlanes.confirm_routes(self.p, self.long_run([("T-0999", True)])), [], "no goal in the tier")
+        self.assertEqual(fmlanes.confirm_routes(self.p, self.long_run([(tids[0], True)], agent="oracle")), [])
+        self.assertTrue(self.state()["S"]["provisional"])
+
+    def test_revert_route_restores_the_dearer_pick_and_pauses_probing_for_twenty_lanes(self):
+        self.promoted()
+        r = self.fm("lane", "brief", "--revert-route", "2026-01-01")
+        self.assertIn("S", r.stdout)
+        self.assertIn("Revert S lanes to sonnet", self.decisions())
+        self.assertEqual(self.route(probe_id(False))[0], "sonnet")
+        self.lanes("sonnet", 19)
+        self.assertEqual(self.route(probe_id())[::2], ("sonnet", False))
+        self.lanes("sonnet", 1)
+        self.assertEqual(self.route(probe_id())[::2], ("haiku", True))
+
+    def test_revert_route_leaves_promotions_before_the_date_and_refuses_a_bad_date(self):
+        self.promoted()
+        self.fm("lane", "brief", "--revert-route", "2999-01-01")
+        self.assertEqual(self.state()["S"]["pick"], "haiku")
+        bad = self.fm("lane", "brief", "--revert-route", "yesterday", check=False)
+        self.assertNotEqual(bad.returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
