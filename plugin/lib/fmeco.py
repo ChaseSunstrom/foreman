@@ -14,18 +14,30 @@ import time
 import fmcore as c
 
 
-def capture_once(p, text, type_, source, key=None):
+def capture_once(p, text, type_, source, key=None, trigger=None):
     """(brief, new): text captured into p's inbox, unless an open brief has its title (or, with key, any brief's raw
-    request holds key) — a sweep, adopt or canary run twice asks once."""
+    request holds key) — a sweep, adopt or canary run twice asks once. trigger (default: source) names what fired it;
+    one whose recent closed captures were mostly dropped files at low priority (T-2276, fm triggers)."""
     import fmcli
+    trigger = trigger or source
     title = fmcli._title(text)
+    try:  # before the lock, and a failure here only means no demotion: a capture is never lost to it
+        import fmtriggers
+        low = fmtriggers.noisy(p, trigger) if source != "user" else None
+    except Exception:
+        low = None
     with c.lock(p.dir):
         line = re.compile(r"(?m)^(?:> ?)?" + re.escape(key)) if key else None  # review: a whole line of Foreman's,
         for b in c.load_briefs(p, include_archive=bool(key)):                   # never text inside a quoted issue
             if line.search(b.section("Raw request")) if key else (b.status not in c.CLOSED and b.title == title):
                 return b, False
-        b = fmcli._create(p, title, type_, c.guess_tier(type_, text), "captured", raw=text, source=source)
-        c.log_event(p, "capture", task=b.id, data={"source": source, "type": type_}, session=c.session_id())
+        if low:
+            text += (f"\n(Filed at low priority: trigger {trigger} has precision {low[0]:.2f} over its last {low[1]} "
+                     f"closed captures; fm triggers shows the record.)")
+        b = fmcli._create(p, title, type_, c.guess_tier(type_, text), "captured", raw=text, source=source,
+                          priority="low" if low else "normal")
+        c.log_event(p, "capture", task=b.id, data={"source": source, "type": type_, "trigger": trigger},
+                    session=c.session_id())
         c.regen_views(p, mirror=False)  # review: fm sync's mirror is that project's to export, in its own session
     return b, True
 
