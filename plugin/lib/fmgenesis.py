@@ -1749,8 +1749,10 @@ def _context(text):
     return out
 
 
-SECTION_FLOOR, SECTION_SHORT, SECTION_READS = 40, 8, 12  # T-2243: a file needs 40 logical lines to be read by section;
-# sections under 8 lines share a read with a neighbour; at most 12 reads a put
+SECTION_FLOOR, SECTION_READS = 40, 12  # T-2243: a file needs 40 logical lines (or SECTION_CHARS) to be read by section;
+# at most 12 reads a put. T-2245: by characters, since a paragraph is one logical line (T-2231): a file of 3000+
+# characters splits, and only a section under 300 characters joins the read before it, up to 1500 characters a read
+SECTION_CHARS, SECTION_TINY, SECTION_GROUP = 3000, 300, 1500
 
 
 def _parts(text):
@@ -1778,7 +1780,7 @@ def _groups(secs):
     out, seen = [], {}
     for h, body in secs:
         seen[h] = seen.get(h, 0) + 1
-        if out and (len(_logical(out[-1][1])) < SECTION_SHORT or len(_logical(body)) < SECTION_SHORT):
+        if out and len(body) < SECTION_TINY and len(out[-1][1]) + len(body) <= SECTION_GROUP:
             out[-1][1] += body
             out[-1][3] += 1
         else:
@@ -1793,7 +1795,7 @@ def _read(p, name, text):
     outline, reader, charter and exam tail) isn't read again. Filed when every section passes; at most SECTION_READS reads
     a put. A finding follows its line across a heading rename."""
     text = c.redact(text)
-    secs = _parts(text) if len(_logical(text)) >= SECTION_FLOOR else []
+    secs = _parts(text) if len(_logical(text)) >= SECTION_FLOOR or len(text) >= SECTION_CHARS else []
     gen0 = _doc(home(p), "gen-0.md")
     if len(secs) < 2 or gen0 is None:  # no gen-0: the whole-file read says so
         return _read1(p, name, text)

@@ -1643,6 +1643,15 @@ class GenesisRead(ForemanTestCase):
         r, n = reads(doc(Beta="two", Gamma="three"))  # the failed section is read again, and passes
         self.assertEqual((r.returncode, n), (0, 1), r.stderr)
 
+    def test_paragraph_sections_each_get_a_read_and_only_tiny_ones_merge(self):
+        # T-2245: since T-2231 a paragraph is one logical line, so a critique's sections all read as short and nine of
+        # them merged into one read, the whole-file read again
+        para = lambda h: " ".join(f"{h} sentence {i} says what this part of the critique found and why." for i in range(7))
+        heads = [f"Part {x}" for x in "ABCDEFGHIJ"]
+        doc = "# Critique\n\n" + "".join(f"## {h}\n{para(h)}\n\n" for h in heads) + "## Tiny one\nShort.\n\n## Tiny two\nAlso short.\n"
+        r, log = self.reads(doc)
+        self.assertEqual((r.returncode, log.count("<file name=")), (0, 10), r.stderr)  # the two tiny ones join Part J
+
     def sect(self, heads, n=15, tag="one"):
         return "# Critique\n\n" + "".join(
             f"## {h}\n" + "".join(f"- {h[:6]} claim number {i}: {tag} point about the tower\n" for i in range(n)) for h in heads)
