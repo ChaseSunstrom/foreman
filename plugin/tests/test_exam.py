@@ -178,6 +178,49 @@ class ExamGen(ForemanTestCase):
         self.assertIn("3 self-authored held-out results not counted", self.fm("exam", "scorecard", "--agent", "oracle",
                                                                              check=False).stdout)
 
+    def test_static_reads_only_testish_files_and_check_runs_the_clean_side_three_times(self):
+        import fmexam  # T-2218: latest.py and contest.js are no tests; a clean side that fails one run in three is named
+        t = os.path.join(self.tmp, "static")
+        os.makedirs(t)
+        for name in ("latest.py", "contest.js", "attestation.rb", "test_x.py", "x.test.js"):
+            with open(os.path.join(t, name), "w") as f:
+                f.write("MARK_" + name.split(".")[0])
+        chk = lambda must: {"files": "test", "must": must, "never": []}
+        for name in ("test_x", "x"):
+            self.assertTrue(fmexam._static(t, chk([f"MARK_{name}"])), name)
+        for name in ("latest", "contest", "attestation"):
+            self.assertFalse(fmexam._static(t, chk([f"MARK_{name}"])), name)
+
+        class P:
+            dir = os.path.join(self.tmp, "proj")
+        for kind in ("clean", "flaky"):
+            base = os.path.join(P.dir, "exam", "run-1", f"{kind}-1")
+            os.makedirs(os.path.join(base, "hidden", "clean"))
+            with open(os.path.join(base, "key.json"), "w") as f:
+                json.dump({"defects": []}, f)
+            calls = []
+
+            def fake(key, target, overlay=None, slow=False):
+                if target.endswith("clean"):
+                    calls.append(target)
+                    return (len(calls) != 2, "exit 1: flake")
+                return True, ""
+            orig, fmexam.suite = fmexam.suite, fake
+            try:
+                got = fmexam._check_one(P, "run-1", {"id": f"{kind}-1", "kind": kind, "repo": os.path.join(base, "repo")})
+            finally:
+                fmexam.suite = orig
+            self.assertEqual(len(calls), 2, kind)  # the flake on run 2 stops the loop; a 3rd run is never needed
+            self.assertEqual([x for x in got if "clean suite failed" in x and f"{kind}-1" in x], got)
+            self.assertEqual(len(got), 1)
+        calls.clear()
+        fmexam.suite = lambda key, target, overlay=None, slow=False: (calls.append(1) or True, "")
+        try:
+            fmexam._check_one(P, "run-1", {"id": "clean-1", "kind": "clean", "repo": "r"})
+        finally:
+            fmexam.suite = orig
+        self.assertEqual(len(calls), 1 + 3)  # the planted suite once, the clean side three times
+
     def test_the_clean_app_keeps_the_edge_contract_and_its_suite_proves_it(self):
         import fmexam  # T-2120: page n or size < 1 is empty, lo wins in clamp, label keeps a long s, total of none is 0
         s = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug")["scenarios"][0]
