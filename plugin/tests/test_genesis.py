@@ -183,7 +183,7 @@ class GenesisExport(ForemanTestCase):
         self.fm("genesis", "init", "--file", "-", input=GEN0_CAPS)
         p, out = c.find_project(self.repo), os.path.join(self.tmp, "site")
         row = {"n": 1, "name": "Initiative", "state": "partial", "closed": 2, "graded": 4,
-               "why": "<img src=x onerror=alert(1)> " + "x" * 300}
+               "why": "<img src=x onerror=alert(1)> " + os.path.expanduser("~") + "/x " + "x" * 300}
         card = {"rows": [row, dict(row, n=2, name="Exhaustive thinking", state="too few", closed=0, graded=0, why="")],
                 "seen": 1, "smoke": 0, "selfmade": 0}
         with mock.patch.object(fmgenesis, "scorecard", return_value=card):
@@ -193,7 +193,8 @@ class GenesisExport(ForemanTestCase):
                          [("Initiative", "partial", 2, 4), ("Exhaustive thinking", "too few", None, None)])
         self.assertTrue(got[0]["why"].startswith("<img src=x onerror=alert(1)>"))  # text stays text: the page escapes it
         self.assertLessEqual(len(got[0]["why"]), 200)
-        self.assertNotIn(self.tmp, json.dumps(got))
+        self.assertIn(" ~/x ", got[0]["why"])  # the home path is scrubbed before the cut
+        self.assertNotIn(os.path.expanduser("~") + "/x", json.dumps(got))
 
     def test_export_scrubs_every_field_and_skips_junk_exam_lines(self):
         import json
@@ -2445,8 +2446,8 @@ class GenesisHealth(ForemanTestCase):
                                      "closed": {"holdout": []}})
         out = self.fm("genesis").stdout.splitlines()
         i = next(i for i, l in enumerate(out) if l.startswith("exam: "))
-        self.assertRegex(out[i + 1], r"^1\. Initiative: [a-z ]+ \(closed - of - held out\)$")
-        self.assertRegex(out[i + 2], r"^2\. Exhaustive thinking: [a-z ]+ \(closed - of - held out\)$")
+        self.assertRegex(out[i + 1], r"^1\. Initiative: [a-z ]+ \(not graded\)$")
+        self.assertRegex(out[i + 2], r"^2\. Exhaustive thinking: [a-z ]+ \(not graded\)$")
         self.assertEqual(len(self.fm_json("genesis")["scorecard"]), 2)
 
     def test_a_seed_row_that_reads_as_an_instruction_stays_data(self):

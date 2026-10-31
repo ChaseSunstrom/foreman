@@ -514,9 +514,14 @@ def card(p):
         return []
     if not (r["seen"] or r["smoke"] or r["selfmade"]):
         return []
-    return [{"n": x["n"], "name": c.fit(c.plain(x["name"]), 200), "state": c.fit(c.plain(x["state"]), 200),
+    home_dir = os.path.expanduser("~")
+
+    def t(s):  # scrub, then cut: a cut first could split a home path or a token the scrub then misses
+        s = c.redact(c.plain(s))
+        return c.fit(s.replace(home_dir, "~") if len(home_dir) > 1 else s, 200)
+    return [{"n": x["n"], "name": t(x["name"]), "state": t(x["state"]),
              "closed": x["closed"] if x["graded"] else None, "graded": x["graded"] or None,
-             "why": c.fit(c.plain(x["why"]), 200)} for x in r["rows"]]
+             "why": t(x["why"])} for x in r["rows"]]
 
 
 def health(p, briefs=None):
@@ -897,8 +902,8 @@ def _text(s):
     if s.get("next"):
         lines.append(f"next: {s['next']['action']} → {s['next']['command']}")
     lines.append(exam)
-    lines += [f"{x['n']}. {x['name']}: {x['state']} (closed {'-' if x['graded'] is None else x['closed']} of "
-              f"{'-' if x['graded'] is None else x['graded']} held out)" for x in s.get("scorecard") or ()]
+    lines += [f"{x['n']}. {x['name']}: {x['state']} " + ("(not graded)" if x["graded"] is None else
+              f"(closed {x['closed']} of {x['graded']} held out)") for x in s.get("scorecard") or ()]
     return "\n".join(lines + [site])
 
 

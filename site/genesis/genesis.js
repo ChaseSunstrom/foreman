@@ -232,9 +232,13 @@
 
   /* T-2154: the held-out scorecard, one row per capability; every cell is textContent, never markup */
   function scorecard() {
-    var box = $("scorecard"), rows = D.scorecard, t = document.createElement("table"), tr, h;
+    var box = $("scorecard"), t = document.createElement("table"), wrap = document.createElement("div"), tr, h, p,
+      rows = Array.isArray(D.scorecard) ? D.scorecard.filter(function (r) { return r && typeof r === "object"; }) : [];
     box.textContent = "";
-    if (!Array.isArray(rows) || !rows.length) { box.textContent = "Scorecard: not graded yet."; return; }
+    if (!rows.length) {
+      p = box.appendChild(document.createElement("p")); p.className = "muted"; p.textContent = "Not graded yet."; return;
+    }
+    wrap.className = "tbl";
     tr = t.appendChild(document.createElement("tr"));
     ["#", "capability", "state", "closed of held out", "why"].forEach(function (w) {
       h = tr.appendChild(document.createElement("th")); h.textContent = w;
@@ -245,7 +249,7 @@
         tr.appendChild(document.createElement("td")).textContent = String(v == null ? "" : v);
       });
     });
-    box.appendChild(t);
+    box.appendChild(wrap).appendChild(t);
   }
 
   /* E: rules */
@@ -402,7 +406,9 @@
     D = data;
     if (!D.generations.length) D.generations = [{ n: 1, seed: false, missions: [], critiques: [], tasks: [], rules: [] }];
     selectGen(D.generations[D.generations.length - 1].n);
-    exam(); scorecard(); docs();
+    exam();
+    try { scorecard(); } catch (e) {}  // a odd scorecard row costs its table, never the docs or the route below
+    docs();
     var h = location.hash.slice(1);
     try { h = decodeURIComponent(h); } catch (e) { h = ""; }  // a malformed hash (#doc=%) opens nothing, breaks nothing
     var m = /^(doc|cap|mission|task)=(.+)$/.exec(h);

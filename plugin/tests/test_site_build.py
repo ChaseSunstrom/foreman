@@ -291,7 +291,7 @@ class GenesisScorecard(unittest.TestCase):
         d = os.path.join(ROOT, "site", "genesis")
         r = subprocess.run([node, os.path.join(PLUGIN, "tests", "genesis_page.js"), d], capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(json.loads(r.stdout), {"text": True, "markup": False, "none": True})
+        self.assertEqual(json.loads(r.stdout), {"text": True, "markup": False, "none": True, "docs": True})
         js = read_text(os.path.join(d, "genesis.js"))
         self.assertNotIn("innerHTML", re.search(r"function scorecard\(\)(.*?)\n  }\n", js, re.S).group(1))
 

@@ -19,12 +19,13 @@ async function page(extra) {
     matchMedia: () => ({matches: false}), fetch: async () => ({ok: true, json: async () => D}), setTimeout, console};
   vm.runInNewContext(fs.readFileSync(dir + "/genesis.js", "utf8"), ctx);
   await new Promise(r => setTimeout(r, 50));
-  return {texts: texts.slice(), html: html.join("\n")};
+  return {texts: texts.slice(), html: html.join("\n"), docs: !!(els["docs-body"] && els["docs-body"].innerHTML)};
 }
 (async () => {
   const bad = "<img src=x onerror=alert(1)>";
-  const a = await page({scorecard: [{n: 1, name: "Initiative", state: "partial", closed: 2, graded: 4, why: bad}]});
+  const a = await page({scorecard: [null, 7, {n: 1, name: "Initiative", state: "partial", closed: 2, graded: 4, why: bad}]});
   const b = await page({scorecard: undefined});
   console.log(JSON.stringify({text: a.texts.includes(bad), markup: a.html.includes("onerror"),
-    none: b.texts.concat(b.html.split("\n")).some(t => /not graded yet/.test(t))}));
+    none: b.texts.concat(b.html.split("\n")).some(t => /not graded yet/i.test(t)),
+    docs: a.docs}));
 })();

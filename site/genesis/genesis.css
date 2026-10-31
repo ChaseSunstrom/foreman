@@ -130,6 +130,7 @@ button.rule:hover { border-color: var(--rule-2); }
 .docs h4 { margin: 0 0 6px; font: 600 .72rem var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); }
 .doc { appearance: none; display: flex; justify-content: space-between; gap: 8px; width: 100%; text-align: left; border: 1px solid var(--rule); background: var(--panel); border-radius: 6px; padding: 7px 10px; margin-bottom: 5px; cursor: pointer; font: 600 .82rem var(--mono); }
 .doc small { color: var(--ink-2); font-weight: 500; white-space: nowrap; }
+.sc-h { margin: 22px 0 8px; font-size: 1.3rem; }
 .tbl { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); }
 table { border-collapse: collapse; width: 100%; font-size: .84rem; }
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
