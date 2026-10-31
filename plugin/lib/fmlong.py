@@ -573,7 +573,8 @@ def grade(p, run, agent):
     goals = []
     for s in meta["scenarios"]:  # every goal counts: one without an answer is not done
         key, work = _key(p, run, s["id"]), _work(p, run, agent, s["id"])
-        g = {"id": s["id"], "answered": os.path.isdir(work), "true_done": False, "checks": len(key["checks"]), "regressions": []}
+        g = {"id": s["id"], "answered": os.path.isdir(work), "true_done": False, "checks": len(key["checks"]),
+             "checks_passed": 0, "regressions": []}  # T-2320: partial credit, so a near miss reads as one
         if g["answered"]:
             _may_run(p, key["src"])
             tmp = tempfile.mkdtemp(prefix="fm-long-")
@@ -586,7 +587,8 @@ def grade(p, run, agent):
             if ok is None:
                 g["error"] = "the runner failed or timed out"
             else:
-                g.update(true_done=set(key["checks"]) <= ok, regressions=[i for i in key["sample"] if i not in ok])
+                g.update(true_done=set(key["checks"]) <= ok, regressions=[i for i in key["sample"] if i not in ok],
+                         checks_passed=len(set(key["checks"]) & set(ok)))
         g.update(_metrics(p, run, agent, g))
         goals.append(g)
     if not any(g["answered"] for g in goals):
@@ -598,7 +600,8 @@ def grade(p, run, agent):
         model = None
     res = {"tier": "long", "agent": agent, "run": run, "at": c.now(), "gen": fmgenesis.current(p), "model": model,
            "scenarios": len(goals), "true_done": sum(g["true_done"] for g in goals),
-           "regressions": sum(len(g["regressions"]) for g in goals), "goals": goals, **_totals(goals)}
+           "regressions": sum(len(g["regressions"]) for g in goals), "checks": sum(g["checks"] for g in goals),
+           "checks_passed": sum(g["checks_passed"] for g in goals), "goals": goals, **_totals(goals)}
     fmgenesis.exam_line(p, res)
     return res
 
@@ -615,7 +618,8 @@ def cmd(p, args):
         faults = [f for f in (args.faults or "").split(",") if f]
         r = (run(p, rest[0], agent, args.model, args.budget, args.timeout, faults, args.limit, args.jobs) if verb == "run" else grade(p, rest[0], agent))
         text = (f"{agent} answered {len(r['answered'])} goal(s) of {rest[0]}" if verb == "run" else
-                f"{agent} {rest[0]}: {r['true_done']}/{r['scenarios']} true done, {r['regressions']} regressions")
+                f"{agent} {rest[0]}: {r['true_done']}/{r['scenarios']} true done, {r['checks_passed']}/{r['checks']} checks, "
+                f"{r['regressions']} regressions")
         return fmcli.out(args, r, text)
     raise ValueError("fm exam long gen [--from PATH] [--n N] | run RUN --agent oracle|empty|foreman|plain [--faults kill,pause,compaction,misleading] | "
                      "grade RUN --agent oracle|empty|foreman|plain")
