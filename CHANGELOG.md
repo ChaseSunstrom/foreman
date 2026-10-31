@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Goal distance on the glance surfaces: the statusline, the terminal title and the badge end with `goal 3/7` while a goal with items stands, counted when the views regenerate, so the polled statusline reads no briefs (T-2144).
+- `fm goal show` estimates a goal's time to finish: open items times the median active minutes of its done items' tasks, with the 25th–75th percentile range, "no estimate yet" under 3 sampled items, and an estimate block in `--json` (T-2145).
 - `fm task evidence ID --bench "<cmd>" [--repeat K]` times the command on the task's start tree (a throwaway worktree) and on the current tree, and records "cmd: before → after (K runs each)" as run evidence and in Measurements, which a PERFORMANCE close accepts in place of typed `--numbers` (T-2284).
 - `fm find --ladder` tree-sitter rung: Foreman's own `.scm` rules (starter Python and JS rules in plugin/lib/ladder_rules) run over tracked, size-capped, non-symlink files through an optional tree_sitter binding and report `ts:RULE` findings; a missing binding is one note and one `capability-miss: tree-sitter` (T-2240).
 - Lean ratchet: Foreman's own `fm ship` records the always-on footprint (rules chars, descriptions chars, largest SKILL body) after a green test, and `fm doctor` warns on any metric more than 2% over the last shipped record unless a later `fm decide "footprint: <metric> …"` names it; the fixed caps still fail (T-2281).
