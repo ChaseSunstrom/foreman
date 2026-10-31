@@ -7052,11 +7052,15 @@ def _build_parser(only=None):
     s.add_argument("path", nargs="?", default=".", help="the tree to prove in (default: here)")
     s.add_argument("--limit", type=int, default=10, help="prove the best N candidates (default 10)")
     s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests, kept for this tree")
+    s.add_argument("--bugs", type=int, default=None, metavar="N", help="turns the bug rung on: ask a cheap child for bug "
+                   "candidates in the N hottest files (N is required, at most 10; try 3), as in fm prove --bugs 3 PATH; "
+                   "each is proven by a model-written red test or stays a lead; trusted trees only (T-2242)")
     s.add_argument("--capture", type=int, metavar="N", help="file up to N proven findings as planned tasks fm run works, "
                    "each red until fixed (its criterion is fm prove --only ID); nothing proven writes "
                    "research/prove-receipt.md (T-2123)")
     s.add_argument("--only", metavar="ID", help="prove only the finding with this id (a task's criterion); exit 0 once it "
-                   "is gone or no longer proven")
+                   "is gone or no longer proven. bug-ID (a --bugs finding) reruns its saved test: red is still open "
+                   "(exit 1), green is fixed (exit 0), a missing saved test can't be re-checked (exit 1)")
     s = add("exam", lazy("fmexam", "cmd_exam"), tier=("Finding your way", 456), help="a seeded exam of throwaway repos in six "
             "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
     s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard"),

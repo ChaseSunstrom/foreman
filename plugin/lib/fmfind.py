@@ -651,7 +651,8 @@ def keyed(found, root, home):
     twins, keys = {}, {}
     for i in sorted(range(len(found)), key=lambda i: (found[i]["file"], found[i]["line"], found[i]["finder"])):
         f = found[i]  # twins number in (file, line, finder) order whatever order found comes in: rank, capture and prove agree
-        key = f"{f['finder']}:{os.path.relpath(os.path.join(root, f['file']), home)}:{f['symbol']}:{f['says']}"
+        key = f"{f['finder']}:{os.path.relpath(os.path.join(root, f['file']), home)}:{f['symbol']}"
+        key += "" if f["finder"] == "bug-rung" else f":{f['says']}"  # T-2242: a model's wording changes every run
         twins[key] = twins.get(key, 0) + 1
         keys[i] = key + (f"#{twins[key]}" if twins[key] > 1 else "")
     return [(keys[i], f) for i, f in enumerate(found)]
