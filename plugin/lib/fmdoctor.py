@@ -1,4 +1,5 @@
 """fm doctor: Foreman self-check (BUILD_PROMPT §12). Each check returns a Result; FAIL makes the command exit 1."""
+import functools
 import glob
 import hashlib
 import json
@@ -35,6 +36,7 @@ class Result:
     name: str
     status: str  # PASS | WARN | FAIL
     detail: str = ""
+    ms: int = 0  # T-2279: the check's wall time
 
 
 def _load_json(path):
@@ -2143,6 +2145,37 @@ def cmd_fsck(args):
     return 1 if left else 0
 
 
+def slowest(results, n=3):
+    """T-2279: the n slowest checks, for -v and --json."""
+    return [{"name": r.name, "ms": r.ms} for r in sorted(results, key=lambda r: -r.ms)[:n]]
+
+
+def _timing(run):
+    """T-2279: runs `run` with each check_* timed: its wall ms lands on the Result(s) it returns."""
+    def timed(fn):
+        def go(*a, **kw):
+            t0 = time.perf_counter()
+            out = fn(*a, **kw)
+            ms = int((time.perf_counter() - t0) * 1000)
+            for r in out if isinstance(out, list) else [out]:
+                if isinstance(r, Result):
+                    r.ms = ms
+            return out
+        return go
+
+    @functools.wraps(run)  # inspect.getsource(run_all) still reads the body
+    def wrapper(*a, **kw):
+        g = run.__globals__
+        orig = {k: v for k, v in g.items() if k.startswith("check_") and callable(v)}
+        g.update({k: timed(v) for k, v in orig.items()})
+        try:
+            return run(*a, **kw)
+        finally:
+            g.update(orig)
+    return wrapper
+
+
+@_timing
 def run_all(full=False, accept_supply=False):
     home = c.foreman_home()
     claude = os.path.join(os.path.expanduser("~"), ".claude")
@@ -2335,11 +2368,14 @@ def cmd_doctor(args):
         return None
     ok = not any(r.status == "FAIL" for r in results)
     if args.json:
-        print(json.dumps({"ok": ok, "results": [asdict(r) for r in results]}, indent=2, ensure_ascii=False))
+        print(json.dumps({"ok": ok, "results": [asdict(r) for r in results], "slowest": slowest(results)},
+                         indent=2, ensure_ascii=False))
     else:
         for r in results:  # T-0844: only what needs a look, unless -v
             if r.status != "PASS" or getattr(args, "verbose", False):
                 print(f"{r.status:4}  {r.name:<20} {r.detail}")
+        if getattr(args, "verbose", False):
+            print("\nslowest: " + ", ".join(f"{s['name']} {s['ms']} ms" for s in slowest(results)))
         print(f"\nfm doctor: {'OK' if ok else 'FAILED'} ({sum(r.status == 'PASS' for r in results)} pass, "
               f"{sum(r.status == 'WARN' for r in results)} warn, {sum(r.status == 'FAIL' for r in results)} fail)")
     if not ok:

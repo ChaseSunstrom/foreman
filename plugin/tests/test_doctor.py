@@ -567,6 +567,34 @@ class Command(ForemanTestCase):
             self.assertIn("FOREMAN_DOCTOR_BENCH=0", rs[n]["detail"])
 
 
+class Timing(ForemanTestCase):
+    def test_a_slow_check_tops_the_slowest_list(self):  # T-2279
+        import unittest.mock as mock
+
+        def slow():
+            time.sleep(0.3)
+            return d.Result("disk", "PASS", "stub")
+        # every other check is stubbed fast: the real ones read this machine's state and take seconds
+        fast = {k: (lambda *a, **kw: d.Result("fast", "PASS")) for k in dir(d) if k.startswith("check_")}
+        fast["check_disk"] = slow
+        with mock.patch.multiple(d, **fast), mock.patch.dict(os.environ, {"FOREMAN_DOCTOR_BENCH": "0"}):
+            rs = d.run_all()
+        top = d.slowest(rs)
+        self.assertEqual(len(top), 3)
+        self.assertEqual(top[0]["name"], "disk")
+        self.assertGreaterEqual(top[0]["ms"], 300)
+        self.assertEqual(next(r for r in rs if r.name == "disk").ms, top[0]["ms"])
+        self.assertEqual([t["ms"] for t in top], sorted((t["ms"] for t in top), reverse=True))
+
+    def test_json_and_verbose_carry_the_timings(self):
+        self.fm("init")
+        out = json.loads(self.fm("doctor", "--json", check=False, env={"HOME": self.tmp}).stdout)
+        self.assertEqual(len(out["slowest"]), 3)
+        self.assertTrue(all("ms" in r for r in out["results"]))
+        self.assertIn("slowest:", self.fm("doctor", "-v", check=False, env={"HOME": self.tmp}).stdout)
+        self.assertNotIn("slowest:", self.fm("doctor", check=False, env={"HOME": self.tmp}).stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
 
