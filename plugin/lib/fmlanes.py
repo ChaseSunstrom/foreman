@@ -459,9 +459,13 @@ def stop_causes(p, briefs=None, fresh=False):
             idle = stalled(p, all_briefs if fresh else None) if idle is None else idle
             if tid in idle:
                 out[tid] = ("stalled", "")
-        else:
-            done = set(c.finished_lanes(p, all_briefs)) if done is None else done
-            if tid in done:
+        else:  # the process ended (T-2362): commits ahead of main on a clean tree wait on a merge, however fresh;
+            # finished_lanes' 30 quiet minutes are for a builder that may still be at work, which an ended one isn't
+            if done is None:
+                main = c.main_worktree(p.root) or p.root
+                done = git(main, "rev-parse", "HEAD").stdout.strip()
+            ahead = git(b.meta["lane"], "rev-list", "--count", "HEAD", "--not", done).stdout.strip() if done else ""
+            if ahead not in ("", "0") and not git(b.meta["lane"], "status", "--porcelain").stdout.strip():
                 out[tid] = ("no_report", "")
                 continue
             wall = _usage_wall() if wall is False else wall

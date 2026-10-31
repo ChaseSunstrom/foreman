@@ -1423,6 +1423,7 @@ KIND_WORDS = (("bug", r"\bbugs?\b|correct(?!ions?\b)|broken"), ("vuln", r"secur|
               ("trigger", r"self-trigger|event triggers|\bwatchers?\b"),  # T-2216: #2, #9, #11, anchored (review)
               ("watch", r"self-trigger|event triggers|\bwatchers?\b|work starts without"),  # T-2360: #11's own kind
               ("recur", r"self-repair|own failures|repeated failures"), ("correction", r"\bcorrections?\b"),  # T-2361: #7
+              ("lanes", r"\bsubagents?\b|merges its own"),  # T-2362: #9's own kind, beside parts
               # T-2343: #2 (race: candidates tried side by side) and #8 (fork: decides and records, door: irreversible,
               # unsure: states confidence); phrases, not bare "race", "fork" or "door", which mean other things
               ("race", r"parallel lanes|candidate (?:fixes|designs|approaches)|choose by evidence"),

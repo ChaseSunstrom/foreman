@@ -1277,6 +1277,11 @@ class GenesisDraft(ForemanTestCase):
         (row,) = fmgenesis.scorecard(self.p)["rows"]
         self.assertIn("proxy", row["why"])  # #9's kind grades a three-part outcome, not delegation, and says so
 
+    def test_orchestration_maps_to_lanes_and_parts(self):
+        import fmgenesis  # T-2362: #9's own kind drills stopped lanes; parts stays beside it
+        nine = "It spawns, briefs, checks and merges its own subagents and lanes, picks the cheapest model"
+        self.assertLessEqual({"lanes", "parts"}, set(fmgenesis._kinds("Orchestration", nine)))
+
     def test_corrections_map_to_recur_and_correction_not_bug(self):
         import fmgenesis  # T-2361: #7 matched bug only through 'corrections' containing 'correct'
         seven = ("Its own failures, friction, misses and my corrections become fixes, gated by bench and trials, "
