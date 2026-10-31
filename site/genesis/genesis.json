@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-31T03:44:24Z",
- "rev": "6d8e5f64",
+ "updated": "2026-10-31T04:46:50Z",
+ "rev": "ea94b84a",
  "capabilities": [
   {
    "n": 1,
@@ -707,7 +707,7 @@
       {
        "id": "T-2142",
        "title": "Goal notices fire only on state transitions (item done, verdict change, a typed wait),…",
-       "status": "captured",
+       "status": "dropped",
        "type": "FEATURE",
        "tier": "M",
        "steps": 0,
@@ -717,7 +717,7 @@
       {
        "id": "T-2143",
        "title": "Goal card byte-stable across sessions so the SessionStart prefix stays prompt-cached…",
-       "status": "captured",
+       "status": "dropped",
        "type": "FEATURE",
        "tier": "M",
        "steps": 0,
