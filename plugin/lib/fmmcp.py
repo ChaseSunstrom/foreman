@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 
@@ -378,8 +379,14 @@ def cmd_new(args):
 def cmd_register(args):
     import fmcli
     harness, rest = (args.words or [""])[0], (args.words or [])[1:]
+    if harness == "desktop" and not rest:  # T-2232: Claude Desktop starts servers with no shell PATH and no project
+        p = fmcli.resolve(args)            # folder, so the stanza names fm by path and the project with -p
+        fm = shutil.which("fm") or os.path.join(c.PLUGIN_ROOT, "bin", "fm")
+        stanza = {"mcpServers": {"foreman": {"command": os.path.abspath(fm), "args": ["mcp", "-p", p.slug]}}}
+        return print("Add this to Claude Desktop's claude_desktop_config.json (merge into an existing mcpServers), "
+                     "then restart Desktop:\n" + json.dumps(stanza, indent=2))
     if harness not in ("claude", "codex", "gemini") or len(rest) > 1:
-        raise fmcli.UsageError("fm mcp register claude|codex|gemini [DIR]: DIR is a folder fm mcp new wrote "
+        raise fmcli.UsageError("fm mcp register claude|codex|gemini|desktop [DIR]: DIR is a folder fm mcp new wrote "
                                "(default: Foreman's own server)")
     name, cmd = "foreman", ["fm", "mcp"]
     if rest:
