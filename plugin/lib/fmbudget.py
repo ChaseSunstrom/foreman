@@ -5,11 +5,13 @@ cost in one global ledger (state/spend.jsonl: USD from claude's JSON result, tok
 usage (or 90% of the 5-hour window, the statusline's snapshot) every cap halves, like economy mode. Raising a cap isn't
 blocked: it is recorded as a costly decision, which the user reviews (fm decide --review). Subagents have no token cap
 (T-0320): they wait only while usage runs ahead of the week's pace or the 5-hour window is nearly spent."""
+import contextlib
 import datetime
 import glob
 import json
 import math
 import os
+import threading
 import time
 
 import fmcore as c
@@ -59,7 +61,29 @@ def ledger(days=1):
     return [e for e in c.tail_jsonl(_path("spend.jsonl"), 20000) if str(e.get("day", "")) >= since]
 
 
+_LOCK, _FLIGHT = threading.RLock(), {}  # T-2292: sessions running at once under one process, by feature
+
+
+@contextlib.contextmanager
+def reserve(feature, est, smaller=""):
+    """One session's spend slot: the check counts `est` for this session and for each one still running (their cost
+    isn't in the ledger yet), under a lock so parallel sessions can't all pass the same headroom. Record inside the block."""
+    with _LOCK:
+        check(feature, est * (_FLIGHT.get(feature, 0) + 1), smaller)
+        _FLIGHT[feature] = _FLIGHT.get(feature, 0) + 1
+    try:
+        yield
+    finally:
+        with _LOCK:
+            _FLIGHT[feature] -= 1
+
+
 def record(feature, usd=None, runs=1, tokens=None, project=None, detail=""):
+    with _LOCK:
+        return _record(feature, usd, runs, tokens, project, detail)
+
+
+def _record(feature, usd, runs, tokens, project, detail):
     e = {"ts": c.now(), "day": _today(), "feature": feature, "usd": round(usd, 4) if usd is not None else None,
          "runs": runs, "tokens": tokens, "project": project, "detail": c.fit(str(detail), 120)}
     os.makedirs(c.state_dir(), exist_ok=True)

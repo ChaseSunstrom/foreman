@@ -338,6 +338,33 @@ class Long(ForemanTestCase):
         self.assertEqual(len(self.go("plain", limit=1)["answered"]), 1)
         self.assertEqual(len(self.calls()), 1)
 
+    def test_jobs_runs_goals_at_once_and_writes_the_same_answers_as_one_job(self):  # T-2292
+        self.stub()
+        write(os.path.join(self.tmp, "bin"), "claude", SLOW)
+        res = {}
+        for jobs in (1, 2):
+            open(self.log + ".t", "w").close()
+            res[jobs] = self.go("plain", limit=2, jobs=jobs)
+            spans = [json.loads(x) for x in open(self.log + ".t")]
+            self.assertEqual(len(spans), 2)
+            self.assertEqual(max(s[0] for s in spans) < min(s[1] for s in spans), jobs == 2)  # started before the other ended
+            self.assertEqual(sorted(res[jobs]["answered"]), ["T-1001", "T-1003"])
+            self.assertEqual(len(self.faults("plain", "T-1003")), 0)
+        self.assertEqual(res[1]["errors"], res[2]["errors"])
+        self.assertEqual(self.fmlong.grade(self.p, self.run_id, "plain")["scenarios"], 2)
+
+    def test_jobs_checks_the_budget_for_the_goals_in_flight_too(self):  # T-2292
+        import fmbudget
+        from unittest import mock
+        self.stub()
+        write(os.path.join(self.tmp, "bin"), "claude", SLOW)
+        seen = []
+        with mock.patch.object(fmbudget, "check", lambda f, est, hint="": seen.append(round(est, 2))), \
+                mock.patch.object(fmbudget, "estimate", lambda f, n, fb=0.5: n * fb):
+            self.go("plain", limit=2, jobs=2)
+        self.assertEqual(seen[0], 1.0)  # up front: both goals
+        self.assertEqual(sorted(seen[1:]), [0.5, 1.0])  # the second goal to start sees the first still running
+
     def test_spend_is_checked_before_each_goal_and_doubles_for_a_resuming_fault(self):
         import fmbudget
         self.stub()
@@ -401,6 +428,14 @@ class Long(ForemanTestCase):
         self.assertEqual(json.loads(r.stdout)["agent"], "plain")
 
 
+SLOW = '''#!/usr/bin/env python3
+import json, os, time
+t0 = time.time()
+time.sleep(0.6)
+with open(os.environ["STUB_LOG"] + ".t", "a") as f:
+    f.write(json.dumps([t0, time.time()]) + "\\n")
+print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.1, "result": "done", "session_id": "s-1"}))
+'''
 STUB = r'''#!/usr/bin/env python3
 import json, os, sys, time
 argv = sys.argv[1:]

@@ -362,9 +362,13 @@ class ExamGen(ForemanTestCase):
 
 
 STUB = r'''#!/usr/bin/env python3
-import json, os, re, sys
+import json, os, re, sys, time
 argv = sys.argv[1:]
 if "--permission-mode" in argv:  # a session arm: it answers in its reply and changes nothing
+    t0 = time.time()
+    time.sleep(float(os.environ.get("STUB_SLEEP", 0)))
+    with open(os.environ["STUB_LOG"] + ".t", "a") as f:
+        f.write(json.dumps([t0, time.time()]) + "\n")
     with open(os.environ["STUB_LOG"], "a") as f:
         f.write(("plugin" if "--plugin-dir" in argv else "bare") + "\n")
     with open(os.environ["STUB_LOG"] + ".cwd", "a") as f:
@@ -750,6 +754,21 @@ class ExamAuthors(ForemanTestCase):
         self.fm_json("exam", "run", run, "--agent", "plain", "--split", "holdout", "--limit", "1", "--budget", "1",
                      env=self.env)
         self.assertEqual(read_text(self.log + ".budget").split()[-1], "1")  # a cap the run names still holds
+
+    def test_jobs_runs_session_scenarios_at_once_and_grades_like_one_job(self):  # T-2292
+        run = self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "3", "--lang", "python", "--kind", "bug")["run"]
+        env, got = dict(self.env, STUB_SLEEP="0.6"), {}
+        for jobs in ("1", "2"):
+            open(self.log + ".t", "w").close()
+            got[jobs] = self.fm_json("exam", "run", run, "--agent", "plain", "--limit", "2", "--jobs", jobs, env=env)
+            spans = [json.loads(x) for x in read_text(self.log + ".t").splitlines()]
+            self.assertEqual(len(spans), 2)
+            self.assertEqual(max(s[0] for s in spans) < min(s[1] for s in spans), jobs == "2")
+        keep = ("scenarios", "found", "false_alarms", "fixed", "keyed")
+        self.assertEqual({k: got["1"][k] for k in keep}, {k: got["2"][k] for k in keep})
+        self.assertAlmostEqual(got["2"]["cost"], 0.5)
+        r = self.fm("exam", "run", run, "--agent", "plain", "--jobs", "0", env=env, check=False)
+        self.assertIn("--jobs", r.stderr)  # a count under 1 is refused before any session
 
     def test_a_reply_with_no_findings_object_gets_one_more_turn_for_it(self):
         run = self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "3", "--lang", "python", "--kind", "bug")["run"]

@@ -6,6 +6,7 @@ Local history only: nothing is cloned or fetched, and a repo's tests run only in
 copy, by a runner outside the tree that loads each hidden test by its path (an answer can't shadow the stdlib or a
 test module)."""
 import ast
+import concurrent.futures
 import json
 import os
 import random
@@ -389,8 +390,10 @@ def _goal_session(agent, base, key, work, model, budget, timeout, faults):
     return cost, err, log, info
 
 
-def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=None):
+def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=None, jobs=1):
     _agent(agent)
+    import fmexam
+    jobs = fmexam._jobs(jobs)
     bad = [f for f in faults if f not in FAULTS]
     if bad or (faults and agent not in SESSIONS):
         raise ValueError(f"--faults {', '.join(FAULTS)} go with a session agent ({', '.join(SESSIONS)}), not "
@@ -409,18 +412,23 @@ def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=N
             shutil.rmtree(d, ignore_errors=True)  # this run's, not a rerun's
         c.write_atomic(_stamp(p, run, agent), c.plain(model or "default")[:60])
     errors = {}
-    for s in picked:
+
+    def session(s):
         key, work = _key(p, run, s["id"]), _work(p, run, agent, s["id"])
         shutil.rmtree(work, ignore_errors=True)
-        if agent in SESSIONS:
-            fmbudget.check("exam-arm", est(1), "a smaller --limit")  # the day's spend may have moved since the last goal
+        with fmbudget.reserve("exam-arm", est(1), "a smaller --limit"):  # the day's spend may have moved since the last goal
             cost, err, log, info = _goal_session(agent, os.path.join(_root(p), run, s["id"]), key, work, model, budget, timeout, faults)
             fmbudget.record("exam-arm", cost, project=p.slug, detail=f"long {agent} {s['id']}")
-            c.write_atomic(os.path.join(_root(p), run, "faults", agent, s["id"] + ".json"), json.dumps(log, indent=1))
-            c.write_atomic(os.path.join(_root(p), run, "faults", agent, s["id"] + ".run.json"), json.dumps(info, indent=1))
-            if err:
-                errors[s["id"]] = c.fit(c.plain(str(err)), 200)
-            continue
+        c.write_atomic(os.path.join(_root(p), run, "faults", agent, s["id"] + ".json"), json.dumps(log, indent=1))
+        c.write_atomic(os.path.join(_root(p), run, "faults", agent, s["id"] + ".run.json"), json.dumps(info, indent=1))
+        if err:
+            errors[s["id"]] = c.fit(c.plain(str(err)), 200)
+    if agent in SESSIONS:  # T-2292: up to `jobs` goals at once, each in its own temp copy; the files written are per goal
+        with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
+            list(pool.map(session, picked))
+    for s in () if agent in SESSIONS else picked:
+        key, work = _key(p, run, s["id"]), _work(p, run, agent, s["id"])
+        shutil.rmtree(work, ignore_errors=True)
         shutil.copytree(os.path.join(_root(p), run, s["id"], "repo"), work, ignore=shutil.ignore_patterns(".git"))
         if agent == "oracle":
             _overlay(work, key["src"], key["target"], key["files"])
@@ -519,7 +527,7 @@ def cmd(p, args):
     if verb in ("run", "grade") and rest:
         agent = args.agent or "oracle"
         faults = [f for f in (args.faults or "").split(",") if f]
-        r = (run(p, rest[0], agent, args.model, args.budget, args.timeout, faults, args.limit) if verb == "run" else grade(p, rest[0], agent))
+        r = (run(p, rest[0], agent, args.model, args.budget, args.timeout, faults, args.limit, args.jobs) if verb == "run" else grade(p, rest[0], agent))
         text = (f"{agent} answered {len(r['answered'])} goal(s) of {rest[0]}" if verb == "run" else
                 f"{agent} {rest[0]}: {r['true_done']}/{r['scenarios']} true done, {r['regressions']} regressions")
         return fmcli.out(args, r, text)
