@@ -67,6 +67,24 @@ class Robustness(ForemanTestCase):
                     out[os.path.relpath(os.path.join(root, n), self.p.dir)] = hashlib.sha1(data).hexdigest()
         return out
 
+    def test_the_brief_caches_do_not_depend_on_when_a_load_runs(self):
+        """T-2324: a closed brief written moments ago is indexed the same as one written long ago."""
+        self.fm("task", "drop", "T-0001", "--reason", "no")  # closed, written this second
+        keys = [os.path.join(self.p.dir, n) for n in ("briefs-closed.json", "briefs-index.json")]
+        for k in keys:
+            if os.path.exists(k):
+                os.remove(k)
+        c.load_briefs(self.p)
+        first = [open(k, "rb").read() for k in keys]
+        self.assertIn(b"T-0001", first[0])
+        real = c.time.time
+        c.time.time = lambda: real() + 30  # a later load, as under load or a second run
+        try:
+            c.load_briefs(self.p)
+        finally:
+            c.time.time = real
+        self.assertEqual([open(k, "rb").read() for k in keys], first)
+
     def test_a_mutating_verb_run_twice_changes_nothing_the_second_time(self):
         self.fm("capture", "Spare idea")
         self.assertIn("near-duplicate", self.fm("capture", "Spare idea", check=False).stderr)  # the same text is one item
