@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Guard: `fm mandate set` and `fm mandate off` are the user's to run, so a session can no longer end, overwrite or renew the standing mandate (T-2252).
+- The website stays current: genesis publish refreshes the homepage's own-record stats once a day, and the Genesis page's long-horizon card shows hidden checks passed per arm, breaking a true-done tie on them (T-2326).
 - `fm exam long` keeps each session goal's activity summary (tool calls, fm verbs, turns, Foreman event counts, the fitted done claim), and grade shows it with a "where the time went" line, so a slow or false-done arm says why (T-2325).
 - A closed brief written in the last 2 seconds is indexed at once, so a second `fm checkpoint` no longer rewrites briefs-index.json and briefs-closed.json (T-2324).
 - `fm ship` runs fm check's affected tests over its range in the scratch tree before the full suite; a red one stops the ship in minutes with the failing classes named (T-2323).
