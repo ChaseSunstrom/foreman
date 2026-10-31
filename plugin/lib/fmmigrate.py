@@ -411,10 +411,17 @@ class Pg:
             shutil.rmtree(self.sock, ignore_errors=True)
 
 
+def _pg_dirs():
+    """The Postgres bin folders off PATH, newest first: PG_DIRS, or FOREMAN_PG_DIRS's glob (T-2439: a test hides the
+    runner's own cluster with it)."""
+    return sorted(glob.glob(os.environ.get("FOREMAN_PG_DIRS") or PG_DIRS),
+                  key=lambda d: [int(t) if t.isdigit() else 0 for t in re.split(r"(\d+)", d)], reverse=True)
+
+
 def _pg_bins(env, root):
     """({tool: path}, '') when a throwaway Postgres can run here, else ({}, why not): on PATH, else the newest under PG_DIRS."""
     import fminfra
-    dirs = sorted(glob.glob(PG_DIRS), key=lambda d: [int(t) if t.isdigit() else 0 for t in re.split(r"(\d+)", d)], reverse=True)
+    dirs = _pg_dirs()
 
     def find(n):
         for d in dirs:
