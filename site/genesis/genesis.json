@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-31T06:07:04Z",
- "rev": "f03acae6",
+ "updated": "2026-10-31T06:54:47Z",
+ "rev": "c824fc38",
  "capabilities": [
   {
    "n": 1,
@@ -398,12 +398,12 @@
       {
        "id": "T-2185",
        "title": "Initiative detection ladder (steer 2026-10-30 #4, capability #1): fm find stays the free…",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "L",
        "steps": 7,
-       "done": 0,
-       "current": "red tests for every rung, the consent gate and the per-language/per-kind recall"
+       "done": 7,
+       "current": ""
       }
      ]
     },
@@ -727,22 +727,22 @@
       {
        "id": "T-2144",
        "title": "Goal remaining distance as one number on the statusline and terminal title (Mission 4…",
-       "status": "captured",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
-       "steps": 0,
+       "steps": 3,
        "done": 0,
-       "current": ""
+       "current": "red tests: goal D/N in state.line and the title; no goal unchanged; a broken goal unchanged"
       },
       {
        "id": "T-2145",
        "title": "Estimate a goal's time to finish from its items' history (Mission 4 inbox)",
-       "status": "captured",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
-       "steps": 0,
+       "steps": 3,
        "done": 0,
-       "current": ""
+       "current": "red tests from seeded items, links and closes: estimate, range, too-few case, json"
       }
      ]
     },
@@ -4666,7 +4666,7 @@
  },
  "not_yet": 0,
  "not_yet_open": 0,
- "unproven": 347,
+ "unproven": 350,
  "next": {
   "stage": "critique",
   "gen": 1,
