@@ -34,6 +34,14 @@ def _head(p, rev="HEAD"):
 PUBLIC_POLL = 75  # GitHub allows 60 unauthenticated calls an hour: a poll each 75 s leaves room for a brief's calls
 
 
+class RateLimited(Exception):
+    """T-2156: the public API's hourly limit is spent; `reset` is the epoch second it refills."""
+
+    def __init__(self, reset):
+        super().__init__(f"GitHub's hourly limit is spent until {reset}")
+        self.reset = reset
+
+
 def _api(p, path, gh_error):
     """T-1939: GitHub's public API when gh is missing or logged out (a public repo needs no token, so none is sent and
     the host is fixed). Raises gh's error when there's no github.com origin or the network is off; None on a failed
@@ -52,6 +60,9 @@ def _api(p, path, gh_error):
         with urllib.request.urlopen(req, timeout=20) as r:
             return json.load(r)
     except urllib.error.HTTPError as err:
+        h = err.headers or {}
+        if err.code == 403 and str(h.get("X-RateLimit-Remaining")) == "0" and str(h.get("X-RateLimit-Reset", "")).isdigit():
+            raise RateLimited(int(h["X-RateLimit-Reset"])) from err  # T-2156: wait for it, don't stop
         if err.code in (401, 403, 404):  # a private repo or the hourly limit: say so now, not after an hour of polls
             raise UsageError(f"{gh_error}; GitHub's public API answered {err.code} (a private repo, or its hourly limit)") from err
         return None
@@ -99,7 +110,7 @@ def _jobs(p, run):
             jobs = json.loads(_gh(p, "run", "view", str(run["databaseId"]), "--json", "jobs")).get("jobs")
         except UsageError as e:
             jobs = (_api(p, f"actions/runs/{run['databaseId']}/jobs", e) or {}).get("jobs")
-    except (UsageError, ValueError, AttributeError):
+    except (UsageError, ValueError, AttributeError, RateLimited):  # a spent limit: the next poll waits for it
         return []
     return [j for j in (jobs if isinstance(jobs, list) else []) if isinstance(j, dict)]
 
@@ -125,13 +136,16 @@ def _brief(p, run, branch):
     try:
         tail, what = _gh(p, "run", "view", str(run["databaseId"]), "--log-failed"), "log tail"
     except UsageError as e:  # T-1939: logs need a token; the failed jobs' annotations don't, and name the failing line
-        jobs = _api(p, f"actions/runs/{run['databaseId']}/jobs", e)
         tail, what = "", "failed jobs' annotations"
-        for j in (jobs.get("jobs") or [] if isinstance(jobs, dict) else [])[:20]:
-            if isinstance(j, dict) and isinstance(j.get("id"), int) and j.get("conclusion") in ("failure", "timed_out"):
-                notes = _api(p, f"check-runs/{j['id']}/annotations", e)
-                tail += "".join(f"{a.get('path')}:{a.get('start_line')} {a.get('message')}\n"
-                                for a in (notes if isinstance(notes, list) else []) if isinstance(a, dict))
+        try:
+            jobs = _api(p, f"actions/runs/{run['databaseId']}/jobs", e)
+            for j in (jobs.get("jobs") or [] if isinstance(jobs, dict) else [])[:20]:
+                if isinstance(j, dict) and isinstance(j.get("id"), int) and j.get("conclusion") in ("failure", "timed_out"):
+                    notes = _api(p, f"check-runs/{j['id']}/annotations", e)
+                    tail += "".join(f"{a.get('path')}:{a.get('start_line')} {a.get('message')}\n"
+                                    for a in (notes if isinstance(notes, list) else []) if isinstance(a, dict))
+        except RateLimited:  # the brief still files, saying where to look
+            pass
         tail = tail or "no annotations readable: open the run for its log"
     tail = c.plain_lines(tail)[-4000:]
     tail = "\n".join(tail.strip().splitlines()[-40:])
@@ -142,12 +156,50 @@ def _brief(p, run, branch):
     return capture_once(p, text, "FIX", "ci", key=f"CONTEXT: {url}, ")
 
 
+def _lock_path(p):
+    import fmforesight
+    import hashlib
+    key = fmforesight.github_repo(p.root) or p.root
+    return os.path.join(c.state_dir(), "ci-watch-" + hashlib.sha1(str(key).encode()).hexdigest()[:16] + ".lock")
+
+
 def watch(p, branch, retries, interval, max_polls=120, say=print, commit=None):
+    """T-2156: one watch per repo polls (they'd split GitHub's 60 calls an hour): a second waits on the repo's lock."""
+    import fcntl
+    os.makedirs(c.state_dir(), exist_ok=True)
+    with open(_lock_path(p), "a") as lk:
+        told = False
+        while True:
+            try:
+                fcntl.flock(lk, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if not told:
+                    say("another fm ci-watch already holds this repo's poll budget: waiting for it to finish", flush=True)
+                    told = True
+                time.sleep(10)
+        return _poll(p, branch, retries, interval, max_polls, say, commit)
+
+
+MAX_RESET_WAIT = 3700  # an hour and a bit: a wild reset header never parks a watch for days
+
+
+def _poll(p, branch, retries, interval, max_polls, say, commit):
     """(code, message): 0 once a run is green; 1 after more than `retries` failed runs or `max_polls` polls."""
+    from datetime import datetime
     seen, fails, via = set(), 0, set()
     say(f"watching {(commit or _head(p))[:7]} on {branch or 'this branch'}, up to {max_polls} polls", flush=True)
-    for _ in range(max_polls):
-        run = _latest(p, branch, commit or _head(p), via)  # a pushed fix moves HEAD: follow it unless --commit pins one
+    polls = 0
+    while polls < max_polls:
+        try:
+            run = _latest(p, branch, commit or _head(p), via)  # a pushed fix moves HEAD: follow it unless --commit pins one
+        except RateLimited as e:  # T-2156: say so, wait for the refill; the wait isn't a poll
+            wait = min(max(e.reset - time.time(), 0) + 2, MAX_RESET_WAIT)
+            say(f"GitHub's hourly limit (60 unauthenticated calls) is spent: it resets at "
+                f"{datetime.fromtimestamp(e.reset).strftime('%H:%M')}; waiting {int(wait // 60)} min then polling again", flush=True)
+            time.sleep(wait)
+            continue
+        polls += 1
         key = run and (run["databaseId"], run.get("attempt"))  # a rerun keeps the id and bumps the attempt
         if run and run.get("status") == "completed" and key not in seen:
             seen.add(key)
