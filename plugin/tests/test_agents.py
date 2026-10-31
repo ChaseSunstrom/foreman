@@ -140,6 +140,27 @@ class Hook(ForemanTestCase):
                                                         "tool_input": {"command": "rm -rf ~"}})
             self.assertEqual(p.returncode, 2, name)
 
+    def test_a_missing_tool_in_an_agents_after_tool_event_is_a_capability_miss(self):  # T-2378: #5 on other agents
+        import fmcore as c
+        tid = self.focus()
+        shapes = {"codex": ("PostToolUse", {"tool_name": "shell", "tool_input": {"command": ["bash", "-lc", "q8tool x"]},
+                                            "tool_response": {"stdout": "", "stderr": "bash: q8tool: command not found"}}),
+                  "gemini": ("AfterTool", {"tool_name": "run_shell_command", "tool_input": {"command": "q8tool x"},
+                                           "tool_response": "bash: q8tool: command not found"}),
+                  "opencode": ("PostToolUse", {"tool": "bash", "args": {"command": "q8tool x"},
+                                               "output": "bash: q8tool: command not found"})}
+        for agent, (event, pl) in shapes.items():
+            with self.subTest(agent=agent):
+                p = self.agent_hook(agent, event, dict(pl, session_id=f"{agent}-9", cwd=self.repo))
+                self.assertEqual(p.returncode, 0, p.stderr)
+                self.assertIn("`q8tool` is missing", p.stdout)
+        proj = c.find_project(self.repo)
+        got = [e for e in c.ledger_events(proj, ("capability_miss",)) if (e.get("data") or {}).get("name") == "q8tool"]
+        self.assertEqual({e["task"] for e in got}, {tid})
+        ok = self.agent_hook("codex", "PostToolUse", {"session_id": "codex-9", "cwd": self.repo, "tool_name": "shell",
+                                                      "tool_input": {"command": ["ls"]}, "tool_response": {"stdout": "a"}})
+        self.assertNotIn("is missing", ok.stdout)
+
     def test_unknown_agent_fails_closed_on_tool_events_only(self):
         p = self.agent_hook("nope", "PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "ls"}})
         self.assertEqual(p.returncode, 2)
@@ -307,3 +328,5 @@ class Judgment(ForemanTestCase):
             self.assertIn(word, line)
         self.assertLessEqual(len(line), 192)  # the plan line before T-2344: rewritten in place, not added to
         self.assertEqual(len(text.splitlines()), 7)  # and no new line (the block's paths vary by install, so not chars)
+        self.assertIn("`fm which X`", text)  # T-2378: #5's line, for a host with no after-tool event to route
+        self.assertIn("fm ask ID plugin --later", text)

@@ -700,6 +700,10 @@ def _signals(sd, d, p=None):
     gv = (fmmandate.fresh_verdict(p) if p else None) or {}  # T-2141: the stored verdict only, no check runs here
     if gv.get("verdict") == "stopped":
         out.append({"level": "amber", "text": c.plain(f"goal stopped: {c.fit(str((gv.get('causes') or ['no cause stored'])[0]), 100)}")})
+    import fmgrants  # T-2378: install grants waiting on the user (a brief scan, kept like the others)
+    grants = _kept(p, "grants-line.json", lambda: fmgrants.line(p)) if p else ""
+    if grants:
+        out.append({"level": "amber", "text": c.plain(grants)[:200]})
     import fmoutcomes  # T-2344: parked doors and a Brier worse than the base rate; outcomes() is slow, so kept
     judged = _kept(p, "judgment-line.json", lambda: fmoutcomes.band_line(p)) if p else ""
     if judged:

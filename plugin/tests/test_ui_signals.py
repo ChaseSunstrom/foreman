@@ -86,6 +86,19 @@ class GoalSignal(Base):
         self.assertEqual(goal(), [])
 
 
+class GrantSignal(Base):  # T-2378: the band shows queued install grants while any wait on the user
+    def test_a_queued_grant_shows_one_band_line_naming_the_task(self):
+        import fmgrants
+        self.assertEqual([x for x in self.ui()["signals"] if "grant request" in x["text"]], [])
+        r = self.fm_json("task", "new", "Tables", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        import os
+        os.unlink(os.path.join(self.p.dir, "grants-line.json"))  # the empty answer was kept a while: start fresh
+        fmgrants.queue(self.p, r["id"], ["plugin"], "needs a table printer", what="tabulate")
+        sig = [x for x in self.ui()["signals"] if "grant request" in x["text"]]
+        self.assertEqual(len(sig), 1, sig)
+        self.assertIn(f"{r['id']} tabulate", sig[0]["text"])
+
+
 class JudgmentSignal(Base):  # T-2344: one band line only when judgment needs the user
     def judged(self):
         return [x for x in self.ui()["signals"] if x["text"].startswith("judgment:")]

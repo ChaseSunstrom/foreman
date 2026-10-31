@@ -113,6 +113,14 @@ def _judgment(s):
                                                 "outcomes, and the ledger needs 20 before it moves a bar.</p>")
 
 
+def _lacks(s):
+    """T-2378: #5 from the ledger (site/stats.py's tools block): misses met, searches, tools proved, grants asked."""
+    t = s.get("tools") or {}
+    return tiles([("tools found missing", t.get("misses", 0)), ("misses resolved by a run", t.get("resolved", 0)),
+                  ("shelf searches", t.get("searches", 0)), ("tools built and proved", t.get("proved", 0)),
+                  ("installs asked of you", t.get("queued", 0)), ("installs you said no to", t.get("refused", 0))])
+
+
 def _types(s):
     return hbars("Closed tasks by type", None, sorted(s["types"].items(), key=lambda kv: -kv[1]))
 
@@ -452,6 +460,24 @@ PAGES = [
           "<code>calibration</code> tool (Claude Desktop, other agents) reads the same record without changing it, "
           "and the band shows one line only when a door is parked or the numbers lose to the base rate.</p>"),
          ("chart", _judgment)]},
+    {"slug": "lacks", "nav": "Getting tools", "title": "It gets the tools it lacks, and asks before it installs",  # T-2378
+     "desc": "A missing tool is noticed, found on a shelf or built and proved, and an install waits for your yes.",
+     "lede": "When the work needs something that isn't there, Foreman says so on the spot, looks on every shelf it has, "
+             "builds what's missing with a test, and queues an install for you instead of granting it to itself.",
+     "blocks": [
+         ("text", "Noticed where it happens", "<p>A command that fails because a tool is missing gets a note right "
+          "there: what's already here, <code>fm which</code> to look on every shelf, or <code>fm new tool</code> to "
+          "build it. The miss belongs to the task: it can't finish until a run gets past it. The same note reaches "
+          "<code>fm code</code> on any model and Codex, Gemini CLI and opencode, whose after-tool events go through "
+          "the same check.</p>"),
+         ("text", "Found, built, proved", "<p><code>fm which</code> searches past fixes, the project's own tools, MCP "
+          "servers, binaries, skills, playbooks, fm commands, stack cards and plugins, best first. A tool Foreman "
+          "builds counts only once runs prove it.</p>"),
+         ("text", "Installs wait for you", "<p>An install is never self-granted. <code>fm ask ID plugin --later</code> "
+          "queues it with the miss behind it, what was searched and what the work does meanwhile; it never expires, "
+          "and a no is remembered. The band shows the queue while it waits, and the MCP <code>which</code> and "
+          "<code>grants</code> tools read the same record from Claude Desktop or another agent, changing nothing.</p>"),
+         ("chart", _lacks)]},
     {"slug": "proof", "nav": "Proof", "title": "Nothing is done until a command proves it",
      "desc": "Evidence is a command Foreman ran and recorded; a fix needs a test that failed first.",
      "lede": "Saying the tests pass is not evidence. Foreman records the real command, its exit code and its output, "
