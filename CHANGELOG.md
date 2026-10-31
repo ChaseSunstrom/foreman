@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm find` gives the same dependency findings on every machine (a fixed import-to-package table instead of the host's installed packages), a quote mark inside a Python string, comment or multi-line f-string no longer hides later functions from the untested finder, `fm prove` cuts each test run at its deadline, and a cold re-find says it is a re-find by the same check, not an outside proof.
 - `fm genesis put`'s cold reader can quote across lines (it writes the line break as a literal \n): each piece of the quote must name a line, and the finding lands on the last one, so a quote spanning a heading and a bullet is no longer refused as a line the file doesn't hold.
 - `fm find` now reads tracked files in hidden folders such as `.github/workflows` (untracked hidden folders are still skipped) and never reads a file through a symlinked folder. `fm find --capture` and `fm prove --capture` keep at most 5 of their tasks open at once, quoted repo text that reads like instructions is marked as data, and a rejected `fm prove --yes-run` call no longer remembers your yes.
 - `fm exam` now reports how many planted defects each arm found per language and per defect kind (overall and held out), not just one total, so a finder that's blind in one language or to one kind of bug shows up.
