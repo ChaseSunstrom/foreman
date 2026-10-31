@@ -1378,11 +1378,8 @@ def user_prompt_submit(pl):
             prompts = _load_list(_prompts_path(p))  # a dialog still open when the user speaks was refused or ignored
             if any(a.get("session") == sid for a in prompts):
                 c.write_atomic(_prompts_path(p), json.dumps([a for a in prompts if a.get("session") != sid]))
-                import fmgrants  # T-2374: a dialog for a queued request that went unanswered is a no
-                for a in prompts:
-                    nb = c.find_brief(p, a["task"]) if a.get("session") == sid and isinstance(a.get("task"), str) else None
-                    if nb and isinstance(a.get("allow"), list):
-                        fmgrants.refuse(p, nb, a["allow"], a.get("pin"), session=sid)
+                # T-2374 review: an unanswered dialog is not a no; its queued request stays queued (only an explicit no
+                # is remembered, so one missed dialog never suppresses a request for good)
             meta["session"] = {"id": sid, "seen": c.now(), "pid": _claude_pid()}  # T-0841: whose process it is
             if (meta.get("resume_after_reload") or {}).get("session") == sid:
                 meta.pop("resume_after_reload")  # T-0145: the reloaded mod's prompt (or the user's) resumed it

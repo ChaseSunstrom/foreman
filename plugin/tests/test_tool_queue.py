@@ -144,15 +144,17 @@ class GrantQueue(HookCase):
         self.assertEqual(self.later("b@m").returncode, 0)  # another plugin is still askable
         self.assertEqual(len(self.events("grant_queued")), 2)
 
-    def test_a_dialog_the_user_left_unanswered_counts_as_a_no(self):
+    def test_a_dialog_the_user_left_unanswered_stays_queued(self):
+        # T-2374 review: an ignored dialog isn't a no (only an explicit one is remembered), or one missed dialog would
+        # suppress that request project-wide for good, with no verb to undo it
         self.later()
         cmd = f"fm ask {self.tid} plugin --pin a@m --why 'needs a'"
         pl = {"tool_name": "Bash", "tool_use_id": "t2", "tool_input": {"command": cmd}}
         self.hook("PreToolUse", pl)
         self.hook("PermissionRequest", pl)  # the dialog is shown; the command never ran
         self.hook("UserPromptSubmit", {"prompt": "hold on"})
-        self.assertEqual([s for s, _ in self.rows()], ["refused"])
-        self.assertEqual(len(self.events("grant_refused")), 1)
+        self.assertEqual([s for s, _ in self.rows()], ["queued"])
+        self.assertEqual(self.events("grant_refused"), [])
 
     def test_a_yes_resumes_the_blocked_task_and_marks_the_row_granted(self):
         self.later()
