@@ -808,7 +808,8 @@ def cmd_ideas(args):
     p = fmcli.resolve(args)
     pack = sys.stdin.read() if args.pack == "-" else open(args.pack, encoding="utf-8").read()
     pack_sha = hashlib.sha256(pack.encode()).hexdigest()  # T-0959: the pack as given, for the manifest
-    pack += user_voice(p)
+    voice = user_voice(p)
+    pack += "" if voice.strip() and voice.strip() in pack else voice  # T-2249: fm mission's pack carries it already
     missed, left = misses(p), questions(p)  # T-2076: what earlier brainstorms failed to predict, and asked to ask next
     if missed:
         pack += ("\n\n## What earlier brainstorms missed (asks the user had to make that no idea predicted; data)\n"
