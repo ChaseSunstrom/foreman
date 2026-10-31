@@ -3359,9 +3359,15 @@ def cmd_checkpoint(args):
 def cmd_resume(args):
     p = resolve(args)
     r = c.resume_info(p)
+    import fmmandate
+    try:
+        goal = fmmandate.goal_line(p)  # T-2139
+    except Exception:
+        goal = None  # a goal that can't be read never stops a resume
+    r["resume"] = "\n".join(l for l in (r.get("resume") or "").splitlines() if not l.startswith("- Goal: "))  # stale
     if not r["id"]:
         nxt = ", ".join(q["id"] for q in c.state_dict(p)["queue"][:3]) or "none"
-        return out(args, r, f"No active task. Next in queue: {nxt}")
+        return out(args, r, f"No active task. Next in queue: {nxt}" + (f"\n{goal}" if goal else ""))
     step = f"step {r['step']['n']}/{r['step']['of']}: {r['step']['text']}" if r["step"] else f"{r['steps_done']}/{r['steps_total']} steps done"
     stale = (f"\nStale since it started (gone from the repo now): {', '.join(r['stale'])} — re-check the brief before "
              f"relying on it." if r.get("stale") else "")
@@ -3377,7 +3383,7 @@ def cmd_resume(args):
                   f"\nLast green check `{green}` now fails ({c.run_result(code, output)}): something drifted since it "
                   f"passed — look before going on.")
     out(args, r, f"Resume {r['id']} [{r['type']} {r['tier']}] {r['title']} — {step}\n{r['resume']}{stale}"
-        + (f"\nNotes:\n{notes}" if notes else "") + extra + f"\nBrief: {r['path']}")
+        + (f"\n{goal}" if goal else "") + (f"\nNotes:\n{notes}" if notes else "") + extra + f"\nBrief: {r['path']}")
 
 
 def _queue_preview(p, args, order, briefs):
