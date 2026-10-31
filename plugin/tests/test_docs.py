@@ -320,6 +320,13 @@ class Agents(unittest.TestCase):
                 self.assertTrue(tools <= allowed, tools - allowed)
                 self.assertIn("400 words", body)
 
+    def test_builders_get_a_scratch_folder_inside_their_worktree(self):
+        # T-2259: told to write a batch file with nowhere named, builders picked /tmp and the isolation refused it
+        _, body = frontmatter(os.path.join(PLUGIN, "agents", "fm-builder.md"))
+        self.assertIn(".fm-scratch/", body)
+        with open(os.path.join(os.path.dirname(PLUGIN), ".gitignore")) as f:
+            self.assertIn(".fm-scratch/", f.read().split())
+
 
 class PluginConflicts(unittest.TestCase):
     def test_setup_plugins_and_fm_plugins_share_one_curated_conflict_list(self):
