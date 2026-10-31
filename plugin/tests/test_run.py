@@ -159,6 +159,23 @@ class UnknownNames(unittest.TestCase):
     def test_names_that_all_match_still_pass(self):
         self.assertEqual(self.run_py("test_run.Args").returncode, 0)
 
+    def test_a_red_runs_last_line_names_the_failing_class(self):
+        # T-2319: 'FAILED (1 classes)' alone sent a builder into a full re-run to learn which class failed
+        import subprocess
+        r = subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "run.py"), "test_run.AskedToFail"],
+                           capture_output=True, text=True, timeout=300, env=dict(os.environ, FM_RUN_ASKED_TO_FAIL="1"))
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertEqual(r.stderr.strip().splitlines()[-1], "FAILED (1 classes: test_run.AskedToFail)")
+
+
+class AskedToFail(unittest.TestCase):
+    """Fails only when test_a_red_runs_last_line_names_the_failing_class asks it to, through the environment."""
+
+    def test_fails_when_asked(self):
+        if os.environ.get("FM_RUN_ASKED_TO_FAIL") != "1":
+            self.skipTest("fails only inside the summary test")
+        self.fail("asked to fail")
+
 
 class Tmp(unittest.TestCase):
     """T-2019: classes leaked 45k temp dirs, some with 68k files, until /tmp ran out of inodes and git failed."""

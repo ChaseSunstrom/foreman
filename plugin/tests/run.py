@@ -237,8 +237,10 @@ def main():
     slow = slowest(results, 3)
     if skipped():
         sys.stderr.write(f"\nleft out (FOREMAN_SKIP_TESTS): {', '.join(sorted(skipped()))}")
+    names = [r[0] for r in failed]  # T-2319: the last line says which classes, since tails cut the ==== blocks above
+    said = ", ".join(names[:5]) + (f", +{len(names) - 5} more" if len(names) > 5 else "")
     sys.stderr.write(f"\nRan {total} tests in {time.time() - t0:.1f}s ({len(todo)} classes, {a.j} at a time; "
-                     f"slowest: {slow})\n\n{'FAILED (' + str(len(failed)) + ' classes)' if failed else 'OK' if total else 'NO TESTS RAN'}\n")
+                     f"slowest: {slow})\n\n{f'FAILED ({len(failed)} classes: {said})' if failed else 'OK' if total else 'NO TESTS RAN'}\n")
     return 1 if failed or not total else 0
 
 

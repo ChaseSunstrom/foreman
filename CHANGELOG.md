@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- run.py's last line names the failing classes ("FAILED (2 classes: test_x.A, test_y.B)", up to 5, then +N more), so a red run says what failed even through a tail (T-2319).
 - `fm lane merge` and `fm audit prep` name every function a branch changes (git's hunk context plus the hunk's own definitions, secrets redacted), so a stray edit stands out (T-2312).
 - A batch host held by a builder lane keeps its members out of the main inbox, so the drive no longer offers them as new work (T-2317).
 - Tests: in-process speed and complexity bars (design lint and tokens, find rank, library suggest, brief regex, cost bisect, scene render, lint_verify) time CPU with `time.process_time`; deadline, timeout and child-process bars keep the wall clock and name their deadline in a comment (T-2310).
