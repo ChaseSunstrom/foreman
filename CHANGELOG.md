@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm doctor` times each check: every result carries its wall ms (null when unmeasured), the hook benchmark is charged to hook latency, `--json` adds the three slowest and `-v` prints them, so a slower doctor names its cause (T-2279).
 - `fm ci-watch` backs off to GitHub's rate-limit reset (naming the limit and its HH:MM reset, without counting the wait as a poll, giving up after 3 waits) and holds one public-API watch per repo, so several watches don't split the hourly budget (T-2156).
 - fm-builder.md tells builders to create `.fm-scratch/` files (an fm edit batch, notes, drafts) with the Write tool and names heredocs and `cat >` as refused there; test_builder asserts it (T-2294).
 - `fm mcp register desktop` prints the `mcpServers` stanza for Claude Desktop's config (fm by absolute path, the project by `-p`), so Desktop reaches Foreman's `find` tool and the rest of its MCP server (T-2232).
