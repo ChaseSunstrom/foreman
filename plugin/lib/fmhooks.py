@@ -3179,6 +3179,31 @@ def _runner_evidence(pl, p, act, cmd):
                     session=pl.get("session_id"))
 
 
+_MISSING = c.lazy(r"(?m)command not found: (\S+)|(\S+): command not found|No module named '?([^\s']+)|"
+                  r"Cannot find module '?([^\s']+)")  # keep in step with fmcli._ENV_FAILURES
+
+
+def _capability_miss(p, sid, err):
+    """T-2270: a missing tool names the find-or-build path once per session; a second session that misses it captures
+    one FEATURE task. Ledger only: no network, no plugin search. The name is untrusted: a plain tool name or nothing."""
+    m = _MISSING.search(err[-4000:])
+    name = next((x for x in m.groups() if x), "") if m else ""
+    if not re.fullmatch(r"[A-Za-z0-9_.+-]{1,64}", name):
+        return None
+    seen = {e.get("session_id") for e in c.ledger_tail(p, 1500)
+            if e.get("event") == "capability_miss" and (e.get("data") or {}).get("name") == name}
+    if sid in seen:
+        return None
+    c.log_event(p, "capability_miss", data={"name": name}, session=sid)
+    if seen:  # a second session: one task, ever (the key line)
+        import fmeco
+        fmeco.capture_once(p, f"Missing tool {name}: find it (fm plugins find {name}) or build it (script + test)\n"
+                           f"capability-miss: {name}", "FEATURE", "self", key=f"capability-miss: {name}")
+    name = c.fit(c.plain(name), 64)
+    return (f"Foreman: `{name}` is missing. Find it: fm plugins find {name} (an install needs fm ask ID plugin), "
+            f"or build a script with its test.")
+
+
 def post_tool_use_failure(pl):
     """Also failure memory (T-0046): a failed command whose failure a finished task already met gets a pointer to it."""
     post_tool_use(pl, ok=False)
@@ -3198,7 +3223,8 @@ def post_tool_use_failure(pl):
             return {"hookSpecificOutput": {"hookEventName": "PostToolUseFailure", "additionalContext": fix}} if fix else None
         import fmrecall
         act = c.active_brief_fast(p, p.lane)
-        note = " ".join(filter(None, [fix, fmrecall.note_failure(p, act.id if act else None, err)]))
+        note = " ".join(filter(None, [fix, fmrecall.note_failure(p, act.id if act else None, err),
+                                      _capability_miss(p, pl.get("session_id"), err)]))
         if re.search(r"(?m)^(Traceback|FAIL:|ERROR:|\s+at .+:\d+)", err):  # T-0706: a red run comes with suspects
             import fmdebug
             note = " ".join(filter(None, [note, fmdebug.line(p, err)]))

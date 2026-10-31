@@ -1609,6 +1609,42 @@ class AutoEvidence(HookCase):
         self.assertNotIn("no recorded verification evidence", p.stdout)
 
 
+class CapabilityMiss(HookCase):
+    # T-2270: a missing tool names the find-or-build path once per session; a second session captures one task
+    def miss(self, err, sid="s1", **extra):
+        return self.ctx_of(self.hook("PostToolUseFailure", dict(
+            {"tool_name": "Bash", "tool_input": {"command": "x"}, "error": err, "session_id": sid}, **extra)))
+
+    def tasks(self):
+        return [b for b in c.load_briefs(self.project()) if b.title.startswith("Missing tool")]
+
+    def test_a_miss_notes_once_per_session_and_a_second_session_captures_one_task(self):
+        self.fm("init")
+        note = self.miss("Exit code 127\nbash: jq: command not found")
+        self.assertIn("fm plugins find jq", note)
+        self.assertIn("fm ask", note)
+        self.assertLessEqual(len(note), 300)
+        self.assertNotIn("fm plugins find jq", self.miss("Exit code 127\nbash: jq: command not found"))
+        self.assertEqual(self.tasks(), [])
+        self.miss("zsh: command not found: jq", sid="s2")
+        self.miss("zsh: command not found: jq", sid="s3")
+        found = self.tasks()
+        self.assertEqual(len(found), 1)
+        self.assertEqual((found[0].type, found[0].meta.get("source")), ("FEATURE", "self"))
+
+    def test_module_errors_count_and_odd_names_or_subagents_are_ignored(self):
+        self.fm("init")
+        self.assertIn("yaml", self.miss("ModuleNotFoundError: No module named 'yaml'"))
+        self.assertIn("left-pad", self.miss("Error: Cannot find module 'left-pad'"))
+        for err in ("bash: ./run.sh: command not found", "Cannot find module '/abs/x'", "bash: $(rm -rf): command not found",
+                    "command not found: " + "a" * 65):
+            self.assertNotIn("plugins find", self.miss(err, sid="s9"), err)
+        self.assertEqual(self.miss("bash: sox: command not found", agent_id="a1"), "")
+        self.assertEqual(self.miss("bash: sox: command not found", sid="s5", agent_id="a1"), "")
+        self.assertIn("sox", self.miss("bash: sox: command not found", sid="s6"))
+        self.assertEqual(self.tasks(), [], "subagent misses did not count as a session")
+
+
 class PreToolUse(HookCase):
     def pre(self, tool, tool_input):
         return self.hook("PreToolUse", {"tool_name": tool, "tool_input": tool_input})
