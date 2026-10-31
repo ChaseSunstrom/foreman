@@ -1420,6 +1420,7 @@ KIND_WORDS = (("bug", r"\bbugs?\b|correct|broken"), ("vuln", r"secur|vulnerab|ex
               ("resume", r"\bresum|half-(?:done|finished)|left off"),  # T-2131: none/clean/rank as fmexam has them (T-2126)
               ("exists", r"\bexhaustive|use what exists"), ("parts", r"\bsubagents?\b"),
               ("trigger", r"self-trigger|event triggers|\bwatchers?\b"),  # T-2216: #2, #9, #11, anchored (review)
+              ("watch", r"self-trigger|event triggers|\bwatchers?\b|work starts without"),  # T-2360: #11's own kind
               # T-2343: #2 (race: candidates tried side by side) and #8 (fork: decides and records, door: irreversible,
               # unsure: states confidence); phrases, not bare "race", "fork" or "door", which mean other things
               ("race", r"parallel lanes|candidate (?:fixes|designs|approaches)|choose by evidence"),

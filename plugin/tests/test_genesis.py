@@ -1277,6 +1277,16 @@ class GenesisDraft(ForemanTestCase):
         (row,) = fmgenesis.scorecard(self.p)["rows"]
         self.assertIn("proxy", row["why"])  # #9's kind grades a three-part outcome, not delegation, and says so
 
+    def test_self_triggering_maps_to_watch_with_trigger_kept_as_its_proxy(self):
+        import fmgenesis  # T-2360: #11's own kind grades work starting from events; trigger stays, said as a proxy
+        eleven = "Schedules, file and event triggers, CI and issue watchers, so work starts without me."
+        self.assertLessEqual({"watch", "trigger"}, set(fmgenesis._kinds("Self-triggering", eleven)))
+        self.fm("genesis", "init", "--file", "-", input=f"go\n\n## 2. The capability spec\n\n11. **Self-triggering.** "
+                f"{eleven}\n\n## 3. The tower\n")
+        (row,) = fmgenesis.scorecard(self.p)["rows"]
+        self.assertIn("watch", row["kinds"])
+        self.assertIn("proxy", row["why"])
+
     def test_a_capability_partly_without_an_outside_author_never_passes(self):
         import fmgenesis  # T-2204 review: bug's child results can't speak for missing-tool, which no child writes
         self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
