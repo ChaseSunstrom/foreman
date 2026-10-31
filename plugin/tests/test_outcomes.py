@@ -216,6 +216,68 @@ class TrackRecord(Base):
         self.assertRegex(self.fm("focus", "T-0003").stdout, r"Track record for FEATURE S here: 1 of 2 closed")
 
 
+class Predictions(Base):
+    """T-2290: focus predicts minutes and attempts from the closes of the same tier and type; the close scores them."""
+
+    def seed(self, n, minutes=10, attempts=1, typ="FEATURE", tier="S"):
+        import fmoutcomes
+        for i in range(n):
+            fmoutcomes.record_close(self.p, dict(type=typ, tier=tier, minutes=minutes + i, attempts=attempts))
+
+    def new(self, title="Work", **kw):
+        tid = self.fm_json("task", "new", title, "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")["id"]
+        for k, v in kw.items():
+            self.fm("task", "set", tid, f"{k}={v}")
+        return tid
+
+    def test_focus_predicts_the_median_of_same_tier_and_type(self):
+        self.seed(5, minutes=10)  # 10..14: median 12
+        self.seed(9, minutes=500, typ="FIX")  # another type never counts
+        t = self.new()
+        self.fm("focus", t)
+        m = c.find_brief(self.p, t).meta
+        self.assertEqual((int(m["predict_minutes"]), int(m["predict_attempts"])), (12, 1))
+
+    def test_under_five_samples_predicts_nothing_and_a_typed_one_stays(self):
+        self.seed(4)
+        a, b = self.new("A"), self.new("B", predict_minutes=7)
+        self.fm("focus", a)
+        self.assertIsNone(c.find_brief(self.p, a).meta.get("predict_minutes"))
+        self.seed(1)
+        self.fm("focus", b)
+        self.assertEqual(int(c.find_brief(self.p, b).meta["predict_minutes"]), 7)
+
+    def test_the_close_logs_its_stats_and_the_prediction_scored(self):
+        self.seed(5)
+        t = self.new()
+        self.fm("focus", t)
+        self.fm("task", "finish", t, "--audit", "self", "--run", "true")
+        d = next(e["data"] for e in c.ledger_events(self.p, ("task_done",)) if e["task"] == t)
+        self.assertEqual((d["predict_minutes"], d["minutes"], d["attempts"]), (12, 0, 1))
+        import fmoutcomes
+        self.assertEqual(len(fmoutcomes.history(self.p, "FEATURE", "S")), 6, "the close joins the history")
+
+    def test_calibration_prints_the_median_ratio_per_tier(self):
+        import fmoutcomes
+        for actual in (10, 20, 40):
+            fmoutcomes.record_close(self.p, dict(type="FEATURE", tier="S", minutes=actual, predict_minutes=10))
+        out = self.fm("outcomes", "--calibration").stdout
+        self.assertRegex(out, r"S: median actual/predicted 2\.0x over 3")
+
+    def test_next_notes_a_task_past_three_times_its_prediction(self):
+        import fmoutcomes
+        t = self.new(predict_minutes=5)
+        self.fm("focus", t)
+        self.assertNotIn("3x", self.fm("next").stdout)
+        real = time.time
+        fmoutcomes.time.time = lambda: real() + 1500  # 25 active minutes
+        try:
+            note = c.next_for(self.p)
+        finally:
+            fmoutcomes.time.time = real
+        self.assertEqual(str(note).count("3x its prediction"), 1)
+
+
 class Hygiene(Base):
     def test_bench_lists_cases_that_never_discriminate(self):
         d = os.path.join(self.p.dir, "bench", "results")
