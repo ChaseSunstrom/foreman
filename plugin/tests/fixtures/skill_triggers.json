@@ -78,14 +78,14 @@
     "optimize this",
     "Optimize the performance of the parser"
   ],
-  "security-review": [
+  "security-audit": [
     "Do a security review of this endpoint that takes user input",
     "Check the auth code and scan for leaked secrets",
     "Is this API route safe from injection?",
     "security review of the repo",
     "Do a security review of the login code"
   ],
-  "docs": [
+  "write-docs": [
     "Write the README for this tool",
     "Rework the how-to guide so examples run",
     "Write the docs for this feature"
