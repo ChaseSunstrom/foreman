@@ -1060,8 +1060,9 @@ def _static(target, chk):
             low, path = f.lower(), os.path.join(d, f)
             if os.path.islink(path) or not os.path.isfile(path):  # T-2216 review: a FIFO or a link is no file to read
                 continue
-            if (chk["files"] == "readme" and low == "readme.md") or (chk["files"] == "test" and "test" in low) or \
-                    (chk["files"] == "trigger" and re.search(TRIGGER_FILES, os.path.relpath(path, target).replace(os.sep, "/"))):
+            rel = os.path.relpath(path, target).replace(os.sep, "/")
+            if (chk["files"] == "readme" and low == "readme.md") or (chk["files"] == "test" and c.TESTISH.search(rel)) or \
+                    (chk["files"] == "trigger" and re.search(TRIGGER_FILES, rel)):  # T-2218: latest.py is no test
                 try:
                     with open(path, encoding="utf-8", errors="replace") as fh:
                         texts.append(fh.read(1 << 20))
@@ -1111,10 +1112,10 @@ def _check_one(p, run, s):
             probs.append(f"{d['kind']} check fails on the clean render")
         if d["tf"] and suite(key, clean, os.path.join(base, "hidden", "planted", d["kind"]), slow=True)[0]:
             probs.append(f"clean suite misses the planted {d['kind']}")
-    for _ in range(2 if s["kind"] == "flaky" else 1):  # T-2211: a 'fixed' test that still leans on chance fails one
+    for i in range(3):  # T-2211/T-2218: a clean side that leans on chance fails one run in three (the planted side is exempt)
         ok, why = suite(key, clean)
         if not ok:
-            probs.append(f"clean suite failed: {why}")
+            probs.append(f"clean suite failed on run {i + 1} of 3: {why}")
             break
     return [f"{s['id']}: {x}" for x in probs]
 
