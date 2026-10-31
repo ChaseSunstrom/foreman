@@ -302,30 +302,43 @@ PLAN_SYSTEM = ("List best-in-class contents for a goal like the user's, one per 
                "each naming a file path, a surface of the project or an `fm` verb it touches. No other text.")
 
 
-def _grounded(root, line, found):
-    """T-2136: the line names something the repo has: an existing path inside it, a surface found, or an fm verb."""
-    import fmcli
+def _norm(text):
+    import re
+    return re.sub(r"\s+", " ", c.plain(text or "")).strip().lower().rstrip(".,;:!")
+
+
+def _grounded(root, line, found, files, verbs):
+    """T-2136: item text built from what the line names that the repo has, never the line itself: a tracked path (a /
+    or an extension, inside the repo by realpath), a surface found (whole word), or an fm verb; else None."""
     import os
     import re
-    low = line.lower()
-    if any(s.lower() in low for s in found):
-        return True
-    verbs = fmcli.build_parser()._subparsers._group_actions[0].choices
-    if any(v in verbs for v in re.findall(r"\bfm ([a-z][\w-]*)", low)):
-        return True
-    return any(not t.startswith(("/", "..")) and ".." not in t and os.path.exists(os.path.join(root, t))
-               for t in re.findall(r"[\w./-]+", line))
+    top = os.path.realpath(root)
+    for t in (x.rstrip(".,;:)") for x in re.findall(r"[\w./-]+", line)):
+        if ("/" in t or re.search(r"\.\w+$", t)) and ".." not in t and not t.startswith("/") and (
+                t in files or any(f.startswith(t.rstrip("/") + "/") for f in files)) and os.path.realpath(
+                os.path.join(root, t)).startswith(top + os.sep):
+            return f"cover {t}"
+    for v in re.findall(r"\bfm ([a-z][\w-]*)", line.lower()):
+        if v in verbs:
+            return f"fm {v} works for the goal"
+    for sf in found:
+        if re.search(rf"\b{re.escape(sf)}\b", line, re.I):
+            return f"works on the {sf} surface"
+    return None
 
 
 def _misses(p):
     """T-2136: the top 5 recent past misses: items added after a finished verdict (the goal_verdict event), and tasks
     reopened (a task_set to an open status) within 7 days of their task_done."""
-    import datetime
-    t = lambda e: datetime.datetime.fromisoformat(str(e["ts"])[:19])  # noqa: E731
+    t = lambda e: c.parse_ts(e.get("ts"))  # noqa: E731
     out, done, claimed = [], {}, False
-    for e in c.ledger_events(p, kinds=["goal_verdict", "goal_item", "task_done", "task_set"]):
+    for e in c.ledger_events(p, kinds=["goal_set", "goal_verdict", "goal_item", "task_done", "task_set"]):
         k, d = e.get("event"), e.get("data") or {}
-        if k == "goal_verdict":
+        if not t(e):
+            continue  # a malformed ts
+        if k == "goal_set":
+            claimed = False  # a new goal starts with no done claim
+        elif k == "goal_verdict":
             claimed = d.get("verdict") == "finished"
         elif k == "goal_item" and claimed:
             out.append(f"item added after a done claim: {c.fit(c.plain(d.get('text', '')), 80)}")
@@ -344,7 +357,10 @@ def plan(p, m):
     import fmmission
     import os
     found = fmmission.surfaces(p.root)
-    files = c._git(p.root, "ls-files", timeout=10).splitlines()
+    files = c._git(p.root, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "ls-files",
+                   timeout=10).splitlines()
+    import fmcli
+    verbs = set(fmcli.build_parser()._subparsers._group_actions[0].choices)  # once per plan; no public helper
     top = {f.split("/")[0].lower() for f in files}
     items = [{"tag": "user", "text": x} for x in m.get("clauses") or [m["text"]]]
     std = ["tests cover the work"] if any("test" in f.lower() for f in files) else []
@@ -366,7 +382,8 @@ def plan(p, m):
         for l in c.plain_lines(reply).splitlines()[:10]:
             if l.strip().startswith("- ") and l.strip()[2:].strip():
                 l = c.fit(l.strip()[2:].strip(), 120)
-                (items.append({"tag": "model", "text": l}) if _grounded(p.root, l, found) else proposals.append(l))
+                g = _grounded(p.root, l, found, set(files), verbs)
+                (items.append({"tag": "model", "text": g}) if g else proposals.append(l))
     return {"items": items, "proposals": proposals, "checklist": _misses(p), "note": note}
 
 
@@ -377,9 +394,12 @@ def cmd_plan(p, args):
         raise fmcli.UsageError('fm goal plan --apply needs --done-when CMD, the check each added item gets')
     got = plan(p, m)
     if args.apply:
-        have = {i["text"].lower() for i in m.get("items") or []}
-        got["added"] = [i["text"] for i in got["items"] if i["text"].lower() not in have
-                        and add_item(p, i["text"], args.done_when, i["tag"])]
+        have = {_norm(i["text"]) for i in m.get("items") or []}
+        got["added"] = []
+        for i in got["items"]:
+            if _norm(i["text"]) not in have:
+                have.add(_norm(i["text"]))
+                got["added"].append(add_item(p, i["text"], args.done_when, i["tag"])["text"])
     lines = [f"[{i['tag']}] {i['text']}" for i in got["items"]]
     lines += ["proposals (not added):"] * bool(got["proposals"]) + [f"  {x}" for x in got["proposals"]]
     lines += ["checklist:"] * bool(got["checklist"]) + [f"  {x}" for x in got["checklist"]]

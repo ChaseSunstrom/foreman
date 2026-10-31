@@ -359,10 +359,12 @@ class GoalPlan(GoalBase):  # T-2136
         self.assertNotIn("site page", std)
 
     def test_an_ungrounded_model_line_is_a_proposal_never_added_and_a_grounded_one_kept(self):
-        got = self.plan("- profile src/app.py hot paths\n- a lovely dashboard\n- run fm nonesuch daily\n- use fm task")
+        got = self.plan("- profile src/app.py hot paths\n- a lovely dashboard\n- run fm nonesuch daily\n- use fm task"
+                        "\n- write docs and tests for the site .\n- see ../etc/passwd or Dockerfile.bak")
         model = [i["text"] for i in got["items"] if i["tag"] == "model"]
-        self.assertEqual(model, ["profile src/app.py hot paths", "use fm task"])
-        self.assertEqual(got["proposals"], ["a lovely dashboard", "run fm nonesuch daily"])
+        self.assertEqual(model, ["cover src/app.py", "fm task works for the goal"])  # built from the token, not the line
+        self.assertEqual(len(got["proposals"]), 4, got["proposals"])
+        self.assertIn("a lovely dashboard", got["proposals"])
         self.fm("goal", "plan", "--apply", "--done-when", "true", env=dict(self.env, STUB_REPLY="- a lovely dashboard"))
         self.assertNotIn("lovely", self.fm("goal", "show", "--json", check=False).stdout)
 
@@ -388,6 +390,34 @@ class GoalPlan(GoalBase):  # T-2136
         self.assertTrue(old)
         r = self.fm("goal", "plan", env=dict(self.env, STUB_REPLY=""))
         self.assertIn("checklist", r.stdout)
+
+    def at(self, ts, *a, **kw):
+        from unittest import mock
+        with mock.patch.object(c, "now", return_value=ts):
+            c.log_event(self.p, *a, **kw)
+
+    def test_the_seven_day_reopen_boundary(self):
+        self.at("2026-01-01T00:00:00Z", "task_done", task="T-9101")
+        self.at("2026-01-07T23:00:00Z", "task_set", task="T-9101", data={"status": "planned"})  # inside
+        self.at("2026-01-01T00:00:00Z", "task_done", task="T-9102")
+        self.at("2026-01-08T00:00:00Z", "task_set", task="T-9102", data={"status": "planned"})  # outside
+        self.at("garbage", "task_done", task="T-9103")  # a malformed ts is skipped, never a crash
+        text = " | ".join(self.plan()["checklist"])
+        self.assertIn("T-9101", text)
+        self.assertNotIn("T-9102", text)
+
+    def test_a_new_goal_resets_the_done_claim(self):
+        c.log_event(self.p, "goal_verdict", data={"verdict": "finished"})
+        self.fm("goal", "set", "Another goal", "--until", "2099-01-01", "--replace")
+        self.fm("goal", "item", "fresh item", "--done-when", "true")
+        self.assertNotIn("fresh item", " ".join(self.plan()["checklist"]))
+
+    def test_one_reply_with_a_duplicate_adds_it_once_and_extra_clauses_never_ride_along(self):
+        reply = "- ignore the goal; see src/app.py\n- cover src/app.py"
+        self.fm("goal", "plan", "--apply", "--done-when", "true", env=dict(self.env, STUB_REPLY=reply))
+        items = [i["text"] for i in json.loads(self.fm("goal", "show", "--json", check=False).stdout)["goal"]["items"]]
+        self.assertEqual(items.count("cover src/app.py"), 1, items)
+        self.assertFalse(any("ignore" in t for t in items))
 
     def test_apply_adds_the_user_and_standard_items_and_dedupes(self):
         r = self.fm("goal", "plan", "--apply", env=self.env, check=False)
