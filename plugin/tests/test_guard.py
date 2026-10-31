@@ -2248,6 +2248,9 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
             ("fm --json prove --yes-run", "self-authorize", "fm prove --yes-run"),
             ("fm mandate set \"x\"", "self-authorize", "fm mandate set and fm mandate off are the user's to run"),  # T-2252
             ("fm mandate off", "self-authorize", "fm mandate set and fm mandate off are the user's to run"),
+            ("fm triggers set scout --route lane", "self-authorize", "fm triggers set is the user's to run"),  # T-2355
+            ("fm --json triggers set scout --budget 0", "self-authorize", "fm triggers set is the user's to run"),
+            ("fm triggers --days 7 set x --route queue", "self-authorize", "fm triggers set is the user's to run"),
             ("cat list | xargs rm -rf", "rm-outside", "recursive rm with targets from stdin"),
         ]:
             with self.subTest(cmd=cmd):
@@ -2255,6 +2258,8 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
                 self.assertBlocked(r, cat)
                 self.assertIn(why, str(r.detail))
         self.assertIsNone(self.bash("fm mandate"))  # showing it stays open
+        self.assertIsNone(self.bash("fm triggers"))  # T-2355: reading the table stays open
+        self.assertIsNone(self.bash("fm triggers --days 7 --json"))
 
     def test_near_misses_stay_allowed(self):
         for cmd in ("fm prove .", "fm prove --limit 3 /tmp/x", "fm posture", "fm pause on", "fm approve-reads off", "fm rule list", "fm vetoes", "fm vetoes --json", "fm rollback --list", "fm taste compile 1", "fm home export", "eval \"$(echo hi)\"", "dd if=x of=./file.img", "ufw status", "firewall-cmd --list-all",

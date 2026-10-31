@@ -3440,6 +3440,10 @@ def cmd_focus(args):
         target = need_brief(p, args.id)
         if target.status in c.CLOSED:
             raise UsageError(f"{target.id} is {target.status}")
+        if target.meta.get("lane_only") and not p.lane and not target.meta.get("lane"):
+            # T-2355: a queue- or lane-routed trigger's work lands on a branch; once briefed, main focuses it to close
+            raise c.PolicyError(f"{target.id} came from a trigger routed to the queue or a lane: it starts in a lane, "
+                                f"never on main: fm lane brief {target.id}")
         stage_before = c.stage(target)  # T-1137: focus saves outside mutate, so it logs its own stage move
         gaps = [] if target.status in ("active", "verifying") else \
             c.plan_gaps(target, c.effective_autonomy(p))
@@ -7026,6 +7030,12 @@ def _build_parser(only=None):
             help="each trigger that files tasks: fired, done, dropped, open and precision; a mostly-dropped one files "
                  "at low priority (T-2276)")
     s.add_argument("--days", type=int, default=30, help="count captures from the last N days (default 30)")
+    s.add_argument("action", nargs="?", choices=["set"], help="set NAME: change a trigger's row (T-2355; the user's to run)")
+    s.add_argument("name", nargs="?", help="set: the trigger")
+    s.add_argument("--route", choices=["inbox", "queue", "lane", "muted"], help="set: where its captures go")
+    s.add_argument("--budget", type=int, help="set: captures a day before it adds to its open one (0: none)")
+    s.add_argument("--burst", type=int, help="set: seconds after a filing in which it adds to its open one (0: none)")
+    s.add_argument("--tier-cap", choices=["S", "M", "L"], help="set: the largest tier it may queue")
 
     s = add("repeats", lazy("fmrepeats", "cmd_repeats"), tier=("Reports", 1030),
             help="commands and procedures this project keeps repeating, and what project tool each could become")

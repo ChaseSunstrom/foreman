@@ -928,6 +928,12 @@ def cmd_digest(args):
         if part("door_ask", "asks") or part("door_park", "parks") else []
     import fmtrials
     lines += fmtrials.lines(p, act=True)  # T-1059; T-2351: the digest files and settles self-fix verdicts
+    try:  # T-2355: trigger routes move on outcomes Foreman didn't author, once a digest, each move a decide row
+        import fmtriggers
+        moved = fmtriggers.settle_routes(p)
+        lines += [f"Trigger routes moved: {', '.join(f'{t} -> {r}' for t, r in moved.items())}"] if moved else []
+    except Exception:  # a digest never fails on a derived report
+        pass
     lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []
     triage.sort(key=lambda r: ("do", "drop", "ask").index(r[1]))  # a do or drop never hides behind asks
     lines += [f"Deferred: {t} → {v} ({w})" for t, v, w in triage[:6]]
