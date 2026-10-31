@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A standing goal rides across days: SessionStart, the PreCompact checkpoint and `fm resume` print one goal line (its text, items done/total, the next item and its first open task), and `fm run` takes that item's planned task first
 - `fm find --capture`, `--rank` and `fm prove` give twin leads the same keys, so a capture's dedupe and a proof's lift name the same lead
 - `fm goal` turns the standing mandate into a goal ledger: items, each with a check command and the tasks that build it (`fm goal link`, or `fm task new --goal N`); `fm goal show` lists open work outside the goal, items with no task, and items whose tasks closed while the check still fails, exiting 1 when any. A plain mandate prints as before
 - `fm mandate` shows its end date as the day you typed; it printed the next day west of UTC

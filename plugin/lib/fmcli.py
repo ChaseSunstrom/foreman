@@ -3353,9 +3353,11 @@ def cmd_resume(args):
     p = resolve(args)
     r = c.resume_info(p)
     import fmmandate
-    goal = fmmandate.goal_line(p)  # T-2139
-    if goal and goal in (r.get("resume") or ""):
-        goal = None  # the last checkpoint already holds this line
+    try:
+        goal = fmmandate.goal_line(p)  # T-2139
+    except Exception:
+        goal = None  # a goal that can't be read never stops a resume
+    r["resume"] = "\n".join(l for l in (r.get("resume") or "").splitlines() if not l.startswith("- Goal: "))  # stale
     if not r["id"]:
         nxt = ", ".join(q["id"] for q in c.state_dict(p)["queue"][:3]) or "none"
         return out(args, r, f"No active task. Next in queue: {nxt}" + (f"\n{goal}" if goal else ""))

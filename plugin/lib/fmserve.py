@@ -321,6 +321,13 @@ def _next_runnable(p, skip, told, fit=False):
         state = {x.id: x.status for x in briefs}
         queue = sorted((x for x in queue if all(state.get(d) in c.CLOSED for d in c._deps(x))),
                        key=lambda x: "SML".find(x.tier))
+    try:  # T-2139: a standing goal's next item's task goes first among what this picker already accepts, never added to it
+        import fmmandate
+        g = fmmandate.progress(p, briefs)
+        mine = set(g[2]["tasks"]) if g and g[2] else set()  # any of its tasks: the first open one may be an unplanned capture
+        queue = sorted(queue, key=lambda x: x.id not in mine)
+    except Exception:
+        pass  # a goal that can't be read never stops a run
     for b in ([act] if act else []) + queue:
         if b.id in skip:
             continue
@@ -336,11 +343,6 @@ def _next_runnable(p, skip, told, fit=False):
                 told.add(b.id)
                 print(f"{b.id} waits on the user ({why}); skipped")
             continue
-        return b
-    import fmmandate  # T-2139: an empty queue with a goal standing: the next item's first open task, as a fallback only
-    g = fmmandate.progress(p)
-    b = g[3] if g else None
-    if b and b.id not in skip and b.status in c.RUNNABLE | {"captured"} and not c.waits_on_user(b, pending, autonomy):
         return b
     return None
 

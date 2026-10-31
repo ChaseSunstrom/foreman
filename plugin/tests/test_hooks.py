@@ -222,7 +222,7 @@ class SessionStart(HookCase):
         self.assertIn("Standing mandate", self.ctx_of(self.run_ss()))  # no items yet: the mandate text
         self.fm("goal", "item", "coverage", "--done-when", "true")
         ctx = self.ctx_of(self.run_ss())
-        self.assertIn("Goal: Ship the ledger · 0/1 items done · next: 1. coverage (no task yet)", ctx)
+        self.assertIn('Goal: "Ship the ledger" · 0/1 items done · next: 1. coverage (no task yet)', ctx)
         self.assertNotIn("Standing mandate", ctx)
         self.assertLess(len(ctx), 10000)
 
@@ -2094,7 +2094,7 @@ class PreCompact(HookCase):
         self.fm("goal", "item", "coverage", "--done-when", "true")
         tid = self.task()
         self.hook("PreCompact", {"trigger": "auto", "custom_instructions": None})
-        self.assertIn("Goal: Ship the ledger · 0/1 items done", c.find_brief(self.project(), tid).section("Resume here"))
+        self.assertIn('Goal: "Ship the ledger" · 0/1 items done', c.find_brief(self.project(), tid).section("Resume here"))
 
     def test_corrupt_state_still_exits_zero(self):
         self.fm("init")

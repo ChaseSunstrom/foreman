@@ -2,6 +2,7 @@
 bound) that fm scout and fm night read. While it stands, what scout captures says it was found under it; once it ends,
 scout captures one decision (renew it or let it lapse) and nothing more under it until the user renews or clears it."""
 import argparse
+import json
 import time
 
 import fmcore as c
@@ -272,25 +273,28 @@ def cmd_goal(args):
     return show(p, args)
 
 
-def progress(p):
+def progress(p, briefs=None):
     """T-2139: (goal, items done, next item, its first open brief or None) of the standing goal, or None when none stands,
-    it has ended or it has no items. An item is done when it has tasks and all of them are closed. Meta and briefs only."""
+    it has ended or it has no items. An item is done when a linked task is done and none is still open (dropped ones
+    are ignored: an item with only dropped tasks isn't done). Meta and briefs only; briefs: ones the caller loaded."""
     m = get(p)
     items = (m or {}).get("items") or []
     if not m or m["expired"] or not items:
         return None
-    by = {b.id: b for b in c.load_briefs(p)}
-    done = lambda it: bool(it.get("tasks")) and all(t in by and by[t].status in c.CLOSED for t in it["tasks"])
+    by = {b.id: b for b in (briefs if briefs is not None else c.load_briefs(p))}
+    st = lambda it: [by[t].status if t in by else "gone" for t in it.get("tasks") or []]  # a gone task counts as open
+    done = lambda it: "done" in st(it) and all(x in c.CLOSED for x in st(it))
     nxt = next((it for it in items if not done(it)), None)
     open_ = next((by[t] for t in (nxt or {}).get("tasks") or [] if t in by and by[t].status not in c.CLOSED), None)
     return m, sum(map(done, items)), nxt, open_
 
 
-def goal_line(p):
-    """T-2139: the one line every surface prints while a goal stands: its text, items done/total, the next item."""
-    g = progress(p)
+def goal_line(p, briefs=None):
+    """T-2139: the one line every surface prints while a goal stands: its text (quoted, it's the user's words), items
+    done/total, the next item."""
+    g = progress(p, briefs)
     if not g:
         return None
     m, done, nxt, b = g
     tail = f" · next: {nxt['n']}. {c.fit(nxt['text'], 60)} ({b.id if b else 'no task yet'})" if nxt else " · all items done"
-    return c.plain(f"Goal: {c.fit(m['text'], 80)} · {done}/{len(m['items'])} items done{tail}")
+    return c.plain(f"Goal: {json.dumps(c.fit(m['text'], 80), ensure_ascii=False)} · {done}/{len(m['items'])} items done{tail}")
