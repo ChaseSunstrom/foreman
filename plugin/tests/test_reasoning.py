@@ -117,6 +117,20 @@ class Confidence(Base):  # T-2338 (Mission 5, #8): a choice under the race bar, 
         self.assertEqual(self.fm("lane", "race", tid, "--json", check=False).returncode, 0)
         self.assertNotIn("fm lane race", self.nxt())
 
+    def test_a_race_that_cant_start_gives_the_released_task_back_focused(self):  # T-2338 review
+        import argparse
+        from unittest import mock
+        import fmlanes
+        tid = self.task()
+        self.assertEqual(c.find_brief(self.p, tid).status, "active")
+        with mock.patch.object(fmlanes, "builder_brief", side_effect=RuntimeError("no lane")):
+            with self.assertRaises(RuntimeError):
+                fmlanes.race(self.p, c.find_brief(self.p, tid), argparse.Namespace(confidence=None, json=True))
+        b = c.find_brief(self.p, tid)
+        self.assertEqual(b.status, "active")
+        self.assertNotIn("race", b.meta)
+        self.assertEqual(c.find_brief(self.p, "T-0002").status, "dropped")
+
     def test_a_ready_task_is_raced_before_it_is_focused(self):
         self.task(focus=False)
         self.assertRegex(self.nxt(), r"fm lane race T-0001")

@@ -442,7 +442,8 @@ def race(p, b, args):
         if b.meta.get("race") or b.meta.get("race_of"):
             raise c.PolicyError(f"{b.id} is already racing (fm lane race {b.id} --score)")
         _ready(p, b)
-        if b.status == "active":  # T-2338: fm next names the race while the task is focused and untouched: release it
+        released = b.status == "active"
+        if released:  # T-2338: fm next names the race while the task is focused and untouched: release it
             b.meta["status"] = "planned"
             b.append_log("released to race: focused, no work on it yet")
             c.save_brief(p, b)
@@ -478,7 +479,8 @@ def race(p, b, args):
     except Exception:  # review: no half-started race (an orphan clone, a race mark nobody can clear)
         fmcli.mutate(p, nid, lambda y: (y.meta.__setitem__("status", "dropped"),
                                         y.append_log("dropped: the race couldn't start")), "task_drop", {})
-        fmcli.mutate(p, b.id, lambda y: (y.meta.pop("race", None), y.meta.pop("race_checks", None)), "race_abort", {})
+        fmcli.mutate(p, b.id, lambda y: (y.meta.pop("race", None), y.meta.pop("race_checks", None),
+                                         released and y.meta.__setitem__("status", "active")), "race_abort", {})  # T-2338: focused again
         raise
     agent = 'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"'
     paths = {t: os.path.join(p.dir, "audits", f"{t}.builder.md") for t in (b.id, nid)}
