@@ -164,18 +164,33 @@ def _build_in_background(p):
         pass
 
 
-def blast_line(p, scope, budget=BLAST_BUDGET):
-    """T-2277: the plan's one-line blast radius for a task's literal scope files, or "" when there is nothing to say.
-    Reads the graph only if it is built and fresh (focus never rebuilds it: a build runs git log over 3000 commits) and
-    stops a slow query after `budget` seconds; any failure is silence."""
+FRESH_COMMITS = 50  # a graph built this many commits before HEAD still answers (T-2336)
+TOKEN = re.compile(r"[\w][\w./-]*")
+
+
+def _repo_files(p, names):
+    """The distinct names that are real files inside the project (no globs, no escapes), in order."""
     root = os.path.realpath(p.root)
     paths = []
-    for s in scope or []:
+    for s in names:
         f = os.path.normpath(s)
         real = os.path.realpath(os.path.join(root, f))
         if not re.search(r"[*?\[\]{}]", s) and real.startswith(root + os.sep) and os.path.isfile(real) \
                 and f not in paths:
             paths.append(f)
+    return paths
+
+
+def blast_line(p, scope, budget=BLAST_BUDGET, text=""):
+    """T-2277: the plan's one-line blast radius for a task's literal scope files (T-2336: with no scope, the repo files
+    its `text` names), or "" when there is nothing to say; "unknown" when those files have no co-change history.
+    Reads the graph only if it is built and within FRESH_COMMITS of HEAD (focus never rebuilds it: a build runs git log
+    over 3000 commits) and stops a slow query after `budget` seconds; any failure is silence."""
+    if scope:
+        paths = _repo_files(p, scope)
+    else:  # ponytail: any word that is a file; ceiling 300 stats, upgrade is the brief's own file list
+        words = {w.rstrip(".,-") for w in TOKEN.findall(text or "")[:2000] if "." in w or "/" in w}
+        paths = _repo_files(p, sorted(words)[:300])
     db_path = os.path.join(p.dir, "graph.sqlite")
     if not paths:
         return ""
@@ -183,7 +198,9 @@ def blast_line(p, scope, budget=BLAST_BUDGET):
         con = sqlite3.connect(db_path, timeout=0.5) if os.path.exists(db_path) else None
         # HEAD alone: ledger events and graphify's file don't change co-change history (the stamp starts with HEAD)
         built = con and (con.execute("SELECT v FROM meta WHERE k='stamp'").fetchone() or [""])[0].split(":")[0]
-        fresh = bool(built) and built == c._git(p.root, "rev-parse", "HEAD", timeout=2).strip()
+        # commits HEAD has that the built one lacks; a built commit that is gone (rebased away) is an error: stale
+        fresh = bool(built) and int(c._git(p.root, "rev-list", "--count", f"{built}..HEAD", timeout=2).strip() or "x") \
+            < FRESH_COMMITS
     except Exception:
         fresh = False
     if not fresh:
@@ -200,7 +217,9 @@ def blast_line(p, scope, budget=BLAST_BUDGET):
         bits.append("co-changes " + ", ".join(r["cochange"][:5]))
     if r["fixes"]:
         bits.append("past FIXes " + ", ".join(f["id"] for f in r["fixes"][:5]))
-    return "Blast radius (fm graph blast): " + "; ".join(bits) + "." if bits else ""
+    if not bits:  # a graph that was read and found nothing says so, so the plan shows the check ran
+        return f"Blast radius (fm graph blast): unknown, no co-change history for {', '.join(paths[:5])}."
+    return "Blast radius (fm graph blast): " + "; ".join(bits) + "."
 
 
 def blast(p, paths, as_of=None, con=None):

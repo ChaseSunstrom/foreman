@@ -3289,7 +3289,8 @@ def cmd_focus(args):
         peek = need_brief(p, args.id)
         if peek.tier in ("M", "L") and "Blast radius (fm graph blast)" not in peek.section("Risks and rollback"):
             import fmgraph
-            blast = fmgraph.blast_line(p, peek.meta.get("scope"))
+            blast = fmgraph.blast_line(p, peek.meta.get("scope"), text="\n".join(
+                peek.section(s) for s in ("Interpretation", "Approach (options → choice → why)", "Steps")))  # T-2336
     except Exception:  # a hint; the locked read below reports a missing task
         pass
     with c.lock(p.dir):

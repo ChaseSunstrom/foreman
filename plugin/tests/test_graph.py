@@ -33,6 +33,10 @@ class Base(ForemanTestCase):
         with open(path, "w") as f:
             f.write(text)
 
+    def empty_commits(self, n):
+        for i in range(n):
+            subprocess.run(["git", "-C", self.repo, "commit", "-q", "--allow-empty", "-m", f"empty {i}"], check=True)
+
     def commit(self, msg, when):
         env = dict(os.environ, GIT_AUTHOR_DATE=when, GIT_COMMITTER_DATE=when)
         subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True, env=env)
@@ -98,6 +102,66 @@ class BlastInPlan(Base):
         self.assertNotIn("Blast radius", self.risks())
 
 
+class BlastReach(BlastInPlan):
+    """T-2336: the line reaches plans with no scope (files named in the text), a graph a few commits old, and says
+    'unknown' for files with no history."""
+    test_names_neighbours_and_past_fixes_once = test_empty_scope_glob_or_unbuilt_graph_skips = \
+        test_no_graph_skips_and_focus_does_not_build_one = None  # the parent's tests run once, in their own class
+
+    def named(self, text):
+        tid = self.plan("Touch the session", None)
+        self.fm("task", "set", tid, "--section", "Interpretation", "--text", text)
+        return tid
+
+    def line(self, text, scope=None):
+        import fmcore as c
+        import fmgraph
+        return fmgraph.blast_line(c.find_project(self.repo), scope, text=text)
+
+    def test_files_named_in_the_text_get_the_line_once(self):
+        tid = self.named("Reading 1: change `app/session.py::open_session`, not billing. Reading 2: skip.")
+        self.fm("graph", "build")
+        self.fm("focus", tid)
+        r = self.risks()
+        self.assertIn("Blast radius (fm graph blast): co-changes app/auth.py", r)
+        self.fm("focus", tid)
+        self.assertEqual(self.risks().count("Blast radius"), 1)
+
+    def test_a_scope_wins_over_the_text(self):
+        self.write("app/lonely.py", "x = 1\n")
+        self.commit("lonely", "2026-04-01T10:00:00Z")
+        self.fm("graph", "build")
+        line = self.line("touch app/lonely.py", ["app/session.py"])
+        self.assertIn("app/auth.py", line)
+        self.assertNotIn("lonely", line)
+
+    def test_words_that_are_not_repo_files_say_nothing(self):
+        self.fm("graph", "build")
+        self.assertEqual(self.line("see ../../etc/passwd, nope/none.py, e.g. v1.2 and /etc/hostname"), "")
+
+    def test_a_graph_10_commits_old_is_read_and_one_60_old_is_not(self):
+        self.fm("graph", "build")
+        self.empty_commits(10)
+        self.assertIn("app/auth.py", self.line("app/session.py"))
+        self.empty_commits(50)
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"FOREMAN_NO_BACKGROUND": "1"}):
+            self.assertEqual(self.line("app/session.py"), "")
+
+    def test_a_graph_60_commits_old_starts_a_build(self):
+        self.fm("graph", "build")
+        self.empty_commits(60)
+        line, pop = BlastBuild.run_line(self, True)
+        self.assertEqual((line, pop.call_count), (["", ""], 1))
+
+    def test_no_co_change_history_says_unknown(self):
+        self.write("app/lonely.py", "x = 1\n")
+        self.commit("lonely", "2026-04-01T10:00:00Z")
+        self.fm("graph", "build")
+        self.assertEqual(self.line("only app/lonely.py"),
+                         "Blast radius (fm graph blast): unknown, no co-change history for app/lonely.py.")
+
+
 class BlastBuild(Base):
     """T-2277: a missing or stale graph at focus starts one detached fm graph build and writes no line."""
 
@@ -130,6 +194,7 @@ class BlastBuild(Base):
         self.fm("graph", "build")
         self.write("app/new.py", "x = 1\n")
         self.commit("move head", "2026-04-01T10:00:00Z")
+        self.empty_commits(60)  # T-2336: a graph this far behind HEAD is stale
         line, pop = self.run_line(True)
         self.assertEqual((line, pop.call_count), (["", ""], 1))
 
@@ -158,7 +223,8 @@ class BlastBuild(Base):
         future = __import__("time").time() + 86400
         os.utime(lock, (future, future))
         self.write("app/new.py", "x = 1\n")
-        self.commit("move head", "2026-04-01T10:00:00Z")  # the graph is stale again
+        self.commit("move head", "2026-04-01T10:00:00Z")
+        self.empty_commits(60)  # the graph is stale again
         line, pop = self.run_line(True)
         self.assertEqual(pop.call_count, 1)
 
