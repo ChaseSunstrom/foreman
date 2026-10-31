@@ -5453,6 +5453,14 @@ def cmd_audit(args):
     if found:  # T-0068: mechanical findings first, so the reviewer confirms them instead of hunting for them
         head += "\nPre-audit (mechanical; confirm or dismiss each, then review the rest):\n" + "\n".join(
             f"- {x}" for x in found)
+    import fmlanes
+    # T-2312: a stray edit stands out; -U0, since a hunk's own context lines would hide the def above the change
+    zero = "".join(c._git(p.root, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "diff", "-U0",
+                          "--no-ext-diff", "--no-textconv", a, z, timeout=300) for a, z in pairs)
+    fns = fmlanes.functions_line(fmlanes.functions_changed(_without_secrets(p.root, zero)))  # no credential file's lines
+    if fns:
+        head += ("\nFunctions changed (git's enclosing definition, may be a class; one outside the task's steps is a "
+                 "stray edit):\n" + fns)
     steps = _files_vs_steps(b, files)  # T-0610: does each changed file serve a step?
     import fmlib  # T-1036: the review checklists of the stack cards this task's edits used (self block and reviewers)
     try:  # the hook's per-task marker, not a ledger scan (an archived ledger would lose them); ":" names are markers

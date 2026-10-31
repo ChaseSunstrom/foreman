@@ -2,6 +2,7 @@
 synced copies, the far end of long context lines, fixtures and lockfiles. Changed lines always stay whole."""
 import json
 import os
+import subprocess
 
 from helpers import ForemanTestCase
 from test_hooks import HookCase
@@ -172,6 +173,61 @@ class DesignLens(HookCase):
         self.write("README.md", "# changed\n")
         self.fm("audit", "prep", self.tid, "--base", "HEAD", "--json")
         self.assertFalse(os.path.exists(mark), "the repo's diff driver never ran")
+
+    def test_the_brief_lists_every_function_the_diff_changed(self):  # T-2312
+        body = "".join(f"def {n}():\n    return 1\n\n\n" for n in ("f", "g", "h"))
+        self.write("m.py", body)
+        subprocess.run(["git", "-C", self.repo, "add", "m.py"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "m"], check=True)
+        self.prep()
+        self.write("m.py", body.replace("return 1", "return 2", 2))
+        text = self.brief()[1]
+        self.assertIn("Functions changed", text)
+        self.assertIn("m.py: f, g", text)
+
+    def test_hunk_header_text_is_plain_and_bounded(self):  # T-2312: repo text is data
+        import fmlanes
+        d = ("diff --git a/x.c b/x.c\n--- a/x.c\n+++ b/x.c\n@@ -1 +1 @@ int \x1b]0;pwn\x07evil" + "z" * 200 + "(void)\n"
+             "@@ -9 +9 @@\n")
+        got = fmlanes.functions_changed(d)["x.c"]
+        self.assertEqual(len(got), 1)
+        self.assertNotIn("\x1b", got[0])
+        self.assertLessEqual(len(got[0]), 40)
+
+    def test_function_names_credit_changed_defs_skip_quoted_files_and_say_how_many_more(self):  # T-2312 review
+        import fmlanes
+        d = ("diff --git a/m.py b/m.py\n--- a/m.py\n+++ b/m.py\n"
+             "@@ -3 +3 @@ def prev():\n-def f(a):\n+def f(a, b):\n"
+             "@@ -9,0 +10,2 @@ def prev():\n+async def added():\n+    pass\n"
+             'diff --git "a/q\\303\\251.py" "b/q\\303\\251.py"\n@@ -1 +1 @@ def stray():\n'
+             "diff --git a/n.py b/n.py\n" + "".join(f"@@ -{i} +{i} @@ def g{i}():\n" for i in range(1, 12)))
+        got = fmlanes.functions_changed(d)
+        self.assertEqual(got["m.py"], ["f", "added"], "a changed def is not credited to the function before it")
+        self.assertNotIn("stray", str(got))
+        self.assertEqual(got["n.py"][:2], ["g1", "g2"])
+        self.assertIn("+3 more", fmlanes.functions_line(got))
+
+    def test_a_hunk_names_git_context_and_its_defs_unless_it_starts_on_a_def_line(self):  # T-2312: never hide an edit
+        import fmlanes
+        both = ("diff --git a/m.py b/m.py\n@@ -4 +4,3 @@ def f():\n-    return 1\n+    return 2\n+\n+def g():\n")
+        self.assertEqual(fmlanes.functions_changed(both)["m.py"], ["f", "g"])
+        sig = "diff --git a/m.py b/m.py\n@@ -3 +3 @@ def prev():\n-def f(a):\n+def f(a, b):\n"
+        self.assertEqual(fmlanes.functions_changed(sig)["m.py"], ["f"])
+
+    def test_a_secret_in_a_hunk_header_reaches_neither_the_brief_nor_the_merge_output(self):  # T-2312 review
+        import fmlanes
+        key = "sk-live-9f8e7d6c5b4a39281706"
+        self.assertNotIn(key, str(fmlanes.functions_changed(
+            f'diff --git a/a.py b/a.py\n@@ -5 +5 @@ API_KEY = "{key}"\n')))
+        self.write(".env", f"TOKEN={key}\nA=1\nB=2\nC=3\nD=4\n")
+        self.write("a.py", f'API_KEY = "{key}"\nA=1\nB=2\nC=3\nD=4\n')
+        subprocess.run(["git", "-C", self.repo, "add", "-f", ".env", "a.py"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "k"], check=True)
+        self.prep()
+        self.write(".env", f"TOKEN={key}\nA=1\nB=2\nC=3\nD=5\n")
+        self.write("a.py", f'API_KEY = "{key}"\nA=1\nB=2\nC=3\nD=5\n')
+        text = self.brief()[1]
+        self.assertNotIn(key, text)
 
     def test_a_backend_diff_gets_no_design_lens(self):
         self.prep()

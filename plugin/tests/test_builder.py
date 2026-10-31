@@ -222,6 +222,32 @@ class Contract(_Tasks):
         self.assertIn("credentials", p.stderr)
         self.assertFalse(os.path.exists(os.path.join(self.repo, "config", "secrets.yaml")))
 
+    def test_lane_merge_names_every_function_the_branch_changed(self):
+        # T-2312: a stray edit in a second function stands out in the merge result
+        body = "".join(f"def {n}():\n    return 1\n\n\n" for n in ("f", "g", "h"))
+        with open(os.path.join(self.repo, "m.py"), "w") as fh:
+            fh.write(body)
+        git(self.repo, "add", "m.py")
+        git(self.repo, "commit", "-qm", "m")
+        tid, wt = self.lane("Two funcs")
+        with open(os.path.join(wt, "m.py"), "w") as fh:
+            fh.write(body.replace("return 1", "return 2", 2))  # f and g, not h
+        git(wt, "commit", "-qam", "edit f and g")
+        out = self.fm("lane", "merge", tid, "--json").stdout
+        self.assertEqual(json.loads(out)["functions"], {"m.py": ["f", "g"]})
+
+    def test_lane_merge_output_holds_no_secret_from_a_hunk_header(self):  # T-2312 review
+        key = "sk-live-9f8e7d6c5b4a39281706"
+        with open(os.path.join(self.repo, "k.py"), "w") as fh:
+            fh.write(f'API_KEY = "{key}"\nA = 1\nB = 2\nC = 3\nD = 4\n')
+        git(self.repo, "add", "k.py")
+        git(self.repo, "commit", "-qm", "k")
+        tid, wt = self.lane("Below a key")
+        with open(os.path.join(wt, "k.py"), "w") as fh:
+            fh.write(f'API_KEY = "{key}"\nA = 1\nB = 2\nC = 3\nD = 5\n')
+        git(wt, "commit", "-qam", "edit")
+        self.assertNotIn(key, self.fm("lane", "merge", tid, "--json").stdout)
+
     def test_lane_merge_checks_both_sides_of_a_rename(self):
         # T-0382 (security review): git diff --name-only shows a rename by its new name only, so a lane that moves a
         # guarded file away (deleting it from main) must be judged by its old path too
