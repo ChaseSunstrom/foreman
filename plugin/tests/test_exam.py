@@ -1216,3 +1216,102 @@ class ExamRuby(LangCheck, ForemanTestCase):
 
 class ExamC(LangCheck, ForemanTestCase):
     LANG = "c"
+
+
+TOOL_KINDS = ("tool-build", "tool-find")
+
+
+class ToolKinds(JudgmentStub, ForemanTestCase):
+    """T-2375 (Mission 6, #5): tool-build (a converter built, graded on a hidden second input, a stub of the tool and
+    its output) and tool-find (a shelf tool the request doesn't name, graded on its run counter and its output)."""
+
+    def scenario(self, kind):
+        s = next(x for x in self.gen("--kind", kind)["scenarios"] if x["kind"] == kind)
+        return s, self.key(s), os.path.dirname(s["repo"])
+
+    def arm(self, src):
+        """A copy of src as an arm's tree: a folder of its own, so its run counter (one level up) is its own."""
+        work = os.path.join(self.tmp, "arm-" + os.urandom(4).hex(), "w")
+        shutil.copytree(src, work, ignore=shutil.ignore_patterns(".git"))
+        return work
+
+    def passes(self, s, key, base, work):
+        import fmexam
+        return fmexam.passes(base, key, key["defects"][0], work)
+
+    def test_tool_kinds_oracle_closes_both_and_the_empty_answer_closes_neither(self):
+        r = self.gen("--kind", ",".join(TOOL_KINDS))
+        self.assertEqual(sorted(s["kind"] for s in r["scenarios"]), sorted(TOOL_KINDS))
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "oracle")),
+                         sorted(s["id"] for s in r["scenarios"]))
+        self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "empty")), [])
+
+    def test_tool_build_a_hand_written_output_fails_the_second_input_and_an_untested_tool_fails_the_stub(self):
+        s, key, base = self.scenario("tool-build")
+        clean = os.path.join(base, "hidden", "clean")
+        self.assertNotIn("rec2csv", os.listdir(os.path.join(s["repo"], "tools")) if os.path.isdir(
+            os.path.join(s["repo"], "tools")) else [])
+        self.assertTrue(self.passes(s, key, base, self.arm(clean)))
+        hand = self.arm(s["repo"])  # the CSV written by hand, no tool: the hidden second input has nothing to run
+        shutil.copy(os.path.join(clean, "data", "orders.csv"), os.path.join(hand, "data", "orders.csv"))
+        self.assertFalse(self.passes(s, key, base, hand))
+        untested = self.arm(clean)  # the right tool and output, but no test of it: the stub goes unnoticed
+        shutil.copy(os.path.join(s["repo"], key["commands"]["suite"]), os.path.join(untested, key["commands"]["suite"]))
+        self.assertFalse(self.passes(s, key, base, untested))
+        naive = self.arm(clean)  # a tool that prints fields in line order: right on the shown input, wrong on the hidden
+        with open(os.path.join(naive, "tools", "rec2csv"), "w") as f:
+            f.write("#!/bin/sh\nhead=$(sed -n '1p;2p' data/orders.rec | cut -d: -f1 | paste -sd,)\n"
+                    "printf '%s\\n' \"$head\"\ngrep ': ' | cut -d' ' -f2 | paste -d, - -\n")
+        self.assertFalse(self.passes(s, key, base, naive))
+
+    def test_tool_find_an_own_converter_fails_and_running_the_shelf_tool_passes(self):
+        s, key, base = self.scenario("tool-find")
+        self.assertTrue(os.path.isfile(os.path.join(s["repo"], "tools", "rec2csv")))  # on the shelf, unmentioned
+        self.assertNotIn("rec2csv", key["request"])
+        own = self.arm(s["repo"])  # its own converter: the right CSV, but the shelf tool never ran
+        shutil.copy(os.path.join(base, "hidden", "clean", "data", "orders.csv"), os.path.join(own, "data", "orders.csv"))
+        self.assertFalse(self.passes(s, key, base, own))
+        used = self.arm(s["repo"])
+        with open(os.path.join(used, "data", "orders.rec"), "rb") as i, \
+                open(os.path.join(used, "data", "orders.csv"), "wb") as o:
+            subprocess.run(["sh", "tools/rec2csv"], stdin=i, stdout=o, cwd=used, check=True)
+        self.assertTrue(self.passes(s, key, base, used))
+
+    def test_tool_find_runs_travel_with_a_copied_tree_and_a_rerun_starts_with_none(self):
+        import fmexam
+        s, key, base = self.scenario("tool-find")
+        used = self.arm(s["repo"])  # a session arm works in a temp copy, then its tree is copied back for grading
+        with open(os.path.join(used, "data", "orders.rec"), "rb") as i, \
+                open(os.path.join(used, "data", "orders.csv"), "wb") as o:
+            subprocess.run(["sh", "tools/rec2csv"], stdin=i, stdout=o, cwd=used, check=True)
+        back = os.path.join(self.tmp, "graded", "w")
+        shutil.copytree(used, back)
+        self.assertFalse(self.passes(s, key, base, back))  # the counter stayed beside the temp copy
+        fmexam._carry_runs(used, back)
+        self.assertTrue(self.passes(s, key, base, back))
+        shutil.rmtree(back)  # the next run of this arm starts over: its old line must not pass it
+        fmexam._forget_runs(back)
+        shutil.copytree(s["repo"], back, ignore=shutil.ignore_patterns(".git"))
+        shutil.copy(os.path.join(used, "data", "orders.csv"), os.path.join(back, "data", "orders.csv"))
+        self.assertFalse(self.passes(s, key, base, back))
+
+    def test_tool_kinds_nine_per_kind_three_held_out_in_every_language_and_scored_for_five(self):
+        import fmexam
+        import fmgenesis
+        res = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "9", "--kind", ",".join(TOOL_KINDS))
+        for kind in TOOL_KINDS:
+            mine = [s for s in res["scenarios"] if s["kind"] == kind]
+            self.assertEqual((len(mine), sum(s["split"] == "holdout" for s in mine)), (9, 3), kind)
+        for lang in fmexam.LANGS:
+            got = self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", lang, "--kind", ",".join(TOOL_KINDS))
+            self.assertEqual(len(got["scenarios"]), 2, lang)
+            for s in got["scenarios"]:
+                self.assertTrue(os.path.isfile(os.path.join(s["repo"], "data", "orders.rec")), (lang, s["kind"]))
+        five = ("When it hits something it can't do, it finds an existing plugin, skill or MCP server (`fm plugins find`, "
+                "`fm lib search`) or builds one (`fm mcp new`, a script, a project skill), tests it, and uses it.")
+        kinds = fmgenesis._kinds("Getting the tools it lacks", five)
+        for kind in ("missing-tool",) + TOOL_KINDS:
+            self.assertIn(kind, kinds)
+        for name, text in (("Docs", "builds the docs site"), ("Search", "finds an existing user by email")):
+            self.assertEqual([k for k in fmgenesis._kinds(name, text) if k in TOOL_KINDS], [], name)
