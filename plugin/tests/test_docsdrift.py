@@ -5,6 +5,8 @@ import subprocess
 
 from helpers import ForemanTestCase
 
+from test_prove import cli, write
+
 import fmdocs
 
 
@@ -120,6 +122,23 @@ class TaskDocsDrift(DocsDrift):
         blockers, _ = fmdocs.task_docs(self.repo, "rules/foreman.md")
         self.assertEqual(blockers, ["docs impact names rules/foreman.md, which doesn't exist "
                                     "(one of mods/rules/foreman.md, plugin/rules/foreman.md?)"])
+
+    def test_task_docs_docs_proof_a_renamed_flag_blocks_and_prose_checks_nothing(self):
+        # T-2381: the static rung of fm prove --docs runs on the lines the task added to the docs it names
+        write(self.repo, {"bin/mycli": cli("/dev/null"), "CHANGELOG.md": "# Changes\n"})
+        os.chmod(os.path.join(self.repo, "bin", "mycli"), 0o755)
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "a cli"], check=True)
+        self.append("README.md", "Build with `mycli build --out dist`.\n")
+        self.assertEqual(fmdocs.task_docs(self.repo, "README.md")[0], [])
+        self.append("README.md", "Or `mycli build --renamed-flag`.\n")
+        blockers, _ = fmdocs.task_docs(self.repo, "README.md")
+        self.assertEqual(len(blockers), 1, blockers)
+        self.assertIn("--renamed-flag", blockers[0])
+        subprocess.run(["git", "-C", self.repo, "checkout", "README.md"], check=True)
+        self.append("CHANGELOG.md", "- the mycli --renamed-flag option is gone.\n")
+        self.append("README.md", "A prose line, no command.\n")
+        self.assertEqual(fmdocs.task_docs(self.repo, "CHANGELOG.md and README.md")[0], [])
 
     def test_task_docs_a_new_doc_is_all_added(self):
         self.append("NEW.md", "See `src/missing.py`.\n")
