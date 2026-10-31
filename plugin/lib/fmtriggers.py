@@ -3,6 +3,8 @@ else the event's source); a captured brief's final status says whether it was wo
 closed captures were mostly dropped files at low priority (demote, never silence). Stdlib only; reads the ledger and
 the briefs, writes nothing."""
 import datetime
+import json
+import os
 
 import fmcore as c
 
@@ -58,10 +60,29 @@ def noisy(p, trigger):
 
 
 def noisiest(p):
-    """The trigger with the most dropped captures and precision under LOW_PRECISION, or None: for fm status."""
+    """The trigger with the most dropped captures and precision under LOW_PRECISION, or None: for fm state. Cached in
+    triggers.json keyed on the ledger's size, so a polled fm state doesn't load every brief (T-2276: +90 ms CPU
+    here). ponytail: any new ledger line invalidates it; key on the capture/close counts if that bites."""
+    path = os.path.join(p.dir, "triggers.json")
+    try:
+        size = os.path.getsize(os.path.join(p.dir, "ledger.jsonl"))
+    except OSError:
+        size = -1
+    try:
+        with open(path) as f:
+            hit = json.load(f)
+        if hit.get("size") == size:
+            return hit.get("noisiest")
+    except (OSError, ValueError, AttributeError):
+        pass
     bad = [r for r in stats(p).values() if r["trigger"] not in URGENT and r["precision"] is not None
            and r["done"] + r["dropped"] >= MIN_CLOSED and r["precision"] < LOW_PRECISION]
-    return max(bad, key=lambda r: r["dropped"], default=None)
+    n = max(bad, key=lambda r: r["dropped"], default=None)
+    try:
+        c.write_atomic(path, json.dumps({"size": size, "noisiest": n}))
+    except OSError:
+        pass
+    return n
 
 
 def cmd_triggers(args):
@@ -73,5 +94,7 @@ def cmd_triggers(args):
         prec = "-" if r["precision"] is None else f"{r['precision']:.2f}"
         flag = "  (files at low priority)" if noisy(p, r["trigger"]) else ""
         lines.append(f"{r['trigger']:<22}{r['fired']:>6}{r['done']:>6}{r['dropped']:>8}{r['open']:>6}{prec:>10}{flag}")
+    if args.days == 30:
+        noisiest(p)  # refresh the cache fm state reads
     fmcli.out(args, {"days": args.days, "triggers": rows},
               "\n".join(lines) if rows else f"No trigger has filed a task in the last {args.days} days.")

@@ -64,6 +64,25 @@ class Triggers(ForemanTestCase):
             self.fire("baseline", "dropped")
         self.assertEqual(self.fire("baseline").priority, "normal")
 
+    def test_state_names_the_noisiest_trigger_and_a_second_state_reloads_no_briefs(self):
+        import unittest.mock as mock
+
+        import fmtriggers
+        for _ in range(5):
+            self.fire("noisy", "dropped")
+        self.assertEqual(fmtriggers.noisiest(self.p)["trigger"], "noisy")
+        real = c.load_briefs
+        with mock.patch.object(c, "load_briefs", side_effect=lambda *a, **k: real(*a, **k)) as m:
+            self.assertEqual(fmtriggers.noisiest(self.p)["trigger"], "noisy")
+            self.assertEqual(m.call_count, 0)
+        self.assertIn("Noisiest trigger: noisy", self.fm("state").stdout)
+
+    def test_ad_hoc_sources_count_as_triggers(self):
+        c.log_event(self.p, "capture", task="T-0099", data={"source": "sentinel"})  # as fm sentinel logs it
+        self.fm("capture", "a follow-up", "--source", "followup")
+        r = self.rows()
+        self.assertEqual((r["sentinel"]["fired"], r["followup"]["fired"]), (1, 1))
+
     def test_a_recovered_trigger_climbs_back(self):
         for _ in range(5):
             self.fire("flaky", "dropped")
