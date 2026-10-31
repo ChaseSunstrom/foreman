@@ -1314,7 +1314,7 @@ def _child_caps(p, f, goal):
     return context, caps
 
 
-def draft(p, line=""):
+def draft(p, line="", model=True):
     """A whole gen-0 from a line (or nothing): {text, source: child|fallback, unconfirmed}. The line's own MUST/NEVER/
     CONTEXT/DONE-WHEN lines go in as given; open briefs' quoted MUST/NEVER lines carry over (a brief not from the user
     is marked unconfirmed); the child only names capabilities and context, never constraints."""
@@ -1343,6 +1343,8 @@ def draft(p, line=""):
                 tagged[q.split(":")[0]].append(q + (f" (from {b.id})" if mine else f" (unconfirmed, from {b.id})"))
                 unconfirmed += [] if mine else [tagged[q.split(":")[0]][-1]]
     try:
+        if not model:  # T-2178: a scout probe runs from hooks and never calls a model
+            raise ValueError("no model asked for")
         context, caps = _child_caps(p, f, goal)
         source, reason = "child", ""
     except ValueError as e:

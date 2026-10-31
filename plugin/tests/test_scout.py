@@ -430,3 +430,119 @@ class ScoutDrive(ForemanTestCase):
         self.fm("init")
         p = c.find_project(self.repo, create=False)
         self.assertEqual(fmnight.jobs(p)[0][0], "scout")
+
+
+class GenesisSelfStart(ForemanTestCase):  # T-2178: gen-0 #13, Genesis starts by itself on a drained queue
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo, create=False)
+        import fmcli
+        for i in range(10):
+            fmcli._create(self.p, f"shipped {i}", "FIX", "S", "done")
+
+    GOAL = "Make the docs and tests complete.\nMUST: keep fm check green"
+
+    def full(self, goal=GOAL, user=True):
+        import fmcli
+        import fmmandate
+        c.update_meta(self.p, autonomy="full")
+        if goal:
+            fmmandate.put(self.p, goal, None)
+            if user:  # the words came from the user: a user-sourced brief holds them
+                fmcli._create(self.p, "the goal", "FEATURE", "S", "done", raw=goal, source="user")
+
+    def test_a_mandate_a_session_wrote_is_only_offered(self):
+        self.full(user=False)
+        self.assertTrue(self.probe()[0].confirm)
+        self.assertFalse(os.path.exists(self.gen0()))
+
+    def test_a_goal_the_user_steered_in_starts(self):
+        self.full(user=False)
+        c.update_meta(self.p, scout_keys={})
+        self.fm("decide", "user steer 2026-10-30: make the docs and tests complete, keep fm check green",
+                "--cites", "user steer 2026-10-30")
+        self.assertEqual([f.key for f in self.probe()], ["genesis:started"])
+        self.assertTrue(os.path.exists(self.gen0()))
+
+    def test_lines_quoted_from_other_briefs_make_it_an_offer(self):
+        import fmcli
+        self.full()
+        fmcli._create(self.p, "scout item", "FIX", "S", "blocked", raw="MUST: never touch the vault files at all",
+                      source="scout")
+        found = self.probe()
+        self.assertTrue(found[0].confirm)
+        self.assertFalse(os.path.exists(self.gen0()))
+
+    def test_a_tower_a_second_session_filed_first_is_left_alone(self):
+        import fmgenesis
+        self.full()
+        real = fmgenesis.init
+
+        def lose(p, data):  # the other session's init lands between our check and ours
+            real(p, b"# gen-0 by someone else\n")
+            return real(p, data)
+        with unittest.mock.patch.object(fmgenesis, "init", side_effect=lose):
+            self.assertEqual(self.probe(), [])
+        self.assertIn("else", open(self.gen0(), encoding="utf-8").read())
+
+    def test_a_failure_after_init_still_leaves_the_decision_and_the_key(self):
+        import fmgenesis
+        self.full()
+        with unittest.mock.patch.object(fmgenesis, "kick", side_effect=OSError("boom")):
+            with self.assertRaises(OSError):
+                self.probe()
+        self.assertIn("genesis:start", c.read_meta(self.p)["scout_keys"])
+        self.assertIn("Genesis started", open(os.path.join(self.p.dir, "decisions.md"), encoding="utf-8").read())
+
+    def probe(self, **ctx):
+        return fmscout.probe_genesis(self.p, ctx)
+
+    def gen0(self):
+        import fmgenesis
+        return os.path.join(fmgenesis.home(self.p), "gen-0.md")
+
+    def test_full_autonomy_with_a_goal_starts_once_sealed_with_a_decision_and_no_model(self):
+        import fmgenesis
+        self.full()
+        with unittest.mock.patch("fmideas.run_child", side_effect=AssertionError("no model in a probe")):
+            note = self.probe()
+        self.assertEqual([(f.key, "fm genesis step" in f.why) for f in note], [("genesis:started", True)])
+        text = open(self.gen0(), encoding="utf-8").read()
+        self.assertIn("Make the docs and tests complete", text)
+        self.assertIn("MUST: keep fm check green", text)
+        self.assertTrue(fmgenesis.seal(self.p))
+        self.assertIn("genesis:start", c.read_meta(self.p)["scout_keys"])
+        dec = os.path.join(self.p.dir, "decisions.md")
+        d = open(dec, encoding="utf-8").read()
+        self.assertIn("Genesis started", d)
+        self.assertIn("mandate", d)
+        self.assertEqual(self.probe(), [])  # a second probe does nothing
+        self.assertEqual(open(dec, encoding="utf-8").read(), d)
+
+    def test_a_dry_run_starts_nothing(self):
+        self.full()
+        self.probe(dry=True)
+        self.assertFalse(os.path.exists(self.gen0()))
+
+    def test_full_without_a_goal_or_with_an_ended_one_offers(self):
+        import fmmandate
+        self.full(goal="")
+        found = self.probe()
+        self.assertEqual([f.key for f in found], ["genesis:start"])
+        self.assertTrue(found[0].confirm)
+        fmmandate.put(self.p, "Improve everything now", time.time() - 60)
+        self.assertTrue(self.probe()[0].confirm)
+        self.assertFalse(os.path.exists(self.gen0()))
+
+    def test_standard_autonomy_offers_even_with_a_goal(self):
+        self.full()
+        c.update_meta(self.p, autonomy="standard")
+        self.assertTrue(self.probe()[0].confirm)
+        self.assertFalse(os.path.exists(self.gen0()))
+
+    def test_a_sensitive_project_never_starts(self):
+        self.full()
+        c.update_meta(self.p, sensitive=True)
+        self.assertTrue(self.probe()[0].confirm)
+        self.assertFalse(os.path.exists(self.gen0()))
