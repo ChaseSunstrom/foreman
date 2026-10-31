@@ -108,6 +108,25 @@ class Long(ForemanTestCase):
             self.assertNotIn("assert", goal.lower())  # names and done-when only, never the tests' bodies
             self.assertNotIn("h is five", goal)
 
+    def test_a_goal_states_the_literals_its_checks_pin_and_one_pinning_too_many_is_dropped(self):
+        # T-2322: l002's T-2041 pinned viewBox '0 0 64 64' and T-2020 >150 patterns, values no honest answer could know
+        self.add("\n\ndef view():\n    return '0 0 64 64'\n\n\ndef size():\n    return 77\n",
+                 "\n    def test_v_view(self):\n        self.assertEqual(app.view(), '0 0 64 64')\n"
+                 "        self.assertEqual(app.size(), 77)\n        self.assertEqual(app.old(), 0)\n"
+                 "        self.assertTrue(app.size())\n        self.assertNotEqual(app.size(), 1)\n"
+                 "        self.assertEqual(app.old.__name__, 'old')\n", "Add view (T-1020)")  # 1 and 'old' state nothing new
+        self.add("\n\ndef many():\n    return [880, 881, 882, 883]\n",
+                 "\n    def test_m_many(self):\n" + "".join(f"        self.assertEqual(app.many()[{i}], {880 + i})\n" for i in range(4)),
+                 "Add many (T-1021)")
+        r = json.loads(self.gen().stdout)
+        self.assertEqual([s["id"] for s in r["scenarios"] if s["id"] in ("T-1020", "T-1021")], ["T-1020"])
+        self.assertEqual(r["dropped_pinned"], 1)
+        goal = [s for s in r["scenarios"] if s["id"] == "T-1020"][0]["goal"]
+        self.assertIn("The checks expect these values: '0 0 64 64', 77\n", goal)
+        self.assertNotIn("880", goal)
+        text = self.fm("exam", "long", "gen", "--from", self.src).stdout  # the text output names the drop
+        self.assertIn("dropped 1 goal(s) whose checks pin values the goal can't state (T-1021)", text)
+
     def test_a_goal_from_the_projects_own_history_carries_its_briefs_ticket(self):
         # T-2321: a subject alone left the checks' contract unsaid; the brief is the ticket a session had
         out = self.fm("task", "new", "Add q", "--type", "FEATURE", "--tier", "S", "--interpretation",
