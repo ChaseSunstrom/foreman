@@ -195,7 +195,7 @@ def _call(p, name, args):
             if m:
                 by = {b.id: b for b in c.load_briefs(p, include_archive=True)}
                 m["items"] = [dict(it, state=fmmandate.item_state(it, by)) for it in m.get("items") or []]
-            return json.dumps({"goal": m, "line": fmmandate.goal_line(p), "verdict": c.read_meta(p).get("goal_verdict")},
+            return json.dumps({"goal": m, "line": fmmandate.goal_line(p), "verdict": fmmandate.fresh_verdict(p, m)},
                               ensure_ascii=False), False
         if name == "fail":
             text = args.get("text")

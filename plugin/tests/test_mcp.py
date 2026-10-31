@@ -1,11 +1,14 @@
 """fm mcp (T-0245): Foreman's memory and state as read-only MCP tools over stdio (JSON-RPC 2.0, one message a line)."""
 import json
 import os
+import re
 import time
 import subprocess
 import sys
 
 from helpers import FM, ForemanTestCase
+
+import fmcore as c
 
 
 class _Mcp(ForemanTestCase):
@@ -399,12 +402,17 @@ class GoalTool(_Mcp):
         self.assertEqual(json.loads(_text(out[0])), {"goal": None, "line": None, "verdict": None})
         self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
         self.fm("goal", "item", "one", "--done-when", "touch ran-it")  # a check that would leave a mark if it ran
-        self.fm("goal", "verdict", check=False)
+        self.fm("goal", "verdict", check=False)  # (stored while no task is linked: nothing ran)
+        r = self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                    "--goal", "1")
+        b = c.find_brief(c.find_project(self.repo), re.search(r"T-\d+", r.stdout)[0])
+        b.meta["status"] = "done"  # drift would now run the item's check (fm goal show does)
+        c.save_brief(c.find_project(self.repo), b, touch=False)
         out, _ = self.talk({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, self.call(2, "goal"))
         self.assertIn("goal", {t["name"] for t in out[0]["result"]["tools"]})
         data = json.loads(_text(out[1]))
         self.assertEqual(data["goal"]["text"], "Ship the ledger")
-        self.assertEqual(data["goal"]["items"][0]["state"], "no task")
-        self.assertIn("0/1 items done", data["line"])
+        self.assertEqual(data["goal"]["items"][0]["state"], "done")
+        self.assertIn("1/1 items done", data["line"])
         self.assertEqual(data["verdict"]["verdict"], "stopped")
         self.assertFalse(os.path.exists(os.path.join(self.repo, "ran-it")))

@@ -697,9 +697,8 @@ def _signals(sd, d, p=None):
         out.append({"level": "red" if g["kind"] == "fatal" else "amber",
                     "text": f"genesis gen {g['gen']} {g['kind']}: {c.plain(g['action'])[:120]}"})
     import fmmandate
-    gv = (c.read_meta(p).get("goal_verdict") or {}) if p else {}  # T-2141: the stored verdict only, no check runs here
-    gm = fmmandate.get(p) if gv.get("verdict") == "stopped" else None
-    if gm and not gm["expired"] and gv.get("set_at") == gm.get("set_at"):
+    gv = (fmmandate.fresh_verdict(p) if p else None) or {}  # T-2141: the stored verdict only, no check runs here
+    if gv.get("verdict") == "stopped":
         out.append({"level": "amber", "text": c.plain(f"goal stopped: {c.fit(str((gv.get('causes') or ['no cause stored'])[0]), 100)}")})
     errors = len(fmdoctor.recent_hook_errors())
     if errors:

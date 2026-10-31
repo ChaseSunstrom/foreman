@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The standing goal shows wherever you look: `fm code`'s run prompt, a read-only MCP `goal` tool, a Goal section in `fm export agents` (with the dated last verdict), the band (a stopped goal and its first cause) and the Planning page; a stored verdict counts only while the goal it judged stands, from this checkout and under a day old
 - A standing goal rides across days: SessionStart, the PreCompact checkpoint and `fm resume` print one goal line (its text, items done/total, the next item and its first open task), and `fm run` takes that item's planned task first
 - Genesis keeps one moonshot Mission each generation from gen 2: ideas outside every coverage cell, a far-domain lens, a frontier digest from your own research notes (`fm genesis frontier N`), and a cold novelty read (`fm genesis novelty N`) that marks the obvious ones. `fm genesis check` holds each idea to prior-art and better-by lines, keeps a failed spike in not-yet.md, and makes the report say which shipped moonshots you asked for
 - `fm goal verdict` says `finished` only when every item has a done task and none open, its check passes now, every goal clause is covered and `fm check` last ran green on this tree; otherwise `stopped` with each cause (exit 1, no goal 2); a done claim on a stopped goal blocks once at Stop, counted toward DRIVE_MAX (T-2137)
