@@ -57,12 +57,23 @@ def _transcript_commands(sids):
     return out
 
 
-def _recheck(events):
+def _example(e, full):
+    """T-2280: the blocked command with data-heredoc bodies dropped (the hook logs only its first 160 chars, newlines
+    flattened, so the judged line can be past the cut: the transcript's full text is used when it is there), fitted,
+    and the rule's hint after it."""
+    import fmguard
+    cmd = full.get((e.get("session_id"), e["cmd"]), (str(e["cmd"]),))[0]
+    shown = c.fit(c.plain(fmguard._drop_data_heredocs(c.redact(cmd)).replace("\n", " ")), 160)
+    hint = fmguard._hint(str(e.get("target") or ""), e.get("category") or "").strip()
+    return f" — e.g. `{shown}`", (f" — hint: {c.fit(hint, 160)}" if hint else "")
+
+
+def _recheck(events, found=None):
     """{event index: what today's guard says of the command it blocked then} (T-0187): a fix that removed the friction
     shows as 'allows it'; a command no transcript holds any more gets no word."""
     import fmreplay
     bash = [(i, e) for i, e in enumerate(events) if e.get("tool") == "Bash" and e.get("cmd") and e.get("session_id")]
-    found = _transcript_commands({e["session_id"] for _, e in bash})
+    found = found if found is not None else _transcript_commands({e["session_id"] for _, e in bash})
     runs = {i: found[(e["session_id"], e["cmd"])] for i, e in bash if (e["session_id"], e["cmd"]) in found}
     now = fmreplay.verdicts(runs.values())
     say = lambda v: "today's guard allows it" if v == "allow" else \
@@ -107,7 +118,8 @@ def _mine(ledger, label):
             smooth.append(f"{label(lp)}{tid} ({len(evs)} stage events, graded "
                           f"{(end.get('data') or {}).get('verified') or 'ungraded'})")
         if end["event"] == "task_block":
-            gave_up[sum(_failed(e) for e in evs)].append(f"{label(lp)}{tid}")
+            why = c.fit(c.plain(str((end.get("data") or {}).get("reason") or "")), 80)  # T-2295
+            gave_up[sum(_failed(e) for e in evs)].append(f"{label(lp)}{tid}" + (f" ({why})" if why else ""))
     return {
         "common paths (stage sequences of tasks that finished or blocked)": [
             f"{s} ×{n}" for s, n in paths.most_common(3)],
@@ -129,13 +141,15 @@ def digest(p, recheck=True):
     guard = [e for e in events if e.get("kind") == "guard_block"]
     key = lambda e: (e.get("category"), c.fit(c.plain(str(e.get("target") or "")), 110))
     blocks = collections.Counter(key(e) for e in guard)
-    example = {key(e): c.fit(c.plain(str(e["cmd"])), 160) for e in guard if e.get("cmd")}  # T-0172: the newest
     shown = blocks.most_common(MAX_LINES)
     newest = {key(e): e for e in guard}
-    now = _recheck([newest[k] for k, _ in shown]) if recheck else {}
+    full = _transcript_commands({e["session_id"] for e in (newest[k] for k, _ in shown)
+                                 if e.get("session_id") and e.get("tool") == "Bash"}) if recheck else {}
+    example = {k: _example(e, full) for k, e in newest.items() if e.get("cmd")}  # T-0172: the newest
+    now = _recheck([newest[k] for k, _ in shown], full) if recheck else {}
     out["guard blocks (each a stop Claude had to work around; a false one costs a rewrite)"] = [
-        f"{n}× {cat}: {target}" + (f" — e.g. `{example[(cat, target)]}`" if (cat, target) in example else "")
-        + (f" — {now[i]}" if i in now else "") for i, ((cat, target), n) in enumerate(shown)]
+        f"{n}× {cat}: {target}" + example.get((cat, target), ("", ""))[0]
+        + (f" — {now[i]}" if i in now else "") + example.get((cat, target), ("", ""))[1] for i, ((cat, target), n) in enumerate(shown)]
     rules = collections.Counter(e["rule"] for e in guard if e.get("rule"))  # T-0672: which checks fire most
     if rules:
         out["guard rules by fire count (a rule that fires often on harmless work is the one to look at)"] = [

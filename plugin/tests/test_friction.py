@@ -173,6 +173,37 @@ class Friction(ForemanTestCase):
         self.assertIn("SessionStart: session map — 1,900 chars avg × 4", big)
         self.assertNotIn("prompt hint", big)
 
+    def test_guard_example_drops_heredoc_bodies_and_adds_the_rules_hint(self):
+        # T-2280: the first 160 chars cut a heredoc before the line the guard judged
+        import fmcore as c
+        claude = os.path.join(self.tmp, "claude")
+        os.makedirs(os.path.join(claude, "projects", "x"))
+        body = "\n".join(f"print({i})  # padding padding padding" for i in range(12))
+        cmd = f"cat > /tmp/t.py <<'EOF'\n{body}\nEOF\npython3 $D/run.py"
+        with open(os.path.join(claude, "projects", "x", "s2.jsonl"), "w") as f:
+            f.write(json.dumps({"type": "assistant", "cwd": self.repo, "sessionId": "s2", "message": {"content": [
+                {"type": "tool_use", "name": "Bash", "input": {"command": cmd}}]}}) + "\n")
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": c.iso(c.time.time() - 60), "kind": "guard_block", "session_id": "s2",
+                                "category": "state-direct", "tool": "Bash", "rule": "x",
+                                "target": "$D/run.py (not known before it runs)",
+                                "cmd": c.fit(cmd.replace("\n", " "), 160)}) + "\n")
+        out = self.fm("friction", env={"CLAUDE_CONFIG_DIR": claude}).stdout
+        self.assertIn("python3 $D/run.py", out)
+        self.assertNotIn("print(3)", out)
+        self.assertIn("name it literally", out)  # the rule's hint
+
+    def test_give_up_lines_say_why_each_task_blocked(self):
+        # T-2295: the line named task ids only
+        import fmcore as c
+        p = c.find_project(self.repo)
+        for tid, why in (("T-0006", "can't reproduce"), ("T-0007", "needs the prod key")):
+            c.log_event(p, "focus", task=tid)
+            c.log_event(p, "task_block", task=tid, data={"reason": why})
+        out = self.fm("friction").stdout
+        self.assertIn("T-0006 (can't reproduce)", out)
+        self.assertIn("T-0007 (needs the prod key)", out)
+
     def test_the_digest_rechecks_guard_blocks_and_shows_the_trend(self):
         # T-0187: 'done since: T-0178' said nothing of whether the fix removed its friction. Each guard block is re-run
         # through today's guard (its full command from the session's transcript); a mark keeps the window's counts
