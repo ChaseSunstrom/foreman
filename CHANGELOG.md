@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm exam grade` splits false alarms by scenario kind (`false_by_kind`, overall and per split, and "false alarms by kind" in the summary), so a clean scenario's zero-findings bar reads directly (T-2299).
 - Friction digest: the guard example shows the line the guard judged (data-heredoc bodies dropped, the full command found in the session transcript) with the rule's hint, and give-up lines name each task's block reason (T-2280, T-2295, T-2296).
 - `fm doctor` times each check: every result carries its wall ms (null when unmeasured), the hook benchmark is charged to hook latency, `--json` adds the three slowest and `-v` prints them, so a slower doctor names its cause (T-2279).
 - `fm ci-watch` backs off to GitHub's rate-limit reset (naming the limit and its HH:MM reset, without counting the wait as a poll, giving up after 3 waits) and holds one public-API watch per repo, so several watches don't split the hourly budget (T-2156).
