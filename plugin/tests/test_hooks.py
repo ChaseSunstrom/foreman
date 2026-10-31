@@ -2161,6 +2161,51 @@ class Stop(HookCase):
                     {"type": "tool_result", "tool_use_id": f"u{i}", "content": text, "is_error": err}]}}) + "\n")
         return path
 
+    def leads_session(self, sid, seen=True):
+        """T-2297: a repo with two SQL-built lookups; session start (unattended, nothing queued) shows their leads."""
+        self.fm("init")
+        os.makedirs(os.path.join(self.repo, "kit"), exist_ok=True)
+        with open(os.path.join(self.repo, "kit", "store.py"), "w") as f:
+            f.write("def lookup(db, name):\n    return db.execute(\"SELECT * FROM users WHERE name = '\" + name + \"'\")\n\n\n"
+                    "def remove(db, ident):\n    return db.execute(\"DELETE FROM users WHERE id = '\" + ident + \"'\")\n")
+        for args in (["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]):
+            subprocess.run(["git", *args], cwd=self.repo, capture_output=True)
+        if seen:
+            ctx = self.ctx_of(self.hook("SessionStart", {"source": "startup", "session_id": sid}, env={
+                "CLAUDE_ENV_FILE": self.env_file, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}))
+            self.assertIn("kit/store.py:2", ctx)
+            self.assertIn("kit/store.py:6", ctx)
+            self.assertIn("a lead, not a finding", ctx)  # T-2297: no failing test, no finding
+
+    def test_a_stop_holds_once_for_a_shown_lead_the_reply_never_names(self):
+        # T-2297: s31-006: the session saw the clamp lead, never reported it, and reported unproven ones as findings
+        self.leads_session("s1")
+        held = self.stop("Looked around; nothing to add. `lookup` is the only risk.", session="s1")
+        self.assertEqual(self.decision(held), "block")
+        reason = parse(held)["reason"]
+        self.assertIn("kit/store.py:6", reason)
+        self.assertNotIn("kit/store.py:2", reason)  # named by its symbol
+        self.assertIn("refute it", reason)
+        self.assertIn("a lead, not a finding", reason)
+        self.assertIsNone(self.decision(self.stop("Still nothing.", session="s1")))  # held once, the second stop passes
+
+    def test_a_reply_naming_every_shown_lead_passes_and_a_session_without_leads_is_untouched(self):
+        self.leads_session("s2")
+        self.assertIsNone(self.decision(self.stop("Report: kit/store.py:2 and remove are SQL-built leads.", session="s2")))
+        self.assertIsNone(self.decision(self.stop("nothing", session="s-none")))  # never shown any: untouched
+        self.assertIsNone(self.decision(self.stop("nothing", session=None)))
+
+    def test_a_lead_no_longer_present_is_not_held_and_a_slow_rescan_skips_the_check(self):
+        from unittest import mock
+        import fmfind
+        import fmhooks
+        self.leads_session("s3")
+        pl = {"session_id": "s3", "last_assistant_message": "nothing"}
+        with mock.patch.object(fmhooks, "LEADS_SECONDS", 0.05), \
+                mock.patch.object(fmfind, "scan", side_effect=lambda *a: time.sleep(0.5) or (0, [])):
+            self.assertIsNone(fmhooks._leads_hold(self.project(), pl))  # past the deadline: skipped
+        self.assertIsNone(fmhooks._leads_hold(self.project(), pl))  # and it counted as the one hold
+
     def test_a_tests_pass_claim_needs_a_passing_run_after_the_last_edit(self):
         # T-0886: the Stop gate checked only "done"; "all tests pass" went unchecked against the turn's own runs
         self.fm("init")
