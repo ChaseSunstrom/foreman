@@ -206,7 +206,9 @@ class Shelves(ForemanTestCase):
                    '#!/usr/bin/env python3\n# fm new tool\n"""sheetsplit: split a spreadsheet into one file per tab."""\n')
         self.write(os.path.join(self.repo, "tools", "other.py"), '"""split spreadsheet tabs: no header."""\n')
         (row,) = self.rows("split a spreadsheet by tab", "tools")
-        self.assertEqual((row["source"], row["grant"]), ("project tool", ""))
+        self.assertEqual(row["grant"], "")
+        self.assertTrue(row["source"].startswith("project tool"), row["source"])
+        self.assertIn("this repo's, unreviewed: read it first", row["source"])  # the repo wrote it, not this machine
         self.assertIn("tools/sheetsplit.py", row["load"])
 
     def test_an_installed_plugins_skill_is_found(self):
@@ -225,10 +227,31 @@ class Shelves(ForemanTestCase):
         self.write(os.path.join(self.hm, ".claude.json"), json.dumps(
             {"mcpServers": {"wombat-search": {"command": "w"}},
              "projects": {self.repo: {"mcpServers": {"yak-cache": {"command": "g"}}}}}))
-        self.assertEqual([r["source"] for r in self.rows("gizmo-db", "mcp")], [".mcp.json"])
+        (row,) = self.rows("gizmo-db", "mcp")
+        self.assertTrue(row["source"].startswith(".mcp.json"), row["source"])
+        self.assertIn("this repo's, unreviewed: read it first", row["source"])
         self.assertEqual([r["source"] for r in self.rows("wombat-search", "mcp")], ["~/.claude.json"])
         self.assertEqual([r["name"] for r in self.rows("yak-cache", "mcp")], ["yak-cache"])
         self.assertEqual(self.rows("gizmo-db", "mcp")[0]["grant"], "")
+
+    def test_a_pipe_or_a_huge_file_where_a_config_belongs_is_skipped_not_read(self):
+        os.mkfifo(os.path.join(self.repo, ".mcp.json"))  # a read would block forever
+        self.write(os.path.join(self.hm, ".claude.json"), '{"mcpServers": {"gizmo": {}}, "pad": "' + "x" * 9_000_000 + '"}')
+        p = self.fm("which", "gizmo", env=self.env(), check=False, timeout=15)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+
+    def test_a_shelf_that_fails_is_named_in_the_output_and_the_receipt(self):
+        from unittest import mock
+
+        import fmwhich
+        p = c.find_project(self.repo)
+        failed = []
+        with mock.patch.dict(os.environ, self.env()), mock.patch.object(fmwhich, "tools", side_effect=OSError("x")):
+            got = fmwhich.search("record evidence for a step", p, failed)
+        self.assertEqual((failed, got["tools"]), (["tools"], []))
+        self.assertIn("fm task evidence", [r["load"] for r in got["commands"]], "the other shelves still answer")
+        self.assertIn("skipped: tools", fmwhich.skipped_note(failed))
+        self.assertEqual(fmwhich.skipped_note([]), "")
 
     def test_a_malformed_config_is_skipped_not_fatal(self):
         self.write(os.path.join(self.repo, ".mcp.json"), "{not json")
@@ -301,7 +324,7 @@ class Shelves(ForemanTestCase):
         from unittest import mock
         with mock.patch.dict(os.environ, {"HOME": self.hm}), mock.patch("fmplugins.index", side_effect=AssertionError):
             self.assertIn("rg2", fmwhich.local_hit(p, "rg2"))
-            self.assertIn("tools/sheetsplit.py", fmwhich.local_hit(p, "sheetsplit"))
+            self.assertEqual(fmwhich.local_hit(p, "sheetsplit"), "", "a repo's own tool is never put in the hook's note")
             self.assertIn("apt install jq", fmwhich.local_hit(p, "jq"))
             self.assertEqual(fmwhich.local_hit(p, "nothing-here"), "")
 

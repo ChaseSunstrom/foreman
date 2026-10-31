@@ -100,6 +100,9 @@ TITLES = {"fixes": "Solved before", "tools": "On this machine: project tools", "
           "library": "Stack cards and skill sources", "plugins": "Marketplace plugins"}
 _NAME = re.compile(r"[A-Za-z0-9_.+-]{1,64}")  # the capability-miss hook's rule for a tool name
 GRANT = "fm ask ID plugin"
+UNREVIEWED = "this repo's, unreviewed: read it first"  # a file the repo carries: its word, not this machine's
+HIT_MAX = 140  # characters of the hook note's local hit
+JSON_MAX = 8_000_000  # bytes of a config read (a real ~/.claude.json is a few MB at most)
 
 
 def _row(name, load, summary, source, grant="", text=None):
@@ -142,19 +145,31 @@ def tools(root):
         name = os.path.basename(path)[:-3]
         if _tool_file(root, name):
             doc = re.search(r'"""([^\n]*)', _head(path)[:1500])
-            out.append(_row(name, f"python3 tools/{name}.py", doc.group(1) if doc else "", "project tool"))
+            out.append(_row(name, f"python3 tools/{name}.py", doc.group(1) if doc else "",
+                        f"project tool ({UNREVIEWED})"))
     return out
 
 
-def mcp(root):
+def _json_file(path):
+    """A config's parsed JSON, or {}: a regular file under JSON_MAX bytes only (a FIFO would block, a huge one cost)."""
     import fmplugins
+    try:
+        if not os.path.isfile(path) or os.path.getsize(path) > JSON_MAX:
+            return {}
+    except OSError:
+        return {}
+    return fmplugins._json(path, {}) or {}
+
+
+def mcp(root):
     out = []
 
     def take(servers, source):
         for name in servers if isinstance(servers, dict) else ():
             out.append(_row(name, f"MCP server {name}", "a configured MCP server", source, text=str(name)))
-    take((fmplugins._json(os.path.join(root, ".mcp.json"), {}) or {}).get("mcpServers"), ".mcp.json")
-    conf = fmplugins._json(os.path.join(os.path.expanduser("~"), ".claude.json"), {})
+    mine = _json_file(os.path.join(root, ".mcp.json"))
+    take(mine.get("mcpServers") if isinstance(mine, dict) else None, f".mcp.json ({UNREVIEWED})")
+    conf = _json_file(os.path.join(os.path.expanduser("~"), ".claude.json"))
     if isinstance(conf, dict):
         take(conf.get("mcpServers"), "~/.claude.json")
         proj = conf.get("projects")
@@ -226,20 +241,28 @@ def search(task, p=None, failed=None):
     return rank(task, found)
 
 
+def skipped_note(failed):
+    """The line that says a shelf could not be read, so a quiet answer is not mistaken for a complete search."""
+    return f"skipped: {', '.join(failed)} (could not be read)" if failed else ""
+
+
 def local_hit(p, name):
     """What the capability-miss hook adds to its note, from the cheap sources only (a past fix this machine learned, a
-    project tool, a binary in a bin folder): one short phrase, or ''. No plugin index, no skill index."""
+    binary in a bin folder): one short phrase, or ''. No plugin index, no skill index. Only what this machine holds or
+    learned: a repo's own tools/NAME.py is its word, so a repo can't plant one and have the note send a session to run
+    it. A phrase that would not fit whole is left out: a command cut mid-string is worse than none."""
     import fmfixes
     if not _NAME.fullmatch(name):
         return ""
-    low, root = name.lower(), p.root
+    low = name.lower()
     for f in fmfixes.known(p)[:300]:  # a fix that came with the repo is data to weigh: not put in a note
-        if f["trusted"] and low in re.findall(r"[a-z0-9_.+-]+", f["sig"].lower()):
-            return c.fit(c.plain(f"a known fix: {f['do']}"), 140)
-    if _tool_file(root, name):
-        return f"a project tool does this: python3 tools/{name}.py"
-    path = binary(name, root)
-    return c.fit(c.plain(f"it is already at {path}"), 140) if path else ""
+        first = re.findall(r"[a-z0-9_.+-]+", f["sig"].lower())[:1]  # the command word the failure names
+        if f["trusted"] and first == [low]:
+            hit = c.plain(f"a known fix: {f['do']}")
+            return hit if len(hit) <= HIT_MAX else ""
+    path = binary(name, p.root)
+    hit = c.plain(f"it is already at {path}") if path else ""
+    return hit if len(hit) <= HIT_MAX else ""
 
 
 def rank(task, found=None):
@@ -275,14 +298,15 @@ def cmd(args):
     p, failed = c.find_project(os.getcwd(), create=False), []
     got = search(task, p, failed)
     data = {"task": task, **{k: [{x: r.get(x, "") for x in ("name", "load", "summary", "score", "source", "grant")}
-                                 for r in v] for k, v in got.items()}}
+                                 for r in v] for k, v in got.items()}, "skipped": failed}
     if p:  # the receipt: what was searched and how much each shelf held, a search that found nothing included
         c.log_event(p, "tool_search", data={"need": task[:200], "sources": list(got),
                                             "hits": {k: len(v) for k, v in got.items()}, "failed": failed})
     if not any(got.values()):
         fmcli.out(args, data, f"Nothing matches {c.fit(c.plain(task), 60)!r}: no past fix, project tool, MCP server, "
                   "binary, skill, playbook, fm command, stack card or plugin holds enough of its words.\n"
-                  "fm help --all lists every command; say what the work is in other words, or build it: fm new tool NAME.")
+                  "fm help --all lists every command; say what the work is in other words, or build it: fm new tool NAME."
+                  + ("\n" + skipped_note(failed) if failed else ""))
         return 1
     lines = []
     ours = ("skills", "playbooks", "commands")  # T-1908: Foreman's own, the strongest kind first
@@ -294,5 +318,5 @@ def cmd(args):
                 f"  {r['load']:<{w}}{fmrecall.gist(r['summary'], task, max(30, 98 - w))}"
                 + (f"  [{r['source']}{'; needs ' + r['grant'] if r['grant'] else ''}]" if r.get("source") else "")
                 for r in got[kind]]
-    fmcli.out(args, data, "\n".join(lines))
+    fmcli.out(args, data, "\n".join(lines + ([skipped_note(failed)] if failed else [])))
     return 0
