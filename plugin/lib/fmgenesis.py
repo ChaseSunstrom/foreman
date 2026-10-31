@@ -2444,10 +2444,26 @@ def _charter(p, gen0):
 def _exam_tail(d, k=20):
     """The newest graded exam.jsonl line per run and agent (up to k), one short line each: found, false alarms, fixed,
     held out, scenarios closed. A reader can then tell claimed progress from exam movement."""
-    def score(x):
+    def score(x):  # T-2366: and the numbers a critique cites, so a reader can check them
+        rec = x.get("recall") if isinstance(x.get("recall"), dict) else {}
+        by = [f"by {word}: " + ", ".join(f"{k} {v[0]}/{v[1]}" for k, v in rec[dim].items() if isinstance(v, list) and len(v) == 2)
+              for dim, word in (("lang", "language"), ("kind", "kind")) if isinstance(rec.get(dim), dict) and rec[dim]]
         return (f"found {x.get('found', 0)}/{x['keyed']}, {x.get('false_alarms', 0)} false alarms"
                 + (f" ({x['proved_by_arm']} with the arm's own proof)" if x.get("proved_by_arm") else "")
-                + f", fixed {x.get('fixed', 0)}/{x.get('fixable', 0)}") if "keyed" in x else ""
+                + f", fixed {x.get('fixed', 0)}/{x.get('fixable', 0)}"
+                + (f", {x['exam_defects']} exam defects" if isinstance(x.get("exam_defects"), int) else "")
+                + (f", ranked {x.get('rank_hit', 0)}/{x['rank_keyed']} in order" if x.get("rank_keyed") else "")
+                + "".join(f"; {b}" for b in by)) if "keyed" in x else ""
+
+    def long(x):  # T-2366: a long-tier line's own result over its goals
+        gs = [g for g in x.get("goals") or [] if isinstance(g, dict)]
+        if x.get("tier") != "long" or not gs:
+            return ""
+        num = lambda k: sum(g[k] for g in gs if isinstance(g.get(k), int) and not isinstance(g.get(k), bool))
+        cp = all(isinstance(g.get("checks_passed"), int) for g in gs)
+        return (f"true done {sum(g.get('true_done') is True for g in gs)}/{len(gs)}"
+                + (f", checks {num('checks_passed')}/{num('checks')}" if cp else "")
+                + f", false done {sum(g.get('false_done') is True for g in gs)}")
     rows = {}
     for raw in (_doc(d, "exam.jsonl") or "").splitlines():
         try:
@@ -2457,7 +2473,7 @@ def _exam_tail(d, k=20):
         if not (isinstance(x, dict) and x.get("run")):
             continue
         n, h = x.get("scenarios"), x.get("holdout") if isinstance(x.get("holdout"), dict) else {}
-        parts = [n and f"{n} scenarios", score(x), score(h) and f"held out: {score(h)}"]
+        parts = [n and f"{n} scenarios", score(x), long(x), score(h) and f"held out: {score(h)}"]
         parts += [f"{label} {sum(len(v) for v in x[key].values() if isinstance(v, list))}" + (f" of {n}" if n else "")
                   + (f", {len(x[key]['holdout'])} held out" if isinstance(x[key].get("holdout"), list) and x[key]["holdout"] else "")
                   for key, label in (("closed", "fully closed"), ("given", "closed on the given score"))

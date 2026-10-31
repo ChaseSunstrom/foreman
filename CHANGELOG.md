@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Genesis cold reads see the numbers critiques cite: the exam summary now carries exam defects, ranking, recall by language and by kind, and each long-horizon line's true done, hidden checks and false done (T-2366).
 - `fm goal verdict` no longer says finished when an item's check can't fail (`true`, `echo ok`, `x || true`, `x; true`, a pipe hiding the exit status) or when gates were green only because red tests were skipped (it names them); task verifies get the same `|| true` warning; Mission 4's spikes (adversary, relay race over 11 kill points, reopened-ticket miner) each have a verdict (T-2332).
 - Genesis cold reads: an objection blocks a tower file only when its BREAKS line quotes, verbatim, the gen-0 line, steer or standing-intent clause it breaks; the rest print as advisory, so narrative files converge (T-2246).
 - Guard: `fm mandate set` and `fm mandate off` are the user's to run, so a session can no longer end, overwrite or renew the standing mandate (T-2252).
