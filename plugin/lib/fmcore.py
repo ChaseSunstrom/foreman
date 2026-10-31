@@ -4274,6 +4274,17 @@ _BUILTINS = {"cd", "test", "[", "[[", "true", "false", "echo", "printf", "export
 _VACUOUS = {"true", ":", "echo", "printf", "ls", "cat", "pwd", "exit", "sleep", "date", "cd"}
 
 
+def _masked(cmd):
+    """T-2332: `x || true`, `x || echo ok` or `x; true` exit 0 whatever x did. exit with a nonzero code can fail."""
+    parts = re.split(r"(&&|\|\||;)", cmd)
+    def hollow(seg):
+        w = seg.split()
+        return bool(w) and w[0].strip("()") in _VACUOUS and not (w[0] == "exit" and len(w) > 1 and w[1] != "0")
+    segs = [(parts[i - 1] if i else "", parts[i]) for i in range(0, len(parts), 2)]
+    return any(sep == "||" and hollow(seg) for sep, seg in segs[1:]) or (
+        len(segs) > 1 and segs[-1][0] == ";" and hollow(segs[-1][1]))
+
+
 def lint_verify(cmd, root):
     """What's wrong with a verify command as a check (T-0066): programs that aren't on PATH, builtins or repo files
     (it would fail with 'command not found', not on the behaviour), nothing that can fail (echo ok, true), or a
@@ -4290,6 +4301,8 @@ def lint_verify(cmd, root):
                 problems.append(f"{w} isn't on PATH or in the repo")
     if any(firsts) and all(f in _VACUOUS or not f for f in firsts):
         problems.append("it can't fail (nothing in it checks the behaviour)")
+    elif _masked(cmd or ""):
+        problems.append("it can't fail (a fallback after || or a last command after ; always succeeds)")
     if re.search(r"plugin/tests/run\.py\b.*\s-k\s+(['\"])[^'\"]*\s[^'\"]*\1", cmd or ""):  # T-0357: a substring
         problems.append("run.py -k matches a substring, so a pattern with a space matches nothing: repeat -k")
     problems += _run_py_misses(cmd, root)

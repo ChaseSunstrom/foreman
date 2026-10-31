@@ -295,6 +295,7 @@ def show(p, args, key="goal", run=True):
 
 def verdict(p, m):
     """T-2137: the causes a goal isn't finished (empty: finished). Reuses drift's guarded checks; deterministic."""
+    import re
     import fmrecall
     items = m.get("items") or []
     briefs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
@@ -305,6 +306,10 @@ def verdict(p, m):
         item_state(i, briefs)))]
     causes += [f"item {i['n']} check fails ({how})" for i, how in unmet]
     causes += [f"item {i['n']} check not run" for i in unchecked]
+    for i in items:  # T-2332: a check that can't fail, or whose pipe hides the exit status, proves nothing
+        hollow = sorted((x for x in c.lint_verify(i["done_when"], p.root) if "can't fail" in x or "piped program" in x),
+                        key=lambda x: "piped program" not in x)  # a pipe is the more specific reason
+        causes += [f"item {i['n']} check can't fail ({re.sub(r'^it can.t fail [(](.*)[)]$', r'\1', hollow[0])})"] if hollow else []
     # a clause is accounted when an item (text, done-when, task titles) shares 2 of its words (1 if it has one)
     bags = [set(fmrecall.words(" ".join([i["text"], i["done_when"]] + [briefs[t].title for t in i["tasks"] if t in briefs])))
             for i in items]
@@ -320,6 +325,8 @@ def verdict(p, m):
         causes.append("gates not run on this tree (fm check)")
     elif any((r or {}).get("exit") for r in last.get("results") or []):
         causes.append("gates red (fm check)")
+    elif last.get("skip_tests"):  # T-2332: green only because red-first tests were left out; named, so whose shows
+        causes.append(f"gates skipped red tests: {c.fit(', '.join(map(str, last['skip_tests'])), 120)} (fm check)")
     return causes
 
 
