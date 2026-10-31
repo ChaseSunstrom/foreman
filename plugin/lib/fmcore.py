@@ -3645,14 +3645,19 @@ def next_for(p, briefs=None):
     briefs = briefs if briefs is not None else load_briefs(p)
     if b is None or b.status not in ("active", "verifying"):  # T-1841: its lane folder went; it's still active there
         action = "".join(stranded_note(s) + " · " for s in stranded(briefs, p.lane)) + action
-    done = finished_lanes(p, briefs)  # T-2038: first when nothing else is under way
+    idle_now = b is None or b.status not in ("active", "verifying")
+    try:  # T-2354: lanes that stopped before their merge, each with the one recovery for its cause
+        import fmlanes
+        done = fmlanes.awaiting_merge(p, briefs)  # T-2038: first when nothing else is under way
+        recovery = fmlanes.recovery_line(p, briefs, not panicked() and effective_autonomy(p) == "full")
+    except Exception:  # a lane that can't be read never costs the next action
+        done, recovery = finished_lanes(p, briefs), ""
     if done:
         merge = (f"builder lane(s) finished, their work waits on a merge: "
                  + "; ".join(f"fm lane merge {i}" for i in done) + " (review the branch first)")
-        if b is None or b.status not in ("active", "verifying"):
-            action = merge + " · " + action
-        else:
-            action += " · " + merge
+        action = merge + " · " + action if idle_now else action + " · " + merge
+    if recovery:
+        action = recovery + " · " + action if idle_now else action + " · " + recovery
     raised = andons(briefs)  # T-0648: a lane stopped to ask
     if raised:
         tid, text = raised[0]
