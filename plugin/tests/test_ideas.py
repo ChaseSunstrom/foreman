@@ -79,7 +79,7 @@ class Ideas(Stubbed):
         start = time.time()
         res = json.loads(self.fm("ideas", "--pack", self.pack, "--lens", "reliability", "--lens", "bold bets",
                                  "--json", env=env).stdout)
-        self.assertLess(time.time() - start, 1.9, "children run concurrently")
+        self.assertLess(time.time() - start, 1.9, "children run concurrently")  # wall clock: children sleep, and run in parallel
         calls = self.calls()
         self.assertEqual(len(calls), 2)
         for call in calls:

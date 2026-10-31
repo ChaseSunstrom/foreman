@@ -135,7 +135,7 @@ class Stories(StubCase):
                 fmstories.cmd_stories(args)
             except SystemExit as e:
                 code = e.code
-        self.assertLess(time.monotonic() - start, 5)
+        self.assertLess(time.monotonic() - start, 5)  # wall clock: the TOTAL_S=1 budget deadline (waits on a browser)
         self.assertEqual(code, 1)
         slow, nxt = json.loads(out.getvalue())["states"]
         self.assertIn("time ran out", slow["error"])

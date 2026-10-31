@@ -141,7 +141,7 @@ class Watch(VisibilityCase):
         self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "pytest -q"}, "duration_ms": 321})
         t0 = time.monotonic()
         out = self.fm("watch", "--once").stdout
-        self.assertLess(time.monotonic() - t0, 2.0)
+        self.assertLess(time.monotonic() - t0, 2.0)  # wall clock: a child fm watch's two-second deadline
         for section in ("Active", "Queue", "Inbox", "Tool timeline", "Subagents", "Files touched", "Guard blocks",
                         "Hook latency", "Session"):
             self.assertIn(section, out)

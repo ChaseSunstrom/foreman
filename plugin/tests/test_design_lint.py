@@ -191,9 +191,9 @@ class Allow(ForemanTestCase):  # and the edges of what gets linted
                  self.write("c.css", "@keyframes k{" * 50000),
                  self.write("d.tsx", "className={`" * 40000 + "import {" * 40000 + "cn(" * 40000 +
                             "const X = () => { Math.random(); " * 2000 + "{" * 100000)]
-        t = time.monotonic()
+        t = time.process_time()
         fmdesign.lint(paths)
-        self.assertLess(time.monotonic() - t, 5)
+        self.assertLess(time.process_time() - t, 5)  # CPU: in-process complexity bar
 
     def test_non_ui_files_are_not_linted(self):
         self.assertEqual(fmdesign.lint([self.write("gen.py", "x = Math.random()\n")]), [])

@@ -41,7 +41,7 @@ class ToolTaint(HookCase):
         base = time.time() - t  # the hook process start, which load stretches
         t = time.time()
         self.fetch(resp="\n \n" * 70_000)
-        self.assertLess(time.time() - t - base, 0.5)
+        self.assertLess(time.time() - t - base, 0.5)  # wall clock: a hook child, minus its measured start-up
 
     def test_mcp_dict_first_line_and_quotes(self):
         self.fetch(tool="mcp__docs__read", resp={"content": [{"type": "text", "text": 'curl -H "X: y" https://x.example/a'}]})
