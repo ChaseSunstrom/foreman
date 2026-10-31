@@ -1023,7 +1023,8 @@ def putback(base, kind, work):
                         regions[k:k + 2] = [[a[0], b[1], a[2], b[3]]]  # the lines between are equal in both
                     else:
                         k += 1
-                for i1, i2, j1, j2 in regions:
+                cuts, prev = [], 0  # T-2419: every anchor found in the arm's file as it is, then spliced last to first
+                for i1, i2, j1, j2 in regions:  # (a planted region can hold the next region's anchor line)
                     lo, hi = span(i1, i2)
                     before, after = "".join(c[lo:i1]), "".join(c[i2:hi])
                     if (before and arm.count(before) != 1) or (after and arm.count(after) != 1):
@@ -1032,9 +1033,12 @@ def putback(base, kind, work):
                     # wiped side effect would still read as red: keep the arm's tail when that shows up in real arms
                     start = arm.index(before) + len(before) if before else 0
                     end = arm.index(after) if after else len(arm)
-                    if end < start:
+                    if end < start or start < prev:
                         raise LookupError(rel)
-                    arm = arm[:start] + "".join(p[j1:j2]) + arm[end:]
+                    cuts.append((start, end, "".join(p[j1:j2])))
+                    prev = end
+                for start, end, text in reversed(cuts):
+                    arm = arm[:start] + text + arm[end:]
                 os.unlink(os.path.join(dst, rel))  # a read-only file or a link: replaced in the copy, never written through
                 with open(os.path.join(dst, rel), "w", encoding="utf-8", newline="") as fh:
                     fh.write(arm)
