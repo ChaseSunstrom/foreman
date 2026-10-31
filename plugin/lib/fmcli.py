@@ -3960,8 +3960,13 @@ def cmd_decide(args):
                                                           if "[reverses:" not in rows[n - 1]) else "") for n in nums]
         if getattr(args, "export_adr", None):  # numbered as in the full list, so a --review export never collides
             return _export_adr(p, args, list(zip(nums, pick)))
-        return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick]},
-                   "\n".join(pick[-args.n:]) or "No decisions recorded.")
+        fetched = []  # T-2356: what the model-free tick sent off the machine (a ledger event each, no pending row)
+        if args.review:
+            import fmnight
+            fetched = [{"date": d, "kind": k, "repo": r, "requests": n} for d, k, r, n in fmnight.fetches(p)]
+        sent = [f"{f['date']} night tick sent {f['requests']} request(s): {f['kind']} of {f['repo']}" for f in fetched]
+        return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick], "night_fetches": fetched},
+                   "\n".join(pick[-args.n:] + sent) or "No decisions recorded.")
     try:
         revisit = c.revisit_tag(p.root, args.revisit) + " " if getattr(args, "revisit", None) else ""  # callers build
     except ValueError as e:                                                                          # their own args

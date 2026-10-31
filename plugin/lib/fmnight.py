@@ -3,8 +3,8 @@ the landscape scan when due, the sentinel (T-0888), one research-debt question, 
 kept fm evolve candidate — each an existing fm command, kept while the night's estimate fits --max-usd and today's
 remaining budget. Refused when usage is high, when usage is unknown the limit halves, a sensitive project runs
 nothing, and the night stops as soon as real spend passes the limit or usage climbs (T-0298 review). Never merges;
-the morning's fm digest says what ran. --tick (T-2356) is the model-free pass the Stop sweep and the timer run:
-orders, the cached CI result, and CI or issues only where the user said yes. Scheduling (cron, a systemd timer) is the user's to set up;
+the morning's fm digest says what ran. --tick (T-2356) is the model-free pass: orders, the cached CI result, and CI or issues only where
+the user said yes. It runs from the Stop hook's sweep now, and from the timer T-2357 stages. Scheduling (cron, a systemd timer) is the user's to set up;
 --print-timer prints both, ready to paste."""
 import fcntl
 import glob
@@ -147,15 +147,35 @@ def _watch(meta):
     return w.get("ci") is True, [r for r in issues if isinstance(r, str) and _REPO.fullmatch(r)] if isinstance(issues, list) else []
 
 
-def _listed(p, kind, repo):
-    """Each request that left the machine is a ledger line; the final report's list (fm decide --review) gets one
-    outward row a day per kind and repo, not one per tick."""
+CAP = 20  # issues the tick captures per repo per day: a flood of issues is not a flood of tasks
+
+
+def fetches(p, days=7):
+    """[(date, kind, repo, requests)] the tick sent off the machine in the last days, from its night_tick ledger
+    events: routine approved polls are listed here (fm decide --review prints them), not as pending [outward] rows."""
+    cut = (c.datetime.date.today() - c.datetime.timedelta(days=days)).isoformat()
+    n = {}
+    for e in c.ledger_tail(p, 5000):
+        if e.get("event") == "night_tick" and str(e.get("ts"))[:10] >= cut:
+            for f in (e.get("data") or {}).get("fetched") or []:
+                k = (str(e["ts"])[:10], str(f.get("kind")), str(f.get("repo")))
+                n[k] = n.get(k, 0) + 1
+    return [k + (v,) for k, v in sorted(n.items())]
+
+
+def _row(p, text, why):
+    """One [outward] decision (fm todo holds it for the user's look), for something new: the first request for a repo,
+    a failure, the cap. Once a day for the same words."""
     import fmcli
-    text = (f"night tick fetched CI results of {repo} with no session open" if kind == "ci" else
-            f"night tick polled GitHub issues of {repo}")
     if not any(d == c.now()[:10] and t == text for d, _, t in c._decision_rows(p)):
-        fmcli._write_decision(p, text, "your yes to the watch lines (fm night --install); each poll is a night_tick "
-                                       "ledger event", "", "outward")
+        fmcli._write_decision(p, text, why, "", "outward")
+
+
+def _num(v):
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def tick(p, fetch_ci=None):
@@ -177,45 +197,83 @@ def tick(p, fetch_ci=None):
     except BlockingIOError:
         lease.close()
         return dict(res, notes=["another tick is running"])
-    with lease:
-        meta = c.read_meta(p)
-        net = not os.environ.get("FOREMAN_NO_NET") and not meta.get("sensitive")
-        ci_ok, repos = _watch(meta)
-        before = {b.id for b in c.load_briefs(p, include_archive=True)}
-        try:
-            if fmorders.load(p):
-                res["orders"] = [o["n"] for o in fmorders.run(p)]
-        except Exception as e:  # an order file never costs the tick
-            res["notes"].append(f"standing orders: {c.fit(c.plain(str(e)), 120)}")
-        repo = None if meta.get("sensitive") else fmforesight.github_repo(p.root)
-        if repo:
-            try:  # the cached result always; a fetch only with the yes, and with nobody at a keyboard to ask
-                import fmbus
-                ask = net and ci_ok and (not fmbus.live() if fetch_ci is None else fetch_ci)
-                if fmforesight._ci(p, fetch=bool(ask)):
+    before, path, loud = None, os.path.join(p.dir, "tick.json"), []
+    try:
+        with lease:
+            meta = c.read_meta(p)
+            net = not os.environ.get("FOREMAN_NO_NET") and not meta.get("sensitive")
+            ci_ok, repos = _watch(meta)
+            before = {b.id for b in c.load_briefs(p, include_archive=True)}
+            try:
+                if fmorders.load(p):
+                    res["orders"] = [o["n"] for o in fmorders.run(p)]
+            except Exception as e:  # an order file never costs the tick
+                res["notes"].append(f"standing orders: {c.fit(c.plain(str(e)), 120)}")
+            try:
+                with open(path, encoding="utf-8") as f:
+                    seen = json.load(f)
+            except (OSError, ValueError):
+                seen = {}
+            seen = seen if isinstance(seen, dict) else {}
+            stamps = seen["issues"] if isinstance(seen.get("issues"), dict) else {}
+            told = [x for x in seen["told"] if isinstance(x, str)] if isinstance(seen.get("told"), list) else []
+            day = seen["day"] if isinstance(seen.get("day"), dict) else {}
+            today = c.now()[:10]
+            made = day["n"] if day.get("date") == today and isinstance(day.get("n"), dict) else {}
+
+            def save():
+                c.write_atomic(path, json.dumps({"issues": stamps, "told": told, "day": {"date": today, "n": made}}))
+
+            def first(kind, repo, what):  # the first request of a kind for a repo is one outward row; later ones aren't
+                if f"{kind} {repo}" not in told:
+                    told.append(f"{kind} {repo}")
+                    loud.append((f"night tick {what} {repo} for the first time", "your yes to the watch line; later "
+                                 "requests are night_tick ledger events (fm decide --review lists them)"))
+
+            repo = None if meta.get("sensitive") else fmforesight.github_repo(p.root)
+            if repo:
+                sent = []
+                try:  # the cached result always; a fetch only with the yes, and with nobody at a keyboard to ask
+                    import fmbus
+                    ask = net and ci_ok and (not fmbus.live() if fetch_ci is None else fetch_ci)
+                    fmforesight._ci(p, fetch=bool(ask), sent=sent)
+                except Exception as e:
+                    res["notes"].append(f"CI: {c.fit(c.plain(str(e)), 120)}")
+                if sent:  # listed even when the capture after it failed
                     res["fetched"].append({"kind": "ci", "repo": repo})
-            except Exception as e:
-                res["notes"].append(f"CI: {c.fit(c.plain(str(e)), 120)}")
-        path = os.path.join(p.dir, "tick.json")
-        try:
-            with open(path, encoding="utf-8") as f:
-                seen = json.load(f)
-            seen = seen if isinstance(seen, dict) and isinstance(seen.get("issues"), dict) else {}
-        except (OSError, ValueError):
-            seen = {}
-        if net and repo and repo in repos and time.time() - float((seen.get("issues") or {}).get(repo) or 0) >= ISSUES_EVERY:
-            seen["issues"] = dict(seen.get("issues") or {}, **{repo: time.time()})
-            c.write_atomic(path, json.dumps(seen))  # stamped first: a failing gh waits its interval too
-            res["fetched"].append({"kind": "issues", "repo": repo})
-            try:  # fm inbox gh's path: plain, defanged, quoted behind "| "; an issue's asks are never run
-                fmeco.inbox_gh(p, repo, ISSUES_LIMIT)
-            except Exception as e:  # not logged in, no gh, offline: said, never fatal
-                res["notes"].append(f"issues of {repo}: {c.fit(c.redact(c.plain(str(e))), 160)}")
-        res["captured"] = sorted({b.id for b in c.load_briefs(p, include_archive=True)} - before)
-    for f in res["fetched"]:
-        _listed(p, f["kind"], f["repo"])
-    if res["fetched"] or res["orders"] or res["captured"]:
-        c.log_event(p, "night_tick", data={k: res[k] for k in ("orders", "captured", "fetched")}, session=fmcli.session())
+                    first("ci", repo, "fetched the CI result of")
+                    save()
+            if net and repo and repo in repos and time.time() - _num(stamps.get(repo)) >= ISSUES_EVERY:
+                try:
+                    left = CAP - int(_num(made.get(repo)))
+                except (OverflowError, ValueError):
+                    left = 0
+                if left <= 0:
+                    res["notes"].append(f"issues of {repo}: daily cap of {CAP} captured, polling resumes tomorrow")
+                else:
+                    stamps[repo] = time.time()
+                    first("issues", repo, "polled GitHub issues of")
+                    save()  # stamped first: a failing gh waits its interval too
+                    res["fetched"].append({"kind": "issues", "repo": repo})
+                    try:  # fm inbox gh's path: plain, defanged, quoted behind "| "; an issue's asks are never run
+                        got = fmeco.inbox_gh(p, repo, min(ISSUES_LIMIT, left))
+                        made[repo] = int(_num(made.get(repo))) + len(got["captured"])
+                        save()
+                        if made[repo] >= CAP:
+                            res["notes"].append(f"issues of {repo}: daily cap of {CAP} captured, polling resumes tomorrow")
+                            loud.append((f"night tick stopped capturing issues of {repo} today: {CAP} captured (the cap)",
+                                         "a flood of issues is not a flood of tasks; polling resumes tomorrow"))
+                    except Exception as e:  # not logged in, no gh, offline: said, never fatal
+                        why = c.fit(c.redact(c.plain(str(e))), 160)
+                        res["notes"].append(f"issues of {repo}: {why}")
+                        loud.append((f"night tick's poll of GitHub issues of {repo} failed", why))
+    finally:  # what left the machine is listed even when something after it failed
+        if before is not None:
+            res["captured"] = sorted({b.id for b in c.load_briefs(p, include_archive=True)} - before)
+        for text, why in loud:
+            _row(p, text, why)
+        if res["fetched"] or res["orders"] or res["captured"]:
+            c.log_event(p, "night_tick", data={k: res[k] for k in ("orders", "captured", "fetched")}, session=fmcli.session())
     return res
 
 

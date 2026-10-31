@@ -138,16 +138,18 @@ def refresh(p, net=True):
     return changed
 
 
-def _ci(p, fetch=True):
-    """The repo's CI result, fetched when its cache is older than CI_EVERY (fetch) and filed once per red sha. True
-    when a request left the machine (T-2356: a tick lists each one for the final report)."""
+def _ci(p, fetch=True, sent=None):
+    """The repo's CI result, fetched when its cache is older than CI_EVERY (fetch) and filed once per red sha. A
+    request that leaves the machine is appended to `sent` first (T-2356: a tick lists each one for the final report,
+    even when something after it fails)."""
     repo = github_repo(p.root)
     if not repo:
-        return False
+        return
     shared = os.path.join(c.state_dir(), "ci", repo.replace("/", "__") + ".json")
-    r, asked = _load(shared), False
+    r = _load(shared)
     if fetch and time.time() - r.get("checked", 0) >= CI_EVERY * (48 if r.get("private") else 1):
-        asked = True
+        if sent is not None:
+            sent.append(repo)
         branch = default_branch(p.root)
         got = ci_main(repo, branch)
         if got == "private":
@@ -167,7 +169,6 @@ def _ci(p, fetch=True):
         _save(_mine(p), {k: r[k] for k in ("branch", "sha", "failed")} | {"task": b.id})
     elif r.get("sha") and not r.get("failed") and mine:
         _save(_mine(p), {})  # green again
-    return asked
 
 
 def pile_lines(sd):
