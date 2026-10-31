@@ -1218,15 +1218,24 @@ def _session_arm(agent, base, key, work, model, budget, timeout, request=None):
                 said=c.redact(said)[-400:])  # the tail: where the answer should have been
 
 
+def _jobs(n):
+    """--jobs: how many session scenarios run at once; under 1 is refused before any session starts."""
+    n = 1 if n is None else n
+    if n < 1:
+        raise ValueError(f"--jobs is 1 or more, not {n}")
+    return n
+
+
 def _answers(p, run, agent):
     return os.path.join(root(p), run, "answers", agent)
 
 
-def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, timeout=20, request=None):
+def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, timeout=20, request=None, jobs=1):
     """Answers from one agent on the run's scenarios (split, then the first `limit`), then the grade. A session arm runs
-    one scenario at a time and defaults to 3 (ponytail: a spend guard; --limit raises it); kinds take turns, so a short
-    sample still spans them."""
+    `jobs` scenarios at a time (default 1) and defaults to 3 (ponytail: a spend guard; --limit raises it); kinds take
+    turns, so a short sample still spans them."""
     _known(agent)
+    jobs = _jobs(jobs)
     if request and agent not in SESSIONS:
         raise ValueError(f"--request goes with a session agent ({', '.join(SESSIONS)}); {agent} answers from the key")
     request = request or ("make this great" if agent == "genesis" else None)  # recorded, so the row says what was asked
@@ -1255,16 +1264,17 @@ def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, t
         work = os.path.join(root(p), run, "work", agent, s["id"])
         shutil.rmtree(work, ignore_errors=True)
         if agent in SESSIONS:
-            answer = _session_arm(agent, base, key, work, model, budget, timeout, request)
-            fmbudget.record("exam-arm", answer["cost"], project=p.slug, detail=f"{agent} {s['id']}")
+            with fmbudget.reserve("exam-arm", fmbudget.estimate("exam-arm", 1, min(budget or 0.5, 0.5)), "a smaller --limit"):
+                answer = _session_arm(agent, base, key, work, model, budget, timeout, request)
+                fmbudget.record("exam-arm", answer["cost"], project=p.slug, detail=f"{agent} {s['id']}")
         else:
             answer, src = AGENTS[agent](base, key)
             shutil.copytree(src, work, ignore=shutil.ignore_patterns(".git"))
         c.write_atomic(os.path.join(_answers(p, run, agent), f"{s['id']}.json"), json.dumps(answer, indent=1))
 
-    if agent in SESSIONS:
-        for s in picked:
-            one(s)
+    if agent in SESSIONS:  # T-2292: up to `jobs` sessions at once, each in its own temp copy; answers are per-scenario files
+        with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
+            list(pool.map(one, picked))
     else:
         _pool(one, picked)
     return grade(p, run, agent)
@@ -1542,7 +1552,7 @@ def cmd_exam(args):
                              + (f"; {len(meta['dropped'])} child-authored dropped (failed fm exam check)" if meta["dropped"] else ""))
         if action == "run":
             res = run_agent(p, args.run, args.agent or "oracle", args.split, args.limit, args.budget, args.model,
-                            request=args.request)
+                            request=args.request, jobs=args.jobs)
             fmcli.out(args, res, summary(res))
             return 1 if res.get("ungraded") else 0
         if action == "grade":
