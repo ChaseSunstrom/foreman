@@ -2558,7 +2558,30 @@ def _bench(p, b, cmd, n, timeout):
         raise UsageError(f"{b.id} has no start commit on record: --bench needs the tree the task started from (fm focus it first)")
     start = time.monotonic()
 
-    def side(root):
+    def twin(wt):
+        """T-2303: (cmd for the start tree, whether its first word lies in this tree). A first word that resolves through
+        PATH (or a symlink) to a file in this tree runs the same relative file in the start tree; anything else is unchanged."""
+        import shlex
+        import shutil
+        try:
+            words = shlex.split(cmd)
+        except ValueError:
+            return cmd, False
+        if not words:
+            return cmd, False
+        first = words[0]
+        found = shutil.which(os.path.join(p.root, first) if "/" in first and not os.path.isabs(first) else first)
+        root = os.path.realpath(p.root)
+        real = os.path.realpath(found) if found else ""
+        if not real.startswith(root + os.sep):
+            return cmd, False
+        mate = os.path.join(wt, os.path.relpath(real, root))
+        text = cmd.lstrip()
+        if ("/" in first and not os.path.isabs(first)) or not os.path.isfile(mate) or not text.startswith(first):
+            return cmd, True  # relative paths already run in each tree; no twin or a quoted first word: leave it
+        return shlex.quote(mate) + text[len(first):], True
+
+    def side(root, cmd):
         times = []
         for _ in range(n):
             left = None if timeout is None else timeout - (time.monotonic() - start)
@@ -2576,16 +2599,18 @@ def _bench(p, b, cmd, n, timeout):
         if not os.path.isdir(wt):
             raise UsageError(f"git worktree add at {base[:12]} failed")
         try:
-            before, bad_before = side(wt)
+            wcmd, in_tree = twin(wt)
+            before, bad_before = side(wt, wcmd)
         finally:
             c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
             c._git(p.root, "worktree", "prune", timeout=30)
-    after, bad_after = ([], None) if bad_before else side(p.root)
+    after, bad_after = ([], None) if bad_before else side(p.root, cmd)
     for where, bad in (("the start tree", bad_before), ("the current tree", bad_after)):
         if bad:
             tail = "\n".join(bad[1].rstrip().splitlines()[-20:])
             return bad[0], tail, f"{cmd}: failed on {where} (exit {bad[0]}) after {n} runs asked", ""
-    line = (f"{cmd}: {statistics.median(before):.3f}s → {statistics.median(after):.3f}s ({n} runs each)")
+    line = (f"{cmd}: {statistics.median(before):.3f}s → {statistics.median(after):.3f}s ({n} runs each)"
+            + ("" if in_tree else " · neither side's entry point is in the tree: both may time the same code"))
     return 0, "", line, line
 
 

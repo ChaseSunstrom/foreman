@@ -125,6 +125,51 @@ class Bench(_Base):
         self.assertEqual(r.returncode, 3)
         self.assertIn("failed on the current tree", r.stdout)
 
+    def _tool_on_path(self, text):
+        """A bin/tool in the repo, reached through a symlink in a PATH folder outside it (like ~/.local/bin/fm)."""
+        import os
+        import stat
+        import subprocess
+        os.makedirs(os.path.join(self.repo, "bin"), exist_ok=True)
+        tool = os.path.join(self.repo, "bin", "tool")
+        with open(tool, "w") as f:
+            f.write(text)
+        os.chmod(tool, os.stat(tool).st_mode | stat.S_IXUSR)
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "t"], check=True)
+        linkdir = os.path.join(self.home, "linkbin")
+        os.makedirs(linkdir, exist_ok=True)
+        if not os.path.islink(os.path.join(linkdir, "tool")):
+            os.symlink(tool, os.path.join(linkdir, "tool"))
+        return {"PATH": linkdir + os.pathsep + os.environ["PATH"]}
+
+    def test_a_command_resolving_into_the_tree_runs_the_start_trees_copy_before(self):
+        env = self._tool_on_path("#!/bin/sh\nexit 0\n")  # base copy: fine
+        tid = self._perf()
+        self.fm("focus", tid)
+        self._tool_on_path("#!/bin/sh\necho CURRENT-COPY\nexit 3\n")
+        r = self.fm("task", "evidence", tid, "--bench", "tool --x", "--repeat", "1", check=False, env=env)
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)  # the before side passed, so it ran the base copy
+        self.assertIn("failed on the current tree", r.stdout)
+        self.assertIn("CURRENT-COPY", r.stdout)
+
+    def test_a_command_outside_the_tree_runs_unchanged_and_says_it_may_time_the_same_code(self):
+        self._commit("pass\n")
+        tid = self._perf()
+        self.fm("focus", tid)
+        r = self.fm("task", "evidence", tid, "--bench", "python3 work.py", "--repeat", "1")
+        self.assertIn("(1 runs each)", r.stdout)
+        self.assertIn("neither side's entry point is in the tree", r.stdout)
+        r = self.fm("task", "evidence", tid, "--bench", "python3 'unclosed", "--repeat", "1", check=False)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_a_command_in_the_tree_has_no_same_code_warning(self):
+        env = self._tool_on_path("#!/bin/sh\nexit 0\n")
+        tid = self._perf()
+        self.fm("focus", tid)
+        r = self.fm("task", "evidence", tid, "--bench", "tool", "--repeat", "1", env=env)
+        self.assertNotIn("neither side", r.stdout)
+
     def test_no_base_commit_is_refused(self):
         tid = self._perf()  # never focused: no start commit
         r = self.fm("task", "evidence", tid, "--bench", "true", check=False)
