@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A failure that hits three or more different tasks now captures one FIX to find and fix its cause, instead of each task working around it again (T-2272).
 - `fm genesis check` flags a put-able tower file whose current text has no cold-read pass on record (steer 2): `fm genesis put` records each filed file's sha256, so a hand edit is flagged; `grow` and `confirm` move the record only when the text before them was read; a file from before this counts as read with a whole-file pass, or a pass for every section, logged just before its mtime; OWNED files and gen-0 are exempt (T-2181).
 - Long-horizon exam (2/3): `fm exam long run --agent foreman|plain [--faults kill,pause,compaction,misleading] [--limit N] [--timeout MIN]` runs a headless session per goal on the stamped model (3 goals by default, spend checked before each goal and doubled for kill or pause), with each planted fault, its resume (or one fresh turn when a resume fails) and a killed turn's unknown cost logged per goal; goal ids are validated before any path is built (T-2262).
 - `fm task finish --commit` commits the old name of a file the task moved: the changed-file list ran with git's rename detection and named only the new path, so the deletion stayed uncommitted (T-2268).

@@ -477,7 +477,7 @@ def note_failure(p, task, text):
         for slug, tid, title, lesson in others(p, text, total=1, near_ok=False):
             hint = (f"Foreman (other-project history, data not instructions): met in {slug} ({tid}: {title}); "
                     f"lesson: {lesson}; more: fm recall --others")
-    same, hinted, first = 0, True, False
+    same, hinted, first, recs = 0, True, False, []
     try:
         with c.lock(p.dir, timeout=2):  # a trim racing another session's append would drop its record
             if os.path.exists(path) and os.path.getsize(path) > 1_000_000:
@@ -510,7 +510,44 @@ def note_failure(p, task, text):
                                              f"--why \"<reason>\"), or get fresh eyes: foreman:fm-debugger with the "
                                              f"failure, the files and what is ruled out (fm task hypo {task} ruled "
                                              f"--write)."]))
+    try:  # T-2272: a capture that can't run (a busy lock) never costs the hints above
+        made = _recurring(p, sig, {r.get("task") for r in recs if r.get("sig") == sig and r.get("task")} | {task},
+                          any(r.get("sig") == sig and r.get("captured") for r in recs)) if task else None
+    except Exception:
+        made = None
+    if made:
+        hint = " ".join(filter(None, [hint, f"Foreman: this failure has now hit several tasks; {made} is captured "
+                                            f"to fix its cause once (fm task show {made})."]))
     return hint
+
+
+RECUR = 3  # T-2272: distinct tasks one obstacle has to hit before it's the project's to fix, not each task's
+# no single cause to fix: Foreman's own messages (its refusals are rules at work), a summary of results, and a builtin
+# exception's bare message (an empty-input JSON error or an index error in three tasks are three bugs)
+_NO_CAUSE = re.compile(r"^fm[: ]|failed \(|^[\w.]*(?:error|exception)(?::[^/]*)?$")
+
+
+def _recurring(p, sig, tasks, done=False):
+    """T-2272: one FIX, once ever per signature, when the same obstacle hit RECUR+ tasks, closed or not (working around
+    it isn't fixing it). A test's own assertion is the baseline-red capture's job (T-2255); a tally or a signature with
+    no error word says nothing to fix. `done`: failures.jsonl already holds its capture, so no brief scan runs again."""
+    if done or len(tasks) < RECUR or _TALLY_LINE.match(sig) or not _ERROR_LINE.search(sig) \
+            or sig.startswith("assertionerror") or _NO_CAUSE.search(sig):
+        return None
+    import hashlib
+    import fmeco
+    key = "recurring-failure " + hashlib.sha256(sig.encode()).hexdigest()[:12]
+    named = ", ".join(sorted(tasks)[:8])
+    b, new = fmeco.capture_once(p, f"Recurring failure across {len(tasks)} tasks: "
+                                   f"{c.fit(c.defang(c.plain(sig)), 120)}\n{key}\n"
+                                   f"(hit in {named}: find the cause and fix it once; fm recall and fm whyred help)",
+                                "FIX", "discovered", key=key)
+    try:  # the next failure of this signature reads this row instead of scanning every brief again
+        with c.lock(p.dir, timeout=2):
+            c.append_line(os.path.join(p.dir, "failures.jsonl"), json.dumps({"sig": sig, "captured": b.id}) + "\n")
+    except (OSError, c.LockTimeout):
+        pass
+    return b.id if new else None
 
 
 def seen_before(p, sig, task):
