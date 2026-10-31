@@ -429,7 +429,8 @@ def grid(area, skip=(), over=None):
         if (s, f) in skip:
             continue
         n = next(_ids)  # a distinct I and N/A cell each time: repeated ones are templated (T-2159)
-        cell = over.get((s, f)) or (f"F: real.py — the feature {n}", f"I: probe case {n} (real.py)", f"N/A: none for {n}")[i % 3]
+        tag = "zeta" + "".join(chr(97 + int(d)) for d in str(n))  # 4+ letters, so F cells on one path differ (T-2175)
+        cell = over.get((s, f)) or (f"F: real.py — the feature {tag}", f"I: probe case {n} (real.py)", f"N/A: none for {n}")[i % 3]
         lines.append(f"- {s} × {f}: {cell}")
     return "\n".join(lines) + "\n"
 
@@ -465,6 +466,17 @@ class GenesisCheck(ForemanTestCase):
         text = self.fm("genesis", "check").stdout
         self.assertIn("✓ coverage: 3 areas, 192 of 192 cells filled", text)
         self.assertIn("✓ not-yet: 1 item", text)
+
+    def test_one_feature_filled_under_two_cells_counts_once(self):  # T-2175
+        over = {("find", "CLI"): "F: real.py — ranks the repository files by risk and prints the top leads",
+                ("ship", "MCP"): "F: real.py — ranks repository files by risk, printing the leads on top",  # same feature
+                ("learn", "site"): "F: real.py — a page that teaches the reader every verb with worked examples"}
+        self.put("coverage.md", grid("1. Initiative", over=over))
+        code, res = self.check()
+        cov, probs = res["coverage"], "\n".join(res["coverage"]["problems"])
+        self.assertEqual((code, cov["filled"], cov["templated"]), (1, 63, 0))  # one of the pair doesn't count
+        self.assertIn("1. Initiative: ship × MCP: duplicate of find × CLI", probs)
+        self.assertNotIn("learn × site", probs)  # the same path, a different description, stays
 
     def test_empty_ungrounded_and_unknown_cells_are_flagged(self):
         bad = {("find", "MCP"): "F: nope.py", ("plan", "site"): "I: a dashboard", ("ship", "CLI"): "N/A:",
@@ -1575,7 +1587,7 @@ class GenesisSelect(ForemanTestCase):
         import fmgenesis
         with open(os.path.join(self.repo, "real.py"), "w") as f:
             f.write("x = 1\n")
-        done = {sf: f"F: real.py — shipped piece {k}" for k, sf in enumerate(itertools.product(STAGES, SURFACES))}
+        done = {sf: f"F: real.py — shipped piece zeta{chr(97 + k // 26)}{chr(97 + k % 26)}" for k, sf in enumerate(itertools.product(STAGES, SURFACES))}
         self.put("coverage.md", grid("1. Initiative") + grid("2. Exhaustive thinking", skip={("find", "MCP"), ("plan", "site")})
                  + grid("Docs", skip={("ship", "CLI")}) + grid("Security", over=done)
                  + "".join(grid(f"Extra {i}") for i in range(1, 7)))
