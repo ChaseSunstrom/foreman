@@ -180,7 +180,9 @@ class Cap(unittest.TestCase):
     def test_the_skill_list_is_short_and_holds_no_playbook(self):
         skills = os.path.join(PLUGIN, "skills")
         found = [os.path.join(d, "SKILL.md") for d, _, fs in os.walk(skills) if "SKILL.md" in fs]
-        self.assertLessEqual(len(found), 20, "playbooks are routed, not listed: a 21st skill needs a merge first")
+        # T-2266: the user asked for many more skills within the listing budget (T-2072), so the budget is the
+        # listing's characters (test_docs' 2,200 cap), not a count; playbooks still stay out of the list
+        self.assertTrue(found)
         for f in found:
             self.assertNotIn(os.sep + "references" + os.sep, f, f"{f}: a playbook is not a skill")
         stems = {os.path.splitext(os.path.basename(b))[0] for b in pb._playbooks(pb.ROOT)}
