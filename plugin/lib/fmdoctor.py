@@ -139,6 +139,24 @@ def _p95(xs):
     return xs[min(len(xs) - 1, int(len(xs) * 0.95))]  # as bench_hooks takes it
 
 
+def hook_p95(runs=60):
+    """T-2359: the guard's PreToolUse p95 in ms (the worst PreToolUse fixture, scripts aside; CPU time on a loaded
+    machine, as bench_hooks' own budget check does), the median of three bench_hooks runs of only those fixtures, to
+    one decimal; None where the bench isn't installed."""
+    try:
+        if os.path.join(PLUGIN, "tests") not in sys.path:
+            sys.path.insert(0, os.path.join(PLUGIN, "tests"))
+        import bench_hooks
+    except Exception:
+        return None
+    pre = lambda k: k.split(":")[0] == "PreToolUse" and not k.endswith(":script")  # noqa: E731
+    vals = []
+    for _ in range(3):
+        got = [v["cpu_p95"] if v.get("load", 0) > 1 else v["p95"] for v in bench_hooks.run_bench(runs, only=pre).values()]
+        vals += [max(got)] if got else []
+    return round(sorted(vals)[len(vals) // 2], 1) if vals else None
+
+
 def check_hook_slo():
     """T-0486: the guard's real latency, from the hooks' own timings, against bench_hooks' budget; over it, the Foreman
     revision where it rose (the first whose own p95 is over, after one under). In-process time: import time isn't in it."""
@@ -849,6 +867,35 @@ def recent_hook_errors(days=1):
         elif entries:
             entries[-1].append(line)
     return [e for e in entries if (c.age_days(e[0].split(" ", 1)[0]) or 99) < days]
+
+
+def feed_self_failures(p, results, sid):
+    """T-2349: Foreman's own failures enter the signal-to-fix loop: each FAIL of this run (a hook over its latency budget
+    is one), a hook SLO miss, and each hook traceback of the last week still live in hooks.log (one run per hour: a
+    storm of one bug in one session is one run). fmrecall.note_own files one FIX when a signature recurs across 3+
+    runs; a feed that raises is told on stderr and the others still go. The first doctor run also replays old failures
+    (fmrecall.replay, 5 captures a run). Ids of the FIXes this call filed."""
+    import fmrecall
+    made = []
+
+    def feed(*a, **k):
+        try:
+            made.append(fmrecall.note_own(*a, **k))
+        except Exception as e:
+            print(f"fm doctor: one self-failure feed failed: {c.plain(repr(e))[:120]}", file=sys.stderr)
+    for r in results:
+        if r.status == "FAIL" or (r.name == "hook SLO" and r.status == "WARN"):
+            feed(p, f"fm doctor FAIL {r.name}: {r.detail}", sid)
+    for e in recent_hook_errors(7)[-20:]:  # a storm of one error is 20 runs, not thousands of locked appends
+        ts, event, *rest = (e[0].split(" ") + ["", ""])
+        if rest and rest[0] == "Traceback" and not _stale(e):
+            last = next((l.strip() for l in reversed(e) if l.strip()), "")
+            feed(p, f"hook {c.plain(event)} traceback: {c.plain(last)}", f"hook-hour {ts[:13]}", at=ts)
+    try:
+        made += fmrecall.replay(p)
+    except Exception as e:
+        print(f"fm doctor: the failure replay failed: {c.plain(repr(e))[:120]}", file=sys.stderr)
+    return [m for m in made if m]
 
 
 def _recent_errors(days=7):
@@ -2436,6 +2483,12 @@ def cmd_doctor(args):
         print(f"Views regenerated in {', '.join(fixed)}." if fixed else "Views match the briefs everywhere.")
         return None
     results = run_all(full=args.full, accept_supply=getattr(args, "accept_supply", False))
+    p = c.find_project(os.getcwd())
+    if p and os.path.realpath(PLUGIN).startswith(os.path.realpath(p.root) + os.sep):
+        try:  # T-2349: only in Foreman's own repo: another project's board is not where Foreman's bugs are filed
+            feed_self_failures(p, results, c.session_id() or c.now()[:10])
+        except Exception:
+            pass
     if getattr(args, "fix", False):
         fixed, left = fix(results)
         print("\n".join(["Fixed:"] + [f"  {x}" for x in fixed]) if fixed else "Fixed: nothing")

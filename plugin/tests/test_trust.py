@@ -21,7 +21,7 @@ class TrustCase(ForemanTestCase):
                                  "--step", "do it", "--json").stdout)["id"]
         if tier != "S":
             for sec in ("Interpretation", "Approach (options → choice → why)", "Risks and rollback"):
-                self.fm("task", "set", tid, "--section", sec, "--text", f"{title}: planned. Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
+                self.fm("task", "set", tid, "--section", sec, "--text", f"{title}: planned. Reading 1: a. Reading 2: b. 1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a")
         if focus:
             self.fm("focus", tid)
         return tid

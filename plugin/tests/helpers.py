@@ -45,6 +45,13 @@ for _k in fmsetup.ENV:
     os.environ.pop(_k, None)
 
 
+def valid_m_plan():
+    """T-2335: (interpretation, approach) texts the M/L plan gate accepts: two readings, three options each with an
+    outcome (one use-what-exists, one do-less) and a choice. Use it where a test only needs a plannable M brief."""
+    return ("Reading 1: a. Reading 2: b.",
+            "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a")
+
+
 def busy_factor(cap=8.0):
     """T-1730: how many times slower than a quiet machine a child runs now: runnable tasks (the 1-min load, or the
     count runnable this instant, which a fresh burst shows before the average catches up) per core, at least 1 and at

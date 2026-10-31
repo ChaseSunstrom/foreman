@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import time
 
 import fmcore as c
@@ -429,6 +430,13 @@ def race(p, b, args):
     """T-1069: two builders on one S/M task. The brief is cloned as its "b" side under a new id (fm focus holds one
     lane per task), each side gets a builder brief, and the main thread scores and picks one."""
     import fmcli
+    import fmoutcomes
+    conf = getattr(args, "confidence", None)
+    if conf is not None:  # T-2337: refused before anything starts
+        try:
+            fmoutcomes._stated(conf)
+        except ValueError as e:
+            raise fmcli.UsageError(str(e))
     with c.lock(p.dir):  # review: checked and written under one lock, so two races at once can't both start
         b = c.find_brief(p, b.id)
         if b.meta.get("race") or b.meta.get("race_of"):
@@ -451,6 +459,13 @@ def race(p, b, args):
         b.append_log(f"racing {nid}")
         c.save_brief(p, b)
     c.log_event(p, "race_start", task=b.id, data={"other": nid})
+    if conf is not None:  # the bet: side A (the original) wins; scored by fm lane pick
+        try:  # a ledger doesn't stop a race that has already started
+            fmoutcomes.bet(p, "race", conf, task=b.id, key=f"{b.id}>{nid}", files=b.meta.get("scope") or [],
+                           base=fmoutcomes.base_rate(fmoutcomes.outcomes(p), fmoutcomes._first_finish(p), b.type,
+                                                     b.tier))
+        except Exception as e:
+            print(f"fm: warning: the race bet was not recorded ({c.fit(str(e), 80)})", file=sys.stderr)
     quiet = argparse.Namespace(**{**vars(args), "json": True})
     try:
         with contextlib.redirect_stdout(io.StringIO()):  # the two briefs' own output; the launch lines follow

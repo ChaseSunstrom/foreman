@@ -181,7 +181,7 @@ def cmd_outcomes(args):
         if getattr(args, flag, False):
             res = globals()["_" + flag](p, outs)
             return fmcli.out(args, res, "\n".join(res["lines"]))
-    lines += survival_lines(p, outs) + track_lines(p) + calibration_lines(p, outs)
+    lines += survival_lines(p, outs) + track_lines(p) + ledger_lines(p, outs)
     rows = track(p, outs)
     return fmcli.out(args, {"tasks": outs, "track": {f"{a} {b}": dict(r) for (a, b), r in rows.items()}},
                      "\n".join(lines))
@@ -253,30 +253,400 @@ def _seen(p, outs):
 BUCKETS = ((0, 59), (60, 79), (80, 94), (95, 100))
 
 
-def calibration(p, outs=None):
-    """T-0619, one axis: a task's stated confidence (fm task set ID confidence=N, 0-100) that it holds on its first
-    finish, against what happened: [(lo, hi, n, ok)] per bucket, and the Brier score (0 is perfect; None without
-    data). ok = closed on the first finish and held."""
+# --- T-2337 (Mission 5, #8): the calibration ledger. Every stated confidence is a write-once bet row in the project's
+# calibration.jsonl; an outcome is a second row (never an edit); the signals that score a row are ones Foreman didn't
+# author (a revert, a later fix, a user correction, a race pick, an assumption's own check, a reversed decision).
+LEDGER_MIN = 20  # scored rows before a Brier, a bar move or a route is believed
+BAR_DEFAULTS = {"research": 70, "race": 55}  # the confidence a plan or a race side needs before it skips research/the race
+BAR_MAX, BAR_STEP, BAR_GAP = 90, 10, 15  # a bar rises at most BAR_STEP, never past BAR_MAX, on a gap of BAR_GAP points
+KINDS = ("task", "choice", "assumption", "decision", "race")
+_PCT = re.compile(r"\((\d{1,3})%\)")
+_CHOICE_PCT = re.compile(r"(?i)\b(?:choice|choose|chose|chosen|decision|decided)\b[^\n]*?\((\d{1,3})%\)")
+
+
+def _ledger_path(p):
+    return os.path.join(p.dir, "calibration.jsonl")
+
+
+def ledger(p):
+    """([bet rows], {bet id: its outcome row}) from calibration.jsonl; a line that isn't JSON is skipped."""
+    bets, grades = [], {}
+    try:
+        with open(_ledger_path(p), encoding="utf-8") as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(r, dict) and "kind" in r and "stated" in r:
+                    bets.append(r)
+                elif isinstance(r, dict) and r.get("of") and r.get("outcome") in ("held", "missed"):
+                    grades.setdefault(r["of"], r)  # write-once: the first grade stands
+    except OSError:
+        pass
+    return bets, grades
+
+
+def _tree(p):
+    try:
+        r = subprocess.run(["git", "-C", p.root, "rev-parse", "-q", "--verify", "HEAD^{tree}"], capture_output=True,
+                           text=True, timeout=5)
+        return r.stdout.strip()[:40] or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _stated(v):
+    try:
+        n = int(str(v).strip().rstrip("%"))
+    except (TypeError, ValueError):
+        raise ValueError(f"a stated confidence is a whole percent, 0-100: got {v!r}")
+    if not 0 <= n <= 100:
+        raise ValueError(f"a stated confidence is a whole percent, 0-100: got {v!r}")
+    return n
+
+
+def bet(p, kind, stated, task=None, key="", files=(), tree=None, tier=None, typ=None, base=None):
+    """Append one write-once bet row (kind, stated, base rate, task, files, tree); the row for the same task, kind and
+    key is never written twice and never edited, so a restated number can't rewrite the record. None if it existed."""
+    stated, key = _stated(stated), c.fit(str(key), 80)
+    b = c.find_brief(p, task) if task else None
+    row = {"ts": c.now(), "id": "", "kind": kind, "stated": stated, "base": base, "task": task, "key": key,
+           "files": [str(f) for f in files][:20], "tree": tree or _tree(p), "tier": tier or (b.tier if b else None),
+           "type": typ or (b.type if b else None)}
+    with c.lock(p.dir):
+        if any(x.get("task") == task and x.get("kind") == kind and x.get("key") == key for x in ledger(p)[0]):
+            return None
+        row["id"] = f"{len(ledger(p)[0]) + 1:05d}-{kind}"
+        with open(_ledger_path(p), "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return row
+
+
+def base_rate(outs, first, typ, tier):
+    """The forecast with no stated number: the share of earlier closes of this type and tier that held on the first
+    finish (a clean first fm task finish, then nothing undid it); every close counts while the pair has under
+    LEDGER_MIN. None with no history."""
+    pair = [t for t, o in outs.items() if o.get("type") == typ and o.get("tier") == tier]
+    pool = pair if len(pair) >= LEDGER_MIN else list(outs)
+    if not pool:
+        return None
+    return round(100 * sum(first.get(t, True) and outs[t]["fate"] == "held" for t in pool) / len(pool))
+
+
+def record_stated(p, b):
+    """The numbers a brief states: its task confidence, the choice's (Approach: 'Choice N: why (80%)') and each
+    assumption's ('(70%)'). Each becomes a bet (write-once per key); called at first focus and when a confidence is
+    stated after work began. Never raises: a ledger doesn't stop a focus. A number stated once the task closed or
+    finished once is hindsight: never recorded. The cheap parse comes first; the outcomes, the first-finish scan, the
+    tree and the base rate are only computed when a number is new."""
+    try:
+        want = []  # (kind, key, percent)
+        if str(b.meta.get("confidence") or "").isdecimal():
+            want.append(("task", "confidence", b.meta["confidence"]))
+        m = list(_CHOICE_PCT.finditer(b.section("Approach (options → choice → why)")))
+        if m and int(m[-1].group(1)) <= 100:
+            want.append(("choice", "choice", m[-1].group(1)))
+        for n, _tag, _how, text in b.assumptions():
+            m = _PCT.search(text)
+            if m and int(m.group(1)) <= 100:
+                want.append(("assumption", f"A{n}", m.group(1)))
+        if not want or b.status in ("done", "dropped"):
+            return
+        have = {(x.get("kind"), x.get("key")) for x in ledger(p)[0] if x.get("task") == b.id}  # the one ledger read
+        want = [w for w in want if (w[0], w[1]) not in have]
+        if not want:
+            return
+        first = _first_finish(p)
+        if b.id in first:  # it has finished once: a new number now is a bet placed with the answer in hand
+            return
+        base = base_rate(outcomes(p), first, b.type, b.tier)
+        scope = list(b.meta.get("plan0_scope") or b.meta.get("scope") or [])
+        kw = dict(task=b.id, files=scope, tree=_tree(p), tier=b.tier, typ=b.type, base=base)
+        for kind, key, pct in want:
+            bet(p, kind, pct, key=key, **kw)
+    except Exception:
+        pass
+
+
+def _verdicts(p, bets, outs, first):
+    """{bet id: (outcome, by, src)}: held, missed, or None while the signal hasn't spoken. src names the signal: only
+    'survival' (fm outcomes' re-fix or revert, or a quiet window) is one Foreman didn't author; a failed first finish,
+    an assumption mark, a reversed decision and a race pick are its own, and never move a bar."""
+    import datetime
+    briefs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
+    reversed_ = [(str(e.get("ts") or ""), str((e.get("data") or {}).get("reverses") or "").lower(),
+                  c.fit(str((e.get("data") or {}).get("decision") or "").lower(), 80))
+                 for e in c.ledger_events(p, ("decision",)) if (e.get("data") or {}).get("reverses")]
+    picks = [e.get("data") or {} for e in c.ledger_events(p, ("race_pick",))]
+    now = datetime.datetime.now(datetime.timezone.utc)
+    got = {}
+    for r in bets:
+        k, t, v = r["kind"], r.get("task"), (None, "", "")
+        if k in ("task", "choice"):
+            o = outs.get(t) or {}
+            if first.get(t) is False:
+                v = ("missed", "its first finish failed a check", "first_finish")
+            elif o.get("survival") == "lost":
+                v = ("missed", c.fit(f"{o.get('fate')}: {', '.join(map(str, o.get('by') or []))}", 100), "survival")
+            elif o.get("survival") == "survived":
+                v = ("held", f"survived {SURVIVE_DAYS} days", "survival")
+        elif k == "assumption" and t in briefs:
+            tag = next((tg for n, tg, _, _ in briefs[t].assumptions() if f"A{n}" == r["key"]), None)
+            v = {"verified": ("held", "marked verified", "mark"),
+                 "false": ("missed", "marked false", "mark")}.get(tag, (None, "", ""))
+        elif k == "decision":
+            at = c.parse_ts(r.get("ts"))
+            if any(ts >= str(r.get("ts")) and words and words in r["key"] and own != r["key"]
+                   for ts, words, own in reversed_):  # its own --reverses words aren't a later reversal of it
+                v = ("missed", "reversed by a later decision", "decision")
+            elif at and (now - at).days >= SURVIVE_DAYS:
+                v = ("held", f"not reversed in {SURVIVE_DAYS} days", "decision")
+        elif k == "race":
+            side = str(r["key"]).split(">")[0]
+            for d in picks:
+                if side in (d.get("winner"), d.get("loser")):
+                    v = ("held", "the side won the race", "race") if d.get("winner") == side else \
+                        ("missed", "the side lost the race", "race")
+        got[r["id"]] = v
+    return got
+
+
+def scored(p, outs=None, first=None):
+    """Every bet with its outcome ('held', 'missed' or None while pending): a grade row already written stands,
+    else the signals above decide."""
+    bets, grades = ledger(p)
+    if not bets:
+        return []
+    outs = outcomes(p) if outs is None else outs
+    first = _first_finish(p) if first is None else first
+    verdicts = _verdicts(p, bets, outs, first)
+    out = []
+    for r in bets:
+        g = grades.get(r["id"])
+        v = verdicts[r["id"]]
+        out.append(dict(r, outcome=g["outcome"] if g else v[0], by=g.get("by") if g else v[1],
+                        src=g.get("src") if g else v[2]))
+    return out
+
+
+def settle(p, outs=None):
+    """Write one outcome row per bet whose signal has spoken (once each); the grade is a new row, the bet is untouched."""
+    bets, grades = ledger(p)
     outs = outcomes(p) if outs is None else outs
     first = _first_finish(p)
-    stated = {b.id: b.meta.get("confidence") for b in c.load_briefs(p, include_archive=True) if b.id in outs}
-    pairs = []
-    for tid, conf in stated.items():
+    verdicts = _verdicts(p, bets, outs, first) if bets else {}
+    new = [(i, v) for i, v in verdicts.items() if v[0] and i not in grades]
+    if new:
+        with c.lock(p.dir):
+            done = ledger(p)[1]
+            with open(_ledger_path(p), "a", encoding="utf-8") as f:
+                for i, (outcome, by, src) in new:
+                    if i not in done:
+                        f.write(json.dumps({"ts": c.now(), "of": i, "outcome": outcome, "by": by, "src": src}) + "\n")
+    return len(new)
+
+
+def bars(p):
+    """{research, race}: the confidence bars, from project meta over the defaults. Never below 0; a bar set by hand
+    above BAR_MAX stays (only Foreman's own raises stop at it)."""
+    try:
+        saved = c.read_meta(p).get("calibration_bars") or {}
+    except (OSError, c.CorruptState):
+        saved = {}
+    out = dict(BAR_DEFAULTS)
+    for k in out:
         try:
-            pairs.append((int(conf), first.get(tid, True) and outs[tid]["fate"] == "held"))
+            out[k] = max(0, int(saved.get(k, out[k])))
         except (TypeError, ValueError):
-            continue
-    rows = [(lo, hi, sum(lo <= x <= hi for x, _ in pairs), sum(ok for x, ok in pairs if lo <= x <= hi))
-            for lo, hi in BUCKETS]
-    brier = sum((x / 100 - ok) ** 2 for x, ok in pairs) / len(pairs) if pairs else None
-    return [r for r in rows if r[2]], brier
+            pass
+    return out
 
 
-def calibration_lines(p, outs=None):
-    rows, brier = calibration(p, outs)
-    return ["Calibration (stated confidence → held on the first finish): " + " · ".join(
-        f"{lo}–{hi}%: {n} task(s), {ok} held on the first finish ({round(100 * ok / n)}%)" for lo, hi, n, ok in rows)
-        + f"; Brier {brier:.2f} (0 is perfect)"] if rows else []
+def _bucket(stated):
+    return next(i for i, (lo, hi) in enumerate(BUCKETS) if lo <= stated <= hi)
+
+
+def tables(rows):
+    """{kind: [bucket dicts]} over the scored rows: n, held, the share held, the mean stated and the gap (stated
+    minus held, in points)."""
+    out = {}
+    for kind in KINDS:
+        for i, (lo, hi) in enumerate(BUCKETS):
+            got = [r for r in rows if r["kind"] == kind and r["outcome"] and _bucket(r["stated"]) == i]
+            if got:
+                held = sum(r["outcome"] == "held" for r in got)
+                mean = sum(r["stated"] for r in got) / len(got)
+                out.setdefault(kind, []).append({"lo": lo, "hi": hi, "n": len(got), "held": held,
+                                                 "pct": round(100 * held / len(got)), "stated": round(mean),
+                                                 "gap": round(mean - 100 * held / len(got))})
+    return out
+
+
+def brier(rows, key="stated"):
+    """The mean squared miss of a forecast against what happened (0 is perfect); None without rows that have it."""
+    pairs = [(r[key] / 100, r["outcome"] == "held") for r in rows if r["outcome"] and r.get(key) is not None]
+    return sum((x - h) ** 2 for x, h in pairs) / len(pairs) if pairs else None
+
+
+def _pairs(rows):
+    return {(r["type"], r["tier"]) for r in rows if r.get("type") and r.get("tier") and r["outcome"]}
+
+
+def routes(p, rows=None):
+    """{'TYPE TIER': base rate}: where the stated numbers (over LEDGER_MIN scored rows of the pair) score a worse Brier
+    than the base rate did, the base rate's forecast is used in their place."""
+    rows = scored(p) if rows is None else rows
+    out = {}
+    for typ, tier in sorted(_pairs(rows)):
+        got = [r for r in rows if r["outcome"] and (r.get("type"), r.get("tier")) == (typ, tier)]
+        based = [r for r in got if r.get("base") is not None]
+        s, b = brier(based), brier(based, "base")
+        if len(based) >= LEDGER_MIN and s is not None and b is not None and s > b:
+            out[f"{typ} {tier}"] = based[-1]["base"]
+    return out
+
+
+def bar_rows(rows):
+    """The scored rows allowed to move a bar: a task or choice bet whose outcome came from survival (fm outcomes' re-fix,
+    revert or quiet window), the one signal Foreman didn't author; one row per task (its task bet over its choice bet),
+    so a close counts once. Race picks, assumption marks, reversed decisions and a failed first finish score in the
+    report but never move a bar."""
+    out, tasks = [], set()
+    for r in sorted((r for r in rows if r["kind"] in ("task", "choice") and r.get("outcome") and r.get("src") == "survival"),
+                    key=lambda r: r["kind"] != "task"):  # stable: a task bet sorts before a choice bet
+        if r.get("task") is not None:
+            if r["task"] in tasks:
+                continue
+            tasks.add(r["task"])
+        out.append(r)
+    return out
+
+
+def adjust_bars(p, rows):
+    """Raise the research bar (never lower one) when a bucket of 20+ bar rows (see bar_rows) ran 15+ points over: at
+    most BAR_STEP, at most BAR_MAX, once per 20 fresh rows in that bucket. The race bar stays where it is until a
+    signal Foreman didn't author scores a race. A raise is an fm decide row and a registered trial on the Brier; the
+    trial is registered first, so a failed add leaves nothing raised. A bucket 15+ points under is reported once as a
+    costly decision, so fm decide --review carries it to the final report. Returns (raised [(bar, old, new)],
+    under [text], warnings [text])."""
+    import fmcli
+    import fmtrials
+    table = tables(rows)
+    meta = c.read_meta(p)
+    cur, seen = bars(p), dict(meta.get("calibration_seen") or {})
+    plan, under, warns = None, [], []
+    for kind, buckets in table.items():
+        for b in buckets:
+            if b["n"] < LEDGER_MIN:
+                continue
+            key = f"{kind}:{b['lo']}"
+            if b["gap"] >= BAR_GAP and not plan and b["n"] - int(seen.get(key, 0)) >= LEDGER_MIN \
+                    and cur["research"] < BAR_MAX:
+                plan = (key, b, kind)
+            elif b["gap"] <= -BAR_GAP:
+                under.append((key, b["n"], f"{kind} {b['lo']}–{b['hi']}%: underconfident by {-b['gap']} points over "
+                              f"{b['n']} rows (stated {b['stated']}%, held {b['pct']}%); Foreman never lowers a bar: "
+                              f"lower a bar yourself if you agree"))
+    raised = []
+    new = min(BAR_MAX, cur["research"] + BAR_STEP)
+    if plan:
+        try:  # first: if this fails nothing was raised and the next look tries again
+            fmtrials.add(p, f"research bar {cur['research']} → {new} (Brier of stated confidence)", "brier", 30)
+        except Exception as e:
+            warns.append(f"the research bar was not raised: its trial could not be registered ({e})")
+            plan = None
+    with c.lock(p.dir):  # ponytail: two racing looks could each register a trial; the re-check below keeps one raise
+        meta = c.read_meta(p)
+        cur, seen = bars(p), dict(meta.get("calibration_seen") or {})
+        said = dict(meta.get("calibration_under") or {})
+        if plan:
+            key, b, kind = plan
+            if b["n"] - int(seen.get(key, 0)) >= LEDGER_MIN and cur["research"] < BAR_MAX:
+                old, cur["research"] = cur["research"], min(BAR_MAX, cur["research"] + BAR_STEP)
+                seen[key] = b["n"]
+                raised.append(("research", old, cur["research"]))
+                fmcli._write_decision(
+                    p, f"Raised the research bar {old} → {cur['research']}: {kind} bets stated {b['stated']}% in "
+                       f"{b['lo']}–{b['hi']}% held {b['pct']}% over {b['n']} scored closes",
+                    why="the calibration ledger: overconfident by 15+ points over 20+ closes; a bar only rises",
+                    task=None, locked=True)
+        for key, n, text in under:
+            if n - int(said.get(key, -LEDGER_MIN)) >= LEDGER_MIN:
+                said[key] = n
+                fmcli._write_decision(p, "Calibration: " + text, why="the calibration ledger", kind="costly",
+                                      task=None, locked=True)
+        if raised or said != (meta.get("calibration_under") or {}):
+            meta.update(calibration_bars=dict(meta.get("calibration_bars") or {}, **{"research": cur["research"]}),
+                        calibration_seen=seen, calibration_under=said)
+            c.write_meta(p, meta)
+    return raised, [t for _k, _n, t in under], warns
+
+
+def maintain(p):
+    """Run at each fm task finish: write the outcome rows that are due and apply the bar check. Cheap when no bet was
+    ever stated (one stat). Never raises: a ledger doesn't fail a close."""
+    try:
+        if not os.path.exists(_ledger_path(p)):
+            return
+        outs = outcomes(p)
+        settle(p, outs)
+        adjust_bars(p, bar_rows(scored(p, outs)))
+    except Exception:
+        pass
+
+
+def ledger_data(p, outs=None):
+    rows = scored(p, outs)
+    done = [r for r in rows if r["outcome"]]
+    table = tables(rows)
+    based = [r for r in done if r.get("base") is not None]
+    return {"total": len(rows), "scored": len(done), "pending": len(rows) - len(done), "kinds": table,
+            "brier": {"stated": brier(done), "base": brier(based, "base")} if len(done) >= LEDGER_MIN else None,
+            "bars": bars(p), "routes": routes(p, rows) if len(done) >= LEDGER_MIN else {}}
+
+
+def _bucket_line(kind, b):
+    return f"{kind} {b['lo']}–{b['hi']}%: n {b['n']}, held {b['held']} ({b['pct']}%), gap {b['gap']:+d}"
+
+
+def _too_few(d):
+    return f"Calibration ledger: too few ({d['scored']} of {LEDGER_MIN} scored, {d['pending']} pending)"
+
+
+def _brier_line(d):
+    s, b = d["brier"]["stated"], d["brier"]["base"]
+    return f"Brier: stated {s:.2f}, base rate {'%.2f' % b if b is not None else 'n/a'} (0 is perfect)"
+
+
+def ledger_lines(p, outs=None):
+    """The digest's lines: the ledger's buckets and both Briers, or 'too few'; [] with no bets at all."""
+    d = ledger_data(p, outs)
+    if not d["total"]:
+        return []
+    if not d["brier"]:
+        return [_too_few(d)]
+    return ["Calibration ledger: " + "; ".join(_bucket_line(k, b) for k, bs in d["kinds"].items() for b in bs)
+            + f"; {_brier_line(d)}"]
+
+
+def cmd_calibration(args):
+    """fm calibration: the ledger's buckets per kind, the Brier of the stated numbers beside the base rate's, the
+    bars and where the base rate routes. Writes the outcome rows that are due and applies a bar raise."""
+    import fmcli
+    p = fmcli.resolve(args)
+    outs = outcomes(p)
+    settle(p, outs)
+    d = ledger_data(p, outs)
+    raised, under, warns = adjust_bars(p, bar_rows(scored(p, outs)))
+    d["bars"], d["raised"], d["under"] = bars(p), raised, under
+    lines = [_too_few(d) + ": no bar moves" if not d["brier"] else "Calibration ledger: " + _brier_line(d)]
+    lines += [_bucket_line(k, b) for k, bs in d["kinds"].items() for b in bs]
+    lines += [f"Raised the {bar} bar {old} → {new}." for bar, old, new in raised] + under + warns
+    lines += [f"{pair}: the base rate's {v}% replaces the stated numbers (they scored a worse Brier)"
+              for pair, v in d["routes"].items()]
+    lines.append(f"Bars: research {d['bars']['research']} · race {d['bars']['race']}")
+    return fmcli.out(args, d, "\n".join(lines))
 
 
 PLAN_WINDOW, PLAN_MISS, PLAN_DAYS, PLAN_OUTSIDE = 5, 3, 14, 2  # T-1061: last 5 closes within 14 days; 3 missed = slow

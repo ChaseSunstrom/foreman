@@ -86,7 +86,7 @@ def _write_script(repo, run):
                 + "".join(SCRIPT_BLOCK.format(n=n) for n in range(64)) + 'build_0 "$@"\n')
 
 
-def run_bench(runs=30):
+def run_bench(runs=30, only=None):  # only: a predicate on fixture names (T-2359 times the guard's alone)
     with open(os.path.join(HERE, "fixtures", "hook_payloads.json")) as f:
         fixtures = json.load(f)
     results = {}
@@ -94,6 +94,8 @@ def run_bench(runs=30):
         repo, env = _scratch_project(tmp)
         env["CLAUDE_ENV_FILE"] = os.path.join(tmp, "envfile")
         for name, payload in fixtures.items():
+            if only and not only(name):
+                continue
             event = name.split(":")[0]
             body = json.dumps(dict({"session_id": "bench", "cwd": repo, "hook_event_name": event},
                                    **json.loads(json.dumps(payload).replace("{cwd}", repo))))

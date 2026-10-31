@@ -771,7 +771,8 @@ def _first_brief(p, sid, transcript=None):
         if c.active_brief_fast(p, getattr(p, "lane", None)):
             return ""  # a parallel edit's hook made it a moment ago: its own note said so
         cmd = [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "task", "new", title, "--type", type_, "--tier", tier,
-               "--step", "do what the request asks", "--focus", "--json"] + [x for d in done for x in ("--ac", d)]
+               "--step", "do what the request asks", "--harness-plan=hook",  # T-2335: no readings/options to gate
+               "--focus", "--json"] + [x for d in done for x in ("--ac", d)]
         r = subprocess.run(cmd, cwd=p.root, capture_output=True, text=True, timeout=3,  # the hook's limit is 5 s
                            env=dict(os.environ, FOREMAN_SESSION_ID=sid))
     act = c.active_brief_fast(p, getattr(p, "lane", None))
@@ -843,7 +844,8 @@ def _queue_requests(p, sid, reqs):
             done = (r.done_when or ["the request is done as asked"])[:6]
             code, out, err = _fm_inline(p.root, sid, "task", "new", c.fit(f"Request {k}: {first}", 90), "--type", type_,
                                         "--tier", "M" if type_ == "SECURITY" else "S", f"--raw={text}",
-                                        "--step=do what the request asks", "--json", *[f"--ac={d}" for d in done],
+                                        "--step=do what the request asks", "--harness-plan=hook", "--json",
+                                        *[f"--ac={d}" for d in done],
                                         *([f"--depends={made[-1]}"] if made else []))
             tid = re.search(r'"id": "(T-\d+)"', out)
             if code or not tid:
@@ -1987,6 +1989,9 @@ def _pre_tool_use(raw):
                             data={"category": block.category, "detail": str(block.detail)[:200],
                                   "rule": getattr(block, "rule", None)},  # T-0672 (committed fallback may lack it)
                             session=pl.get("session_id"))
+                if block.category == "plugin" and not pl.get("agent_id"):  # T-2370: the session wanted a tool it lacks
+                    _capability_miss(p, pl.get("session_id"), "", name=(guard.plugin_target(block.detail) or "?").split("@")[0],
+                                     kind="plugin")
         except Exception:
             log_error("PreToolUse", _tb())
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
@@ -2957,7 +2962,15 @@ def post_tool_use(pl, ok=True):
         try:  # a success after the session's last failure is its fix; an edit in between makes it a code fix instead
             import fmfixes
             if tool == "Bash":
-                fmfixes.on_success(p, pl.get("session_id"), ti.get("command"))
+                failed = fmfixes.on_success(p, pl.get("session_id"), ti.get("command"))
+                mine = p and not pl.get("agent_id") and not _oneoff()  # a subagent's or a one-off's run is no task's
+                act = c.active_brief_fast(p, p.lane) if mine else None
+                if act:  # T-2369: the pair that gets past a capability miss closes it (fmmiss reads this)
+                    if failed:
+                        c.log_event(p, "fix_paired", task=act.id, session=pl.get("session_id"),
+                                    data={"failed": failed, "cmd": c.redact(str(ti.get("command") or ""))[:200]})
+                    import fmmiss  # a pass of an open miss's own command: one ledger event, readers never scan events
+                    fmmiss.on_pass(p, act, pl.get("session_id"), ti.get("command"))
             else:
                 fmfixes.on_edit(pl.get("session_id"))
         except Exception:
@@ -3279,33 +3292,80 @@ _MISSING = c.lazy(r"(?m)command not found: (\S+)|(\S+): command not found|No mod
                   r"Cannot find module '?([^\s']+)")  # keep in step with fmcli._ENV_FAILURES
 
 
-def _capability_miss(p, sid, err):
+def _capability_miss(p, sid, err, act=None, cmd="", name=None, kind=None):
     """T-2270: a missing tool names the find-or-build path once per session; a second session that misses it captures
-    one FEATURE task. Ledger only: no network, no plugin search. The name is untrusted: a plain tool name or nothing."""
-    m = _MISSING.search(err[-4000:])
-    name = next((x for x in m.groups() if x), "") if m else ""
+    one FEATURE task. Ledger only: no network, no plugin search. The name is untrusted: a plain tool name or nothing.
+    T-2369: with an active task, every miss is logged with the task, the kind and the command (fmmiss reads them: the
+    task can't finish until a run gets past it); the note and the capture stay once per session.
+    T-2370: name+kind come in from a source that is no command (an extension, a tool, a plugin target): logged on no
+    task, because no run of a command can resolve it and a blocked finish with no way out helps no one."""
+    m = None
+    if name is None:
+        m = _MISSING.search(err[-4000:])
+        name = next((x for x in m.groups() if x), "") if m else ""
     if not re.fullmatch(r"[A-Za-z0-9_.+-]{1,64}", name):
         return None
     seen = {e.get("session_id") for e in c.ledger_tail(p, 1500)
             if e.get("event") == "capability_miss" and (e.get("data") or {}).get("name") == name}
+    if sid in seen and not act:
+        return None
+    data = {"name": name}
+    if m is None:
+        data["kind"], act = kind, None
+    elif act:
+        import fmmiss  # the key form (no cd prefix, one space, whole up to fmmiss.CUT) is what both sides compare
+        data.update(kind={3: "module", 4: "node"}.get(m.lastindex, "command"), cmd=fmmiss.key(cmd))
+    c.log_event(p, "capability_miss", task=act.id if act else None, data=data, session=sid)
     if sid in seen:
         return None
-    c.log_event(p, "capability_miss", data={"name": name}, session=sid)
     if seen:  # a second session: one task, ever (the key line)
         import fmeco
         fmeco.capture_once(p, f"Missing tool {name}: find it (fm plugins find {name}) or build it (script + test)\n"
                            f"capability-miss: {name}", "FEATURE", "self", key=f"capability-miss: {name}",
                            trigger="capability-miss")
     name = c.fit(c.plain(name), 64)
+    if kind in ("extension", "tool"):
+        return (f"Foreman: {'Read can not parse .' + name + ' files' if kind == 'extension' else name + ' is not available'}. "
+                f"Find one: fm which \"{name}\".")
+    if kind == "plugin":
+        return None
     return (f"Foreman: `{name}` is missing. Find it: fm plugins find {name} (an install needs fm ask ID plugin), "
             f"or build it: fm new tool {name if re.fullmatch(r'[a-z][a-z0-9_]{0,31}', name) else 'NAME'}.")
+
+
+_UNREADABLE = c.lazy(r"(?i)cannot read binary files|unsupported (?:file|image) (?:type|format)|not a supported file type")
+_NO_TOOL = c.lazy(r"(?i)no such tool available: (\S+)|mcp server '?([^\s']+)'? (?:not found|is not connected|not available)")
+
+
+def _tool_miss(pl):
+    """T-2370: a non-Bash failure that names something the host lacks: a Read of a type it can't parse (names the
+    extension), a call to a tool or MCP server that isn't there (names it). Fixed shapes only; a name that isn't a plain
+    word is ignored by _capability_miss. The regexes run on the tail first, so a failure that is neither costs nothing."""
+    err = str(pl.get("error") or "")[-4000:]
+    ti = pl.get("tool_input") if isinstance(pl.get("tool_input"), dict) else {}
+    m = _NO_TOOL.search(err)
+    if m:
+        name, kind = next((x for x in m.groups() if x), ""), "tool"
+    elif pl.get("tool_name") == "Read" and _UNREADABLE.search(err):
+        name, kind = os.path.splitext(str(ti.get("file_path") or ""))[1][1:].lower(), "extension"
+    else:
+        return None
+    p = c.find_project(_cwd(pl))
+    return _capability_miss(p, pl.get("session_id"), err, name=name, kind=kind) if p else None
 
 
 def post_tool_use_failure(pl):
     """Also failure memory (T-0046): a failed command whose failure a finished task already met gets a pointer to it."""
     post_tool_use(pl, ok=False)
-    if pl.get("tool_name") != "Bash" or pl.get("agent_id"):  # T-1110: a subagent's failure is its own; the notes
-        return None  # landed in the main thread's context and the failure was filed against this thread's task
+    if pl.get("agent_id"):  # T-1110: a subagent's failure is its own; the notes landed in the main thread's context
+        return None  # and the failure was filed against this thread's task
+    if pl.get("tool_name") != "Bash":  # T-2370: past Bash, only the miss shapes
+        try:
+            note = _tool_miss(pl)
+        except Exception:
+            log_error("PostToolUseFailure", _tb())
+            return None
+        return {"hookSpecificOutput": {"hookEventName": "PostToolUseFailure", "additionalContext": note}} if note else None
     err = str(pl.get("error") or "")
     p = None
     try:  # T-1032: a known fix first, in any folder (this machine's fixes need no Foreman project)
@@ -3321,7 +3381,8 @@ def post_tool_use_failure(pl):
         import fmrecall
         act = c.active_brief_fast(p, p.lane)
         note = " ".join(filter(None, [fix, fmrecall.note_failure(p, act.id if act else None, err),
-                                      _capability_miss(p, pl.get("session_id"), err)]))
+                                      _capability_miss(p, pl.get("session_id"), err, act,
+                                                       (pl.get("tool_input") or {}).get("command"))]))
         if re.search(r"(?m)^(Traceback|FAIL:|ERROR:|\s+at .+:\d+)", err):  # T-0706: a red run comes with suspects
             import fmdebug
             note = " ".join(filter(None, [note, fmdebug.line(p, err)]))
