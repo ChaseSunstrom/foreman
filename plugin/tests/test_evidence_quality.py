@@ -148,20 +148,37 @@ class Bench(_Base):
         tid = self._perf()
         self.fm("focus", tid)
         self._tool_on_path("#!/bin/sh\necho CURRENT-COPY\nexit 3\n")
-        r = self.fm("task", "evidence", tid, "--bench", "tool --x", "--repeat", "1", check=False, env=env)
-        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)  # the before side passed, so it ran the base copy
-        self.assertIn("failed on the current tree", r.stdout)
-        self.assertIn("CURRENT-COPY", r.stdout)
+        for cmd in ("tool --x", "FOO=1 tool", "time tool", '"tool"', "tool | tool", "true && tool"):
+            r = self.fm("task", "evidence", tid, "--bench", cmd, "--repeat", "1", check=False, env=env)
+            self.assertEqual(r.returncode, 3, cmd + r.stdout + r.stderr)  # the before side passed: it ran the base copy
+            self.assertIn("failed on the current tree", r.stdout, cmd)
+            self.assertIn("CURRENT-COPY", r.stdout, cmd)
 
-    def test_a_command_outside_the_tree_runs_unchanged_and_says_it_may_time_the_same_code(self):
+    def test_a_command_with_no_word_in_the_tree_says_it_may_time_the_same_code(self):
+        import os
+        import stat
+        self._commit("pass\n")
+        tid = self._perf()
+        self.fm("focus", tid)
+        other = self.repo + "-other"  # shares the repo's path as a string prefix, but is not inside it
+        os.makedirs(other, exist_ok=True)
+        with open(os.path.join(other, "tool"), "w") as f:
+            f.write("#!/bin/sh\nexit 0\n")
+        os.chmod(os.path.join(other, "tool"), 0o755 | stat.S_IXUSR)
+        env = {"PATH": other + os.pathsep + os.environ["PATH"]}
+        for cmd in ("tool", "python3 'unclosed"):
+            r = self.fm("task", "evidence", tid, "--bench", cmd, "--repeat", "1", check=False, env=env)
+            self.assertNotIn("Traceback", r.stderr)
+        r = self.fm("task", "evidence", tid, "--bench", "tool", "--repeat", "1", env=env)
+        self.assertIn("neither side's entry point is in the tree", r.stdout)
+
+    def test_a_path_into_the_tree_as_an_argument_is_no_warning(self):
         self._commit("pass\n")
         tid = self._perf()
         self.fm("focus", tid)
         r = self.fm("task", "evidence", tid, "--bench", "python3 work.py", "--repeat", "1")
         self.assertIn("(1 runs each)", r.stdout)
-        self.assertIn("neither side's entry point is in the tree", r.stdout)
-        r = self.fm("task", "evidence", tid, "--bench", "python3 'unclosed", "--repeat", "1", check=False)
-        self.assertNotIn("Traceback", r.stderr)
+        self.assertNotIn("neither side", r.stdout)
 
     def test_an_entry_point_new_in_the_task_says_the_before_side_ran_the_current_copy(self):
         self._commit("pass\n")
