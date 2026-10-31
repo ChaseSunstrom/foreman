@@ -6,3 +6,4 @@ listed in SKILL.md.
 
 - `references/context/docs.md` — Task-first pages: one kind per page, numbered steps with results, examples run in CI by a self-checked run_examples.py.
 - `references/context/decks-and-reports.md` — Decks, reports and status updates: answer and ask first, sentence titles, sourced numbers, built from source.
+- `references/context/instruction-files.md` — CLAUDE.md, rules and skill descriptions that cost little: count what loads, checkable rules, short descriptions.
