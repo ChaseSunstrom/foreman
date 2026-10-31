@@ -2,7 +2,9 @@
 # T-2288: fm prove --migration: up, down, up again on a throwaway sqlite file, schema compared each time
 import json
 import os
+import sys
 import tempfile
+from unittest import mock
 
 from helpers import ForemanTestCase
 
@@ -59,8 +61,9 @@ class Migration(ForemanTestCase):
         self.assertIn("--yes-run", r["why"])
         r = fmprove.migration(self.proj({"app.py": "x = 1"}, "p3"), True)
         self.assertEqual(r["verdict"], "unknown")
-        r = fmprove.migration(self.proj({"alembic.ini": "[alembic]"}, "p4"), True)
-        self.assertEqual(r["verdict"], "unknown")
+        with mock.patch.dict(os.environ, {"PATH": os.path.join(self.tmp, "nobin")}):  # T-2386: a named tool is unproven, not unknown
+            r = fmprove.migration(self.proj({"alembic.ini": "[alembic]"}, "p4"), True)
+        self.assertEqual(r["verdict"], "unproven")
         self.assertIn("alembic", r["why"])
 
     def test_sql_cannot_reach_a_file_outside_the_throwaway_database(self):
@@ -84,6 +87,394 @@ class Migration(ForemanTestCase):
         r = self.fm("prove", "--migration", root, "--yes-run", "--json", check=False)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout)["verdict"], "pass")
+
+
+DBMATE = "-- migrate:up\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n\n-- migrate:down\nDROP TABLE users;\n"
+PG_SQL = {M + "001_a.up.sql": "CREATE EXTENSION IF NOT EXISTS pgcrypto;\nCREATE TABLE accounts (id uuid);",
+          M + "001_a.down.sql": "DROP TABLE accounts;"}
+ALEMBIC_INI = ("[alembic]\nscript_location = %(here)s/alembic\nsqlalchemy.url = {url}\n\n[loggers]\nkeys = root\n")
+ENV_PY = "from alembic import context\nurl = context.config.get_main_option('sqlalchemy.url')\n"
+ALEMBIC = """
+import configparser, json, os, sqlite3, sys
+a = sys.argv[1:]
+cp = configparser.ConfigParser(interpolation=None)
+cp.read(a[a.index("-c") + 1])
+url = cp["alembic"]["sqlalchemy.url"]
+with open(@LOG@, "a") as f:
+    f.write(json.dumps({"argv": a, "url": url, "dotenv": os.path.exists(".env"),
+                        "env": sorted(k for k in os.environ if k.startswith(("DATABASE", "PG", "MYSQL")))}) + "\\n")
+if os.path.exists(@BREAK@):
+    sys.exit("sqlalchemy.exc.ProgrammingError: boom")
+db = sqlite3.connect(url.split("sqlite:///", 1)[1])
+if a[-2:] == ["upgrade", "head"]:
+    db.execute("CREATE TABLE IF NOT EXISTS alembic_version (v)")
+    db.execute("CREATE TABLE IF NOT EXISTS widgets (id)")
+elif a[-2:] == ["downgrade", "base"] and not os.path.exists(@LEAK@):
+    db.execute("DROP TABLE IF EXISTS widgets")
+db.commit()
+"""
+MANAGE = """
+import json, os, sqlite3, sys
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "proj.settings")
+import django
+django.setup()
+from django.conf import settings
+name = settings.DATABASES["default"]["NAME"]
+with open(@LOG@, "a") as f:
+    f.write(json.dumps({"argv": sys.argv[1:], "name": name, "settings": os.environ["DJANGO_SETTINGS_MODULE"],
+                        "env": sorted(k for k in os.environ if k.startswith(("DATABASE", "PG", "MYSQL")))}) + "\\n")
+if os.path.exists(@BREAK@):
+    sys.exit("django.db.utils.OperationalError: boom")
+db = sqlite3.connect(name)
+a = sys.argv[1:]
+if a == ["migrate"]:
+    db.execute("CREATE TABLE IF NOT EXISTS django_migrations (id)")
+    db.execute("CREATE TABLE IF NOT EXISTS shop_item (id)")
+elif a[-1:] == ["zero"] and not os.path.exists(@LEAK@):
+    db.execute("DROP TABLE IF EXISTS shop_item")
+db.commit()
+"""
+class ToolCase(ForemanTestCase):
+    """T-2386: stubs on PATH stand in for the repo's own migration tools (alembic, Django, psql); DB variables are set."""
+
+    def setUp(self):
+        super().setUp()
+        self.bin, self.log = os.path.join(self.tmp, "bin"), os.path.join(self.tmp, "calls.log")
+        self.leak, self.brk = os.path.join(self.tmp, "leak"), os.path.join(self.tmp, "break")
+        os.makedirs(self.bin)
+        patch = mock.patch.dict(os.environ, {"PATH": self.bin, "DATABASE_URL": "postgres://real/prod", "PGHOST": "real",
+                                             "MYSQL_HOST": "real"})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def stub(self, name, body):
+        path = os.path.join(self.bin, name)
+        with open(path, "w") as f:
+            f.write(f"#!{sys.executable}\n" + body.replace("@LOG@", repr(self.log)).replace("@LEAK@", repr(self.leak))
+                    .replace("@BREAK@", repr(self.brk)))
+        os.chmod(path, 0o755)
+
+    def python3(self):
+        """A python3 whose Django is a tiny fake: its settings are the module DJANGO_SETTINGS_MODULE names."""
+        fake = os.path.join(self.tmp, "fake")
+        write(fake, {"django/__init__.py": "def setup():\n    import importlib, os\n    from django import conf\n"
+                     "    conf.settings = importlib.import_module(os.environ['DJANGO_SETTINGS_MODULE'])\n",
+                     "django/conf.py": "settings = None\n"})
+        path = os.path.join(self.bin, "python3")
+        with open(path, "w") as f:
+            f.write(f'#!/bin/sh\nPYTHONPATH={fake} exec {sys.executable} "$@"\n')
+        os.chmod(path, 0o755)
+
+    def calls(self):
+        try:
+            with open(self.log) as f:
+                return [json.loads(x) for x in f.read().splitlines()]
+        except OSError:
+            return []
+
+    def alembic_tree(self, url="sqlite:///dev.db", name="al", env_py=ENV_PY):
+        self.stub("alembic", ALEMBIC)
+        return self.proj_at(name, {"alembic.ini": ALEMBIC_INI.format(url=url), "alembic/env.py": env_py,
+                                   "alembic/versions/001_widgets.py": "# revision\n"})
+
+    def django_tree(self, name="dj"):
+        self.python3()
+        root = self.proj_at(name, {"proj/__init__.py": "", "proj/settings.py":
+                                   "DATABASES = {'default': {'ENGINE': 'django.db.backends.postgresql', 'NAME': 'prod'}}\n",
+                                   "shop/migrations/0001_initial.py": "# migration\n"})
+        write(root, {"manage.py": MANAGE.replace("@LOG@", repr(self.log)).replace("@LEAK@", repr(self.leak))
+                     .replace("@BREAK@", repr(self.brk))})
+        return root
+
+    def proj_at(self, name, files):
+        root = os.path.join(self.tmp, name)
+        write(root, files)
+        return root
+
+
+class MigrationTools(ToolCase):
+    """T-2386: the repo's own migration tool on a throwaway database."""
+
+    def test_migration_tool_a_dbmate_file_runs_its_up_and_down_sections_and_passes(self):
+        r = fmprove.migration(self.proj_at("db", {"db/migrations/20240101_users.sql": DBMATE}), True)
+        self.assertEqual((r["verdict"], r["tool"]), ("pass", "dbmate"), r)
+        self.assertIn("CREATE TABLE users", "".join(r["after_up"]))
+        self.assertEqual(r["after_up"], r["after_up2"])
+        self.assertEqual(r["after_down"], r["before"])
+
+    def test_migration_tool_a_dbmate_down_that_leaves_a_table_fails_and_a_file_without_down_fails(self):
+        left = DBMATE.replace("DROP TABLE users;", "SELECT 1;")
+        r = fmprove.migration(self.proj_at("db", {"db/migrations/1_users.sql": left}), True)
+        self.assertEqual(r["verdict"], "fail", r)
+        self.assertIn("users", r["why"])
+        r = fmprove.migration(self.proj_at("db2", {"db/migrations/1_users.sql": "-- migrate:up\nCREATE TABLE t (a);\n"}), True)
+        self.assertEqual(r["verdict"], "fail", r)
+        self.assertIn("down", r["why"])
+
+    def test_migration_tool_alembic_runs_upgrade_downgrade_upgrade_on_a_generated_config(self):
+        r = fmprove.migration(self.alembic_tree(), True)
+        self.assertEqual((r["verdict"], r["tool"]), ("pass", "alembic"), r)
+        steps = [x["argv"][-2:] for x in self.calls()]
+        self.assertEqual(steps, [["upgrade", "head"], ["downgrade", "base"], ["upgrade", "head"]])
+        self.assertEqual(r["after_up"], r["after_up2"])
+        self.assertEqual(r["after_down"], r["before"])
+        self.assertIn("widgets", "".join(r["after_up"]))
+        self.assertNotIn("alembic_version", "".join(r["after_up"]))  # the tool's own bookkeeping is not the schema
+
+    def test_migration_tool_alembic_a_downgrade_that_leaves_a_table_fails(self):
+        open(self.leak, "w").close()
+        r = fmprove.migration(self.alembic_tree(), True)
+        self.assertEqual(r["verdict"], "fail", r)
+        self.assertIn("downgrade", r["why"])
+        self.assertIn("widgets", r["why"])
+
+    def test_migration_tool_alembic_not_installed_says_what_it_needs_and_untrusted_runs_nothing(self):
+        root = self.alembic_tree()
+        os.remove(os.path.join(self.bin, "alembic"))
+        r = fmprove.migration(root, True)
+        self.assertEqual(r["verdict"], "unproven", r)
+        self.assertIn("alembic", r["why"])
+        self.assertIn("PATH", r["why"])
+        self.stub("alembic", ALEMBIC)
+        self.assertEqual(fmprove.migration(root, False)["verdict"], "refused")
+        self.assertEqual(self.calls(), [])
+
+    def test_migration_tool_django_runs_migrate_app_zero_migrate_on_a_generated_settings_module(self):
+        r = fmprove.migration(self.django_tree(), True)
+        self.assertEqual((r["verdict"], r["tool"]), ("pass", "django"), r)
+        self.assertEqual([x["argv"] for x in self.calls()], [["migrate"], ["migrate", "shop", "zero"], ["migrate"]])
+        self.assertEqual({x["settings"] for x in self.calls()}, {"fm_prove_settings"})
+        self.assertEqual(r["after_up"], r["after_up2"])
+        self.assertIn("shop_item", "".join(r["after_up"]))
+        self.assertNotIn("shop_item", "".join(r["after_down"]))
+
+    def test_migration_tool_django_a_zero_that_leaves_the_apps_table_fails(self):
+        open(self.leak, "w").close()
+        r = fmprove.migration(self.django_tree(), True)
+        self.assertEqual(r["verdict"], "fail", r)
+        self.assertIn("shop_item", r["why"])
+
+    def test_migration_tool_prisma_and_rails_say_what_they_need_instead_of_unknown(self):
+        r = fmprove.migration(self.proj_at("pr", {"prisma/schema.prisma": "model A {}\n",
+                                                  "prisma/migrations/1/migration.sql": "SELECT 1;"}), True)
+        self.assertEqual((r["verdict"], r["tool"]), ("unproven", "prisma"), r)
+        self.assertIn("prisma", r["why"])
+        self.assertIn("DATABASE_URL", r["why"])
+        r = fmprove.migration(self.proj_at("rb", {"Gemfile": "gem 'rails'\n", "db/migrate/20240101_a.rb": "# m\n",
+                                                  "config/database.yml": "default: {}\n"}), True)
+        self.assertEqual((r["verdict"], r["tool"]), ("unproven", "rails"), r)
+        self.assertIn("rails db:rollback", r["why"])
+
+    def test_migration_tool_the_command_exits_two_for_unproven(self):
+        r = self.fm("prove", "--migration", self.proj_at("pr", {"prisma/schema.prisma": "model A {}\n"}), "--yes-run",
+                    check=False)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("unproven", r.stdout)
+
+
+class MigrationIsolation(ToolCase):
+    """T-2386: the real database is never reached."""
+
+    def test_migration_isolation_the_tool_gets_no_connection_variables_and_no_dotenv(self):
+        root = self.alembic_tree()
+        write(root, {".env": "DATABASE_URL=postgres://real/prod\n"})
+        r = fmprove.migration(root, True)
+        self.assertEqual(r["verdict"], "pass", r)
+        self.assertTrue(self.calls())
+        for x in self.calls():
+            self.assertEqual(x["env"], [], x)
+            self.assertFalse(x["dotenv"])
+        r = fmprove.migration(self.django_tree(), True)
+        self.assertEqual(r["verdict"], "pass", r)
+        self.assertEqual([x["env"] for x in self.calls() if "name" in x], [[], [], []])
+
+    def test_migration_isolation_alembic_is_pointed_at_the_throwaway_database_by_its_own_url_setting(self):
+        root = self.alembic_tree(url="postgresql://prod.example/real")
+        before = open(os.path.join(root, "alembic.ini")).read()
+        self.assertEqual(fmprove.migration(root, True)["verdict"], "pass")
+        for x in self.calls():
+            self.assertTrue(x["url"].startswith("sqlite:///" + tempfile.gettempdir()), x)
+            self.assertIn("fm-prove-", x["url"])
+        self.assertEqual(open(os.path.join(root, "alembic.ini")).read(), before)  # the tree's own file is untouched
+
+    def test_migration_isolation_alembic_whose_url_is_not_the_throwaway_one_is_refused_before_any_run(self):
+        with mock.patch("fmmigrate._alembic_ini", lambda text, url: text):
+            r = fmprove.migration(self.alembic_tree(url="postgresql://prod.example/real"), True)
+        self.assertEqual(r["verdict"], "refused", r)
+        self.assertIn("throwaway", r["why"])
+        self.assertEqual(self.calls(), [])
+
+    def test_migration_isolation_an_env_py_that_names_its_own_database_is_refused_before_any_run(self):
+        root = self.alembic_tree(env_py="from sqlalchemy import create_engine\ne = create_engine('postgresql://prod/real')\n")
+        r = fmprove.migration(root, True)
+        self.assertEqual(r["verdict"], "refused", r)
+        self.assertIn("env.py", r["why"])
+        self.assertEqual(self.calls(), [])
+
+    def test_migration_isolation_django_settings_are_replaced_and_a_database_that_resolves_elsewhere_is_refused(self):
+        r = fmprove.migration(self.django_tree(), True)
+        self.assertEqual(r["verdict"], "pass", r)
+        self.assertTrue(all(x["name"].startswith(tempfile.gettempdir()) and "fm-prove-" in x["name"]
+                            for x in self.calls()), self.calls())
+        os.remove(self.log)
+        with mock.patch("fmmigrate._django_settings", lambda mod, db: f"from {mod} import *\n"):
+            r = fmprove.migration(self.django_tree(), True)
+        self.assertEqual(r["verdict"], "refused", r)
+        self.assertIn("throwaway", r["why"])
+        self.assertEqual(self.calls(), [])
+
+    def test_migration_isolation_a_failing_tool_run_never_names_the_throwaway_folder_and_leaves_nothing(self):
+        open(self.brk, "w").close()
+        held = {n for n in os.listdir(tempfile.gettempdir()) if n.startswith("fm-prove-")}
+        r = fmprove.migration(self.alembic_tree(), True)
+        self.assertEqual(r["verdict"], "fail", r)
+        self.assertNotIn(tempfile.gettempdir() + "/fm-prove-", r["why"])
+        self.assertEqual({n for n in os.listdir(tempfile.gettempdir()) if n.startswith("fm-prove-")} - held, set())
+
+
+STUB_PG = {
+    "initdb": "import os, sys\nopen(@LOG@, 'a').write(json.dumps({'tool': 'initdb', 'argv': sys.argv[1:]}) + '\\n')\n"
+              "os.makedirs(sys.argv[sys.argv.index('-D') + 1])\n",
+    "pg_ctl": "import os, sys\na = sys.argv[1:]\nopen(@LOG@, 'a').write(json.dumps({'tool': 'pg_ctl', 'argv': a}) + '\\n')\n"
+              "if 'start' in a:\n    o = a[a.index('-o') + 1]\n    assert \"listen_addresses=''\" in o, o\n"
+              "    os.makedirs(o.split('unix_socket_directories=')[1].split()[0], exist_ok=True)\n",
+    "psql": "import os, re, sys\na = sys.argv[1:]\nsock = a[a.index('-h') + 1]\nstate = os.path.join(os.path.dirname(sock), 'tables')\n"
+            "open(@LOG@, 'a').write(json.dumps({'tool': 'psql', 'sock': sock, 'cluster': os.path.dirname(sock), "
+            "'argv': [x[:40] for x in a]}) + '\\n')\n"
+            "tables = set(open(state).read().split()) if os.path.exists(state) else set()\n"
+            "if '-c' in a:\n    print(chr(10).join('relation r ' + t for t in sorted(tables)))\n    sys.exit(0)\n"
+            "sql = open(a[a.index('-f') + 1]).read()\n"
+            "if 'BAD' in sql:\n    sys.exit('psql: ERROR: syntax error at or near BAD')\n"
+            "tables |= set(re.findall(r'CREATE TABLE (\\w+)', sql))\ntables -= set(re.findall(r'DROP TABLE (\\w+)', sql))\n"
+            "open(state, 'w').write(' '.join(sorted(tables)))\n",
+}
+
+
+class MigrationDialect(ToolCase):
+    """T-2386: SQL for Postgres runs on a throwaway Postgres cluster when initdb is installed, else it's unproven."""
+
+    def pg_stubs(self):
+        for name, body in STUB_PG.items():
+            self.stub(name, "import json\n" + body)
+
+    def test_migration_dialect_postgres_only_sql_without_initdb_is_unproven_not_failed(self):
+        r = fmprove.migration(self.proj_at("pg", PG_SQL), True)
+        self.assertEqual(r["verdict"], "unproven", r)
+        self.assertIn("dialect", r["why"])
+        self.assertIn("initdb", r["why"])
+        self.assertEqual(r["dialect"], "postgres")
+        c = self.fm("prove", "--migration", self.proj_at("pg", PG_SQL), "--yes-run", check=False)
+        self.assertEqual(c.returncode, 2, c.stdout + c.stderr)  # exit 1 stays for a real failure
+
+    def test_migration_dialect_a_dbmate_file_for_postgres_is_unproven_too_and_plain_errors_still_fail(self):
+        pg = "-- migrate:up\nCREATE TYPE mood AS ENUM ('a');\n-- migrate:down\nDROP TYPE mood;\n"
+        r = fmprove.migration(self.proj_at("pg", {"db/migrations/1_m.sql": pg}), True)
+        self.assertEqual(r["verdict"], "unproven", r)
+        r = fmprove.migration(self.proj_at("bad", {"db/migrations/1_m.sql": "-- migrate:up\nCREAT TABLE x;\n-- migrate:down\n"}),
+                              True)
+        self.assertEqual(r["verdict"], "fail", r)
+
+    def test_migration_dialect_postgres_only_sql_runs_on_a_socket_only_cluster_in_a_temp_dir_removed_after(self):
+        self.pg_stubs()
+        r = fmprove.migration(self.proj_at("pg", PG_SQL), True)
+        self.assertEqual((r["verdict"], r["engine"]), ("pass", "postgres"), r)
+        calls = self.calls()
+        tools = [x["tool"] for x in calls]
+        self.assertEqual(tools[0], "initdb")
+        self.assertTrue(tools.count("psql") >= 3)
+        start = next(x for x in calls if x["tool"] == "pg_ctl" and "start" in x["argv"])
+        self.assertIn("-w", start["argv"])
+        self.assertEqual(calls[-1]["argv"][-1], "stop")
+        psql = next(x for x in calls if x["tool"] == "psql")
+        self.assertTrue(os.path.isabs(psql["sock"]) and psql["sock"].startswith(tempfile.gettempdir()))
+        self.assertFalse(os.path.exists(psql["cluster"]))  # the cluster's folder is gone
+
+    def test_migration_dialect_a_statement_postgres_rejects_fails_and_portable_sql_never_starts_a_cluster(self):
+        self.pg_stubs()
+        bad = dict(PG_SQL, **{M + "001_a.up.sql": "CREATE EXTENSION pgcrypto; BAD;"})
+        r = fmprove.migration(self.proj_at("pg", bad), True)
+        self.assertEqual((r["verdict"], r["engine"]), ("fail", "postgres"), r)
+        self.assertIn("BAD", r["why"])
+        os.remove(self.log)
+        r = fmprove.migration(self.proj_at("ok", GOOD), True)
+        self.assertEqual((r["verdict"], r["engine"]), ("pass", "sqlite"), r)
+        self.assertEqual(self.calls(), [])
+
+    def test_migration_dialect_a_tool_that_fails_on_sqlite_in_a_postgres_tree_is_unproven(self):
+        open(self.brk, "w").close()
+        r = fmprove.migration(self.alembic_tree(url="postgresql://prod.example/real"), True)
+        self.assertEqual(r["verdict"], "unproven", r)
+        self.assertEqual(r["dialect"], "postgres")
+        r = fmprove.migration(self.alembic_tree(url="sqlite:///dev.db", name="lite"), True)
+        self.assertEqual(r["verdict"], "fail", r)
+
+    def test_migration_dialect_a_missing_module_is_the_environment_not_a_failed_migration(self):
+        self.stub("alembic", "import sys\nsys.exit(\"ModuleNotFoundError: No module named 'app'\")\n")
+        r = fmprove.migration(self.proj_at("al", {"alembic.ini": ALEMBIC_INI.format(url="sqlite:///x.db"),
+                                                  "alembic/env.py": ENV_PY}), True)
+        self.assertEqual(r["verdict"], "unproven", r)
+        self.assertIn("No module", r["why"])
+
+
+class MigrationFinish(ForemanTestCase):
+    """T-2386: fm task finish proves the migrations the task touched, in a trusted tree."""
+
+    def setUp(self):
+        super().setUp()
+        tools = os.path.join(self.tmp, "tools")
+        os.makedirs(tools)
+        import shutil
+        for need in ("git", "bash"):
+            os.symlink(shutil.which(need), os.path.join(tools, need))
+        self.env = {"PATH": tools}
+        self.fm("init", env=self.env)
+        self.fm("task", "new", "schema change", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus", env=self.env)
+
+    def trust(self):
+        self.fm("prove", "--migration", self.repo, "--yes-run", env=self.env, check=False)
+
+    def finish(self):
+        return self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--lens", "adversary: held",
+                       env=self.env, check=False)
+
+    def evidence(self):
+        import fmcore as c
+        return [l for l in c.find_brief(c.find_project(self.repo), "T-0001").evidence() if "fm prove --migration" in l]
+
+    def test_migration_finish_records_a_passing_run_and_a_failing_one_refuses_the_close(self):
+        self.trust()
+        write(self.repo, {"db/migrations/1_users.sql": DBMATE.replace("DROP TABLE users;", "SELECT 1;")})
+        r = self.finish()
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertIn("users", r.stdout + r.stderr)
+        self.assertTrue(self.evidence())
+        write(self.repo, {"db/migrations/1_users.sql": DBMATE})
+        r = self.finish()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(any("exit 0" in l and "[ran]" in l for l in self.evidence()), self.evidence())
+
+    def test_migration_finish_an_untrusted_tree_runs_nothing_and_says_how_to_trust_it(self):
+        write(self.repo, {"db/migrations/1_users.sql": DBMATE.replace("DROP TABLE users;", "SELECT 1;")})
+        r = self.finish()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("--yes-run", r.stdout)
+        self.assertEqual(self.evidence(), [])
+
+    def test_migration_finish_unproven_is_said_and_records_no_run_and_other_files_run_nothing(self):
+        self.trust()
+        write(self.repo, {"db/migrations/1_pg.up.sql": PG_SQL[M + "001_a.up.sql"],
+                          "db/migrations/1_pg.down.sql": PG_SQL[M + "001_a.down.sql"]})
+        r = self.finish()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("unproven", r.stdout)
+        self.assertEqual(self.evidence(), [])
+        self.fm("task", "new", "app change", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus", env=self.env)
+        write(self.repo, {"app.py": "x = 1\n"})
+        r = self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true", "--lens", "adversary: held",
+                    "--lens", "intent: ok", "--docs", "none: test", "--lesson", "none: test", env=self.env, check=False)
+        self.assertNotIn("migration", r.stdout)
 
 
 class InfraProof(ForemanTestCase):

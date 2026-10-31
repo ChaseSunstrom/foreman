@@ -15,7 +15,6 @@ import os
 import re
 import shlex
 import shutil
-import sqlite3
 import sys
 import tempfile
 import time
@@ -538,91 +537,18 @@ def _lane_trusted(p, root):
     return bool(main) and trusted(os.path.join(main, os.path.relpath(os.path.realpath(root), os.path.realpath(p.root))))
 
 
-MIG_FILES, MIG_BYTES = 500, 1 << 20  # T-2288: pairs and bytes per file a migration run reads
-# tools Foreman knows by their config file but can't run yet: add a runner row to MIG_TOOLS to prove one
-MIG_NAMED = {"alembic.ini": "alembic", "manage.py": "django", "prisma/schema.prisma": "prisma"}
-
-
-def _schema(db):
-    return [f"{t} {n}: {s}" for t, n, s in db.execute(
-        "SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")]
-
-
-def _sql_pairs(work):
-    """Sorted [(label, up path, down path or None)] of NAME.up.sql files in the tree, with their NAME.down.sql."""
-    ups = []
-    for d, dirs, names in os.walk(work):
-        dirs[:] = sorted(dirs)
-        ups += [os.path.join(d, n) for n in names if n.endswith(".up.sql")]
-    out = []
-    for up in sorted(ups)[:MIG_FILES]:
-        down = up[:-len(".up.sql")] + ".down.sql"
-        out.append((os.path.relpath(up[:-len(".up.sql")], work), up, down if os.path.isfile(down) else None))
-    return out
-
-
-def _run_sql(db, pairs, which, end):
-    """Apply every up (or every down, last first) to db; '' when all ran, else why one didn't."""
-    for label, up, down in pairs if which == "up" else reversed(pairs):
-        path = up if which == "up" else down
-        if path is None:
-            return f"{label}: no .down.sql"
-        try:
-            if os.path.getsize(path) > MIG_BYTES:
-                return f"{label}: {which} is over {MIG_BYTES} bytes"
-            with open(path, encoding="utf-8", errors="replace") as f:
-                db.executescript(f.read())
-        except sqlite3.Error as e:
-            return f"{label}: {which} hit the time limit" if "interrupt" in str(e) else \
-                f"{label}: {which} failed: {c.plain(str(e))[:200]}"
-        except OSError as e:
-            return f"{label}: {which} unreadable: {c.plain(str(e))[:200]}"
-        if time.time() > end:
-            return f"{label}: {which} hit the time limit"
-    return ""
-
-
-def _sql_tool(work, tmp, end):
-    pairs = _sql_pairs(work)
-    if not pairs:
-        return None
-    db = sqlite3.connect(os.path.join(tmp, "migration.db"), isolation_level=None)
-    # ATTACH would reach a file outside the throwaway database; the progress handler cuts a runaway statement
-    db.set_authorizer(lambda act, *a: sqlite3.SQLITE_DENY if act == sqlite3.SQLITE_ATTACH else sqlite3.SQLITE_OK)
-    db.set_progress_handler(lambda: 1 if time.time() > end else 0, 1000)
-    r = {"before": _schema(db), "migrations": [p[0] for p in pairs]}
-    # each step: (direction, key kept, key it must equal, what that is)
-    for which, key, then, now in (("up", "after_up", None, ""), ("down", "after_down", "before", "the start"),
-                                  ("up", "after_up2", "after_up", "the first up")):
-        why = _run_sql(db, pairs, which, end)
-        if why:
-            return r | {"verdict": "fail", "why": why}
-        r[key] = _schema(db)
-        if then and r[key] != r[then]:
-            diff = sorted(set(r[key]) ^ set(r[then]))
-            return r | {"verdict": "fail", "why": f"{which}: schema after it differs from {now}: "
-                        + "; ".join(x[:120] for x in diff[:5])}
-    return r | {"verdict": "pass", "why": f"{len(pairs)} migration(s): up, down, up gave the same schema each time"}
-
-
-MIG_TOOLS = [("sql", _sql_tool)]  # (name, runner(work, tmp, end) -> result dict, or None when the tree has none)
-
-
 def migration(root, allowed, limit=RUN_T):
-    """T-2288: up, down, up again on a throwaway sqlite file in a copy of root. verdict pass, fail, refused (untrusted)
-    or unknown (no tool Foreman can run); the real database is never opened."""
+    """T-2288, T-2386: up, down, up again on a throwaway database in a copy of root, by the tree's own tool (fmmigrate).
+    verdict pass, fail, refused (untrusted, or a database that isn't the throwaway), unproven (the environment or the
+    SQL dialect can't run it here) or unknown (no tool recognized); the real database is never opened."""
+    import fmmigrate
     if not allowed:
         return {"root": root, "tool": None, "verdict": "refused", "why": NO_RUN}
     tmp, work = _copy(root)
     try:
-        for name, run in MIG_TOOLS:
-            r = run(work, tmp, time.time() + limit)
-            if r:
-                return {"root": root, "tool": name} | r
-        named = sorted(v for k, v in MIG_NAMED.items() if os.path.exists(os.path.join(work, k)))
-        return {"root": root, "tool": named[0] if named else None, "verdict": "unknown", "why": (
-            f"{named[0]} migrations found, but fm prove --migration only runs plain SQL NAME.up.sql/NAME.down.sql pairs yet"
-            if named else "no migration tool recognized (plain SQL NAME.up.sql/NAME.down.sql pairs)")}
+        r = fmmigrate.run(os.path.realpath(root), work, tmp, time.time() + limit)
+        return {"root": root} | (r or {"tool": None, "verdict": "unknown", "why": "no migration tool recognized (plain SQL "
+                "NAME.up.sql/NAME.down.sql pairs, dbmate files, alembic, Django, prisma, rails)"})
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
