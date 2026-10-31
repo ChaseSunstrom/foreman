@@ -1,6 +1,6 @@
 ---
 name: playbooks
-description: Use whenever you are about to refactor, tune performance, review security, fix build errors, do TDD, plan, write an ADR or run evals.
+description: Use whenever you fix build errors, do TDD, plan, write an ADR or run evals.
 ---
 
 # Foreman playbooks

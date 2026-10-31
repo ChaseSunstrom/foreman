@@ -1,7 +1,7 @@
 export const meta = {
   name: 'ideas',
-  description: 'Foreman grounded brainstorm: lens agents read the code; each idea comes back new, partial or built, with evidence',
-  whenToUse: 'Open-ended improvement requests needing ideas grounded in this repo. Args: the request, or {request, lenses, seen}.',
+  description: 'Grounded brainstorm: lens agents read the code; each idea is new, partial or built, with evidence',
+  whenToUse: 'Open-ended improvement requests needing ideas grounded in this repo. Args: the request.',
   phases: [
     { title: 'Ideas', detail: 'one code-reading agent per lens' },
     { title: 'Critic', detail: 'what angle is missing; one more round per gap' },

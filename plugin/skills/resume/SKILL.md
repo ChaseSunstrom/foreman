@@ -1,6 +1,6 @@
 ---
 name: resume
-description: Use whenever you start after /compact, /clear, a crash or a new session, or the user asks "where were we": restores saved task context.
+description: Use whenever you start after /compact, /clear or a crash, or "where were we" is asked: restores task context.
 ---
 
 # Foreman: resume

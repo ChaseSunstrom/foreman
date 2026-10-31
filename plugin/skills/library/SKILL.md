@@ -1,6 +1,6 @@
 ---
 name: library
-description: Use whenever you are about to code, test or debug in a language, framework, database or tool: stack cards (fm lib) with verify commands.
+description: Use whenever you code or test in a language, framework, database or tool: stack cards (fm lib).
 ---
 
 # Foreman: stack library

@@ -1,6 +1,6 @@
 ---
 name: research
-description: Use whenever you need to find something out before building: what exists, what to reuse, cited answers, one saved note.
+description: Use whenever you must find something out before building: what exists, what to reuse, cited answers.
 ---
 
 # Foreman: find out before building
