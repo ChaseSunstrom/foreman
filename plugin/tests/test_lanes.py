@@ -1342,5 +1342,212 @@ class RaceEvidence(RaceBase):
         self.assertIn("lost", self.brief(other).section("Approach (options → choice → why)"))
 
 
+class SelfChangeGate(ForemanTestCase):
+    """T-2352: a branch changing Foreman's own plugin/ merges only if the guard blocks no less, no hook gets slower and
+    the always-on footprint doesn't grow with no cut; only the user's yes after a refusal passes it."""
+    CASES = "plugin/tests/fixtures/guard_cases.jsonl"
+    ALLOW = "plugin/tests/fixtures/guard_allow.jsonl"
+
+    def setUp(self):
+        super().setUp()
+        import fmselfgate
+        self.g = fmselfgate
+        self.fm("init")
+        self.tid = first(self.fm("task", "new", "Self change", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                                 "--step", "s", "--json").stdout)["id"]
+        self.p = c.find_project(self.repo)
+        self.write({"plugin/lib/fmguard.py": "x = 1\n", "plugin/rules/foreman.md": "r" * 999 + "\n",
+                    self.CASES: '{"id": "c1", "cmd": "rm -rf ~", "cwd": ".", "should": "block"}\n'
+                                '{"id": "c2", "cmd": "git push --force origin main", "cwd": ".", "should": "block"}\n',
+                    self.ALLOW: '{"id": "a1", "cmd": "ls", "cwd": ".", "should": "allow"}\n'})
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+        self.git("checkout", "-qb", "foreman/x")
+
+    def git(self, *a):
+        return subprocess.run(["git", "-C", self.repo, *a], capture_output=True, text=True, check=True).stdout
+
+    def write(self, files):
+        for rel, text in files.items():
+            os.makedirs(os.path.dirname(os.path.join(self.repo, rel)), exist_ok=True)
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write(text)
+
+    def branch(self, files, drop=()):
+        self.write(files)
+        for rel in drop:
+            os.remove(os.path.join(self.repo, rel))
+        self.git("add", "-A")
+        self.git("commit", "-qm", "change")
+        self.git("checkout", "-q", "main" if "main" in self.git("branch") else "master")
+
+    def gate(self, verdicts=None, bench=None):
+        from unittest import mock
+        verdicts = verdicts or (lambda tree, cmds: ["allow" if cmd == "ls" else "destructive" for cmd, _ in cmds])
+        bench = bench or (lambda tree: ({"Stop": {"p95": 100.0, "budget": 500}}, {"SessionStart": 2000}))
+        files = self.git("diff", "--name-only", "HEAD...foreman/x").split()
+        b = c.find_brief(self.p, self.tid)
+        with mock.patch.object(self.g, "_verdicts", verdicts), mock.patch.object(self.g, "_bench", bench), \
+                mock.patch.object(self.g, "_corpus", lambda: []):
+            return self.g.gate(self.p, b, self.repo, "foreman/x", files)
+
+    def test_a_branch_outside_plugin_or_a_repo_that_isnt_foreman_isnt_gated(self):
+        self.branch({"README.md": "hi\n"})
+        self.assertEqual(self.gate(verdicts=lambda t, cmds: ["allow"] * len(cmds)), [])
+
+    def test_a_case_the_base_blocks_and_the_branch_allows_refuses_naming_both_verdicts(self):
+        self.branch({"plugin/lib/fmguard.py": "x = 2\n"})
+        base_tree = []
+
+        def verdicts(tree, cmds):
+            base_tree.append(tree)
+            loose = len(base_tree) > 1  # the branch is judged second
+            return ["allow" if cmd == "ls" or (loose and cmd.startswith("rm")) else "destructive" for cmd, _ in cmds]
+        rows = self.gate(verdicts=verdicts)
+        self.assertEqual(len(rows), 1, rows)
+        self.assertIn("rm -rf ~", rows[0])
+        self.assertIn("destructive", rows[0])
+        self.assertIn("allow", rows[0])
+
+    def test_a_branch_that_removes_a_labelled_case_refuses(self):  # the union of both corpora, so a deletion can't hide
+        self.branch({self.CASES: '{"id": "c1", "cmd": "rm -rf ~", "cwd": ".", "should": "block"}\n'})
+        rows = self.gate()
+        self.assertTrue(any("removed" in r and "git push --force" in r for r in rows), rows)
+
+    def test_a_case_the_branch_cant_judge_refuses(self):
+        self.branch({"plugin/lib/fmguard.py": "x = 2\n"})
+        n = []
+
+        def verdicts(tree, cmds):
+            n.append(1)
+            return ["error: KeyError" if len(n) > 1 else ("allow" if cmd == "ls" else "destructive") for cmd, _ in cmds]
+        self.assertTrue(any("error: KeyError" in r for r in self.gate(verdicts=verdicts)))
+
+    def bench_pair(self, base, branch, again=None):
+        calls = []
+
+        def bench(tree):
+            calls.append(tree)
+            ms = (base, branch, *(again or (base, branch)))[len(calls) - 1]
+            return {"Stop": {"p95": ms, "budget": 150}}, {"SessionStart": 2000}
+        return bench
+
+    def test_a_hook_slower_past_fifteen_percent_or_its_budget_refuses_with_both_numbers(self):
+        self.branch({"plugin/hooks/hook": "#!/bin/sh\n"})
+        rows = self.gate(bench=self.bench_pair(100.0, 130.0))
+        self.assertTrue(any("Stop" in r and "100.0" in r and "130.0" in r for r in rows), rows)
+        self.assertEqual(self.gate(bench=self.bench_pair(100.0, 110.0)), [])  # +10%: jitter
+        self.assertEqual(self.gate(bench=self.bench_pair(10.0, 12.0)), [])  # +20% but 2 ms: under the floor
+        rows = self.gate(bench=self.bench_pair(140.0, 152.0))  # +8.6%, but past its 150 ms budget
+        self.assertTrue(any("budget" in r for r in rows), rows)
+
+    def test_a_rise_that_doesnt_hold_on_a_second_bench_is_noise(self):
+        self.branch({"plugin/hooks/hook": "#!/bin/sh\n"})
+        self.assertEqual(self.gate(bench=self.bench_pair(100.0, 130.0, again=(100.0, 101.0))), [])
+
+    def test_footprint_growth_refuses_unless_always_on_context_was_cut_as_much(self):
+        self.branch({"plugin/rules/foreman.md": "r" * 1099 + "\n"})
+        rows = self.gate()
+        self.assertTrue(any("rules chars" in r for r in rows), rows)
+
+        def bench(tree):  # the same branch, paid for with a SessionStart cut of 100
+            return {}, {"SessionStart": 2000 if f"{os.sep}base{os.sep}" in tree else 1900}
+        self.assertEqual(self.gate(bench=bench), [])
+
+    def test_only_the_users_yes_after_the_refusal_passes_never_a_decision_or_the_standing_yes(self):
+        self.branch({"plugin/rules/foreman.md": "r" * 1099 + "\n"})
+        self.fm("decide", f"{self.tid}: footprint rules chars +10% is fine")
+        meta = c.read_meta(self.p)
+        meta["standing"] = {"core": c.now()}
+        c.write_meta(self.p, meta)
+        c.log_event(self.p, "approval_granted", task=self.tid, data={"allow": ["core"], "via": "prompt"})  # before
+        time.sleep(1.05)
+        self.assertTrue(self.gate())
+        time.sleep(1.05)
+        c.log_event(self.p, "approval_granted", task=self.tid, data={"allow": ["core"], "via": "prompt"})
+        self.assertEqual(self.gate(), [])
+
+    def test_a_gate_that_cant_run_refuses_with_the_reason(self):
+        self.branch({"plugin/hooks/hook": "#!/bin/sh\n"})
+
+        def bench(tree):
+            raise OSError("no bench_hooks.py")
+        rows = self.gate(bench=bench)
+        self.assertTrue(any("couldn't run" in r and "no bench_hooks.py" in r for r in rows), rows)
+
+    def test_the_yes_is_bound_to_the_commit_it_answered(self):  # T-2352 review: no new commits after the yes
+        self.branch({"plugin/rules/foreman.md": "r" * 1099 + "\n"})
+        self.assertTrue(self.gate())
+        time.sleep(1.05)
+        c.log_event(self.p, "approval_granted", task=self.tid, data={"allow": ["core"], "via": "prompt"})
+        self.assertEqual(self.gate(), [])
+        self.git("checkout", "-q", "foreman/x")
+        self.branch({"plugin/rules/foreman.md": "r" * 1199 + "\n"})  # pushed after the yes
+        self.assertTrue(self.gate())
+
+    TOY_REPLAY = ("import os\nimport fmguard\ndef resolve_cwd(c):\n    return c\ndef _key(cmd, cwd):\n"
+                  "    return cmd + '|' + cwd\ndef verdicts(cmds):\n"
+                  "    return {_key(x, y or os.path.expanduser('~')): fmguard.judge(x) for x, y in cmds}\n")
+    TOY_GUARD = "def judge(cmd):\n    return 'destructive' if cmd.startswith('rm') or 'force' in cmd else 'allow'\n"
+
+    def toy_base(self):
+        main = "main" if "main" in self.git("branch") else "master"
+        self.git("checkout", "-q", main)
+        self.write({"plugin/lib/fmreplay.py": self.TOY_REPLAY, "plugin/lib/fmguard.py": self.TOY_GUARD})
+        self.git("add", "-A")
+        self.git("commit", "-qm", "toy guard")
+        self.git("checkout", "-qB", "foreman/x")
+
+    def real_gate(self):
+        from unittest import mock
+        files = self.git("diff", "--name-only", "HEAD...foreman/x").split()
+        with mock.patch.object(self.g, "_corpus", lambda: []), \
+                mock.patch.object(self.g, "_bench", lambda t: ({}, {"SessionStart": 2000})):
+            return self.g.gate(self.p, c.find_brief(self.p, self.tid), self.repo, "foreman/x", files)
+
+    def test_the_branch_is_judged_by_the_bases_replay_even_if_it_rewrites_its_own(self):  # T-2352 review
+        self.toy_base()
+        lie = self.TOY_REPLAY.replace("fmguard.judge(x)", "'destructive'")  # the branch's replay claims all blocked
+        self.branch({"plugin/lib/fmguard.py": "def judge(cmd):\n    return 'allow'\n", "plugin/lib/fmreplay.py": lie})
+        rows = self.real_gate()
+        self.assertTrue(any("rm -rf ~" in r and "base destructive, branch allow" in r for r in rows), rows)
+
+    def test_gitattributes_cant_hide_a_file_from_the_footprint(self):  # T-2352 review: no git archive
+        self.branch({".gitattributes": "plugin/rules/foreman.md export-ignore\n",
+                     "plugin/rules/foreman.md": "r" * 1099 + "\n"})
+        self.assertTrue(any("rules chars" in r for r in self.gate()))
+
+    def test_a_branch_verdict_that_isnt_a_string_refuses_and_an_old_inability_doesnt(self):
+        self.branch({"plugin/lib/fmguard.py": "x = 2\n"})
+        n = []
+
+        def missing(tree, cmds):
+            n.append(1)
+            return [None if len(n) > 1 else "destructive" for _ in cmds]
+        self.assertTrue(any("branch None" in r for r in self.gate(verdicts=missing)))
+        same = lambda tree, cmds: ["allow" if cmd == "ls" else "error: KeyError" for cmd, _ in cmds]  # noqa: E731
+        self.assertEqual(self.gate(verdicts=same), [])  # both trees fail on it: not the branch's doing
+
+    def test_the_budget_is_the_bases_not_the_branchs(self):  # T-2352 review: a branch can't raise its own budget
+        self.branch({"plugin/hooks/hook": "#!/bin/sh\n"})
+        calls = []
+
+        def bench(tree):
+            calls.append(1)
+            branch = len(calls) % 2 == 0
+            return {"Stop": {"p95": 152.0 if branch else 140.0, "budget": 500 if branch else 150}}, {}
+        self.assertTrue(any("past its 150 ms budget" in r for r in self.gate(bench=bench)))
+
+    def test_fm_lane_merge_runs_the_gate(self):
+        self.branch({"plugin/lib/fmguard.py": "x = 2\n"})
+        b = c.find_brief(self.p, self.tid)
+        b.meta["lane_branch"] = "foreman/x"
+        c.save_brief(self.p, b)
+        r = self.fm("lane", "merge", self.tid, "--unverified", "no worktree here", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("self-change gate", r.stderr)  # a waiver of the criteria never waives the gate
+        self.assertIn(f"fm ask {self.tid} core", r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
