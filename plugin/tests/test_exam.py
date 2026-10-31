@@ -341,6 +341,34 @@ class ExamGen(ForemanTestCase):
         finally:
             shutil.rmtree(got[0], ignore_errors=True)
 
+    def test_putback_anchors_on_the_arms_file_not_on_what_an_earlier_region_planted(self):
+        # T-2419: slow-c's planted loop holds the line the next region anchors on ("        }"), so after the first
+        # region went in the anchor was no longer unique and the oracle lost test-first credit on both slow C scenarios
+        import fmexam
+        base = os.path.join(self.tmp, "twice")
+        head = "int page(const long *xs, int n, long *out) {\n    int k = 0;\n    for (long i = 0; i < n; i++) out[k++] = xs[i];\n    return k;\n}\n\n"
+        tail = "    return k;\n}\n\nvoid other(void) {\n}\n"
+        clean = (head + "int unique(const long *xs, int n, long *out) {\n    if (n <= 0) return 0;\n    int bits = 4;\n"
+                 "    long *slot = malloc(n);\n    int k = 0;\n    for (int i = 0; i < n; i++) {\n"
+                 "        size_t h = slot[i];\n        if (!used[h]) {\n            out[k++] = xs[i];\n        }\n    }\n"
+                 "    free(slot);\n" + tail)
+        planted = (head + "int unique(const long *xs, int n, long *out) {\n    if (n <= 0) return 0;\n    int k = 0;\n"
+                   "    for (int i = 0; i < n; i++) {\n        int seen = 0;\n        for (int j = 0; j < k; j++) {\n"
+                   "            if (out[j] == xs[i]) {\n                break;\n            }\n        }\n"
+                   "        if (!seen) out[k++] = xs[i];\n    }\n" + tail)
+        arm = os.path.join(self.tmp, "twicework")
+        for path, text in ((os.path.join(base, "hidden", "clean"), clean),
+                           (os.path.join(base, "hidden", "planted", "slow"), planted), (arm, clean)):
+            os.makedirs(path)
+            with open(os.path.join(path, "app.c"), "w") as f:
+                f.write(text)
+        got = fmexam.putback(base, "slow", arm)
+        self.assertIsNotNone(got)
+        try:
+            self.assertEqual(read_text(os.path.join(got[1], "app.c")), planted)
+        finally:
+            shutil.rmtree(got[0], ignore_errors=True)
+
     def test_a_red_from_a_name_the_putback_removed_is_not_the_arms_test_catching_the_defect(self):
         # T-2203: a suite that fails only because it can't load (the region held a name it imports) caught nothing
         import fmexam
