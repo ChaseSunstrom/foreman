@@ -803,6 +803,33 @@ class FindRankValue(ForemanTestCase):
         self.assertAlmostEqual(self.score(f, elsewhere, proven), base * 1.25, delta=0.002)
         self.assertAlmostEqual(self.score(f, v1.replace("return 1", "return 9"), proven), base, delta=0.002)
 
+    def test_blank_lines_between_functions_keep_the_proof_and_a_generated_file_gets_none(self):
+        v1 = "def a(x):\n    return 1\n\n\ndef b():\n    return 2\n"
+        f = self.lead()
+        self.assertAlmostEqual(self.score(f, v1.replace("\n\n\ndef b", "\n\n\n\n\n\ndef b"), self.proof(f, v1)),
+                               self.score(f, v1) * 1.25, delta=0.002)
+        gen = self.lead(file="gen.py")  # in no text: nothing to hash, so nothing to keep or lift
+        self.assertIsNone(fmfind.proof_hash({}, gen))
+        (key, _), = fmfind.keyed([gen], ".", ".")
+        self.assertEqual(fmfind.rank([gen], {}, {}, {key: ""})[0]["score"], fmfind.rank([gen], {}, {})[0]["score"])
+
+    def test_many_leads_in_one_function_rank_fast(self):
+        import time
+        text = "def a(x):\n" + "    y = 1\n" * 5000
+        leads = [self.lead(line=i) for i in range(2, 5002)]
+        t0 = time.time()
+        self.assertEqual(len(fmfind.rank(leads, {"app.py": text}, {})), 5000)
+        self.assertLess(time.time() - t0, 2)
+
+    def test_unequal_reach_cannot_lift_a_proven_lead_past_an_unproven_higher_kind(self):
+        text = "def a(x):\n    return 1\n"
+        dep, bug = self.lead("dep", "lo.py"), self.lead("bug", "hi.py")
+        bug["symbol"] = "y"  # nothing else names y; six other files name x, so the dep's reach is 1.3 to the bug's 1
+        texts = {"lo.py": text, "hi.py": text} | {f"m{i}.py": "x\n" for i in range(6)}
+        got = fmfind.rank([dep, bug], texts, {}, self.proof(dep, text))
+        self.assertEqual([f["kind"] for f in got], ["bug", "dep"])
+        self.assertGreaterEqual(got[1]["score"], fmfind.rank([dep], texts, {})[0]["score"])
+
     def test_a_small_functions_lead_outranks_an_equal_one_in_a_200_line_function(self):
         big = "def big(x):\n" + "    y = 1\n" * 200
         got = fmfind.rank([self.lead(file="s.py"), self.lead(file="b.py")],
@@ -830,7 +857,7 @@ class FindRankValue(ForemanTestCase):
             return next(f["score"] for f in got if f["symbol"] == "unused")
         before = unused()
         self.fm("prove", "app", "--yes-run", "--json", check=False)
-        self.assertAlmostEqual(unused(), before * 1.225, delta=0.003)  # 1.25 capped under flaky's severity
+        self.assertAlmostEqual(unused(), before * 1.25, delta=0.003)
         p =c.find_project(self.repo)
         self.assertTrue(os.path.isfile(os.path.join(p.dir, "find-proofs.json")))
         self.assertFalse(os.path.exists(os.path.join(self.repo, "find-proofs.json")))
