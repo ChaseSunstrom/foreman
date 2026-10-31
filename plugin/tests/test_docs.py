@@ -160,7 +160,7 @@ class Skills(unittest.TestCase):
         import fmdoctor
         self.assertEqual(fm_mention_problems("`fm nosuch` `fm lane nosuch ID` `fm lane brief ID` `fm task hypo ID add`"),
                          ["fm nosuch", "fm lane nosuch"], "the checker itself")
-        jobs = ("debug-test", "release", "research", "refactor", "performance", "security-review", "docs")
+        jobs = ("debug-test", "release", "research", "refactor", "performance", "security-audit", "write-docs")
         for name in jobs:
             with self.subTest(skill=name):
                 meta, body = frontmatter(os.path.join(PLUGIN, "skills", name, "SKILL.md"))
