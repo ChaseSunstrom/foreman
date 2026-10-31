@@ -133,6 +133,29 @@ class LacksPage(unittest.TestCase):  # T-2378: #5 on the site, its figures from 
                 self.assertIn(word, doc, f"{name}: {word}")
 
 
+class ProofPage(unittest.TestCase):  # T-2395: #6/#10 on the site, built from Foreman's own code and data
+    def test_proof_page_names_every_kind_from_the_code_and_renders_counts_over_time(self):
+        sys.path.insert(0, SITE)
+        try:
+            import pages
+            import build
+        finally:
+            sys.path.pop(0)
+        import fmcore
+        page = next(x for x in pages.PAGES if x["slug"] == "verifying")
+        text = json.dumps(page["blocks"], default=str)
+        for kind in fmcore.PROOF_KINDS:
+            self.assertIn(kind, text)
+        for word in ("fm proof", "proof", "beyond", "unproven"):
+            self.assertIn(word, text)
+        proof = {"n": 12, "counts": {"typed": 5, "meaning": 4}, "history": [{"day": "2026-10-30", "n": 15},
+                                                                             {"day": "2026-10-31", "n": 12}]}
+        html = build.render_page(page, {"proof": proof}, pages.PAGES)
+        self.assertIn("12", html)
+        self.assertIn("meaning", html)
+        self.assertIn('class="tiles"', build.render_page(page, {}, pages.PAGES))  # no data: still a figure
+
+
 class JudgmentPage(unittest.TestCase):  # T-2344: #2 and #8 on the site, its figures from fm calibration --json
     def test_judgment_page_describes_the_plan_shape_races_doors_and_scores_from_calibration_data(self):
         sys.path.insert(0, SITE)

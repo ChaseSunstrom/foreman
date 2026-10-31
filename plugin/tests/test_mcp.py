@@ -41,7 +41,7 @@ class RoundTrip(_Mcp):
         names = {t["name"] for t in by[2]["result"]["tools"]}
         self.assertEqual(names, {"state", "next", "recall", "research_list", "research_read", "task_show", "checks",
                                  "lib_suggest", "lib_search", "lib_show", "outline", "sym", "impact", "why", "fail",
-                                 "logs", "data", "trace", "find", "exam_scorecard", "genesis_status", "goal", "triggers", "calibration", "which", "grants"})
+                                 "logs", "data", "trace", "find", "exam_scorecard", "genesis_status", "goal", "triggers", "calibration", "which", "grants", "proof"})
         for t in by[2]["result"]["tools"]:
             self.assertEqual(t["inputSchema"]["type"], "object")
         self.assertIn("Parse dates in the importer", by[3]["result"]["content"][0]["text"])
@@ -469,3 +469,20 @@ class ToolsTools(_Mcp):  # T-2378: #5 through MCP (Claude Desktop and other agen
         self.assertIn("plain columns", rows[0]["text"])
         self.assertTrue(out[3]["result"]["isError"])  # nothing to look up
         self.assertEqual(os.path.getsize(os.path.join(p.dir, "ledger.jsonl")), ledger)  # no search receipt logged
+
+
+class ProofTool(_Mcp):  # T-2395: the unproven rollup through MCP (Claude Desktop, other agents)
+    def test_proof_tool_is_listed_and_returns_the_rollup_rows(self):
+        self.fm("init")
+        r = self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        tid = re.search(r"T-\d+", r.stdout)[0]
+        self.fm("task", "evidence", tid, "--step", "1", "pytest", "9 passed")  # typed, so the rollup holds it
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, tid)
+        b.meta["status"] = "done"
+        c.save_brief(p, b, touch=False)
+        out, _ = self.talk({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, self.call(2, "proof"))
+        self.assertIn("proof", {t["name"] for t in out[0]["result"]["tools"]})
+        d = json.loads(_text(out[1]))
+        self.assertEqual([x["id"] for x in d["tasks"]], [tid])
+        self.assertIn("typed", d["tasks"][0]["kinds"])

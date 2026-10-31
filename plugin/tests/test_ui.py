@@ -87,6 +87,17 @@ class UiView(ForemanTestCase):
                 "--approach", "y", "--ac", "csv opens :: true", "--step", "build", "--depends", "T-0001")
         self.fm("capture", "Merge the date helpers")
 
+    def test_unproven_count_and_top_kind_ride_in_the_view_model(self):  # T-2395: the pane's band line reads it
+        import fmcore as c
+        self.assertEqual(self.fm_json("ui")["unproven"]["n"], 0)
+        p = c.find_project(self.repo)
+        self.fm("task", "evidence", "T-0002", "--step", "1", "pytest", "9 passed")  # typed: the rollup holds it once done
+        b = c.find_brief(p, "T-0002")
+        b.meta["status"] = "done"
+        c.save_brief(p, b)
+        got = self.fm_json("ui")["unproven"]
+        self.assertEqual((got["n"], got["top"]), (1, "typed"))
+
     def test_no_string_holds_a_control_character(self):
         """T-1674: Claude Code refuses the whole pane when a text child holds a control character."""
         import unicodedata

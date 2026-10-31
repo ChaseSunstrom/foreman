@@ -103,6 +103,9 @@ TOOLS = [
     ("which", "What already does a piece of work (fm which, T-2378): past fixes, project tools, MCP servers, binaries, "
      "skills, playbooks, fm commands, stack cards and plugins that hold its words, each shelf's best first. Read-only: "
      "it logs no search receipt.", _obj(["task"], task=_str("the work, in words", cap=300)), None),
+    ("proof", "Done tasks no run here proved, by kind (fm proof, T-2395): typed, red, ui, docs, perf, claimed, meaning "
+     "and the rest, each row's needs with the command that closes it. Read before calling work verified.", _TEXT,
+     lambda a, p: ["proof", "--json"]),
     ("grants", "Install grants queued for the user (T-2374): per open task, what is asked and why, the miss behind it, "
      "what was searched, the fallback, and what a yes unblocks. Read-only: a grant is the user's to answer.", _TEXT, None),
 ]

@@ -387,6 +387,13 @@ def _guarded(fn):
         return None
 
 
+def _unproven(p):
+    """T-2395: {n, top}: how many done tasks no run proved, and the kind most of them need (the cached rollup)."""
+    got = c.unproven_summary(p, c.PROOF_DAYS)
+    counts = got.get("counts") or {}
+    return {"n": got["n"], "top": max(counts, key=lambda k: (counts[k], k)) if counts else None}
+
+
 def _budget():
     """T-0228: today's spend against the caps (fm budget), for the pane."""
     import fmbudget
@@ -628,6 +635,7 @@ def view(p):
         "loop": _guarded(lambda: __import__("fmloop").view(p)),  # T-1057: the forever loop's round
         "worktrees": _guarded(lambda: _worktrees(p, briefs)) or [],  # T-1023
         "budget": _guarded(_budget),  # T-0228
+        "unproven": _guarded(lambda: _unproven(p)) or {"n": 0, "top": None},  # T-2395: the band's proof line
         "bench": _guarded(lambda: _bench(p, events)),
         "research": _guarded(lambda: _research_asks(events)) or [],
         "vetoes": _guarded(lambda: [c.plain(str(v.get("said", "")))[:200] for v in c.vetoes(p)][::-1][:3]) or [],  # T-0251
@@ -704,6 +712,9 @@ def _signals(sd, d, p=None):
     grants = _kept(p, "grants-line.json", lambda: fmgrants.line(p)) if p else ""
     if grants:
         out.append({"level": "amber", "text": c.plain(grants)[:200]})
+    proof = _guarded(lambda: c.unproven_summary(p, c.PROOF_DAYS)) if p else None  # T-2395: keyed cache, no TTL
+    if proof and proof.get("n"):
+        out.append({"level": "amber", "text": c.plain(c.unproven_line(proof["n"], proof.get("counts")))[:200]})
     import fmoutcomes  # T-2344: parked doors and a Brier worse than the base rate; outcomes() is slow, so kept
     judged = _kept(p, "judgment-line.json", lambda: fmoutcomes.band_line(p)) if p else ""
     if judged:
