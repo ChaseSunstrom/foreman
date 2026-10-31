@@ -202,8 +202,89 @@ def _windows(src):
             names = fmfind._git(src, "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", h) or b""
             files += [f for f in names.decode("utf-8", "replace").split("\0") if f and f not in files and _safe(f)]
         out.append({"task": task, "base": cs[-1][1], "target": cs[0][0], "files": files,
+                    "commits": [(h, par) for h, par, _ in cs],  # T-2304: the task's own, so an interleaved one's tests aren't checks
                     "goal": "\n".join(c.plain(s) for _, _, s in reversed(cs))})
     return out
+
+
+def _parse(text):
+    """An ast of repo text, or an empty module when it doesn't parse (parse only: nothing runs)."""
+    try:
+        return ast.parse(text or "")
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return ast.Module(body=[], type_ignores=[])
+
+
+def _top_names(text):
+    """The names a module's source defines at its top level (functions, classes, assigned names, imports)."""
+    tree = _parse(text)
+    out = set()
+    for s in tree.body:
+        if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            out.add(s.name)
+        elif isinstance(s, (ast.Assign, ast.AnnAssign)):
+            out |= {e.id for t in (s.targets if isinstance(s, ast.Assign) else [s.target]) for e in ast.walk(t)
+                    if isinstance(e, ast.Name)}
+        elif isinstance(s, (ast.Import, ast.ImportFrom)):
+            out |= {(a.asname or a.name).split(".")[0] for a in s.names}
+    return out
+
+
+def _interface(src, w, checks):
+    """T-2304: what a goal must say so an honest answer can pass checks it never sees: each `module.name` the checks
+    reach that the target defines and the base doesn't, each --flag they pass that the base's code never mentions, and
+    each check's name as a done-when line. Never a test body or an assertion. -> (names, done)"""
+    def git(*a):  # fmfind._git lets a timeout escape; a slow probe drops that probe, never the gen
+        try:
+            return (fmfind._git(src, *a) or b"").decode("utf-8", "replace")
+        except (OSError, subprocess.SubprocessError):
+            return ""
+    paths = [f for f in git("ls-tree", "-r", "--name-only", "-z", w["target"]).split("\0") if f.endswith(".py") and _safe(f)]
+    names, flags, done, parsed, tops = set(), set(), [], {}, {}
+    for i in checks:
+        rel, name = i.split("::")
+        cls, fn = name.split(".")[1:]
+        if rel not in parsed:
+            parsed[rel] = _parse(_show(src, w["target"], rel))
+        mods, froms = {}, {}  # local name -> module; local name -> (module, name) for `from m import n`
+        for n in ast.walk(parsed[rel]):
+            if isinstance(n, ast.Import):
+                mods.update({a.asname or a.name: a.name for a in n.names if "." not in a.name or a.asname})
+            elif isinstance(n, ast.ImportFrom) and n.module and not n.level:
+                froms.update({a.asname or a.name: (n.module, a.name) for a in n.names})
+        node = next((f for k in parsed[rel].body if isinstance(k, ast.ClassDef) and k.name == cls for f in k.body
+                     if isinstance(f, ast.FunctionDef) and f.name == fn), None)
+        if node is None:
+            continue
+        line = c.fit(fn[len("test_"):].replace("_", " ").strip(), 80)
+        if len(line) >= 3 and line not in done:
+            done.append(line)
+        for n in ast.walk(node):
+            if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id in mods:
+                names.add((mods[n.value.id], n.attr))
+            elif isinstance(n, ast.Name) and n.id in froms:
+                names.add(froms[n.id])
+            elif isinstance(n, ast.Constant) and isinstance(n.value, str) and re.fullmatch(r"--[a-z][\w-]{0,40}", n.value):
+                flags.add(n.value)
+
+    def top(rev, f):
+        if (rev, f) not in tops:
+            tops[rev, f] = _top_names(_show(src, rev, f))
+        return tops[rev, f]
+    new = set()
+    for mod, attr in names:
+        if mod.split(".")[0] in sys.stdlib_module_names:  # the runner puts the stdlib first: a repo os.py is never it
+            continue
+        exact = f"{mod.replace('.', '/')}.py"
+        cands = [exact] if exact in paths else [x for x in paths if x.endswith(f"/{mod.split('.')[-1]}.py")]
+        if any(attr in top(w["target"], f) and attr not in top(w["base"], f) for f in cands):
+            new.add(f"{mod}.{attr}")
+    for flag in flags:  # a flag the base's code (tests aside) never mentions is part of what the change adds
+        hits = git("grep", "-l", "-F", "-e", flag, w["base"], "--", "*.py")
+        if not any(not _is_test(h.split(":", 1)[-1]) for h in hits.splitlines()):
+            new.add(flag)
+    return sorted(c.plain(x) for x in new if not x.startswith("--")) + sorted(x for x in new if x.startswith("--")), \
+        [c.plain(d) for d in done]
 
 
 def _scenario(src, w, seed, d, end):
@@ -217,9 +298,11 @@ def _scenario(src, w, seed, d, end):
     dirs = {os.path.dirname(f) for f in tests}
     hidden = [f for f in w["files"] if os.path.dirname(f) in dirs]  # tests and their support files
     new = set()
-    for f in tests:
-        new |= _ids(_show(src, w["target"], f) or "", f) - _ids(_show(src, w["base"], f) or "", f)
-    new = sorted(new)[:MAX_NEW]
+    for h, par in w.get("commits") or [(w["target"], w["base"])]:  # T-2304: ids the task's own commits added
+        for f in tests:
+            new |= _ids(_show(src, h, f) or "", f) - _ids(_show(src, par, f) or "", f)
+    at_target = set().union(*(_ids(_show(src, w["target"], f) or "", f) for f in tests))
+    new = sorted(new & at_target)[:MAX_NEW]
     if not new:
         return None
     base, red, green = (os.path.join(d, x) for x in ("base", "red", "green"))
@@ -239,7 +322,10 @@ def _scenario(src, w, seed, d, end):
     checks = [i for i in new if i in ok and i not in at_base][:MAX_CHECKS]
     if not checks:
         return None
-    return {"checks": checks, "sample": sorted(i for i in pool if i in ok and i in at_base), "pypath": pypath,
+    names, done = _interface(src, w, checks)
+    goal = w["goal"] + (f"\n\nThe checks use these new names: {', '.join(names)}" if names else "") + \
+        ("\n\nDone when:\n" + "\n".join(f"- {d}" for d in done) if done else "")
+    return {"checks": checks, "goal": goal, "sample": sorted(i for i in pool if i in ok and i in at_base), "pypath": pypath,
             "test_files": hidden, "command": "fm exam long grade (its runner loads each id by its path)"}
 
 
@@ -270,9 +356,9 @@ def gen(p, src=None, n=6, seed=0):
                                                       "-c", "commit.gpgsign=false", "commit", "-qm", "base"]):
                 subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", os.path.join(base, "repo"), *cmd],
                                check=True, capture_output=True)
-            key = dict(k, id=w["task"], base=w["base"], target=w["target"], goal=w["goal"], files=w["files"], src=src)
+            key = dict(k, id=w["task"], base=w["base"], target=w["target"], files=w["files"], src=src)
             c.write_atomic(os.path.join(base, "key.json"), json.dumps(key, indent=1))
-            kept.append({"id": w["task"], "goal": w["goal"], "repo": os.path.join(base, "repo")})
+            kept.append({"id": w["task"], "goal": k["goal"], "repo": os.path.join(base, "repo")})
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
     if not kept:
