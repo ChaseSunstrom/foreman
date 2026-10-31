@@ -58,3 +58,15 @@ class BlockSegment(Base):
         reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("rm -rf ~/Documents", reason.split("\n")[-1] if "\n" in reason else reason)
         self.assertIn("in: ", reason)
+
+
+class GoalSignal(Base):
+    def test_a_stopped_goal_names_its_first_cause_from_the_stored_verdict(self):  # T-2141
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "one", "--done-when", "touch ran-it")
+        self.assertEqual([x for x in self.ui()["signals"] if "goal" in x["text"]], [], "no verdict yet")
+        self.fm("goal", "verdict", check=False)
+        sig = [x for x in self.ui()["signals"] if "goal" in x["text"]]
+        self.assertEqual(len(sig), 1, sig)
+        self.assertEqual(sig[0]["level"], "amber")
+        self.assertIn("goal stopped: item 1 has no task", sig[0]["text"])

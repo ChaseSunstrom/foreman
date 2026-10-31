@@ -57,3 +57,18 @@ class Export(ForemanTestCase):
         self.fm("sensitive", "on")
         self.fm("export", "agents")
         self.assertNotIn("Known fixes", read_text(self.path("AGENTS.md")))
+
+    def test_agents_has_a_goal_section_only_while_a_goal_stands_and_never_when_sensitive(self):  # T-2141
+        self.fm("export", "agents")
+        self.assertNotIn("## Goal", read_text(self.path("AGENTS.md")))
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "one", "--done-when", "true")
+        self.fm("goal", "verdict", check=False)
+        self.fm("export", "agents")
+        text = read_text(self.path("AGENTS.md"))
+        self.assertIn("## Goal", text)
+        self.assertIn('Goal: "Ship the ledger" · 0/1 items done', text)
+        self.assertIn("stopped: item 1 has no task", text)
+        self.fm("sensitive", "on")
+        self.fm("export", "agents")
+        self.assertNotIn("## Goal", read_text(self.path("AGENTS.md")))

@@ -38,7 +38,7 @@ class RoundTrip(_Mcp):
         names = {t["name"] for t in by[2]["result"]["tools"]}
         self.assertEqual(names, {"state", "next", "recall", "research_list", "research_read", "task_show", "checks",
                                  "lib_suggest", "lib_search", "lib_show", "outline", "sym", "impact", "why", "fail",
-                                 "logs", "data", "trace", "find", "exam_scorecard", "genesis_status"})
+                                 "logs", "data", "trace", "find", "exam_scorecard", "genesis_status", "goal"})
         for t in by[2]["result"]["tools"]:
             self.assertEqual(t["inputSchema"]["type"], "object")
         self.assertIn("Parse dates in the importer", by[3]["result"]["content"][0]["text"])
@@ -390,3 +390,21 @@ class McpReview(_Mcp):
         for m in out:
             self.assertTrue(m["result"]["isError"], m)
             self.assertIn("secret", _text(m))
+
+
+class GoalTool(_Mcp):
+    def test_the_goal_tool_reads_meta_only_and_is_listed(self):  # T-2141
+        self.fm("init")
+        out, _ = self.talk(self.call(1, "goal"))
+        self.assertEqual(json.loads(_text(out[0])), {"goal": None, "line": None, "verdict": None})
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "one", "--done-when", "touch ran-it")  # a check that would leave a mark if it ran
+        self.fm("goal", "verdict", check=False)
+        out, _ = self.talk({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, self.call(2, "goal"))
+        self.assertIn("goal", {t["name"] for t in out[0]["result"]["tools"]})
+        data = json.loads(_text(out[1]))
+        self.assertEqual(data["goal"]["text"], "Ship the ledger")
+        self.assertEqual(data["goal"]["items"][0]["state"], "no task")
+        self.assertIn("0/1 items done", data["line"])
+        self.assertEqual(data["verdict"]["verdict"], "stopped")
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "ran-it")))
