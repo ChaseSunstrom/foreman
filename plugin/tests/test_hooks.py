@@ -34,6 +34,13 @@ class GatePipe(unittest.TestCase):  # T-1759
         self.assertIsNone(fmhooks._gate_pipe_note({"tool_name": "Read", "tool_input": {"command": "fm check | tail"}}))
 
 
+class NoteKeyPossessive(unittest.TestCase):  # T-2313
+    def test_an_apostrophe_s_does_not_leave_a_stray_s_word(self):
+        import fmhooks
+        self.assertEqual(fmhooks._note_key("T-0877's lesson for this file: x"), "lesson for this file x")
+        self.assertEqual(fmhooks._note_key("Foreman: don't edit \"quoted\" files"), "don t edit quoted files")
+
+
 class GatePipeOnce(ForemanTestCase):
     def test_a_later_piped_gate_in_the_session_gets_the_one_line_form(self):
         # T-1889: the full note came back after every compaction (8x in a week); the session already knows it

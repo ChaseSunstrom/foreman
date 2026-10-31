@@ -554,6 +554,9 @@ class BuilderGates(unittest.TestCase):
             self.assertIn("full gates run after the merge", text)
             self.assertNotRegex(text, r"`fm check --evidence")
         self.assertIn("without `cd DIR &&` chains", brief)  # T-0808
+        for text in (brief, agent):  # T-2315
+            self.assertIn("never cd (not with &&, not with ;)", text)
+            self.assertIn("Grep/Glob: omit path, they search your worktree", text)
 
     def test_builders_review_their_own_change_as_an_adversary_before_reporting(self):
         # T-1147: reviewers found real defects in almost every builder branch
