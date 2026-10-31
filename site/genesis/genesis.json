@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-31T21:41:21Z",
- "rev": "ec14edee",
+ "updated": "2026-10-31T22:11:34Z",
+ "rev": "b34fa629",
  "capabilities": [
   {
    "n": 1,
@@ -11883,14 +11883,14 @@
  },
  "not_yet": 0,
  "not_yet_open": 0,
- "unproven": 1019,
+ "unproven": 1020,
  "unproven_kinds": {
   "meaning": 571,
   "research-uncited": 30,
   "typed": 46,
   "red": 38,
   "perf-typed": 52,
-  "docs": 566,
+  "docs": 567,
   "ui-unshot": 57,
   "data": 6,
   "infra": 7,
@@ -12043,7 +12043,7 @@
    "state": "too few",
    "closed": null,
    "graded": null,
-   "why": "no graded trigger scenarios yet"
+   "why": "no graded trigger, watch scenarios yet; a proxy: a schedule built on request; watch grades work that starts from events with no one asking"
   },
   {
    "n": 12,
