@@ -464,19 +464,70 @@ class BoardRun(RunCase):
         self.fm("run", env=self.env(FOREMAN_INHIBITED="1"))
         self.assertNotIn("--what", self.called(), "the guard stops a second re-exec")
 
-    def test_night_print_timer_prints_units_and_a_crontab_line_and_changes_nothing(self):
-        def tree():
-            return sorted(os.path.join(d, f) for top in (self.home, self.uhome)
-                          for d, _, fs in os.walk(top) for f in fs)
-        before = tree()
-        out = self.fm("night", "--print-timer", env=self.env()).stdout
-        for needle in ("[Timer]", "OnCalendar=", "Persistent=true", "[Service]", "WorkingDirectory=" + self.repo,
-                       "timers.target", "systemctl --user enable --now"):
-            self.assertIn(needle, out)
-        self.assertRegex(out, r"(?m)^ExecStart=.*\bfm'? night$")
-        self.assertRegex(out, r"(?m)^\d+ \d+ \* \* \* cd .* night")
-        self.assertIn(f'Environment="FOREMAN_HOME={self.home}"', out)  # systemd and cron start bare: state and tools
-        self.assertRegex(out, r'(?m)^Environment="PATH=[^"]+"$')
-        self.assertRegex(out, r"(?m)^\d+ \d+ \* \* \* cd .* && FOREMAN_HOME=\S+ PATH=\S+ \S+ \S+ night$")
-        self.assertEqual(tree(), before)
+
+class NightInstall(ServeCase):  # T-2357: night and tick timers staged, asked once, installed only after the user's yes
+    def tree(self):
+        return sorted(os.path.join(d, f) for d, _, fs in os.walk(self.uhome) for f in fs)
+
+    def stage(self, *extra):
+        self.fm("task", "new", "timers", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus", env=self.env())
+        return self.fm("night", "--stage", *extra, env=self.env())
+
+    def test_night_stage_writes_only_state_and_queues_one_plugin_grant_naming_each_line(self):
+        before = self.tree()
+        out = self.stage("--watch-issues", "octo/app", "--watch-ci").stdout
+        self.assertEqual(self.tree(), before, "staging writes nothing outside state")
         self.assertEqual(self.called(), "")
+        staged = os.path.join(c.find_project(self.repo).dir, "night", "staged")
+        names = sorted(os.listdir(staged))
+        for n in (f"foreman-night-{self.slug}.service", f"foreman-night-{self.slug}.timer",
+                  f"foreman-tick-{self.slug}.service", f"foreman-tick-{self.slug}.timer", "crontab.txt", "plan.json"):
+            self.assertIn(n, names)
+        timer = read_text(os.path.join(staged, f"foreman-night-{self.slug}.timer"))
+        self.assertIn("Persistent=true", timer)
+        self.assertRegex(read_text(os.path.join(staged, f"foreman-tick-{self.slug}.service")), r"(?m)^ExecStart=.* night --tick$")
+        for word in ("nightly", "hourly", "$", "fm night --uninstall", "octo/app", "CI"):
+            self.assertIn(word, out)
+        todo = self.fm("todo", "--json", env=self.env()).stdout
+        self.assertEqual(todo.count('"kind": "grant"'), 1)
+        self.assertIn("plugin", todo)
+        self.assertIn("octo/app", todo)
+        self.assertIn("fm night --uninstall", todo)
+        self.fm("night", "--stage", "--watch-issues", "octo/app", "--watch-ci", env=self.env())  # the same plan: one ask
+        self.assertEqual(self.fm("todo", "--json", env=self.env()).stdout.count('"kind": "grant"'), 1)
+
+    def test_night_install_after_the_yes_enables_the_staged_timers_and_the_staged_watch_lines_only(self):
+        self.stage("--watch-ci")
+        r = self.fm("night", "--install", env=self.env())  # the user's own terminal: the guard isn't in the way
+        udir = os.path.join(self.uhome, ".config", "systemd", "user")
+        for n in (f"foreman-night-{self.slug}.timer", f"foreman-tick-{self.slug}.timer"):
+            self.assertTrue(os.path.isfile(os.path.join(udir, n)), r.stdout)
+            self.assertIn(f"systemctl --user enable --now {n}", self.called())
+        meta = self.meta()
+        self.assertEqual(meta.get("watch"), {"ci": True, "issues": []})  # issues weren't staged, so not watched
+        self.assertFalse(os.path.exists(os.path.join(c.find_project(self.repo).dir, "night", "staged")))
+        self.fm("night", "--uninstall", env=self.env())
+        self.assertFalse(any(n.startswith(("foreman-night-", "foreman-tick-")) for n in os.listdir(udir)))
+        self.assertIn(f"systemctl --user disable --now foreman-tick-{self.slug}.timer", self.called())
+        self.assertNotIn("watch", self.meta())
+
+    def test_night_install_with_nothing_staged_stages_first_and_the_print_timer_flag_is_gone(self):
+        r = self.fm("night", "--print-timer", env=self.env(), check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.fm("night", "--install", env=self.env())
+        self.assertIn(f"enable --now foreman-night-{self.slug}.timer", self.called())
+        self.assertEqual(self.meta().get("watch"), {"ci": False, "issues": []})
+
+    def test_night_doctor_names_staged_timers_waiting_and_units_of_another_home(self):
+        self.stage()
+        out = self.fm("doctor", env=self.env(), check=False).stdout
+        self.assertIn("night timers", out)
+        self.assertIn("waiting for your yes", out)
+        udir = os.path.join(self.uhome, ".config", "systemd", "user")
+        os.makedirs(udir, exist_ok=True)
+        with open(os.path.join(udir, "foreman-night-old.service"), "w") as f:
+            f.write('[Service]\nEnvironment="FOREMAN_HOME=/elsewhere/foreman"\nExecStart=/x/fm night\n')
+        out = self.fm("doctor", env=self.env(), check=False).stdout
+        self.assertIn("foreman-night-old.service", out)
+        self.assertIn("/elsewhere/foreman", out)

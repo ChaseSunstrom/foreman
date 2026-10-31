@@ -148,7 +148,7 @@ class Night(ForemanTestCase):
             seen.append(argv)
             c.log_event(p, "task_done", task="T-0001", data={})
             return mock.Mock(returncode=0, stdout="finished 1", stderr="")
-        args = argparse.Namespace(only=["queue"], max_usd=5.0, dry_run=False, json=True, print_timer=False, project=None)
+        args = argparse.Namespace(only=["queue"], max_usd=5.0, dry_run=False, json=True, project=None)
         cwd = os.getcwd()
         os.chdir(self.repo)
         try:

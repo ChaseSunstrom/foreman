@@ -480,7 +480,7 @@ The app never talks to a server: it runs `fm … --json` on this machine, and on
 **`fm run`** works the queue in fresh `claude -p` sessions, one task each, so a long queue never piles up in one context.
 - It waits out a usage limit (up to six hours by default) before retrying. A task that makes no progress is blocked with the reason, so the next run moves on.
 - The machine is kept from sleeping while it runs (systemd-inhibit, where there is one).
-- To run `fm night` every night, `fm night --print-timer` prints a systemd timer and a crontab line to paste.
+- To run `fm night` every night and `fm night --tick` hourly, `fm night --stage` writes both systemd timers into state and queues one request for your yes (`--watch-ci`, `--watch-issues OWNER/REPO` add those lines); after the yes `fm night --install` starts them, `fm night --uninstall` removes them.
 
 **The sandbox** is opt-in: `fm run --sandbox`, or `fm sandbox on` to keep it for later runs and `fm night` timers (`--no-sandbox` skips it for one run).
 - Each session then runs under Claude Code's own sandbox (bubblewrap with socat on Linux, Seatbelt on macOS): Bash writes only the checkout, the cache dirs, Foreman's state and the git dir.

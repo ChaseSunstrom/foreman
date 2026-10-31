@@ -1942,6 +1942,11 @@ class PluginChanges(GuardCase):
             ("fm plugins install rust-analyzer-lsp@claude-plugins-official", "plugin"),
             ("fm plugins add-marketplace some-org/some-plugins", "plugin"),
             ("fm plugins forget x@y", None),
+            ("fm night --install", "plugin"),  # T-2357: timers that run Foreman unattended wait for the user's yes
+            ("fm night --inst", "plugin"),
+            ("fm night --stage --watch-ci", None),
+            ("fm night --uninstall", None),
+            ("fm night --tick", None),
             ("claude plugin list --json", None),
             ("claude plugin details x@y", None),
             ("claude mcp list", None),

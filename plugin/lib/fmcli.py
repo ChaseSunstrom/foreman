@@ -6762,8 +6762,17 @@ def _build_parser(only=None):
             help="budgeted background work while you're away (landscape when due, the daily second read, the court); "
                  "refused at high usage; fm digest reports it")
     s.add_argument("--dry-run", action="store_true", help="list tonight's jobs and estimates; run nothing")
-    s.add_argument("--print-timer", action="store_true",
-                   help="print a systemd user timer + service and a crontab line for fm night here; install nothing")
+    s.add_argument("--stage", action="store_true",
+                   help="write the nightly and hourly timer units into state and queue one install request for your yes "
+                        "(T-2357); installs nothing")
+    s.add_argument("--install", action="store_true",
+                   help="install and start the staged timers (an agent only after your yes to the queued request)")
+    s.add_argument("--uninstall", action="store_true", help="stop the timers, remove their units, turn the watch lines off")
+    s.add_argument("--watch-issues", action="append", metavar="OWNER/REPO",
+                   help="--stage: also ask to capture this GitHub repo's new issues from the hourly tick (repeatable)")
+    s.add_argument("--watch-ci", action="store_true",
+                   help="--stage: also ask to check CI from the hourly tick when no session is open")
+    s.add_argument("--task", help="--stage: the open task the request is queued on (default: the focused one)")
     s.add_argument("--tick", action="store_true",
                    help="the model-free pass (T-2356): standing orders, the cached CI result, and CI or issues only where "
                         "you said yes; spends no tokens")

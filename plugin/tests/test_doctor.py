@@ -1226,3 +1226,18 @@ class RuleConflicts(ForemanTestCase):  # T-1267
         rs = {r["name"]: r for r in json.loads(self.fm("doctor", "--json", check=False, env={"HOME": self.tmp}).stdout)
               ["results"]}
         self.assertEqual(rs["rule conflicts"]["status"], "PASS")
+
+
+class NightTimers(ForemanTestCase):  # T-2357
+    def test_night_timers_row_passes_with_nothing_staged_and_warns_while_a_yes_is_waiting(self):
+        self.fm("init")
+        env = {"HOME": self.tmp, "XDG_CONFIG_HOME": os.path.join(self.tmp, "cfg")}
+        row = lambda: {r["name"]: r for r in json.loads(self.fm("doctor", "--json", check=False, env=env).stdout)  # noqa: E731
+                       ["results"]}["night timers"]
+        self.assertEqual(row()["status"], "PASS")
+        staged = os.path.join(c.find_project(self.repo).dir, "night", "staged")
+        os.makedirs(staged)
+        with open(os.path.join(staged, "plan.json"), "w") as f:
+            json.dump({"units": []}, f)
+        self.assertEqual(row()["status"], "WARN")
+        self.assertIn("waiting for your yes", row()["detail"])
