@@ -172,6 +172,34 @@ class DesignLens(HookCase):
         self.assertNotIn("\x1b", got[0])
         self.assertLessEqual(len(got[0]), 40)
 
+    def test_function_names_credit_changed_defs_skip_quoted_files_and_say_how_many_more(self):  # T-2312 review
+        import fmlanes
+        d = ("diff --git a/m.py b/m.py\n--- a/m.py\n+++ b/m.py\n"
+             "@@ -3 +3 @@ def prev():\n-def f(a):\n+def f(a, b):\n"
+             "@@ -9,0 +10,2 @@ def prev():\n+async def added():\n+    pass\n"
+             'diff --git "a/q\\303\\251.py" "b/q\\303\\251.py"\n@@ -1 +1 @@ def stray():\n'
+             "diff --git a/n.py b/n.py\n" + "".join(f"@@ -{i} +{i} @@ def g{i}():\n" for i in range(1, 12)))
+        got = fmlanes.functions_changed(d)
+        self.assertEqual(got["m.py"], ["f", "added"], "a changed def is not credited to the function before it")
+        self.assertNotIn("stray", str(got))
+        self.assertEqual(got["n.py"][:2], ["g1", "g2"])
+        self.assertIn("+3 more", fmlanes.functions_line(got))
+
+    def test_a_secret_in_a_hunk_header_reaches_neither_the_brief_nor_the_merge_output(self):  # T-2312 review
+        import fmlanes
+        key = "sk-live-9f8e7d6c5b4a39281706"
+        self.assertNotIn(key, str(fmlanes.functions_changed(
+            f'diff --git a/a.py b/a.py\n@@ -5 +5 @@ API_KEY = "{key}"\n')))
+        self.write(".env", f"TOKEN={key}\nA=1\nB=2\nC=3\nD=4\n")
+        self.write("a.py", f'API_KEY = "{key}"\nA=1\nB=2\nC=3\nD=4\n')
+        subprocess.run(["git", "-C", self.repo, "add", "-f", ".env", "a.py"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "k"], check=True)
+        self.prep()
+        self.write(".env", f"TOKEN={key}\nA=1\nB=2\nC=3\nD=5\n")
+        self.write("a.py", f'API_KEY = "{key}"\nA=1\nB=2\nC=3\nD=5\n')
+        text = self.brief()[1]
+        self.assertNotIn(key, text)
+
     def test_a_backend_diff_gets_no_design_lens(self):
         self.prep()
         self.write("a.py", "x = 1\n")

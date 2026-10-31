@@ -815,24 +815,44 @@ def _verify(b):
 
 
 _HUNK = re.compile(r"^@@ -\S+ \+\S+ @@ ?(.*)$")
+_SIGNED_DEF = re.compile(r"^[+-]\s*(?:async\s+|export\s+|pub\s+)*(?:def|class|function|func|fn|sub)\s+([\w$]+)")
 _DEF = re.compile(r"\b(?:def|class|function|func|fn|sub)\s+([\w$]+)")
 
 
 def functions_changed(diff, per_file=8, max_files=40):
     """T-2312: {file: [function, …]} from a diff's hunk headers (git's own function context, so any language it knows;
     the diff's repo text goes through plain and fit before anyone prints it). A change outside any function has none."""
-    out, cur = {}, None
+    out, cur, extra, hunk = {}, None, {}, None
+
+    def add(name):
+        name = c.fit(c.plain(c.redact(name)), 40)  # the header is the nearest line above: a `KEY = "sk-…"` one
+        if cur is None or name in cur:
+            return
+        if len(cur) < per_file:
+            cur.append(name)
+        else:
+            extra[id(cur)] = extra.get(id(cur), 0) + 1
+
+    def flush():  # a hunk's own +/- def lines name it; else git's context (a changed def line would credit the one above)
+        if hunk and cur is not None:
+            for name in hunk["defs"] or ([(_DEF.search(hunk["ctx"]) or [0, hunk["ctx"]])[1]] if hunk["ctx"] else []):
+                add(name)
     for line in diff.splitlines():
-        m = re.match(r"diff --git a/.+? b/(.+)$", line)
-        if m:
-            cur = None if len(out) >= max_files and m.group(1) not in out else out.setdefault(m.group(1), [])
-            continue
-        h = _HUNK.match(line)
-        if h and cur is not None and h.group(1).strip():
-            ctx = h.group(1).strip()
-            name = c.fit(c.plain((_DEF.search(ctx) or [0, ctx])[1]), 40)
-            if name not in cur and len(cur) < per_file:
-                cur.append(name)
+        if line.startswith("diff --git "):
+            flush()
+            hunk = None
+            m = re.match(r"diff --git a/.+? b/(.+)$", line)  # a git-quoted name doesn't match: no credit to the last file
+            cur = None if not m or (len(out) >= max_files and m.group(1) not in out) else out.setdefault(m.group(1), [])
+        elif line.startswith("@@ "):
+            flush()
+            h = _HUNK.match(line)
+            hunk = {"ctx": h.group(1).strip(), "defs": []} if h else None
+        elif hunk and line[:1] in "+-" and (d := _SIGNED_DEF.match(line)):
+            hunk["defs"].append(d.group(1))
+    flush()
+    for v in out.values():
+        if extra.get(id(v)):
+            v.append(f"+{extra[id(v)]} more")
     return out
 
 
