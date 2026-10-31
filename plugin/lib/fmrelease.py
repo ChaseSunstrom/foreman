@@ -335,6 +335,25 @@ def _push_main(p, tid, sha, remote, by):
 SHIPPED = "refs/foreman/shipped"  # T-1945: the last commit fm ship landed; default picks start after it
 
 
+def _affected_first(p, wt, base, env):
+    """T-2323: fm check's affected-test selection over the range (main..the cherry-picked tip) in the scratch tree, run
+    before the full suite; red stops the ship naming the failing classes. No linked test or no affected command: goes on."""
+    import fmcli
+    try:
+        cmd, tests, _ = fmcli.affected(c.Project(p.slug, wt, p.dir, p.lane), since=base)
+    except Exception as e:  # a convenience: the full suite still runs
+        print(f"affected tests skipped: {c.fit(c.plain(str(e)), 120)}", flush=True)
+        return
+    if not cmd:
+        return
+    print(f"testing the {len(tests)} affected test file(s) first", flush=True)
+    code, out = c.run_command(wt, cmd, 900, env=dict(fmcli._skip_env({}), **{k: v for k, v in env.items() if k != "FOREMAN_SKIP_TESTS"}))
+    if code:
+        print(out[-4000:], flush=True)
+        bad = sorted({m.group(1) for m in re.finditer(r"^(?:FAIL|ERROR): \S+ \(([\w.]+?)\.\w+\)", out, re.M)})
+        _err("the affected tests failed in the scratch tree" + (f": {', '.join(bad)}" if bad else "") + "; nothing was pushed")
+
+
 def ship(p, args):
     """T-1943: fm ship — HEAD's commits the remote's main lacks (git cherry, by patch) or the named ones, cherry-picked
     onto the fetched main in a scratch worktree, their files compared, tested there, main re-checked, then pushed
@@ -401,6 +420,7 @@ def ship(p, args):
             env.setdefault("PYTHONUNBUFFERED", "1")
             log = os.path.join(tmp, "test.log")  # T-2255: a file, not a pipe: a background process holding it can't hang the ship
             try:  # a full fm check here waits for this run; the ship's own fm check (in wt) doesn't
+                _affected_first(p, wt, base, env)  # T-2323: a red linked test stops the ship in minutes, not after the suite
                 with open(log, "wb") as out, open(log, "rb") as rd:
                     try:
                         proc = subprocess.Popen(test, cwd=wt, stdin=subprocess.DEVNULL, env=env, stdout=out,
