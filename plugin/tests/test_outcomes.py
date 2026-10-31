@@ -351,3 +351,37 @@ class Mining(Base):
         self.assertRegex(out, r"smooth but unverified[^\n]*\n\s+- T-0005")
         self.assertRegex(out, r"give-up points[^\n]*\n\s+- [^\n]*after 3 failed run\(s\)[^\n]*T-0006")
         self.assertRegex(out, r"common paths[^\n]*\n\s+- focus → done")
+
+
+class ModelRouter(Base):
+    """T-2291: the builder model follows how past lanes' tasks held up per tier and model."""
+    def seed(self, model, n, bad):
+        """n closed S tasks built by `model`; the first `bad` get a later FIX naming them."""
+        for i in range(n):
+            t = self.done(f"{model} task {i}")
+            b = c.find_brief(self.p, t)
+            with open(b.path, encoding="utf-8") as f:
+                text = f.read()
+            with open(b.path, "w", encoding="utf-8") as f:
+                f.write(re.sub(r"(?m)^updated: .*$", lambda m: f"{m.group(0)}\nbuilder_model: {model}", text, 1))
+            if i < bad:
+                self.fm("capture", f"{t} broke the export", "--type", "FIX", "--tier", "S")
+
+    def route(self):
+        import fmlanes
+        return fmlanes.model_route(c.find_project(self.repo), "S")
+
+    def test_a_cheaper_model_that_keeps_needing_rework_escalates_to_opus(self):
+        self.seed("sonnet", 6, 4)
+        self.seed("opus", 5, 0)
+        model, line = self.route()
+        self.assertEqual(model, "opus")
+        self.assertIn("4/6", line)
+        self.assertIn("0/5", line)
+
+    def test_too_few_samples_or_a_small_gap_keeps_sonnet_and_says_so(self):
+        self.seed("sonnet", 6, 4)
+        self.seed("opus", 4, 0)
+        model, line = self.route()
+        self.assertEqual(model, "sonnet")
+        self.assertIn("too little history", line)

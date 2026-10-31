@@ -3,6 +3,7 @@ work two tasks without touching each other's files. `new` makes one for a task (
 branch foreman/<id>) and gives the task to it; `list` shows them; `rm` removes one with nothing uncommitted, keeps its
 branch unless it is merged, and puts the task back in the queue."""
 import argparse
+import collections
 import contextlib
 import functools
 import io
@@ -637,6 +638,29 @@ def defect_classes(p, days=30, top=5):
     return [f"- {n}: {len(t)} (e.g. {t[-1][:100]})" for n, t in ranked]
 
 
+def model_route(p, tier, outs=None):
+    """T-2291: (model, line): sonnet, unless over the last 20 lane-built closed tasks of this tier sonnet's rework rate
+    (a later FIX or revert, a lost outcome, a baseline red naming it) is 0.3+ above opus's, 5+ samples each."""
+    import fmoutcomes
+    outs = outs if outs is not None else fmoutcomes.outcomes(p)
+    briefs = c.load_briefs(p, include_archive=True)
+    red = " ".join(b.section("Raw request") for b in briefs if b.meta.get("baseline"))
+    built = sorted((fmoutcomes.done_at(b), b.id, b.meta["builder_model"]) for b in briefs
+                   if b.tier == tier and b.id in outs and b.meta.get("builder_model"))[-20:]
+    n, bad = collections.Counter(), collections.Counter()
+    for _, i, m in built:
+        o = outs[i]
+        n[m] += 1
+        bad[m] += o["fate"] in ("reverted", "fixed later") or o.get("survival") == "lost" or i in red
+    nums = ", ".join(f"{m} {bad[m]}/{n[m]}" for m in sorted(n)) or "none"
+    if min(n["sonnet"], n["opus"]) < 5:
+        return "sonnet", f"too little history to route {tier} lanes (need 5+ each of sonnet and opus; reworked: {nums})"
+    gap = bad["sonnet"] / n["sonnet"] - bad["opus"] / n["opus"]
+    if gap >= 0.3:
+        return "opus", f"{tier} lanes reworked: {nums}: sonnet's rate is {gap:.0%} above opus's, so opus"
+    return "sonnet", f"{tier} lanes reworked: {nums}: no gap worth opus"
+
+
 def builder_brief(p, b, args, resume_branch=None):
     """T-0234: a self-contained brief for one S/M task worked by a foreman:fm-builder subagent in its own worktree
     (Agent isolation "worktree"; its `fm focus` binds the task there), and the Agent call that launches it. The main
@@ -718,21 +742,25 @@ def builder_brief(p, b, args, resume_branch=None):
     def mark(x):
         import fmbus
         x.meta["builder"] = c.now()
+        x.meta["builder_model"] = chosen
         proc = fmbus.claude_proc()  # T-1028: when this process ends, the builder is stopped (fm lane resume)
         if proc:
             x.meta["builder_proc"] = proc
         else:
             x.meta.pop("builder_proc", None)
         x.append_log(f"builder brief: {path}")
+    chosen, route = model_route(p, b.tier)
+    if getattr(args, "model", None):
+        chosen, route = args.model, f"--model {args.model}"
     fmcli.mutate(p, b.id, mark, "lane_builder", {"path": path})
     # T-1796: every builder runs on Sonnet (Opus M lanes were 22% of a week's usage); the main thread reviews either
     # T-0779: and its effort follows the tier: medium for small well-specified diffs, high for M
-    model = f', model: "sonnet", effort: "{"medium" if b.tier == "S" else "high"}"'
+    model = f', model: "{chosen}", effort: "{"medium" if b.tier == "S" else "high"}"'
     agent = (f'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"{model}, prompt: "Read {path} and work '
              f'the task it describes."')
-    return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id], "warnings": warns},
+    return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "model": chosen, "route": route, "out": out + [b.id], "warnings": warns},
                      "".join(f"{w}\n" for w in warns) +
-                     f"{b.id}: builder brief {path}\n  launch: {agent}\n  then: review its branch (one fm-reviewer on "
+                     f"{b.id}: builder brief {path}\n  model {chosen}: {route}\n  launch: {agent}\n  then: review its branch (one fm-reviewer on "
                      f"git diff HEAD...<branch>), fm lane merge {b.id}, fm lane rm {b.id} (takes it back), "
                      f"fm focus {b.id} here, re-run its criteria, fm task finish {b.id} "
                      f"(skills/intake/references/delegate.md)\n  not launching it? fm lane rm {b.id} frees the slot")

@@ -304,7 +304,7 @@ class Contract(_Tasks):
         self.fm("lane", "rm", tid)
         self.assertIn("release", git(self.repo, "branch", "--list", "release"))  # never one it switched to
         self.assertEqual(git(self.repo, "branch", "--list", f"builder/{tid}"), "")  # its own, merged, goes
-        self.assertNotIn("builder", self.fm("task", "show", tid, "--json").stdout.split('"meta"', 1)[1].split("}", 1)[0])
+        self.assertNotIn('"builder"', self.fm("task", "show", tid, "--json").stdout.split('"meta"', 1)[1].split("}", 1)[0])
 
     def test_a_briefed_task_that_never_launched_frees_its_slot(self):
         one, two, three = self.task("One"), self.task("Two"), self.task("Three")
