@@ -289,6 +289,7 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 - `fm run` works the queue in one fresh `claude -p` session per task (`--max-usd` caps what it spends); `fm serve` runs Remote Control on a server.
 - `fm scout` finds work nobody asked for: a newer Claude Code to adopt, dependencies with no stack card, doctor failures (filed in Foreman's own inbox), a weekly brainstorm, and up to 3 `fm find` leads a day in your own projects.
 - `fm night` runs budgeted background jobs: it works the queue under the night's budget, composts finished lanes and proposes merged lessons.
+- `fm goal set|plan|item|link|show|verdict` keeps a big goal as items with done-when checks across days; one `Goal:` line shows in sessions, `fm code`, `AGENTS.md`, the band and the MCP `goal` tool until `fm goal verdict` says finished.
 - `fm draft` has the top queued small task drafted on a throwaway branch while Claude waits; `fm lane race T` has two builders take different approaches and `fm lane pick` merges the better one.
 - `fm ci-watch` follows the CI run of the commit you pushed and turns a failure into a fix task; `fm pr threads` turns review comments into steps and `fm pr train` merges approved, green PRs in order after a re-test.
 - **The forever loop.** `fm loop on` keeps Foreman improving without being asked: when the queue and inbox run out, `fm next` and the Stop drive start the next round instead of ending the run.

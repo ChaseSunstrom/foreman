@@ -1,6 +1,7 @@
 """T-0681: UI and motion — the view model carries a close-out card's facts and the health signals the band shows,
 and a guard refusal of a long command quotes the part that matched."""
 import json
+import time
 
 from helpers import ForemanTestCase
 
@@ -58,3 +59,28 @@ class BlockSegment(Base):
         reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("rm -rf ~/Documents", reason.split("\n")[-1] if "\n" in reason else reason)
         self.assertIn("in: ", reason)
+
+
+class GoalSignal(Base):
+    def test_a_stopped_goal_names_its_first_cause_from_the_stored_verdict(self):  # T-2141
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "one", "--done-when", "touch ran-it")
+        self.assertEqual([x for x in self.ui()["signals"] if "goal" in x["text"]], [], "no verdict yet")
+        self.fm("goal", "verdict", check=False)
+        sig = [x for x in self.ui()["signals"] if "goal" in x["text"]]
+        self.assertEqual(len(sig), 1, sig)
+        self.assertEqual(sig[0]["level"], "amber")
+        self.assertIn("goal stopped: item 1 has no task", sig[0]["text"])
+
+    def test_a_stale_other_root_or_ended_verdict_shows_nothing(self):  # T-2141
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "one", "--done-when", "true")
+        self.fm("goal", "verdict", check=False)
+        v = c.read_meta(self.p)["goal_verdict"]
+        goal = lambda: [x for x in self.ui()["signals"] if "goal" in x["text"]]  # noqa: E731
+        self.assertEqual(len(goal()), 1)
+        for bad in (dict(v, at=c.iso(time.time() - 3 * 86400)), dict(v, root="/elsewhere"), dict(v, set_at="1999")):
+            c.update_meta(self.p, goal_verdict=bad)
+            self.assertEqual(goal(), [], bad)
+        c.update_meta(self.p, goal_verdict=v, mandate=dict(c.read_meta(self.p)["mandate"], until=c.iso(time.time() - 60)))
+        self.assertEqual(goal(), [])
