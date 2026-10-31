@@ -3004,10 +3004,14 @@ class GenesisReadRecord(ForemanTestCase):
         log(keys[1], "fail")
         tower_file(self.g.home(self.p), "coverage.md", text)
         self.assertEqual(len(self.unread()), 1)
-        log("coverage.md", "pass")  # a whole-file pass isn't how a sectioned file is read
-        tower_file(self.g.home(self.p), "coverage.md", text)
-        self.assertEqual(len(self.unread()), 1)
         log(keys[1], "pass")
+        tower_file(self.g.home(self.p), "coverage.md", text)
+        self.assertEqual(self.unread(), [])
+
+    def test_a_sectioned_legacy_file_read_whole_counts(self):
+        # T-2181: files filed before section reads (T-2243) were read whole; that pass covers every section at once
+        text = "".join(f"## Part {n}\n" + "".join(f"- row {n}.{i} of real work\n" for i in range(30)) for n in (1, 2))
+        self.c.log_event(self.p, "genesis_read", data={"name": "coverage.md", "verdict": "pass"})
         tower_file(self.g.home(self.p), "coverage.md", text)
         self.assertEqual(self.unread(), [])
 
