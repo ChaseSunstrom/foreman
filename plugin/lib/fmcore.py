@@ -1981,6 +1981,8 @@ def _read_brief(path, idx=None, fresh=None):
         with open(path, encoding="utf-8") as f:
             b = Brief.parse(f.read(), path)
         if time.time() - st.st_mtime <= 2:  # just written: a same-size rewrite in the same tick could pass for it
+            if fresh is not None and b.status in CLOSED:  # T-2324: still indexed (its inode changes on a rewrite),
+                fresh[name] = key + [b.meta, b.preamble]  # or a load a second later would rewrite the caches
             return b
         if len(_BRIEF_MEMO) > BRIEF_MEMO_MAX:
             _BRIEF_MEMO.clear()

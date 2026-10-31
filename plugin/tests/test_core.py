@@ -1189,7 +1189,8 @@ class BriefIndex(ForemanTestCase):
         c._BRIEF_MEMO.clear()
         self.assertEqual(c.active_brief_fast(self.p).id, "T-0001")
 
-    def test_brief_index_a_just_written_brief_is_not_indexed(self):
+    def test_brief_index_a_just_written_brief_is_indexed_and_a_rewrite_is_not_served_stale(self):
+        """T-2324: indexed at once (a later load must not rewrite the caches); the rewrite's new inode misses it."""
         b = c.find_brief(self.p, "T-0002")
         b.meta["status"] = "done"
         c.save_brief(self.p, b)
@@ -1197,8 +1198,10 @@ class BriefIndex(ForemanTestCase):
         c.load_briefs(self.p)
         with open(os.path.join(self.p.dir, "briefs-index.json"), encoding="utf-8") as f:
             names = json.load(f)["e"]
-        self.assertIn(os.path.basename(c.find_brief(self.p, "T-0001").path), names)
-        self.assertNotIn(os.path.basename(b.path), names, "a same-tick rewrite could pass for it")
+        self.assertIn(os.path.basename(b.path), names)
+        b.meta["tier"] = "M"
+        c.save_brief(self.p, b, touch=False)  # same size, same tick, a new inode
+        self.assertEqual([x for x in c.load_briefs(self.p) if x.id == "T-0002"][0].meta["tier"], "M")
 
     def test_brief_index_a_stub_copies_edits_and_renders_like_a_parsed_brief(self):
         c.load_briefs(self.p)
