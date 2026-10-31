@@ -1005,15 +1005,26 @@ def putback(base, kind, work):
                     arm = "".join(_readlines(os.path.join(dst, rel)))
                 except (OSError, ValueError):
                     raise LookupError(rel)
-                for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, c, p, autojunk=False).get_opcodes():
-                    if op == "equal":
-                        continue
-                    whole = "".join(c)
-                    lo, hi = max(i1 - 1, 0), min(i2 + 1, len(c))  # one line each side, more while not unique in clean
+                whole = "".join(c)
+
+                def span(i1, i2):  # one line each side, more while not unique in clean
+                    lo, hi = max(i1 - 1, 0), min(i2 + 1, len(c))
                     while lo > 0 and whole.count("".join(c[lo:i1])) != 1:
                         lo -= 1
                     while hi < len(c) and whole.count("".join(c[i2:hi])) != 1:
                         hi += 1
+                    return lo, hi
+                regions = [[i1, i2, j1, j2] for op, i1, i2, j1, j2 in
+                           difflib.SequenceMatcher(None, c, p, autojunk=False).get_opcodes() if op != "equal"]
+                k = 0
+                while k + 1 < len(regions):  # T-2401: an anchor that reaches the next region would be gone once it's planted
+                    a, b = regions[k], regions[k + 1]
+                    if span(a[0], a[1])[1] > b[0] or span(b[0], b[1])[0] < a[1]:
+                        regions[k:k + 2] = [[a[0], b[1], a[2], b[3]]]  # the lines between are equal in both
+                    else:
+                        k += 1
+                for i1, i2, j1, j2 in regions:
+                    lo, hi = span(i1, i2)
                     before, after = "".join(c[lo:i1]), "".join(c[i2:hi])
                     if (before and arm.count(before) != 1) or (after and arm.count(after) != 1):
                         raise LookupError(rel)
