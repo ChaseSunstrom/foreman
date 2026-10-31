@@ -7173,6 +7173,9 @@ def _build_parser(only=None):
     s.add_argument("path", nargs="?", default=".", help="the tree to prove in (default: here)")
     s.add_argument("--limit", type=int, default=10, help="prove the best N candidates (default 10)")
     s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests, kept for this tree")
+    s.add_argument("--migration", action="store_true", help="instead: run the tree's plain SQL NAME.up.sql/NAME.down.sql "
+                   "migrations up, down, up on a throwaway sqlite file and compare the schema each time; trusted trees "
+                   "only; exit 0 pass, 1 fail, 2 refused or no known tool (T-2288)")
     s.add_argument("--bugs", type=int, default=None, metavar="N", help="turns the bug rung on: ask a cheap child for bug "
                    "candidates in the N hottest files (N is required, at most 10; try 3), as in fm prove --bugs 3 PATH; "
                    "each is proven by a model-written red test or stays a lead; trusted trees only (T-2242)")
