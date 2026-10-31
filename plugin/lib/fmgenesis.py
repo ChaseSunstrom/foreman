@@ -16,7 +16,7 @@ import fmcore as c
 # coverage.md: the capability-area x surface x stage grid every generation fills.
 SHAPE = re.compile(r"(gap-map|lineage|catalogue|report|not-yet|coverage|spec)\.md|exam\.jsonl"
                    r"|frame\.md|gen-[1-9][0-9]*/(seed|drift|sweep|frontier|(mission|critique)-[a-z0-9][a-z0-9-]*)\.md")
-OWNED = re.compile(r"exam\.jsonl|frame\.md|gen-[1-9][0-9]*/(drift|sweep|select|frontier)\.md")  # T-2155: the stage gates' records,
+OWNED = re.compile(r"exam\.jsonl|frame\.md|gen-[1-9][0-9]*/(drift|sweep|select|confirm|frontier)\.md")  # T-2155: the stage gates' records,
 # frame.md (T-2188): only fm genesis grow adds to it;
 # never put; T-2187: frontier.md is built from the project's own notes by fm genesis frontier N
 GEN = re.compile(r"gen-([1-9][0-9]*)")
@@ -767,11 +767,19 @@ def step(p):
     prev = _doc(d, f"gen-{n - 1}/seed.md")
     def gaps(rs):  # T-2187: the moonshot row closes no coverage gap, so a seed with only it is dry
         return [r for r in rs if r[1] != "mission-moonshot"]
-    if not gaps(rows) and prev is not None and not gaps(ROW.findall(prev)):
-        for h, b in _sections(_doc(d, "lineage.md") or ""):  # T-2197: the report waits for the production exam's verdict
-            if (g := re.fullmatch(r"gen-(\d+)", h)) and re.search(r"^- provisional:", b, re.M):
-                return act("report", n, f"{h} is still provisional (only the cheap exam has judged it): the report waits "
-                                        f"for the production-model exam", f"fm genesis confirm {g.group(1)}", "blocked")
+    lineage, dry = _doc(d, "lineage.md") or "", not gaps(rows) and prev is not None and not gaps(ROW.findall(prev))
+    if dry or _stopped(lineage, n):  # T-2197: the report (or the stop) waits for each choice's production verdict
+        for h, b in _sections(lineage):
+            g, mk = re.fullmatch(r"gen-(\d+)", h), re.search(r"^- (provisional|confirmed|reversed):", b, re.M)
+            if g and mk and (mk.group(1) == "provisional" or not re.search(
+                    rf"^Verdict: {mk.group(1)}$", _doc(d, f"{h}/confirm.md") or "", re.M)):  # a typed mark has no record
+                ready = not _prod(p, int(g.group(1)), "foreman", bool(re.search(r"^- baseline:", b, re.M)))[1]
+                run = next((x.get("run") for x in reversed(_exam(p, "foreman")) if x.get("gen") == int(g.group(1))), "RUN")
+                return act("confirm", n, f"{h} isn't settled by a production-model exam (confirm.md with the lineage mark): "
+                                         f"the {'report' if dry else 'next step'} waits",
+                           f"fm genesis confirm {g.group(1)}" if ready else
+                           f"fm exam run {c.plain(str(run))} --agent foreman --model sonnet", "blocked")
+    if dry:
         return act("report", n, "two generations in a row found no tier 3-4 gap: write the final report (§8)",
                    "fm genesis put report.md --file -")
     if _stopped(_doc(d, "lineage.md") or "", n):
@@ -1779,41 +1787,75 @@ def select(p, n, agent="foreman"):
         return r
 
 
+def _prod(p, n, agent, baseline):
+    """T-2197: the production-model exam lines settling gen n: a non-empty model stamp that isn't 'default' or Haiku.
+    A kept or reverted choice needs gen n AND its parent on a common run; a baseline needs gen n alone. (rows, why):
+    why is '' when usable, else what is missing, noting the lines skipped."""
+    every = _exam(p, agent)
+    rows = [x for x in every if str(x.get("model") or "").strip() not in ("", "default") and not smoke(x)]
+    note = f" ({len(every) - len(rows)} unstamped, 'default' or Haiku line(s) skipped)" if len(every) > len(rows) else ""
+    if baseline:
+        rows = [x for x in rows if x.get("gen") == n]
+    kid, mom = ({x.get("run") for x in rows if x.get("gen") == g} for g in (n, n - 1))
+    if not kid:
+        return rows, f"no production-model line for gen {n}{note}"
+    if not baseline and not kid & mom:
+        return rows, f"no production-model line for gen {n - 1} on a run shared with gen {n}{note}"
+    return rows, ""
+
+
 def confirm(p, n, agent="foreman"):
-    """T-2197: settle gen n's provisional lineage choice from the production-model exam lines (never smoke, never Haiku)
-    by select's own comparison: '- confirmed:' when the kept or reverted choice still wins, '- reversed:' when not. No
-    production line, or a one-scenario rerun ask, leaves it provisional; an existing mark is never rewritten."""
+    """T-2197: settle gen n's provisional lineage choice from the production-model exam lines by select's own comparison:
+    '- confirmed:' when the kept or reverted choice still wins, '- reversed:' when not (the seed base then follows what
+    production kept), with the verdict in gen-N/confirm.md, which only this writes. A missing or one-scenario-margin
+    production line leaves it provisional; an existing lineage mark is never rewritten."""
     with c.lock(os.path.join(p.dir, "genesis-lineage")):  # the same lock select's read and write hold
         old = _doc(home(p), "lineage.md") or ""
-        pat = re.compile(rf"^## gen-{n}\b.*?(?=^## |\Z)", re.M | re.S)
-        sec = pat.search(old)
+        sec = re.compile(rf"^## gen-{n}\b.*?(?=^## |\Z)", re.M | re.S).search(old)
         out = lambda mark, why: {"gen": n, "mark": mark, "reason": why}
         if not sec:
             raise ValueError(f"lineage.md has no '## gen-{n}' section: fm genesis select {n} first")
-        if m := re.search(r"^- (confirmed|reversed):", sec.group(0), re.M):
-            return out(m.group(1), f"gen-{n} is already {m.group(1)}: left as filed")
-        if not re.search(r"^- provisional:", sec.group(0), re.M):
+        body = sec.group(0)
+        have = (re.search(r"^- (confirmed|reversed):", body, re.M) or [None, None])[1]
+        kind = re.search(r"^- (kept|reverted|baseline):", body, re.M)
+        if not have and not re.search(r"^- provisional:", body, re.M):
             raise ValueError(f"gen-{n} has no '- provisional:' line to settle")
-        rows = [x for x in _exam(p, agent) if not smoke(x)]
-        res, verdict, why = None, "none", ""
-        if any(x.get("gen") == n for x in rows):
+        if not kind:
+            raise ValueError(f"gen-{n} has no '- kept:', '- reverted:' or '- baseline:' choice line")
+        if have and re.search(rf"^Verdict: {have}$", _doc(home(p), f"gen-{n}/confirm.md") or "", re.M):
+            return out(have, f"gen-{n} is already {have}: left as filed")
+        rows, miss = _prod(p, n, agent, kind.group(1) == "baseline")
+        res = verdict = why = None
+        if not miss:
             try:
-                res, verdict, why, _, _ = _compare(rows, n, agent)
-            except ValueError as e:  # gen n and its parent were graded on no common run
-                why = str(e)
-        if verdict in ("none", "rerun"):
-            return out("provisional", f"gen-{n} stays provisional: no usable production-model exam line from {agent} "
-                                      f"(not smoke, not Haiku): fm exam run RUN --agent {agent} --model <production>, "
-                                      f"then fm exam grade RUN --agent {agent}, then fm genesis confirm {n}"
-                                      + (f" ({why})" if why else ""))
-        kept = re.search(r"^- (kept|baseline):", sec.group(0), re.M)
-        mark = "confirmed" if (verdict in ("keep", "baseline")) == bool(kept) else "reversed"
-        line = (f"- {mark}: production-model exam run {res['shown']} (agent {agent}): train closed {res['closed']}"
-                + (f" vs parent {res['parent']}" if res["parent"] is not None else "") + f", select's comparison says "
-                f"{verdict}: {why}")
-        new = re.sub(r"^- provisional:.*$", lambda _: line, sec.group(0), count=1, flags=re.M)
-        _file(p, "lineage.md", old[:sec.start()] + new + old[sec.end():])
-        return out(mark, line[2:])
+                res, verdict, why, k, _ = _compare(rows, n, agent)
+            except ValueError as e:  # a run mismatch _prod can't see
+                miss = str(e)
+        if miss or verdict == "rerun":
+            return out(have or "provisional", f"gen-{n} stays {have or 'provisional'}: {miss or why}; fm exam run RUN "
+                       f"--agent {agent} --model sonnet, then fm exam grade RUN --agent {agent}, then fm genesis confirm {n}")
+        shown = c.plain(str(res["run"]))
+        won = (verdict in ("keep", "baseline")) == (kind.group(1) != "reverted")
+        mark = "confirmed" if won else "reversed"
+        if have and have != mark:
+            return out(have, f"production says {mark} but lineage.md says {have}: left as filed; the report stays "
+                             f"blocked until lineage.md and the exam agree")
+        model = ", ".join(sorted({c.plain(str(x["model"]))[:40] for x in k}))
+        counts = f"{res['closed']}" + (f" vs {res['parent']}" if res["parent"] is not None else "")
+        _file(p, f"gen-{n}/confirm.md", f"# Confirm\n\nGen: {n}\nVerdict: {mark}\nRun: {shown}\nAgent: {agent}\n"
+                                        f"Model: {model}\nTrain closed: {counts}\nReason: {why}\n")
+        if not have:
+            line = (f"- {mark}: production-model exam run {shown} (agent {agent}, model {model}): train closed "
+                    f"{counts}; select's comparison says {verdict}: {why}")
+            new = re.sub(r"^- provisional:.*$", lambda _: line, body, count=1, flags=re.M)
+            if mark == "reversed":  # the choice lost: the next seed builds on what production kept
+                keep = f"gen-{n}" if kind.group(1) == "reverted" else (_base(old, n - 1) or f"gen-{n - 1}")
+                new = re.sub(r"^- seed base:.*$", lambda _: f"- seed base: {keep}", new, count=1, flags=re.M)
+            _file(p, "lineage.md", old[:sec.start()] + new + old[sec.end():])
+        import fmcli
+        c.log_event(p, "genesis_confirm", data={"gen": n, "mark": mark, "run": shown, "model": model},
+                    session=fmcli.session())
+        return out(mark, why)
 
 
 def _compare(rows, n, agent):
@@ -1849,7 +1891,6 @@ def _compare(rows, n, agent):
     else:
         verdict, why = "revert", (f"closed {len(a)} train scenarios to gen {n - 1}'s {len(b)}: a rewrite stays only if "
                                   "it closed more")
-    res.update(a=len(a), b=len(b), mom=bool(mom), shown=shown)
     return res, verdict, why, k, m
 
 
@@ -1863,7 +1904,8 @@ def _select(p, n, agent):
     res, verdict, why, k, m = _compare(rows, n, agent)
     if verdict == "rerun":
         return dict(res, verdict="rerun", base=None, reason=why)
-    a, b, mom, shown, reopened = res.pop("a"), res.pop("b"), res.pop("mom"), res.pop("shown"), res["reopened"]
+    a, b, reopened = res["closed"], res["parent"], res["reopened"]
+    mom, shown = b is not None, c.plain(str(res["run"]))
     lineage = _doc(d, "lineage.md")
     base = f"gen-{n}" if verdict != "revert" else (_base(lineage, n - 1) or f"gen-{n - 1}")
     sec = (f"## gen-{n}\n- {dict(keep='kept', revert='reverted', baseline='baseline')[verdict]}: {why}\n"
