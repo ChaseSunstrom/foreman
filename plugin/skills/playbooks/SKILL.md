@@ -40,11 +40,8 @@ Core debugging, regression-test and verification procedures live with intake: `.
 - `references/verify/tdd-guide.md` — Test-Driven Development specialist enforcing write-tests-first methodology. Ensures 80%+ test coverage.
 - `references/verify/tdd-workflow.md` — Test-first for a feature, fix or refactor: red, green, refactor.
 - `references/verify/verification-loop.md` — Before calling work done: build, types, lint, tests, secrets, diff, report.
-- `references/fix/flaky-tests.md` — A test that passes and fails without a code change: prove, classify, reproduce deterministically, fix…
-- `references/fix/sql.md` — Slow or new queries: real SQL, call count, plan on real data, query before index, before/after proof.
-- `references/fix/migration.md` — Live schema changes: expand, dual-write, batched backfill, switch reads, contract, lock timeout.
-- `references/fix/text-time-bytes.md` — Text, time, bytes, money: encodings, Unicode normalisation, UTC and DST, minor units.
-- `references/fix/cli-errors.md` — A CLI crashes, rejects a natural argument shape or acts on more than named: usage errors, many at once.
+- `references/verify/INDEX.md` — more: verifying per stack (plugins, data, games, Go, mobile).
+- `references/fix/INDEX.md` — bugs by kind: flaky tests, SQL, migrations, text and time, CLI errors, data pipelines, mobile crashes, serial and bus links.
 
 ## REVIEW — checklists (also read by foreman:fm-reviewer)
 - `references/review/code-reviewer.md` — Expert code review specialist. Proactively reviews code for quality, security, and maintainability. Use…

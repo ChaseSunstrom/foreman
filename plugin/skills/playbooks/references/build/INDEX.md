@@ -11,3 +11,6 @@ Build and compile errors, one file per toolchain. Paths are relative to the play
 - `references/build/shell-build.md` — Shell script errors: bash -n's give-up point, ShellCheck SC codes by severity, silent strict-mode exits, bats failures.
 - `references/build/swift-build.md` — Swift build errors (SwiftPM, Xcode): skip summary lines, out-of-order errors, missing modules, Swift 6 concurrency.
 - `references/build/typescript-build.md` — Build and TypeScript error resolution specialist. Fixes build/type errors only with minimal diffs, no…
+- `references/build/mobile-build.md` — Xcode, Expo and Flutter build failures: name the layer, resolution before compile, signing is not a compile error.
+- `references/build/embedded-build.md` — Firmware builds (PlatformIO, ESP-IDF, Zephyr): target and toolchain, link and size errors, config source files.
+- `references/build/game-build.md` — Game project import and export errors (Godot, Unity, shaders): headless log, first error, caches last.
