@@ -14,8 +14,8 @@ class Base(ForemanTestCase):
         self.p = c.find_project(self.repo)
 
     def task(self, tier="S"):
-        self.fm("task", "new", "Parser", "--type", "FEATURE", "--tier", tier, "--interpretation", "x", "--approach",
-                "1) a 2) b 3) c Choice 1: a", "--ac", "ok :: true", "--step", "s", "--focus")
+        self.fm("task", "new", "Parser", "--type", "FEATURE", "--tier", tier, "--interpretation", "Reading 1: a. Reading 2: b.", "--approach",
+                "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--ac", "ok :: true", "--step", "s", "--focus")
         return "T-0001"
 
     def fail_runs(self, tid, *outputs):
@@ -42,7 +42,7 @@ class Stall(Base):
 
 class Race(Base):  # T-2271 (Mission 5, #2): stuck with a runner-up approach on file, race it before more hypotheses
     def brief(self, tier="S", approach="1) a regex scan 2) a real parser. Choice 1: smaller"):
-        self.fm("task", "new", "Parser", "--type", "FEATURE", "--tier", tier, "--interpretation", "x", "--approach",
+        self.fm("task", "new", "Parser", "--type", "FEATURE", "--tier", tier, "--interpretation", "Reading 1: a. Reading 2: b.", "--approach",
                 approach, "--ac", "ok :: true", "--step", "s", "--focus")
         self.fail_runs("T-0001", "KeyError col", "KeyError col", "KeyError col")
         return self.fm("next").stdout

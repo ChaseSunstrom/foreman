@@ -50,9 +50,10 @@ class Batch(ForemanTestCase):
 
     def test_the_host_closing_closes_its_members(self):
         host = json.loads(self.fm("batch", *self.ids, "--json").stdout)["id"]
-        self.fm("task", "set", host, "--section", "Interpretation", "--text", "all three")
+        self.fm("task", "set", host, "--section", "Interpretation", "--text", "Reading 1: all three. Reading 2: one at a time.")
         self.fm("task", "set", host, "--section", "Approach (options → choice → why)", "--text",
-                "1) together 2) apart 3) skip Choice 1: together")
+                "1) together; fails if: one breaks 2) use what exists: apart; likely slower 3) do less: skip; the rest stays "
+                "Choice 1: together")
         self.fm("task", "set", host, "--section", "Acceptance criteria", "--text", "".join(
             f"- [ ] {tid}: thing {i} works — verify with `true`\n" for i, tid in enumerate(self.ids)))
         self.fm("focus", host)

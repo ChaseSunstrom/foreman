@@ -21,7 +21,7 @@ class ConflictHistory(ForemanTestCase):
 
     def task(self, title, scope="x.py"):
         return json.loads(self.fm("task", "new", title, "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true",
-                                  "--step", "s", "--interpretation", "x", "--approach", "1) a 2) b 3) c Choice 1: a", "--scope", scope,
+                                  "--step", "s", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--scope", scope,
                                   "--json").stdout)["id"]
 
     def conflicting_lane(self, tid, text):

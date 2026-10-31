@@ -2767,9 +2767,11 @@ def _make_task(run, profile):
     pl = run.plan
     after = f" (a follow-up to {run.after_tid})" if getattr(run, "after_tid", None) else ""  # T-1340
     a = ["task", "new", pl["title"], "--type", pl["type"], "--tier", pl["tier"], f"--raw={run.request}{after}",
-         f"--interpretation={run.request}",
-         f"--approach=fm code ({_who(run, None if run.worker else profile)}): 1) one free-form model run; 2) a human "
-         "plan first; 3) the harness runs the stations. Choice 3: " + (  # T-2269: the plan gate counts 3+ options and a choice
+         f"--interpretation=Reading 1: {run.request}\nReading 2: only the part of it the criteria name; ruled out, the "
+         "plan below carries the whole request.",  # T-2335: the gate wants 2+ readings
+         f"--approach=fm code ({_who(run, None if run.worker else profile)}): 1) one free-form model run; fails if: it "
+         "skips the checks; 2) use what exists: a human plan first; likely outcome: slower, same result; 3) do less: "
+         "the harness runs the stations only; fails if: a step needs judgment. Choice 3: " + (  # T-2269, T-2335: the plan gate counts 3+ options with outcomes and a choice
              "the worker CLI does each step, the harness judges its diff and runs the verify" if run.worker else
              "the model filled the plan and picks one action at a time"), "--focus", "--json"]
     a += [f"--ac={cr['text'].strip()} :: {cr['verify'].strip()}" for cr in pl["criteria"]]

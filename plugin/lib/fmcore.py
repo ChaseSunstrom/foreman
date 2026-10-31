@@ -2609,7 +2609,7 @@ def waits_on_user(b, pending, autonomy="standard"):
 
 
 # followed by text (a word, a flag, `code`, a quote; T-2285); "1) …" is hollow
-_NUM_RE = lazy(r"(?:^|[\s(*#])(\d+)[.)][ \t]*(?=[^\s…])")  # "1)" "(1)" "2."
+_NUM_RE = lazy(r"(?:^|[\s(*#])(\d{1,3})[.)][ \t]*(?=[^\s…])")  # "1)" "(1)" "2." (3 digits: int() of a pulled brief's 5,000 digits raises)
 _LET_RE = lazy(r"(?:^|[\s(*#])([A-Za-z])[.)][ \t]*(?=[^\s…])")  # "A)" "(B)" "C."
 _WORD_RE = lazy(r"\b(?:option|approach|reading)\s+(\w)\b[\s:.)*\-]*(?!(?:option|approach|reading)\s+\w\b)(?=\w)", re.I)  # "Option A: x", "**Reading 1** x"
 _BULLET_RE = lazy(r"^\s*[-*]\s+(?=\w)", re.M)
@@ -2633,6 +2633,46 @@ def _count_options(text, bullets=True):
     return max(_run(idx), _run(letters), _run(words), len(_BULLET_RE.findall(text)) if bullets else 0)
 
 
+_CHOICE_AT_RE = lazy(r"(?:^|[.\n])\W*(?:choice|choose|chose|chosen|decision|decided|go(?:ing)? with)\b", re.I)
+_OUTCOME_RE = lazy(r"\b(?:fail\w*|break\w*|risks?|outcomes?|likely|results?|yields?|leads? to|ends? up|costs?|miss\w*|"
+                   r"gives?|saves?|cuts?|stays?|but|however|unless|only if)\b|→|->", re.I)
+_EXISTS_RE = lazy(r"use[- ]what[- ]exists|\bexisting\b|\balready\b|\bre-?use\w*|\bextend\w*\b", re.I)
+_LESS_RE = lazy(r"\bdo[- ]less\b|\bdo(?:ing)? nothing\b|\bno change\b|\bleave (?:it|as)\b|\bstatus quo\b|\bskip\b|\bsmaller\b|\bminimal\b|\bdrop (?:it|the)\b", re.I)
+_RULED_RE = lazy(r"\bruled?[- ]out\b|\brules? out\b|\brejected\b|\bno other (?:honest )?reading\b", re.I)
+
+
+def _split_options(text):
+    """The option texts _count_options counts, in order (the last cut at a 'Choice …' sentence); [] for no markers."""
+    best = []
+    for rx, conv in ((_NUM_RE, int), (_LET_RE, lambda m: ord(m.lower()) - 96),
+                     (_WORD_RE, lambda m: int(m) if m.isdigit() else ord(m.lower()) - 96)):
+        marks, at = [], 0
+        for m in rx.finditer(text):
+            if m.group(1).isalnum() and conv(m.group(1)) == len(marks) + 1 and m.start() >= at:
+                marks.append((m.start(), m.end()))
+                at = m.end()
+        best = max(best, marks, key=len)
+    bul = [(m.start(), m.end()) for m in _BULLET_RE.finditer(text)]
+    if len(bul) > len(best):
+        best = bul
+    best = best[:40]  # _distinct compares pairs: a pulled brief's 5,000 bullets stay cheap, and 40 is plenty
+    parts = [text[e:(best[i + 1][0] if i + 1 < len(best) else len(text))] for i, (_, e) in enumerate(best)]
+    if parts:
+        cut = _CHOICE_AT_RE.search(parts[-1])
+        parts[-1] = parts[-1][:cut.start()] if cut else parts[-1]
+    return parts
+
+
+def _distinct(parts):
+    """The parts that don't share most of their words (4/5 of the shorter's) with an earlier one."""
+    keep = []
+    for p in parts:
+        w = set(re.findall(r"\w+", p.lower()))
+        if not any(w and k and len(w & k) >= 0.8 * min(len(w), len(k)) for k in keep):
+            keep.append(w)
+    return len(keep)
+
+
 def _started(b):
     """A brief that was ever started: pausing sets status back to planned, so look at what starting leaves behind."""
     return bool(b.status in CLOSED or b.status in ("active", "verifying") or b.meta.get("plan0_at") or b.meta.get("base")
@@ -2640,22 +2680,37 @@ def _started(b):
 
 
 def _content_gaps(b):
-    """T-2269: the plan's content by tier: M/L name 3+ options and a choice, L adds 2+ readings and risks."""
-    gaps, n = [], 0
+    """T-2269, T-2335: the plan's content by tier: M/L name 2+ distinct readings (or the one ruled out), 3+ distinct options
+    each with an outcome or failure mode, one use-what-exists and one do-less option, and a choice; L adds risks."""
+    gaps = []
     if b.tier in ("M", "L"):
+        it = b.section("Interpretation")
+        parts = _split_options(it)
+        n = _count_options(it) - (len(parts) - _distinct(parts))
+        if it.strip() and n < 2 and not _RULED_RE.search(it):
+            n = max(n, 1)
+            gaps.append(f"Interpretation names {n} distinct reading; 2+ readings needed, or the one reading and the one you "
+                        f"ruled out and why (fm task set {b.id} --section Interpretation: 'Reading 1: … Reading 2: …')")
         ap = b.section("Approach (options → choice → why)")
-        n = _count_options(ap)
+        parts = _split_options(ap)
+        n = _count_options(ap) - (len(parts) - _distinct(parts))
         if ap.strip() and n < 3:
-            gaps.append(f"Approach names {n} option{'s' * (n != 1)}; 3+ options needed (fm task set {b.id} --section Approach "
+            dup = "; some share most of their words, so they count once" if len(parts) > _distinct(parts) else ""
+            gaps.append(f"Approach names {n} option{'s' * (n != 1)}; 3+ options needed{dup} (fm task set {b.id} --section Approach "
                         "--text '1) … 2) … 3) … Choice 1: why', each with words)")
         if ap.strip() and not _CHOICE_RE.search(ap):
             gaps.append(f"a choice in Approach (fm task set {b.id} --section Approach: add 'Choice N: why')")
+        bare = [str(i) for i, p in enumerate(parts, 1) if not _OUTCOME_RE.search(p)]
+        if bare:
+            gaps.append(f"option {', '.join(bare)} in Approach has no likely outcome or failure mode (fm task set {b.id} "
+                        "--section Approach: add 'fails if: …' or 'likely outcome: …' to each option)")
+        if parts and not _EXISTS_RE.search(" ".join(parts)):
+            gaps.append(f"a use-what-exists option in Approach: what the repo already has that does this (fm task set {b.id} "
+                        "--section Approach: add 'N) use what exists: …')")
+        if parts and not _LESS_RE.search(" ".join(parts)):
+            gaps.append(f"a do-less option in Approach: do nothing, or the smaller change (fm task set {b.id} "
+                        "--section Approach: add 'N) do less: …')")
     if b.tier == "L":
-        it = b.section("Interpretation")
-        n = _count_options(it)
-        if it.strip() and n < 2:
-            gaps.append(f"Interpretation names {n} reading{'s' * (n != 1)}; 2+ readings needed (fm task set {b.id} --section "
-                        "Interpretation: 'Reading 1: … Reading 2: …')")
         if not b.section("Risks and rollback").strip():
             gaps.append(f"Risks and rollback (fm task set {b.id} --section 'Risks and rollback': what fails, what undoes it)")
     low = [l for l in b.section(b.ASSUMPTIONS).splitlines()

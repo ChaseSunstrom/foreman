@@ -205,7 +205,7 @@ class LensSkills(ForemanTestCase):
             json.dump({"enabledPlugins": {"sec@m": True}}, f)
         self.fm("init")
         tid = json.loads(self.fm("task", "new", "x", "--type", "FIX", "--tier", "M", "--ac", "x :: true", "--step", "x",
-                                 "--interpretation", "x", "--approach", "1) a 2) b 3) c Choice 1: a", "--json").stdout)["id"]
+                                 "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--json").stdout)["id"]
         self.fm("focus", tid)
         with open(os.path.join(self.repo, "a.py"), "w") as f:
             f.write("x = 1\n")

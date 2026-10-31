@@ -6093,8 +6093,10 @@ def _build_parser(only=None):
     t.add_argument("--ac", action="append", help="acceptance criterion (repeatable): name its observable, what the "
                                                  "user will see, and give its check as 'TEXT :: CMD'")
     t.add_argument("--step", action="append", help="step (repeatable)")
-    t.add_argument("--interpretation", help="what the request means (M/L plan gate)")
-    t.add_argument("--approach", help="options → choice → why (M/L plan gate)")
+    t.add_argument("--interpretation", help="what the request means (M/L plan gate: 'Reading 1: … Reading 2: …', or the "
+                                            "one reading and the one you ruled out and why)")
+    t.add_argument("--approach", help="options → choice → why (M/L plan gate: '1) … fails if: … 2) use what exists: … "
+                                      "3) do less: … Choice N: why'; each option with its likely outcome or failure mode)")
     t.add_argument("--focus", action="store_true", help="focus it right away (the plan gate still applies)")
     t.add_argument("--goal", metavar="ITEM", help="it builds item ITEM of the standing goal (fm goal show)")
     t = tadd("show")
