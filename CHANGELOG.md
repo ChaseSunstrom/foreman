@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm genesis check` flags one feature filled under two coverage cells (the same F: path, descriptions sharing 60% of their words) and counts it once (T-2175).
 - `fm lane rm` treats a builder's `.fm-scratch/` as throwaway, like the guard's script cache, so it no longer blocks removing a merged lane (T-2289).
 - `fm ci-watch` no longer files a FIX for a cancelled run (a deploy a newer push superseded): it says so and keeps watching, and a commit whose other run succeeded reads green (T-2287).
 - Goal distance on the glance surfaces: the statusline, the terminal title and the badge end with `goal 3/7` while a goal with items stands, counted when the views regenerate, so the polled statusline reads no briefs (T-2144).
