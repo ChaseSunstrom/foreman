@@ -1740,59 +1740,89 @@ def _context(text):
     return out
 
 
-SECTION_FLOOR = 40  # T-2243: logical lines a tower file needs before it's read a ## section at a time
+SECTION_FLOOR, SECTION_SHORT, SECTION_READS = 40, 8, 12  # T-2243: a file needs 40 logical lines to be read by section;
+# sections under 8 lines share a read with a neighbour; at most 12 reads a put
 
 
 def _parts(text):
-    """T-2243: [(heading, section text)] split on '## ' headings outside code fences; what comes before the first one is
-    '(top)'. Repeated headings get ' (2)'... so each section has its own key."""
+    """T-2243: [(heading, section text)] split on '## ' headings outside code fences, in order; what comes before the
+    first one is '(top)'. A section holding nothing but its own '## ' line (or the top's H1 title) is dropped: there is
+    nothing to judge. Any other line, a '###' subheading included, is content."""
     out, fenced = [["(top)", []]], False
     for x in text.splitlines():
         fenced ^= x.lstrip().startswith("```")
         if not fenced and x.startswith("## "):
             out.append([x[3:].strip() or "(blank)", []])
         out[-1][1].append(x)
-    seen, res = {}, []
-    for h, body in out:
-        if all(x.startswith("#") for x in _logical("\n".join(body))):  # blank, or only a title: nothing to judge
-            continue
-        seen[h] = seen.get(h, 0) + 1
-        res.append((h if seen[h] == 1 else f"{h} ({seen[h]})", "\n".join(body) + "\n"))
+    res = []
+    for i, (h, body) in enumerate(out):
+        rest = _logical("\n".join(body))
+        rest = rest[1:] if rest and rest[0].startswith("## " if i else "# ") else rest
+        if rest:
+            res.append((h, "\n".join(body) + "\n"))
     return res
+
+
+def _groups(secs):
+    """T-2243: consecutive short sections share one read: [(label, text, key)]. The key hashes the first heading (and
+    how many times it came before), never the heading text: a heading is data and may be hostile."""
+    out, seen = [], {}
+    for h, body in secs:
+        seen[h] = seen.get(h, 0) + 1
+        if out and (len(_logical(out[-1][1])) < SECTION_SHORT or len(_logical(body)) < SECTION_SHORT):
+            out[-1][1] += body
+            out[-1][3] += 1
+        else:
+            out.append([h, body, _key(f"{h}\n{seen[h]}")[:10], 0])
+    return [(h + (f" (+{n} more)" if n else ""), body, k) for h, body, k, n in out]
 
 
 def _read(p, name, text):
     """T-2243: a file past SECTION_FLOOR logical lines with two or more sections is read one ## section at a time (each
-    with an outline of the other headings, its own previous reads and acceptance, keyed name#heading), so a new objection
-    can only land on a section that changed; a section that passed and is unchanged (same text, reader, charter and
-    exam tail) isn't read again. Filed when every section passes. Coverage's bullet grid sits under few headings, so it
-    splits too: each initiative's rows are judged together."""
+    with an outline of the others' headings and first lines, its own previous reads and acceptance, keyed name#hash), so
+    a new objection can only land on a section that changed; a section that passed clean and is unchanged (same text,
+    outline, reader, charter and exam tail) isn't read again. Filed when every section passes; at most SECTION_READS reads
+    a put. A finding follows its line across a heading rename."""
     text = c.redact(text)
     secs = _parts(text) if len(_logical(text)) >= SECTION_FLOOR else []
     gen0 = _doc(home(p), "gen-0.md")
     if len(secs) < 2 or gen0 is None:  # no gen-0: the whole-file read says so
         return _read1(p, name, text)
-    ck, failed = _key(READ_CHILD + _charter(p, gen0) + _exam_tail(home(p))), []
-    for h, body in secs:
-        key, ph = f"{name}#{h}", _key(ck + body)
+    groups = _groups(secs)
+    ck, failed, done = _key(READ_CHILD + _charter(p, gen0) + _exam_tail(home(p))), [], 0
+    firsts = [(h, next((x for x in _logical(b) if not x.startswith("#")), "")) for h, b, _ in groups]
+    keys = {f"{name}#{k}" for _, _, k in groups}
+    for i, (h, body, k) in enumerate(groups):
+        key, label = f"{name}#{k}", f"{name}#{c.fit(_fence(c.plain(h)), 50)}"
+        outline = "\n".join(f"- {_fence(c.plain(o))}: {_fence(c.plain(c.fit(f, 100)))}" for j, (o, f) in enumerate(firsts) if j != i)
+        ph = _key(ck + _key(outline) + body)
         if (_reads(p, ACCEPTED).get(key) or {}).get("pass") == ph:
             continue
-        outline = "\n".join(f"- {_fence(c.plain(o))}" for o, _ in secs if o != h)
+        if done >= SECTION_READS:
+            failed.append(f"{label} was not read this put (at most {SECTION_READS} sections are read at once)")
+            continue
+        done += 1
+        legacy = [k2 for k2 in _reads(p) if k2 == name or k2.startswith(name + "#")]
         try:
-            _read1(p, key, body, outline)
+            carried = _read1(p, key, body, outline, label, legacy)
         except ValueError as e:
             failed.append(str(e).split("\nRevise it")[0])
             continue
         acc = _reads(p, ACCEPTED)  # reloaded: _read1 just wrote this section's entry
-        if isinstance(acc.get(key), dict):
+        if not carried and isinstance(acc.get(key), dict):  # a pass with advisory findings is read again
             acc[key]["pass"] = ph
             c.write_atomic(os.path.join(p.dir, ACCEPTED), json.dumps(acc))
     if failed:
         raise ValueError("\n".join(failed) + "\nRevise the sections named and put it again: a tower file counts only once "
                          "a cold read passes every section (the passed ones aren't read again).")
+    for f in (READS, ACCEPTED):  # filed: sections that no longer exist, and the old whole-file entry, are dropped
+        cur = _reads(p, f)
+        keep = {k2: v for k2, v in cur.items() if k2 in keys or not (k2.startswith(name + "#") or (f == READS and k2 == name))}
+        if keep != cur:
+            c.write_atomic(os.path.join(p.dir, f), json.dumps(keep))
 
 
-def _read1(p, name, text, outline=""):
+def _read1(p, name, text, outline="", label="", legacy=()):
     """T-2166 (steer 2026-10-30): one cold Haiku read of a tower doc before it's filed, against gen-0 and the user's
     steers and for metric-gaming. Only a plain CLEAN with no FAIL passes; anything else is a ValueError naming what to
     revise, and nothing is written. The reader sees the redacted text; only lines the doc holds are named back.
@@ -1803,10 +1833,12 @@ def _read1(p, name, text, outline=""):
     gen0 = _doc(d, "gen-0.md")
     if gen0 is None:
         raise ValueError(f"{name} is read against gen-0 before it's filed: fm genesis init --file <gen-0> first")
-    text, reads = c.redact(text), _reads(p)
-    before = [x for x in reads.get(name) or [] if isinstance(x, list) and len(x) == 2
-              and all(isinstance(y, str) for y in x) and x[0]]
-    lines, stored = _logical(text), before  # T-2228: a finding follows its line when edited and ends when it's gone;
+    text, reads, label = c.redact(text), _reads(p), label or name
+    good = lambda v: [x for x in v or [] if isinstance(x, list) and len(x) == 2 and all(isinstance(y, str) for y in x) and x[0]]
+    stored = good(reads.get(name))
+    # T-2243: the old whole-file and other sections' findings come along where their line is in this section
+    before = [x for k in legacy if k != name for x in good(reads.get(k))] + stored
+    lines = _logical(text)  # T-2228: a finding follows its line when edited and ends when it's gone;
     before = list({s: [s, w] for q, w in before if (s := q if q in lines else _successor(q, lines))}.values())  # newest
     prev = "".join(f"\n- {_fence(c.plain(q))} — WHY: {_fence(c.plain(w))}" for q, w in before)
     charter, tail = _charter(p, gen0), _exam_tail(d)
@@ -1825,7 +1857,7 @@ def _read1(p, name, text, outline=""):
     else:
         named = _named(reply, "FAIL", lines)
         stray = sum(not h for h, *_ in named)
-        why = (f"it named {stray} line(s) {name} doesn't hold" if stray else "" if named
+        why = (f"it named {stray} line(s) {label} doesn't hold" if stray else "" if named
                else "" if re.search(r"^[\s*]*CLEAN\b", reply, re.M) else "no CLEAN or FAIL line came back")
     occ = _context(text)
     keys = lambda hs: set().union(set(), *(occ.get(h, set()) for h in hs))
@@ -1849,12 +1881,14 @@ def _read1(p, name, text, outline=""):
     note = "".join(f"\n  ~ {h} — reader: {w} (advisory: two earlier reads left it unflagged; a second fail blocks)"
                    for h, w in carried)
     if verdict == "pass" and note:
-        print(f"{name}: its cold read passed; on lines earlier reads passed:" + note, file=sys.stderr)
+        print(f"{label}: its cold read passed; on lines earlier reads passed:" + note, file=sys.stderr)
+    if verdict == "pass":
+        return len(carried)
     if verdict != "pass":
-        raise ValueError(f"{name} wasn't filed: its cold read " + (f"failed {len(held)} line(s)" if held else
+        raise ValueError(f"{label} wasn't filed: its cold read " + (f"failed {len(held)} line(s)" if held else
                          f"didn't pass ({why})") + "".join(f"\n  ✗ {h}" + (f" — reader: {w}" if w else "")
                                                           for h, w in held)
-                         + "".join(f"\n  ? \"{c.fit(q, 80)}\" names no line {name} holds" + (f" — reader: {w}" if w else "")
+                         + "".join(f"\n  ? \"{c.fit(q, 80)}\" names no line {label} holds" + (f" — reader: {w}" if w else "")
                                    for h, w, q, _ in named if not h)  # T-2229: its words, so a misquote shows
                          + note
                          + "\nRevise it and put it again: a tower file counts only once a cold read passes it.")
