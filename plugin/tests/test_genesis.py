@@ -2944,3 +2944,44 @@ class GenesisFrame(ForemanTestCase):
         self.assertTrue(any("F-1" in x for x in self.problems()), self.problems())  # 'syncing' isn't 'sync'
         fmgenesis.put(self.p, "report.md", "# Report\n\n- F-1 capability: Offline sync\n")
         self.assertEqual(self.problems(), [])
+
+
+class GenesisReadRecord(ForemanTestCase):
+    """T-2181: fm genesis check flags a put-able tower file whose current text has no cold-read pass on record."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        import fmcore as c
+        import fmgenesis
+        self.c, self.g = c, fmgenesis
+        self.p = c.find_project(self.repo)
+        fmgenesis.init(self.p, GEN0.encode())
+        self.cov = os.path.join(fmgenesis.home(self.p), "coverage.md")
+
+    def unread(self):
+        return self.fm_json("genesis", "check", check=False)["read"]["problems"]
+
+    def test_put_file_is_clean_a_hand_edit_after_it_is_flagged(self):
+        self.fm("genesis", "put", "coverage.md", "--file", "-", input="# Coverage\n")
+        self.assertEqual(self.unread(), [])
+        with open(self.cov, "a") as f:
+            f.write("- hand written\n")
+        self.assertTrue(any("coverage.md" in x and "fm genesis put" in x for x in self.unread()), self.unread())
+        self.assertIn("✗ read:", self.fm("genesis", "check", check=False).stdout)
+
+    def test_legacy_file_is_clean_only_with_a_ledger_pass_just_before_its_mtime(self):
+        tower_file(self.g.home(self.p), "coverage.md", "# Coverage\n")
+        self.assertEqual(len(self.unread()), 1)  # no pass on record
+        self.c.log_event(self.p, "genesis_read", data={"name": "coverage.md#Intro", "verdict": "fail"})
+        self.assertEqual(len(self.unread()), 1)  # a fail isn't a pass
+        self.c.log_event(self.p, "genesis_read", data={"name": "coverage.md#Intro", "verdict": "pass"})
+        tower_file(self.g.home(self.p), "coverage.md", "# Coverage\n")  # written right after the pass
+        self.assertEqual(self.unread(), [])
+        later = time.time() + 600
+        os.utime(self.cov, (later, later))  # written long after the pass
+        self.assertEqual(len(self.unread()), 1)
+
+    def test_owned_files_and_gen0_are_exempt(self):
+        tower_file(self.g.home(self.p), "exam.jsonl", "{}\n")
+        tower_file(self.g.home(self.p), "gen-1/drift.md", "x\n")
+        self.assertEqual(self.unread(), [])  # gen-0.md exists and was never put
