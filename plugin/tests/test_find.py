@@ -4,6 +4,7 @@ import errno
 import json
 import os
 import shutil
+import subprocess
 
 from helpers import ForemanTestCase
 
@@ -861,3 +862,56 @@ class FindRankValue(ForemanTestCase):
         p =c.find_project(self.repo)
         self.assertTrue(os.path.isfile(os.path.join(p.dir, "find-proofs.json")))
         self.assertFalse(os.path.exists(os.path.join(self.repo, "find-proofs.json")))
+
+
+class FindHotspots(ForemanTestCase):
+    """T-2238: tracked files ranked by the fix commits that touched them; git only, no repo code."""
+
+    def git(self, root, *a):
+        subprocess.run(["git", "-C", root, *a], check=True, capture_output=True)
+
+    def commit(self, root, msg, files):
+        write(root, files)
+        self.git(root, "add", "-A")
+        self.git(root, "commit", "-qm", msg)
+
+    def mk(self):
+        from helpers import git_repo
+        root = git_repo(self.tmp, "hs")
+        self.commit(root, "add things", {"a.py": "1\n", "b.py": "1\n", "old.py": "1\n"})
+        self.commit(root, "Fix crash in a", {"a.py": "2\n", "b.py": "2\n"})
+        self.commit(root, "regression: broken a", {"a.py": "3\n"})
+        self.commit(root, "Revert \"x\"", {"b.py": "3\n"})
+        self.commit(root, "tidy prefix and debug", {"b.py": "4\n", "a.py": "4\n", "c.py": "1\n"})  # not a fix
+        os.symlink("a.py", os.path.join(root, "link.py"))
+        self.commit(root, "fix link", {})  # a fix commit that touches only a symlink
+        write(root, {"untracked.py": "1\n"})
+        return root
+
+    def test_counts_fix_commits_per_tracked_file_best_first(self):
+        rows = fmfind.hotspots(self.mk(), 10)
+        self.assertEqual([(r["file"], r["fixes"]) for r in rows], [("a.py", 2), ("b.py", 2)])  # no c.py, link.py, untracked
+    def test_n_caps_the_rows(self):
+        self.assertEqual(len(fmfind.hotspots(self.mk(), 1)), 1)
+
+    def test_a_renamed_file_counts_under_its_current_name(self):
+        root = self.mk()
+        self.commit(root, "fix old", {"old.py": "2\n"})
+        self.git(root, "mv", "old.py", "new.py")
+        self.git(root, "commit", "-qm", "rename")
+        rows = {r["file"]: r["fixes"] for r in fmfind.hotspots(root, 10)}
+        self.assertEqual(rows.get("new.py"), 1)
+        self.assertNotIn("old.py", rows)
+
+    def test_cli_json_and_text(self):
+        root = self.mk()
+        self.assertEqual(json.loads(self.fm("find", "--hotspots", root, "--json").stdout)["hotspots"][0]["file"], "a.py")
+        self.assertIn("a.py", self.fm("find", "--hotspots", root).stdout)
+
+    def test_not_a_checkout_is_empty_and_runs_no_repo_code(self):
+        self.assertEqual(fmfind.hotspots(self.tmp, 10), [])
+        root = self.mk()
+        mark = os.path.join(self.tmp, "ran")
+        self.git(root, "config", "core.fsmonitor", f"touch {mark}")
+        fmfind.hotspots(root, 10)
+        self.assertFalse(os.path.exists(mark))
