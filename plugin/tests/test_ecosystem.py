@@ -331,7 +331,7 @@ class AdoptHistory(ForemanTestCase):
                        input="fix: big\n\nerror: " + "a → " * 125000, text=True)  # one line, ~500 KB
         t = time.time()
         self.fm("adopt", "--history")
-        self.assertLess(time.time() - t, 20)
+        self.assertLess(time.time() - t, 20)  # wall clock: a child fm adopt, a hang guard
 
     def test_a_remedy_with_an_html_comment_end_is_not_added_twice(self):
         commit(self.repo, "b.py", "y = 1\n", "fix: arrow\n\nerror: ValueError on parse input → use a --> b")

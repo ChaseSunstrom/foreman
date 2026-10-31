@@ -149,9 +149,9 @@ class LibrarySuggest(ForemanTestCase):
         os.makedirs(root)
         with open(os.path.join(root, "go.mod"), "w") as f:
             f.write("a." * 200_000)  # one 400 KB line; the old pattern backtracked for minutes
-        t = time.monotonic()
+        t = time.process_time()
         fmlib.suggest(root)
-        self.assertLess(time.monotonic() - t, 2)
+        self.assertLess(time.process_time() - t, 2)  # CPU: in-process regex bar
 
     def test_the_session_map_line_names_the_cards(self):
         with open(os.path.join(self.repo, "pyproject.toml"), "w") as f:

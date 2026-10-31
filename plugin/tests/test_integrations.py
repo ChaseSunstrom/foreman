@@ -289,7 +289,7 @@ class Lsp(ForemanTestCase):
                            "params": {"textDocument": {"uri": self.URI, "version": 1, "text": text}}},
                           {"jsonrpc": "2.0", "id": 2, "method": "shutdown"}, {"jsonrpc": "2.0", "method": "exit"},
                           timeout=60)
-        self.assertLess(time.monotonic() - t, 10)
+        self.assertLess(time.monotonic() - t, 10)  # wall clock: a child's timeout deadline
         self.assertEqual(p.returncode, 0, p.stderr[-500:])
         diags = next(m for m in out if "method" in m)["params"]["diagnostics"]
         self.assertEqual(len(diags), 3, diags)

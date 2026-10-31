@@ -282,10 +282,10 @@ class TaskAt(unittest.TestCase):
         self.assertIsNone(fmcost._task_at([], "2026-10-03T00:00:00"))
         big = [(f"2026-10-{d:02d}T{h:02d}:{m:02d}:{s:02d}", "T-1") for d in range(1, 3) for h in range(24)
                for m in range(60) for s in range(0, 60, 2)]  # 172,800 events
-        start = time.perf_counter()
+        start = time.process_time()
         for _ in range(2000):  # a linear scan: ~340M steps; a bisect: ~36k
             fmcost._task_at(big, "2026-10-02T23:59:59")
-        self.assertLess(time.perf_counter() - start, 1.0)
+        self.assertLess(time.process_time() - start, 1.0)  # CPU: in-process bisect bar
 
 
 class TranscriptPrefilter(unittest.TestCase):

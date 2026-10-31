@@ -663,7 +663,7 @@ class FindReview(ForemanTestCase):
         with mock.patch.object(fmprove, "_suites", return_value=["sleep 60"]):
             t0 = time.time()
             res = fmprove.prove(root, found, deadline=2)
-        self.assertLess(time.time() - t0, 2 + 6)
+        self.assertLess(time.time() - t0, 2 + 6)  # wall clock: prove's deadline=2 plus slack
         self.assertFalse([t for t in res["tickets"] if t["verdict"] == "proven" and t["kind"] == "untested"])
 
     def test_a_quote_mark_in_a_string_or_comment_leaves_later_defs_visible(self):
@@ -831,9 +831,9 @@ class FindRankValue(ForemanTestCase):
         import time
         text = "def a(x):\n" + "    y = 1\n" * 5000
         leads = [self.lead(line=i) for i in range(2, 5002)]
-        t0 = time.time()
+        t0 = time.process_time()
         self.assertEqual(len(fmfind.rank(leads, {"app.py": text}, {})), 5000)
-        self.assertLess(time.time() - t0, 2)
+        self.assertLess(time.process_time() - t0, 2)  # CPU: in-process rank
 
     def test_unequal_reach_cannot_lift_a_proven_lead_past_an_unproven_higher_kind(self):
         text = "def a(x):\n    return 1\n"

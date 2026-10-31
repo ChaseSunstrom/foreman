@@ -97,7 +97,7 @@ class Follow(ForemanTestCase):
         out, t = Out(), time.time()
         with contextlib.redirect_stdout(out):
             fmwatch._follow(build, lambda v: [path], 0.01, refresh=3)
-        self.assertLess(time.time() - t, 1.5, out)  # the change came through, not held until the refresh
+        self.assertLess(time.time() - t, 1.5, out)  # the change came through, not held until the refresh; wall clock: a polling deadline (the follower sleeps)
 
     def test_projects_follow_sees_a_new_project(self):
         self.fm("init")
