@@ -63,6 +63,50 @@ class BuildWhatIsMissing(ForemanTestCase):
         p = self.new("check", tool, "--run", check=False)
         self.assertEqual(p.returncode, 1, p.stdout)
 
+    def test_the_checked_tool_runs_sandboxed_without_our_secrets(self):
+        d = os.path.join(self.tmp, "proj")
+        os.makedirs(d)
+        self.new("tool", "shout", d)
+        tool = os.path.join(d, "tools", "shout.py")
+        with open(tool, "w") as f:
+            f.write("# fm new tool\nimport argparse, os, sys\n"
+                    "if os.environ.get('T2278_SECRET') or os.path.expanduser('~') != os.getcwd():\n    sys.exit(7)\n"
+                    "argparse.ArgumentParser(prog='x').parse_args()\n")
+        env = {"PATH": os.path.join(PLUGIN, "bin") + os.pathsep + os.environ["PATH"], "T2278_SECRET": "hunter2"}
+        p = self.fm("new", "check", tool, "--run", "--json", env=env, cwd=self.tmp, check=False)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_a_half_written_tool_is_undone_whole(self):
+        d = os.path.join(self.tmp, "proj")
+        os.makedirs(d)
+        with open(os.path.join(d, "tests"), "w") as f:  # a file where the test's folder should be
+            f.write("x")
+        p = self.new("tool", "foo", d, check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertFalse(os.path.exists(os.path.join(d, "tools", "foo.py")), "nothing of ours is left")
+
+    def test_a_symlinked_folder_and_a_stdlib_name_are_refused(self):
+        d, out = os.path.join(self.tmp, "proj"), os.path.join(self.tmp, "outside")
+        os.makedirs(d)
+        os.makedirs(out)
+        os.symlink(out, os.path.join(d, "tools"))
+        self.assertNotEqual(self.new("tool", "foo", d, check=False).returncode, 0)
+        os.symlink(out, os.path.join(d, ".claude"))
+        self.assertNotEqual(self.new("skill", "foo", d, check=False).returncode, 0)
+        self.assertEqual(os.listdir(out), [], "nothing written through a link")
+        for bad in ("json", "os", "sys"):
+            self.assertNotEqual(self.new("tool", bad, self.tmp, check=False).returncode, 0, bad)
+
+    def test_the_hint_says_run_and_the_description_is_quoted(self):
+        d = os.path.join(self.tmp, "proj")
+        os.makedirs(d)
+        p = self.fm("new", "tool", "shout", d, env={"PATH": os.path.join(PLUGIN, "bin") + os.pathsep + os.environ["PATH"]},
+                    cwd=self.tmp)
+        self.assertIn("fm new check --run ", p.stdout)
+        self.new("skill", "tidy", d)
+        text = read_text(os.path.join(d, ".claude", "skills", "tidy", "SKILL.md"))
+        self.assertIn('description: "Use whenever ', text)
+
     def test_a_skill_lands_in_the_listing_format_and_passes_its_check(self):
         d = os.path.join(self.tmp, "proj")
         os.makedirs(d)
@@ -70,7 +114,7 @@ class BuildWhatIsMissing(ForemanTestCase):
         path = os.path.join(d, ".claude", "skills", "tidy-logs", "SKILL.md")
         self.assertEqual(got["wrote"], [path])
         text = read_text(path)
-        desc = next(x for x in text.splitlines() if x.startswith("description: "))[len("description: "):]
+        desc = json.loads(next(x for x in text.splitlines() if x.startswith("description: "))[len("description: "):])
         self.assertTrue(desc.startswith("Use whenever "))
         self.assertLessEqual(len(desc), 125)
         self.assertEqual(self.new("check", path, check=False).returncode, 0)

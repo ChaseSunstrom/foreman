@@ -271,20 +271,24 @@ def _scaffold(args, words):
     never overwritten, --force or not: the work in them is yours."""
     import fmcli
     import re
+    import sys
     kind = words[0]
     rule, files, _ = SCAFFOLDS[kind]
     if not 2 <= len(words) <= 3:
         raise fmcli.UsageError(f"fm new {kind} NAME [DIR]")
     name = words[1]
-    if not re.fullmatch(rule, name) or len(name) > 32:
+    if not re.fullmatch(rule, name) or len(name) > 32 or (kind == "tool" and name in sys.stdlib_module_names):
         raise fmcli.UsageError(f"{name!r} isn't a {kind} name: lowercase letters and digits, "
                                + ("with _" if kind == "tool" else "with single -") + ", starting with a letter, "
-                               "32 characters at most")
+                               "32 characters at most, and not a standard-library module's")
     base = os.path.abspath(words[2] if len(words) == 3 else ".")
     dests = [os.path.join(base, rel.format(n=name)) for _, rel in files]
     for d in dests:
         if os.path.lexists(d):
             raise fmcli.UsageError(f"{d} exists; fm new {kind} never writes over a file")
+        if os.path.commonpath([os.path.realpath(os.path.dirname(d)), os.path.realpath(base)]) != os.path.realpath(base):
+            raise fmcli.UsageError(f"{os.path.dirname(d)} is a link that leaves {base}; fm new {kind} won't write "
+                                   "through it")
     texts = []
     for tmpl, _rel in files:
         with open(os.path.join(c.PLUGIN_ROOT, "templates", "scaffold", tmpl), encoding="utf-8") as f:
@@ -298,12 +302,12 @@ def _scaffold(args, words):
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(text)
     except FileExistsError:
-        _undo(made[:-1])  # the last one is somebody else's: it appeared after the check
+        _undo(made)  # what we made; the one that collided (never in made) is somebody else's
         raise fmcli.UsageError(f"{d} appeared while writing; nothing of ours is left")
     except OSError as e:
         _undo(made)
         raise fmcli.UsageError(f"can't write {d}: {e.strerror or e}")
-    nxt = (f"python3 {dests[1]} fails until {dests[0]} does its job; then fm new check {dests[0]}" if kind == "tool"
+    nxt = (f"python3 {dests[1]} fails until {dests[0]} does its job; then fm new check --run {dests[0]}" if kind == "tool"
            else f"fm new check {dests[0]}")
     fmcli.out(args, {"wrote": dests, "template": kind}, "Wrote " + ", ".join(dests) + f".\nNext: {nxt}")
     return 0
@@ -327,22 +331,25 @@ def _is_tool(path):
 
 def _tool_problems(path):
     """A tool from fm new tool keeps its contract: --help exits 0 and prints usage; a bad option exits 2. Run in a
-    temporary folder, stdin closed, bounded in time (the caller has gated on _runnable)."""
-    import subprocess
+    temporary folder through the panel check's sandbox (fmplaybooks._run: PATH-only env, HOME the folder, limits,
+    process-group kill), stdin closed, bounded in time (the caller has gated on _runnable)."""
     import sys
+    import fmplaybooks
     problems = []
-    with tempfile.TemporaryDirectory() as tmp:
-        for flag, want in (("--help", 0), ("--no-such-option", 2)):
-            try:
-                r = subprocess.run([sys.executable, "-I", os.path.abspath(path), flag], cwd=tmp, capture_output=True,
-                                   text=True, timeout=CHECK_SECONDS, stdin=subprocess.DEVNULL)
-            except subprocess.TimeoutExpired:
-                problems.append(f"{flag} ran over {CHECK_SECONDS}s")
-                continue
-            if r.returncode != want:
-                problems.append(f"{flag} exits {r.returncode}, not {want} (argparse gives 0 and 2)")
-            elif want == 0 and "usage:" not in r.stdout:
-                problems.append("--help prints no usage line (argparse)")
+    for flag, want in (("--help", 0), ("--no-such-option", 2)):
+        with tempfile.TemporaryFile() as out:
+            why = fmplaybooks._run(flag, CHECK_SECONDS, fmplaybooks._limits(), what="the tool", stdout=out,
+                                   argv=(sys.executable, "-I", os.path.abspath(path)))
+            out.seek(0)
+            text = out.read().decode("utf-8", "replace")
+        code = None if not why else (why.split()[3].rstrip(":") if why.startswith("the tool exited ") else "?")
+        if why and why.startswith("timed out"):
+            problems.append(f"{flag} ran over {CHECK_SECONDS}s")
+        elif str(code or 0) != str(want):
+            problems.append(f"{flag} exits {code or 0}, not {want} (argparse gives 0 and 2)"
+                            + (f": {why}" if code == "?" else ""))
+        elif want == 0 and "usage:" not in text:
+            problems.append("--help prints no usage line (argparse)")
     return problems
 
 
@@ -357,7 +364,13 @@ def _skill_problems(path):
     meta = {}
     for line in parts[0].splitlines()[1:] if parts[0].startswith("---") and len(parts) == 2 else []:
         k, _, v = line.partition(":")
-        meta[k.strip()] = v.strip()
+        v = v.strip()
+        if v[:1] == '"':  # quoted, so a ": " in it can't break a strict YAML parser (JSON escapes read the same)
+            try:
+                v = json.loads(v)
+            except ValueError:
+                pass
+        meta[k.strip()] = v
     if not meta:
         return ["no frontmatter: it opens with --- and closes with ---"]
     out = []
