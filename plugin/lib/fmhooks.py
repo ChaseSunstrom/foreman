@@ -3922,7 +3922,9 @@ def _drive(p, sd, briefs, pl, g):
             key = sorted(f"{t}:{v[0]}" for t, v in fmlanes.stop_causes(p, briefs).items() if v[0] != "no_report")
         except Exception:  # a lane that can't be read never traps or ends the drive
             recovery = ""
-    if recovery and d.get("recover") != key:  # said once per set of stopped lanes (the cause keys)
+    if not recovery:
+        d.pop("recover", None)  # nothing pending: the same stop later is a new one, so the cap block is reached
+    elif d.get("recover") != key:  # said once per set of stopped lanes (the cause keys)
         d["recover"] = key
         return "Foreman drive: " + recovery
     try:

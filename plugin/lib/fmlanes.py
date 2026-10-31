@@ -373,21 +373,35 @@ STOP_CAUSES = {
     "stalled": ("stalled 15+ min", "stop its agent (TaskStop), then fm lane recover {id} --agent-stopped"),
     "merge_conflict": ("merge conflict", "fm lane recover {id}"),
     "red_after_merge": ("red after merge", "fm lane recover {id}"),
+    "guard_refused": ("merge refused by a guard", "grant it: fm ask {id} {grant}, then fm lane merge {id}"),
 }
-_MARKERS = ("lane_builder", "lane_resume", "lane_recover", "lane_merge", "lane_conflict", "enforce")
+_STOP_KINDS = {"conflict": "merge_conflict", "refused": "red_after_merge", "guard": "guard_refused"}
 
 
 def recovery_text(cause, tid, detail=""):
-    return STOP_CAUSES[cause][1].format(id=tid, reset=detail or "its reset time")
+    return STOP_CAUSES[cause][1].format(id=tid, reset=detail or "its reset time", grant=detail or "<category>")
 
 
-def _marker(events, tid):
-    """The newest event that says where the task's lane stands: a launch, a resume, a merge, or a refused merge."""
-    for e in reversed(events):
-        if e.get("task") == tid and e.get("event") in _MARKERS and (
-                e["event"] != "enforce" or (e.get("data") or {}).get("kind") == "merge_refused"):
-            return e
-    return None
+def stop_mark(p, tid, kind, arg=""):
+    """Where the lane's last `fm lane merge` ended (conflict, refused, guard + its category, merged), on the brief: a busy
+    ledger can't push it out of a tail. Reset when the lane is taken back; fm task unblock clears it too."""
+    import fmcli
+    stamp = f"{kind} {c.now()} {arg}".strip()
+    fmcli.mutate(p, tid, lambda x: x.meta.update(lane_stop=stamp), "lane_stop", {"kind": kind, "arg": arg})
+
+
+def _stop(b):
+    """(kind, epoch, arg) of the lane's last merge outcome from its brief, or (None, 0, "")."""
+    kind, _, rest = str(b.meta.get("lane_stop") or "").partition(" ")
+    ts, _, arg = rest.partition(" ")
+    at = c.parse_ts(ts)
+    return (kind, at.timestamp(), arg.strip()) if at else (None, 0.0, "")
+
+
+def _recoveries(b):
+    """The recoveries a lane has had (cause@time, oldest first), counted on its brief."""
+    got = b.meta.get("recoveries") or []
+    return got if isinstance(got, list) else [got]
 
 
 def _usage_wall():
@@ -402,37 +416,42 @@ def _usage_wall():
 
 def stop_causes(p, briefs=None, fresh=False):
     """T-2354: {task id: (cause, detail)} for lanes whose builder came back without the work merged. A stopped process
-    (this host) is proof it ended; a live one is a cause only when it is stalled, or when its last word was a refused or
-    conflicted merge. Another host, no process record, a merged or blocked lane: no cause, nothing to recover.
+    (this host) is proof it ended. A live one proves nothing (builder_proc is the main session's): it is a cause only
+    when it is stalled, or when its last merge ended in a conflict or red at least FM_STALL_MIN minutes ago with no
+    file or commit in the lane since; a fresh one may still be a builder at work. A guard refusal is a grant to ask for,
+    whoever's process it is. Another host, no process record, a merged or blocked lane: no cause, nothing to recover.
     `fresh` re-reads the lanes instead of the 60 s stalled cache."""
     import fmbus
     if p.lane:
         return {}
+    all_briefs = c.load_briefs(p) if briefs is None else briefs
     cand = {}
-    for b in (c.load_briefs(p) if briefs is None else briefs):
+    for b in all_briefs:
         if (b.meta.get("builder") and b.meta.get("lane") and b.status not in c.CLOSED and b.status != "blocked"
                 and os.path.isdir(b.meta["lane"])):
             state = fmbus.proc_state(b.meta.get("builder_proc"))
             if state in ("stopped", "alive"):
-                cand[b.id] = state
+                cand[b.id] = (b, state)
     if not cand:
         return {}
-    events, out, idle, done, wall = c.ledger_tail(p, 500), {}, None, None, False
-    for tid, state in cand.items():
-        kind = (_marker(events, tid) or {}).get("event")
-        if kind == "lane_merge":
+    out, idle, done, wall = {}, None, None, False
+    git = functools.partial(_git, timeout=10)
+    for tid, (b, state) in cand.items():
+        kind, at, arg = _stop(b)
+        if kind == "merged":
             continue
-        if kind == "lane_conflict":
-            out[tid] = ("merge_conflict", "")
-        elif kind == "enforce":
-            out[tid] = ("red_after_merge", "")
+        if kind == "guard":
+            out[tid] = ("guard_refused", arg)
+            continue
+        if kind in _STOP_KINDS and (state == "stopped" or (
+                (time.time() - at) / 60 >= _stall_limit() and _newest(b.meta["lane"], git) <= at + 2)):
+            out[tid] = (_STOP_KINDS[kind], "")
         elif state == "alive":
-            idle = stalled(p, briefs if fresh else None) if idle is None else idle
+            idle = stalled(p, all_briefs if fresh else None) if idle is None else idle
             if tid in idle:
                 out[tid] = ("stalled", "")
         else:
-            done = set(c.finished_lanes(p, [b for b in (briefs or c.load_briefs(p)) if b.id in cand])) \
-                if done is None else done
+            done = set(c.finished_lanes(p, all_briefs)) if done is None else done
             if tid in done:
                 out[tid] = ("no_report", "")
                 continue
@@ -441,39 +460,42 @@ def stop_causes(p, briefs=None, fresh=False):
     return out
 
 
-def recoveries(p, tid):
-    """The lane_recover events for a task: each recovery spent, oldest first."""
-    return [e for e in c.ledger_events(p, ["lane_recover"]) if e.get("task") == tid]
-
-
 def recovery_line(p, briefs, full):
     """T-2354: what fm next and the drive say about lanes stopped before their merge: each one's cause and its one
     recovery. In full autonomy it is an order with the Agent line; in standard it names the recovery. A lane that only
     waits on a merge (no_report) is fm next's finished-lane note."""
+    by = {b.id: b for b in briefs}
     causes = {t: v for t, v in stop_causes(p, briefs).items() if v[0] != "no_report"}
-    if not causes:
-        return ""
-    parts, launch = [], []
+    parts, grants, launch = [], [], []
     for tid, (cause, detail) in sorted(causes.items()):
-        used = len(recoveries(p, tid))
-        parts.append(f"{tid} ({STOP_CAUSES[cause][0]}): {recovery_text(cause, tid, detail)}"
-                     + (f" — recovered {used}x already, so it blocks the task instead" if used >= RECOVERIES_MAX else ""))
+        text = f"{tid} ({STOP_CAUSES[cause][0]}): {recovery_text(cause, tid, detail)}"
+        if cause == "guard_refused":  # a grant is the user's, and a rebuild would meet the same refusal
+            grants.append(text)
+            continue
+        if _ignored(by[tid].meta["lane"]):  # recover can't free a lane holding ignored files: fm lane recover says so
+            continue
+        used = len(_recoveries(by[tid]))
+        parts.append(text + (f" — recovered {used}x already, so it blocks the task instead" if used >= RECOVERIES_MAX else ""))
         if cause in ("uncommitted", "merge_conflict", "red_after_merge") and used < RECOVERIES_MAX:
             launch.append(f"{AGENT_HEAD}, {agent_prompt(os.path.join(p.dir, 'audits', f'{tid}.builder.md'))}")
+    if not parts and not grants:
+        return ""
     if not full:
-        return "Builder lane(s) came back before their merge: " + "; ".join(parts) + "."
-    return ("Builder lane(s) came back before their merge. Recover now, no need to ask: " + "; ".join(parts) + "."
-            + (" Each fm lane recover prints its Agent line; launch it (" + "; ".join(launch) + ")." if launch else ""))
+        return "Builder lane(s) came back before their merge: " + "; ".join(parts + grants) + "."
+    return ("Builder lane(s) came back before their merge."
+            + (" Recover now, no need to ask: " + "; ".join(parts) + "." if parts else "")
+            + (" Each fm lane recover prints its Agent line; launch it (" + "; ".join(launch) + ")." if launch else "")
+            + (" A guard refused; only the user grants it: " + "; ".join(grants) + "." if grants else ""))
 
 
 def awaiting_merge(p, briefs):
     """T-2038 and T-2354: finished lanes (commits, clean tree, quiet) that only wait on fm lane merge. One whose last
-    merge conflicted or was refused is a recovery (recovery_line), not another merge to try."""
+    merge conflicted or was refused is a recovery or a grant (recovery_line), not another merge to try."""
     done = c.finished_lanes(p, briefs)
     if not done:
         return []
-    cause = stop_causes(p, [b for b in briefs if b.id in done])
-    return [i for i in done if cause.get(i, ("",))[0] not in ("merge_conflict", "red_after_merge")]
+    cause = stop_causes(p, briefs)  # every lane, so finished_lanes' cache keeps one key
+    return [i for i in done if cause.get(i, ("",))[0] not in ("merge_conflict", "red_after_merge", "guard_refused")]
 
 
 def recover(p, b, main, args):
@@ -481,7 +503,8 @@ def recover(p, b, main, args):
     - a process that ended (this host) is proof: recover, as resume does;
     - a stalled live builder (builder_proc is the main session's, alive after its builder returns) is stopped through
       its own agent first; --agent-stopped says it was, and the lane must still be quiet when this runs;
-    - a conflict or refused merge came after the builder's report; the lane must show no work since;
+    - a conflict or refused merge on a live process counts only when it is old and the lane shows no work since
+      (stop_causes), so a fresh one is never taken from a builder that may still be at work;
     - anything this can't tell (another host, no record) is left alone, and the reason said. --force is never used.
     A lane gets RECOVERIES_MAX recoveries; the next stop blocks its task with the cause and the attempts."""
     import fmbus
@@ -496,44 +519,39 @@ def recover(p, b, main, args):
     got = stop_causes(p, [b], fresh=True).get(b.id)
     if not got:
         raise c.PolicyError(f"{b.id} has no stop cause: " + (
-            f"its builder's process is alive and the lane changed in the last {_stall_limit():g} min, or it is merged "
-            f"(fm lane rm {b.id}); left alone" if state == "alive" else f"its lane is merged (fm lane rm {b.id})"))
+            f"its builder's process is alive and its lane is neither stalled nor quiet since a merge attempt that is "
+            f"{_stall_limit():g}+ min old, so its builder may be working; left alone" if state == "alive"
+            else f"its lane is merged (fm lane rm {b.id})"))
     cause, detail = got
     label = STOP_CAUSES[cause][0]
-    if cause == "no_report":
-        raise c.PolicyError(f"{b.id} {label}: {recovery_text(cause, b.id)}")
+    if cause in ("no_report", "guard_refused"):
+        raise c.PolicyError(f"{b.id} {label}: {recovery_text(cause, b.id, detail)}")
     if cause == "usage_limit":
         raise c.PolicyError(f"{b.id} stopped at the usage limit: {recovery_text(cause, b.id, detail)}")
-    tried = recoveries(p, b.id)
+    agent_stopped = bool(getattr(args, "agent_stopped", False))
+    if cause == "stalled" and not agent_stopped:
+        raise c.PolicyError(f"{b.id} is stalled with a live process: {recovery_text(cause, b.id)}. Resuming a lane its "
+                            f"agent may still be writing in would race it")
+    tried = _recoveries(b)  # the cap comes after the guards above: a lane being worked is never blocked under its builder
     if len(tried) >= RECOVERIES_MAX:
         why = (f"{b.id} stopped a third time ({label}) after {len(tried)} recoveries: "
-               + "; ".join(f"attempt {i} at {e.get('ts', '?')} ({STOP_CAUSES.get((e.get('data') or {}).get('cause'), ('?',))[0]})"
-                           for i, e in enumerate(tried, 1)))
+               + "; ".join(f"attempt {i} at {t.partition('@')[2] or '?'} "
+                           f"({STOP_CAUSES.get(t.partition('@')[0], ('?',))[0]})" for i, t in enumerate(tried, 1)))
         fmcli.mutate(p, b.id, lambda x: (x.meta.update(status="blocked"), x.append_log(f"blocked: {why}")),
                      "task_block", {"reason": why})
         return fmcli.out(args, {"id": b.id, "blocked": True, "reason": why},
                          f"{b.id} blocked: {why}. Its lane {path} is left as it is; a person reads it, then "
                          f"fm task unblock {b.id}")
-    agent_stopped = bool(getattr(args, "agent_stopped", False))
-    if cause == "stalled" and not agent_stopped:
-        raise c.PolicyError(f"{b.id} is stalled with a live process: {recovery_text(cause, b.id)}. Resuming a lane its "
-                            f"agent may still be writing in would race it")
-    if state == "alive" and cause != "stalled":
-        git = functools.partial(_git, timeout=10)
-        marker = _marker(c.ledger_tail(p, 500), b.id) or {}
-        at = c.parse_ts(marker.get("ts"))
-        newest = _newest(path, git)
-        if at is None or newest > at.timestamp() + 2:  # work since the merge attempt: a builder may be running
-            if not agent_stopped or (time.time() - newest) / 60 < _stall_limit():
-                raise c.PolicyError(f"{b.id}'s lane changed after its {label}: a builder may be working in it. Stop its "
-                                    f"agent (TaskStop), wait {_stall_limit():g} min of quiet, then fm lane recover "
-                                    f"{b.id} --agent-stopped")
+    ignored = _ignored(path)
+    if ignored:  # recover never forces: the person moves them, then recovers
+        raise c.PolicyError(f"{b.id}'s lane {path} has ignored files ({', '.join(ignored[:5])}) that removing it would "
+                            f"delete: move them out, then fm lane recover {b.id}")
     args.force = None  # never --force over a process that might be alive
-    extra = {"conflict": "", "refused": ""}
     if cause == "merge_conflict":
-        files = ((_marker(c.ledger_tail(p, 500), b.id) or {}).get("data") or {}).get("files") or []
+        files = next(((e.get("data") or {}).get("files") or [] for e in reversed(c.ledger_tail(p, 500))
+                      if e.get("task") == b.id and e.get("event") == "lane_conflict"), [])
         brief = os.path.join(p.dir, "audits", f"{b.id}.conflict.md")
-        after = (f"Merging this branch into main conflicted in: {', '.join(files[:20])}. Run `git merge "
+        after = (f"Merging this branch into main conflicted in: {', '.join(files[:20]) or 'see the conflict brief'}. Run `git merge "
                  f"{_git(main, 'rev-parse', '--abbrev-ref', 'HEAD').stdout.strip() or 'HEAD'}` in your worktree, resolve "
                  f"the clash keeping both sides' intent, run the task's tests and commit."
                  + (f" What clashed: {brief}" if os.path.exists(brief) else ""))
@@ -616,8 +634,10 @@ def resume(p, b, main, args, ended=False, recover=None, after=""):
     have = _ref_ok(main, branch)
 
     def reset(x):
-        for k in ("lane", "lane_branch", "builder", "builder_proc"):
+        for k in ("lane", "lane_branch", "builder", "builder_proc", "lane_stop"):
             x.meta.pop(k, None)
+        if recover:
+            x.meta["recoveries"] = [*_recoveries(x), f"{recover['cause']}@{c.now()}"]
         if x.status in ("active", "verifying"):
             x.meta["status"] = "planned"
         x.append_log(f"builder stopped: lane {path} removed" + (f", work kept on {branch}" if have else "")
@@ -1143,6 +1163,7 @@ def merge(p, b, main, unverified=None):
         if blk:
             c.log_event(p, "enforce", task=b.id, data={"kind": "merge_refused", "reason": f"guard: {blk.category}",
                                                        "branch": branch})
+            stop_mark(p, b.id, "guard", blk.category)  # T-2354: a grant to ask for, not a rebuild
             raise c.PolicyError(f"{b.id}: {branch} changes {f}, which the guard refuses for this task "
                                 f"({blk.category}: {blk.detail}); grant it the way an edit is granted, then merge")
     if unverified is not None:  # T-0948: the waiver is on the ledger before the merge it allows
@@ -1152,6 +1173,7 @@ def merge(p, b, main, unverified=None):
             _verify(b)
         except (c.PolicyError, fmcli.UsageError) as e:  # T-0949: a refusal is an enforce event fm doctor counts
             c.log_event(p, "enforce", task=b.id, data={"kind": "merge_refused", "reason": str(e)[:300], "branch": branch})
+            stop_mark(p, b.id, "refused")
             raise
     pre_merge = c.git_head(main)  # T-0804: the task's diff starts here, not at the old focus snapshot
     pre_tree = c.worktree_tree(main)  # T-0812: and from these files, or focus re-snapshots them after the merge
@@ -1177,11 +1199,14 @@ def merge(p, b, main, unverified=None):
             for k in keys:
                 x.meta.pop(k, None)
             x.meta.update(old)
+            if clashed:  # T-2354: the marker rides the brief; recover reads it, a busy ledger can't push it out
+                x.meta["lane_stop"] = f"conflict {c.now()}"
         fmcli.mutate(p, b.id, restore, "lane_merge_base", {"branch": branch, "restored": True})
         raise fmcli.UsageError(f"git merge {branch} failed and was aborted: {(r.stderr or r.stdout).strip()[:300]}"
                                + (f"\nConflict brief: {brief}" if brief else ""))
     merge.last = branch
-    fmcli.mutate(p, b.id, lambda x: x.append_log(f"merged {branch} ({len(files)} file(s))"), "lane_merge",
+    fmcli.mutate(p, b.id, lambda x: (x.append_log(f"merged {branch} ({len(files)} file(s))"),
+                                     x.meta.update(lane_stop=f"merged {c.now()}")), "lane_merge",
                  {"branch": branch, "files": files[:50]})
     return files
 

@@ -850,7 +850,8 @@ def cmd_task(args):
             if b.status != "blocked":  # read under the lock: a close in between is kept
                 raise c.PolicyError(f"{b.id} is {b.status}, not blocked")
             b.meta["status"] = "planned" if b.acceptance() else "captured"
-            b.meta.pop("revisit", None)
+            for k in ("revisit", "recoveries", "lane_stop"):  # T-2354: a fresh start gets a fresh recovery count
+                b.meta.pop(k, None)
             b.append_log(f"unblocked: {reason}" if reason else "unblocked")
         b, _ = mutate(p, cur.id, back, "task_unblock", {"reason": reason})
         return out(args, c.brief_summary(b), f"{b.id} unblocked: {b.status}.")

@@ -744,6 +744,20 @@ class LaneRecovery(ForemanTestCase):
             f.write("y = 2\n")
         return path
 
+    def mark(self, tid, kind, ago=0, arg="", **meta):
+        """What fm lane merge leaves on the brief when it ends without merging (kind: conflict, refused, guard + its
+        category, merged), `ago` seconds old; other brief fields (the recoveries spent) alongside."""
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, tid)
+        if kind:
+            b.meta["lane_stop"] = f"{kind} {c.iso(time.time() - ago)} {arg}".strip()
+        b.meta.update(meta)
+        c.save_brief(p, b)
+
+    def live_proc(self):
+        import fmbus
+        return f"{fmbus.host_id()}|{os.getpid()}|{fmbus._proc(os.getpid())[1]}"
+
     def test_every_stop_cause_has_one_recovery_and_a_scenario_that_classifies_to_it(self):
         import fmlanes
         p = c.find_project(self.repo)
@@ -752,9 +766,11 @@ class LaneRecovery(ForemanTestCase):
         lanes["uncommitted"] = self.stopped_builder()[0]
         lanes["no_report"] = self.finished_builder()[0]
         lanes["merge_conflict"] = self.stopped_builder(wip="c.py")[0]
-        c.log_event(p, "lane_conflict", task=lanes["merge_conflict"], data={"files": ["a.py"], "branch": "x"})
+        self.mark(lanes["merge_conflict"], "conflict")
         lanes["red_after_merge"] = self.stopped_builder(wip="r.py")[0]
-        c.log_event(p, "enforce", task=lanes["red_after_merge"], data={"kind": "merge_refused", "reason": "ac 1 red"})
+        self.mark(lanes["red_after_merge"], "refused")
+        lanes["guard_refused"] = self.stopped_builder(wip="g.py")[0]
+        self.mark(lanes["guard_refused"], "guard", arg="core")
         lanes["stalled"] = self.live_stalled_builder()[0]
         got = fmlanes.stop_causes(p, c.load_briefs(p), fresh=True)
         self.usage_wall()
@@ -767,6 +783,11 @@ class LaneRecovery(ForemanTestCase):
             text = fmlanes.recovery_text(cause, tid, detail=got[tid][1])
             self.assertTrue(text.strip(), cause)
             if cause == "no_report":
+                self.assertIn(f"fm lane merge {tid}", text)
+                self.assertNotIn("recover", text)
+            elif cause == "guard_refused":  # a grant, never a rebuild
+                self.assertEqual(got[tid][1], "core")
+                self.assertIn(f"fm ask {tid} core", text)
                 self.assertIn(f"fm lane merge {tid}", text)
                 self.assertNotIn("recover", text)
             else:
@@ -782,7 +803,7 @@ class LaneRecovery(ForemanTestCase):
         import fmlanes
         p = c.find_project(self.repo)
         merged = self.stopped_builder()[0]
-        c.log_event(p, "lane_merge", task=merged)
+        self.mark(merged, "merged")
         elsewhere = self.stopped_builder(proc="elsewhere|ns|999999999|1", wip="e.py")[0]
         self.assertEqual(fmlanes.stop_causes(p, c.load_briefs(p), fresh=True), {}, "can't tell or merged: no cause")
 
@@ -814,6 +835,17 @@ class LaneRecovery(ForemanTestCase):
         self.assertIn(f"fm lane recover {tid}", out)
         self.assertIn('"decision": "block"', out)
         self.assertNotIn(f"fm lane recover {tid}", stop(), "said once per set, not on every Stop")
+
+    def test_a_second_stop_with_the_same_cause_drives_again_once_the_first_was_recovered(self):
+        tid, _ = self.stopped_builder()
+        self.fm("autonomy", "full")
+        stop = lambda: self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting.",
+                                          "session_id": "sess-1"}).stdout
+        self.assertIn(f"fm lane recover {tid}", stop())
+        self.fm("lane", "recover", tid)
+        self.assertNotIn(f"fm lane recover {tid}", stop(), "nothing pending now")
+        self.relaunch_stopped(tid)
+        self.assertIn(f"fm lane recover {tid}", stop(), "the same task and cause again is a new stop: drive on it")
 
     def test_recover_frees_the_lane_keeps_the_work_logs_the_attempt_and_prints_the_agent_line(self):
         tid, path = self.stopped_builder()
@@ -862,21 +894,127 @@ class LaneRecovery(ForemanTestCase):
         self.assertEqual((ev[0]["data"]["cause"], ev[0]["data"]["agent_stopped"]), ("stalled", True))
         self.assertFalse(ev[0]["data"].get("forced"))
 
-    def test_a_conflict_lane_with_a_live_process_is_taken_back_only_while_the_lane_shows_no_work_since(self):
-        import fmbus
-        me = fmbus._proc(os.getpid())[1]
-        tid, path = self.stopped_builder(proc=f"{fmbus.host_id()}|{os.getpid()}|{me}")
-        c.log_event(c.find_project(self.repo), "lane_conflict", task=tid, data={"files": ["a.py"], "branch": "x"})
+    def test_a_fresh_conflict_or_red_on_a_live_lane_is_left_alone_and_fm_next_does_not_order_it(self):
+        """T-2354 review: builder_proc is the main session's, so "alive" proves nothing about the builder."""
+        import fmlanes
+        env = {"FM_STALL_CACHE_S": "0"}
+        for kind in ("conflict", "refused"):
+            tid, path = self.stopped_builder(proc=self.live_proc(), wip=f"{kind}.py")
+            self.mark(tid, kind)
+            self.assertNotIn(tid, fmlanes.stop_causes(c.find_project(self.repo), fresh=True), kind)
+            r = self.fm("lane", "recover", tid, check=False, env=env)
+            self.assertNotEqual(r.returncode, 0, kind)
+            self.assertTrue(os.path.isdir(path), f"a fresh {kind} on a live lane: its builder may still be working")
+            self.fm("autonomy", "full")
+            self.assertNotIn(f"fm lane recover {tid}", self.fm("next", env=env).stdout, kind)
+
+    def test_a_conflict_on_a_live_lane_counts_once_the_marker_is_old_and_the_lane_shows_no_work_since(self):
+        env = self.stall_env()
+        tid, path = self.stopped_builder(proc=self.live_proc())
+        self.mark(tid, "conflict")
+        time.sleep(2)  # past the (0.02 min) limit
         later = time.time() + 30  # the builder wrote after the merge attempt: it may be running
         os.utime(os.path.join(path, "wip.py"), (later, later))
-        r = self.fm("lane", "recover", tid, check=False, env={"FM_STALL_CACHE_S": "0"})
+        r = self.fm("lane", "recover", tid, check=False, env=env)
         self.assertNotEqual(r.returncode, 0)
         self.assertTrue(os.path.isdir(path), "work after the conflict: left alone")
         old = time.time() - 60
         os.utime(os.path.join(path, "wip.py"), (old, old))
-        c.log_event(c.find_project(self.repo), "lane_conflict", task=tid, data={"files": ["a.py"], "branch": "x"})
-        self.fm("lane", "recover", tid, env={"FM_STALL_CACHE_S": "0"})
-        self.assertFalse(os.path.isdir(path), "quiet since the conflict: its builder had already returned")
+        self.fm("lane", "recover", tid, env=env)
+        self.assertFalse(os.path.isdir(path), "old marker and quiet since: its builder had already returned")
+
+    def test_the_cap_never_blocks_a_task_whose_lane_is_being_worked(self):
+        env = {"FM_STALL_CACHE_S": "0"}
+        tid, path = self.stopped_builder(proc=self.live_proc())
+        self.mark(tid, "conflict", recoveries=["uncommitted@2026-01-01T00:00:00Z", "stalled@2026-01-02T00:00:00Z"])
+        self.assertNotEqual(self.fm("lane", "recover", tid, check=False, env=env).returncode, 0)
+        status = lambda t: json.loads(self.fm("task", "show", t, "--json").stdout)["meta"]["status"]
+        self.assertNotEqual(status(tid), "blocked", "a live lane is left alone, not blocked under its builder")
+        tid2, path2 = self.live_stalled_builder()
+        self.mark(tid2, "", recoveries=["uncommitted@2026-01-01T00:00:00Z", "stalled@2026-01-02T00:00:00Z"])
+        env = {"FM_STALL_MIN": "0.02", "FM_STALL_CACHE_S": "0"}
+        r = self.fm("lane", "recover", tid2, check=False, env=env)
+        self.assertNotEqual(r.returncode, 0, "its agent is not yet stopped")
+        self.assertNotEqual(status(tid2), "blocked")
+        self.fm("lane", "recover", tid2, "--agent-stopped", env=env)
+        self.assertEqual(status(tid2), "blocked", "agent stopped and still quiet: the cap applies")
+        self.assertTrue(os.path.isdir(path2))
+
+    def test_a_guard_refusal_names_its_grant_and_never_offers_a_rebuild(self):
+        import fmlanes
+        p = c.find_project(self.repo)
+        tid, path = self.stopped_builder()
+        self.mark(tid, "guard", arg="core")
+        self.assertEqual(fmlanes.stop_causes(p, fresh=True)[tid][0], "guard_refused")
+        self.fm("autonomy", "full")
+        out = self.fm("next").stdout
+        self.assertIn(f"fm ask {tid} core", out)
+        self.assertNotIn(f"fm lane recover {tid}", out)
+        self.assertNotIn(f"{tid}.builder.md", out, "no Agent line: a rebuild would hit the same refusal")
+        r = self.fm("lane", "recover", tid, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn(f"fm ask {tid} core", r.stdout + r.stderr)
+        self.assertTrue(os.path.isdir(path))
+
+    def test_a_refused_merge_leaves_its_marker_on_the_brief_and_a_merge_clears_it(self):
+        tid = first(self.fm("task", "new", "Red", "--type", "FEATURE", "--tier", "S", "--ac", "it passes :: false",
+                            "--step", "s", "--json").stdout)["id"]
+        path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
+        with open(os.path.join(path, "x.py"), "w") as f:
+            f.write("x = 1\n")
+        self.git("add", "x.py", cwd=path)
+        self.git("commit", "-qm", "work", cwd=path)
+        self.assertNotEqual(self.fm("lane", "merge", tid, check=False).returncode, 0)
+        stop = c.find_brief(c.find_project(self.repo), tid).meta.get("lane_stop", "")
+        self.assertTrue(stop.startswith("refused "), stop)
+        self.fm("lane", "merge", tid, "--unverified", "the gate is red on purpose")
+        self.assertTrue(c.find_brief(c.find_project(self.repo), tid).meta.get("lane_stop", "").startswith("merged "))
+
+    def test_the_marker_survives_a_busy_ledger_and_the_ignored_lane_is_not_ordered(self):
+        import fmlanes
+        p = c.find_project(self.repo)
+        tid, path = self.stopped_builder()
+        self.mark(tid, "conflict")
+        for i in range(520):  # more than the ledger tail the old marker read
+            c.log_event(p, "touched", task="T-9999", data={"file": f"f{i}"})
+        self.assertEqual(fmlanes.stop_causes(p, fresh=True)[tid][0], "merge_conflict")
+        with open(os.path.join(path, ".gitignore"), "w") as f:
+            f.write("keep.dat\n")
+        with open(os.path.join(path, "keep.dat"), "w") as f:
+            f.write("irreplaceable\n")
+        self.fm("autonomy", "full")
+        self.assertNotIn(f"fm lane recover {tid}", self.fm("next").stdout, "recover can't free a lane with ignored files")
+        r = self.fm("lane", "recover", tid, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("keep.dat", r.stdout + r.stderr)
+        self.assertNotIn("--force", r.stdout + r.stderr, "recover never offers the override")
+        self.assertTrue(os.path.isdir(path))
+
+    def test_a_recovery_is_counted_on_the_brief_and_unblock_starts_the_count_over(self):
+        tid, _ = self.stopped_builder()
+        self.fm("lane", "recover", tid)
+        meta = lambda: c.find_brief(c.find_project(self.repo), tid).meta
+        self.assertEqual(len(meta().get("recoveries") or []), 1)
+        self.relaunch_stopped(tid)
+        self.fm("lane", "recover", tid)
+        self.relaunch_stopped(tid, wip="third.py")
+        self.fm("lane", "recover", tid)
+        self.assertEqual(meta()["status"], "blocked")
+        self.fm("task", "unblock", tid, "a person read the lane")
+        self.assertFalse(meta().get("recoveries"), "a person's unblock is a fresh start")
+        self.assertFalse(meta().get("lane_stop"))
+
+    def test_stop_causes_reads_every_lane_so_the_finished_cache_keeps_one_key(self):
+        import unittest.mock
+        import fmlanes
+        p = c.find_project(self.repo)
+        a = self.finished_builder()[0]
+        b = self.stopped_builder(wip="b.py")[0]
+        seen = []
+        real = c.finished_lanes
+        with unittest.mock.patch.object(c, "finished_lanes", side_effect=lambda pp, bs: seen.append(sorted(x.id for x in bs)) or real(pp, bs)):
+            fmlanes.stop_causes(p, c.load_briefs(p), fresh=True)
+        self.assertEqual(seen, [sorted([a, b])], "the whole list goes in, the answer is filtered after")
 
     def test_a_stalled_claim_is_checked_again_when_the_lane_shows_new_work(self):
         tid, path = self.live_stalled_builder()
@@ -906,6 +1044,7 @@ class LaneRecovery(ForemanTestCase):
 
     def test_a_conflict_recovery_brief_says_why_it_came_back(self):
         tid, _ = self.stopped_builder()
+        self.mark(tid, "conflict")
         c.log_event(c.find_project(self.repo), "lane_conflict", task=tid, data={"files": ["clash.py"], "branch": "x"})
         self.fm("lane", "recover", tid)
         brief = read_text(os.path.join(c.find_project(self.repo).dir, "audits", f"{tid}.builder.md"))
