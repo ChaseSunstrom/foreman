@@ -1943,14 +1943,40 @@ class GenesisRead(ForemanTestCase):
             f.write(CHILD)
         os.chmod(os.path.join(self.bindir, "claude"), 0o755)
 
-    def put(self, text, reply, stub=True):
+    def put(self, text, reply, stub=True, grounded=True):
         src = os.path.join(self.tmp, "doc.md")
         with open(src, "w") as f:
             f.write(text)
+        if grounded and "FAIL:" in reply and "BREAKS:" not in reply:  # T-2246: a FAIL blocks only with a charter clause
+            reply += "\nBREAKS: NEVER: lower the guard."
         bare = os.environ["PATH"].replace(CLEAN_READER + os.pathsep, "", 1)  # no stub: the lockout answers (exit 97)
         env = {"PATH": (self.bindir + os.pathsep if stub else "") + bare, "STUB_LOG": self.log, "STUB_REPLY": reply}
         r = self.fm("genesis", "put", "coverage.md", "--file", src, check=False, env=env)
         return r, os.path.join(self.tower, "coverage.md")
+
+    def test_a_fail_blocks_only_when_it_quotes_a_charter_clause_verbatim(self):
+        # T-2246: Mission 3's critique failed 18 cold reads with 1-20 objections each, some reversing earlier ones
+        fail = "FAIL: - find × CLI: F: a shim to help the user with things\nWHY: names no file\n"
+        r, path = self.put(self.COV, fail + "BREAKS: NEVER: lower the guard.", grounded=False)
+        self.assertEqual(r.returncode, 1, r.stderr)  # a real NEVER line, as the reader was given it
+        r, path = self.put(self.COV, fail + "BREAKS: **NEVER:**  lower the\n", grounded=False)
+        self.assertEqual(r.returncode, 1, r.stderr)  # markdown and spacing don't matter
+        self.assertFalse(os.path.exists(path))
+        for breaks in ("BREAKS: NEVER: raise the guard.", "BREAKS:", "BREAKS: MUST", "", "BREAKS: Goal"):
+            with self.subTest(breaks=breaks):  # an invented clause, none, or a fragment too short to be one
+                r, path = self.put(self.COV, fail + breaks, grounded=False)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn("advisory", r.stderr)
+                self.assertIn("a shim to help", r.stderr)
+                self.assertTrue(os.path.exists(path))
+        r, _ = self.put(self.COV, "FAIL: a line this file never had\nWHY: x\nBREAKS: NEVER: lower the guard.", grounded=False)
+        self.assertEqual(r.returncode, 1, r.stderr)  # a stray quote still fails closed
+        steer = "Genesis standing rule: coverage cells name a test"
+        self.fm("decide", steer, "--cites", "user steer 2026-10-31")
+        r, _ = self.put(self.COV, fail + f"BREAKS: {steer}", grounded=False)
+        self.assertEqual(r.returncode, 1, r.stderr)  # a steer counts too
+        r, _ = self.put(self.COV, fail + "BREAKS: " + steer.upper(), grounded=False)
+        self.assertEqual(r.returncode, 0, r.stderr)  # verbatim: no case folding
 
     def test_only_a_whole_line_clean_passes_the_cold_read(self):
         # T-2180: CLEANUP, 'Not CLEAN', CLEAN-ish and 'CLEAN but ...' are not verdicts
