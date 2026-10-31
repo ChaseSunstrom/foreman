@@ -93,8 +93,8 @@ class Race(ForemanTestCase):
         self.fm("init")
         big = self.task("L")
         r = self.fm("lane", "race", big, check=False)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("S or M", r.stderr + r.stdout)
+        self.assertNotEqual(r.returncode, 0)  # T-2340: a planned L races its design; an unplanned one is refused
+        self.assertIn("planned enough", r.stderr + r.stdout)
         tid = self.task()
         self.fm("lane", "race", tid)
         r = self.fm("lane", "race", tid, check=False)
