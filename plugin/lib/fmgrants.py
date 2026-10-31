@@ -1,0 +1,158 @@
+"""T-2374 (Mission 6, #5): the install-grant queue. `fm ask ID CATEGORY --later` records, on the task, a request only the
+user can answer, and grants nothing: no dialog, no pending approval, no hook record. The request is a row in the task
+brief's "Grant requests" section, one fixed format (`- [queued|granted|refused] {json}`), read by `rows` alone, so a
+forged line is only text: no reader treats a row as an authorization. `fmhooks._grant` stays the only writer of
+`approval_granted`; it calls `settle` so a real yes marks the matching row granted and resumes a blocked task.
+A queued request never expires (APPROVAL_TTL doesn't apply: nothing is waiting on a reply). A no is remembered twice:
+the row turns refused and the ledger has `grant_refused`, which `queue` checks before it queues the same thing again.
+The ledger also has `grant_queued` (data name: the open miss it answers, else the pin or what; fmmiss reads it)."""
+import json
+import re
+
+import fmcore as c
+
+SECTION = "Grant requests"
+_ROW = re.compile(r"^- \[(queued|granted|refused)\] (\{.*\})$")
+
+
+def _clean(x, n):
+    return c.fit(c.redact(c.plain(str(x or ""))).strip(), n)
+
+
+def row(state, d):
+    return f"- [{state}] {json.dumps(d, sort_keys=True, separators=(',', ':'))}"
+
+
+def rows(b):
+    """[(state, dict)] for each well-formed row of the brief's section; anything else in it is ignored."""
+    out = []
+    for line in b.section(SECTION).splitlines():
+        m = _ROW.match(line)
+        try:
+            d = json.loads(m.group(2)) if m else None
+        except ValueError:
+            d = None
+        if isinstance(d, dict) and isinstance(d.get("cats"), list) and all(isinstance(x, str) for x in d["cats"]) \
+                and d["cats"] and isinstance(d.get("pin") or "", str) and isinstance(d.get("what") or "", str):
+            out.append((m.group(1), d))
+    return out
+
+
+def _key(cats, pin, what):
+    return (tuple(sorted(set(cats))), pin or what or "")
+
+
+def _write(b, items):
+    b.set_section(SECTION, "".join(row(s, d) + "\n" for s, d in items))
+
+
+def refused_before(p, cats, pin, what=""):
+    """The user said no to this request on some task of the project (the ledger's `grant_refused`)."""
+    k = _key(cats, pin, what)
+    return any(_key(d.get("cats") or [], d.get("pin"), d.get("what")) == k
+               for e in c.ledger_events(p, ("grant_refused",)) for d in [e.get("data") or {}] if isinstance(d, dict))
+
+
+def _evidence(p, b):
+    """(the newest open capability miss, what fm which already searched) on this task, for the user's context."""
+    import fmmiss
+    miss = (fmmiss.open_misses(p, b) or [None])[-1]
+    seen = [e for e in c.ledger_tail(p, 1500) if e.get("event") == "tool_search" and e.get("task") == b.id]
+    hits = ((seen[-1].get("data") or {}).get("hits") or {}) if seen else {}
+    alts = [f"{k} x{n}" for k, n in hits.items() if isinstance(n, int) and n > 0]
+    return ({"name": _clean(miss["name"], 60), "cmd": _clean(miss["cmd"], 120)} if miss else None), alts
+
+
+def queue(p, tid, cats, why, pin=None, what="", fallback="", session=None):
+    """Record the request on task tid. Returns (state, row dict): queued, dedupe (an identical one is still queued) or
+    refused (the user said no before). Grants nothing and writes no file but the brief and the ledger."""
+    cats = sorted(set(cats))
+    with c.lock(p.dir):
+        b = c.find_brief(p, tid)
+        if not b:
+            return "missing", {}
+        items = rows(b)
+        k = _key(cats, pin, what)
+        if any(s == "queued" and _key(d["cats"], d.get("pin"), d.get("what")) == k for s, d in items):
+            return "dedupe", next(d for s, d in items if s == "queued" and _key(d["cats"], d.get("pin"), d.get("what")) == k)
+        if refused_before(p, cats, pin, what):
+            return "refused", {"cats": cats, "pin": pin or "", "what": what}
+        miss, alts = _evidence(p, b)
+        d = {"cats": cats, "pin": pin or "", "what": _clean(what, 80), "why": _clean(why, 200) or "no reason given",
+             "miss": miss, "alts": alts, "fallback": _clean(fallback, 200), "at": c.now()}
+        _write(b, items + [("queued", d)])
+        c.save_brief(p, b)
+        c.log_event(p, "grant_queued", task=b.id, session=session,
+                    data={"name": (miss or {}).get("name") or pin or what or cats[0], "allow": cats, "pin": pin or "",
+                          "what": d["what"]})
+        c.regen_views(p)
+        return "queued", d
+
+
+def settle(b, cats, pin, state="granted"):
+    """In the caller's lock, before it saves b: the queued rows this answer covers become granted or refused. A yes also
+    resumes a blocked or deferred task once none is left queued. Returns the rows it settled."""
+    items, hit = rows(b), []
+    for i, (s, d) in enumerate(items):
+        if s == "queued" and set(d["cats"]) <= set(cats) and (d.get("pin") or "") == (pin or ""):
+            items[i] = (state, d)
+            hit.append(d)
+    if hit:
+        _write(b, items)
+        if state == "granted" and not any(s == "queued" for s, _ in items) and b.status in ("blocked", "deferred"):
+            b.meta["status"] = "planned" if b.acceptance() else "captured"
+            for x in ("revisit", "recoveries", "lane_stop"):
+                b.meta.pop(x, None)
+            b.append_log("unblocked: the user's yes to a queued grant request")
+    return hit
+
+
+def refuse(p, b, cats, pin, session=None):
+    """The user answered no to a request that was queued on b: remembered (row and ledger). The caller holds the lock."""
+    hit = settle(b, cats, pin, "refused")
+    if hit:
+        c.save_brief(p, b)
+        for d in hit:
+            c.log_event(p, "grant_refused", task=b.id, session=session,
+                        data={"allow": d["cats"], "cats": d["cats"], "pin": d.get("pin") or "", "what": d.get("what") or ""})
+    return hit
+
+
+def queued(p, briefs=None):
+    """[(brief, row)] still queued on open tasks, oldest first: a closed task's grant would grant nothing."""
+    out = []
+    for b in briefs if briefs is not None else c.load_briefs(p):
+        if b.status not in c.CLOSED and SECTION in [s[0].strip() for s in b.sections]:
+            out += [(b, d) for s, d in rows(b) if s == "queued"]
+    return sorted(out, key=lambda x: x[1].get("at") or "")
+
+
+def command(b, d):
+    pin = f" --pin {d['pin']}" if d.get("pin") else ""
+    return f"fm ask {b.id} {' '.join(d['cats'])}{pin} --why \"{d['why'][:80]}\"; the user answers yes"
+
+
+def text(d):
+    """The row the way the user reads it: what is asked, the miss behind it, the alternatives and the fallback."""
+    what = d.get("pin") or d.get("what") or ""
+    parts = [f"{', '.join(d['cats'])}{' ' + what if what else ''}: {d.get('why') or 'no reason given'}"]
+    if d.get("miss"):
+        parts.append(f"miss: {d['miss'].get('name')}" + (f" ({d['miss']['cmd']})" if d["miss"].get("cmd") else ""))
+    parts.append("already searched: " + ", ".join(d["alts"]) if d.get("alts") else "no alternatives searched")
+    parts.append(f"meanwhile: {d['fallback']}" if d.get("fallback") else "no fallback named")
+    return "; ".join(parts)
+
+
+def unblocks(p, b, briefs=None):
+    """What a yes frees: this task, and the open tasks that wait on it."""
+    waiting = [x.id for x in (briefs if briefs is not None else c.load_briefs(p))
+               if x.status not in c.CLOSED and b.id in (x.meta.get("depends_on") or [])]
+    return f"{b.id} {c.fit(b.title, 60)}" + (f" and {', '.join(waiting[:5])} waiting on it" if waiting else "")
+
+
+def line(p, briefs=None):
+    """One line for fm next, the Stop hook and fm run's end: how many wait on the user, or ''."""
+    q = queued(p, briefs)
+    return (f"{len(q)} grant request{'s' if len(q) != 1 else ''} queued for the user (fm todo): "
+            + ", ".join(dict.fromkeys(f"{b.id} {d.get('pin') or d.get('what') or d['cats'][0]}" for b, d in q[:5]))
+            + (" …" if len(q) > 5 else "")) if q else ""

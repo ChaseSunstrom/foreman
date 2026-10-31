@@ -82,6 +82,22 @@ class Todo(ForemanTestCase):
         self.assertIn("T-0002", out)
         self.assertNotIn("T-0003", out)
 
+    def test_queued_grants_come_first_with_what_they_unblock(self):  # T-2374
+        self.pend([{"task": "T-0001", "allow": ["publish"], "why": "ship it", "session": "s", "at": c.now()}])
+        self.fm("capture", "Two")
+        self.fm("task", "block", "T-0002", "waiting on the user to log in")
+        b = c.find_brief(self.p, "T-0001")
+        b.set_section("Grant requests", '- [queued] {"alts":[],"at":"2026-01-01T00:00:00Z","cats":["plugin"],'
+                                        '"fallback":"","miss":null,"pin":"a@m","what":"","why":"needs a"}\n')
+        c.save_brief(self.p, b)
+        out = json.loads(self.fm("todo", "--json").stdout)["todo"]
+        self.assertEqual([e["kind"] for e in out][:2], ["grant", "ask"])
+        self.assertIn("One", out[0]["unblocks"])
+        self.assertIn("a@m", out[0]["command"])
+        text = self.fm("todo").stdout
+        self.assertLess(text.index("grant:"), text.index("ask:"))
+        self.assertIn("unblocks", text)
+
 
 if __name__ == "__main__":
     unittest.main()

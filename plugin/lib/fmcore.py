@@ -3827,6 +3827,13 @@ def next_for(p, briefs=None):
         action += (f" · ask digest past its deadline: fm decide --digest applies the {n} default(s)" if digest_due(d)
                    else f" · ask digest: {n} ask(s) wait (defaults at {d.get('deadline')}); before you end the turn put "
                         f"them to the user in one AskUserQuestion (fm decide --digest)")
+    try:  # T-2374: grant requests queued for the user wait without blocking anything
+        import fmgrants
+        queued = fmgrants.line(p, briefs)
+    except Exception:
+        queued = ""
+    if queued:
+        action += f" · {queued}"
     return b, st, action
 
 
