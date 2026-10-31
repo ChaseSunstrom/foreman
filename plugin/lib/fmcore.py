@@ -3756,7 +3756,19 @@ def state_dict(p, briefs=None):
         "tidy_overdue_days": int(days) if days is not None and days > TIDY_EVERY_DAYS else None,
         "session": meta.get("session") or {},
         "genesis": _genesis(p, everything),  # T-2118: the tower's next action, on every surface that reads this
+        "goal": _goal_count(p, everything),
     }
+
+
+def _goal_count(p, briefs):
+    """T-2144: [items done, items] of the standing goal, from the briefs state_dict already loaded; None when none
+    stands or it can't be read (a broken goal costs its count, never the state)."""
+    try:
+        import fmmandate
+        g = fmmandate.progress(p, briefs)
+        return g and [g[1], len(g[0]["items"])]
+    except Exception:
+        return None
 
 
 def _genesis(p, briefs):
@@ -3834,6 +3846,8 @@ def state_line(sd):
         parts.append(f"blk{len(sd['blocked'])}")
     if sd["paused"]:
         parts.append("PAUSED")
+    if sd.get("goal"):  # T-2144: how far the standing goal is from done, on every glanceable surface
+        parts.append(f"goal {sd['goal'][0]}/{sd['goal'][1]}")
     return " · ".join(parts)
 
 
@@ -3932,7 +3946,8 @@ def badge_text(sd):
     if not a:
         return ""
     n = f"{a['step']['n']}/{a['step']['of']}" if a["step"] else f"{a['steps_done']}/{a['steps_total']}"
-    return f"{a['id']} {a['type']} · {a.get('stage') or 'executing'} {n}"
+    g = f" · goal {sd['goal'][0]}/{sd['goal'][1]}" if sd.get("goal") else ""
+    return f"{a['id']} {a['type']} · {a.get('stage') or 'executing'} {n}{g}"
 
 
 def progress_line(sd, width=120):
