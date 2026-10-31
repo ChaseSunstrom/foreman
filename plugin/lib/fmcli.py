@@ -1169,6 +1169,13 @@ def task_finish(p, args):
         print(f"Slowest: {c.fit(c.plain(cmd), 80)} {secs:.0f} s (of {total:.0f} s)")
     started = None
     if not rc:
+        try:  # T-2241: a closed FIX no finder flagged is a blind spot; best effort, never the close's failure
+            done = c.find_brief(p, b.id)
+            if done and done.status == "done" and done.type == "FIX":
+                import fmfind
+                fmfind.blindspots(p, done)
+        except Exception:  # noqa: BLE001
+            pass
         try:
             started = _sentinel(p)
         except (OSError, subprocess.SubprocessError):
@@ -7025,6 +7032,8 @@ def _build_parser(only=None):
                    "under the floor is muted (T-2125)")
     s.add_argument("--capture", type=int, metavar="N", help="file up to N new leads, best first (none held back), as "
                    "discovered tasks tagged finder=; what becomes of them is that finder's precision")
+    s.add_argument("--blindspots", action="store_true", help="instead: closed FIXes whose changed lines no finder flagged "
+                   "(with --capture 1: file one 'add a rule, tool or check' task a day; T-2241)")
     s.add_argument("--hotspots", action="store_true", help="instead: tracked files by how many fix commits touched them "
                    "in the last 500 non-merge commits, counting those whose subject has a fix word (git only, no repo code; not with "
                    "--rank or --capture; T-2238)")
