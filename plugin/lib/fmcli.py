@@ -7754,8 +7754,11 @@ def _build_parser(only=None):
     s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "recover", "race", "pick"])
     s.add_argument("--agent-stopped", action="store_true", help="recover: its agent was stopped (TaskStop), so a "
                                                                 "stalled lane is free to take back (T-2354)")
-    s.add_argument("--score", action="store_true", help="race: run both sides' criteria in their worktrees, count "
-                                                        "lines changed, name a leader (T-1069)")
+    s.add_argument("--score", action="store_true", help="race: run every side's criteria in its worktree, cross-examine "
+                                                        "(each side's new tests on the others' trees), count lines "
+                                                        "and files outside scope, name a leader (T-1069, T-2339)")
+    s.add_argument("--sides", type=int, metavar="N", help="race: 2 or 3 sides, one per Approach option, the stated "
+                                                          "choice first (default 2) (T-2339)")
     s.add_argument("id", nargs="?", help="the task id; max: how many builders may be out at once (1-6)")
     s.add_argument("--confidence", metavar="N", help="race: whole percent, 0-100, that the original side wins; a bet in "
                                                      "the calibration ledger (T-2337)")
