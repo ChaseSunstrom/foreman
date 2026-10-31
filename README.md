@@ -79,6 +79,8 @@ fm new web site                              # site/index.html: tokens, light an
 fm design lint site                          # still clean: no generic-design tells
 ```
 
+Nothing found for a missing tool or skill? Build it: `fm new tool NAME` writes `tools/NAME.py` and a `tests/test_NAME.py` that fails until it works; `fm new skill NAME` writes a project skill in the listing's format.
+
 <p align="center">
   <img src="demo/demo.svg" width="860" alt="fm demo: Foreman refuses an edit made before any task exists and an rm -rf ~, records a failing test, the fix and a passing test, refuses to close the task until the audit is given, then closes and commits it">
 </p>

@@ -1,0 +1,19 @@
+"""Fails until tools/__NAME__.py does its job: replace the example with a real input and its expected output."""
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools"))
+import __NAME__  # noqa: E402
+
+
+class Test__NAME__(unittest.TestCase):
+    def test_it_does_its_job(self):
+        self.assertEqual(__NAME__.run("example input"), "expected output")
+
+    def test_a_bad_input_exits_1(self):
+        self.assertEqual(__NAME__.main([""]), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1623,6 +1623,7 @@ class CapabilityMiss(HookCase):
         note = self.miss("Exit code 127\nbash: jq: command not found")
         self.assertIn("fm plugins find jq", note)
         self.assertIn("fm ask", note)
+        self.assertIn("or build it: fm new tool jq", note)  # T-2278
         self.assertLessEqual(len(note), 300)
         self.assertNotIn("fm plugins find jq", self.miss("Exit code 127\nbash: jq: command not found"))
         self.assertEqual(self.tasks(), [])

@@ -3201,7 +3201,7 @@ def _capability_miss(p, sid, err):
                            f"capability-miss: {name}", "FEATURE", "self", key=f"capability-miss: {name}")
     name = c.fit(c.plain(name), 64)
     return (f"Foreman: `{name}` is missing. Find it: fm plugins find {name} (an install needs fm ask ID plugin), "
-            f"or build a script with its test.")
+            f"or build it: fm new tool {name if re.fullmatch(r'[a-z][a-z0-9_]{0,31}', name) else 'NAME'}.")
 
 
 def post_tool_use_failure(pl):

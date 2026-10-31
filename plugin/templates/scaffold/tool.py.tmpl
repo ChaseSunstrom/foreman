@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+# fm new tool
+"""__NAME__: say in one line what it does.
+
+Exit codes: 0 done, 1 it ran and the result is bad, 2 bad usage (argparse). Stdlib only."""
+import argparse
+import sys
+
+
+def run(text):
+    """The job: take the input text, return the result text; raise ValueError when the input can't be handled."""
+    raise NotImplementedError("__NAME__: write the job, then make tests/test___NAME__.py pass")
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="__NAME__", description=__doc__.splitlines()[0])
+    ap.add_argument("text", help="the input")
+    args = ap.parse_args(argv)
+    try:
+        print(run(args.text))
+    except ValueError as e:
+        print(f"__NAME__: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

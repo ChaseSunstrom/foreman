@@ -178,8 +178,12 @@ def check(path, run=False):
     if not os.path.isfile(path):
         return [f"{path}: not a file"]
     ext = os.path.splitext(path)[1].lower()
+    if os.path.basename(path) == "SKILL.md":
+        return [f"{path}: {x}" for x in _skill_problems(path)]
     if ext == ".py":
         why = _runnable(path, run)
+        if not why and _is_tool(path):  # T-2278: a script from fm new tool is held to its contract, not a panel's
+            return [f"{path}: {x}" for x in _tool_problems(path)]
         return [f"{path}: {why}"] if why else [f"{path}: {x}" for x in _panel(path)]
     if ext not in fmdesign.EXTS:
         return [f"{path}: fm new check reads a page ({' '.join(sorted(fmdesign.EXTS))}) or an fm code panel (.py)"]
@@ -253,6 +257,136 @@ def cmd_dev(args):
         return 0
 
 
+SCAFFOLDS = {  # T-2278: kind: (name rule, [(template, where it lands under DIR)], what it is)
+    "tool": (r"[a-z][a-z0-9_]{0,31}", [("tool.py.tmpl", "tools/{n}.py"), ("tool_test.py.tmpl", "tests/test_{n}.py")],
+             "a stdlib script (argparse, --help, exit 0/1/2) and tests/test_NAME.py, which fails until it does its job"),
+    "skill": (r"[a-z][a-z0-9]*(-[a-z0-9]+)*", [("skill.md.tmpl", ".claude/skills/{n}/SKILL.md")],
+              "a project skill in the listing's format: a 'Use whenever' description of at most 125 characters"),
+}
+SKILL_DESC_MAX = 125  # the per-skill share of the skill listing (test_docs)
+
+
+def _scaffold(args, words):
+    """fm new tool|skill NAME [DIR]: the files are all checked absent first (a symlink counts), then created O_EXCL;
+    never overwritten, --force or not: the work in them is yours."""
+    import fmcli
+    import re
+    import sys
+    kind = words[0]
+    rule, files, _ = SCAFFOLDS[kind]
+    if not 2 <= len(words) <= 3:
+        raise fmcli.UsageError(f"fm new {kind} NAME [DIR]")
+    name = words[1]
+    if not re.fullmatch(rule, name) or len(name) > 32 or (kind == "tool" and name in sys.stdlib_module_names):
+        raise fmcli.UsageError(f"{name!r} isn't a {kind} name: lowercase letters and digits, "
+                               + ("with _" if kind == "tool" else "with single -") + ", starting with a letter, "
+                               "32 characters at most, and not a standard-library module's")
+    base = os.path.abspath(words[2] if len(words) == 3 else ".")
+    dests = [os.path.join(base, rel.format(n=name)) for _, rel in files]
+    for d in dests:
+        if os.path.lexists(d):
+            raise fmcli.UsageError(f"{d} exists; fm new {kind} never writes over a file")
+        if os.path.commonpath([os.path.realpath(os.path.dirname(d)), os.path.realpath(base)]) != os.path.realpath(base):
+            raise fmcli.UsageError(f"{os.path.dirname(d)} is a link that leaves {base}; fm new {kind} won't write "
+                                   "through it")
+    texts = []
+    for tmpl, _rel in files:
+        with open(os.path.join(c.PLUGIN_ROOT, "templates", "scaffold", tmpl), encoding="utf-8") as f:
+            texts.append(f.read().replace("__NAME__", name))
+    made = []
+    try:
+        for d, text in zip(dests, texts):
+            os.makedirs(os.path.dirname(d), exist_ok=True)
+            fd = os.open(d, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+            made.append(d)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(text)
+    except FileExistsError:
+        _undo(made)  # what we made; the one that collided (never in made) is somebody else's
+        raise fmcli.UsageError(f"{d} appeared while writing; nothing of ours is left")
+    except OSError as e:
+        _undo(made)
+        raise fmcli.UsageError(f"can't write {d}: {e.strerror or e}")
+    nxt = (f"python3 {dests[1]} fails until {dests[0]} does its job; then fm new check --run {dests[0]}" if kind == "tool"
+           else f"fm new check {dests[0]}")
+    fmcli.out(args, {"wrote": dests, "template": kind}, "Wrote " + ", ".join(dests) + f".\nNext: {nxt}")
+    return 0
+
+
+def _undo(paths):
+    for p in paths:
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
+
+
+def _is_tool(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return any(f.readline().strip() == "# fm new tool" for _ in range(3))
+    except OSError:
+        return False
+
+
+def _tool_problems(path):
+    """A tool from fm new tool keeps its contract: --help exits 0 and prints usage; a bad option exits 2. Run in a
+    temporary folder through the panel check's sandbox (fmplaybooks._run: PATH-only env, HOME the folder, limits,
+    process-group kill), stdin closed, bounded in time (the caller has gated on _runnable)."""
+    import sys
+    import fmplaybooks
+    problems = []
+    for flag, want in (("--help", 0), ("--no-such-option", 2)):
+        with tempfile.TemporaryFile() as out:
+            why = fmplaybooks._run(flag, CHECK_SECONDS, fmplaybooks._limits(), what="the tool", stdout=out,
+                                   argv=(sys.executable, "-I", os.path.abspath(path)))
+            out.seek(0)
+            text = out.read().decode("utf-8", "replace")
+        code = None if not why else (why.split()[3].rstrip(":") if why.startswith("the tool exited ") else "?")
+        if why and why.startswith("timed out"):
+            problems.append(f"{flag} ran over {CHECK_SECONDS}s")
+        elif str(code or 0) != str(want):
+            problems.append(f"{flag} exits {code or 0}, not {want} (argparse gives 0 and 2)"
+                            + (f": {why}" if code == "?" else ""))
+        elif want == 0 and "usage:" not in text:
+            problems.append("--help prints no usage line (argparse)")
+    return problems
+
+
+def _skill_problems(path):
+    """A project skill in the listing's format: frontmatter name = its folder, a 'Use whenever' description of at
+    most SKILL_DESC_MAX characters, a body."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            parts = f.read().split("\n---", 1)
+    except (OSError, UnicodeDecodeError) as e:
+        return [f"can't read it: {e}"]
+    meta = {}
+    for line in parts[0].splitlines()[1:] if parts[0].startswith("---") and len(parts) == 2 else []:
+        k, _, v = line.partition(":")
+        v = v.strip()
+        if v[:1] == '"':  # quoted, so a ": " in it can't break a strict YAML parser (JSON escapes read the same)
+            try:
+                v = json.loads(v)
+            except ValueError:
+                pass
+        meta[k.strip()] = v
+    if not meta:
+        return ["no frontmatter: it opens with --- and closes with ---"]
+    out = []
+    folder = os.path.basename(os.path.dirname(os.path.abspath(path)))
+    if meta.get("name") != folder:
+        out.append(f"name {meta.get('name')!r} isn't its folder {folder!r}")
+    desc = meta.get("description", "")
+    if not desc.startswith("Use whenever "):
+        out.append("description doesn't start 'Use whenever ' (task words, not the tool's name)")
+    if len(desc) > SKILL_DESC_MAX:
+        out.append(f"description is {len(desc)} characters; the listing's share is {SKILL_DESC_MAX}")
+    if not parts[1].strip("-\n "):
+        out.append("no body")
+    return out
+
+
 def cmd_new(args):
     import fmcli
     words = list(args.words or [])
@@ -262,7 +396,8 @@ def cmd_new(args):
         rows = [{"name": n, "file": f, "what": what, "source": source(n)} for n, (_, f, what) in TEMPLATES.items()]
         fmcli.out(args, {"templates": rows}, "Templates, strict by default (fm new NAME [DIR]; fm new check PATH):\n"
                   + "\n".join(f"  {r['name']:<6} {r['file']:<11} {r['what']}" for r in rows)
-                  + "\n  (a panel lands in fm code's tui/ folder in Foreman's home unless DIR is given)")
+                  + "".join(f"\n  {k:<6} {'NAME':<11} {v[2]}" for k, v in SCAFFOLDS.items())
+                  + "\n  (fm new tool|skill NAME [DIR] never overwrites; a panel lands in fm code's tui/ folder in Foreman's home unless DIR is given)")
         return 0
     if words[0] == "check":
         if len(words) < 2:
@@ -272,6 +407,8 @@ def cmd_new(args):
         fmcli.out(args, {"problems": found}, "\n".join(found) if found else
                   f"✓ {len(words) - 1} file(s) keep their template's rules")
         return 1 if found else 0
+    if words[0] in ("tool", "skill"):
+        return _scaffold(args, words)
     name = words[0]
     if name not in TEMPLATES or len(words) > 2:
         raise fmcli.UsageError(f"fm new {'|'.join(TEMPLATES)} [DIR] [--force] · fm new list · fm new check PATH...")
