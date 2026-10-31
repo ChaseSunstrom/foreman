@@ -138,6 +138,35 @@ class Reproduce(ForemanTestCase):
         self.assertIn("stale", r.stdout + r.stderr)
 
 
+class UnprovenTrailer(HookCase):  # T-2392: a closed task in the unproven rollup says so in its commit and its PR
+    def test_unproven_trailer_names_the_kinds_and_fm_pr_lists_them(self):
+        import fmcore as c
+        self.fm("init")
+        self.fm("task", "new", "Claimed", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        path = os.path.join(self.repo, "a.py")
+        with open(path, "w") as f:
+            f.write("A = 1\n")
+        self.hook("PostToolUse", {"tool_name": "Write", "tool_input": {"file_path": path}, "tool_response": {}})
+        p = self.project()
+        b = c.find_brief(p, "T-0001")
+        b.meta["unproven_claims"] = ["perf"]  # what the Stop hook records for a kept, unbacked claim
+        c.save_brief(p, b)
+        self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--commit", "Claimed")
+        body = subprocess.run(["git", "-C", self.repo, "log", "-1", "--format=%B"], capture_output=True, text=True).stdout
+        self.assertIn("Unproven: claimed", body)
+        pr = self.fm("pr", "T-0001").stdout
+        self.assertIn("### Unproven", pr)
+        self.assertIn("claimed perf", pr)
+        self.assertIn("--bench", pr)  # with the command that proves it
+        self.fm("task", "new", "Proven", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        with open(path, "w") as f:
+            f.write("A = 2\n")
+        self.hook("PostToolUse", {"tool_name": "Write", "tool_input": {"file_path": path}, "tool_response": {}})
+        self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true", "--commit", "Proven")
+        body = subprocess.run(["git", "-C", self.repo, "log", "-1", "--format=%B"], capture_output=True, text=True).stdout
+        self.assertNotIn("Unproven:", body)
+
+
 class CommitOwnFiles(HookCase):
     """T-0738: T-0706's commit took T-0707's new files: both edited neighbouring lines of shared files, so re-basing
     T-0706's start snapshot failed and its commit fell back to everything changed since; T-0707's then had nothing."""

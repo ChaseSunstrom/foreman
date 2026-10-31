@@ -2468,6 +2468,45 @@ class Stop(HookCase):
         self.assertIn(f"{tid} step 1/2 has no recorded verification evidence", parse(p)["reason"])
         self.assertIsNone(self.decision(self.stop("Done.")))
 
+    def proof_stop(self, msg, *calls, sid="pc-1"):
+        return self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": msg, "session_id": sid,
+                                  "transcript_path": self.turn(*(calls or [("Read", {"file_path": "a.py"}, "x", False)]))})
+
+    def proof_ready(self):
+        self.fm("init")
+        tid = self.task()
+        self.fm("drive", "off")
+        for n in ("1", "2"):  # the done gate is satisfied: only the proof claim is judged
+            self.fm("task", "evidence", tid, "--step", n, "--run", "true")
+        return tid
+
+    def test_proof_claim_a_perf_number_with_no_bench_is_held_once_and_a_bench_or_negation_passes(self):  # T-2392
+        tid = self.proof_ready()
+        p = self.proof_stop("Done: the parser is 3x faster now.")
+        self.assertEqual(self.decision(p), "block")
+        reason = parse(p)["reason"]
+        for word in ("3x faster", "perf", tid, "--bench", "unproven"):
+            self.assertIn(word, reason)
+        bench = ("Bash", {"command": "fm task evidence T-0001 --bench 'python3 bench.py'"}, "median 12 ms", False)
+        self.assertIsNone(self.decision(self.proof_stop("Done: the parser is 3x faster now.", bench, sid="pc-2")))
+        self.assertIsNone(self.decision(self.proof_stop("It is not 3x faster yet; I'll measure it.", sid="pc-3")))
+        self.assertIsNone(self.decision(self.proof_stop("If it ends up 3x faster we keep it.", sid="pc-4")))
+        p = self.proof_stop("The docs are now accurate.", sid="pc-5")
+        self.assertIn("fm prove --docs", parse(p)["reason"])
+        self.assertIsNone(self.decision(self.proof_stop("The docs are now accurate, unproven: not checked.", sid="pc-6")))
+
+    def test_proof_claim_kept_after_its_hold_is_labelled_for_the_user_and_recorded_on_the_task(self):  # T-2392
+        import fmcore as c
+        tid = self.proof_ready()
+        self.assertEqual(self.decision(self.proof_stop("The migration works and reverses.", sid="pk-1")), "block")
+        p = self.proof_stop("Yes, the migration works.", sid="pk-1")  # kept, still no run and no unproven label
+        self.assertIsNone(self.decision(p))
+        self.assertIn("unproven", parse(p).get("systemMessage", "").lower())
+        self.assertIn("migration", parse(p)["systemMessage"])
+        b = c.find_brief(self.project(), tid)
+        self.assertEqual(b.meta.get("unproven_claims"), ["migration"])
+        self.assertIn("unproven claim (migration)", b.section("Log"))
+
     def test_a_done_claim_with_unaccounted_clauses_blocks_once_naming_them(self):
         # T-2138: a sweeping request's dropped parts hold "done" once; never a trap
         self.fm("init")

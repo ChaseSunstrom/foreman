@@ -4519,6 +4519,44 @@ PROOF_KINDS = {
 }
 
 
+# T-2392: a reply's claim that names a proof kind: (the claim, the green run that backs it, the command that supplies it)
+PROOF_CLAIMS = {
+    "perf": (lazy(r"\b\d+(?:\.\d+)?\s*(?:x|×|%)\s+(?:faster|quicker|smaller|less (?:time|memory)|fewer \w+)\b|"
+                  r"\b(?:faster|quicker|sped up|speeds? up|cut|reduced|dropped)\b[^.\n]{0,40}?\b(?:from|by|to)\s+\d[\d.]*\s*"
+                  r"(?:ms|s|sec(?:ond)?s?|%|x|MB|KB)\b", re.I),
+             lazy(r"--bench\b|\bbench(?:mark)?s?\b|\bhyperfine\b|\btimeit\b|\bperf stat\b"), "fm task evidence {id} --bench CMD"),
+    "docs": (lazy(r"\b(?:the\s+)?(?:docs?|documentation|README)\s+(?:is|are)\s+(?:now\s+)?(?:accurate|correct|up to date|in "
+                  r"sync)\b|\b(?:updated|fixed|corrected)\s+the\s+(?:docs|documentation|README)\b", re.I),
+             lazy(rf"{_FM_RUN}prove\s+--docs"), 'fm task evidence {id} --run "fm prove --docs"'),
+    "migration": (lazy(r"\bmigrations?\s+(?:now\s+)?(?:works?|runs? clean(?:ly)?|reverses?|(?:is|are)\s+reversible|"
+                       r"pass(?:es)?|succeeds?)\b", re.I),
+                  lazy(rf"(?:{_FM_RUN}prove\s+--migration|(?:python3?\s+-m\s+)?(?:alembic|flyway|migrate)\b)"),
+                  'fm task evidence {id} --run "fm prove --migration"'),
+    "ui": (lazy(r"\b(?:the\s+)?(?:UI|page|screen|layout|component)\s+(?:now\s+)?(?:looks|renders)\s+(?:right|good|correct|"
+                r"fine|great)\b", re.I), _UI_PROOF, 'fm task evidence {id} --run "fm shot FILE"'),
+    "release": (lazy(r"\b(?:released|deployed|published|shipped)\s+(?:v?\d+\.\d+[\w.-]*|it\b|to\s+(?:prod\w*|production|npm|"
+                     r"pypi|crates|main|staging)|the\s+(?:release|package|site|app|build))", re.I),
+                lazy(r"\bfm\s+(?:ship|release|prove\s+--release)\b|\bgit\s+push\b|\bnpm\s+publish\b|\btwine\s+upload\b|"
+                     r"\bcargo\s+publish\b|\bgem\s+push\b"), 'fm task evidence {id} --run "fm prove --release"'),
+}
+
+
+def claim_backed(b, kind):
+    """T-2392: the task holds a green run of the claim kind's own proof."""
+    clear = PROOF_CLAIMS[kind][1]
+    return any(_RAN_MARK in l and "→ exit 0" in l and clear.search(l) for l in b.evidence())
+
+
+def _need_claimed(x):
+    """T-2392: a claim the Stop hook labelled unproven (meta unproven_claims) with no green run of its kind since."""
+    left = [k for k in x["b"].meta.get("unproven_claims") or [] if k in PROOF_CLAIMS and not claim_backed(x["b"], k)]
+    return {"why": f"claimed {', '.join(left)} with no run of that kind",
+            "fmt": {"cmd": PROOF_CLAIMS[left[0]][2].replace("{id}", x["b"].id)}} if left else None
+
+
+PROOF_KINDS["claimed"] = _kind(_need_claimed, "{cmd}")
+
+
 _DONE_STATUS = lazy(r"(?m)^status:\s*[\"']?done\b")
 PROOF_DAYS = 30  # the window fm status, digest and the exam keep in unproven.json; another --days is computed, not kept
 

@@ -2047,6 +2047,12 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
             raise UsageError(f"{b.id} is done, but the stack wasn't committed: {e}")
         return
     trailer =[] if "Foreman-Task:" in message else ["--trailer", f"Foreman-Task: {b.id}"]  # fm why reads it
+    try:  # T-2392: a task the unproven rollup holds names its kinds in the commit, where a reader of the history sees it
+        kinds = sorted({n["kind"] for n in c.proof_needs(p, c.find_brief(p, b.id) or b, files, live=True)})
+    except Exception:  # a rollup read never fails a commit
+        kinds = []
+    if kinds and "Unproven:" not in message:
+        trailer += ["--trailer", f"Unproven: {', '.join(kinds)}"]
     # only the task's files (and so only what was scanned), whatever else was staged before (T-0132 review)
     done = add.returncode == 0 and run("commit", "-q", "-m", message, *trailer, "--", *files)
     if not done or done.returncode:
