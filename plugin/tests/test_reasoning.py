@@ -40,6 +40,29 @@ class Stall(Base):
         self.assertRegex(self.fm("next").stdout, r"stuck, rung 2.*environment")
 
 
+class Race(Base):  # T-2271 (Mission 5, #2): stuck with a runner-up approach on file, race it before more hypotheses
+    def brief(self, tier="S", approach="1) a regex scan 2) a real parser. Choice 1: smaller"):
+        self.fm("task", "new", "Parser", "--type", "FEATURE", "--tier", tier, "--interpretation", "x", "--approach",
+                approach, "--ac", "ok :: true", "--step", "s", "--focus")
+        self.fail_runs("T-0001", "KeyError col", "KeyError col", "KeyError col")
+        return self.fm("next").stdout
+
+    def test_three_failed_runs_with_an_alternative_race_the_runner_up(self):
+        self.assertRegex(self.brief(), r"stuck, rung 3.*fm lane race T-0001")
+
+    def test_one_approach_keeps_the_hypothesis_rung(self):
+        out = self.brief(approach="a regex scan")
+        self.assertNotIn("fm lane race", out)
+        self.assertRegex(out, r"stuck, rung 3.*hypotheses")
+
+    def test_a_task_already_raced_keeps_the_hypothesis_rung(self):
+        self.brief()
+        b = c.find_brief(self.p, "T-0001")
+        b.meta["race"] = "T-0002"
+        c.save_brief(self.p, b)
+        self.assertNotIn("fm lane race", self.fm("next").stdout)
+
+
 class Devil(Base):
     def test_second_plan_has_a_devils_advocate_role(self):
         import fmsecond
