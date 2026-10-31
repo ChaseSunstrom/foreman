@@ -170,6 +170,44 @@ class GoalReview(GoalBase):
         self.assertNotEqual(self.fm("goal", "link", "²", t, check=False).returncode, 0)
         self.assertNotIn("Traceback", self.fm("goal", "link", "²", t, check=False).stderr)
 
+    def verdict(self):
+        r = self.fm("goal", "verdict", check=False)
+        return r.returncode, r.stdout
+
+    def gates(self, exit_code):
+        c.log_event(self.p, "check_run", data={"tree": "t", "results": [{"cmd": "x", "exit": exit_code}]})
+
+    def test_verdict_names_each_cause_and_finishes_only_when_all_hold(self):
+        # T-2137
+        self.assertEqual(self.verdict(), (0, "no goal\n"))
+        self.fm("goal", "set", "Cache the index. Also tune the ranker weights", "--no-end")
+        self.fm("goal", "item", "cache the index", "--done-when", "true")
+        code, out = self.verdict()
+        self.assertEqual(code, 1)
+        for cause in ("item 1 has no task", "clause unaccounted: Also tune the ranker weights",
+                      "gates never run"):
+            self.assertIn(cause, out)
+        t = self.new("cache it", "--goal", "1")
+        self.assertIn("item 1 has open tasks", self.verdict()[1])
+        self.fm("task", "drop", t, "done")
+        self.gates(1)
+        self.assertIn("gates red", self.verdict()[1])
+        self.gates(0)
+        self.assertNotIn("gates", self.verdict()[1])
+        self.fm("goal", "item", "tune the ranker weights", "--done-when", "false")
+        t2 = self.new("tune", "--goal", "2")
+        self.fm("task", "drop", t2, "done")
+        out = self.verdict()[1]
+        self.assertIn("item 2 check fails (exit 1)", out)
+        self.assertNotIn("unaccounted", out)
+        c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
+            dict(i, done_when="true") for i in c.read_meta(self.p)["mandate"]["items"]]))
+        self.assertEqual(self.verdict(), (0, "finished\n"))
+        stored = c.read_meta(self.p)["goal_verdict"]
+        self.assertEqual((stored["verdict"], stored["causes"]), ("finished", []))
+        self.assertTrue(stored["at"] and stored["tree"])
+        self.assertEqual(json.loads(self.fm("goal", "verdict", "--json").stdout)["verdict"], "finished")
+
 
 if __name__ == "__main__":
     unittest.main()

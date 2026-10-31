@@ -247,10 +247,49 @@ def show(p, args, key="goal", run=True):
     return 1 if outside or uncovered or unmet else 0
 
 
+def verdict(p, m):
+    """T-2137: the causes a goal isn't finished (empty: finished). Reuses drift's guarded checks; deterministic."""
+    import fmrecall
+    items = m.get("items") or []
+    briefs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
+    _, uncovered, unmet, unchecked = drift(p, m)
+    causes = [] if items else ["the goal has no items"]
+    causes += [f"item {i['n']} has no task" for i in uncovered]
+    causes += [f"item {i['n']} has open tasks" for i in items if i not in uncovered
+               and any(briefs[t].status not in c.CLOSED for t in i["tasks"] if t in briefs)]
+    causes += [f"item {i['n']} check fails ({how})" for i, how in unmet]
+    causes += [f"item {i['n']} check not run" for i in unchecked]
+    seen = {w for i in items for w in fmrecall.words(i["text"])}
+    causes += [f"clause unaccounted: {c.fit(x, 80)}" for x in m.get("clauses") or []
+               if not seen & set(fmrecall.words(x))]
+    last = next((e for e in reversed(c.ledger_tail(p, 3000)) if e.get("event") == "check_run"), None)
+    if not last:
+        causes.append("gates never run (fm check)")
+    elif any((r or {}).get("exit") for r in (last.get("data") or {}).get("results") or []):
+        causes.append("gates red (fm check)")
+    return causes
+
+
+def cmd_verdict(p, args):
+    import fmcli
+    m = get(p)
+    if not m or m["expired"]:
+        return fmcli.out(args, {"verdict": None}, "no goal")
+    causes = verdict(p, m)
+    word = "finished" if not causes else "stopped"
+    # the tree is the worktree id; root lets Stop (which runs no git) tell another checkout's verdict from this one's
+    c.update_meta(p, goal_verdict={"verdict": word, "causes": causes[:10], "at": c.now(),
+                                   "tree": c.worktree_id(p.root) or "", "root": p.root})
+    fmcli.out(args, {"verdict": word, "causes": causes}, word + (": " + "; ".join(causes) if causes else ""))
+    return 1 if causes else 0
+
+
 def cmd_goal(args):
     import fmcli
     p = fmcli.resolve(args)
     words = args.text or []
+    if args.action == "verdict":
+        return cmd_verdict(p, args)
     if args.action == "set":
         if not words or not (args.until or args.no_end):  # an endless goal is said so, never a default
             raise fmcli.UsageError('fm goal set "<the request>" --until YYYY-MM-DD | --no-end [--usd N] [--replace]')

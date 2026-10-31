@@ -6913,7 +6913,7 @@ def _build_parser(only=None):
             help="the standing goal: the mandate with a contents list, each item a done-when check and the tasks that "
                  "build it; show lists open work outside it, items with no task and items claimed but not met, "
                  "exit 1 when any (T-2135)")
-    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "item", "link"])
+    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "item", "link", "verdict"])
     s.add_argument("text", nargs="*", help="set: the request, in the user's words; item: what it covers; link: ITEM TASK")
     s.add_argument("--until", metavar="YYYY-MM-DD", help="set: the last day it stands")
     s.add_argument("--no-end", action="store_true", help="set: it stands until replaced or cleared (instead of --until)")
