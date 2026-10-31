@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-31T22:33:20Z",
- "rev": "a14ce2af",
+ "updated": "2026-10-31T22:59:40Z",
+ "rev": "ededc3c0",
  "capabilities": [
   {
    "n": 1,
@@ -11883,14 +11883,14 @@
  },
  "not_yet": 0,
  "not_yet_open": 0,
- "unproven": 1021,
+ "unproven": 1022,
  "unproven_kinds": {
   "meaning": 571,
   "research-uncited": 30,
   "typed": 46,
   "red": 38,
   "perf-typed": 52,
-  "docs": 568,
+  "docs": 569,
   "ui-unshot": 57,
   "data": 6,
   "infra": 7,
@@ -12027,7 +12027,7 @@
    "state": "too few",
    "closed": null,
    "graded": null,
-   "why": "no graded parts scenarios yet; a proxy: the outcome of a three-part request; delegation and model choice aren't visible to the grader, so the long-horizon tier decides #9"
+   "why": "no graded parts, lanes scenarios yet; a proxy: the outcome of a three-part request; delegation and model choice aren't visible to the grader, so the long-horizon tier decides #9"
   },
   {
    "n": 10,
