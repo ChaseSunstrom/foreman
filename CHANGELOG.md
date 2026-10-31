@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A closed brief written in the last 2 seconds is indexed at once, so a second `fm checkpoint` no longer rewrites briefs-index.json and briefs-closed.json (T-2324).
 - `fm ship` runs fm check's affected tests over its range in the scratch tree before the full suite; a red one stops the ship in minutes with the failing classes named (T-2323).
 - Long goals state every string or number their hidden checks assert that the goal, its ticket and the base code never mention, and gen drops (and counts) a goal that pins more than three or a value over 60 characters (T-2322).
 - Long goals replayed from Foreman's own history carry the task brief's interpretation and acceptance criteria (text only, never the verify commands), so a goal reads like the ticket its session had (T-2321).
