@@ -337,6 +337,18 @@ class Lanes(ForemanTestCase):
             self.assertIn(f'effort: "{effort}"', agent)
             self.assertIn('model: "sonnet"', agent, "T-1796: every builder runs on Sonnet; Opus M lanes were 22% of usage")
 
+    def test_brief_records_the_model_and_model_flag_overrides(self):
+        # T-2291: the named model is recorded on the brief; --model overrides the history's suggestion
+        mk = lambda t: first(self.fm("task", "new", t, "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                                     "--step", "s", "--json").stdout)["id"]
+        a, b = mk("Router a"), mk("Router b")
+        out = json.loads(self.fm("lane", "brief", a, "--json").stdout)
+        self.assertIn('model: "sonnet"', out["agent"])
+        self.assertIn("too little history", self.fm("lane", "brief", a).stdout)
+        self.assertIn('model: "opus"', self.fm("lane", "brief", b, "--model", "opus").stdout)
+        for tid, model in ((a, "sonnet"), (b, "opus")):
+            self.assertIn(f"builder_model: {model}", open(c.find_brief(c.find_project(self.repo), tid).path).read())
+
     def test_a_clean_tasks_brief_says_to_record_the_behaviour_lock_first(self):
         # T-1712: CLEAN lanes failed the close gate: their brief never said to run the tests before the first edit
         lock = "fm check --evidence {} --step 1"
