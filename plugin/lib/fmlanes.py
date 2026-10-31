@@ -35,7 +35,10 @@ def _ref_state(root, branch):
             return "corrupt"
         if not re.fullmatch(rb"[0-9a-f]{40}|[0-9a-f]{64}|ref: \S+", data):
             return "corrupt"
-    return "ok" if _git(root, "rev-parse", "--verify", "-q", f"refs/heads/{branch}").returncode == 0 else "missing"
+    r = _git(root, "rev-parse", "--verify", "-q", f"refs/heads/{branch}")
+    if r.returncode not in (0, 1):  # a failure or timeout says nothing about the ref
+        raise c.PolicyError(f"git can't say whether branch {branch} exists (exit {r.returncode}): {r.stderr.strip()[:200]}")
+    return "ok" if r.returncode == 0 else "missing"
 
 
 def _ref_ok(root, branch):
@@ -56,7 +59,11 @@ def corrupt_refs(root, cap=5000):
             seen += 1
             if seen > cap:
                 return out
-            if os.path.getsize(os.path.join(r, n)) == 0 and not n.endswith(".lock"):
+            try:
+                empty = os.path.getsize(os.path.join(r, n)) == 0
+            except OSError:  # a ref git rewrote just now: skip it, not the rest
+                continue
+            if empty and not n.endswith(".lock"):
                 out.append(os.path.relpath(os.path.join(r, n), top))
     return out
 
@@ -91,14 +98,22 @@ def _wreck_aside(p, b, main, path, branches):
         f = _ref_file(main, x)
         if _ref_state(main, x) == "corrupt" and f:
             shutil.move(f, os.path.join(dest, "ref" if x == branches[0] else f"ref-{x.replace('/', '_')}"))
-    adm = os.path.join(os.path.dirname(_ref_file(main, "x")), "..", "..", "worktrees")
+    common = os.path.join(os.path.dirname(_ref_file(main, "x")), "..", "..")
+    for x in branches:  # the zeroed ref's reflog still holds its old sha
+        log = os.path.join(common, "logs", "refs", "heads", x)
+        if os.path.isfile(log):
+            shutil.copy2(log, os.path.join(dest, f"reflog-{x.replace('/', '_')}"))
+    adm = os.path.join(common, "worktrees")
     for n in (os.listdir(adm) if os.path.isdir(adm) else []):
         try:
             with open(os.path.join(adm, n, "gitdir")) as h:
                 link = h.read().strip()
         except OSError:
             continue
-        if os.path.realpath(os.path.dirname(link)) == os.path.realpath(path):
+        # an emptied gitdir (the same truncation) matches by name; a relative one is relative to the admin dir
+        if (os.path.realpath(os.path.dirname(os.path.join(adm, n, link))) == os.path.realpath(path) if link
+                else n == os.path.basename(path)):
+            shutil.copytree(os.path.join(adm, n), os.path.join(dest, "admin", n), symlinks=True)
             with contextlib.suppress(OSError):
                 os.remove(os.path.join(adm, n, "locked"))
     shutil.move(path, os.path.join(dest, os.path.basename(path)))

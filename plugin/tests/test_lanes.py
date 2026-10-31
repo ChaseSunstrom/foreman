@@ -228,7 +228,7 @@ class Lanes(ForemanTestCase):
         self.fm("lane", "rm", tid)
         self.assertFalse(os.path.exists(path))
 
-    def wreck(self, keep_one=False):
+    def wreck(self, keep_one=False, empty_gitdir=False):
         """T-2257: a lane whose creation was cut off: 0-byte branch ref, every file empty, a stale admin lock."""
         tid = self.new("Cut off", self.repo, focus=False)
         path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
@@ -245,6 +245,8 @@ class Lanes(ForemanTestCase):
         adm = os.path.join(self.repo, ".git", "worktrees")
         for n in os.listdir(adm):
             open(os.path.join(adm, n, "locked"), "w").write("claude agent\n")
+            if empty_gitdir and n == os.path.basename(path):
+                open(os.path.join(adm, n, "gitdir"), "w").close()
         return tid, path, ref
 
     def test_a_cut_off_lane_is_named_by_doctor_and_rm_moves_it_aside(self):
@@ -271,6 +273,19 @@ class Lanes(ForemanTestCase):
         f = subprocess.run(["git", "-C", self.repo, "fetch", "origin"], capture_output=True, text=True)
         self.assertEqual(f.returncode, 0, f.stderr)
         self.fm("lane", "new", tid)  # the task is free again
+
+    def test_a_cut_off_lane_with_an_emptied_admin_gitdir_is_unlocked_and_pruned(self):
+        tid, path, ref = self.wreck(empty_gitdir=True)
+        self.fm("lane", "rm", tid, "--why", "cut off")
+        wreck = os.path.join(c.find_project(self.repo).dir, "lane-wreck", tid)
+        self.assertTrue(os.path.isdir(os.path.join(wreck, "admin")), "the admin dir is kept for recovery")
+        self.assertNotIn(os.path.basename(path), os.listdir(os.path.join(self.repo, ".git", "worktrees")))
+        self.fm("lane", "new", tid)
+
+    def test_a_ref_state_git_failure_is_not_missing(self):
+        import fmlanes
+        with self.assertRaises(c.PolicyError):
+            fmlanes._ref_state(self.tmp, "x")  # not a repo: git exits 128
 
     def test_a_corrupt_ref_with_one_real_file_is_still_refused(self):
         tid, path, ref = self.wreck(keep_one=True)
