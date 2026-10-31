@@ -7031,6 +7031,9 @@ def _build_parser(only=None):
     s.add_argument("path", nargs="?", default=".", help="the tree to prove in (default: here)")
     s.add_argument("--limit", type=int, default=10, help="prove the best N candidates (default 10)")
     s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests, kept for this tree")
+    s.add_argument("--bugs", type=int, nargs="?", const=3, default=0, metavar="N", help="also ask a cheap child for bug "
+                   "candidates in the N hottest files (default 3, at most 10); each is proven by a model-written red test "
+                   "or stays a lead (T-2242)")
     s.add_argument("--capture", type=int, metavar="N", help="file up to N proven findings as planned tasks fm run works, "
                    "each red until fixed (its criterion is fm prove --only ID); nothing proven writes "
                    "research/prove-receipt.md (T-2123)")
