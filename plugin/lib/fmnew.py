@@ -307,6 +307,9 @@ def _scaffold(args, words):
     except OSError as e:
         _undo(made)
         raise fmcli.UsageError(f"can't write {d}: {e.strerror or e}")
+    if kind == "tool":  # T-2372: the active task must prove this tool before it closes
+        import fmtoolproof
+        fmtoolproof.built(name, dests[0], dests[1])
     nxt = (f"python3 {dests[1]} fails until {dests[0]} does its job; then fm new check --run {dests[0]}" if kind == "tool"
            else f"fm new check {dests[0]}")
     fmcli.out(args, {"wrote": dests, "template": kind}, "Wrote " + ", ".join(dests) + f".\nNext: {nxt}")

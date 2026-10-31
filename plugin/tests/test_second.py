@@ -45,7 +45,7 @@ class Plan(_Stubbed):
     def test_a_rival_model_reviews_the_plan(self):
         tid = json.loads(self.fm("task", "new", "Cache the session token", "--type", "FEATURE", "--tier", "L",
                                  "--ac", "tokens are cached :: true", "--step", "add the cache", "--interpretation",
-                                 "keep tokens in memory", "--approach", "1) dict 2) redis 3) file Choice 1: dict", "--json").stdout)["id"]
+                                 "keep tokens in memory", "--approach", "1) dict 2) redis 3) file Choice 1 (80%): dict", "--json").stdout)["id"]
         out = self.fm("second", "plan", tid, env=self.env).stdout
         self.assertIn("Verdict: revise", out)
         brief = self.fm("task", "show", tid).stdout
@@ -412,7 +412,7 @@ class LensSkills(ForemanTestCase):
             json.dump({"enabledPlugins": {"sec@m": True}}, f)
         self.fm("init")
         tid = json.loads(self.fm("task", "new", "x", "--type", "FIX", "--tier", "M", "--ac", "x :: true", "--step", "x",
-                                 "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--json").stdout)["id"]
+                                 "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a", "--json").stdout)["id"]
         self.fm("focus", tid)
         with open(os.path.join(self.repo, "a.py"), "w") as f:
             f.write("x = 1\n")

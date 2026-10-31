@@ -2,17 +2,19 @@
 (focus there pauses only that lane's), does its git work in its own files, and neither side's next or queue offers a
 task the other holds. fm lane new|list|rm manage them; rm never discards uncommitted work."""
 import json
+import re
 import os
 import shutil
 import subprocess
 import time
 import unittest
 
-from helpers import ForemanTestCase, read_text
+from helpers import ForemanTestCase, read_text, valid_m_plan
 
 import fmcore as c
+import fmlanes
 
-first = lambda text: json.JSONDecoder().raw_decode(text)[0]  # --focus prints its own lines after the JSON
+first =lambda text: json.JSONDecoder().raw_decode(text)[0]  # --focus prints its own lines after the JSON
 
 
 class Lanes(ForemanTestCase):
@@ -331,7 +333,7 @@ class Lanes(ForemanTestCase):
     def test_the_brief_agent_line_names_effort_by_tier(self):
         # T-0779: S builders run at medium effort, M at high, beside the model
         for tier, effort in (("S", "medium"), ("M", "high")):
-            extra = ["--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a"] if tier != "S" else []
+            extra = ["--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a"] if tier != "S" else []
             tid = first(self.fm("task", "new", f"T{tier}", "--type", "FEATURE", "--tier", tier, "--ac", "ok :: true",
                                 "--step", "s", *extra, "--json").stdout)["id"]
             agent = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"]
@@ -389,7 +391,7 @@ class Lanes(ForemanTestCase):
         """T-1028: a builder whose launching claude process is gone, with work left in its lane."""
         import fmbus
         tid = first(self.fm("task", "new", "Built", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true", "--step", "s",
-                            "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--json").stdout)["id"]
+                            "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a", "--json").stdout)["id"]
         path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
         p = c.find_project(self.repo)
         b = c.find_brief(p, tid)
@@ -503,7 +505,7 @@ class Lanes(ForemanTestCase):
     def test_a_briefed_never_launched_task_is_not_flagged(self):
         import fmbus
         tid = first(self.fm("task", "new", "Idle", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true", "--step", "s",
-                            "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--json").stdout)["id"]
+                            "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a", "--json").stdout)["id"]
         p = c.find_project(self.repo)
         b = c.find_brief(p, tid)
         b.meta["builder"] = c.now()
@@ -1070,6 +1072,274 @@ class LaneRecovery(ForemanTestCase):
         ev = [e for e in c.ledger_events(c.find_project(self.repo), ["lane_recover"]) if e.get("task") == tid]
         self.assertEqual(len(ev), 2, "a blocked third stop is not a third recovery")
         self.assertNotIn(f"fm lane recover {tid}", self.fm("next").stdout, "a blocked task is not recovered")
+
+
+class RaceBase(ForemanTestCase):
+    """T-2339: a race at plan time. Temporary repos only; a builder is simulated by a worktree and a commit."""
+    OPTIONS = ("1) widen the race; fails if: builders converge 2) use what exists: two sides; fails if: a tie "
+               "3) do less: the stuck race only; fails if: never fires Choice 1 (80%): widen")
+
+    def git(self, cwd, *args):
+        return subprocess.run(["git", "-C", cwd, "-c", "user.email=t@t", "-c", "user.name=t", *args],
+                              capture_output=True, text=True, check=True).stdout
+
+    def task(self, check="test -f win.txt", approach=None, tier="M"):
+        reading, plan = valid_m_plan()
+        return json.loads(self.fm("task", "new", "Make it win", "--type", "FEATURE", "--tier", tier, "--interpretation",
+                                  reading, "--approach", approach or self.OPTIONS, "--ac", f"it wins :: {check}",
+                                  "--step", "s", "--scope", "win.txt", "--json").stdout)["id"]
+
+    def race(self, tid, *more):
+        return json.loads(self.fm("lane", "race", tid, *more, "--json").stdout)
+
+    def side(self, tid, name, files):
+        """What a builder does: its own worktree, fm focus there, committed files {path: text}."""
+        path = os.path.join(self.tmp, f"wt-{name}")
+        self.git(self.repo, "worktree", "add", "-q", "-b", f"race-{name}", path, "HEAD")
+        self.fm("focus", tid, cwd=path)
+        for rel, text in files.items():
+            os.makedirs(os.path.dirname(os.path.join(path, rel)), exist_ok=True)
+            with open(os.path.join(path, rel), "w") as f:
+                f.write(text)
+        self.git(path, "add", "-A")
+        self.git(path, "commit", "-qm", f"{tid}: side {name}")
+        return path
+
+    def brief(self, tid):
+        return c.find_brief(c.find_project(self.repo), tid)
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+
+
+class PlanRace(RaceBase):
+    def test_three_sides_one_per_named_option_each_brief_names_its_option(self):
+        tid = self.task()
+        self.fm("lane", "max", "3")  # three builders out at once is a decision, not a default
+        d = self.race(tid, "--sides", "3")
+        self.assertEqual(len(d["sides"]), 3, d)
+        self.assertEqual(d["sides"][0], tid)
+        p = c.find_project(self.repo)
+        built = []
+        for t in d["sides"]:
+            text = read_text(os.path.join(p.dir, "audits", f"{t}.builder.md"))
+            built.append(re.search(r"build option (\d)", text).group(1))
+        self.assertEqual(built, ["1", "2", "3"], "the stated choice first, then the others in order")
+        self.assertIn("do less", self.brief(d["sides"][2]).section("Race"))
+        self.assertEqual(self.brief(tid).meta["race_sides"], d["sides"][1:])
+
+    def test_two_sides_by_default_and_the_chosen_option_is_side_a(self):
+        tid = self.task(approach=self.OPTIONS.replace("Choice 1 (80%): widen", "Choice 2 (80%): two sides"))
+        d = self.race(tid)
+        self.assertEqual(len(d["sides"]), 2)
+        self.assertIn("option 2", self.brief(tid).section("Race"))
+        self.assertIn("option 1", self.brief(d["sides"][1]).section("Race"))
+
+    def test_checks_that_pass_on_the_base_tree_are_refused_and_nothing_is_written(self):
+        tid = self.task(check="true")
+        r = self.fm("lane", "race", tid, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("the checks can't tell the sides apart: add one that fails now", r.stderr + r.stdout)
+        p = c.find_project(self.repo)
+        self.assertEqual([b.id for b in c.load_briefs(p) if b.meta.get("race_of")], [])
+        self.assertFalse(self.brief(tid).meta.get("race"))
+
+    def test_a_refused_race_never_unfocuses_the_task(self):  # T-2338 merge: the release comes after every refusal
+        tid = self.task(check="true")
+        self.fm("focus", tid)
+        self.assertEqual(self.brief(tid).status, "active")
+        self.assertNotEqual(self.fm("lane", "race", tid, check=False).returncode, 0)
+        self.assertEqual(self.brief(tid).status, "active")
+
+    def test_one_failing_check_among_passing_ones_is_enough(self):
+        tid = self.task()
+        self.fm("task", "ac", tid, "add", "fine", "--verify", "true")
+        self.assertEqual(len(self.race(tid)["sides"]), 2)
+
+    def test_more_sides_than_options_or_than_three_or_than_slots_are_refused(self):
+        tid = self.task(approach="1) a; fails if: x 2) use what exists: b; fails if: y Choice 1: a")
+        r = self.fm("lane", "race", tid, "--sides", "3", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("2 options", r.stderr + r.stdout)
+        r = self.fm("lane", "race", tid, "--sides", "4", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("2 or 3", r.stderr + r.stdout)
+        other = self.task()
+        self.fm("lane", "max", "2")
+        r = self.fm("lane", "race", other, "--sides", "3", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("3 free builder slots", r.stderr + r.stdout)
+        self.assertEqual([b.id for b in c.load_briefs(c.find_project(self.repo)) if b.meta.get("race_of") == other], [])
+
+
+    def test_one_named_option_with_the_default_two_sides_is_an_open_race(self):
+        one = "1) the obvious way; fails if: it is slow. Choice 1: the obvious way"
+        tid = self.task(approach=one, tier="S")  # an M plan needs 3 options; an S one may name fewer
+        d = self.race(tid)
+        self.assertEqual(len(d["sides"]), 2)
+        r = self.fm("lane", "race", self.task(approach=one, tier="S"), "--sides", "3", check=False)
+        self.assertNotEqual(r.returncode, 0, "three sides still need three options")
+
+    def test_a_choice_word_in_prose_is_not_a_choice_and_the_first_stated_one_counts(self):
+        tid = self.task(approach=self.OPTIONS.replace("Choice 1 (80%): widen", "Choice 2 (70%) the sure one. Later we chose a "
+                                                      "simple cache"))
+        self.race(tid)
+        self.assertIn("option 2", self.brief(tid).section("Race"))
+        self.assertEqual(fmlanes._options(self.brief(tid))[1], 2)
+
+    def test_the_base_check_ignores_a_missing_program_and_a_linted_command(self):
+        tid = self.task(check="nosuchprog_t2339")
+        self.fm("task", "ac", tid, "add", "fine", "--verify", "true")
+        r = self.fm("lane", "race", tid, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("a timeout, a missing program or a linted command doesn't count", r.stderr + r.stdout)
+        self.assertIn("main checkout", r.stderr + r.stdout)
+        self.assertEqual([b.id for b in c.load_briefs(c.find_project(self.repo)) if b.meta.get("race_of")], [])
+
+    def test_a_test_file_name_with_a_trailing_newline_is_not_a_test_file(self):
+        self.assertTrue(fmlanes._TEST_RE.fullmatch("pkg/test_a.py"))
+        self.assertTrue(fmlanes._TEST_RE.fullmatch("a_test.py"))
+        self.assertFalse(fmlanes._TEST_RE.fullmatch("test_a.py\n"))
+        self.assertFalse(fmlanes._TEST_RE.fullmatch("test_é.py"))
+
+
+class RaceEvidence(RaceBase):
+    GOOD ="import unittest\n\n\nclass T(unittest.TestCase):\n    def test_good(self):\n" \
+           "        self.assertEqual(open('win.txt').read().strip(), 'good')\n"
+
+    def started(self):
+        tid = self.task()
+        d = self.race(tid)
+        return tid, d["sides"][1]
+
+    def score(self, tid):
+        return json.loads(self.fm("lane", "race", tid, "--score", "--json").stdout)
+
+    def test_cross_examination_ranks_the_side_whose_test_catches_the_other_first(self):
+        tid, other = self.started()
+        # B is smaller and passes the frozen check; A's own test fails B's tree: A leads although B has fewer lines
+        self.side(tid, "a", {"win.txt": "good\n", "test_a.py": self.GOOD})
+        self.side(other, "b", {"win.txt": "bad\n"})
+        d = self.score(tid)
+        rows = {r["id"]: r for r in d["sides"]}
+        self.assertLess(rows[other]["lines"], rows[tid]["lines"])
+        self.assertEqual((rows[tid]["caught"], rows[other]["caught"]), (1, 0))
+        self.assertEqual((rows[tid]["broken"], rows[other]["broken"]), (0, 1))
+        self.assertEqual(d["leader"], tid)
+        self.assertIn(f"leader: {tid}", self.fm("lane", "race", tid, "--score").stdout)
+
+    def test_without_a_test_that_tells_them_apart_the_smaller_diff_leads(self):
+        tid, other = self.started()
+        self.side(tid, "a", {"win.txt": "one\n" * 30})
+        self.side(other, "b", {"win.txt": "two\n"})
+        d = self.score(tid)
+        self.assertEqual(d["leader"], other)
+        self.assertEqual({r["caught"] for r in d["sides"]}, {0})
+
+    def test_a_test_that_fails_on_its_own_side_catches_nobody(self):
+        tid, other = self.started()
+        self.side(tid, "a", {"win.txt": "bad\n", "test_a.py": self.GOOD})  # red at home: no evidence
+        self.side(other, "b", {"win.txt": "good\n"})
+        d = self.score(tid)
+        self.assertEqual({r["caught"] for r in d["sides"]}, {0})
+
+    def test_identical_diffs_are_no_real_alternative(self):
+        tid, other = self.started()
+        self.side(tid, "a", {"win.txt": "same\n"})
+        self.side(other, "b", {"win.txt": "same\n"})
+        d = self.score(tid)
+        self.assertFalse(d["alternative"])
+        self.assertIn("no real alternative", self.fm("lane", "race", tid, "--score").stdout)
+
+    def test_files_outside_scope_are_counted(self):
+        tid, other = self.started()
+        self.side(tid, "a", {"win.txt": "x\n", "extra.txt": "y\n"})
+        self.side(other, "b", {"win.txt": "z\n"})
+        rows = {r["id"]: r for r in self.score(tid)["sides"]}
+        self.assertEqual((rows[tid]["outside"], rows[other]["outside"]), (1, 0))
+
+    def test_pick_is_a_decision_a_ledger_row_and_a_note_in_the_winners_approach(self):
+        tid, other = self.started()
+        self.side(tid, "a", {"win.txt": "good\n", "test_a.py": self.GOOD})
+        self.side(other, "b", {"win.txt": "bad\n"})
+        out = self.fm("lane", "pick", tid).stdout
+        p = c.find_project(self.repo)
+        decisions = read_text(os.path.join(p.dir, "decisions.md"))
+        row = [l for l in decisions.splitlines() if f"{tid} won the race" in l]
+        self.assertEqual(len(row), 1, decisions)
+        self.assertIn(other, row[0], "the loser is the rejected column")
+        self.assertIn("caught", row[0], "the evidence")
+        ev = [e for e in c.ledger_events(p, ["race_pick"])][-1]["data"]
+        self.assertEqual((ev["winner"], ev["stated"], ev["first_won"]), (tid, 1, True))
+        self.assertIn(other, ev["losers"])
+        approach = self.brief(tid).section("Approach (options → choice → why)")
+        self.assertIn("Race:", approach)
+        self.assertIn("use what exists", approach.split("Race:")[1], "the loser's option")
+        self.assertIn("lost", approach.split("Race:")[1], "and why")
+        self.assertIn("race", out)
+
+    def test_a_builders_test_sees_none_of_this_shells_secrets(self):
+        tid, other = self.started()
+        test = ("import os, unittest\n\n\nclass T(unittest.TestCase):\n    def test_env(self):\n"
+                "        self.assertIsNone(os.environ.get('FM_RACE_SECRET_T2339'))\n"
+                "        self.assertEqual(open('win.txt').read().strip(), 'good')\n")
+        self.side(tid, "a", {"win.txt": "good\n", "test_a.py": test})
+        self.side(other, "b", {"win.txt": "bad\n"})
+        d = json.loads(self.fm("lane", "race", tid, "--score", "--json", env={"FM_RACE_SECRET_T2339": "s3cret"}).stdout)
+        rows = {r["id"]: r for r in d["sides"]}
+        self.assertEqual(rows[tid]["caught"], 1, "A's test passes at home only if it can't see the variable")
+
+    def test_a_side_with_uncommitted_work_is_an_error_row_and_ranks_last(self):
+        tid, other = self.started()
+        a = self.side(tid, "a", {"win.txt": "x\n"})  # the smallest diff, which would win a tie
+        with open(os.path.join(a, "late.txt"), "w") as f:
+            f.write("not committed\n")
+        self.side(other, "b", {"win.txt": "z\n" * 20})
+        d = self.score(tid)
+        rows = {r["id"]: r for r in d["sides"]}
+        self.assertIn("uncommitted work", rows[tid]["error"])
+        self.assertEqual(d["leader"], other)
+        self.assertIn(f"{tid}: error: uncommitted work", self.fm("lane", "race", tid, "--score").stdout)
+
+    def test_a_file_another_side_has_in_the_way_does_not_crash_the_score(self):
+        tid, other = self.started()
+        quiet = "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n"
+        self.side(tid, "a", {"win.txt": "good\n", "sub/test_a.py": quiet})
+        self.side(other, "b", {"win.txt": "good\n", "sub": "a file where A wants a folder\n"})
+        d = self.score(tid)
+        self.assertEqual({r["caught"] for r in d["sides"]}, {0}, "no word either way is not a catch")
+
+    def test_a_test_that_errors_on_the_other_side_is_coupled_not_caught(self):
+        tid, other = self.started()
+        test = "import unittest\nimport helper_t2339\n\n\nclass T(unittest.TestCase):\n    def test_x(self):\n" \
+               "        self.assertEqual(helper_t2339.V, 1)\n"
+        self.side(tid, "a", {"win.txt": "good\n", "helper_t2339.py": "V = 1\n", "test_a.py": test})
+        self.side(other, "b", {"win.txt": "good\n"})
+        d = self.score(tid)
+        rows = {r["id"]: r for r in d["sides"]}
+        self.assertEqual((rows[tid]["caught"], rows[tid]["coupled"], rows[other]["broken"]), (0, 1, 0))
+        self.assertIn("coupled to 1", self.fm("lane", "race", tid, "--score").stdout)
+
+    def test_pick_reuses_a_score_while_no_side_moved_and_scores_again_after(self):
+        tid, other = self.started()
+        a = self.side(tid, "a", {"win.txt": "good\n", "test_a.py": self.GOOD})
+        self.side(other, "b", {"win.txt": "bad\n"})
+        self.assertIn("running the frozen checks", self.fm("lane", "race", tid, "--score").stderr)
+        self.git(a, "commit", "-q", "--allow-empty", "-m", "moved")  # a side moved: the stored score is stale
+        self.assertIn("running the frozen checks", self.fm("lane", "race", tid, "--score").stderr)
+        again = self.fm("lane", "pick", tid)
+        self.assertNotIn("running the frozen checks", again.stderr, "same heads: the stored rows are used")
+        self.assertIn("caught", again.stdout)
+
+    def test_the_first_choice_losing_is_a_ledger_row_too(self):
+        tid, other = self.started()
+        self.side(tid, "a", {"win.txt": "bad\n"})
+        self.side(other, "b", {"win.txt": "good\n", "test_b.py": self.GOOD})
+        self.fm("lane", "pick", other)
+        ev = c.ledger_events(c.find_project(self.repo), ["race_pick"])[-1]["data"]
+        self.assertEqual((ev["winner"], ev["first_won"], ev["loser"]), (other, False, tid))
+        self.assertIn("lost", self.brief(other).section("Approach (options → choice → why)"))
 
 
 if __name__ == "__main__":
