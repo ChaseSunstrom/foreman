@@ -1670,14 +1670,19 @@ def scorecard(p, agent="foreman", bar=0.8):
         bare = [] if who == "draft-genesis" else [k for k in kinds if k not in fmexam.CHILD_KINDS]
         seen_kinds = {sid.rsplit("-", 2)[0] for sid, v in pools[who].items() if v is not None}
         unseen = [k for k in kinds if k not in bare and k not in seen_kinds]  # T-2217: one kind can't speak for another
+        # T-2225: ids are kind-lang-hash; a --lang-narrowed run grades one language, which can't speak for the rest
+        have = {sid.rsplit("-", 2)[1] for sid, v in pools[who].items() if v is not None and sid.rsplit("-", 2)[0] in kinds}
+        langs = [x for x in fmexam.LANGS if x in have]
+        nolang = [x for x in fmexam.LANGS if x not in have] if graded else []
         why = ("; ".join(x for x in (f"no outside author writes {', '.join(bare)} scenarios yet" if bare else "",
                                      f"no graded {', '.join(unseen)} scenarios yet" if unseen else "",
+                                     f"no graded {', '.join(nolang)} scenarios yet" if nolang else "",
                                      *(fmexam.PROXY[k] for k in kinds if k in fmexam.PROXY)) if x))
         state = ("unmeasurable" if not kinds and re.search(r"\bunmeasurable:", text) else  # T-2188: said so, with why
                  "no exam kind" if not kinds else "no outside author" if len(bare) == len(kinds) else
                  "too few" if graded < 3 else  # 3: the fewest held out per capability
-                 "under" if closed / graded < bar else "partial" if bare or unseen else "pass")
-        rows.append({"n": int(n), "name": name, "kinds": kinds, "agent": who, "graded": graded, "closed": closed,
+                 "under" if closed / graded < bar else "partial" if bare or unseen or nolang else "pass")
+        rows.append({"n": int(n), "name": name, "kinds": kinds, "langs": langs, "agent": who, "graded": graded, "closed": closed,
                      "rate": round(closed / graded, 3) if graded else 0, "state": state,
                      "selfmade": len(mine) - graded, "why": why})
     pool = pools[agent] if agent in pools else newest(agent)
