@@ -208,6 +208,25 @@ class Lanes(ForemanTestCase):
         self.assertNotIn("kept", out, "its branch is merged (no commits): it goes")
         self.fm("lane", "new", tid)  # and the lane can be made again
 
+    def test_rm_discards_a_builders_scratch_folder_but_not_other_ignored_files(self):
+        # T-2289: builders keep scratch in .fm-scratch/ (T-2259); it's throwaway by contract and never blocks rm
+        tid = self.new("Scratch", self.repo, focus=False)
+        path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
+        common = subprocess.run(["git", "-C", path, "rev-parse", "--git-common-dir"], capture_output=True,
+                                text=True).stdout.strip()
+        os.makedirs(os.path.join(path, common, "info"), exist_ok=True)
+        with open(os.path.join(path, common, "info", "exclude"), "a") as f:
+            f.write(".fm-scratch/\n.env\n")
+        os.makedirs(os.path.join(path, ".fm-scratch"))
+        with open(os.path.join(path, ".fm-scratch", "batch.json"), "w") as f:
+            f.write("[]\n")
+        with open(os.path.join(path, ".env"), "w") as f:
+            f.write("KEY=x\n")
+        self.assertNotEqual(self.fm("lane", "rm", tid, check=False).returncode, 0, "the .env still blocks it")
+        os.remove(os.path.join(path, ".env"))
+        self.fm("lane", "rm", tid)
+        self.assertFalse(os.path.exists(path))
+
     def test_rm_discards_a_folder_holding_only_the_guard_script_cache(self):
         # T-1685: a Foreman lane's guard writes state/guard-scripts.json in its own worktree; that alone never blocks rm
         tid = self.new("Cached", self.repo, focus=False)
