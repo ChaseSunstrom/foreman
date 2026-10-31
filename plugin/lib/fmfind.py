@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -516,13 +517,15 @@ def _deps(root, files, code, rels):
     return out
 
 
-def scan(root, prec=None, proven=None, home=None):
+def scan(root, prec=None, proven=None, home=None, extra=()):
     """(files scanned, findings); ranked best first when prec (each finder's precision, a dict, maybe empty) is given;
-    proven and home as in rank (home: what find_key paths are relative to, default root)."""
+    proven and home as in rank (home: what find_key paths are relative to, default root); extra: findings made
+    elsewhere (the tool rung's) joined to these."""
     files, rels, gen = _files(root)
     code = [Src(r, t) for r, t in files if os.path.splitext(r)[1].lower() in LANG]
     import fmsecrets
-    out = _untested(code) + _docs(files, code, root) + _deps(root, files, code, rels)
+    known = {r for r, _ in files + gen}  # regular, unlinked files this scan read: a tool's `//line` can name any path
+    out = _untested(code) + _docs(files, code, root) + _deps(root, files, code, rels) + [f for f in extra if f["file"] in known]
     for s in code:
         out += _flaky(s) if s.test else _sql(s) + _slow(s)
     for rel, text in files + gen:  # a generated file can still hold a pasted key
@@ -875,6 +878,156 @@ def cmd_blindspots(p, args):
     return 0
 
 
+# T-2239, the tool rung: each stack's standard analyzer. The argv is Foreman's, fixed here; a repo's manifest files only
+# select an entry (by existing as a regular file, never a symlink). A tool that executes repo code (go vet builds) is why
+# the rung runs only where the user said yes (fm prove --yes-run) or in an exam sandbox.
+GO_LINE = r"^(?P<file>[^:\s]+\.go):(?P<line>\d+):(?:\d+:)? (?P<msg>.+)$"
+TOOLS = (
+    {"name": "ruff", "argv": ("ruff", "check", "--output-format", "json", "--no-cache", "--isolated"),
+     "selects": ("pyproject.toml", "setup.py", "requirements.txt"), "parse": "ruff", "stream": 0, "kind": "bug"},
+    {"name": "go-vet", "argv": ("go", "vet", "./..."), "selects": ("go.mod",), "parse": GO_LINE, "stream": 1, "kind": "bug"},
+    {"name": "gosec", "argv": ("gosec", "-fmt", "sarif", "-quiet", "./..."), "selects": ("go.mod",), "parse": "sarif",
+     "stream": 0, "kind": "vuln"},
+)
+TOOL_T, TOOL_MAX = 120, 8 << 20  # a run's seconds, and the bytes each stream may hold (the run is killed past it)
+
+
+def _rel(path, root):
+    """path as a relative name inside root, or None: tool output is data (an absolute path elsewhere, .. or a URI is dropped)."""
+    if not isinstance(path, str) or "\x00" in path:
+        return None
+    path = path[7:] if path.startswith("file://") else path
+    if os.path.isabs(path):
+        path = os.path.relpath(os.path.normpath(path), root)
+    path = os.path.normpath(path)
+    return None if path in (".", "") or path == ".." or path.startswith("../") or os.path.isabs(path) else path
+
+
+def _int(x):
+    return x if isinstance(x, int) and not isinstance(x, bool) and x > 0 else 1
+
+
+def _parse_ruff(text, root):
+    return [(r, _int((x.get("location") or {}).get("row")), f"{x.get('code')}: {x.get('message')}")
+            for x in json.loads(text) if isinstance(x, dict) and (r := _rel(x.get("filename"), root))]
+
+
+def _parse_sarif(text, root):
+    out = []
+    for run in json.loads(text).get("runs") or []:
+        for x in run.get("results") or []:
+            for loc in (x.get("locations") or [])[:1]:
+                phys = loc.get("physicalLocation") or {}
+                r = _rel((phys.get("artifactLocation") or {}).get("uri"), root)
+                if r:
+                    out.append((r, _int((phys.get("region") or {}).get("startLine")),
+                                f"{x.get('ruleId')}: {(x.get('message') or {}).get('text')}"))
+    return out
+
+
+def _parse_lines(text, pattern, root):
+    rx, out = re.compile(pattern, re.M), []
+    for m in rx.finditer(text):
+        if r := _rel(m["file"], root):
+            out.append((r, _int(int(m["line"])), m["msg"]))
+    return out
+
+
+def _tool_env(root):
+    """Foreman's own minimal environment: no credentials, no FOREMAN_/CLAUDE vars. PATH keeps only absolute entries
+    outside the tree (a relative one, or one inside it, would run the tree's own file as the tool)."""
+    path = os.pathsep.join(x for x in os.environ.get("PATH", "").split(os.pathsep)
+                           if os.path.isabs(x) and os.path.commonpath([os.path.realpath(x), root]) != root)
+    return {"PATH": path, "HOME": os.environ.get("HOME", "/nonexistent"), "LANG": "C.UTF-8", "CGO_ENABLED": "0",
+            "GOTOOLCHAIN": "local", "GOFLAGS": "-mod=readonly", "GOPROXY": "off"}
+
+
+def _run_tool(argv, root, env):
+    """(stdout, stderr, returncode, why): each stream's first TOOL_MAX bytes; why names a timeout or an overflow (the run
+    is killed). shell=False; output goes to temp files polled for size (no rlimit: it would reach the tool's own compiler
+    and caches); the whole process group is killed however the run ends, so no grandchild outlives it."""
+    import signal
+    import tempfile
+    import time
+    why = None
+    with tempfile.TemporaryFile() as o, tempfile.TemporaryFile() as e:
+        proc = subprocess.Popen(argv, cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=o, stderr=e,
+                                start_new_session=True)
+        try:
+            end = time.monotonic() + TOOL_T
+            while proc.poll() is None and not why:
+                if time.monotonic() > end:
+                    why = f"timed out after {TOOL_T}s"
+                elif max(os.fstat(o.fileno()).st_size, os.fstat(e.fileno()).st_size) > TOOL_MAX:
+                    why = f"output over {TOOL_MAX} bytes"
+                else:
+                    time.sleep(0.05)
+        finally:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            proc.wait()
+        texts = []
+        for f in (o, e):
+            f.seek(0)
+            texts.append(f.read(TOOL_MAX).decode("utf-8", "replace"))
+        return texts[0], texts[1], proc.returncode, why
+
+
+def ladder(root, p=None, sandbox=False):
+    """(findings, notes): the tool rung over root. Runs nothing unless fmprove.trusted(root) or sandbox (a caller's
+    argument: an exam's throwaway render; no file in a tree and no environment variable can set it). Findings are
+    tool:NAME leads; a selected tool not on PATH is captured once under the capability-miss key (project p, if any)."""
+    import fmprove
+    root = os.path.realpath(root)  # trust is judged on the resolved path, and the tools run there
+    if not (sandbox or fmprove.trusted(root)):
+        return [], ["tool rung skipped: not a trusted tree (fm prove --yes-run PATH says yes to one)"]
+    env, found, notes = _tool_env(root), [], []
+    for t in TOOLS:
+        if not any(stat.S_ISREG(st.st_mode) for m in t["selects"] if (st := _lstat(os.path.join(root, m)))):
+            continue
+        name = t["argv"][0]
+        exe = shutil.which(name, path=env["PATH"])
+        if exe and os.path.commonpath([os.path.realpath(exe), root]) == root:  # a link into the tree is the tree's file
+            exe = None
+        if not exe:
+            notes.append(f"tool:{t['name']}: {name} is not on PATH")
+            if p:
+                import fmeco
+                fmeco.capture_once(p, f"Missing tool {name}: find it (fm plugins find {name}) or build it (script + test)\n"
+                                   f"capability-miss: {name}", "FEATURE", "self", key=f"capability-miss: {name}")
+            continue
+        argv = (exe,) + t["argv"][1:]
+        if name == "go" and (st := _lstat(os.path.join(root, "vendor", "modules.txt"))) and stat.S_ISREG(st.st_mode):
+            argv = argv[:2] + ("-mod=vendor",) + argv[2:]
+        out, err, rc, why = _run_tool(argv, root, env)
+        first = c.fit(c.plain(next((x for x in err.splitlines() if x.strip()), "")), 120)
+        rows = []
+        if why:
+            notes.append(f"tool:{t['name']}: {why}")
+            continue
+        try:
+            text = (out, err)[t["stream"]]
+            rows = (_parse_ruff(text, root) if t["parse"] == "ruff" else _parse_sarif(text, root) if t["parse"] == "sarif"
+                    else _parse_lines(text, t["parse"], root))
+        except (ValueError, AttributeError, TypeError, RecursionError) as ex:
+            notes.append(f"tool:{t['name']}: output not understood ({type(ex).__name__}); exit {rc}; stderr: {first}")
+            continue
+        if rc < 0 or (rc and not rows):
+            notes.append(f"tool:{t['name']}: exit {rc} with {len(rows)} finding(s); stderr: {first}")
+        found += [_found("tool:" + t["name"], t["kind"], rel, line, "", c.fit(c.plain(says), 200))
+                  for rel, line, says in rows[:500]]
+    return found, notes
+
+
+def _lstat(path):
+    try:
+        return os.lstat(path)
+    except OSError:
+        return None
+
+
 def cmd_find(args):
     import fmcli
     root, cap = os.path.abspath(args.path), getattr(args, "capture", None)
@@ -902,9 +1055,12 @@ def cmd_find(args):
     if bad:  # exit 1 means findings here, so a usage slip must read as an error (2), not as a hit
         print(f"fm find: {bad}", file=sys.stderr)
         return 2
+    tools, notes = ladder(root, p) if getattr(args, "ladder", False) else ([], [])
+    for note in notes:
+        print(f"fm find: {c.plain(note)}", file=sys.stderr)
     try:
         prec = (precision(p) if p else {}) if ranked else None
-        n, found = scan(root, prec, proofs(p) if ranked and p else None, p and os.path.realpath(p.root))  # keys use realpaths, as fm prove's do
+        n, found = scan(root, prec, proofs(p) if ranked and p else None, p and os.path.realpath(p.root), tools)  # keys use realpaths, as fm prove's do
     except Exception as e:  # noqa: BLE001 — exit 1 means findings; a scan that dies must read as an error (2)
         print(f"fm find: the scan failed under {root}: {type(e).__name__}: {c.plain(str(e))[:300]}", file=sys.stderr)
         return 2
