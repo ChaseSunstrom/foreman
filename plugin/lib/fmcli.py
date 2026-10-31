@@ -1498,6 +1498,9 @@ def _claimed(p, b):
     """T-1122: the files this task says are its own, its scope and the paths its 'scope:' log reasons name: an edit
     made in the same command as the finish has no touched record yet, so the record alone can't say it's this task's."""
     named = [s.rstrip("/") for s in b.meta.get("scope") or []]
+    b = c.find_brief(p, b.id) or b  # T-2251: the finish's --docs landed in the file after b was read
+    for w in b.section("Docs impact").split():  # the docs it names are its own, whoever else touched them
+        named.append(w.strip(" `'\"().,;:"))
     for line in b.section("Log").splitlines():
         head = line.partition(" scope: ")[2].split(" — ")[0] if " scope: " in line else ""
         named += [x.strip(" `'\"") for x in re.split(r",\s*|\s+and\s+", head) if x.strip()]

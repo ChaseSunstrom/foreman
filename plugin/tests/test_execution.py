@@ -185,6 +185,19 @@ class BoardClose(Base):
         self.assertEqual(out.strip().splitlines()[-1], f"Landed: committed {sha} · not pushed")
         self.assertIn("Landed: committed", self.fm("task", "finish", "T-0001", "--commit", "again").stdout)
 
+    def test_a_doc_the_finish_names_is_committed_though_another_task_touched_it(self):  # T-2251
+        self.committed("CHANGELOG.md", "# Log\n")
+        self.task()
+        self.write("CHANGELOG.md", "# Log\n- shell edit\n")  # no touched record for this task
+        c.log_event(self.p, "touched", task="T-0009", data={"file": os.path.join(self.repo, "CHANGELOG.md")})
+        out = self.finish("--docs", "CHANGELOG.md", "--commit", "x").stdout
+        shown = subprocess.run(["git", "-C", self.repo, "show", "--name-only", "--format=", "HEAD"],
+                               capture_output=True, text=True).stdout
+        self.assertIn("CHANGELOG.md", shown)
+        self.assertRegex(out.strip().splitlines()[-1], r"^Landed: committed ")
+        self.assertEqual(subprocess.run(["git", "-C", self.repo, "status", "--porcelain", "--", "CHANGELOG.md"],
+                                        capture_output=True, text=True).stdout, "")
+
     def test_tier_drift_has_a_short_kind_in_the_verdict(self):
         import fmcli
         self.assertEqual(fmcli._warning_kind("T-0956 was planned S, but its diff is M-sized (3 files, 90 lines): x"),
