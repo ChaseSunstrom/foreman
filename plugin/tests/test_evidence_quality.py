@@ -87,3 +87,52 @@ class Surprise(_Base):
     def test_a_surprise_needs_text(self):
         p = self.fm("surprise", " ", check=False)
         self.assertNotEqual(p.returncode, 0)
+
+
+class Bench(_Base):
+    """T-2284: fm task evidence --bench times a command on the task's start tree and on this one."""
+
+    def _commit(self, text):
+        import os
+        import subprocess
+        with open(os.path.join(self.repo, "work.py"), "w") as f:
+            f.write(text)
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "w"], check=True)
+
+    def _perf(self):
+        return json.loads(self.fm("task", "new", "faster", "--type", "PERFORMANCE", "--tier", "S", "--ac", "fast :: true",
+                                  "--step", "speed it up", "--json").stdout)["id"]
+
+    def test_medians_before_and_after_are_recorded_and_finish_accepts_them(self):
+        self._commit("import time\ntime.sleep(0.3)\n")
+        tid = self._perf()
+        self.fm("focus", tid)
+        self._commit("pass\n")
+        r = self.fm("task", "evidence", tid, "--step", "1", "--bench", "python3 work.py", "--repeat", "3")
+        self.assertIn("(3 runs each)", r.stdout)
+        shown = self.fm("task", "show", tid).stdout
+        self.assertRegex(shown, r"python3 work.py: 0\.[3-9]\d*s → 0\.\d+s \(3 runs each\)")
+        self.assertIn("(3 runs each)", shown.split("Measurements", 1)[1])
+        self.fm("task", "finish", tid, "--audit", "read it")  # no --numbers: the bench is the numbers
+
+    def test_a_failing_side_is_recorded_as_a_failure(self):
+        self._commit("pass\n")
+        tid = self._perf()
+        self.fm("focus", tid)
+        self._commit("raise SystemExit(3)\n")
+        r = self.fm("task", "evidence", tid, "--bench", "python3 work.py", "--repeat", "2", check=False)
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("failed on the current tree", r.stdout)
+
+    def test_no_base_commit_is_refused(self):
+        tid = self._perf()  # never focused: no start commit
+        r = self.fm("task", "evidence", tid, "--bench", "true", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("start commit", r.stderr)
+
+    def test_bench_does_not_mix_with_run_or_a_huge_repeat(self):
+        tid = self._perf()
+        for extra in (("--run", "true"), ("--repeat", "999")):
+            r = self.fm("task", "evidence", tid, "--bench", "true", *extra, check=False)
+            self.assertNotEqual(r.returncode, 0)
