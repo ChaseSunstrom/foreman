@@ -586,14 +586,15 @@ class GenesisCheck(ForemanTestCase):
 
     def test_a_verb_whose_module_a_reached_verbs_module_imports_is_reached(self):
         # T-2186: fm find runs fmoutcomes' and fmdocs' code, so a session that runs fm find uses fm outcomes and fm docs;
-        # reach read only words, so it named them unreached while it missed fm adopt and fm mandate, which nothing ran
+        # reach read only words, so it named them unreached while it missed fm adopt and fm mandate, which nothing ran.
+        # T-2283: fm find now imports fmeco (fm adopt's module), so the unreached example is fm which, a leaf module the rules name
         import fmcore as c
         import fmgenesis
         from unittest import mock
-        self.put("gen-1/mission-x.md", "# Mission\ngen-0\nfm outcomes, fm docs, fm adopt and fm mandate feed it.\n")
+        self.put("gen-1/mission-x.md", "# Mission\ngen-0\nfm outcomes, fm docs, fm which and fm mandate feed it.\n")
         p = c.find_project(self.repo)
         with mock.patch.object(fmgenesis, "_session_text", return_value="run fm find first"):
-            self.assertEqual([x.split(":")[0] for x in fmgenesis.check(p)["reach"]["problems"]], ["fm adopt", "fm mandate"])
+            self.assertEqual([x.split(":")[0] for x in fmgenesis.check(p)["reach"]["problems"]], ["fm which", "fm mandate"])
         with mock.patch.object(fmgenesis, "_session_text", return_value="run fm decide first"):
             self.assertEqual(len(fmgenesis.check(p)["reach"]["problems"]), 4)  # fmcli imports everything: never counted
         self.assertEqual(fmgenesis.check(p)["reach"]["problems"], [])  # the real session paths
