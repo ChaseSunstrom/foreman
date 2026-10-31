@@ -2566,20 +2566,25 @@ def _bench(p, b, cmd, n, timeout):
         try:
             words = shlex.split(cmd)
         except ValueError:
-            return cmd, False
+            return cmd, False, ""
         if not words:
-            return cmd, False
+            return cmd, False, ""
         first = words[0]
         found = shutil.which(os.path.join(p.root, first) if "/" in first and not os.path.isabs(first) else first)
         root = os.path.realpath(p.root)
         real = os.path.realpath(found) if found else ""
         if not real.startswith(root + os.sep):
-            return cmd, False
-        mate = os.path.join(wt, os.path.relpath(real, root))
+            return cmd, False, ""
+        rel = os.path.relpath(real, root)
+        mate = os.path.join(wt, rel)
         text = cmd.lstrip()
-        if ("/" in first and not os.path.isabs(first)) or not os.path.isfile(mate) or not text.startswith(first):
-            return cmd, True  # relative paths already run in each tree; no twin or a quoted first word: leave it
-        return shlex.quote(mate) + text[len(first):], True
+        if "/" in first and not os.path.isabs(first):
+            return cmd, True, ""  # a relative path already runs in each tree
+        if not os.path.isfile(mate):  # new in this task: the before side runs the current file
+            return cmd, True, f" · the start tree has no {rel}: the before side ran the current copy"
+        if not text.startswith(first):
+            return cmd, True, ""  # a quoted first word: leave it
+        return shlex.quote(mate) + text[len(first):], True, ""
 
     def side(root, cmd):
         times = []
@@ -2599,7 +2604,7 @@ def _bench(p, b, cmd, n, timeout):
         if not os.path.isdir(wt):
             raise UsageError(f"git worktree add at {base[:12]} failed")
         try:
-            wcmd, in_tree = twin(wt)
+            wcmd, in_tree, gap = twin(wt)
             before, bad_before = side(wt, wcmd)
         finally:
             c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
@@ -2610,7 +2615,7 @@ def _bench(p, b, cmd, n, timeout):
             tail = "\n".join(bad[1].rstrip().splitlines()[-20:])
             return bad[0], tail, f"{cmd}: failed on {where} (exit {bad[0]}) after {n} runs asked", ""
     line = (f"{cmd}: {statistics.median(before):.3f}s → {statistics.median(after):.3f}s ({n} runs each)"
-            + ("" if in_tree else " · neither side's entry point is in the tree: both may time the same code"))
+            + ("" if in_tree else " · neither side's entry point is in the tree: both may time the same code") + gap)
     return 0, "", line, line
 
 

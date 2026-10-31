@@ -163,6 +163,14 @@ class Bench(_Base):
         r = self.fm("task", "evidence", tid, "--bench", "python3 'unclosed", "--repeat", "1", check=False)
         self.assertNotIn("Traceback", r.stderr)
 
+    def test_an_entry_point_new_in_the_task_says_the_before_side_ran_the_current_copy(self):
+        self._commit("pass\n")
+        tid = self._perf()
+        self.fm("focus", tid)
+        env = self._tool_on_path("#!/bin/sh\nexit 0\n")  # bin/tool is added after the start commit
+        r = self.fm("task", "evidence", tid, "--bench", "tool", "--repeat", "1", env=env)
+        self.assertIn("the start tree has no bin/tool: the before side ran the current copy", r.stdout)
+
     def test_a_command_in_the_tree_has_no_same_code_warning(self):
         env = self._tool_on_path("#!/bin/sh\nexit 0\n")
         tid = self._perf()
