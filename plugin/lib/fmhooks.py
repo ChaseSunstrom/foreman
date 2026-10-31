@@ -3650,16 +3650,12 @@ def _goal_gate(p, pl, g, sid, closed=()):
     per cause set and counted toward DRIVE_MAX. Reads meta only: no checks, no git."""
     if pl.get("stop_hook_active") or not claims_done(pl.get("last_assistant_message"), closed=closed):
         return None
-    v = c.read_meta(p).get("goal_verdict")
-    age = c.age_days(v.get("at")) if isinstance(v, dict) else None
-    d = g["drive"].setdefault(sid, {"count": 0})
-    if age is None or age > 1 or v.get("verdict") != "stopped" or v.get("root") != p.root \
-            or not isinstance(v.get("causes"), list) or d.get("count", 0) >= DRIVE_MAX:
-        return None
     import fmmandate
-    m = fmmandate.get(p)
-    if not m or m["expired"] or m.get("set_at") != v.get("set_at"):
-        return None  # the goal it judged is gone, replaced or ended
+    v = fmmandate.fresh_verdict(p)  # T-2141: the goal it judged still stands, this checkout, under a day old
+    d = g["drive"].setdefault(sid, {"count": 0})
+    if not v or v.get("verdict") != "stopped" or not isinstance(v.get("causes"), list) \
+            or d.get("count", 0) >= DRIVE_MAX:
+        return None
     key = hashlib.sha1(json.dumps([v["causes"], v.get("set_at"), sid]).encode()).hexdigest()[:12]
     if key in g.setdefault("goal", []):
         return None
