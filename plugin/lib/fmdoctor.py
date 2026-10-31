@@ -361,12 +361,20 @@ def _stats(paths, exact=False):
     return out
 
 
+def _code_stamp():
+    """T-2314: this file's mtime_ns, so an edited check does not return yesterday's cached result."""
+    try:
+        return os.stat(__file__).st_mtime_ns
+    except OSError:
+        return 0
+
+
 def _cached(name, key, compute):
     """T-2298: the Result `compute` makes, reused from state/doctor-cache.json (JSON, never pickle) while `key` (the
     inputs' coarse stats plus the day) is unchanged. A missing, oversized, corrupt or odd cache recomputes; a hit takes
     only status and detail, cleaned; a failed write is ignored."""
     path = os.path.join(c.state_dir(), "doctor-cache.json")
-    key = json.loads(json.dumps([time.strftime("%Y-%m-%d"), key]))  # as JSON round-trips it, for the comparison
+    key = json.loads(json.dumps([time.strftime("%Y-%m-%d"), _code_stamp(), key]))  # as JSON round-trips it, for the comparison
     try:
         with open(path, encoding="utf-8") as f:
             cache = json.loads(f.read(65537))  # past 64 KB the cut text fails to parse: recompute

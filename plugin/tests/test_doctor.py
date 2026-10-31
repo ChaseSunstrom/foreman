@@ -900,6 +900,14 @@ class ScanCache(ForemanTestCase):
         d.check_usage_burn()
         self.assertEqual(self.calls["burn"], 1)
 
+    def test_an_edited_check_recomputes_the_same_day(self):  # T-2314
+        d.check_usage_burn()
+        saved = d._code_stamp
+        d._code_stamp = lambda: saved() + 1
+        self.addCleanup(setattr, d, "_code_stamp", saved)
+        d.check_usage_burn()
+        self.assertEqual(self.calls["burn"], 2)
+
     def test_an_odd_cache_file_recomputes(self):
         path = os.path.join(c.state_dir(), "doctor-cache.json")
         d.check_usage_burn()

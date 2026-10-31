@@ -191,6 +191,7 @@ def log_error(event, text):
 def _note_key(text):
     """T-0499: a note's kind in a few words, ids, paths and numbers left out ("edited times without a check")."""
     t = re.sub(r"^Foreman(?: [\w-]+)?:\s*", "", str(text))
+    t = re.sub(r"['’]s\b", "", t)  # T-2313: "T-0877's lesson" is not the word "s"
     t = re.sub(r"\bT-\d{4,}\b|\S*/\S*|\d+|[`'\"()\[\]]", " ", t)
     return " ".join(re.findall(r"[A-Za-z][\w-]*", t)[:5]).lower()
 
