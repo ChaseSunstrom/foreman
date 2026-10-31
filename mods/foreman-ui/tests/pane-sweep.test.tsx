@@ -70,7 +70,8 @@ function world(on: On) {
   })
 }
 
-test('the pane fits every width and height: nothing wider than the pane, nothing spills (T-1050)', async ($, on) => {
+// T-2293: 30 mounts take ~5 s of real CPU, the engine's default cap; a loaded host timed it out
+test('the pane fits every width and height: nothing wider than the pane, nothing spills (T-1050)', { timeoutMs: 60000 }, async ($, on) => {
   world(on)
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const bad: string[] = []
