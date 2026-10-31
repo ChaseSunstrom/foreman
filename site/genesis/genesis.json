@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-31T06:54:47Z",
- "rev": "c824fc38",
+ "updated": "2026-10-31T07:04:22Z",
+ "rev": "180ef16f",
  "capabilities": [
   {
    "n": 1,
@@ -398,7 +398,7 @@
       {
        "id": "T-2185",
        "title": "Initiative detection ladder (steer 2026-10-30 #4, capability #1): fm find stays the free…",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "L",
        "steps": 7,
@@ -727,22 +727,22 @@
       {
        "id": "T-2144",
        "title": "Goal remaining distance as one number on the statusline and terminal title (Mission 4…",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 0,
-       "current": "red tests: goal D/N in state.line and the title; no goal unchanged; a broken goal unchanged"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2145",
        "title": "Estimate a goal's time to finish from its items' history (Mission 4 inbox)",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 0,
-       "current": "red tests from seeded items, links and closes: estimate, range, too-few case, json"
+       "done": 3,
+       "current": ""
       }
      ]
     },
