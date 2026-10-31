@@ -459,7 +459,11 @@ def step(p):
         if not os.path.isfile(os.path.join(d, f"{pre}critique-{name}.md")):
             return act("critique", n, f"{where}: write its critique (closed vs planned, outside signals, what failed)",
                        f"fm genesis put {pre}critique-{name}.md --file -")
-    if not re.search(rf"^## gen-{n}\b", _doc(d, "lineage.md") or "", re.M):
+    # T-2163: only fm genesis select's own ledger event passes this stage; a lineage.md heading is a file anyone can put.
+    # ponytail: the last 20000 ledger events; a select older than that re-runs (it rewrites its own section)
+    if not (re.search(rf"^## gen-{n}\b", _doc(d, "lineage.md") or "", re.M)
+            and any(e.get("event") == "genesis_select" and (e.get("data") or {}).get("gen") == n
+                    for e in c.ledger_tail(p, 20000))):
         return act("select", n, f"select: gen-{n}'s rewrite stays only if it closed more train exam scenarios than "
                                 f"its parent on the same run; the verdict goes to fm decide and a '## gen-{n}' section "
                                 "in lineage.md", f"fm genesis select {n}")
@@ -1443,7 +1447,12 @@ def _base(lineage, n):
 
 def select(p, n, agent="foreman"):
     with c.lock(os.path.join(p.dir, "genesis-lineage")):  # two selects can't interleave a read and its write
-        return _select(p, n, agent)
+        r = _select(p, n, agent)
+        if r["verdict"] != "rerun":  # T-2163: the record step() gates on; only a select that wrote its section leaves it
+            import fmcli
+            c.log_event(p, "genesis_select", data={"gen": n, "verdict": r["verdict"], "base": r["base"]},
+                        session=fmcli.session())
+        return r
 
 
 def _select(p, n, agent):
@@ -2034,8 +2043,9 @@ def cmd_genesis(args):
         if action in ("select", "seed"):
             n = int(args.path)
             r = (select if action == "select" else seed)(p, n, args.agent)
+            if action == "seed":
+                c.log_event(p, "genesis_seed", data={"gen": n, "base": r["base"]}, session=fmcli.session())
             if action == "seed" or r["verdict"] != "rerun":
-                c.log_event(p, f"genesis_{action}", data={"gen": n, "base": r["base"]}, session=fmcli.session())
                 kick(p)
             if action == "seed":
                 return fmcli.out(args, r, f"Seed: {r['path']} ({r['missions']} Missions, from {r['base']}'s seed)")

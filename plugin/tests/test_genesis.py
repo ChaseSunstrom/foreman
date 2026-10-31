@@ -694,6 +694,7 @@ class GenesisStep(ForemanTestCase):
         self.at("critique", "gen-1/critique-genesis.md")
         self.put("gen-1/critique-genesis.md", "# Critique\n")
         self.at("select", "lineage.md", "fm decide", "fm genesis select 1")
+        selected(self.p, 1)
         self.put("lineage.md", "# Lineage\n\n## gen-1\n- kept: the first generation\n")
         self.at("drift", "gen-1/drift.md", "fm genesis drift 1")
         self.put("gen-1/drift.md", "# Drift\n\nVerdict: drifted\n")
@@ -704,6 +705,17 @@ class GenesisStep(ForemanTestCase):
         self.at("sweep", "fix the red", "fm genesis sweep 1")
         self.put("gen-1/sweep.md", "# Sweep\n\nVerdict: clean\n")
         self.assertEqual(self.at("seed", "gen-2/seed.md", "fm genesis seed 2")["gen"], 2)
+
+    def test_a_hand_written_lineage_heading_doesnt_pass_select_only_select_does(self):
+        """T-2163: fm genesis put files any lineage.md text, so a '## gen-1' heading is no record that select ran."""
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        self.put("gen-1/seed.md", SEED.split("| 1 |")[0] + "No Missions this generation.\n")
+        self.put("lineage.md", "# Lineage\n\n## gen-1\n- kept: written by hand\n")
+        self.at("select", "fm genesis select 1")
+        tower_file(fmgenesis.home(self.p), "exam.jsonl", line("r1", 1, ["a"]))
+        self.assertEqual(self.fm_json("genesis", "select", "1")["verdict"], "baseline")
+        self.assertNotEqual(self.step()["stage"], "select")
 
     def test_a_blocked_brief_is_named_as_blocked(self):
         import fmgenesis
@@ -724,6 +736,7 @@ class GenesisStep(ForemanTestCase):
             self.at("select")
             lineage += f"\n## gen-{n}\n- dry\n"
             self.put("lineage.md", lineage)
+            selected(self.p, n)
             self.put(f"gen-{n}/drift.md", "Verdict: clean\n")
             self.put(f"gen-{n}/sweep.md", "Verdict: clean\n")
             if n == 1:
@@ -744,6 +757,7 @@ class GenesisStep(ForemanTestCase):
                             (f"gen-{n}/drift.md", "Verdict: clean\n"), (f"gen-{n}/sweep.md", "Verdict: clean\n")):
                 self.put(f, text)
             self.put("lineage.md", "".join(f"## gen-{i}\n- kept\n" for i in range(1, n + 1)))
+            selected(self.p, n)
         s = self.at("seed", "fm evolve --runs 3")
         self.assertEqual(s["gen"], 4)
 
@@ -1146,6 +1160,13 @@ def line(run, gen, train, holdout=(), agent="foreman", cost=1.0):
                        "closed": {"train": sorted(train), "holdout": sorted(holdout)}}) + "\n"
 
 
+def selected(p, *gens):
+    """T-2163: what fm genesis select leaves in the ledger, for tests that put their own lineage text."""
+    import fmcore as c
+    for n in gens:
+        c.log_event(p, "genesis_select", data={"gen": n, "verdict": "keep", "base": f"gen-{n}"})
+
+
 NY = ("# Not yet\n\n## Self-hosted model router\n- blocker: no local model\n- tried: ollama probe; llama.cpp spike\n"
       "- unblocks-with: #5 getting tools\n- retried: gen-2 still no model on this box\n\n"
       "## Voice intake\n- blocker: no microphone\n- tried: arecord; a phone bridge\n- unblocks-with: a USB mic\n"
@@ -1365,6 +1386,7 @@ class GenesisDrift(ForemanTestCase):
         self.tower = fmgenesis.home(self.p)
         fmgenesis.init(self.p, GEN0.encode())
         fmgenesis.put(self.p, "lineage.md", "# Lineage\n\n## gen-1\n- baseline\n")
+        selected(self.p, 1)
         self.bindir, self.log = os.path.join(self.tmp, "bin"), os.path.join(self.tmp, "stub.log")
         os.makedirs(self.bindir)
         with open(os.path.join(self.bindir, "claude"), "w") as f:
@@ -1749,6 +1771,7 @@ class GenesisSweep(ForemanTestCase):
         for name, text in (("lineage.md", "# Lineage\n\n## gen-1\n- baseline\n"), ("gen-1/seed.md", "# Seed\ngen-0\nNo Missions this generation.\n"),
                            ("gen-1/drift.md", "# Drift\n\nVerdict: clean\n")):
             tower_file(self.tower, name, text)
+        selected(self.p, 1)
 
     def sweep(self, doctor=(), gates="run at 12:00 UTC", clean_check=True):
         import fmgenesis
@@ -1938,6 +1961,7 @@ class GenesisPropose(ForemanTestCase):
         sec = "## gen-{n}\n- {v}: why\n- seed base: gen-1\n\n"
         fmgenesis.put(self.p, "lineage.md", "# Lineage\n\n" + "".join(
             sec.format(n=n, v=v) for n, v in ((1, "baseline"), (2, "reverted"), (3, "reverted"))))
+        selected(self.p, 1, 2, 3)
         self.assertEqual(fmgenesis.step(self.p)["stage"], "seed")  # two reverts in a row: it keeps trying
         fmgenesis.put(self.p, "lineage.md", "# Lineage\n\n" + "".join(
             sec.format(n=n, v="reverted") for n in (1, 2, 3)))
