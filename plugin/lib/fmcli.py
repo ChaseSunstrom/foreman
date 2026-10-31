@@ -752,6 +752,8 @@ def cmd_task(args):
             if b.tier in ("M", "L") and not lesson and not b.section("Lessons").strip():
                 reasons.append(f"lesson missing: fm task done {b.id} --lesson \"<what the next similar task should "
                                f"know>\" (or \"none: <why>\"); recall shows it on related work")
+            import fmmiss  # T-2369: fm task done is no way round finish's refusal
+            reasons += fmmiss.safe_gaps(p, b)
             if reasons:
                 lead = "" if hasattr(args, "audit") else (  # T-0849: fm task done, not finish's own close
                     f" — one call settles most of it: fm task finish {b.id} --run \"<test cmd>\" --audit \"<how>\""
@@ -1119,6 +1121,8 @@ def task_finish(p, args):
         + _file_map_gaps(p, b) + [g for g in [b.proof_gap(then=[cmd for _, _, cmd in todo] + [args.run])] if g] \
         + _proved_gaps(p, b, then=[cmd for _, _, cmd in todo] + [args.run]) \
         + _adversary_gaps(p, b, lenses)  # T-1906, T-1907: asked before anything runs
+    import fmmiss  # T-2369: an open capability miss refuses every try; only a later passing run closes it
+    gaps += fmmiss.safe_gaps(p, b)
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always
@@ -3293,7 +3297,8 @@ def cmd_focus(args):
         peek = need_brief(p, args.id)
         if peek.tier in ("M", "L") and "Blast radius (fm graph blast)" not in peek.section("Risks and rollback"):
             import fmgraph
-            blast = fmgraph.blast_line(p, peek.meta.get("scope"))
+            blast = fmgraph.blast_line(p, peek.meta.get("scope"), text="\n".join(
+                peek.section(s) for s in ("Interpretation", "Approach (options → choice → why)", "Steps")))  # T-2336
     except Exception:  # a hint; the locked read below reports a missing task
         pass
     with c.lock(p.dir):
@@ -7210,7 +7215,7 @@ def _build_parser(only=None):
             "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
     s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish", "check", "step",
                                                  "draft", "spec", "select", "confirm", "seed", "drift", "sweep", "exam", "frontier",
-                                                 "novelty", "grow"))
+                                                 "novelty", "grow", "steer"))
     s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; live: on|off; export: the folder "
                                           "for genesis.json and the docs (site/genesis here); draft: the goal line (none: "
                                           "a whole gen-0 anyway); select/seed/drift/sweep: the generation N")
@@ -7253,7 +7258,15 @@ def _build_parser(only=None):
             "re-found cold; runs the tree's tests, so only in a tree you commit to (T-2122); exit 1 when one is proven")
     s.add_argument("path", nargs="?", default=".", help="the tree to prove in (default: here)")
     s.add_argument("--limit", type=int, default=10, help="prove the best N candidates (default 10)")
-    s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests, kept for this tree")
+    s.add_argument("files", nargs="*", help="--docs: the docs files to check (default: all the repo's markdown)")
+    s.add_argument("--docs", action="store_true", help="instead: check what the docs say about the repo's own CLI "
+                   "(paths, make/npm targets, flags, subcommands, fenced commands) against its files, each claim proven, "
+                   "failed or unproven; a flag or subcommand no non-doc file has fails in any tree, one a file only "
+                   "mentions is unproven; in a trusted tree fenced commands are checked against --help and run on a "
+                   "throwaway copy, and a run that exits 0 proves its flags; exit 0 none failed and one proven, 1 a "
+                   "failure, 2 nothing checkable or provable (T-2381)")
+    s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests (--docs: its "
+                   "documented commands), kept for this tree")
     s.add_argument("--migration", action="store_true", help="instead: run the tree's plain SQL NAME.up.sql/NAME.down.sql "
                    "migrations up, down, up on a throwaway sqlite file and compare the schema each time; trusted trees "
                    "only; exit 0 pass, 1 fail, 2 refused or no known tool (T-2288)")

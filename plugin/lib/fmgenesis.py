@@ -80,7 +80,13 @@ def put(p, name, text):
         raise ValueError(f"{name!r} isn't a tower doc: gap-map.md, lineage.md, catalogue.md, report.md, "
                          "not-yet.md, coverage.md, spec.md, or gen-N/seed.md, mission-NAME.md, critique-NAME.md (N from 1)")
     _read(p, name, text)
-    return _file(p, name, text, record="put")
+    path = _file(p, name, text, record="put")
+    if (m := re.fullmatch(r"gen-(\d+)/seed\.md", name)):
+        try:  # T-2359: the generation's lean start; never fails a put
+            record_lean(p, int(m[1]))
+        except Exception as e:
+            print(f"fm: lean start for gen {m[1]} not recorded: {c.fit(c.plain(str(e)), 120)}", file=sys.stderr)
+    return path
 
 
 def _file(p, name, text, record=""):
@@ -2812,6 +2818,128 @@ def privileges(p, n):
     return new, (", ".join(f"{k} {x}×" for k, x in sorted(used.items())) + "; no new kind") if used else "no grant used"
 
 
+def steer(p):
+    """T-2350: run the steer checks; a rule whose check fails becomes one FIX, named for the rule and the commit it
+    failed at (open or closed, the same failure at the same commit is one task). -> (lines, [(rule, why)], [new ids])."""
+    import fmcli
+    fails = []
+    lines = c.steer_checks(p, fails=fails)
+    head, made = (c.git_head(p.root) or "nohead")[:12], []
+    if fails:
+        with c.lock(p.dir):
+            have = "".join(b.section("Raw request") for b in c.load_briefs(p, include_archive=True))
+            for decision, name, cmd, why in fails:
+                key = f"{hashlib.sha1(decision.encode()).hexdigest()[:8]}@{head}"
+                if f"[steer-check {key}]" in have:
+                    continue
+                name, cmd, why = (c.defang(c.redact(x)) for x in (name, cmd, why))
+                b = fmcli._create(p, f"The user's rule no longer holds: {name}", "FIX", "S", "captured",
+                                  raw=f"[steer-check {key}] fm genesis steer (T-2350): the user's rule `{name}` has the "
+                                      f"check `{cmd}`, and at commit {head} it fails: {why}. Fix what broke the rule; the "
+                                      "rule stands until the user's own steer reverses it.", source="discovered")
+                c.log_event(p, "capture", task=b.id, data={"source": "discovered", "type": "FIX"})
+                made.append(b.id)
+        if made:
+            c.regen_views(p)
+    return lines, [(n, w) for _, n, _, w in fails], made
+
+
+LEAN = "genesis-lean.json"  # T-2359: each generation's lean start (no band: hook p95 is already a median of three)
+
+
+def _lean(root):
+    """T-2359: (metrics, verbs) of the Foreman tree at root: fmdoctor.footprint's always-on chars and the fm verbs
+    fmcli registers (its add("name", …) lines); None outside a Foreman tree."""
+    import fmdoctor
+    plugin = os.path.join(root, "plugin")
+    rules, cli = os.path.join(plugin, "rules", "foreman.md"), os.path.join(plugin, "lib", "fmcli.py")
+    if not (os.path.isfile(rules) and os.path.isfile(cli)):
+        return None
+    with open(cli, encoding="utf-8", errors="replace") as f:
+        verbs = sorted(set(re.findall(r'(?<![.\w])add\("([a-z][\w-]*)"', f.read())))
+    return dict(fmdoctor.footprint(rules, plugin), verbs=len(verbs)), verbs
+
+
+def _lean_record(p, n):
+    r = _reads(p, LEAN).get(str(n))
+    return r if isinstance(r, dict) else None
+
+
+def record_lean(p, n):
+    """T-2359: generation n's lean start, kept once (the first put of its seed): metrics, verbs, hook p95, HEAD."""
+    import fmdoctor
+    got = _lean(p.root)
+    if not got or _lean_record(p, n):
+        return
+    head = c._git(p.root, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "rev-parse", "HEAD",
+                  timeout=10).strip()
+    same = os.path.realpath(fmdoctor.PLUGIN) == os.path.realpath(os.path.join(p.root, "plugin"))  # the bench times the running fm
+    hp = fmdoctor.hook_p95() if same else None
+    with c.lock(p.dir):
+        c.write_atomic(os.path.join(p.dir, LEAN), json.dumps(dict(_reads(p, LEAN), **{str(n): {
+            "at": c.now(), "commit": head, "metrics": got[0], "verbs": got[1], "hook_p95": hp}})))
+
+
+def _lean_at_seed(p, n):
+    """T-2359: a generation whose seed was filed before the record existed is measured from the tree at the last
+    commit before its seed's mtime (hook time unknown then, so not judged)."""
+    import subprocess
+    import tempfile
+    try:
+        mt = int(os.path.getmtime(os.path.join(home(p), f"gen-{n}", "seed.md")))
+    except OSError:
+        return None
+    g = ["git", "-C", p.root, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"]
+    rev = subprocess.run(g + ["rev-list", "-1", f"--before=@{mt}", "HEAD"], capture_output=True, text=True,
+                         timeout=10).stdout.strip()
+    if not rev:
+        return None
+    want = ("plugin/rules", "plugin/skills", "plugin/agents", "plugin/commands", "plugin/lib/fmcli.py")
+    have = set(subprocess.run(g + ["ls-tree", "--name-only", rev, "plugin/", "plugin/lib/"], capture_output=True,
+                              text=True, timeout=10).stdout.split())
+    paths = [w for w in want if w in have]
+    if "plugin/lib/fmcli.py" not in paths or "plugin/rules" not in paths:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        tar = subprocess.run(g + ["archive", rev, *paths], capture_output=True, timeout=60).stdout
+        subprocess.run(["tar", "-x", "-C", tmp], input=tar, capture_output=True, timeout=60)
+        got = _lean(tmp)
+    return got and {"commit": rev, "metrics": got[0], "verbs": got[1], "hook_p95": None, "fallback": True}
+
+
+def _lean_row(p, n):
+    """T-2359: (bad, good) for the sweep: any metric above its start fails, no band on any (hook p95 is the median of
+    three bench runs), naming each, with what the generation removed against what it added."""
+    import fmdoctor
+    now = _lean(p.root)
+    if not now:
+        return [], "not Foreman's own tree: no lean ratchet"
+    start = _lean_record(p, n) or _lean_at_seed(p, n)
+    if not start:
+        return [], f"no lean start for gen {n} (no record, no commit before its seed): not judged"
+    bad, less = [], []
+    for k, was in (start.get("metrics") or {}).items():
+        cur = now[0].get(k)
+        if k == "verbs" and start.get("fallback") and not was:
+            continue  # an old fmcli that registered verbs another way: not judged, never growth from 0
+        if isinstance(was, int) and isinstance(cur, int) and cur != was:
+            (bad if cur > was else less).append(f"{k} {was} -> {cur} ({cur - was:+d})")
+    old, new = set(start.get("verbs") or []), set(now[1])
+    gone, added = sorted(old - new), sorted(new - old)
+    hp = start.get("hook_p95")
+    same = os.path.realpath(fmdoctor.PLUGIN) == os.path.realpath(os.path.join(p.root, "plugin"))
+    cp = fmdoctor.hook_p95() if isinstance(hp, (int, float)) and same else None
+    if isinstance(cp, (int, float)):
+        (bad if cp > hp else less if cp < hp else []).append(f"hook p95 {hp:.1f} -> {cp:.1f} ms")
+    notes = ([f"removed: {', '.join(gone)}"] if gone else []) + ([f"added: {', '.join(added)}"] if added else [])
+    notes += [] if isinstance(cp, (int, float)) else ["hook p95 not judged (" + (
+        "the running fm isn't this tree's" if not same else "no start time") + ")"]
+    notes += ["measured from the seed's commit (no start record)"] if start.get("fallback") else []
+    if bad:  # row() keeps 8: the failures first, then one line each for what went and what came
+        return bad[:5] + notes, ""
+    return [], "; ".join(less + notes) or "no metric above its start"
+
+
 def sweep(p, n, agent="foreman"):
     """gen-0 §7 in one command (T-2104): each line ✓ or ✗ into gen-N/sweep.md; verdict clean or red."""
     import fmdocs
@@ -2824,7 +2952,7 @@ def sweep(p, n, agent="foreman"):
                                                                                     if len(bad) > 8 else "") or good})
     r = check(p)
     row("genesis check", _bad(r), "coverage, not-yet, reach and lineage are whole")
-    row("steer checks", c.steer_checks(p), "every rule from a user steer has a check, and each passes")  # T-2167
+    row("steer checks", steer(p)[0], "every rule from a user steer has a check, and each passes")  # T-2167
     briefs = c.load_briefs(p)
     by_id = {b.id: b for b in c.load_briefs(p, include_archive=True)}  # fm tidy archives closed briefs after 14 days
     ids = [t for f in sorted(os.listdir(os.path.join(d, f"gen-{n}")) if os.path.isdir(os.path.join(d, f"gen-{n}")) else [])
@@ -2853,6 +2981,10 @@ def sweep(p, n, agent="foreman"):
                                  else "no gates configured: fm check add '<cmd>', then fm check"],
         f"full gates green on this tree, {ran}")
     row("privileges", *privileges(p, n))
+    try:  # T-2359: gen-0 §6; a measuring failure is one red row, never a lost sweep
+        row("lean", *_lean_row(p, n))
+    except Exception as e:
+        row("lean", [f"could not measure: {c.fit(c.plain(str(e)), 160)}"], "")
     graded = [x for x in _exam(p, agent) if x.get("gen") == n]
     row("exam", [] if graded else [f"no {agent} exam line graded for gen {n}: fm exam run, then fm exam grade"],
         f"{len(graded)} {agent} line(s) graded for gen {n}")
@@ -2964,6 +3096,12 @@ def cmd_genesis(args):
             r = check(p)
             fmcli.out(args, r, "\n".join(_check_lines(r)))
             return 1 if _bad(r) else 0
+        if action == "steer":  # T-2350: fm night's job; the last line names each rule that failed
+            lines, failed, made = steer(p)
+            summary = (f"steer checks: {len(failed)} rule(s) failed: " + "; ".join(n for n, _ in failed) if failed else
+                       f"steer checks: none failed ({len(lines)} line(s) to read)" if lines else "steer checks: all hold")
+            fmcli.out(args, {"lines": lines, "failed": failed, "captured": made}, "\n".join(lines + [summary]))
+            return 1 if failed else 0
         if action == "step":
             r = step(p)
             fmcli.out(args, r, f"gen {r['gen']} · {r['stage']}: {r['action']}\n  → {r['command']}")

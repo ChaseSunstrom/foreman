@@ -319,6 +319,28 @@ class ExamGen(ForemanTestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_putback_merges_two_regions_whose_anchors_run_into_each_other(self):
+        # T-2401: goal-rust-860eab's bug changed two lines around a repeated `return []`: each region's widened anchor
+        # held the other region's clean line, gone once the first was planted, so the oracle lost test-first credit
+        import fmexam
+        base = os.path.join(self.tmp, "near")
+        clean = ("def page(xs, n, size):\n    if n < 1:\n        return []\n    start = (n - 1) * size\n"
+                 "    if start >= len(xs):\n        return []\n    return xs[start:min(start + size, len(xs))]\n")
+        planted = clean.replace("if start >= len(xs):", "if start + size > len(xs):").replace(
+            "xs[start:min(start + size, len(xs))]", "xs[start:start + size]")
+        arm = os.path.join(self.tmp, "nearwork")
+        for path, text in ((os.path.join(base, "hidden", "clean"), clean),
+                           (os.path.join(base, "hidden", "planted", "bug"), planted), (arm, clean)):
+            os.makedirs(path)
+            with open(os.path.join(path, "app.py"), "w") as f:
+                f.write(text)
+        got = fmexam.putback(base, "bug", arm)
+        self.assertIsNotNone(got)
+        try:
+            self.assertEqual(read_text(os.path.join(got[1], "app.py")), planted)
+        finally:
+            shutil.rmtree(got[0], ignore_errors=True)
+
     def test_a_red_from_a_name_the_putback_removed_is_not_the_arms_test_catching_the_defect(self):
         # T-2203: a suite that fails only because it can't load (the region held a name it imports) caught nothing
         import fmexam
