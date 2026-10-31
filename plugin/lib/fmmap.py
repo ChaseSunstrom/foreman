@@ -77,6 +77,11 @@ def build(p):
         layout.update("/".join(f.split("/")[:2]) + "/" if f.count("/") >= 2 else big for f in files if f.startswith(big))
     sources = [f for f in files if _CODE.search(f) and not _TEST.search(f)]
     tops = {f.split("/", 1)[0] for f in files if "/" in f}
+    mix = collections.defaultdict(collections.Counter)  # T-2267: code vs not, per second-level folder (plugin/skills)
+    for f in files:
+        if f.count("/") >= 2:
+            mix["/".join(f.split("/")[:2])][bool(_CODE.search(f))] += 1
+    prose = {d for d, n in mix.items() if n[False] > n[True]}
     links = {}
     for t in (f for f in files if _TEST.search(f) and _CODE.search(f)):
         stem, ext = _name_stem(t), os.path.splitext(t)[1]
@@ -84,7 +89,7 @@ def build(p):
         # T-0709: a short name links when only a short prefix comes before it (test_bus.py → fmbus.py)
         srcs = [s for s in sources if s.endswith(ext) and (_name_stem(s) == stem or (_name_stem(s).endswith(stem) and (
             len(stem) >= 4 or len(_name_stem(s)) - len(stem) <= 2)))]
-        srcs += _folders(root, t, tops)
+        srcs += _folders(root, t, tops, prose)
         if srcs:
             links[t] = srcs
     lib = _lib(root, files)
@@ -244,7 +249,7 @@ def _source(root, rel):
         return ""
 
 
-VERSION = 11  # bump when build() changes, so older maps are rebuilt
+VERSION = 12  # bump when build() changes, so older maps are rebuilt
 
 
 def load(p, rebuild=False):
@@ -261,9 +266,11 @@ def load(p, rebuild=False):
     return m
 
 
-def _folders(root, test, tops):
+def _folders(root, test, tops, prose=()):
     """T-2086: top-level folders a test names as a string literal ("site"), as "site/" links: test_design_lint lints
-    all of site/ and is named after no file in it. The test's own folder (tests/, plugin/) would link everything."""
+    all of site/ and is named after no file in it. The test's own folder (tests/, plugin/) would link everything.
+    T-2267: also a mostly non-code folder beside the test's own (plugin/rules beside plugin/tests); a code folder
+    (plugin/lib) links by file name only, or every lib edit would pull in each test that names "lib"."""
     path = os.path.join(root, test)
     try:
         if os.path.islink(path) or not _TEST.search(os.path.basename(test)):  # a fixture or helper under tests/
@@ -272,8 +279,10 @@ def _folders(root, test, tops):
             text = f.read(200_000)
     except OSError:
         return []
-    named = set(re.findall(r"""["']([^"'/\s]+)["']""", text)) & (tops - {test.split("/", 1)[0]})
-    return [d + "/" for d in sorted(named)]
+    words = set(re.findall(r"""["']([^"'/\s]+)["']""", text))
+    up, own = test.split("/", 1)[0], "/".join(test.split("/")[:2])
+    side = {d for d in prose if d.startswith(up + "/") and d != own and d.split("/", 1)[1] in words}
+    return [d + "/" for d in sorted(words & (tops - {up}))] + [d + "/" for d in sorted(side)]
 
 
 def tests_for(m, paths):

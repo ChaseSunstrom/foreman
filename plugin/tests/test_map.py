@@ -58,6 +58,19 @@ class Map(ForemanTestCase):
         self.assertNotIn("tests/test_walk.py", out, "a test's own folder links nothing")
         self.assertIn("tests/test_walk.py", self.fm("impact", "src/report.py").stdout)
 
+    def test_a_test_naming_a_mostly_non_code_folder_beside_its_own_runs_when_a_file_in_it_changes(self):
+        # T-2267: here every folder sits under plugin/, so test_doctor naming "rules" linked nothing and a rules edit
+        # ran no budget test at close; a mostly-code sibling (lib) still links by file name only
+        files = {"plugin/rules/r.md": "x\n", "plugin/lib/fmx.py": "x = 1\n", "plugin/lib/fmy.py": "y = 1\n",
+                 "plugin/tests/test_budget.py": 'R = os.path.join(PLUGIN, "rules")\nL = os.path.join(PLUGIN, "lib")\n'}
+        for rel, text in files.items():
+            os.makedirs(os.path.join(self.repo, os.path.dirname(rel)), exist_ok=True)
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write(text)
+        self.commit("budget")
+        self.assertIn("plugin/tests/test_budget.py", self.fm("impact", "plugin/rules/r.md").stdout)
+        self.assertNotIn("plugin/tests/test_budget.py", self.fm("impact", "plugin/lib/fmx.py").stdout)
+
     def test_the_map_is_rebuilt_only_when_head_moves(self):
         self.fm("map")
         path = os.path.join(c.find_project(self.repo).dir, "map.json")
