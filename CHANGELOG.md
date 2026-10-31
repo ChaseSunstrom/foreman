@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `fm prove --migration [PATH]` runs a repo's plain SQL up/down migrations up, down and up again on a throwaway sqlite copy, compares the schema each time and refuses untrusted trees; alembic, django and prisma are recognized by name, not yet run (T-2288).
+- Foreman predicts each task's active minutes and attempts at focus from the median of its last 30 same-type, same-tier closes, scores them at close, shows per-tier calibration in `fm outcomes --calibration`, and `fm next` notes once when a task passes 3x its prediction (T-2290).
+- `fm lane brief` picks the builder model from history: opus when sonnet's lanes in that tier were reworked (a later fix, a revert, a lost outcome) 0.3+ more often than opus's, with 5+ samples each, else sonnet; `--model` overrides; the model is recorded on the brief (T-2291).
+- `fm exam run` and `fm exam long run` take `--jobs N`: session arms run N scenarios at once, each in its own temp copy, with the spend check made under a lock that counts sessions still running (T-2292).
 - `fm genesis check` flags one feature filled under two coverage cells (the same F: path, descriptions sharing 60% of their words) and counts it once (T-2175).
 - `fm lane rm` treats a builder's `.fm-scratch/` as throwaway, like the guard's script cache, so it no longer blocks removing a merged lane (T-2289).
 - `fm ci-watch` no longer files a FIX for a cancelled run (a deploy a newer push superseded): it says so and keeps watching, and a commit whose other run succeeded reads green (T-2287).
