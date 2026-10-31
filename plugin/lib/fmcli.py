@@ -3315,10 +3315,18 @@ def _list_value(v):
     return [x.strip().strip("'\"").strip() for x in v.split(",") if x.strip().strip("'\"").strip()]
 
 
+def _door_check(p, b):
+    """T-2342 review: a step or criterion changed on an active task meets the one-way door gate, as fm focus does."""
+    if b.status in ("active", "verifying"):
+        import fmdoors
+        fmdoors.check(p, b.id)
+
+
 def task_step(p, args):
     if args.action == "add":
         b, n = mutate(p, args.id, lambda b: _filled(b, b.add_step(args.arg)), "step_add", {"text": args.arg})
-        return out(args, c.brief_summary(b), f"{b.id}: added step {n}.")
+        _door_check(p, b)
+        return out(args, c.brief_summary(c.find_brief(p, b.id) or b), f"{b.id}: added step {n}.")
     try:
         n = int(args.arg)
     except ValueError:
@@ -3331,6 +3339,9 @@ def task_step(p, args):
                           "step_reword" if args.action == "edit" else "step_remove", {"step": n, "text": args.text})  # step_edit: a file edit
         except KeyError as e:
             raise UsageError(str(e).strip("'\""))
+        if args.action == "edit":
+            _door_check(p, b)
+            b = c.find_brief(p, b.id) or b
         return out(args, c.brief_summary(b), f"{b.id}: step {n} {'edited' if args.action == 'edit' else 'removed; later steps renumbered'}.")
     if args.action == "current":
         b, _ = mutate(p, args.id, lambda b: b.set_current(n), "step_current", {"step": n})
@@ -3342,6 +3353,10 @@ def task_step(p, args):
             b.add_evidence(ev[0], ev[1], step=n)
         b.mark_step(n)
     b, _ = mutate(p, args.id, done, "step_done", {"step": n, "evidence": ev})
+    import fmdoors
+    for rel in fmdoors.drift(p, b.id, n):  # T-2342: the step's Undo line restores the snapshot's copy of these
+        print(f"fm: warning: {rel} differs from its snapshot taken at focus (the step changed it, or something else did); "
+              f"step {n}'s Undo line restores the snapshot's copy over it", file=sys.stderr)
     s = c.brief_summary(b)
     nxt = f" Next: step {s['step']['n']}/{s['step']['of']} {s['step']['text']}" if s["step"] else " All steps done."
     out(args, s, f"{b.id}: step {n} done.{nxt}")
@@ -3354,7 +3369,8 @@ def task_ac(p, args):
         _refuse_unrunnable(p, [verify])
         b, _ = mutate(p, args.id, lambda b: _filled(b, b.add_ac(text, verify)), "ac_add", {"text": text})
         _lint_verify(p, [verify])
-        return out(args, c.brief_summary(b), f"{b.id}: criterion added.")
+        _door_check(p, b)
+        return out(args, c.brief_summary(c.find_brief(p, b.id) or b), f"{b.id}: criterion added.")
     try:
         n = int(args.arg)
     except ValueError:
@@ -3368,7 +3384,8 @@ def task_ac(p, args):
         except KeyError as e:
             raise UsageError(str(e).strip("'\""))
         _lint_verify(p, [args.verify])
-        return out(args, c.brief_summary(b), f"{b.id}: criterion {n} edited.")
+        _door_check(p, b)
+        return out(args, c.brief_summary(c.find_brief(p, b.id) or b), f"{b.id}: criterion {n} edited.")
     ev = args.evidence
 
     def check(b):
@@ -3394,7 +3411,7 @@ def cmd_focus(args):
         pass
     if peek and peek.status not in c.CLOSED:  # T-2342: doors read, snapshots taken and parks recorded under their own locks
         import fmdoors
-        fmdoors.gate(p, peek.id)
+        fmdoors.check(p, peek.id)
     with c.lock(p.dir):
         target = need_brief(p, args.id)
         if target.status in c.CLOSED:

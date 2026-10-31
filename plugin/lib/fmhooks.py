@@ -3638,10 +3638,12 @@ def _question_nudge(pl, p):
     import fmdoors
     door = fmdoors.reply_door(pl.get("last_assistant_message"), p)
     c.log_event(p, "door_ask", data={"door": door})
-    two = ("two-way: decide it and record it (fm decide … --confidence N). " if door == "two-way" else "")
-    return (f"Foreman: the reply asks the user something in text. {two}If it's yours to decide, decide it and record it "
-            "(fm decide); otherwise ask it with the AskUserQuestion tool (one prompt, your default first), or "
-            "fm ask for a guard category, so the answer can't be lost in chat. Where that tool isn't available "
+    ask = ("This fork is two-way: decide it and record it (fm decide … --confidence N) instead of asking; use the "
+           "AskUserQuestion tool (one prompt, your default first) only if you can't pick a default that is cheap to undo."
+           if door == "two-way" else
+           "If it's yours to decide, decide it and record it (fm decide); otherwise ask it with the AskUserQuestion tool "
+           "(one prompt, your default first), or fm ask for a guard category, so the answer can't be lost in chat.")
+    return (f"Foreman: the reply asks the user something in text. {ask} Where that tool isn't available "
             "(claude -p), decide with your default and record it. Either way, repeat what the user needs from the "
             "earlier reply (plan, order, results) in your final message: print mode shows only that one.")
 

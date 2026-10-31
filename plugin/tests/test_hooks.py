@@ -3161,7 +3161,9 @@ class DoorPark(HookCase):  # T-2342: a reply that asks the user is sorted by the
         self.task()
         reason = parse(self.stop("Which parser should I keep, the old or the new one?"))["reason"]
         self.assertIn("two-way: decide it and record it (fm decide … --confidence N)", reason)
-        self.assertIn("AskUserQuestion", reason, "the old nudge still follows, so the ask can still become a prompt")
+        self.assertIn("AskUserQuestion", reason, "a fork with no cheap default can still become a prompt")
+        self.assertNotIn("otherwise ask", reason, "one sentence, not the two-way clause beside the older one")
+        self.assertEqual(reason.count("decide it and record it"), 1)
 
     def test_a_one_way_ask_keeps_the_prompt_nudge_without_the_two_way_clause(self):
         self.fm("init")

@@ -2601,26 +2601,59 @@ def pending_tasks(meta):
     return [a.get("task") for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")]
 
 
-def door_marked(b):
-    """T-2342: the step numbers fm focus marked as local one-way doors (frontmatter lists read back as strings)."""
-    return sorted({int(n) for n in b.meta.get("doors") or [] if str(n).isdigit()})
+def door_marked(b, key="doors"):
+    """T-2342: the step (key doors) or criterion (door_acs) numbers fm focus marked as local one-way doors (frontmatter
+    lists read back as strings)."""
+    return sorted({int(n) for n in b.meta.get(key) or [] if str(n).isdigit()})
+
+
+def door_hash(text):
+    """What door_seen and door_undone store for a step or verify text (a hash: frontmatter lists split on commas)."""
+    return hashlib.sha1(text.encode("utf-8", "surrogateescape")).hexdigest()[:12]
+
+
+def undo_ok(text):
+    """T-2342 review: whether a step's 'Undo:' line is a real way back: a restore command (cp, mv, rsync, tar, unzip) that
+    names a source that exists. 'none', 'n/a' and an empty line are not one; fm's own line (cp -a SNAPSHOT/. REPO/) is."""
+    if "Undo:" not in text:
+        return False
+    try:
+        words = shlex.split(text.split("Undo:", 1)[1].strip())
+    except ValueError:
+        return False
+    if not words or os.path.basename(words[0]) not in ("cp", "mv", "rsync", "tar", "unzip", "gunzip"):
+        return False
+    args = [w for w in words[1:] if not w.startswith("-")]
+    srcs = args[:-1] if len(args) > 1 and words[0] in ("cp", "mv", "rsync") else args
+    return any(os.path.lexists(os.path.expandvars(os.path.expanduser(s))) for s in srcs)
+
+
+def _door_open(b):
+    """[(label, text)] for each marked one-way step with no real Undo line, and each marked verify command with no snapshot."""
+    marked, acs, undone = door_marked(b), door_marked(b, "door_acs"), [str(x) for x in b.meta.get("door_undone") or []]
+    out = [(f"step {s.n}", s.text) for s in b.steps() if s.n in marked and not s.done and not undo_ok(s.text)]
+    for a in b.acceptance():
+        cmd = verify_of(a.text)
+        if a.n in acs and cmd and not a.checked and door_hash(cmd) not in undone:
+            out.append((f"verify {a.n}", cmd))
+    return out
 
 
 def door_park(b):
-    """T-2342: 'one-way and ambiguous: <step>' while a step fm focus marked as a local one-way door has no Undo line (the
-    drive and fm run skip it; the final report carries its costly decision), else None. An Undo line or a done step lifts it."""
-    marked = door_marked(b)
-    for s in b.steps():
-        if s.n in marked and not s.done and "Undo:" not in s.text:
-            return f"one-way and ambiguous: {s.text.strip()}"
+    """T-2342: 'one-way and ambiguous: <step>' while a step fm focus marked as a local one-way door has no real Undo line,
+    or a marked verify command has no snapshot (the drive and fm run skip it; the final report carries its costly
+    decision), else None. A real Undo line, a done step or a checked criterion lifts it."""
+    for label, text in _door_open(b):
+        return f"one-way and ambiguous: {label}: {text.strip()}"
     return None
 
 
 def door_gaps(b):
     """T-2342: the Undo line each marked one-way step still needs before fm focus lets the task start."""
-    marked = door_marked(b)
-    return [f"an Undo: line on step {s.n} (one-way, untracked data: write how to take it back, e.g. 'Undo: cp -a SNAPSHOT/. .')"
-            for s in b.steps() if s.n in marked and not s.done and "Undo:" not in s.text]
+    return [f"an Undo: line on {label} (one-way, untracked data: 'Undo: cp -a SNAPSHOT/. .' with a SNAPSHOT that exists; "
+            f"'none' and 'n/a' don't count)" if label.startswith("step") else
+            f"a {label} that doesn't delete untracked data (or name the path in the request, plainly)"
+            for label, _ in _door_open(b)]
 
 
 def waits_on_user(b, pending, autonomy="standard"):
@@ -2845,7 +2878,7 @@ def rival_gap(b):
     if os.environ.get("FOREMAN_NO_RIVAL", "0") not in ("", "0"):
         return []
     conf = _CONF_RE.search(b.section("Approach (options → choice → why)"))
-    hard = _one_way(b) or ("untracked data, T-2342" if b.meta.get("doors") else "")  # fm focus marks local one-way steps
+    hard = _one_way(b) or ("untracked data, T-2342" if b.meta.get("doors") or b.meta.get("door_acs") else "")  # fm focus marks local one-way steps
     why = ("an L plan" if b.tier == "L" else
            f"a one-way step ({hard})" if hard else
            f"the choice is {conf.group(1)}% sure, under {RACE_BAR}%" if b.tier == "M" and conf and int(conf.group(1)) < RACE_BAR else
