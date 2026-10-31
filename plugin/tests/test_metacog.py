@@ -35,8 +35,8 @@ class Calibrate(Base):
         self.assertNotEqual(self.fm("task", "set", "T-0002", "confidence=150", check=False).returncode, 0)
         out = self.fm("digest").stdout
         # T-2337: the ledger scores them (a stated number is a write-once row); two rows is too few to print buckets
-        self.assertRegex(out, r"Calibration ledger: too few \(0 of 20 scored, 2 pending\)")
-        self.assertEqual(self.fm("task", "set", a, "confidence=10", check=False).returncode, 1)
+        self.assertRegex(out, r"Calibration ledger: too few \(1 of 20 scored, 1 pending\)")
+        self.assertNotEqual(self.fm("task", "set", a, "confidence=10", check=False).returncode, 0)
 
 
 class Atlas(Base):

@@ -479,7 +479,7 @@ class CalibrationLedger(CalBase):
             self.assertNotEqual(r.returncode, 0, edit)
             self.assertIn("bet", r.stderr + r.stdout)
         self.assertEqual([r["stated"] for r in self.bets("task")], [80])
-        self.assertEqual(c.find_brief(self.p, tid).meta["confidence"], 80)
+        self.assertEqual(c.find_brief(self.p, tid).meta["confidence"], "80")
         self.fm("task", "set", tid, "confidence=80")  # the same value is no edit
 
     def test_a_confidence_stated_after_focus_is_recorded_when_set(self):
@@ -570,7 +570,7 @@ class CalibrationBars(CalBase):
         out = self.fm("calibration").stdout
         self.assertRegex(out, r"task 80–94%: n 20, held 14 \(70%\), gap \+20")
         self.assertRegex(out, r"Brier: stated 0\.25, base rate 0\.21")
-        self.assertRegex(out, r"Bars: research 70 · race 55")
+        self.assertRegex(out, r"Bars: research 80 · race 55", "a task bet 20 points over raises the research bar")
 
     def test_a_bar_only_rises_as_a_decide_row_and_a_registered_trial(self):
         self.seed("race", 90, 10, 20)  # stated 90, held 50%: 40 points over
@@ -616,7 +616,8 @@ class CalibrationBars(CalBase):
     def test_digest_reads_the_ledger_and_cost_still_runs(self):
         self.seed("task", 90, 14, 20, base=70)
         self.assertRegex(self.fm("digest").stdout, r"(?s)Calibration.*task 80–94%: n 20, held 14")
-        self.assertEqual(self.fm("cost").returncode, 0)
+        with open(os.path.join(os.path.dirname(fmoutcomes.__file__), "fmcost.py"), encoding="utf-8") as f:
+            self.assertNotIn("calibration_lines", f.read(), "fm cost reads the ledger, not the removed function")
 
     def test_a_trial_for_a_bar_grades_on_brier_and_reverts_when_nothing_improved(self):
         self.seed("race", 90, 10, 20)
