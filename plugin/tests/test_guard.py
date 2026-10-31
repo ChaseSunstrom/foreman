@@ -2246,12 +2246,15 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
             ("fm prove --yes-r /tmp/x", "self-authorize", "fm prove --yes-run"),
             ("fm prove --yes-run=1 .", "self-authorize", "fm prove --yes-run"),
             ("fm --json prove --yes-run", "self-authorize", "fm prove --yes-run"),
+            ("fm mandate set \"x\"", "self-authorize", "fm mandate set and fm mandate off are the user's to run"),  # T-2252
+            ("fm mandate off", "self-authorize", "fm mandate set and fm mandate off are the user's to run"),
             ("cat list | xargs rm -rf", "rm-outside", "recursive rm with targets from stdin"),
         ]:
             with self.subTest(cmd=cmd):
                 r = self.bash(cmd)
                 self.assertBlocked(r, cat)
                 self.assertIn(why, str(r.detail))
+        self.assertIsNone(self.bash("fm mandate"))  # showing it stays open
 
     def test_near_misses_stay_allowed(self):
         for cmd in ("fm prove .", "fm prove --limit 3 /tmp/x", "fm posture", "fm pause on", "fm approve-reads off", "fm rule list", "fm vetoes", "fm vetoes --json", "fm rollback --list", "fm taste compile 1", "fm home export", "eval \"$(echo hi)\"", "dd if=x of=./file.img", "ufw status", "firewall-cmd --list-all",
