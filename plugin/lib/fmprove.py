@@ -645,6 +645,9 @@ def cmd_prove(args):
     if not os.path.isdir(root):
         print(f"fm prove: not a directory: {args.path}", file=sys.stderr)
         return 2
+    if args.infra:  # T-2385: each infra file's own validator, on a copy, offline
+        import fminfra
+        return fminfra.cmd_infra(args, root)
     if args.migration:  # T-2288: the tree's own migration files, run on a copy
         if args.yes_run:
             try:
