@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm ship` runs fm check's affected tests over its range in the scratch tree before the full suite; a red one stops the ship in minutes with the failing classes named (T-2323).
 - Long goals state every string or number their hidden checks assert that the goal, its ticket and the base code never mention, and gen drops (and counts) a goal that pins more than three or a value over 60 characters (T-2322).
 - Long goals replayed from Foreman's own history carry the task brief's interpretation and acceptance criteria (text only, never the verify commands), so a goal reads like the ticket its session had (T-2321).
 - Friction digest keys drop `'s` (a "T-0877's lesson" note no longer keys as "s lesson"); `fm doctor`'s result cache keys on fmdoctor.py's mtime, so an edited check recomputes the same day; the builder contract says never `cd` (not with `&&`, not with `;`) and that Grep/Glob omit `path` (T-2313, T-2314, T-2315, T-2316).
