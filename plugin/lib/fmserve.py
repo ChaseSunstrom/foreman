@@ -670,7 +670,13 @@ def _integrate_lane(p, tid, path):
     why = _main_moved(git, p.root, branch)  # session audit: the gates can take an hour; look again right before
     if why:
         return f"kept in {path}: {why} while the gates ran"
-    if git(p.root, "merge", "-q", "--ff-only", f"foreman/{tid}").returncode:
+    tip = git(path, "rev-parse", "HEAD").stdout.strip() or f"foreman/{tid}"
+    import fmselfgate  # T-2352: fm serve's merge is gated like fm lane merge, on the same commit it lands
+    files = [f for f in git(p.root, "diff", "--name-only", "--no-renames", "-z", f"HEAD...{tip}").stdout.split("\0") if f]
+    held = fmselfgate.gate(p, c.find_brief(p, tid), p.root, tip, files)
+    if held:
+        return f"kept in {path}: the self-change gate holds it ({c.fit(held[0], 120)}); fm ask {tid} core, then merge"
+    if git(p.root, "merge", "-q", "--ff-only", tip).returncode:
         return f"kept in {path}: {branch} moved on; rebase the lane again"
     rm = _fm(p.root, "lane", "rm", tid)
     return f"merged into {branch}" + ("" if rm.returncode == 0 else f" (lane left: {rm.stderr.strip()[:120]})")
