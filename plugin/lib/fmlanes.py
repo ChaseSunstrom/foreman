@@ -9,11 +9,116 @@ import io
 import json
 import os
 import re
+import shutil
 import time
 
 import fmcore as c
 
 _git = functools.partial(c._git, timeout=120, proc=True)  # T-0961: fmcore's runner; callers read returncode/stderr
+
+
+def _ref_file(root, branch):
+    common = c._git(root, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "rev-parse",
+                    "--git-common-dir", timeout=10).strip()
+    return os.path.join(root, common, "refs", "heads", branch) if common else ""
+
+
+def _ref_state(root, branch):
+    """T-2257: "ok", "missing" or "corrupt" for refs/heads/<branch>: a loose ref file that is 0 bytes or isn't a sha or a
+    symref is corrupt, which rev-parse --verify alone reports as missing."""
+    f = _ref_file(root, branch)
+    if f and os.path.isfile(f):
+        try:
+            with open(f, "rb") as h:
+                data = h.read(256).strip()
+        except OSError:
+            return "corrupt"
+        if not re.fullmatch(rb"[0-9a-f]{40}|[0-9a-f]{64}|ref: \S+", data):
+            return "corrupt"
+    r = _git(root, "rev-parse", "--verify", "-q", f"refs/heads/{branch}")
+    if r.returncode not in (0, 1):  # a failure or timeout says nothing about the ref
+        raise c.PolicyError(f"git can't say whether branch {branch} exists (exit {r.returncode}): {r.stderr.strip()[:200]}")
+    return "ok" if r.returncode == 0 else "missing"
+
+
+def _ref_ok(root, branch):
+    """True when the branch exists; a corrupt ref raises (PolicyError) rather than reading as absent."""
+    st = _ref_state(root, branch)
+    if st == "corrupt":
+        raise c.PolicyError(f"branch ref {branch} is corrupt (a 0-byte or unreadable file under .git/refs/heads): for a "
+                            f"cut-off lane fm lane rm <id> --why \"…\" moves it aside; else move the file away by hand")
+    return st == "ok"
+
+
+def corrupt_refs(root, cap=5000):
+    """T-2257: branch names under refs/heads whose loose ref is 0 bytes (an interrupted write)."""
+    top = os.path.dirname(_ref_file(root, "x") or "")
+    out, seen = [], 0
+    for r, _, names in os.walk(top):
+        for n in names:
+            seen += 1
+            if seen > cap:
+                return out
+            try:
+                empty = os.path.getsize(os.path.join(r, n)) == 0
+            except OSError:  # a ref git rewrote just now: skip it, not the rest
+                continue
+            if empty and not n.endswith(".lock"):
+                out.append(os.path.relpath(os.path.join(r, n), top))
+    return out
+
+
+def _all_empty(path, cap=200000):
+    """True when no file in the worktree folder (its .git link aside) has content; stops at the first non-empty one."""
+    seen = 0
+    for r, dirs, names in os.walk(path):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for n in names:
+            seen += 1
+            if seen > cap or (r, n) != (path, ".git") and os.lstat(os.path.join(r, n)).st_size:
+                return False
+    return True
+
+
+def cut_off(main, path, branches):
+    """T-2257: a lane whose worktree creation was interrupted: a folder with no content and a branch ref that is corrupt
+    or missing (every branch asked about)."""
+    return os.path.isdir(path) and bool(branches) and all(_ref_state(main, x) != "ok" for x in branches) \
+        and _all_empty(path)
+
+
+def _wreck_aside(p, b, main, path, branches):
+    """Move the cut-off lane's folder and corrupt ref files into the project's state (never deleted), drop the stale admin
+    lock and prune. The folder in state, or its name when it had to be made unique."""
+    dest = os.path.join(p.dir, "lane-wreck", b.id)
+    if os.path.exists(dest):
+        dest += f"-{int(time.time())}"
+    os.makedirs(dest)
+    for x in branches:
+        f = _ref_file(main, x)
+        if _ref_state(main, x) == "corrupt" and f:
+            shutil.move(f, os.path.join(dest, "ref" if x == branches[0] else f"ref-{x.replace('/', '_')}"))
+    common = os.path.join(os.path.dirname(_ref_file(main, "x")), "..", "..")
+    for x in branches:  # the zeroed ref's reflog still holds its old sha
+        log = os.path.join(common, "logs", "refs", "heads", x)
+        if os.path.isfile(log):
+            shutil.copy2(log, os.path.join(dest, f"reflog-{x.replace('/', '_')}"))
+    adm = os.path.join(common, "worktrees")
+    for n in (os.listdir(adm) if os.path.isdir(adm) else []):
+        try:
+            with open(os.path.join(adm, n, "gitdir")) as h:
+                link = h.read().strip()
+        except OSError:
+            continue
+        # an emptied gitdir (the same truncation) matches by name; a relative one is relative to the admin dir
+        if (os.path.realpath(os.path.dirname(os.path.join(adm, n, link))) == os.path.realpath(path) if link
+                else n == os.path.basename(path)):
+            shutil.copytree(os.path.join(adm, n), os.path.join(dest, "admin", n), symlinks=True)
+            with contextlib.suppress(OSError):
+                os.remove(os.path.join(adm, n, "locked"))
+    shutil.move(path, os.path.join(dest, os.path.basename(path)))
+    _git(main, "worktree", "prune")
+    return dest
 
 
 def cmd_lane(args):
@@ -100,7 +205,7 @@ def cmd_lane(args):
                                 f"a lane takes a task nobody is working on")
         path = os.path.join(os.path.dirname(main), os.path.basename(main) + ".lanes", b.id)
         _git(main, "worktree", "prune")  # a lane folder deleted by hand would block re-adding it
-        have =_git(main, "rev-parse", "--verify", "-q", f"refs/heads/{branch}").returncode == 0
+        have = _ref_ok(main, branch)
         r = _git(main, "worktree", "add", "-q", *([path, branch] if have else ["-b", branch, path, "HEAD"]))
         if r.returncode:
             raise fmcli.UsageError(f"git worktree add failed: {r.stderr.strip()[:300]}")
@@ -294,7 +399,7 @@ def resume(p, b, main, args):
         if r.returncode:
             raise fmcli.UsageError(f"git worktree remove failed: {r.stderr.strip()[:300]}")
     _git(main, "worktree", "prune")
-    have = _git(main, "rev-parse", "--verify", "-q", f"refs/heads/{branch}").returncode == 0
+    have = _ref_ok(main, branch)
 
     def reset(x):
         for k in ("lane", "lane_branch", "builder", "builder_proc"):
@@ -686,7 +791,7 @@ def merge(p, b, main, unverified=None):
     import fmcli
     import fmguard
     branch = b.meta.get("lane_branch") or f"foreman/{b.id}"
-    if _git(main, "rev-parse", "--verify", "-q", f"refs/heads/{branch}").returncode:
+    if not _ref_ok(main, branch):
         raise fmcli.UsageError(f"{b.id}: there is no branch {branch} to merge")
     meta = c.read_meta(p)
     ctx = fmguard.Ctx(cwd=main, project_root=main, home=os.path.expanduser("~"), foreman_home=c.foreman_home(),
@@ -833,6 +938,12 @@ def remove(p, b, main, drop=None):
             raise c.PolicyError(f"{b.id}'s last merge conflicted and its branch isn't merged ({conflict}): resolve it "
                                 f"on the branch and run fm lane merge {b.id}; to abandon the lane, fm task drop "
                                 f"{b.id} first (the branch is kept either way)")
+    wreck = ""
+    if cut_off(main, path, branches):  # T-2257: an interrupted worktree creation holds nothing: move it aside
+        if drop is None:
+            raise c.PolicyError(f"lane {path} is a cut-off worktree creation (corrupt or missing branch ref, every file "
+                                f"empty): fm lane rm {b.id} --why \"<reason>\" moves it aside into the project's state")
+        wreck = _wreck_aside(p, b, main, path, branches)
     if os.path.isdir(path):
         st = _git(path, "status", "--porcelain", "--ignored=matching")  # ignored files (.env, builds) go with it too
         left = [ln for ln in st.stdout.splitlines() if not (ln.startswith("!! ") and _is_cache(path, ln[3:]))]
@@ -860,7 +971,7 @@ def remove(p, b, main, drop=None):
     import fmbus
     fmbus.release(p, b.id)  # T-1068: its file claims end with the lane
     _git(main, "worktree", "prune")  # a folder deleted by hand leaves a registration that holds the branch (review)
-    have = [x for x in branches if _git(main, "rev-parse", "--verify", "-q", f"refs/heads/{x}").returncode == 0]
+    have = [x for x in branches if _ref_state(main, x) == "ok"]
     kept = [x for x in have if _git(main, "branch", "-d", x).returncode]  # -d refuses an unmerged one: commits stay
 
     def take_back(x):
@@ -869,7 +980,7 @@ def remove(p, b, main, drop=None):
                 x.meta.pop(k, None)
         if x.status in ("active", "verifying"):
             x.meta["status"] = "planned"  # not the main checkout's active task by accident
-        x.append_log(f"lane removed: {path}" + (f" (branch {', '.join(kept)} kept: not merged)" if kept else "")
+        x.append_log(f"lane removed: {path}" + (f" (cut off; kept in {wreck})" if wreck else "") + (f" (branch {', '.join(kept)} kept: not merged)" if kept else "")
                      + (f"; dropped: {drop['why']}" if drop else ""))
     fmcli.mutate(p, b.id, take_back, "lane_rm", {"path": path, "branch_kept": kept,
                                                  **({"dropped": drop["why"]} if drop else {})})

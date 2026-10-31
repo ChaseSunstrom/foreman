@@ -228,6 +228,72 @@ class Lanes(ForemanTestCase):
         self.fm("lane", "rm", tid)
         self.assertFalse(os.path.exists(path))
 
+    def wreck(self, keep_one=False, empty_gitdir=False):
+        """T-2257: a lane whose creation was cut off: 0-byte branch ref, every file empty, a stale admin lock."""
+        tid = self.new("Cut off", self.repo, focus=False)
+        path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
+        ref = os.path.join(self.repo, ".git", "refs", "heads", "foreman", tid)
+        open(ref, "w").close()
+        for root, dirs, names in os.walk(path):
+            dirs[:] = [d for d in dirs if d != ".git"]
+            for n in names:
+                open(os.path.join(root, n), "w").close()
+        open(os.path.join(path, ".git"), "w").close()
+        if keep_one:
+            with open(os.path.join(path, "README.md"), "w") as f:
+                f.write("real work\n")
+        adm = os.path.join(self.repo, ".git", "worktrees")
+        for n in os.listdir(adm):
+            open(os.path.join(adm, n, "locked"), "w").write("claude agent\n")
+            if empty_gitdir and n == os.path.basename(path):
+                open(os.path.join(adm, n, "gitdir"), "w").close()
+        return tid, path, ref
+
+    def test_a_cut_off_lane_is_named_by_doctor_and_rm_moves_it_aside(self):
+        import fmdoctor
+        tid, path, ref = self.wreck()
+        r = fmdoctor.check_cut_off_lanes([c.find_project(self.repo)], here=c.find_project(self.repo).slug)
+        self.assertEqual(r.status, "FAIL")
+        self.assertIn(f"fm lane rm {tid} --why", r.detail)
+        p = self.fm("lane", "rm", tid, check=False)
+        self.assertNotEqual(p.returncode, 0, "without --why nothing moves")
+        self.assertTrue(os.path.isdir(path))
+        self.fm("lane", "rm", tid, "--why", "cut off")
+        wreck = os.path.join(c.find_project(self.repo).dir, "lane-wreck", tid)
+        self.assertFalse(os.path.exists(path))
+        self.assertFalse(os.path.exists(ref))
+        self.assertTrue(os.path.isdir(os.path.join(wreck, os.path.basename(path))), "the folder is kept")
+        self.assertTrue(os.path.isfile(os.path.join(wreck, "ref")), "and so is the ref")
+        self.assertEqual(self.git("worktree", "list").count("\n"), 2, "the entry is pruned (main and the test's lane)")
+        self.assertEqual(fmdoctor.check_cut_off_lanes([c.find_project(self.repo)]).status, "PASS")
+        bare = os.path.join(self.tmp, "remote.git")
+        subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
+        subprocess.run(["git", "-C", self.repo, "push", "-q", bare, "main"], check=True)
+        subprocess.run(["git", "-C", self.repo, "remote", "add", "origin", bare], check=True)
+        f = subprocess.run(["git", "-C", self.repo, "fetch", "origin"], capture_output=True, text=True)
+        self.assertEqual(f.returncode, 0, f.stderr)
+        self.fm("lane", "new", tid)  # the task is free again
+
+    def test_a_cut_off_lane_with_an_emptied_admin_gitdir_is_unlocked_and_pruned(self):
+        tid, path, ref = self.wreck(empty_gitdir=True)
+        self.fm("lane", "rm", tid, "--why", "cut off")
+        wreck = os.path.join(c.find_project(self.repo).dir, "lane-wreck", tid)
+        self.assertTrue(os.path.isdir(os.path.join(wreck, "admin")), "the admin dir is kept for recovery")
+        self.assertNotIn(os.path.basename(path), os.listdir(os.path.join(self.repo, ".git", "worktrees")))
+        self.fm("lane", "new", tid)
+
+    def test_a_ref_state_git_failure_is_not_missing(self):
+        import fmlanes
+        with self.assertRaises(c.PolicyError):
+            fmlanes._ref_state(self.tmp, "x")  # not a repo: git exits 128
+
+    def test_a_corrupt_ref_with_one_real_file_is_still_refused(self):
+        tid, path, ref = self.wreck(keep_one=True)
+        p = self.fm("lane", "rm", tid, "--why", "x", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertTrue(os.path.isdir(path))
+        self.assertTrue(os.path.exists(ref))
+
     def test_a_criterions_command_run_in_a_lane_is_that_lanes_evidence(self):
         main = self.new("Main work", self.repo)
         lane = self.new("Lane work", self.lane)
