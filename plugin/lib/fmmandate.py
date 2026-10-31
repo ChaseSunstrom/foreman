@@ -289,6 +289,7 @@ def cmd_verdict(p, args):
         return 2  # finished is 0, stopped 1
     causes = verdict(p, m)
     word = "finished" if not causes else "stopped"
+    c.log_event(p, "goal_verdict", data={"verdict": word})  # T-2136: the done claim fm goal plan's checklist reads
     # the tree is the worktree id; root lets Stop (which runs no git) tell another checkout's verdict from this one's
     c.update_meta(p, goal_verdict={"verdict": word, "causes": causes[:10], "at": c.now(),
                                    "tree": c.worktree_id(p.root) or "", "root": p.root,
@@ -297,10 +298,122 @@ def cmd_verdict(p, args):
     return 1 if causes else 0
 
 
+PLAN_SYSTEM = ("List best-in-class contents for a goal like the user's, one per line, each starting with '- ', at most 10, "
+               "each naming a file path, a surface of the project or an `fm` verb it touches. No other text.")
+
+
+def _norm(text):
+    import re
+    return re.sub(r"\s+", " ", c.plain(text or "")).strip().lower().rstrip(".,;:!")
+
+
+def _grounded(root, line, found, files, verbs):
+    """T-2136: item text built from what the line names that the repo has, never the line itself: a tracked path (a /
+    or an extension, inside the repo by realpath), a surface found (whole word), or an fm verb; else None."""
+    import os
+    import re
+    top = os.path.realpath(root)
+    for t in (x.rstrip(".,;:)") for x in re.findall(r"[\w./-]+", line)):
+        if ("/" in t or re.search(r"\.\w+$", t)) and ".." not in t and not t.startswith("/") and (
+                t in files or any(f.startswith(t.rstrip("/") + "/") for f in files)) and os.path.realpath(
+                os.path.join(root, t)).startswith(top + os.sep):
+            return f"cover {t}"
+    for v in re.findall(r"\bfm ([a-z][\w-]*)", line.lower()):
+        if v in verbs:
+            return f"fm {v} works for the goal"
+    for sf in found:
+        if re.search(rf"\b{re.escape(sf)}\b", line, re.I):
+            return f"works on the {sf} surface"
+    return None
+
+
+def _misses(p):
+    """T-2136: the top 5 recent past misses: items added after a finished verdict (the goal_verdict event), and tasks
+    reopened (a task_set to an open status) within 7 days of their task_done."""
+    t = lambda e: c.parse_ts(e.get("ts"))  # noqa: E731
+    out, done, claimed = [], {}, False
+    for e in c.ledger_events(p, kinds=["goal_set", "goal_verdict", "goal_item", "task_done", "task_set"]):
+        k, d = e.get("event"), e.get("data") or {}
+        if not t(e):
+            continue  # a malformed ts
+        if k == "goal_set":
+            claimed = False  # a new goal starts with no done claim
+        elif k == "goal_verdict":
+            claimed = d.get("verdict") == "finished"
+        elif k == "goal_item" and claimed:
+            out.append(f"item added after a done claim: {c.fit(c.plain(d.get('text', '')), 80)}")
+        elif k == "task_done" and e.get("task"):
+            done[e["task"]] = t(e)
+        elif k == "task_set" and e.get("task") in done:
+            st = d.get("status") or (d.get("changes") or {}).get("status")
+            if st and st not in c.CLOSED and (t(e) - done.pop(e["task"])).days < 7:
+                out.append(f"{c.plain(e['task'])} reopened within 7 days of closing: check what it missed")
+    return list(dict.fromkeys(out))[-5:]
+
+
+def plan(p, m):
+    """T-2136: the proposed contents list: {"items": [{tag, text}], "proposals": [ungrounded model lines], "checklist"}."""
+    import fmideas
+    import fmmission
+    import os
+    found = fmmission.surfaces(p.root)
+    files = c._git(p.root, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "ls-files",
+                   timeout=10).splitlines()
+    import fmcli
+    verbs = set(fmcli.build_parser()._subparsers._group_actions[0].choices)  # once per plan; no public helper
+    top = {f.split("/")[0].lower() for f in files}
+    items = [{"tag": "user", "text": x} for x in m.get("clauses") or [m["text"]]]
+    std = ["tests cover the work"] if any("test" in f.lower() for f in files) else []
+    std += [f"{n} updated" for n, k in (("MASTER.md", "master.md"), ("README", "readme.md"), ("CHANGELOG entry", "changelog.md"))
+            if k in top]
+    std += ["a site page if it is user-facing"] if "site" in top else []
+    std += ["a pane or status surface shows its state"] if any(s in found for s in fmmission.CLIENTS) else []
+    std += [f"it works on the {s} surface" for s in found]
+    items += [{"tag": "standard", "text": s} for s in std]
+    proposals, note = [], None
+    if c.read_meta(p).get("sensitive"):
+        note = "sensitive project: no model call"
+    else:
+        try:  # the reply is untrusted: plain text, a line is kept only when grounded
+            reply = fmideas.run_child("goal-plan", PLAN_SYSTEM, f"Goal: {m['text']}\nSurfaces: {', '.join(found) or 'none'}",
+                                      "haiku", 120, project=p.slug)
+        except ValueError as e:
+            reply, note = "", f"no model items: {c.fit(c.plain(str(e)), 120)}"
+        for l in c.plain_lines(reply).splitlines()[:10]:
+            if l.strip().startswith("- ") and l.strip()[2:].strip():
+                l = c.fit(l.strip()[2:].strip(), 120)
+                g = _grounded(p.root, l, found, set(files), verbs)
+                (items.append({"tag": "model", "text": g}) if g else proposals.append(l))
+    return {"items": items, "proposals": proposals, "checklist": _misses(p), "note": note}
+
+
+def cmd_plan(p, args):
+    import fmcli
+    m = standing(p)
+    if args.apply and not args.done_when:
+        raise fmcli.UsageError('fm goal plan --apply needs --done-when CMD, the check each added item gets')
+    got = plan(p, m)
+    if args.apply:
+        have = {_norm(i["text"]) for i in m.get("items") or []}
+        got["added"] = []
+        for i in got["items"]:
+            if _norm(i["text"]) not in have:
+                have.add(_norm(i["text"]))
+                got["added"].append(add_item(p, i["text"], args.done_when, i["tag"])["text"])
+    lines = [f"[{i['tag']}] {i['text']}" for i in got["items"]]
+    lines += ["proposals (not added):"] * bool(got["proposals"]) + [f"  {x}" for x in got["proposals"]]
+    lines += ["checklist:"] * bool(got["checklist"]) + [f"  {x}" for x in got["checklist"]]
+    lines += [got["note"]] if got["note"] else []
+    lines += [f"added {len(got['added'])} item(s)"] if args.apply else ["--apply --done-when CMD adds them"]
+    return fmcli.out(args, got, "\n".join(lines))
+
+
 def cmd_goal(args):
     import fmcli
     p = fmcli.resolve(args)
     words = args.text or []
+    if args.action == "plan":
+        return cmd_plan(p, args)
     if args.action == "verdict":
         return cmd_verdict(p, args)
     if args.action == "set":
