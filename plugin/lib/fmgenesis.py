@@ -80,14 +80,27 @@ def put(p, name, text):
         raise ValueError(f"{name!r} isn't a tower doc: gap-map.md, lineage.md, catalogue.md, report.md, "
                          "not-yet.md, coverage.md, spec.md, or gen-N/seed.md, mission-NAME.md, critique-NAME.md (N from 1)")
     _read(p, name, text)
-    return _file(p, name, text)
+    return _file(p, name, text, record="put")
 
 
-def _file(p, name, text):
-    """A tower file written as is (redacted): put after its checks, and drift and sweep for the files only they write."""
+def _file(p, name, text, record=""):
+    """A tower file written as is (redacted): put after its checks, and drift and sweep for the files only they write.
+    T-2181: record 'put' files its sha256 as read (the text just passed its cold read); 'keep' (grow and confirm rewriting
+    a file put filed) moves the record to the new bytes only if the old record matched the bytes just before, so read
+    text stays read and nothing unread is blessed. One lock holds the write and the record."""
     path = os.path.join(home(p), name)
+    sha = lambda b: hashlib.sha256(b).hexdigest()
     with c.lock(p.dir):
-        c.write_atomic(path, c.redact(text))
+        try:
+            with open(path, "rb") as f:
+                before = sha(f.read())
+        except OSError:
+            before = None
+        data = c.redact(text)
+        c.write_atomic(path, data)
+        rec = _reads(p, PASSED)
+        if record == "put" or (record == "keep" and before and rec.get(name) == before):
+            c.write_atomic(os.path.join(p.dir, PASSED), json.dumps(dict(rec, **{name: sha(data.encode())})))
     return path
 
 
@@ -265,7 +278,7 @@ def grow(p, kind, name, evidence, measure):
         rest = lineage[m.end():].lstrip("\n") if m else ""
         lineage = (lineage[:m.end()].rstrip("\n") + f"\n{line}\n" + (f"\n{rest}" if rest.strip() else "")) if m else \
             lineage.rstrip("\n") + f"\n\n## Frame\n{line}\n"
-        _file(p, "lineage.md", lineage)
+        _file(p, "lineage.md", lineage, record="keep")
     return {"id": nid, "kind": kind, "name": name, "measure": measure, "gen": n, "path": path}
 
 
@@ -446,7 +459,45 @@ def check(p):
     d, n = home(p), current(p) or None
     return {"gen": n, "coverage": coverage(p, _doc(d, "coverage.md"), _doc(d, "gen-0.md") or ""),
             "not_yet": not_yet(_doc(d, "not-yet.md"), n), "reach": reach(p, n), "lineage": marks(_doc(d, "lineage.md")),
-            "moonshot": moonshot_check(p), "frame": frame_check(p)}
+            "moonshot": moonshot_check(p), "frame": frame_check(p), "read": read_check(p)}
+
+
+PASSED, PASS_WINDOW = "genesis-passed.json", 120  # T-2181: {name: sha256 of the text put wrote after its cold read passed}
+
+
+def read_check(p):
+    """T-2181 (steer 2: every tower file gets a cold second read): each put-able tower file (not OWNED, not gen-0) whose
+    bytes aren't the ones put filed is a problem. A file put never recorded counts as read when the ledger holds a
+    passing genesis_read for it (or one of its sections) at most PASS_WINDOW seconds before its mtime."""
+    d, rec, problems = home(p), _reads(p, PASSED), []
+    files = [os.path.relpath(os.path.join(r, f), d) for r, _, fs in os.walk(d) for f in fs]
+    passes = None  # the ledger is scanned only when some file has no matching record
+    for name in sorted(files):
+        if not SHAPE.fullmatch(name) or OWNED.fullmatch(name):
+            continue
+        try:
+            with open(os.path.join(d, name), "rb") as f:
+                raw = f.read()
+            mtime = os.path.getmtime(os.path.join(d, name))
+        except OSError:
+            continue
+        if rec.get(name) == hashlib.sha256(raw).hexdigest():
+            continue
+        if passes is None:
+            passes = {}
+            for e in c.ledger_events(p, kinds=["genesis_read"]):
+                x, ts = e.get("data") or {}, c.parse_ts(e.get("ts"))
+                if x.get("verdict") == "pass" and ts:
+                    passes.setdefault(str(x.get("name")), []).append(ts.timestamp())
+        text = raw.decode("utf-8", "replace")
+        secs = _parts(text) if len(_logical(text)) >= SECTION_FLOOR or len(text) >= SECTION_CHARS else []
+        # as _read splits it: a sectioned file needs a pass for every section (one in the window), else a whole-file pass
+        names = [f"{name}#{k}" for _, _, k in _groups(secs)] if len(secs) >= 2 else [name]
+        near = any(mtime - PASS_WINDOW <= t <= mtime + 2 for n in names for t in passes.get(n, ()))
+        if name not in rec and near and all(n in passes for n in names):
+            continue
+        problems.append(f"{name}: no cold-read pass for its current text: fm genesis put it again")
+    return {"files": len(files), "problems": problems}
 
 
 # T-2187 (steer 2026-10-30 #5): the moonshot Mission's ideas, their novelty marks and what the report says of them
@@ -606,7 +657,7 @@ def marks(lineage):
 
 def _bad(r):
     """Every problem fm genesis check reports, in its order."""
-    return [x for part in ("coverage", "not_yet", "reach", "lineage", "moonshot", "frame")
+    return [x for part in ("coverage", "not_yet", "reach", "lineage", "moonshot", "frame", "read")
             for x in (r.get(part) or {}).get("problems", [])]
 
 
@@ -909,6 +960,8 @@ def _check_lines(r, limit=6):
     out += ([f"✗ frame: {len(fr['problems'])} problem(s)"] + [f"    {x}" for x in fr["problems"][:limit]]) \
         if fr["problems"] else [f"✓ frame: {fr['entries']} added categor{'y' if fr['entries'] == 1 else 'ies'}"]
     out += [f"    pending: {x}" for x in fr["pending"][:limit]]
+    rd = (r.get("read") or {}).get("problems", [])
+    out += ([f"✗ read: {len(rd)} tower file(s) with no cold-read pass for their text"] + [f"    {x}" for x in rd[:limit]]) if rd else ["✓ read"]
     return out
 
 
@@ -1854,7 +1907,7 @@ def confirm(p, n, agent="foreman"):
             if mark == "reversed":  # the choice lost: the next seed builds on what production kept
                 keep = f"gen-{n}" if kind.group(1) == "reverted" else (_base(old, n - 1) or f"gen-{n - 1}")
                 new = re.sub(r"^- seed base:.*$", lambda _: f"- seed base: {keep}", new, count=1, flags=re.M)
-            _file(p, "lineage.md", old[:sec.start()] + new + old[sec.end():])
+            _file(p, "lineage.md", old[:sec.start()] + new + old[sec.end():], record="keep")
         import fmcli
         c.log_event(p, "genesis_confirm", data={"gen": n, "mark": mark, "run": shown, "model": model},
                     session=fmcli.session())
