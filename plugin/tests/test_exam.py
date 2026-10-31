@@ -394,6 +394,25 @@ class ExamGen(ForemanTestCase):
         self.assertRegex(text, r"by language: js \d+/\d+ · python \d+/\d+")
         self.assertRegex(text, r"by kind: docs \d+/\d+ · vuln \d+/\d+")
 
+    def test_false_alarms_are_split_by_scenario_kind(self):
+        # T-2299: 19 false alarms on s70-010 couldn't say which kind they fell in, so I-clean's zero bar was unreadable
+        r = self.gen("--seed", "4", "--per-kind", "1", "--lang", "python", "--kind", "clean,docs")
+        by = {s["kind"]: s for s in r["scenarios"]}
+        self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        run_dir = os.path.dirname(os.path.dirname(by["clean"]["repo"]))
+        ans = os.path.join(run_dir, "answers", "oracle", by["clean"]["id"] + ".json")
+        a = json.loads(read_text(ans))
+        a["findings"] = [{"file": "app.py", "symbol": "nothing_here", "says": "a guess"}]
+        with open(ans, "w") as f:
+            json.dump(a, f)
+        g = self.fm_json("exam", "grade", r["run"], "--agent", "oracle")
+        self.assertEqual(g["false_by_kind"], {"clean": 1})
+        self.assertEqual(sum(g["false_by_kind"].values()), g["false_alarms"])
+        split = by["clean"]["split"]
+        self.assertEqual(g[split]["false_by_kind"], {"clean": 1})
+        text = self.fm("exam", "grade", r["run"], "--agent", "oracle").stdout
+        self.assertIn("false alarms by kind: clean 1", text)
+
     def test_unknown_language_or_kind_is_refused(self):
         for args in (("--lang", "cobol"), ("--kind", "nonsense"), ("--per-kind", "0")):
             r = self.fm("exam", "gen", *args, check=False)
