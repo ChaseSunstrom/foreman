@@ -502,6 +502,133 @@ def _changed(state):
     return bool({"bump", "changelog", "commit"} & set(state["done"]))
 
 
+# T-2390: any other repo: the generic ritual, the same checkpoint file, resume and grant path
+ANY_STEPS = [("tree", "the working tree is clean"),
+             ("check", "fm check passes (the full gates)"),
+             ("bump", "the one manifest's version (pyproject.toml, package.json, Cargo.toml, a gemspec or VERSION)"),
+             ("changelog", "CHANGELOG.md's Unreleased entries are headed VERSION"),
+             ("prove", "fm prove --release: the artifact built offline and run from a throwaway prefix"),
+             ("commit", "commit 'Release VERSION' (the manifest and CHANGELOG.md only)"),
+             ("tag", "a local annotated tag vVERSION"),
+             ("push", "--push: the branch and the tag to the remote; spends this repo's active task's publish grant")]
+MANIFESTS = (("pyproject.toml", r'(?m)^(version\s*=\s*")([^"]+)(")'), ("package.json", r'("version"\s*:\s*")([^"]+)(")'),
+             ("Cargo.toml", r'(?m)^(version\s*=\s*")([^"]+)(")'), ("*.gemspec", r"""(\.version\s*=\s*["'])([^"']+)(["'])"""),
+             ("VERSION", r"\A(\s*)(\d[^\s]*)()"))
+
+
+def _manifest(root):
+    """(relative path, pattern, version) of the one manifest that carries a version; UsageError naming what it read."""
+    import glob
+    found = []
+    for pat, rx in MANIFESTS:
+        for path in sorted(glob.glob(os.path.join(root, pat))):
+            with open(path, encoding="utf-8", errors="replace") as f:
+                m = re.search(rx, f.read(1 << 20))
+            if m:
+                found.append((os.path.relpath(path, root), rx, m.group(2)))
+    if len(found) != 1:
+        _err(f"{'no manifest carries a version' if not found else str(len(found)) + ' manifests carry a version: ' + ', '.join(x[0] for x in found)}"
+             f" (looked at {', '.join(p for p, _ in MANIFESTS).replace('*.gemspec', 'a gemspec')}); release one with exactly one")
+    return found[0]
+
+
+def run_any(p, args, root, state, state_path):
+    """T-2390: fm release VERSION outside Foreman's repo, a checkpoint after each of ANY_STEPS (state/release.json, as
+    Foreman's own). A red or unproven fm prove --release stops before the commit; --push without this repo's active
+    task's publish grant stops after the local tag and names the push."""
+    import datetime
+    v = args.version
+    rel, rx, cur = _manifest(root)
+    if args.dry_run:
+        print(f"fm release {v} ({rel}: {cur}): {len(ANY_STEPS)} steps, a checkpoint after each (--resume continues)")
+        for i, (n, what) in enumerate(ANY_STEPS, 1):
+            print(f"  {i}. {n}: {what}")
+        return 0
+    if args.resume or (state and state.get("version") == v and state.get("any")):
+        if not state or state.get("version") != v:
+            _err(f"no unfinished release of {v} to resume")
+        state["push"] = bool(args.push or state.get("push"))
+    else:
+        if state and state.get("version") != v and _unfinished(state):
+            _err(f"the release of {state['version']} is unfinished: fm release {state['version']} --resume, or fm release --abandon")
+        if not re.fullmatch(SEMVER, cur) or tuple(map(int, v.split("."))) <= tuple(map(int, cur.split("."))):
+            _err(f"{v} isn't newer than {rel}'s {cur}")
+        state = {"version": v, "old": cur, "done": [], "skipped": [], "push": bool(args.push), "remote": args.remote or "origin",
+                 "any": rel}
+    remote = state.get("remote") or "origin"
+    if remote.startswith("-"):
+        _err(f"--remote {remote!r} reads as a git option; name a remote or a URL")
+
+    def tree():
+        if _git(root, "status", "--porcelain").strip():
+            _err("the tree has uncommitted changes; commit or finish them first")
+
+    def bump():
+        path = os.path.join(root, state["any"])
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        c.write_atomic(path, re.sub(rx, lambda m: m.group(1) + v + m.group(3), text, count=1))
+
+    def changelog():
+        path = os.path.join(root, "CHANGELOG.md")
+        text = open(path, encoding="utf-8").read() if os.path.isfile(path) else ""
+        if re.search(rf"(?m)^## {re.escape(v)} ", text):
+            return
+        if "## Unreleased\n" not in text:
+            _err("CHANGELOG.md has no '## Unreleased' heading to put under the version")
+        c.write_atomic(path, text.replace("## Unreleased\n", f"## Unreleased\n\n## {v} — {datetime.date.today().isoformat()}\n", 1))
+
+    def prove():
+        r = subprocess.run([*FM, "prove", root, "--release"], cwd=root)
+        if r.returncode:
+            _err(f"fm prove --release {'failed' if r.returncode == 1 else 'is unproven or refused'} (exit {r.returncode}): "
+                 "a release closes on its artifact working; nothing was committed" + (
+                     "" if r.returncode == 1 else " (an untrusted tree needs the user's fm prove PATH --yes-run once)"))
+
+    def commit():
+        if _git(root, "log", "-1", "--format=%s").strip() != f"Release {v}":
+            b = c.active_brief_fast(p, p.lane)
+            _git(root, "commit", "-qm", f"Release {v}", *(["--trailer", f"Foreman-Task: {b.id}"] if b else []), "--",
+                 state["any"], *(["CHANGELOG.md"] if os.path.isfile(os.path.join(root, "CHANGELOG.md")) else []))
+        state["sha"] = _git(root, "rev-parse", "HEAD").strip()
+
+    def tag():
+        if not _git(root, "tag", "-l", f"v{v}").strip():
+            _git(root, "tag", "-a", f"v{v}", "-m", f"Release {v}", state.get("sha") or "HEAD")
+
+    def push():
+        b = _grant(p)
+        if not b:
+            print(f"  stopped after the local tag: pushing v{v} to {remote} needs this repo's task's publish grant (fm ask "
+                  f"ID publish); for the final report: the push of {v} waits on it")
+            c.log_event(p, "release_push_waiting", data={"version": v, "remote": remote})
+            return False
+        branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
+        _spend(p, b.id, f"fm release {v}")
+        _git(root, "push", remote, f"{state.get('sha') or 'HEAD'}:refs/heads/{branch}")
+        _git(root, "push", remote, f"refs/tags/v{v}")
+        return True
+
+    fns = {"tree": tree, "check": lambda: _gate(root, "check"), "bump": bump, "changelog": changelog, "prove": prove,
+           "commit": commit, "tag": tag, "push": push}
+    for i, (name, _) in enumerate(ANY_STEPS, 1):
+        if name in state["done"] or (name == "push" and not state["push"]):
+            continue
+        print(f"step {i}/{len(ANY_STEPS)} {name}", flush=True)
+        try:
+            ok = fns[name]()
+        except Exception as e:
+            _dump(state_path, state)
+            if type(e).__name__ == "UsageError":
+                raise type(e)(f"step {i} {name}: {e}\nstopped at step {i} ({name}); fix it, then: fm release {v} --resume")
+            raise
+        if ok is not False:
+            state["done"].append(name)
+        _dump(state_path, state)
+    print(f"Released {v} ({state['any']}): tagged v{v}" + (", pushed" if "push" in state["done"] else ", not pushed"))
+    return 0
+
+
 def run(p, args):
     if getattr(args, "canary_status", False):
         return _canary_status(p) or 0
@@ -532,8 +659,10 @@ def run(p, args):
             _err(f"{what} is MAJOR.MINOR.PATCH, e.g. 1.2.20")
     root = c.git_root(p.root)
     pj = os.path.join(root or "", "plugin", ".claude-plugin", "plugin.json")
-    if not root or not os.path.isfile(pj):
-        _err("fm release runs in Foreman's own repo (no plugin/.claude-plugin/plugin.json here)")
+    if not root:
+        _err("fm release runs in a git repo")
+    if not os.path.isfile(pj):  # T-2390: any other repo gets the generic ritual
+        return run_any(p, args, root, state, state_path)
     import datetime
     hour = datetime.datetime.now().hour
     bad = bad_hour(c.ledger_events(p, ["check_run"]), hour)
