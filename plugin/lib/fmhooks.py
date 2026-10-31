@@ -2958,10 +2958,14 @@ def post_tool_use(pl, ok=True):
             import fmfixes
             if tool == "Bash":
                 failed = fmfixes.on_success(p, pl.get("session_id"), ti.get("command"))
-                act = c.active_brief_fast(p, p.lane) if failed and p else None
+                mine = p and not pl.get("agent_id") and not _oneoff()  # a subagent's or a one-off's run is no task's
+                act = c.active_brief_fast(p, p.lane) if mine else None
                 if act:  # T-2369: the pair that gets past a capability miss closes it (fmmiss reads this)
-                    c.log_event(p, "fix_paired", task=act.id, session=pl.get("session_id"),
-                                data={"failed": failed, "cmd": c.redact(str(ti.get("command") or ""))[:200]})
+                    if failed:
+                        c.log_event(p, "fix_paired", task=act.id, session=pl.get("session_id"),
+                                    data={"failed": failed, "cmd": c.redact(str(ti.get("command") or ""))[:200]})
+                    import fmmiss  # a pass of an open miss's own command: one ledger event, readers never scan events
+                    fmmiss.on_pass(p, act, pl.get("session_id"), ti.get("command"))
             else:
                 fmfixes.on_edit(pl.get("session_id"))
         except Exception:
@@ -3298,7 +3302,8 @@ def _capability_miss(p, sid, err, act=None, cmd=""):
         return None
     data = {"name": name}
     if act:
-        data.update(kind="module" if m.lastindex in (3, 4) else "command", cmd=c.redact(str(cmd or ""))[:200])
+        import fmmiss  # the key form (no cd prefix, one space, whole up to fmmiss.CUT) is what both sides compare
+        data.update(kind={3: "module", 4: "node"}.get(m.lastindex, "command"), cmd=fmmiss.key(cmd))
     c.log_event(p, "capability_miss", task=act.id if act else None, data=data, session=sid)
     if sid in seen:
         return None

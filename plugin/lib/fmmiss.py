@@ -1,54 +1,61 @@
 """T-2369 (Mission 6, #5): a capability miss during an active task is that task's to resolve. The PostToolUseFailure hook
-logs `capability_miss` with the task and the failing command; fm next leads with the open ones, and fm task finish (and
-done) refuse the task while one is unresolved. A miss resolves only by run evidence, never by a typed line or a flag:
-  - a later exit 0 of the same command (a [ran] evidence line, or a Bash run the hook saw pass),
-  - a later `fix_paired` event (fmfixes paired the failure with the command that got past it, T-1032),
-  - a later `tool_proved` event naming it (a tool built and proved from runs),
-  - a later `grant_queued` event naming it plus a later passing [ran] run of the step that used the fallback.
-A missing module the task then writes (the name is a code file in the tree) is the red-first test, not a miss. The way
-out short of resolving is fm task block with the diagnosis. No miss logged on the task: nothing here runs."""
+logs `capability_miss` (task, data name/kind/cmd); fm next leads with the open ones, and fm task finish (and done)
+refuse the task while one is unresolved. A miss resolves only by run evidence, never by a typed line, a flag or a file
+that happens to exist. Everything is read from the task's own ledger and brief, never from the global events:
+  - `miss_resolved` (the PostToolUse hook logs it when a passing Bash command, in one of this task's own sessions and
+    not a subagent, has the miss's key: the whole command, cd prefix and spacing aside),
+  - a [ran] evidence line with exit 0 and that key, later than the miss (fm ran it; a typed line can't be one),
+  - `fix_paired` (data failed, cmd: fmfixes paired a passing command with the failure, T-1032), only while the tool is
+    present now, and never for a no-op command (touch, mkdir, true, :, test, [),
+  - `tool_proved` (data name: a tool built and proved from runs),
+  - `grant_queued` (data name, optional step: a grant asked for) plus a later passing [ran] run of that step.
+A run counts only when strictly later than the miss (timestamps are whole seconds). The way out short of resolving is
+fm task block with the diagnosis. No miss logged on the task: nothing here runs."""
+import importlib.util
 import os
 import re
+import shutil
 
 import fmcore as c
 import fmfixes
 
-KINDS = ("capability_miss", "fix_paired", "tool_proved", "grant_queued")
-CODE_EXT = (".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".rb", ".go", ".rs", ".sh", ".lua", ".php")
+KINDS = ("capability_miss", "fix_paired", "tool_proved", "grant_queued", "miss_resolved")
+CUT = 1000  # a key is the whole command up to here; the event keeps as much, so both sides cut alike
+NOOPS = {"touch", "mkdir", "true", ":", "test", "["}  # they succeed with anything: pairing with one proves nothing
 _PASS = re.compile(r"^- (?:\((step|ac) (\d+)\) )?`([^`]*)` → exit 0\b")
+_CD = re.compile(r"^(?:\s*cd\s+\S+\s*&&)+\s*")
 
 
 def key(cmd):
-    """What two runs of one command share: no leading cd, one space between words, redacted as the ledger keeps it,
-    cut where the hook's event target is."""
-    return c.redact(fmfixes._norm(str(cmd or "").replace("`", "'")).strip())[:120]
+    """What two runs of one command share: no leading `cd X &&` (any number), one space between words, redacted as
+    the ledger keeps it."""
+    return c.redact(fmfixes._norm(_CD.sub("", str(cmd or "").replace("`", "'"))))[:CUT]
 
 
 def _data(e):
     return e.get("data") if isinstance(e.get("data"), dict) else {}
 
 
-def _written(p, name):
-    """The module the task wrote: a code file or package of that name anywhere in the tree (tracked or not)."""
-    import fmmap
-    stem = name.replace(".", "/")
-    for f in fmmap._git(p.root, "ls-files", "--cached", "--others", "--exclude-standard").splitlines():
-        base, ext = os.path.splitext(f)
-        if ext in CODE_EXT and (base == stem or base.endswith("/" + stem)
-                                or re.search(rf"(^|/){re.escape(stem)}/(__init__|index)$", base)):
-            return True
-    return False
+def _present(p, name, kind):
+    """Is the missing tool there now: a command on PATH, a Python module findable (top-level only: nothing imports),
+    a node module under the project's node_modules."""
+    try:
+        if kind == "module":
+            return importlib.util.find_spec(name.split(".")[0]) is not None
+        if kind == "node":
+            return os.path.isdir(os.path.join(p.root, "node_modules", name))
+        return shutil.which(name) is not None
+    except (ImportError, ValueError):
+        return False
 
 
-def _bash_ok(p, since):
-    """Keys of the Bash commands the hook saw pass (kind tool) since `since`; only read when a miss is open."""
-    return {key(e.get("target")) for e in c.global_events(since)
-            if e.get("kind") == "tool" and e.get("tool") == "Bash" and e.get("ok") and e.get("project") == p.slug
-            and str(e.get("ts") or "") > since}
+def _noop(cmd):
+    toks = key(cmd).split()
+    return bool(toks) and os.path.basename(toks[0]) in NOOPS
 
 
 def open_misses(p, b):
-    """[{name, cmd, kind, ts}], the newest miss of each command logged on this task that nothing has resolved."""
+    """[{name, cmd, kind, key, ts}], the newest miss of each command logged on this task that nothing has resolved."""
     evs = [e for e in c.ledger_events(p, KINDS, since=str(b.meta.get("created") or "")) if e.get("task") == b.id]
     latest = {}
     for i, e in enumerate(evs):
@@ -63,36 +70,62 @@ def open_misses(p, b):
         t = c._TS_TAIL.search(line)
         if m and t and c._RAN_MARK in line:
             passes.append((t.group(1), int(m.group(2)) if m.group(1) == "step" else None, key(m.group(3))))
-    bash, out = None, []
+    out = []
     for (name, k), (i, miss) in sorted(latest.items(), key=lambda kv: kv[1][0]):
-        ts, d, later, done = str(miss.get("ts") or ""), _data(miss), evs[i + 1:], False
-        if d.get("kind") == "module" and _written(p, name):
-            continue
-        for e in later:
-            x = _data(e)
-            ev = e.get("event")
-            if ev == "fix_paired" and key(x.get("failed")) == k or ev == "tool_proved" and x.get("name") == name:
-                done = True
+        ts, d, done, kind = str(miss.get("ts") or ""), _data(miss), False, _data(miss).get("kind") or "command"
+        for e in evs[i + 1:]:
+            x, ev = _data(e), e.get("event")
+            if ev == "miss_resolved":
+                done = done or x.get("name") == name and x.get("key") == k
+            elif ev == "tool_proved":
+                done = done or x.get("name") == name
+            elif ev == "fix_paired":
+                done = done or (key(x.get("failed"))[:300] == k[:300] and not _noop(x.get("cmd"))
+                                and _present(p, name, kind))
             elif ev == "grant_queued" and x.get("name") == name:
                 gts = str(e.get("ts") or "")
-                done = done or any(t > gts and (not x.get("step") or s == int(x["step"])) and s is not None
+                done = done or any(t > gts and s is not None and (not x.get("step") or s == int(x["step"]))
                                    for t, s, _ in passes)
-        if not done and any(t > ts and pk == k for t, _, pk in passes):  # strictly: a run in the miss's own second is no later
-            done = True
+        done = done or any(t > ts and pk == k for t, _, pk in passes)
         if not done:
-            bash = _bash_ok(p, ts) if bash is None else bash
-            done = k in bash
-        if not done:
-            out.append({"name": name, "cmd": d.get("cmd") or "", "kind": d.get("kind") or "command", "ts": ts})
+            out.append({"name": name, "cmd": d.get("cmd") or "", "kind": kind, "key": k, "ts": ts})
     return out
 
 
+def on_pass(p, b, sid, cmd):
+    """The PostToolUse hook, a passing Bash command on the active task (never a subagent's): when it is an open miss's
+    command and this session has ledger events on the task, log `miss_resolved` so readers need only the ledger."""
+    hit = [m for m in open_misses(p, b) if m["key"] == key(cmd)]
+    if not hit or sid not in {e.get("session_id") for e in c.ledger_tail(p, 1500) if e.get("task") == b.id}:
+        return
+    for m in hit:
+        c.log_event(p, "miss_resolved", task=b.id, session=sid, data={"name": m["name"], "key": m["key"]})
+
+
 def gaps(p, b):
-    """One line per open miss, for the refusal fm task finish and fm task done give."""
-    return [f"capability miss: `{m['name']}` ({c.fit(m['cmd'], 80)}) is unresolved; find it (fm which \"{m['name']}\"), or "
-            f"build and test it (fm new tool NAME) and run it green, or queue the grant with a fallback step that passes "
-            f"(fm ask {b.id} plugin); only a later passing run closes it, no flag or typed line does; "
+    """One line per open miss, for the refusal fm task finish and fm task done give. `fm task finish --run CMD` is
+    refused before it runs, so the way to run the command green is fm task evidence."""
+    return [f"capability miss: `{m['name']}` (ran `{c.defang(c.plain(m['cmd']))}`) is unresolved; find it "
+            f"(fm which \"{m['name']}\"), or build and test it (fm new tool NAME), then run the command green with "
+            f"fm task evidence {b.id} --step N --run '<the command>' (or queue the grant, fm ask {b.id} plugin, with a "
+            f"fallback step that passes); only a later passing run closes it, no flag, typed line or file does; "
             f"fm task block {b.id} \"<why>\" is the way out" for m in open_misses(p, b)]
+
+
+def safe_gaps(p, b):
+    """gaps for the close gates: a reader that breaks (a torn ledger line, a full disk) must not stop a close, so it
+    fails open and logs the error where the hooks' errors go (fm doctor reads it)."""
+    try:
+        return gaps(p, b)
+    except Exception:
+        import traceback
+        try:
+            path = os.path.join(c.state_dir(), "logs", "hooks.log")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            c.append_line(path, f"{c.now()} fmmiss.gaps {c.redact(traceback.format_exc()).rstrip()}\n")
+        except OSError:
+            pass
+        return []
 
 
 def lead(p, b):

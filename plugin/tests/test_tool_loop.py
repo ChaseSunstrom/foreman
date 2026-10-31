@@ -4,6 +4,7 @@ import json
 import os
 import time
 import unittest
+from unittest import mock
 
 from helpers import ForemanTestCase
 
@@ -87,13 +88,58 @@ class MissLoop(ForemanTestCase):
         self.passed("false gizmo")
         self.closes()
 
-    def test_the_command_fmfixes_pairs_with_the_failure_closes_it(self):
-        self.miss("gizmo --x")
+    def test_the_command_fmfixes_pairs_with_the_failure_closes_it_when_the_tool_is_there_now(self):
+        self.miss("git fnord", "bash: git: command not found")  # git is on this machine; ls is no pairing subject
         self.refused()
-        self.passed("python3 tools/gizmo.py --x")
+        self.passed("git ls-files")
         (e,) = c.ledger_events(self.p, ["fix_paired"])
         self.assertEqual(e["task"], self.tid)
         self.closes()
+
+    def test_a_pairing_resolves_nothing_while_the_tool_is_absent_or_the_command_is_a_no_op(self):
+        self.miss("gizmo --x")
+        self.passed("python3 tools/gizmo.py --x")
+        self.assertTrue(c.ledger_events(self.p, ["fix_paired"]), "the pairing is logged")
+        self.refused("gizmo is still not on the machine")
+        self.miss("touch a", "bash: touch: command not found")
+        self.passed("touch b")
+        self.refused("touch pairs with anything")
+        self.assertIn("`touch`", self.finish().stderr)
+
+    def test_a_pass_resolves_only_from_this_tasks_sessions_and_never_a_subagent(self):
+        self.miss()
+        self.passed("true gizmo", sid="another-lane")
+        self.refused("a session with no event on this task")
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "true gizmo"}, "session_id": "s1",
+                                  "agent_id": "a1", "tool_response": {"stdout": "ok", "stderr": "", "interrupted": False}})
+        self.refused("a subagent's run")
+        self.passed("true gizmo", sid="s1")
+        self.closes()
+
+    def test_the_whole_command_is_compared_not_a_prefix_and_a_leading_cd_is_not_part_of_it(self):
+        long = "true gizmo " + "x" * 150
+        self.miss(long + " --one")
+        self.passed(long + " --two")
+        self.refused("same first 120 characters, another command")
+        self.passed("cd sub && cd .. && " + long + " --one")
+        self.closes()
+
+    def test_a_resolving_pass_is_a_ledger_event_and_readers_never_scan_events(self):
+        import fmmiss
+        self.miss()
+        self.passed("true gizmo")
+        (e,) = c.ledger_events(self.p, ["miss_resolved"])
+        self.assertEqual((e["task"], e["data"]["name"]), (self.tid, "gizmo"))
+        with mock.patch.object(c, "global_events", side_effect=AssertionError("no events scan")):
+            self.assertEqual(fmmiss.open_misses(self.p, c.find_brief(self.p, self.tid)), [])
+            self.miss("false gizmo")
+            self.assertEqual([m["name"] for m in fmmiss.open_misses(self.p, c.find_brief(self.p, self.tid))], ["gizmo"])
+
+    def test_the_refusal_prints_the_whole_command_and_the_way_to_run_it_green(self):
+        self.miss("true gizmo --flag " + "y" * 200)
+        r = self.finish()
+        self.assertIn("y" * 200, r.stderr)
+        self.assertIn(f"fm task evidence {self.tid} --step N --run", r.stderr)
 
     def test_a_tool_proved_event_naming_it_closes_it_but_another_name_does_not(self):
         self.miss()
@@ -112,15 +158,15 @@ class MissLoop(ForemanTestCase):
         self.fm("task", "evidence", self.tid, "--step", "1", "--run", "true")
         self.closes()
 
-    def test_a_missing_module_the_task_then_writes_is_not_a_miss_but_a_missing_command_is(self):
+    def test_no_file_resolves_a_miss_however_it_is_named(self):
+        # the criterion: only a green run, a proved tool or a queued grant plus its fallback close one
         self.miss("python3 app.py", "ModuleNotFoundError: No module named 'gizmolib'")
-        self.refused("not written yet")
-        with open(os.path.join(self.repo, "gizmolib.py"), "w") as f:
-            f.write("X = 1\n")
-        self.assertNotIn("open miss", self.fm("next").stdout)
-        self.closes()
-
-    def test_a_command_not_found_is_not_cleared_by_a_file_of_that_name(self):
+        os.makedirs(os.path.join(self.repo, "x"))
+        for f in ("gizmolib.py", "x/gizmolib.py"):
+            with open(os.path.join(self.repo, f), "w") as h:
+                h.write("X = 1\n")
+        self.assertIn("open miss `gizmolib`", self.fm("next").stdout)
+        self.refused("a file of that name")
         self.miss()
         with open(os.path.join(self.repo, "gizmo.py"), "w") as f:
             f.write("X = 1\n")

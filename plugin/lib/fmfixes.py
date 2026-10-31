@@ -330,7 +330,10 @@ def _escalate(p, sig):
 
 def on_success(p, sid, cmd):
     """PostToolUse, Bash, success: the fix for the session's last failure, when this is one; a fix that was offered
-    and now passed counts as worked. Returns the failed command it paired with (T-2369), else None."""
+    and now passed counts as worked. Returns the failed command it paired with (T-2369: redacted, cut to 300 as the
+    failure was kept), else None. The hook then logs `fix_paired` on the active task (data failed, cmd: this command),
+    which fmmiss reads: a pairing closes a capability miss only while the missing tool is present now and the
+    command is no no-op (touch, mkdir, true, :, test, [)."""
     paired = None
     spath = _session_path(sid)
     if not os.path.exists(spath):
