@@ -2601,8 +2601,9 @@ def waits_on_user(b, pending, autonomy="standard"):
     return "plan approval" if needs_approval(b, autonomy) else None
 
 
-_NUM_RE = lazy(r"(?:^|[\s(*#])(\d+)[.)][ \t]*(?=\w)")  # "1)" "(1)" "2." followed by words; "1) …" is hollow
-_LET_RE = lazy(r"(?:^|[\s(*#])([A-Za-z])[.)][ \t]*(?=\w)")  # "A)" "(B)" "C."
+# followed by text (a word, a flag, `code`, a quote; T-2285); "1) …" is hollow
+_NUM_RE = lazy(r"(?:^|[\s(*#])(\d+)[.)][ \t]*(?=[^\s…])")  # "1)" "(1)" "2."
+_LET_RE = lazy(r"(?:^|[\s(*#])([A-Za-z])[.)][ \t]*(?=[^\s…])")  # "A)" "(B)" "C."
 _WORD_RE = lazy(r"\b(?:option|approach|reading)\s+(\w)\b[\s:.)*\-]*(?!(?:option|approach|reading)\s+\w\b)(?=\w)", re.I)  # "Option A: x", "**Reading 1** x"
 _BULLET_RE = lazy(r"^\s*[-*]\s+(?=\w)", re.M)
 _CHOICE_RE = lazy(r"\b(?:choice|choose|chose|chosen|decision|decided)\b|\bgo(?:ing)? with\b", re.I)
