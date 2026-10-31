@@ -1071,7 +1071,7 @@ class GenesisDraft(ForemanTestCase):
         self.assertEqual(r.returncode, 1, "not every capability passes")
         rows = json.loads(r.stdout)["rows"]
         self.assertEqual([(x["name"], x["state"], x["closed"], x["graded"]) for x in rows],
-                         [("Correctness", "pass", 4, 4), ("Security", "under", 2, 4), ("Speed", "too few", 2, 2),
+                         [("Correctness", "partial", 4, 4), ("Security", "under", 2, 4), ("Speed", "too few", 2, 2),
                           ("Taste", "no exam kind", 0, 0), ("Genesis as a feature", "partial", 3, 3)])  # no 'none' graded
         self.assertEqual(rows[4]["agent"], "draft-genesis")
         self.assertEqual(json.loads(r.stdout)["smoke"], 2)  # the older s9 line takes the stamp its regrade gave
@@ -1081,7 +1081,7 @@ class GenesisDraft(ForemanTestCase):
         self.assertIn("s9 (foreman, model claude-haiku-5-5: a smoke signal): ",
                       fmgenesis._exam_tail(fmgenesis.home(self.p)))  # what a cold read and the site table see
         low = self.fm_json("exam", "scorecard", "--bar", "0.5", check=False)["rows"]
-        self.assertEqual(low[1]["state"], "pass")
+        self.assertEqual(low[1]["state"], "partial")  # T-2225: python only, so not a pass at any bar
         self.assertIn("--bar is a rate", self.fm("exam", "scorecard", "--bar", "80", check=False).stderr)  # not a percent
         self.assertIn("no graded held-out lines from 'nobody'", self.fm("exam", "scorecard", "--agent", "nobody", check=False).stdout)
         text = self.fm("exam", "scorecard", check=False).stdout
@@ -1105,13 +1105,13 @@ class GenesisDraft(ForemanTestCase):
             del fmexam.CHILD_KINDS["missing-tool"]  # T-2216 adds would read before its own child shape
             r = fmgenesis.scorecard(self.p)
             self.assertEqual([(x["name"], x["state"], x["closed"], x["graded"], x["selfmade"]) for x in r["rows"]],
-                             [("Correctness", "pass", 3, 3, 6), ("Tools", "no outside author", 0, 0, 3),
+                             [("Correctness", "partial", 3, 3, 6), ("Tools", "no outside author", 0, 0, 3),
                               ("Genesis as a feature", "too few", 0, 0, 1)])  # T-2215: #13 can have one now
         self.assertEqual((r["selfmade"], r["ok"]), (9, False))
         text = self.fm("exam", "scorecard", check=False).stdout
         self.assertIn("3. Genesis as a feature: too few", text)
         self.assertIn("9 self-authored held-out results not counted", text)
-        self.assertIn("1/3 pass, 9 self-authored skipped", fmgenesis._exam_count(self.p))
+        self.assertIn("0/3 pass, 9 self-authored skipped", fmgenesis._exam_count(self.p))
         fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": kid, "child": []},
                                      "closed": {"holdout": []}})  # a later template run of the same ids
         fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": tools, "child": tools},
@@ -1120,7 +1120,7 @@ class GenesisDraft(ForemanTestCase):
             del fmexam.CHILD_KINDS["missing-tool"]
             r = fmgenesis.scorecard(self.p)
         self.assertEqual([(x["state"], x["closed"], x["graded"]) for x in r["rows"][:2]],
-                         [("pass", 3, 3), ("no outside author", 0, 0)])  # neither erases nor forges a child result
+                         [("partial", 3, 3), ("no outside author", 0, 0)])  # neither erases nor forges a child result
 
     def test_exhaustive_thinking_orchestration_and_self_triggering_have_exam_kinds(self):
         import fmgenesis  # T-2216: gen-0 #2, #9 and #11 read 'no exam kind' before; gen-0's own words, verbatim
@@ -1155,6 +1155,53 @@ class GenesisDraft(ForemanTestCase):
         self.assertIn("missing-tool", row["why"])
         self.assertIn("1. Correctness: partial 3/3 (bug, missing-tool): no graded missing-tool scenarios yet",
                       self.fm("exam", "scorecard", check=False).stdout)  # an author for each kind, but none graded yet
+
+    def test_a_capability_graded_in_only_some_languages_is_partial_and_names_the_rest(self):
+        import fmexam
+        import fmgenesis  # T-2225: a --lang python run can't pass a capability for every language
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
+                "1. **Correctness.** Fixes what's broken. Exam: bug.\n\n## 3. The tower\n")
+
+        def run(langs):
+            ids = [f"bug-{lang}-{i:06x}" for lang in langs for i in range(3)]
+            fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": ids, "child": ids},
+                                         "closed": {"holdout": ids}})
+            return fmgenesis.scorecard(self.p)["rows"][0]
+        row = run(["python"])
+        self.assertEqual((row["state"], row["graded"], row["langs"]), ("partial", 3, ["python"]))
+        self.assertIn("no graded " + ", ".join(fmexam.LANGS[1:]) + " scenarios yet", row["why"])
+        self.assertIn("Correctness: partial 3/3 (bug): no graded js, ts, ruby, rust, c scenarios yet",
+                      self.fm("exam", "scorecard", check=False).stdout)
+        self.assertIn("run fm exam gen --lang js,ts,ruby,rust,c", row["why"])  # the run that closes the gap
+        with open(os.path.join(fmgenesis.home(self.p), "spec.md"), "w") as f:  # the spec drew every language
+            f.write("# Spec\n\nExam run `s1` (seed 1, 9 per kind, " + ", ".join(fmexam.LANGS) + "): a third of each.\n")
+        self.assertEqual(fmgenesis.scorecard(self.p)["rows"][0]["state"], "partial")
+        row = run(list(fmexam.LANGS))
+        self.assertEqual((row["state"], row["langs"], row["why"]), ("pass", list(fmexam.LANGS), ""))
+
+    def test_a_python_only_spec_passes_on_python_and_odd_ids_never_crash(self):  # T-2225 review
+        import fmgenesis
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
+                "1. **Correctness.** Fixes what's broken. Exam: bug.\n\n## 3. The tower\n")
+        with open(os.path.join(fmgenesis.home(self.p), "spec.md"), "w") as f:
+            f.write("# Spec\n\nExam run `s1` (seed 1, 9 per kind, python): a third of each kind is held out.\n")
+        ids = [f"bug-python-{i:06x}" for i in range(3)]
+        odd = ["bug", "bug-cobol-000001", "bug-x"]  # hand-edited: no hyphens, a language outside LANGS
+        fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": ids + odd, "child": ids + odd},
+                                     "closed": {"holdout": ids + odd}})
+        (row,) = fmgenesis.scorecard(self.p)["rows"]
+        self.assertEqual((row["state"], row["graded"], row["langs"], row["why"]), ("pass", 3, ["python"], ""))
+
+    def test_draft_genesis_graded_in_every_language_passes(self):  # T-2225 review: #13's pass path
+        import fmexam
+        import fmgenesis
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
+                "1. **Genesis as a feature.** Seeds itself.\n\n## 3. The tower\n")
+        ids = [f"{k}-{lang}-{i:06x}" for k in fmgenesis.GEN_KINDS for lang in fmexam.LANGS for i in range(3)]
+        fmgenesis.exam_line(self.p, {"agent": "draft-genesis", "answered": {"holdout": ids, "child": ids},
+                                     "closed": {"holdout": ids}})
+        (row,) = fmgenesis.scorecard(self.p)["rows"]
+        self.assertEqual((row["state"], row["langs"]), ("pass", list(fmexam.LANGS)))
 
     def test_review_fixes_fallback_reason_secret_lines_fenced_readme_and_spec_limits(self):
         import fmcore as c
@@ -2451,7 +2498,7 @@ class GenesisExam(ForemanTestCase):
         self.assertIn("MUST: keep every helper's name as it is", saved["line"])  # the child's lines, not the pool's
         fmgenesis.exam_line(self.p, dict(last, agent="draft-genesis"))  # a genesis arm's line with the same results
         row = next(x for x in fmgenesis.scorecard(self.p)["rows"] if x["agent"] == "draft-genesis")
-        self.assertEqual((row["state"], row["graded"]), ("pass", 3))
+        self.assertEqual((row["state"], row["graded"]), ("partial", 3))  # T-2225: a --lang python run
         # another arm reads the same authored input, even with the child gone
         r2 = self.exam("--arm", "empty", "--per-kind", "3", "--author", "child", "--lang", "python",
                        env=self.gen_child("always"))

@@ -1677,13 +1677,21 @@ def exam(p, arm="genesis", split="holdout", per_kind=9, seed=0, author="self", m
     return r
 
 
+def _lang(sid):
+    """T-2225: the language of a kind-lang-hash scenario id, None for one that doesn't split in 3 or names no exam language."""
+    import fmexam
+    parts = sid.rsplit("-", 2)
+    return parts[1] if len(parts) == 3 and parts[1] in fmexam.LANGS else None
+
+
 def scorecard(p, agent="foreman", bar=0.8):
     """T-2097: §8's scorecard. Per gen-0 §2 capability, the newest graded result of each held-out scenario of its
     kinds, from exam.jsonl lines that name what they graded (answered ids; older lines carry none: regrade them). A
     capability naming genesis (#13) scores on fm genesis exam's draft-genesis lines. T-2204: only a scenario an outside
     author wrote counts (answered.child, of a kind fmexam.CHILD_KINDS holds); a template-written one is counted apart
     (selfmade) and never erases a child result for the same id. pass: at least 3 graded, a rate at or over bar, and
-    for every kind an outside author and a graded result (T-2217); else partial (`why` names the kinds without),
+    for every kind an outside author and a graded result (T-2217), and every language the newest spec drew (all of
+    fmexam.LANGS when it records none; T-2225, `why` names `fm exam gen --lang ...`); else partial (`why` names the kinds without),
     under, too few, no outside author or no exam kind. {agent, bar, rows, ok, seen, selfmade}: the agent's counted
     and template-written results."""
     if not 0 < bar <= 1:  # also refuses nan
@@ -1712,26 +1720,34 @@ def scorecard(p, agent="foreman", bar=0.8):
 
     import fmexam
     pools, rows = {}, []
+    m = re.search(r"per kind, ([\w, ]+)\): a third", _doc(home(p), "spec.md") or "")  # the spec's own draw (T-2225)
+    spec_langs = [x for x in fmexam.LANGS if m and x in re.split(r", ", m.group(1))] or list(fmexam.LANGS)
     for n, name, text in caps:
         who = "draft-genesis" if re.search(r"genesis", name, re.I) else agent
         kinds = list(GEN_KINDS) if who == "draft-genesis" else _kinds(name, text)
+        drawn = list(fmexam.LANGS) if who == "draft-genesis" else spec_langs  # #13's exam draws every language by default
         if who not in pools:
             pools[who] = newest(who)
-        mine = [v for sid, v in pools[who].items() if sid.rsplit("-", 2)[0] in kinds]  # ids are kind-lang-hash
+        mine = [v for sid, v in pools[who].items() if sid.rsplit("-", 2)[0] in kinds and _lang(sid)]  # kind-lang-hash
         got = [v for v in mine if v is not None]
         graded, closed = len(got), sum(got)
         # T-2215: fm genesis exam --author child gives #13's draft kinds an outside author too
         bare = [] if who == "draft-genesis" else [k for k in kinds if k not in fmexam.CHILD_KINDS]
         seen_kinds = {sid.rsplit("-", 2)[0] for sid, v in pools[who].items() if v is not None}
         unseen = [k for k in kinds if k not in bare and k not in seen_kinds]  # T-2217: one kind can't speak for another
+        # T-2225: ids are kind-lang-hash; a --lang-narrowed run grades one language, which can't speak for the rest
+        have = {_lang(sid) for sid, v in pools[who].items() if v is not None and sid.rsplit("-", 2)[0] in kinds}
+        langs = [x for x in fmexam.LANGS if x in have]
+        nolang = [x for x in drawn if x not in have] if graded else []
         why = ("; ".join(x for x in (f"no outside author writes {', '.join(bare)} scenarios yet" if bare else "",
                                      f"no graded {', '.join(unseen)} scenarios yet" if unseen else "",
+                                     f"no graded {', '.join(nolang)} scenarios yet: run fm exam gen --lang {','.join(nolang)}" if nolang else "",
                                      *(fmexam.PROXY[k] for k in kinds if k in fmexam.PROXY)) if x))
         state = ("unmeasurable" if not kinds and re.search(r"\bunmeasurable:", text) else  # T-2188: said so, with why
                  "no exam kind" if not kinds else "no outside author" if len(bare) == len(kinds) else
                  "too few" if graded < 3 else  # 3: the fewest held out per capability
-                 "under" if closed / graded < bar else "partial" if bare or unseen else "pass")
-        rows.append({"n": int(n), "name": name, "kinds": kinds, "agent": who, "graded": graded, "closed": closed,
+                 "under" if closed / graded < bar else "partial" if bare or unseen or nolang else "pass")
+        rows.append({"n": int(n), "name": name, "kinds": kinds, "langs": langs, "agent": who, "graded": graded, "closed": closed,
                      "rate": round(closed / graded, 3) if graded else 0, "state": state,
                      "selfmade": len(mine) - graded, "why": why})
     pool = pools[agent] if agent in pools else newest(agent)
