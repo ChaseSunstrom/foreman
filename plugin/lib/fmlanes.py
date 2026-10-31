@@ -780,8 +780,16 @@ def _conflict_brief(p, b, main, branch, files):
         "## Files\n" + "\n".join(f"- {f}" for f in files),
         "## Main's side was last touched by\n" + ("\n".join(dict.fromkeys(mine)) or "(no task on record)"),
         "## Resolve on the branch\n"
-        f"1. git -C {path_of} merge {head}\n2. fix the files above there (keep both sides' intent), run the "
-        f"task's tests\n3. git -C {path_of} commit -am \"Merge {head} into {branch}\"\n4. fm lane merge {b.id}",
+        "The guard reads the session's cwd, so a git step aimed at the worktree from the main checkout is refused (no "
+        "active task there), and `fm focus` refuses a task the lane holds.\n"
+        f"1. Preferred, if the builder is still running: SendMessage it: \"run `git merge {head}` in your worktree, "
+        f"resolve the conflicts keeping both sides' intent, run the task's tests, commit\". Then step 4.\n"
+        f"2. Otherwise run this as its own command (the guard then reads the lane's task; it works only while "
+        f"{b.id} is active or verifying there):\n```\ncd {path_of}\n```\n"
+        f"3. then, as separate commands: `git merge {head}`; fix the files above (keep both sides' intent); run the "
+        f"task's tests; `git commit -am \"Merge {head} into {branch}\"`. If the guard says no active task, drop and "
+        f"redo: `fm task drop {b.id} <why>`, `fm lane rm {b.id}`, recapture on the new main.\n"
+        f"4. From the main checkout: fm lane merge {b.id}",
         "## Conflict hunks\n```diff\n" + hunks[:60_000] + "\n```"])) + "\n"
     out = os.path.join(p.dir, "audits", f"{b.id}.conflict.md")
     os.makedirs(os.path.dirname(out), exist_ok=True)

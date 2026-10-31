@@ -113,6 +113,21 @@ class Lanes(ForemanTestCase):
         self.fm("tidy", "--apply", env=home)
         self.assertNotIn(f"foreman/{done}", self.git("branch", "--list", "foreman/T-*"))
 
+    def test_conflict_brief_resolves_from_where_the_main_session_stands(self):
+        # T-2208: `git -C <lane> ...` from the main checkout is refused (the guard reads the cwd): message the builder,
+        # or cd into the worktree as its own command first
+        import fmlanes
+        tid = self.new("Clash", self.repo, focus=False)
+        path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
+        p = c.find_project(self.repo)
+        out = fmlanes._conflict_brief(p, c.find_brief(p, tid), self.repo, f"foreman/{tid}", ["a.py"])
+        text = read_text(out)
+        self.assertNotIn("git -C", text)
+        self.assertIn("SendMessage", text)
+        self.assertIn(f"cd {path}\n", text)
+        self.assertIn("as its own command", text)
+        self.assertIn("fm lane merge " + tid, text)
+
     def test_rm_waits_for_an_open_conflict_unless_the_task_is_dropped(self):
         # T-1136: rm right after a conflicted merge took the builder record, so the lane couldn't be resumed
         tid = self.new("Conflicted", self.repo, focus=False)
