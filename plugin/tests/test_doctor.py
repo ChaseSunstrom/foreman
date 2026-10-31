@@ -696,6 +696,61 @@ class CoreIntegrity(unittest.TestCase):
                                            os.path.join(PLUGIN, "none.md")).status, "PASS")
 
 
+class FootprintRatchet(unittest.TestCase):  # T-2281
+    def setUp(self):
+        self.t = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.t)
+        self.p = type("P", (), {"dir": self.t})()
+        self.md = os.path.join(self.t, "none.md")
+        self.plugin = os.path.join(self.t, "plugin")
+        os.makedirs(self.plugin)
+
+    def rules(self, n):
+        path = os.path.join(self.t, "rules.md")
+        with open(path, "w") as f:
+            f.write("x" * (n - 1) + "\n")
+        return path
+
+    def decide(self, date, text):
+        with open(os.path.join(self.t, "decisions.md"), "a") as f:
+            f.write(f"| {date} | {text} | why |\n")
+
+    def check(self, n):
+        return d.check_footprint(self.rules(n), self.md, plugin=self.plugin, project=self.p)
+
+    def test_no_record_passes_and_a_record_within_two_percent_passes(self):
+        self.assertEqual(self.check(1000).status, "PASS")
+        d.record_footprint(self.p, self.rules(1000), self.plugin)
+        self.assertEqual(self.check(1020).status, "PASS")
+
+    def test_a_zero_or_empty_record_is_ignored(self):
+        for rec in ({"at": "2000-01-01", "metrics": {"rules chars": 0, "descriptions chars": 0}}, {"at": "x"}, {"metrics": {}}):
+            with open(os.path.join(self.t, "footprint.json"), "w") as f:
+                json.dump(rec, f)
+            self.assertEqual(self.check(1000).status, "PASS")
+
+    def test_growth_over_two_percent_warns_naming_the_metric(self):
+        d.record_footprint(self.p, self.rules(1000), self.plugin)
+        r = self.check(1021)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("rules chars", r.detail)
+        self.assertIn("fm decide", r.detail)
+
+    def test_a_decision_since_the_ship_naming_the_metric_clears_it(self):
+        d.record_footprint(self.p, self.rules(1000), self.plugin)
+        self.decide("2000-01-01", "footprint: rules chars +5% before the ship")  # too old
+        self.decide("2999-01-01", "footprint: descriptions chars +5%")  # names another metric
+        self.assertEqual(self.check(1050).status, "WARN")
+        self.decide("2999-01-01", "footprint: rules chars +5% for the reply format")
+        self.assertEqual(self.check(1050).status, "PASS")
+
+    def test_shrinking_passes_and_the_fixed_cap_still_fails(self):
+        d.record_footprint(self.p, self.rules(1000), self.plugin)
+        self.assertEqual(self.check(500).status, "PASS")
+        self.assertEqual(self.check(d.RULES_CHARS_MAX + 1).status, "FAIL")
+        self.assertEqual(d.RULES_CHARS_MAX, 6400)
+
+
 class DoctorStateSize(ForemanTestCase):
     # T-0920: state grows quietly (ledger, research, outputs); past a budget doctor says so and names the fix
     def test_a_project_past_the_budget_warns_with_its_biggest_part_and_fm_tidy(self):

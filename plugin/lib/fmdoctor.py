@@ -181,7 +181,41 @@ def check_injection_budgets(sizes):
                   f"SessionStart {sizes.get('SessionStart', 0)} chars, UserPromptSubmit {sizes.get('UserPromptSubmit', 0)} chars")
 
 
-def check_footprint(rules_path, claude_md_path, plugin=PLUGIN):
+RATCHET = 0.02  # T-2281: growth over the last shipped footprint that needs a decision naming the metric
+
+
+def footprint(rules_path, plugin=PLUGIN):
+    """The always-on footprint in chars: rules, skill/agent/command descriptions, the largest SKILL body."""
+    desc = sum(len((_frontmatter(f) or {}).get("description", "")) for pattern in
+               ("skills/*/SKILL.md", "agents/*.md", "commands/*.md") for f in glob.glob(os.path.join(plugin, pattern)))
+    skill = max((len(_read(f) or "") for f in glob.glob(os.path.join(plugin, "skills/*/SKILL.md"))), default=0)
+    rules = sum(len(l) + 1 for l in (_read(rules_path) or "").splitlines())
+    return {"rules chars": rules, "descriptions chars": desc, "largest SKILL chars": skill}
+    # ponytail: no hook p50: it is noisy (a 2% step is jitter); the SLO check already judges hook latency
+
+
+def record_footprint(p, rules_path, plugin=PLUGIN):
+    """fm ship's baseline: what shipped, when (T-2281)."""
+    c.write_atomic(os.path.join(p.dir, "footprint.json"),
+                   json.dumps({"at": c.now(), "metrics": footprint(rules_path, plugin)}))
+
+
+def _ratchet(p, now):
+    """Metrics that grew over 2% since the last ship's record, with no decision dated on or after that ship naming them."""
+    rec = _load_json(os.path.join(p.dir, "footprint.json"))
+    if not isinstance(rec, dict) or not isinstance(rec.get("metrics"), dict) or not rec["metrics"].get("rules chars"):
+        return []  # missing, or measured on a tree with no Foreman rules: no baseline
+    since = str(rec.get("at", ""))[:10]
+    named = " ".join(t.lower() for dt, _, t in c._decision_rows(p) if dt[:10] >= since)
+    out = []
+    for k, was in rec["metrics"].items():
+        cur = now.get(k)
+        if isinstance(was, int) and isinstance(cur, int) and was > 0 and cur > was * (1 + RATCHET) and k.lower() not in named:
+            out.append(f"{k} {was} -> {cur} (+{(cur - was) * 100 // was}%)")
+    return out
+
+
+def check_footprint(rules_path, claude_md_path, plugin=PLUGIN, project=None):
     rules = (_read(rules_path) or "").splitlines()
     md = _read(claude_md_path) or ""
     m = re.search(r"<!-- foreman:begin -->.*?<!-- foreman:end -->", md, re.S)
@@ -204,6 +238,10 @@ def check_footprint(rules_path, claude_md_path, plugin=PLUGIN):
         bad.append(f"skill/agent/command descriptions {desc} chars > {DESCRIPTIONS_MAX}")
     bad += [f"{os.path.relpath(f, plugin)} {n} chars > {SKILL_MAX}" for f in glob.glob(os.path.join(plugin, "skills/*/SKILL.md"))
             if (n := len(_read(f) or "")) > SKILL_MAX]
+    grew = _ratchet(project, footprint(rules_path, plugin)) if project and not bad else []
+    if grew:
+        return Result("footprint", "WARN", "; ".join(grew) + " over the last ship by more than 2%: "
+                      "fm decide \"footprint: <metric> +N% for <why>\" names it")
     return Result("footprint", "FAIL" if bad else "PASS",
                   "; ".join(bad) or f"rules {len(rules)} + CLAUDE.md block {len(block)} = {total} always-on lines "
                                     f"(≤ {ALWAYS_ON_MAX}), rules {chars} chars (≤ {RULES_CHARS_MAX}); descriptions {desc} chars (≤ {DESCRIPTIONS_MAX})")
@@ -2132,7 +2170,8 @@ def run_all(full=False, accept_supply=False):
     except Exception as e:  # the bench itself failing is a finding, not a crash
         results += [Result(n, "FAIL", f"bench failed: {e}") for n in ("hook latency", "hook exit codes", "injection budgets")]
     results += [check_hook_errors(), check_hook_slo(), check_hook_writers(settings, home), check_name_collisions(settings),
-                check_footprint(os.path.join(PLUGIN, "rules", "foreman.md"), os.path.join(claude, "CLAUDE.md")),
+                check_footprint(os.path.join(PLUGIN, "rules", "foreman.md"), os.path.join(claude, "CLAUDE.md"),
+                                project=c.find_project(os.getcwd())),
                 check_frontmatter(), check_unloaded_skills()]
     projects = [p for p, _ in c.all_projects()]
     results.append(check_heartbeats(projects))
