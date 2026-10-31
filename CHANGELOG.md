@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm doctor`: the usage burn and unloaded skills checks reuse their last result from `state/doctor-cache.json` (JSON, bounded read, keyed on their input files' paths and hour-floored mtimes plus the day and the forecast hours shown), so a repeat doctor skips their rescans; `fmcore.global_event_files` names the event files `global_events` reads, so the cache key can't drift from it (T-2298, T-2300).
 - foreman-ui plugin tests: the four tests that ran near the engine's 5 s default cap now take `{ timeoutMs: 60000 }`, so a loaded host no longer fails a lane's affected run by chance (T-2293).
 - `fm exam grade` splits false alarms by scenario kind (`false_by_kind`, overall and per split, and "false alarms by kind" in the summary), so a clean scenario's zero-findings bar reads directly (T-2299).
 - Friction digest: the guard example shows the line the guard judged (data-heredoc bodies dropped, the full command found in the session transcript) with the rule's hint, and give-up lines name each task's block reason (T-2280, T-2295, T-2296).
