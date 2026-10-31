@@ -851,6 +851,35 @@ def recent_hook_errors(days=1):
     return [e for e in entries if (c.age_days(e[0].split(" ", 1)[0]) or 99) < days]
 
 
+def feed_self_failures(p, results, sid):
+    """T-2349: Foreman's own failures enter the signal-to-fix loop: each FAIL of this run (a hook over its latency budget
+    is one), a hook SLO miss, and each hook traceback of the last week still live in hooks.log (one run per hour: a
+    storm of one bug in one session is one run). fmrecall.note_own files one FIX when a signature recurs across 3+
+    runs; a feed that raises is told on stderr and the others still go. The first doctor run also replays old failures
+    (fmrecall.replay, 5 captures a run). Ids of the FIXes this call filed."""
+    import fmrecall
+    made = []
+
+    def feed(*a, **k):
+        try:
+            made.append(fmrecall.note_own(*a, **k))
+        except Exception as e:
+            print(f"fm doctor: one self-failure feed failed: {c.plain(repr(e))[:120]}", file=sys.stderr)
+    for r in results:
+        if r.status == "FAIL" or (r.name == "hook SLO" and r.status == "WARN"):
+            feed(p, f"fm doctor FAIL {r.name}: {r.detail}", sid)
+    for e in recent_hook_errors(7)[-20:]:  # a storm of one error is 20 runs, not thousands of locked appends
+        ts, event, *rest = (e[0].split(" ") + ["", ""])
+        if rest and rest[0] == "Traceback" and not _stale(e):
+            last = next((l.strip() for l in reversed(e) if l.strip()), "")
+            feed(p, f"hook {c.plain(event)} traceback: {c.plain(last)}", f"hook-hour {ts[:13]}", at=ts)
+    try:
+        made += fmrecall.replay(p)
+    except Exception as e:
+        print(f"fm doctor: the failure replay failed: {c.plain(repr(e))[:120]}", file=sys.stderr)
+    return [m for m in made if m]
+
+
 def _recent_errors(days=7):
     """T-1076: (ts, text) of the last `days`: each hook error and every project's failure signatures (not the
     hinted copy fmrecall adds to a repeat)."""
@@ -2436,6 +2465,12 @@ def cmd_doctor(args):
         print(f"Views regenerated in {', '.join(fixed)}." if fixed else "Views match the briefs everywhere.")
         return None
     results = run_all(full=args.full, accept_supply=getattr(args, "accept_supply", False))
+    p = c.find_project(os.getcwd())
+    if p and os.path.realpath(PLUGIN).startswith(os.path.realpath(p.root) + os.sep):
+        try:  # T-2349: only in Foreman's own repo: another project's board is not where Foreman's bugs are filed
+            feed_self_failures(p, results, c.session_id() or c.now()[:10])
+        except Exception:
+            pass
     if getattr(args, "fix", False):
         fixed, left = fix(results)
         print("\n".join(["Fixed:"] + [f"  {x}" for x in fixed]) if fixed else "Fixed: nothing")
