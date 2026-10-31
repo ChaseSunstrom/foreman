@@ -968,9 +968,9 @@ class ScanCache(ForemanTestCase):
         return t
 
     def grow(self, path, seconds=2 * 3600):  # default: the mtime crosses an hour boundary
-        with open(path, "a") as f:
+        t = os.stat(path).st_mtime + seconds  # T-2429: from the mtime before the append, which resets it to now (in
+        with open(path, "a") as f:  # an hour's last minute, now + 60 s was the next hour: a cache miss)
             f.write("{}\n")
-        t = os.stat(path).st_mtime + seconds
         os.utime(path, (t, t))
 
     def test_an_append_within_the_hour_still_hits(self):
