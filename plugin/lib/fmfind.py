@@ -164,36 +164,51 @@ def _words(text):
 
 
 def _git(root, *args):
-    """git's stdout as bytes ('' on failure); the repo isn't trusted: none of its config may run code (fsmonitor, hooks)."""
+    """git's stdout as bytes (None on failure); the repo isn't trusted: none of its config may run code (fsmonitor, hooks,
+    a signature check's gpg program)."""
     r = subprocess.run(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.quotepath=false",
-                        "-C", root, *args], capture_output=True, timeout=60)
-    return r.stdout if r.returncode == 0 else b""
+                        "-c", "log.showSignature=false", "-c", "gpg.program=/bin/false", "-c", "gpg.ssh.program=/bin/false",
+                        "-c", "gpg.x509.program=/bin/false", "-c", "diff.renameLimit=1000", "-C", root, *args],
+                       capture_output=True, timeout=60)
+    return r.stdout if r.returncode == 0 else None
 
 
-FIX = re.compile(r"\b(fix|bug|crash|regress|broken|revert)", re.I)
+# a revert of a fix says so in its quoted subject (Revert "Fix x"); a revert of a feature doesn't match
+FIX = re.compile(r"\b(fix(es|ed|ing)?|bugs?|bugfix|crash\w*|regress\w*|broken)\b", re.I)
 
 
 def hotspots(root, n=20):
-    """T-2238: [{"file", "fixes"}] best first: tracked regular files by how many of the last 500 commits with a fix-like
-    subject (fix, bug, crash, regress, broken, revert) touched them; a renamed file counts under its current name."""
+    """T-2238: [{"file", "fixes"}] best first, or None when git failed: tracked regular files under root by how many of
+    the last 500 non-merge commits, those whose subject has a fix word (fix, bug, crash, regress, broken, a revert of
+    one), touched them; a renamed file counts under its current name."""
     try:
-        tracked = {os.fsdecode(p) for p in _git(root, "ls-files", "-z").split(b"\0") if p}
-        log = _git(root, "log", "-500", "--no-merges", "-M", "--name-status", "--format=%x01%s").decode("utf-8", "replace")
+        ls = _git(root, "ls-files", "-z")
+        log = _git(root, "log", "-500", "--no-merges", "--no-show-signature", "-M", "--relative", "-z", "--name-status",
+                   "--format=%x01%s")  # --relative: paths as ls-files gives them, from a subdirectory too
     except (OSError, subprocess.SubprocessError):
-        return []
+        return None
+    if ls is None or log is None:
+        return None
+    tracked = {os.fsdecode(p) for p in ls.split(b"\0") if p}
     real, now, fix, count = os.path.realpath(root), {}, False, {}
-    for line in log.split("\n"):  # newest first, so a rename's old name maps to the new one for older commits
-        if line.startswith("\x01"):
-            fix = bool(FIX.search(line))
-        elif line:
-            st, *names = line.split("\t")
-            if not names:
-                continue
-            new = now.get(names[-1], names[-1])
-            if st[0] == "R":  # every commit's renames count, fix or not
-                now[names[0]] = new
-            if fix:
-                count[new] = count.get(new, 0) + 1
+    toks, i = log.split(b"\0"), 0  # newest first, so a rename's old name maps to the new one for older commits
+    while i < len(toks):
+        t = toks[i]
+        i += 1
+        if t.startswith(b"\x01"):  # a commit: its subject
+            fix = bool(FIX.search(os.fsdecode(t[1:])))
+            continue
+        st = t.lstrip(b"\n")  # then a status and one name, or two for a rename or copy
+        k = 2 if st[:1] in (b"R", b"C") else 1
+        names = [os.fsdecode(x) for x in toks[i:i + k]]
+        i += k
+        if not st or len(names) < k:
+            continue
+        new = now.get(names[-1], names[-1])
+        if st[:1] == b"R":  # every commit's renames count, fix or not
+            now[names[0]] = new
+        if fix:
+            count[new] = count.get(new, 0) + 1
     # ponytail: only renames inside the 500-commit window and above git's similarity cutoff are followed
     rows = []
     for rel, k in sorted(count.items(), key=lambda x: (-x[1], x[0])):
@@ -212,7 +227,7 @@ def _files(root):
     directories, untracked hidden ones (T-2235: tracked ones like .github are read), generated files, binaries, files
     over 1 MB and anything reached through a symlink are left out."""
     def ls(*how):
-        return [os.fsdecode(p) for p in _git(root, "ls-files", *how, "-z").split(b"\0") if p]
+        return [os.fsdecode(p) for p in (_git(root, "ls-files", *how, "-z") or b"").split(b"\0") if p]
     try:
         tracked = ls("-c")
         rels = tracked + ls("-o", "--exclude-standard")
@@ -714,7 +729,14 @@ def cmd_find(args):
            else "--capture N: N is how many tasks to file, at least 1" if cap is not None and cap < 1
            else "--capture files tasks: run it inside a Foreman project" if cap and not p else None)
     if not bad and getattr(args, "hotspots", False):  # T-2238: where fixes landed before; not findings, so exit 0
-        rows = [r | {"file": c.defang(c.plain(r["file"]))} for r in hotspots(root, 20)]
+        if ranked:
+            print("fm find: --hotspots can't combine with --rank or --capture", file=sys.stderr)
+            return 2
+        got = hotspots(root, 20)
+        if got is None:  # a timeout or failure is not a clean result
+            print(f"fm find: git failed or timed out under {root} (not a checkout?): no hotspots to list", file=sys.stderr)
+            return 2
+        rows = [r | {"file": c.defang(c.plain(r["file"]))} for r in got]
         fmcli.out(args, {"root": root, "hotspots": rows}, "\n".join(f"{r['fixes']:4}  {r['file']}" for r in rows) or f"No fix commits touch tracked files under {root}.")
         return 0
     if bad:  # exit 1 means findings here, so a usage slip must read as an error (2), not as a hit

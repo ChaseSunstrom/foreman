@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm find --hotspots PATH` ranks tracked files by how many of the last 500 non-merge commits with a fix word in the subject touched them (git with fsmonitor, hooks and gpg programs off, renames followed, symlinks and untracked files never counted), with `--json`; `fmfind.hotspots(root, n)` returns the same rows for the bug rung (T-2238).
 - `fm genesis status`, genesis.json and the site's Genesis page show `fm exam scorecard`'s per-capability held-out rows (state, closed of graded, why), text only (T-2154).
 - `fm find --rank` weighs proof and effort: a lead `fm prove` proved ranks up to 1.25x until its own function changes (never past an unproven lead of a more severe kind), and a lead in a small function ranks above an equal one in a long function
 - Each new genesis seed and each `fm mission` pack now carries the user's standing rules: every steer still in force, one line each. `fm genesis drift` fails a seed that drops one; an older seed, or a steer newer than the seed, only gets a note

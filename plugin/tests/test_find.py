@@ -881,7 +881,7 @@ class FindHotspots(ForemanTestCase):
         self.commit(root, "add things", {"a.py": "1\n", "b.py": "1\n", "old.py": "1\n"})
         self.commit(root, "Fix crash in a", {"a.py": "2\n", "b.py": "2\n"})
         self.commit(root, "regression: broken a", {"a.py": "3\n"})
-        self.commit(root, "Revert \"x\"", {"b.py": "3\n"})
+        self.commit(root, "Revert \"fix x\"", {"b.py": "3\n"})
         self.commit(root, "tidy prefix and debug", {"b.py": "4\n", "a.py": "4\n", "c.py": "1\n"})  # not a fix
         os.symlink("a.py", os.path.join(root, "link.py"))
         self.commit(root, "fix link", {})  # a fix commit that touches only a symlink
@@ -908,10 +908,67 @@ class FindHotspots(ForemanTestCase):
         self.assertEqual(json.loads(self.fm("find", "--hotspots", root, "--json").stdout)["hotspots"][0]["file"], "a.py")
         self.assertIn("a.py", self.fm("find", "--hotspots", root).stdout)
 
-    def test_not_a_checkout_is_empty_and_runs_no_repo_code(self):
-        self.assertEqual(fmfind.hotspots(self.tmp, 10), [])
+    def test_a_git_failure_is_none_and_the_cli_warns_instead_of_saying_clean(self):
+        self.assertIsNone(fmfind.hotspots(self.tmp, 10))
+        r = self.fm("find", "--hotspots", self.tmp, check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertNotIn("No fix commits", r.stdout)
+        self.assertIn("git", r.stderr)
+
+    def test_runs_no_repo_code(self):
         root = self.mk()
         mark = os.path.join(self.tmp, "ran")
         self.git(root, "config", "core.fsmonitor", f"touch {mark}")
         fmfind.hotspots(root, 10)
         self.assertFalse(os.path.exists(mark))
+
+    def test_a_forged_signature_runs_no_gpg_program(self):
+        root = self.mk()
+        mark, prog = os.path.join(self.tmp, "gpg-ran"), os.path.join(self.tmp, "gpg.sh")
+        write(self.tmp, {"gpg.sh": f"#!/bin/sh\ntouch {mark}\n"})
+        os.chmod(prog, 0o755)
+        tree = subprocess.run(["git", "-C", root, "rev-parse", "HEAD^{tree}"], capture_output=True, text=True).stdout.strip()
+        head = subprocess.run(["git", "-C", root, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        who = "t <t@example.com> 1 +0000"
+        obj = (f"tree {tree}\nparent {head}\nauthor {who}\ncommitter {who}\ngpgsig -----BEGIN PGP SIGNATURE-----\n \n"
+               " x\n -----END PGP SIGNATURE-----\n\nfix forged\n")
+        new = subprocess.run(["git", "-C", root, "hash-object", "-t", "commit", "-w", "--stdin"], input=obj,
+                             capture_output=True, text=True).stdout.strip()
+        self.git(root, "update-ref", "HEAD", new)
+        self.git(root, "config", "log.showSignature", "true")
+        self.git(root, "config", "gpg.program", prog)
+        self.assertTrue(fmfind.hotspots(root, 10))
+        self.assertFalse(os.path.exists(mark))
+
+    def test_a_subdirectory_path_and_diff_relative_still_match(self):
+        root = self.mk()
+        self.commit(root, "add sub", {"sub/s.py": "1\n"})
+        self.commit(root, "fix s", {"sub/s.py": "2\n", "a.py": "9\n"})
+        for rel in ("false", "true"):
+            self.git(root, "config", "diff.relative", rel)
+            self.assertEqual(fmfind.hotspots(os.path.join(root, "sub"), 10), [{"file": "s.py", "fixes": 1}])
+            self.assertEqual(fmfind.hotspots(root, 10)[0], {"file": "a.py", "fixes": 3})
+
+    def test_odd_file_names_are_kept(self):
+        root = self.mk()
+        self.commit(root, "fix odd", {"t\tab.py": "1\n", 'q"uote.py': "1\n"})
+        self.assertEqual({r["file"] for r in fmfind.hotspots(root, 10)} & {"t\tab.py", 'q"uote.py'},
+                         {"t\tab.py", 'q"uote.py'})
+
+    def test_subjects_match_whole_fix_words_only(self):
+        root = self.mk()
+        self.commit(root, "add fixtures and Bugzilla links", {"f.py": "1\n"})
+        self.commit(root, "Fixes the crashes", {"g.py": "1\n"})
+        self.assertEqual({r["file"] for r in fmfind.hotspots(root, 10)} & {"f.py", "g.py"}, {"g.py"})
+
+    def test_a_revert_counts_only_when_it_reverts_a_fix(self):
+        root = self.mk()
+        self.commit(root, "Revert \"add new feature\"", {"f.py": "1\n"})
+        self.commit(root, "Revert \"Fix the parser\"", {"g.py": "1\n"})
+        self.assertEqual({r["file"] for r in fmfind.hotspots(root, 10)} & {"f.py", "g.py"}, {"g.py"})
+
+    def test_hotspots_with_rank_or_capture_is_a_usage_error(self):
+        root = self.mk()
+        for flag in (["--rank"], ["--capture", "1"]):
+            r = self.fm("find", "--hotspots", root, *flag, check=False)
+            self.assertEqual(r.returncode, 2, r.stdout)
