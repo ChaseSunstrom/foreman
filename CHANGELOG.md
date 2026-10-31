@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm find` now reads tracked files in hidden folders such as `.github/workflows` (untracked hidden folders are still skipped) and never reads a file through a symlinked folder. `fm find --capture` and `fm prove --capture` keep at most 5 of their tasks open at once, quoted repo text that reads like instructions is marked as data, and a rejected `fm prove --yes-run` call no longer remembers your yes.
 - `fm exam` now reports how many planted defects each arm found per language and per defect kind (overall and held out), not just one total, so a finder that's blind in one language or to one kind of bug shows up.
 - `fm genesis put`'s cold reader can now quote a sentence that wraps onto the next line of a paragraph: a wrapped paragraph counts as one line, so the quote names it instead of being refused as a line the file doesn't hold.
 - When `fm genesis put`'s cold reader quotes a line the file doesn't have, the refusal now shows the reader's own words, so you can see whether it misquoted or paraphrased.
