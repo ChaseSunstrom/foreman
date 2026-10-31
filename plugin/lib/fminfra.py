@@ -185,6 +185,25 @@ def _run(argv, cwd, env, end):
         fmfind.TOOL_T = old
 
 
+def sandbox_prefix(env, root, cwd, end):
+    """`unshare -r -n` (no network) as an argv prefix when it works unprivileged here, else [] (silently plain). T-2386:
+    shared with fm prove --migration."""
+    exe = _which("unshare", env, root)
+    ok = exe and _run([exe, "-r", "-n", sys.executable, "-c", "pass"], cwd, env, end)[2:] == (0, None)
+    return [exe, "-r", "-n"] if ok else []
+
+
+def touched(p, b):
+    """The files the task b changed, relative to the project p's folder (git names them from the repo's top; the project
+    may be a folder in it)."""
+    import fmmap
+    top = c.git_root(p.root)
+    base = c.task_base(p.root, b) if top else None
+    prefix = os.path.relpath(p.root, top).replace(os.sep, "/") if top else "."
+    return [f[len(prefix) + 1:] if prefix != "." and f.startswith(prefix + "/") else f
+            for f in (fmmap.changed(p.root, base) if base else [])]
+
+
 def infra(root, allowed=False, p=None, only=None, budget=None):
     """{"root", "files": [{"file", "class", "tool", "verdict": pass|fail|unproven, "why"}], "verdict": fail|pass|unchecked}.
     allowed: the tree is trusted (terraform validate loads the folder's own provider plugins, the tree's code, so it
@@ -209,9 +228,7 @@ def infra(root, allowed=False, p=None, only=None, budget=None):
 
     def sandbox(dst):
         if not net:
-            exe = _which("unshare", env, root)
-            ok = exe and _run([exe, "-r", "-n", sys.executable, "-c", "pass"], dst, env, end)[2:] == (0, None)
-            net.append([exe, "-r", "-n"] if ok else [])  # silently plain when it can't
+            net.append(sandbox_prefix(env, root, dst, end))
         return net[0]
 
     def miss(name):
@@ -317,16 +334,10 @@ def for_task(p, b, say=print):
     """(code, text) for fm task finish, or None: the infra files the task touched, proved. A missing validator is said
     (and filed once as a capability-miss), never installed; all-unproven records no run. A failing file refuses the close
     (text: every file's line, the failing ones first-class in the refusal)."""
-    import fmmap
     import fmprove
-    top = c.git_root(p.root)
-    base = c.task_base(p.root, b) if top else None
-    prefix = os.path.relpath(p.root, top).replace(os.sep, "/") if top else "."
-    # git names a change from the repo's top; the project may be a folder in it
-    touched = [f[len(prefix) + 1:] if prefix != "." and f.startswith(prefix + "/") else f
-               for f in (fmmap.changed(p.root, base) if base else [])]
-    r = infra(p.root, fmprove.trusted(p.root) or fmprove._lane_trusted(p, p.root), p=p, only=touched, budget=FINISH_T) \
-        if touched else None
+    files = touched(p, b)
+    r = infra(p.root, fmprove.trusted(p.root) or fmprove._lane_trusted(p, p.root), p=p, only=files, budget=FINISH_T) \
+        if files else None
     if not r or not r["files"]:
         return None
     lines = render(r)

@@ -229,6 +229,7 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 | **Learns a fix once** | A failure that was fixed before gets its fix offered next time, in any project | `fm fix list` |
 | **Changes many spots** | Batches of exact replacements, applied all or none, inside the task's scope | `fm edit` · `fm sub` |
 | **Improves itself** | Rule changes backtested on your real sessions; self-improvement kept only when evals agree | `/foreman:improve` |
+| **Proves migrations** | SQL pairs, dbmate files, alembic and Django run up, down, up on a throwaway database in a trusted tree (a throwaway Postgres when installed); a dialect or missing-tool mismatch is unproven, never a failure; the real database is never reached | `fm prove --migration` |
 | **Checks infra files** | Dockerfiles, compose, Terraform, Helm, Kubernetes, CI workflows, shell, systemd units: each through its own validator on a copy, offline; no validator installed, unproven | `fm prove --infra` |
 | **Finds problems unasked** | Untested code, undeclared imports, SQL built from input, slow loops, flaky tests, stale docs, leaked keys: no model, worst first; proven on a copy | `fm find --rank [--ladder]` (tools: trusted only), `fm prove --capture N`/`--docs`, `/foreman:initiative` |
 | **Seeds itself** | Genesis: generations toward one goal you write; a rewrite stays only if it closed more exam scenarios | `fm genesis step` |

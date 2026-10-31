@@ -1210,6 +1210,10 @@ def task_finish(p, args):
     infra = fminfra.for_task(p, b)
     if infra:
         results.append(("final", None, "fm prove --infra", *infra))
+    import fmmigrate  # T-2386: the migration files the task touched, run up/down/up in a trusted tree
+    mig = fmmigrate.for_task(p, b)
+    if mig:
+        results.append(("final", None, "fm prove --migration", *mig))
     tree = c.worktree_id(p.root)
 
     def record(x):
@@ -7402,9 +7406,10 @@ def _build_parser(only=None):
                    "failure, 2 nothing checkable or provable (T-2381)")
     s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests (--docs: its "
                    "documented commands), kept for this tree")
-    s.add_argument("--migration", action="store_true", help="instead: run the tree's plain SQL NAME.up.sql/NAME.down.sql "
-                   "migrations up, down, up on a throwaway sqlite file and compare the schema each time; trusted trees "
-                   "only; exit 0 pass, 1 fail, 2 refused or no known tool (T-2288)")
+    s.add_argument("--migration", action="store_true", help="instead: run the tree's migrations (SQL pairs, dbmate files, "
+                   "alembic, Django) up, down, up on a throwaway database with the right dialect and compare the schema "
+                   "each time; trusted trees only; exit 0 pass, 1 fail, 2 refused, unproven (dialect or environment) or "
+                   "no known tool (T-2288, T-2386)")
     s.add_argument("--infra", action="store_true", help="instead: run each infra file's own validator (hadolint, docker "
                    "compose config, terraform validate in an initialised folder, helm lint, kubeconform, actionlint, "
                    "shellcheck, systemd-analyze verify) on a throwaway copy, offline; a missing tool leaves the file "
