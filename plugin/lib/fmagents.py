@@ -306,7 +306,7 @@ def rules_text():
             f"--step \"<s>\" --focus`; M: 2 readings, 3+ fails-if options, Choice N (NN%) (`fm calibration`).\n"  # T-2344
             f"- Follow `fm next`: the one next required action and how to do it.\n"
             f"- Nothing is done without fresh evidence: run each criterion's verify command, then "
-            f"`fm task finish ID --audit \"<how>\"`.\n"
+            f"`fm task finish ID --audit \"<how>\"`; `fm proof` lists what no run proved.\n"  # T-2395
             f"- A refused command says why and how it is granted; never work around the guard. A missing tool: "
             f"`fm which X`; an install waits for the user: `fm ask ID plugin --later`.\n"  # T-2378: #5 on every host
             f"- The full rules: {os.path.join(PLUGIN, 'rules', 'foreman.md')}")

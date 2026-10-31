@@ -121,6 +121,16 @@ def _lacks(s):
                   ("installs asked of you", t.get("queued", 0)), ("installs you said no to", t.get("refused", 0))])
 
 
+def _proof(s):
+    """T-2395: fm proof's rollup (site/stats.py's proof block): the count, the kinds most need, the count per day."""
+    pr = s.get("proof") or {}
+    top = sorted((pr.get("counts") or {}).items(), key=lambda kv: -kv[1])[:5]
+    row = tiles([("done tasks unproven", pr.get("n", 0))] + [(f"need {k}", v) for k, v in top])
+    hist = pr.get("history") or []
+    return row + (columns("Unproven done tasks per day", "fm proof's count, last 30 days of closes, each time the site "
+                          "was built.", hist, ["n"]) if len(hist) > 1 else "")
+
+
 def _types(s):
     return hbars("Closed tasks by type", None, sorted(s["types"].items(), key=lambda kv: -kv[1]))
 
@@ -496,6 +506,24 @@ PAGES = [
                   "✓ step 2  $ pytest tests/test_login.py           → exit 0 · 14 passed\n"
                   "✓ proved  fails without the change, passes with it\n"
                   "✓ audits  self, adversary")]},
+    {"slug": "verifying", "nav": "What isn't proved", "title": "It says what no run proved",  # T-2395
+     "desc": "Every done task whose claim no command here proved is listed by kind, with the command that closes it.",
+     "lede": "A green close can still rest on words. Foreman reads each done task for claims no run backed, lists them "
+             "by kind, and shows the count wherever you look.",
+     "blocks": [
+         ("text", "The kinds", "<p>Each kind is a claim with its own proof: <code>typed</code> evidence (pasted, not "
+          "run), <code>red</code> or <code>inconclusive</code> runs, <code>ui-unshot</code> (a UI edit with no "
+          "screenshot), <code>docs</code>, <code>infra</code>, <code>migration</code>, <code>data</code>, "
+          "<code>perf-typed</code> and <code>perf-noise</code> (a speed claim with no bench, or one inside the noise), "
+          "<code>research-uncited</code>, <code>hollow</code> (a test that can't fail), <code>claimed</code> (a proof "
+          "word said with no run behind it) and <code>meaning</code> (a clause of the request no criterion checks)."
+          "</p>"),
+         ("text", "Where it shows", "<p><code>fm proof</code> lists each unproven task with the command that closes "
+          "it. The close itself prints the Not verified lines, in <code>fm task finish</code> and in "
+          "<code>fm code</code> on any model; commits and pull requests carry an Unproven trailer; the pane's band "
+          "shows the count and the kind most need; the MCP <code>proof</code> tool gives Claude Desktop and other "
+          "agents the same rows; the exam's proof and beyond kinds count a false proof against the run.</p>"),
+         ("chart", _proof)]},
     {"slug": "guard", "nav": "The guard", "title": "A guard built for bypass mode",
      "desc": "Every command and edit is read before it runs; dangerous ones are refused and destructive git saves your work first.",
      "lede": "Foreman is meant to run without permission prompts, so the brake has to be real: it reads every Bash "

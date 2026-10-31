@@ -393,6 +393,15 @@ class MissNote(CodeCase):
         self.assertNotEqual(self.task()["status"], "done", r.stdout)  # fm task finish refuses past an open miss
 
 
+class CloseLines(CodeCase):  # T-2395: fm code's close prints the Not verified and meaning lines fm task finish does
+    def test_unproven_and_meaning_lines_reach_fm_code_s_close_output(self):
+        self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
+        r = self.code("fix calc.add so it adds. Also email the weekly digest to every admin on Mondays.", "--model", "fake")
+        self.assertEqual(self.task()["status"], "done", r.stdout)
+        self.assertIn("meaning unproven", r.stdout)
+        self.assertIn("email the weekly digest", r.stdout)
+
+
 class AnyRequest(CodeCase):
     """T-1320: fm code takes any request: a question gets an answer (no task, nothing changed), and a plan whose check
     can't run here goes back to the planner instead of ending the run."""

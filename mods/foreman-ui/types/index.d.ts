@@ -90,6 +90,7 @@ export type FmView = {
   worktrees?: FmWorktree[] | null // T-1023: git worktrees beside the main checkout
   history?: FmHistory[] | null // T-1026: what happened, structured, newest last
   budget?: FmBudget | null // T-0228: today's spend on child runs and subagents
+  unproven?: { n: number; top: string | null } // T-2395: done tasks no run proved, and the kind most need
   bench?: FmBench | null // T-0228: bench cases, the newest run, evolve generations
   research?: FmResearchAsk[] // T-0228: the newest fm research ask notes
   revisit?: { date: string; decision: string; why: string }[] // T-0247: decisions whose revisit trigger fired

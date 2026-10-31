@@ -147,6 +147,21 @@ def calibration():
     return {k: d[k] for k in ("scored", "pending", "brier", "bars", "races") if k in d}
 
 
+def proof(old):
+    """T-2395: the verifying page's figures from fm proof --json, today's count added to the kept history (60 days)."""
+    try:
+        p = subprocess.run([os.path.join(ROOT, "plugin", "bin", "fm"), "proof", "--json"], cwd=ROOT,
+                           capture_output=True, text=True, timeout=300)
+        d = json.loads(p.stdout or "{}")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return old or {}
+    if "count" not in d:
+        return old or {}
+    day = datetime.date.today().isoformat()
+    hist = [h for h in (old or {}).get("history") or [] if h.get("day") != day] + [{"day": day, "n": d["count"]}]
+    return {"n": d["count"], "counts": d.get("counts") or {}, "history": hist[-60:]}
+
+
 def bench():
     p = subprocess.run([sys.executable, os.path.join(ROOT, "plugin", "tests", "bench_hooks.py"), "--runs", "20", "--json"],
                        capture_output=True, text=True, timeout=600)
@@ -262,7 +277,7 @@ def main():
         with open(OUT, encoding="utf-8") as f:
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
-             "cards": cards(), "code": code_counts(), "calibration": calibration(), "bench": old.get("bench", {}) if a.no_bench else bench(),
+             "cards": cards(), "code": code_counts(), "calibration": calibration(), "proof": proof(old.get("proof")), "bench": old.get("bench", {}) if a.no_bench else bench(),
              "duels": merge_duels(old.get("duels") or [], [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(
                  *x.partition("=")[2].split("@", 1), kind=next((k for k in ("long", "marathon") if x.startswith(k)), "")))
                                                      for x in (a.duel or [f"quality={state}"])) if d])}

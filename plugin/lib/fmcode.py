@@ -32,6 +32,7 @@ Write is reverted and reported. The worker's exit code and reply never mark anyt
 """
 import glob
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -106,7 +107,8 @@ EVENTS = {
     "worker": "worker, exit", "revert": "file, reason",
     "verify": "criterion, label (before|verify), cmd, exit, output (when it failed)",
     "changed": "step, files (dirty after the step), stat {path: [added, removed]}",
-    "closed": "task, tokens", "blocked": "task, reason, next (the command to run now)", "error": "task, next",
+    "closed": "task, tokens, unproven (fm task finish's Not verified lines, T-2395)",
+    "blocked": "task, reason, next (the command to run now)", "error": "task, next",
     "answer": "text: the answer to a question about the code (no task, nothing changed)",
     "note": "text, worker: which runner the run uses and why, or a caution about it (T-1328), or a worker turn that "
             "changed nothing (T-1393); stopped [pids]: runners a killed fm code left, stopped at this start (T-1337)",
@@ -3188,12 +3190,17 @@ def _finish(run, profile):
     if code:
         raise Blocked(f"fm code: fm task finish refused: {_one_line(out, 400)}")
     run.log(kind="end", status="done")
-    landed = next((x for x in out.splitlines() if x.startswith(f"{run.tid}: committed")), "")
+    lines = out.splitlines()
+    landed = next((x for x in lines if x.startswith(f"{run.tid}: committed")), "")
+    at = next((i for i, x in enumerate(lines) if x.startswith("Not verified (")), None)  # T-2395: what no run proved
+    unproven = [] if at is None else list(itertools.takewhile(lambda x: x.startswith("  "), lines[at + 1:]))
     first = None if _closed_before(run.jdir, run.tid) else os.path.basename(run.root)  # T-1349
     _tell(fmcore.find_project(run.root), f"fm code {run.tid} closed: {_one_line(pl['title'], 120)}")  # T-1342
     run.emit("closed", f"{run.tid} closed{'; ' + landed[len(run.tid) + 2:] if landed else ''} "
                        f"(tokens: {run.tokens[0]} in, {run.tokens[1]} out"
-                       f"{f', ${run.usd:.2f}' if run.usd is not None else ''})", task=run.tid, tokens=run.tokens,
+                       f"{f', ${run.usd:.2f}' if run.usd is not None else ''})"
+                       + (f"\n{lines[at]}\n" + "\n".join(unproven) if unproven else ""), task=run.tid, tokens=run.tokens,
+             unproven=[x.strip().removeprefix("- ") for x in unproven],
              usd=None if run.usd is None else round(run.usd, 4), **({"first_in": first} if first else {}))
 
 

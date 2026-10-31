@@ -330,3 +330,11 @@ class Judgment(ForemanTestCase):
         self.assertEqual(len(text.splitlines()), 7)  # and no new line (the block's paths vary by install, so not chars)
         self.assertIn("`fm which X`", text)  # T-2378: #5's line, for a host with no after-tool event to route
         self.assertIn("fm ask ID plugin --later", text)
+
+
+class ProofLine(ForemanTestCase):  # T-2395
+    def test_proof_line_tells_other_agents_to_run_fm_proof_before_calling_work_verified(self):
+        import fmagents as a
+        text = a.rules_text()
+        self.assertIn("fm proof", text)
+        self.assertEqual(len(text.splitlines()), 7)  # in an existing line, no new one
