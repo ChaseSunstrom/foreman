@@ -3,6 +3,7 @@ previews a rewrite as a diff and writes it only with --apply; fm dev --once runs
 import json
 import os
 import subprocess
+import sys
 
 from helpers import PLUGIN, ForemanTestCase, read_text
 
@@ -28,6 +29,74 @@ class Born(ForemanTestCase):
         got = json.loads(self.fm("new", "web", here, "--json", env=self.env(), cwd=self.tmp).stdout)
         self.assertEqual(got["born"], [])
         self.assertFalse(os.path.exists(os.path.join(here, ".git")))
+
+
+class BuildWhatIsMissing(ForemanTestCase):
+    """T-2278: fm new tool NAME (a stdlib script and the test that fails until it works) and fm new skill NAME."""
+    def new(self, *a, check=True):
+        return self.fm("new", *a, "--json", env={"PATH": os.path.join(PLUGIN, "bin") + os.pathsep + os.environ["PATH"]},
+                       cwd=self.tmp, check=check)
+
+    def test_a_tool_lands_with_a_test_that_fails_and_passes_its_check(self):
+        d = os.path.join(self.tmp, "proj")
+        os.makedirs(d)
+        got = json.loads(self.new("tool", "shout", d).stdout)
+        tool, test = os.path.join(d, "tools", "shout.py"), os.path.join(d, "tests", "test_shout.py")
+        self.assertEqual(sorted(got["wrote"]), sorted([tool, test]))
+        self.assertIn("argparse", read_text(tool))
+        self.assertNotIn("__NAME__", read_text(tool) + read_text(test))
+        h = subprocess.run([sys.executable, tool, "--help"], capture_output=True, text=True)
+        self.assertEqual((h.returncode, "usage:" in h.stdout), (0, True))
+        self.assertEqual(subprocess.run([sys.executable, tool], capture_output=True).returncode, 2)  # bad usage
+        red = subprocess.run([sys.executable, test], capture_output=True, text=True)
+        self.assertNotEqual(red.returncode, 0, "the test fails until the tool does its job")
+        ok = self.new("check", tool, "--run", check=False)
+        self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+
+    def test_a_tool_that_ignores_help_fails_its_check(self):
+        d = os.path.join(self.tmp, "proj")
+        os.makedirs(d)
+        self.new("tool", "shout", d)
+        tool = os.path.join(d, "tools", "shout.py")
+        with open(tool, "w") as f:
+            f.write("# fm new tool\nprint('hi')\n")
+        p = self.new("check", tool, "--run", check=False)
+        self.assertEqual(p.returncode, 1, p.stdout)
+
+    def test_a_skill_lands_in_the_listing_format_and_passes_its_check(self):
+        d = os.path.join(self.tmp, "proj")
+        os.makedirs(d)
+        got = json.loads(self.new("skill", "tidy-logs", d).stdout)
+        path = os.path.join(d, ".claude", "skills", "tidy-logs", "SKILL.md")
+        self.assertEqual(got["wrote"], [path])
+        text = read_text(path)
+        desc = next(x for x in text.splitlines() if x.startswith("description: "))[len("description: "):]
+        self.assertTrue(desc.startswith("Use whenever "))
+        self.assertLessEqual(len(desc), 125)
+        self.assertEqual(self.new("check", path, check=False).returncode, 0)
+        with open(path, "w") as f:
+            f.write("---\nname: tidy-logs\ndescription: Tidies logs.\n---\nbody\n")
+        self.assertEqual(self.new("check", path, check=False).returncode, 1)
+
+    def test_neither_overwrites_and_a_bad_name_is_refused(self):
+        d = os.path.join(self.tmp, "proj")
+        os.makedirs(d)
+        for kind in ("tool", "skill"):
+            self.new(kind, "demo", d)
+            again = self.new(kind, "demo", d, check=False)
+            self.assertNotEqual(again.returncode, 0)
+            self.assertIn("exists", again.stdout + again.stderr)
+        os.unlink(os.path.join(d, "tests", "test_demo.py"))  # half there: the other file is still not overwritten
+        with open(os.path.join(d, "tools", "demo.py"), "w") as f:
+            f.write("mine\n")
+        self.assertNotEqual(self.new("tool", "demo", d, check=False).returncode, 0)
+        self.assertEqual(read_text(os.path.join(d, "tools", "demo.py")), "mine\n")
+        self.assertFalse(os.path.exists(os.path.join(d, "tests", "test_demo.py")), "nothing written on a refusal")
+        for kind, bad in (("tool", "../x"), ("tool", "Bad Name"), ("tool", "a-b"), ("tool", "1x"), ("tool", ""),
+                          ("skill", "../x"), ("skill", "A"), ("skill", "a_b"), ("skill", "-x"), ("skill", "x" * 40)):
+            with self.subTest(kind=kind, name=bad):
+                self.assertNotEqual(self.new(kind, bad, d, check=False).returncode, 0)
+        self.assertEqual(sorted(os.listdir(os.path.join(d, "tools"))), ["demo.py"])
 
 
 class Codemod(ForemanTestCase):
