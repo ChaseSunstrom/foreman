@@ -1425,13 +1425,15 @@ def merge(p, b, main, unverified=None):
     branch = b.meta.get("lane_branch") or f"foreman/{b.id}"
     if not _ref_ok(main, branch):
         raise fmcli.UsageError(f"{b.id}: there is no branch {branch} to merge")
+    # T-2352: one commit from here on: what the gates judge is what merges, even if the branch moves meanwhile
+    tip = _git(main, "rev-parse", "--verify", f"{branch}^{{commit}}").stdout.strip() or branch
     meta = c.read_meta(p)
     ctx = fmguard.Ctx(cwd=main, project_root=main, home=os.path.expanduser("~"), foreman_home=c.foreman_home(),
                       state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(), scratch=[],
                       allow=set(b.meta.get("allow") or []), task_id=b.id, standing=set(meta.get("standing") or {}),
                       trusted=bool(c.trusted()))
     # T-0382: --no-renames, so a file moved away is listed by its old path too (a rename deletes it from main)
-    files = [f for f in _git(main, "diff", "--name-only", "--no-renames", "-z", f"HEAD...{branch}").stdout.split("\0")
+    files = [f for f in _git(main, "diff", "--name-only", "--no-renames", "-z", f"HEAD...{tip}").stdout.split("\0")
              if f]
     # T-0403: the main thread is often mid-task, so uncommitted edits the branch doesn't touch stay and the merge goes
     # ahead, as git's own does; a staged change (the merge commit would record it) or an overlapping edit refuses
@@ -1456,7 +1458,7 @@ def merge(p, b, main, unverified=None):
     # T-2312: the functions the branch changes (before the merge moves HEAD), so a stray edit stands out
     merge.functions = functions_changed(_git(main, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "diff",
                                              "-U0", "--no-renames", "--no-ext-diff", "--no-textconv",
-                                             f"HEAD...{branch}").stdout)
+                                             f"HEAD...{tip}").stdout)
     for f in files:
         blk = fmguard.check("Write", {"file_path": os.path.join(main, f), "content": ""}, ctx)
         if blk:
@@ -1465,6 +1467,14 @@ def merge(p, b, main, unverified=None):
             stop_mark(p, b.id, "guard", blk.category)  # T-2354: a grant to ask for, not a rebuild
             raise c.PolicyError(f"{b.id}: {branch} changes {f}, which the guard refuses for this task "
                                 f"({blk.category}: {blk.detail}); grant it the way an edit is granted, then merge")
+    import fmselfgate  # T-2352: before the criteria waiver, which never waives it
+    held = fmselfgate.gate(p, b, main, tip, files)
+    if held:
+        c.log_event(p, "enforce", task=b.id, data={"kind": "merge_refused", "reason": "self-change gate", "branch": branch})
+        stop_mark(p, b.id, "guard", "core")  # T-2354: a grant to ask for, not a rebuild
+        raise c.PolicyError(f"{b.id}: the self-change gate holds {branch}:\n  " + "\n  ".join(held[:12])
+                            + f"\nOnly the user's yes passes it (not the standing yes, not a decision): fm ask {b.id} core "
+                              f"--why \"<what the change needs and why it's safe>\", then merge again")
     if unverified is not None:  # T-0948: the waiver is on the ledger before the merge it allows
         c.log_event(p, "lane_unverified", task=b.id, data={"reason": unverified.strip(), "branch": branch})
     else:
@@ -1486,7 +1496,7 @@ def merge(p, b, main, unverified=None):
             x.meta.update({"base": pre_merge}, **({"base_tree": pre_tree} if pre_tree else {}))
         return old
     _, old = fmcli.mutate(p, b.id, based, "lane_merge_base", {"branch": branch, "base": pre_merge})
-    r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
+    r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", tip)
     if r.returncode:
         clashed = [f for f in _git(main, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0") if f]
         brief = _conflict_brief(p, b, main, branch, clashed)  # T-0446: what clashed, and how to resolve it on the branch
