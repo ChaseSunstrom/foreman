@@ -151,6 +151,28 @@ class DesignLens(HookCase):
         self.assertEqual(lenses, ["self", "design"])
         self.assertIn("No screenshots", text)
 
+    def test_a_base_that_is_an_option_is_refused_and_writes_nothing(self):  # T-2318
+        self.prep()
+        out = os.path.join(self.repo, "pwned.txt")
+        r = self.fm("audit", "prep", self.tid, f"--base=--output={out}", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("not a revision", r.stdout + r.stderr)
+        self.assertFalse(os.path.exists(out), "git never saw the value as an option")
+        self.assertEqual(self.fm("audit", "prep", self.tid, "--base", "HEAD", "--json").returncode, 0)
+
+    def test_the_diff_runs_with_the_safe_git_options(self):  # T-2318
+        import subprocess
+        self.prep()
+        mark = os.path.join(self.repo, "ran.txt")
+        drv = os.path.join(self.home, "drv.sh")
+        with open(drv, "w") as f:
+            f.write(f"#!/bin/sh\ntouch '{mark}'\n")
+        os.chmod(drv, 0o755)
+        subprocess.run(["git", "-C", self.repo, "config", "diff.external", drv], check=True)
+        self.write("README.md", "# changed\n")
+        self.fm("audit", "prep", self.tid, "--base", "HEAD", "--json")
+        self.assertFalse(os.path.exists(mark), "the repo's diff driver never ran")
+
     def test_a_backend_diff_gets_no_design_lens(self):
         self.prep()
         self.write("a.py", "x = 1\n")
