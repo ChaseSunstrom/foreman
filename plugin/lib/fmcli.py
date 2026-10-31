@@ -6927,8 +6927,10 @@ def _build_parser(only=None):
             help="the standing goal: the mandate with a contents list, each item a done-when check and the tasks that "
                  "build it; show lists open work outside it, items with no task and items claimed but not met, "
                  "exit 1 when any (T-2135)")
-    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "item", "link", "verdict"],
-                   help="verdict: finished (exit 0) or stopped with its causes (1); no goal exits 2")
+    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "item", "link", "verdict", "plan"],
+                   help="verdict: finished (exit 0) or stopped with its causes (1); no goal exits 2; plan: propose the "
+                        "contents list tagged user/standard/model, with --apply --done-when CMD adding it (T-2136)")
+    s.add_argument("--apply", action="store_true", help="plan: add the proposed user, standard and grounded model items")
     s.add_argument("text", nargs="*", help="set: the request, in the user's words; item: what it covers; link: ITEM TASK")
     s.add_argument("--until", metavar="YYYY-MM-DD", help="set: the last day it stands")
     s.add_argument("--no-end", action="store_true", help="set: it stands until replaced or cleared (instead of --until)")
@@ -7010,11 +7012,14 @@ def _build_parser(only=None):
             "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
     s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish", "check", "step",
                                                  "draft", "spec", "select", "seed", "drift", "sweep", "exam", "frontier",
-                                                 "novelty"))
+                                                 "novelty", "grow"))
     s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; live: on|off; export: the folder "
                                           "for genesis.json and the docs (site/genesis here); draft: the goal line (none: "
                                           "a whole gen-0 anyway); select/seed/drift/sweep: the generation N")
     s.add_argument("--agent", default="foreman", help="select/sweep: whose graded exam lines count (default foreman)")
+    s.add_argument("--name", help="grow: the new category's name (T-2188)")
+    s.add_argument("--evidence", help="grow: the ideas, failures or misses no existing category fits")
+    s.add_argument("--measure", help="grow: exam kinds (bug, flaky, …) or 'unmeasurable: why'")
     s.add_argument("--file", help="init/put/draft: read the text from this file (- is stdin)")
     s.add_argument("--per-kind", type=int, help="spec/exam: exam scenarios per kind (default 9); a third is held out")
     s.add_argument("--arm", choices=("genesis", "plain", "oracle", "empty"), default="genesis",
@@ -7049,11 +7054,15 @@ def _build_parser(only=None):
     s.add_argument("path", nargs="?", default=".", help="the tree to prove in (default: here)")
     s.add_argument("--limit", type=int, default=10, help="prove the best N candidates (default 10)")
     s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests, kept for this tree")
+    s.add_argument("--bugs", type=int, default=None, metavar="N", help="turns the bug rung on: ask a cheap child for bug "
+                   "candidates in the N hottest files (N is required, at most 10; try 3), as in fm prove --bugs 3 PATH; "
+                   "each is proven by a model-written red test or stays a lead; trusted trees only (T-2242)")
     s.add_argument("--capture", type=int, metavar="N", help="file up to N proven findings as planned tasks fm run works, "
                    "each red until fixed (its criterion is fm prove --only ID); nothing proven writes "
                    "research/prove-receipt.md (T-2123)")
     s.add_argument("--only", metavar="ID", help="prove only the finding with this id (a task's criterion); exit 0 once it "
-                   "is gone or no longer proven")
+                   "is gone or no longer proven. bug-ID (a --bugs finding) reruns its saved test: red is still open "
+                   "(exit 1), green is fixed (exit 0), a missing saved test can't be re-checked (exit 1)")
     s = add("exam", lazy("fmexam", "cmd_exam"), tier=("Finding your way", 456), help="a seeded exam of throwaway repos in six "
             "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
     s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard"),

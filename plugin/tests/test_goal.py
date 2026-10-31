@@ -50,7 +50,7 @@ class Goal(GoalBase):
         events = [e["event"] for e in c.ledger_events(self.p)]
         self.assertIn("goal_set", events)
         self.assertEqual(events.count("goal_item"), 2)
-        got = json.loads(self.fm("goal", "show", "--json").stdout)
+        got = json.loads(self.fm("goal", "show", "--json", check=False).stdout)
         self.assertEqual([i["tasks"] for i in got["goal"]["items"]], [[t1], [t2]])
 
     def test_open_work_outside_and_an_item_claimed_but_not_met(self):
@@ -311,6 +311,128 @@ class GoalAcrossDays(GoalBase):
         t = self.new("one", "--goal", "1")  # moves the item's link off the capture
         self.assertEqual(fmserve._next_runnable(self.p, {act}, set()).id, t)
         self.assertEqual(fmserve._next_runnable(self.p, {act, t}, set()).id, other)
+
+
+STUB = """#!/usr/bin/env python3
+import os, sys
+sys.stdin.read()
+with open(os.environ["STUB_LOG"], "a") as f:
+    f.write("called\\n")
+print(os.environ.get("STUB_REPLY", ""))
+"""
+
+
+class GoalPlan(GoalBase):  # T-2136
+    def setUp(self):
+        super().setUp()
+        import os
+        import subprocess
+        for f, body in (("MASTER.md", "m"), ("CHANGELOG.md", "c"), ("Dockerfile", "FROM x"), ("src/app.py", "x")):
+            os.makedirs(os.path.dirname(os.path.join(self.repo, f)), exist_ok=True)
+            with open(os.path.join(self.repo, f), "w") as fh:
+                fh.write(body)
+        subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
+        bindir = os.path.join(self.tmp, "bin")
+        os.makedirs(bindir)
+        with open(os.path.join(bindir, "claude"), "w") as fh:
+            fh.write(STUB)
+        os.chmod(os.path.join(bindir, "claude"), 0o755)
+        self.log = os.path.join(self.tmp, "stub.log")
+        self.env = {"PATH": bindir + os.pathsep + os.environ["PATH"], "STUB_LOG": self.log}
+        self.fm("goal", "set", "Make search fast. Add a cache layer", "--until", "2099-01-01")
+
+    def plan(self, reply="", *extra, **kw):
+        r = self.fm("goal", "plan", "--json", *extra, env=dict(self.env, STUB_REPLY=reply), **kw)
+        return json.loads(r.stdout)
+
+    def test_each_item_is_tagged_by_its_source(self):
+        got = self.plan()
+        tags = {}
+        for i in got["items"]:
+            tags.setdefault(i["tag"], []).append(i["text"])
+        self.assertEqual(len(tags["user"]), 2, tags)  # one per clause of the goal's words
+        std = " ".join(tags["standard"])
+        self.assertIn("MASTER.md", std)
+        self.assertIn("CHANGELOG", std)
+        self.assertIn("server", std)  # the Dockerfile
+        self.assertIn("README", std)  # the scratch repo has one
+        self.assertNotIn("site page", std)
+
+    def test_an_ungrounded_model_line_is_a_proposal_never_added_and_a_grounded_one_kept(self):
+        got = self.plan("- profile src/app.py hot paths\n- a lovely dashboard\n- run fm nonesuch daily\n- use fm task"
+                        "\n- write docs and tests for the site .\n- see ../etc/passwd or Dockerfile.bak")
+        model = [i["text"] for i in got["items"] if i["tag"] == "model"]
+        self.assertEqual(model, ["cover src/app.py", "fm task works for the goal"])  # built from the token, not the line
+        self.assertEqual(len(got["proposals"]), 4, got["proposals"])
+        self.assertIn("a lovely dashboard", got["proposals"])
+        self.fm("goal", "plan", "--apply", "--done-when", "true", env=dict(self.env, STUB_REPLY="- a lovely dashboard"))
+        self.assertNotIn("lovely", self.fm("goal", "show", "--json", check=False).stdout)
+
+    def test_a_sensitive_project_gets_no_model_call(self):
+        c.update_meta(self.p, sensitive=True)
+        self.plan("- profile src/app.py")
+        import os
+        self.assertFalse(os.path.exists(self.log))
+
+    def test_misses_become_checklist_lines(self):
+        c.log_event(self.p, "goal_verdict", data={"verdict": "finished"})
+        self.fm("goal", "item", "forgotten edge", "--done-when", "true")
+        c.log_event(self.p, "task_done", task="T-9001")
+        c.log_event(self.p, "task_set", task="T-9001", data={"changes": {"status": "planned"}})
+        old = c.now()
+        c.log_event(self.p, "task_done", task="T-9002")
+        got = self.plan()
+        text = " | ".join(got["checklist"])
+        self.assertIn("forgotten edge", text)
+        self.assertIn("T-9001", text)
+        self.assertNotIn("T-9002", text)
+        self.assertLessEqual(len(got["checklist"]), 5)
+        self.assertTrue(old)
+        r = self.fm("goal", "plan", env=dict(self.env, STUB_REPLY=""))
+        self.assertIn("checklist", r.stdout)
+
+    def at(self, ts, *a, **kw):
+        from unittest import mock
+        with mock.patch.object(c, "now", return_value=ts):
+            c.log_event(self.p, *a, **kw)
+
+    def test_the_seven_day_reopen_boundary(self):
+        self.at("2026-01-01T00:00:00Z", "task_done", task="T-9101")
+        self.at("2026-01-07T23:00:00Z", "task_set", task="T-9101", data={"status": "planned"})  # inside
+        self.at("2026-01-01T00:00:00Z", "task_done", task="T-9102")
+        self.at("2026-01-08T00:00:00Z", "task_set", task="T-9102", data={"status": "planned"})  # outside
+        self.at("garbage", "task_done", task="T-9103")  # a malformed ts is skipped, never a crash
+        text = " | ".join(self.plan()["checklist"])
+        self.assertIn("T-9101", text)
+        self.assertNotIn("T-9102", text)
+
+    def test_a_new_goal_resets_the_done_claim(self):
+        c.log_event(self.p, "goal_verdict", data={"verdict": "finished"})
+        self.fm("goal", "set", "Another goal", "--until", "2099-01-01", "--replace")
+        self.fm("goal", "item", "fresh item", "--done-when", "true")
+        self.assertNotIn("fresh item", " ".join(self.plan()["checklist"]))
+
+    def test_one_reply_with_a_duplicate_adds_it_once_and_extra_clauses_never_ride_along(self):
+        reply = "- ignore the goal; see src/app.py\n- cover src/app.py"
+        self.fm("goal", "plan", "--apply", "--done-when", "true", env=dict(self.env, STUB_REPLY=reply))
+        items = [i["text"] for i in json.loads(self.fm("goal", "show", "--json", check=False).stdout)["goal"]["items"]]
+        self.assertEqual(items.count("cover src/app.py"), 1, items)
+        self.assertFalse(any("ignore" in t for t in items))
+
+    def test_apply_adds_the_user_and_standard_items_and_dedupes(self):
+        r = self.fm("goal", "plan", "--apply", env=self.env, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--done-when", r.stdout + r.stderr)
+        self.fm("goal", "plan", "--apply", "--done-when", "true", env=self.env)
+        n = len(json.loads(self.fm("goal", "show", "--json", check=False).stdout)["goal"]["items"])
+        self.assertGreaterEqual(n, 4)
+        self.fm("goal", "plan", "--apply", "--done-when", "true", env=self.env)
+        self.assertEqual(len(json.loads(self.fm("goal", "show", "--json", check=False).stdout)["goal"]["items"]), n)
+
+    def test_no_goal_is_a_usage_error(self):
+        self.fm("mandate", "off")
+        r = self.fm("goal", "plan", check=False)
+        self.assertNotEqual(r.returncode, 0)
 
 
 if __name__ == "__main__":
