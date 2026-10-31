@@ -215,6 +215,17 @@ class SessionStart(HookCase):
         self.fm("mandate", "off")
         self.assertNotIn("fm mandate", self.ctx_of(self.run_ss()))
 
+    def test_session_start_carries_the_goal_line_instead_of_the_mandate_text(self):
+        # T-2139: a goal with items stands across days: one line, not the line plus the mandate text again
+        self.fm("init")
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.assertIn("Standing mandate", self.ctx_of(self.run_ss()))  # no items yet: the mandate text
+        self.fm("goal", "item", "coverage", "--done-when", "true")
+        ctx = self.ctx_of(self.run_ss())
+        self.assertIn('Goal: "Ship the ledger" · 0/1 items done · next: 1. coverage (no task yet)', ctx)
+        self.assertNotIn("Standing mandate", ctx)
+        self.assertLess(len(ctx), 10000)
+
     def test_an_unattended_run_is_told_to_end_with_its_checks(self):
         # T-1228: the duel's judge read only the final reply; Foreman's evidence sat in its ledger, not in the reply
         self.fm("init")
@@ -2076,6 +2087,14 @@ class PreCompact(HookCase):
         p = self.hook("PreCompact", {"trigger": "auto", "custom_instructions": None})
         self.assertEqual((p.returncode, p.stdout.strip()), (0, ""))
         self.assertIn("<!-- auto -->", c.find_brief(self.project(), tid).section("Resume here"))
+
+    def test_the_checkpoint_carries_the_goal_line(self):
+        self.fm("init")
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "coverage", "--done-when", "true")
+        tid = self.task()
+        self.hook("PreCompact", {"trigger": "auto", "custom_instructions": None})
+        self.assertIn('Goal: "Ship the ledger" · 0/1 items done', c.find_brief(self.project(), tid).section("Resume here"))
 
     def test_corrupt_state_still_exits_zero(self):
         self.fm("init")

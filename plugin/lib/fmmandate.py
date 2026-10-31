@@ -2,6 +2,7 @@
 bound) that fm scout and fm night read. While it stands, what scout captures says it was found under it; once it ends,
 scout captures one decision (renew it or let it lapse) and nothing more under it until the user renews or clears it."""
 import argparse
+import json
 import time
 
 import fmcore as c
@@ -257,11 +258,8 @@ def verdict(p, m):
     _, uncovered, unmet, unchecked = drift(p, m)
     causes = [] if items else ["the goal has no items"]
     causes += [f"item {i['n']} has no task" for i in uncovered]
-    # an item is done when a linked task is done and none is open; dropped tasks don't count (T-2137)
-    st = {i["n"]: [briefs[t].status for t in i["tasks"] if t in briefs] for i in items}
-    causes += [f"item {i['n']} has open tasks" for i in items if any(s not in c.CLOSED for s in st[i["n"]])]
-    causes += [f"item {i['n']} has no done task" for i in items
-               if st[i["n"]] and all(s in c.CLOSED for s in st[i["n"]]) and "done" not in st[i["n"]]]
+    causes += [f"item {i['n']} has {w}" for i in items if (w := {"open": "open tasks", "no done task": "no done task"}.get(
+        item_state(i, briefs)))]
     causes += [f"item {i['n']} check fails ({how})" for i, how in unmet]
     causes += [f"item {i['n']} check not run" for i in unchecked]
     # a clause is accounted when an item (text, done-when, task titles) shares 2 of its words (1 if it has one)
@@ -324,3 +322,36 @@ def cmd_goal(args):
         return fmcli.out(args, {"item": int(words[0]), "task": words[1].upper()},
                          f"{words[1].upper()} builds item {words[0]}.")
     return show(p, args)
+
+
+def item_state(it, by):
+    """T-2137, T-2139: the one item-done rule: 'done' when a linked task is done and none is open; 'open' while one is;
+    'no done task' when its tasks are all dropped; 'no task' when it has none (a gone task is ignored). by: id -> brief."""
+    st = [by[t].status for t in it.get("tasks") or [] if t in by]
+    return ("open" if any(s not in c.CLOSED for s in st) else "done" if "done" in st else "no done task") if st else "no task"
+
+
+def progress(p, briefs=None):
+    """T-2139: (goal, items done, next item, its first open brief or None) of the standing goal, or None when none stands,
+    it has ended or it has no items. An item is done when a linked task is done and none is still open (dropped ones
+    are ignored: an item with only dropped tasks isn't done). Meta and briefs only; briefs: ones the caller loaded."""
+    m = get(p)
+    items = (m or {}).get("items") or []
+    if not m or m["expired"] or not items:
+        return None
+    by = {b.id: b for b in (briefs if briefs is not None else c.load_briefs(p))}
+    done = lambda it: item_state(it, by) == "done"
+    nxt = next((it for it in items if not done(it)), None)
+    open_ = next((by[t] for t in (nxt or {}).get("tasks") or [] if t in by and by[t].status not in c.CLOSED), None)
+    return m, sum(map(done, items)), nxt, open_
+
+
+def goal_line(p, briefs=None):
+    """T-2139: the one line every surface prints while a goal stands: its text (quoted, it's the user's words), items
+    done/total, the next item."""
+    g = progress(p, briefs)
+    if not g:
+        return None
+    m, done, nxt, b = g
+    tail = f" · next: {nxt['n']}. {c.fit(nxt['text'], 60)} ({b.id if b else 'no task yet'})" if nxt else " · all items done"
+    return c.plain(f"Goal: {json.dumps(c.fit(m['text'], 80), ensure_ascii=False)} · {done}/{len(m['items'])} items done{tail}")
