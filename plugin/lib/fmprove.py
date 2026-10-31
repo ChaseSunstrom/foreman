@@ -453,8 +453,7 @@ def cmd_prove(args):
     try:
         found = fmfind.scan(root, fmfind.precision(p) if p else {})[1]
         for key, f in fmfind.keyed(
-                sorted(found, key=lambda f: (f["file"], f["line"], f["finder"])),  # fm find's order: twin numbers match
-                os.path.realpath(root), os.path.realpath(p.root if p else root)):
+                found, os.path.realpath(root), os.path.realpath(p.root if p else root)):
             f["key"] = key  # fm find --capture's key, so a task filed from either is never filed twice
         if args.only:  # T-2123: one finding, as a task's criterion names it; gone from fm find means fixed
             found = [dict(f, held=None) for f in found if proof_id(f["key"]) == args.only]
