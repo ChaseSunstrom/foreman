@@ -318,9 +318,14 @@ def _goal_session(agent, base, key, work, model, budget, timeout, faults):
     """One goal in a temp copy of its repo (with .git), as fmexam._session_arm does it, with the faults planted: a
     misleading test before the session; a kill (the first turn capped at KILL_T minutes, then resumed by its id); a pause
     (the turn told to stop at a checkpoint, PAUSE_GAP seconds, then resumed); a forced small compaction window.
-    (cost, error, fault log); the tree it leaves is copied to work."""
+    (known cost, error, fault log, run info for fm exam long grade: T-2263); the tree it leaves is copied to work."""
     import fmbench
-    num = lambda r: r.get("total_cost_usd") if isinstance(r.get("total_cost_usd"), (int, float)) else 0
+    unknown = []  # turns that reported no cost: counted apart, never as 0
+
+    def num(r):
+        v = r.get("total_cost_usd")
+        unknown.append(not isinstance(v, (int, float)))
+        return v if isinstance(v, (int, float)) else 0
     log, t0, sid = [], time.monotonic(), str(uuid.uuid4())
     since = lambda: round(time.monotonic() - t0, 1)
     with tempfile.TemporaryDirectory() as tmp:
@@ -345,7 +350,7 @@ def _goal_session(agent, base, key, work, model, budget, timeout, faults):
         sids = [sid]
         res, err = fmbench._session(wt, env, plugins, ask, model, budget, min(KILL_T, timeout) if "kill" in faults else timeout,
                                     keep=True, settings=settings, sid=sid)
-        cost = num(res)
+        cost, last = num(res), res
         killed = "kill" in faults and str(err).startswith("timed out")
         paused = "pause" in faults and "PAUSED" in str(res.get("result") or "")
         if "kill" in faults:  # a killed turn reports no cost: unknown, not zero
@@ -356,14 +361,14 @@ def _goal_session(agent, base, key, work, model, budget, timeout, faults):
             time.sleep(PAUSE_GAP if paused else 0)
             again, err = fmbench._session(wt, env, plugins, CONTINUE, model, budget, timeout, resume=sid, keep=True,
                                           settings=settings)
-            cost += num(again)
+            cost, last = cost + num(again), again
             fresh = bool(err) and not again  # no result at all: the resume itself failed (the kill beat the session file)
             if fresh:
                 sid2 = str(uuid.uuid4())
                 sids.append(sid2)
                 again, err = fmbench._session(wt, env, plugins, GOAL.format(goal=key["goal"]), model, budget, timeout,
                                               keep=True, settings=settings, sid=sid2)
-                cost += num(again)
+                cost, last = cost + num(again), again
             for f in log:
                 if f["kind"] in ("kill", "pause") and f["fired"]:
                     f.update(resumed=True, resume_ok=not fresh and not err, resumed_at=since(), **({"fresh": True} if fresh else {}))
@@ -374,7 +379,14 @@ def _goal_session(agent, base, key, work, model, budget, timeout, faults):
             if f["kind"] == "misleading":
                 f["kept"] = os.path.isfile(os.path.join(wt, f["file"]))
         shutil.copytree(wt, work, symlinks=True, ignore=shutil.ignore_patterns(".git"))
-    return cost, err, log
+        import fmhooks
+        events = os.path.join(state, "events.jsonl")  # a guard block is an event in the session's own state
+        blocks = sum(fmbench._diagnose(state)["guard_blocks"].values()) if os.path.isfile(events) else None
+        info = {"cost": cost, "cost_unknown": any(unknown) or any(f.get("cost_unknown") for f in log),
+                "said_done": bool(last.get("result")) and not err and fmhooks.claims_done(str(last["result"])), "secs": since(),
+                "ended_ok": not err, "resume_failed": sum(bool(f.get("resumed") and not f.get("resume_ok")) for f in log),
+                "guard_blocks": blocks}
+    return cost, err, log, info
 
 
 def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=None):
@@ -402,9 +414,10 @@ def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=N
         shutil.rmtree(work, ignore_errors=True)
         if agent in SESSIONS:
             fmbudget.check("exam-arm", est(1), "a smaller --limit")  # the day's spend may have moved since the last goal
-            cost, err, log = _goal_session(agent, os.path.join(_root(p), run, s["id"]), key, work, model, budget, timeout, faults)
+            cost, err, log, info = _goal_session(agent, os.path.join(_root(p), run, s["id"]), key, work, model, budget, timeout, faults)
             fmbudget.record("exam-arm", cost, project=p.slug, detail=f"long {agent} {s['id']}")
             c.write_atomic(os.path.join(_root(p), run, "faults", agent, s["id"] + ".json"), json.dumps(log, indent=1))
+            c.write_atomic(os.path.join(_root(p), run, "faults", agent, s["id"] + ".run.json"), json.dumps(info, indent=1))
             if err:
                 errors[s["id"]] = c.fit(c.plain(str(err)), 200)
             continue
@@ -412,6 +425,51 @@ def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=N
         if agent == "oracle":
             _overlay(work, key["src"], key["target"], key["files"])
     return {"run": run, "agent": agent, "answered": [s["id"] for s in picked], "errors": errors}
+
+
+def _metrics(p, run, agent, g):
+    """T-2263: one goal's false-done claim, cost, interventions, seconds and guard blocks, from the run info `run` stored
+    beside its fault log. A goal with no info (a zero-token arm, an older run) or no answer has each of them as None:
+    unknown is never 0. A false-done is the session's last reply claiming done while a hidden check fails.
+    resumes_needed is where a person would have to step in: a planned resume that failed, or a session that ended in
+    error. unfinished is a session that ended with no done claim and no error: it stopped short, which is no
+    intervention. secs is the session's wall time: the tree is only checked once, at its end, so
+    the time to the first true-done is bounded by it."""
+    none = {"false_done": None, "cost": None, "cost_unknown": None, "resumes_needed": None, "unfinished": None, "secs": None, "guard_blocks": None}
+    try:
+        with open(os.path.join(_root(p), run, "faults", agent, g["id"] + ".run.json"), encoding="utf-8") as f:
+            info = json.load(f)
+    except (OSError, ValueError):
+        return none
+    if not (g["answered"] and isinstance(info, dict)):
+        return none
+    num = lambda k, kind=(int, float): info[k] if isinstance(info.get(k), kind) and not isinstance(info.get(k), bool) else None
+    flag = lambda k: info[k] if isinstance(info.get(k), bool) else None  # a flag the run didn't store is unknown
+    said, ok = flag("said_done"), flag("ended_ok")
+    return {"false_done": None if said is None else said and not g["true_done"], "cost": num("cost"),
+            "cost_unknown": info.get("cost_unknown") is not False,
+            "resumes_needed": None if ok is None else (num("resume_failed", int) or 0) + (not ok),
+            "unfinished": None if ok is None or said is None else int(ok and not said), "secs": num("secs"),
+            "guard_blocks": num("guard_blocks", int)}
+
+
+def _totals(goals):
+    """The run's rows over its answered goals: a sum over the goals that know it (None when none does) and the count of
+    goals that don't, under "unknown"."""
+    mine = [g for g in goals if g["answered"]]
+    known = lambda k: [g[k] for g in mine if g.get(k) is not None]
+    tot = lambda k: sum(known(k)) if known(k) else None
+    secs = [g["secs"] for g in mine if g["true_done"] and g.get("secs") is not None]
+    out = {"rate": round(sum(g["true_done"] for g in goals) / len(goals), 3) if goals else 0,
+           "false_done": tot("false_done"), "resumes_needed": tot("resumes_needed"), "unfinished": tot("unfinished"), "guard_blocks": tot("guard_blocks"),
+           "cost": round(tot("cost"), 4) if known("cost") else None,
+           "cost_unknown": sum(g.get("cost") is None or g.get("cost_unknown") is not False for g in mine),
+           "hours_to_done": round(min(secs) / 3600, 3) if secs else None,
+           # a revert (a landed change taken back) can't be seen in the final tree the run keeps: unknown, not 0
+           "reverts": None}
+    out["unknown"] = {k: sum(g.get(k) is None for g in mine) for k in ("false_done", "resumes_needed", "unfinished", "guard_blocks")}
+    out["unknown"]["hours_to_done"] = sum(g["true_done"] and g.get("secs") is None for g in mine)
+    return out
 
 
 def grade(p, run, agent):
@@ -435,6 +493,7 @@ def grade(p, run, agent):
                 g["error"] = "the runner failed or timed out"
             else:
                 g.update(true_done=set(key["checks"]) <= ok, regressions=[i for i in key["sample"] if i not in ok])
+        g.update(_metrics(p, run, agent, g))
         goals.append(g)
     if not any(g["answered"] for g in goals):
         raise ValueError(f"no answers from {agent!r} in {run} (fm exam long run {run} --agent {agent})")
@@ -445,7 +504,7 @@ def grade(p, run, agent):
         model = None
     res = {"tier": "long", "agent": agent, "run": run, "at": c.now(), "gen": fmgenesis.current(p), "model": model,
            "scenarios": len(goals), "true_done": sum(g["true_done"] for g in goals),
-           "regressions": sum(len(g["regressions"]) for g in goals), "goals": goals}
+           "regressions": sum(len(g["regressions"]) for g in goals), "goals": goals, **_totals(goals)}
     fmgenesis.exam_line(p, res)
     return res
 

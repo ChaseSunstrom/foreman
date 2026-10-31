@@ -268,6 +268,57 @@ class Long(ForemanTestCase):
         self.go("plain", ("pause",))
         self.assertEqual([k["kind"] for k in self.faults("plain")], ["pause"])
 
+    def test_grade_reports_false_done_cost_interventions_and_never_records_unknown_as_zero(self):  # T-2263
+        self.stub()
+        os.environ["STUB_HANG"] = "1"
+        self.addCleanup(os.environ.pop, "STUB_HANG", None)
+        self.go("plain", ("kill",), limit=2)  # the stub says "done" but writes nothing: hidden checks stay red
+        g = self.grade(self.run_id, "plain")
+        self.assertEqual((g["true_done"], g["false_done"], g["resumes_needed"], g["unfinished"]), (0, 2, 0, 0), g)
+        self.assertEqual(g["cost_unknown"], 2, g)  # a killed turn reports no cost
+        self.assertEqual(g["cost"], 0.2)  # only the resumed turns' cost: 2 x 0.1
+        self.assertIsNone(g["hours_to_done"])
+        self.assertIsNone(g["guard_blocks"])  # the stub leaves no guard events: unknown, not 0
+        self.assertTrue(all(x["false_done"] is True and x["cost_unknown"] for x in g["goals"]), g)
+        o = self.fmlong.run(self.p, self.run_id, "oracle")
+        g = self.grade(self.run_id, "oracle")  # no session ran: nothing to read the claim or cost from
+        self.assertEqual(o["agent"], "oracle")
+        self.assertEqual((g["true_done"], g["false_done"], g["cost"], g["resumes_needed"], g["unfinished"]), (2, None, None, None, None), g)
+        self.assertEqual(g["unknown"]["false_done"], 2, g)
+
+    def test_grade_reads_seeded_metrics_hours_guard_blocks_and_a_false_done(self):  # T-2263
+        self.stub()
+        self.go("plain", limit=0)  # a stamp only
+        self.fmlong.run(self.p, self.run_id, "oracle")
+        root = self.fmlong._root(self.p)
+        os.makedirs(os.path.join(root, self.run_id, "faults", "oracle"))
+        for sid, said, secs in (("T-1001", True, 5400), ("T-1003", True, 60)):
+            with open(os.path.join(root, self.run_id, "faults", "oracle", sid + ".run.json"), "w") as f:
+                json.dump({"cost": 0.25, "cost_unknown": False, "said_done": said, "secs": secs, "guard_blocks": 2, "ended_ok": True}, f)
+        g = self.grade(self.run_id, "oracle")
+        self.assertEqual((g["false_done"], g["guard_blocks"], g["cost"], g["hours_to_done"]), (0, 4, 0.5, 0.017), g)
+        os.remove(os.path.join(self.work(self.run_id, "oracle", "T-1003"), "app.py"))  # now the second goal fails
+        g = self.grade(self.run_id, "oracle")
+        self.assertEqual((g["true_done"], g["false_done"], g["hours_to_done"]), (1, 1, 1.5), g)  # the first true-done left standing
+
+    def test_a_session_that_stopped_short_is_unfinished_not_a_human_intervention(self):  # T-2263
+        self.stub()
+        self.go("plain", limit=0)
+        self.fmlong.run(self.p, self.run_id, "oracle")
+        root = self.fmlong._root(self.p)
+        os.makedirs(os.path.join(root, self.run_id, "faults", "oracle"))
+        put = lambda sid, info: json.dump(info, open(os.path.join(root, self.run_id, "faults", "oracle", sid + ".run.json"), "w"))
+        put("T-1001", {"said_done": False, "ended_ok": True})  # stopped short: no error, no claim
+        put("T-1003", {"said_done": False, "ended_ok": False, "resume_failed": 1})  # an error and a failed resume
+        r = self.grade(self.run_id, "oracle")
+        g = {x["id"]: x for x in r["goals"]}
+        self.assertEqual((g["T-1001"]["resumes_needed"], g["T-1001"]["unfinished"]), (0, 1))
+        self.assertEqual((g["T-1003"]["resumes_needed"], g["T-1003"]["unfinished"]), (2, 0))
+        self.assertEqual((r["resumes_needed"], r["unfinished"]), (2, 1))
+        put("T-1001", {"ended_ok": True})  # no claim recorded: can't tell
+        g = {x["id"]: x for x in self.grade(self.run_id, "oracle")["goals"]}["T-1001"]
+        self.assertEqual((g["resumes_needed"], g["unfinished"], g["false_done"]), (0, None, None))
+
     def test_a_tampered_run_json_id_is_refused_and_nothing_outside_the_run_is_touched(self):
         self.stub()
         outside = os.path.join(self.tmp, "x")

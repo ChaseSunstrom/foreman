@@ -252,6 +252,28 @@
     box.appendChild(wrap).appendChild(t);
   }
 
+  /* T-2263: the deciding long-horizon row, foreman vs plain on the common goals; textContent only, null shows as "?" */
+  function longRow() {
+    var box = $("long"), L = D.long, t = document.createElement("table"), wrap = document.createElement("div"), tr, p, q = function (v) { return v == null ? "?" : String(v); };
+    box.textContent = "";
+    if (!L || typeof L !== "object") {
+      p = box.appendChild(document.createElement("p")); p.className = "muted"; p.textContent = "No long-horizon run yet."; return;
+    }
+    p = box.appendChild(document.createElement("p"));
+    p.textContent = /^(ahead|level|behind)$/.test(L.state) ? "Foreman is " + L.state + " of plain on the " + L.goals + " goals both answered." : "No verdict: " + String(L.state);
+    if (!L.foreman || !L.plain) return;
+    wrap.className = "tbl";
+    [["foreman", L.foreman], ["plain", L.plain]].forEach(function (s) {
+      var x = s[1];
+      tr = t.appendChild(document.createElement("tr"));
+      [s[0], "true done " + q(x.true_done_same) + " of " + L.goals, "false done " + q(x.false_done), "regressions " + q(x.regressions),
+        "cost " + (typeof x.cost === "number" ? "$" + x.cost.toFixed(2) : "?")].forEach(function (v) {
+        tr.appendChild(document.createElement("td")).textContent = v;
+      });
+    });
+    box.appendChild(wrap).appendChild(t);
+  }
+
   /* E: rules */
   var RUN = [["Held-out exam", "A third of the practice repos are never trained on. They decide \"done\"."], ["Subtract as you add", "Each round cuts as much as it adds. Hooks can't get slower."],
     ["Spikes, not vetoes", "\"Too ambitious\" is never a reason. A failed prototype is."], ["Two new tries, then move on", "Stuck tasks get two fresh angles, then a recorded diagnosis."],
@@ -407,6 +429,7 @@
     if (!D.generations.length) D.generations = [{ n: 1, seed: false, missions: [], critiques: [], tasks: [], rules: [] }];
     selectGen(D.generations[D.generations.length - 1].n);
     exam();
+    try { longRow(); } catch (e) {}
     try { scorecard(); } catch (e) {}  // a odd scorecard row costs its table, never the docs or the route below
     docs();
     var h = location.hash.slice(1);

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The long-horizon exam decides: `fmlong.grade` records per goal false-done, cost, `resumes_needed` (a planned resume failed or the session errored) and `unfinished` (no done claim, no error; not a human intervention), guard blocks and time to done, each unknown rather than 0 when the run can't tell. `fm exam scorecard`, `fm genesis status` and the Genesis page show a long row, Foreman against plain on the goals both answered (ahead, level, behind, or why there is no verdict); a Haiku line never decides and `behind` fails the card (T-2263).
 - `fm proof [--days N] [--json]` lists done tasks no run here proved (typed, failing or inconclusive evidence, or UI files edited with no shot, smoke, stories or flow run); `fm status`, `fm digest`, `fm genesis status`, genesis.json and `fm exam scorecard` show `unproven: N (fm proof)` from a cache keyed on the task folders, so status stays fast (T-2273).
 - Builders write scratch files (an fm edit batch, notes, drafts) in `.fm-scratch/` inside their worktree, which git ignores, instead of /tmp, which worktree isolation refuses (T-2259).
 - The stuck ladder races the runner-up: after three failed runs on a step of an S or M task whose Approach names another way and that hasn't raced yet, `fm next` says `fm lane race ID`, so evidence picks between the two approaches before more hypotheses (T-2271).
