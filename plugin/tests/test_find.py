@@ -984,3 +984,76 @@ class FindHotspots(ForemanTestCase):
         for flag in (["--rank"], ["--capture", "1"]):
             r = self.fm("find", "--hotspots", root, *flag, check=False)
             self.assertEqual(r.returncode, 2, r.stdout)
+
+
+class FindBlindSpots(ForemanTestCase):
+    """T-2241: what each finder flagged is saved at capture; a closed FIX's changed lines that no flag sits near are a
+    blind spot, listed by fm find --blindspots and filed as at most one task a day."""
+    PAD = APP + "# pad\n" * 30  # unused is line 5; line 35 is far from every flag
+
+    def setUp(self):
+        super().setUp()
+        import fmcore as c
+        self.fm("init")
+        write(self.repo, {"app/app.py": self.PAD, "app/tests/test_app.py": SUITE})
+        self.fm("find", "app", "--capture", "5", "--json", check=False)
+        self.p = c.find_project(self.repo)
+
+    def state(self, name):
+        return os.path.join(self.p.dir, name)
+
+    def fix(self, line, title="fix a bug"):
+        tid = self.fm_json("task", "new", title, "--type", "FIX", "--tier", "S", "--ac", "works :: true", "--step", "s",
+                           "--scope", "app/app.py")["id"]
+        self.fm("focus", tid)
+        with open(os.path.join(self.repo, "app/app.py")) as f:
+            lines = f.read().splitlines(True)
+        lines[line - 1] = f"# changed {tid}\n"
+        write(self.repo, {"app/app.py": "".join(lines)})
+        self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: test")
+        r = self.fm("task", "finish", tid, "--audit", "self", "--run", "true", check=False, env={"FOREMAN_SENTINEL": "off"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return tid
+
+    def spots(self):
+        try:
+            with open(self.state("blindspots.jsonl")) as f:
+                return [json.loads(x) for x in f]
+        except OSError:
+            return []
+
+    def test_flags_are_saved_at_capture(self):
+        with open(self.state("find-flags.json")) as f:
+            got = json.load(f)
+        self.assertIn(5, got["files"]["app/app.py"]["lines"])
+        self.assertIn("untested", got["files"]["app/app.py"]["finders"])
+
+    def test_a_fix_on_an_unflagged_line_records_a_blind_spot(self):
+        tid = self.fix(35)
+        rec = self.spots()
+        self.assertEqual([(r["task"], r["file"], r["lines"]) for r in rec], [(tid, "app/app.py", [35])])
+        self.assertIn("untested", rec[0]["finders"])
+
+    def test_a_fix_on_a_flagged_line_records_none(self):
+        self.fix(6)  # within 3 lines of the flag on line 5
+        self.assertEqual(self.spots(), [])
+
+    def test_only_one_task_is_filed_a_day(self):
+        self.fix(35, "fix one")
+        self.fix(33, "fix two")
+        self.assertEqual(len(self.spots()), 2)
+        self.assertIn("app/app.py", self.fm("find", "--blindspots").stdout)
+        first = json.loads(self.fm("find", "--blindspots", "--capture", "1", "--json").stdout)["captured"]
+        self.assertEqual(len(first), 1)
+        self.assertEqual(json.loads(self.fm("find", "--blindspots", "--capture", "1", "--json").stdout)["captured"], [])
+        import fmcore as c
+        b = c.find_brief(self.p, first[0])
+        self.assertTrue(b.title.startswith("fm find missed T-"))
+        self.assertEqual((b.type, b.meta.get("finder")), ("FEATURE", "blindspot"))
+
+    def test_a_corrupt_state_file_never_fails_the_finish(self):
+        for name in ("find-flags.json", "blindspots.jsonl"):
+            with open(self.state(name), "w") as f:
+                f.write("{not json\n\x00")
+        self.fix(35)
+        self.assertEqual(self.fm("find", "--blindspots", check=False).returncode, 0)

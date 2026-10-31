@@ -455,6 +455,8 @@ def cmd_prove(args):
         for key, f in fmfind.keyed(
                 found, os.path.realpath(root), os.path.realpath(p.root if p else root)):
             f["key"] = key  # fm find --capture's key, so a task filed from either is never filed twice
+        if cap and not args.only:
+            fmfind.save_flags(p, found, root)  # T-2241: what the finders flagged, for a closed FIX's blind spots
         if args.only:  # T-2123: one finding, as a task's criterion names it; gone from fm find means fixed
             found = [dict(f, held=None) for f in found if proof_id(f["key"]) == args.only]
         # ponytail: each --only re-check scans and runs the suite up to three times; cache per tree id if it drags
