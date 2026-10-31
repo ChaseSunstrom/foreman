@@ -286,11 +286,6 @@ def cmd_prove(args):
     if not os.path.isdir(root):
         print(f"fm prove: not a directory: {args.path}", file=sys.stderr)
         return 2
-    if args.yes_run:  # the user's yes (the guard keeps the flag theirs), kept for this tree
-        try:
-            remember(root)
-        except OSError as e:
-            print(f"fm prove: ran on your yes, but couldn't keep it for {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
     p, cap = c.find_project(os.getcwd()), args.capture
     bad = ("--capture N: N is how many tasks to file, at least 1" if cap is not None and cap < 1
            else "--capture files tasks: run it inside a Foreman project" if cap and not p
@@ -299,6 +294,11 @@ def cmd_prove(args):
     if bad:
         print(f"fm prove: {bad}", file=sys.stderr)
         return 2
+    if args.yes_run:  # the user's yes (the guard keeps the flag theirs), kept for this tree once the call is valid (T-2235)
+        try:
+            remember(root)
+        except OSError as e:
+            print(f"fm prove: ran on your yes, but couldn't keep it for {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
     try:
         found = fmfind.scan(root, fmfind.precision(p) if p else {})[1]
         for key, f in fmfind.keyed(found, os.path.realpath(root), os.path.realpath(p.root if p else root)):
@@ -338,6 +338,6 @@ def cmd_prove(args):
         f"under {root}" + (f" (suite: {res['suite']}; control: {res['control']})" if res["suite"] else "") + "\n"
         + "\n".join(f"{'✓ proven' if t['verdict'] == 'proven' else '· lead  '} {t['file']}:{t['line']}  {t['kind']}  "
                     f"{json.dumps(t['symbol'] or '-')}: {t['evidence']}" for t in res["tickets"])
-        + (f"\nFiled {len(made)} task(s): {', '.join(made) or 'none new'}." if made is not None else "")
+        + (fmfind.filed_line(p, made) if made is not None else "")
         + (f"\nNothing proven: receipt at {receipt}." if receipt else "")))
     return 1 if proven else 0
