@@ -7022,6 +7022,9 @@ def _build_parser(only=None):
                    "under the floor is muted (T-2125)")
     s.add_argument("--capture", type=int, metavar="N", help="file up to N new leads, best first (none held back), as "
                    "discovered tasks tagged finder=; what becomes of them is that finder's precision")
+    s.add_argument("--hotspots", action="store_true", help="instead: tracked files by how many fix commits touched them "
+                   "in the last 500 non-merge commits, counting those whose subject has a fix word (git only, no repo code; not with "
+                   "--rank or --capture; T-2238)")
     s = add("prove", lazy("fmprove", "cmd_prove"), tier=("Finding your way", 458), help="fm find's candidates as proof "
             "tickets or leads: an untested function stubbed on a throwaway copy while the suite stays green, docs/dep/secret "
             "re-found cold; runs the tree's tests, so only in a tree you commit to (T-2122); exit 1 when one is proven")
