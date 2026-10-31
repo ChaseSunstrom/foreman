@@ -2743,7 +2743,48 @@ def _content_gaps(b):
     if low:
         gaps.append(f"research or a spike for the low-confidence assumption {low[0][:60]!r} (fm research NAME, then name "
                     "research/NAME on the line; or a spike task: 'spike T-NNNN'; or verify it: fm task assume)")
-    return gaps
+    return gaps + rival_gap(b)
+
+
+HARD_RE = lazy(r"(?i)\b(deploy|release|publish|push|migrat(?:e|ion)|delete|drop|merge|send)(?:s|es|d|ed|ing)?\b")  # a step that's hard to undo
+# S briefs: only what can't be taken back (a push, a send or a lease chore is routine and never waits on a paid call)
+HARD_S_RE = lazy(r"(?i)\b(deploy|release|publish|migrat(?:e|ion)|delete|drop table)(?:s|es|d|ed|ing)?\b")
+RACE_BAR = 80  # T-2341: an M plan whose own choice is under this sure (the "(60%)" after Choice) gets a cold rival read
+_CONF_RE = lazy(r"\b(?:choice|choose|chose|chosen)\b[^\n(]{0,20}\((\d{1,3})\s*%\)", re.I)
+_ONE_READING_RE = lazy(r"(?<!no )(?<!not )\b(?:only|just|one|single|sole)\s+(?:honest\s+)?reading\b", re.I)  # "no other honest reading" is T-2335's ruled-out form
+_RIVAL_OPEN = lazy(r"- \[ \] rival (?:reading|approach): ")
+
+
+def _one_way(b):
+    """The first step's one-way verb, unless the Raw request itself names it (the user asked for that)."""
+    rx, raw = (HARD_S_RE if b.tier == "S" else HARD_RE), b.section("Raw request")
+    for s in b.steps():
+        m = rx.search(s.text)
+        if m and not re.search(r"(?i)\b" + re.escape(m.group(1)[:5]), raw):
+            return m.group(0).lower()
+    return ""
+
+
+def rival_gap(b):
+    """T-2341: ["a cold rival read…"] while the brief needs one it doesn't have, or has rival-only lines still open: an
+    L plan, an M plan under the race bar or claiming one honest reading, any plan with a one-way step the request
+    didn't name. The read is the rival_at meta key fm second rival writes (a section typed in by hand doesn't count).
+    FOREMAN_NO_RIVAL set to anything but '' or '0' skips it (the suite, a run with no child to ask)."""
+    if os.environ.get("FOREMAN_NO_RIVAL", "0") not in ("", "0"):
+        return []
+    conf = _CONF_RE.search(b.section("Approach (options → choice → why)"))
+    hard = _one_way(b)
+    why = ("an L plan" if b.tier == "L" else
+           f"a one-way step ({hard})" if hard else
+           f"the choice is {conf.group(1)}% sure, under {RACE_BAR}%" if b.tier == "M" and conf and int(conf.group(1)) < RACE_BAR else
+           "the plan claims one reading" if b.tier == "M" and _ONE_READING_RE.search(b.section("Interpretation")) else "")
+    if not why:
+        return []
+    if not b.meta.get("rival_at"):
+        return [f"a cold rival read ({why}; fm second rival {b.id})"]
+    n = sum(1 for ln in b.section("Dissent").splitlines() if _RIVAL_OPEN.match(ln))
+    return [f"{n} open rival line{'s' * (n != 1)} answered (fm task dissent {b.id}: resolve N 'adopted: …' or "
+            f"'rejected: why')"] if n else []
 
 
 def plan_gaps(b, autonomy="standard"):
@@ -3604,14 +3645,19 @@ def next_for(p, briefs=None):
     briefs = briefs if briefs is not None else load_briefs(p)
     if b is None or b.status not in ("active", "verifying"):  # T-1841: its lane folder went; it's still active there
         action = "".join(stranded_note(s) + " · " for s in stranded(briefs, p.lane)) + action
-    done = finished_lanes(p, briefs)  # T-2038: first when nothing else is under way
+    idle_now = b is None or b.status not in ("active", "verifying")
+    try:  # T-2354: lanes that stopped before their merge, each with the one recovery for its cause
+        import fmlanes
+        done = fmlanes.awaiting_merge(p, briefs)  # T-2038: first when nothing else is under way
+        recovery = fmlanes.recovery_line(p, briefs, not panicked() and effective_autonomy(p) == "full")
+    except Exception:  # a lane that can't be read never costs the next action
+        done, recovery = finished_lanes(p, briefs), ""
     if done:
         merge = (f"builder lane(s) finished, their work waits on a merge: "
                  + "; ".join(f"fm lane merge {i}" for i in done) + " (review the branch first)")
-        if b is None or b.status not in ("active", "verifying"):
-            action = merge + " · " + action
-        else:
-            action += " · " + merge
+        action = merge + " · " + action if idle_now else action + " · " + merge
+    if recovery:
+        action = recovery + " · " + action if idle_now else action + " · " + recovery
     raised = andons(briefs)  # T-0648: a lane stopped to ask
     if raised:
         tid, text = raised[0]

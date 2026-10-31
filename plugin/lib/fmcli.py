@@ -858,7 +858,8 @@ def cmd_task(args):
             if b.status != "blocked":  # read under the lock: a close in between is kept
                 raise c.PolicyError(f"{b.id} is {b.status}, not blocked")
             b.meta["status"] = "planned" if b.acceptance() else "captured"
-            b.meta.pop("revisit", None)
+            for k in ("revisit", "recoveries", "lane_stop"):  # T-2354: a fresh start gets a fresh recovery count
+                b.meta.pop(k, None)
             b.append_log(f"unblocked: {reason}" if reason else "unblocked")
         b, _ = mutate(p, cur.id, back, "task_unblock", {"reason": reason})
         return out(args, c.brief_summary(b), f"{b.id} unblocked: {b.status}.")
@@ -1139,6 +1140,10 @@ def task_finish(p, args):
     for _, _, cmd in todo:  # T-0901 review: every one is checked before any runs, so a refusal leaves no side effects
         guard_stored(p, b, cmd)
     results = [(kind, n, cmd, *run(cmd)) for kind, n, cmd in todo]
+    import fminfra  # T-2385: the infra files the task touched, each through its own validator (a missing one is said, not run)
+    infra = fminfra.for_task(p, b)
+    if infra:
+        results.append(("final", None, "fm prove --infra", *infra))
     tree = c.worktree_id(p.root)
 
     def record(x):
@@ -1170,8 +1175,9 @@ def task_finish(p, args):
                 x.set_section("Would do differently", c.redact(c.plain(args.differently).strip()))
     mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3]),
                                        "ran": [[r[2][:200], r[3]] for r in results][:20]})  # T-0749: catch rates
-    failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → {c.run_result(code, output)}"
-              for kind, n, cmd, code, output in results if code]
+    failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → " + (  # T-2385: every failing infra file, not only the last output lines
+        " / ".join(l for l in output.splitlines() if l.startswith("fail"))[:600] if cmd == "fm prove --infra" else
+        c.run_result(code, output)) for kind, n, cmd, code, output in results if code]
     if failed:
         raise c.PolicyError(f"{b.id} not finished; failing (recorded):\n  - " + "\n  - ".join(failed))
     _close_affected(p, need_brief(p, b.id), runs, args)  # T-1117: what it changed must not break what's linked to it
@@ -2831,7 +2837,7 @@ def step_contracts(p, b):
     return ("Step contracts: " + "; ".join(notes[:4])) if notes else ""
 
 
-_HARD = re.compile(r"(?i)\b(deploy|release|publish|push|migrat(?:e|ion)|delete|drop|merge|send)(?:s|es|d|ed|ing)?\b")
+_HARD = c.HARD_RE  # T-2341: one definition, the plan gate (fmcore.rival_gap) reads it too
 _UNKNOWN = re.compile(r"(?i)\b(spike|probe|prototype|investigate|measure|find out|unknown)\w*")
 
 
@@ -5667,15 +5673,6 @@ def cmd_next(args):
              f"them to the user at the end, never act on them first; deferred after {ASK_DAYS} days)") if asks else ""
     import fmcontract
     over += fmcontract.line(p)  # T-1158
-    import fmlanes
-    done = set(c.finished_lanes(p, briefs))  # T-2038: a finished lane is merged, not resumed
-    dead = [i for i in fmlanes.stopped(p, briefs) if i not in done]  # T-1028
-    over += (f" · builder(s) stopped, their Claude Code process ended: " + "; ".join(f"fm lane resume {i}" for i in dead)
-             + " (keeps the work, frees the worktree, writes a new brief)") if dead else ""
-    idle = fmlanes.stalled(p)  # T-1156
-    over += (" · builder(s) stalled, live but no edit, commit or event: "
-             + "; ".join(f"{i} ({round(m)} min)" for i, m in idle.items()) + ": check its lane; if hung, stop the agent, then "
-             + "fm lane resume ID --force \"hung\"") if idle else ""
     hollow = [e for e in c.ledger_tail(p, 500) if e.get("event") == "hollow_return"
               and (age := c.age_days(e.get("ts"))) is not None and age < 1]  # T-0963: today's, so an old one doesn't nag forever
     if hollow:
@@ -6518,11 +6515,12 @@ def _build_parser(only=None):
                                                        "publish grant, spent by the post (T-1167)")
     s.add_argument("--task", help="train: the task whose publish grant covers the merges (default: the active one)")
     s = add("second", lazy("fmsecond", "cmd_second"), tier=("Finding your way", 430),
-            help="an independent second read: plan (another model), debate (rebut a review), session (what was missed)")
-    s.add_argument("what", choices=["plan", "cheapest", "debate", "session"])
-    s.add_argument("id", nargs="?", help="plan, debate: the task")
+            help="an independent second read: plan (another model), rival (a cold read of the request alone), debate "
+                 "(rebut a review), session (what was missed)")
+    s.add_argument("what", choices=["plan", "cheapest", "rival", "debate", "session"])
+    s.add_argument("id", nargs="?", help="plan, rival, debate: the task")
     s.add_argument("--review", help="debate: the research note holding the earlier review")
-    s.add_argument("--model", help="plan, session: the child's model, another than the main one (default sonnet)")
+    s.add_argument("--model", help="plan, rival, session: the child's model, another than the main one (default sonnet)")
     s.add_argument("--if-due", action="store_true", help="session: only once a day")
     s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
     s.add_argument("--force", action="store_true", help="plan: run it on a tier protocols.json gives no panel")
@@ -7312,6 +7310,10 @@ def _build_parser(only=None):
     s.add_argument("--migration", action="store_true", help="instead: run the tree's plain SQL NAME.up.sql/NAME.down.sql "
                    "migrations up, down, up on a throwaway sqlite file and compare the schema each time; trusted trees "
                    "only; exit 0 pass, 1 fail, 2 refused or no known tool (T-2288)")
+    s.add_argument("--infra", action="store_true", help="instead: run each infra file's own validator (hadolint, docker "
+                   "compose config, terraform validate in an initialised folder, helm lint, kubeconform, actionlint, "
+                   "shellcheck, systemd-analyze verify) on a throwaway copy, offline; a missing tool leaves the file "
+                   "unproven and names it, nothing is installed; exit 0 none failed, 1 a failure, 2 nothing checked (T-2385)")
     s.add_argument("--bugs", type=int, default=None, metavar="N", help="turns the bug rung on: ask a cheap child for bug "
                    "candidates in the N hottest files (N is required, at most 10; try 3), as in fm prove --bugs 3 PATH; "
                    "each is proven by a model-written red test or stays a lead; trusted trees only (T-2242)")
@@ -7680,8 +7682,11 @@ def _build_parser(only=None):
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent; "
                                                        "merge <id>: bring a builder's finished commits in; "
-                                                       "resume <id>: take back a stopped builder's work")
-    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "race", "pick"])
+                                                       "resume <id>: take back a stopped builder's work; "
+                                                       "recover <id>: the one recovery for why its lane stopped (T-2354)")
+    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "recover", "race", "pick"])
+    s.add_argument("--agent-stopped", action="store_true", help="recover: its agent was stopped (TaskStop), so a "
+                                                                "stalled lane is free to take back (T-2354)")
     s.add_argument("--score", action="store_true", help="race: run both sides' criteria in their worktrees, count "
                                                         "lines changed, name a leader (T-1069)")
     s.add_argument("id", nargs="?", help="the task id; max: how many builders may be out at once (1-6)")
