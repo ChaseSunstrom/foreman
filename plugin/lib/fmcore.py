@@ -4041,6 +4041,33 @@ _UI_FILE = lazy(r"(?i)\.(css|scss|html|tsx|jsx|svelte|vue)$")
 _UI_PROOF = lazy(r"(?i)\b(shot|smoke|stories|flow)\b")  # a run of fm shot, fm smoke, fm stories or a flow check
 
 
+def unproven_cached(p, days=30):
+    """T-2273: len(unproven(p, days)) kept in unproven.json, recomputed only when its key moves: today, and each brief
+    folder's mtime and file count (a brief is written by rename, so a save or a close moves its folder's mtime). The
+    ledger is not in the key: a done task's touches no longer grow. ponytail: an edit logged to a task after its close
+    shows at the next brief change; key on the ledger size if that matters."""
+    def stat(d):
+        try:
+            return [os.stat(d).st_mtime_ns, len(os.listdir(d))]
+        except OSError:
+            return [0, 0]
+    key = [days, now()[:10], stat(os.path.join(p.dir, "tasks"))]
+    arch = os.path.join(p.dir, "archive")
+    key += [[dp] + stat(dp) for dp, _, _ in os.walk(arch)]
+    path = os.path.join(p.dir, "unproven.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            got = json.load(f)
+        if got.get("key") == key and isinstance(got.get("n"), int):
+            return got["n"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    n = len(unproven(p, days))
+    with contextlib.suppress(OSError):
+        write_atomic(path, json.dumps({"key": key, "n": n}))
+    return n
+
+
 def unproven(p, days=30):
     """T-2273: [{id, title, kinds, why}] for done tasks closed in the last `days` with a claim no run here proved: per
     step/criterion whose evidence has no green run (typed: only typed lines; red: only failing runs; inconclusive: only

@@ -50,6 +50,25 @@ class Proof(ForemanTestCase):
         t = self.task(evidence=[("--step", "1", "pytest", "ok"), ("--step", "1", "--run", "true")])
         self.assertNotIn(t, self.listed())
 
+    def test_a_warm_status_reads_the_cache_not_the_briefs_or_the_ledger(self):
+        from unittest import mock
+        t = self.task(evidence=[("--step", "1", "pytest", "ok")])
+        tdir = os.path.join(self.p.dir, "tasks")
+        src = next(f for f in os.listdir(tdir) if f.startswith(t))
+        text = open(os.path.join(tdir, src), encoding="utf-8").read()
+        for i in range(500):  # 500 more closed briefs
+            n = 900 + i
+            with open(os.path.join(tdir, f"T-{n}-x.md"), "w", encoding="utf-8") as f:
+                f.write(text.replace(t, f"T-{n}"))
+        self.assertIn("unproven: 501", self.fm("status").stdout)  # cold: fills the cache
+        with mock.patch.object(c, "ledger_tail", side_effect=AssertionError("ledger read")), \
+                mock.patch.object(c, "load_briefs", wraps=c.load_briefs) as lb:
+            self.assertGreaterEqual(c.unproven_cached(self.p), 0)
+            self.assertEqual(lb.call_count, 0, "a warm call never loads the closed briefs")
+        t2 = self.task(evidence=[("--step", "1", "pytest", "ok")])  # a new closed brief changes the key
+        self.assertIn(t2, [r["id"] for r in c.unproven(self.p)])
+        self.assertEqual(self.fm_json("status", "--json")["unproven"], c.unproven_cached(self.p))
+
     def test_the_window_bounds_the_list_and_the_count_is_on_status_and_digest(self):
         t = self.task(evidence=[("--step", "1", "pytest", "ok")])
         self.assertEqual(self.fm_json("proof", "--days", "7")["count"], 1)

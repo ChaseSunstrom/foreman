@@ -124,7 +124,7 @@ def cmd_state(args):
                      f"--tier S --focus (or just give Claude a request).")
     if not args.line:  # T-2273: reads closed briefs and the ledger, so never on a status bar's poll
         try:
-            sd["unproven"] = len(c.unproven(p))
+            sd["unproven"] = c.unproven_cached(p)
         except Exception:  # a rollup must never cost the status
             pass
     if args.line:

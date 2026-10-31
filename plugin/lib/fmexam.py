@@ -1573,7 +1573,7 @@ def cmd_exam(args):
             res = fmgenesis.scorecard(p, args.agent or "foreman", args.bar)
             rows = res["rows"]
             try:  # T-2273: §8 says how much of what closed no run here proved
-                res["unproven"] = len(c.unproven(p))
+                res["unproven"] = c.unproven_cached(p)
             except Exception:  # never costs the scorecard
                 res["unproven"] = None
             fmcli.out(args, res, f"scorecard ({res['agent']}, held out, bar {res['bar']:.0%}): "
