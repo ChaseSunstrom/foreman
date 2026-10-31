@@ -3,11 +3,13 @@ every planted defect of a covered kind found, nothing found that the key doesn't
 import errno
 import json
 import os
+import shutil
 
 from helpers import ForemanTestCase
 
 import fmexam
 import fmfind
+import fmprove
 
 COVERED = {"vuln", "slow", "dep", "untested", "docs", "flaky"}
 
@@ -477,13 +479,14 @@ class FindProve(ForemanTestCase):
         self.assertTrue(ob.meta.get("confirm"))
         self.assertEqual(shlex.split(ob.verify_cmds()[0][1])[2], os.path.realpath(out))
 
-    def test_provable_kinds_take_the_limit_before_leads_no_check_here_can_prove(self):
-        # T-2123 review: a lead no check here can prove (SQL, slow, flaky) must not fill --limit before what can
+    def test_the_limit_takes_the_best_ranked_candidate_first(self):
+        # T-2199: a vuln is provable now (a model-written test, none here: the lockout claude), so it still ranks first
         root = self.proj({"app.py": APP + "\n\n" + SQL, "tests/test_app.py": SUITE.replace(  # SQL ranks first
             "    def test_used", "    def test_q(self):\n        app.q(type('D', (), {'execute': lambda s, x: x})(), 'a')\n\n"
             "    def test_used")})
         r = json.loads(self.fm("prove", root, "--yes-run", "--limit", "1", "--json", check=False).stdout)
-        self.assertEqual([t["kind"] for t in r["tickets"]], ["untested"], r["tickets"])
+        self.assertEqual([t["kind"] for t in r["tickets"]], ["vuln"], r["tickets"])
+        self.assertEqual(r["tickets"][0]["verdict"], "lead")  # the child can't run: a lead, not a crash
 
     def test_a_red_suite_or_none_proves_nothing(self):
         root = self.proj({"app.py": APP, "tests/test_app.py": SUITE.replace("app.used(), 1", "app.used(), 9")})
@@ -662,3 +665,117 @@ class FindReview(ForemanTestCase):
         self.assertEqual([d[2] for d in fmfind.Src("m.py", big).defs], ["b"])  # a long line: the old counter, same answer
         s = fmfind.Src("m.py", '"""unterminated\n\ndef x():\n    pass\n')  # a TokenError falls back to the old tracker
         self.assertEqual(s.defs, [])
+
+
+STUB_CLAUDE = ("#!/usr/bin/env python3\nimport json, os, sys\nsys.stdin.read()\n"
+               "print(json.dumps({'type': 'result', 'is_error': False, 'total_cost_usd': 0,\n"
+               "                  'result': open(os.environ['STUB_REPLY']).read()}))\n")
+FLIP = ("import os\nimport random\nimport unittest\n\n\nclass T(unittest.TestCase):\n    def test_flip(self):\n"
+        "        random.random()\n        p = os.environ['FLIP_FILE']\n        n = int(open(p).read()) if os.path.exists(p) else 0\n"
+        "        open(p, 'w').write(str(n + 1))\n        self.assertEqual(n % {mod}, 0)\n")
+JS_DB = ("function findUser(name, opts = {}) {\n  return \"SELECT * FROM users WHERE name = '\" + name + \"'\";\n}\n"
+         "module.exports = { findUser };\n")
+JS_TEST = ("```js\nconst q = require('./app').findUser(\"x' OR '1'='1\");\nif (q.includes(\"x' OR\")) {\n"
+           "  console.log('FM_RED: the quote reached the SQL');\n  process.exit(1);\n}\n```\n")
+DB = "def find_user(name):\n    return \"SELECT * FROM users WHERE name = '\" + name + \"'\"\n"
+DEDUPE = ("def dedupe(items):\n    seen = []\n    out = []\n    for x in items:\n        if x not in seen:\n"
+          "            seen.append(x)\n            out.append(x)\n    return out\n")
+VULN_TEST = ("```python\nimport db\nq = db.find_user(\"x' OR '1'='1\")\nif \"x' OR\" in q and q.count(\"'\") > 2:\n"
+             "    print('FM_RED: the quote reached the SQL')\n    raise SystemExit(1)\n```\n")
+SLOW_TEST = ("```python\nimport dedupe_mod\nn = [0]\n\n\nclass K:\n    def __init__(s, v):\n        s.v = v\n\n"
+             "    def __eq__(s, o):\n        n[0] += 1\n        return s.v == o.v\n\n    def __hash__(s):\n"
+             "        return hash(s.v)\n\n\ndedupe_mod.dedupe([K(i) for i in range(200)])\nif n[0] > 2000:\n"
+             "    print('FM_RED: %d comparisons' % n[0])\n    raise SystemExit(1)\n```\n")
+
+
+class FindProveKinds(ForemanTestCase):
+    """T-2199: fm prove proves flaky by reruns and vuln/slow by a model-written test that is red 3/3 on an assertion
+    and changes when the candidate is stubbed; anything else stays a lead."""
+
+    def proj(self, files, name="proj"):
+        root = os.path.join(self.tmp, name)
+        shutil.rmtree(root, ignore_errors=True)
+        write(root, files)
+        return root
+
+    def prove(self, root, reply=None, yes=True):
+        bindir = os.path.join(self.tmp, "bin")
+        write(bindir, {"claude": STUB_CLAUDE})
+        os.chmod(os.path.join(bindir, "claude"), 0o755)
+        env = {"PATH": bindir + os.pathsep + os.environ["PATH"], "STUB_REPLY": os.path.join(self.tmp, "reply"),
+               "FLIP_FILE": os.path.join(self.tmp, "flips")}  # outside the copy: each rerun gets a fresh copy
+        if os.path.exists(env["FLIP_FILE"]):
+            os.remove(env["FLIP_FILE"])
+        write(self.tmp, {"reply": reply or ""})
+        r = self.fm("prove", root, *(["--yes-run"] if yes else []), "--json", check=False, env=env, timeout=120)
+        return {t["kind"]: t for t in json.loads(r.stdout)["tickets"]}
+
+    def test_flaky_is_proven_only_when_reruns_both_pass_and_fail(self):
+        flips = self.prove(self.proj({"tests/test_flip.py": FLIP.format(mod=2)}))["flaky"]
+        self.assertEqual(flips["verdict"], "proven", flips)
+        self.assertIn("6 times", flips["evidence"])
+        steady = self.prove(self.proj({"tests/test_flip.py": FLIP.format(mod=1)}))["flaky"]  # always green
+        self.assertEqual(steady["verdict"], "lead", steady)
+        self.assertIn("never failed", steady["evidence"])
+        no = self.prove(self.proj({"tests/test_flip.py": FLIP.format(mod=2)}, "other"), yes=False)["flaky"]
+        self.assertEqual(no["verdict"], "lead")  # an untrusted tree's tests don't run
+        self.assertIn("--yes-run", no["evidence"])
+
+    def test_vuln_is_proven_by_a_test_red_three_times_that_notices_the_stub(self):
+        root = self.proj({"db.py": DB})
+        t = self.prove(root, VULN_TEST)["vuln"]
+        self.assertEqual(t["verdict"], "proven", t)
+        self.assertIn("3 of 3", t["evidence"])
+        with open(os.path.join(root, "db.py")) as f:
+            self.assertEqual(f.read(), DB)
+        self.assertEqual(os.listdir(root), ["db.py"])  # the model's test was written to the copy only
+
+    def test_slow_is_proven_the_same_way(self):
+        t = self.prove(self.proj({"dedupe_mod.py": DEDUPE}), SLOW_TEST)["slow"]
+        self.assertEqual(t["verdict"], "proven", t)
+
+    def test_a_test_that_fails_for_its_own_reason_stays_a_lead(self):
+        root = self.proj({"db.py": DB})
+        broken = self.prove(root, "```python\nimport nonexistent_module_xyz\n```\n")["vuln"]
+        self.assertEqual(broken["verdict"], "lead", broken)
+        self.assertIn("assertion", broken["evidence"])
+        blind = self.prove(root, "```python\nprint('FM_RED: always')\nraise SystemExit(1)\n```\n")["vuln"]
+        self.assertEqual(blind["verdict"], "lead", blind)  # red, but the stub changes nothing: it never ran db
+        self.assertIn("stub", blind["evidence"])
+        green = self.prove(root, "```python\nimport db\ndb.find_user('a')\n```\n")["vuln"]
+        self.assertEqual(green["verdict"], "lead", green)  # never red
+        no = self.prove(self.proj({"db.py": DB}, "other"), VULN_TEST, yes=False)["vuln"]
+        self.assertEqual((no["verdict"], "--yes-run" in no["evidence"]), ("lead", True))  # an untrusted tree's code never runs
+
+    def test_a_test_that_calls_the_function_then_prints_red_whatever_it_returns_stays_a_lead(self):
+        t = self.prove(self.proj({"db.py": DB}), "```python\nimport db\ndb.find_user('a')\nprint('FM_RED: always')\n"
+                       "raise SystemExit(1)\n```\n")["vuln"]
+        self.assertEqual(t["verdict"], "lead", t)  # the raise stub changes it, the benign stub doesn't
+        self.assertIn("benign", t["evidence"])
+
+    def test_a_stub_that_leaves_a_syntax_error_is_a_lead_not_a_proof(self):
+        import shutil as sh
+        if not sh.which("node"):
+            self.skipTest("no node")
+        t = self.prove(self.proj({"app.js": JS_DB}), JS_TEST)["vuln"]  # the throw would land inside `opts = {}`
+        self.assertEqual(t["verdict"], "lead", t)
+        self.assertIn("stub", t["evidence"])
+        self.assertNotIn("FM_SENTINEL", fmprove.RAISE["js"])  # the literal is built at runtime, never in the source
+
+    def test_flaky_counts_only_failure_lines_that_name_the_test(self):
+        from unittest import mock
+        root = self.proj({"tests/test_flip.py": FLIP.format(mod=2)})
+        outs = iter([(0, "test_flip ... ok"), (1, "test_flip ... ok\nFAIL: test_other (t.T)"), (0, "test_flip ... ok")] * 2)
+        f = {"symbol": "test_flip"}
+        with mock.patch.object(fmprove.c, "run_command", side_effect=lambda *a, **k: next(outs)):
+            v, e = fmprove._flaky(root, f)
+        self.assertEqual(v, "lead", e)
+        self.assertIn("another test", e)
+
+    def test_a_sensitive_project_gets_no_model_written_test(self):
+        self.fm("init")
+        self.fm("sensitive", "on")
+        t = self.prove(self.proj({"db.py": DB}), VULN_TEST)["vuln"]
+        self.assertEqual((t["verdict"], t["evidence"]), ("lead", "sensitive project: no model-written test"))
+        flips = self.prove(self.proj({"tests/test_flip.py": FLIP.format(mod=2)}))["flaky"]
+        self.assertEqual(flips["verdict"], "proven", flips)  # reruns run no model code
