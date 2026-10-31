@@ -5405,9 +5405,18 @@ def cmd_audit(args):
             pairs.append(("HEAD", now))
     stdout = ""
     for a, z in pairs:
+        # T-2318: --base is the user's text: resolve each side to a tree id (an id can't read as an option), and run
+        # the diff with no repo-configured driver, fsmonitor or hook
+        ids = []
+        for rev in (a, z):
+            got = c._git(p.root, "rev-parse", "--verify", "-q", "--end-of-options", f"{rev}^{{tree}}", fail=None)
+            if not got or not got.strip():
+                raise UsageError(f"--base {rev!r} is not a revision in this repository")
+            ids.append(got.strip())
         try:
-            r = subprocess.run(["git", "-C", p.root, "diff", a, z], capture_output=True, text=True, errors="replace",
-                               timeout=300)
+            r = subprocess.run(["git", "-C", p.root, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+                                "diff", "--no-ext-diff", "--no-textconv", *ids],
+                               capture_output=True, text=True, errors="replace", timeout=300)
         except subprocess.TimeoutExpired:
             raise UsageError(f"git diff {a[:12]} took over 5 minutes; narrow it with --base <a later rev>")
         if r.returncode:
