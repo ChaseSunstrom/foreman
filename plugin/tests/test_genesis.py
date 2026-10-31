@@ -1172,8 +1172,36 @@ class GenesisDraft(ForemanTestCase):
         self.assertIn("no graded " + ", ".join(fmexam.LANGS[1:]) + " scenarios yet", row["why"])
         self.assertIn("Correctness: partial 3/3 (bug): no graded js, ts, ruby, rust, c scenarios yet",
                       self.fm("exam", "scorecard", check=False).stdout)
+        self.assertIn("run fm exam gen --lang js,ts,ruby,rust,c", row["why"])  # the run that closes the gap
+        with open(os.path.join(fmgenesis.home(self.p), "spec.md"), "w") as f:  # the spec drew every language
+            f.write("# Spec\n\nExam run `s1` (seed 1, 9 per kind, " + ", ".join(fmexam.LANGS) + "): a third of each.\n")
+        self.assertEqual(fmgenesis.scorecard(self.p)["rows"][0]["state"], "partial")
         row = run(list(fmexam.LANGS))
         self.assertEqual((row["state"], row["langs"], row["why"]), ("pass", list(fmexam.LANGS), ""))
+
+    def test_a_python_only_spec_passes_on_python_and_odd_ids_never_crash(self):  # T-2225 review
+        import fmgenesis
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
+                "1. **Correctness.** Fixes what's broken. Exam: bug.\n\n## 3. The tower\n")
+        with open(os.path.join(fmgenesis.home(self.p), "spec.md"), "w") as f:
+            f.write("# Spec\n\nExam run `s1` (seed 1, 9 per kind, python): a third of each kind is held out.\n")
+        ids = [f"bug-python-{i:06x}" for i in range(3)]
+        odd = ["bug", "bug-cobol-000001", "bug-x"]  # hand-edited: no hyphens, a language outside LANGS
+        fmgenesis.exam_line(self.p, {"agent": "foreman", "answered": {"holdout": ids + odd, "child": ids + odd},
+                                     "closed": {"holdout": ids + odd}})
+        (row,) = fmgenesis.scorecard(self.p)["rows"]
+        self.assertEqual((row["state"], row["graded"], row["langs"], row["why"]), ("pass", 3, ["python"], ""))
+
+    def test_draft_genesis_graded_in_every_language_passes(self):  # T-2225 review: #13's pass path
+        import fmexam
+        import fmgenesis
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
+                "1. **Genesis as a feature.** Seeds itself.\n\n## 3. The tower\n")
+        ids = [f"{k}-{lang}-{i:06x}" for k in fmgenesis.GEN_KINDS for lang in fmexam.LANGS for i in range(3)]
+        fmgenesis.exam_line(self.p, {"agent": "draft-genesis", "answered": {"holdout": ids, "child": ids},
+                                     "closed": {"holdout": ids}})
+        (row,) = fmgenesis.scorecard(self.p)["rows"]
+        self.assertEqual((row["state"], row["langs"]), ("pass", list(fmexam.LANGS)))
 
     def test_review_fixes_fallback_reason_secret_lines_fenced_readme_and_spec_limits(self):
         import fmcore as c
