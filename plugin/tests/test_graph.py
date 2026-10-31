@@ -107,13 +107,15 @@ class BlastBuild(Base):
         import fmgraph
         p = c.find_project(self.repo)
         env = {} if background else {"FOREMAN_NO_BACKGROUND": "1"}
-        with mock.patch.dict(os.environ, env), mock.patch("subprocess.Popen") as pop:
+        real = subprocess.Popen
+        pop = mock.MagicMock()
+
+        def fake(argv, *a, **k):  # git runs through Popen too: only the build is stubbed
+            return pop(argv, *a, **k) if argv[-2:] == ["graph", "build"] else real(argv, *a, **k)
+        with mock.patch.dict(os.environ, env), mock.patch("subprocess.Popen", fake):
             if background:
                 os.environ.pop("FOREMAN_NO_BACKGROUND", None)
             line = [fmgraph.blast_line(p, ["app/session.py"]) for _ in range(2)]
-        pop.builds = [x for x in pop.call_args_list if x.args[0][-2:] == ["graph", "build"]]  # git runs through Popen too
-        pop.call_count = len(pop.builds)
-        pop.call_args = pop.builds[-1] if pop.builds else None
         return line, pop
 
     def test_a_missing_graph_starts_one_build_and_no_line(self):
@@ -130,6 +132,41 @@ class BlastBuild(Base):
         self.commit("move head", "2026-04-01T10:00:00Z")
         line, pop = self.run_line(True)
         self.assertEqual((line, pop.call_count), (["", ""], 1))
+
+    def test_a_ledger_append_alone_does_not_make_it_stale(self):  # review: hooks append events all the time
+        import fmcore as c
+        import fmgraph
+        self.fm("graph", "build")
+        p = c.find_project(self.repo)
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            f.write('{"event": "noise"}\n')
+        line, pop = self.run_line(True)
+        self.assertEqual(pop.call_count, 0)
+        self.assertIn("app/auth.py", fmgraph.blast_line(p, ["app/session.py"]))
+
+    def test_the_build_removes_its_lock_and_a_future_lock_is_expired(self):
+        import fmcore as c
+        import fmgraph
+        p = c.find_project(self.repo)
+        lock = os.path.join(p.dir, "graph.building")
+        with open(lock, "w") as f:
+            f.write("1")
+        self.fm("graph", "build")
+        self.assertFalse(os.path.exists(lock))
+        with open(lock, "w") as f:
+            f.write("1")
+        future = __import__("time").time() + 86400
+        os.utime(lock, (future, future))
+        self.write("app/new.py", "x = 1\n")
+        self.commit("move head", "2026-04-01T10:00:00Z")  # the graph is stale again
+        line, pop = self.run_line(True)
+        self.assertEqual(pop.call_count, 1)
+
+    def test_the_line_is_computed_before_the_project_lock(self):
+        import fmcore as c  # source order: git and sqlite waits must not sit inside the lock every verb queues on
+        src = open(os.path.join(c.PLUGIN_ROOT, "lib", "fmcli.py")).read()
+        body = src.split("def cmd_focus")[1].split("\ndef ")[0]
+        self.assertLess(body.index("blast_line"), body.index("with c.lock(p.dir)"))
 
     def test_no_background_starts_none(self):
         line, pop = self.run_line(False)
