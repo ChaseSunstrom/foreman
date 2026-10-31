@@ -829,6 +829,77 @@ class DoctorStateSize(ForemanTestCase):
         self.assertIn("fm tidy", r.detail)
 
 
+class ScanCache(ForemanTestCase):
+    # T-2298: usage burn and unloaded skills reuse their result while the files they read are unchanged
+    def setUp(self):
+        super().setUp()
+        import fmcost
+        self.fmcost = fmcost
+        self.calls = {"burn": 0, "events": 0}
+        self.cfg = os.path.join(self.tmp, "cfg")
+        os.makedirs(os.path.join(self.cfg, "projects", "-p"))
+        self.transcript = os.path.join(self.cfg, "projects", "-p", "s.jsonl")
+        with open(self.transcript, "w") as f:
+            f.write("{}\n")
+        self._saved = (fmcost.burn_findings, c.global_events, os.environ.get("CLAUDE_CONFIG_DIR"))
+        os.environ["CLAUDE_CONFIG_DIR"] = self.cfg
+
+        def burn(*a, **k):
+            self.calls["burn"] += 1
+            return [("slow", "fix")]
+
+        def events(since):
+            self.calls["events"] += 1
+            return []
+        fmcost.burn_findings, c.global_events = burn, events
+        self.addCleanup(self.restore)
+
+    def restore(self):
+        self.fmcost.burn_findings, c.global_events = self._saved[:2]
+        if self._saved[2] is None:
+            os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        else:
+            os.environ["CLAUDE_CONFIG_DIR"] = self._saved[2]
+
+    def grow(self, path):
+        with open(path, "a") as f:
+            f.write("{}\n")
+        os.utime(path, (time.time() + 5, time.time() + 5))
+
+    def test_usage_burn_reuses_its_result_until_a_transcript_changes(self):
+        first = d.check_usage_burn()
+        self.assertEqual(d.check_usage_burn(), first)
+        self.assertEqual(self.calls["burn"], 1)
+        self.grow(self.transcript)
+        d.check_usage_burn()
+        self.assertEqual(self.calls["burn"], 2)
+
+    def test_unloaded_skills_reuses_its_result_until_events_change(self):
+        events = os.path.join(c.state_dir(), "events.jsonl")
+        os.makedirs(c.state_dir(), exist_ok=True)
+        with open(events, "w") as f:
+            f.write("{}\n")
+        first = d.check_unloaded_skills()
+        self.assertEqual(d.check_unloaded_skills(), first)
+        self.assertEqual(self.calls["events"], 1)
+        self.grow(events)
+        d.check_unloaded_skills()
+        self.assertEqual(self.calls["events"], 2)
+
+    def test_the_cache_is_json_and_a_corrupt_one_recomputes(self):
+        d.check_usage_burn()
+        path = os.path.join(c.state_dir(), "doctor-cache.json")
+        with open(path, encoding="utf-8") as f:
+            self.assertIn("usage burn", json.load(f))
+        with open(path, "w") as f:
+            f.write("{not json")
+        d.check_usage_burn()
+        self.assertEqual(self.calls["burn"], 2)
+        os.remove(path)
+        d.check_usage_burn()
+        self.assertEqual(self.calls["burn"], 3)
+
+
 class DoctorDualInstall(ForemanTestCase):
     # T-0923: Foreman from a GitHub marketplace beside install.sh's copy in its home: sessions run either, and drift
     def setUp(self):

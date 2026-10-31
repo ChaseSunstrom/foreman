@@ -348,6 +348,38 @@ def check_frontmatter(plugin=PLUGIN):
     return Result("frontmatter", "FAIL" if bad else "PASS", "; ".join(bad) or "skills and read-only agents valid")
 
 
+def _stats(paths):
+    """[path, size, mtime_ns] per path, [path] for one that can't be stat'd: a changed file changes the list."""
+    out = []
+    for p in sorted(paths):
+        try:
+            st = os.stat(p)
+            out.append([p, st.st_size, st.st_mtime_ns])
+        except OSError:
+            out.append([p])
+    return out
+
+
+def _cached(name, key, compute):
+    """T-2298: the Result `compute` makes, reused from state/doctor-cache.json (JSON, never pickle) while `key` (the
+    inputs' stats plus the day) is unchanged. A missing, corrupt or odd cache recomputes; a failed write is ignored."""
+    path = os.path.join(c.state_dir(), "doctor-cache.json")
+    key = json.loads(json.dumps([time.strftime("%Y-%m-%d"), key]))  # as JSON round-trips it, for the comparison
+    cache = _load_json(path)
+    cache = cache if isinstance(cache, dict) else {}
+    hit = cache.get(name)
+    if isinstance(hit, dict) and hit.get("key") == key and isinstance(hit.get("result"), list) \
+            and len(hit["result"]) == 3 and all(isinstance(x, str) for x in hit["result"]):
+        return Result(*hit["result"]), True
+    r = compute()
+    cache[name] = {"key": key, "result": [r.name, r.status, r.detail]}
+    try:
+        c.write_atomic(path, json.dumps(cache))
+    except OSError:
+        pass
+    return r, False
+
+
 UNLOADED_SESSIONS = 5  # T-1703: sessions that named a skill, none loading it, before doctor says so
 IDLE_NAMED = {"next"}  # the idle Next line names /foreman:next every turn, so every session names it
 
@@ -360,8 +392,15 @@ def check_unloaded_skills(events=None, plugin=PLUGIN, n=UNLOADED_SESSIONS):
     skills = os.path.join(plugin, "skills")
     names = sorted(s for s in os.listdir(skills) if os.path.isfile(os.path.join(skills, s, "SKILL.md"))) \
         if os.path.isdir(skills) else []
-    if events is None:
-        events = c.global_events(fmcost._since(30))
+    if events is None:  # T-2298: the files c.global_events reads (rotated logs, events.jsonl) and each SKILL.md
+        logs = os.path.join(c.state_dir(), "logs")
+        try:
+            rotated = [os.path.join(logs, f) for f in os.listdir(logs) if f.startswith("events-") and f.endswith(".jsonl")]
+        except OSError:
+            rotated = []
+        files = rotated + [os.path.join(c.state_dir(), "events.jsonl")] + [os.path.join(skills, s, "SKILL.md") for s in names]
+        return _cached("unloaded skills", [plugin, n, _stats(files)],
+                       lambda: check_unloaded_skills(list(c.global_events(fmcost._since(30))), plugin, n))[0]
     named, loaded = collections.defaultdict(set), collections.defaultdict(set)
     for e in events:
         if e.get("kind") in ("skill_named", "slash"):
@@ -1823,9 +1862,28 @@ def check_enforce(p, days=7):
 def check_usage_burn(found=None):
     """T-1800: why usage burns, named with its fix (fmcost.burn_findings), so nobody has to notice it first."""
     if found is None:
+        import fmbudget
         import fmcost
-        found = fmcost.burn_findings()
-        fmcost.write_burn(found)
+        # T-2298: the transcripts burn_findings reads (_entries skips a file older than the window) and the usage
+        # reading's weekly line; burn.json is written only when the scan ran (the key holds the day, so it is
+        # never older than the cache's day)
+        folder = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "projects")
+        cut = time.time() - 2 * 86400 - 3600  # an hour of slack: a file just inside the window is keyed, not missed
+        files = []
+        for dirpath, _, names in os.walk(folder):
+            for n in names:
+                p = os.path.join(dirpath, n)
+                try:
+                    if n.endswith(".jsonl") and os.path.getmtime(p) >= cut:
+                        files.append(p)
+                except OSError:
+                    pass
+        week = fmbudget.forecast().get("seven_day") or {}
+        def compute():
+            found = fmcost.burn_findings(forecast={"seven_day": week})
+            fmcost.write_burn(found)
+            return check_usage_burn(found)
+        return _cached("usage burn", [_stats(files), week.get("full_at"), week.get("resets_at")], compute)[0]
     return Result("usage burn", "WARN" if found else "PASS",
                   "; ".join(f"{a} → {b}" for a, b in found) + "; /usage names Claude Code's own causes, f applies them"
                   if found else "no sign of usage burn in the last 2 days")
