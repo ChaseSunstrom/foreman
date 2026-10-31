@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm find --rank` weighs proof and effort: a lead `fm prove` proved ranks up to 1.25x until its own function changes (never past an unproven lead of a more severe kind), and a lead in a small function ranks above an equal one in a long function
 - Each new genesis seed and each `fm mission` pack now carries the user's standing rules: every steer still in force, one line each. `fm genesis drift` fails a seed that drops one; an older seed, or a steer newer than the seed, only gets a note
 - `fm loop round` stops re-listing a lagging file once a decision names it, and lists it again when the file changes after that decision
 - `fm code --help` and the site's Foreman Code page can't drift apart: a site test names every verb and flag the page misses
