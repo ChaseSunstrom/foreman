@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -279,6 +280,20 @@ class NoBareNulls(unittest.TestCase):
                         html = re.sub(r"(?is)<(script|style)\b.*?</\1>", "", read_text(os.path.join(d, fn)))
                         for line in re.sub(r"(?s)<[^>]*>", "\n", html).splitlines():
                             self.assertIsNone(bare.search(line.strip()), f"{fn} prints a bare empty value: {line.strip()[:80]}")
+
+
+class GenesisScorecard(unittest.TestCase):
+    """T-2154: the Genesis page's scorecard is text from genesis.json: a hostile why never becomes markup."""
+    def test_a_hostile_why_renders_as_text_and_a_missing_key_says_not_graded(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("no node")
+        d = os.path.join(ROOT, "site", "genesis")
+        r = subprocess.run([node, os.path.join(PLUGIN, "tests", "genesis_page.js"), d], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout), {"text": True, "markup": False, "none": True, "docs": True})
+        js = read_text(os.path.join(d, "genesis.js"))
+        self.assertNotIn("innerHTML", re.search(r"function scorecard\(\)(.*?)\n  }\n", js, re.S).group(1))
 
 
 if __name__ == "__main__":
