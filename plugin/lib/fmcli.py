@@ -124,7 +124,8 @@ def cmd_state(args):
                      f"--tier S --focus (or just give Claude a request).")
     if not args.line:  # T-2273: reads closed briefs and the ledger, so never on a status bar's poll
         try:
-            sd["unproven"] = c.unproven_cached(p)
+            got = c.unproven_summary(p)
+            sd["unproven"], sd["unproven_kinds"] = got["n"], got["counts"]
         except Exception:  # a rollup must never cost the status
             pass
     if args.line:
@@ -149,11 +150,17 @@ def cmd_proof(args):
     """T-2273: the done tasks with a claim no run here proved, by kind."""
     if args.days < 0:
         raise UsageError("--days is 0 or more")
-    rows = c.unproven(resolve(args), args.days)
-    text = [f"unproven: {len(rows)} (done in the last {args.days} days; fm task evidence --run closes a typed one)"]
-    text += [f"- {r['id']} {c.fit(r['title'], 50)}: {', '.join(r['kinds'])}" + (f" ({r['why']})" if r["why"] else "")
-             for r in rows]
-    out(args, {"count": len(rows), "days": args.days, "tasks": rows}, "\n".join(text))
+    p = resolve(args)
+    got = c.unproven_summary(p, args.days)
+    rows = got["rows"]
+    for r in rows:  # T-2391: read live, never from the cache: an install or a grant changes it
+        for n in r["needs"]:
+            n["waiting"] = c.proof_waiting(p, n)
+    text = [f"unproven: {len(rows)} (done in the last {args.days} days; each row's command closes it)"]
+    for r in rows:
+        text.append(f"- {r['id']} {c.fit(r['title'], 50)}: {', '.join(r['kinds'])}" + (f" ({r['why']})" if r["why"] else ""))
+        text += [f"    {n['kind']}: {n['upgrade']}" + (f"  (waiting: {n['waiting']})" if n["waiting"] else "") for n in r["needs"]]
+    out(args, {"count": len(rows), "counts": got["counts"], "days": args.days, "cold_s": got.get("cold_s"), "tasks": rows}, "\n".join(text))
 
 
 def _block(item, r, key):
@@ -892,6 +899,12 @@ def cmd_task(args):
         by_hand = list(getattr(args, "not_verified", None) or []) + [
             f"criterion {a.n}: " + c.fit(re.sub(r" — verify with `.*`$", "", a.text), 90)
             for a in b.acceptance() if a.n not in own]
+        try:  # T-2391: each rollup kind this close still needs (docs, infra, data, perf, research, hollow), with its command;
+            # the per-criterion kinds (typed, red, inconclusive) are the criterion lines above
+            by_hand += [f"{n['kind']} proof: {c.fit(n['why'], 70)} → {n['upgrade']}"
+                        for n in c.proof_needs(p, b, files, live=True) if n["kind"] not in ("typed", "red", "inconclusive")]
+        except Exception:  # the close is recorded already; a rollup read must never fail it
+            pass
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed,
                               check_by_hand=by_hand, **({"ledger": _ledger_head(p)} if getattr(args, "json", False)
                                                         else {}),

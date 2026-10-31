@@ -939,10 +939,11 @@ def cmd_digest(args):
     lines += [f"Tokens: ≈ {_human(tokens)} input-equivalent (fm cost for the breakdown)"] if tokens else []
     lines += [unex] if unex else []
     try:  # T-2273: what closed without a green run here
-        unproven = c.unproven(p, args.days)
+        got = c.unproven_summary(p, args.days)
+        unproven, kinds = got["rows"], got["counts"]
     except Exception:  # the rollup never costs the digest
-        unproven = []
-    lines += [f"Done without a green run here: unproven: {len(unproven)} (fm proof)"] if unproven else []
+        unproven, kinds = [], {}
+    lines += [c.unproven_line(len(unproven), kinds, lead="Done without a green run here: ")] if unproven else []
     nights = [e for e in c.ledger_tail(p, 3000) if e.get("event") == "night" and str(e.get("ts", ""))[:19] >= since]
     lines += ["Night shift (fm night):"] + [  # T-0236
         f"- {str(e.get('ts', ''))[:10]}: " + (", ".join(f"{'✓' if r.get('exit') == 0 else '✗'} {r.get('name')}"
