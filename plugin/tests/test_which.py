@@ -83,6 +83,15 @@ class Which(ForemanTestCase):
         self.assertIn("fm playbooks show release/release-and-changelog", out)
         self.assertNotIn("fm release", out)
 
+    def test_a_folder_word_is_not_a_name_match(self):
+        # T-2248: release/ named every book in it, so all tied and the alphabet cut the generic release book
+        import fmwhich
+        books = [{"name": f"release/{n}", "load": "", "summary": "", "text": f"release {n.replace('-', ' ')} {t}"}
+                 for n, t in (("demo", "Demo: ship a short demo, release day"), ("release-notes", "Release notes: ship it"))]
+        got = fmwhich.rank("ship a release", {"playbooks": books})["playbooks"]
+        self.assertEqual(got[0]["name"], "release/release-notes")
+        self.assertGreater(got[0]["score"], got[1]["score"])
+
     def test_only_a_playbooks_header_is_indexed(self):
         # a playbook without a ## section was indexed whole, so its body's common words outranked real headers
         import fmplaybooks
