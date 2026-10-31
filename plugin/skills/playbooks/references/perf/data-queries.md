@@ -9,7 +9,7 @@ Built on the cards `fm lib show query-tuning`, `fm lib show postgres-indexes`, `
 2. **Read the plan on real data volumes:** `EXPLAIN (ANALYZE, BUFFERS) <query>` in Postgres, `EXPLAIN` in DuckDB or ClickHouse. A sequential scan on a big table, rows estimated far from actual, or a sort spilling to disk names the fix.
 3. **Query before index.** Select only needed columns, filter early, avoid functions on indexed columns. Then add an index:
    ```bash
-   psql -c "CREATE INDEX CONCURRENTLY idx_orders_user ON orders (user_id)"
+   psql -c "CREATE INDEX CONCURRENTLY idx_orders_user ON orders (user_id)"   # dev or staging only; for prod follow fix/migration.md
    psql -c "SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid"
    ```
    The second line finds a failed concurrent build.

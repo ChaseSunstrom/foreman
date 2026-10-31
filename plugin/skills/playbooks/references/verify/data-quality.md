@@ -6,7 +6,7 @@ Use when a dbt model, SQL transform, parquet export or dataframe step changed an
 Built on the cards `fm lib show dbt`, `fm lib show pandera`, `fm lib show parquet-arrow`, `fm lib show duckdb` and `fm lib show etl-pipelines`.
 
 1. **Contract first:** keys unique, not null, foreign keys present. `dbt test --select model_name`, or a `pandera` schema on the dataframe at the boundary.
-2. **Parse and build only what changed:** `dbt parse`, then `dbt build --select state:modified+`.
+2. **Parse and build only what changed:** `dbt parse`, then `dbt build --select state:modified+ --state path/to/prod-artifacts --target dev` (never the prod target).
 3. **Diff old against new on the same input.** Row count, distinct keys, sums of money columns, min and max dates:
    ```bash
    duckdb -c "SELECT count(*), count(DISTINCT id), sum(amount) FROM read_parquet('old/*.parquet')"

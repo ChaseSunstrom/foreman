@@ -41,7 +41,7 @@ Core debugging, regression-test and verification procedures live with intake: `.
 - `references/verify/tdd-workflow.md` — Test-first for a feature, fix or refactor: red, green, refactor.
 - `references/verify/verification-loop.md` — Before calling work done: build, types, lint, tests, secrets, diff, report.
 - `references/verify/INDEX.md` — more: verifying per stack (plugins, data, games, Go, mobile).
-- `references/fix/INDEX.md` — bugs by kind: flaky tests, SQL, migrations, text and time, CLI errors, hooks, data pipelines, mobile crashes, serial and bus links.
+- `references/fix/INDEX.md` — bugs by kind: flaky tests, SQL, migrations, text and time, CLI errors, data pipelines, mobile crashes, serial and bus links.
 
 ## REVIEW — checklists (also read by foreman:fm-reviewer)
 - `references/review/code-reviewer.md` — Expert code review specialist. Proactively reviews code for quality, security, and maintainability. Use…

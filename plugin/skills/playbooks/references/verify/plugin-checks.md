@@ -16,9 +16,9 @@ Built on the cards `fm lib show cc-plugin-testing`, `fm lib show cc-plugin-manif
    ```
 3. **Session layer:** a real session loads it, and `plugin_errors` in the init event is empty:
    ```bash
-   claude --plugin-dir ./plugin -p "ping" --output-format stream-json --verbose | grep plugin_errors
+   claude --plugin-dir ./plugin -p "ping" --output-format stream-json --verbose | jq -e 'select(.type=="system" and .subtype=="init") | (.plugin_errors // []) | length == 0'
    ```
-4. **Behaviour layer, only when a skill's wording changed:** `claude plugin eval ./plugin --trust-plugin --scaffold --runs 1 --max-cost-usd 5 --no-publish --json /tmp/eval.json`, then compare per-case scores with the run before.
+4. **Behaviour layer, only when a skill's wording changed:** `claude plugin eval ./plugin --trust-plugin --scaffold --runs 1 --max-cost-usd 5 --no-publish --json "$(mktemp)"`, then compare per-case scores with the run before.
 5. **Record which layers ran.** A green structure layer proves the files parse, not that a hook behaves; say so for any layer you skipped.
 
 Pass: layers 1 to 3 exit 0 on the tree you are committing, and a changed skill has an eval number before and after.

@@ -9,7 +9,7 @@ Built on the cards `fm lib show airflow`, `fm lib show dagster`, `fm lib show db
 2. **Does it load?** `airflow dags list-import-errors`, `dagster definitions validate`, `dbt parse`. An import error looks like a scheduler outage.
 3. **Reproduce one partition locally** with a dry run and a tiny fixture:
    ```bash
-   dbt build --select state:modified+
+   dbt build --select state:modified+ --state path/to/prod-artifacts --target dev
    python pipeline.py --date 2024-01-01 --dry-run
    kafka-consumer-groups.sh --bootstrap-server $BS --describe --group G
    ```
