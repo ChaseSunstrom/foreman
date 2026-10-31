@@ -1263,3 +1263,124 @@ class FindBlindSpots(ForemanTestCase):
                 f.write("{not json\n\x00")
         self.fix(35)
         self.assertEqual(self.fm("find", "--blindspots", check=False).returncode, 0)
+
+
+class FindToolRung(ForemanTestCase):
+    """T-2239: fm find --ladder runs a stack's tools only in a tree the user trusted (or an exam sandbox), with argv from
+    Foreman's registry; stub tools on PATH log every call."""
+    RUFF = ('[{"filename": "%s/app.py", "location": {"row": 3, "column": 1}, "code": "F401", "message": "os imported but unused"},'
+            ' {"filename": "/etc/passwd", "location": {"row": 1}, "code": "X", "message": "outside"}]')
+
+    def setUp(self):
+        super().setUp()
+        import fmcore as c
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        self.bin, self.log = os.path.join(self.tmp, "bin"), os.path.join(self.tmp, "calls.log")
+        os.makedirs(self.bin)
+        self.tree = os.path.join(self.tmp, "tree")
+        write(self.tree, {"pyproject.toml": "[tool.ruff]\nfix = true\n", "app.py": "import os\n"})
+        self.stub("ruff", "printf '%s' '" + (self.RUFF % os.path.realpath(self.tree)) + "'\nexit 1")
+        from unittest import mock
+        patch = mock.patch.dict(os.environ, {"PATH": self.bin + os.pathsep + os.environ["PATH"], "STUBLOG": self.log,
+                                             "GITHUB_TOKEN": "t0ps3cret", "CLAUDE_CODE_X": "1"})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def stub(self, name, body):
+        path = os.path.join(self.bin, name)
+        with open(path, "w") as f:
+            f.write(f'#!/bin/sh\necho "{name} $@ pwd=$PWD tok=$GITHUB_TOKEN cl=$CLAUDE_CODE_X" >> {self.log}\n{body}\n')
+        os.chmod(path, 0o755)
+
+    def calls(self):
+        try:
+            with open(self.log) as f:
+                return f.read().splitlines()
+        except OSError:
+            return []
+
+    def test_untrusted_tree_runs_nothing_and_says_why(self):
+        found, notes = fmfind.ladder(self.tree, self.p)
+        self.assertEqual((found, self.calls()), ([], []))
+        self.assertIn("tool rung skipped: not a trusted tree", " ".join(notes))
+
+    def test_a_tree_cannot_vouch_for_itself(self):
+        write(self.tree, {".foreman-trusted": "yes", "trusted": "1"})
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"FOREMAN_TRUSTED": "1", "FOREMAN_EXAM": "1"}):
+            fmfind.ladder(self.tree, self.p)
+        self.assertEqual(self.calls(), [])
+
+    def test_trusted_tree_runs_selected_tool_and_normalizes(self):
+        fmprove.remember(self.tree)
+        found, notes = fmfind.ladder(self.tree, self.p)
+        self.assertEqual([(f["finder"], f["file"], f["line"], f["kind"]) for f in found], [("tool:ruff", "app.py", 3, "bug")], notes)
+        self.assertIn("F401", found[0]["says"])
+        (call,) = self.calls()  # one tool, fixed argv, no secrets, cwd the tree
+        self.assertIn("ruff check --output-format json --no-cache --isolated", call)
+        self.assertIn(f"pwd={os.path.realpath(self.tree)} tok= cl=", call)
+
+    def test_exam_sandbox_runs_without_trust(self):
+        found, _ = fmfind.ladder(self.tree, self.p, sandbox=True)
+        self.assertEqual(len(found), 1)
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_unselected_tools_do_not_run_and_repo_cannot_add_argv(self):
+        fmprove.remember(self.tree)
+        os.remove(os.path.join(self.tree, "pyproject.toml"))
+        write(self.tree, {"go.mod": "module x\n", "ruff": "#!/bin/sh\necho owned >> owned\n", ".fm-ladder.json": '{"argv": ["touch", "owned"]}'})
+        os.chmod(os.path.join(self.tree, "ruff"), 0o755)
+        self.stub("go", "exit 0")
+        fmfind.ladder(self.tree, self.p)
+        self.assertEqual([x.split()[0] for x in self.calls()], ["go"])
+        self.assertIn("vet ./...", self.calls()[0])
+        self.assertFalse(os.path.exists(os.path.join(self.tree, "owned")))
+
+    def test_a_relative_path_entry_cannot_run_the_trees_own_binary(self):
+        fmprove.remember(self.tree)
+        os.remove(os.path.join(self.bin, "ruff"))
+        write(self.tree, {"ruff": "#!/bin/sh\necho owned >> owned\n"})
+        os.chmod(os.path.join(self.tree, "ruff"), 0o755)
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"PATH": "." + os.pathsep + self.tree + os.pathsep + "/usr/bin:/bin"}):
+            fmfind.ladder(self.tree, self.p)
+        self.assertFalse(os.path.exists(os.path.join(self.tree, "owned")))
+
+    def test_a_symlinked_manifest_selects_nothing(self):
+        fmprove.remember(self.tree)
+        os.remove(os.path.join(self.tree, "pyproject.toml"))
+        os.symlink("/etc/hostname", os.path.join(self.tree, "pyproject.toml"))
+        fmfind.ladder(self.tree, self.p)
+        self.assertEqual(self.calls(), [])
+
+    def test_missing_tool_is_captured_once_with_the_hook_key(self):
+        import fmcore as c
+        fmprove.remember(self.tree)
+        os.remove(os.path.join(self.bin, "ruff"))
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"PATH": self.bin + os.pathsep + "/usr/bin:/bin"}):
+            for _ in range(2):
+                found, notes = fmfind.ladder(self.tree, self.p)
+        self.assertEqual(found, [])
+        mine = [b for b in c.load_briefs(self.p, include_archive=True) if "capability-miss: ruff" in b.section("Raw request")]
+        self.assertEqual(len(mine), 1)
+
+    def test_garbage_output_and_huge_output_are_not_findings(self):
+        fmprove.remember(self.tree)
+        self.stub("ruff", "echo not json")
+        self.assertEqual(fmfind.ladder(self.tree, self.p)[0], [])
+        self.stub("ruff", "yes '{' | head -c 20000000")
+        self.assertEqual(fmfind.ladder(self.tree, self.p)[0], [])
+
+    def test_sarif_and_line_parsers(self):
+        sarif = json.dumps({"runs": [{"results": [{"ruleId": "G101", "message": {"text": "hardcoded"}, "locations": [
+            {"physicalLocation": {"artifactLocation": {"uri": "main.go"}, "region": {"startLine": 7}}}]}]}]})
+        self.assertEqual(fmfind._parse_sarif(sarif, "/r"), [("main.go", 7, "G101: hardcoded")])
+        self.assertEqual(fmfind._parse_lines("# pkg\n./main.go:9:2: unreachable code\n", r"^(?P<file>[^:\s]+):(?P<line>\d+):(?:\d+:)? (?P<msg>.+)$", "/r"),
+                         [("main.go", 9, "unreachable code")])
+
+    def test_cli_flag_prints_the_skip(self):
+        r = self.fm("find", self.tree, "--ladder", check=False)
+        self.assertIn("tool rung skipped: not a trusted tree", r.stdout + r.stderr)
+        self.assertEqual(self.calls(), [])
