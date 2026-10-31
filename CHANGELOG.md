@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Exam putback anchors every region in the arm's file as it is, then splices last to first: slow C's planted loop no longer voids test-first credit, so the oracle can close the held-out slow-c scenarios (T-2419).
 - `fm prove --infra` runs each infra file's own validator (hadolint, docker compose config, terraform validate, helm lint, kubeconform, actionlint, shellcheck, systemd-analyze) on a throwaway copy, offline (no network where unshare works); a missing tool is unproven and filed once as a capability miss; fm task finish runs it on touched infra files and names every failing one (T-2385).
 - A cold rival reads the request: `fm second rival ID` has a tool-less child on another model read only the request and the repo map and write a Rival plan; rival-only readings and approaches become open Dissent lines and a top reading the plan didn't choose marks the brief rival_split; fm focus waits for it on an L brief, an M brief under 80% or claiming one reading, and a one-way step (on S only deploy, publish, release, migrate, delete, drop table, unless the request names it); a failed child never blocks (T-2341).
 - Wider capability-miss detection: a Read of an unsupported file type, an unknown tool or MCP server, a guard refusal of a plugin target, and a failed `fm task evidence --run` with 'command not found' all feed the same miss path; only evidence-run misses block a finish (T-2370).
