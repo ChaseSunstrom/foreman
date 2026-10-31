@@ -138,7 +138,7 @@ class Confidence(Base):  # T-2338 (Mission 5, #8): a choice under the race bar, 
     def test_an_l_task_names_the_design_race(self):
         self.task("L")
         self.assertRegex(self.nxt(), r"design race.*fm second plan T-0001")
-        self.assertNotIn("fm lane race", self.nxt())
+        self.assertIn("fm lane race T-0001 (one throwaway spike per option", self.nxt())  # T-2340
 
     def test_the_stuck_rung_names_what_race_line_builds(self):
         tid = self.task(choice="Choice 1 (90%): smaller")
