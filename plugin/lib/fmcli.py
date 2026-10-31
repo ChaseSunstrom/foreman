@@ -1139,6 +1139,10 @@ def task_finish(p, args):
     for _, _, cmd in todo:  # T-0901 review: every one is checked before any runs, so a refusal leaves no side effects
         guard_stored(p, b, cmd)
     results = [(kind, n, cmd, *run(cmd)) for kind, n, cmd in todo]
+    import fminfra  # T-2385: the infra files the task touched, each through its own validator (a missing one is said, not run)
+    infra = fminfra.for_task(p, b)
+    if infra:
+        results.append(("final", None, "fm prove --infra", *infra))
     tree = c.worktree_id(p.root)
 
     def record(x):
@@ -1170,8 +1174,9 @@ def task_finish(p, args):
                 x.set_section("Would do differently", c.redact(c.plain(args.differently).strip()))
     mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3]),
                                        "ran": [[r[2][:200], r[3]] for r in results][:20]})  # T-0749: catch rates
-    failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → {c.run_result(code, output)}"
-              for kind, n, cmd, code, output in results if code]
+    failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → " + (  # T-2385: every failing infra file, not only the last output lines
+        " / ".join(l for l in output.splitlines() if l.startswith("fail"))[:600] if cmd == "fm prove --infra" else
+        c.run_result(code, output)) for kind, n, cmd, code, output in results if code]
     if failed:
         raise c.PolicyError(f"{b.id} not finished; failing (recorded):\n  - " + "\n  - ".join(failed))
     _close_affected(p, need_brief(p, b.id), runs, args)  # T-1117: what it changed must not break what's linked to it
@@ -7313,6 +7318,10 @@ def _build_parser(only=None):
     s.add_argument("--migration", action="store_true", help="instead: run the tree's plain SQL NAME.up.sql/NAME.down.sql "
                    "migrations up, down, up on a throwaway sqlite file and compare the schema each time; trusted trees "
                    "only; exit 0 pass, 1 fail, 2 refused or no known tool (T-2288)")
+    s.add_argument("--infra", action="store_true", help="instead: run each infra file's own validator (hadolint, docker "
+                   "compose config, terraform validate in an initialised folder, helm lint, kubeconform, actionlint, "
+                   "shellcheck, systemd-analyze verify) on a throwaway copy, offline; a missing tool leaves the file "
+                   "unproven and names it, nothing is installed; exit 0 none failed, 1 a failure, 2 nothing checked (T-2385)")
     s.add_argument("--bugs", type=int, default=None, metavar="N", help="turns the bug rung on: ask a cheap child for bug "
                    "candidates in the N hottest files (N is required, at most 10; try 3), as in fm prove --bugs 3 PATH; "
                    "each is proven by a model-written red test or stays a lead; trusted trees only (T-2242)")
