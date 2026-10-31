@@ -171,5 +171,54 @@ class GoalReview(GoalBase):
         self.assertNotIn("Traceback", self.fm("goal", "link", "²", t, check=False).stderr)
 
 
+class GoalAcrossDays(GoalBase):
+    """T-2139: one line, from fmmandate.goal_line, that SessionStart, the PreCompact checkpoint and fm resume print."""
+
+    def line(self):
+        import fmmandate
+        return fmmandate.goal_line(self.p)
+
+    def test_none_without_a_goal_without_items_or_once_ended(self):
+        self.assertIsNone(self.line())
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.assertIsNone(self.line())  # no items
+        self.fm("goal", "item", "one", "--done-when", "true")
+        self.assertIsNotNone(self.line())
+        c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], until=c.iso(time.time() - 60)))
+        self.assertIsNone(self.line())  # ended
+
+    def test_format_counts_closed_items_and_names_the_next_open_task(self):
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        for t in ("verbs", "coverage in show", "docs"):
+            self.fm("goal", "item", t, "--done-when", "true")
+        t1 = self.new("verbs", "--goal", "1")
+        self.fm("task", "drop", t1, "done")
+        self.assertEqual(self.line(), "Goal: Ship the ledger · 1/3 items done · next: 2. coverage in show (no task yet)")
+        t2 = self.new("show", "--goal", "2")
+        self.assertEqual(self.line(), f"Goal: Ship the ledger · 1/3 items done · next: 2. coverage in show ({t2})")
+        self.fm("task", "drop", t2, "done")
+        t3 = self.new("docs", "--goal", "3")
+        self.assertIn(f"2/3 items done · next: 3. docs ({t3})", self.line())
+
+    def test_fm_resume_prints_it(self):
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "one", "--done-when", "true")
+        self.assertIn("Goal: Ship the ledger · 0/1 items done · next: 1. one (no task yet)", self.fm("resume").stdout)
+        t = self.new("one", "--goal", "1", "--focus")
+        out = self.fm("resume", "--no-check").stdout
+        self.assertEqual(out.count("Goal: Ship the ledger"), 1, out)
+        self.assertIn(f"next: 1. one ({t})", out)
+
+    def test_fm_run_takes_the_next_items_task_on_an_empty_queue(self):
+        import fmserve
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "one", "--done-when", "true")
+        self.assertIsNone(fmserve._next_runnable(self.p, set(), set()))
+        t = re.search(r"T-\d+", self.fm("capture", "build one").stdout)[0]
+        self.fm("goal", "link", "1", t)
+        self.assertEqual(fmserve._next_runnable(self.p, set(), set()).id, t)
+        self.assertIsNone(fmserve._next_runnable(self.p, {t}, set()))  # a skipped one stays skipped
+
+
 if __name__ == "__main__":
     unittest.main()

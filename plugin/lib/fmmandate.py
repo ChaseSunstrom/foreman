@@ -270,3 +270,27 @@ def cmd_goal(args):
         return fmcli.out(args, {"item": int(words[0]), "task": words[1].upper()},
                          f"{words[1].upper()} builds item {words[0]}.")
     return show(p, args)
+
+
+def progress(p):
+    """T-2139: (goal, items done, next item, its first open brief or None) of the standing goal, or None when none stands,
+    it has ended or it has no items. An item is done when it has tasks and all of them are closed. Meta and briefs only."""
+    m = get(p)
+    items = (m or {}).get("items") or []
+    if not m or m["expired"] or not items:
+        return None
+    by = {b.id: b for b in c.load_briefs(p)}
+    done = lambda it: bool(it.get("tasks")) and all(t in by and by[t].status in c.CLOSED for t in it["tasks"])
+    nxt = next((it for it in items if not done(it)), None)
+    open_ = next((by[t] for t in (nxt or {}).get("tasks") or [] if t in by and by[t].status not in c.CLOSED), None)
+    return m, sum(map(done, items)), nxt, open_
+
+
+def goal_line(p):
+    """T-2139: the one line every surface prints while a goal stands: its text, items done/total, the next item."""
+    g = progress(p)
+    if not g:
+        return None
+    m, done, nxt, b = g
+    tail = f" · next: {nxt['n']}. {c.fit(nxt['text'], 60)} ({b.id if b else 'no task yet'})" if nxt else " · all items done"
+    return c.plain(f"Goal: {c.fit(m['text'], 80)} · {done}/{len(m['items'])} items done{tail}")

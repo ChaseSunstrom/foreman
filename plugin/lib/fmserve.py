@@ -337,6 +337,11 @@ def _next_runnable(p, skip, told, fit=False):
                 print(f"{b.id} waits on the user ({why}); skipped")
             continue
         return b
+    import fmmandate  # T-2139: an empty queue with a goal standing: the next item's first open task, as a fallback only
+    g = fmmandate.progress(p)
+    b = g[3] if g else None
+    if b and b.id not in skip and b.status in c.RUNNABLE | {"captured"} and not c.waits_on_user(b, pending, autonomy):
+        return b
     return None
 
 
