@@ -56,16 +56,16 @@ class RoundI(ForemanTestCase):
     def test_task_new_plans_an_m_brief_in_one_call(self):
         self.fm("init")
         self.fm("task", "new", "Mid", "--type", "FEATURE", "--tier", "M", "--interpretation", "Reading 1: what it means. Reading 2: something else.",
-                "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--ac", "works :: pytest -q", "--step", "build", "--focus")
+                "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a", "--ac", "works :: pytest -q", "--step", "build", "--focus")
         b = self.brief("T-0001")
         self.assertEqual(b.status, "active")
         self.assertEqual(b.section("Interpretation").strip(), "Reading 1: what it means. Reading 2: something else.")
-        self.assertEqual(b.section("Approach (options → choice → why)").strip(), "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a")
+        self.assertEqual(b.section("Approach (options → choice → why)").strip(), "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a")
 
     def test_finish_closes_an_m_task_in_one_call(self):
         # T-0097: close-out cost ~18 fm calls a task across 287 real tasks; one call does it now
         self.fm("init")
-        self.fm("task", "new", "Mid", "--type", "FEATURE", "--tier", "M", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a",
+        self.fm("task", "new", "Mid", "--type", "FEATURE", "--tier", "M", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a",
                 "--ac", "works :: python3 -c 'print(1)'", "--ac", "fast :: python3 -c 'print(2)'", "--step", "build", "--focus")
         self.fm("task", "step", "T-0001", "done", "1", "--evidence", "python3 -c 'print(0)'", "ok")
         p = self.fm("task", "finish", "T-0001", "--audit", "fm-reviewer pass (research T-0001-review)",
@@ -80,7 +80,7 @@ class RoundI(ForemanTestCase):
     def test_finish_closes_a_step_that_already_has_evidence_and_names_what_needs_run(self):
         # T-0142: 'give --run: a step or criterion has no verify command of its own', after the step's evidence was in
         self.fm("init")
-        self.fm("task", "new", "Mid", "--type", "FEATURE", "--tier", "M", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a",
+        self.fm("task", "new", "Mid", "--type", "FEATURE", "--tier", "M", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a",
                 "--ac", "works :: python3 -c 'print(1)'", "--step", "build", "--step", "live check", "--focus")
         self.fm("task", "step", "T-0001", "done", "1", "--evidence", "python3 -c 'print(0)'", "ok")
         p = self.fm("task", "finish", "T-0001", "--audit", "self", "--lens", "intent: ok", "--lens", "edge: ok",
@@ -190,7 +190,7 @@ class RoundI(ForemanTestCase):
 
     def test_finish_on_an_m_task_refuses_an_unknown_lens(self):
         self.fm("init")
-        self.fm("task", "new", "Mid", "--type", "FEATURE", "--tier", "M", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a",
+        self.fm("task", "new", "Mid", "--type", "FEATURE", "--tier", "M", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a",
                 "--ac", "works :: python3 -c 'print(1)'", "--step", "build", "--focus")
         p = self.fm("task", "finish", "T-0001", "--run", "python3 -c 'print(0)'", "--audit", "review",
                     "--lens", "vibes: fine", check=False)

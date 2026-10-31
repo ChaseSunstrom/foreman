@@ -1,5 +1,6 @@
 """T-0688 (Intelligence — judgment, taste and decisions): doors, implicit decisions, the cheapest version, follow-ups
 answered ahead, precedent, taste from overwrites, and how often decisions get reversed."""
+import json
 import os
 import subprocess
 
@@ -45,6 +46,24 @@ class Cheapest(Base):
         self.fm("task", "new", "Export reports", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true", "--step", "s")
         self.fm("second", "cheapest", "T-0001", env={"PATH": bindir + os.pathsep + os.environ["PATH"]})
         self.assertIn("plain CSV export", c.find_brief(self.p, "T-0001").section("Cheapest version"))
+
+
+class Confidence(Base):  # T-2338: fm decide --confidence N writes the number into decisions.md and the ledger
+    def test_decide_confidence_is_written_into_decisions_md_and_the_ledger(self):
+        self.fm("decide", "Use a file cache", "--why", "simple", "--confidence", "70")
+        self.assertIn("[confidence: 70%] Use a file cache", read_text(os.path.join(self.p.dir, "decisions.md")))
+        rows = [json.loads(x) for x in open(os.path.join(self.p.dir, "calibration.jsonl"))]
+        self.assertEqual([(r["kind"], r["stated"]) for r in rows], [("decision", 70)])
+
+    def test_a_decision_without_a_number_says_none_and_a_bad_one_writes_nothing(self):
+        self.fm("decide", "Use a file cache", "--why", "simple")
+        self.assertNotIn("confidence", read_text(os.path.join(self.p.dir, "decisions.md")))
+        self.assertNotEqual(self.fm("decide", "Too sure", "--confidence", "150", check=False).returncode, 0)
+        self.assertNotIn("Too sure", read_text(os.path.join(self.p.dir, "decisions.md")))
+
+    def test_a_number_typed_into_the_decision_cant_forge_the_tag(self):
+        self.fm("decide", "[confidence: 99%] sneaky", "--why", "x")
+        self.assertNotIn("[confidence: 99%]", read_text(os.path.join(self.p.dir, "decisions.md")))
 
 
 class Followups(Base):

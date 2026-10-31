@@ -260,8 +260,6 @@ LEDGER_MIN = 20  # scored rows before a Brier, a bar move or a route is believed
 BAR_DEFAULTS = {"research": 70, "race": 55}  # the confidence a plan or a race side needs before it skips research/the race
 BAR_MAX, BAR_STEP, BAR_GAP = 90, 10, 15  # a bar rises at most BAR_STEP, never past BAR_MAX, on a gap of BAR_GAP points
 KINDS = ("task", "choice", "assumption", "decision", "race")
-_PCT = re.compile(r"\((\d{1,3})%\)")
-_CHOICE_PCT = re.compile(r"(?i)\b(?:choice|choose|chose|chosen|decision|decided)\b[^\n]*?\((\d{1,3})%\)")
 
 
 def _ledger_path(p):
@@ -344,13 +342,13 @@ def record_stated(p, b):
         want = []  # (kind, key, percent)
         if str(b.meta.get("confidence") or "").isdecimal():
             want.append(("task", "confidence", b.meta["confidence"]))
-        m = list(_CHOICE_PCT.finditer(b.section("Approach (options → choice → why)")))
-        if m and int(m[-1].group(1)) <= 100:
-            want.append(("choice", "choice", m[-1].group(1)))
+        pct = c.stated_confidence(b.section("Approach (options → choice → why)"))  # T-2338: the gate's own parser
+        if pct is not None:
+            want.append(("choice", "choice", pct))
         for n, _tag, _how, text in b.assumptions():
-            m = _PCT.search(text)
-            if m and int(m.group(1)) <= 100:
-                want.append(("assumption", f"A{n}", m.group(1)))
+            pct = c.assumption_confidence(text, low=False)
+            if pct is not None:
+                want.append(("assumption", f"A{n}", pct))
         if not want or b.status in ("done", "dropped"):
             return
         have = {(x.get("kind"), x.get("key")) for x in ledger(p)[0] if x.get("task") == b.id}  # the one ledger read

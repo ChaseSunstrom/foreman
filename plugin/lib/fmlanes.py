@@ -729,6 +729,11 @@ def race(p, b, main, args):
         if b.meta.get("race") or b.meta.get("race_of"):
             raise c.PolicyError(f"{b.id} is already racing (fm lane race {b.id} --score)")
         _ready(p, b, n)
+        released = b.status == "active"
+        if released:  # T-2338: fm next names the race while the task is focused and untouched: release it, after every refusal above
+            b.meta["status"] = "planned"
+            b.append_log("released to race: focused, no work on it yet")
+            c.save_brief(p, b)
         nids = []
         for i, (opt, text) in enumerate(plan[1:], 1):
             nid = c.next_id(p)
@@ -775,8 +780,8 @@ def race(p, b, main, args):
         for nid in nids:
             fmcli.mutate(p, nid, lambda y: (y.meta.__setitem__("status", "dropped"),
                                             y.append_log("dropped: the race couldn't start")), "task_drop", {})
-        fmcli.mutate(p, b.id, lambda y: [y.meta.pop(k, None) for k in ("race", "race_checks", "race_sides",
-                                                                         "race_option")], "race_abort", {})
+        fmcli.mutate(p, b.id, lambda y: ([y.meta.pop(k, None) for k in ("race", "race_checks", "race_sides", "race_option")],
+                                         released and y.meta.__setitem__("status", "active")), "race_abort", {})  # T-2338: focused again
         raise
     agent = 'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"'
     paths = {t: os.path.join(p.dir, "audits", f"{t}.builder.md") for t in (b.id, *nids)}
@@ -791,7 +796,8 @@ def _ready(p, b, n=2):
     import fmcli
     if b.tier not in ("S", "M"):
         raise c.PolicyError(f"{b.id} is {b.tier}: a race takes an S or M task")
-    if b.status in c.CLOSED or b.status in ("active", "verifying") or c.held_elsewhere(b):
+    idle = b.status == "active" and not b.has_evidence() and not any(s.done for s in b.steps())  # T-2338: no work yet
+    if b.status in c.CLOSED or b.status == "verifying" or (b.status == "active" and not idle) or c.held_elsewhere(b):
         raise c.PolicyError(f"{b.id} is {b.status}: a race takes a task nobody is working on")
     gaps = c.plan_gaps(b, c.effective_autonomy(p))
     if gaps:

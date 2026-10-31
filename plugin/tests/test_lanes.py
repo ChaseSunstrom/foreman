@@ -333,7 +333,7 @@ class Lanes(ForemanTestCase):
     def test_the_brief_agent_line_names_effort_by_tier(self):
         # T-0779: S builders run at medium effort, M at high, beside the model
         for tier, effort in (("S", "medium"), ("M", "high")):
-            extra = ["--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a"] if tier != "S" else []
+            extra = ["--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a"] if tier != "S" else []
             tid = first(self.fm("task", "new", f"T{tier}", "--type", "FEATURE", "--tier", tier, "--ac", "ok :: true",
                                 "--step", "s", *extra, "--json").stdout)["id"]
             agent = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"]
@@ -391,7 +391,7 @@ class Lanes(ForemanTestCase):
         """T-1028: a builder whose launching claude process is gone, with work left in its lane."""
         import fmbus
         tid = first(self.fm("task", "new", "Built", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true", "--step", "s",
-                            "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--json").stdout)["id"]
+                            "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a", "--json").stdout)["id"]
         path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
         p = c.find_project(self.repo)
         b = c.find_brief(p, tid)
@@ -505,7 +505,7 @@ class Lanes(ForemanTestCase):
     def test_a_briefed_never_launched_task_is_not_flagged(self):
         import fmbus
         tid = first(self.fm("task", "new", "Idle", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true", "--step", "s",
-                            "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--json").stdout)["id"]
+                            "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a", "--json").stdout)["id"]
         p = c.find_project(self.repo)
         b = c.find_brief(p, tid)
         b.meta["builder"] = c.now()
@@ -1077,7 +1077,7 @@ class LaneRecovery(ForemanTestCase):
 class RaceBase(ForemanTestCase):
     """T-2339: a race at plan time. Temporary repos only; a builder is simulated by a worktree and a commit."""
     OPTIONS = ("1) widen the race; fails if: builders converge 2) use what exists: two sides; fails if: a tie "
-               "3) do less: the stuck race only; fails if: never fires Choice 1: widen")
+               "3) do less: the stuck race only; fails if: never fires Choice 1 (80%): widen")
 
     def git(self, cwd, *args):
         return subprocess.run(["git", "-C", cwd, "-c", "user.email=t@t", "-c", "user.name=t", *args],
@@ -1130,7 +1130,7 @@ class PlanRace(RaceBase):
         self.assertEqual(self.brief(tid).meta["race_sides"], d["sides"][1:])
 
     def test_two_sides_by_default_and_the_chosen_option_is_side_a(self):
-        tid = self.task(approach=self.OPTIONS.replace("Choice 1: widen", "Choice 2: two sides"))
+        tid = self.task(approach=self.OPTIONS.replace("Choice 1 (80%): widen", "Choice 2 (80%): two sides"))
         d = self.race(tid)
         self.assertEqual(len(d["sides"]), 2)
         self.assertIn("option 2", self.brief(tid).section("Race"))
@@ -1144,6 +1144,13 @@ class PlanRace(RaceBase):
         p = c.find_project(self.repo)
         self.assertEqual([b.id for b in c.load_briefs(p) if b.meta.get("race_of")], [])
         self.assertFalse(self.brief(tid).meta.get("race"))
+
+    def test_a_refused_race_never_unfocuses_the_task(self):  # T-2338 merge: the release comes after every refusal
+        tid = self.task(check="true")
+        self.fm("focus", tid)
+        self.assertEqual(self.brief(tid).status, "active")
+        self.assertNotEqual(self.fm("lane", "race", tid, check=False).returncode, 0)
+        self.assertEqual(self.brief(tid).status, "active")
 
     def test_one_failing_check_among_passing_ones_is_enough(self):
         tid = self.task()
@@ -1175,7 +1182,7 @@ class PlanRace(RaceBase):
         self.assertNotEqual(r.returncode, 0, "three sides still need three options")
 
     def test_a_choice_word_in_prose_is_not_a_choice_and_the_first_stated_one_counts(self):
-        tid = self.task(approach=self.OPTIONS.replace("Choice 1: widen", "Choice 2 (70%) the sure one. Later we chose a "
+        tid = self.task(approach=self.OPTIONS.replace("Choice 1 (80%): widen", "Choice 2 (70%) the sure one. Later we chose a "
                                                       "simple cache"))
         self.race(tid)
         self.assertIn("option 2", self.brief(tid).section("Race"))

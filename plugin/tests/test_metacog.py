@@ -57,7 +57,7 @@ class Honest(Base):
         with open(os.path.join(self.repo, "p.txt"), "w") as f:
             f.write("ok\n")
         self.fm("task", "new", "Parser", "--type", "FEATURE", "--tier", "M", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach",
-                "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--ac", "parses every input :: grep -q ok p.txt",
+                "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a", "--ac", "parses every input :: grep -q ok p.txt",
                 "--step", "s", "--focus")
         self.fm("task", "ac", "T-0001", "edit", "1", "--text", "parses the common inputs")
         r = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "grep -q ok p.txt", "--lens", "intent: ok",
