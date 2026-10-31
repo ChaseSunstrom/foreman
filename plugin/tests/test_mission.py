@@ -49,3 +49,20 @@ class Mission(ForemanTestCase):
         self.assertNotIn("every device and surface", res["lenses"])
         self.assertIn("capability map", res["lenses"])
         self.assertFalse({"web UI", "mobile app"} & set(res["surfaces"]), res["surfaces"])
+
+    def test_mission_and_pack_carry_each_unreversed_steer_in_standing_rules(self):
+        # T-2160: a mission brainstorm sees the user's standing rules, not only the cold read
+        self.files({"README.md": "# P\nA tool.\n"})
+        self.fm("init")
+        self.fm("decide", "Testing cadence: Haiku is smoke only", "--cites", "the user's steer 2026-10-30")
+        self.fm("decide", "Provisional selection until the exam", "--cites", "user steer 2026-10-30")
+        self.fm("decide", "Selection is final", "--cites", "user steer 2026-11-01", "--reverses", "Provisional selection")
+        self.fm("decide", "session undo", "--reverses", "Haiku is smoke")
+        self.fm("decide", "a plain decision")
+        res = json.loads(self.fm("mission", "--json").stdout)
+        for text in (read_text(res["path"]), read_text(res["pack"]), res["mission"]):
+            rules = text.split("## The user's standing rules (steers)", 1)[1].split("\n## ", 1)[0]
+            self.assertIn("Haiku is smoke only", rules)
+            self.assertNotIn("Provisional selection until", rules)
+            self.assertNotIn("session undo", rules)
+            self.assertNotIn("a plain decision", rules)

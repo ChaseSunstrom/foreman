@@ -1512,8 +1512,9 @@ def _select(p, n, agent):
     return dict(res, verdict=verdict, base=base, reason=why)
 
 
+STEERS = "The user's standing rules (steers)"  # T-2160: not "Standing rules", which the page reads for gen-1's numbered rules
 MADE = ("What this generation is for", "Missions", "Empty coverage cells (fill first)",
-        "Not-yet items (each retried this generation)", "Exam", "Lineage", "Standing intent")  # seed() writes these
+        "Not-yet items (each retried this generation)", "Exam", "Lineage", "Standing intent", STEERS)  # seed() writes these
 ASKS = re.compile(r"What gen-\d+'s critiques said to change")
 
 
@@ -1578,6 +1579,8 @@ def _seed(p, n, agent):
            "verbatim (fm genesis drift checks).", "",
            "## Standing intent", "", "The user's, under gen-0 and over every later steer (T-2191; every cold read sees "
            "it too):", "", intent(), "",
+           "## " + STEERS, "", "The user's steers since gen-0, each still in force (T-2160; fm genesis drift "
+           "checks every row):", "", *c.standing_rules(p), "",
            "## What this generation is for", "",
            *[f"Top gap: {g}\n" for g in free_beats(p, agent, "train")],  # T-2184: before any cell or Mission
            "Close the open coverage cells, most first, retry every not-yet item, and act on what the critiques asked; "
@@ -1939,6 +1942,21 @@ def drift(p, n):
     held = next((b for h, b in _sections(seed_text) if h == "Standing intent"), None)
     if n >= 2 and (held is None or " ".join(intent().split()) not in " ".join(held.split())):  # T-2191: fm genesis seed
         found.append("seed.md: no '## Standing intent' section holding templates/standing-intent.md verbatim")
+    notes = []
+    if n >= 2:  # T-2160: a seed holds every steer it was written after; an older seed or a newer steer only warns
+        rules = next((b for h, b in _sections(seed_text) if h == STEERS), None)
+        if rules is None:
+            notes.append(f"seed.md has no '## {STEERS}' section (written before T-2160): add it with fm genesis put")
+        else:
+            mine = {" ".join(x.split()) for x in rules.splitlines()}  # whole lines, not a substring of one
+            seeded = time.strftime("%Y-%m-%d", time.gmtime(os.path.getmtime(os.path.join(d, pre + "seed.md"))))
+            for date, line in c.steer_rules(p):
+                if f"- {date}: {line}" in mine:
+                    continue
+                if date >= seeded:  # a day's grain: a steer on the seed's own day can't be told from one before it
+                    notes.append(f"new since this seed ({date}): {c.fit(line, 120)}")
+                else:
+                    found.append(f"seed.md: '## {STEERS}' misses the user's steer {date}: {c.fit(line, 120)}")
     read = "skipped: fix the lines above first"  # one paid read per clean candidate, not per failed attempt
     if not found:
         import fmideas
@@ -1959,14 +1977,18 @@ def drift(p, n):
     verdict = "drifted" if found else "clean" if read == "clean" else "unread"
     out = [f"# Drift — gen-{n}", "", f"Verdict: {verdict}", "",
            f"Checked {', '.join(files)} against gen-0's {len(allowed)} MUST/NEVER line(s); cold read: {read}.", "",
-           *([f"- {x}" for x in found] or ["Nothing drifted."])]
+           *([f"- {x}" for x in found] or ["Nothing drifted."]),
+           *(["", "Advisory (not a failure):", *[f"- {x}" for x in notes]] if notes else [])]
     if verdict != "clean":
-        out += ["", "Undo the lines named here (a generation never rewrites the user's MUSTs or NEVERs), then rerun "
-                    f"fm genesis drift {n}." if found else f"Rerun fm genesis drift {n}: no countable cold read, no pass."]
+        missed = any("misses the user's steer" in x for x in found)
+        out += ["", ("Add each missed row to the seed's standing rules section (fm genesis put), " if missed else
+                     "Undo the lines named here (a generation never rewrites the user's MUSTs or NEVERs), ")
+                    + f"then rerun fm genesis drift {n}." if found else f"Rerun fm genesis drift {n}: no countable cold read, no pass."]
     path = _file(p, f"{pre}drift.md", "\n".join(out) + "\n")
     os.utime(path, (t0, t0))
     return {"gen": n, "verdict": verdict, "found": found, "read": read, "path": path,
-            "lines": [f"  ✗ {x}" for x in found] + [f"  cold read: {read}"]}
+            "notes": notes, "lines": [f"  ✗ {x}" for x in found] + [f"  note: {x}" for x in notes]
+            + [f"  cold read: {read}"]}
 
 
 def _doctor():
