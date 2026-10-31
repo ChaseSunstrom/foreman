@@ -7,7 +7,6 @@ Injected text is factual state, never instructions.
 import collections
 import contextlib
 import fnmatch
-import glob
 import hashlib
 import json
 import os
@@ -1073,8 +1072,9 @@ def _leads_note(p, sid=None):
         return pointer.format(why) if why else None
     if sid and found:  # T-2297: keys only; the Stop hook holds the session to them once
         try:
-            for old in glob.glob(os.path.join(p.dir, "leads-*.json")):  # a record older than 7 days is no session's
-                if time.time() - os.path.getmtime(old) > 7 * 86400:
+            for name in os.listdir(p.dir):  # a record older than 7 days is no session's (T-2305: no glob import in hooks)
+                old = os.path.join(p.dir, name)
+                if name.startswith("leads-") and name.endswith(".json") and time.time() - os.path.getmtime(old) > 7 * 86400:
                     os.unlink(old)
             c.write_atomic(_leads_path(p, sid), json.dumps({"keys": [_lead_key(f) for f in found[:LEADS]]}))
         except OSError:
