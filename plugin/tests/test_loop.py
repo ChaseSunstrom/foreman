@@ -202,6 +202,37 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class LagKept(ForemanTestCase):
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+
+    def test_a_decision_naming_a_lagging_file_mutes_it_until_the_file_changes(self):
+        # T-2075: a file fm decide kept (why it stays) was listed again every round
+        import subprocess
+        from unittest import mock
+        import fmloop
+
+        def commit(path, date):
+            with open(os.path.join(self.repo, path), "a", encoding="utf-8") as f:
+                f.write(date + "\n")
+            subprocess.run(["git", "-C", self.repo, "add", path], check=True)
+            subprocess.run(["git", "-C", self.repo, "commit", "-qm", "c"], check=True,
+                           env={**os.environ, "GIT_COMMITTER_DATE": date + "T12:00:00", "GIT_AUTHOR_DATE": date + "T12:00:00"})
+        commit("page.html", "2026-01-01")
+        commit("data.py", "2026-01-01")
+        p = c.find_project(self.repo)
+        drift = [("page.html", 2.0, "lib.py", 4, 0.5), ("data.py", 2.0, "lib.py", 4, 0.5)]
+        with mock.patch("fmmap.drift", return_value=drift):
+            self.assertEqual(len(fmloop.lag(p)), 2)
+            with open(os.path.join(p.dir, "decisions.md"), "a", encoding="utf-8") as f:
+                f.write("| 2026-01-02 | [x] page.html stays: nothing in it changes with lib.py | why |\n")
+            left = fmloop.lag(p)  # "a.py" must not match inside "data.py", nor "page.html" inside "mypage.html"
+            self.assertEqual([x.split(":")[0] for x in left], ["- data.py"])
+            commit("page.html", "2026-02-01")  # changed after the decision: listed again
+            self.assertEqual(len(fmloop.lag(p)), 2)
+
+
 class LoopReview(ForemanTestCase):
     """T-1057 review: the dry stop is Foreman's, not the model's memory; a yield counts once; a new round is progress."""
     def setUp(self):
