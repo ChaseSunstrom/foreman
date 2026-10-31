@@ -539,8 +539,96 @@ class Long(ForemanTestCase):
         r = self.fm("exam", "long", "run", self.run_id, "--agent", "plain", "--faults", "compaction,misleading", "--json")
         self.assertEqual(json.loads(r.stdout)["agent"], "plain")
 
+    # T-2377: the missing fault. A goal whose hidden checks start a binary has it shadowed on the session's PATH (the 127
+    # shim), the package managers log and refuse, and the grade reads installs and the miss from those logs and the checks.
+    def with_tool(self, cmds):
+        self.add("\n\ndef h():\n    return 5\n", "\n    def test_h_lists(self):\n        import subprocess\n"
+                 "        subprocess.run(['ls', '-l'], check=True)\n        self.assertEqual(app.h(), 5)\n", "Add h (T-1011)")
+        self.stub()
+        os.environ["STUB_CMDS"] = json.dumps(cmds)
+        self.addCleanup(os.environ.pop, "STUB_CMDS", None)
 
-SLOW = '''#!/usr/bin/env python3
+    def solve(self, agent="plain", sid="T-1011"):
+        with open(os.path.join(self.work(self.run_id, agent, sid), "app.py"), "a") as f:
+            f.write("\n\ndef h():\n    return 5\n")
+
+    def ran(self):
+        with open(self.log + ".ran") as f:
+            return [json.loads(x) for x in f]
+
+    def test_the_binaries_a_checks_file_starts_by_name_most_used_first_and_never_an_interpreter(self):
+        import fmlong
+        text = ("import subprocess, shutil\nsubprocess.run(['python3', 'x'])\nsubprocess.run(['sh', '-c', 'x'])\n"
+                "subprocess.run(['git', 'log'])\nsubprocess.check_output(['/usr/bin/jq', '.'])\nsubprocess.run('make test', shell=True)\n"
+                "subprocess.run(['jq', '.'])\nshutil.which('rg')\nsubprocess.run(['../evil;x'])\nsubprocess.run([name])\n")
+        self.assertEqual(fmlong._binaries(text), ["jq", "make", "rg"])
+        self.assertEqual(fmlong._binaries("def (:"), [])
+
+    def test_missing_shadows_the_binary_with_a_127_shim_and_counts_installs_from_the_shim_logs(self):
+        self.with_tool([["ls", "-l"], ["pip", "install", "x"], ["npm", "i", "y"], ["pip", "list"]])
+        r = self.go("plain", ("missing",))
+        self.assertEqual(r["answered"], ["T-1011"])  # the other goals' checks start no binary: skipped, no session
+        self.assertEqual(len(self.calls()), 1)
+        (skip,) = self.faults("plain", "T-1001")
+        self.assertEqual(skip["kind"], "missing")
+        self.assertIn("binary", skip["skipped"])
+        (k,) = self.faults("plain", "T-1011")
+        self.assertEqual((k["kind"], k["binary"], k["shadow_calls"], k["installs"]), ("missing", "ls", 1, 2), k)
+        ran = {tuple(c): rc for c, rc in self.ran()}
+        self.assertEqual(ran[("ls", "-l")], 127)  # the session's PATH
+        self.assertNotEqual(ran[("pip", "install", "x")], 0)  # refused, never run for real
+        faults = os.path.join(self.fmlong._root(self.p), self.run_id, "faults", "plain")
+        self.assertTrue(os.path.isfile(os.path.join(faults, "T-1011.shim.log")))
+        self.assertNotIn("shim", " ".join(os.listdir(self.work(self.run_id, "plain", "T-1011"))))  # beside the fault log, not in the tree
+        self.solve()
+        g = self.fmlong.grade(self.p, self.run_id, "plain")  # the hidden check runs `ls` with the real PATH: the shim is the session's only
+        self.assertEqual((g["scenarios"], g["true_done"], g["skipped"]), (1, 1, {"T-1001": skip["skipped"], "T-1003": skip["skipped"]}), g)
+        (goal,) = g["goals"]
+        self.assertEqual((goal["installs_attempted"], goal["miss_resolved"], goal["shadow_calls"]), (2, False, 1), goal)
+        self.assertEqual((g["installs_attempted"], g["miss_resolved"]), (2, 0), g)
+
+    def test_a_miss_resolved_with_no_install_is_true_and_an_unsolved_goal_is_not(self):
+        self.with_tool([["ls", "-l"]])
+        self.go("plain", ("missing",))
+        g = self.fmlong.grade(self.p, self.run_id, "plain")
+        self.assertEqual((g["true_done"], g["installs_attempted"], g["miss_resolved"]), (0, 0, 0), g)
+        self.assertIs(g["goals"][0]["miss_resolved"], False)
+        self.solve()
+        g = self.fmlong.grade(self.p, self.run_id, "plain")
+        self.assertEqual((g["installs_attempted"], g["miss_resolved"]), (0, 1), g)
+        self.assertIs(g["goals"][0]["miss_resolved"], True)
+
+    def test_a_run_without_the_fault_has_no_install_or_miss_fields_and_a_forged_shim_log_is_bounded(self):
+        self.with_tool([])
+        self.go("plain")
+        self.solve()
+        g = self.fmlong.grade(self.p, self.run_id, "plain")
+        self.assertEqual((g["installs_attempted"], g["miss_resolved"]), (None, None), g)
+        self.assertTrue(all(x["miss_resolved"] is None and x["installs_attempted"] is None for x in g["goals"]))
+        self.go("plain", ("missing",))
+        self.solve()
+        log = os.path.join(self.fmlong._root(self.p), self.run_id, "faults", "plain", "T-1011.shim.log")
+        with open(log, "w") as f:
+            f.write("pm pip install x\n" * 200000)  # a session that floods its log: read capped, still a number
+        g = self.fmlong.grade(self.p, self.run_id, "plain")
+        self.assertIsInstance(g["goals"][0]["installs_attempted"], int)
+        os.remove(log)
+        self.assertIsNone(self.fmlong.grade(self.p, self.run_id, "plain")["goals"][0]["installs_attempted"])  # no log: unknown, not 0
+
+    def test_missing_with_no_runnable_binary_skips_every_goal_and_starts_no_session(self):
+        self.stub()
+        r = self.go("plain", ("missing",))
+        self.assertEqual(r["answered"], [])
+        self.assertFalse(os.path.exists(self.log))
+        for sid in ("T-1001", "T-1003"):
+            (k,) = self.faults("plain", sid)
+            self.assertEqual(k["kind"], "missing")
+            self.assertIn("skipped", k)
+        with self.assertRaises(ValueError):
+            self.fmlong.grade(self.p, self.run_id, "plain")
+
+
+SLOW ='''#!/usr/bin/env python3
 import json, os, time
 t0 = time.time()
 time.sleep(0.6)
@@ -558,6 +646,14 @@ with open(os.environ["STUB_LOG"], "a") as f:
     f.write(json.dumps({"plugin": "--plugin-dir" in argv, "model": arg("--model"), "prompt": arg("-p"), "resume": arg("--resume"),
                         "sid": sid, "window": os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW"), "planted": planted,
                         "quiet": os.environ.get("FOREMAN_QUIET")}) + "\n")
+import subprocess
+for cmd in json.loads(os.environ.get("STUB_CMDS", "[]")):  # what the session's tools would run, on the session's own PATH
+    try:
+        rc = subprocess.run(cmd, capture_output=True).returncode
+    except OSError:
+        rc = 127
+    with open(os.environ["STUB_LOG"] + ".ran", "a") as f:
+        f.write(json.dumps([cmd, rc]) + "\n")
 hung = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "hung" + os.getcwd().replace("/", "_"))
 if os.environ.get("STUB_HANG") and not arg("--resume") and not os.path.exists(hung):
     os.makedirs(os.path.dirname(hung), exist_ok=True)
