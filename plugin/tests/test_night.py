@@ -77,6 +77,23 @@ class Night(ForemanTestCase):
         self.assertIn(("sentinel", ["sentinel", "--bisect"], 0.0),  # T-0888: closed tasks' checks against HEAD, free
                       [(j["name"], j["argv"], j["usd"]) for j in tight["jobs"]])
 
+    def test_steer_checks_run_nightly_and_the_report_names_the_rule_that_failed(self):  # T-2350
+        self.assertNotIn("steer checks", [j["name"] for j in json.loads(self.fm("night", "--dry-run", "--json").stdout)["jobs"]])
+        os.makedirs(os.path.join(self.repo, "plugin", "tests"))
+        with open(os.path.join(self.repo, "plugin", "tests", "run.py"), "w") as f:
+            f.write("import sys\nsys.stderr.write('boom')\nsys.exit(1)\n")
+        self.fm("decide", "rule one: the tower is whole", "--cites", "the user's steer 2026-10-30",
+                "--check", "python3 plugin/tests/run.py test_genesis")
+        out = json.loads(self.fm("night", "--dry-run", "--only", "steer checks", "--json").stdout)
+        self.assertEqual([(j["name"], j["usd"]) for j in out["jobs"]], [("steer checks", 0.0)])  # free
+        res = json.loads(self.fm("night", "--only", "steer checks", "--json").stdout)
+        ran = res["ran"][0]
+        self.assertEqual(ran["name"], "steer checks")
+        self.assertIn("rule one", ran["tail"])  # the report names the rule
+        self.assertNotEqual(ran["exit"], 0)
+        p = c.find_project(self.repo)
+        self.assertEqual(len([b for b in c.load_briefs(p) if b.title.startswith("The user's rule no longer holds")]), 1)
+
     def test_gardening_jobs_are_listed_and_accepted(self):  # T-1071
         out = json.loads(self.fm("night", "--dry-run", "--only", "compost", "--json").stdout)
         self.assertEqual([j["name"] for j in out["jobs"]], ["compost"])

@@ -2431,6 +2431,51 @@ class GenesisSweep(ForemanTestCase):
         r = self.sweep()
         self.assertEqual(r["verdict"], "clean", r["rows"])
 
+    def _runner(self, code, say=""):
+        os.makedirs(os.path.join(self.repo, "plugin", "tests"), exist_ok=True)
+        with open(os.path.join(self.repo, "plugin", "tests", "run.py"), "w") as f:
+            f.write(f"import sys\nsys.stderr.write({say!r})\nsys.exit({code})\n")
+
+    def _steer_fixes(self):
+        import fmcore as c
+        return [b for b in c.load_briefs(self.p, include_archive=True) if b.title.startswith("The user's rule no longer holds")]
+
+    def test_a_failing_steer_check_becomes_one_fix_per_rule_and_commit(self):
+        # T-2350: the user's rule broke: a FIX naming the check and its output; the same failure at the same commit adds none
+        import subprocess
+        import fmgenesis
+        tower_file(fmgenesis.home(self.p), "exam.jsonl", line("r1", 1, ["a"]))
+        self._runner(1, "FAIL: test_rule_one broke")
+        self.fm("decide", "rule one: coverage cells name a file", "--cites", "user steer 2026-10-30",
+                "--check", "python3 plugin/tests/run.py test_genesis")
+        self.fm("decide", "rule two: no check yet", "--cites", "user steer 2026-10-30")  # a missing check stays a doctor line
+        self.sweep()
+        fixes = self._steer_fixes()
+        self.assertEqual(len(fixes), 1, [b.title for b in fixes])
+        self.assertEqual(fixes[0].type, "FIX")
+        self.assertIn("rule one", fixes[0].title)
+        raw = fixes[0].section("Raw request")
+        self.assertIn("python3 plugin/tests/run.py test_genesis", raw)
+        self.assertIn("FAIL: test_rule_one broke", raw)
+        self.sweep()
+        self.assertEqual(len(self._steer_fixes()), 1)  # same rule, same commit: nothing more
+        self.fm("task", "drop", fixes[0].id, "done elsewhere")
+        self.sweep()
+        self.assertEqual(len(self._steer_fixes()), 1)  # closed or open, the failure at this commit is one task
+        subprocess.run(["git", "-C", self.repo, "commit", "-q", "--allow-empty", "-m", "next"], check=True)
+        self.sweep()
+        self.assertEqual(len(self._steer_fixes()), 2)  # a new commit that still fails is news
+        self._runner(0)
+        subprocess.run(["git", "-C", self.repo, "commit", "-q", "--allow-empty", "-m", "fixed"], check=True)
+        self.sweep()
+        self.assertEqual(len(self._steer_fixes()), 2)  # a passing check files nothing
+
+    def test_the_doctors_cheap_pass_captures_nothing(self):
+        import fmdoctor
+        self.fm("decide", "rule one: no check", "--cites", "user steer 2026-10-30")
+        fmdoctor.check_steers(self.p)
+        self.assertEqual(self._steer_fixes(), [])
+
     def test_a_reach_problem_turns_the_sweep_red(self):
         import fmgenesis
         from unittest import mock

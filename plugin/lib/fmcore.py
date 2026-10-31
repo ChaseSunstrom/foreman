@@ -3327,11 +3327,11 @@ def check_argv(cmd):
                      f"not {plain(cmd)[:120]!r}")
 
 
-def steer_checks(p, run=True, pending=True, timeout=900):
+def steer_checks(p, run=True, pending=True, timeout=900, fails=None):
     """T-2167: one line per unsettled decision row cited from a user steer that has no [check: …], or (run) whose check
     fails, or (pending) whose check waits on a task; a check several rules share runs once. run=False only looks for
     missing checks (cheap, for fm doctor). Only a later row that itself cites a user steer settles a steer rule, so a
-    session can't retire the user's rule with its own --reverses.
+    session can't retire the user's rule with its own --reverses. `fails` (a list) collects each failed check.
     ponytail: a check is any allowlisted test set, not one tied to its rule; a cold read of the pair is the upgrade."""
     import subprocess  # lazy: the hooks import fmcore and never run a check (T-2023)
     parsed, out, ran = _decision_rows(p), [], {}
@@ -3361,6 +3361,8 @@ def steer_checks(p, run=True, pending=True, timeout=900):
                 ran[cmd] = fit(plain(str(e)), 120)
         if ran[cmd] != "exit 0":
             out.append(f"{date} {name}: check `{cmd}` → {ran[cmd]}")
+            if fails is not None:  # T-2350: a check that ran and failed: (the rule's full text, its name, the check, why)
+                fails.append((decision, name, cmd, ran[cmd]))
     return out
 
 
