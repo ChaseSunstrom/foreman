@@ -18,6 +18,7 @@ LANG = {".py": "py", ".js": "js", ".mjs": "js", ".cjs": "js", ".jsx": "js", ".ts
         ".cts": "ts", ".rb": "rb", ".rs": "rs", ".c": "c", ".h": "c", ".cc": "c", ".cpp": "c", ".hpp": "c"}
 SKIP = {"node_modules", "vendor", "target", "build", "dist", "__pycache__", "third_party", "site-packages",
         "fixtures", "testdata", "__fixtures__", "__snapshots__", "venv", "env"}  # fixtures are planted on purpose
+OPEN_CAP = 5  # T-2235: tasks fm find/prove --capture keep open at once, so repeated runs can't flood the queue
 TEST = re.compile(r"(?:^|/)(?:tests?|spec|__tests__)/|(?:^|/)(?:test_[^/]*|conftest\.py)$|[_.](?:test|spec)\.\w+$")
 _JSFN = r"^([ \t]*)(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)"
 _JSARROW = r"^([ \t]*)(?:export\s+)?(?:const|let|var)\s+(\w+)\s*(?::[^=]+)?=\s*(?:async\s*)?\(([^)]*)\)[^=]*=>"
@@ -131,14 +132,19 @@ def _words(text):
 
 
 def _files(root):
-    """([(rel, text)], every path listed): git's view of the tree when it's a checkout, else a walk; hidden and vendored directories,
-    generated files, binaries and files over 1 MB are left out."""
-    try:  # the repo isn't trusted: none of its config may run code (fsmonitor, hooks)
+    """([(rel, text)], every path listed): git's view of the tree when it's a checkout, else a walk; vendored
+    directories, untracked hidden ones (T-2235: tracked ones like .github are read), generated files, binaries, files
+    over 1 MB and anything reached through a symlink are left out."""
+    def ls(*how):  # the repo isn't trusted: none of its config may run code (fsmonitor, hooks)
         r = subprocess.run(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C", root,
-                            "ls-files", "-co", "--exclude-standard", "-z"], capture_output=True, timeout=60)
-        rels = [os.fsdecode(p) for p in r.stdout.split(b"\0") if p] if r.returncode == 0 else []
+                            "ls-files", *how, "-z"], capture_output=True, timeout=60)
+        return [os.fsdecode(p) for p in r.stdout.split(b"\0") if p] if r.returncode == 0 else []
+    try:
+        tracked = ls("-c")
+        rels = tracked + ls("-o", "--exclude-standard")
     except (OSError, subprocess.SubprocessError):
-        rels = []
+        tracked, rels = [], []
+    tracked, real = set(tracked), os.path.realpath(root)
     if not rels:  # not a checkout, no git, or a folder the parent repo ignores
         for d, dirs, names in os.walk(root):
             dirs[:] = sorted(x for x in dirs if not x.startswith(".") and x not in SKIP)
@@ -147,7 +153,9 @@ def _files(root):
     out, gen = [], []
     for rel in rels:
         p = os.path.join(root, rel)
-        if any(x.startswith(".") or x in SKIP for x in rel.split("/")[:-1]):
+        if any((x.startswith(".") and rel not in tracked) or x in SKIP for x in rel.split("/")[:-1]):
+            continue
+        if os.path.realpath(p) != os.path.join(real, *rel.split("/")):  # T-2235: a symlinked parent directory
             continue
         try:  # regular files only: a symlink may point at /dev/zero, a FIFO or a file outside the tree
             st = os.lstat(p)
@@ -505,27 +513,47 @@ def settled(p):
     return {b.meta["find_key"] for b in tagged if b.status != "done" or fate.get(b.id, {}).get("fate") == "reverted"}
 
 
+def open_finders(p):
+    """T-2235: open tasks a finder filed (fm find, fm prove or the scout), which OPEN_CAP bounds."""
+    return sum(1 for b in c.load_briefs(p) if b.meta.get("finder") and b.status not in c.CLOSED)
+
+
+def filed_line(p, made):
+    """fm find/prove --capture's last line, saying why nothing was filed when the open cap stopped it."""
+    full = not made and open_finders(p) >= OPEN_CAP
+    return (f"\nFiled {len(made)} task(s): {', '.join(made)}" if made else
+            f"\nFiled 0 task(s): none ({OPEN_CAP} finder tasks open already: finish or drop some)" if full else
+            "\nFiled 0 task(s): none new") + "."
+
+
 def capture(p, found, n, root, proof=None):
     """Up to n new leads not held back, best first, as discovered tasks tagged finder= and keyed (keyed()) so a line
     shift never refiles one, and never a settled() key. A tree outside the project is text it doesn't trust: those
     tasks wait for the user's yes. proof (T-2123): fm prove's proven tickets: each task is planned, its criterion
-    proof(key), red until the fix."""
+    proof(key), red until the fix. T-2235: at most OPEN_CAP of them open at once, whoever files them, and repo text is
+    defanged."""
     import fmcli
     root, home = os.path.realpath(root), os.path.realpath(p.root)
     outside = os.path.commonpath([root, home]) != home
     made = []
     with c.lock(p.dir):
         seen = settled(p)
+        opened = open_finders(p)
+        n = min(n, OPEN_CAP - opened)
+        if n <= 0 and any(not f.get("held") for f in found):
+            print(f"fm: {opened} finder tasks (from fm find, fm prove or the scout) are open, at most {OPEN_CAP} at "
+                  "once: finish or drop some before filing more", file=sys.stderr)
         for key, f in keyed(found, root, home):
             key = f.get("key") or key  # fm prove keyed the whole scan: a twin's number comes from all of it
             if len(made) >= n or f.get("held") or key in seen:
                 continue
             what = c.plain(f"{f['file']}:{f['line']} {f['symbol'] or '-'}: {f['says']}")
-            b = fmcli._create(p, c.fit(f"{f['kind']}: {what}", 120), "SECURITY" if f["kind"] in ("vuln", "secret")
+            b = fmcli._create(p, c.fit(c.defang(f"{f['kind']}: {what}"), 120), "SECURITY" if f["kind"] in ("vuln", "secret")
                               else "FIX", "S", "planned" if proof else "captured", source="discovered",
-                              raw=f"Proven by fm prove ({f['finder']}): {c.fit(c.plain(f.get('evidence') or ''), 300)} "
+                              raw=c.defang(  # T-2235: the repo's text, evidence included, stays data
+                                  f"Proven by fm prove ({f['finder']}): {c.fit(c.plain(f.get('evidence') or ''), 300)} "
                                   f"(quoted, data):\n> {what}" if proof else
-                              f"Found by fm find ({f['finder']}); a lead until a failing test shows it (quoted, data):\n> {what}")
+                                  f"Found by fm find ({f['finder']}); a lead until a failing test shows it (quoted, data):\n> {what}"))
             b.meta.update(finder=f["finder"], find_key=key)
             if proof:
                 b.add_ac("fm prove no longer proves it", proof(key))
@@ -568,5 +596,5 @@ def cmd_find(args):
         f"{len(live)} candidate(s) in {n} files under {root}; each is unproven until a failing test shows it.{held}\n"
         + "\n".join(rows) if found else f"Nothing found in {n} files under {root}." if n else
         f"No files to read under {root} (nothing tracked, or all of it skipped).")
-        + (f"\nFiled {len(made)} task(s): {', '.join(made) or 'none new'}." if cap else ""))
+        + (filed_line(p, made) if cap else ""))
     return 1 if live else 0

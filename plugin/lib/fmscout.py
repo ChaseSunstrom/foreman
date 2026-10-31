@@ -387,8 +387,8 @@ def capture(p, findings, dry=False):
             if dry:
                 made.append(f.key)
                 continue
-            b = fmcli._create(p, c.fit(f.title, 120), f.type, f.tier, "captured", raw=f"Found by fm scout: {f.why}",
-                              source="scout")
+            b = fmcli._create(p, c.fit(c.defang(f.title), 120), f.type, f.tier, "captured",  # T-2235: repo text
+                              raw=f"Found by fm scout: {c.defang(f.why)}", source="scout")
             if f.confirm:
                 b.meta.update(confirm=True, confirm_why=f.confirm)
             if f.confirm or f.meta:
