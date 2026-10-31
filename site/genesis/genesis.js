@@ -266,7 +266,9 @@
     [["foreman", L.foreman], ["plain", L.plain]].forEach(function (s) {
       var x = s[1];
       tr = t.appendChild(document.createElement("tr"));
-      [s[0], "true done " + q(x.true_done_same) + " of " + L.goals, "false done " + q(x.false_done), "regressions " + q(x.regressions),
+      [s[0], "true done " + q(x.true_done_same) + " of " + L.goals,
+        "checks " + q(x.checks_same) + " of " + q(x.checks_total),  /* T-2326: partial credit, so a tie on true done still reads */
+        "false done " + q(x.false_done), "regressions " + q(x.regressions),
         "cost " + (typeof x.cost === "number" ? "$" + x.cost.toFixed(2) : "?")].forEach(function (v) {
         tr.appendChild(document.createElement("td")).textContent = v;
       });

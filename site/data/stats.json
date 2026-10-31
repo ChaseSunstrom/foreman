@@ -1,17 +1,17 @@
 {
- "generated": "2026-10-29",
+ "generated": "2026-10-31",
  "totals": {
-  "tasks_done": 1290,
-  "evidence": 5394,
-  "proofs": 435,
-  "commits": 1029,
-  "gate_runs": 839,
-  "subagents": 1029,
-  "lanes_merged": 306,
-  "findings": 1269,
-  "guard_blocks": 466,
-  "captures": 1056,
-  "lessons_shown": 1544
+  "tasks_done": 1504,
+  "evidence": 6528,
+  "proofs": 578,
+  "commits": 1205,
+  "gate_runs": 936,
+  "subagents": 1327,
+  "lanes_merged": 385,
+  "findings": 1961,
+  "guard_blocks": 524,
+  "captures": 1257,
+  "lessons_shown": 1950
  },
  "daily": [
   {
@@ -192,34 +192,56 @@
   },
   {
    "day": "2026-10-29",
-   "FEATURE": 35,
-   "FIX": 56,
+   "FEATURE": 36,
+   "FIX": 64,
    "CLEAN": 9,
    "PERFORMANCE": 15,
    "SECURITY": 3,
    "RESEARCH": 0,
    "lanes": 13,
-   "evidence": 413
+   "evidence": 452
+  },
+  {
+   "day": "2026-10-30",
+   "FEATURE": 52,
+   "FIX": 38,
+   "CLEAN": 5,
+   "PERFORMANCE": 1,
+   "SECURITY": 2,
+   "RESEARCH": 1,
+   "lanes": 6,
+   "evidence": 499
+  },
+  {
+   "day": "2026-10-31",
+   "FEATURE": 68,
+   "FIX": 32,
+   "CLEAN": 1,
+   "PERFORMANCE": 1,
+   "SECURITY": 4,
+   "RESEARCH": 0,
+   "lanes": 73,
+   "evidence": 596
   }
  ],
  "tiers": {
-  "S": 655,
-  "M": 581,
-  "L": 54
+  "S": 733,
+  "M": 700,
+  "L": 71
  },
  "types": {
-  "FEATURE": 616,
-  "FIX": 410,
-  "CLEAN": 71,
-  "PERFORMANCE": 51,
-  "SECURITY": 113,
-  "RESEARCH": 29
+  "FEATURE": 737,
+  "FIX": 488,
+  "CLEAN": 77,
+  "PERFORMANCE": 53,
+  "SECURITY": 119,
+  "RESEARCH": 30
  },
  "guard": {
-  "core": 174,
-  "brief": 142,
-  "state-direct": 48,
-  "system": 28,
+  "core": 199,
+  "brief": 162,
+  "state-direct": 55,
+  "system": 33,
   "plugin": 27,
   "rm-outside": 22,
   "pipe-shell": 11,
@@ -227,30 +249,30 @@
  },
  "findings": {
   "lenses": {
-   "adversary": 342,
-   "edge": 309,
-   "maintainer": 203,
-   "self": 168,
-   "intent": 154,
-   "operator": 60
+   "edge": 513,
+   "adversary": 476,
+   "maintainer": 314,
+   "intent": 276,
+   "self": 221,
+   "operator": 122
   },
   "severity": {
-   "LOW": 774,
-   "MEDIUM": 396,
-   "HIGH": 61
+   "LOW": 1228,
+   "MEDIUM": 614,
+   "HIGH": 81
   }
  },
  "subagents": {
-  "fm-builder": 525,
-  "fm-reviewer": 311,
-  "fm-recon": 92,
-  "general-purpose": 78,
-  "fm-scout": 8,
-  "Explore": 8
+  "fm-builder": 693,
+  "fm-reviewer": 415,
+  "fm-recon": 112,
+  "general-purpose": 80,
+  "fm-scout": 11,
+  "claude-code-guide": 8
  },
  "gate_seconds": {
-  "runs": 839,
-  "median": 132.2
+  "runs": 936,
+  "median": 172.7
  },
  "releases": [
   {
@@ -368,7 +390,7 @@
  "code": {
   "model_tests": 52,
   "endpoints": 9,
-  "tests": 4274
+  "tests": 4918
  },
  "bench": {
   "SessionStart": {
