@@ -264,6 +264,7 @@ class NoBareNulls(unittest.TestCase):
             self.assertEqual(p.returncode, 0, p.stderr)
             stats = json.loads(read_text(os.path.join(ROOT, "site", "data", "stats.json")))
             names = {c["case"] for d in stats["duels"] for c in d.get("cases") or []}
+            self.assertTrue(names, "stats.json has no duel cases, so the check below would pass empty")
             bench = os.path.join(tmp, "features", "benchmarks.html")
             if not os.path.exists(bench):
                 bench = os.path.join(tmp, "features", "benchmarks", "index.html")
