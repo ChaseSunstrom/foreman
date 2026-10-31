@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm genesis exam`: G-sweep scenarios plant three defects (a vulnerability, an untested helper, a doc gap) and a draft closes one only when its §2 has a capability with a matching exam kind for each, each miss named; G-line and G-none still plant one (T-2177).
 - `fm prove --migration [PATH]` runs a repo's plain SQL up/down migrations up, down and up again on a throwaway sqlite copy, compares the schema each time and refuses untrusted trees; alembic, django and prisma are recognized by name, not yet run (T-2288).
 - Foreman predicts each task's active minutes and attempts at focus from the median of its last 30 same-type, same-tier closes, scores them at close, shows per-tier calibration in `fm outcomes --calibration`, and `fm next` notes once when a task passes 3x its prediction (T-2290).
 - `fm lane brief` picks the builder model from history: opus when sonnet's lanes in that tier were reworked (a later fix, a revert, a lost outcome) 0.3+ more often than opus's, with 5+ samples each, else sonnet; `--model` overrides; the model is recorded on the brief (T-2291).
