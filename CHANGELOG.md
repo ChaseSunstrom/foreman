@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- foreman-ui plugin tests: the four tests that ran near the engine's 5 s default cap now take `{ timeoutMs: 60000 }`, so a loaded host no longer fails a lane's affected run by chance (T-2293).
 - `fm exam grade` splits false alarms by scenario kind (`false_by_kind`, overall and per split, and "false alarms by kind" in the summary), so a clean scenario's zero-findings bar reads directly (T-2299).
 - Friction digest: the guard example shows the line the guard judged (data-heredoc bodies dropped, the full command found in the session transcript) with the rule's hint, and give-up lines name each task's block reason (T-2280, T-2295, T-2296).
 - `fm doctor` times each check: every result carries its wall ms (null when unmeasured), the hook benchmark is charged to hook latency, `--json` adds the three slowest and `-v` prints them, so a slower doctor names its cause (T-2279).
