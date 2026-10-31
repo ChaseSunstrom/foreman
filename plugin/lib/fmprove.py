@@ -179,14 +179,23 @@ def remember(root):
     c.write_atomic(os.path.join(c.state_dir(), TRUST), json.dumps(sorted(_trusted() | {os.path.realpath(root)})))
 
 
-def _pick(root, code, flagged):
+def _t(end):
+    """A suite run's timeout: RUN_T, or the whole seconds left before end (a clock time), at least 1. A run can still
+    outlast end by the 10 s run_command waits to collect a killed run's output."""
+    return max(1, min(RUN_T, int(end - time.time()))) if end else RUN_T
+
+
+def _pick(root, code, flagged, end=None):
     """(suite, control, '') for the first command that is green untouched and runs the control, else (None, None, why
-    each failed)."""
+    each failed). end: the clock time fm prove's budget runs out; no run starts or outlasts it."""
     control, tried = _control(code, flagged), []
     for cmd in _suites(root, code):
+        if end and time.time() >= end:
+            tried.append("fm prove's budget ran out before `" + cmd + "` ran")
+            break
         tmp, dst = _copy(root)
         try:
-            ran, out = c.run_command(dst, cmd, timeout=RUN_T, env=_env(tmp))
+            ran, out = c.run_command(dst, cmd, timeout=_t(end), env=_env(tmp))
             if ran:
                 tried.append(f"`{cmd}` isn't green untouched (exit {ran}: {_last(out)})")
                 continue
@@ -195,7 +204,7 @@ def _pick(root, code, flagged):
                 tried.append(f"`{cmd}` is green, but no function the tests name could be instrumented to show it runs "
                              "code")
                 continue
-            ran, out = c.run_command(dst, cmd, timeout=RUN_T, env=_env(tmp))
+            ran, out = c.run_command(dst, cmd, timeout=_t(end), env=_env(tmp))
             if ran or not os.path.exists(mark):
                 tried.append(f"`{cmd}` never ran {control[2]} (which the tests name), so it can't show a function goes "
                              "unrun")
@@ -206,7 +215,7 @@ def _pick(root, code, flagged):
     return None, None, "; ".join(tried) or "no test command found here (fm check add '<cmd>' names one)"
 
 
-def _untested(root, f, suite, control):
+def _untested(root, f, suite, control, end=None):
     """One untested candidate, instrumented beside the control on a fresh copy: (verdict, evidence)."""
     import fmfind
     tmp, dst = _copy(root)
@@ -219,7 +228,7 @@ def _untested(root, f, suite, control):
         sym = json.dumps(f["symbol"])
         if not done[mine]:
             return "lead", f"couldn't instrument {sym} safely here (a one-line or expression-bodied definition)"
-        ran, out = c.run_command(dst, suite, timeout=RUN_T, env=_env(tmp))
+        ran, out = c.run_command(dst, suite, timeout=_t(end), env=_env(tmp))
         if ran:
             return "lead", f"`{suite}` failed with the markers in place (exit {ran}: {_last(out)})"
         if not os.path.exists(theirs):
@@ -256,15 +265,15 @@ def prove(root, found, limit=10, deadline=DEADLINE, run=True):
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
             t.update(verdict="proven" if again else "lead", fixed=not again,
-                     evidence="re-found on a fresh copy by the same deterministic check: the tree itself holds it, not "
-                              "its surroundings" if again else
+                     evidence="re-found on a fresh copy by the same check (a re-find, not an outside proof): it reads "
+                              "only the tree" if again else
                               "not re-found on a fresh copy: it depends on something outside the tree")
         elif f["kind"] == "untested" and not run:
             t.update(verdict="lead", evidence=NO_RUN)
         elif f["kind"] == "untested":
             if suite is None and why is None:
-                suite, control, why = _pick(root, _code(root), flagged)
-            v, e = ("lead", why) if not suite else _untested(root, f, suite, control)
+                suite, control, why = _pick(root, _code(root), flagged, t0 + deadline)
+            v, e = ("lead", why) if not suite else _untested(root, f, suite, control, t0 + deadline)
             t.update(verdict=v, evidence=e, fixed=e.startswith(RAN))
         else:
             t.update(verdict="lead", evidence=f"a {f['kind']} needs a failing test that shows it before it counts")

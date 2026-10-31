@@ -3,13 +3,14 @@ that doesn't exist, imports no manifest declares, SQL built from a parameter, li
 randomness in tests, credentials. Each is a candidate until proven; every finder reports nothing on every clean exam
 render (test_find)."""
 import bisect
-import functools
+import io
 import json
 import os
 import re
 import stat
 import subprocess
 import sys
+import tokenize
 import tomllib
 
 import fmcore as c
@@ -64,7 +65,19 @@ BUILTIN = set("printf fprintf snprintf sprintf puts putchar malloc calloc reallo
               "fopen fclose fread fwrite fgets getchar perror strchr strrchr strstr isalpha isdigit isspace tolower toupper "
               "puts print p pp raise require format sprintf loop lambda proc Integer Float String Array Hash rand "
               "attr_reader attr_accessor include extend private".split())
-PY_ALIAS = {"bs4": "beautifulsoup4", "pil": "pillow", "cv2": "opencv", "sklearn": "scikit-learn", "gi": "pygobject"}
+PY_ALIAS = {"bs4": "beautifulsoup4", "pil": "pillow", "cv2": "opencv", "sklearn": "scikit-learn", "gi": "pygobject",
+            # import name (lower case) → distribution, a fixed table: never the host's installed packages (T-2237)
+            "yaml": "pyyaml", "dateutil": "python-dateutil", "google": "protobuf", "attr": "attrs", "jwt": "pyjwt",
+            "magic": "python-magic", "serial": "pyserial", "crypto": "pycryptodome", "cryptodome": "pycryptodomex",
+            "dotenv": "python-dotenv", "git": "gitpython", "markdown": "markdown", "mysqldb": "mysqlclient",
+            "psycopg2": "psycopg2-binary", "usb": "pyusb", "zmq": "pyzmq", "skimage": "scikit-image",
+            "openssl": "pyopenssl", "docx": "python-docx", "pptx": "python-pptx", "slugify": "python-slugify",
+            "jose": "python-jose", "multipart": "python-multipart", "socks": "pysocks", "wx": "wxpython",
+            "pkg_resources": "setuptools", "bson": "pymongo", "fitz": "pymupdf", "lxml": "lxml", "ldap": "python-ldap",
+            "nacl": "pynacl", "engineio": "python-engineio", "socketio": "python-socketio", "discord": "discord-py",
+            "telegram": "python-telegram-bot", "jenkins": "python-jenkins", "consul": "python-consul",
+            "snappy": "python-snappy", "levenshtein": "python-levenshtein", "tomli_w": "tomli-w", "ruamel": "ruamel-yaml",
+            "yaml_include": "pyyaml-include", "win32api": "pywin32", "win32con": "pywin32", "pythoncom": "pywin32"}
 
 
 class Src:
@@ -73,11 +86,26 @@ class Src:
         self.lines = [x if len(x) <= 2000 else "" for x in text.split("\n")]  # minified or hostile: data, not code
         self.lang, self.test = LANG[os.path.splitext(rel)[1].lower()], bool(TEST.search(rel))
         self.instr, quote = set(), None  # Python lines inside a triple-quoted string: code there is data
-        for i, line in enumerate(self.lines if self.lang == "py" else ()):
-            if quote:
-                self.instr.add(i)
-            for m in re.finditer(r'"""|\'\'\'', line):
-                quote = m.group() if quote is None else None if m.group() == quote else quote
+        opens = [getattr(tokenize, n, None) for n in ("FSTRING_START", "TSTRING_START")]  # 3.12+ / 3.14+
+        closes = [getattr(tokenize, n, None) for n in ("FSTRING_END", "TSTRING_END")]
+        try:  # a string token over several lines: its later lines are data (tokenize parses, never runs, the text)
+            if self.lang == "py" and any(len(x) > 2000 for x in text.split("\n")):
+                raise ValueError("a minified line: tokenizing it costs a token per character")
+            starts = []  # rows where the open f/t-strings began, nesting-aware
+            for t in tokenize.generate_tokens(io.StringIO(text).readline) if self.lang == "py" else ():
+                if t.type in opens:
+                    starts.append(t.start[0])
+                elif t.type in closes and starts:
+                    self.instr.update(range(starts.pop(), t.end[0]))
+                elif t.type == tokenize.STRING and t.end[0] > t.start[0]:
+                    self.instr.update(range(t.start[0], t.end[0]))  # 1-based rows: start..end-1 are 0-based 2nd..last
+        except (tokenize.TokenError, SyntaxError, ValueError):  # unparseable: count the marks instead
+            self.instr.clear()
+            for i, line in enumerate(self.lines):
+                if quote:
+                    self.instr.add(i)
+                for m in re.finditer(r'"""|\'\'\'', line):
+                    quote = m.group() if quote is None else None if m.group() == quote else quote
         self.defs = []  # (line, indent, name, params)
         for i, line in enumerate(self.lines):
             if i in self.instr:
@@ -304,15 +332,6 @@ def _norm(name):
     return re.sub(r"[-_.]+", "-", name.lower())
 
 
-@functools.lru_cache(maxsize=1)
-def _dists():
-    import importlib.metadata
-    try:
-        return importlib.metadata.packages_distributions()
-    except Exception:  # noqa: BLE001 — a broken install's metadata never stops a scan
-        return {}
-
-
 def _manifest(b, text):
     """The package names one manifest declares."""
     names = set()
@@ -417,9 +436,9 @@ def _deps(root, files, code, rels):
                     continue
             elif s.lang == "py":
                 alias = _norm(PY_ALIAS.get(mod.lower(), "")) or None
-                cands = {n, alias} | {_norm(x) for x in _dists().get(mod, [])}
+                cands = {n, alias}
                 # ponytail: substring match (yaml in pyyaml) can hide an undeclared import (req vs requests);
-                # a full import-name → distribution table if a miss shows up in the exam
+                # grow PY_ALIAS if a miss shows up in the exam
                 if any(x and (x in declared or len(x) >= 3 and any(x in d for d in declared)) for x in cands):
                     continue
             elif n in declared:
