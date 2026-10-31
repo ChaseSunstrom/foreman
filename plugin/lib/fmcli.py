@@ -785,6 +785,7 @@ def cmd_task(args):
         b, _ = mutate(p, args.id, done, "task_done", logged)
         import fmoutcomes
         fmoutcomes.record_close(p, logged)  # T-1061
+        fmoutcomes.maintain(p)  # T-2337: the calibration ledger's due outcomes and bar check, each close
         if b.meta.get("batch"):
             _settle_batch(p, b, done=True)
         chose = " ".join(b.section("Decision").split()) if b.type == "RESEARCH" else ""
@@ -3966,14 +3967,21 @@ def cmd_decide(args):
     _write_decision(p, args.decision, args.why, args.rejected, args.kind, args.reverses, args.task,
                     getattr(args, "revisited", None), revisit, cites=getattr(args, "cites", None),
                     check=getattr(args, "check", None))
+    note = ""
     if conf is not None:  # a stated confidence is a bet in the calibration ledger, scored when it's reversed or holds
-        import fmoutcomes
-        tb = c.find_brief(p, args.task) if args.task else None
-        fmoutcomes.bet(p, "decision", conf, task=args.task or None, key=args.decision.lower(),
-                       base=fmoutcomes.base_rate(fmoutcomes.outcomes(p), fmoutcomes._first_finish(p),
-                                                 tb.type if tb else None, tb.tier if tb else None))
+        try:
+            import fmoutcomes
+            tb = c.find_brief(p, args.task) if args.task else None
+            made = fmoutcomes.bet(p, "decision", conf, task=args.task or None, key=args.decision.lower(),
+                                  base=fmoutcomes.base_rate(fmoutcomes.outcomes(p), fmoutcomes._first_finish(p),
+                                                            tb.type if tb else None, tb.tier if tb else None))
+            if made is None:
+                note = " Its confidence was ignored: this decision already has a bet, and a bet is never rewritten."
+        except Exception as e:  # a ledger doesn't lose the decision just written
+            note = f" Its confidence was not recorded ({c.fit(str(e), 80)})."
     out(args, {"decision": args.decision},
-        f"Decision recorded in {path}." + (" Its sunset is already expired." if sunset and sunset <= c.now()[:10] else ""))
+        f"Decision recorded in {path}." + (" Its sunset is already expired." if sunset and sunset <= c.now()[:10] else "")
+        + note)
 
 
 def _write_decision(p, decision, why="", rejected="", kind="reversible", reverses=None, task=None, settles=None,

@@ -416,17 +416,20 @@ class CalBase(Base):
             self.fm("task", "set", tid, f"confidence={conf}")
         return tid
 
-    def seed(self, kind, stated, held, n, base=None, tier="S", typ="FEATURE", prefix="s"):
-        """n scored bets of one kind and stated value, `held` of them held (rows as fm writes them)."""
+    def seed(self, kind, stated, held, n, base=None, tier="S", typ="FEATURE", prefix="s", tasks=False, src=None):
+        """n scored bets of one kind and stated value, `held` of them held (rows as fm writes them). tasks: the bets
+        belong to tasks X-0.. (one close each, whatever its kinds); src: what scored them (a task or choice bet is
+        scored by survival, the fm outcomes signal, unless said otherwise)."""
         path = os.path.join(self.p.dir, "calibration.jsonl")
+        src = src or ("survival" if kind in ("task", "choice") else "mark")
         with open(path, "a", encoding="utf-8") as f:
             for i in range(n):
                 bid = f"{prefix}{kind}{stated}-{i}"
                 f.write(json.dumps({"ts": c.now(), "id": bid, "kind": kind, "stated": stated, "base": base,
-                                    "task": None, "key": bid, "files": [], "tree": None, "tier": tier,
-                                    "type": typ}) + "\n")
+                                    "task": f"X-{i}" if tasks else None, "key": bid, "files": [], "tree": None,
+                                    "tier": tier, "type": typ}) + "\n")
                 f.write(json.dumps({"ts": c.now(), "of": bid, "outcome": "held" if i < held else "missed",
-                                    "by": "seeded"}) + "\n")
+                                    "by": "seeded", "src": src}) + "\n")
 
     def cal(self, *args):
         return json.loads(self.fm("calibration", "--json", *args).stdout)
@@ -439,7 +442,7 @@ class CalBase(Base):
         return c.load_briefs(self.p)[-1].id
 
 
-class CalibrationLedger(CalBase):
+class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning has one
     def test_a_stated_confidence_writes_one_write_once_row_per_kind(self):
         first = self.done("Earlier 0")  # earlier closes: the base rate is their held-on-first-finish share (2 of 3)
         self.done("Earlier 1")
@@ -553,6 +556,55 @@ class CalibrationLedger(CalBase):
         self.assertFalse(hasattr(fmoutcomes, "calibration"))
         self.assertFalse(hasattr(fmoutcomes, "calibration_lines"))
 
+    def test_a_bet_stated_after_the_task_closed_is_never_recorded(self):
+        tid = self.done("Closed already")
+        self.fm("task", "set", tid, "confidence=90", check=False)
+        self.assertEqual(self.bets(), [], "a hindsight bet can't count")
+        self.fm("task", "assume", tid, "add", "it was fine (90%)", check=False)
+        self.assertEqual(self.bets(), [])
+
+    def test_a_bet_stated_after_the_first_finish_of_an_open_task_is_never_recorded(self):
+        self.fm("task", "new", "Failing", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        tid = c.load_briefs(self.p)[-1].id
+        c.log_event(self.p, "finish", task=tid, data={"failed": ["x"]})
+        self.fm("task", "set", tid, "confidence=90")
+        self.assertEqual(self.bets(), [], "it knew the first finish failed")
+
+    def test_a_decision_is_not_scored_against_its_own_reversal_event(self):
+        self.fm("decide", "Use Redis for sessions v2", "--reverses", "use redis for sessions", "--confidence", "80")
+        got = {r["key"]: r["outcome"] for r in fmoutcomes.scored(self.p)}
+        self.assertIsNone(got["use redis for sessions v2"], "its own --reverses words are not a later reversal")
+
+    def test_a_restated_decision_says_its_bet_was_ignored(self):
+        first = self.fm("decide", "Use Redis for sessions", "--confidence", "80")
+        self.assertNotIn("ignored", first.stdout + first.stderr)
+        again = self.fm("decide", "Use Redis for sessions", "--confidence", "60")
+        self.assertIn("ignored", again.stdout + again.stderr)
+        self.assertEqual([r["stated"] for r in self.bets("decision")], [80])
+
+    def test_record_stated_computes_nothing_when_nothing_is_stated(self):
+        from unittest import mock
+        self.fm("task", "new", "Silent", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        b = c.load_briefs(self.p)[-1]
+        with mock.patch.object(fmoutcomes, "outcomes", side_effect=AssertionError("outcomes() ran")), \
+                mock.patch.object(fmoutcomes, "_first_finish", side_effect=AssertionError("ran")), \
+                mock.patch.object(fmoutcomes, "_tree", side_effect=AssertionError("ran")):
+            fmoutcomes.record_stated(self.p, b)  # swallows errors, so look at the mocks' own calls
+            for name in ("outcomes", "_first_finish", "_tree"):
+                self.assertFalse(getattr(fmoutcomes, name).called, name)
+
+    def test_record_stated_skips_the_work_when_every_key_is_already_a_bet(self):
+        from unittest import mock
+        tid = self.planned(conf=90)
+        self.fm("focus", tid)
+        b = c.find_brief(self.p, tid)
+        with mock.patch.object(fmoutcomes, "outcomes") as outs:
+            fmoutcomes.record_stated(self.p, b)
+        outs.assert_not_called()
+        self.assertEqual(len(self.bets("task")), 1)
+
 
 class CalibrationBars(CalBase):
     def meta_bars(self):
@@ -573,25 +625,73 @@ class CalibrationBars(CalBase):
         self.assertRegex(out, r"Bars: research 80 · race 55", "a task bet 20 points over raises the research bar")
 
     def test_a_bar_only_rises_as_a_decide_row_and_a_registered_trial(self):
-        self.seed("race", 90, 10, 20)  # stated 90, held 50%: 40 points over
-        self.assertEqual(self.cal()["bars"], {"research": 70, "race": 65})
-        self.assertEqual(self.meta_bars()["race"], 65)
+        self.seed("choice", 90, 10, 20)  # stated 90, held 50% (by survival): 40 points over
+        self.assertEqual(self.cal()["bars"], {"research": 80, "race": 55})
+        self.assertEqual(self.meta_bars()["research"], 80)
         decisions = open(os.path.join(self.p.dir, "decisions.md"), encoding="utf-8").read()
-        self.assertRegex(decisions, r"race bar 55 → 65")
+        self.assertRegex(decisions, r"research bar 70 → 80")
         trials = fmtrials.load(self.p)
         self.assertEqual([t["moves"] for t in trials], ["brier"])
-        self.assertIn("race bar", trials[0]["what"])
+        self.assertIn("research bar", trials[0]["what"])
         self.fm("calibration")  # the same rows raise nothing twice
-        self.assertEqual((self.meta_bars()["race"], len(fmtrials.load(self.p))), (65, 1))
-        self.seed("race", 90, 10, 20, prefix="more")  # twenty fresh rows, still over: one more step
-        self.assertEqual(self.cal()["bars"]["race"], 75)
+        self.assertEqual((self.meta_bars()["research"], len(fmtrials.load(self.p))), (80, 1))
+        self.seed("choice", 90, 10, 20, prefix="more")  # twenty fresh rows, still over: one more step
+        self.assertEqual(self.cal()["bars"]["research"], 90)
+
+    def test_a_bar_is_raised_at_task_finish_without_fm_calibration_run(self):
+        self.seed("choice", 90, 10, 20)
+        self.assertEqual(self.meta_bars(), {}, "nothing has looked yet")
+        self.done("Close that triggers the check")
+        self.assertEqual(self.meta_bars().get("research"), 80)
+        self.assertRegex(open(os.path.join(self.p.dir, "decisions.md"), encoding="utf-8").read(),
+                         r"research bar 70 → 80")
+        self.assertEqual(len(fmtrials.load(self.p)), 1)
+
+    def test_only_survival_signals_move_a_bar_foremans_own_marks_only_score(self):
+        self.seed("race", 90, 10, 20)  # 40 points over, scored by Foreman's own race pick
+        self.seed("assumption", 90, 10, 20)
+        self.seed("decision", 90, 10, 20)
+        self.seed("task", 90, 10, 20, src="first_finish")  # a failed first finish: Foreman's own gate
+        data = self.cal()
+        self.assertEqual(data["bars"], {"research": 70, "race": 55}, "none of these raise a bar")
+        self.assertEqual(self.meta_bars(), {})
+        self.assertEqual(fmtrials.load(self.p), [])
+        self.assertEqual(data["scored"], 80, "they still score in the report")
+        self.assertRegex(self.fm("calibration").stdout, r"race 80–94%: n 20")
+        self.seed("task", 90, 10, 20, src="survival", prefix="surv")
+        self.assertEqual(self.cal()["bars"]["research"], 80, "a survival-scored task bet does")
+
+    def test_one_close_counts_once_toward_the_twenty_row_threshold(self):
+        self.seed("task", 90, 10, 20, tasks=True)  # twenty closes, each with a task bet ...
+        self.seed("choice", 90, 10, 20, tasks=True)  # ... and a choice bet: 40 rows, 20 closes
+        self.seed("task", 90, 10, 20, tasks=True, prefix="b")  # twenty more rows of the same twenty closes
+        self.assertEqual(self.cal()["bars"]["research"], 80)
+        self.assertEqual(self.cal()["bars"]["research"], 80, "ten closes can't raise it twice")
+        self.assertEqual(len(fmtrials.load(self.p)), 1)
 
     def test_a_bar_stops_at_ninety_and_a_small_gap_raises_nothing(self):
         c.update_meta(self.p, calibration_bars={"research": 85})
         self.seed("choice", 90, 10, 20)
         self.assertEqual(self.cal()["bars"]["research"], 90, "at most 10 points, at most 90")
-        self.seed("assumption", 70, 12, 20)  # stated 70, held 60%: 10 points, under the 15
+        self.seed("task", 70, 12, 20)  # stated 70, held 60%: 10 points, under the 15
         self.assertEqual(self.cal()["bars"]["research"], 90)
+        self.assertEqual(len(fmtrials.load(self.p)), 1)
+
+    def test_a_hand_set_bar_above_ninety_is_kept(self):
+        c.update_meta(self.p, calibration_bars={"research": 95})
+        self.assertEqual(self.cal()["bars"]["research"], 95)
+        self.seed("choice", 90, 10, 20)
+        self.assertEqual(self.cal()["bars"]["research"], 95, "never lowered, never raised past the cap")
+
+    def test_a_failed_trial_add_leaves_no_raise_behind(self):
+        from unittest import mock
+        self.seed("choice", 90, 10, 20)
+        with mock.patch.object(fmtrials, "add", side_effect=OSError("disk full")):
+            fmoutcomes.adjust_bars(self.p, fmoutcomes.bar_rows(fmoutcomes.scored(self.p)))
+        self.assertEqual(self.meta_bars(), {})
+        self.assertFalse(os.path.exists(os.path.join(self.p.dir, "decisions.md"))
+                         and "research bar" in open(os.path.join(self.p.dir, "decisions.md"), encoding="utf-8").read())
+        self.assertEqual(self.cal()["bars"]["research"], 80, "the next look raises it, with its trial")
         self.assertEqual(len(fmtrials.load(self.p)), 1)
 
     def test_an_underconfident_bucket_is_reported_once_for_the_final_report_and_the_bar_stays(self):
@@ -609,9 +709,7 @@ class CalibrationBars(CalBase):
         self.seed("task", 70, 14, 20, base=50, tier="M", prefix="m")  # stated .21, base .25: stated stays
         self.assertEqual(self.cal()["routes"], {"FEATURE S": 70})
         self.assertIn("FEATURE S: the base rate's 70% replaces the stated numbers", self.fm("calibration").stdout)
-        self.assertEqual(fmoutcomes.routed(self.p, "S", "FEATURE", 90), 70)
-        self.assertEqual(fmoutcomes.routed(self.p, "M", "FEATURE", 70), 70)
-        self.assertEqual(fmoutcomes.routed(self.p, "L", "FIX", 90), 90, "no scored rows: the stated number stands")
+        self.assertFalse(hasattr(fmoutcomes, "routed"), "routes() in the report is the only reader; no dead twin")
 
     def test_digest_reads_the_ledger_and_cost_still_runs(self):
         self.seed("task", 90, 14, 20, base=70)
@@ -620,7 +718,7 @@ class CalibrationBars(CalBase):
             self.assertNotIn("calibration_lines", f.read(), "fm cost reads the ledger, not the removed function")
 
     def test_a_trial_for_a_bar_grades_on_brier_and_reverts_when_nothing_improved(self):
-        self.seed("race", 90, 10, 20)
+        self.seed("choice", 90, 10, 20)
         self.cal()
         t = fmtrials.load(self.p)[0]
         later = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=t["by"] + 1)

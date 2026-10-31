@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import time
 
 import fmcore as c
@@ -459,8 +460,12 @@ def race(p, b, args):
         c.save_brief(p, b)
     c.log_event(p, "race_start", task=b.id, data={"other": nid})
     if conf is not None:  # the bet: side A (the original) wins; scored by fm lane pick
-        fmoutcomes.bet(p, "race", conf, task=b.id, key=f"{b.id}>{nid}", files=b.meta.get("scope") or [],
-                       base=fmoutcomes.base_rate(fmoutcomes.outcomes(p), fmoutcomes._first_finish(p), b.type, b.tier))
+        try:  # a ledger doesn't stop a race that has already started
+            fmoutcomes.bet(p, "race", conf, task=b.id, key=f"{b.id}>{nid}", files=b.meta.get("scope") or [],
+                           base=fmoutcomes.base_rate(fmoutcomes.outcomes(p), fmoutcomes._first_finish(p), b.type,
+                                                     b.tier))
+        except Exception as e:
+            print(f"fm: warning: the race bet was not recorded ({c.fit(str(e), 80)})", file=sys.stderr)
     quiet = argparse.Namespace(**{**vars(args), "json": True})
     try:
         with contextlib.redirect_stdout(io.StringIO()):  # the two briefs' own output; the launch lines follow

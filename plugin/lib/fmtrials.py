@@ -46,7 +46,7 @@ def grade(p, t, now=None):
     fmt = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")
     if t["moves"] == "brier":  # T-2337: a calibration bar moved; the metric is the Brier of bets stated before vs after
         import fmoutcomes
-        rows = [r for r in fmoutcomes.scored(p) if r["outcome"]]
+        rows = fmoutcomes.bar_rows(fmoutcomes.scored(p))  # the survival-scored rows, the only ones that moved the bar
         b = fmoutcomes.brier([r for r in rows if str(r["ts"]) < fmt(at)])
         a = fmoutcomes.brier([r for r in rows if fmt(at) <= str(r["ts"]) < fmt(due)])
         if b is not None and a is not None and a < b:
