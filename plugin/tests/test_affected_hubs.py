@@ -37,6 +37,21 @@ class AffectedHubs(ForemanTestCase):
         _, tests, _ = fmcli.affected(p)
         self.assertIn("tests/test_wiring.py", tests)
 
+    def test_a_hook_path_module_brings_test_core_for_its_import_budget(self):
+        # T-2307: a new top-level import in fmhooks.py passed the lane and failed only at ship (T-2305)
+        import fmcli
+        self.fm("init")
+        self.fm("check", "affected", "python3 -m pytest -q {tests}")
+        self.commit({"plugin/lib/fmhooks.py": "N = 1\n", "plugin/lib/fmother.py": "N = 1\n",
+                     "plugin/tests/test_core.py": "N = 1\n"}, "seed")
+        self.fm("task", "new", "note it", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s", "--focus")
+        p = c.find_project(self.repo, create=False)
+        for rel, want in (("plugin/lib/fmother.py", False), ("plugin/lib/fmhooks.py", True), ("plugin/lib/fmcore.py", True)):
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write("N = 2\n")
+            _, tests, _ = fmcli.affected(p)
+            self.assertEqual("plugin/tests/test_core.py" in tests, want, (rel, tests))
+
     def test_a_hub_file_that_once_turned_the_gates_red_brings_the_test_it_broke(self):
         # T-2148: MASTER.md co-changes with every task, so no pair links it, yet an edit to it broke test_docs (T-2147)
         import fmcli

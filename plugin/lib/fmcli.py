@@ -5105,7 +5105,8 @@ def _runnable(template, tests):
     return tests
 
 
-HUB_PAIRS = 10  # T-1467: more co-changed tests than this and a file's pairs are noise
+HOOK_BUDGET = (("plugin/lib/fmhooks.py", "plugin/lib/fmcore.py"), "plugin/tests/test_core.py")  # T-2307
+HUB_PAIRS = 10 # T-1467: more co-changed tests than this and a file's pairs are noise
 
 
 def affected(p, b=None, skipped=None):
@@ -5140,7 +5141,9 @@ def affected(p, b=None, skipped=None):
     if not template and not by:
         raise UsageError("no affected-tests command: fm check affected '<cmd with {tests} or {names}>'")
     broke = {t for f in changed for t in (m.get("broke") or {}).get(f, [])}  # T-2148: tests a file once turned red
-    every = sorted(set(fmmap.tests_for(m, sorted(changed))) | own | paired | broke)
+    # T-2307: a hook-path module's import budget is tested in test_core (LaterImports), which no map link names
+    budget = {HOOK_BUDGET[1]} if changed & set(HOOK_BUDGET[0]) and os.path.isfile(os.path.join(p.root, HOOK_BUDGET[1])) else set()
+    every = sorted(set(fmmap.tests_for(m, sorted(changed))) | own | paired | broke | budget)
     fill = lambda tpl, ts: tpl.replace("{tests}", " ".join(shlex.quote(t) for t in ts)).replace(  # noqa: E731
         "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in ts))
 
