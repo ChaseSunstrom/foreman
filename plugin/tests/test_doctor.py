@@ -861,10 +861,76 @@ class ScanCache(ForemanTestCase):
         else:
             os.environ["CLAUDE_CONFIG_DIR"] = self._saved[2]
 
-    def grow(self, path):
+    def mid_hour(self, *paths):
+        t = time.time() // 3600 * 3600 + 1800
+        for p in paths:
+            os.utime(p, (t, t))
+        return t
+
+    def grow(self, path, seconds=2 * 3600):  # default: the mtime crosses an hour boundary
         with open(path, "a") as f:
             f.write("{}\n")
-        os.utime(path, (time.time() + 5, time.time() + 5))
+        t = os.stat(path).st_mtime + seconds
+        os.utime(path, (t, t))
+
+    def test_an_append_within_the_hour_still_hits(self):
+        events = os.path.join(c.state_dir(), "events.jsonl")
+        os.makedirs(c.state_dir(), exist_ok=True)
+        with open(events, "w") as f:
+            f.write("{}\n")
+        self.mid_hour(events, self.transcript)
+        d.check_usage_burn()
+        d.check_unloaded_skills()
+        self.grow(events, 60)
+        self.grow(self.transcript, 60)
+        d.check_usage_burn()
+        d.check_unloaded_skills()
+        self.assertEqual(self.calls, {"burn": 1, "events": 1})
+
+    def test_the_forecast_is_keyed_on_the_hours_it_shows(self):
+        import fmbudget
+        saved, n = fmbudget.forecast, [0]
+
+        def fc(now=None):
+            n[0] += 1  # full_at moves with the clock; the hours before the reset shown don't
+            return {"seven_day": {"resets_at": 1_000_000.0, "full_at": 1_000_000.0 - 7200 + n[0]}}
+        fmbudget.forecast = fc
+        self.addCleanup(setattr, fmbudget, "forecast", saved)
+        d.check_usage_burn()
+        d.check_usage_burn()
+        self.assertEqual(self.calls["burn"], 1)
+
+    def test_an_odd_cache_file_recomputes(self):
+        path = os.path.join(c.state_dir(), "doctor-cache.json")
+        d.check_usage_burn()
+        with open(path, "w") as f:
+            f.write("[" * 100_000)  # T-1605 class: RecursionError, not ValueError
+        d.check_usage_burn()
+        self.assertEqual(self.calls["burn"], 2)
+        with open(path, "w") as f:
+            f.write("[]")
+        d.check_usage_burn()
+        self.assertEqual(self.calls["burn"], 3)
+        with open(path) as f:
+            good = json.load(f)["usage burn"]
+        for result in (["usage burn", "BOGUS", "x"], ["usage burn", "PASS", 5], "text"):
+            with open(path, "w") as f:
+                json.dump({"usage burn": {"key": good["key"], "result": result}}, f)
+            d.check_usage_burn()
+        self.assertEqual(self.calls["burn"], 6)
+
+    def test_a_cached_detail_is_plain_and_short(self):
+        d.check_usage_burn()
+        path = os.path.join(c.state_dir(), "doctor-cache.json")
+        with open(path) as f:
+            cache = json.load(f)
+        cache["usage burn"]["result"] = ["usage burn", "WARN", "a\x1b[31mb" + "x" * 5000]
+        with open(path, "w") as f:
+            json.dump(cache, f)
+        r = d.check_usage_burn()
+        self.assertEqual(self.calls["burn"], 1)
+        self.assertNotIn("\x1b", r.detail)
+        self.assertLessEqual(len(r.detail), 2000)
 
     def test_usage_burn_reuses_its_result_until_a_transcript_changes(self):
         first = d.check_usage_burn()

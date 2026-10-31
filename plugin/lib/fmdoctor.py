@@ -348,13 +348,14 @@ def check_frontmatter(plugin=PLUGIN):
     return Result("frontmatter", "FAIL" if bad else "PASS", "; ".join(bad) or "skills and read-only agents valid")
 
 
-def _stats(paths):
-    """[path, size, mtime_ns] per path, [path] for one that can't be stat'd: a changed file changes the list."""
+def _stats(paths, exact=False):
+    """[path, mtime floored to the hour] per path, [path] for one that can't be stat'd. The inputs are aggregates over
+    days that grow every turn, so up to an hour stale is fine; `exact` adds size and the ns mtime (SKILL.md files)."""
     out = []
     for p in sorted(paths):
         try:
             st = os.stat(p)
-            out.append([p, st.st_size, st.st_mtime_ns])
+            out.append([p, st.st_size, st.st_mtime_ns] if exact else [p, int(st.st_mtime // 3600)])
         except OSError:
             out.append([p])
     return out
@@ -362,22 +363,27 @@ def _stats(paths):
 
 def _cached(name, key, compute):
     """T-2298: the Result `compute` makes, reused from state/doctor-cache.json (JSON, never pickle) while `key` (the
-    inputs' stats plus the day) is unchanged. A missing, corrupt or odd cache recomputes; a failed write is ignored."""
+    inputs' coarse stats plus the day) is unchanged. A missing, oversized, corrupt or odd cache recomputes; a hit takes
+    only status and detail, cleaned; a failed write is ignored."""
     path = os.path.join(c.state_dir(), "doctor-cache.json")
     key = json.loads(json.dumps([time.strftime("%Y-%m-%d"), key]))  # as JSON round-trips it, for the comparison
-    cache = _load_json(path)
+    try:
+        with open(path, encoding="utf-8") as f:
+            cache = json.loads(f.read(65537))  # past 64 KB the cut text fails to parse: recompute
+    except (OSError, ValueError, RecursionError):
+        cache = None
     cache = cache if isinstance(cache, dict) else {}
     hit = cache.get(name)
-    if isinstance(hit, dict) and hit.get("key") == key and isinstance(hit.get("result"), list) \
-            and len(hit["result"]) == 3 and all(isinstance(x, str) for x in hit["result"]):
-        return Result(*hit["result"]), True
+    res = hit.get("result") if isinstance(hit, dict) and hit.get("key") == key else None
+    if isinstance(res, list) and len(res) == 3 and res[1] in ("PASS", "WARN", "FAIL") and isinstance(res[2], str):
+        return Result(name, res[1], c.fit(c.plain(res[2]), 2000))
     r = compute()
     cache[name] = {"key": key, "result": [r.name, r.status, r.detail]}
     try:
         c.write_atomic(path, json.dumps(cache))
     except OSError:
         pass
-    return r, False
+    return r
 
 
 UNLOADED_SESSIONS = 5  # T-1703: sessions that named a skill, none loading it, before doctor says so
@@ -393,14 +399,9 @@ def check_unloaded_skills(events=None, plugin=PLUGIN, n=UNLOADED_SESSIONS):
     names = sorted(s for s in os.listdir(skills) if os.path.isfile(os.path.join(skills, s, "SKILL.md"))) \
         if os.path.isdir(skills) else []
     if events is None:  # T-2298: the files c.global_events reads (rotated logs, events.jsonl) and each SKILL.md
-        logs = os.path.join(c.state_dir(), "logs")
-        try:
-            rotated = [os.path.join(logs, f) for f in os.listdir(logs) if f.startswith("events-") and f.endswith(".jsonl")]
-        except OSError:
-            rotated = []
-        files = rotated + [os.path.join(c.state_dir(), "events.jsonl")] + [os.path.join(skills, s, "SKILL.md") for s in names]
-        return _cached("unloaded skills", [plugin, n, _stats(files)],
-                       lambda: check_unloaded_skills(list(c.global_events(fmcost._since(30))), plugin, n))[0]
+        return _cached("unloaded skills", [plugin, n, _stats(c.global_event_files()),
+                                           _stats([os.path.join(skills, s, "SKILL.md") for s in names], exact=True)],
+                       lambda: check_unloaded_skills(list(c.global_events(fmcost._since(30))), plugin, n))
     named, loaded = collections.defaultdict(set), collections.defaultdict(set)
     for e in events:
         if e.get("kind") in ("skill_named", "slash"):
@@ -1883,7 +1884,11 @@ def check_usage_burn(found=None):
             found = fmcost.burn_findings(forecast={"seven_day": week})
             fmcost.write_burn(found)
             return check_usage_burn(found)
-        return _cached("usage burn", [_stats(files), week.get("full_at"), week.get("resets_at")], compute)[0]
+        try:  # the hours before the reset the finding shows, not full_at (it moves with the clock)
+            shown = round((week["resets_at"] - week["full_at"]) / 3600) if week.get("full_at") and week.get("resets_at") else None
+        except (TypeError, KeyError):
+            shown = None
+        return _cached("usage burn", [_stats(files), shown], compute)
     return Result("usage burn", "WARN" if found else "PASS",
                   "; ".join(f"{a} → {b}" for a, b in found) + "; /usage names Claude Code's own causes, f applies them"
                   if found else "no sign of usage burn in the last 2 days")
