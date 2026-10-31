@@ -170,7 +170,7 @@ class Ship(ForemanTestCase):
         t = time.time()
         r = self.ship("--test", "sh -c 'sleep 30 & exit 1'")
         self.assertNotEqual(r.returncode, 0)
-        self.assertLess(time.time() - t, 20)
+        self.assertLess(time.time() - t, 20)  # wall clock: a ship child must not wait out its background sleeper
         self.assertNotIn("add a", self.main_log())
 
     def test_a_failing_name_is_cleaned_and_cut_before_it_is_written(self):

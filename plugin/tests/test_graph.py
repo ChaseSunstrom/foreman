@@ -76,7 +76,7 @@ class BlastInPlan(Base):
         import fmgraph
         t0 = time.monotonic()
         line = fmgraph.blast_line(c.find_project(self.repo), ["app/session.py"])
-        self.assertLess(time.monotonic() - t0, fmgraph.BLAST_BUDGET)  # the seeded graph answers well inside the cap
+        self.assertLess(time.monotonic() - t0, fmgraph.BLAST_BUDGET)  # the seeded graph answers well inside the cap; wall clock: BLAST_BUDGET deadline (blast_line runs git)
         self.assertIn("app/auth.py", line)
         self.fm("focus", tid)
         r = self.risks()

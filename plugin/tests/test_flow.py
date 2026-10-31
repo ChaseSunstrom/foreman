@@ -202,7 +202,7 @@ class Journey(StubCase):
                 code = e.code
         data = json.loads(out.getvalue())
         self.assertEqual(code, 1)
-        self.assertLess(time.monotonic() - start, 5)
+        self.assertLess(time.monotonic() - start, 5)  # wall clock: the TOTAL_S=1 budget deadline (waits on a browser)
         self.assertIn("ran past 1 s", data["steps"][-1]["error"])
         self.assertLess(data["failed"], 6)
 
@@ -341,7 +341,7 @@ class BrowserClose(StubCase):
                     mock.patch("os.kill", side_effect=PermissionError), mock.patch.object(fmshot, "CLOSE_S", 0.3):
                 start = time.monotonic()
                 b.close()
-                self.assertLess(time.monotonic() - start, 3)
+                self.assertLess(time.monotonic() - start, 3)  # wall clock: the CLOSE_S=0.3 deadline
         finally:
             os.killpg(pid, signal.SIGKILL)
             os.waitpid(pid, 0)

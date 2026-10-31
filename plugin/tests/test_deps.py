@@ -57,7 +57,7 @@ class Deps(HookCase):
     def test_a_slow_fetcher_is_cut_off_by_one_total_budget(self):
         t = time.time()
         f = fmdeps.check(self.project(), "npm i lodahs brand-a brand-b", fetch=lambda e, n: time.sleep(5))
-        self.assertLess(time.time() - t, 1.6)
+        self.assertLess(time.time() - t, 1.6)  # wall clock: the total fetch budget deadline (the fetcher sleeps)
         self.assertTrue(any(x["kind"] == "typosquat" for x in f))
 
     def test_at_most_two_lookups_and_never_for_popular_scoped_or_configured(self):

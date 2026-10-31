@@ -257,20 +257,20 @@ class Unruly(StubCase):
     def test_a_flood_of_events_still_times_out(self):
         code, data, took = self.run_shot("flood")
         self.assertEqual(code, 1)
-        self.assertLess(took, 10)
+        self.assertLess(took, 10)  # wall clock: the browser-answer timeout deadline
         # the fonts check times out first and is only "unchecked"; the screenshot after it fails the page
         self.assertIn("no answer to Page.captureScreenshot", data["failed"][0]["error"])
 
     def test_a_hung_browser_times_out(self):
         code, data, took = self.run_shot("hang")
         self.assertEqual(code, 1)
-        self.assertLess(took, 10)
+        self.assertLess(took, 10)  # wall clock: the browser-answer timeout deadline
         self.assertIn("no answer to Page.captureScreenshot", data["failed"][0]["error"])
 
     def test_a_browser_that_dies_is_named(self):
         code, data, took = self.run_shot("die")
         self.assertEqual(code, 1)
-        self.assertLess(took, 10)
+        self.assertLess(took, 10)  # wall clock: a dead browser is named, not waited out
         self.assertIn("the browser closed", data["failed"][0]["error"])
 
     def test_a_browser_that_never_starts_says_why(self):

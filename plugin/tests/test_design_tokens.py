@@ -286,10 +286,10 @@ class Extract(ForemanTestCase):
 
     def test_deep_nesting_stays_linear(self):
         import time
-        t = time.monotonic()
+        t = time.process_time()
         base, _ = self.tokens_of(":root{" * 80_000 + "--a:1;" * 80_000)
         self.assertEqual(base, {"--a": "1"})
-        self.assertLess(time.monotonic() - t, 5)
+        self.assertLess(time.process_time() - t, 5)  # CPU: in-process complexity bar
 
     def test_skipped_files_are_reported(self):
         ui = os.path.join(self.tmp, "ui")
@@ -345,10 +345,10 @@ class Extract(ForemanTestCase):
             f.write("colors: { " + "a" * 400_000 + " }\n" + "'" + "b" * 300_000 + "\n")
         with open(os.path.join(path, "a.css"), "w") as f:
             f.write(":root { --x: oklch(" + "1" * 200_000 + "x); }\n" + ":not(" * 50_000 + "{ }\n" + "#{" * 50_000)
-        t = time.monotonic()
+        t = time.process_time()
         fmdesign.extract([path])
         fmdesign.check_pairs(fmdesign.read_tokens(os.path.join(path, "a.css")), ["x/x"], strict=False)
-        self.assertLess(time.monotonic() - t, 5)
+        self.assertLess(time.process_time() - t, 5)  # CPU: in-process complexity bar
 
     def test_a_worker_of_fm_code_may_not_extract(self):
         p = self.fm("design", "extract", UI, "--out", os.path.join(self.tmp, "D.md"), check=False,

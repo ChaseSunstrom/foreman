@@ -84,7 +84,7 @@ class UserRules(ForemanTestCase):
         self.fm("rule", "add", "(a+)+$", "--block", "--why", "nested")
         t = time.time()
         p = self.bash("echo " + "a" * 40 + "!")
-        self.assertLess(time.time() - t, 4)
+        self.assertLess(time.time() - t, 4)  # wall clock: the rule's time-box deadline, in a hook child
         self.assertEqual(p.returncode, 2, "a block rule it couldn't finish checking refuses")
         self.assertIn("too long", _out(p).get("permissionDecisionReason", ""))
         # security review: past RULE_SCAN a block rule can't be shown not to match, so it refuses (a warn doesn't)

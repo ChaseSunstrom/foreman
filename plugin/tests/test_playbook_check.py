@@ -273,7 +273,7 @@ class Snippets(Fixture):
         self.child("time.sleep(30)")
         t0 = time.time()
         self.assertFlags("timed out after 2 s", timeout=2)
-        self.assertLess(time.time() - t0, 15)
+        self.assertLess(time.time() - t0, 15)  # wall clock: the timeout=2 kill deadline
         self.assertChildGone()
 
     def test_a_child_left_running_by_a_passing_block_is_killed(self):
