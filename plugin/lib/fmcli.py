@@ -6584,6 +6584,9 @@ def _build_parser(only=None):
     s.add_argument("--dry-run", action="store_true", help="list tonight's jobs and estimates; run nothing")
     s.add_argument("--print-timer", action="store_true",
                    help="print a systemd user timer + service and a crontab line for fm night here; install nothing")
+    s.add_argument("--tick", action="store_true",
+                   help="the model-free pass (T-2356): standing orders, the cached CI result, and CI or issues only where "
+                        "you said yes; spends no tokens")
     s.add_argument("--max-usd", type=float, default=2.0, help="the night's spend at most (and today's budget left)")
     s.add_argument("--only", action="append", metavar="JOB", help="only this job (repeatable): landscape, "
                                                                   "second session, court")

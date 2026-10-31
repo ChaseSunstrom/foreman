@@ -3,10 +3,12 @@ the landscape scan when due, the sentinel (T-0888), one research-debt question, 
 kept fm evolve candidate — each an existing fm command, kept while the night's estimate fits --max-usd and today's
 remaining budget. Refused when usage is high, when usage is unknown the limit halves, a sensitive project runs
 nothing, and the night stops as soon as real spend passes the limit or usage climbs (T-0298 review). Never merges;
-the morning's fm digest says what ran. Scheduling (cron, a systemd timer) is the user's to set up;
+the morning's fm digest says what ran. --tick (T-2356) is the model-free pass the Stop sweep and the timer run:
+orders, the cached CI result, and CI or issues only where the user said yes. Scheduling (cron, a systemd timer) is the user's to set up;
 --print-timer prints both, ready to paste."""
 import fcntl
 import glob
+import json
 import os
 import re
 import shlex
@@ -132,12 +134,102 @@ def timer(p):
         f"30 2 * * * cd {shlex.quote(p.root)} && FOREMAN_HOME={shlex.quote(home)} PATH={shlex.quote(path)} {cmd}"])
 
 
+ISSUES_EVERY = 1800  # a repo's issues are polled at most this often (the Stop sweep ticks every 10 min)
+ISSUES_LIMIT = 10  # new issues captured per poll (a first poll of a busy tracker is not 30 tasks)
+_REPO = re.compile(r"[\w.-]+/[\w.-]+")
+
+
+def _watch(meta):
+    """(CI fetch approved, [repos whose issue watch is approved]): meta 'watch' {"ci": true, "issues": ["o/r"]}, which
+    only T-2357's one-yes install writes after the user's yes. Anything else reads as no."""
+    w = meta.get("watch") if isinstance(meta.get("watch"), dict) else {}
+    issues = w.get("issues")
+    return w.get("ci") is True, [r for r in issues if isinstance(r, str) and _REPO.fullmatch(r)] if isinstance(issues, list) else []
+
+
+def _listed(p, kind, repo):
+    """Each request that left the machine is a ledger line; the final report's list (fm decide --review) gets one
+    outward row a day per kind and repo, not one per tick."""
+    import fmcli
+    text = (f"night tick fetched CI results of {repo} with no session open" if kind == "ci" else
+            f"night tick polled GitHub issues of {repo}")
+    if not any(d == c.now()[:10] and t == text for d, _, t in c._decision_rows(p)):
+        fmcli._write_decision(p, text, "your yes to the watch lines (fm night --install); each poll is a night_tick "
+                                       "ledger event", "", "outward")
+
+
+def tick(p, fetch_ci=None):
+    """T-2356: the model-free pass, from the Stop hook's sweep and the timer: standing orders (file and schedule
+    triggers), the CI result fmforesight cached, and new issues of a repo the user approved. Spends no tokens and runs
+    no child. Remote reads only with the user's yes (meta watch), never when sensitive or FOREMAN_NO_NET; CI is fetched
+    here only when approved and no session is open (fetch_ci=None decides; the sweep passes False: it fetched its own).
+    {orders, captured, fetched: [{kind, repo}], notes}."""
+    import fmcli
+    import fmeco
+    import fmforesight
+    import fmorders
+    if c.panicked():
+        raise c.PolicyError(c.PAUSED)
+    res = {"orders": [], "captured": [], "fetched": [], "notes": []}
+    lease = open(os.path.join(p.dir, "tick.lock"), "w")  # held until this returns (a second tick finds it taken)
+    try:
+        fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lease.close()
+        return dict(res, notes=["another tick is running"])
+    with lease:
+        meta = c.read_meta(p)
+        net = not os.environ.get("FOREMAN_NO_NET") and not meta.get("sensitive")
+        ci_ok, repos = _watch(meta)
+        before = {b.id for b in c.load_briefs(p, include_archive=True)}
+        try:
+            if fmorders.load(p):
+                res["orders"] = [o["n"] for o in fmorders.run(p)]
+        except Exception as e:  # an order file never costs the tick
+            res["notes"].append(f"standing orders: {c.fit(c.plain(str(e)), 120)}")
+        repo = None if meta.get("sensitive") else fmforesight.github_repo(p.root)
+        if repo:
+            try:  # the cached result always; a fetch only with the yes, and with nobody at a keyboard to ask
+                import fmbus
+                ask = net and ci_ok and (not fmbus.live() if fetch_ci is None else fetch_ci)
+                if fmforesight._ci(p, fetch=bool(ask)):
+                    res["fetched"].append({"kind": "ci", "repo": repo})
+            except Exception as e:
+                res["notes"].append(f"CI: {c.fit(c.plain(str(e)), 120)}")
+        path = os.path.join(p.dir, "tick.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                seen = json.load(f)
+            seen = seen if isinstance(seen, dict) and isinstance(seen.get("issues"), dict) else {}
+        except (OSError, ValueError):
+            seen = {}
+        if net and repo and repo in repos and time.time() - float((seen.get("issues") or {}).get(repo) or 0) >= ISSUES_EVERY:
+            seen["issues"] = dict(seen.get("issues") or {}, **{repo: time.time()})
+            c.write_atomic(path, json.dumps(seen))  # stamped first: a failing gh waits its interval too
+            res["fetched"].append({"kind": "issues", "repo": repo})
+            try:  # fm inbox gh's path: plain, defanged, quoted behind "| "; an issue's asks are never run
+                fmeco.inbox_gh(p, repo, ISSUES_LIMIT)
+            except Exception as e:  # not logged in, no gh, offline: said, never fatal
+                res["notes"].append(f"issues of {repo}: {c.fit(c.redact(c.plain(str(e))), 160)}")
+        res["captured"] = sorted({b.id for b in c.load_briefs(p, include_archive=True)} - before)
+    for f in res["fetched"]:
+        _listed(p, f["kind"], f["repo"])
+    if res["fetched"] or res["orders"] or res["captured"]:
+        c.log_event(p, "night_tick", data={k: res[k] for k in ("orders", "captured", "fetched")}, session=fmcli.session())
+    return res
+
+
 def cmd_night(args):
     import fmcli
     p = fmcli.resolve(args)
     if getattr(args, "print_timer", False):
         print(timer(p))
         return 0
+    if getattr(args, "tick", False):
+        res = tick(p)
+        return fmcli.out(args, res, "tick: " + ", ".join(
+            [f"{len(res['orders'])} order(s) fired", f"{len(res['captured'])} captured"]
+            + [f"fetched {f['kind']} of {f['repo']}" for f in res["fetched"]] + res["notes"]))
     if c.panicked():
         raise c.PolicyError(c.PAUSED)
     if not getattr(args, "dry_run", False):  # T-0921: one night at a time (a cron firing while a manual one runs)
