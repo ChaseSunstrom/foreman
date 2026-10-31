@@ -1418,6 +1418,7 @@ def grade(p, run, agent):
             return None, s["id"], f"{type(e).__name__}: {e}", 0, [], []
 
     res["ungraded"] = []
+    kinds = {s["id"]: s.get("kind") for s in answered}
     for split, sid, n, cost, defect_lines, recall in _pool(safe, answered):
         if split is None:  # n is the error text; counts nothing, so it is neither found nor fixed
             res["ungraded"].append(c.fit(c.plain(f"{sid}: {n}"), 200))
@@ -1425,6 +1426,10 @@ def grade(p, run, agent):
         for hit in recall:
             tally(res["recall"], *hit)
             tally(res[split]["recall"], *hit)
+        if n["false_alarms"]:  # T-2299: which scenario kind each false alarm fell in (I-clean's bar is zero)
+            for into in (res, res[split]):
+                fa = into.setdefault("false_by_kind", {})
+                fa[kinds[sid]] = fa.get(kinds[sid], 0) + n["false_alarms"]
         res["cost"] += cost
         res["proved_by_arm_findings"] += defect_lines
         if _closed(n):  # fm genesis select compares these ids, train only, against the parent generation's
@@ -1486,6 +1491,9 @@ def summary(r):
     h = r.get("holdout") or {}
     if h.get("scenarios"):
         parts.append(f"held out {h.get('found', 0)}/{h.get('keyed', 0)} found")
+    if r.get("false_by_kind"):
+        parts.append("false alarms by kind: " + " · ".join(f"{c.plain(str(k))[:20]} {v}"
+                                                           for k, v in sorted(r["false_by_kind"].items())))
     for axis, word in (("lang", "language"), ("kind", "kind")):  # T-2233: a finder blind in one can't hide in the total
         by = (r.get("recall") or {}).get(axis) or {}
         if by:
