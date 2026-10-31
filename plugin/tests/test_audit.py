@@ -2,6 +2,7 @@
 synced copies, the far end of long context lines, fixtures and lockfiles. Changed lines always stay whole."""
 import json
 import os
+import subprocess
 
 from helpers import ForemanTestCase
 from test_hooks import HookCase
@@ -150,6 +151,26 @@ class DesignLens(HookCase):
         lenses, text = self.brief()
         self.assertEqual(lenses, ["self", "design"])
         self.assertIn("No screenshots", text)
+
+    def test_the_brief_lists_every_function_the_diff_changed(self):  # T-2312
+        body = "".join(f"def {n}():\n    return 1\n\n\n" for n in ("f", "g", "h"))
+        self.write("m.py", body)
+        subprocess.run(["git", "-C", self.repo, "add", "m.py"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "m"], check=True)
+        self.prep()
+        self.write("m.py", body.replace("return 1", "return 2", 2))
+        text = self.brief()[1]
+        self.assertIn("Functions changed", text)
+        self.assertIn("m.py: f, g", text)
+
+    def test_hunk_header_text_is_plain_and_bounded(self):  # T-2312: repo text is data
+        import fmlanes
+        d = ("diff --git a/x.c b/x.c\n--- a/x.c\n+++ b/x.c\n@@ -1 +1 @@ int \x1b]0;pwn\x07evil" + "z" * 200 + "(void)\n"
+             "@@ -9 +9 @@\n")
+        got = fmlanes.functions_changed(d)["x.c"]
+        self.assertEqual(len(got), 1)
+        self.assertNotIn("\x1b", got[0])
+        self.assertLessEqual(len(got[0]), 40)
 
     def test_a_backend_diff_gets_no_design_lens(self):
         self.prep()

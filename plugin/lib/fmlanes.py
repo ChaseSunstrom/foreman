@@ -193,8 +193,10 @@ def cmd_lane(args):
         merged = merge(p, b, main, why)
         import fmbus
         fmbus.release(p, b.id)  # T-1068
-        return fmcli.out(args, {"id": b.id, "merged": merged}, f"{b.id}: merged {merge.last} into {main} "
-                         f"(--no-ff); next: fm lane rm {b.id}, fm focus {b.id}, re-run its criteria, fm task finish")
+        fns = merge.functions
+        return fmcli.out(args, {"id": b.id, "merged": merged, "functions": fns}, f"{b.id}: merged {merge.last} into "
+                         f"{main} (--no-ff); next: fm lane rm {b.id}, fm focus {b.id}, re-run its criteria, fm task finish"
+                         + (f"\nFunctions changed:\n{functions_line(fns)}" if functions_line(fns) else ""))
     if args.action == "new":
         if c.panicked():
             raise c.PolicyError(c.PAUSED)
@@ -812,6 +814,33 @@ def _verify(b):
                                 f"(fm lane merge {b.id} --unverified \"<reason>\" waives it, logged)")
 
 
+_HUNK = re.compile(r"^@@ -\S+ \+\S+ @@ ?(.*)$")
+_DEF = re.compile(r"\b(?:def|class|function|func|fn|sub)\s+([\w$]+)")
+
+
+def functions_changed(diff, per_file=8, max_files=40):
+    """T-2312: {file: [function, …]} from a diff's hunk headers (git's own function context, so any language it knows;
+    the diff's repo text goes through plain and fit before anyone prints it). A change outside any function has none."""
+    out, cur = {}, None
+    for line in diff.splitlines():
+        m = re.match(r"diff --git a/.+? b/(.+)$", line)
+        if m:
+            cur = None if len(out) >= max_files and m.group(1) not in out else out.setdefault(m.group(1), [])
+            continue
+        h = _HUNK.match(line)
+        if h and cur is not None and h.group(1).strip():
+            ctx = h.group(1).strip()
+            name = c.fit(c.plain((_DEF.search(ctx) or [0, ctx])[1]), 40)
+            if name not in cur and len(cur) < per_file:
+                cur.append(name)
+    return out
+
+
+def functions_line(fns):
+    """One printable line per file: `path: f, g`."""
+    return "\n".join(f"{c.fit(c.plain(f), 80)}: {', '.join(v)}" for f, v in fns.items() if v)
+
+
 def merge(p, b, main, unverified=None):
     """T-0377: merge a reviewed builder branch into the main checkout (--no-ff) through fm. On Foreman's own repo the
     guard refuses `git merge` (a tree write over core); here every file the branch changes must pass the guard as a
@@ -850,6 +879,10 @@ def merge(p, b, main, unverified=None):
     if clash:
         raise c.PolicyError(f"{main} has uncommitted changes to {', '.join(clash[:5])}, which {branch} also changes: "
                             f"commit them first, then merge")
+    # T-2312: the functions the branch changes (before the merge moves HEAD), so a stray edit stands out
+    merge.functions = functions_changed(_git(main, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "diff",
+                                             "-U0", "--no-renames", "--no-ext-diff", "--no-textconv",
+                                             f"HEAD...{branch}").stdout)
     for f in files:
         blk = fmguard.check("Write", {"file_path": os.path.join(main, f), "content": ""}, ctx)
         if blk:
