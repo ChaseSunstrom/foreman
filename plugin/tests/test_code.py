@@ -308,6 +308,16 @@ class Repairs(CodeCase):
         self.assertIn("negative numbers add too", read_text(self.task()["path"]))
         self.assertEqual(len(f.seen), 4)
 
+    def test_the_harness_written_plan_is_exempt_from_the_plan_gate_content_checks(self):
+        # T-2335: the plan is the harness's, not a reading/option plan the model wrote; it says so, no boilerplate labels
+        self.serve("anthropic", plan(dict(PLAN, tier="M")),
+                   call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"), CLOSE)
+        self.code("fix add", "--model", "fake")
+        import fmcore
+        b = fmcore.find_brief(fmcore.find_project(self.repo), self.task()["id"])
+        self.assertEqual(b.meta.get("harness_plan"), "code")
+        self.assertNotIn("use what exists", b.section("Approach (options → choice → why)"))
+
 
 class AnyRequest(CodeCase):
     """T-1320: fm code takes any request: a question gets an answer (no task, nothing changed), and a plan whose check

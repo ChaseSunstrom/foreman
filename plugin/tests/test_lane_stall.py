@@ -17,7 +17,7 @@ class LaneStall(ForemanTestCase):
 
     def builder(self, live=True):
         tid = json.loads(self.fm("task", "new", "Built", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true",
-                                 "--step", "s", "--interpretation", "x", "--approach", "1) a 2) b 3) c Choice 1: a", "--json").stdout)["id"]
+                                 "--step", "s", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--json").stdout)["id"]
         self.path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
         p = c.find_project(self.repo)
         b = c.find_brief(p, tid)

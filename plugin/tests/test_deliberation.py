@@ -31,7 +31,7 @@ class Dissent(Base):
         self.fm("task", "new", "Cache the report", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true",
                 "--step", "s")
         for sec in ("Interpretation", "Approach (options → choice → why)"):
-            self.fm("task", "set", "T-0001", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a")
         self.fm("second", "plan", "T-0001", env=self.env)
         dissent = c.find_brief(self.p, "T-0001").section("Dissent")
         self.assertIn("- [ ] the cache is never invalidated", dissent)
@@ -57,6 +57,6 @@ class Panel(Base):
         self.assertFalse(c.find_brief(self.p, "T-0001").section("Plan review").strip())
         self.fm("task", "new", "Big change", "--type", "FEATURE", "--tier", "L", "--ac", "ok :: true", "--step", "s")
         for sec in ("Interpretation", "Approach (options → choice → why)", "Build vs reuse", "Risks and rollback"):
-            self.fm("task", "set", "T-0002", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
+            self.fm("task", "set", "T-0002", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a")
         self.fm("task", "drop", "T-0001", "not needed")
         self.assertIn("fm second plan T-0002", self.fm("next").stdout)

@@ -23,7 +23,7 @@ class Recall(ForemanTestCase):
                                  "--step", "do it", "--json").stdout)["id"]
         if tier != "S":
             for sec in ("Interpretation", "Approach (options → choice → why)", "Risks and rollback"):
-                self.fm("task", "set", tid, "--section", sec, "--text", f"{title}: planned. Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
+                self.fm("task", "set", tid, "--section", sec, "--text", f"{title}: planned. Reading 1: a. Reading 2: b. 1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a")
         return tid
 
     def finish(self, tid, lesson=None):
@@ -181,6 +181,10 @@ class FailureMemory(ForemanTestCase):
         first = self.task("Tidy the YAML loader")
         sighting = json.loads(self.failing().stdout or "null") or {}
         self.assertNotIn("came up in", json.dumps(sighting), "first sighting: no earlier task to point to")
+        import time
+        time.sleep(1.05)  # a miss resolves only on a run strictly later, in whole seconds
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "python3 x.py"},
+                                  "tool_response": {"stdout": "ok", "stderr": "", "interrupted": False}})  # T-2369: the rerun resolves the miss
         self.fm("task", "step", first, "done", "1", "--evidence", "x", "ok")
         self.fm("task", "ac", first, "check", "1", "--evidence", "x", "ok")
         self.fm("task", "audit", first, "self", "x", "ok")
