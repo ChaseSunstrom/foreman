@@ -439,6 +439,27 @@ def _session_cmd(p, b, args, models):
     return _claude_cmd(p, b, args, models)
 
 
+def _routed(p, b, models, args):
+    """T-2353: the models for this one session. --models (or a kept choice) and --runner win untouched (the same dict
+    back); else an S or M task goes to the per-tier route's model (fmlanes.route, a probe one down on its hash lanes),
+    stamped on the brief so the session's outcome feeds the route, and printed. L stays on Claude's default."""
+    if getattr(args, "runner", None) or models or b.tier not in ("S", "M"):
+        return models
+    import fmcli
+    import fmlanes
+    model, line, probe = fmlanes.route(p, b.tier, tid=b.id, racing=bool(b.meta.get("race") or b.meta.get("race_of")))
+
+    def mark(x):
+        x.meta["builder_model"] = model
+        if probe:
+            x.meta["route_probe"] = 1
+        else:
+            x.meta.pop("route_probe", None)
+    fmcli.mutate(p, b.id, mark, "run_route", {"model": model})
+    print(f"{b.id}: model {model}: {c.fit(line, 200)}", flush=True)
+    return {b.tier: model}
+
+
 def _claude_cmd(p, b, args, models):
     model = models.get(b.tier)
     import fmcontract
@@ -542,7 +563,8 @@ def _run_lanes(p, batch, args, models, log):
                 continue
             path = lanes[b.id] = json.loads(made.stdout)["path"]
             out = tempfile.TemporaryFile("w+", errors="replace")
-            proc = subprocess.Popen(_session_cmd(p, b, args, models), cwd=path, stdout=out, stderr=subprocess.STDOUT,
+            proc = subprocess.Popen(_session_cmd(p, b, args, _routed(p, b, models, args)), cwd=path, stdout=out,
+                                    stderr=subprocess.STDOUT,
                                     env=dict(os.environ, FOREMAN_DRIVE_TASK=b.id), text=True, start_new_session=True)
             runs[b.id] = (path, proc, out, time.monotonic())
         deadline = time.monotonic() + args.timeout * 60
@@ -670,7 +692,13 @@ def _integrate_lane(p, tid, path):
     why = _main_moved(git, p.root, branch)  # session audit: the gates can take an hour; look again right before
     if why:
         return f"kept in {path}: {why} while the gates ran"
-    if git(p.root, "merge", "-q", "--ff-only", f"foreman/{tid}").returncode:
+    tip = git(path, "rev-parse", "HEAD").stdout.strip() or f"foreman/{tid}"
+    import fmselfgate  # T-2352: fm serve's merge is gated like fm lane merge, on the same commit it lands
+    files = [f for f in git(p.root, "diff", "--name-only", "--no-renames", "-z", f"HEAD...{tip}").stdout.split("\0") if f]
+    held = fmselfgate.gate(p, c.find_brief(p, tid), p.root, tip, files)
+    if held:
+        return f"kept in {path}: the self-change gate holds it ({c.fit(held[0], 120)}); fm ask {tid} core, then merge"
+    if git(p.root, "merge", "-q", "--ff-only", tip).returncode:
         return f"kept in {path}: {branch} moved on; rebase the lane again"
     rm = _fm(p.root, "lane", "rm", tid)
     return f"merged into {branch}" + ("" if rm.returncode == 0 else f" (lane left: {rm.stderr.strip()[:120]})")
@@ -931,9 +959,12 @@ def cmd_run(args):
                 args.parallel = 1  # one at a time from here, which waits a usage limit out
                 print("usage limit hit: no more lanes this run; one task at a time from here", flush=True)
             continue
+        sess = _routed(p, b, models, args)
+        if sess is not models:
+            b = c.find_brief(p, b.id) or b  # the route stamped its model on the brief
         before, found = _fingerprint(b), _repeat_key(p, b)
-        model = models.get(b.tier)
-        cmd = _session_cmd(p, b, args, models)
+        model = sess.get(b.tier)
+        cmd = _session_cmd(p, b, args, sess)
         started, t0 = c.now(), time.monotonic()
         import signal
         import tempfile
@@ -1019,3 +1050,9 @@ def cmd_run(args):
     print(f"fm run: {finished} task{'s' if finished != 1 else ''} done"
           + ("; spend cap reached" if capped else "; the queue has nothing else runnable" if finished < args.max
              else f"; stopped at --max {args.max}"))
+    try:  # T-2374: what waits on the user ends the run's report
+        import fmgrants
+        if fmgrants.line(p):
+            print(fmgrants.line(p))
+    except Exception:
+        pass

@@ -42,6 +42,11 @@ def run(p, now=None):
     last look (the first look only notes it). An open task of the same title isn't captured twice. [fired orders]"""
     import fmcli
     now, fired = now or time.time(), []
+    try:  # T-2356: the trigger table (fm triggers): orders whose captures were mostly dropped file at low priority
+        import fmtriggers
+        low = fmtriggers.noisy(p, "order")
+    except Exception:
+        low = None
     with c.lock(p.dir):
         orders = load(p)
         titles = {b.title for b in c.load_briefs(p) if b.status not in c.CLOSED}
@@ -59,7 +64,7 @@ def run(p, now=None):
             title = fmcli._title(o["text"])
             if title not in titles:
                 b = fmcli._create(p, title, o.get("type") or "FEATURE", c.guess_tier(o.get("type") or "FEATURE", o["text"]),
-                                  "captured", raw=o["text"], source="order")
+                                  "captured", raw=o["text"], source="order", priority="low" if low else "normal")
                 c.log_event(p, "capture", task=b.id, data={"source": "order", "order": o["n"]})
                 titles.add(title)
             fired.append(o)

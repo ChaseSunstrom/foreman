@@ -1280,6 +1280,11 @@ def _resolve_approvals(p, meta, sid, text, hashes=None, claude=None):
         else:
             c.log_event(p, "approval_declined", task=a["task"], data={"allow": a["allow"], "expired": not fresh},
                         session=sid)
+            if fresh and not yes:  # T-2374: a no to a queued request is remembered (an expired ask isn't a no)
+                import fmgrants
+                nb = c.find_brief(p, a["task"])
+                if nb:
+                    fmgrants.refuse(p, nb, a["allow"], a.get("pin"), session=sid)
             notes.append(f"Pending {cats} for {a['task']} not granted ({'expired' if not fresh else 'reply was not a yes'})")
     return notes
 
@@ -1373,6 +1378,8 @@ def user_prompt_submit(pl):
             prompts = _load_list(_prompts_path(p))  # a dialog still open when the user speaks was refused or ignored
             if any(a.get("session") == sid for a in prompts):
                 c.write_atomic(_prompts_path(p), json.dumps([a for a in prompts if a.get("session") != sid]))
+                # T-2374 review: an unanswered dialog is not a no; its queued request stays queued (only an explicit no
+                # is remembered, so one missed dialog never suppresses a request for good)
             meta["session"] = {"id": sid, "seen": c.now(), "pid": _claude_pid()}  # T-0841: whose process it is
             if (meta.get("resume_after_reload") or {}).get("session") == sid:
                 meta.pop("resume_after_reload")  # T-0145: the reloaded mod's prompt (or the user's) resumed it
@@ -2391,8 +2398,9 @@ def _record_asks(pl, p, fmguard):
     dialog = bool(fmguard.lone_fm_ask(cmd)) and not os.environ.get("FOREMAN_DRIVE_TASK")  # PreToolUse asks for one
     for args in fmguard.fm_calls(cmd):
         if len(args) > 2 and args[0] == "ask":
-            task, cats, *_ = _ask_target(args)
-            asks.append({"task": task, "allow": cats, "session": pl["session_id"], "at": time.time(), "dialog": dialog})
+            task, cats, *_, later = _ask_target(args)
+            if not later:  # T-2374: a queued request needs no session binding: nothing can answer it
+                asks.append({"task": task, "allow": cats, "session": pl["session_id"], "at": time.time(), "dialog": dialog})
     if not asks:
         return
     try:
@@ -2410,8 +2418,9 @@ def _record_asks(pl, p, fmguard):
 
 
 def _ask_target(args):
-    """(task, sorted categories, why, problems, plugin pin, standing) from `fm ask` arguments, read by fm's own parser so
-    the dialog and the grant can't drift from what the command means."""
+    """(task, sorted categories, why, problems, plugin pin, standing, later) from `fm ask` arguments, read by fm's own
+    parser so the dialog and the grant can't drift from what the command means. A --later ask (T-2374) is a queued
+    request: no dialog, no pending approval, never a grant."""
     import contextlib
     import io
     import fmcli
@@ -2419,8 +2428,8 @@ def _ask_target(args):
         with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):  # -h prints
             ns = fmcli.build_parser().parse_args(args)
     except SystemExit:
-        return "", [], "", ["arguments fm ask doesn't accept"], None, False
-    return ns.id, sorted(set(ns.categories)), ns.why or "", [], ns.pin, bool(ns.standing)
+        return "", [], "", ["arguments fm ask doesn't accept"], None, False, False
+    return ns.id, sorted(set(ns.categories)), ns.why or "", [], ns.pin, bool(ns.standing), bool(ns.later)
 
 
 _plain = c.plain  # dialog text (fm ask): see fmcore.plain
@@ -2441,6 +2450,8 @@ def _grant(p, b, cats, sid, via, pin=None, h=None, **data):
             b.append_log(f"plugin yes for {pin} not granted: it is no longer installed or in a known marketplace")
     b.meta["allow"] = list(dict.fromkeys(list(b.meta.get("allow") or []) + cats))
     if cats:
+        import fmgrants  # T-2374: a queued request this yes covers is answered (and a task waiting on it resumes)
+        fmgrants.settle(b, cats, pin)
         b.append_log(f"user approved {', '.join(cats)} " + ("in chat" if via == "chat" else "in Claude Code's permission prompt"))
     if set(cats) & set(_UNDO) and c.git_root(p.root):  # T-0672 (T-0478): where to come back to, as of this yes
         point = undo_point(p.root, b.id)
@@ -2621,7 +2632,7 @@ def _ask_prompt(pl, p, fmguard):
     if not args:
         return ("deny", "Foreman: run fm ask as its own Bash command (nothing chained, piped or substituted), so the "
                         "permission prompt approves exactly that request")
-    task, cats, why, bad, pin, standing = _ask_target(args)
+    task, cats, why, bad, pin, standing, later = _ask_target(args)
     unknown = [x for x in cats if x not in fmguard.CATEGORIES or x in fmguard.NOT_AUTHORIZABLE]
     if pin:
         import fmplugins
@@ -2632,6 +2643,8 @@ def _ask_prompt(pl, p, fmguard):
     if bad or unknown or not cats or not re.fullmatch(r"T-\d{4,}", task):
         return ("deny", f"Foreman: fm ask takes an id, categories ({', '.join(x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE)}) "
                         f"and --why; not {', '.join(bad + unknown) or 'this'}")
+    if later:  # T-2374: queued, not asked: no dialog to raise or deny, and nothing here grants it
+        return None
     if os.environ.get("FOREMAN_DRIVE_TASK"):  # fm run's claude -p: no one can answer a dialog here
         return ("deny", f"Foreman: nobody can answer a permission prompt in this headless session. Record it with "
                         f"fm task block {task} \"needs {', '.join(cats)} from the user\" and stop.")
@@ -2673,11 +2686,13 @@ def permission_request(pl):
     p = c.find_project(_cwd(pl)) if args else None
     if not p or not pl.get("session_id"):
         return None
-    task, cats, *_ = _ask_target(args)
+    task, cats, _, _, pin, _, later = _ask_target(args)
+    if later:  # T-2374: a dialog approved for a queued request must never become a grant
+        return None
     with c.lock(p.dir, timeout=LOCK_SLOW):
         seen = [a for a in _load_list(_prompts_path(p)) if time.time() - a.get("at", 0) < c.APPROVAL_TTL]
         seen.append({"task": task, "allow": cats, "session": pl["session_id"], "tool_use_id": pl.get("tool_use_id"),
-                     "at": time.time()})
+                     "at": time.time(), "pin": pin})
         c.write_atomic(_prompts_path(p), json.dumps(seen[-20:]))
     return None
 
@@ -2689,7 +2704,9 @@ def _grant_prompted(pl, p):
     sid, tuid = pl.get("session_id"), pl.get("tool_use_id")
     if not args or not sid:
         return
-    task, cats, why, _, pin, standing = _ask_target(args)
+    task, cats, why, _, pin, standing, later = _ask_target(args)
+    if later:  # T-2374: queued, never granted
+        return
     ok = [x for x in cats if x in fmguard.CATEGORIES and x not in fmguard.NOT_AUTHORIZABLE]
     h = _pin_hashes([pin]).get(pin)
     with c.lock(p.dir, timeout=LOCK_SLOW):
@@ -3549,7 +3566,7 @@ def _stop(pl):
         nudge = None if reload_due else _headless_wait(pl) if oneoff else (
             _evidence_gate(p, act, pl, g, closed) or _clauses_gate(p, pl, g, closed) or _safe_goal_gate(p, pl, g, sid, closed)
             or _claims_gate(pl, g)
-            or _question_nudge(pl)
+            or _question_nudge(pl, p)
             or _headless_wait(pl))
         reason = nudge or (None if oneoff or "drive" in c.ablated() else _drive(p, sd, briefs, pl, g))  # T-1375
         d = g["drive"].setdefault(sid, {"count": 0})
@@ -3628,17 +3645,33 @@ def _push_nudge(sid, sd, drained):
             f"the turn.")
 
 
-def _question_nudge(pl):
+def _question_nudge(pl, p):
     """A question for the user left in the reply text gets lost when they type something else; the user asked for
-    such blockers as Claude Code prompts. Sent back once per stop chain."""
+    such blockers as Claude Code prompts. Sent back once per stop chain. T-2342: a fork the guard's parser doesn't stop
+    on is two-way: decide it and record it, never ask; each ask is counted by door for fm digest."""
     if pl.get("stop_hook_active") or os.environ.get("FOREMAN_DRIVE_TASK") or \
             not needs_user(pl.get("last_assistant_message")):
         return None  # (fm run's headless sessions have nobody to ask)
-    return ("Foreman: the reply asks the user something in text. If it's yours to decide, decide it and record it "
-            "(fm decide); otherwise ask it with the AskUserQuestion tool (one prompt, your default first), or "
-            "fm ask for a guard category, so the answer can't be lost in chat. Where that tool isn't available "
+    import fmdoors
+    door = fmdoors.reply_door(pl.get("last_assistant_message"), p)
+    c.log_event(p, "door_ask", data={"door": door})
+    ask = ("This fork is two-way: decide it and record it (fm decide … --confidence N) instead of asking; use the "
+           "AskUserQuestion tool (one prompt, your default first) only if you can't pick a default that is cheap to undo."
+           if door == "two-way" else
+           "If it's yours to decide, decide it and record it (fm decide); otherwise ask it with the AskUserQuestion tool "
+           "(one prompt, your default first), or fm ask for a guard category, so the answer can't be lost in chat.")
+    return (f"Foreman: the reply asks the user something in text. {ask} Where that tool isn't available "
             "(claude -p), decide with your default and record it. Either way, repeat what the user needs from the "
             "earlier reply (plan, order, results) in your final message: print mode shows only that one.")
+
+
+def _queue_line(p, briefs):  # T-2374: the install grants waiting on the user, for the final report
+    try:
+        import fmgrants
+        return fmgrants.line(p, briefs)
+    except Exception:
+        log_error("Stop", _tb())
+        return ""
 
 
 def _headless():
@@ -4099,7 +4132,8 @@ def _drive(p, sd, briefs, pl, g):
               + (f"; {len(more)} more queued ({', '.join(more[:4])})" if more else "")
               + (". Autonomy full: the user is not asked mid-run; decide with your default and record it (fm decide), "
                  "self-approve L/? plans after the self-critique, keep what needs the user (fm ask) for the final report"
-                 + (f"; waiting on the user: {', '.join(waiting)}" if waiting else "") + "."
+                 + (f"; waiting on the user: {', '.join(waiting)}" if waiting else "")
+                 + (f"; {_queue_line(p, briefs)}" if _queue_line(p, briefs) else "") + "."
                  if full else
                  ". No question to the user or approval is pending. Drive ends when the queue is empty, "
                  "when a question or approval is needed, or with `fm drive off`."))

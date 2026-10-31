@@ -68,7 +68,7 @@ class Confidence(Base):  # T-2338 (Mission 5, #8): a choice under the race bar, 
 
     def task(self, tier="S", choice="Choice 1 (40%): smaller", opts=None, focus=True):
         self.fm("task", "new", "Parser", "--type", "FEATURE", "--tier", tier, "--interpretation", "Reading 1: a. Reading 2: b.",
-                "--approach", (opts or self.OPTS) + choice, "--ac", "ok :: ls", "--step", "s", *(["--focus"] if focus and tier != "L" else []))
+                "--approach", (opts or self.OPTS) + choice, "--ac", "ok :: test -f parser.py", "--step", "s", *(["--focus"] if focus and tier != "L" else []))
         if tier == "L":
             self.fm("task", "set", "T-0001", "--section", "Risks and rollback", "--text", "It breaks; revert.")
             b = c.find_brief(self.p, "T-0001")
@@ -125,7 +125,7 @@ class Confidence(Base):  # T-2338 (Mission 5, #8): a choice under the race bar, 
         self.assertEqual(c.find_brief(self.p, tid).status, "active")
         with mock.patch.object(fmlanes, "builder_brief", side_effect=RuntimeError("no lane")):
             with self.assertRaises(RuntimeError):
-                fmlanes.race(self.p, c.find_brief(self.p, tid), argparse.Namespace(confidence=None, json=True))
+                fmlanes.race(self.p, c.find_brief(self.p, tid), self.repo, argparse.Namespace(confidence=None, json=True))
         b = c.find_brief(self.p, tid)
         self.assertEqual(b.status, "active")
         self.assertNotIn("race", b.meta)
@@ -138,7 +138,7 @@ class Confidence(Base):  # T-2338 (Mission 5, #8): a choice under the race bar, 
     def test_an_l_task_names_the_design_race(self):
         self.task("L")
         self.assertRegex(self.nxt(), r"design race.*fm second plan T-0001")
-        self.assertNotIn("fm lane race", self.nxt())
+        self.assertIn("fm lane race T-0001 (one throwaway spike per option", self.nxt())  # T-2340
 
     def test_the_stuck_rung_names_what_race_line_builds(self):
         tid = self.task(choice="Choice 1 (90%): smaller")

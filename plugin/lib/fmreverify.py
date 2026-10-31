@@ -6,6 +6,7 @@ import os
 import re
 
 import fmcore as c
+import fmincident
 
 PER_COMMIT = 5     # closed tasks one commit can queue (a CHANGELOG edit touches most tasks' scope)
 MAX_COMMITS = 50   # commits read per scan: a long gap queues its newest changes, not the whole history
@@ -75,7 +76,7 @@ def scan(p):
     if rows:
         closed = []
         for b in c.load_briefs(p, include_archive=True):
-            scope = b.meta.get("scope") or []
+            scope = b.meta.get("scope") or fmincident.scope(b)  # T-2388: an incident's files are its fix's
             ts = c.parse_ts(b.meta.get("updated")) if b.status == "done" and isinstance(scope, list) else None
             cmds = checks(b) if ts and scope else []
             if cmds:

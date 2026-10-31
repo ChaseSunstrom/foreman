@@ -120,10 +120,32 @@ def run_bench(runs=30, only=None):  # only: a predicate on fixture names (T-2359
     return results
 
 
+def injection_sizes():
+    """Chars SessionStart and UserPromptSubmit inject in a scratch project (fm doctor's budget; T-2358: fm ship's
+    record measures the shipped tree's hooks through --inject)."""
+    import tempfile
+    sizes = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, env = _scratch_project(tmp)
+        env["CLAUDE_ENV_FILE"] = os.path.join(tmp, "envfile")
+        for event, extra in (("SessionStart", {"source": "startup"}),
+                             ("UserPromptSubmit", {"prompt": "FIX: a\nFEATURE!: b\nCLEAN?: c\nCONTEXT: d"})):
+            payload = json.dumps(dict({"session_id": "doctor", "cwd": repo, "hook_event_name": event}, **extra))
+            try:  # a hook that can't start or hangs measures 0, as fm doctor's own run had it
+                out = subprocess.run([HOOK, event], input=payload, env=env, cwd=repo, capture_output=True, text=True,
+                                     timeout=120).stdout
+                sizes[event] = len(json.loads(out)["hookSpecificOutput"]["additionalContext"])
+            except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+                sizes[event] = 0
+    return sizes
+
+
 def main():
     runs = int(sys.argv[sys.argv.index("--runs") + 1]) if "--runs" in sys.argv else 30
     res = run_bench(runs)
-    if "--json" in sys.argv:
+    if "--inject" in sys.argv:  # T-2358: fm ship's footprint record, both in one JSON
+        print(json.dumps({"bench": res, "injected": injection_sizes()}))
+    elif "--json" in sys.argv:
         print(json.dumps(res, indent=2))
     else:
         print(f"{'hook':<24}{'p50 ms':>8}{'p95 ms':>8}{'budget':>8}  exit")

@@ -129,16 +129,27 @@ def refresh(p, net=True):
         _save(_path(), d)
     if net and not os.environ.get("FOREMAN_NO_NET") and not c.read_meta(p).get("sensitive"):
         _ci(p)
+    if net:  # T-2356: the same sweep runs the model-free tick (orders, the cached CI result, approved issues)
+        try:
+            import fmnight
+            fmnight.tick(p, fetch_ci=False)  # this sweep just fetched CI itself
+        except Exception:
+            pass  # a tick that fails never costs the sweep its caches
     return changed
 
 
-def _ci(p):
+def _ci(p, fetch=True, sent=None):
+    """The repo's CI result, fetched when its cache is older than CI_EVERY (fetch) and filed once per red sha. A
+    request that leaves the machine is appended to `sent` first (T-2356: a tick lists each one for the final report,
+    even when something after it fails)."""
     repo = github_repo(p.root)
     if not repo:
         return
     shared = os.path.join(c.state_dir(), "ci", repo.replace("/", "__") + ".json")
     r = _load(shared)
-    if time.time() - r.get("checked", 0) >= CI_EVERY * (48 if r.get("private") else 1):
+    if fetch and time.time() - r.get("checked", 0) >= CI_EVERY * (48 if r.get("private") else 1):
+        if sent is not None:
+            sent.append(repo)
         branch = default_branch(p.root)
         got = ci_main(repo, branch)
         if got == "private":
@@ -154,7 +165,8 @@ def _ci(p):
         b, _ = fmeco.capture_once(p, f"FIX: CI on {r['branch']} is red at {r['sha'][:7]} ({', '.join(r['failed'])})"
                                      f"\nCONTEXT: found by the session-start sweep (T-1810): "
                                      f"https://github.com/{repo}/commit/{r['sha']}\nCI-red: {r['sha']}",
-                                  "FIX", "discovered", key=f"CI-red: {r['sha']}", trigger="ci-red")
+                                  "FIX", "discovered", key=f"CI-red: {r['sha']}", trigger="ci-red",
+                                  trial_key=f"ci:{r['branch']}:{','.join(sorted(r['failed']))}")  # T-2351
         _save(_mine(p), {k: r[k] for k in ("branch", "sha", "failed")} | {"task": b.id})
     elif r.get("sha") and not r.get("failed") and mine:
         _save(_mine(p), {})  # green again

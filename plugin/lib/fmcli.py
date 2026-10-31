@@ -124,7 +124,8 @@ def cmd_state(args):
                      f"--tier S --focus (or just give Claude a request).")
     if not args.line:  # T-2273: reads closed briefs and the ledger, so never on a status bar's poll
         try:
-            sd["unproven"] = c.unproven_cached(p)
+            got = c.unproven_summary(p)
+            sd["unproven"], sd["unproven_kinds"] = got["n"], got["counts"]
         except Exception:  # a rollup must never cost the status
             pass
     if args.line:
@@ -149,11 +150,17 @@ def cmd_proof(args):
     """T-2273: the done tasks with a claim no run here proved, by kind."""
     if args.days < 0:
         raise UsageError("--days is 0 or more")
-    rows = c.unproven(resolve(args), args.days)
-    text = [f"unproven: {len(rows)} (done in the last {args.days} days; fm task evidence --run closes a typed one)"]
-    text += [f"- {r['id']} {c.fit(r['title'], 50)}: {', '.join(r['kinds'])}" + (f" ({r['why']})" if r["why"] else "")
-             for r in rows]
-    out(args, {"count": len(rows), "days": args.days, "tasks": rows}, "\n".join(text))
+    p = resolve(args)
+    got = c.unproven_summary(p, args.days)
+    rows = got["rows"]
+    for r in rows:  # T-2391: read live, never from the cache: an install or a grant changes it
+        for n in r["needs"]:
+            n["waiting"] = c.proof_waiting(p, n)
+    text = [f"unproven: {len(rows)} (done in the last {args.days} days; each row's command closes it)"]
+    for r in rows:
+        text.append(f"- {r['id']} {c.fit(r['title'], 50)}: {', '.join(r['kinds'])}" + (f" ({r['why']})" if r["why"] else ""))
+        text += [f"    {n['kind']}: {n['upgrade']}" + (f"  (waiting: {n['waiting']})" if n["waiting"] else "") for n in r["needs"]]
+    out(args, {"count": len(rows), "counts": got["counts"], "days": args.days, "cold_s": got.get("cold_s"), "tasks": rows}, "\n".join(text))
 
 
 def _block(item, r, key):
@@ -820,7 +827,9 @@ def cmd_task(args):
                 reasons.append(f"lesson missing: fm task done {b.id} --lesson \"<what the next similar task should "
                                f"know>\" (or \"none: <why>\"); recall shows it on related work")
             import fmmiss  # T-2369: fm task done is no way round finish's refusal
-            reasons += fmmiss.safe_gaps(p, b)
+            import fmtoolproof  # T-2372: nor round a tool's proof
+            import fmincident  # T-2388: nor round an incident's two greens and follow-up
+            reasons += fmtoolproof.safe_gaps(p, b) + fmmiss.safe_gaps(p, b) + fmincident.safe_gaps(p, b)
             if reasons:
                 lead = "" if hasattr(args, "audit") else (  # T-0849: fm task done, not finish's own close
                     f" — one call settles most of it: fm task finish {b.id} --run \"<test cmd>\" --audit \"<how>\""
@@ -855,6 +864,11 @@ def cmd_task(args):
         import fmoutcomes
         fmoutcomes.record_close(p, logged)  # T-1061
         fmoutcomes.maintain(p)  # T-2337: the calibration ledger's due outcomes and bar check, each close
+        try:  # T-2351: a task a trigger filed is a trial on its trigger's own key
+            import fmtrials
+            fmtrials.register_fix(p, b)
+        except Exception as e:  # the task is done already; a missing trial must not make that look failed
+            print(f"fm: warning: self-fix trial not registered: {e}", file=sys.stderr)
         if b.meta.get("batch"):
             _settle_batch(p, b, done=True)
         chose = " ".join(b.section("Decision").split()) if b.type == "RESEARCH" else ""
@@ -886,6 +900,12 @@ def cmd_task(args):
         by_hand = list(getattr(args, "not_verified", None) or []) + [
             f"criterion {a.n}: " + c.fit(re.sub(r" — verify with `.*`$", "", a.text), 90)
             for a in b.acceptance() if a.n not in own]
+        try:  # T-2391: each rollup kind this close still needs (docs, infra, data, perf, research, hollow), with its command;
+            # the per-criterion kinds (typed, red, inconclusive) are the criterion lines above
+            by_hand += [f"{n['kind']} proof: {c.fit(n['why'], 70)} → {n['upgrade']}"
+                        for n in c.proof_needs(p, b, files, live=True) if n["kind"] not in ("typed", "red", "inconclusive")]
+        except Exception:  # the close is recorded already; a rollup read must never fail it
+            pass
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed,
                               check_by_hand=by_hand, **({"ledger": _ledger_head(p)} if getattr(args, "json", False)
                                                         else {}),
@@ -1191,7 +1211,9 @@ def task_finish(p, args):
         + _proved_gaps(p, b, then=[cmd for _, _, cmd in todo] + [args.run]) \
         + _adversary_gaps(p, b, lenses)  # T-1906, T-1907: asked before anything runs
     import fmmiss  # T-2369: an open capability miss refuses every try; only a later passing run closes it
-    gaps += fmmiss.safe_gaps(p, b)
+    import fmtoolproof  # T-2372: first, so a proved tool resolves its miss in the same try
+    import fmincident  # T-2388: its criterion's own run is the close's second green
+    gaps += fmtoolproof.safe_gaps(p, b) + fmmiss.safe_gaps(p, b) + fmincident.safe_gaps(p, b, closing=True)
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always
@@ -1203,6 +1225,10 @@ def task_finish(p, args):
     infra = fminfra.for_task(p, b)
     if infra:
         results.append(("final", None, "fm prove --infra", *infra))
+    import fmmigrate  # T-2386: the migration files the task touched, run up/down/up in a trusted tree
+    mig = fmmigrate.for_task(p, b)
+    if mig:
+        results.append(("final", None, "fm prove --migration", *mig))
     tree = c.worktree_id(p.root)
 
     def record(x):
@@ -3313,10 +3339,18 @@ def _list_value(v):
     return [x.strip().strip("'\"").strip() for x in v.split(",") if x.strip().strip("'\"").strip()]
 
 
+def _door_check(p, b):
+    """T-2342 review: a step or criterion changed on an active task meets the one-way door gate, as fm focus does."""
+    if b.status in ("active", "verifying"):
+        import fmdoors
+        fmdoors.check(p, b.id)
+
+
 def task_step(p, args):
     if args.action == "add":
         b, n = mutate(p, args.id, lambda b: _filled(b, b.add_step(args.arg)), "step_add", {"text": args.arg})
-        return out(args, c.brief_summary(b), f"{b.id}: added step {n}.")
+        _door_check(p, b)
+        return out(args, c.brief_summary(c.find_brief(p, b.id) or b), f"{b.id}: added step {n}.")
     try:
         n = int(args.arg)
     except ValueError:
@@ -3329,6 +3363,9 @@ def task_step(p, args):
                           "step_reword" if args.action == "edit" else "step_remove", {"step": n, "text": args.text})  # step_edit: a file edit
         except KeyError as e:
             raise UsageError(str(e).strip("'\""))
+        if args.action == "edit":
+            _door_check(p, b)
+            b = c.find_brief(p, b.id) or b
         return out(args, c.brief_summary(b), f"{b.id}: step {n} {'edited' if args.action == 'edit' else 'removed; later steps renumbered'}.")
     if args.action == "current":
         b, _ = mutate(p, args.id, lambda b: b.set_current(n), "step_current", {"step": n})
@@ -3340,6 +3377,10 @@ def task_step(p, args):
             b.add_evidence(ev[0], ev[1], step=n)
         b.mark_step(n)
     b, _ = mutate(p, args.id, done, "step_done", {"step": n, "evidence": ev})
+    import fmdoors
+    for rel in fmdoors.drift(p, b.id, n):  # T-2342: the step's Undo line restores the snapshot's copy of these
+        print(f"fm: warning: {rel} differs from its snapshot taken at focus (the step changed it, or something else did); "
+              f"step {n}'s Undo line restores the snapshot's copy over it", file=sys.stderr)
     s = c.brief_summary(b)
     nxt = f" Next: step {s['step']['n']}/{s['step']['of']} {s['step']['text']}" if s["step"] else " All steps done."
     out(args, s, f"{b.id}: step {n} done.{nxt}")
@@ -3352,7 +3393,8 @@ def task_ac(p, args):
         _refuse_unrunnable(p, [verify])
         b, _ = mutate(p, args.id, lambda b: _filled(b, b.add_ac(text, verify)), "ac_add", {"text": text})
         _lint_verify(p, [verify])
-        return out(args, c.brief_summary(b), f"{b.id}: criterion added.")
+        _door_check(p, b)
+        return out(args, c.brief_summary(c.find_brief(p, b.id) or b), f"{b.id}: criterion added.")
     try:
         n = int(args.arg)
     except ValueError:
@@ -3366,7 +3408,8 @@ def task_ac(p, args):
         except KeyError as e:
             raise UsageError(str(e).strip("'\""))
         _lint_verify(p, [args.verify])
-        return out(args, c.brief_summary(b), f"{b.id}: criterion {n} edited.")
+        _door_check(p, b)
+        return out(args, c.brief_summary(c.find_brief(p, b.id) or b), f"{b.id}: criterion {n} edited.")
     ev = args.evidence
 
     def check(b):
@@ -3381,6 +3424,7 @@ def cmd_focus(args):
     p = resolve(args)
     warn = None
     blast = ""  # T-2277: git and sqlite waits happen before the project lock every verb queues on
+    peek = None
     try:
         peek = need_brief(p, args.id)
         if peek.tier in ("M", "L") and "Blast radius (fm graph blast)" not in peek.section("Risks and rollback"):
@@ -3389,6 +3433,9 @@ def cmd_focus(args):
                 peek.section(s) for s in ("Interpretation", "Approach (options → choice → why)", "Steps")))  # T-2336
     except Exception:  # a hint; the locked read below reports a missing task
         pass
+    if peek and peek.status not in c.CLOSED:  # T-2342: doors read, snapshots taken and parks recorded under their own locks
+        import fmdoors
+        fmdoors.check(p, peek.id)
     with c.lock(p.dir):
         target = need_brief(p, args.id)
         if target.status in c.CLOSED:
@@ -3831,6 +3878,20 @@ def cmd_ask(args):
         if "plugin" not in cats or fmplugins.content_hash(args.pin) is None:
             raise UsageError(f"--pin names a plugin to install or enable with the plugin category; {args.pin!r} "
                              f"isn't in the known marketplaces or installed (fm plugins find <need>)")
+    if args.later:  # T-2374: a request only the user can answer, on the task; nothing here can grant it
+        import fmgrants
+        if args.standing:
+            raise UsageError("--later queues a request on one task; --standing is a yes for every task: ask without --later")
+        b = need_brief(p, args.id)
+        if b.status in c.CLOSED:
+            raise UsageError(f"{b.id} is closed ({b.status}): queue the request on an open task")
+        state, d = fmgrants.queue(p, b.id, cats, why, pin=args.pin, fallback=args.fallback, session=session())
+        what = f"{', '.join(cats)}{' ' + args.pin if args.pin else ''}"
+        msg = {"queued": f"Queued for the user: {what} on {b.id}. It grants nothing and never expires; fm todo lists it. "
+                         f"Carry on with the steps that don't need it.",
+               "dedupe": f"{what} is already queued on {b.id}: nothing added.",
+               "refused": f"The user said no to {what} earlier: it is not requested again. Use the fallback."}[state]
+        return out(args, {"task": b.id, "state": state, "allow": cats, "pin": args.pin or "", "later": True}, msg)
     with c.lock(p.dir):
         b = need_brief(p, args.id)
         if b.status in c.CLOSED and not args.standing:  # T-0302: a yes on a closed task would grant nothing
@@ -3881,6 +3942,11 @@ def cmd_todo(args):
     p = resolve(args)
     todo = []
     import time
+    import fmgrants
+    briefs = c.load_briefs(p)
+    for b, d in fmgrants.queued(p, briefs):  # T-2374: queued grants first, with what a yes unblocks; they never expire
+        todo.append({"kind": "grant", "task": b.id, "text": fmgrants.text(d), "unblocks": fmgrants.unblocks(p, b, briefs),
+                     "command": fmgrants.command(b, d)})
     for a in c.read_meta(p).get("pending_approvals") or []:
         if isinstance(a, dict):
             cats = ", ".join(a.get("allow") or [])
@@ -3892,7 +3958,7 @@ def cmd_todo(args):
     for tid in unanswered_asks(p):  # T-0622: requests the last session missed
         todo.append({"kind": "unanswered", "task": tid, "text": "a request the last session didn't answer",
                      "command": f"fm task show {tid}; answer it or fm task drop {tid} \"reason\""})
-    for b in c.load_briefs(p):
+    for b in briefs:
         if b.status == "blocked":
             why = next((l.split("blocked:", 1)[1].strip() for l in reversed(b.section("Log").splitlines())
                         if "blocked:" in l), "")
@@ -3910,7 +3976,8 @@ def cmd_todo(args):
                 todo.append({"kind": "decision", "task": None, "text": f"[{kind.group(1)}] {text}",
                              "command": "fm decide --review; fm decide \"<new>\" --reverses \"<words of it>\" to undo"})
     shown = todo[:20]
-    lines = [f"- {e['task'] + ' ' if e['task'] else ''}{e['kind']}: {e['text']}\n    → {e['command']}" for e in shown]
+    lines = [f"- {e['task'] + ' ' if e['task'] else ''}{e['kind']}: {e['text']}"
+             + (f"\n    unblocks: {e['unblocks']}" if e.get("unblocks") else "") + f"\n    → {e['command']}" for e in shown]
     if len(todo) > len(shown):
         lines.append(f"{len(todo) - len(shown)} more (fm todo --json)")
     if older:
@@ -4022,8 +4089,13 @@ def cmd_decide(args):
                                                           if "[reverses:" not in rows[n - 1]) else "") for n in nums]
         if getattr(args, "export_adr", None):  # numbered as in the full list, so a --review export never collides
             return _export_adr(p, args, list(zip(nums, pick)))
-        return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick]},
-                   "\n".join(pick[-args.n:]) or "No decisions recorded.")
+        fetched = []  # T-2356: what the model-free tick sent off the machine (a ledger event each, no pending row)
+        if args.review:
+            import fmnight
+            fetched = [{"date": d, "kind": k, "repo": r, "requests": n} for d, k, r, n in fmnight.fetches(p)]
+        sent = [f"{f['date']} night tick sent {f['requests']} request(s): {f['kind']} of {f['repo']}" for f in fetched]
+        return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick], "night_fetches": fetched},
+                   "\n".join(pick[-args.n:] + sent) or "No decisions recorded.")
     try:
         revisit = c.revisit_tag(p.root, args.revisit) + " " if getattr(args, "revisit", None) else ""  # callers build
     except ValueError as e:                                                                          # their own args
@@ -6063,6 +6135,10 @@ def _build_parser(only=None):
     s.add_argument("--pin", help="plugin id: the plugin yes holds only for installing or enabling it, as it is now")
     s.add_argument("--standing", action="store_true",
                    help="core only: the yes covers every later task in this project until fm standing off")
+    s.add_argument("--later", action="store_true",
+                   help="queue the request on the task for the user (never expires, grants nothing; fm todo lists it): "
+                        "no dialog, so it works headless and in full autonomy")
+    s.add_argument("--fallback", default="", help="with --later: what the work does meanwhile")
 
     s = add("trust", cmd_trust, tier=("Project and settings", 740), help="whether Claude may edit the guard and Claude Code settings (on: /fm-trust, typed)")
     s.add_argument("state", nargs="?", choices=["off"])
@@ -6650,6 +6726,9 @@ def _build_parser(only=None):
     s.add_argument("--dry-run", action="store_true", help="list tonight's jobs and estimates; run nothing")
     s.add_argument("--print-timer", action="store_true",
                    help="print a systemd user timer + service and a crontab line for fm night here; install nothing")
+    s.add_argument("--tick", action="store_true",
+                   help="the model-free pass (T-2356): standing orders, the cached CI result, and CI or issues only where "
+                        "you said yes; spends no tokens")
     s.add_argument("--max-usd", type=float, default=2.0, help="the night's spend at most (and today's budget left)")
     s.add_argument("--only", action="append", metavar="JOB", help="only this job (repeatable): landscape, "
                                                                   "second session, court")
@@ -6884,6 +6963,15 @@ def _build_parser(only=None):
                    "session, leases (T-1821)")
 
     add("next", cmd_next, tier=("Every task", 10), help="the one next required action (derived from the briefs)")
+
+    s = add("incident", lazy("fmincident", "cmd_incident"), tier=("Every task", 102), help="live harm: open an urgent FIX "
+            "on a signal that is red now (--signal CMD); log actions with their expected effect; close on the signal "
+            "green twice plus one follow-up; fm sentinel keeps rerunning it")
+    s.add_argument("words", nargs="+", help="'<impact>' with --signal; or: log '<action>' --expect '<effect>'; "
+                   "follow-up '<what stops this recurring>'")
+    s.add_argument("--signal", help="the harm signal: one command, exit 0 healthy, 1..125 harmed")
+    s.add_argument("--expect", help="with log: the effect the action should have")
+    s.add_argument("--id", help="log/follow-up: the incident (default: the open one)")
 
     s = add("sentinel", cmd_sentinel, tier=("Internal (hooks and installer)", 1320), help="re-run the checks recent finished tasks passed; report what fails now")
     s.add_argument("--last", type=int, default=10, help="finished tasks to cover")
@@ -7374,9 +7462,10 @@ def _build_parser(only=None):
                    "failure, 2 nothing checkable or provable (T-2381)")
     s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests (--docs: its "
                    "documented commands), kept for this tree")
-    s.add_argument("--migration", action="store_true", help="instead: run the tree's plain SQL NAME.up.sql/NAME.down.sql "
-                   "migrations up, down, up on a throwaway sqlite file and compare the schema each time; trusted trees "
-                   "only; exit 0 pass, 1 fail, 2 refused or no known tool (T-2288)")
+    s.add_argument("--migration", action="store_true", help="instead: run the tree's migrations (SQL pairs, dbmate files, "
+                   "alembic, Django) up, down, up on a throwaway database with the right dialect and compare the schema "
+                   "each time; trusted trees only; exit 0 pass, 1 fail, 2 refused, unproven (dialect or environment) or "
+                   "no known tool (T-2288, T-2386)")
     s.add_argument("--infra", action="store_true", help="instead: run each infra file's own validator (hadolint, docker "
                    "compose config, terraform validate in an initialised folder, helm lint, kubeconform, actionlint, "
                    "shellcheck, systemd-analyze verify) on a throwaway copy, offline; a missing tool leaves the file "
@@ -7754,8 +7843,11 @@ def _build_parser(only=None):
     s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "recover", "race", "pick"])
     s.add_argument("--agent-stopped", action="store_true", help="recover: its agent was stopped (TaskStop), so a "
                                                                 "stalled lane is free to take back (T-2354)")
-    s.add_argument("--score", action="store_true", help="race: run both sides' criteria in their worktrees, count "
-                                                        "lines changed, name a leader (T-1069)")
+    s.add_argument("--score", action="store_true", help="race: run every side's criteria in its worktree, cross-examine "
+                                                        "(each side's new tests on the others' trees), count lines "
+                                                        "and files outside scope, name a leader (T-1069, T-2339)")
+    s.add_argument("--sides", type=int, metavar="N", help="race: 2 or 3 sides, one per Approach option, the stated "
+                                                          "choice first (default 2) (T-2339)")
     s.add_argument("id", nargs="?", help="the task id; max: how many builders may be out at once (1-6)")
     s.add_argument("--confidence", metavar="N", help="race: whole percent, 0-100, that the original side wins; a bet in "
                                                      "the calibration ledger (T-2337)")
@@ -7765,6 +7857,8 @@ def _build_parser(only=None):
     s.add_argument("--unverified", metavar="REASON", help="merge: merge although the criteria's re-run is red, with the "
                                                           "reason on the ledger (main thread only, T-0948)")
     s.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="brief: the builder's model, over the history's pick (T-2291)")
+    s.add_argument("--revert-route", metavar="DATE", help="brief, no id: put back the dearer picks the probe-down route "
+                                                          "promoted since DATE (YYYY-MM-DD), probing paused 20 lanes (T-2353)")
     s.add_argument("--why", metavar="REASON", help="rm: drop the builder's work (its branch is kept, a locked worktree "
                                                    "goes); the next fm lane brief starts from this (T-1823)")
     s = add("session", lazy("fmsession", "cmd_session"), tier=("Running elsewhere", 1160), help="agent sessions on this device (claude, codex, gemini, "

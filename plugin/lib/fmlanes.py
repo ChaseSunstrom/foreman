@@ -6,13 +6,18 @@ import argparse
 import collections
 import contextlib
 import functools
+import hashlib
 import io
 import json
 import os
 import re
 import shutil
+import subprocess
 import sys
+import tarfile
+import tempfile
 import time
+import zlib
 
 import fmcore as c
 
@@ -166,6 +171,13 @@ def cmd_lane(args):
                 lines.append(f"{b.meta['lane']} [missing]: {b.id} {b.status} {c.fit(b.title, 50)} — fm lane rm {b.id} "
                              f"frees it")
         return fmcli.out(args, {"lanes": rows}, "\n".join(lines) or "No lanes: fm lane new <task id> makes one.")
+    if getattr(args, "revert_route", None):  # T-2353: the off switch for the probe-down route, no task id
+        if args.action != "brief" or p.lane:
+            raise fmcli.UsageError("fm lane brief --revert-route DATE runs from the main checkout, with no task id")
+        back = revert_route(p, args.revert_route)
+        return fmcli.out(args, {"reverted": [{"tier": t, "from": m} for t, m in back]},
+                         (", ".join(f"{t} lanes back from {m}" for t, m in back) or "No promotion since that date")
+                         + f"; probing is paused for the next {REVERT_QUIET} lanes of each tier.")
     if not args.id:
         raise fmcli.UsageError(f"fm lane {args.action} needs a task id")
     if p.lane:  # T-0234 review: a lane (a builder's above all) doesn't hand itself back or start others
@@ -173,7 +185,7 @@ def cmd_lane(args):
     b = fmcli.need_brief(p, args.id)
     branch = f"foreman/{b.id}"
     if args.action == "race":
-        return score(p, b, main, args) if getattr(args, "score", False) else race(p, b, args)
+        return score(p, b, main, args) if getattr(args, "score", False) else race(p, b, main, args)
     if args.action == "pick":
         return pick(p, b, main, args)
     if args.action == "brief":
@@ -187,9 +199,6 @@ def cmd_lane(args):
             raise fmcli.UsageError(f"{b.id} has no builder to recover (fm lane brief {b.id})")
         return recover(p, b, main, args)
     if args.action == "merge":
-        if b.meta.get("lane_spike"):  # T-0732: a spike answers a question; its code is thrown away
-            raise c.PolicyError(f"{b.id}'s lane is a spike: it is never merged. Note what it found (fm task note "
-                                f"{b.id} fact \"…\"), then fm lane rm {b.id}")
         why = getattr(args, "unverified", None)
         if why is not None and not why.strip():
             raise c.PolicyError("--unverified needs a reason (what makes the criteria's re-run wrong)")
@@ -650,100 +659,236 @@ def resume(p, b, main, args, ended=False, recover=None, after=""):
     return builder_brief(p, c.find_brief(p, b.id), args, resume_branch=branch if have else None, after=after)
 
 
-def _pair(p, b):
-    """(the original, its b side) of a race, from either one."""
+def _sides(p, b):
+    """(the original, [its b sides]) of a race, from any side."""
     orig = c.find_brief(p, b.meta["race_of"]) if b.meta.get("race_of") else b
-    other = c.find_brief(p, orig.meta.get("race")) if orig and orig.meta.get("race") else None
-    if not orig or not other:
+    ids = (orig.meta.get("race_sides") or [orig.meta["race"]]) if orig and orig.meta.get("race") else []
+    others = [x for x in (c.find_brief(p, i) for i in ids) if x]
+    if not orig or not others:
         raise c.PolicyError(f"{b.id} isn't in a race (fm lane race {b.id} starts one)")
-    return orig, other
+    return orig, others
 
 
-def race(p, b, args):
-    """T-1069: two builders on one S/M task. The brief is cloned as its "b" side under a new id (fm focus holds one
-    lane per task), each side gets a builder brief, and the main thread scores and picks one."""
+APPROACH = "Approach (options → choice → why)"
+DESIGN = c.DESIGN  # the L's Approach keeps its spikes' scores below it; replaced on each --score
+
+
+def _design(orig):
+    """T-2340: is this race a design race (race() marked its L)? An L whose tier was edited since is refused, never read
+    as a plain race: its spikes' code must not reach main through pick."""
+    if not orig.meta.get("race_design"):
+        return False
+    if orig.tier != "L":
+        raise c.PolicyError(f"{orig.id} is {orig.tier} but its race is a design race (it was an L when the race started): "
+                            f"fm task set {orig.id} tier=L, then fm lane race {orig.id} --score or fm lane pick again")
+    return True
+
+
+def _racers(orig, others):
+    """The sides a race scores: a design race scores its spikes, the L itself has no code (T-2340)."""
+    return others if _design(orig) else [orig, *others]
+
+
+def _flat(s, n=120):
+    """T-2340: a spike builder's note as one plain clause for the L's Approach: no digit marker, bracket or percent, no
+    option word, so it can't read as an option or a stated choice to the plan gate (the last '(NN%)' wins there).
+    Text that reads as instructions to the model keeps its marker (T-0058): the note reaches the plan and its readers."""
+    s = re.sub(r"\b(?:option|approach|reading)\b", "opt", re.sub(r"[^\w ,:;'/-]", " ", s), flags=re.I)
+    return c.defang(c.fit(" ".join(s.split()), n))
+# the words are fmcore's (CHOICE_WORDS, what the plan gate reads); a letter counts when uppercase or marked "a)" "a." "a:",
+# so "chose a simple cache" names no option
+_CHOSEN_RE = re.compile(r"\b(?i:" + c.CHOICE_WORDS + r")\b\W{0,6}(?i:option|approach)?\s*(?:(\d{1,2})\b|([A-Z])\b|([a-z])(?=[).:]))")
+
+
+def _options(b):
+    """([the Approach's option texts], the stated choice, 1-based; 1 when none reads or it is out of range)."""
+    ap = b.section(APPROACH).split(DESIGN, 1)[0]  # T-2340: a design race's note below the options is no part of the last one
+    opts = [c.fit(" ".join(x.split()), 200) for x in c._split_options(ap)]
+    m = _CHOSEN_RE.search(ap)  # the first hit: a later "we chose …" in the why isn't the choice
+    n = (int(m[1]) if m[1] else ord((m[2] or m[3]).lower()) - 96) if m else 1
+    return opts, n if 1 <= n <= len(opts) else 1
+
+
+def _plan_sides(b, n):
+    """[(option number or None, its text)] per side, the stated choice first then the rest in order: one per named
+    option. With under 2 options a 2-side race keeps T-1069's open one (the b side picks its own alternative)."""
+    import fmcli
+    opts, ch = _options(b)
+    if len(opts) < n and n > 2:  # 2 sides on under 2 options: the open race, as before (the b side picks its own way)
+        raise fmcli.UsageError(f"--sides {n} needs {n} options in the Approach: it names {len(opts)} options (fm task "
+                               f"set {b.id} --section Approach)")
+    if len(opts) < 2:
+        return [(None, "")] * n
+    return [(k, opts[k - 1]) for k in [ch] + [i for i in range(1, len(opts) + 1) if i != ch]][:n]
+
+
+def race(p, b, main, args):
+    """T-1069: builders on one S/M task, 2 by default and up to 3 (T-2339), one per Approach option. The brief is
+    cloned as each "b" side under a new id (fm focus holds one lane per task), each side gets a builder brief that
+    names its option, and the main thread scores and picks one."""
     import fmcli
     import fmoutcomes
+    n = getattr(args, "sides", None) or 2
+    if n not in (2, 3):
+        raise fmcli.UsageError(f"--sides is 2 or 3: got {n}")
     conf = getattr(args, "confidence", None)
     if conf is not None:  # T-2337: refused before anything starts
         try:
-            fmoutcomes._stated(conf)
+            stated = fmoutcomes._stated(conf)
         except ValueError as e:
             raise fmcli.UsageError(str(e))
+        bar = fmoutcomes.bars(p)["race"]
+        if stated >= bar:  # the plan is sure enough to skip the race: it still runs, but the bet is on record
+            print(f"fm: note: {stated}% is at or above the race bar ({bar}%): this plan could skip the race",
+                  file=sys.stderr)
+    b = c.find_brief(p, b.id)
+    if b.meta.get("race") or b.meta.get("race_of"):  # said first: a second race is not a slot problem
+        raise c.PolicyError(f"{b.id} is already racing (fm lane race {b.id} --score)")
+    _ready(p, b, n)
+    design = b.tier == "L"  # T-2340: an L's design races as S spikes, one per option; the L itself stays in the main thread
+    plan = _plan_sides(b, n)
+    stated = plan[0][0]
+    if design:
+        if stated is None:
+            raise fmcli.UsageError(f"a design race needs 2+ options in the Approach of {b.id} (fm task set {b.id} --section Approach)")
+        plan = sorted(plan, key=lambda x: x[0])  # the options in order; the stated one is among them
+    checks = [v for _, v in b.verify_cmds() if v]
+    _say(f"running {len(checks)} check(s) on the base tree")
+    if not _fails_on_base(p, b, main, checks):  # T-2339: a check that passes on the base can't tell the sides apart
+        raise c.PolicyError("the checks can't tell the sides apart: add one that fails now (none of the criteria's verify "
+                            f"commands fails on the base tree, run in the main checkout as it stands, uncommitted work "
+                            f"included; a timeout, a missing program or a linted command doesn't count; fm task ac {b.id} "
+                            f"add …)")
+    letters = "ABC"
     with c.lock(p.dir):  # review: checked and written under one lock, so two races at once can't both start
         b = c.find_brief(p, b.id)
         if b.meta.get("race") or b.meta.get("race_of"):
             raise c.PolicyError(f"{b.id} is already racing (fm lane race {b.id} --score)")
-        _ready(p, b)
-        released = b.status == "active"
-        if released:  # T-2338: fm next names the race while the task is focused and untouched: release it
+        _ready(p, b, n)
+        released = b.status == "active" and not design
+        if released:  # T-2338: fm next names the race while the task is focused and untouched: release it, after every refusal above
             b.meta["status"] = "planned"
             b.append_log("released to race: focused, no work on it yet")
             c.save_brief(p, b)
-        nid = c.next_id(p)
-        nb = c.Brief.parse(b.render())
-        nb.path, nb.meta["id"], nb.meta["race_of"], nb.meta["status"] = None, nid, b.id, "planned"
-        for k in ("lane", "lane_branch", "builder", "builder_proc", "base", "base_tree", "paused_tree", "race",
-                  "race_checks"):
-            nb.meta.pop(k, None)
-        nb.preamble = nb.preamble.replace(f"# {b.title}", f"# {b.title} (race b of {b.id})", 1)
-        nb.set_section("Verification evidence", "")
-        nb.set_section("Race", f"The b side of a race with {b.id}: take a different approach from the obvious one (the "
-                               f"Approach section's alternatives); the main thread scores both and merges one.")
-        nb.set_section("Log", f"- {c.now()} race b of {b.id}")
-        c.save_brief(p, nb)
-        # review: both sides are scored on the original's checks, fixed now (a builder can edit its own criteria)
-        b.meta["race"], b.meta["race_checks"] = nid, [v for _, v in b.verify_cmds() if v]
-        b.append_log(f"racing {nid}")
+        nids = []
+        for i, (opt, text) in enumerate(plan if design else plan[1:], 0 if design else 1):
+            nid = c.next_id(p)
+            nids.append(nid)
+            nb = c.Brief.parse(b.render())
+            nb.path, nb.meta["id"], nb.meta["race_of"], nb.meta["status"] = None, nid, b.id, "planned"
+            for k in ("lane", "lane_branch", "builder", "builder_proc", "base", "base_tree", "paused_tree", "race",
+                      "race_checks", "race_sides", "race_option"):
+                nb.meta.pop(k, None)
+            if opt:
+                nb.meta["race_option"] = opt
+            nb.preamble = nb.preamble.replace(f"# {b.title}", f"# {b.title} ({'spike' if design else 'race'} "
+                                                              f"{letters[i].lower()} of {b.id})", 1)
+            nb.set_section("Verification evidence", "")
+            if design:  # a throwaway S task aimed at the option's riskiest step; fm lane merge refuses a lane_spike
+                risk = re.search(r"(?:fails if|likely outcome):?\s*(.+)", text, re.I)
+                nb.meta["tier"], nb.meta["lane_spike"] = "S", True
+                nb.set_section("Steps", "1. [ ] Spike the riskiest step of your option, commit it, and note what it shows "
+                                        f"(fm task note {nid} fact \"…\")")
+                nb.set_section("Race", f"Design spike {letters[i]} of {b.id}'s race: option {opt} of the Approach: {text} "
+                                       f"Build the riskiest step first: {risk[1] if risk else 'the part this option leans on most'}. "
+                                       f"Your code is thrown away and never merged (its branch is kept): commit what you "
+                                       f"built and note what it showed. The main thread scores the spikes and picks "
+                                       f"the design; {b.id} itself stays with the main thread.")
+            else:
+                nb.set_section("Race", f"Side {letters[i]} of a race with {b.id}: "
+                                       + (f"build option {opt} of the Approach: {text} " if opt else "")
+                                       + "Take a different approach from the obvious one (the Approach section's "
+                                         "alternatives); the main thread scores the sides and merges one.")
+            nb.set_section("Log", f"- {c.now()} {'design spike' if design else 'race'} {letters[i].lower()} of {b.id}")
+            c.save_brief(p, nb)
+        # review: every side is scored on the original's checks, fixed now (a builder can edit its own criteria)
+        b.meta["race"], b.meta["race_checks"] = nids[0], checks
+        b.meta["race_sides"] = nids
+        if design:  # the mark pick and score go by: the tier is editable, the race's kind is not
+            b.meta["race_design"] = True
+        if plan[0][0] and not design:
+            b.meta["race_option"] = plan[0][0]
+            b.set_section("Race", f"Side A of a race with {b.id}: build option {plan[0][0]} of the Approach (the stated "
+                                  f"choice): {plan[0][1]} The other sides build the other options; the main thread "
+                                  f"scores the sides and merges one.")
+        b.append_log(f"racing {', '.join(nids)}")
         c.save_brief(p, b)
-    c.log_event(p, "race_start", task=b.id, data={"other": nid})
-    if conf is not None:  # the bet: side A (the original) wins; scored by fm lane pick
+    c.log_event(p, "race_start", task=b.id, data={"other": nids[0], "others": nids, **({"design": True} if design else {})})
+    if conf is not None:  # the bet: side A (the original) wins, in a design race the spike of the stated option; scored by fm lane pick
+        won = nids[[k for k, _ in plan].index(stated)] if design else b.id
         try:  # a ledger doesn't stop a race that has already started
-            fmoutcomes.bet(p, "race", conf, task=b.id, key=f"{b.id}>{nid}", files=b.meta.get("scope") or [],
+            fmoutcomes.bet(p, "race", conf, task=b.id, key=f"{won}>{b.id if design else nids[0]}", files=b.meta.get("scope") or [],
                            base=fmoutcomes.base_rate(fmoutcomes.outcomes(p), fmoutcomes._first_finish(p), b.type,
                                                      b.tier))
         except Exception as e:
             print(f"fm: warning: the race bet was not recorded ({c.fit(str(e), 80)})", file=sys.stderr)
     quiet = argparse.Namespace(**{**vars(args), "json": True})
     try:
-        with contextlib.redirect_stdout(io.StringIO()):  # the two briefs' own output; the launch lines follow
-            for t in (b.id, nid):
+        with contextlib.redirect_stdout(io.StringIO()):  # the briefs' own output; the launch lines follow
+            for t in (nids if design else (b.id, *nids)):
                 builder_brief(p, c.find_brief(p, t), quiet)
-    except Exception:  # review: no half-started race (an orphan clone, a race mark nobody can clear)
-        fmcli.mutate(p, nid, lambda y: (y.meta.__setitem__("status", "dropped"),
-                                        y.append_log("dropped: the race couldn't start")), "task_drop", {})
-        fmcli.mutate(p, b.id, lambda y: (y.meta.pop("race", None), y.meta.pop("race_checks", None),
+    except Exception:  # review: no half-started race (orphan clones, a race mark nobody can clear)
+        for nid in nids:
+            fmcli.mutate(p, nid, lambda y: (y.meta.__setitem__("status", "dropped"),
+                                            y.append_log("dropped: the race couldn't start")), "task_drop", {})
+        fmcli.mutate(p, b.id, lambda y: ([y.meta.pop(k, None) for k in ("race", "race_checks", "race_sides", "race_option", "race_design")],
                                          released and y.meta.__setitem__("status", "active")), "race_abort", {})  # T-2338: focused again
         raise
     agent = 'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"'
-    paths = {t: os.path.join(p.dir, "audits", f"{t}.builder.md") for t in (b.id, nid)}
-    return fmcli.out(args, {"id": b.id, "race": nid, "briefs": paths}, f"{b.id} races {nid}:\n" + "\n".join(
+    racers = nids if design else [b.id, *nids]
+    paths = {t: os.path.join(p.dir, "audits", f"{t}.builder.md") for t in racers}
+    return fmcli.out(args, {"id": b.id, "race": nids[0], "sides": racers, "briefs": paths},
+                     f"{b.id} {'design race, spikes' if design else 'races'} {', '.join(nids)}:\n" + "\n".join(
         f"  launch: {agent}, prompt: \"Read {path} and work the task it describes.\"" for path in paths.values())
-        + f"\n  then: fm lane race {b.id} --score, and fm lane pick <the winner>")
+        + f"\n  then: fm lane race {b.id} --score, and fm lane pick <the winner>"
+        + (f" (a spike's code is never merged; {b.id} stays here)" if design else ""))
 
 
-def _ready(p, b):
-    """T-1069 review: what builder_brief checks, for both sides, before a race writes anything."""
+def _ready(p, b, n=2):
+    """T-1069 review: what builder_brief checks, for every side, before a race writes anything."""
     import fmcli
-    if b.tier not in ("S", "M"):
-        raise c.PolicyError(f"{b.id} is {b.tier}: a race takes an S or M task")
+    if b.tier not in ("S", "M", "L"):
+        raise c.PolicyError(f"{b.id} is {b.tier}: a race takes an S, M or L task")
     idle = b.status == "active" and not b.has_evidence() and not any(s.done for s in b.steps())  # T-2338: no work yet
     if b.status in c.CLOSED or b.status == "verifying" or (b.status == "active" and not idle) or c.held_elsewhere(b):
         raise c.PolicyError(f"{b.id} is {b.status}: a race takes a task nobody is working on")
-    gaps = c.plan_gaps(b, c.effective_autonomy(p))
+    # T-2340: an L's design races before its approval (the race informs the yes), so the approval gap doesn't count;
+    # an explore item's own wait for the user's yes does (its spikes clone it, and a builder brief refuses them)
+    if b.tier == "L" and b.meta.get("explore") and c.needs_approval(b, c.effective_autonomy(p)):
+        raise c.PolicyError(f"{b.id} is an explore item that isn't approved: the user's yes comes before any spike "
+                            f"(fm task set {b.id} approved=true after it)")
+    gaps =c.plan_gaps(b, "full" if b.tier == "L" else c.effective_autonomy(p))
     if gaps:
         raise c.PolicyError(f"{b.id} isn't planned enough for a builder: missing {', '.join(gaps)} (fm task set/ac/step)")
     if not [v for _, v in b.verify_cmds() if v]:
         raise fmcli.UsageError(f"{b.id} has no criterion with a verify command: a race is scored on them")
     out = [x.id for x in c.load_briefs(p) if x.meta.get("builder") and x.status not in c.CLOSED and x.id != b.id]
-    if len(out) + 2 > builders_cap(p):
-        raise c.PolicyError(f"a race needs 2 free builder slots; {len(out)} of {builders_cap(p)} are out: merge one "
+    if len(out) + n > builders_cap(p):
+        raise c.PolicyError(f"a race needs {n} free builder slots; {len(out)} of {builders_cap(p)} are out: merge one "
                             f"first, or fm lane max N")
 
 
 def _checks(p, x):
     orig = c.find_brief(p, x.meta["race_of"]) if x.meta.get("race_of") else x
     return (orig.meta.get("race_checks") if orig else None) or [v for _, v in x.verify_cmds() if v]
+
+
+def _say(msg):
+    """T-2339: a race's phases take minutes; one stderr line each (stdout stays the verb's answer)."""
+    print(f"fm: race: {msg}", file=sys.stderr, flush=True)
+
+
+def _fails_on_base(p, x, main, checks):
+    """The checks that really fail on the base tree: exit 124 (timeout) and 127 (no such program) and a command the
+    lint flags say nothing about the sides, so they count as passing."""
+    import fmcli
+    real = []
+    for cmd in checks:
+        fmcli.guard_stored(p, x, cmd)
+        code = c.run_command(main, cmd, 600)[0]
+        if code not in (0, 124, 127) and not c.lint_verify(cmd, main):
+            real.append(cmd)
+    return real
 
 
 def _failing(p, x, path, checks):
@@ -757,29 +902,289 @@ def _failing(p, x, path, checks):
 
 
 def _side(p, x, main):
-    """{id, branch, tests, passed, lines} for one side: the race's checks run in its own worktree."""
+    """{id, branch, tests, passed, lines, outside, diff} for one side: the race's checks run in its own worktree;
+    outside is the changed files no scope glob covers, diff a hash of its patch (equal hashes: the same change)."""
     branch, path = x.meta.get("lane_branch"), x.meta.get("lane")
-    row = {"id": x.id, "branch": branch, "tests": 0, "passed": 0, "lines": None}
+    row = {"id": x.id, "branch": branch, "tests": 0, "passed": 0, "lines": None, "outside": 0, "diff": None,
+           "caught": 0, "broken": 0, "coupled": 0}
     if not branch or not path or not os.path.isdir(path):
+        return row
+    if _git(path, "status", "--porcelain").stdout.strip():  # the diff below reads commits: this side's work isn't in it
+        row["error"] = "uncommitted work: commit it in the lane, then score again"
         return row
     stat = _git(main, "diff", "--shortstat", f"HEAD...{branch}")  # review: a tree base can't make a symmetric diff
     if stat.returncode:
         row["error"] = c.fit(stat.stderr.strip(), 120)
         return row
     row["lines"] = sum(int(n) for n in re.findall(r"(\d+) (?:insertion|deletion)", stat.stdout))
+    scope = x.meta.get("scope") or []
+    names = _git(main, "diff", "--name-only", "--no-renames", "-z", f"HEAD...{branch}").stdout.split("\0")
+    row["outside"] = len([f for f in names if f and scope and not any(c.glob_match(f, s) for s in scope)])
+    patch = _git(main, "diff", "--no-renames", f"HEAD...{branch}").stdout
+    row["diff"] = hashlib.sha1(patch.encode("utf-8", "replace")).hexdigest()[:12] if patch.strip() else None
     checks = _checks(p, x)
     row["tests"], row["passed"] = len(checks), len(checks) - len(_failing(p, x, path, checks))
     return row
 
 
+_TEST_RE = re.compile(r"(?:.*/)?(?:test_\w+|\w+_test)\.py", re.ASCII)  # fullmatch; \w only: the name goes into a shell command
+CROSS_FILES, CROSS_SECS, CROSS_TOTAL = 5, 120, 300  # per side: test files it may bring; one run's timeout; all runs'
+
+
+def _cross(p, xs, rows, main):
+    """T-2339: each started side's added python test files (test_*.py, *_test.py; at most CROSS_FILES) run on every
+    started side's committed tree, unpacked to a temp dir so no builder's lane is touched. A pair counts when the
+    tests pass on their own side and fail an assertion on the other: the first's row gains `caught`, the other's
+    `broken`. A run that errors (an import or a name only the owner adds) is `coupled` on the owner's row and ranks
+    nothing; a write that can't be made or a timeout says nothing. All runs share CROSS_TOTAL seconds: past it the
+    rest are skipped and each row says how far it got.
+    The tests are the builders' own code and run unsandboxed: each command passes fm's guard like any stored one, and
+    the environment is cut to PATH, a temp HOME, LANG and PYTHONPATH (the tree), so no token or key of this shell is
+    visible to them. Nothing stops a test that reaches for the network or the disk by path.
+    ponytail: python unittest files only; other languages' tests are not run, add a runner per extension if it matters."""
+    import fmcli
+    live = [(x, r) for x, r in zip(xs, rows) if r["lines"] is not None]
+    tests = {x.id: [f for f in _git(main, "diff", "--name-only", "--diff-filter=A", "--no-renames", "-z",
+                                    f"HEAD...{r['branch']}").stdout.split("\0") if _TEST_RE.fullmatch(f)][:CROSS_FILES]
+             for x, r in live}
+    if len(live) < 2 or not any(tests.values()):
+        return
+    git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    tmp = tempfile.mkdtemp(prefix="fm-race-")
+    deadline, total, done = time.monotonic() + CROSS_TOTAL, sum(len(live) for x, _ in live if tests[x.id]), [0]
+    _say(f"cross-examining {len(live)} sides ({total} test runs, {CROSS_TOTAL} s at most)")
+    try:
+        trees = {}
+        for x, r in live:
+            dest = os.path.join(tmp, x.id)
+            os.makedirs(dest)
+            try:
+                with subprocess.Popen(["git", "-C", main, "archive", "--format=tar", r["branch"]], stdout=subprocess.PIPE,
+                                      stderr=subprocess.DEVNULL, env=git_env) as pr, \
+                        tarfile.open(fileobj=pr.stdout, mode="r|") as t:
+                    t.extractall(dest, filter="data")  # the data filter: no link or path leaves dest
+                trees[x.id] = dest
+            except (OSError, tarfile.TarError):
+                pass  # that side has no tree to examine; it neither catches nor is caught
+
+        def run(owner, r, tid):
+            """'pass'; 'fail' (an assertion failed); 'error' (it couldn't run there); None (no word: budget spent, a
+            file that can't be written, a timeout or no bash)."""
+            if deadline - time.monotonic() <= 0:
+                return None
+            done[0] += 1
+            for f in tests[owner.id]:
+                blob = _git(main, "show", f"{r['branch']}:{f}")
+                dst = os.path.join(trees[tid], f)
+                try:
+                    if blob.returncode:
+                        return None
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    with open(dst, "w", encoding="utf-8") as h:
+                        h.write(blob.stdout)
+                except (OSError, ValueError):  # another side's file in the way, a name the disk refuses (UnicodeError too)
+                    return None
+                cmd = f"python3 -m unittest -q {os.path.basename(f)[:-3]}"
+                fmcli.guard_stored(p, owner, cmd)
+                env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": tmp, "PYTHONPATH": trees[tid],
+                       "LANG": os.environ.get("LANG", "C.UTF-8"), "PYTHONDONTWRITEBYTECODE": "1"}
+                code, out = c.run_command(os.path.dirname(dst), cmd, max(1, min(CROSS_SECS, deadline - time.monotonic())),
+                                          env=env)
+                if code in (124, 127):
+                    return None
+                if code:
+                    return "fail" if "failures=" in out else "error"
+            return "pass"
+        for x, r in live:
+            if x.id in trees and tests[x.id] and run(x, r, x.id) == "pass":  # a test red at home proves nothing
+                for y, ry in live:
+                    if y.id != x.id and y.id in trees:
+                        got = run(x, r, y.id)
+                        if got == "fail":
+                            r["caught"] += 1
+                            ry["broken"] += 1
+                        elif got == "error":
+                            r["coupled"] += 1
+        if done[0] < total:
+            for _, r in live:
+                r["cross_stopped"] = f"cross-examination stopped at {CROSS_TOTAL} s: {done[0]} of {total} runs"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _rank(p, b, main):
+    """(original, [b sides], rows, leader id, [groups of ids with identical diffs]): frozen checks passed, then
+    cross-examination (caught less broken), then lines changed, then files outside scope; a tie keeps the stated
+    choice (the original; in a design race, the spike of the stated option). A side with uncommitted work (an error row)
+    is not scored and never leads."""
+    orig, others = _sides(p, b)
+    xs = _racers(orig, others)
+    stated = str(_options(orig)[1])
+    first = next((x.id for x in xs if str(x.meta.get("race_option")) == stated), xs[0].id)  # T-2340
+    _say(f"running the frozen checks in {len(xs)} sides")
+    rows = [_side(p, x, main) for x in xs]
+    _cross(p, xs, rows, main)
+    started = [r for r in rows if r["lines"] is not None]
+    lead = min(started, key=lambda r: (-r["passed"] / (r["tests"] or 1), r["broken"] - r["caught"], r["lines"],
+                                       r["outside"], r["id"] != first))["id"] if started else None
+    groups = {}
+    for r in started:
+        groups.setdefault(r["diff"] or f"empty-{r['id']}", []).append(r["id"])
+    return orig, others, rows, lead, [g for g in groups.values() if len(g) > 1]
+
+
+def _heads(xs, main):
+    """{side id: its branch's head sha}: what a stored score was made from."""
+    return {x.id: _git(main, "rev-parse", x.meta.get("lane_branch") or "-").stdout.strip() for x in xs}
+
+
+def _scored_path(p, orig):
+    return os.path.join(p.dir, "audits", f"{orig.id}.race-score.json")
+
+
+def _scored(p, orig, xs, main):
+    """The rows `fm lane race --score` stored, when every side's branch is still at the commit they were made from."""
+    try:
+        with open(_scored_path(p, orig), encoding="utf-8") as h:
+            got = json.load(h)
+        heads = _heads(xs, main)
+        if got["heads"] == heads and all(heads.values()):
+            return {r["id"]: r for r in got["rows"]}
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
+def _design_note(p, orig, xs, rows, lead=None, picked=""):
+    """T-2340: each spike's checks passed, cross-examination and findings (its brief's Notes), written into the L's
+    Approach under "Design race", replacing the last one; `picked` (after a pick) ends it. No digit marker or
+    percent, and no 'option N' followed by a word: the plan gate reads this text too."""
+    import fmcli
+    got = []
+    for x, r in zip(xs, rows):
+        found = [_flat(ln.lstrip("- ")) for ln in x.section("Notes").splitlines() if ln.strip()][:3]
+        had = (f"{r['passed']} of {r['tests']} checks, {r['lines']} lines changed, its tests caught {r['caught']} and "
+               f"failed {r['broken']} of the others" if r["lines"] is not None else _flat(r.get("error") or "no commit yet"))
+        got.append(f"{x.id} built option {x.meta.get('race_option')}, {had}" + (f"; found: {'; '.join(found)}" if found else ""))
+    text = (f"{DESIGN} throwaway spikes, one per option, scored on the frozen checks\n" + "\n".join(got)
+            + (f"\n{picked}" if picked else f"\nLeading: {lead or 'none yet'}"))
+    fmcli.mutate(p, orig.id, lambda y: y.set_section(APPROACH, y.section(APPROACH).split(DESIGN, 1)[0].rstrip() + text),
+                 "race_note", {"design": True})
+
+
 def score(p, b, main, args):
     import fmcli
-    rows = [_side(p, x, main) for x in _pair(p, b)]
+    orig, others = _sides(p, b)
+    design = _design(orig)
+    if design and all(x.status in c.CLOSED for x in others):  # T-2340: after the pick the spikes are gone; a re-score would
+        raise c.PolicyError(f"{orig.id}'s design race is already picked (see Design race in its Approach)")  # erase the pick
+    orig, others, rows, lead, same = _rank(p, b, main)
     started = [r for r in rows if r["lines"] is not None]
-    lead = max(started, key=lambda r: (r["passed"] / (r["tests"] or 1), -r["lines"]))["id"] if started else None
-    lines = [f"{r['id']}: " + (f"tests {r['passed']}/{r['tests']} passing, {r['lines']} lines changed"
-                               if r["lines"] is not None else "not started (no worktree yet)") for r in rows]
-    return fmcli.out(args, {"sides": rows, "leader": lead}, "\n".join(lines + [f"leader: {lead or 'none yet'}"]))
+    xs = _racers(orig, others)
+    if design:
+        _design_note(p, orig, xs, rows, lead)
+    if not any(r.get("error") for r in rows):  # pick reuses this while no side has moved (T-2339)
+        try:
+            os.makedirs(os.path.dirname(_scored_path(p, orig)), exist_ok=True)
+            with open(_scored_path(p, orig), "w", encoding="utf-8") as h:
+                json.dump({"heads": _heads(xs, main), "rows": rows}, h)
+        except OSError:
+            pass  # a pick then scores again
+    lines = [f"{r['id']}: " + (f"tests {r['passed']}/{r['tests']} passing, {r['lines']} lines changed, {r['outside']} "
+                               f"files outside scope, its tests caught {r['caught']} of the others (broken by "
+                               f"{r['broken']}), coupled to {r['coupled']}"
+                               + (f"; {r['cross_stopped']}" if r.get("cross_stopped") else "")
+                               if r["lines"] is not None else f"error: {r['error']}" if r.get("error")
+                               else "not started (no worktree yet)")
+             for r in rows]
+    lines += [f"{' and '.join(g)}: identical diffs, no real alternative" for g in same]
+    alt = len(started) < 2 or len(same) != 1 or len(same[0]) != len(started)
+    return fmcli.out(args, {"sides": rows, "leader": lead, "alternative": alt, "same": same},
+                     "\n".join(lines + [f"leader: {lead or 'none yet'}"]))
+
+
+def _why(r):
+    """One side's evidence as a clause."""
+    return (f"checks {r['passed']}/{r['tests']}, {r['lines']} lines, {r['outside']} outside scope, its tests caught "
+            f"{r['caught']} (broken by {r['broken']})")
+
+
+def _lost(r, w):
+    """Why a side lost to the winner, from the two rows ('' rows: not scored)."""
+    if not r or not w or r["lines"] is None:
+        return "not scored"
+    if r["diff"] and r["diff"] == w["diff"]:
+        return "the same diff as the winner, no real alternative"
+    why = []
+    if r["passed"] < w["passed"]:
+        why.append(f"{r['passed']}/{r['tests']} checks against {w['passed']}/{w['tests']}")
+    if r["broken"] > w["broken"]:
+        why.append(f"its change failed {r['broken']} of the winner's new tests")
+    if r["caught"] < w["caught"]:
+        why.append(f"its tests caught {r['caught']} of the others, the winner's {w['caught']}")
+    if r["lines"] > w["lines"]:
+        why.append(f"{r['lines']} lines against {w['lines']}")
+    if r["outside"] > w["outside"]:
+        why.append(f"{r['outside']} files outside scope against {w['outside']}")
+    return "; ".join(why) or "tied on the evidence; the winner was picked by hand"
+
+
+def _pick_design(p, win, orig, spikes, main, args):
+    """T-2340: the pick of an L's design race: nothing merges (a spike's code is thrown away). The pick is a decision row
+    and a race_pick ledger row, the Approach gets the scores and the pick, every spike is dropped with its reason and its
+    branch kept, and the L stays where it was, in the main thread."""
+    import fmcli
+    import fmbus
+    if win.id == orig.id:
+        raise c.PolicyError(f"{win.id} is an L task: pick one of its spikes ({', '.join(x.id for x in spikes)}); a spike's "
+                            f"code is never merged")
+    if win.status in c.CLOSED:
+        raise c.PolicyError(f"{win.id} is {win.status}: {orig.id}'s design race is already picked")
+    if not win.meta.get("lane_branch"):
+        raise fmcli.UsageError(f"{win.id} has no branch: its spike wasn't built (fm lane race {orig.id} --score)")
+    losers = [x for x in spikes if x.id != win.id]
+    try:  # the evidence is read before the cleanup removes the trees it comes from
+        rows = _scored(p, orig, spikes, main) or {r["id"]: r for r in _rank(p, win, main)[2]}
+    except Exception:  # a spike that can't be scored doesn't stop a pick
+        rows = {}
+    opts, stated = _options(orig)
+    opt_of = lambda x: int(x.meta["race_option"]) if str(x.meta.get("race_option")).isdigit() else None
+    scored = lambda x: rows.get(x.id) if rows.get(x.id) and rows[x.id]["lines"] is not None else None
+    why = {x.id: _lost(scored(x), scored(win)) for x in losers}
+    evidence = "; ".join(f"{x.id} {_why(scored(x))}" for x in spikes if scored(x))
+    picked = f"Picked: {win.id} (option {opt_of(win)}, the design to build); " + "; ".join(
+        f"{x.id} (option {opt_of(x)}, lost: {_flat(why[x.id])})" for x in losers)
+    _design_note(p, orig, spikes, [rows.get(x.id) or {"lines": None, "error": "not scored"} for x in spikes], picked=picked)
+    fmcli._write_decision(p, f"{orig.id}'s design race: option {opt_of(win)} ({win.id}) won over "
+                             f"{', '.join(x.id for x in losers)}", evidence or "the spikes were not scored",
+                          "; ".join(f"{x.id} (option {opt_of(x)}): {why[x.id]}" for x in losers), task=orig.id)
+    c.log_event(p, "race_pick", task=orig.id, data={"winner": win.id, "loser": losers[0].id, "losers": [x.id for x in losers],
+                                                   "stated": stated if len(opts) > 1 else None,
+                                                   "first_won": opt_of(win) == stated, "winner_option": opt_of(win),
+                                                   "design": True})
+    for x in spikes:
+        reason = (f"lost the design race to {win.id} ({orig.id} keeps the design; branch kept)" if x.id != win.id else
+                  f"won the design race: {orig.id} builds from it, a spike's code is never merged (branch kept)")
+        fmcli.mutate(p, x.id, lambda y, r=reason: (y.meta.__setitem__("status", "dropped"), y.append_log(f"dropped: {r}")),
+                     "task_drop", {"reason": reason})
+    pending = []  # a cleanup that can't finish now is reported, never fatal
+    for x in spikes:
+        x = c.find_brief(p, x.id)
+        lane = x.meta.get("lane")
+        if not lane or not os.path.isdir(lane):
+            continue
+        _git(main, "worktree", "unlock", lane)  # Claude Code locks a builder's worktree; remove() still refuses uncommitted work
+        try:
+            remove(p, x, main, keep=True)
+        except (c.PolicyError, fmcli.UsageError) as e:
+            pending.append(f"{x.id}: {e}")
+        fmbus.release(p, x.id)
+    return fmcli.out(args, {"winner": win.id, "dropped": [x.id for x in spikes], "losers": [x.id for x in losers],
+                            "pending": pending},
+                     f"{orig.id}'s design race: option {opt_of(win)} ({win.id}) won, {', '.join(x.id for x in spikes)} dropped "
+                     f"(branches kept, nothing merged); {evidence or 'not scored'}; next: write the design into {orig.id}'s "
+                     f"Approach and plan from it ({orig.id} stays here)"
+                     + ("\ncleanup pending:\n  " + "\n  ".join(pending) if pending else ""))
 
 
 def pick(p, b, main, args):
@@ -787,38 +1192,69 @@ def pick(p, b, main, args):
     the loser's branch is kept, never deleted."""
     import fmcli
     import fmbus
-    orig, other = _pair(p, b)
-    win, lose = (b, other if b.id == orig.id else orig)
+    orig, others = _sides(p, b)
+    if _design(orig):
+        return _pick_design(p, b, orig, others, main, args)
+    sides = [orig, *others]
+    win, losers = b, [x for x in sides if x.id != b.id]
+    lose = orig if win.id != orig.id else others[0]  # the ledger's `loser` field: the original, else the first b side
     path = win.meta.get("lane")
     if not path or not os.path.isdir(path):
         raise fmcli.UsageError(f"{win.id} has no worktree to merge (fm lane race {orig.id} --score)")
     bad = _failing(p, win, path, _checks(p, win))  # review: judged on the race's checks, not its own edited ones
     if bad:
         raise c.PolicyError(f"{win.id} fails the race's criteria ({c.fit(bad[0], 80)}): pick the other, or fix it first")
+    try:  # T-2339: the evidence is read before the merge and the cleanup remove the trees it comes from
+        rows = _scored(p, orig, sides, main) or {r["id"]: r for r in _rank(p, b, main)[2]}  # --score's, if no side moved
+    except Exception:  # a side that can't be scored doesn't stop a pick
+        rows = {}
+    opts, stated = _options(orig)
+    own = lambda x: str(x.meta.get("race_option") or "")  # meta reads back as text
+    opt_of = lambda x: int(own(x)) if own(x).isdigit() else (stated if x.id == orig.id and len(opts) > 1 else None)
+    said = lambda x: f"option {opt_of(x)} ({opts[opt_of(x) - 1]})" if opt_of(x) and opt_of(x) <= len(opts) else x.id
+    evidence = "; ".join(f"{x.id} {_why(rows.get(x.id))}" for x in sides if rows.get(x.id))
     merge(p, win, main)
     fmbus.release(p, win.id)
+    reasons = [_lost(rows.get(x.id), rows.get(win.id)) for x in losers]
+    notes = [f"{said(x)} lost: {r}" for x, r in zip(losers, reasons)]
+
+    def note(y):
+        y.set_section(APPROACH, (y.section(APPROACH).rstrip() + "\n\n" if y.section(APPROACH).strip() else "")
+                      + f"Race: {said(win)} won the race ({win.id}). " + "; ".join(notes) + ".")
+    fmcli.mutate(p, win.id, note, "race_note", {"losers": [x.id for x in losers]})
 
     def drop(x, why):
         fmcli.mutate(p, x.id, lambda y: (y.meta.__setitem__("status", "dropped"), y.append_log(f"dropped: {why}")),
                      "task_drop", {"reason": why})
-    drop(lose, f"lost the race to {win.id}" if lose.id != orig.id else f"done in {win.id} (won the race)")
-    c.log_event(p, "race_pick", task=win.id, data={"winner": win.id, "loser": lose.id})
+    for x in losers:
+        drop(x, f"lost the race to {win.id}" if x.id != orig.id else f"done in {win.id} (won the race)")
+    first = win.id == orig.id
+    fmcli._write_decision(p, f"{win.id} won the race with {', '.join(x.id for x in losers)}: {said(win)}"
+                          + ("" if first else f" (the stated choice was {said(orig)})"),
+                          evidence or "the sides were not scored", "; ".join(f"{x.id} ({said(x)}): {r}"
+                                                                           for x, r in zip(losers, reasons)), task=win.id)
+    c.log_event(p, "race_pick", task=win.id, data={"winner": win.id, "loser": lose.id, "losers": [x.id for x in losers],
+                                                  "stated": stated if len(opts) > 1 else None, "first_won": first,
+                                                  "winner_option": opt_of(win)})
     pending = []  # review: the merge has landed; a cleanup that can't finish now is reported, never fatal
-    for x in (lose, win):
+    for x in (*losers, win):
         x = c.find_brief(p, x.id)
         lane = x.meta.get("lane")
         if not lane or not os.path.isdir(lane):
             continue
-        if x.id == lose.id:  # a builder subagent shares the main Claude process, so no liveness test can tell; remove()
+        if x.id != win.id:  # a builder subagent shares the main Claude process, so no liveness test can tell; remove()
             # still refuses uncommitted work, and the losing branch is kept either way
             _git(main, "worktree", "unlock", lane)  # Claude Code locks a builder's worktree
         try:
             remove(p, x, main)
         except (c.PolicyError, fmcli.UsageError) as e:
             pending.append(f"{x.id}: {e}")
-    return fmcli.out(args, {"winner": win.id, "dropped": lose.id, "pending": pending},
-                     f"{win.id} merged, {lose.id} dropped (its branch kept); next: fm focus {win.id}, re-run its "
-                     f"criteria, fm task finish" + ("\ncleanup pending:\n  " + "\n  ".join(pending) if pending else ""))
+    gone = ", ".join(x.id for x in losers)
+    return fmcli.out(args, {"winner": win.id, "dropped": losers[0].id, "losers": [x.id for x in losers],
+                            "pending": pending},
+                     f"{win.id} won the race and merged, {gone} dropped (branches kept); {evidence or 'not scored'}; "
+                     f"next: fm focus {win.id}, re-run its criteria, fm task finish"
+                     + ("\ncleanup pending:\n  " + "\n  ".join(pending) if pending else ""))
 
 
 def hot_files(p, b, days=30, times=2):
@@ -895,20 +1331,26 @@ def defect_classes(p, days=30, top=5):
     return [f"- {n}: {len(t)} (e.g. {t[-1][:100]})" for n, t in ranked]
 
 
+def _lanes(p, tier, outs):
+    """T-2353: [(closed, id, model, probe, reworked)] oldest first, for this tier's lane-built closed tasks. Reworked: a
+    later FIX or revert, a lost outcome, or a baseline red naming it."""
+    import fmoutcomes
+    briefs = c.load_briefs(p, include_archive=True)
+    red = " ".join(b.section("Raw request") for b in briefs if b.meta.get("baseline"))
+    return sorted((fmoutcomes.done_at(b), b.id, b.meta["builder_model"], bool(b.meta.get("route_probe")),
+                   outs[b.id]["fate"] in ("reverted", "fixed later") or outs[b.id].get("survival") == "lost" or b.id in red)
+                  for b in briefs if b.tier == tier and b.id in outs and b.meta.get("builder_model"))
+
+
 def model_route(p, tier, outs=None):
     """T-2291: (model, line): sonnet, unless over the last 20 lane-built closed tasks of this tier sonnet's rework rate
     (a later FIX or revert, a lost outcome, a baseline red naming it) is 0.3+ above opus's, 5+ samples each."""
     import fmoutcomes
     outs = outs if outs is not None else fmoutcomes.outcomes(p)
-    briefs = c.load_briefs(p, include_archive=True)
-    red = " ".join(b.section("Raw request") for b in briefs if b.meta.get("baseline"))
-    built = sorted((fmoutcomes.done_at(b), b.id, b.meta["builder_model"]) for b in briefs
-                   if b.tier == tier and b.id in outs and b.meta.get("builder_model"))[-20:]
     n, bad = collections.Counter(), collections.Counter()
-    for _, i, m in built:
-        o = outs[i]
+    for _, _, m, _, rework in _lanes(p, tier, outs)[-20:]:
         n[m] += 1
-        bad[m] += o["fate"] in ("reverted", "fixed later") or o.get("survival") == "lost" or i in red
+        bad[m] += rework
     nums = ", ".join(f"{m} {bad[m]}/{n[m]}" for m in sorted(n)) or "none"
     if min(n["sonnet"], n["opus"]) < 5:
         return "sonnet", f"too little history to route {tier} lanes (need 5+ each of sonnet and opus; reworked: {nums})"
@@ -916,6 +1358,180 @@ def model_route(p, tier, outs=None):
     if gap >= 0.3:
         return "opus", f"{tier} lanes reworked: {nums}: sonnet's rate is {gap:.0%} above opus's, so opus"
     return "sonnet", f"{tier} lanes reworked: {nums}: no gap worth opus"
+
+
+# T-2353: the probe-down route. The pick (model_route, or a promoted one kept in route.json) is probed one model down on
+# the lanes the stable hash names; probes that rework within a band of the pick's own rate make the cheaper model the pick.
+MODELS = ("haiku", "sonnet", "opus")  # cheapest first
+PROBE_MOD, PROBE_MIN, PROBE_WINDOW, PROBE_BAND, PROBE_COOL, REVERT_QUIET = 5, 5, 10, 0.1, 5, 20
+_ROUTE_KEYS = ("pick", "since", "provisional", "from", "evidence", "reverted_at", "quiet_from")
+
+
+def is_probe(tid):
+    """A stable fifth of the task ids: a function of the id alone, so a re-brief or a retry never moves a lane across."""
+    return zlib.crc32(str(tid).encode("utf-8")) % PROBE_MOD == 0
+
+
+def route_state(p):
+    """{tier: {pick, since, provisional, from, evidence, reverted_at, quiet_from}} from route.json, every field coerced:
+    a hand-edited or torn file reads as the base rule, never an error."""
+    try:
+        with open(os.path.join(p.dir, "route.json"), encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for tier, s in (raw.items() if isinstance(raw, dict) else ()):
+        if tier in ("S", "M") and isinstance(s, dict):
+            q = s.get("quiet_from")
+            out[tier] = {"pick": s.get("pick") if s.get("pick") in MODELS else None,
+                         "since": str(s.get("since") or "")[:20], "provisional": s.get("provisional") is True,
+                         "from": s.get("from") if s.get("from") in MODELS else None,
+                         "evidence": str(s.get("evidence") or "")[:300], "reverted_at": str(s.get("reverted_at") or "")[:20],
+                         "quiet_from": q if isinstance(q, int) and not isinstance(q, bool) and q >= 0 else 0}
+    return out
+
+
+def _rate(lanes):
+    return sum(l[4] for l in lanes) / len(lanes) if lanes else 0.0
+
+
+def _transition(p, tier, expect, new, decision, why):
+    """Apply `new` to the tier's route state and write its decide row, in one lock: only if the state is still `expect`
+    (pick, provisional), so two sessions that see the same evidence record one change. True if it applied."""
+    import fmcli
+    with c.lock(p.dir):
+        state = route_state(p)
+        cur = state.get(tier) or {"pick": None, "provisional": False}
+        if (cur.get("pick"), cur.get("provisional")) != expect:
+            return False
+        state[tier] = {**dict.fromkeys(_ROUTE_KEYS), "provisional": False, "quiet_from": 0, **cur, **new}
+        c.write_atomic(os.path.join(p.dir, "route.json"), json.dumps(state, indent=1, sort_keys=True) + "\n")
+        if decision:
+            fmcli._write_decision(p, decision, why=why, locked=True)
+    return True
+
+
+def route(p, tier, tid=None, outs=None, racing=False):
+    """(model, line, probe) for the next lane of this tier: the pick, or its probe one model down. A probe lane is task
+    `tid` when the hash names it, the pick reworks 0.1 or less over 5+ lanes, no probe reworked in the last 5 closes and
+    no revert is still quiet. 5+ probes (last 10) reworking within 0.1 of the pick's rate promote the cheaper model
+    (provisional until the long-horizon run confirms it). A racing task is never a probe."""
+    import fmoutcomes
+    outs = outs if outs is not None else fmoutcomes.outcomes(p)
+    base, line = model_route(p, tier, outs)
+    lanes = _lanes(p, tier, outs)
+    st = route_state(p).get(tier) or {}
+    pick = st.get("pick") or base
+    if st.get("pick"):
+        line = (f"{tier} lanes on {pick} (promoted from {st['from'] or 'the base'} {st['since'][:10]}"
+                + (f", provisional since {st['since'][:10]}" if st["provisional"] else "") + f"): {line}")
+    i = MODELS.index(pick)
+    down = MODELS[i - 1] if i else None
+    if not down:
+        return pick, line, False
+    mine = [l for l in lanes if l[2] == pick and not l[3]][-PROBE_WINDOW:]
+    recent = lanes[st.get("quiet_from", 0):]  # a revert forgets the probes before it
+    probes = [(k, l) for k, l in enumerate(recent) if l[3] and l[2] == down][-PROBE_WINDOW:]
+    if len(mine) >= PROBE_MIN and len(probes) >= PROBE_MIN and \
+            _rate([l for _, l in probes]) <= _rate(mine) + PROBE_BAND + 1e-9:
+        why = (f"{len(probes)} probe lanes on {down} reworked {sum(l[4] for _, l in probes)}/{len(probes)}, within "
+               f"{PROBE_BAND} of {pick}'s {sum(l[4] for l in mine)}/{len(mine)} (last {PROBE_WINDOW} each)")
+        if _transition(p, tier, (st.get("pick"), st.get("provisional", False)),
+                       {"pick": down, "since": c.now(), "provisional": True, "from": pick, "evidence": why},
+                       f"Route {tier} lanes to {down} (provisional)",
+                       f"{why}; the end-of-run long-horizon tier confirms or reverts it; "
+                       f"fm lane brief --revert-route DATE undoes it"):
+            return down, f"{tier} lanes promoted to {down} (provisional since {c.now()[:10]}): {why}", False
+        return route(p, tier, tid, outs, racing)  # another session moved it first: read its answer
+    bad = [k for k, l in probes if l[4]]
+    cooled = not bad or len(recent) - 1 - bad[-1] >= PROBE_COOL
+    quiet = bool(st.get("reverted_at")) and len(lanes) - st.get("quiet_from", 0) < REVERT_QUIET
+    if tid and not racing and is_probe(tid) and len(mine) >= PROBE_MIN and _rate(mine) <= PROBE_BAND + 1e-9 \
+            and cooled and not quiet:
+        return down, (f"{tier} probe: {down}, one model down from {pick} (it reworks {sum(l[4] for l in mine)}/"
+                      f"{len(mine)}; {len(probes)} probes so far; {tid} is on the probe hash)"), True
+    return pick, line, False
+
+
+_route = route  # builder_brief has a local named route
+
+
+def confirm_routes(p, res):
+    """The end-of-run hook of `fm exam long` (fmlong.grade): a provisional promotion stands if this run's goals in its tier
+    pass at least as often as the last foreman run before the promotion, else the dearer pick comes back. A run that can't
+    judge (not foreman's, a Haiku smoke line, no earlier run, no goal in the tier) changes nothing. [{tier, action, pick}]"""
+    import fmgenesis
+    import fmoutcomes
+    if not isinstance(res, dict) or res.get("agent") != "foreman" or fmgenesis.smoke(res):
+        return []
+    prov = {t: s for t, s in route_state(p).items() if s["provisional"] and s["pick"]}
+    if not prov:
+        return []
+    tiers = {b.id: b.tier for b in c.load_briefs(p, include_archive=True)}
+    prior = []
+    for raw in (fmgenesis._doc(fmgenesis.home(p), "exam.jsonl") or "").splitlines():
+        try:
+            x = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(x, dict) and x.get("tier") == "long" and x.get("agent") == "foreman" and not fmgenesis.smoke(x) \
+                and isinstance(x.get("goals"), list) and isinstance(x.get("at"), str):
+            prior.append(x)
+
+    def passed(run, tier):
+        mine = [bool(g.get("true_done")) for g in run.get("goals") or [] if isinstance(g, dict)
+                and tiers.get(g.get("id")) == tier]
+        return sum(mine) / len(mine) if mine else None
+    outs, done = None, []
+    for tier, st in prov.items():
+        then = [(x["at"], r) for x in prior if x["at"] < st["since"] and (r := passed(x, tier)) is not None]
+        now = passed(res, tier)
+        if now is None or not then:
+            continue
+        before = max(then)[1]
+        if now >= before:
+            ok = _transition(p, tier, (st["pick"], True), {"provisional": False},
+                             f"Confirm {tier} lanes on {st['pick']}",
+                             f"the long-horizon run passed {now:.0%} of its {tier} goals, the last run before the "
+                             f"promotion {before:.0%}")
+        else:
+            outs = outs if outs is not None else fmoutcomes.outcomes(p)
+            ok = _transition(p, tier, (st["pick"], True), _reverted(len(_lanes(p, tier, outs))),
+                             f"Revert {tier} lanes to {st['from'] or 'the base rule'}",
+                             f"the long-horizon run passed {now:.0%} of its {tier} goals, down from {before:.0%} before "
+                             f"the promotion to {st['pick']}")
+        if ok:
+            done.append({"tier": tier, "action": "confirm" if now >= before else "revert", "pick": st["pick"]})
+    return done
+
+
+def _reverted(n):
+    """The state a revert leaves: the base rule picks, the probes so far are forgotten, probing pauses 20 lanes."""
+    return {"pick": None, "provisional": False, "reverted_at": c.now(), "quiet_from": n}
+
+
+def revert_route(p, date):
+    """fm lane brief --revert-route DATE: every promotion made on or after DATE goes back to its dearer model (a decide
+    row each) and each tier stops probing for its next 20 lanes. [(tier, from the cheaper pick)]"""
+    import fmcli
+    import fmoutcomes
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date or ""):
+        raise fmcli.UsageError("fm lane brief --revert-route DATE: DATE is YYYY-MM-DD")
+    outs, back = fmoutcomes.outcomes(p), []
+    for tier in ("S", "M"):
+        st = route_state(p).get(tier) or {"pick": None, "provisional": False, "since": "", "from": None}
+        new = _reverted(len(_lanes(p, tier, outs)))
+        if st["pick"] and st["since"][:10] >= date:
+            if _transition(p, tier, (st["pick"], st["provisional"]), new,
+                           f"Revert {tier} lanes to {st['from'] or 'the base rule'}",
+                           f"fm lane brief --revert-route {date}: the promotion to {st['pick']} of {st['since'][:10]} "
+                           f"is undone; probing pauses for {REVERT_QUIET} lanes"):
+                back.append((tier, st["pick"]))
+        else:
+            _transition(p, tier, (st["pick"], st["provisional"]), {k: v for k, v in new.items()
+                                                                    if k in ("reverted_at", "quiet_from")}, "", "")
+    return back
 
 
 def builder_brief(p, b, args, resume_branch=None, after=""):
@@ -1002,15 +1618,19 @@ def builder_brief(p, b, args, resume_branch=None, after=""):
         import fmbus
         x.meta["builder"] = c.now()
         x.meta["builder_model"] = chosen
+        if probe:  # T-2353: a labelled probe: its outcome is the evidence for or against the cheaper model
+            x.meta["route_probe"] = 1
+        else:
+            x.meta.pop("route_probe", None)
         proc = fmbus.claude_proc()  # T-1028: when this process ends, the builder is stopped (fm lane resume)
         if proc:
             x.meta["builder_proc"] = proc
         else:
             x.meta.pop("builder_proc", None)
         x.append_log(f"builder brief: {path}")
-    chosen, route = model_route(p, b.tier)
+    chosen, route, probe = _route(p, b.tier, tid=b.id, racing=bool(racing))
     if getattr(args, "model", None):
-        chosen, route = args.model, f"--model {args.model}"
+        chosen, route, probe = args.model, f"--model {args.model}", False
     fmcli.mutate(p, b.id, mark, "lane_builder", {"path": path})
     # T-1796: every builder runs on Sonnet (Opus M lanes were 22% of a week's usage); the main thread reviews either
     # T-0779: and its effort follows the tier: medium for small well-specified diffs, high for M
@@ -1130,16 +1750,21 @@ def merge(p, b, main, unverified=None):
     changes or uncommitted edits to a file the branch changes (T-0403); a merge that conflicts is aborted."""
     import fmcli
     import fmguard
+    if b.meta.get("lane_spike"):  # T-0732, T-2340: a spike answers a question; its code is thrown away, by every caller
+        raise c.PolicyError(f"{b.id}'s lane is a spike: it is never merged. Note what it found (fm task note "
+                            f"{b.id} fact \"…\"), then fm lane rm {b.id}")
     branch = b.meta.get("lane_branch") or f"foreman/{b.id}"
     if not _ref_ok(main, branch):
         raise fmcli.UsageError(f"{b.id}: there is no branch {branch} to merge")
+    # T-2352: one commit from here on: what the gates judge is what merges, even if the branch moves meanwhile
+    tip = _git(main, "rev-parse", "--verify", f"{branch}^{{commit}}").stdout.strip() or branch
     meta = c.read_meta(p)
     ctx = fmguard.Ctx(cwd=main, project_root=main, home=os.path.expanduser("~"), foreman_home=c.foreman_home(),
                       state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(), scratch=[],
                       allow=set(b.meta.get("allow") or []), task_id=b.id, standing=set(meta.get("standing") or {}),
                       trusted=bool(c.trusted()))
     # T-0382: --no-renames, so a file moved away is listed by its old path too (a rename deletes it from main)
-    files = [f for f in _git(main, "diff", "--name-only", "--no-renames", "-z", f"HEAD...{branch}").stdout.split("\0")
+    files = [f for f in _git(main, "diff", "--name-only", "--no-renames", "-z", f"HEAD...{tip}").stdout.split("\0")
              if f]
     # T-0403: the main thread is often mid-task, so uncommitted edits the branch doesn't touch stay and the merge goes
     # ahead, as git's own does; a staged change (the merge commit would record it) or an overlapping edit refuses
@@ -1164,7 +1789,7 @@ def merge(p, b, main, unverified=None):
     # T-2312: the functions the branch changes (before the merge moves HEAD), so a stray edit stands out
     merge.functions = functions_changed(_git(main, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "diff",
                                              "-U0", "--no-renames", "--no-ext-diff", "--no-textconv",
-                                             f"HEAD...{branch}").stdout)
+                                             f"HEAD...{tip}").stdout)
     for f in files:
         blk = fmguard.check("Write", {"file_path": os.path.join(main, f), "content": ""}, ctx)
         if blk:
@@ -1173,6 +1798,14 @@ def merge(p, b, main, unverified=None):
             stop_mark(p, b.id, "guard", blk.category)  # T-2354: a grant to ask for, not a rebuild
             raise c.PolicyError(f"{b.id}: {branch} changes {f}, which the guard refuses for this task "
                                 f"({blk.category}: {blk.detail}); grant it the way an edit is granted, then merge")
+    import fmselfgate  # T-2352: before the criteria waiver, which never waives it
+    held = fmselfgate.gate(p, b, main, tip, files)
+    if held:
+        c.log_event(p, "enforce", task=b.id, data={"kind": "merge_refused", "reason": "self-change gate", "branch": branch})
+        stop_mark(p, b.id, "guard", "core")  # T-2354: a grant to ask for, not a rebuild
+        raise c.PolicyError(f"{b.id}: the self-change gate holds {branch}:\n  " + "\n  ".join(held[:12])
+                            + f"\nOnly the user's yes passes it (not the standing yes, not a decision): fm ask {b.id} core "
+                              f"--why \"<what the change needs and why it's safe>\", then merge again")
     if unverified is not None:  # T-0948: the waiver is on the ledger before the merge it allows
         c.log_event(p, "lane_unverified", task=b.id, data={"reason": unverified.strip(), "branch": branch})
     else:
@@ -1194,7 +1827,7 @@ def merge(p, b, main, unverified=None):
             x.meta.update({"base": pre_merge}, **({"base_tree": pre_tree} if pre_tree else {}))
         return old
     _, old = fmcli.mutate(p, b.id, based, "lane_merge_base", {"branch": branch, "base": pre_merge})
-    r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
+    r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", tip)
     if r.returncode:
         clashed = [f for f in _git(main, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0") if f]
         brief = _conflict_brief(p, b, main, branch, clashed)  # T-0446: what clashed, and how to resolve it on the branch
@@ -1268,7 +1901,7 @@ def _save_drop(p, tid, drop):
         c.write_atomic(_drop_path(p, tid), json.dumps(drop))
 
 
-def remove(p, b, main, drop=None):
+def remove(p, b, main, drop=None, keep=False):
     """fm lane rm (and fm tidy --apply, T-0186): the lane's folder, its registration and its branch if merged; never
     uncommitted or ignored files (PolicyError). (path, the branches kept because they aren't merged). drop (T-1823,
     fm lane rm --why): the main thread drops the work, so a locked unmerged worktree goes too (its branch stays) and
@@ -1321,7 +1954,8 @@ def remove(p, b, main, drop=None):
     fmbus.release(p, b.id)  # T-1068: its file claims end with the lane
     _git(main, "worktree", "prune")  # a folder deleted by hand leaves a registration that holds the branch (review)
     have = [x for x in branches if _ref_state(main, x) == "ok"]
-    kept = [x for x in have if _git(main, "branch", "-d", x).returncode]  # -d refuses an unmerged one: commits stay
+    # -d refuses an unmerged one: commits stay; keep (T-2340: a dropped spike) keeps even an empty one, which -d would delete
+    kept = list(have) if keep else [x for x in have if _git(main, "branch", "-d", x).returncode]
 
     def take_back(x):
         for k in ("lane", "lane_branch", "builder", "builder_proc"):  # the builder slot comes back too (review)

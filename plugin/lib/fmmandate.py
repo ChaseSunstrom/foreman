@@ -293,6 +293,40 @@ def show(p, args, key="goal", run=True):
     return 1 if outside or uncovered or unmet else 0
 
 
+RED_KEEP = 500  # T-2416: cached start-tree results kept in meta (a base never changes; past this the cache restarts)
+
+
+def start_tree(p, it, briefs):
+    """T-2416: the tree the item's work started from: the earliest start (c.task_base) among its done tasks; None when
+    none has one any more (never focused, or git pruned the snapshot)."""
+    bases = sorted((str(b.meta.get("created") or ""), b.id, base) for t in it["tasks"] if (b := briefs.get(t))
+                   and b.status == "done" and (base := c.task_base(p.root, b)))
+    return bases[0][2] if bases else None
+
+
+def red_before(p, cmd, base, cache, deadline):
+    """T-2416: None when cmd fails on the tree base (the done-when tests the item's work); else why it doesn't count.
+    Runs guarded (fmcli._run_at, as fm task prove --vacuous does), CHECK_S at most; the result is kept in cache,
+    keyed by (cmd, base) as "it passed there", unless the run timed out or couldn't be made."""
+    import fmcli
+    import hashlib
+    key = hashlib.sha256(f"{cmd}\0{base}".encode()).hexdigest()[:16]
+    if key not in cache:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return "is unproven: its check wasn't run on the start tree (out of time)"
+        try:
+            code, _ = fmcli._run_at(p, base, cmd, min(CHECK_S, max(1, left)))
+        except c.PolicyError:
+            return "check refused by the guard"
+        except fmcli.UsageError as e:
+            return f"is unproven: its check couldn't run on the start tree ({c.fit(str(e), 80)})"
+        if code == 124:
+            return "is unproven: its check timed out on the start tree"
+        cache[key] = code == 0
+    return "check passes before the work: it proves nothing" if cache[key] else None
+
+
 def verdict(p, m):
     """T-2137: the causes a goal isn't finished (empty: finished). Reuses drift's guarded checks; deterministic."""
     import re
@@ -306,10 +340,26 @@ def verdict(p, m):
         item_state(i, briefs)))]
     causes += [f"item {i['n']} check fails ({how})" for i, how in unmet]
     causes += [f"item {i['n']} check not run" for i in unchecked]
-    for i in items:  # T-2332: a check that can't fail, or whose pipe hides the exit status, proves nothing
+    # T-2416 review: an item drift refused or didn't reach already has its cause; never run its check here instead,
+    # where the active task's grants would apply
+    unmet_n = {i["n"] for i, _ in unmet} | {i["n"] for i in unchecked}
+    red = dict(c.read_meta(p).get("goal_red") or {})
+    seen, deadline = len(red), time.monotonic() + CHECKS_S
+    for i in items:
+        if item_state(i, briefs) != "done" or i["n"] in unmet_n:  # no cause to add: another cause names it
+            continue
+        base = start_tree(p, i, briefs)
+        if base:  # T-2416: the done-when counts when it fails on the tree the item's work started from
+            why = red_before(p, i["done_when"], base, red, deadline)
+            causes += [f"item {i['n']} {why}"] if why else []
+            continue
+        # no start tree to run it on: T-2332's format check, and the item is named unproven, never finished
+        causes.append(f"item {i['n']} is unproven: no start tree to run its check on")
         hollow = sorted((x for x in c.lint_verify(i["done_when"], p.root) if "can't fail" in x or "piped program" in x),
                         key=lambda x: "piped program" not in x)  # a pipe is the more specific reason
         causes += [f"item {i['n']} check can't fail ({re.sub(r'^it can.t fail [(](.*)[)]$', r'\1', hollow[0])})"] if hollow else []
+    if len(red) != seen:  # a base never changes: only a run that ended is kept (a timeout may pass next time)
+        c.update_meta(p, goal_red=red if len(red) <= RED_KEEP else {})
     # a clause is accounted when an item (text, done-when, task titles) shares 2 of its words (1 if it has one)
     bags = [set(fmrecall.words(" ".join([i["text"], i["done_when"]] + [briefs[t].title for t in i["tasks"] if t in briefs])))
             for i in items]

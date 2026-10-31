@@ -1,5 +1,7 @@
 """T-2276: fm triggers counts each trigger's captures by outcome; a trigger whose closed captures are mostly dropped
 files at low priority; urgent triggers and triggers with too few closes are left alone."""
+import os
+
 from helpers import ForemanTestCase
 
 import fmcore as c
@@ -114,3 +116,27 @@ class Triggers(ForemanTestCase):
         for _ in range(20):  # the last 20 closed ones decide
             self.fire("flaky", "done")
         self.assertEqual(self.fire("flaky").priority, "normal")
+
+
+class TriggerHeldFixes(ForemanTestCase):
+    """T-2351: a held self-fix counts toward its trigger only once fm outcomes shows the task survived 30 days."""
+    def test_a_held_fix_counts_only_with_outcomes_survival(self):
+        import datetime
+        import json
+        from unittest import mock
+        import fmoutcomes
+        import fmtrials
+        self.fm("init")
+        p = c.find_project(self.repo)
+        b = fmeco.capture_once(p, "FIX: CI red\nCONTEXT: u, ", "FIX", "ci", key="CONTEXT: u, ")[0]
+        old = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=40)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with open(os.path.join(p.dir, "trials.json"), "w") as f:
+            json.dump([{"what": f"Self-fix {b.id}", "kind": "self-fix", "task": b.id, "trigger": "ci",
+                        "key": b.meta["trigger_key"], "at": old, "by": 14, "focus": old, "verdict": "held"}], f)
+        with mock.patch.object(fmoutcomes, "outcomes", lambda p: {b.id: {"fate": "held", "survival": "settling"}}):
+            self.assertEqual(fmtrials.held_fixes(p), {})
+        with mock.patch.object(fmoutcomes, "outcomes", lambda p: {b.id: {"fate": "held", "survival": "survived"}}):
+            self.assertEqual(fmtrials.held_fixes(p), {"ci": 1})
+        n = len(c.ledger_events(p))
+        self.fm("triggers")
+        self.assertEqual(len(c.ledger_events(p)), n)  # fm triggers stays read-only

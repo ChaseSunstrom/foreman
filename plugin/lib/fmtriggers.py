@@ -96,10 +96,14 @@ def cmd_triggers(args):
     args.days = min(max(args.days, 1), 3650)
     status, caps = _status(p), _captures(p, LOOKBACK_DAYS)
     rows = sorted(stats(p, args.days, status).values(), key=lambda r: (-r["fired"], r["trigger"]))
-    lines = [f"{'trigger':<22}{'fired':>6}{'done':>6}{'dropped':>8}{'open':>6}{'precision':>10}"]
+    import fmtrials  # T-2351: self-fixes whose key stayed gone and whose task survived (fm outcomes)
+    held = fmtrials.held_fixes(p)
+    lines = [f"{'trigger':<22}{'fired':>6}{'done':>6}{'dropped':>8}{'open':>6}{'precision':>10}{'fixes held':>12}"]
     for r in rows:
+        r["fixes_held"] = held.get(r["trigger"], 0)
         prec = "-" if r["precision"] is None else f"{r['precision']:.2f}"
         flag = "  (files at low priority)" if noisy(p, r["trigger"], caps, status) else ""
-        lines.append(f"{r['trigger']:<22}{r['fired']:>6}{r['done']:>6}{r['dropped']:>8}{r['open']:>6}{prec:>10}{flag}")
+        lines.append(f"{r['trigger']:<22}{r['fired']:>6}{r['done']:>6}{r['dropped']:>8}{r['open']:>6}{prec:>10}"
+                     f"{r['fixes_held']:>12}{flag}")
     fmcli.out(args, {"days": args.days, "triggers": rows},
               "\n".join(lines) if rows else f"No trigger has filed a task in the last {args.days} days.")

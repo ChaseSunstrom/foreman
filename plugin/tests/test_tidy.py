@@ -105,6 +105,23 @@ class Apply(TidyCase):
         self.assertEqual(sorted(os.listdir(rev)), ["link", "new"])
         self.assertTrue(os.path.exists(outside))
 
+    def test_door_snapshots_of_long_closed_tasks_are_aged_out(self):  # T-2342
+        for t in ("old closed", "recent closed", "still open"):
+            self.fm("task", "new", t, "--type", "FIX", "--tier", "S")
+        age(self.p, "T-0001", 15, status="done")
+        age(self.p, "T-0002", 3, status="done")
+        snaps = os.path.join(self.p.dir, "door-snapshots")
+        for tid in ("T-0001", "T-0002", "T-0003", "T-9999"):
+            for n in (f"{tid}-step1", f"{tid}-verify1"):
+                os.makedirs(os.path.join(snaps, n))
+                open(os.path.join(snaps, n + ".json"), "w").close()
+        self.assertIn("old_door_snapshots", self.kinds(self.tidy()))
+        self.assertEqual(len(os.listdir(snaps)), 16, "a dry run removes nothing")
+        self.tidy("--apply")
+        self.assertEqual(sorted(n for n in os.listdir(snaps) if not n.endswith(".json")),
+                         ["T-0002-step1", "T-0002-verify1", "T-0003-step1", "T-0003-verify1", "T-9999-step1", "T-9999-verify1"])
+        self.assertFalse(os.path.exists(os.path.join(snaps, "T-0001-step1.json")))
+
     def test_apply_archives_and_loses_nothing(self):
         self.seed_rot()
         done_text = read_text(c.find_brief(self.p, "T-0004").path)

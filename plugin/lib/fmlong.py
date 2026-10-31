@@ -896,6 +896,11 @@ def grade(p, run, agent):
            "regressions": sum(len(g["regressions"]) for g in goals), "checks": sum(g["checks"] for g in goals),
            "checks_passed": sum(g["checks_passed"] for g in goals), "goals": goals, "skipped": skipped, **_totals(goals)}
     fmgenesis.exam_line(p, res)
+    try:  # T-2353: the end-of-run tier confirms or reverts a provisional model route; a failure here never loses the grade
+        import fmlanes
+        res["route"] = fmlanes.confirm_routes(p, res)
+    except Exception as e:
+        res["route"] = [{"error": c.fit(str(e), 120)}]
     return res
 
 

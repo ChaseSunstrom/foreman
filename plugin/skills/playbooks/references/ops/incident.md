@@ -3,8 +3,8 @@
 
 Use when something people depend on is broken or wrong right now, or about to be: an outage, errors or slowness
 users can see, wrong data being written, a security event in progress. A bug that hurts nobody yet is an ordinary
-FIX (the intake skill's `references/debugging.md`). In Foreman, capture it with the urgent tag (`FIX!:`) so the current
-task is checkpointed and the incident takes the focus.
+FIX (the intake skill's `references/debugging.md`). In Foreman, start it with `fm incident '<impact>' --signal CMD`
+(the urgent `FIX!:` path): the current task is checkpointed and the incident takes the focus.
 
 The order matters more than the cleverness: impact first, mitigation second, cause last. Most incidents run long
 because someone hunted the root cause while users were still failing.
@@ -13,27 +13,30 @@ because someone hunted the root cause while users were still failing.
 
 1. **Declare it.** Open one incident record (a file, ticket or channel) with the start time in UTC and one line of
    impact in the users' terms ("checkout returns 500 for about 30% of requests"). Pass: the record exists before the
-   first change to production.
+   first change to production. In Foreman the record is the task: `fm incident '<impact>' --signal CMD` opens it
+   only when the signal is red (exit 0 healthy, 1..125 harmed), with a Timeline from the UTC time.
 2. **Name the roles.** A lead who decides, a hands-on who changes things, and (past one person) a communicator. Alone,
    you hold all three and write that down. Pass: the record names each role's holder.
 3. **Triage by impact** with the severity table: who is affected, how many, since when, and is it getting worse.
    Pass: the record states the severity and the number that set it.
 4. **Mitigate before you diagnose.** Reach for the reversible moves first: roll back the last deploy, turn the flag
    off, fail over, scale out, shed or block the bad traffic. Before each action write the effect you expect; after
-   it, the effect you saw. Pass: every production change is a timeline row with both.
+   it, the effect you saw. Pass: every production change is a timeline row with both
+   (`fm incident log '<action>' --expect '<effect>'` adds the row; the effect seen is the next signal run).
    **A security event changes the order:** preserve the evidence first (snapshot the logs, disks and memory of
    affected machines, copy access logs out of reach of the intruder), contain (isolate the host, rotate exposed
    credentials and keys), and only then roll back, fail over or rebuild, which would destroy what you need to learn
    how they got in. Pass: the snapshots are listed in the timeline before the first rebuild.
 5. **Prove recovery with the signal that showed the harm**: the same graph, query or error rate, back to its normal
-   band, held for 15 minutes (or two of its usual cycles, whichever is longer). "Looks fine" is not a pass.
+   band, held for 15 minutes (or two of its usual cycles, whichever is longer). "Looks fine" is not a pass. Foreman
+   closes only on that signal green twice after the fix's last edit, and `fm sentinel` reruns it after later commits.
 6. **Communicate on a clock.** Updates every 30 minutes for SEV1, every 60 for SEV2, even when there is no news.
    Each update says the impact now, what was done, and when the next update comes.
 7. **Keep the timeline from evidence**: deploy logs, alerts, dashboards, chat, shell history. UTC, one fact per row,
    no blame words. Mark four moments: started, detected, mitigated, resolved.
 8. **Close with owned follow-ups.** SEV1 and SEV2 get a blameless review within five working days. Every follow-up
    is a ticket with an owner and a due date (in Foreman, one `fm capture` each), and at least one answers "how
-   would we have known sooner". Pass: no follow-up exists only as a sentence in the review.
+   would we have known sooner" (`fm incident follow-up '<text>'` captures it; the close needs it). Pass: no follow-up exists only as a sentence in the review.
 
 ## Severity
 

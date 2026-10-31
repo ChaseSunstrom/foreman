@@ -370,6 +370,8 @@ def cmd_new(args):
             text = text.replace(k, v, 1)
         c.write_atomic(os.path.join(d, f), text)
     os.chmod(os.path.join(d, "server.py"), 0o755)
+    import fmtoolproof  # T-2372: the active task must prove this server before it closes
+    fmtoolproof.built(name, os.path.join(d, "server.py"), os.path.join(d, "test_server.py"), kind="mcp")
     print(f"Wrote a stdlib MCP server for `{shlex.join(wrap)}`" + (f" (subcommands: {', '.join(subs)})" if subs else "")
           + ":\n" + "\n".join(f"  {os.path.join(d, f)}" for f in files)
           + f"\nTest it: python3 {shlex.quote(os.path.join(d, 'test_server.py'))}"
@@ -397,7 +399,17 @@ def cmd_register(args):
             m = re.search(r'^NAME = "([a-z][a-z0-9_-]{0,39})"$', f.read(), re.M)
         name, cmd = (m.group(1) if m else os.path.basename(os.path.dirname(server))), ["python3", server]
     if harness == "claude":  # the form in Claude Code's MCP docs: claude mcp add NAME -- COMMAND [ARGS…]
-        return print(f"claude mcp add {shlex.quote(name)} -- {shlex.join(cmd)}")
+        print(f"claude mcp add {shlex.quote(name)} -- {shlex.join(cmd)}")
+        try:  # T-2374: adding the server is the user's grant to give: queue it on the active task, grant nothing
+            import fmgrants
+            p = fmcli.resolve(args, create=False)
+            act = c.active_brief(c.load_briefs(p), p.lane)
+            if act and fmgrants.queue(p, act.id, ["plugin"], f"register the {name} MCP server with Claude Code",
+                                      what=f"mcp:{name}", session=os.environ.get("CLAUDE_SESSION_ID"))[0] == "queued":
+                print(f"Plugin request for mcp:{name} queued for the user on {act.id} (fm todo).")
+        except fmcli.UsageError:
+            pass
+        return
     # T-0946: only formats confirmed in the harness's current docs are printed; none is confirmed here yet
     print(f"No {harness} registration format is confirmed against {harness}'s current docs, so none is printed: check "
           f"its MCP docs and register this stdio server as {name!r}, command: {shlex.join(cmd)}"

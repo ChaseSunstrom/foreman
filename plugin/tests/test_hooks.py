@@ -3152,6 +3152,40 @@ class Stop(HookCase):
         self.assertIn("\x1b]0;foreman", parse(self.stop("ok"))["terminalSequence"])
 
 
+class DoorPark(HookCase):  # T-2342: a reply that asks the user is sorted by the door it asks about
+    def stop(self, msg, active=False):
+        return self.hook("Stop", {"stop_hook_active": active, "last_assistant_message": msg})
+
+    def test_a_two_way_ask_is_told_to_decide_and_record_it(self):
+        self.fm("init")
+        self.task()
+        reason = parse(self.stop("Which parser should I keep, the old or the new one?"))["reason"]
+        self.assertIn("two-way: decide it and record it (fm decide … --confidence N)", reason)
+        self.assertIn("AskUserQuestion", reason, "a fork with no cheap default can still become a prompt")
+        self.assertNotIn("otherwise ask", reason, "one sentence, not the two-way clause beside the older one")
+        self.assertEqual(reason.count("decide it and record it"), 1)
+
+    def test_a_one_way_ask_keeps_the_prompt_nudge_without_the_two_way_clause(self):
+        self.fm("init")
+        self.task()
+        reason = parse(self.stop("Should I run `git push --force origin main` now?"))["reason"]
+        self.assertIn("AskUserQuestion", reason)
+        self.assertNotIn("two-way: decide it", reason)
+
+    def test_the_digest_counts_asks_by_door(self):
+        self.fm("init")
+        self.task()
+        self.stop("Which parser should I keep, the old or the new one?")
+        self.stop("Should I run `git push --force origin main` now?")
+        self.assertRegex(self.fm("digest").stdout, r"Doors: asks: 1 two-way, 1 one-way")
+
+    def test_no_nudge_and_no_count_when_the_reply_asks_nothing(self):
+        self.fm("init")
+        self.task()
+        self.stop("All steps are verified.")
+        self.assertNotIn("Doors:", self.fm("digest").stdout)
+
+
 class Reload(HookCase):
     """T-0145: a mod changed during a driven turn reaches the session: Claude Code hot-reloads only when a turn really
     ends, so the drive lets this one end and the reloaded mod starts the next."""

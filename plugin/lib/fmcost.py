@@ -920,8 +920,14 @@ def cmd_digest(args):
     lines += [f"Decided without you: {len(decided)} ({len(review)} to review below)"] + [f"- {c.fit(x, 160)}" for x in plain[-6:]] \
         if decided else []
     lines += ["Decisions to review (costly/outward):"] + [f"- {c.fit(x, 160)}" for x in review[-6:]] if review else []
+    doors = collections.Counter((e["event"], (e.get("data") or {}).get("door")) for e in
+                                c.ledger_events(p, ("door_ask", "door_park"), since=since))  # T-2342
+    part = lambda ev, name: [f"{name}: " + ", ".join(f"{doors[ev, d]} {d}" for d in ("two-way", "one-way") if doors[ev, d])] \
+        if any(doors[ev, d] for d in ("two-way", "one-way")) else []
+    lines += ["Doors: " + " · ".join(part("door_ask", "asks") + part("door_park", "parks"))] \
+        if part("door_ask", "asks") or part("door_park", "parks") else []
     import fmtrials
-    lines += fmtrials.lines(p)  # T-1059
+    lines += fmtrials.lines(p, act=True)  # T-1059; T-2351: the digest files and settles self-fix verdicts
     lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []
     triage.sort(key=lambda r: ("do", "drop", "ask").index(r[1]))  # a do or drop never hides behind asks
     lines += [f"Deferred: {t} → {v} ({w})" for t, v, w in triage[:6]]
@@ -933,10 +939,11 @@ def cmd_digest(args):
     lines += [f"Tokens: ≈ {_human(tokens)} input-equivalent (fm cost for the breakdown)"] if tokens else []
     lines += [unex] if unex else []
     try:  # T-2273: what closed without a green run here
-        unproven = c.unproven(p, args.days)
+        got = c.unproven_summary(p, args.days)
+        unproven, kinds = got["rows"], got["counts"]
     except Exception:  # the rollup never costs the digest
-        unproven = []
-    lines += [f"Done without a green run here: unproven: {len(unproven)} (fm proof)"] if unproven else []
+        unproven, kinds = [], {}
+    lines += [c.unproven_line(len(unproven), kinds, lead="Done without a green run here: ")] if unproven else []
     nights = [e for e in c.ledger_tail(p, 3000) if e.get("event") == "night" and str(e.get("ts", ""))[:19] >= since]
     lines += ["Night shift (fm night):"] + [  # T-0236
         f"- {str(e.get('ts', ''))[:10]}: " + (", ".join(f"{'✓' if r.get('exit') == 0 else '✗'} {r.get('name')}"
