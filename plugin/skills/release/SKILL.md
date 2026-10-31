@@ -1,6 +1,6 @@
 ---
 name: release
-description: Use whenever you release or ship: gate the exact commit, bump the version, changelog, tag, publish.
+description: Use whenever you release or ship: gate the commit, bump the version, changelog, tag, publish.
 ---
 
 # Foreman: release

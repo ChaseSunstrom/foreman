@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-description: Use whenever a request is open-ended ("super improve it", "what next?"): grounded, scored ideas become tasks.
+description: Use whenever a request is open-ended ("super improve it", "what next?"): scored ideas become tasks.
 ---
 
 # Foreman: brainstorm

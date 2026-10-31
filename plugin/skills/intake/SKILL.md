@@ -1,6 +1,6 @@
 ---
 name: intake
-description: Use whenever a new request arrives (FIX:/FEATURE: lines or plain words): makes ordered tasks.
+description: Use whenever a new request arrives (FIX:/FEATURE: lines or plain words): makes tasks.
 ---
 
 # Foreman intake

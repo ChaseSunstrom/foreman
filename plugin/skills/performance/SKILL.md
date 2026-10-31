@@ -1,6 +1,6 @@
 ---
 name: performance
-description: Use whenever something is slow or must be faster: profile, change one thing, measure before and after.
+description: Use whenever you optimize or improve performance, or something is slow: profile, change one thing, measure.
 ---
 
 # Foreman: performance
