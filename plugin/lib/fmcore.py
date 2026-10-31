@@ -4408,14 +4408,24 @@ _BUILTINS = {"cd", "test", "[", "[[", "true", "false", "echo", "printf", "export
 
 
 _VACUOUS = {"true", ":", "echo", "printf", "ls", "cat", "pwd", "exit", "sleep", "date", "cd"}
+_PATHED = {"ls", "cat", "cd"}  # T-2333: given a path these fail when it's missing, so they can check something
+
+
+def _hollow(words, pathed=True):
+    """Whether a command's words can't fail: a _VACUOUS program, unless exit carries a nonzero code or (pathed) ls, cat
+    or cd names a path, a word that is neither an option nor a redirect. A fallback (pathed=False) stays hollow with a
+    path: `x || ls dist` exits 0 whenever dist exists, whatever x did."""
+    w = words[0].strip("()") if words else ""
+    if w not in _VACUOUS:
+        return False
+    args = [a for a in words[1:] if not re.match(r"-|\d*[<>]|&", a)]
+    return not ((pathed and w in _PATHED and args) or (w == "exit" and args and args[0] != "0"))
 
 
 def _masked(cmd):
     """T-2332: `x || true`, `x || echo ok` or `x; true` exit 0 whatever x did. exit with a nonzero code can fail."""
     parts = re.split(r"(&&|\|\||;)", cmd)
-    def hollow(seg):
-        w = seg.split()
-        return bool(w) and w[0].strip("()") in _VACUOUS and not (w[0] == "exit" and len(w) > 1 and w[1] != "0")
+    hollow = lambda seg: _hollow(seg.split(), pathed=False)  # noqa: E731
     segs = [(parts[i - 1] if i else "", parts[i]) for i in range(0, len(parts), 2)]
     return any(sep == "||" and hollow(seg) for sep, seg in segs[1:]) or (
         len(segs) > 1 and segs[-1][0] == ";" and hollow(segs[-1][1]))
@@ -4431,11 +4441,11 @@ def lint_verify(cmd, root):
             words = [w for w in part.split() if not re.match(r"^\w+=", w)]
             w = words[0].strip("()") if words else ""
             if k == 0:
-                firsts.append(w)
+                firsts.append((w, _hollow(words)))
             if w and w not in _BUILTINS and w not in _VACUOUS and not shutil.which(w) \
                     and not os.path.exists(os.path.join(root, w)) and not os.path.exists(os.path.expanduser(w)):
                 problems.append(f"{w} isn't on PATH or in the repo")
-    if any(firsts) and all(f in _VACUOUS or not f for f in firsts):
+    if any(f for f, _ in firsts) and all(h or not f for f, h in firsts):
         problems.append("it can't fail (nothing in it checks the behaviour)")
     elif _masked(cmd or ""):
         problems.append("it can't fail (a fallback after || or a last command after ; always succeeds)")
