@@ -828,7 +828,8 @@ def cmd_task(args):
                                f"know>\" (or \"none: <why>\"); recall shows it on related work")
             import fmmiss  # T-2369: fm task done is no way round finish's refusal
             import fmtoolproof  # T-2372: nor round a tool's proof
-            reasons += fmtoolproof.safe_gaps(p, b) + fmmiss.safe_gaps(p, b)
+            import fmincident  # T-2388: nor round an incident's two greens and follow-up
+            reasons += fmtoolproof.safe_gaps(p, b) + fmmiss.safe_gaps(p, b) + fmincident.safe_gaps(p, b)
             if reasons:
                 lead = "" if hasattr(args, "audit") else (  # T-0849: fm task done, not finish's own close
                     f" — one call settles most of it: fm task finish {b.id} --run \"<test cmd>\" --audit \"<how>\""
@@ -1211,7 +1212,8 @@ def task_finish(p, args):
         + _adversary_gaps(p, b, lenses)  # T-1906, T-1907: asked before anything runs
     import fmmiss  # T-2369: an open capability miss refuses every try; only a later passing run closes it
     import fmtoolproof  # T-2372: first, so a proved tool resolves its miss in the same try
-    gaps += fmtoolproof.safe_gaps(p, b) + fmmiss.safe_gaps(p, b)
+    import fmincident  # T-2388: its criterion's own run is the close's second green
+    gaps += fmtoolproof.safe_gaps(p, b) + fmmiss.safe_gaps(p, b) + fmincident.safe_gaps(p, b, closing=True)
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always
@@ -6961,6 +6963,15 @@ def _build_parser(only=None):
                    "session, leases (T-1821)")
 
     add("next", cmd_next, tier=("Every task", 10), help="the one next required action (derived from the briefs)")
+
+    s = add("incident", lazy("fmincident", "cmd_incident"), tier=("Every task", 102), help="live harm: open an urgent FIX "
+            "on a signal that is red now (--signal CMD); log actions with their expected effect; close on the signal "
+            "green twice plus one follow-up; fm sentinel keeps rerunning it")
+    s.add_argument("words", nargs="+", help="'<impact>' with --signal; or: log '<action>' --expect '<effect>'; "
+                   "follow-up '<what stops this recurring>'")
+    s.add_argument("--signal", help="the harm signal: one command, exit 0 healthy, 1..125 harmed")
+    s.add_argument("--expect", help="with log: the effect the action should have")
+    s.add_argument("--id", help="log/follow-up: the incident (default: the open one)")
 
     s = add("sentinel", cmd_sentinel, tier=("Internal (hooks and installer)", 1320), help="re-run the checks recent finished tasks passed; report what fails now")
     s.add_argument("--last", type=int, default=10, help="finished tasks to cover")
