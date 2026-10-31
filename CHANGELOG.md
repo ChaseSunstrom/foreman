@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- fm-builder.md tells builders to create `.fm-scratch/` files (an fm edit batch, notes, drafts) with the Write tool and names heredocs and `cat >` as refused there; test_builder asserts it (T-2294).
 - `fm mcp register desktop` prints the `mcpServers` stanza for Claude Desktop's config (fm by absolute path, the project by `-p`), so Desktop reaches Foreman's `find` tool and the rest of its MCP server (T-2232).
 - `fm exam`: the static test-kind grading reads only test files by Foreman's one test-file pattern (latest.py, contest.js no longer count), and `fm exam check` runs each scenario's clean side 3 times and names one that fails any run (T-2218).
 - `fm genesis exam`: G-sweep scenarios plant three defects (a vulnerability, an untested helper, a doc gap) and a draft closes one only when its §2 has a capability with a matching exam kind for each, each miss named; G-line and G-none still plant one (T-2177).
