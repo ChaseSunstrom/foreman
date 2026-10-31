@@ -95,7 +95,9 @@ def rank(task, found=None):
     them."""
     want = list(dict.fromkeys(words(task)))
     found = found or {"skills": skills(), "playbooks": playbooks(task), "commands": commands()}
-    docs = [(kind, x, set(words(x["text"])), set(words(x["name"].replace("/", " ").replace("-", " "))))
+    # T-2248: a name's last segment only; a folder (release/) is shared by every book in it, so as a name word it ties
+    # them all and the alphabet picks; it still counts once in the text
+    docs = [(kind, x, set(words(x["text"])), set(words(x["name"].rsplit("/", 1)[-1].replace("-", " "))))
             for kind, rows in found.items() for x in rows]
     df = {w: sum(w in d for _, _, d, _ in docs) for w in want}
     idf = {w: math.log(1 + len(docs) / df[w]) for w in want if df[w]}
