@@ -5106,7 +5106,7 @@ def _runnable(template, tests):
 
 
 HOOK_BUDGET = (("plugin/lib/fmhooks.py", "plugin/lib/fmcore.py"), "plugin/tests/test_core.py")  # T-2307
-HUB_PAIRS = 10 # T-1467: more co-changed tests than this and a file's pairs are noise
+HUB_PAIRS = 10  # T-1467: more co-changed tests than this and a file's pairs are noise
 
 
 def affected(p, b=None, skipped=None):

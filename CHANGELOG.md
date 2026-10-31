@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm check --affected` adds test_core's import-budget tests when fmhooks.py or fmcore.py changes, so a new top-level import in a hook module fails in the lane, not at ship (T-2307).
 - Long-tier goals are passable from their text: checks come only from the task's own commits, and the goal names the new module attributes and flags its checks reach and lists the checks as "Done when", never the test bodies (T-2304).
 - Hooks import no `glob` again: the leads-record prune lists its folder (T-2305).
 - The Stop hook holds a session once for fm find leads it was shown at session start that are still present and unnamed in its reply (fix test-first, report, or refute); a suspicion with no failing test is reported as a lead, not a finding. Only turns that ran tools are held (T-2297).
