@@ -1,6 +1,6 @@
 ---
 name: debug-test
-description: Use whenever a test fails, a run crashes or a bug comes back: reproduce it, find the root cause, fix it red to green.
+description: Use whenever a test fails, a run crashes or a bug comes back: reproduce, find the root cause, fix red to green.
 ---
 
 # Foreman: debug a failure

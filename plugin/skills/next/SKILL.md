@@ -1,6 +1,6 @@
 ---
 name: next
-description: Use whenever you have finished, blocked or dropped a task, or the user says next or continue: closes it and starts the next queued one.
+description: Use whenever a task is finished, blocked or dropped, or the user says next or continue: closes it, starts the next.
 ---
 
 # Foreman: next

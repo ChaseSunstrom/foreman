@@ -45,9 +45,9 @@
     "Ask Foreman to improve itself with eval-gated changes"
   ],
   "playbooks": [
-    "I am about to refactor this module and tune performance",
-    "Do a security review, then fix the build errors",
-    "Write an ADR, plan it, and do TDD and run evals"
+    "Fix the build errors, then do TDD",
+    "Write an ADR and plan the change",
+    "Plan it, do TDD and run evals"
   ],
   "debug-test": [
     "A test fails after my change, reproduce it and find the root cause",
@@ -63,6 +63,26 @@
     "Find out what exists before building a CSV parser, and what we can reuse",
     "I need cited answers on which auth library to use; save one note",
     "Before building the sync feature, find something to reuse"
+  ],
+  "refactor": [
+    "Refactor this module and remove the dead code",
+    "Simplify this code without changing behavior",
+    "Delete the duplicate helpers and simplify the code"
+  ],
+  "performance": [
+    "This endpoint is slow, make it faster",
+    "Profile the startup and cut the latency",
+    "Benchmark before and after this change"
+  ],
+  "security-review": [
+    "Do a security review of this endpoint that takes user input",
+    "Check the auth code and scan for leaked secrets",
+    "Is this API route safe from injection?"
+  ],
+  "docs": [
+    "Write the README for this tool",
+    "Rework the how-to guide so examples run",
+    "Write the docs for this feature"
   ],
   "status": [
     "I am about to report where work stands, what is left?",

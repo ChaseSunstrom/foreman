@@ -2539,8 +2539,10 @@ def brief_detail(b):
 SKILL_FOR = {
     "FIX": "load: Skill foreman:debug-test; fm playbooks show tdd-workflow",  # T-1701: the job skills
     "FEATURE": "load: Skill foreman:intake, then its references/execute.md; fm playbooks show tdd-workflow",
-    "CLEAN": "load: Skill foreman:playbooks (clean)", "PERFORMANCE": "load: Skill foreman:playbooks (perf: baseline first)",
-    "SECURITY": "load: Skill foreman:playbooks (security)",
+    # T-2072: the job skills wrap these stages' playbooks; the playbooks name stays for `fm playbooks route`
+    "CLEAN": "load: Skill foreman:refactor; foreman:playbooks (clean)",
+    "PERFORMANCE": "load: Skill foreman:performance; foreman:playbooks (perf: baseline first)",
+    "SECURITY": "load: Skill foreman:security-review; foreman:playbooks (security)",
     "RESEARCH": "load: Skill foreman:research",
     "verifying": "run: fm playbooks show verification-loop", "auditing": "run: the /foreman:review workflow",
     "design": "load: Skill foreman:ui-design",  # T-1700: it routes to the directions skill and the ui playbooks

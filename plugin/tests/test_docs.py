@@ -160,7 +160,7 @@ class Skills(unittest.TestCase):
         import fmdoctor
         self.assertEqual(fm_mention_problems("`fm nosuch` `fm lane nosuch ID` `fm lane brief ID` `fm task hypo ID add`"),
                          ["fm nosuch", "fm lane nosuch"], "the checker itself")
-        jobs, chars = ("debug-test", "release", "research"), 0
+        jobs, chars = ("debug-test", "release", "research", "refactor", "performance", "security-review", "docs"), 0
         for name in jobs:
             with self.subTest(skill=name):
                 meta, body = frontmatter(os.path.join(PLUGIN, "skills", name, "SKILL.md"))
@@ -175,7 +175,7 @@ class Skills(unittest.TestCase):
                     self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)), ref)
                 self.assertIn("`fm ", body, "wraps at least one fm verb")
                 self.assertEqual(fm_mention_problems(body), [])
-        self.assertLessEqual(chars, 360, "three of the 2,200-character listing's job-skill room")
+        self.assertLessEqual(chars, 880, "seven of the 2,200-character listing's job-skill room")  # T-2072
         self.assertEqual([p for p in fmdoctor._description_problems(os.path.join(PLUGIN, "skills"))
                           if any(j in p for j in jobs)], [])
 
