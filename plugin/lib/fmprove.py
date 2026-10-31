@@ -458,6 +458,10 @@ def cmd_prove(args):
             found = [dict(f, held=None) for f in found if proof_id(f["key"]) == args.only]
         # ponytail: each --only re-check scans and runs the suite up to three times; cache per tree id if it drags
         res = prove(root, found, args.limit, run=args.yes_run or trusted(root) or _lane_trusted(p, root))
+        won = [t for t in res["tickets"] if t["verdict"] == "proven" and t.get("key")]
+        if p and won:  # T-2132: fm find --rank lifts these until their function changes
+            texts = dict(fmfind._files(root)[0])
+            fmfind.record(p, {t["key"]: fmfind.proof_hash(texts, t) for t in won})
     except (OSError, shutil.Error) as e:
         print(f"fm prove: couldn't copy {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
         return 2
