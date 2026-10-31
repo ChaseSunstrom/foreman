@@ -1047,12 +1047,12 @@ class GenesisDraft(ForemanTestCase):
 
         def goals(done, ids=("T-1", "T-2", "T-3")):
             return [{"id": i, "answered": True, "true_done": d, "regressions": [], "false_done": (not d) or None, "cost": 0.5,
-                     "interventions": 0} for i, d in zip(ids, done)]
+                     "resumes_needed": 0, "unfinished": 0} for i, d in zip(ids, done)]
 
         def line(agent, done, model=None, run="l1", ids=("T-1", "T-2", "T-3"), **kw):
             fmgenesis.exam_line(self.p, {"tier": "long", "agent": agent, "run": run, "model": model, "goals": goals(done, ids),
                                          "scenarios": len(ids), "true_done": sum(done), "regressions": 0, "false_done": 3 - sum(done),
-                                         "cost": 1.5, "interventions": 0, "guard_blocks": None, **kw})
+                                         "cost": 1.5, "resumes_needed": 0, "unfinished": 0, "guard_blocks": None, **kw})
         line("plain", [True, False, False])
         self.assertEqual(row()["state"], "no foreman line")
         line("foreman", [True, True, False], model="claude-haiku-5-5")

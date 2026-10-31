@@ -430,11 +430,12 @@ def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=N
 def _metrics(p, run, agent, g):
     """T-2263: one goal's false-done claim, cost, interventions, seconds and guard blocks, from the run info `run` stored
     beside its fault log. A goal with no info (a zero-token arm, an older run) or no answer has each of them as None:
-    unknown is never 0. A false-done is the session's last reply claiming done while a hidden check fails. An
-    intervention is a resume a person would have had to make: a planned resume that failed, or a session that ended
-    in error or without claiming done. secs is the session's wall time: the tree is only checked once, at its end, so
+    unknown is never 0. A false-done is the session's last reply claiming done while a hidden check fails.
+    resumes_needed is where a person would have to step in: a planned resume that failed, or a session that ended in
+    error. unfinished is a session that ended with no done claim and no error: it stopped short, which is no
+    intervention. secs is the session's wall time: the tree is only checked once, at its end, so
     the time to the first true-done is bounded by it."""
-    none = {"false_done": None, "cost": None, "cost_unknown": None, "interventions": None, "secs": None, "guard_blocks": None}
+    none = {"false_done": None, "cost": None, "cost_unknown": None, "resumes_needed": None, "unfinished": None, "secs": None, "guard_blocks": None}
     try:
         with open(os.path.join(_root(p), run, "faults", agent, g["id"] + ".run.json"), encoding="utf-8") as f:
             info = json.load(f)
@@ -443,9 +444,12 @@ def _metrics(p, run, agent, g):
     if not (g["answered"] and isinstance(info, dict)):
         return none
     num = lambda k, kind=(int, float): info[k] if isinstance(info.get(k), kind) and not isinstance(info.get(k), bool) else None
-    said, ok = info.get("said_done") is True, info.get("ended_ok") is True
-    return {"false_done": said and not g["true_done"], "cost": num("cost"), "cost_unknown": info.get("cost_unknown") is not False,
-            "interventions": (num("resume_failed", int) or 0) + (0 if ok and said else 1), "secs": num("secs"),
+    flag = lambda k: info[k] if isinstance(info.get(k), bool) else None  # a flag the run didn't store is unknown
+    said, ok = flag("said_done"), flag("ended_ok")
+    return {"false_done": None if said is None else said and not g["true_done"], "cost": num("cost"),
+            "cost_unknown": info.get("cost_unknown") is not False,
+            "resumes_needed": None if ok is None else (num("resume_failed", int) or 0) + (not ok),
+            "unfinished": None if ok is None or said is None else int(ok and not said), "secs": num("secs"),
             "guard_blocks": num("guard_blocks", int)}
 
 
@@ -457,13 +461,13 @@ def _totals(goals):
     tot = lambda k: sum(known(k)) if known(k) else None
     secs = [g["secs"] for g in mine if g["true_done"] and g.get("secs") is not None]
     out = {"rate": round(sum(g["true_done"] for g in goals) / len(goals), 3) if goals else 0,
-           "false_done": tot("false_done"), "interventions": tot("interventions"), "guard_blocks": tot("guard_blocks"),
+           "false_done": tot("false_done"), "resumes_needed": tot("resumes_needed"), "unfinished": tot("unfinished"), "guard_blocks": tot("guard_blocks"),
            "cost": round(tot("cost"), 4) if known("cost") else None,
            "cost_unknown": sum(g.get("cost") is None or g.get("cost_unknown") is not False for g in mine),
            "hours_to_done": round(min(secs) / 3600, 3) if secs else None,
            # a revert (a landed change taken back) can't be seen in the final tree the run keeps: unknown, not 0
            "reverts": None}
-    out["unknown"] = {k: sum(g.get(k) is None for g in mine) for k in ("false_done", "interventions", "guard_blocks")}
+    out["unknown"] = {k: sum(g.get(k) is None for g in mine) for k in ("false_done", "resumes_needed", "unfinished", "guard_blocks")}
     out["unknown"]["hours_to_done"] = sum(g["true_done"] and g.get("secs") is None for g in mine)
     return out
 

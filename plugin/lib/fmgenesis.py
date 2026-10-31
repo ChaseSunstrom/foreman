@@ -1763,7 +1763,7 @@ def scorecard(p, agent="foreman", bar=0.8):
             "gaps": free_beats(p, agent), "smoke": sum(map(smoke, _exam(p, agent)))}
 
 
-LONG_KEYS = ("true_done", "false_done", "regressions", "interventions", "guard_blocks", "cost", "hours_to_done")
+LONG_KEYS = ("true_done", "false_done", "regressions", "resumes_needed", "unfinished", "guard_blocks", "cost", "hours_to_done")
 
 
 def long_row(p):
@@ -1819,7 +1819,8 @@ def long_text(r):
     if not r["foreman"]:
         return f"long-horizon (deciding): {r['state']}"
     show = lambda s: (f"{s['true_done_same']}/{r['goals']} done, false-done {'?' if s['false_done'] is None else s['false_done']}, "
-                      f"regressions {s['regressions']}, cost {'?' if s['cost'] is None else '$%.2f' % s['cost']}")
+                      f"regressions {s['regressions']}, resumes needed {'?' if s['resumes_needed'] is None else s['resumes_needed']}, "
+                      f"unfinished {'?' if s['unfinished'] is None else s['unfinished']}, cost {'?' if s['cost'] is None else '$%.2f' % s['cost']}")
     return f"long-horizon (deciding): {r['state']} on {r['goals']} same goal(s): foreman {show(r['foreman'])} vs plain {show(r['plain'])}"
 
 
