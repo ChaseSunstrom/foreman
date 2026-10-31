@@ -34,6 +34,9 @@ class Agent(ForemanTestCase):
         self.assertNotIn("Agent", tools)  # it never launches agents of its own
         for rule in ("fm focus", "worktree", "never push", "never merge", "fm task evidence", "git commit"):
             self.assertIn(rule, text.lower() if rule.islower() else text)
+        flat = " ".join(text.split())
+        self.assertIn("Create `.fm-scratch/` files", flat)  # T-2294: the Write tool, not a heredoc
+        self.assertIn("heredocs and `cat >` are refused there", flat)
 
 
 class Brief(_Tasks):
