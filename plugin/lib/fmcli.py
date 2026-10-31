@@ -7219,6 +7219,7 @@ def _build_parser(only=None):
                         "and resume keys (kept only when fm exam check passes); only these decide fm exam scorecard")
     s.add_argument("--model", help="gen: the child author's model (default sonnet); run: the session's model")
     s.add_argument("--limit", type=int, help="run: answer the first N picked scenarios (session arms default to 3)")
+    s.add_argument("--jobs", type=int, default=1, help="run, long run: session scenarios at once (default 1, T-2292)")
     s.add_argument("--budget", type=float, help="run: USD cap per session (default none: gen-0 puts no cap on proving; "
                                                 "the timeout stops a runaway)")
     s.add_argument("--request", help="run: session arms get these words instead of each scenario's request")
