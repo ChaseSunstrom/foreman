@@ -1594,6 +1594,29 @@ class GenesisRead(ForemanTestCase):
         prev = fifth.split("<previous-reads>")[1].split("</previous-reads>")[0]
         self.assertEqual((prev.count("a shim to help"), "first why" in prev, "second why" in prev), (1, False, True))
 
+    def test_a_long_file_is_read_by_section_and_a_passed_unchanged_section_isnt_read_again(self):
+        # T-2243: objections rotated across a whole long file (13 puts); now each ## section is its own read
+        def doc(**edit):
+            return "# Critique\n\n" + "".join(
+                f"## {h}\n" + "".join(f"- {h} claim number {i}: {edit.get(h, 'one')} point about the tower\n" for i in range(15))
+                for h in ("Alpha", "Beta", "Gamma"))
+        def reads(text, reply="CLEAN"):
+            open(self.log, "w").close()
+            r, _ = self.put(text, reply)
+            return r, read_text(self.log).count("<file name=")
+        r, n = reads(doc())
+        self.assertEqual((r.returncode, n), (0, 3), r.stderr)
+        r, n = reads(doc(Beta="two"))
+        self.assertEqual((r.returncode, n), (0, 1), r.stderr)  # only the changed section
+        r, n = reads(doc(Beta="two"))
+        self.assertEqual((r.returncode, n), (0, 0), r.stderr)  # nothing changed: nothing read
+        r, n = reads(doc(Beta="two", Gamma="three"), "FAIL: - Gamma claim number 3: three point about the tower\nWHY: vague")
+        self.assertEqual((r.returncode, n), (1, 1), r.stderr)
+        self.assertIn("coverage.md#Gamma", r.stderr)
+        self.assertNotIn("#Beta", r.stderr)
+        r, n = reads(doc(Beta="two", Gamma="three"))  # the failed section is read again, and passes
+        self.assertEqual((r.returncode, n), (0, 1), r.stderr)
+
     def code(self, text, reply):
         return self.put(text, reply)[0].returncode
 
