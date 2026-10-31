@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A user-steer rule whose check fails becomes a fix: `fm genesis sweep` and the new `fm genesis steer` file one FIX per rule and commit naming the check and its output; `fm night` runs the steer checks free and its report names any rule that failed (T-2350).
 - Blast radius reaches real plans: an M/L focus with no scope takes the repo files its Interpretation, Approach or Steps name, reads a graph built within 50 commits of HEAD, and writes `unknown, no co-change history for …` instead of nothing (T-2336).
 - Exam test-first credit: putting a defect back into an arm's fix merges two changed regions whose anchors run into each other, so the oracle closes every #4 scenario (goal-rust-860eab had lost its credit) (T-2401).
 - Genesis cold reads judge what a line claims, hides or plans: a critique row that honestly says a capability is still open no longer fails against "everything finishes completely" (T-2400; recorded with fm decide for the user's review).
