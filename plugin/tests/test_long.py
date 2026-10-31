@@ -108,6 +108,24 @@ class Long(ForemanTestCase):
             self.assertNotIn("assert", goal.lower())  # names and done-when only, never the tests' bodies
             self.assertNotIn("h is five", goal)
 
+    def test_a_goal_half_done_scores_its_checks_passed(self):
+        # T-2320: l002's foreman arm passed 4 of 20 hidden checks and read only "0/6 true done"
+        self.add("\n\nMODES = ['--json']\n", "", "prep, no task")
+        self.add("\n\ndef _twice(x):\n    return x * 2\n",
+                 "\n    def test_g_doubles_its_input(self):\n        self.assertEqual(app._twice(2), 4)\n", "Start g (T-1010)")
+        self.add("\n\nFLAGS = ['--deep']\n",
+                 "\n    def test_g_takes_the_deep_flag(self):\n        self.assertIn('--deep', app.FLAGS)\n", "Finish g (T-1010)")
+        run = json.loads(self.gen().stdout)["run"]
+        self.fm("exam", "long", "run", run, "--agent", "empty")
+        with open(os.path.join(self.work(run, "empty", "T-1010"), "app.py"), "a") as f:
+            f.write("\n\ndef _twice(x):\n    return x * 2\n")  # the first check's half only
+        g = self.grade(run, "empty")
+        goal = [x for x in g["goals"] if x["id"] == "T-1010"][0]
+        self.assertEqual((goal["true_done"], goal["checks_passed"], goal["checks"]), (False, 1, 2))
+        self.assertEqual((g["checks_passed"], g["checks"]), (1, sum(x["checks"] for x in g["goals"])))
+        self.assertIn(f"1/{g['checks']} checks", self.fm("exam", "long", "grade", run, "--agent", "empty").stdout)
+        self.assertIn(f"1/{g['checks']} checks", self.fm("exam", "status").stdout)
+
     def lines(self):
         import fmcore as c
         import fmgenesis

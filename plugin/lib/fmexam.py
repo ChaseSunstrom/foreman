@@ -1464,6 +1464,7 @@ def summary(r):
     """One line for a score row (fm exam, fm genesis)."""
     if r.get("tier") == "long":  # T-2258: replayed task changes
         return (f"long {r.get('agent', '?')} {r.get('run', '?')}: {r.get('true_done', 0)}/{r.get('scenarios', 0)} true done, "
+                + (f"{r['checks_passed']}/{r['checks']} checks, " if "checks_passed" in r else "") +
                 f"{r.get('regressions', 0)} regressions")
     if str(r.get("agent", "")).startswith("draft-"):  # fm genesis exam: drafts graded by cover
         cl = r.get("closed") or {}
