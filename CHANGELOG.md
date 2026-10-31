@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm prove` now proves more kinds, only in a tree you said yes to: a flaky test when six fresh reruns both pass and fail with a failure naming it, and a vuln or slow finding when a test a model writes is red three times out of three on an assertion and turns different both when the function is stubbed to raise and when it's stubbed to return a harmless value. A test that fails for its own reason stays a lead, and a sensitive project gets no model-written test.
 - `fm log NAME` now records a note as event `log` with the name inside it, so a session can no longer write an event that Foreman's own checks read (a check run, a genesis stage, a ledger-damage acknowledgement). Notes like `fm log final_verify` still record and show in `fm recall`.
 - `fm genesis put`'s section reads now size sections by characters: a file of 3000+ characters splits, and only a section under 300 characters shares a read with the one before it, so a critique written in paragraphs gets one read per section instead of one read for nearly all of it.
 - `fm genesis put` reads a long tower file one section at a time: each `##` section gets its own cold read with an outline of the others, a section that passed and hasn't changed isn't read again, and the file is filed when every section passes. Short sections share a read, and a put reads at most 12.
