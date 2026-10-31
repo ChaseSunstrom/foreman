@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- One find across every shelf (Mission 6, #5): `fm which NEED` searches Foreman's verbs and skills, installed skills, project tools, MCP servers, binaries on this machine, stack cards, marketplace plugins and past fixes, past fixes and on-machine hits first, each row naming its source and whether it needs a grant (repo-carried rows marked unreviewed); no network call; each run logs a `tool_search` receipt, and the capability-miss note names `fm which` (T-2371).
 - A verify check that names a path can fail: `ls dist`, `cat README.md` and `cd build && …` no longer read "can't fail" (options and redirects aren't paths); `exit 1` can fail too, while `x || ls dist` and `x; cat y` still count as masking x's exit (T-2333).
 - Stopped and stalled lanes recover by cause: `fm lane recover` maps seven stop causes to one recovery each and never resumes over a builder that may be alive (a conflict or red merge on a live lane counts only once old and quiet); a guard refusal names its grant; the stop marker and recovery count live on the task brief, a third stop blocks the task, `fm task unblock` resets them; fm next and the full-autonomy drive lead with it (T-2354).
 - Exam putback anchors every region in the arm's file as it is, then splices last to first: slow C's planted loop no longer voids test-first credit, so the oracle can close the held-out slow-c scenarios (T-2419).
