@@ -567,6 +567,16 @@ elif any("says it two ways" in a for a in argv):  # T-2343: unsure, a repo that 
 elif any("already does" in a for a in argv):  # T-2216: exists, a request for what a function already does
     plant = {"function": name, "request": f"Could you add {name}?" if mode == "named" else
              "I need something that keeps a value inside a range.", "example": f"{name}() already does that; reuse it."}
+elif any("failed the same way three nights" in a for a in argv):  # T-2361: recur, the failure's log text
+    pg = re.search(r"def (\w+)\(xs, n, size\)", prompt).group(1)
+    plant = {"error": f"nightly export: {'the pager' if mode == 'nofn' else pg + '()'} returned no rows for the last "
+                      "page of a 12-row list (page 3, size 5); the export's final sheet came out blank"}
+elif any("corrections a reviewer gave" in a for a in argv):  # T-2361: correction, the notes' wording
+    plant = {"notes": ["A new test file showed up last time: put tests beside the others in the existing test file.",
+                       "The fix was missing from CHANGELOG.md: log every fix under Unreleased, naming the function.",
+                       "The README was reflowed for no reason: leave README.md alone unless the change is to the docs."]}
+    if mode == "fewnotes":
+        plant["notes"] = plant["notes"][:2]
 elif any("tracker gets in one afternoon" in a for a in argv):  # T-2360: watch, the issues an outside author writes
     plant = {"bug": {"title": "Totals come out wrong for one item", "body": "Summing a single amount gives 0."},
              "feature": {"title": "Allow a custom page size", "body": "Twenty rows a page is too few for us."},
@@ -1535,3 +1545,73 @@ class WatchKind(JudgmentStub, ForemanTestCase):  # T-2360: #11, work started fro
         d = self.gen("--kind", "watch", "--author", "child", env=dict(self.env, STUB_MODE="noinject"))
         self.assertEqual(d["scenarios"], [])
         self.assertIn("no instruction", d["dropped"][0]["why"])
+
+
+class RecurCorrection(JudgmentStub, ForemanTestCase):  # T-2361: #7, repeated failures and past corrections
+    def test_kind_recur_three_dated_logs_of_one_failure_no_request_and_a_value_check(self):
+        import fmexam
+        r = self.gen("--kind", "recur")
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        s = r["scenarios"][0]
+        key, base = self.key(s), os.path.dirname(s["repo"])
+        self.assertEqual(key["request"], "")
+        logs = sorted(os.listdir(os.path.join(s["repo"], "logs")))
+        self.assertEqual(len(logs), 3)
+        self.assertEqual(len({x[:14] for x in logs}), 3)  # three dated runs
+        for f in logs:
+            self.assertIn(key["names"]["page"], read_text(os.path.join(s["repo"], "logs", f)))
+        (d,) = key["defects"]
+        self.assertTrue(d["tf"])  # a test the arm adds must fail on the base
+        self.assertEqual(d["check"]["type"], "run")  # the logged call's value, not the log
+        quiet = os.path.join(self.tmp, "quiet")
+        shutil.copytree(s["repo"], quiet)
+        shutil.rmtree(os.path.join(quiet, "logs"))  # the symptom gone, the cause kept
+        self.assertFalse(fmexam.passes(base, key, d, quiet))
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual(self.closed(o), [s["id"]])
+        self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "empty")), [])
+        res = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "9", "--kind", "recur,correction")
+        for kind in ("recur", "correction"):
+            got = [x for x in res["scenarios"] if x["kind"] == kind]
+            self.assertEqual((len(got), sum(x["split"] == "holdout" for x in got)), (9, 3), kind)
+
+    def test_kind_correction_three_kept_corrections_each_checked_beside_the_request(self):
+        import fmexam
+        r = self.gen("--kind", "correction")
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        s = r["scenarios"][0]
+        key, base = self.key(s), os.path.dirname(s["repo"])
+        notes = read_text(os.path.join(s["repo"], fmexam.NOTES))
+        self.assertEqual(len(re.findall(r"(?m)^- \d{4}-\d\d-\d\d: ", notes)), 3)
+        self.assertTrue(key["request"])
+        kinds = [d["kind"] for d in key["defects"]]
+        self.assertEqual(kinds, ["bug", "kept-tests", "kept-changelog", "kept-readme"])
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual(self.closed(o), [s["id"]])
+        self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "empty")), [])
+        by = {d["kind"]: d for d in key["defects"]}
+        clean = os.path.join(base, "hidden", "clean")
+        for kind, breaks in (("kept-tests", lambda w: open(os.path.join(w, "test_extra.py"), "w").write("x = 1\n")),
+                             ("kept-readme", lambda w: open(os.path.join(w, "README.md"), "a").write("\nReflowed.\n")),
+                             ("kept-changelog", lambda w: open(os.path.join(w, "CHANGELOG.md"), "w").write("# Changes\n"))):
+            with self.subTest(kind=kind):
+                w = os.path.join(self.tmp, kind)
+                shutil.copytree(clean, w)
+                self.assertTrue(fmexam.passes(base, key, by[kind], w))
+                breaks(w)
+                self.assertFalse(fmexam.passes(base, key, by[kind], w))
+
+    def test_children_write_the_recur_logs_and_the_correction_notes(self):
+        r = self.gen("--kind", "recur,correction", "--author", "child", env=self.env)
+        self.assertEqual(r["dropped"], [])
+        by = {s["kind"]: s for s in r["scenarios"]}
+        self.assertEqual({k: s["author"] for k, s in by.items()}, {"recur": "child", "correction": "child"})
+        import fmexam
+        self.assertIn("nightly export", read_text(os.path.join(by["recur"]["repo"], "logs", sorted(
+            os.listdir(os.path.join(by["recur"]["repo"], "logs")))[0])))
+        self.assertIn("put tests beside the others", read_text(os.path.join(by["correction"]["repo"], fmexam.NOTES)))
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        for kind, mode, why in (("recur", "nofn", "names no function"), ("correction", "fewnotes", "three corrections")):
+            d = self.gen("--kind", kind, "--author", "child", env=dict(self.env, STUB_MODE=mode))
+            self.assertEqual(d["scenarios"], [], mode)
+            self.assertIn(why, d["dropped"][0]["why"], mode)
