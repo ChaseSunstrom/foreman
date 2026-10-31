@@ -126,6 +126,18 @@ SEED = ("# Seed\n\n| # | Mission file | Capabilities | Gaps closed (gap-map tier
 
 
 class GenesisExport(ForemanTestCase):
+    def test_the_page_still_lists_the_numbered_rules_beside_the_steers_section(self):
+        # T-2160: the steers section has its own heading, so the page's '## Standing rules' regex finds gen-1's rules
+        self.fm("init")
+        self.fm("genesis", "init", "--file", "-", input=GEN0_CAPS)
+        self.fm("genesis", "put", "gen-2/seed.md", "--file", "-", input=(
+            "# Seed\n\n## The user's standing rules (steers)\n\n- 2026-10-30: Haiku is smoke only\n\n"
+            "## Standing rules\n\n1. coverage cells name a file\n2. every item retried\n"))
+        out = os.path.join(self.tmp, "site-genesis")
+        self.fm_json("genesis", "export", out)
+        gen = json.loads(read_text(os.path.join(out, "genesis.json")))["generations"][-1]
+        self.assertEqual(gen["rules"], ["coverage cells name a file", "every item retried"])
+
     def test_export_writes_the_tower_as_data_and_docs(self):
         import json
         self.fm("init")
@@ -1378,6 +1390,9 @@ class GenesisSelect(ForemanTestCase):
             fmgenesis.select(self.p, 0)  # gen-0 is the user's text: nothing to select
 
 
+HEAD = "## The user's standing rules (steers)"  # T-2160: not '## Standing rules', which gen-1's numbered rules use
+
+
 class GenesisDrift(ForemanTestCase):
     """T-2104: fm genesis drift: a generation never rewrites gen-0's MUSTs or NEVERs (every unfenced constraint line is
     one of gen-0's verbatim, each file points to gen-0) and one cold read lists drifted seed lines."""
@@ -1450,6 +1465,68 @@ class GenesisDrift(ForemanTestCase):
                       + "\n\nNo Missions this generation.\n")
         r = self.fm("genesis", "drift", "2", "--json", check=False, env=env)
         self.assertEqual(json.loads(r.stdout)["verdict"], "clean", r.stdout)
+
+    def steers(self):
+        import fmgenesis
+        fmgenesis.put(self.p, "lineage.md", "# Lineage\n\n## gen-1\n- baseline\n- seed base: gen-1\n")
+        fmgenesis.put(self.p, "gen-1/seed.md", "# Seed\nSee gen-0.\n\n## Rules\n- one\n")
+        self.fm("decide", "Testing cadence: Haiku scores are smoke only", "--cites", "the user's steer 2026-10-30")
+        self.fm("decide", "Provisional selection until the exam", "--cites", "user steer 2026-10-30")
+        self.fm("decide", "Real coverage: every cell names a file", "--cites", "user steer 2026-10-30")
+        self.fm("decide", "a plain decision, no steer")
+        self.fm("decide", "a session's own undo", "--reverses", "Haiku scores")  # a plain --reverses retires no steer
+        self.fm("decide", "tagged only", "--reverses", "cites: user steer 2026-10-30")  # nor makes a row a steer
+        self.fm("decide", "Provisional selection is final", "--cites", "user steer 2026-11-01",
+                "--reverses", "Provisional selection")  # the user's own reversal undoes the 2nd
+
+    def drift2(self, seed, days=0):
+        """put gen-2's seed, date its file days from now (a steer is dated by day), run drift."""
+        import json
+        import fmgenesis
+        path = fmgenesis.put(self.p, "gen-2/seed.md", seed + "\nNo Missions this generation.\n")
+        os.utime(path, (time.time() + days * 86400,) * 2)
+        env = {"PATH": self.bindir + os.pathsep + os.environ["PATH"], "STUB_LOG": self.log, "STUB_REPLY": "CLEAN"}
+        r = self.fm("genesis", "drift", "2", "--json", check=False, env=env)
+        return json.loads(r.stdout), read_text(os.path.join(self.tower, "gen-2", "drift.md"))
+
+    def test_a_seed_carries_each_unreversed_steer_and_drift_holds_it_to_them(self):
+        import fmgenesis
+        self.steers()
+        self.fm("genesis", "seed", "2")
+        text = read_text(os.path.join(self.tower, "gen-2", "seed.md"))
+        rules = text.split(HEAD, 1)[1].split("\n## ", 1)[0]
+        self.assertIn("Haiku scores are smoke only", rules)
+        self.assertIn("Real coverage: every cell names a file", rules)
+        self.assertNotIn("Provisional selection until the exam", rules)  # reversed
+        self.assertNotIn("a plain decision", rules)
+        self.assertNotIn("tagged only", rules)
+        self.assertNotIn("session's own undo", rules)
+        self.assertLess(text.index("## Standing intent"), text.index(HEAD))
+        r, _ = self.drift2(text, 2)
+        self.assertEqual(r["verdict"], "clean", r)
+        r, md = self.drift2(text.replace("Haiku scores are smoke only", "x"), 2)  # a seed dated after the steers
+        self.assertEqual(r["verdict"], "drifted")
+        self.assertIn("Haiku scores are smoke only", md)  # names the missing row
+        self.assertIn("Add each missed row", md)  # its own remedy, not "undo the lines"
+        r, md = self.drift2(text.replace("- 2026", "- 2026 ", 1), 2)  # whole line, not a substring of a longer one
+        self.assertEqual(r["verdict"], "drifted", r)
+
+    def test_drift_only_warns_for_a_seed_without_the_section_or_a_steer_newer_than_it(self):
+        import json
+        import fmgenesis
+        self.steers()
+        old = "# Seed\nSee gen-0.\n\n## Standing intent\n\n" + fmgenesis.intent() + "\n"
+        r, md = self.drift2(old)  # written before this change: no Standing rules section
+        self.assertEqual(r["verdict"], "clean", r)
+        self.assertIn("no '## The user's standing rules (steers)' section", md)
+        os.remove(os.path.join(self.tower, "gen-2", "seed.md"))
+        self.fm("genesis", "seed", "2")
+        text = read_text(os.path.join(self.tower, "gen-2", "seed.md"))
+        gone = text.replace("Haiku scores are smoke only", "x")
+        for days in (0, -2):  # a steer on the seed's own day, or after it, only warns
+            r, md = self.drift2(gone, days)
+            self.assertEqual(r["verdict"], "clean", r)
+            self.assertIn("new since this seed", md)
 
     def test_a_reworded_must_an_added_never_and_an_unpointed_file_drift(self):
         for seed, files, want in (("# Seed\nSee gen-0.\nMUST: some autonomy.\n", {}, "MUST: some autonomy."),
