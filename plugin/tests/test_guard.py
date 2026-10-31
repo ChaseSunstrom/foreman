@@ -2629,7 +2629,7 @@ class TokenFallback(GuardCase):
         # T-1924: each `cd X; …; cd ..` that may fail doubled the folder sets, and the text after every $( was re-read
         # from every folder: 14 blocks took 6.5 s, 20 never finished
         blocks = " ".join(f"cd state; echo $(ls); cd ..; cd d{i}; echo $(pwd); cd ..;" for i in range(20))
-        start = time.monotonic()
+        start = time.process_time()  # T-2309: CPU time (the guard runs in this process), not the loaded host's clock
         self.run_table([
             (blocks + " ls", None),
             (blocks + " tar xf -", "core"),  # the d{i} cds fail: each `cd ..` climbs above Foreman
@@ -2650,7 +2650,7 @@ class TokenFallback(GuardCase):
             ("echo $(touch y); cd ../../../repo; tar xf -", "core"),
             ("mkdir -m 0 -p {repo}/q; cd {repo}/q; tar xf -", "core"),  # a folder it can't enter
         ], lambda cmd: self.bash(cmd, cwd=self.fhome))
-        self.assertLess(time.monotonic() - start, 2)
+        self.assertLess(time.process_time() - start, 2)
 
     def test_unfollowable_cds_before_substitutions_are_judged_fast(self):
         # T-1930: a relative target after cds the guard can't follow is guessed below every folder a word of the line
@@ -2726,9 +2726,9 @@ class TokenFallback(GuardCase):
 
     def test_deep_nesting_is_masked_in_linear_time(self):
         line = "\"$(echo " * 20000 + "\"x\" " * 20000
-        start = time.monotonic()
+        start = time.process_time()  # T-2309: CPU time, so a loaded host's other work can't fail the bar
         g._mask_nested_dq(line)
-        self.assertLess(time.monotonic() - start, 0.5)  # a rescan of every open frame per quote took 1.7 s
+        self.assertLess(time.process_time() - start, 0.5)  # a rescan of every open frame per quote took 1.7 s
 
     def test_an_awk_program_in_a_substitution_tail_stays_strict(self):
         # the tail's split makes "sh"}' a piped name: debris, not a pipe into sh; the line itself is still refused
