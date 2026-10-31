@@ -395,8 +395,36 @@ class GenesisLive(ForemanTestCase):
         self.assertTrue(all(f.startswith("site/genesis/") or f == "site/data/stats.json" for f in files), files)
         pushed = json.loads(self.git("show", "main:site/data/stats.json", at=self.origin))
         self.assertEqual(pushed["generated"], datetime.date.today().isoformat())
-        self.git("pull", "-q", "origin", "main")
-        self.assertEqual(self.fm_json("genesis", "publish")["result"], "up to date")  # fresh today: nothing to push
+        self.assertEqual(self.fm_json("genesis", "publish")["result"], "up to date")  # main's is today's: no push
+
+    def test_main_decides_staleness_and_a_failed_or_foreign_stats_script_says_why(self):
+        # T-2326 review: a fresh local stats.json hid main's stale one; a failing script was silent
+        import datetime
+        import fmcore as c
+        import fmprove
+        os.makedirs(os.path.join(self.repo, "site", "data"), exist_ok=True)
+        with open(os.path.join(self.repo, "site", "stats.py"), "w") as f:
+            f.write("import sys\nsys.exit('no state here')\n")
+        with open(os.path.join(self.repo, "site", "data", "stats.json"), "w") as f:
+            f.write('{"generated": "2000-01-01"}\n')
+        self.git("add", "site")
+        self.git("commit", "-qm", "site with old stats and a failing script")
+        self.git("push", "-q", "origin", "main")
+        with open(os.path.join(self.repo, "site", "data", "stats.json"), "w") as f:  # fresh here, stale on main
+            f.write(json.dumps({"generated": datetime.date.today().isoformat()}))
+        self.granted()
+        self.fm("genesis", "live", "on")
+        r = self.fm_json("genesis", "publish")
+        self.assertEqual(r["result"], "pushed")  # an untrusted tree's script never runs, and says nothing
+        self.assertNotIn("site/data/stats.json", self.git("diff", "--name-only", "main~1", "main", at=self.origin))
+        fmprove.remember(self.repo)
+        r = self.fm_json("genesis", "publish")
+        self.assertEqual(r["result"], "up to date; stats refresh failed: exit 1: no state here")
+        self.assertIsNone(c.read_meta(c.find_project(self.repo))["genesis_live"].get("stats_day"))  # retried next time
+        with open(os.path.join(self.repo, "site", "stats.py"), "a") as f:
+            f.write("# changed here, not on main\n")
+        r = self.fm_json("genesis", "publish")
+        self.assertIn("main's site/stats.py differs from this tree's", r["result"])
 
     def test_kick_schedules_one_trailing_publish_per_window(self):
         import fmcore as c
@@ -1124,6 +1152,13 @@ class GenesisDraft(ForemanTestCase):
         self.assertEqual((r["foreman"]["checks_same"], r["foreman"]["checks_total"], r["plain"]["checks_same"]), (3, 8, 1))
         self.assertEqual(r["state"], "ahead")  # level on true done, ahead on the hidden checks passed
         self.assertIn("foreman 0/2 done, checks 3/8", fmgenesis.long_text(r))
+        fmgenesis.exam_line(self.p, {"tier": "long", "agent": "plain", "run": "l9", "model": None, "scenarios": 2,
+                                     "true_done": 0, "regressions": 0, "goals": [  # review: an older line, no checks_passed
+                                         {"id": f"T-{i}", "answered": True, "true_done": False, "regressions": [],
+                                          "checks": 4} for i in range(2)]})
+        r = fmgenesis.scorecard(self.p)["long"]
+        self.assertIsNone(r["plain"]["checks_same"])
+        self.assertEqual(r["state"], "level")  # missing partial credit never breaks a tie
 
     def test_scorecard_grades_each_capability_on_its_newest_held_out_results(self):
         import fmgenesis  # T-2097: the §8 scorecard, read from graded exam.jsonl lines

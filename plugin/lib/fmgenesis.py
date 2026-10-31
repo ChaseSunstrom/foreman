@@ -1183,12 +1183,14 @@ def _body(path):
         return {k: v for k, v in json.load(f).items() if k not in ("updated", "rev")}  # these change every export
 
 
-def _record(p, result, digest=None, sha=None):
+def _record(p, result, digest=None, sha=None, stats_day=None):
     with c.lock(p.dir):
         meta = c.read_meta(p)
         lv = meta.get("genesis_live")
         if lv:  # switched off meanwhile: stays off
             lv["last"] = {"at": c.now(), "result": result}
+            if stats_day:  # T-2326: main's stats are today's: no fetch for them until tomorrow
+                lv["stats_day"] = stats_day
             if digest:
                 lv["hash"] = digest
             if sha:
@@ -1222,17 +1224,28 @@ def _stats_ok(p):
 
 
 def _refresh_stats(p, wt):
-    """Run the worktree's site/stats.py (--no-bench keeps the hook timings) against this project's state; True when it
-    changed the stats file. A failed or slow run leaves the old file and the tower push goes on."""
+    """Run main's site/stats.py (--no-bench keeps the hook timings) against this project's state, only when it is this
+    trusted tree's own script byte for byte; (changed, why not). A failed or slow run leaves the old file, says why,
+    and the tower push goes on."""
     import subprocess
     import sys
+    script = os.path.join(wt, "site", "stats.py")
+    if _file_text(script) != _file_text(os.path.join(p.root, "site", "stats.py")):
+        return False, "stats not refreshed: main's site/stats.py differs from this tree's"
     before = _file_text(os.path.join(wt, STATS))
     try:
-        subprocess.run([sys.executable, os.path.join(wt, "site", "stats.py"), "--no-bench", "--state", p.dir], cwd=wt,
-                       capture_output=True, timeout=300, stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return _file_text(os.path.join(wt, STATS)) != before
+        r = subprocess.run([sys.executable, script, "--no-bench", "--state", p.dir], cwd=wt, capture_output=True,
+                           text=True, timeout=300, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return False, "stats refresh failed: over 300 s"
+    except (OSError, subprocess.SubprocessError) as e:
+        return False, f"stats refresh failed: {c.fit(c.plain(str(e)), 120)}"
+    if r.returncode:
+        last = (r.stderr or r.stdout or "").strip().splitlines()[-1:]
+        return False, f"stats refresh failed: exit {r.returncode}" + (f": {c.fit(c.redact(c.plain(last[0])), 120)}" if last else "")
+    if _stats_stale(wt):
+        return False, "stats refresh failed: the file still isn't dated today"
+    return _file_text(os.path.join(wt, STATS)) != before, ""
 
 
 def _file_text(path):
@@ -1272,7 +1285,9 @@ def publish(p, settle=False):
             export(p, out)
             new = _body(os.path.join(out, "genesis.json"))
             digest = hashlib.sha256(json.dumps(new, sort_keys=True).encode()).hexdigest()
-            stats = _stats_ok(p) and _stats_stale(p.root)  # T-2326: a stale homepage is a reason to publish too
+            today = time.strftime("%Y-%m-%d")
+            # T-2326: a stale homepage is a reason to publish too; main decides, and the day stamp spares the fetch
+            stats = lv.get("stats_day") != today and _stats_ok(p) and os.path.isfile(os.path.join(p.root, "site", "stats.py"))
             if digest == lv.get("hash") and not stats:
                 return _record(p, "up to date")
             open(os.path.join(p.dir, STAMP), "w").close()
@@ -1285,12 +1300,20 @@ def publish(p, settle=False):
                     old = _body(os.path.join(dest, "genesis.json"))
                 except (OSError, ValueError):
                     old = None
-                fresh = stats and _stats_stale(wt) and _refresh_stats(p, wt)
+                fresh, note, day = False, "", None
+                if stats and not _stats_stale(wt):
+                    day = today  # main's is today's already
+                elif stats:
+                    fresh, note = _refresh_stats(p, wt)
+                    day = today if fresh else None
+                tail = f"; {note}" if note else ""
                 if old == new and not fresh:
-                    return _record(p, "up to date", digest)
-                shutil.copytree(out, dest, dirs_exist_ok=True)
+                    return _record(p, "up to date" + tail, digest, stats_day=day)
+                if old != new:
+                    shutil.copytree(out, dest, dirs_exist_ok=True)
                 git(wt, "add", "--", "site/genesis", *([STATS] if fresh else []))
-                git(wt, "commit", "-q", "-m", "Genesis: tower update (fm genesis live)")
+                git(wt, "commit", "-q", "-m", "Genesis: tower update (fm genesis live)" if old != new
+                    else "Site: daily stats refresh (fm genesis live)")
                 sha = git(wt, "rev-parse", "HEAD").strip()
                 stray = [f for f in git(wt, "diff", "--name-only", base, sha).splitlines()
                          if not f.startswith("site/genesis/") and f != STATS]
@@ -1306,7 +1329,7 @@ def publish(p, settle=False):
         _record(p, f"failed: {why}")
         raise ValueError(f"genesis publish failed: {why}") from None
     c.log_event(p, "genesis_publish", data={"sha": sha, "remote": remote})
-    return _record(p, "pushed", digest, sha)
+    return _record(p, "pushed" + tail, digest, sha, stats_day=day)
 
 
 def _text(s):
@@ -1859,7 +1882,7 @@ LONG_KEYS = ("true_done", "false_done", "regressions", "resumes_needed", "unfini
 def long_row(p):
     """T-2263: the long-horizon tier, the deciding row (steer 2026-10-30 rule 1): Foreman's newest graded long line
     against plain's on the goals both answered, never a Haiku line. state: "ahead" | "level" | "behind" on the true-done
-    count over those goals, or why there is none ("no long run", "no foreman line", "no plain line", "smoke", "no common
+    count over those goals (a tie broken on hidden checks passed when both lines have them, T-2326), or why there is none ("no long run", "no foreman line", "no plain line", "smoke", "no common
     goals"). Metrics a run couldn't compute are None, not 0."""
     newest, seen = {}, False
     for raw in (_doc(home(p), "exam.jsonl") or "").splitlines():
@@ -1894,7 +1917,8 @@ def long_row(p):
                 "true_done_same": sum(d[i] for i in same),
                 "checks_same": num("checks_passed") if known else None, "checks_total": num("checks") if known else None}
     a, b = side(newest["foreman"], f), side(newest["plain"], pl)
-    score = lambda s: (s["true_done_same"], s["checks_same"] or 0)  # a tie on true done is broken on hidden checks passed
+    known = a["checks_same"] is not None and b["checks_same"] is not None  # an older line has no partial credit
+    score = lambda s: (s["true_done_same"], s["checks_same"] if known else 0)  # a true-done tie breaks on hidden checks
     return {"state": "ahead" if score(a) > score(b) else "behind" if score(a) < score(b) else "level",
             "goals": len(same), "foreman": a, "plain": b}
 
