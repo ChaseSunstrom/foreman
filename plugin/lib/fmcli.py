@@ -676,6 +676,14 @@ def cmd_task(args):
             pre = need_brief(p, args.id)
             code, output, timing = _repeat_runs(p.root, args.run, args.repeat, args.timeout if args.timeout > 0 else None)
             cmd, result, shown = args.run, c.run_result(code, output, args.run), "\n".join(output.rstrip().splitlines()[-20:])
+            if code and not getattr(args, "expect_fail", False):  # T-2370: fm ran it, so no hook is needed for the miss
+                try:
+                    import fmhooks
+                    note = fmhooks._capability_miss(p, c.session_id(), output, pre, args.run)
+                    if note:
+                        print(note, file=sys.stderr)
+                except Exception:  # a miss that can't be logged never fails the evidence run
+                    pass
             if timing:
                 head, _, tail = result.partition(" · ")
                 result = f"{head} · {timing} · {tail}"
