@@ -385,3 +385,343 @@ class ModelRouter(Base):
         model, line = self.route()
         self.assertEqual(model, "sonnet")
         self.assertIn("too little history", line)
+
+
+# --- T-2337 (Mission 5, #8): the calibration ledger -------------------------------------------------------------
+import datetime
+
+import fmoutcomes
+import fmtrials
+
+
+class CalBase(Base):
+    def rows(self):
+        path = os.path.join(self.p.dir, "calibration.jsonl")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as f:
+            return [json.loads(x) for x in f if x.strip()]
+
+    def bets(self, kind=None):
+        return [r for r in self.rows() if "kind" in r and (kind is None or r["kind"] == kind)]
+
+    def planned(self, title="Cache", tier="M", conf=None, assume=(), choice="Choice 1: a (80%)"):
+        """A planned task: a stated choice, assumptions and an optional task confidence, not yet focused."""
+        self.fm("task", "new", title, "--type", "FEATURE", "--tier", tier, "--interpretation", "x", "--approach",
+                f"1) a 2) b 3) c {choice}", "--ac", "ok :: true", "--step", "s", "--scope", "lib/a.py")
+        tid = c.load_briefs(self.p)[-1].id
+        for text in assume:
+            self.fm("task", "assume", tid, "add", text)
+        if conf is not None:
+            self.fm("task", "set", tid, f"confidence={conf}")
+        return tid
+
+    def seed(self, kind, stated, held, n, base=None, tier="S", typ="FEATURE", prefix="s", tasks=False, src=None):
+        """n scored bets of one kind and stated value, `held` of them held (rows as fm writes them). tasks: the bets
+        belong to tasks X-0.. (one close each, whatever its kinds); src: what scored them (a task or choice bet is
+        scored by survival, the fm outcomes signal, unless said otherwise)."""
+        path = os.path.join(self.p.dir, "calibration.jsonl")
+        src = src or ("survival" if kind in ("task", "choice") else "mark")
+        with open(path, "a", encoding="utf-8") as f:
+            for i in range(n):
+                bid = f"{prefix}{kind}{stated}-{i}"
+                f.write(json.dumps({"ts": c.now(), "id": bid, "kind": kind, "stated": stated, "base": base,
+                                    "task": f"X-{i}" if tasks else None, "key": bid, "files": [], "tree": None,
+                                    "tier": tier, "type": typ}) + "\n")
+                f.write(json.dumps({"ts": c.now(), "of": bid, "outcome": "held" if i < held else "missed",
+                                    "by": "seeded", "src": src}) + "\n")
+
+    def cal(self, *args):
+        return json.loads(self.fm("calibration", "--json", *args).stdout)
+
+    def race(self, tid):
+        return json.loads(self.fm("lane", "race", tid, "--confidence", "70", "--json").stdout)["race"]
+
+    def plain(self, title="Race me"):
+        self.fm("task", "new", title, "--type", "FEATURE", "--tier", "S", "--ac", "it wins :: true", "--step", "s")
+        return c.load_briefs(self.p)[-1].id
+
+
+class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning has one
+    def test_a_stated_confidence_writes_one_write_once_row_per_kind(self):
+        first = self.done("Earlier 0")  # earlier closes: the base rate is their held-on-first-finish share (2 of 3)
+        self.done("Earlier 1")
+        self.done("Earlier 2")
+        self.fm("capture", f"Crash in what {first} added", "--type", "FIX", "--tier", "S")
+        tid = self.planned(conf=90, assume=["the cache is read-only (70%)", "no network (60%) in tests"])
+        self.assertEqual(self.bets(), [], "nothing is a bet before first focus")
+        self.fm("focus", tid)
+        got = {(r["kind"], r["key"]): r for r in self.bets() if r["task"] == tid}
+        self.assertEqual({k: r["stated"] for k, r in got.items()},
+                         {("task", "confidence"): 90, ("choice", "choice"): 80, ("assumption", "A1"): 70,
+                          ("assumption", "A2"): 60})
+        row = got[("choice", "choice")]
+        self.assertEqual((row["base"], row["files"], row["tier"], row["type"]), (67, ["lib/a.py"], "M", "FEATURE"))
+        self.assertTrue(row["tree"] and row["id"] and row["ts"], row)
+        self.fm("focus", tid)  # a second focus (a resume) writes nothing new
+        self.assertEqual(len([r for r in self.bets() if r["task"] == tid]), 4)
+        self.fm("decide", "Use a file cache", "--why", "simple", "--confidence", "85", "--task", tid)
+        self.assertEqual([(r["stated"], r["task"]) for r in self.bets("decision")], [(85, tid)])
+        self.fm("decide", "No number given")
+        self.assertEqual(len(self.bets("decision")), 1, "a decision without --confidence is no bet")
+        self.assertNotEqual(self.fm("decide", "Too sure", "--confidence", "150", check=False).returncode, 0)
+        self.assertNotEqual(self.fm("decide", "NaN", "--confidence", "x", check=False).returncode, 0)
+
+    def test_a_race_side_is_a_bet(self):
+        tid = self.plain()
+        other = self.race(tid)
+        (row,) = self.bets("race")
+        self.assertEqual((row["stated"], row["task"], row["key"]), (70, tid, f"{tid}>{other}"))
+
+    def test_a_stated_value_cannot_be_edited_or_cleared_once_work_started(self):
+        tid = self.planned(conf=90)
+        self.fm("task", "set", tid, "confidence=80")  # before first focus it is still a plan
+        self.fm("focus", tid)
+        for edit in ("confidence=50", "confidence="):
+            r = self.fm("task", "set", tid, edit, check=False)
+            self.assertNotEqual(r.returncode, 0, edit)
+            self.assertIn("bet", r.stderr + r.stdout)
+        self.assertEqual([r["stated"] for r in self.bets("task")], [80])
+        self.assertEqual(c.find_brief(self.p, tid).meta["confidence"], "80")
+        self.fm("task", "set", tid, "confidence=80")  # the same value is no edit
+
+    def test_a_confidence_stated_after_focus_is_recorded_when_set(self):
+        self.fm("task", "new", "Late", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        tid = c.load_briefs(self.p)[-1].id
+        self.fm("task", "set", tid, "confidence=75")
+        self.assertEqual([(r["task"], r["stated"]) for r in self.bets("task")], [(tid, 75)])
+
+    def test_outcomes_score_each_row_pending_until_the_window_closes(self):
+        held, broke, fresh = self.done("Held"), self.done("Broke"), self.done("Fresh")
+        for tid in (held, broke, fresh):
+            fmoutcomes.bet(self.p, "task", 90, task=tid, key="confidence", tier="S", typ="FEATURE")
+        self.age(held, 31)
+        self.age(broke, 10)
+        self.fm("capture", f"Crash in what {broke} added", "--type", "FIX", "--tier", "S")
+        data = self.cal()
+        by = {r["task"]: r for r in fmoutcomes.scored(self.p)}
+        self.assertEqual({t: by[t]["outcome"] for t in (held, broke, fresh)},
+                         {held: "held", broke: "missed", fresh: None}, "settling is pending, never held")
+        self.assertEqual((data["scored"], data["pending"]), (2, 1))
+        (b,) = [x for x in data["kinds"]["task"] if x["lo"] == 80]
+        self.assertEqual((b["n"], b["held"], b["gap"]), (2, 1, 40))  # stated 90, held 50%
+        self.assertEqual(sorted(r["outcome"] for r in self.rows() if "outcome" in r), ["held", "missed"])
+        self.fm("calibration")
+        self.assertEqual(len([r for r in self.rows() if "outcome" in r]), 2, "settling twice adds no second grade")
+
+    def test_a_first_finish_that_failed_is_a_miss_at_once(self):
+        self.fm("task", "new", "Red", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        tid = c.load_briefs(self.p)[-1].id
+        c.log_event(self.p, "finish", task=tid, data={"failed": ["x"]})
+        fmoutcomes.bet(self.p, "task", 95, task=tid, key="confidence", tier="S", typ="FEATURE")
+        self.assertEqual([r["outcome"] for r in fmoutcomes.scored(self.p)], ["missed"])
+
+    def test_assumption_marks_and_reversed_decisions_score(self):
+        tid = self.planned(assume=["it is fast (80%)", "it is small (60%)"], choice="Choice 1: a")
+        self.fm("focus", tid)
+        self.fm("task", "assume", tid, "verify", "1", "--run", "true")
+        self.fm("task", "assume", tid, "verify", "2", "--run", "false")
+        self.fm("decide", "Use Redis for sessions", "--confidence", "80")
+        self.fm("decide", "Use Redis for rate limits", "--confidence", "90")
+        self.fm("decide", "Use Postgres for sessions instead", "--reverses", "Use Redis for sessions")
+        data = self.cal()
+        got = {(r["kind"], r["key"]): r["outcome"] for r in fmoutcomes.scored(self.p)}
+        self.assertEqual(got[("assumption", "A1")], "held")
+        self.assertEqual(got[("assumption", "A2")], "missed")
+        self.assertEqual(got[("decision", "use redis for sessions")], "missed")
+        self.assertIsNone(got[("decision", "use redis for rate limits")], "an unreversed decision waits out the window")
+        self.assertEqual(data["pending"], 1)
+
+    def test_a_race_result_scores_the_race_side(self):
+        tid = self.plain()
+        other = self.race(tid)
+        self.assertEqual([r["outcome"] for r in fmoutcomes.scored(self.p)], [None])
+        c.log_event(self.p, "race_pick", task=other, data={"winner": other, "loser": tid})
+        self.assertEqual([r["outcome"] for r in fmoutcomes.scored(self.p)], ["missed"])
+
+    def test_the_base_rate_is_the_pairs_held_share_or_all_closes_under_twenty(self):
+        outs, first = {}, {}
+        for i in range(20):  # 20 FEATURE S closes, 10 held
+            outs[f"T-{i}"] = {"type": "FEATURE", "tier": "S", "fate": "held" if i < 10 else "reverted"}
+        for i in range(5):  # 5 FIX M closes, all held
+            outs[f"F-{i}"] = {"type": "FIX", "tier": "M", "fate": "held"}
+        first["T-0"], first["T-1"] = False, False  # two of the held FEATURE S closes failed their first finish
+        self.assertEqual(fmoutcomes.base_rate(outs, first, "FEATURE", "S"), 40, "8 of 20: the pair has 20")
+        self.assertEqual(fmoutcomes.base_rate(outs, first, "FIX", "M"), 52, "5 closes: all 25 count, 13 held first")
+        self.assertIsNone(fmoutcomes.base_rate({}, {}, "FIX", "M"), "no history is no forecast")
+
+    def test_the_old_fmoutcomes_calibration_is_gone(self):
+        self.assertFalse(hasattr(fmoutcomes, "calibration"))
+        self.assertFalse(hasattr(fmoutcomes, "calibration_lines"))
+
+    def test_a_bet_stated_after_the_task_closed_is_never_recorded(self):
+        tid = self.done("Closed already")
+        self.fm("task", "set", tid, "confidence=90", check=False)
+        self.assertEqual(self.bets(), [], "a hindsight bet can't count")
+        self.fm("task", "assume", tid, "add", "it was fine (90%)", check=False)
+        self.assertEqual(self.bets(), [])
+
+    def test_a_bet_stated_after_the_first_finish_of_an_open_task_is_never_recorded(self):
+        self.fm("task", "new", "Failing", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        tid = c.load_briefs(self.p)[-1].id
+        c.log_event(self.p, "finish", task=tid, data={"failed": ["x"]})
+        self.fm("task", "set", tid, "confidence=90")
+        self.assertEqual(self.bets(), [], "it knew the first finish failed")
+
+    def test_a_decision_is_not_scored_against_its_own_reversal_event(self):
+        self.fm("decide", "Use Redis for sessions v2", "--reverses", "use redis for sessions", "--confidence", "80")
+        got = {r["key"]: r["outcome"] for r in fmoutcomes.scored(self.p)}
+        self.assertIsNone(got["use redis for sessions v2"], "its own --reverses words are not a later reversal")
+
+    def test_a_restated_decision_says_its_bet_was_ignored(self):
+        first = self.fm("decide", "Use Redis for sessions", "--confidence", "80")
+        self.assertNotIn("ignored", first.stdout + first.stderr)
+        again = self.fm("decide", "Use Redis for sessions", "--confidence", "60")
+        self.assertIn("ignored", again.stdout + again.stderr)
+        self.assertEqual([r["stated"] for r in self.bets("decision")], [80])
+
+    def test_record_stated_computes_nothing_when_nothing_is_stated(self):
+        from unittest import mock
+        self.fm("task", "new", "Silent", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        b = c.load_briefs(self.p)[-1]
+        with mock.patch.object(fmoutcomes, "outcomes", side_effect=AssertionError("outcomes() ran")), \
+                mock.patch.object(fmoutcomes, "_first_finish", side_effect=AssertionError("ran")), \
+                mock.patch.object(fmoutcomes, "_tree", side_effect=AssertionError("ran")):
+            fmoutcomes.record_stated(self.p, b)  # swallows errors, so look at the mocks' own calls
+            for name in ("outcomes", "_first_finish", "_tree"):
+                self.assertFalse(getattr(fmoutcomes, name).called, name)
+
+    def test_record_stated_skips_the_work_when_every_key_is_already_a_bet(self):
+        from unittest import mock
+        tid = self.planned(conf=90)
+        self.fm("focus", tid)
+        b = c.find_brief(self.p, tid)
+        with mock.patch.object(fmoutcomes, "outcomes") as outs:
+            fmoutcomes.record_stated(self.p, b)
+        outs.assert_not_called()
+        self.assertEqual(len(self.bets("task")), 1)
+
+
+class CalibrationBars(CalBase):
+    def meta_bars(self):
+        return c.read_meta(self.p).get("calibration_bars") or {}
+
+    def test_under_twenty_scored_rows_says_too_few_and_moves_nothing(self):
+        self.seed("race", 90, 5, 19)
+        out = self.fm("calibration").stdout
+        self.assertIn("too few", out)
+        self.assertNotIn("Brier", out)
+        self.assertEqual(self.cal()["bars"], {"research": 70, "race": 55})
+
+    def test_buckets_and_both_briers_print_from_twenty_rows(self):
+        self.seed("task", 90, 14, 20, base=70)
+        out = self.fm("calibration").stdout
+        self.assertRegex(out, r"task 80–94%: n 20, held 14 \(70%\), gap \+20")
+        self.assertRegex(out, r"Brier: stated 0\.25, base rate 0\.21")
+        self.assertRegex(out, r"Bars: research 80 · race 55", "a task bet 20 points over raises the research bar")
+
+    def test_a_bar_only_rises_as_a_decide_row_and_a_registered_trial(self):
+        self.seed("choice", 90, 10, 20)  # stated 90, held 50% (by survival): 40 points over
+        self.assertEqual(self.cal()["bars"], {"research": 80, "race": 55})
+        self.assertEqual(self.meta_bars()["research"], 80)
+        decisions = open(os.path.join(self.p.dir, "decisions.md"), encoding="utf-8").read()
+        self.assertRegex(decisions, r"research bar 70 → 80")
+        trials = fmtrials.load(self.p)
+        self.assertEqual([t["moves"] for t in trials], ["brier"])
+        self.assertIn("research bar", trials[0]["what"])
+        self.fm("calibration")  # the same rows raise nothing twice
+        self.assertEqual((self.meta_bars()["research"], len(fmtrials.load(self.p))), (80, 1))
+        self.seed("choice", 90, 10, 20, prefix="more")  # twenty fresh rows, still over: one more step
+        self.assertEqual(self.cal()["bars"]["research"], 90)
+
+    def test_a_bar_is_raised_at_task_finish_without_fm_calibration_run(self):
+        self.seed("choice", 90, 10, 20)
+        self.assertEqual(self.meta_bars(), {}, "nothing has looked yet")
+        self.done("Close that triggers the check")
+        self.assertEqual(self.meta_bars().get("research"), 80)
+        self.assertRegex(open(os.path.join(self.p.dir, "decisions.md"), encoding="utf-8").read(),
+                         r"research bar 70 → 80")
+        self.assertEqual(len(fmtrials.load(self.p)), 1)
+
+    def test_only_survival_signals_move_a_bar_foremans_own_marks_only_score(self):
+        self.seed("race", 90, 10, 20)  # 40 points over, scored by Foreman's own race pick
+        self.seed("assumption", 90, 10, 20)
+        self.seed("decision", 90, 10, 20)
+        self.seed("task", 90, 10, 20, src="first_finish")  # a failed first finish: Foreman's own gate
+        data = self.cal()
+        self.assertEqual(data["bars"], {"research": 70, "race": 55}, "none of these raise a bar")
+        self.assertEqual(self.meta_bars(), {})
+        self.assertEqual(fmtrials.load(self.p), [])
+        self.assertEqual(data["scored"], 80, "they still score in the report")
+        self.assertRegex(self.fm("calibration").stdout, r"race 80–94%: n 20")
+        self.seed("task", 90, 10, 20, src="survival", prefix="surv")
+        self.assertEqual(self.cal()["bars"]["research"], 80, "a survival-scored task bet does")
+
+    def test_one_close_counts_once_toward_the_twenty_row_threshold(self):
+        self.seed("task", 90, 10, 20, tasks=True)  # twenty closes, each with a task bet ...
+        self.seed("choice", 90, 10, 20, tasks=True)  # ... and a choice bet: 40 rows, 20 closes
+        self.seed("task", 90, 10, 20, tasks=True, prefix="b")  # twenty more rows of the same twenty closes
+        self.assertEqual(self.cal()["bars"]["research"], 80)
+        self.assertEqual(self.cal()["bars"]["research"], 80, "ten closes can't raise it twice")
+        self.assertEqual(len(fmtrials.load(self.p)), 1)
+
+    def test_a_bar_stops_at_ninety_and_a_small_gap_raises_nothing(self):
+        c.update_meta(self.p, calibration_bars={"research": 85})
+        self.seed("choice", 90, 10, 20)
+        self.assertEqual(self.cal()["bars"]["research"], 90, "at most 10 points, at most 90")
+        self.seed("task", 70, 12, 20)  # stated 70, held 60%: 10 points, under the 15
+        self.assertEqual(self.cal()["bars"]["research"], 90)
+        self.assertEqual(len(fmtrials.load(self.p)), 1)
+
+    def test_a_hand_set_bar_above_ninety_is_kept(self):
+        c.update_meta(self.p, calibration_bars={"research": 95})
+        self.assertEqual(self.cal()["bars"]["research"], 95)
+        self.seed("choice", 90, 10, 20)
+        self.assertEqual(self.cal()["bars"]["research"], 95, "never lowered, never raised past the cap")
+
+    def test_a_failed_trial_add_leaves_no_raise_behind(self):
+        from unittest import mock
+        self.seed("choice", 90, 10, 20)
+        with mock.patch.object(fmtrials, "add", side_effect=OSError("disk full")):
+            fmoutcomes.adjust_bars(self.p, fmoutcomes.bar_rows(fmoutcomes.scored(self.p)))
+        self.assertEqual(self.meta_bars(), {})
+        self.assertFalse(os.path.exists(os.path.join(self.p.dir, "decisions.md"))
+                         and "research bar" in open(os.path.join(self.p.dir, "decisions.md"), encoding="utf-8").read())
+        self.assertEqual(self.cal()["bars"]["research"], 80, "the next look raises it, with its trial")
+        self.assertEqual(len(fmtrials.load(self.p)), 1)
+
+    def test_an_underconfident_bucket_is_reported_once_for_the_final_report_and_the_bar_stays(self):
+        self.seed("choice", 70, 20, 20)  # stated 70, held 100%
+        self.assertIn("underconfident", self.fm("calibration").stdout)
+        self.assertEqual(self.cal()["bars"], {"research": 70, "race": 55}, "Foreman never lowers a bar")
+        review = self.fm("decide", "--review").stdout
+        self.assertIn("underconfident", review)
+        self.assertIn("lower a bar", review)
+        self.fm("calibration")
+        self.assertEqual(self.fm("decide", "--review").stdout.count("underconfident"), 1, "said once")
+
+    def test_the_base_rate_routes_where_the_stated_numbers_score_worse(self):
+        self.seed("task", 90, 14, 20, base=70)  # stated Brier .25, base .21
+        self.seed("task", 70, 14, 20, base=50, tier="M", prefix="m")  # stated .21, base .25: stated stays
+        self.assertEqual(self.cal()["routes"], {"FEATURE S": 70})
+        self.assertIn("FEATURE S: the base rate's 70% replaces the stated numbers", self.fm("calibration").stdout)
+        self.assertFalse(hasattr(fmoutcomes, "routed"), "routes() in the report is the only reader; no dead twin")
+
+    def test_digest_reads_the_ledger_and_cost_still_runs(self):
+        self.seed("task", 90, 14, 20, base=70)
+        self.assertRegex(self.fm("digest").stdout, r"(?s)Calibration.*task 80–94%: n 20, held 14")
+        with open(os.path.join(os.path.dirname(fmoutcomes.__file__), "fmcost.py"), encoding="utf-8") as f:
+            self.assertNotIn("calibration_lines", f.read(), "fm cost reads the ledger, not the removed function")
+
+    def test_a_trial_for_a_bar_grades_on_brier_and_reverts_when_nothing_improved(self):
+        self.seed("choice", 90, 10, 20)
+        self.cal()
+        t = fmtrials.load(self.p)[0]
+        later = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=t["by"] + 1)
+        verdict, detail = fmtrials.grade(self.p, t, now=later)
+        self.assertEqual(verdict, "revert")
+        self.assertIn("Brier", detail)
