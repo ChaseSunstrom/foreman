@@ -1193,6 +1193,109 @@ class DocsProof(ForemanTestCase):
         self.assertFalse(os.path.exists(self.mark))
 
 
+BACKFILL = """import sqlite3
+db = sqlite3.connect("data/app.db")
+db.execute("UPDATE users SET email = name || '@x.test' WHERE id < 3")
+db.commit()
+"""
+BACKFILL_ALL = BACKFILL.replace(" WHERE id < 3", "")
+NULLS = "SELECT id FROM users WHERE email IS NULL"
+
+
+class DataProof(ForemanTestCase):
+    """T-2387 (Mission 7, #10): fm prove --data runs a data command on a throwaway copy and checks the declared
+    invariants (queries returning the violating rows) before and after; the real database is never touched."""
+
+    def tree(self, name="t", script=BACKFILL, csv=False):
+        import sqlite3
+        root = os.path.join(self.tmp, name)
+        write(root, {"backfill.py": script})
+        os.makedirs(os.path.join(root, "data"))
+        if csv:
+            write(root, {"data/users.csv": "id,name,email\n1,ann,\n2,bob,\n3,cy,\n"})
+        else:
+            db = sqlite3.connect(os.path.join(root, "data", "app.db"))
+            db.execute("CREATE TABLE users (id INTEGER, name TEXT, email TEXT)")
+            db.executemany("INSERT INTO users VALUES (?, ?, NULL)", [(1, "ann"), (2, "bob"), (3, "cy")])
+            db.commit()
+            db.close()
+        return root
+
+    def prove(self, root, *args, yes=True):
+        return self.fm("prove", root, "--data", *args, *(["--yes-run"] if yes else []), check=False)
+
+    def test_data_invariant_a_backfill_that_leaves_a_null_fails_and_a_clean_one_passes(self):
+        import json as j
+        root = self.tree()
+        before = open(os.path.join(root, "data", "app.db"), "rb").read()
+        r = self.prove(root, "--run", "python3 backfill.py", "--check", NULLS, "--json")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        d = j.loads(r.stdout)
+        self.assertEqual(d["verdict"], "fail")
+        self.assertEqual((d["checks"][0]["before"], d["checks"][0]["after"]), (3, 1))
+        self.assertEqual(d["checks"][0]["rows"], [[3]])  # the violating row, shown
+        self.assertEqual(d["tables"]["users"], [3, 3])  # each table's row count before and after
+        self.assertEqual(open(os.path.join(root, "data", "app.db"), "rb").read(), before)  # the real one untouched
+        clean = self.tree("c", BACKFILL_ALL)
+        r = self.prove(clean, "--run", "python3 backfill.py", "--check", NULLS)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("pass", r.stdout)
+
+    def test_data_invariant_csv_is_loaded_into_a_throwaway_table_and_a_failed_command_fails(self):
+        fill = ("import csv\nrows = list(csv.reader(open('data/users.csv')))\nfor r in rows[1:]:\n    r[2] = r[1] + '@x.test'\n"
+                "csv.writer(open('data/users.csv', 'w', newline='')).writerows(rows)\n")
+        root = self.tree("csv", fill, csv=True)
+        self.assertEqual(self.prove(root, "--run", "python3 backfill.py", "--check", NULLS).returncode, 0)
+        r = self.prove(root, "--run", "python3 backfill.py && exit 3", "--check", NULLS)
+        self.assertEqual(r.returncode, 1, r.stdout)  # every check is clean, but the command itself failed
+
+    def test_data_invariant_untrusted_or_nothing_to_check_is_exit_two(self):
+        root = self.tree()
+        r = self.prove(root, "--run", "python3 backfill.py", "--check", NULLS, yes=False)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("--yes-run", r.stdout + r.stderr)
+        self.assertEqual(self.prove(root, "--run", "python3 backfill.py").returncode, 2)  # no --check
+        self.assertEqual(self.prove(root, "--run", "true", "--check", "SELECT * FROM nope").returncode, 2)  # a check that can't run
+
+    def test_data_isolation_no_connection_variables_a_throwaway_tree_and_no_path_outside(self):
+        root = self.tree(script=BACKFILL_ALL)
+        cmd = f'test -z "$DATABASE_URL$PGHOST$MYSQL_HOST" && test "$(pwd -P)" != "{os.path.realpath(root)}" && python3 backfill.py'
+        r = self.fm("prove", root, "--data", "--run", cmd, "--check", NULLS, "--yes-run", check=False,
+                    env={"DATABASE_URL": "postgres://real/prod", "PGHOST": "real", "MYSQL_HOST": "real"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        write(self.tmp, {"outside.db": ""})
+        r = self.prove(root, "--run", "true", "--check", NULLS, "--db", "../outside.db")
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("outside", r.stdout + r.stderr)
+        r = self.prove(root, "--run", "true", "--check", "SELECT 1; DELETE FROM users")
+        self.assertEqual(r.returncode, 2, r.stdout)  # a check reads; it never writes
+
+    def test_data_finish_runs_the_briefs_invariants_and_records_the_run(self):
+        import sqlite3
+        self.fm("init")
+        os.makedirs(os.path.join(self.repo, "data"))
+        db = sqlite3.connect(os.path.join(self.repo, "data", "app.db"))
+        db.execute("CREATE TABLE users (id INTEGER, name TEXT, email TEXT)")
+        db.executemany("INSERT INTO users VALUES (?, ?, NULL)", [(1, "ann"), (2, "bob"), (3, "cy")])
+        db.commit()
+        db.close()
+        write(self.repo, {"backfill.py": BACKFILL})
+        self.fm("prove", self.repo, "--yes-run", check=False)  # the user's yes for this tree
+        self.fm("task", "new", "backfill emails", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        self.fm("task", "set", "T-0001", "--section", "Invariants", "--text", f"python3 backfill.py\n{NULLS}")
+        write(self.repo, {"backfill.py": BACKFILL + "# touched\n"})
+        args = ("task", "finish", "T-0001", "--audit", "self", "--run", "true")
+        r = self.fm(*args, check=False)
+        self.assertNotEqual(r.returncode, 0, r.stdout)  # one row still has no email
+        self.assertIn("fm prove --data", r.stdout + r.stderr)
+        write(self.repo, {"backfill.py": BACKFILL_ALL})
+        r = self.fm(*args, check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        brief = self.fm("task", "show", "T-0001").stdout
+        self.assertIn("fm prove --data", brief)
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
