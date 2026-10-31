@@ -80,17 +80,27 @@ def put(p, name, text):
         raise ValueError(f"{name!r} isn't a tower doc: gap-map.md, lineage.md, catalogue.md, report.md, "
                          "not-yet.md, coverage.md, spec.md, or gen-N/seed.md, mission-NAME.md, critique-NAME.md (N from 1)")
     _read(p, name, text)
-    path = _file(p, name, text)
-    with c.lock(p.dir), open(path, "rb") as f:  # T-2181: the text that passed its cold read; check flags any other
-        c.write_atomic(os.path.join(p.dir, PASSED), json.dumps(dict(_reads(p, PASSED), **{name: hashlib.sha256(f.read()).hexdigest()})))
-    return path
+    return _file(p, name, text, record="put")
 
 
-def _file(p, name, text):
-    """A tower file written as is (redacted): put after its checks, and drift and sweep for the files only they write."""
+def _file(p, name, text, record=""):
+    """A tower file written as is (redacted): put after its checks, and drift and sweep for the files only they write.
+    T-2181: record 'put' files its sha256 as read (the text just passed its cold read); 'keep' (grow and confirm rewriting
+    a file put filed) moves the record to the new bytes only if the old record matched the bytes just before, so read
+    text stays read and nothing unread is blessed. One lock holds the write and the record."""
     path = os.path.join(home(p), name)
+    sha = lambda b: hashlib.sha256(b).hexdigest()
     with c.lock(p.dir):
-        c.write_atomic(path, c.redact(text))
+        try:
+            with open(path, "rb") as f:
+                before = sha(f.read())
+        except OSError:
+            before = None
+        data = c.redact(text)
+        c.write_atomic(path, data)
+        rec = _reads(p, PASSED)
+        if record == "put" or (record == "keep" and before and rec.get(name) == before):
+            c.write_atomic(os.path.join(p.dir, PASSED), json.dumps(dict(rec, **{name: sha(data.encode())})))
     return path
 
 
@@ -268,7 +278,7 @@ def grow(p, kind, name, evidence, measure):
         rest = lineage[m.end():].lstrip("\n") if m else ""
         lineage = (lineage[:m.end()].rstrip("\n") + f"\n{line}\n" + (f"\n{rest}" if rest.strip() else "")) if m else \
             lineage.rstrip("\n") + f"\n\n## Frame\n{line}\n"
-        _file(p, "lineage.md", lineage)
+        _file(p, "lineage.md", lineage, record="keep")
     return {"id": nid, "kind": kind, "name": name, "measure": measure, "gen": n, "path": path}
 
 
@@ -461,21 +471,30 @@ def read_check(p):
     passing genesis_read for it (or one of its sections) at most PASS_WINDOW seconds before its mtime."""
     d, rec, problems = home(p), _reads(p, PASSED), []
     files = [os.path.relpath(os.path.join(r, f), d) for r, _, fs in os.walk(d) for f in fs]
-    passes = {}
-    for e in c.ledger_events(p, kinds=["genesis_read"]):
-        x, ts = e.get("data") or {}, c.parse_ts(e.get("ts"))
-        if x.get("verdict") == "pass" and ts:
-            passes.setdefault(str(x.get("name")).split("#")[0], []).append(ts.timestamp())
+    passes = None  # the ledger is scanned only when some file has no matching record
     for name in sorted(files):
         if not SHAPE.fullmatch(name) or OWNED.fullmatch(name):
             continue
         try:
             with open(os.path.join(d, name), "rb") as f:
-                sha = hashlib.sha256(f.read()).hexdigest()
+                raw = f.read()
             mtime = os.path.getmtime(os.path.join(d, name))
         except OSError:
             continue
-        if rec.get(name) == sha or (name not in rec and any(mtime - PASS_WINDOW <= t <= mtime + 2 for t in passes.get(name, ()))):
+        if rec.get(name) == hashlib.sha256(raw).hexdigest():
+            continue
+        if passes is None:
+            passes = {}
+            for e in c.ledger_events(p, kinds=["genesis_read"]):
+                x, ts = e.get("data") or {}, c.parse_ts(e.get("ts"))
+                if x.get("verdict") == "pass" and ts:
+                    passes.setdefault(str(x.get("name")), []).append(ts.timestamp())
+        text = raw.decode("utf-8", "replace")
+        secs = _parts(text) if len(_logical(text)) >= SECTION_FLOOR or len(text) >= SECTION_CHARS else []
+        # as _read splits it: a sectioned file needs a pass for every section (one in the window), else a whole-file pass
+        names = [f"{name}#{k}" for _, _, k in _groups(secs)] if len(secs) >= 2 else [name]
+        near = any(mtime - PASS_WINDOW <= t <= mtime + 2 for n in names for t in passes.get(n, ()))
+        if name not in rec and near and all(n in passes for n in names):
             continue
         problems.append(f"{name}: no cold-read pass for its current text: fm genesis put it again")
     return {"files": len(files), "problems": problems}
@@ -1888,7 +1907,7 @@ def confirm(p, n, agent="foreman"):
             if mark == "reversed":  # the choice lost: the next seed builds on what production kept
                 keep = f"gen-{n}" if kind.group(1) == "reverted" else (_base(old, n - 1) or f"gen-{n - 1}")
                 new = re.sub(r"^- seed base:.*$", lambda _: f"- seed base: {keep}", new, count=1, flags=re.M)
-            _file(p, "lineage.md", old[:sec.start()] + new + old[sec.end():])
+            _file(p, "lineage.md", old[:sec.start()] + new + old[sec.end():], record="keep")
         import fmcli
         c.log_event(p, "genesis_confirm", data={"gen": n, "mark": mark, "run": shown, "model": model},
                     session=fmcli.session())
