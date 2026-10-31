@@ -6920,7 +6920,8 @@ def _build_parser(only=None):
             help="the standing goal: the mandate with a contents list, each item a done-when check and the tasks that "
                  "build it; show lists open work outside it, items with no task and items claimed but not met, "
                  "exit 1 when any (T-2135)")
-    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "item", "link"])
+    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "item", "link", "verdict"],
+                   help="verdict: finished (exit 0) or stopped with its causes (1); no goal exits 2")
     s.add_argument("text", nargs="*", help="set: the request, in the user's words; item: what it covers; link: ITEM TASK")
     s.add_argument("--until", metavar="YYYY-MM-DD", help="set: the last day it stands")
     s.add_argument("--no-end", action="store_true", help="set: it stands until replaced or cleared (instead of --until)")
@@ -7001,7 +7002,8 @@ def _build_parser(only=None):
     s = add("genesis", lazy("fmgenesis", "cmd_genesis"), tier=("Finding your way", 455), help="the Genesis tower's "
             "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
     s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish", "check", "step",
-                                                 "draft", "spec", "select", "seed", "drift", "sweep", "exam"))
+                                                 "draft", "spec", "select", "seed", "drift", "sweep", "exam", "frontier",
+                                                 "novelty"))
     s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; live: on|off; export: the folder "
                                           "for genesis.json and the docs (site/genesis here); draft: the goal line (none: "
                                           "a whole gen-0 anyway); select/seed/drift/sweep: the generation N")

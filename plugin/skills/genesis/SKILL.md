@@ -33,6 +33,10 @@ Repeat until the kind is done or stopped (on blocked, work the rest of the queue
 2. Do it. Stages in order: spec (when spec.md is missing), seed (≤ 8 Missions), mission (`fm mission`,
    `fm ideas`), intake, build (each brief closed with `fm task finish`), critique, select (`fm genesis select N`), drift (`fm genesis drift N`), sweep
    (`fm genesis sweep N`), then the next seed (`fm genesis seed N+1`) or the report.
+   From gen 2 the seed's 8th Mission is the moonshot (mission-moonshot.md): run `fm genesis frontier N`
+   first, give each `### idea` its `Prior art:`, `Better by:` and `Novelty: 1-5` lines, run `fm genesis
+   novelty N` (the cold read that marks obvious ideas), then name the `Spiked pick:` and its `Spike: shipped|failed`
+   line; a failed spike goes to not-yet.md, and report.md lists each shipped moonshot with `(asked: …)`.
    Each seed carries "## The user's standing rules (steers)": every steer still in force (`c.steer_rules`, minus
    one a later steer `--reverses` or `--revisited`). Drift fails a seed missing one and only notes a steer newer than the seed.
 3. After a tower edit, `fm genesis check` (exit 1 names every empty cell and not-yet gap).
