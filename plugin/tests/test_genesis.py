@@ -2074,6 +2074,14 @@ class GenesisRead(ForemanTestCase):
         r, _ = self.put(self.COV, fail + "BREAKS: " + steer.upper(), grounded=False)
         self.assertEqual(r.returncode, 0, r.stderr)  # verbatim: no case folding
 
+    def test_an_honest_gap_report_breaks_nothing_and_a_claimed_done_line_still_blocks(self):
+        # T-2400: Mission 3's critique failed 4 puts on rows that said a capability is open, cited against 'finishes completely'
+        import fmgenesis
+        self.assertIn("A line that reports a requirement as unmet, open or unproven doesn't break it", fmgenesis.READ_CHILD)
+        fail = "FAIL: - find × CLI: F: a shim to help the user with things\nWHY: claims done with no exam line\n"
+        r, path = self.put(self.COV, fail + "BREAKS: NEVER: lower the guard.", grounded=False)
+        self.assertEqual(r.returncode, 1, r.stderr)  # a grounded FAIL still blocks
+
     def test_an_advisory_fail_keeps_its_line_unaccepted_so_a_grounded_one_still_blocks(self):
         # T-2246 review: advisory lines counted as clear, so two of them accepted the line and a real break only carried
         fail = "FAIL: - find × CLI: F: a shim to help the user with things\nWHY: names no file\n"
