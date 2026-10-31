@@ -1572,6 +1572,10 @@ def cmd_exam(args):
             import fmgenesis
             res = fmgenesis.scorecard(p, args.agent or "foreman", args.bar)
             rows = res["rows"]
+            try:  # T-2273: §8 says how much of what closed no run here proved
+                res["unproven"] = c.unproven_cached(p)
+            except Exception:  # never costs the scorecard
+                res["unproven"] = None
             fmcli.out(args, res, f"scorecard ({res['agent']}, held out, bar {res['bar']:.0%}): "
                                  f"{sum(r['state'] == 'pass' for r in rows)}/{len(rows)} pass"
                                  + (f" · {res['smoke']} Haiku smoke line{'s' * (res['smoke'] != 1)} not counted (Haiku "
@@ -1583,6 +1587,8 @@ def cmd_exam(args):
                 f"  {r['n']:>2}. {r['name']}: {r['state']}" + (f" {r['closed']}/{r['graded']}" if r["graded"] else "")
                 + (f" ({', '.join(r['kinds'])})" if r["kinds"] else "") + (f": {r['why']}" if r.get("why") else "")
                 for r in rows)
+                + (f"\n  unproven: {res['unproven']} done task(s) in 30 days no run here proved (fm proof)"
+                   if res["unproven"] else "")
                 + ("" if res["seen"] else f"\n  no graded held-out lines from {res['agent']!r}: fm exam run RUN --agent "
                                           f"{res['agent']} --split holdout"))
             return 0 if res["ok"] else 1
