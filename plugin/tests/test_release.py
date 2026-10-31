@@ -341,6 +341,95 @@ class Release(ReleaseCase):
         self.assertIn("MAJOR.MINOR.PATCH", r.stderr)
         self.assertNotIn("Traceback", r.stderr)
 
-    def test_outside_foremans_own_repo_it_refuses(self):
+    def test_outside_foremans_own_repo_it_takes_the_any_repo_ritual(self):  # T-2390: no longer a refusal
         os.remove(os.path.join(self.repo, "plugin/.claude-plugin/plugin.json"))
-        self.assertIn("Foreman's own repo", self.rel("9.9.9", "--dry-run", check=False).stderr)
+        r = self.rel("9.9.9", "--dry-run", check=False)
+        self.assertNotIn("Foreman's own repo", r.stderr)
+        self.assertIn("no manifest carries a version", r.stderr)  # this stub repo has none of the generic manifests
+
+
+class AnyRepo(ForemanTestCase):
+    """T-2390 (Mission 7, #10): fm release VERSION in a repo that isn't Foreman's: tree, check, bump the one manifest,
+    changelog, fm prove --release, commit, local tag, and --push only behind that repo's task's publish grant."""
+    replayed = True
+
+    def setUp(self):
+        super().setUp()
+        self.env = stub_env(self.tmp, self.repo)
+
+    def repo_with(self, files):
+        for rel, text in files.items():
+            put(self.repo, rel, text)
+        put(self.repo, "CHANGELOG.md", "# Changelog\n\n## Unreleased\n- a thing\n")
+        self.fm("init")
+        stub_corpus_replay(self.repo)
+        sh(self.repo, "add", ".")
+        sh(self.repo, "commit", "-qm", "start")
+
+    def rel(self, *a, check=True, env=None):
+        return self.fm("release", *a, check=check, env=dict(self.env, **(env or {})))
+
+    def task(self, grant=False):
+        out = self.fm("task", "new", "ship", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                      "--focus", "--json").stdout
+        t = json.JSONDecoder().raw_decode(out)[0]["id"]  # --focus prints a second object
+        if grant:
+            p = c.find_project(self.repo)
+            b = c.find_brief(p, t)
+            b.meta["allow"] = ["publish"]
+            c.save_brief(p, b)
+        return t
+
+    def test_any_repo_python_release_bumps_tags_and_a_red_proof_stops_before_the_commit(self):
+        self.repo_with({"pyproject.toml": '[project]\nname = "x"\nversion = "0.1.0"\n'})
+        dry = self.rel("0.2.0", "--dry-run")
+        for step in ("bump", "changelog", "prove", "commit", "tag"):
+            self.assertIn(step, dry.stdout)
+        self.assertIn('version = "0.1.0"', read_text(os.path.join(self.repo, "pyproject.toml")))  # dry: nothing changed
+        fail = os.path.join(self.tmp, "failonce")
+        os.makedirs(fail)
+        open(os.path.join(fail, "prove"), "w").close()
+        r = self.rel("0.2.0", check=False, env={"STUB_FAIL_ONCE": fail})
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("prove", r.stderr + r.stdout)
+        self.assertEqual(sh(self.repo, "log", "-1", "--format=%s").strip(), "start")  # stopped before the commit
+        self.rel("0.2.0", "--resume")
+        self.assertEqual(sh(self.repo, "log", "-1", "--format=%s").strip(), "Release 0.2.0")
+        self.assertIn('version = "0.2.0"', read_text(os.path.join(self.repo, "pyproject.toml")))
+        self.assertRegex(read_text(os.path.join(self.repo, "CHANGELOG.md")), r"## Unreleased\n\n## 0\.2\.0 — ")
+        self.assertEqual(sh(self.repo, "cat-file", "-t", "v0.2.0").strip(), "tag")  # annotated
+        self.assertEqual(sh(self.repo, "status", "--porcelain").strip(), "")
+
+    def test_any_repo_npm_release_and_no_manifest_names_what_it_looked_at(self):
+        self.repo_with({"package.json": '{\n  "name": "y",\n  "version": "1.4.0"\n}\n'})
+        self.rel("1.5.0")
+        self.assertIn('"version": "1.5.0"', read_text(os.path.join(self.repo, "package.json")))
+        os.remove(os.path.join(self.repo, "package.json"))
+        sh(self.repo, "commit", "-qam", "drop the manifest")
+        r = self.rel("1.6.0", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        for name in ("pyproject.toml", "package.json", "Cargo.toml", "gemspec", "VERSION"):
+            self.assertIn(name, r.stderr + r.stdout)
+
+    def test_any_repo_push_needs_this_repos_publish_grant_and_spends_it(self):
+        self.repo_with({"pyproject.toml": '[project]\nname = "x"\nversion = "0.1.0"\n'})
+        origin = os.path.join(self.tmp, "origin.git")
+        subprocess.run(["git", "init", "-q", "--bare", origin], check=True)
+        sh(self.repo, "remote", "add", "origin", origin)
+        self.task()
+        r = self.rel("0.2.0", "--push")
+        self.assertIn("publish grant", r.stdout)  # named for the final report
+        self.assertEqual(sh(self.repo, "cat-file", "-t", "v0.2.0").strip(), "tag")  # the local steps ran
+        self.assertEqual(subprocess.run(["git", "-C", origin, "tag"], capture_output=True, text=True).stdout, "")
+        t = self.task(grant=True)
+        self.rel("0.2.0", "--push")
+        self.assertIn("v0.2.0", subprocess.run(["git", "-C", origin, "tag"], capture_output=True, text=True).stdout)
+        p = c.find_project(self.repo)
+        self.assertNotIn("publish", c.find_brief(p, t).meta.get("allow") or [])  # spent
+
+    def test_any_repo_skill_runs_fm_release_for_any_repo(self):
+        text = read_text(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills", "release",
+                                      "SKILL.md"))
+        any_part = text.split("## Foreman's own repo")[0]
+        self.assertIn("fm release VERSION", any_part)
+        self.assertIn("--push", any_part)

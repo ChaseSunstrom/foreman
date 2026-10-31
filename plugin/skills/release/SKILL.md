@@ -9,6 +9,8 @@ The procedure is `../playbooks/references/release/release-and-changelog.md`; thi
 
 ## Any project
 
+`fm release VERSION` runs this ritual in any repo as named steps with a checkpoint after each: clean tree, `fm check`, bump the one manifest's version (pyproject.toml, package.json, Cargo.toml, a gemspec or VERSION), CHANGELOG's Unreleased headed VERSION, `fm prove --release` (a red or unproven proof stops before the commit), commit, a local annotated tag. `--dry-run` prints the plan, `--resume` continues; `--push` pushes the branch and tag only with this repo's task's publish grant, and without one stops after the tag and names the push. By hand, the same steps:
+
 1. **Clean tree, green gate** on the exact commit you'll tag: `fm check` (no `--affected`), then `fm check --python oldest` once when that Python is installed (the same before a push to main), nothing uncommitted. Red → fix first (`/foreman:debug-test`), never "fix after tagging".
 2. **Version** by the project's scheme (semver: breaking → major, feature → minor, fix → patch); bump every place that carries it in one commit. A dependency bump in the same release → `../playbooks/references/release/dependency-upgrade.md`, one per task.
 3. **Changelog:** move Unreleased under the new version with today's date; one user-facing line per change, task ids linked; breaking changes get a before → after migration note.
