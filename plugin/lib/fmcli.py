@@ -2963,11 +2963,12 @@ def _make_batch(p, ids, title):
                     priority="urgent" if any(b.priority == "urgent" for b in members) else "normal",
                     scope=sorted({s for b in members for s in b.meta.get("scope") or []}),
                     depends=sorted({d for b in members for d in b.meta.get("depends_on") or []} - set(ids)))
-        h.set_section("Interpretation", f"Do {', '.join(ids)} as one batch: one plan read, one gate run, one review and "
-                                        f"one commit; each keeps its own criteria and is closed done in {h.id}. Write "
-                                        "the failing tests for every member first, together. Per step, run only that "
+        h.set_section("Interpretation", f"Reading 1: do {', '.join(ids)} as one batch: one plan read, one gate run, one "
+                                        f"review and one commit; each keeps its own criteria and is closed done in {h.id}. "
+                                        "Write the failing tests for every member first, together. Per step, run only that "
                                         "step's own new tests (fast, -k); the full gates, replays and the review run "
-                                        "once, at close (T-0670).")
+                                        "once, at close (T-0670). Reading 2: each one alone; ruled out because one plan "
+                                        "read and one gate run serve them all cheaper.")  # T-2335: the plan gate wants 2 readings
         for b in members:
             crit = [(c._VERIFY_OF.sub("", a.text).strip(), c.verify_of(a.text)) for a in b.acceptance()] or \
                 [(t.strip(), v.strip() or None) for t, _, v in (x.partition(" :: ") for x in _DONE_WHEN.findall(  # T-1976
@@ -3055,8 +3056,11 @@ def task_new(p, args):
         import fmmandate
         fmmandate.link(p, args.goal, b.id)
         b = c.find_brief(p, b.id)
-    if args.ac or args.step or args.interpretation or args.approach:
+    harness = getattr(args, "harness_plan", None)
+    if args.ac or args.step or args.interpretation or args.approach or harness:
         def plan(b):
+            if harness:  # T-2335: Foreman's own harness wrote this plan; the plan gate's content checks skip it
+                b.meta["harness_plan"] = harness
             for name, text in (("Interpretation", args.interpretation), ("Approach", args.approach)):
                 if text:  # an M/L brief plans in one call (T-0083)
                     b.set_section(name, c.redact(text))
@@ -6098,8 +6102,12 @@ def _build_parser(only=None):
     t.add_argument("--ac", action="append", help="acceptance criterion (repeatable): name its observable, what the "
                                                  "user will see, and give its check as 'TEXT :: CMD'")
     t.add_argument("--step", action="append", help="step (repeatable)")
-    t.add_argument("--interpretation", help="what the request means (M/L plan gate)")
-    t.add_argument("--approach", help="options → choice → why (M/L plan gate)")
+    t.add_argument("--interpretation", help="what the request means (M/L plan gate: 'Reading 1: … Reading 2: …', or the "
+                                            "one reading and the one you ruled out and why)")
+    t.add_argument("--approach", help="options → choice → why (M/L plan gate: '1) … fails if: … 2) use what exists: … "
+                                      "3) do less: … Choice N: why'; each option with its likely outcome or failure mode)")
+    t.add_argument("--harness-plan", metavar="WHO", help="Foreman's own harness (code, hook) wrote this plan: the M/L plan "
+                                                         "gate skips its readings and options (not for hand-written plans)")
     t.add_argument("--focus", action="store_true", help="focus it right away (the plan gate still applies)")
     t.add_argument("--goal", metavar="ITEM", help="it builds item ITEM of the standing goal (fm goal show)")
     t = tadd("show")

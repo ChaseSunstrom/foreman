@@ -2771,7 +2771,8 @@ def _make_task(run, profile):
          f"--approach=fm code ({_who(run, None if run.worker else profile)}): 1) one free-form model run; 2) a human "
          "plan first; 3) the harness runs the stations. Choice 3: " + (  # T-2269: the plan gate counts 3+ options and a choice
              "the worker CLI does each step, the harness judges its diff and runs the verify" if run.worker else
-             "the model filled the plan and picks one action at a time"), "--focus", "--json"]
+             "the model filled the plan and picks one action at a time"), "--harness-plan=code",  # T-2335: the harness wrote it: no reading/option gate
+         "--focus", "--json"]
     a += [f"--ac={cr['text'].strip()} :: {cr['verify'].strip()}" for cr in pl["criteria"]]
     a += [f"--step={s.strip()}" for s in pl["steps"]]
     code, out = run.fm(*a)

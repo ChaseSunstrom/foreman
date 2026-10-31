@@ -518,7 +518,8 @@ class Stages(unittest.TestCase):
     def plan(self, b):
         b.set_section("Interpretation", "Reading 1: login times out on slow networks.\nReading 2: the server is slow.")
         b.set_section("Approach (options → choice → why)",
-                      "1) retry with backoff 2) a longer timeout 3) a queue. Choice 1: cheapest.")
+                      "1) retry with backoff; fails if: retries pile up 2) use what exists: a longer timeout; likely outcome: too slow "
+                      "3) do less: a queue; breaks ordering. Choice 1: cheapest.")
         b.set_section("Risks and rollback", "Retries pile up; revert the commit.")
         b.add_ac("login works on 3G", verify="pytest -k slow")
         b.add_step("reproduce")
@@ -534,7 +535,9 @@ class Stages(unittest.TestCase):
             b.set_section(AP, "Retry with backoff vs longer timeout → retry. Choice: retry. In 2 steps, 3 files.")
             self.assertIn("3+ options", gaps(b))
             self.assertIn("fm task set", gaps(b))  # the gap names its fix
-            for text in ("1. a\n2. b\n3. c\nChosen: a", "- a\n- b\n- c\nchose a", "Option A: a\nOption B: b\nOption C: c\nChoice: B"):
+            a, b2, c3 = "reuse existing code; fails if: x", "do less, skip it; fails if: y", "a queue; breaks z"  # T-2335
+            for text in (f"1. {a}\n2. {b2}\n3. {c3}\nChosen: a", f"- {a}\n- {b2}\n- {c3}\nchose a",
+                         f"Option A: {a}\nOption B: {b2}\nOption C: {c3}\nChoice: B"):
                 b.set_section(AP, text)
                 self.assertEqual(c.plan_gaps(b, "full"), [], text)
             b.set_section(AP, "1) a 2) b 3) c")
@@ -542,7 +545,9 @@ class Stages(unittest.TestCase):
         m = self.plan(self.brief("M"))
         m.set_section("Interpretation", "One reading.")
         m.set_section("Risks and rollback", "")
-        self.assertEqual(c.plan_gaps(m, "full"), [])  # M needs neither
+        self.assertIn("2+ readings", gaps(m))  # T-2335: M needs 2 readings too, but not the risks section
+        m.set_section("Interpretation", "Reading 1: a. Reading 2: b.")
+        self.assertEqual(c.plan_gaps(m, "full"), [])
         big = self.plan(self.brief("L"))
         big.set_section("Interpretation", "One reading.")
         self.assertIn("2+ readings", gaps(big))
@@ -595,14 +600,16 @@ class Stages(unittest.TestCase):
 
     def test_option_formats_and_hollow_markers(self):  # T-2269 review
         AP = "Approach (options → choice → why)"
-        real = ("Options: (1) one (2) two (3) three Choice 2: two",
-                "1) --bench on evidence 2) `fm bench` verb 3) \"last commit\" compare. Choice 1",  # T-2285: flags, code
-                "1) one 2) two 3) three Choice 1",
-                "Options: (A) a (B) b (C) c Choice: A",
-                "A) a\nB. b\nC) c\nDecision: A",
-                "Option A: a\nApproach B: b\nOption C: c\nGo with B",
-                "**Option 1** a\n**Option 2** b\n### Option 3\nc\nChoose 1",
-                "1. a 2. b 3. c Chosen: 1")
+        e, l, o = "reuse existing code; fails if: p", "do less, skip it; fails if: q", "a queue; breaks r"  # T-2335
+        real = (f"Options: (1) {e} (2) {l} (3) {o} Choice 2: two",
+                f"1) --bench on evidence; fails if: p 2) `fm bench` verb, reuse existing; breaks r 3) \"last commit\" compare, "
+                f"do less; fails if: q. Choice 1",  # T-2285: flags, code
+                f"1) {e} 2) {l} 3) {o} Choice 1",
+                f"Options: (A) {e} (B) {l} (C) {o} Choice: A",
+                f"A) {e}\nB. {l}\nC) {o}\nDecision: A",
+                f"Option A: {e}\nApproach B: {l}\nOption C: {o}\nGo with B",
+                f"**Option 1** {e}\n**Option 2** {l}\n### Option 3\n{o}\nChoose 1",
+                f"1. {e} 2. {l} 3. {o} Chosen: 1")
         for text in real:
             b = self.plan(self.brief("M"))
             b.set_section(AP, text)
@@ -617,7 +624,9 @@ class Stages(unittest.TestCase):
         big = self.plan(self.brief("L"))
         big.set_section("Interpretation", "A reading of the request that reads it once; reading it again changes nothing, reading.")
         self.assertIn("2+ readings", " ".join(c.plan_gaps(big, "full")))
-        big.set_section("Interpretation", "- first\n- second")
+        big.set_section("Interpretation", "- first\n- second")  # T-2335: a bullet is a scope line, not a reading
+        self.assertIn("2+ readings", " ".join(c.plan_gaps(big, "full")))
+        big.set_section("Interpretation", "Reading 1: first thing. Reading 2: second thing.")
         self.assertEqual(c.plan_gaps(big, "full"), [])
 
     def test_plan_gaps_by_tier(self):
@@ -703,6 +712,160 @@ class Stages(unittest.TestCase):
         self.assertIn("fm task evidence T-0001 --step 2 --run", nxt)
         b.add_evidence("pytest -k slow", "exit 0", step=2)
         self.assertIn("fm task finish T-0001", c.next_action(b))
+
+
+class PlanContent(unittest.TestCase):
+    """T-2335: an M or L plan names 2+ readings (or the one it ruled out), an outcome or failure mode per option, a
+    use-what-exists or do-less option, and near-copy options count once."""
+    AP = "Approach (options → choice → why)"
+    GOOD = ("1) add `--strict` to the gate; fails if: callers pass old flags. "
+            "2) use what exists: the audit table already has it; fails if: it lacks the column. "
+            "3) do less: only warn; likely outcome: the gap stays. Choice 2: no new code.")
+
+    def brief(self, tier="M", interp="Reading 1: the gate counts. Reading 2: the gate reads the text.", ap=GOOD):
+        b = c.Brief.new("T-0001", "Gate plans", "FEATURE", tier, now="2026-01-01T00:00:00Z")
+        b.set_section("Interpretation", interp)
+        b.set_section(self.AP, ap)
+        b.set_section("Risks and rollback", "Refuses good plans; revert the commit.")
+        b.add_ac("gate refuses", verify="verify with pytest -k x")
+        b.add_step("red test")
+        return b
+
+    def gaps(self, b):
+        return " | ".join(c.plan_gaps(b, "full"))
+
+    def test_a_complete_plan_starts_and_s_is_untouched(self):
+        for tier in ("M", "L"):
+            self.assertEqual(c.plan_gaps(self.brief(tier), "full"), [], tier)
+        s = self.brief("S", interp="One.", ap="just do it")
+        self.assertEqual(c.plan_gaps(s, "full"), [])
+
+    def test_one_reading_is_refused_unless_it_names_the_one_ruled_out(self):
+        for tier in ("M", "L"):
+            g = self.gaps(self.brief(tier, interp="The gate counts options."))
+            self.assertIn("1 distinct reading", g)
+            self.assertIn("fm task set T-0001", g)  # the gap names its fix
+            ok = self.brief(tier, interp="The gate counts options. Ruled out: a skill nudge, because 0 of 29 briefs follow prose.")
+            self.assertEqual(c.plan_gaps(ok, "full"), [], tier)
+
+    def test_near_copy_readings_count_once(self):
+        b = self.brief("M", interp="Reading 1: the plan gate counts the options in a brief.\n"
+                                   "Reading 2: the plan gate counts the options in the brief.")
+        self.assertIn("1 distinct reading", self.gaps(b))
+
+    def test_an_option_without_an_outcome_is_refused_with_its_number(self):
+        ap = ("1) add `--strict` to the gate; fails if: callers pass old flags. 2) use what exists: the audit table. "
+              "3) do less: only warn; likely outcome: the gap stays. Choice 1: why")
+        g = self.gaps(self.brief(ap=ap))
+        self.assertIn("option 2", g)
+        self.assertNotIn("option 1", g)
+        self.assertIn("fm task set T-0001", g)
+
+    def test_no_use_what_exists_or_do_less_option_is_refused(self):
+        ap = ("1) add `--strict`; fails if: old flags. 2) a new `gate` verb; breaks the CLI surface. "
+              "3) a cold child judges the plan; breaks on a slow call. Choice 1: smallest.")
+        g = self.gaps(self.brief(ap=ap))
+        self.assertIn("use-what-exists", g)
+        self.assertIn("do-less", g)
+        one = "1) add `--strict`; fails if: old flags. "
+        exists, less = "2) reuse the existing audit table; fails if: no column. ", "3) do nothing; likely outcome: the gap stays. "
+        self.assertEqual(c.plan_gaps(self.brief(ap=one + exists + less + "Choice 1: smallest."), "full"), [])
+        g = self.gaps(self.brief(ap=one + exists + "3) a queue; breaks on a slow call. Choice 1: smallest."))
+        self.assertIn("do-less", g)
+        self.assertNotIn("use-what-exists", g)
+        g = self.gaps(self.brief(ap=one + "2) a queue; breaks on a slow call. " + less + "Choice 1: smallest."))
+        self.assertIn("use-what-exists", g)
+        self.assertNotIn("do-less", g)
+
+    def test_near_copy_options_count_once(self):
+        ap = ("1) use what exists: reuse the audit table for the gate checks; fails if: no column. "
+              "2) use what exists: reuse the audit table for the gate checks now; fails if: no column. "
+              "3) use what exists: reuse the audit table for the gate checks here; fails if: no column. Choice 1: why")
+        g = self.gaps(self.brief(ap=ap))
+        self.assertIn("names 1 option", g)
+        self.assertIn("share most of their words", g)
+
+    def test_flag_and_code_led_options_still_count(self):  # T-2285
+        ap = ("1) --strict flag; fails if: old flags. 2) `fm gate` verb reusing the existing table; breaks the surface. "
+              "3) \"do less\" warn only; likely outcome: the gap stays. Choice 1: why")
+        self.assertEqual(c.plan_gaps(self.brief(ap=ap), "full"), [])
+
+    def test_numbered_options_with_indented_sub_bullets_split_by_the_numbers(self):
+        ap = ("1) add `--strict` to the gate; fails if: callers pass old flags\n"
+              "   1. read the table\n   2. write the column\n   - a detail\n   - another detail\n"
+              "2) use what exists: the audit table already has it; fails if: it lacks the column\n   - a detail\n   - more\n"
+              "3) do less: only warn; likely outcome: the gap stays\n   - a detail\n   - more\n"
+              "Choice 2: no new code.")
+        parts = c._split_options(ap)
+        self.assertEqual(len(parts), 3, parts)
+        self.assertIn("fails if: callers", parts[0])
+        self.assertEqual(c.plan_gaps(self.brief(ap=ap), "full"), [])
+        inline = "1) add it; steps 1. read 2. write; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z"
+        self.assertEqual(len(c._split_options(inline)), 3)
+
+    def test_bullets_are_options_only_when_no_run_of_markers_reaches_three(self):
+        bullets = "- add it; fails if: x\n- use what exists: b; fails if: y\n- do less: c; fails if: z\nChoice 1: a"
+        self.assertEqual(c.plan_gaps(self.brief(ap=bullets), "full"), [])
+        self.assertEqual(len(c._split_options("1) a b c\n- x y\n- z w\n- v u\n- t s")), 4)  # a run of 1 loses to bullets
+
+    def test_bullets_are_not_readings(self):
+        for tier in ("M", "L"):
+            g = self.gaps(self.brief(tier, interp="- scope: the gate counts options\n- scope: the gate reads the text"))
+            self.assertIn("1 distinct reading", g, tier)
+
+    def test_use_what_exists_and_do_less_come_from_different_options(self):
+        ap = ("1) add `--strict`; fails if: old flags. 2) reuse the existing table and do less; fails if: no column. "
+              "3) a queue; breaks on a slow call. Choice 1: smallest.")
+        g = self.gaps(self.brief(ap=ap))
+        self.assertIn("different options", g)
+        self.assertIn("fm task set T-0001", g)
+
+    def test_a_ruled_out_reading_needs_its_reason(self):
+        for text in ("The gate counts options. Ruled out.", "No other reading.", "One reading; the other is rejected."):
+            self.assertIn("1 distinct reading", self.gaps(self.brief(interp=text)), text)
+        ok = "No other reading: the request names one file and one verb, so nothing else fits."
+        self.assertEqual(c.plan_gaps(self.brief(interp=ok), "full"), [])
+
+    def test_loose_words_are_no_outcome(self):
+        for word in ("but slower", "only if time", "it stays", "gives a table", "cuts a step", "results come", "likely slow"):
+            ap = f"1) add it; fails if: x 2) use what exists: the table, {word} 3) do less: c; fails if: z Choice 1: a"
+            self.assertIn("option 2", self.gaps(self.brief(ap=ap)), word)
+        arrow = "1) add it; fails if: x 2) use what exists: the table → slower 3) do less: c; breaks y Choice 1: a"
+        self.assertEqual(c.plan_gaps(self.brief(ap=arrow), "full"), [])
+
+    def test_short_options_with_the_same_few_words_stay_distinct(self):
+        ap = ("1) add it; fails if: x 2) use what exists: skip it; fails if: it is slow "
+              "3) do less: skip it; fails if: it is slow Choice 1: a")
+        self.assertEqual(c.plan_gaps(self.brief(ap=ap), "full"), [])  # 2 content words: too few to call a copy
+
+    def test_a_long_run_of_dots_and_spaces_is_not_quadratic(self):
+        import time
+        t = time.process_time()
+        c.plan_gaps(self.brief(ap="1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z " + ". " * 30000), "full")
+        self.assertLess(time.process_time() - t, 2)
+
+    def test_a_harness_plan_is_exempt_with_its_reason(self):
+        for tier in ("M", "L"):
+            b = self.brief(tier, interp="one", ap="x")
+            self.assertTrue(c.plan_gaps(b, "full"))
+            b.meta["harness_plan"] = "code"
+            self.assertEqual(c.plan_gaps(b, "full"), [], tier)
+            b.set_section("Interpretation", "")
+            b.set_section(self.AP, "")
+            self.assertEqual(c.plan_gaps(b, "full"), [], tier)
+
+    def test_a_pulled_brief_with_huge_numbers_or_5000_bullets_neither_raises_nor_crawls(self):
+        import time
+        for text in ("1" * 5000 + ") x. 2) y 3) z Choice 1", "\n".join("- use what exists, fails if: x%d" % i for i in range(5000))):
+            t = time.process_time()
+            self.assertIsInstance(c.plan_gaps(self.brief(ap=text), "full"), list)
+            self.assertLess(time.process_time() - t, 2)
+
+    def test_a_started_task_is_not_regated(self):
+        b = self.brief(interp="One.", ap="1) a 2) b 3) c Choice 1")
+        self.assertTrue(c.plan_gaps(b, "full"))
+        b.meta["plan0_at"] = "x"
+        self.assertEqual(c.plan_gaps(b, "full"), [])
 
 
 class WorkRequests(unittest.TestCase):

@@ -83,7 +83,7 @@ class UiView(ForemanTestCase):
                 "--step", "red test", "--step", "raise the timeout", "--focus")
         self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true")
         self.fm("task", "step", "T-0001", "done", "1")
-        self.fm("task", "new", "CSV export", "--type", "FEATURE", "--tier", "L", "--interpretation", "x",
+        self.fm("task", "new", "CSV export", "--type", "FEATURE", "--tier", "L", "--interpretation", "Reading 1: a. Reading 2: b.",
                 "--approach", "y", "--ac", "csv opens :: true", "--step", "build", "--depends", "T-0001")
         self.fm("capture", "Merge the date helpers")
 
@@ -153,7 +153,7 @@ class UiView(ForemanTestCase):
         self.assertTrue(v["watch"] and all(os.path.exists(w) for w in v["watch"]))
         self.assertTrue(any(w.endswith("ledger.jsonl") for w in v["watch"]), "appends move the ledger, not the dir")
         plan = q["T-0002"]["plan"]  # what a yes approves is shown where it's given
-        self.assertEqual((plan["interpretation"], plan["approach"]), ("x", "y"))
+        self.assertEqual((plan["interpretation"], plan["approach"]), ("Reading 1: a. Reading 2: b.", "y"))
         self.assertEqual([s["text"] for s in plan["steps"]], ["build"])
         self.assertEqual([a["text"] for a in plan["criteria"]], ["csv opens"])
         self.assertNotIn("plan", q.get("T-0003", {}))

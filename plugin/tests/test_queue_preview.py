@@ -15,7 +15,7 @@ class QueuePreview(ForemanTestCase):
             tid = first(self.fm("task", "new", f"done {n}", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
                                 "--step", "a", "--focus", "--json").stdout)["id"]
             self.fm("task", "finish", tid, "--run", "true", "--audit", "self check")
-        self.fm("task", "new", "Big one", "--type", "FEATURE", "--tier", "L", "--interpretation", "x", "--approach", "y",
+        self.fm("task", "new", "Big one", "--type", "FEATURE", "--tier", "L", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "y",
                 "--ac", "ok :: true", "--step", "a")                              # T-0004: an L plan
         self.fm("task", "new", "Small one", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "a")
         self.fm("capture", "Later idea", "--type", "FEATURE", "--tier", "S")      # T-0006, inbox

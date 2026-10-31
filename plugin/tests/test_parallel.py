@@ -84,7 +84,7 @@ class Parallel(ForemanTestCase):
         self.task("needs base", "b.txt")                                                  # T-0002
         self.fm("task", "set", "T-0002", "depends_on=T-0001")
         self.fm("task", "new", "big", "--type", "FEATURE", "--tier", "L", "--scope", "c.txt", "--ac", "ok :: true",
-                "--step", "a", "--interpretation", "x", "--approach", "y")              # T-0003
+                "--step", "a", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "y")              # T-0003
         self.task("free", "d.txt")                                                        # T-0004
         p = c.find_project(self.repo)
         self.assertEqual([b.id for b in fmserve._batch(p, c.find_brief(p, "T-0001"), set(), 3)], ["T-0001", "T-0004"])

@@ -62,8 +62,8 @@ class BlastInPlan(Base):
     def plan(self, tid_title, scope, tier="M"):
         self.fm("task", "new", tid_title, "--type", "FEATURE", "--tier", tier, *(["--scope", scope] if scope else []))
         tid = "T-0003"
-        self.fm("task", "set", tid, "--section", self.AP, "--text", "1) a 2) b 3) c Choice 1: a")
-        self.fm("task", "set", tid, "--section", "Interpretation", "--text", "x")
+        self.fm("task", "set", tid, "--section", self.AP, "--text", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a")
+        self.fm("task", "set", tid, "--section", "Interpretation", "--text", "Reading 1: a. Reading 2: b.")
         self.fm("task", "ac", tid, "add", "works", "--verify", "true")
         self.fm("task", "step", tid, "add", "build")
         return tid

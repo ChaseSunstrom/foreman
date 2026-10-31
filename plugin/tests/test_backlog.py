@@ -387,7 +387,7 @@ class Extras(ForemanTestCase):
         self.fm("task", "new", "Build the sync engine", "--type", "FEATURE", "--tier", "L", "--ac", "syncs :: true",
                 "--step", "build it")
         for sec in ("Interpretation", "Approach (options → choice → why)", "Build vs reuse", "Risks and rollback"):
-            self.fm("task", "set", "T-0001", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a")
         self.fm("task", "set", "T-0001", "approved=true")
         self.assertIn("Spike first", self.fm("focus", "T-0001").stdout)
 

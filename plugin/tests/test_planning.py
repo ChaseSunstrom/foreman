@@ -101,7 +101,7 @@ class AssumptionCheck(Base):
 
 class PlanRigour(Base):
     def test_an_l_feature_is_approved_only_with_a_build_vs_reuse_line(self):
-        t = self.new("Big feature", "FEATURE", "L", "--interpretation", "x", "--approach", "x")
+        t = self.new("Big feature", "FEATURE", "L", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "x")
         r = self.fm("task", "set", t, "approved=true", check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("Build vs reuse", r.stderr)
