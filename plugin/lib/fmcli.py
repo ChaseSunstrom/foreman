@@ -7103,6 +7103,8 @@ def _build_parser(only=None):
                    "discovered tasks tagged finder=; what becomes of them is that finder's precision")
     s.add_argument("--blindspots", action="store_true", help="instead: closed FIXes whose changed lines no finder flagged "
                    "(with --capture 1: file one 'add a rule, tool or check' task a day; T-2241)")
+    s.add_argument("--ladder", action="store_true", help="also run each stack's own analyzer (ruff, go vet, gosec) from "
+                   "Foreman's registry, only in a tree you said yes to (fm prove --yes-run); its findings are tool:NAME (T-2239)")
     s.add_argument("--hotspots", action="store_true", help="instead: tracked files by how many fix commits touched them "
                    "in the last 500 non-merge commits, counting those whose subject has a fix word (git only, no repo code; not with "
                    "--rank or --capture; T-2238)")
