@@ -345,6 +345,17 @@ class McpNew(_Mcp):
             self.assertNotIn(f"{harness} mcp add", r.stdout)  # no format printed from memory
         self.assertNotEqual(self.fm("mcp", "register", "claude", os.path.join(self.tmp, "nope"), check=False).returncode, 0)
 
+    def test_register_desktop_prints_the_mcpservers_stanza(self):
+        # T-2232: Claude Desktop reaches fm find only through this server; it starts servers with no shell PATH and no
+        # project folder, so the stanza names fm by absolute path and the project with -p
+        self.fm("init")
+        r = self.fm("mcp", "register", "desktop")
+        cfg = json.loads(r.stdout[r.stdout.index("{"):])
+        srv = cfg["mcpServers"]["foreman"]
+        self.assertTrue(os.path.isabs(srv["command"]), srv)
+        self.assertEqual(srv["args"][:2], ["mcp", "-p"])
+        self.assertEqual(srv["args"][2], c.find_project(self.repo).slug)
+
 
 class McpReview(_Mcp):
     """T-0946 review: output capped while it streams, bytes that aren't UTF-8, honest schemas and errors."""
