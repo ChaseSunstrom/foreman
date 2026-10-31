@@ -199,6 +199,136 @@ class CiWatch(ForemanTestCase):
         self.assertRegex(msg, r"never got a runner .*test \(macos-latest, 3\.14, 2\).*push again")
         self.assertEqual([b for b in self.briefs() if b.type == "FIX"], [], "a capacity cancel files no FIX brief")
 
+    def _logged_out(self):
+        from unittest import mock
+        import fmci
+        from fmcli import UsageError
+        self.fm("init")
+        subprocess.run(["git", "-C", self.repo, "remote", "add", "origin", "git@github.com:o/r.git"], check=True)
+        gh_out = mock.patch.object(fmci, "_gh", side_effect=UsageError("gh run list failed: not logged in"))
+        return c.find_project(self.repo), gh_out
+
+    def test_a_spent_hourly_limit_waits_for_the_reset_without_counting_a_poll(self):
+        # T-2156: ci14-16 sat silent an hour on HTTP 403 'API rate limit exceeded'
+        import contextlib
+        import io
+        import time as real_time
+        import urllib.error
+        from email.message import Message
+        from unittest import mock
+        import fmci
+        from fmcli import UsageError
+        p, gh_out = self._logged_out()
+        reset = int(real_time.time()) + 600
+        hdr = Message()
+        hdr["X-RateLimit-Remaining"], hdr["X-RateLimit-Reset"] = "0", str(reset)
+        spent = urllib.error.HTTPError("https://api.github.com/x", 403, "rate limit exceeded", hdr, None)
+        head, said = fmci._head(p), []
+        ok = io.BytesIO(json.dumps({"workflow_runs": [{"id": 5, "status": "completed", "conclusion": "success",
+                                                       "head_sha": head, "html_url": "u"}]}).encode())
+        jobs = io.BytesIO(b'{"jobs": []}')  # a green run's jobs are read too
+        answers = iter([spent, contextlib.nullcontext(ok), contextlib.nullcontext(jobs)])
+
+        def urlopen(req, timeout=None):
+            a = next(answers)
+            if isinstance(a, Exception):
+                raise a
+            return a
+        with gh_out, mock.patch("urllib.request.urlopen", side_effect=urlopen) as net, mock.patch.object(fmci, "time") as clock, \
+                mock.patch.dict(os.environ, {"FOREMAN_NO_NET": ""}):
+            clock.time.return_value = reset - 600
+            code, _msg = fmci.watch(p, "main", 3, 0, max_polls=1, say=lambda m, **k: said.append(m))
+        self.assertEqual(code, 0, "the wait isn't a poll: max_polls=1 still reaches the green run")
+        self.assertEqual(net.call_count, 3)
+        waits = [a.args[0] for a in clock.sleep.call_args_list]
+        self.assertTrue(any(600 <= w <= 700 for w in waits), waits)
+        hhmm = real_time.strftime("%H:%M", real_time.localtime(reset))
+        self.assertTrue(any("hourly limit" in m and hhmm in m for m in said), said)
+        # a 403 with no rate-limit headers is a private repo: stop at once
+        private = urllib.error.HTTPError("https://api.github.com/x", 403, "Forbidden", Message(), None)
+        with gh_out, mock.patch("urllib.request.urlopen", side_effect=private), mock.patch.object(fmci, "time") as clock, \
+                mock.patch.dict(os.environ, {"FOREMAN_NO_NET": ""}), self.assertRaisesRegex(UsageError, "not logged in.*403"):
+            fmci.watch(p, "main", 3, 0, max_polls=1, say=lambda *a, **k: None)
+        clock.sleep.assert_not_called()
+
+    def test_a_second_watch_on_the_repo_waits_on_the_first_ones_lock(self):
+        import contextlib
+        import fcntl
+        import io
+        from unittest import mock
+        import fmci
+        p, gh_out = self._logged_out()
+        said = []
+        held = open(fmci._lock_path(p), "a")
+        fcntl.flock(held, fcntl.LOCK_EX)
+
+        def nap(_s):
+            fcntl.flock(held, fcntl.LOCK_UN)  # the first watch ends while the second waits
+        green = {"workflow_runs": [{"id": 5, "status": "completed", "conclusion": "success", "head_sha": fmci._head(p),
+                                    "html_url": "u"}]}
+        bodies = iter([green, {"jobs": []}])
+        urlopen = lambda req, timeout=None: contextlib.nullcontext(io.BytesIO(json.dumps(next(bodies)).encode()))
+        try:
+            with gh_out, mock.patch("urllib.request.urlopen", side_effect=urlopen), mock.patch.object(fmci, "time") as clock, \
+                    mock.patch.dict(os.environ, {"FOREMAN_NO_NET": ""}):
+                clock.sleep.side_effect = nap
+                out = fmci.watch(p, "main", 3, 0, say=lambda m, **k: said.append(m))
+        finally:
+            held.close()
+        self.assertEqual(out, (0, "CI green."))
+        self.assertTrue(any("already holds" in m and "poll budget" in m for m in said), said)
+        self.assertEqual(clock.sleep.call_count, 1)
+
+    def test_a_watch_through_authenticated_gh_never_touches_the_repo_lock(self):
+        from unittest import mock
+        import fmci
+        p, _gh_out = self._logged_out()
+        head = fmci._head(p)
+        run = [{"databaseId": 1, "status": "completed", "conclusion": "success", "headSha": head, "workflowName": "w"}]
+        gh = lambda _p, *argv: json.dumps(run) if argv[0] == "run" and argv[1] == "list" else '{"jobs": []}'
+        with mock.patch.object(fmci, "_gh", side_effect=gh), mock.patch.object(fmci, "_lock_path", side_effect=AssertionError), \
+                mock.patch.object(fmci, "_take_lock", side_effect=AssertionError):
+            self.assertEqual(fmci.watch(p, "main", 3, 0, say=lambda *a, **k: None), (0, "CI green."))
+
+    def _spent(self, reset, remaining="0"):
+        import urllib.error
+        from email.message import Message
+        hdr = Message()
+        hdr["X-RateLimit-Remaining"], hdr["X-RateLimit-Reset"] = remaining, str(reset)
+        return urllib.error.HTTPError("https://api.github.com/x", 403, "rate limit exceeded", hdr, None)
+
+    def test_a_bogus_reset_header_is_a_plain_403(self):
+        import time as real_time
+        from unittest import mock
+        import fmci
+        from fmcli import UsageError
+        p, gh_out = self._logged_out()
+        for reset in (10 ** 15, real_time.time() + 7200, "²", "٣"):  # huge, over an hour off, non-ASCII digits
+            with gh_out, mock.patch("urllib.request.urlopen", side_effect=self._spent(reset)), \
+                    mock.patch.object(fmci, "time") as clock, mock.patch.dict(os.environ, {"FOREMAN_NO_NET": ""}), \
+                    self.assertRaisesRegex(UsageError, "not logged in.*403"):
+                clock.time.return_value = real_time.time()
+                fmci.watch(p, "main", 3, 0, max_polls=1, say=lambda *a, **k: None)
+            clock.sleep.assert_not_called()
+
+    def test_a_stale_reset_still_paces_and_gives_up_after_three_waits(self):
+        import time as real_time
+        from unittest import mock
+        import fmci
+        p, gh_out = self._logged_out()
+        said = []
+        with gh_out, mock.patch("urllib.request.urlopen", side_effect=self._spent(int(real_time.time()) - 100)), \
+                mock.patch.object(fmci, "time") as clock, mock.patch.dict(os.environ, {"FOREMAN_NO_NET": ""}):
+            clock.time.return_value = real_time.time()
+            code, msg = fmci.watch(p, "main", 3, 0, say=lambda m, **k: said.append(m))
+        self.assertEqual(code, 1)
+        self.assertIn("still spent", msg)
+        waits = [a.args[0] for a in clock.sleep.call_args_list]
+        self.assertEqual(len(waits), 3)
+        self.assertTrue(all(w >= fmci.PUBLIC_POLL for w in waits), waits)
+        self.assertFalse(any("waiting 0 min" in m for m in said), said)
+        self.assertTrue(any("waiting 2 min" in m for m in said), "minutes round up: 75 s is 2 min")
+
     def test_with_gh_logged_out_the_public_api_finds_the_run_and_briefs_its_annotations(self):
         # T-1939: gh logged out left ci-watch blind; a public repo's runs and annotations need no token
         import contextlib
