@@ -1,6 +1,6 @@
 ---
 name: status
-description: Use whenever you are about to report where work stands or what's left: a summary in at most 25 lines.
+description: Use whenever you report where work stands or what's left: a summary, 25 lines at most.
 ---
 
 # Foreman: status
