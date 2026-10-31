@@ -3243,6 +3243,12 @@ def cmd_focus(args):
         if moved:  # R2/R3 preflight: the plan was grounded on files that have changed since (kept for fresh sessions)
             related = (related + "\n" if related else "") + moved
             target.set_section("Preflight", moved + "\n")
+        if target.tier in ("M", "L") and "Blast radius (fm graph blast)" not in target.section("Risks and rollback"):
+            import fmgraph  # T-2277: what the scope usually drags along, written once into the plan
+            line = fmgraph.blast_line(p, target.meta.get("scope"))
+            if line:
+                old = target.section("Risks and rollback").strip()
+                target.set_section("Risks and rollback", (old + "\n" if old else "") + line)
         if not target.meta.get("plan0_at"):  # T-1061: the plan at first focus, which the close is scored against
             target.meta.update(plan0_at=c.now(), plan0_scope=list(target.meta.get("scope") or []))
         c.save_brief(p, target)

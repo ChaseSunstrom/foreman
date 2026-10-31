@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 
 import fmcore as c
 
@@ -136,8 +137,43 @@ def _edges(con, as_of, where="", args=()):
     return con.execute(q, (as_of or "9999", *args)).fetchall()
 
 
-def blast(p, paths, as_of=None):
-    con = db(p)
+BLAST_BUDGET = 1.0  # seconds fm focus gives the graph query (T-2277)
+
+
+def blast_line(p, scope, budget=BLAST_BUDGET):
+    """T-2277: the plan's one-line blast radius for a task's literal scope files, or "" when there is nothing to say.
+    Reads the graph only if it is built and fresh (focus never rebuilds it: a build runs git log over 3000 commits) and
+    stops a slow query after `budget` seconds; any failure is silence."""
+    root = os.path.realpath(p.root)
+    paths = []
+    for s in scope or []:
+        f = os.path.normpath(s)
+        real = os.path.realpath(os.path.join(root, f))
+        if not re.search(r"[*?\[\]{}]", s) and real.startswith(root + os.sep) and os.path.isfile(real) \
+                and f not in paths:
+            paths.append(f)
+    db_path = os.path.join(p.dir, "graph.sqlite")
+    if not paths or not os.path.exists(db_path):
+        return ""
+    try:
+        con = sqlite3.connect(db_path)
+        if (con.execute("SELECT v FROM meta WHERE k='stamp'").fetchone() or [None])[0] != _stamp(p):
+            return ""
+        end = time.monotonic() + budget
+        con.set_progress_handler(lambda: int(time.monotonic() > end), 10000)
+        r = blast(p, paths[:20], con=con)
+    except Exception:  # a hint: it never stops a focus
+        return ""
+    bits = []
+    if r["cochange"]:
+        bits.append("co-changes " + ", ".join(r["cochange"][:5]))
+    if r["fixes"]:
+        bits.append("past FIXes " + ", ".join(f["id"] for f in r["fixes"][:5]))
+    return "Blast radius (fm graph blast): " + "; ".join(bits) + "." if bits else ""
+
+
+def blast(p, paths, as_of=None, con=None):
+    con = con or db(p)
     marks = ",".join("?" * len(paths))
     ins = _edges(con, as_of, f" AND dst IN ({marks})", paths)
     outs = _edges(con, as_of, f" AND src IN ({marks})", paths)
