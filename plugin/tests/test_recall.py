@@ -1,5 +1,6 @@
 """fm recall (T-0043) and lessons (T-0048): related past work surfaces when a task is planned or focused."""
 import json
+import os
 
 from helpers import ForemanTestCase
 
@@ -299,3 +300,43 @@ class Consolidate(ForemanTestCase):
         made = [b for b in c.load_briefs(c.find_project(self.repo)) if b.title == "Consolidate near-duplicate lessons"]
         self.assertEqual(len(made), 1)
         self.assertEqual(made[0].meta.get("source"), "followup")
+
+
+class Recurring(ForemanTestCase):  # T-2272: one obstacle in many tasks is fixed once, not worked around in each
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+
+    def caps(self):
+        return [b for b in c.load_briefs(self.p, include_archive=True) if b.title.startswith("Recurring failure")]
+
+    def test_one_obstacle_in_three_tasks_is_captured_once_to_fix_its_cause(self):
+        import fmrecall
+        err = "sed: -e expression #1, char 3: unknown command: ','"
+        fmrecall.note_failure(self.p, "T-0901", err)
+        fmrecall.note_failure(self.p, "T-0902", err)
+        fmrecall.note_failure(self.p, "T-0902", err)
+        self.assertEqual(self.caps(), [], "two tasks are a coincidence")
+        hint = fmrecall.note_failure(self.p, "T-0903", err)
+        caps = self.caps()
+        self.assertEqual(len(caps), 1)
+        self.assertEqual(caps[0].meta["type"], "FIX")
+        self.assertIn(caps[0].id, hint or "")
+        self.assertIn("T-0901", caps[0].section("Raw request"))
+        rows = [json.loads(x) for x in open(os.path.join(self.p.dir, "failures.jsonl"))]
+        self.assertIn(caps[0].id, [r.get("captured") for r in rows], "a later failure skips the brief scan")
+        self.fm("task", "drop", caps[0].id, "fixed")
+        fmrecall.note_failure(self.p, "T-0904", err)
+        self.assertEqual(len(self.caps()), 1, "once per signature, even after the first is closed")
+
+    def test_test_assertions_tallies_and_wordless_signatures_never_capture(self):
+        import fmrecall
+        for text in ("AssertionError: 1 != 2", "guard-publish", "FAILED (3 classes)",
+                     # T-2272 review: real recurring signatures with no single cause
+                     "json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)",
+                     "IndexError: list index out of range", "fm doctor: FAILED (2 pass, 1 warn, 1 fail)",
+                     "fm: refused: T-0001 criterion 1 already has evidence, so its check stays as it is"):
+            for t in ("T-0901", "T-0902", "T-0903"):
+                fmrecall.note_failure(self.p, t, text)
+        self.assertEqual(self.caps(), [])

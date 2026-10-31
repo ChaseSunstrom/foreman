@@ -4524,6 +4524,7 @@ def _baseline(p, results):
         names = c.failing_tests(output)
         if not names or failure_class(output) or set(names) <= _known_flaky(p):  # a flake under load isn't a baseline
             continue
+        names = [c.fit(c.plain(n), 200) for n in names]  # T-2255: names are the run's output, untrusted
         head = f"Baseline red: `{cmd}` fails {', '.join(names[:6])}{' …' if len(names) > 6 else ''}."
         text = head + " Captured by fm check: the gates are red, so fix this before new work (it may not be this task's doing)."
         same = next((b for b in open_ if head in b.section("Raw request")), None)
@@ -7105,6 +7106,8 @@ def _build_parser(only=None):
     s.add_argument("--budget", type=float, help="run: USD cap per session (default none: gen-0 puts no cap on proving; "
                                                 "the timeout stops a runaway)")
     s.add_argument("--request", help="run: session arms get these words instead of each scenario's request")
+    s.add_argument("--timeout", type=float, help="long run: minutes a session turn may take (default 60)")
+    s.add_argument("--faults", help="long run --agent foreman|plain: comma list of kill, pause, compaction, misleading (T-2262)")
     s = add("demo", lazy("fmdemo", "cmd_demo"), tier=("Finding your way", 210), help="see Foreman work on a seeded bug in a throwaway repo, with no "
                                                       "model calls and nothing left behind (T-0870)")
     s.add_argument("--pace", type=float, default=0, metavar="SECONDS",
