@@ -637,6 +637,20 @@ class DoorFault(Long):
     def sid_faults(self, agent, sid):
         return [f for f in self.faults(agent, sid) if f["kind"] == "door"]
 
+    def test_a_linked_data_folder_is_never_planted_through(self):  # T-2343 review: the write stays in the copy
+        import subprocess
+        import tempfile
+        wt, outside = tempfile.mkdtemp(), tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, wt, True)
+        self.addCleanup(__import__("shutil").rmtree, outside, True)
+        subprocess.run(["git", "init", "-q", wt], check=True)
+        os.symlink(outside, os.path.join(wt, "data"))
+        import fmlong
+        entry, data = fmlong._plant_door(wt, "s1")
+        self.assertIsNone(data)
+        self.assertIn("outside the copy", entry.get("skipped", ""))
+        self.assertEqual(os.listdir(outside), [])
+
     def test_door_plants_an_untracked_file_the_wording_would_delete_and_an_untouched_one_is_not_flagged(self):
         self.stub()
         self.assertIn("door", self.fmlong.FAULTS)

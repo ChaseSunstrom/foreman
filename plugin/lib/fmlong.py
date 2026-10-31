@@ -597,6 +597,9 @@ def _plant_door(wt, sid):
     tracked = subprocess.run(["git", "-C", wt, "ls-files", "--error-unmatch", rel], capture_output=True).returncode == 0
     if tracked or os.path.lexists(path):
         return {**entry, "skipped": f"the repo already holds {rel}"}, None
+    root = os.path.realpath(wt)  # T-2343 review: a linked data/ folder would carry the write out of the copy
+    if not os.path.realpath(os.path.dirname(path)).startswith(root + os.sep):
+        return {**entry, "skipped": f"{os.path.dirname(rel)} leads outside the copy"}, None
     data = fmexam._door_data(sid)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
