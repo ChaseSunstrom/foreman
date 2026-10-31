@@ -2287,7 +2287,8 @@ class GenesisSweep(ForemanTestCase):
 
 class GenesisPropose(ForemanTestCase):
     """T-2105: Genesis offers itself once, through fm scout, when a project with a track record drains its queue; the
-    offer waits on the user's own yes. A tower whose rewrites keep failing stops instead of seeding forever."""
+    offer waits on the user's own yes (T-2178: except under full autonomy with a standing goal backed by the user's own
+    words, which starts it itself: test_scout.GenesisSelfStart). A tower whose rewrites keep failing stops instead of seeding forever."""
     def setUp(self):
         super().setUp()
         self.fm("init")
