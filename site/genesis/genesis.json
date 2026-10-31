@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-31T11:23:36Z",
- "rev": "3339f087",
+ "updated": "2026-10-31T12:11:02Z",
+ "rev": "7cd5aac8",
  "capabilities": [
   {
    "n": 1,
@@ -6039,6 +6039,127 @@
     "guard_blocks": 6,
     "hours_to_done": 6
    }
+  },
+  {
+   "tier": "long",
+   "agent": "plain",
+   "run": "l002",
+   "at": "2026-10-31T12:11:01Z",
+   "gen": 1,
+   "model": "default",
+   "scenarios": 6,
+   "true_done": 1,
+   "regressions": 0,
+   "checks": 20,
+   "checks_passed": 4,
+   "goals": [
+    {
+     "id": "T-2093",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "checks_passed": 0,
+     "regressions": [],
+     "false_done": true,
+     "cost": 1.8284754000000003,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1236.1,
+     "guard_blocks": 0
+    },
+    {
+     "id": "T-2020",
+     "answered": true,
+     "true_done": false,
+     "checks": 3,
+     "checks_passed": 1,
+     "regressions": [],
+     "false_done": true,
+     "cost": 1.6963669999999997,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1357.5,
+     "guard_blocks": 60
+    },
+    {
+     "id": "T-2240",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "checks_passed": 2,
+     "regressions": [],
+     "false_done": true,
+     "cost": 2.6215544000000004,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1508.0,
+     "guard_blocks": 0
+    },
+    {
+     "id": "T-2211",
+     "answered": true,
+     "true_done": false,
+     "checks": 2,
+     "checks_passed": 0,
+     "regressions": [],
+     "false_done": true,
+     "cost": 4.507424599999999,
+     "cost_unknown": true,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2038.9,
+     "guard_blocks": 1
+    },
+    {
+     "id": "T-2041",
+     "answered": true,
+     "true_done": true,
+     "checks": 1,
+     "checks_passed": 1,
+     "regressions": [],
+     "false_done": false,
+     "cost": 0.6912134000000001,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 880.6,
+     "guard_blocks": 0
+    },
+    {
+     "id": "T-2279",
+     "answered": true,
+     "true_done": false,
+     "checks": 4,
+     "checks_passed": 0,
+     "regressions": [],
+     "false_done": true,
+     "cost": 1.7324046000000002,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1521.0,
+     "guard_blocks": 1
+    }
+   ],
+   "rate": 0.167,
+   "false_done": 5,
+   "resumes_needed": 0,
+   "unfinished": 0,
+   "guard_blocks": 62,
+   "cost": 13.0774,
+   "cost_unknown": 1,
+   "hours_to_done": 0.245,
+   "reverts": null,
+   "unknown": {
+    "false_done": 0,
+    "resumes_needed": 0,
+    "unfinished": 0,
+    "guard_blocks": 0,
+    "hours_to_done": 0
+   }
   }
  ],
  "coverage": {
@@ -7709,9 +7830,33 @@
   }
  ],
  "long": {
-  "state": "no plain line",
-  "goals": 0,
-  "foreman": null,
-  "plain": null
+  "state": "behind",
+  "goals": 6,
+  "foreman": {
+   "true_done": 0,
+   "false_done": 6,
+   "regressions": 0,
+   "resumes_needed": 0,
+   "unfinished": 0,
+   "guard_blocks": 2,
+   "cost": 13.0793,
+   "hours_to_done": null,
+   "run": "l002",
+   "goals": 6,
+   "true_done_same": 0
+  },
+  "plain": {
+   "true_done": 1,
+   "false_done": 5,
+   "regressions": 0,
+   "resumes_needed": 0,
+   "unfinished": 0,
+   "guard_blocks": 62,
+   "cost": 13.0774,
+   "hours_to_done": 0.245,
+   "run": "l002",
+   "goals": 6,
+   "true_done_same": 1
+  }
  }
 }
