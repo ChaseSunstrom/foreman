@@ -452,7 +452,7 @@ def progress(p, briefs=None):
     items = (m or {}).get("items") or []
     if not m or m["expired"] or not items:
         return None
-    by = {b.id: b for b in (briefs if briefs is not None else c.load_briefs(p))}
+    by = {b.id: b for b in (briefs if briefs is not None else c.load_briefs(p, include_archive=True))}  # T-2141: fm tidy mustn't move it
     done = lambda it: item_state(it, by) == "done"
     nxt = next((it for it in items if not done(it)), None)
     open_ = next((by[t] for t in (nxt or {}).get("tasks") or [] if t in by and by[t].status not in c.CLOSED), None)
@@ -468,3 +468,15 @@ def goal_line(p, briefs=None):
     m, done, nxt, b = g
     tail = f" · next: {nxt['n']}. {c.fit(nxt['text'], 60)} ({b.id if b else 'no task yet'})" if nxt else " · all items done"
     return c.plain(f"Goal: {json.dumps(c.fit(m['text'], 80), ensure_ascii=False)} · {done}/{len(m['items'])} items done{tail}")
+
+
+def fresh_verdict(p, m=None):
+    """T-2141: the stored goal_verdict when it still speaks for the standing goal: the goal stands, set_at matches, it's
+    under a day old and this checkout stored it; else None. Meta only: no check, no git."""
+    m = m or get(p)
+    v = c.read_meta(p).get("goal_verdict")
+    if not m or m["expired"] or not isinstance(v, dict) or v.get("set_at") != m.get("set_at") \
+            or v.get("root") != p.root:
+        return None
+    age = c.age_days(v.get("at"))
+    return v if age is not None and age <= 1 else None

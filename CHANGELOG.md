@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The standing goal shows wherever you look: `fm code`'s run prompt, a read-only MCP `goal` tool, a Goal section in `fm export agents` (with the dated last verdict), the band (a stopped goal and its first cause) and the Planning page; a stored verdict counts only while the goal it judged stands, from this checkout and under a day old
 - Genesis can add its own categories from gen 2 (`fm genesis grow`): a capability, area, surface, stage, lens, source or exam kind, each with evidence, a measure and a cold read. Added capabilities join the exam, the scorecard and the seed like gen-0's. The frame only grows: `fm genesis check` fails a lost or hand-edited entry, and the report must list every added category
 - `fm prove --bugs [N]`: a cheap tool-less child names up to 5 bug candidates in each of the N hottest files (else the largest), kept only when strictly shaped and inside a function; each is proven by a model-written red test with stub controls or stays a lead, `--capture` files the proven ones as bug tasks, and their `--only bug-ID` criterion reruns the kept test (red is open, green fixed, missing never fixed); trusted trees only, never a sensitive project (T-2242)
 - `fm goal plan [--apply --done-when CMD]` proposes the standing goal's contents list tagged user, standard or model, builds a model item only from a tracked path, surface or fm verb the repo has (the model's sentence stays a proposal), lists the project's past misses as a checklist, and `--apply` adds the non-duplicates (T-2136).

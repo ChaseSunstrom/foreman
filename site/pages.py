@@ -406,6 +406,16 @@ PAGES = [
          ("text", "One task at a time", "<p>One task is active. New ideas land in the inbox instead of being chased "
           "halfway, and the queue orders itself: baseline, cleanups, performance, security, fixes, then features, "
           "dependencies first. <code>NOW:</code> switches on purpose.</p>"),
+         ("text", "Goal to finish", "<p>A big goal is one record, not a hope. <code>fm goal set</code> keeps its words and "
+          "an end date; <code>fm goal item</code> adds each thing it must contain with a done-when check; "
+          "<code>fm goal link</code> (or <code>fm task new --goal N</code>) ties a task to the item it builds; "
+          "<code>fm goal show</code> lists drift: work outside the goal, items with no task, items claimed done whose "
+          "check fails. <code>fm goal verdict</code> says <em>finished</em> only when every item is done, every check "
+          "passes now and the gates are green; otherwise <em>stopped</em>, with each cause. A stopped goal blocks a "
+          "done claim once, shows in the band, and the MCP <code>goal</code> tool and AGENTS.md carry it.</p>"
+          "<p>It carries across days: one line, <code>Goal: &quot;…&quot; · 2/5 items done · next: 3. …</code>, opens "
+          "every session, survives compaction, and rides in <code>fm code</code>'s run prompt, so the plan outlives "
+          "the conversation.</p>"),
          ("chart", _sizes), ("chart", _types)]},
     {"slug": "proof", "nav": "Proof", "title": "Nothing is done until a command proves it",
      "desc": "Evidence is a command Foreman ran and recorded; a fix needs a test that failed first.",

@@ -4,6 +4,7 @@ import functools
 import http.server
 import json
 import os
+import sys
 import threading
 import unittest
 
@@ -91,6 +92,20 @@ class CodePageCoversFmCode(unittest.TestCase):
                                       "sentence, or an entry with a reason in SKIP")
         for k in self.SKIP:  # a stale entry hides nothing
             self.assertTrue(k in flags or k in verbs, k + " is no longer an fm code flag or verb")
+
+
+class GoalPage(unittest.TestCase):
+    def test_the_planning_page_describes_the_goal_verbs_and_the_across_days_line(self):  # T-2141
+        sys.path.insert(0, SITE)
+        try:
+            import pages
+        finally:
+            sys.path.pop(0)
+        page = next(x for x in pages.PAGES if x["slug"] == "planning")
+        text = json.dumps(page["blocks"], default=str)
+        for word in ("Goal to finish", "fm goal set", "fm goal item", "fm goal link", "fm goal show", "fm goal verdict",
+                     "fm task new", "--goal", "across days"):
+            self.assertIn(word, text)
 
 
 if __name__ == "__main__":

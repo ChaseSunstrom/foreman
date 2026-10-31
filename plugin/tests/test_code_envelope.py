@@ -40,6 +40,17 @@ class Envelope(CodeCase):
         self.assertRegex(listing, rf"<data-{m.group(1)}>\n(.|\n)*README.md(.|\n)*</data-{m.group(1)}>")
         self.assertEqual(self.task()["status"], "done")
 
+    def test_the_goal_line_rides_in_the_envelope_while_a_goal_stands(self):  # T-2141
+        import fmcode
+        self.fm("init")
+        run = fmcode.Run(type("A", (), {})(), self.repo, self.tmp)
+        self.assertNotIn("Goal:", fmcode._context_note(run))
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "one", "--done-when", "true")
+        note = fmcode._context_note(run)
+        m = re.search(rf"<data-{run.nonce}>\n(.*)\n</data-{run.nonce}>", note, re.S)
+        self.assertIn('Goal: "Ship the ledger" · 0/1 items done', m.group(1) if m else note)
+
     def test_fence_escapes_every_lookalike_and_trim_keeps_the_fence(self):
         import fmcode
         run = fmcode.Run(type("A", (), {})(), self.repo, self.tmp)

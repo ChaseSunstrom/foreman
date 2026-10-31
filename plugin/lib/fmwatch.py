@@ -696,6 +696,10 @@ def _signals(sd, d, p=None):
     if g.get("kind") in ("blocked", "stopped", "fatal"):  # T-2118: the tower can't go on by itself
         out.append({"level": "red" if g["kind"] == "fatal" else "amber",
                     "text": f"genesis gen {g['gen']} {g['kind']}: {c.plain(g['action'])[:120]}"})
+    import fmmandate
+    gv = (fmmandate.fresh_verdict(p) if p else None) or {}  # T-2141: the stored verdict only, no check runs here
+    if gv.get("verdict") == "stopped":
+        out.append({"level": "amber", "text": c.plain(f"goal stopped: {c.fit(str((gv.get('causes') or ['no cause stored'])[0]), 100)}")})
     errors = len(fmdoctor.recent_hook_errors())
     if errors:
         out.append({"level": "amber", "text": f"{errors} hook error(s)"})
