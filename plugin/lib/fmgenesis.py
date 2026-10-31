@@ -136,7 +136,16 @@ def status(p, with_check=True):
         out["check"], out["next"] = check(p), step(p)
         out["scorecard"] = card(p)  # T-2154
         out["long"] = card_long(p)  # T-2263
+        out["unproven"] = _unproven(p)
     return out
+
+
+def _unproven(p):
+    """T-2273: done tasks in 30 days no run here proved, from the cache; None when it can't be read."""
+    try:
+        return c.unproven_cached(p)
+    except Exception:  # never costs the status
+        return None
 
 
 def current(p):
@@ -1062,7 +1071,7 @@ def export(p, out):
             "capabilities": [{"n": int(n), "name": name, "text": t.strip()} for n, name, t in all_caps(p, gen0)],
             "gaps": _gaps(docs.get("gap-map.md", "")), "generations": gens, "exam": exam,
             "coverage": chk["coverage"], "not_yet": chk["not_yet"]["items"], "not_yet_open": chk["not_yet"]["open"],
-            "next": step(p), "docs": docs, "seal": sealed(p) or seal(p)[:8], "intent": intent_clauses()}
+            "unproven": _unproven(p), "next": step(p), "docs": docs, "seal": sealed(p) or seal(p)[:8], "intent": intent_clauses()}
     if rows := card(p):  # T-2154: optional; absent before any graded line
         data["scorecard"] = rows
     if (lr := card_long(p)) and lr["state"] != "no long run":  # T-2263: the deciding row
@@ -1265,6 +1274,7 @@ def _text(s):
     if s.get("next"):
         lines.append(f"next: {s['next']['action']} → {s['next']['command']}")
     lines.append(exam)
+    lines += [f"unproven: {s['unproven']} (fm proof)"] if s.get("unproven") else []
     lines += [f"{x['n']}. {x['name']}: {x['state']} " + ("(not graded)" if x["graded"] is None else
               f"(closed {x['closed']} of {x['graded']} held out)") for x in s.get("scorecard") or ()]
     if (lt := long_text(s.get("long"))) and s["long"]["state"] != "no long run":

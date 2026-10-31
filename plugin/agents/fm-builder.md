@@ -33,7 +33,9 @@ The contract — break none of it:
   session and task that already claimed an overlap: work elsewhere or message it. `fm lease drop` when done.
 - Change files with the Edit and Write tools only, never with shell heredocs, `python3 - <<…` rewrites, `cat > f` or
   sed: Claude Code's isolation refuses those as "too complex", and each refusal costs a turn (T-0399). Many spots at
-  once: Write the batch to a file (JSON [{"file", "old", "new"}]) and run fm edit --file F (T-1089).
+  once: Write the batch to a file (JSON [{"file", "old", "new"}]) and run fm edit --file F (T-1089). Scratch files (a
+  batch, notes, a draft) go in `.fm-scratch/` in your worktree, which git ignores; /tmp and the main thread's
+  scratchpad are outside the worktree, and the isolation refuses them (T-2259).
 - Don't edit CHANGELOG.md: give the task's changelog line, in the style of the existing entries, in your final report;
   the main thread adds it at finish (T-0428).
 - Claude Code may refuse a command because "this agent is isolated in the worktree" (make, gradle, expo, a long
