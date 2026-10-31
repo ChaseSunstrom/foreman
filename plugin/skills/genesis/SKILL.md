@@ -37,6 +37,10 @@ Repeat until the kind is done or stopped (on blocked, work the rest of the queue
    first, give each `### idea` its `Prior art:`, `Better by:` and `Novelty: 1-5` lines, run `fm genesis
    novelty N` (the cold read that marks obvious ideas), then name the `Spiked pick:` and its `Spike: shipped|failed`
    line; a failed spike goes to not-yet.md, and report.md lists each shipped moonshot with `(asked: …)`.
+   When ideas, failures or misses keep fitting no category, `fm genesis grow KIND --name N --evidence E
+   --measure M` adds one to frame.md (from gen 2; never removed). Give an added capability its coverage.md row
+   before that generation's sweep, and list every added category in report.md (its F-N id and name). Today an
+   added capability joins the exam spec, scorecard, seed and export; the other kinds are recorded and checked.
    Each seed carries "## The user's standing rules (steers)": every steer still in force (`c.steer_rules`, minus
    one a later steer `--reverses` or `--revisited`). Drift fails a seed missing one and only notes a steer newer than the seed.
 3. After a tower edit, `fm genesis check` (exit 1 names every empty cell and not-yet gap).

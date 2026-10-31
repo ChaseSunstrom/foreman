@@ -2676,3 +2676,111 @@ class GenesisMoonshot(ForemanTestCase):
         self.moon(pick="idea 3")
         self.assertTrue(any("names no ### idea" in x for x in self.problems()), self.problems())
 
+
+
+class GenesisFrame(ForemanTestCase):
+    """T-2188 (steer 2026-10-30 #6): from gen 2 the frame around gen-0 may grow, never shrink. fm genesis grow adds a
+    category with evidence, a measure and a cold read; a frame_grow ledger event anchors each entry, so a hand edit or
+    a lost entry fails check; an added capability is pending until its coverage row, failing at its gen's sweep; it
+    joins the scorecard, spec, seed and export like §2's; report.md lists every added category."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        import fmcore as c
+        import fmgenesis
+        self.p = c.find_project(self.repo)
+        self.tower = fmgenesis.home(self.p)
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        fmgenesis.put(self.p, "gen-1/seed.md", SEED)
+
+    def grow(self, *args, check=True):
+        return self.fm("genesis", "grow", *args, check=check)
+
+    def problems(self):
+        import fmgenesis
+        return fmgenesis.check(self.p)["frame"]["problems"]
+
+    def test_grow_refuses_below_gen_2_a_taken_name_and_a_missing_measure(self):
+        r = self.grow("capability", "--name", "Offline sync", "--evidence", "three moonshots fit no cell",
+                      "--measure", "flaky", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("gen 2", r.stdout + r.stderr)
+        import fmgenesis
+        fmgenesis.put(self.p, "gen-2/seed.md", SEED)
+        for name, measure in (("Initiative", "bug"), ("Offline sync", "speed"), ("Offline sync", "")):
+            r = self.grow("capability", "--name", name, "--evidence", "x fits no cell", "--measure", measure, check=False)
+            self.assertNotEqual(r.returncode, 0, (name, measure))
+        r = self.grow("surface", "--name", "MCP", "--evidence", "e", "--measure", "unmeasurable: a surface", check=False)
+        self.assertNotEqual(r.returncode, 0)  # an existing surface
+        self.assertFalse(os.path.exists(os.path.join(self.tower, "frame.md")))
+
+    def test_an_added_capability_joins_the_scorecard_spec_and_export_and_is_pending_until_its_row(self):
+        import fmgenesis
+        fmgenesis.put(self.p, "gen-2/seed.md", SEED)
+        r = self.grow("capability", "--name", "Offline sync", "--evidence", "three moonshots fit no cell",
+                      "--measure", "flaky, bug")
+        self.assertIn("F-1", r.stdout)
+        frame = read_text(os.path.join(self.tower, "frame.md"))
+        self.assertIn("## F-1 capability: Offline sync", frame)
+        self.assertIn("Frame", read_text(os.path.join(self.tower, "lineage.md")))
+        names = [nm for _, nm, _ in fmgenesis.all_caps(self.p)]
+        self.assertEqual(names, ["Initiative", "Exhaustive thinking", "Offline sync"])
+        self.assertEqual(fmgenesis._kinds(*fmgenesis.all_caps(self.p)[2][1:]), ["flaky", "bug"])
+        r = fmgenesis.check(self.p)["frame"]
+        self.assertEqual(r["problems"], [])
+        self.assertTrue(any("Offline sync" in x for x in r["pending"]), r)
+        tower_file(self.tower, "gen-2/sweep.md", "# Sweep\n\nVerdict: clean\n")
+        self.assertTrue(any("Offline sync" in x and "sweep" in x for x in self.problems()), self.problems())
+        fmgenesis.put(self.p, "coverage.md", grid("1. Initiative") + grid("2. Exhaustive thinking") + grid("Offline sync"))
+        self.assertEqual(self.problems(), [])
+
+    def test_the_frame_never_shrinks_and_a_hand_edit_counts_for_nothing(self):
+        import fmgenesis
+        fmgenesis.put(self.p, "gen-2/seed.md", SEED)
+        self.grow("lens", "--name", "immune systems", "--evidence", "the moonshot used it", "--measure",
+                  "unmeasurable: a lens shapes ideas, no defect to plant")
+        path = os.path.join(self.tower, "frame.md")
+        text = read_text(path)
+        tower_file(self.tower, "frame.md", text + "\n## F-2 area: Typed in\n- gen: 2\n- evidence: none\n"
+                                                  "- measure: unmeasurable: hand\n")
+        self.assertTrue(any("F-2" in x and "grow" in x for x in self.problems()), self.problems())
+        tower_file(self.tower, "frame.md", text.replace("immune systems", "ecology"))
+        self.assertTrue(any("F-1" in x and "changed" in x for x in self.problems()), self.problems())
+        tower_file(self.tower, "frame.md", "# Frame\n")
+        self.assertTrue(any("F-1" in x and "never shrinks" in x for x in self.problems()), self.problems())
+        with self.assertRaises(ValueError):
+            fmgenesis.put(self.p, "frame.md", text)  # only fm genesis grow writes it
+
+    def test_the_report_lists_every_added_category(self):
+        import fmgenesis
+        fmgenesis.put(self.p, "gen-2/seed.md", SEED)
+        self.grow("exam-kind", "--name", "race", "--evidence", "two flaky fixes were races", "--measure",
+                  "unmeasurable: no race scenario yet")
+        fmgenesis.put(self.p, "report.md", "# Report\n\nDone.\n")
+        self.assertTrue(any("report.md" in x and "race" in x for x in self.problems()), self.problems())
+        fmgenesis.put(self.p, "report.md", "# Report\n\n## Categories Foreman added\n- F-1 exam-kind: race\n")
+        self.assertEqual(self.problems(), [])
+
+    def test_review_names_hashes_report_words_hand_added_and_unmeasurable(self):
+        import fmgenesis
+        fmgenesis.put(self.p, "gen-2/seed.md", SEED)
+        for name in ("1. Initiative", "Initiative.", "**initiative**"):  # the same category, however written
+            r = self.grow("capability", "--name", name, "--evidence", "e", "--measure", "bug", check=False)
+            self.assertNotEqual(r.returncode, 0, name)
+        secret = "token: ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"  # pragma: allowlist secret
+        self.grow("capability", "--name", "Offline sync", "--evidence", f"three misses ({secret})",
+                  "--measure", "unmeasurable: no offline scenario can be planted yet")
+        self.assertNotIn("ghp_", read_text(os.path.join(self.tower, "frame.md")))
+        self.assertFalse(any("changed" in x for x in self.problems()), self.problems())  # hashed as written
+        row = [r for r in fmgenesis.scorecard(self.p)["rows"] if r["name"] == "Offline sync"][0]
+        self.assertEqual((row["kinds"], row["state"]), ([], "unmeasurable"))
+        text = read_text(os.path.join(self.tower, "frame.md"))
+        tower_file(self.tower, "frame.md", text + "\n## F-9 capability: Typed in\n- gen: 2\n- evidence: x\n"
+                                                  "- measure: exam kinds bug\n")
+        self.assertNotIn("Typed in", [nm for _, nm, _ in fmgenesis.all_caps(self.p)])  # a hand edit feeds nothing
+        tower_file(self.tower, "frame.md", text)
+        fmgenesis.put(self.p, "coverage.md", grid("1. Initiative") + grid("2. Exhaustive thinking") + grid("Offline sync"))
+        fmgenesis.put(self.p, "report.md", "# Report\n\nWe embrace F-1 thinking: offline syncing.\n")
+        self.assertTrue(any("F-1" in x for x in self.problems()), self.problems())  # 'syncing' isn't 'sync'
+        fmgenesis.put(self.p, "report.md", "# Report\n\n- F-1 capability: Offline sync\n")
+        self.assertEqual(self.problems(), [])
