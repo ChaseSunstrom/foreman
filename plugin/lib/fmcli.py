@@ -2525,7 +2525,7 @@ def _repeat_runs(root, cmd, n, timeout):
         if left is not None and left <= 0:
             break
         t = time.monotonic()
-        code, output = c.run_command(root_dir, cmd, left, env)
+        code, output = c.run_command(root, cmd, left)
         ran, cut = ran + 1, f"timed out after {left:g}s"
         if code == 124 and left is not None and output.endswith(cut):
             output = output[:-len(cut)] + f"timed out after {timeout:g}s (--timeout, all {n} runs together)"
