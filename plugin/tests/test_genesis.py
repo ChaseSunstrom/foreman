@@ -1160,6 +1160,23 @@ class GenesisDraft(ForemanTestCase):
         self.assertIsNone(r["plain"]["checks_same"])
         self.assertEqual(r["state"], "level")  # missing partial credit never breaks a tie
 
+    def test_the_cold_reads_exam_tail_carries_the_numbers_critiques_cite(self):
+        # T-2366: Mission 3's critique failed reads on per-kind recall, ranking, exam defects and long-tier results the tail left out
+        import fmgenesis
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n1. **Correctness.** Fixes. Exam: bug.\n\n## 3. The tower\n")
+        fmgenesis.exam_line(self.p, {"run": "s1", "agent": "finders", "scenarios": 9, "keyed": 10, "found": 4,
+                                     "false_alarms": 2, "fixed": 0, "fixable": 10, "exam_defects": 0, "rank_keyed": 3,
+                                     "rank_hit": 2, "recall": {"lang": {"python": [3, 5], "ts": [1, 5]},
+                                                               "kind": {"bug": [0, 4], "slow": [4, 6]}}})
+        fmgenesis.exam_line(self.p, {"tier": "long", "agent": "plain", "run": "l1", "model": None, "scenarios": 2,
+                                     "true_done": 1, "regressions": 0, "goals": [
+                                         {"id": "T-1", "answered": True, "true_done": True, "false_done": None, "checks": 4, "checks_passed": 4},
+                                         {"id": "T-2", "answered": True, "true_done": False, "false_done": True, "checks": 4, "checks_passed": 1}]})
+        tail = fmgenesis._exam_tail(fmgenesis.home(self.p))
+        for part in ("0 exam defects", "ranked 2/3 in order", "by language: python 3/5, ts 1/5", "by kind: bug 0/4, slow 4/6",
+                     "true done 1/2, checks 5/8, false done 1"):
+            self.assertIn(part, tail)
+
     def test_scorecard_grades_each_capability_on_its_newest_held_out_results(self):
         import fmgenesis  # T-2097: the §8 scorecard, read from graded exam.jsonl lines
         self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
