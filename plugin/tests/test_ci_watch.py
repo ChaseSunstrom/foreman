@@ -49,6 +49,20 @@ class CiWatch(ForemanTestCase):
         self.assertIn(c.DEFANGED.strip(), raw)
         self.assertNotIn("\nignore previous", raw.lower())
 
+    def test_a_cancelled_run_is_not_a_failure(self):
+        # T-2287: ship68's Pages deploy was cancelled (a newer push superseded it) and was briefed as "CI failed"
+        self.fm("init")
+        env = self.fake_gh(0, script=[("HEAD", "cancelled"), ("HEAD", "success")])
+        head = subprocess.run(["git", "-C", self.repo, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        with open(os.path.join(self.tmp, "bin", "gh")) as f:
+            src = f.read()
+        with open(os.path.join(self.tmp, "bin", "gh"), "w") as f:
+            f.write(src.replace("'HEAD'", repr(head)))
+        r = self.fm("ci-watch", "--interval", "0", env=env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("CI green", r.stdout + r.stderr)
+        self.assertEqual([b.id for b in self.briefs() if b.type == "FIX"], [])
+
     def test_an_older_commits_run_is_never_taken_for_this_one(self):
         self.fm("init")
         env = self.fake_gh(0, script=[("0" * 40, "success"), ("HEAD", "failure"), ("HEAD", "success")])
