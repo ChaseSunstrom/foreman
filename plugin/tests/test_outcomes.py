@@ -441,7 +441,8 @@ class CalBase(Base):
         return json.loads(self.fm("lane", "race", tid, "--confidence", "70", "--json").stdout)["race"]
 
     def plain(self, title="Race me"):
-        self.fm("task", "new", title, "--type", "FEATURE", "--tier", "S", "--ac", "it wins :: true", "--step", "s")
+        self.fm("task", "new", title, "--type", "FEATURE", "--tier", "S", "--ac", "it wins :: test -f win.txt",
+                "--step", "s")  # T-2339: a race refuses a check that already passes
         return c.load_briefs(self.p)[-1].id
 
 

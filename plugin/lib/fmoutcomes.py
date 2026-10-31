@@ -405,7 +405,7 @@ def _verdicts(p, bets, outs, first):
         elif k == "race":
             side = str(r["key"]).split(">")[0]
             for d in picks:
-                if side in (d.get("winner"), d.get("loser")):
+                if side == d.get("winner") or side == d.get("loser") or side in (d.get("losers") or []):  # T-2339: 3 sides
                     v = ("held", "the side won the race", "race") if d.get("winner") == side else \
                         ("missed", "the side lost the race", "race")
         got[r["id"]] = v
