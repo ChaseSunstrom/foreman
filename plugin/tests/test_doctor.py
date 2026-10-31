@@ -723,6 +723,12 @@ class FootprintRatchet(unittest.TestCase):  # T-2281
         d.record_footprint(self.p, self.rules(1000), self.plugin)
         self.assertEqual(self.check(1020).status, "PASS")
 
+    def test_a_zero_or_empty_record_is_ignored(self):
+        for rec in ({"at": "2000-01-01", "metrics": {"rules chars": 0, "descriptions chars": 0}}, {"at": "x"}, {"metrics": {}}):
+            with open(os.path.join(self.t, "footprint.json"), "w") as f:
+                json.dump(rec, f)
+            self.assertEqual(self.check(1000).status, "PASS")
+
     def test_growth_over_two_percent_warns_naming_the_metric(self):
         d.record_footprint(self.p, self.rules(1000), self.plugin)
         r = self.check(1021)

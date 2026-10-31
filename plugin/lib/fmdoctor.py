@@ -203,8 +203,8 @@ def record_footprint(p, rules_path, plugin=PLUGIN):
 def _ratchet(p, now):
     """Metrics that grew over 2% since the last ship's record, with no decision dated on or after that ship naming them."""
     rec = _load_json(os.path.join(p.dir, "footprint.json"))
-    if not isinstance(rec, dict) or not isinstance(rec.get("metrics"), dict):
-        return []
+    if not isinstance(rec, dict) or not isinstance(rec.get("metrics"), dict) or not rec["metrics"].get("rules chars"):
+        return []  # missing, or measured on a tree with no Foreman rules: no baseline
     since = str(rec.get("at", ""))[:10]
     named = " ".join(t.lower() for dt, _, t in c._decision_rows(p) if dt[:10] >= since)
     out = []

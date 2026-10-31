@@ -198,6 +198,14 @@ class Ship(ForemanTestCase):
         self.ship("--test", "false")
         self.assertFalse(os.path.exists(rec))
         self.assertEqual(self.ship("--test", "true").returncode, 0)
+        self.assertFalse(os.path.exists(rec))  # no plugin/rules/foreman.md in this repo: not Foreman's own
+        os.makedirs(os.path.join(self.repo, "plugin", "rules"))
+        with open(os.path.join(self.repo, "plugin", "rules", "foreman.md"), "w") as f:
+            f.write("a rule\n")
+        sh(self.repo, "add", "plugin")
+        sh(self.repo, "commit", "-qm", "rules")
+        self.grant()
+        self.assertEqual(self.ship("--test", "true").returncode, 0)
         with open(rec) as f:
             self.assertIn("rules chars", json.load(f)["metrics"])
 
