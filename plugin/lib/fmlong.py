@@ -449,6 +449,59 @@ def _stamp(p, run, agent):
     return os.path.join(_root(p), run, "answers", agent, "model")
 
 
+def _activity(sids, state, claim):
+    """T-2325: where a session's time went, as counts: tool calls by name, Bash commands by first word (fm by verb), turns,
+    the temp Foreman state's events and ledger events by kind (None without that state) and the fitted final claim. Read from
+    claude's transcripts before fmbench._compactions removes them; nothing else from the repo or the transcript is kept."""
+    import collections
+    import glob
+    home = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    tools, bash, turns = collections.Counter(), collections.Counter(), set()
+    for sid in sids:
+        for path in glob.glob(os.path.join(home, "projects", "*", f"{sid}.jsonl")):
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for n, line in enumerate(f):
+                    try:
+                        e = json.loads(line)
+                        m = e["message"] if e["type"] == "assistant" else None
+                    except (ValueError, KeyError, TypeError):
+                        continue
+                    if not isinstance(m, dict) or not isinstance(m.get("content"), list):
+                        continue
+                    turns.add((sid, str(m.get("id") or n)))  # one reply is split over several lines, one per block
+                    for b in m["content"]:
+                        if not (isinstance(b, dict) and b.get("type") == "tool_use"):
+                            continue
+                        tools[c.fit(c.plain(str(b.get("name"))), 30)] += 1
+                        cmd = (b.get("input") or {}).get("command") if isinstance(b.get("input"), dict) else None
+                        if b.get("name") == "Bash" and isinstance(cmd, str):
+                            words = [w for w in cmd.split() if not re.match(r"\w+=", w)]
+                            if words:
+                                w = os.path.basename(words[0])
+                                bash[c.fit(c.plain(f"fm {words[1]}" if w == "fm" and len(words) > 1 else w), 30)] += 1
+    events = None
+    if os.path.isdir(state):
+        ev = collections.Counter(str(e.get("kind")) for e in c.tail_jsonl(os.path.join(state, "events.jsonl"), 50000))
+        for path in glob.glob(os.path.join(state, "projects", "*", "ledger.jsonl")):
+            ev.update("ledger " + str(e.get("event")) for e in c.tail_jsonl(path, 20000))
+        events = {c.fit(c.plain(k), 40): v for k, v in ev.most_common(30)}
+    top = lambda x: dict(x.most_common(30))
+    return {"tools": top(tools), "bash": top(bash), "turns": len(turns), "events": events or None,
+            "claim": c.fit(c.plain(str(claim or "")), 300)}
+
+
+def went(res):
+    """T-2325: the 'where the time went' line of a graded arm: its goals' top tools and fm verbs, summed."""
+    import collections
+    tools, verbs = collections.Counter(), collections.Counter()
+    for g in res["goals"]:
+        a = g.get("activity") or {}
+        tools.update(a.get("tools") or {})
+        verbs.update({k: v for k, v in (a.get("bash") or {}).items() if k.startswith("fm ")})
+    top = lambda x: ", ".join(f"{k} {v}" for k, v in x.most_common(5)) or "none kept"
+    return f"where the time went: tools {top(tools)}; fm verbs {top(verbs)}"
+
+
 def _goal_session(agent, base, key, work, model, budget, timeout, faults):
     """One goal in a temp copy of its repo (with .git), as fmexam._session_arm does it, with the faults planted: a
     misleading test before the session; a kill (the first turn capped at KILL_T minutes, then resumed by its id); a pause
@@ -507,6 +560,7 @@ def _goal_session(agent, base, key, work, model, budget, timeout, faults):
             for f in log:
                 if f["kind"] in ("kill", "pause") and f["fired"]:
                     f.update(resumed=True, resume_ok=not fresh and not err, resumed_at=since(), **({"fresh": True} if fresh else {}))
+        activity = _activity(sids, state, last.get("result") if not err else None)  # before _compactions removes the transcripts
         n = sum(fmbench._compactions(x) for x in sids)  # also removes each transcript from claude's projects dir
         if "compaction" in faults:
             log.append({"kind": "compaction", "at": since(), "compactions": n, "ok": n >= 1})
@@ -521,7 +575,7 @@ def _goal_session(agent, base, key, work, model, budget, timeout, faults):
                 "said_done": bool(last.get("result")) and not err and fmhooks.claims_done(str(last["result"])), "secs": since(),
                 "ended_ok": not err, "resume_failed": sum(bool(f.get("resumed") and not f.get("resume_ok")) for f in log),
                 "guard_blocks": blocks}
-    return cost, err, log, info
+    return cost, err, log, info, activity
 
 
 def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=None, jobs=1):
@@ -551,10 +605,11 @@ def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=N
         key, work = _key(p, run, s["id"]), _work(p, run, agent, s["id"])
         shutil.rmtree(work, ignore_errors=True)
         with fmbudget.reserve("exam-arm", est(1), "a smaller --limit"):  # the day's spend may have moved since the last goal
-            cost, err, log, info = _goal_session(agent, os.path.join(_root(p), run, s["id"]), key, work, model, budget, timeout, faults)
+            cost, err, log, info, activity = _goal_session(agent, os.path.join(_root(p), run, s["id"]), key, work, model, budget, timeout, faults)
             fmbudget.record("exam-arm", cost, project=p.slug, detail=f"long {agent} {s['id']}")
         c.write_atomic(os.path.join(_root(p), run, "faults", agent, s["id"] + ".json"), json.dumps(log, indent=1))
         c.write_atomic(os.path.join(_root(p), run, "faults", agent, s["id"] + ".run.json"), json.dumps(info, indent=1))
+        c.write_atomic(os.path.join(_root(p), run, "faults", agent, s["id"] + ".activity.json"), json.dumps(activity, indent=1))
         if err:
             errors[s["id"]] = c.fit(c.plain(str(err)), 200)
     if agent in SESSIONS:  # T-2292: up to `jobs` goals at once, each in its own temp copy; the files written are per goal
@@ -639,6 +694,13 @@ def grade(p, run, agent):
                          checks_passed=len(set(key["checks"]) & set(ok)))
         g.update(_metrics(p, run, agent, g))
         goals.append(g)
+    for g in goals:  # T-2325: the goal's kept activity summary, None when none was kept
+        try:
+            with open(os.path.join(_root(p), run, "faults", agent, g["id"] + ".activity.json"), encoding="utf-8") as f:
+                a = json.load(f)
+        except (OSError, ValueError):
+            a = None
+        g["activity"] = a if g["answered"] and isinstance(a, dict) else None
     if not any(g["answered"] for g in goals):
         raise ValueError(f"no answers from {agent!r} in {run} (fm exam long run {run} --agent {agent})")
     try:  # a session arm's model, stamped at run so a Haiku line never decides; the zero-token arms have none
@@ -669,7 +731,7 @@ def cmd(p, args):
         r = (run(p, rest[0], agent, args.model, args.budget, args.timeout, faults, args.limit, args.jobs) if verb == "run" else grade(p, rest[0], agent))
         text = (f"{agent} answered {len(r['answered'])} goal(s) of {rest[0]}" if verb == "run" else
                 f"{agent} {rest[0]}: {r['true_done']}/{r['scenarios']} true done, {r['checks_passed']}/{r['checks']} checks, "
-                f"{r['regressions']} regressions")
+                f"{r['regressions']} regressions\n{went(r)}")
         return fmcli.out(args, r, text)
     raise ValueError("fm exam long gen [--from PATH] [--n N] | run RUN --agent oracle|empty|foreman|plain [--faults kill,pause,compaction,misleading] | "
                      "grade RUN --agent oracle|empty|foreman|plain")

@@ -379,6 +379,25 @@ class Long(ForemanTestCase):
         self.assertEqual((g["true_done"], g["false_done"], g["cost"], g["resumes_needed"], g["unfinished"]), (2, None, None, None, None), g)
         self.assertEqual(g["unknown"]["false_done"], 2, g)
 
+    def test_a_goal_keeps_its_activity_summary_and_grade_carries_it(self):  # T-2325
+        self.stub()
+        self.go("plain", limit=2)
+        path = os.path.join(self.fmlong._root(self.p), self.run_id, "faults", "plain", "T-1001.activity.json")
+        with open(path) as f:
+            raw = f.read()
+        a = json.loads(raw)
+        self.assertEqual((a["tools"], a["bash"], a["turns"]), ({"Bash": 2, "Read": 1}, {"fm task": 1, "ls": 1}, 3), a)
+        self.assertEqual(a["claim"], "done")
+        self.assertIsNone(a["events"])  # the stub leaves no Foreman state: unknown, not 0
+        self.assertNotIn("secret", raw)  # counts and the fitted claim only, nothing from the repo
+        g = self.grade(self.run_id, "plain")
+        self.assertEqual(g["goals"][0]["activity"], a)
+        self.assertIn("where the time went", self.fmlong.went(g))
+        self.assertIn("Bash 4", self.fmlong.went(g))
+        self.assertIn("fm task 2", self.fmlong.went(g))
+        self.fmlong.run(self.p, self.run_id, "oracle")
+        self.assertIsNone(self.grade(self.run_id, "oracle")["goals"][0]["activity"])  # no session: nothing kept
+
     def test_grade_reads_seeded_metrics_hours_guard_blocks_and_a_false_done(self):  # T-2263
         self.stub()
         self.go("plain", limit=0)  # a stamp only
@@ -549,7 +568,9 @@ if os.environ.get("STUB_NORESUME") and arg("--resume"):  # the killed turn never
     sys.exit(1)
 d = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", "p")
 os.makedirs(d, exist_ok=True)
-open(os.path.join(d, sid + ".jsonl"), "w").write("{}\n")
+use = lambda i, n, **inp: json.dumps({"type": "assistant", "message": {"id": i, "content": [{"type": "tool_use", "name": n, "input": inp}]}})
+open(os.path.join(d, sid + ".jsonl"), "w").write("\n".join([use("m1", "Bash", command="FOO=1 fm task new x --tier S"), use("m2", "Bash", command="/bin/ls -la secret-repo-text"),
+                                                              use("m3", "Read", file_path="/x/secret"), "{}", "not json"]) + "\n")
 said = "PAUSED" if "say PAUSED" in arg("-p") and not os.environ.get("STUB_NOPAUSE") else "done"
 print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.1, "result": said, "session_id": sid}))
 '''
