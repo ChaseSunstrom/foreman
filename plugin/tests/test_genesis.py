@@ -3299,11 +3299,11 @@ class GenesisFrame(ForemanTestCase):
     def test_the_report_lists_every_added_category(self):
         import fmgenesis
         fmgenesis.put(self.p, "gen-2/seed.md", SEED)
-        self.grow("exam-kind", "--name", "race", "--evidence", "two flaky fixes were races", "--measure",
-                  "unmeasurable: no race scenario yet")
+        self.grow("exam-kind", "--name", "deadlock", "--evidence", "two flaky fixes were deadlocks", "--measure",
+                  "unmeasurable: no deadlock scenario yet")  # T-2343: race is now a built-in kind, so grow refuses it
         fmgenesis.put(self.p, "report.md", "# Report\n\nDone.\n")
-        self.assertTrue(any("report.md" in x and "race" in x for x in self.problems()), self.problems())
-        fmgenesis.put(self.p, "report.md", "# Report\n\n## Categories Foreman added\n- F-1 exam-kind: race\n")
+        self.assertTrue(any("report.md" in x and "deadlock" in x for x in self.problems()), self.problems())
+        fmgenesis.put(self.p, "report.md", "# Report\n\n## Categories Foreman added\n- F-1 exam-kind: deadlock\n")
         self.assertEqual(self.problems(), [])
 
     def test_review_names_hashes_report_words_hand_added_and_unmeasurable(self):
@@ -3392,3 +3392,44 @@ class GenesisReadRecord(ForemanTestCase):
         tower_file(self.g.home(self.p), "exam.jsonl", "{}\n")
         tower_file(self.g.home(self.p), "gen-1/drift.md", "x\n")
         self.assertEqual(self.unread(), [])  # gen-0.md exists and was never put
+
+
+class JudgmentScore(ForemanTestCase):
+    """T-2343: gen-0 #2 (exhaustive thinking) and #8 (calibrated judgment) have exam kinds the scorecard grades."""
+    TWO = ("Before acting on anything non-trivial: list the readings of the request, every approach (including \"use "
+           "what exists\" and \"do less\"), the likely outcomes and failure modes of each, edge cases, and blast radius "
+           "(`fm graph blast`). Then generate several candidate fixes or designs, test them in parallel lanes, and "
+           "choose by evidence, not first instinct. Scale the depth to the risk, so an S task doesn't pay an L task's cost.")
+    EIGHT = ("It knows what it doesn't know: it states confidence, researches when unsure, and stops for me only when "
+             "something is irreversible and ambiguous. Everything else it decides and records.")
+
+    def test_gen0_two_and_eight_map_to_the_judgment_kinds(self):
+        import fmgenesis
+        two = fmgenesis._kinds("Exhaustive thinking", self.TWO)
+        eight = fmgenesis._kinds("Calibrated judgment", self.EIGHT)
+        for kind in ("exists", "ambiguous", "race"):
+            self.assertIn(kind, two)
+        for kind in ("fork", "door", "unsure", "clean"):
+            self.assertIn(kind, eight)
+        self.assertNotIn("door", two)
+        self.assertNotIn("race", eight)
+
+    def test_words_a_project_uses_for_other_things_map_to_none_of_them(self):
+        import fmgenesis
+        judged = ("race", "fork", "door", "unsure")
+        for name, text in (("Repo hosting", "fork the repo and open a pull request"), ("Stats", "a 95% confidence interval"),
+                           ("Games", "a race condition in the lobby, two lanes of traffic"),
+                           ("Rooms", "a door sensor and a lock")):
+            self.assertEqual([k for k in fmgenesis._kinds(name, text) if k in judged], [], name)
+
+    def test_the_scorecard_rows_for_two_and_eight_carry_those_kinds(self):
+        import fmgenesis
+        import fmcore as c
+        self.fm("init")
+        p = c.find_project(self.repo)
+        self.fm("genesis", "init", "--file", "-", input=f"go\n\n## 2. The capability spec\n\n2. **Exhaustive thinking.** {self.TWO}\n"
+                f"8. **Calibrated judgment.** {self.EIGHT}\n\n## 3. The tower\n")
+        rows = {r["n"]: r for r in fmgenesis.scorecard(p)["rows"]}
+        self.assertTrue({"exists", "ambiguous", "race"} <= set(rows[2]["kinds"]), rows[2]["kinds"])
+        self.assertTrue({"fork", "door", "unsure", "clean"} <= set(rows[8]["kinds"]), rows[8]["kinds"])
+        self.assertNotEqual(rows[8]["state"], "no exam kind")
