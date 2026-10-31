@@ -1490,18 +1490,34 @@ def _theirs(p, b, files, others=None):
     """T-0738: the files only another task edited (while this one was being worked): that task's to commit, even when
     this task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere)."""
     others = _others(p, b) if others is None else others
-    mine = set(c.task_touches(p, b.id)) | _claimed(p, b)
+    mine = set(c.task_touches(p, b.id)) | _claimed(p, b, others)
     return [f for f in files if f in others and f not in mine]
 
 
-def _claimed(p, b):
+def _claimed(p, b, others=None):
     """T-1122: the files this task says are its own, its scope and the paths its 'scope:' log reasons name: an edit
     made in the same command as the finish has no touched record yet, so the record alone can't say it's this task's."""
     named = [s.rstrip("/") for s in b.meta.get("scope") or []]
+    ok = lambda n: n and not n.startswith(("/", "..", ".foreman/")) and os.path.isfile(os.path.join(p.root, n))
+    out = {n for n in named if ok(n)}
+    b = c.find_brief(p, b.id) or b  # T-2251: the finish's --docs landed in the file after b was read
+    docs = b.section("Docs impact").strip()
+    soft = [] if docs.lower().startswith("none") else re.split(r"[\s,;()`*\[\]]+", docs)  # the docs it names
     for line in b.section("Log").splitlines():
         head = line.partition(" scope: ")[2].split(" — ")[0] if " scope: " in line else ""
-        named += [x.strip(" `'\"") for x in re.split(r",\s*|\s+and\s+", head) if x.strip()]
-    return {n for n in named if n and not n.startswith(("/", "..")) and os.path.isfile(os.path.join(p.root, n))}
+        soft += [x.strip(" `'\"") for x in re.split(r",\s*|\s+and\s+", head) if x.strip()]
+    others = _others(p, b) if others is None else others
+    for n in soft:
+        n = os.path.normpath(n.strip("'\"").rstrip(".:") or ".")
+        # an open task still editing it keeps it: committing now would take its half-done hunks
+        if ok(n) and all(_closed(p, t) for t in others.get(n, ())):
+            out.add(n)
+    return out
+
+
+def _closed(p, tid):
+    o = c.find_brief(p, tid)
+    return o is None or o.status in c.CLOSED
 
 
 def _landed(p, b):
