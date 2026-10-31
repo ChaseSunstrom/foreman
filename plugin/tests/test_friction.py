@@ -173,6 +173,52 @@ class Friction(ForemanTestCase):
         self.assertIn("SessionStart: session map — 1,900 chars avg × 4", big)
         self.assertNotIn("prompt hint", big)
 
+    def test_guard_example_drops_heredoc_bodies_and_adds_the_rules_hint(self):
+        # T-2280: the first 160 chars cut a heredoc before the line the guard judged
+        import fmcore as c
+        import fmhooks
+        claude = os.path.join(self.tmp, "claude")
+        os.makedirs(os.path.join(claude, "projects", "x"))
+        body = "\n".join(f"print({i})  # padding padding padding" for i in range(12))
+        cmd = f"cat > /tmp/t.py <<'EOF'\n{body}\nEOF\npython3 $D/run.py"
+        with open(os.path.join(claude, "projects", "x", "s2.jsonl"), "w") as f:
+            f.write(json.dumps({"type": "assistant", "cwd": self.repo, "sessionId": "s2", "message": {"content": [
+                {"type": "tool_use", "name": "Bash", "input": {"command": cmd}}]}}) + "\n")
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": c.iso(c.time.time() - 60), "kind": "guard_block", "session_id": "s2",
+                                "category": "state-direct", "tool": "Bash", "rule": "x",
+                                "target": "$D/run.py (not known before it runs)",
+                                "cmd": fmhooks._window(c.redact(cmd.replace("\n", " ")), "$D/run.py")}) + "\n")  # as the hook logs it
+            edit = "fm edit <<'EOF'\nSENTINEL-BODY\nEOF"
+            f.write(json.dumps({"ts": c.iso(c.time.time() - 30), "kind": "guard_block", "session_id": "s2",
+                                "category": "core", "tool": "Bash", "target": "edit-target",
+                                "cmd": edit.replace("\n", " ")}) + "\n")
+        with open(os.path.join(claude, "projects", "x", "s2.jsonl"), "a") as f:
+            f.write(json.dumps({"type": "assistant", "cwd": self.repo, "sessionId": "s2", "message": {"content": [
+                {"type": "tool_use", "name": "Bash", "input": {"command": edit}}]}}) + "\n")
+        out = self.fm("friction", env={"CLAUDE_CONFIG_DIR": claude}).stdout
+        self.assertIn("python3 $D/run.py", out)  # T-2296 review: found though the target sits past char 160
+        self.assertNotIn("print(3)", out)
+        self.assertNotIn("name it literally", out)  # today's guard allows it: no hint for a block already fixed
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:  # no transcript: unrechecked, the hint stays
+            f.write(json.dumps({"ts": c.iso(c.time.time() - 20), "kind": "guard_block", "session_id": "s3",
+                                "category": "state-direct", "tool": "Bash", "target": "$Z/q (not known before it runs)",
+                                "cmd": "python3 $Z/q"}) + "\n")
+        out = self.fm("friction", env={"CLAUDE_CONFIG_DIR": claude}).stdout
+        self.assertIn("name it literally", out)  # the rule's hint
+        self.assertIn("SENTINEL-BODY", out)  # a fm edit body is the judged target: kept
+
+    def test_give_up_lines_say_why_each_task_blocked(self):
+        # T-2295: the line named task ids only
+        import fmcore as c
+        p = c.find_project(self.repo)
+        for tid, why in (("T-0006", "can't reproduce"), ("T-0007", "needs the prod key")):
+            c.log_event(p, "focus", task=tid)
+            c.log_event(p, "task_block", task=tid, data={"reason": why})
+        out = self.fm("friction").stdout
+        self.assertIn("T-0006 (can't reproduce)", out)
+        self.assertIn("T-0007 (needs the prod key)", out)
+
     def test_the_digest_rechecks_guard_blocks_and_shows_the_trend(self):
         # T-0187: 'done since: T-0178' said nothing of whether the fix removed its friction. Each guard block is re-run
         # through today's guard (its full command from the session's transcript); a mark keeps the window's counts
