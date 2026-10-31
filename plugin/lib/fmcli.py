@@ -3419,7 +3419,8 @@ def cmd_log(args):
         raise UsageError(f"data must be JSON: {e}")
     if not isinstance(data, dict):
         data = {"value": data}
-    rec = c.log_event(p, args.event, task=args.task, data=data, session=session())
+    # T-2244: a session's note is always event "log"; its name rides in data.event, so no gate's event can be forged
+    rec = c.log_event(p, "log", task=args.task, data={**data, "event": args.event}, session=session())
     out(args, rec, None)
 
 
