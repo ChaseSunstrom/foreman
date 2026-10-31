@@ -1689,6 +1689,65 @@ class CapabilityMiss(HookCase):
         self.miss("bash: sox: command not found", agent_id="a1")
         self.assertEqual(c.ledger_events(self.project(), ["capability_miss"]), [])
 
+    # T-2370: past Bash: an unreadable file type, an unknown tool or MCP server, a refused plugin install
+    def tool_fail(self, tool, err, sid="s1", **extra):
+        ti = extra.pop("tool_input", {})
+        return self.ctx_of(self.hook("PostToolUseFailure", dict(
+            {"tool_name": tool, "tool_input": ti, "error": err, "session_id": sid}, **extra)))
+
+    def test_a_read_of_an_unsupported_file_type_names_fm_which_the_extension_once_per_session(self):
+        self.fm("init")
+        err = "This tool cannot read binary files. The file appears to be a binary .xlsb file."
+        read = lambda path, sid="s1", e=err, **x: self.tool_fail("Read", e, sid, tool_input={"file_path": path}, **x)
+        self.assertIn('fm which "xlsb"', read("/w/Book.XLSB"))
+        self.assertEqual(read("/w/other.xlsb"), "", "once per session")
+        self.assertIn('fm which "xlsb"', read("/w/Book.xlsb", sid="s2"))
+        for path in ("/w/noext", "/w/a.b$c", "/w/a." + "x" * 65):
+            self.assertEqual(read(path, sid="s7"), "", path)
+        self.assertEqual(read("/w/a.zzz", sid="s8", e="File does not exist."), "", "not a type problem")
+        self.assertEqual(read("/w/a.qqq", sid="s9", agent_id="a1"), "")
+        self.assertEqual([e["data"]["name"] for e in c.ledger_events(self.project(), ["capability_miss"])],
+                         ["xlsb", "xlsb"])
+        self.assertEqual(c.ledger_events(self.project(), ["capability_miss"])[0]["data"]["kind"], "extension")
+
+    def test_an_unknown_tool_or_mcp_server_names_fm_which_the_name(self):
+        self.fm("init")
+        self.assertIn('fm which "Frobnicate"', self.tool_fail("Frobnicate", "Error: No such tool available: Frobnicate"))
+        self.assertEqual(self.tool_fail("Frobnicate", "Error: No such tool available: Frobnicate"), "")
+        self.assertIn('fm which "mcp__acme__lookup"',
+                      self.tool_fail("mcp__acme__lookup", "No such tool available: mcp__acme__lookup"))
+        for name in ("a;rm", "$(x)", "n" * 65):
+            self.assertEqual(self.tool_fail("Odd", f"No such tool available: {name}", sid="s7"), "", name)
+        self.assertEqual(self.tool_fail("Zed", "No such tool available: Zed", sid="s8", agent_id="a1"), "")
+        kinds = {e["data"]["name"]: e["data"]["kind"] for e in c.ledger_events(self.project(), ["capability_miss"])}
+        self.assertEqual(kinds, {"Frobnicate": "tool", "mcp__acme__lookup": "tool"})
+
+    def test_a_non_command_miss_is_logged_on_no_task_so_it_never_blocks_a_finish(self):
+        self.fm("init")
+        self.task()
+        self.tool_fail("Read", "cannot read binary files", tool_input={"file_path": "/w/a.xlsb"})
+        (e,) = c.ledger_events(self.project(), ["capability_miss"])
+        self.assertIsNone(e["task"])
+
+    def test_a_guard_refusal_of_a_plugin_install_logs_the_target(self):
+        self.fm("init")
+        tid = self.task()
+        p = self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "claude plugin install a@m"},
+                                     "session_id": "s1"})
+        self.assertEqual(p.returncode, 2)
+        (e,) = c.ledger_events(self.project(), ["capability_miss"])
+        self.assertEqual((e["data"]["name"], e["data"]["kind"], e["task"]), ("a", "plugin", None))
+        self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "claude plugin install a@m"},
+                                 "session_id": "s1"})
+        self.assertEqual(len(c.ledger_events(self.project(), ["capability_miss"])), 1, "once per session")
+        self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "claude plugin install a b"},
+                                 "session_id": "s1"})
+        self.assertEqual(len(c.ledger_events(self.project(), ["capability_miss"])), 1, "no one target: nothing")
+        self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "claude plugin install z@m"},
+                                 "session_id": "s1", "agent_id": "a1"})
+        self.assertEqual(len(c.ledger_events(self.project(), ["capability_miss"])), 1, "a subagent's refusal stays out")
+        self.assertTrue(tid)
+
 
 class PreToolUse(HookCase):
     def pre(self, tool, tool_input):
