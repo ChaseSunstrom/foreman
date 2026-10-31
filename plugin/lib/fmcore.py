@@ -3719,7 +3719,10 @@ def held_elsewhere(b, lane=None):
 
 
 def lane_view(briefs, lane=None):
-    return [b for b in briefs if not held_elsewhere(b, lane)]
+    """T-2317: a batch member goes with its host, so a host held by another lane takes its open members with it."""
+    gone = {b.id for b in briefs if held_elsewhere(b, lane)}
+    by_id = {b.id: b for b in briefs}
+    return [b for b in briefs if b.id not in gone and not (b.meta.get("batched_in") in gone and batched(b, by_id))]
 
 
 def _last_log(b):
