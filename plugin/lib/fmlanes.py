@@ -833,9 +833,11 @@ def functions_changed(diff, per_file=8, max_files=40):
         else:
             extra[id(cur)] = extra.get(id(cur), 0) + 1
 
-    def flush():  # a hunk's own +/- def lines name it; else git's context (a changed def line would credit the one above)
+    def flush():  # git's context name, unless the hunk starts on a def line (then it names the one above), plus its defs
         if hunk and cur is not None:
-            for name in hunk["defs"] or ([(_DEF.search(hunk["ctx"]) or [0, hunk["ctx"]])[1]] if hunk["ctx"] else []):
+            if hunk["ctx"] and not hunk["first_def"]:
+                add((_DEF.search(hunk["ctx"]) or [0, hunk["ctx"]])[1])
+            for name in hunk["defs"]:
                 add(name)
     for line in diff.splitlines():
         if line.startswith("diff --git "):
@@ -846,9 +848,13 @@ def functions_changed(diff, per_file=8, max_files=40):
         elif line.startswith("@@ "):
             flush()
             h = _HUNK.match(line)
-            hunk = {"ctx": h.group(1).strip(), "defs": []} if h else None
-        elif hunk and line[:1] in "+-" and (d := _SIGNED_DEF.match(line)):
-            hunk["defs"].append(d.group(1))
+            hunk = {"ctx": h.group(1).strip(), "defs": [], "first_def": None} if h else None
+        elif hunk and line[:1] in "+-":
+            d = _SIGNED_DEF.match(line)
+            if hunk["first_def"] is None:
+                hunk["first_def"] = bool(d)
+            if d:
+                hunk["defs"].append(d.group(1))
     flush()
     for v in out.values():
         if extra.get(id(v)):

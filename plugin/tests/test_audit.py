@@ -185,6 +185,13 @@ class DesignLens(HookCase):
         self.assertEqual(got["n.py"][:2], ["g1", "g2"])
         self.assertIn("+3 more", fmlanes.functions_line(got))
 
+    def test_a_hunk_names_git_context_and_its_defs_unless_it_starts_on_a_def_line(self):  # T-2312: never hide an edit
+        import fmlanes
+        both = ("diff --git a/m.py b/m.py\n@@ -4 +4,3 @@ def f():\n-    return 1\n+    return 2\n+\n+def g():\n")
+        self.assertEqual(fmlanes.functions_changed(both)["m.py"], ["f", "g"])
+        sig = "diff --git a/m.py b/m.py\n@@ -3 +3 @@ def prev():\n-def f(a):\n+def f(a, b):\n"
+        self.assertEqual(fmlanes.functions_changed(sig)["m.py"], ["f"])
+
     def test_a_secret_in_a_hunk_header_reaches_neither_the_brief_nor_the_merge_output(self):  # T-2312 review
         import fmlanes
         key = "sk-live-9f8e7d6c5b4a39281706"
