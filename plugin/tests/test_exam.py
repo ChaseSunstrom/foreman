@@ -1387,3 +1387,82 @@ class ToolGrant(JudgmentStub, ForemanTestCase):
                 "tests it, and uses it. Install grants are queued for me, never self-granted.")
         self.assertIn("tool-grant", fmgenesis._kinds("Getting the tools it lacks", five))
         self.assertNotIn("tool-grant", fmgenesis._kinds("Setup", "a one-line install script"))
+
+
+class ProofKinds(JudgmentStub, ForemanTestCase):
+    """T-2394 (Mission 7, #6 and #10): proof (claims each proven by a hidden check, one no local run can prove that must
+    be labelled) and beyond (non-code deliverables graded by running them), with false proofs counted."""
+
+    def says_verified(self, run, s):
+        """An answer that calls every claim verified and fixes nothing: the false-proof column's foil."""
+        import fmexam
+        p = c.find_project(self.repo)
+        os.makedirs(fmexam._answers(p, run, "plain"), exist_ok=True)
+        key = self.key(s)
+        with open(os.path.join(fmexam._answers(p, run, "plain"), f"{s['id']}.json"), "w") as f:
+            json.dump({"findings": [], "notes": ["all verified"], "done": True, "confidence": 99,
+                       "verified": key["claims"]}, f)
+        shutil.copytree(s["repo"], os.path.join(fmexam.root(p), run, "work", "plain", s["id"]),
+                        ignore=shutil.ignore_patterns(".git"), dirs_exist_ok=True)
+
+    def test_kind_proof_oracle_proves_and_labels_empty_does_neither_and_says_verified_false_proves(self):
+        r = self.gen("--kind", "proof")
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        s = r["scenarios"][0]
+        key = self.key(s)
+        self.assertEqual([d["kind"] for d in key["defects"]], ["bug", "vuln", "docs"])
+        self.assertEqual(key["claims"], ["bug", "vuln", "docs", "production"])
+        self.assertIn("production", key["request"])
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual((self.closed(o), o["false_proofs"]), ([s["id"]], 0))
+        e = self.fm_json("exam", "run", r["run"], "--agent", "empty")
+        self.assertEqual((self.closed(e), e["false_proofs"]), ([], 0))
+        self.says_verified(r["run"], s)
+        g = self.fm_json("exam", "grade", r["run"], "--agent", "plain")
+        self.assertEqual(g["false_proofs"], 4)  # three unfixed claims and the unprovable one, each said verified
+        self.assertEqual(self.closed(g), [])
+
+    def test_kind_proof_nine_per_kind_three_held_out_in_every_language(self):
+        import fmexam
+        res = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "9", "--kind", "proof")
+        self.assertEqual((len(res["scenarios"]), sum(x["split"] == "holdout" for x in res["scenarios"])), (9, 3))
+        for lang in fmexam.LANGS:
+            self.assertEqual(len(self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", lang, "--kind",
+                                              "proof")["scenarios"]), 1, lang)
+
+    def test_kind_beyond_each_deliverable_is_graded_by_running_it(self):
+        import fmexam
+        seen = {}
+        for seed in range(3, 12):
+            for s in self.fm_json("exam", "gen", "--seed", str(seed), "--per-kind", "3", "--lang", "python", "--kind",
+                                  "beyond")["scenarios"]:
+                seen.setdefault(self.key(s)["beyond"], (str(seed), s))
+            if set(seen) == set(fmexam.BEYOND):
+                break
+        self.assertEqual(set(seen), set(fmexam.BEYOND))
+        for what, (seed, s) in seen.items():
+            with self.subTest(what=what):
+                run = s["id"] and os.path.basename(os.path.dirname(os.path.dirname(s["repo"])))
+                key, base = self.key(s), os.path.dirname(s["repo"])
+                self.assertTrue(fmexam.passes(base, key, key["defects"][0], os.path.join(base, "hidden", "clean")))
+                self.assertFalse(fmexam.passes(base, key, key["defects"][0], s["repo"]))
+        what, (seed, s) = next(iter(seen.items()))
+        r = self.gen("--kind", "beyond")
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "oracle")), [r["scenarios"][0]["id"]])
+        e = self.fm_json("exam", "run", r["run"], "--agent", "empty")
+        self.assertEqual((self.closed(e), e["false_proofs"]), ([], 0))
+        self.says_verified(r["run"], r["scenarios"][0])
+        self.assertGreater(self.fm_json("exam", "grade", r["run"], "--agent", "plain")["false_proofs"], e["false_proofs"])
+
+    def test_kind_beyond_a_signal_made_green_by_editing_the_signal_is_no_fix(self):
+        import fmexam
+        for seed in range(3, 30):
+            s = self.fm_json("exam", "gen", "--seed", str(seed), "--per-kind", "1", "--lang", "python", "--kind",
+                             "beyond")["scenarios"][0]
+            if self.key(s)["beyond"] == "signal":
+                break
+        key, base = self.key(s), os.path.dirname(s["repo"])
+        with open(os.path.join(s["repo"], "check_health.sh"), "w") as f:
+            f.write("exit 0\n")
+        self.assertFalse(fmexam.passes(base, key, key["defects"][0], s["repo"]))
