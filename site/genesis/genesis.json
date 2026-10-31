@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-31T04:46:50Z",
- "rev": "ea94b84a",
+ "updated": "2026-10-31T06:07:04Z",
+ "rev": "f03acae6",
  "capabilities": [
   {
    "n": 1,
@@ -4666,6 +4666,7 @@
  },
  "not_yet": 0,
  "not_yet_open": 0,
+ "unproven": 347,
  "next": {
   "stage": "critique",
   "gen": 1,
