@@ -3566,6 +3566,7 @@ def _stop(pl):
         nudge = None if reload_due else _headless_wait(pl) if oneoff else (
             _evidence_gate(p, act, pl, g, closed) or _clauses_gate(p, pl, g, closed) or _safe_goal_gate(p, pl, g, sid, closed)
             or _claims_gate(pl, g)
+            or _proof_claim_gate(p, act, pl, g)
             or _question_nudge(pl, p)
             or _headless_wait(pl))
         reason = nudge or (None if oneoff or "drive" in c.ablated() else _drive(p, sd, briefs, pl, g))  # T-1375
@@ -3620,6 +3621,8 @@ def _stop(pl):
             log_error("Stop", _tb())
     if promised:
         out["systemMessage"] = f"Foreman captured the reply's promise(s) for later: {', '.join(promised)}"
+    if pl.get("_fm_label") and not reason:  # T-2392: a kept unproven claim, labelled where the user reads the reply
+        out["systemMessage"] = "\n".join(filter(None, [out.get("systemMessage"), pl["_fm_label"]]))
     if reason:
         out.update(decision="block", reason=reason)
     elif reloading:
@@ -3840,6 +3843,49 @@ def _claims_gate(pl, g):
     g["claims"] = (g["claims"] + [key])[-50:]
     return (f"Foreman: the reply says \"{m.group(0)}\", but {why} this turn. Run the tests and quote the result, or "
             "say they weren't run.")
+
+
+_IF_CLAUSE = c.lazy(r"(?i)\b(?:if|when|once|unless|until|should|would|could|might|whether|expect(?:ed)?|aim(?:ing)? for|"
+                    r"hope|goal is)\b[^.!?\n]{0,40}$")  # T-2392: "if it ends up 3x faster": still to come, not a claim
+_UNPROVEN_SAID = c.lazy(r"(?i)\bunproven\b|\bunverified\b|\bnot (?:yet )?(?:measured|verified|proven|benchmarked|checked)\b")
+
+
+def _proof_claim_gate(p, act, pl, g):
+    """T-2392: a reply claiming a proof kind (a measured number, accurate docs, a working migration, a UI that renders
+    right, a release) with no green run of that kind on the active task or this turn: held once per kind and session,
+    naming the claim and the command that proves it. Kept after the hold (still no run, no 'unproven'): labelled for the
+    user (pl['_fm_label'], the Stop's systemMessage) and recorded on the task (unproven_claims: its log, the rollup's
+    'claimed' row, the commit trailer). The regexes run first; the brief and the transcript are read only on a match."""
+    msg = pl.get("last_assistant_message") or ""
+    hit = None
+    for kind, (rx, clear, upgrade) in c.PROOF_CLAIMS.items():
+        m = next((x for x in rx.finditer(msg) if not _NEG.search(msg[max(0, x.start() - 40):x.start()])
+                  and not _IF_CLAUSE.search(msg[max(0, x.start() - 60):x.start()])), None)
+        if m:
+            hit = (kind, m.group(0), clear, upgrade)
+            break
+    if not hit or not act or pl.get("stop_hook_active") or _UNPROVEN_SAID.search(msg):
+        return None
+    kind, said, clear, upgrade = hit
+    if c.claim_backed(act, kind):
+        return None
+    calls = _turn_calls(pl["transcript_path"]) if pl.get("transcript_path") else []
+    if any(x[0] == "Bash" and not x[3] and clear.search(str(x[1].get("command") or "")) for x in calls):
+        return None  # this turn ran it, green
+    key = f"{pl.get('session_id')}:proof:{kind}"
+    said = c.fit(c.plain(said), 80)
+    if key not in g.setdefault("claims", []):
+        g["claims"] = (g["claims"] + [key])[-50:]
+        return (f"Foreman: the reply says \"{said}\" ({kind}), but no {kind} run backs it on {act.id} or this turn. "
+                f"Prove it ({upgrade.replace('{id}', act.id)}), or say it is unproven.")
+    pl["_fm_label"] = f"Foreman: unproven ({kind}): \"{said}\" has no {kind} run on {act.id}"
+    b = c.find_brief(p, act.id)
+    if b and kind not in (b.meta.get("unproven_claims") or []):
+        b.meta["unproven_claims"] = sorted(set(b.meta.get("unproven_claims") or []) | {kind})
+        b.append_log(f"unproven claim ({kind}): {said}")
+        c.save_brief(p, b)
+        c.log_event(p, "unproven_claim", task=b.id, data={"kind": kind}, session=pl.get("session_id"))
+    return None
 
 
 def _clauses_gate(p, pl, g, closed=()):

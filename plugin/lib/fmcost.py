@@ -1143,6 +1143,13 @@ def cmd_pr(args):
         lines += ["", "### Bench"] + bench
     claims = [x for x in b.section("Claims").splitlines() if x.strip()]
     lines += ["", "### Claims"] + [c.plain(x) for x in claims] if claims else []  # T-0614
+    try:  # T-2392: the unproven rollup's kinds for this task, each with the command that proves it
+        import fminfra
+        needs = c.proof_needs(p, b, fminfra.touched(p, b))
+    except Exception:
+        needs = []
+    lines += ["", "### Unproven"] + [f"- {n['kind']}: {c.plain(n['why'])[:160]} → `{n['upgrade']}`" for n in needs] \
+        if needs else []
     lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
     if lesson:
         lines += ["", "### Notes", f"- {c.plain(lesson)}"]
