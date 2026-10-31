@@ -1650,9 +1650,13 @@ def _named(reply, tag, lines):
     reply = re.sub(rf"\*\*({tag}|WHY):\*\*", r"\1:", reply)
     out = []
     for m in re.finditer(rf"^[\s>*-]*{tag}:(.*)$(?:\n[\s>*-]*WHY:(.*)$)?", reply, re.M):
-        q = _norm(c.plain(m[1])).strip(" \"'.…")
-        out.append(([s for s in lines if q in _norm(s)] if len(q) >= 8 else [], c.fit(" ".join(c.plain(m[2] or "").split()), 160),
-                    q))
+        # T-2236: a reader writes a newline as a literal backslash-n; each piece must name a line, the hits are the union,
+        # last piece first: it holds the finding, not the heading above it
+        qs = [_norm(c.plain(p)).strip(" \"'.…") for p in m[1].split("\\n")]
+        hits = [[s for s in lines if q in _norm(s)] for q in qs if len(q) >= 8]
+        ok = bool(hits) and all(hits)
+        out.append((list(dict.fromkeys(s for h in hits[::-1] for s in h)) if ok else [], c.fit(" ".join(c.plain(m[2] or "").split()), 160),
+                    " / ".join(qs)))
     return out
 
 

@@ -1623,6 +1623,16 @@ class GenesisRead(ForemanTestCase):
         r, _ = self.put(doc, "FAIL: Initiative now has 7 cells filled and no ideas\nWHY: dropped cells")
         self.assertIn("✗ T-2223 re-filed coverage.md", r.stderr)
 
+    def test_a_quote_spanning_lines_with_a_literal_newline_names_them(self):
+        # T-2236: the reader writes a newline as backslash-n; "signalsn- fm" matched nothing and failed the read closed
+        doc = "# Critique\n\n## Coverage\n- find × CLI: F: a shim to help the user with things\n"
+        r, _ = self.put(doc, "FAIL: ## Coverage\\n- find × CLI: F: a shim to help the user\nWHY: shim")
+        self.assertIn("✗ - find × CLI", r.stderr)
+        self.assertNotIn("names no line", r.stderr)
+        r, _ = self.put(doc, "FAIL: ## Coverage\\n- nothing like this line anywhere\nWHY: shim")
+        self.assertIn("names no line", r.stderr)
+        self.assertEqual(r.returncode, 1)
+
     def test_a_stray_quote_is_shown_so_the_writer_can_see_what_it_misquoted(self):
         # T-2229: "? a line coverage.md doesn't hold" hid the quote, so 8 strays a read couldn't be told apart
         r, _ = self.put(self.COV, "FAIL: - plan row 11: the planner\nWHY: templated")
