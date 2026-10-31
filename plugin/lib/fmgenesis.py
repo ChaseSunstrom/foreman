@@ -2076,6 +2076,7 @@ def _seed(p, n, agent):
 CONSTRAINT = re.compile(r"^\s*(?:[-*]\s+)?((?:MUST|NEVER):.*?)\s*$")
 DONE_WHEN = re.compile(r"^\s*(?:[-*]\s+)?(DONE-WHEN:.*?)\s*$", re.M)
 CLEAN = re.compile(r"^Verdict: clean\s*$", re.M)
+CLEAN_VERDICT = re.compile(r"^[ \t*]*CLEAN[*. \t\r]*$", re.M)  # T-2180: a cold reader's whole-line verdict, not CLEANUP or CLEAN-ish
 DRIFT_CHILD = ("You check one generation's Seed of a self-improvement tower against the user's own text for it (gen-0): "
                "its goal line, its MUST, NEVER and DONE-WHEN lines. The Seed must serve them. List every Seed line that "
                "contradicts, weakens, widens or quietly drops one of them, one per line as 'DRIFT: <the Seed line, "
@@ -2347,7 +2348,7 @@ def _read1(p, name, text, outline="", label="", legacy=()):
         named = _named(reply, "FAIL", lines)
         stray = sum(not h for h, *_ in named)
         why = (f"it named {stray} line(s) {label} doesn't hold" if stray else "" if named
-               else "" if re.search(r"^[\s*]*CLEAN\b", reply, re.M) else "no CLEAN or FAIL line came back")
+               else "" if CLEAN_VERDICT.search(reply) else "no CLEAN or FAIL line came back")
     occ = _context(text)
     keys = lambda hs: set().union(set(), *(occ.get(h, set()) for h in hs))
     hits = [(h, w, keys(h)) for h, w, *_ in named if h]  # a quote several lines hold carries only if all are accepted
@@ -2449,7 +2450,7 @@ def drift(p, n):
             found += [f"seed.md (cold read): {s}" for s in hits]
             read = (f"{len(hits)} drifted line(s)" if hits  # fail closed: only a plain CLEAN with no stray quote passes
                     else f"didn't count: it named {stray} line(s) the seed doesn't hold" if stray
-                    else "clean" if re.search(r"^[\s*]*CLEAN\b", reply, re.M) else "didn't count: no CLEAN or DRIFT line")
+                    else "clean" if CLEAN_VERDICT.search(reply) else "didn't count: no CLEAN or DRIFT line")
     verdict = "drifted" if found else "clean" if read == "clean" else "unread"
     out = [f"# Drift — gen-{n}", "", f"Verdict: {verdict}", "",
            f"Checked {', '.join(files)} against gen-0's {len(allowed)} MUST/NEVER line(s); cold read: {read}.", "",
