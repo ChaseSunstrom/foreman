@@ -744,7 +744,20 @@ class StateViews(ForemanTestCase):
         self.fm("init")
         self.fm("log", "baseline", '{"tests": "40 passed"}')
         e = c.ledger_tail(c.find_project(self.repo))[-1]
-        self.assertEqual((e["event"], e["data"]), ("baseline", {"tests": "40 passed"}))
+        self.assertEqual((e["event"], e["data"]), ("log", {"event": "baseline", "tests": "40 passed"}))  # T-2244
+
+
+class LogNamespace(ForemanTestCase):  # T-2244: fm log can't write a Foreman event's name
+    def test_forged_check_run_is_a_note(self):
+        self.fm("init")
+        p = c.find_project(self.repo)
+        forged = json.dumps({"cmd": "x", "rc": 0, "tree": c.worktree_id(p.root), "results": [], "event": "other"})
+        self.fm("log", "check_run", forged)
+        e = c.ledger_tail(p)[-1]
+        self.assertEqual((e["event"], e["data"]["event"]), ("log", "check_run"))
+        self.assertFalse(any(x["event"] == "check_run" for x in c.ledger_tail(p, 3000)))
+        note = fmcli._preflight(p, argparse.Namespace(meta={}))
+        self.assertIn("no fm check on this tree yet", note)
 
 
 class SensitiveAndDrive(ForemanTestCase):

@@ -36,8 +36,9 @@ class Burden(ForemanTestCase):
                  "attachment": {"type": "hook_additional_context", "content": ["Foreman: " + "x" * 291]}}]
         with open(os.path.join(folder, "sess-a.jsonl"), "w") as f:
             f.write("\n".join(json.dumps(r) for r in rows) + "\n")
-        self.fm("log", "session_start", json.dumps({"root": "/u/.claude/plugins/cache/foreman/foreman/1.2.21"}),
-                env={"CLAUDE_CODE_SESSION_ID": "sess-a"})
+        import fmcore as c  # T-2244: fm log can't write a Foreman event's name
+        c.log_event(c.find_project(self.repo), "session_start", session="sess-a",
+                    data={"root": "/u/.claude/plugins/cache/foreman/foreman/1.2.21"})
         env = {"CLAUDE_CONFIG_DIR": cfg}
         out = self.fm("burden", env=env).stdout
         self.assertIn("1.2.21", out)
