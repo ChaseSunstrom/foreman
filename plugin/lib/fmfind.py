@@ -3,6 +3,7 @@ that doesn't exist, imports no manifest declares, SQL built from a parameter, li
 randomness in tests, credentials. Each is a candidate until proven; every finder reports nothing on every clean exam
 render (test_find)."""
 import bisect
+import hashlib
 import io
 import json
 import os
@@ -130,6 +131,9 @@ class Src:
     def own(self, d):
         """The words of d's own lines: the def line and the lines indented under it, nested functions included; code
         after it at its own indent or less isn't."""
+        return _words("\n".join(self.rows(d)))
+
+    def rows(self, d):
         rows = [self.lines[d[0]]]
         for j in range(d[0] + 1, len(self.lines)):
             row = self.lines[j]
@@ -137,7 +141,7 @@ class Src:
             if row.strip() and ind <= d[1] and j not in self.instr and not re.match(r"\s*(?:[})\]]|end\b)", row):
                 break
             rows.append(row)
-        return _words("\n".join(rows))
+        return rows
 
 
 def _in_str(line, pos):
@@ -455,8 +459,9 @@ def _deps(root, files, code, rels):
     return out
 
 
-def scan(root, prec=None):
-    """(files scanned, findings); ranked best first when prec (each finder's precision, a dict, maybe empty) is given."""
+def scan(root, prec=None, proven=None, home=None):
+    """(files scanned, findings); ranked best first when prec (each finder's precision, a dict, maybe empty) is given;
+    proven and home as in rank (home: what find_key paths are relative to, default root)."""
     files, rels, gen = _files(root)
     code = [Src(r, t) for r, t in files if os.path.splitext(r)[1].lower() in LANG]
     import fmsecrets
@@ -469,7 +474,8 @@ def scan(root, prec=None):
         out += [_found("secrets", "secret", rel, n, "", f"credential: {kind}")
                 for n, kind in fmsecrets.scan_text(text, config=bool(fmsecrets.CONFIG.search(rel)))]
     out = sorted(out, key=lambda f: (f["file"], f["line"], f["finder"]))
-    return len(files), out if prec is None else rank(out, dict(files), prec)
+    return len(files), out if prec is None else rank(
+        out, dict(files), prec, proven, os.path.realpath(root), home or os.path.realpath(root), {s.rel: s for s in code})
 
 
 def find(root):
@@ -481,22 +487,91 @@ FLOOR, BAR = 0.3, 0.1  # a finder whose precision is under FLOOR is muted; a sco
 HALF_LIFE = 180  # days: an outcome weighs half as much per HALF_LIFE, so a mute lifts once its drops age (7: two weeks)
 
 
-def rank(found, texts, prec):
-    """Best first, each given score = severity x reach x its finder's precision (default 0.5, the prior). Reach is 1 plus
-    up to 0.5 for the other files naming the symbol, so it never lifts slow or docs past a vuln or a bug. A finder under
-    FLOOR is muted and a score under BAR held back: both sort last, still listed. ponytail: proof and effort are 1 (every
-    finding is a lead and no fix is sized yet); a failing test or a hunk estimate can feed them later."""
+PROOF = 1.25  # T-2132: fm prove proved this lead and its function is unchanged
+
+
+def _lead_fn(texts, f, srcs, memo):
+    """(hash, line span) of the lead's enclosing function, or of its own line and 0 when it has none; (None, 0) when the
+    file's text is unavailable (a generated file). Parsed, never run; srcs and memo cache per file and per function, so
+    many leads in one function cost one pass."""
+    rel, t = f["file"], texts.get(f["file"])
+    if t is None:
+        return None, 0
+    if rel not in srcs:
+        srcs[rel] = Src(rel, t) if os.path.splitext(rel)[1].lower() in LANG else None
+    s = srcs[rel]
+    d = s and s.fn(f["line"] - 1)
+    if d:
+        if (rel, d[0]) not in memo:
+            rows = s.rows(d)
+            while len(rows) > 1 and not rows[-1].strip():  # blank lines between functions aren't the function's
+                rows.pop()
+            memo[rel, d[0]] = (hashlib.sha1("\n".join(rows).encode("utf-8", "replace")).hexdigest()[:16], len(rows))
+        return memo[rel, d[0]]
+    lines = memo.setdefault(rel, t.split("\n"))
+    if not 0 < f["line"] <= len(lines):
+        return None, 0
+    return hashlib.sha1(lines[f["line"] - 1].encode("utf-8", "replace")).hexdigest()[:16], 0
+
+
+def proof_hash(texts, f):
+    """What fm prove records for a proven lead: a hash of its own function's source, so an edit elsewhere keeps it; None
+    when the file's text is unavailable (nothing to record)."""
+    return _lead_fn(texts, f, {}, {})[0]
+
+
+def rank(found, texts, prec, proven=None, root=".", home=".", srcs=None):
+    """Best first, each given score = severity x reach x its finder's precision (default 0.5, the prior) x effort x proof.
+    Reach is 1 plus up to 0.5 for the other files naming the symbol, so it never lifts slow or docs past a vuln or a bug.
+    Effort is max(0.5, 1 - span/320) of the lead's function (a small fix first; 1 with no function). Proof is PROOF
+    when proven (find_key -> proof_hash, from fm prove) still matches, but a proven lead's score stays under 0.98 x
+    every unproven lead of a higher severity kind in the run (its own unlifted score, if higher, stands). A finder under
+    FLOOR is muted and a score under BAR held back: both sort last, still listed."""
     words = {rel: _words(t) for rel, t in texts.items()}
-    out = []
-    for f in found:
+    rows, srcs, memo = [], {} if srcs is None else srcs, {}
+    for key, f in keyed(found, root, home):
         sym = (re.findall(r"\w+[?!]?", f["symbol"]) or [""])[0]
         n = sum(1 for rel, w in words.items() if rel != f["file"] and sym in w) if sym else 0
         reach = 1 + 0.5 * min(n, 10) / 10
         fp = prec.get(f["finder"], 0.5)
-        score = round(SEVERITY.get(f["kind"], 0.2) * reach * fp, 3)
+        sev = SEVERITY.get(f["kind"], 0.2)
+        h, span = _lead_fn(texts, f, srcs, memo)
+        base = sev * reach * fp * max(0.5, 1 - span / 320)
+        rows.append((f, sev, fp, reach, base, bool(proven) and h is not None and proven.get(key) == h))
+    low = {}  # severity -> its lowest unproven score
+    for f, sev, fp, reach, base, won in rows:
+        if not won:
+            low[sev] = min(low.get(sev, base), base)
+    out = []
+    for f, sev, fp, reach, base, won in rows:
+        raw = base
+        if won:
+            raw = max(base, min([base * PROOF] + [0.98 * v for s, v in low.items() if s > sev]))
+        score = round(raw, 3)
         held = "muted" if fp < FLOOR else "below the bar" if score < BAR else None
         out.append({**f, "score": score, "reach": reach} | ({"held": held} if held else {}))
     return sorted(out, key=lambda f: (bool(f.get("held")), -f["score"], f["file"], f["line"]))
+
+
+PROOFS = "find-proofs.json"  # state: {find_key: proof_hash}, written only by fm prove through write_atomic
+
+
+def proofs(p):
+    try:
+        with open(os.path.join(p.dir, PROOFS)) as fh:
+            got = json.load(fh)
+        return {k: v for k, v in got.items() if isinstance(v, str)}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def record(p, proven):
+    """Keep fm prove's proven leads ({find_key: proof_hash}) for rank; the newest 1000 stay."""
+    with c.lock(p.dir):
+        got = proofs(p)
+        for k in proven:
+            got.pop(k, None)
+        c.write_atomic(os.path.join(p.dir, PROOFS), json.dumps(dict(list((got | proven).items())[-1000:])))
 
 
 def precision(p):
@@ -601,7 +676,7 @@ def cmd_find(args):
         return 2
     try:
         prec = (precision(p) if p else {}) if ranked else None
-        n, found = scan(root, prec)
+        n, found = scan(root, prec, proofs(p) if ranked and p else None, p and os.path.realpath(p.root))  # keys use realpaths, as fm prove's do
     except Exception as e:  # noqa: BLE001 — exit 1 means findings; a scan that dies must read as an error (2)
         print(f"fm find: the scan failed under {root}: {type(e).__name__}: {c.plain(str(e))[:300]}", file=sys.stderr)
         return 2
