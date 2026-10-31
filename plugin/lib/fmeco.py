@@ -27,6 +27,12 @@ def capture_once(p, text, type_, source, key=None, trigger=None, bound=None, tri
         low = fmtriggers.noisy(p, trigger) if source != "user" else None
     except Exception:
         low = None
+    try:  # T-2355: the trigger's row (route, budget, burst); a failure files as before
+        row = fmtriggers.row(p, trigger) if source != "user" else None
+        held = (f"muted (fm triggers set {trigger} --route inbox unmutes it)" if row and row["route"] == "muted"
+                else fmtriggers.over_budget(p, trigger, row) if row else None)
+    except Exception:
+        row = held = None
     import fmtrials  # T-2351: every firing of a signal is a sighting of its key, the trial's evidence
     # T-2351: trial_key when the dedupe key changes per firing (a CI run URL, a sha); else the key, else the full first line
     first = (text.splitlines() or [""])[0]
@@ -38,13 +44,30 @@ def capture_once(p, text, type_, source, key=None, trigger=None, bound=None, tri
         for b in c.load_briefs(p, include_archive=bool(key)):                   # never text inside a quoted issue
             if line.search(b.section("Raw request")) if key else (b.status not in c.CLOSED and b.title == title):
                 return b, False
+        if held:  # T-2355: the firing joins the trigger's newest open capture instead of filing another; a muted
+            # trigger joins its newest capture even when closed, so a mute files nothing after its first
+            muted = row["route"] == "muted"
+            same = sorted((x for x in c.load_briefs(p) if x.meta.get("trigger") == trigger
+                           and (muted or x.status not in c.CLOSED)),
+                          key=lambda x: (x.status not in c.CLOSED, str(x.meta.get("created") or "")))
+            if same:
+                b = same[-1]
+                b.append_log(f"fired again ({held}): {c.fit(c.defang(c.plain(first)), 120)}")
+                c.save_brief(p, b)
+                c.log_event(p, "capture_joined", task=b.id, data={"trigger": trigger, "why": held[:80]})
+                return b, False
         if low:
             text += (f"\n(Filed at low priority: trigger {trigger} has precision {low[0]:.2f} over its last {low[1]} "
                      f"closed captures; fm triggers shows the record.)")
         b = fmcli._create(p, title, type_, c.guess_tier(type_, text), "captured", raw=text, source=source,
                           priority="low" if low else "normal")
-        if tk:  # T-2351: what its trial is keyed on when it closes
-            b.meta.update(trigger=trigger, trigger_key=tk)
+        if source != "user":  # T-2351: what its trial is keyed on; T-2355: which trigger's open capture it is
+            b.meta.update(trigger=trigger, **({"trigger_key": tk} if tk else {}))
+            try:  # T-2355: a queue- or lane-routed trigger's capture starts only in a lane, never on main
+                if fmtriggers.lane_only(p, trigger, b.tier, type_):
+                    b.meta["lane_only"] = True
+            except Exception:
+                pass
             c.save_brief(p, b)
         c.log_event(p, "capture", task=b.id, data={"source": source, "type": type_, "trigger": trigger,
                                                    **({"from": bound} if bound else {})},  # T-2349: the task it follows

@@ -575,6 +575,19 @@ def check_backup(home):
 NO_CC = "no Claude Code here (claude isn't on PATH): nothing to check"  # T-2174: CC is one surface, not a requirement
 
 
+def check_muted_triggers(p):
+    """T-2355: a muted trigger files nothing, so each one is named here with the command that brings it back."""
+    import fmtriggers
+    if not p:
+        return Result("muted triggers", "PASS", "no project here")
+    names = set(fmtriggers._load(p, "trigger-routes.json")) | set(fmtriggers._load(p, "trigger-table.json"))
+    muted = sorted(t for t in names if fmtriggers.row(p, t)["route"] == "muted")
+    if not muted:
+        return Result("muted triggers", "PASS", "no trigger is muted")
+    return Result("muted triggers", "WARN", "; ".join(f"{t} is muted (fm triggers set {t} --route inbox)" for t in muted[:4])
+                  + (f"; … {len(muted) - 4} more (fm triggers)" if len(muted) > 4 else ""))
+
+
 def check_steers(p, run=False):
     """T-2167: in a Genesis tower project every rule cited from a user steer has a check (--full runs them; fm genesis
     sweep always does). A FAIL, so fm check stops a commit that leaves a steer rule unchecked; a rule whose
@@ -2397,6 +2410,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_product(here))
     results.append(check_enforce(here))
     results.append(check_steers(here, run=full))
+    results.append(check_muted_triggers(here))
     results.append(check_idle_stops(here))
     results.append(check_usage_burn())
     results.append(check_version_skew(c.all_projects()))

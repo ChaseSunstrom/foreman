@@ -58,6 +58,8 @@ USER_ONLY_FM = {
                            "them, with the network, now and from then on", "fm prove PATH --yes-run"),  # T-2122, T-2202
     "mandate": (("set", "off"), "fm mandate set and fm mandate off are the user's to run: they end, overwrite or renew "
                                 "the standing mandate they gave", "fm mandate set \"<text>\""),  # T-2252
+    "triggers": ("set", "fm triggers set is the user's to run: a queue or lane route starts work no one asked for, and "
+                        "a mute or budget silences a signal", "fm triggers set NAME --route inbox"),  # T-2355
 }
 def _user_only_hit(word, arg):
     """A word matches itself; a --flag also matches argparse's abbreviations (--y, --ye) and --flag=value.

@@ -1,7 +1,9 @@
 """fm triggers (T-2276): which triggers earn their keep. Each capture event names its trigger (capture_once's trigger=,
 else the event's source); a captured brief's final status says whether it was worth filing. A trigger whose recent
-closed captures were mostly dropped files at low priority (demote, never silence). Stdlib only; reads the ledger and
-the briefs, writes nothing."""
+closed captures were mostly dropped files at low priority (demote, never silence). Stdlib only; fm triggers reads the
+ledger and the briefs and writes nothing. T-2355: one table routes every trigger (inbox, queue, lane, muted) with a tier
+cap, a daily budget and a burst window; the user sets rows (fm triggers set, the user's to run), the digest moves
+routes on outcomes Foreman didn't author (settle_routes), each move an fm decide row."""
 import datetime
 import json
 import os
@@ -13,6 +15,10 @@ WINDOW = 20           # the last this-many closed captures decide
 LOW_PRECISION = 0.3
 LOOKBACK_DAYS = 180   # ponytail: capture_once reads this much ledger; widen if rare triggers need older history
 URGENT = {"baseline", "ci", "ci-red", "security"}  # a red build is never "noise": never demoted
+ROUTES = ("inbox", "queue", "lane", "muted")
+DEFAULT = {"route": "inbox", "tier_cap": "M", "budget": None, "burst": 0}  # T-2355: the defaults change nothing
+PROMOTE, PROMOTE_MIN, MUTE, MUTE_MIN = 0.7, 10, 0.1, 10  # queue: 0.7 of 10+ closed S/M held; muted: under 0.1 of 10+
+TIERS = ("S", "M", "L")
 
 
 def _since(days):
@@ -90,20 +96,160 @@ def noisiest(p):
     return n
 
 
+def cmd_set(p, args, fmcli):
+    """T-2355: the user's row for a trigger (the guard keeps fm triggers set the user's to run)."""
+    if not args.name:
+        raise fmcli.UsageError("fm triggers set NAME [--route R] [--budget N] [--burst S] [--tier-cap T]")
+    with c.lock(p.dir):
+        rows = _load(p, "trigger-table.json")
+        cur = _override(rows.get(args.name))
+        for k, v in (("route", args.route), ("budget", args.budget), ("burst", args.burst), ("tier_cap", args.tier_cap)):
+            if v is not None:
+                cur[k] = v
+        rows[args.name] = dict(_override(cur), set_at=c.now())
+        c.write_atomic(os.path.join(p.dir, "trigger-table.json"), json.dumps(rows, sort_keys=True))
+    r = row(p, args.name)
+    fmcli.out(args, r, f"{args.name}: route {r['route']}, tier cap {r['tier_cap']}, budget {r['budget'] or 'none'}, "
+                       f"burst {r['burst'] or 0} s")
+
+
 def cmd_triggers(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "action", None) == "set":
+        return cmd_set(p, args, fmcli)
     args.days = min(max(args.days, 1), 3650)
     status, caps = _status(p), _captures(p, LOOKBACK_DAYS)
     rows = sorted(stats(p, args.days, status).values(), key=lambda r: (-r["fired"], r["trigger"]))
     import fmtrials  # T-2351: self-fixes whose key stayed gone and whose task survived (fm outcomes)
     held = fmtrials.held_fixes(p)
-    lines = [f"{'trigger':<22}{'fired':>6}{'done':>6}{'dropped':>8}{'open':>6}{'precision':>10}{'fixes held':>12}"]
+    lines = [f"{'trigger':<22}{'fired':>6}{'done':>6}{'dropped':>8}{'open':>6}{'precision':>10}{'fixes held':>12}"
+             f"  route"]
     for r in rows:
         r["fixes_held"] = held.get(r["trigger"], 0)
+        r.update({k: v for k, v in row(p, r["trigger"]).items() if k in ("route", "tier_cap", "budget", "burst", "by")})
         prec = "-" if r["precision"] is None else f"{r['precision']:.2f}"
         flag = "  (files at low priority)" if noisy(p, r["trigger"], caps, status) else ""
         lines.append(f"{r['trigger']:<22}{r['fired']:>6}{r['done']:>6}{r['dropped']:>8}{r['open']:>6}{prec:>10}"
-                     f"{r['fixes_held']:>12}{flag}")
+                     f"{r['fixes_held']:>12}  {r['route']}{flag}")
     fmcli.out(args, {"days": args.days, "triggers": rows},
               "\n".join(lines) if rows else f"No trigger has filed a task in the last {args.days} days.")
+
+
+def _load(p, name):
+    try:
+        with open(os.path.join(p.dir, name), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def _override(v):
+    """A user row (trigger-table.json), every field coerced; a bad value is dropped, never an error."""
+    out = {}
+    if not isinstance(v, dict):
+        return out
+    if v.get("route") in ROUTES:
+        out["route"] = v["route"]
+    if v.get("tier_cap") in TIERS:
+        out["tier_cap"] = v["tier_cap"]
+    for k in ("budget", "burst"):
+        x = v.get(k)
+        if isinstance(x, int) and not isinstance(x, bool) and x >= 0:
+            out[k] = x or (None if k == "budget" else 0)
+    return out
+
+
+def row(p, trigger):
+    """T-2355: the trigger's row: the defaults, Foreman's settled route, then the user's row; an urgent trigger is never
+    muted and has no budget or burst. Two small JSON reads, so capture_once can afford it."""
+    r = dict(DEFAULT, trigger=trigger, by="default")
+    auto = _load(p, "trigger-routes.json").get(trigger)
+    if auto in ROUTES:
+        r.update(route=auto, by="foreman")
+    user = _override(_load(p, "trigger-table.json").get(trigger))
+    r.update(user)
+    if "route" in user:
+        r["by"] = "user"
+    if trigger in URGENT:
+        r.update(budget=None, burst=0, route="inbox" if r["route"] == "muted" else r["route"])
+    return r
+
+
+def table(p, status=None):
+    """{trigger: row} for every trigger that filed a capture or has a row."""
+    names = set(stats(p, LOOKBACK_DAYS, status)) | set(_load(p, "trigger-table.json")) | set(_load(p, "trigger-routes.json"))
+    return {t: row(p, t) for t in sorted(names)}
+
+
+def over_budget(p, trigger, r):
+    """Why a firing joins the trigger's open capture instead of filing another: past its daily budget (local day) or
+    within its burst window of the last filing; None when it files (always for an urgent trigger)."""
+    if trigger in URGENT or not (r.get("budget") or r.get("burst")):
+        return None
+    now = datetime.datetime.now().astimezone()
+    day = now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(datetime.timezone.utc)
+    since = (day if not r.get("burst") else min(day, now.astimezone(datetime.timezone.utc)
+                                                  - datetime.timedelta(seconds=r["burst"])))
+    ts = [str(e.get("ts") or "") for e in c.ledger_events(p, ["capture"], since=since.strftime("%Y-%m-%dT%H:%M:%SZ"))
+          if str((e.get("data") or {}).get("trigger") or "") == trigger]
+    if r.get("budget") and sum(t >= day.strftime("%Y-%m-%dT%H:%M:%SZ") for t in ts) >= r["budget"]:
+        return f"past its daily budget of {r['budget']}"
+    edge = (now.astimezone(datetime.timezone.utc) - datetime.timedelta(seconds=r.get("burst") or 0)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+    if r.get("burst") and ts and max(ts) >= edge:
+        return f"within its {r['burst']} s burst window"
+    return None
+
+
+def lane_only(p, trigger, tier, type_):
+    """A queue- or lane-routed trigger's capture starts only in a lane (a branch, never main), within its tier cap; L and
+    SECURITY captures stay in the inbox whatever the route."""
+    r = row(p, trigger)
+    return (r["route"] in ("queue", "lane") and tier in TIERS[:TIERS.index(r["tier_cap"]) + 1] and tier != "L"
+            and type_ != "SECURITY")
+
+
+def decide_route(p, trigger, closed, held, sm=None):
+    """(route, why) from the trigger's last closed captures (statuses) and how many of its closed S/M ones held in fm
+    outcomes: muted (under MUTE of MUTE_MIN+), inbox-low (T-2276's demotion), queue (PROMOTE of PROMOTE_MIN+ closed
+    S/M held), else inbox. Checked in that order; an urgent trigger is never muted or demoted."""
+    n, done = len(closed), closed.count("done")
+    sm = n if sm is None else sm
+    if trigger not in URGENT and n >= MUTE_MIN and done / n < MUTE:
+        return "muted", f"{done}/{n} of its last closed captures were done (under {MUTE})"
+    if trigger not in URGENT and n >= MIN_CLOSED and done / n < LOW_PRECISION:
+        return "inbox-low", f"{done}/{n} of its last closed captures were done (under {LOW_PRECISION})"
+    if sm >= PROMOTE_MIN and held / sm >= PROMOTE:
+        return "queue", f"{held}/{sm} of its last closed S/M captures held in fm outcomes (survived, no rework)"
+    return "inbox", f"{done}/{n} done, {held}/{sm} held"
+
+
+def settle_routes(p):
+    """T-2355: move each trigger's route on its outcomes (the digest calls it), skipping a user-set route; each move is
+    an fm decide row and lands in trigger-routes.json. {trigger: new route} for the moves made."""
+    import fmcli
+    import fmoutcomes
+    status, caps = _status(p), _captures(p, LOOKBACK_DAYS)
+    tiers = {b.id: b.tier for b in c.load_briefs(p, include_archive=True)}
+    outs, user = fmoutcomes.outcomes(p), _load(p, "trigger-table.json")
+    cur, moved = _load(p, "trigger-routes.json"), {}
+    for t in sorted({x for x, _ in caps}):
+        if "route" in _override(user.get(t)):
+            continue
+        ids = [i for x, i in caps if x == t]
+        closed = [status[i] for i in ids if status.get(i) in c.CLOSED][-WINDOW:]
+        sm = [i for i in ids if status.get(i) in c.CLOSED and tiers.get(i) in ("S", "M")][-WINDOW:]
+        held = sum((outs.get(i) or {}).get("fate") == "held" and (outs.get(i) or {}).get("survival") == "survived"
+                   for i in sm)
+        route, why = decide_route(p, t, closed, held, len(sm))
+        route = "inbox" if route == "inbox-low" else route  # the low priority stays noisy()'s, live at capture time
+        if cur.get(t, "inbox") != route:
+            moved[t] = route
+            fmcli._write_decision(p, f"Trigger {t} routes to {route}", why=why)
+            cur[t] = route
+    if moved:
+        c.write_atomic(os.path.join(p.dir, "trigger-routes.json"),
+                       json.dumps({k: v for k, v in cur.items() if v != "inbox"}, sort_keys=True))
+    return moved

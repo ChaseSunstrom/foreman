@@ -140,3 +140,116 @@ class TriggerHeldFixes(ForemanTestCase):
         n = len(c.ledger_events(p))
         self.fm("triggers")
         self.assertEqual(len(c.ledger_events(p)), n)  # fm triggers stays read-only
+
+
+class TriggerTable(ForemanTestCase):
+    """T-2355: one table routes every trigger's captures (inbox, queue, lane, muted) with a tier cap, a daily budget and
+    a burst window; Foreman moves a route only on outcomes it didn't author, each move an fm decide row."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        self.n = 0
+
+    def fire(self, trigger, tier_text="", source="discovered"):
+        self.n += 1
+        return fmeco.capture_once(self.p, f"FIX: {trigger} finding {self.n}{tier_text}", "FIX", source, trigger=trigger)
+
+    def test_every_trigger_has_a_row_and_the_defaults_change_nothing(self):
+        import fmtriggers
+        self.fire("scout")
+        row = fmtriggers.table(self.p)["scout"]
+        self.assertEqual({k: row[k] for k in ("route", "tier_cap", "budget", "burst")},
+                         {"route": "inbox", "tier_cap": "M", "budget": None, "burst": 0})
+        rows = {r["trigger"]: r for r in self.fm_json("triggers")["triggers"]}
+        self.assertEqual(rows["scout"]["route"], "inbox")
+        for _ in range(12):  # no budget, no burst: every distinct capture files
+            self.assertTrue(self.fire("scout")[1])
+
+    def test_past_its_daily_budget_or_inside_its_burst_a_trigger_adds_to_its_open_capture(self):
+        self.fm("triggers", "set", "scout", "--budget", "2")
+        first, second = self.fire("scout")[0], self.fire("scout")[0]
+        b, new = self.fire("scout")
+        self.assertFalse(new)
+        self.assertEqual(b.id, second.id)  # the newest open capture of that trigger takes the firing
+        self.assertIn("fired again", b.section("Log"))
+        self.fm("triggers", "set", "lint", "--burst", "600")
+        self.assertTrue(self.fire("lint")[1])
+        self.assertFalse(self.fire("lint")[1])  # within 600 s of the last filing
+
+    def test_urgent_triggers_have_no_budget_and_are_never_muted(self):
+        import fmtriggers
+        self.fm("triggers", "set", "ci-red", "--budget", "1")
+        self.assertTrue(all(self.fire("ci-red")[1] for _ in range(3)))
+        self.assertNotEqual(fmtriggers.decide_route(self.p, "ci-red", closed=["dropped"] * 12, held=0)[0], "muted")
+
+    def test_the_route_rules_mute_demote_promote_in_order(self):
+        import fmtriggers
+        r = fmtriggers.decide_route
+        self.assertEqual(r(self.p, "x", closed=["dropped"] * 10 + ["done"] * 0, held=0)[0], "muted")  # under 0.1 over 10+
+        self.assertEqual(r(self.p, "x", closed=["dropped"] * 4 + ["done"], held=0)[0], "inbox-low")  # under 0.3 over 5+
+        self.assertEqual(r(self.p, "x", closed=["done"] * 10, held=7)[0], "queue")  # 0.7 of 10+ closed S/M held
+        self.assertEqual(r(self.p, "x", closed=["done"] * 10, held=6)[0], "inbox")
+        self.assertEqual(r(self.p, "x", closed=["done"] * 9, held=9)[0], "inbox")  # under 10 closed
+
+    def test_a_route_move_is_a_decide_row_once_and_a_queued_capture_is_lane_only(self):
+        import fmtriggers
+        from unittest import mock
+        caps = [self.fire("scout")[0] for _ in range(10)]
+        for b in caps:
+            b.meta["status"] = "done"
+            c.save_brief(self.p, b, touch=False)
+        outs = {b.id: {"fate": "held", "survival": "survived"} for b in caps}
+        with mock.patch("fmoutcomes.outcomes", lambda p: outs):
+            moved = fmtriggers.settle_routes(self.p)
+            self.assertEqual(moved, {"scout": "queue"})
+            self.assertEqual(fmtriggers.settle_routes(self.p), {})  # nothing new: no second row
+        rows = [t for _, _, t in c._decision_rows(self.p) if "scout" in t]
+        self.assertEqual(len(rows), 1, rows)
+        b, new = self.fire("scout")
+        self.assertTrue(new)
+        self.assertTrue(b.meta.get("lane_only"))
+        big, _ = self.fire("scout", " (L: a cross-cutting rewrite)")
+        big.meta["tier"] = "L"
+        self.assertTrue(fmtriggers.lane_only(self.p, "scout", "L", "FIX") is False)  # an L stays in the inbox
+        self.assertFalse(fmtriggers.lane_only(self.p, "scout", "S", "SECURITY"))  # so does SECURITY
+        r = self.fm("focus", b.id, check=False)  # on main: refused, it starts in a lane
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn(f"fm lane brief {b.id}", r.stderr)
+        b = next(x for x in c.load_briefs(self.p) if x.id == b.id)
+        b.meta["lane"] = os.path.join(self.repo, "lane")  # after fm lane brief: main focuses it to merge and close
+        c.save_brief(self.p, b, touch=False)
+        r = self.fm("focus", b.id, check=False)
+        self.assertNotIn("lane brief", r.stderr)  # the lane gate passes (the plan gate still wants criteria)
+
+    def test_a_muted_trigger_adds_to_one_open_capture(self):
+        import json
+        import os
+        with open(os.path.join(self.p.dir, "trigger-routes.json"), "w") as f:
+            json.dump({"noise": "muted"}, f)
+        first, new = self.fire("noise")
+        self.assertTrue(new)  # the one capture a muted trigger keeps, so its firings stay counted
+        b, new = self.fire("noise")
+        self.assertFalse(new)
+        self.assertEqual(b.id, first.id)
+        first.meta["status"] = "dropped"  # closed: a muted trigger still files nothing new
+        c.save_brief(self.p, first, touch=False)
+        b, new = self.fire("noise")
+        self.assertFalse(new)
+        self.assertEqual(b.id, first.id)
+        self.assertEqual(sum(1 for x in c.load_briefs(self.p) if x.meta.get("trigger") == "noise"), 1)
+
+
+class MutedTriggerDoctor(ForemanTestCase):
+    def test_fm_doctor_names_each_muted_trigger_with_its_unmute_command(self):  # T-2355
+        import json
+        import os
+        import fmdoctor
+        self.fm("init")
+        p = c.find_project(self.repo)
+        self.assertEqual(fmdoctor.check_muted_triggers(p).status, "PASS")
+        with open(os.path.join(p.dir, "trigger-routes.json"), "w") as f:
+            json.dump({"noise": "muted"}, f)
+        r = fmdoctor.check_muted_triggers(p)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("fm triggers set noise --route inbox", r.detail)
