@@ -163,13 +163,13 @@ def _words(text):
     return set(re.findall(r"\w+[?!]?", text))
 
 
-def _git(root, *args):
+def _git(root, *args, timeout=60):
     """git's stdout as bytes (None on failure); the repo isn't trusted: none of its config may run code (fsmonitor, hooks,
     a signature check's gpg program)."""
     r = subprocess.run(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.quotepath=false",
                         "-c", "log.showSignature=false", "-c", "gpg.program=/bin/false", "-c", "gpg.ssh.program=/bin/false",
                         "-c", "gpg.x509.program=/bin/false", "-c", "diff.renameLimit=1000", "-C", root, *args],
-                       capture_output=True, timeout=60)
+                       capture_output=True, timeout=timeout)
     return r.stdout if r.returncode == 0 else None
 
 
@@ -722,11 +722,168 @@ def capture(p, found, n, root, proof=None):
     return made
 
 
+FLAGS, SPOTS, SPOT_DAY = "find-flags.json", "blindspots.jsonl", "blindspot-day"  # T-2241 state files
+FLAG_FILES, FLAG_LINES, SPOT_KEEP, NEAR = 2000, 200, 500, 3
+
+
+def _flags(p):
+    """{"files": {file: {"lines": [...], "finders": [...]}}, "finders": [...]}; empty when missing or corrupt."""
+    try:
+        with open(os.path.join(p.dir, FLAGS)) as fh:
+            got = json.load(fh)
+        files = {k: v for k, v in got["files"].items() if isinstance(v, dict) and isinstance(v.get("lines"), list)}
+        return {"files": files}
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        return {"files": {}}
+
+
+def save_flags(p, found, root):
+    """T-2241: which lines each finder flagged per file (relative to the project), for a closed FIX to be held against.
+    The newest 2000 files stay, FLAG_LINES lines each; best effort, never fails a capture."""
+    try:
+        root, home = os.path.realpath(root), os.path.realpath(p.root)
+        under = os.path.relpath(root, home)
+        new = {}
+        for f in found:
+            rel = os.path.relpath(os.path.join(root, f["file"]), home)
+            if rel.startswith(os.pardir) or os.path.islink(os.path.join(root, f["file"])):
+                continue  # outside the project, or a link (never followed)
+            e = new.setdefault(rel, {"lines": set(), "finders": set()})
+            e["lines"].add(int(f["line"]))
+            e["finders"].add(f["finder"])
+        with c.lock(p.dir):
+            files = _flags(p)["files"]
+            for k in [k for k in files if under == os.curdir or k.startswith(under + os.sep)]:
+                del files[k]  # this scan saw that tree: a file it no longer flags is cleared, not merged
+            for k, e in new.items():
+                with open(os.path.join(home, k), "rb") as fh:  # the blob hash git would give: line numbers mean nothing once it differs
+                    data = fh.read()
+                files[k] = {"lines": sorted(e["lines"])[:FLAG_LINES], "finders": sorted(e["finders"]),
+                            "blob": hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()}
+            c.write_atomic(os.path.join(p.dir, FLAGS), json.dumps({"files": dict(list(files.items())[-FLAG_FILES:])}))
+    except (OSError, ValueError, KeyError, TypeError, c.LockTimeout):
+        pass
+
+
+def _changed_lines(text):
+    """{file: [line, ...]} of the new-side lines in a -U0 diff (a pure deletion names the line it sat before)."""
+    out, cur = {}, None
+    for ln in text.splitlines():
+        if ln.startswith("+++ "):
+            cur = ln[6:].rstrip("\t") if ln.startswith("+++ b/") else None  # git adds a TAB after a name with a space
+        elif cur and (m := re.match(r"@@ -\S+ \+(\d+)(?:,(\d+))? @@", ln)):
+            start, n = int(m[1]), int(m[2] or 1)
+            out.setdefault(cur, []).extend(range(start, start + max(n, 1)))
+    return out
+
+
+def blindspots(p, b):
+    """T-2241: a closed FIX's changed lines (its own files, from its start point) that no saved flag sits within NEAR
+    lines of, one record per file in blindspots.jsonl. Best effort: the caller swallows any error. No flags saved yet
+    means no finder ever ran here, so nothing is a miss."""
+    import fmcli
+    import time
+    flags = _flags(p)["files"]
+    if not flags:  # a project that never captured pays nothing
+        return []
+    end = time.monotonic() + 10  # the hook's whole budget
+
+    def git(*a):
+        return _git(p.root, *a, timeout=max(1, end - time.monotonic()))
+    base, tree = c.task_base(p.root, b), c.worktree_tree(p.root)
+    if not base or not tree:
+        return []
+    # --relative: paths are p.root's, as the flags keys are, even when p.root is a folder inside the git root
+    opts = ("--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--relative")
+    files = (git("diff", "--name-only", *opts, base, tree) or b"").decode("utf-8", "replace").splitlines()
+    theirs = set(fmcli._theirs(p, b, files))
+    files = [f for f in files if f not in theirs and os.path.splitext(f)[1].lower() in LANG and not TEST.search(f)][:50]
+    files = [f for f in files if "blob" not in flags.get(f, {})  # flags for a file that changed since the capture mean nothing
+             or (git("rev-parse", f"{base}:./{f}") or b"").decode().strip() == flags[f]["blob"]]
+    if not files:
+        return []
+    diff = git("diff", "-U0", *opts, base, tree, "--", *files)
+    recs = []
+    for f, lines in _changed_lines((diff or b"").decode("utf-8", "replace")).items():
+        near = flags.get(f, {}).get("lines", [])
+        miss = sorted({n for n in lines if not any(isinstance(x, int) and abs(x - n) <= NEAR for x in near)})
+        if miss:
+            recs.append({"task": b.id, "file": f, "lines": miss[:20], "finders": flags.get(f, {}).get("finders", []),
+                         "at": c.now()})
+    with c.lock(p.dir):  # a reopened task closing again replaces its own records
+        old = [r for r in _spots(p) if r["task"] != b.id]
+        c.write_atomic(os.path.join(p.dir, SPOTS), "".join(json.dumps(r) + "\n" for r in (old + recs)[-SPOT_KEEP:]))
+    return recs
+
+
+def _spots(p):
+    out = []
+    try:
+        with open(os.path.join(p.dir, SPOTS), encoding="utf-8", errors="replace") as fh:
+            for ln in fh:
+                try:
+                    r = json.loads(ln)
+                except ValueError:
+                    continue
+                if isinstance(r, dict) and all(isinstance(r.get(k), str) for k in ("task", "file")) \
+                        and isinstance(r.get("lines"), list):
+                    out.append(r)
+    except OSError:
+        pass
+    return out
+
+
+def cmd_blindspots(p, args):
+    """fm find --blindspots: the records, newest last; with --capture, one task a day for the newest one."""
+    import fmcli
+    rows = _spots(p)[-50:]
+    made, why = [], ""
+    day = c.now()[:10]
+    if getattr(args, "capture", None):
+        with c.lock(p.dir):
+            try:  # {"day": the last filing's, "filed": ["task|file", ...]}
+                with open(os.path.join(p.dir, SPOT_DAY)) as fh:
+                    st = json.load(fh)
+                last, filed = str(st["day"]), [x for x in st["filed"] if isinstance(x, str)]
+            except (OSError, ValueError, KeyError, TypeError):
+                last, filed = "", []
+            todo = [r for r in rows if f"{r['task']}|{r['file']}" not in filed]  # newest unfiled
+            if last == day:
+                why = "one a day, and one is filed today"
+            elif open_finders(p) >= OPEN_CAP:
+                why = f"{OPEN_CAP} finder tasks are open, the most at once"
+            elif not todo:
+                why = "every record is filed already"
+            else:
+                r = todo[-1]
+                where = c.plain(f"{r['file']}:{','.join(str(n) for n in r['lines'][:5] if isinstance(n, int))}")
+                b = fmcli._create(p, c.fit(c.defang(f"fm find missed {c.plain(r['task'])}'s fix in {where}: add a rule, "
+                                                    "tool or check"), 120), "FEATURE", "S", "captured", source="discovered",
+                                  raw=c.defang(f"No finder flagged this fix's lines (fm find --blindspots; finders that ran: "
+                                               f"{', '.join(c.plain(str(x)) for x in r.get('finders') or []) or 'none'})."))
+                b.meta.update(finder="blindspot")
+                c.save_brief(p, b, touch=False)
+                c.log_event(p, "capture", task=b.id, data={"source": "discovered", "finder": "blindspot"})
+                c.write_atomic(os.path.join(p.dir, SPOT_DAY), json.dumps(
+                    {"day": day, "filed": (filed + [f"{r['task']}|{r['file']}"])[-SPOT_KEEP:]}))
+                c.regen_views(p)
+                made.append(b.id)
+    text = "\n".join(c.plain(f"{r['task']}  {r['file']}:{','.join(str(n) for n in r['lines'][:20])}") for r in rows)
+    fmcli.out(args, {"blindspots": rows} | ({"captured": made} if getattr(args, "capture", None) else {}),
+              c.plain_lines((text or "No blind spots recorded.") + (f"\nFiled {made[0]}." if made else f"\nFiled 0: {why}." if why else "")))
+    return 0
+
+
 def cmd_find(args):
     import fmcli
     root, cap = os.path.abspath(args.path), getattr(args, "capture", None)
     ranked = bool(getattr(args, "rank", False) or cap)
-    p = c.find_project(os.getcwd()) if ranked else None
+    p = c.find_project(os.getcwd()) if ranked or getattr(args, "blindspots", False) else None
+    if getattr(args, "blindspots", False):
+        if not p:
+            print("fm find: --blindspots: run it inside a Foreman project", file=sys.stderr)
+            return 2
+        return cmd_blindspots(p, args)
     bad = (f"not a directory: {args.path}" if not os.path.isdir(root)
            else "--capture N: N is how many tasks to file, at least 1" if cap is not None and cap < 1
            else "--capture files tasks: run it inside a Foreman project" if cap and not p else None)
@@ -751,6 +908,8 @@ def cmd_find(args):
         print(f"fm find: the scan failed under {root}: {type(e).__name__}: {c.plain(str(e))[:300]}", file=sys.stderr)
         return 2
     made = capture(p, found, cap, root) if cap else None
+    if cap:
+        save_flags(p, found, root)  # T-2241
     rows = [(f"{f['score']:.2f}  " if "score" in f else "") + f"{f['file']}:{f['line']}  {f['kind']}  "
             f"{f['symbol'] or '-'}: {f['says']}" + (f"  ({f['held']})" if f.get("held") else "") for f in found]
     live = [f for f in found if not f.get("held")]
