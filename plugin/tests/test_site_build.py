@@ -255,6 +255,31 @@ class ProductLines(unittest.TestCase):
         self.assertIn("<span>fm code</span>", read_text(os.path.join(ROOT, "site", "index.html")))
 
 
+class NoBareNulls(unittest.TestCase):
+    """T-2057: stats.json's duel cases render on the benchmarks page, and no built page prints a bare empty value."""
+    def test_cases_show_and_no_page_prints_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = subprocess.run([sys.executable, os.path.join(ROOT, "site", "build.py"), tmp], capture_output=True,
+                               text=True, timeout=300)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            stats = json.loads(read_text(os.path.join(ROOT, "site", "data", "stats.json")))
+            names = {c["case"] for d in stats["duels"] for c in d.get("cases") or []}
+            bench = os.path.join(tmp, "features", "benchmarks.html")
+            if not os.path.exists(bench):
+                bench = os.path.join(tmp, "features", "benchmarks", "index.html")
+            page = read_text(bench)
+            for n in sorted(names):
+                self.assertIn(n, page, f"duel case {n} is missing from the benchmarks page")
+            # a whole line (tags cut to line breaks) that is the word, or a value after a colon / in parentheses
+            bare = re.compile(r"^(None|null|undefined|NaN)$|:\s*(None|null|undefined|NaN)\b|\((None|null|undefined|NaN)\)")
+            for d, _, fs in os.walk(tmp):
+                for fn in fs:
+                    if fn.endswith(".html"):
+                        html = re.sub(r"(?is)<(script|style)\b.*?</\1>", "", read_text(os.path.join(d, fn)))
+                        for line in re.sub(r"(?s)<[^>]*>", "\n", html).splitlines():
+                            self.assertIsNone(bare.search(line.strip()), f"{fn} prints a bare empty value: {line.strip()[:80]}")
+
+
 if __name__ == "__main__":
     unittest.main()
 
