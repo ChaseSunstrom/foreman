@@ -5625,15 +5625,6 @@ def cmd_next(args):
              f"them to the user at the end, never act on them first; deferred after {ASK_DAYS} days)") if asks else ""
     import fmcontract
     over += fmcontract.line(p)  # T-1158
-    import fmlanes
-    done = set(c.finished_lanes(p, briefs))  # T-2038: a finished lane is merged, not resumed
-    dead = [i for i in fmlanes.stopped(p, briefs) if i not in done]  # T-1028
-    over += (f" · builder(s) stopped, their Claude Code process ended: " + "; ".join(f"fm lane resume {i}" for i in dead)
-             + " (keeps the work, frees the worktree, writes a new brief)") if dead else ""
-    idle = fmlanes.stalled(p)  # T-1156
-    over += (" · builder(s) stalled, live but no edit, commit or event: "
-             + "; ".join(f"{i} ({round(m)} min)" for i, m in idle.items()) + ": check its lane; if hung, stop the agent, then "
-             + "fm lane resume ID --force \"hung\"") if idle else ""
     hollow = [e for e in c.ledger_tail(p, 500) if e.get("event") == "hollow_return"
               and (age := c.age_days(e.get("ts"))) is not None and age < 1]  # T-0963: today's, so an old one doesn't nag forever
     if hollow:
@@ -7630,8 +7621,11 @@ def _build_parser(only=None):
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent; "
                                                        "merge <id>: bring a builder's finished commits in; "
-                                                       "resume <id>: take back a stopped builder's work")
-    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "race", "pick"])
+                                                       "resume <id>: take back a stopped builder's work; "
+                                                       "recover <id>: the one recovery for why its lane stopped (T-2354)")
+    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "recover", "race", "pick"])
+    s.add_argument("--agent-stopped", action="store_true", help="recover: its agent was stopped (TaskStop), so a "
+                                                                "stalled lane is free to take back (T-2354)")
     s.add_argument("--score", action="store_true", help="race: run both sides' criteria in their worktrees, count "
                                                         "lines changed, name a leader (T-1069)")
     s.add_argument("id", nargs="?", help="the task id; max: how many builders may be out at once (1-6)")
