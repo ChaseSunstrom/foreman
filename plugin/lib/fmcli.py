@@ -137,6 +137,12 @@ def cmd_state(args):
         if args.brief:
             text = "\n".join(text.splitlines()[:15])
         print(text.rstrip("\n"))
+        if not args.brief:  # T-2276: the trigger whose tasks mostly get dropped
+            import fmtriggers
+            n = fmtriggers.noisiest(p)
+            if n:
+                print(f"Noisiest trigger: {n['trigger']} ({n['dropped']} of {n['done'] + n['dropped']} closed dropped); "
+                      f"it files at low priority (fm triggers)")
 
 
 def cmd_proof(args):
@@ -3185,6 +3191,14 @@ def task_ac(p, args):
 def cmd_focus(args):
     p = resolve(args)
     warn = None
+    blast = ""  # T-2277: git and sqlite waits happen before the project lock every verb queues on
+    try:
+        peek = need_brief(p, args.id)
+        if peek.tier in ("M", "L") and "Blast radius (fm graph blast)" not in peek.section("Risks and rollback"):
+            import fmgraph
+            blast = fmgraph.blast_line(p, peek.meta.get("scope"))
+    except Exception:  # a hint; the locked read below reports a missing task
+        pass
     with c.lock(p.dir):
         target = need_brief(p, args.id)
         if target.status in c.CLOSED:
@@ -3259,6 +3273,9 @@ def cmd_focus(args):
         if moved:  # R2/R3 preflight: the plan was grounded on files that have changed since (kept for fresh sessions)
             related = (related + "\n" if related else "") + moved
             target.set_section("Preflight", moved + "\n")
+        if blast and "Blast radius (fm graph blast)" not in target.section("Risks and rollback"):
+            old = target.section("Risks and rollback").strip()  # T-2277: written once into the plan
+            target.set_section("Risks and rollback", (old + "\n" if old else "") + blast)
         if not target.meta.get("plan0_at"):  # T-1061: the plan at first focus, which the close is scored against
             target.meta.update(plan0_at=c.now(), plan0_scope=list(target.meta.get("scope") or []))
         c.save_brief(p, target)
@@ -6665,6 +6682,11 @@ def _build_parser(only=None):
     g.add_argument("--minutes", action="store_true", help="minutes lost in the last week, by kind (T-0959)")
     s.add_argument("--why", help="--reject: why it's a dead end")
 
+    s = add("triggers", lazy("fmtriggers", "cmd_triggers"), tier=("Reports", 1031),
+            help="each trigger that files tasks: fired, done, dropped, open and precision; a mostly-dropped one files "
+                 "at low priority (T-2276)")
+    s.add_argument("--days", type=int, default=30, help="count captures from the last N days (default 30)")
+
     s = add("repeats", lazy("fmrepeats", "cmd_repeats"), tier=("Reports", 1030),
             help="commands and procedures this project keeps repeating, and what project tool each could become")
     s.add_argument("action", nargs="?", default="list", choices=["list", "dismiss"])
@@ -7081,6 +7103,8 @@ def _build_parser(only=None):
                    "discovered tasks tagged finder=; what becomes of them is that finder's precision")
     s.add_argument("--blindspots", action="store_true", help="instead: closed FIXes whose changed lines no finder flagged "
                    "(with --capture 1: file one 'add a rule, tool or check' task a day; T-2241)")
+    s.add_argument("--ladder", action="store_true", help="also run each stack's own analyzer (ruff, go vet, gosec) from "
+                   "Foreman's registry, only in a tree you said yes to (fm prove --yes-run); its findings are tool:NAME (T-2239)")
     s.add_argument("--hotspots", action="store_true", help="instead: tracked files by how many fix commits touched them "
                    "in the last 500 non-merge commits, counting those whose subject has a fix word (git only, no repo code; not with "
                    "--rank or --capture; T-2238)")

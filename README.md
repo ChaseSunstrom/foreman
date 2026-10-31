@@ -79,6 +79,8 @@ fm new web site                              # site/index.html: tokens, light an
 fm design lint site                          # still clean: no generic-design tells
 ```
 
+Nothing found for a missing tool or skill? Build it: `fm new tool NAME` writes `tools/NAME.py` and a `tests/test_NAME.py` that fails until it works; `fm new skill NAME` writes a project skill in the listing's format.
+
 <p align="center">
   <img src="demo/demo.svg" width="860" alt="fm demo: Foreman refuses an edit made before any task exists and an rm -rf ~, records a failing test, the fix and a passing test, refuses to close the task until the audit is given, then closes and commits it">
 </p>
@@ -227,7 +229,7 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 | **Learns a fix once** | A failure that was fixed before gets its fix offered next time, in any project | `fm fix list` |
 | **Changes many spots** | Batches of exact replacements, applied all or none, inside the task's scope | `fm edit` · `fm sub` |
 | **Improves itself** | Rule changes backtested on your real sessions; self-improvement kept only when evals agree | `/foreman:improve` |
-| **Finds problems unasked** | Untested code, undeclared imports, SQL built from input, slow loops, flaky tests, stale docs, leaked keys: no model, worst first; proven on a copy, each a task red until fixed | `fm find --rank`, `fm prove --capture N`, `/foreman:initiative` |
+| **Finds problems unasked** | Untested code, undeclared imports, SQL built from input, slow loops, flaky tests, stale docs, leaked keys: no model, worst first; proven on a copy, a red task each | `fm find --rank [--ladder]` (tools: trusted only), `fm prove --capture N`, `/foreman:initiative` |
 | **Seeds itself** | Genesis: generations toward one goal you write; a rewrite stays only if it closed more exam scenarios | `fm genesis step` |
 | **Stays light** | Only the guard and write validators run in line; hooks take about 20 ms | `fm doctor` |
 

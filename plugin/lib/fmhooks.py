@@ -3198,10 +3198,11 @@ def _capability_miss(p, sid, err):
     if seen:  # a second session: one task, ever (the key line)
         import fmeco
         fmeco.capture_once(p, f"Missing tool {name}: find it (fm plugins find {name}) or build it (script + test)\n"
-                           f"capability-miss: {name}", "FEATURE", "self", key=f"capability-miss: {name}")
+                           f"capability-miss: {name}", "FEATURE", "self", key=f"capability-miss: {name}",
+                           trigger="capability-miss")
     name = c.fit(c.plain(name), 64)
     return (f"Foreman: `{name}` is missing. Find it: fm plugins find {name} (an install needs fm ask ID plugin), "
-            f"or build a script with its test.")
+            f"or build it: fm new tool {name if re.fullmatch(r'[a-z][a-z0-9_]{0,31}', name) else 'NAME'}.")
 
 
 def post_tool_use_failure(pl):
