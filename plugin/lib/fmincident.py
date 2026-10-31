@@ -24,8 +24,9 @@ def _fmcli():
 
 def _env():
     import fmbench
-    return {k: v for k, v in os.environ.items() if k != "FOREMAN_SKIP_TESTS"
-            and (k.startswith(("ANTHROPIC_", "CLAUDE_")) or not fmbench.CREDENTIALS.match(k))}
+    # T-2388 review: every credential is stripped, the model's own (ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN) included:
+    # a signal is any command the session or the user wrote
+    return {k: v for k, v in os.environ.items() if k != "FOREMAN_SKIP_TESTS" and not fmbench.CREDENTIALS.match(k)}
 
 
 def _open_incident(p, tid=None):
