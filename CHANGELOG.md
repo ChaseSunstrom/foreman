@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `fm genesis confirm N` settles a provisional lineage choice from stamped production-model exam lines (not smoke, `default`, unstamped or Haiku) for gen N and its parent on a common run, by select's own comparison: `- confirmed:` or `- reversed:` (the seed base follows what production kept), with the verdict filed in `gen-N/confirm.md`; `fm genesis step` blocks the report and the stop while any choice lacks a matching confirm.md (T-2197)
+- `fm genesis confirm N` settles a provisional lineage choice from stamped production-model exam lines (`default` counts as the configured model; unstamped and Haiku lines don't) for gen N and its parent on a common run, by select's own comparison: `- confirmed:` or `- reversed:` (the seed base follows what production kept), with the verdict filed in `gen-N/confirm.md`; `fm genesis step` blocks the report and the stop while any choice lacks a matching confirm.md (T-2197)
 
 - The standing goal shows wherever you look: `fm code`'s run prompt, a read-only MCP `goal` tool, a Goal section in `fm export agents` (with the dated last verdict), the band (a stopped goal and its first cause) and the Planning page; a stored verdict counts only while the goal it judged stands, from this checkout and under a day old
 - Genesis can add its own categories from gen 2 (`fm genesis grow`): a capability, area, surface, stage, lens, source or exam kind, each with evidence, a measure and a cold read. Added capabilities join the exam, the scorecard and the seed like gen-0's. The frame only grows: `fm genesis check` fails a lost or hand-edited entry, and the report must list every added category

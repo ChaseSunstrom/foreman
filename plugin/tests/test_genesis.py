@@ -797,7 +797,7 @@ class GenesisStep(ForemanTestCase):
         self.put("lineage.md", "# Lineage\n\n## gen-1\n- kept: x\n- confirmed: ok\n\n## gen-2\n- kept: x\n- provisional: cheap\n")
         s = self.at("confirm", "gen-2", "fm exam run")  # no production line: the command is the exam, not a no-op confirm
         self.assertEqual(s["kind"], "blocked")
-        self.assertIn("--model", s["command"])
+        self.assertNotIn("--model", s["command"])  # the configured production model, never a hardcoded one
         # T-2197 review: a hand-typed mark with no confirm.md record stays blocking
         self.put("lineage.md", "# Lineage\n\n## gen-1\n- kept: x\n- confirmed: ok\n\n## gen-2\n- kept: x\n- confirmed: ok\n")
         self.assertEqual(self.at("confirm", "gen-2")["kind"], "blocked")
@@ -1348,14 +1348,16 @@ class GenesisSelect(ForemanTestCase):
         self.assertEqual(fmgenesis.confirm(self.p, 1)["mark"], "confirmed")
         self.assertRegex(self.read("gen-1/confirm.md"), r"(?m)^Verdict: confirmed$")
 
-    def test_unstamped_and_default_lines_are_not_production(self):
+    def test_unstamped_lines_are_not_production_but_default_is(self):
         import fmgenesis
         self.cheap(["a", "b", "c"])
-        self.add(self.graded(1, ["a"], "default"), self.graded(2, ["a", "b", "c"], "default"),
-                 self.graded(1, ["a"], ""), self.graded(2, ["a", "b", "c"], "", run="r9"))
+        self.add(self.graded(1, ["a"], "", run="r9"), self.graded(2, ["a", "b", "c"], "", run="r9"))
         r = fmgenesis.confirm(self.p, 2)
         self.assertEqual(r["mark"], "provisional")
         self.assertIn("unstamped", r["reason"])
+        self.add(self.graded(1, ["a"], "default"), self.graded(2, ["a", "b", "c"], "default"))  # the configured model
+        self.assertEqual(fmgenesis.confirm(self.p, 2)["mark"], "confirmed")
+        self.assertIn("Model: default", self.read("gen-2/confirm.md"))
 
     def test_confirm_files_an_owned_record_and_a_reversal_moves_the_seed_base(self):
         import fmgenesis

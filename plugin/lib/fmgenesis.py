@@ -778,7 +778,7 @@ def step(p):
                 return act("confirm", n, f"{h} isn't settled by a production-model exam (confirm.md with the lineage mark): "
                                          f"the {'report' if dry else 'next step'} waits",
                            f"fm genesis confirm {g.group(1)}" if ready else
-                           f"fm exam run {c.plain(str(run))} --agent foreman --model sonnet", "blocked")
+                           f"fm exam run {c.plain(str(run))} --agent foreman", "blocked")
     if dry:
         return act("report", n, "two generations in a row found no tier 3-4 gap: write the final report (§8)",
                    "fm genesis put report.md --file -")
@@ -1788,12 +1788,13 @@ def select(p, n, agent="foreman"):
 
 
 def _prod(p, n, agent, baseline):
-    """T-2197: the production-model exam lines settling gen n: a non-empty model stamp that isn't 'default' or Haiku.
+    """T-2197: the production-model exam lines settling gen n: a non-empty model stamp that isn't
+    Haiku ("default" is the configured, production model; unstamped lines don't count).
     A kept or reverted choice needs gen n AND its parent on a common run; a baseline needs gen n alone. (rows, why):
     why is '' when usable, else what is missing, noting the lines skipped."""
     every = _exam(p, agent)
-    rows = [x for x in every if str(x.get("model") or "").strip() not in ("", "default") and not smoke(x)]
-    note = f" ({len(every) - len(rows)} unstamped, 'default' or Haiku line(s) skipped)" if len(every) > len(rows) else ""
+    rows = [x for x in every if str(x.get("model") or "").strip() != "" and not smoke(x)]
+    note = f" ({len(every) - len(rows)} unstamped or Haiku line(s) skipped)" if len(every) > len(rows) else ""
     if baseline:
         rows = [x for x in rows if x.get("gen") == n]
     kid, mom = ({x.get("run") for x in rows if x.get("gen") == g} for g in (n, n - 1))
@@ -1833,7 +1834,7 @@ def confirm(p, n, agent="foreman"):
                 miss = str(e)
         if miss or verdict == "rerun":
             return out(have or "provisional", f"gen-{n} stays {have or 'provisional'}: {miss or why}; fm exam run RUN "
-                       f"--agent {agent} --model sonnet, then fm exam grade RUN --agent {agent}, then fm genesis confirm {n}")
+                       f"--agent {agent}, then fm exam grade RUN --agent {agent}, then fm genesis confirm {n}")
         shown = c.plain(str(res["run"]))
         won = (verdict in ("keep", "baseline")) == (kind.group(1) != "reverted")
         mark = "confirmed" if won else "reversed"
