@@ -187,7 +187,7 @@ class GoalReview(GoalBase):
         # T-2137
         self.assertEqual(self.verdict(), (2, "no goal\n"))
         self.fm("goal", "set", "Cache the index. Also tune the ranker weights", "--no-end")
-        self.fm("goal", "item", "cache the index", "--done-when", "true")
+        self.fm("goal", "item", "cache the index", "--done-when", "test -d .")
         code, out = self.verdict()
         self.assertEqual(code, 1)
         for cause in ("item 1 has no task", "clause unaccounted: Also tune the ranker weights",
@@ -214,6 +214,9 @@ class GoalReview(GoalBase):
         self.assertNotIn("unaccounted", out)
         c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
             dict(i, done_when="true") for i in c.read_meta(self.p)["mandate"]["items"]]))
+        self.assertIn("item 1 check can't fail", self.verdict()[1])  # T-2332: true proves nothing
+        c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
+            dict(i, done_when="test -d .") for i in c.read_meta(self.p)["mandate"]["items"]]))
         self.assertEqual(self.verdict(), (0, "finished\n"))
         stored = c.read_meta(self.p)["goal_verdict"]
         self.assertEqual((stored["verdict"], stored["causes"]), ("finished", []))
@@ -225,6 +228,29 @@ class GoalReview(GoalBase):
         self.fm("goal", "verdict", check=False)
         self.fm("mandate", "off")
         self.assertNotIn("goal_verdict", c.read_meta(self.p))
+
+    def test_the_done_vs_stopped_adversary_never_reads_finished(self):
+        # T-2332, Mission 4's spike: states crafted to make the verdict say finished while nothing was proven
+        self.fm("goal", "set", "Cache the index", "--no-end")
+        self.fm("goal", "item", "cache the index", "--done-when", "test -d .")
+        self.finish(self.new("cache it", "--goal", "1"))
+        self.gates(0)
+        self.assertEqual(self.verdict(), (0, "finished\n"))
+        for check in ("true", "echo ok", "exit 0", ":", "python3 -c 'import sys; sys.exit(1)' | cat",
+                      "test -d /nonexistent || true", "false; true", "false || echo ok"):
+            with self.subTest(check=check):  # it can't fail, or a pipe hides the exit status
+                c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
+                    dict(i, done_when=check) for i in c.read_meta(self.p)["mandate"]["items"]]))
+                code, out = self.verdict()
+                self.assertEqual(code, 1, out)
+                self.assertIn("item 1 check can't fail", out)
+        c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
+            dict(i, done_when="test -d .") for i in c.read_meta(self.p)["mandate"]["items"]]))
+        c.log_event(self.p, "check_run", data={"tree": c.worktree_id(self.p.root), "skip_tests": ["test_x.T.test_red"],
+                                               "results": [{"cmd": "x", "exit": 0}]})
+        code, out = self.verdict()  # green only because a red test was skipped
+        self.assertEqual(code, 1, out)
+        self.assertIn("gates skipped red tests: test_x.T.test_red", out)  # named, so the user knows whose
 
     def test_a_clause_needs_two_shared_words_in_an_item_its_check_or_its_task_titles(self):
         # T-2137
@@ -297,6 +323,50 @@ class GoalAcrossDays(GoalBase):
         out = self.fm("resume", "--no-check").stdout
         self.assertEqual(out.count("Goal: "), 1, out)
         self.assertIn(f"1/2 items done · next: 1. one ({t})", out)
+
+    def test_relay_race_a_fresh_session_at_every_kill_point_redoes_and_loses_nothing(self):
+        # T-2332, Mission 4's spike: the session dies after each event; the next one has only the disk (fm resume in a new
+        # process, fm run's pick). Redone: it would start a task already done. Lost: it counts fewer items done than are.
+        import fmserve
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        names = ("verbs", "show", "docs", "site", "pane")
+        for n in names:
+            self.fm("goal", "item", n, "--done-when", "test -d .")
+        t = [self.new(n, "--goal", str(k + 1)) for k, n in enumerate(names)]
+        done, redone, lost, points = set(), 0, 0, 0
+
+        def kill():
+            nonlocal redone, lost, points
+            out = self.fm("resume", "--no-check").stdout
+            self.assertIn("Goal: ", out)  # the line is the only memory: it must be there at every point
+            have = 5 if "all items done" in out else int(re.search(r"(\d+)/5 items done", out)[1])
+            lost += max(0, len(done) - have)
+            pick = fmserve._next_runnable(self.p, set(), set())
+            redone += bool(pick and pick.id in done)
+            points += 1
+
+        def close(tid, status="done"):
+            self.finish(tid, status)
+            (done.add(tid) if status == "done" else None)
+            kill()
+        kill()  # before any work
+        self.fm("focus", t[0])
+        kill()  # mid-task
+        close(t[0])
+        self.fm("checkpoint")
+        kill()  # after a checkpoint (what PreCompact writes)
+        close(t[1])
+        close(t[2], "dropped")  # dropped: its item stays open for a new task
+        t2b = self.new("docs again", "--goal", "3")
+        kill()
+        self.assertEqual(fmserve._next_runnable(self.p, set(), set()).id, t2b)
+        close(t2b)
+        close(t[3])
+        self.fm("focus", t[4])
+        kill()
+        close(t[4])
+        self.assertEqual(points, 11)
+        self.assertEqual((redone, lost), (0, 0))
 
     def test_fm_run_prefers_the_next_items_planned_task_and_never_takes_a_captured_one(self):
         import fmserve
