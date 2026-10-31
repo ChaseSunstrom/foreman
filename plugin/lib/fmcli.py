@@ -4524,6 +4524,7 @@ def _baseline(p, results):
         names = c.failing_tests(output)
         if not names or failure_class(output) or set(names) <= _known_flaky(p):  # a flake under load isn't a baseline
             continue
+        names = [c.fit(c.plain(n), 200) for n in names]  # T-2255: names are the run's output, untrusted
         head = f"Baseline red: `{cmd}` fails {', '.join(names[:6])}{' …' if len(names) > 6 else ''}."
         text = head + " Captured by fm check: the gates are red, so fix this before new work (it may not be this task's doing)."
         same = next((b for b in open_ if head in b.section("Raw request")), None)

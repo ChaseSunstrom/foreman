@@ -4,6 +4,7 @@ so `--resume` continues from the first unfinished one and `--dry-run` only print
 remote's main (origin by default) from a temporary worktree behind the active task's publish grant, which it spends
 before the push. The first run's flags (--ui, --push, --remote, --no-check) are kept in release.json for a resume;
 a skipped step is never recorded as done, and a release with skipped gates can't push."""
+import codecs
 import json
 import os
 import re
@@ -397,15 +398,42 @@ def ship(p, args):
             print(f"testing {n} on {remote} main: {shlex.join(test)}", flush=True)
             env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # GIT_DIR from a hook: not the user's repo
             c.update_meta(p, ship_testing={"pid": os.getpid(), "at": c.now(), "root": os.path.realpath(wt)})
+            env.setdefault("PYTHONUNBUFFERED", "1")
+            log = os.path.join(tmp, "test.log")  # T-2255: a file, not a pipe: a background process holding it can't hang the ship
             try:  # a full fm check here waits for this run; the ship's own fm check (in wt) doesn't
-                failed = subprocess.run(test, cwd=wt, stdin=subprocess.DEVNULL, env=env).returncode
-            except OSError as e:
-                _err(f"--test {test[0]!r} couldn't run ({e.strerror}); nothing was pushed")
+                with open(log, "wb") as out, open(log, "rb") as rd:
+                    try:
+                        proc = subprocess.Popen(test, cwd=wt, stdin=subprocess.DEVNULL, env=env, stdout=out,
+                                                stderr=subprocess.STDOUT)
+                    except OSError as e:
+                        _err(f"--test {test[0]!r} couldn't run ({e.strerror}); nothing was pushed")
+                    dec = codecs.getincrementaldecoder("utf-8")(errors="replace")
+                    while True:
+                        done = proc.poll() is not None
+                        chunk = rd.read()
+                        if chunk:
+                            print(dec.decode(chunk), end="", flush=True)
+                        if done:
+                            break
+                        time.sleep(0.1)
+                    failed = proc.returncode
+                    rd.seek(max(0, os.path.getsize(log) - 1_000_000))  # the last 1 MB, for the baseline capture
+                    tail = rd.read().decode("utf-8", errors="replace")
             finally:
                 if (c.read_meta(p).get("ship_testing") or {}).get("pid") == os.getpid():
                     c.update_meta(p, ship_testing=None)
+            import fmcli  # the shipped tree is vouchable, so the run files (or clears) what fm check would
+            try:
+                got = fmcli._baseline(p, [(shlex.join(test), failed, tail, None)])
+            except Exception as e:  # the verdict stands; the capture is a convenience
+                got = []
+                print(f"baseline capture failed: {e}")
+            m = re.search(r"\bT-\d+\b", " ".join(got))
             if failed:
-                _err("the test failed in the scratch tree; nothing was pushed")
+                _err("the test failed in the scratch tree" + (f" (baseline task {m.group(0)})" if m else "")
+                     + "; nothing was pushed")
+            for ln in got:
+                print(ln)
             tip = _git(wt, "rev-parse", "HEAD").strip()
             _git(root, "fetch", "-q", remote, "main")
             if c._git(root, "merge-base", "--is-ancestor", "FETCH_HEAD", tip, timeout=60, proc=True).returncode:
