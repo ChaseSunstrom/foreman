@@ -363,6 +363,55 @@ class Run(RunCase):
         self.assertIn("fm serve", p.stderr)
 
 
+class RunRoute(RunCase):
+    """T-2353: fm run with no --models and none kept gives each session the per-tier route's model, and says so."""
+    def claudes(self):
+        return [l for l in self.called().splitlines() if l.startswith("claude ")]
+
+    def test_no_models_and_none_kept_routes_each_session_and_prints_it(self):
+        a, b = self.task("one"), self.task("two")
+        self.stub("claude", self.finisher)
+        out = self.run_fm().stdout
+        self.assertEqual(len(self.claudes()), 2)
+        self.assertTrue(all("--model sonnet" in l for l in self.claudes()), self.claudes())
+        for t in (a, b):
+            self.assertRegex(out, rf"{t}: model sonnet: ")  # one line per session
+        self.assertEqual(c.find_brief(c.find_project(self.repo), a).meta["builder_model"], "sonnet")  # feeds the route
+
+    def test_models_still_wins_and_prints_no_route(self):
+        self.task("one")
+        self.stub("claude", self.finisher)
+        out = self.run_fm("--models", "S=opus").stdout
+        self.assertTrue(all("--model opus" in l for l in self.claudes()), self.claudes())
+        self.assertNotIn(": model sonnet", out)
+        self.assertNotIn(": model opus: ", out)
+
+    def test_a_kept_choice_wins_over_the_route(self):
+        self.task("one")
+        self.stub("claude", self.finisher)
+        self.run_fm("--models", "S=haiku", "--save", "--max", "0", check=False)
+        self.task("two")
+        self.run_fm()
+        self.assertTrue(self.claudes() and all("--model haiku" in l for l in self.claudes()), self.claudes())
+
+    def test_a_probe_session_is_marked_and_runs_one_model_down(self):
+        import fmlanes
+        p = c.find_project(self.repo)
+        for i in range(5):  # five closed sonnet S lanes that held
+            t = self.task(f"old {i}")
+            b = c.find_brief(p, t)
+            b.meta["builder_model"] = "sonnet"
+            b.meta["status"] = "done"
+            c.save_brief(p, b)
+        tid = self.task("probe me")
+        while not fmlanes.is_probe(tid):  # tasks pile up until one's id is a probe by the hash; fm run works them all
+            tid = self.task("probe me")
+        self.stub("claude", self.finisher)
+        out = self.run_fm().stdout
+        self.assertIn(f"{tid}: model haiku: ", out)
+        self.assertEqual(c.find_brief(p, tid).meta.get("route_probe"), "1")
+
+
 class Failover(ServeCase):
     def task(self, title):
         return json.loads(self.fm("task", "new", title, "--type", "FIX", "--tier", "S", "--ac", "works",

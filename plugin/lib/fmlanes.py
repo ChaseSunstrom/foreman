@@ -17,6 +17,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import zlib
 
 import fmcore as c
 
@@ -170,6 +171,13 @@ def cmd_lane(args):
                 lines.append(f"{b.meta['lane']} [missing]: {b.id} {b.status} {c.fit(b.title, 50)} — fm lane rm {b.id} "
                              f"frees it")
         return fmcli.out(args, {"lanes": rows}, "\n".join(lines) or "No lanes: fm lane new <task id> makes one.")
+    if getattr(args, "revert_route", None):  # T-2353: the off switch for the probe-down route, no task id
+        if args.action != "brief" or p.lane:
+            raise fmcli.UsageError("fm lane brief --revert-route DATE runs from the main checkout, with no task id")
+        back = revert_route(p, args.revert_route)
+        return fmcli.out(args, {"reverted": [{"tier": t, "from": m} for t, m in back]},
+                         (", ".join(f"{t} lanes back from {m}" for t, m in back) or "No promotion since that date")
+                         + f"; probing is paused for the next {REVERT_QUIET} lanes of each tier.")
     if not args.id:
         raise fmcli.UsageError(f"fm lane {args.action} needs a task id")
     if p.lane:  # T-0234 review: a lane (a builder's above all) doesn't hand itself back or start others
@@ -1323,20 +1331,26 @@ def defect_classes(p, days=30, top=5):
     return [f"- {n}: {len(t)} (e.g. {t[-1][:100]})" for n, t in ranked]
 
 
+def _lanes(p, tier, outs):
+    """T-2353: [(closed, id, model, probe, reworked)] oldest first, for this tier's lane-built closed tasks. Reworked: a
+    later FIX or revert, a lost outcome, or a baseline red naming it."""
+    import fmoutcomes
+    briefs = c.load_briefs(p, include_archive=True)
+    red = " ".join(b.section("Raw request") for b in briefs if b.meta.get("baseline"))
+    return sorted((fmoutcomes.done_at(b), b.id, b.meta["builder_model"], bool(b.meta.get("route_probe")),
+                   outs[b.id]["fate"] in ("reverted", "fixed later") or outs[b.id].get("survival") == "lost" or b.id in red)
+                  for b in briefs if b.tier == tier and b.id in outs and b.meta.get("builder_model"))
+
+
 def model_route(p, tier, outs=None):
     """T-2291: (model, line): sonnet, unless over the last 20 lane-built closed tasks of this tier sonnet's rework rate
     (a later FIX or revert, a lost outcome, a baseline red naming it) is 0.3+ above opus's, 5+ samples each."""
     import fmoutcomes
     outs = outs if outs is not None else fmoutcomes.outcomes(p)
-    briefs = c.load_briefs(p, include_archive=True)
-    red = " ".join(b.section("Raw request") for b in briefs if b.meta.get("baseline"))
-    built = sorted((fmoutcomes.done_at(b), b.id, b.meta["builder_model"]) for b in briefs
-                   if b.tier == tier and b.id in outs and b.meta.get("builder_model"))[-20:]
     n, bad = collections.Counter(), collections.Counter()
-    for _, i, m in built:
-        o = outs[i]
+    for _, _, m, _, rework in _lanes(p, tier, outs)[-20:]:
         n[m] += 1
-        bad[m] += o["fate"] in ("reverted", "fixed later") or o.get("survival") == "lost" or i in red
+        bad[m] += rework
     nums = ", ".join(f"{m} {bad[m]}/{n[m]}" for m in sorted(n)) or "none"
     if min(n["sonnet"], n["opus"]) < 5:
         return "sonnet", f"too little history to route {tier} lanes (need 5+ each of sonnet and opus; reworked: {nums})"
@@ -1344,6 +1358,180 @@ def model_route(p, tier, outs=None):
     if gap >= 0.3:
         return "opus", f"{tier} lanes reworked: {nums}: sonnet's rate is {gap:.0%} above opus's, so opus"
     return "sonnet", f"{tier} lanes reworked: {nums}: no gap worth opus"
+
+
+# T-2353: the probe-down route. The pick (model_route, or a promoted one kept in route.json) is probed one model down on
+# the lanes the stable hash names; probes that rework within a band of the pick's own rate make the cheaper model the pick.
+MODELS = ("haiku", "sonnet", "opus")  # cheapest first
+PROBE_MOD, PROBE_MIN, PROBE_WINDOW, PROBE_BAND, PROBE_COOL, REVERT_QUIET = 5, 5, 10, 0.1, 5, 20
+_ROUTE_KEYS = ("pick", "since", "provisional", "from", "evidence", "reverted_at", "quiet_from")
+
+
+def is_probe(tid):
+    """A stable fifth of the task ids: a function of the id alone, so a re-brief or a retry never moves a lane across."""
+    return zlib.crc32(str(tid).encode("utf-8")) % PROBE_MOD == 0
+
+
+def route_state(p):
+    """{tier: {pick, since, provisional, from, evidence, reverted_at, quiet_from}} from route.json, every field coerced:
+    a hand-edited or torn file reads as the base rule, never an error."""
+    try:
+        with open(os.path.join(p.dir, "route.json"), encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for tier, s in (raw.items() if isinstance(raw, dict) else ()):
+        if tier in ("S", "M") and isinstance(s, dict):
+            q = s.get("quiet_from")
+            out[tier] = {"pick": s.get("pick") if s.get("pick") in MODELS else None,
+                         "since": str(s.get("since") or "")[:20], "provisional": s.get("provisional") is True,
+                         "from": s.get("from") if s.get("from") in MODELS else None,
+                         "evidence": str(s.get("evidence") or "")[:300], "reverted_at": str(s.get("reverted_at") or "")[:20],
+                         "quiet_from": q if isinstance(q, int) and not isinstance(q, bool) and q >= 0 else 0}
+    return out
+
+
+def _rate(lanes):
+    return sum(l[4] for l in lanes) / len(lanes) if lanes else 0.0
+
+
+def _transition(p, tier, expect, new, decision, why):
+    """Apply `new` to the tier's route state and write its decide row, in one lock: only if the state is still `expect`
+    (pick, provisional), so two sessions that see the same evidence record one change. True if it applied."""
+    import fmcli
+    with c.lock(p.dir):
+        state = route_state(p)
+        cur = state.get(tier) or {"pick": None, "provisional": False}
+        if (cur.get("pick"), cur.get("provisional")) != expect:
+            return False
+        state[tier] = {**dict.fromkeys(_ROUTE_KEYS), "provisional": False, "quiet_from": 0, **cur, **new}
+        c.write_atomic(os.path.join(p.dir, "route.json"), json.dumps(state, indent=1, sort_keys=True) + "\n")
+        if decision:
+            fmcli._write_decision(p, decision, why=why, locked=True)
+    return True
+
+
+def route(p, tier, tid=None, outs=None, racing=False):
+    """(model, line, probe) for the next lane of this tier: the pick, or its probe one model down. A probe lane is task
+    `tid` when the hash names it, the pick reworks 0.1 or less over 5+ lanes, no probe reworked in the last 5 closes and
+    no revert is still quiet. 5+ probes (last 10) reworking within 0.1 of the pick's rate promote the cheaper model
+    (provisional until the long-horizon run confirms it). A racing task is never a probe."""
+    import fmoutcomes
+    outs = outs if outs is not None else fmoutcomes.outcomes(p)
+    base, line = model_route(p, tier, outs)
+    lanes = _lanes(p, tier, outs)
+    st = route_state(p).get(tier) or {}
+    pick = st.get("pick") or base
+    if st.get("pick"):
+        line = (f"{tier} lanes on {pick} (promoted from {st['from'] or 'the base'} {st['since'][:10]}"
+                + (f", provisional since {st['since'][:10]}" if st["provisional"] else "") + f"): {line}")
+    i = MODELS.index(pick)
+    down = MODELS[i - 1] if i else None
+    if not down:
+        return pick, line, False
+    mine = [l for l in lanes if l[2] == pick and not l[3]][-PROBE_WINDOW:]
+    recent = lanes[st.get("quiet_from", 0):]  # a revert forgets the probes before it
+    probes = [(k, l) for k, l in enumerate(recent) if l[3] and l[2] == down][-PROBE_WINDOW:]
+    if len(mine) >= PROBE_MIN and len(probes) >= PROBE_MIN and \
+            _rate([l for _, l in probes]) <= _rate(mine) + PROBE_BAND + 1e-9:
+        why = (f"{len(probes)} probe lanes on {down} reworked {sum(l[4] for _, l in probes)}/{len(probes)}, within "
+               f"{PROBE_BAND} of {pick}'s {sum(l[4] for l in mine)}/{len(mine)} (last {PROBE_WINDOW} each)")
+        if _transition(p, tier, (st.get("pick"), st.get("provisional", False)),
+                       {"pick": down, "since": c.now(), "provisional": True, "from": pick, "evidence": why},
+                       f"Route {tier} lanes to {down} (provisional)",
+                       f"{why}; the end-of-run long-horizon tier confirms or reverts it; "
+                       f"fm lane brief --revert-route DATE undoes it"):
+            return down, f"{tier} lanes promoted to {down} (provisional since {c.now()[:10]}): {why}", False
+        return route(p, tier, tid, outs, racing)  # another session moved it first: read its answer
+    bad = [k for k, l in probes if l[4]]
+    cooled = not bad or len(recent) - 1 - bad[-1] >= PROBE_COOL
+    quiet = bool(st.get("reverted_at")) and len(lanes) - st.get("quiet_from", 0) < REVERT_QUIET
+    if tid and not racing and is_probe(tid) and len(mine) >= PROBE_MIN and _rate(mine) <= PROBE_BAND + 1e-9 \
+            and cooled and not quiet:
+        return down, (f"{tier} probe: {down}, one model down from {pick} (it reworks {sum(l[4] for l in mine)}/"
+                      f"{len(mine)}; {len(probes)} probes so far; {tid} is on the probe hash)"), True
+    return pick, line, False
+
+
+_route = route  # builder_brief has a local named route
+
+
+def confirm_routes(p, res):
+    """The end-of-run hook of `fm exam long` (fmlong.grade): a provisional promotion stands if this run's goals in its tier
+    pass at least as often as the last foreman run before the promotion, else the dearer pick comes back. A run that can't
+    judge (not foreman's, a Haiku smoke line, no earlier run, no goal in the tier) changes nothing. [{tier, action, pick}]"""
+    import fmgenesis
+    import fmoutcomes
+    if not isinstance(res, dict) or res.get("agent") != "foreman" or fmgenesis.smoke(res):
+        return []
+    prov = {t: s for t, s in route_state(p).items() if s["provisional"] and s["pick"]}
+    if not prov:
+        return []
+    tiers = {b.id: b.tier for b in c.load_briefs(p, include_archive=True)}
+    prior = []
+    for raw in (fmgenesis._doc(fmgenesis.home(p), "exam.jsonl") or "").splitlines():
+        try:
+            x = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(x, dict) and x.get("tier") == "long" and x.get("agent") == "foreman" and not fmgenesis.smoke(x) \
+                and isinstance(x.get("goals"), list) and isinstance(x.get("at"), str):
+            prior.append(x)
+
+    def passed(run, tier):
+        mine = [bool(g.get("true_done")) for g in run.get("goals") or [] if isinstance(g, dict)
+                and tiers.get(g.get("id")) == tier]
+        return sum(mine) / len(mine) if mine else None
+    outs, done = None, []
+    for tier, st in prov.items():
+        then = [(x["at"], r) for x in prior if x["at"] < st["since"] and (r := passed(x, tier)) is not None]
+        now = passed(res, tier)
+        if now is None or not then:
+            continue
+        before = max(then)[1]
+        if now >= before:
+            ok = _transition(p, tier, (st["pick"], True), {"provisional": False},
+                             f"Confirm {tier} lanes on {st['pick']}",
+                             f"the long-horizon run passed {now:.0%} of its {tier} goals, the last run before the "
+                             f"promotion {before:.0%}")
+        else:
+            outs = outs if outs is not None else fmoutcomes.outcomes(p)
+            ok = _transition(p, tier, (st["pick"], True), _reverted(len(_lanes(p, tier, outs))),
+                             f"Revert {tier} lanes to {st['from'] or 'the base rule'}",
+                             f"the long-horizon run passed {now:.0%} of its {tier} goals, down from {before:.0%} before "
+                             f"the promotion to {st['pick']}")
+        if ok:
+            done.append({"tier": tier, "action": "confirm" if now >= before else "revert", "pick": st["pick"]})
+    return done
+
+
+def _reverted(n):
+    """The state a revert leaves: the base rule picks, the probes so far are forgotten, probing pauses 20 lanes."""
+    return {"pick": None, "provisional": False, "reverted_at": c.now(), "quiet_from": n}
+
+
+def revert_route(p, date):
+    """fm lane brief --revert-route DATE: every promotion made on or after DATE goes back to its dearer model (a decide
+    row each) and each tier stops probing for its next 20 lanes. [(tier, from the cheaper pick)]"""
+    import fmcli
+    import fmoutcomes
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date or ""):
+        raise fmcli.UsageError("fm lane brief --revert-route DATE: DATE is YYYY-MM-DD")
+    outs, back = fmoutcomes.outcomes(p), []
+    for tier in ("S", "M"):
+        st = route_state(p).get(tier) or {"pick": None, "provisional": False, "since": "", "from": None}
+        new = _reverted(len(_lanes(p, tier, outs)))
+        if st["pick"] and st["since"][:10] >= date:
+            if _transition(p, tier, (st["pick"], st["provisional"]), new,
+                           f"Revert {tier} lanes to {st['from'] or 'the base rule'}",
+                           f"fm lane brief --revert-route {date}: the promotion to {st['pick']} of {st['since'][:10]} "
+                           f"is undone; probing pauses for {REVERT_QUIET} lanes"):
+                back.append((tier, st["pick"]))
+        else:
+            _transition(p, tier, (st["pick"], st["provisional"]), {k: v for k, v in new.items()
+                                                                    if k in ("reverted_at", "quiet_from")}, "", "")
+    return back
 
 
 def builder_brief(p, b, args, resume_branch=None, after=""):
@@ -1430,15 +1618,19 @@ def builder_brief(p, b, args, resume_branch=None, after=""):
         import fmbus
         x.meta["builder"] = c.now()
         x.meta["builder_model"] = chosen
+        if probe:  # T-2353: a labelled probe: its outcome is the evidence for or against the cheaper model
+            x.meta["route_probe"] = 1
+        else:
+            x.meta.pop("route_probe", None)
         proc = fmbus.claude_proc()  # T-1028: when this process ends, the builder is stopped (fm lane resume)
         if proc:
             x.meta["builder_proc"] = proc
         else:
             x.meta.pop("builder_proc", None)
         x.append_log(f"builder brief: {path}")
-    chosen, route = model_route(p, b.tier)
+    chosen, route, probe = _route(p, b.tier, tid=b.id, racing=bool(racing))
     if getattr(args, "model", None):
-        chosen, route = args.model, f"--model {args.model}"
+        chosen, route, probe = args.model, f"--model {args.model}", False
     fmcli.mutate(p, b.id, mark, "lane_builder", {"path": path})
     # T-1796: every builder runs on Sonnet (Opus M lanes were 22% of a week's usage); the main thread reviews either
     # T-0779: and its effort follows the tier: medium for small well-specified diffs, high for M
