@@ -68,7 +68,7 @@ Or from inside Claude Code:
 |---|---|
 | **Ask for something** | `fix the login timeout on slow wifi`, in plain words. That's the whole interface. |
 | **Watch it first** | `fm demo` runs the real `fm` and guard hook on a seeded bug in a throwaway repo: no model calls, nothing left behind. |
-| **See where things stand** | Bare `fm` in a project says what's next; `fm help` answers "can it…?" in plain words. |
+| **See where things stand** | Bare `fm` in a project says what's next; `fm help` answers "can it…?" in plain words; `fm which NEED` searches past fixes, your tools, MCP servers, binaries, skills and plugins at once, and says which hits need a grant. |
 
 Starting a page, a 3D scene or an `fm code` panel? Start from a template that already passes the check that keeps it strict:
 

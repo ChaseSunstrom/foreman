@@ -3320,7 +3320,7 @@ def _capability_miss(p, sid, err, act=None, cmd="", name=None, kind=None):
         return None
     if seen:  # a second session: one task, ever (the key line)
         import fmeco
-        fmeco.capture_once(p, f"Missing tool {name}: find it (fm plugins find {name}) or build it (script + test)\n"
+        fmeco.capture_once(p, f"Missing tool {name}: find it (fm which {name}) or build it (script + test)\n"
                            f"capability-miss: {name}", "FEATURE", "self", key=f"capability-miss: {name}",
                            trigger="capability-miss")
     name = c.fit(c.plain(name), 64)
@@ -3329,7 +3329,13 @@ def _capability_miss(p, sid, err, act=None, cmd="", name=None, kind=None):
                 f"Find one: fm which \"{name}\".")
     if kind == "plugin":
         return None
-    return (f"Foreman: `{name}` is missing. Find it: fm plugins find {name} (an install needs fm ask ID plugin), "
+    try:  # T-2371: the best hit from the cheap sources (past fixes, project tools, binaries); never a plugin index
+        import fmwhich
+        hit = fmwhich.local_hit(p, name)
+    except Exception:
+        hit = ""
+    return (f"Foreman: `{name}` is missing. " + (f"Already here: {hit}. " if hit else "")
+            + f"Find it: fm which \"{name}\" (every shelf; an install needs fm ask ID plugin), "
             f"or build it: fm new tool {name if re.fullmatch(r'[a-z][a-z0-9_]{0,31}', name) else 'NAME'}.")
 
 

@@ -249,7 +249,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fmroll` (T-1648: `fm design roll`, a seeded, coherent pick of one look card's palette, type, motion and texture)
 - `fmrollback` (T-1085: a snapshot of every project's record before a new version runs, and `fm rollback` to restore it)
 - `fmtrials` (T-1059: a self-change as a pre-registered trial, graded by the digest on ledger event rates before and after)
-- `fmwhich` (T-1699: `fm which TASK`, the skills, playbooks and commands that fit a task, each with the call that loads it)
+- `fmwhich` (T-1699: `fm which TASK`, the skills, playbooks and commands that fit a task, each with the call that loads it; T-2371: every shelf, each hit with its source and any grant it needs: past fixes, project tools, MCP servers, installed skills, binaries (a one-word need), Foreman's own, stack cards, marketplace plugins; local ones first; each run logs `tool_search`; the capability-miss note names `fm which NAME` and the best hit from fixes, tools and binaries only; no network)
 
 </details>
 
