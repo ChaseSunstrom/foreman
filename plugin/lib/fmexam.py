@@ -1400,7 +1400,17 @@ def grade(p, run, agent):
            "answered": {"holdout": sorted(s["id"] for s in answered if s["split"] == "holdout"),
                         # T-2204: the held-out ones an outside author wrote; only these decide the scorecard
                         "child": sorted(s["id"] for s in answered if s["split"] == "holdout" and s.get("author") == "child")}}
-    for split, sid, n, cost, defect_lines, recall in _pool(one, answered):
+    def safe(s):  # T-2209: one scenario's exception (a damaged key, an unreadable repo) must not lose the rest
+        try:
+            return one(s)
+        except Exception as e:  # not BaseException: Ctrl-C and SystemExit still stop the grade
+            return None, s["id"], f"{type(e).__name__}: {e}", 0, [], []
+
+    res["ungraded"] = []
+    for split, sid, n, cost, defect_lines, recall in _pool(safe, answered):
+        if split is None:  # n is the error text; counts nothing, so it is neither found nor fixed
+            res["ungraded"].append(c.fit(c.plain(f"{sid}: {n}"), 200))
+            continue
         for hit in recall:
             tally(res["recall"], *hit)
             tally(res[split]["recall"], *hit)
@@ -1473,7 +1483,8 @@ def summary(r):
         parts.append(f"{r['reasked']} re-asked")
     if r.get("cost"):
         parts.append(f"${r['cost']:.2f}")
-    return f"{r.get('agent', '?')} {r.get('run', '?')}: " + ", ".join(parts)
+    return (f"{r.get('agent', '?')} {r.get('run', '?')}: " + ", ".join(parts)
+            + "".join(f"\n  ungraded {u}" for u in r.get("ungraded") or []))
 
 
 def last_lines(p, n=5):
@@ -1526,7 +1537,8 @@ def cmd_exam(args):
         if action == "run":
             res = run_agent(p, args.run, args.agent or "oracle", args.split, args.limit, args.budget, args.model,
                             request=args.request)
-            return fmcli.out(args, res, summary(res))
+            fmcli.out(args, res, summary(res))
+            return 1 if res.get("ungraded") else 0
         if action == "grade":
             if args.model:  # T-2158: answers from before the stamp, or stamped "default", name their model here
                 who = args.agent or "oracle"
@@ -1543,7 +1555,8 @@ def cmd_exam(args):
                                      "stamp is never rewritten")
                 c.write_atomic(f, new)
             res = grade(p, args.run, args.agent or "oracle")
-            return fmcli.out(args, res, summary(res))
+            fmcli.out(args, res, summary(res))
+            return 1 if res.get("ungraded") else 0
         if action == "check":
             res = check(p, args.run)
             fmcli.out(args, res, f"{args.run}: {res['checked']} scenarios checked, "
