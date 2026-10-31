@@ -562,7 +562,11 @@ PAGES = [
           "proves what it can on a throwaway copy and files each proven lead as a task whose check stays red until "
           "it's fixed; nothing proven leaves a receipt. <code>/foreman:initiative</code> runs map, find, prove and "
           "fix end to end.</li><li><strong>Only your trees.</strong> A tree whose recent commits aren't yours "
-          "is skipped; where others commit too, each lead waits for your yes.</li><li><strong>Everywhere.</strong> "
+          "is skipped; where others commit too, each lead waits for your yes.</li><li><strong>Deeper when you "
+          "allow it.</strong> <code>fm find --ladder</code> adds each stack's own analyzers (ruff, go vet, gosec), "
+          "run only in a tree you trusted with <code>fm prove PATH --yes-run</code>, tree-sitter rules when the "
+          "binding is installed, and git history to rank hotspots; a fixed bug no finder flagged becomes a blind "
+          "spot and a task for a new rule.</li><li><strong>Everywhere.</strong> "
           "The terminal, the <code>find</code> MCP tool for other agents and Desktop, and Foreman Code through its "
           "run tool.</li></ul>"),
          ("term", "$ fm find --rank\n2 candidate(s) in 2 files under ~/app; each is unproven until a failing test "
