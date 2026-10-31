@@ -2,7 +2,7 @@
 each still closed honestly, done in the host."""
 import json
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, valid_m_plan
 
 
 class Batch(ForemanTestCase):
@@ -50,10 +50,10 @@ class Batch(ForemanTestCase):
 
     def test_the_host_closing_closes_its_members(self):
         host = json.loads(self.fm("batch", *self.ids, "--json").stdout)["id"]
-        self.fm("task", "set", host, "--section", "Interpretation", "--text", "Reading 1: all three. Reading 2: one at a time.")
-        self.fm("task", "set", host, "--section", "Approach (options → choice → why)", "--text",
-                "1) together; fails if: one breaks 2) use what exists: apart; likely slower 3) do less: skip; the rest stays "
-                "Choice 1: together")
+        import fmcore as c
+        gaps = c.plan_gaps(c.find_brief(c.find_project(self.repo), host), "full")
+        self.assertFalse([g for g in gaps if "eading" in g], gaps)  # T-2335: the generator writes the readings itself
+        self.fm("task", "set", host, "--section", "Approach (options → choice → why)", "--text", valid_m_plan()[1])
         self.fm("task", "set", host, "--section", "Acceptance criteria", "--text", "".join(
             f"- [ ] {tid}: thing {i} works — verify with `true`\n" for i, tid in enumerate(self.ids)))
         self.fm("focus", host)

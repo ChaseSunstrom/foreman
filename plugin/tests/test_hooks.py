@@ -1114,6 +1114,17 @@ class NoTaskGate(HookCase):
         self.assertEqual((act.type, act.tier), ("FEATURE", "S"))
         self.assertIn("LRUCache", act.title)
 
+    def test_a_security_request_gets_an_m_task_that_passes_the_plan_gate(self):
+        # T-2335: the hook makes SECURITY briefs tier M; the gate's readings and outcomes must not leave them unfocused
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "SECURITY: review the upload endpoint for path traversal"})
+        out = self.pre(os.path.join(self.repo, "kit.py"))
+        act = c.active_brief(c.load_briefs(self.project()))
+        self.assertIsNotNone(act, f"the M brief the hook made was never focused: {out}")
+        self.assertEqual(act.tier, "M")
+        self.assertEqual(c.plan_gaps(act, "full"), [])
+
     def test_a_plan_only_or_open_ended_request_keeps_the_plain_refusal(self):
         for prompt in ("Make a plan for the cache, don't implement anything yet", "Fix everything"):
             with self.subTest(prompt=prompt):
