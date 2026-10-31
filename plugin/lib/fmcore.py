@@ -3668,7 +3668,12 @@ def _next_for(p, briefs=None):
                            f" · installed skills that fit this stage: {', '.join(fit)} (use one if it helps)")
         except Exception:
             pass  # a broken plugin registry must never cost the next action
-    return b, st, action + waits
+    try:
+        import fmmiss  # T-2369: an open capability miss comes first; a task with none logged pays one ledger read
+        miss = fmmiss.lead(p, b)
+    except Exception:
+        miss = ""
+    return b, st, (f"{miss} — then: {action}" if miss else action) + waits
 
 
 def active_brief(briefs, lane=None):
