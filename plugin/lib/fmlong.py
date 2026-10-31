@@ -230,6 +230,22 @@ def _top_names(text):
     return out
 
 
+def _ticket(p, src, task):
+    """T-2321: a goal replayed from this project's own history reads like the ticket its session had: the task brief's
+    Interpretation and its acceptance criteria's text, never their verify commands (those name the tests). Another
+    repo's ids aren't this project's tasks, so nothing is looked up there."""
+    if os.path.realpath(src) != os.path.realpath(p.root):
+        return ""
+    b = c.find_brief(p, task)
+    if b is None:
+        return ""
+    said = c.fit(c.plain(" ".join(b.section("Interpretation").split())), 600)
+    acs = [c.fit(c.plain(c._VERIFY_OF.sub("", a.text).strip()), 200) for a in b.acceptance()][:8]
+    acs = [a for a in acs if a]
+    return (f"\n\nInterpretation: {said}" if said else "") + \
+        ("\n\nAcceptance criteria:\n" + "\n".join(f"- {a}" for a in acs) if acs else "")
+
+
 def _interface(src, w, checks):
     """T-2304: what a goal must say so an honest answer can pass checks it never sees: each `module.name` the checks
     reach that the target defines and the base doesn't, each --flag they pass that the base's code never mentions, and
@@ -350,6 +366,7 @@ def gen(p, src=None, n=6, seed=0):
             k = _scenario(src, w, seed, tmp, end)
             if not k:
                 continue
+            k["goal"] += _ticket(p, src, w["task"])
             base = os.path.join(_root(p), run, w["task"])
             _archive(src, w["base"], os.path.join(base, "repo"))
             for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.name=exam", "-c", "user.email=exam@example.com",

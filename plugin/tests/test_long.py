@@ -108,6 +108,30 @@ class Long(ForemanTestCase):
             self.assertNotIn("assert", goal.lower())  # names and done-when only, never the tests' bodies
             self.assertNotIn("h is five", goal)
 
+    def test_a_goal_from_the_projects_own_history_carries_its_briefs_ticket(self):
+        # T-2321: a subject alone left the checks' contract unsaid; the brief is the ticket a session had
+        out = self.fm("task", "new", "Add q", "--type", "FEATURE", "--tier", "S", "--interpretation",
+                      "Add q, which returns seven.", "--ac", "q returns 7 :: python3 -m unittest tests.test_app",
+                      "--json").stdout
+        tid = json.loads(out)["id"]
+        write(self.repo, "app.py", APP)
+        write(self.repo, "tests/test_app.py", TEST.format(extra=""))
+        subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "base"], check=True)
+        write(self.repo, "app.py", APP + "\n\ndef q():\n    return 7\n")
+        write(self.repo, "tests/test_app.py",
+              TEST.format(extra="\n    def test_q_is_seven(self):\n        self.assertEqual(app.q(), 7)\n"))
+        subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", f"Add q ({tid})"], check=True)
+        fmprove.remember(self.repo)
+        r = json.loads(self.fm("exam", "long", "gen", "--from", self.repo, "--json").stdout)
+        goal = [s for s in r["scenarios"] if s["id"] == tid][0]["goal"]
+        self.assertIn("Add q, which returns seven.", goal)
+        self.assertIn("q returns 7", goal)
+        self.assertNotIn("unittest", goal)  # the verify command names the test: never in the goal
+        sub = json.loads(self.gen().stdout)["scenarios"][0]["goal"]  # another repo's ids: no brief lookup
+        self.assertNotIn("Acceptance criteria", sub)
+
     def test_a_goal_half_done_scores_its_checks_passed(self):
         # T-2320: l002's foreman arm passed 4 of 20 hidden checks and read only "0/6 true done"
         self.add("\n\nMODES = ['--json']\n", "", "prep, no task")
