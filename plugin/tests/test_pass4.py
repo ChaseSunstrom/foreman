@@ -74,7 +74,7 @@ class Sinks(ForemanTestCase):
     def test_network_code_needs_the_adversary_lens_and_its_sinks(self):
         self.fm("init")
         tid = json.loads(self.fm("task", "new", "fetch it", "--type", "FEATURE", "--tier", "M", "--ac", "x :: true",
-                                 "--step", "x", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--json").stdout)["id"]
+                                 "--step", "x", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a", "--json").stdout)["id"]
         self.fm("focus", tid)
         with open(os.path.join(self.repo, "get.py"), "w") as f:
             f.write("import urllib.request\n\n\ndef get(url):\n    return urllib.request.urlopen(url).read()\n")

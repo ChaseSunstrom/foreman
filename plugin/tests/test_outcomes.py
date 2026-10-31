@@ -405,7 +405,7 @@ class CalBase(Base):
     def bets(self, kind=None):
         return [r for r in self.rows() if "kind" in r and (kind is None or r["kind"] == kind)]
 
-    def planned(self, title="Cache", tier="M", conf=None, assume=(), choice="Choice 1: a (80%)"):
+    def planned(self, title="Cache", tier="M", conf=None, assume=(), choice="Choice 1 (80%): a (80%)"):
         """A planned task: a stated choice, assumptions and an optional task confidence, not yet focused."""
         from helpers import valid_m_plan
         reading, _ = valid_m_plan()  # T-2335's plan gate: two readings, outcomes, use-what-exists and do-less
@@ -451,13 +451,13 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
         self.done("Earlier 1")
         self.done("Earlier 2")
         self.fm("capture", f"Crash in what {first} added", "--type", "FIX", "--tier", "S")
-        tid = self.planned(conf=90, assume=["the cache is read-only (70%)", "no network (60%) in tests"])
+        tid = self.planned(conf=90, assume=["the cache is read-only (70%)", "no network (75%) in tests"])
         self.assertEqual(self.bets(), [], "nothing is a bet before first focus")
         self.fm("focus", tid)
         got = {(r["kind"], r["key"]): r for r in self.bets() if r["task"] == tid}
         self.assertEqual({k: r["stated"] for k, r in got.items()},
                          {("task", "confidence"): 90, ("choice", "choice"): 80, ("assumption", "A1"): 70,
-                          ("assumption", "A2"): 60})
+                          ("assumption", "A2"): 75})
         row = got[("choice", "choice")]
         self.assertEqual((row["base"], row["files"], row["tier"], row["type"]), (67, ["lib/a.py"], "M", "FEATURE"))
         self.assertTrue(row["tree"] and row["id"] and row["ts"], row)
@@ -522,7 +522,7 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
         self.assertEqual([r["outcome"] for r in fmoutcomes.scored(self.p)], ["missed"])
 
     def test_assumption_marks_and_reversed_decisions_score(self):
-        tid = self.planned(assume=["it is fast (80%)", "it is small (60%)"], choice="Choice 1: a")
+        tid = self.planned(assume=["it is fast (80%)", "it is small (75%)"], choice="Choice 1 (80%): a")
         self.fm("focus", tid)
         self.fm("task", "assume", tid, "verify", "1", "--run", "true")
         self.fm("task", "assume", tid, "verify", "2", "--run", "false")
@@ -535,7 +535,7 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
         self.assertEqual(got[("assumption", "A2")], "missed")
         self.assertEqual(got[("decision", "use redis for sessions")], "missed")
         self.assertIsNone(got[("decision", "use redis for rate limits")], "an unreversed decision waits out the window")
-        self.assertEqual(data["pending"], 1)
+        self.assertEqual(data["pending"], 2)  # the unreversed decision and the choice (80%) the plan gate now requires
 
     def test_a_race_result_scores_the_race_side(self):
         tid = self.plain()
