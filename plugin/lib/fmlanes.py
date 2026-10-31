@@ -193,8 +193,10 @@ def cmd_lane(args):
         merged = merge(p, b, main, why)
         import fmbus
         fmbus.release(p, b.id)  # T-1068
-        return fmcli.out(args, {"id": b.id, "merged": merged}, f"{b.id}: merged {merge.last} into {main} "
-                         f"(--no-ff); next: fm lane rm {b.id}, fm focus {b.id}, re-run its criteria, fm task finish")
+        fns = merge.functions
+        return fmcli.out(args, {"id": b.id, "merged": merged, "functions": fns}, f"{b.id}: merged {merge.last} into "
+                         f"{main} (--no-ff); next: fm lane rm {b.id}, fm focus {b.id}, re-run its criteria, fm task finish"
+                         + (f"\nFunctions changed:\n{functions_line(fns)}" if functions_line(fns) else ""))
     if args.action == "new":
         if c.panicked():
             raise c.PolicyError(c.PAUSED)
@@ -812,6 +814,59 @@ def _verify(b):
                                 f"(fm lane merge {b.id} --unverified \"<reason>\" waives it, logged)")
 
 
+_HUNK = re.compile(r"^@@ -\S+ \+\S+ @@ ?(.*)$")
+_SIGNED_DEF = re.compile(r"^[+-]\s*(?:async\s+|export\s+|pub\s+)*(?:def|class|function|func|fn|sub)\s+([\w$]+)")
+_DEF = re.compile(r"\b(?:def|class|function|func|fn|sub)\s+([\w$]+)")
+
+
+def functions_changed(diff, per_file=8, max_files=40):
+    """T-2312: {file: [function, …]} from a diff's hunk headers (git's own function context, so any language it knows;
+    the diff's repo text goes through plain and fit before anyone prints it). A change outside any function has none."""
+    out, cur, extra, hunk = {}, None, {}, None
+
+    def add(name):
+        name = c.fit(c.plain(c.redact(name)), 40)  # the header is the nearest line above: a `KEY = "sk-…"` one
+        if cur is None or name in cur:
+            return
+        if len(cur) < per_file:
+            cur.append(name)
+        else:
+            extra[id(cur)] = extra.get(id(cur), 0) + 1
+
+    def flush():  # git's context name, unless the hunk starts on a def line (then it names the one above), plus its defs
+        if hunk and cur is not None:
+            if hunk["ctx"] and not hunk["first_def"]:
+                add((_DEF.search(hunk["ctx"]) or [0, hunk["ctx"]])[1])
+            for name in hunk["defs"]:
+                add(name)
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            flush()
+            hunk = None
+            m = re.match(r"diff --git a/.+? b/(.+)$", line)  # a git-quoted name doesn't match: no credit to the last file
+            cur = None if not m or (len(out) >= max_files and m.group(1) not in out) else out.setdefault(m.group(1), [])
+        elif line.startswith("@@ "):
+            flush()
+            h = _HUNK.match(line)
+            hunk = {"ctx": h.group(1).strip(), "defs": [], "first_def": None} if h else None
+        elif hunk and line[:1] in "+-":
+            d = _SIGNED_DEF.match(line)
+            if hunk["first_def"] is None:
+                hunk["first_def"] = bool(d)
+            if d:
+                hunk["defs"].append(d.group(1))
+    flush()
+    for v in out.values():
+        if extra.get(id(v)):
+            v.append(f"+{extra[id(v)]} more")
+    return out
+
+
+def functions_line(fns):
+    """One printable line per file: `path: f, g`."""
+    return "\n".join(f"{c.fit(c.plain(f), 80)}: {', '.join(v)}" for f, v in fns.items() if v)
+
+
 def merge(p, b, main, unverified=None):
     """T-0377: merge a reviewed builder branch into the main checkout (--no-ff) through fm. On Foreman's own repo the
     guard refuses `git merge` (a tree write over core); here every file the branch changes must pass the guard as a
@@ -850,6 +905,10 @@ def merge(p, b, main, unverified=None):
     if clash:
         raise c.PolicyError(f"{main} has uncommitted changes to {', '.join(clash[:5])}, which {branch} also changes: "
                             f"commit them first, then merge")
+    # T-2312: the functions the branch changes (before the merge moves HEAD), so a stray edit stands out
+    merge.functions = functions_changed(_git(main, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "diff",
+                                             "-U0", "--no-renames", "--no-ext-diff", "--no-textconv",
+                                             f"HEAD...{branch}").stdout)
     for f in files:
         blk = fmguard.check("Write", {"file_path": os.path.join(main, f), "content": ""}, ctx)
         if blk:
