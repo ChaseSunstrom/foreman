@@ -5,6 +5,8 @@ import os
 
 from helpers import ForemanTestCase
 
+import fmcore as c
+
 SKILLS = os.path.join(os.path.dirname(__file__), "..", "skills")
 
 
@@ -74,9 +76,13 @@ class Which(ForemanTestCase):
 
     def test_one_common_word_is_no_match(self):
         # T-1699 review: "page" alone listed the UI playbooks and fm page for a login task nothing covers
-        p = self.fm("which", "add a login page with oauth", check=False)
+        p = self.fm("which", "add a zebra page with quokka", check=False)
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("Nothing matches", p.stdout)
+        # T-2371: the stack cards are a shelf now, so the login task finds the auth card (a real fit) but no UI playbook
+        out = self.fm("which", "add a login page with oauth").stdout
+        self.assertIn("fm lib show auth-providers", out)
+        self.assertNotIn("fm playbooks show ui/", out)
 
     def test_foremans_own_release_tool_is_not_a_users_release(self):
         out = self.fm("which", "ship a release").stdout
@@ -152,6 +158,175 @@ class Which(ForemanTestCase):
         self.assertNotIn("fm which", ctx("add a --quiet flag to the parser"), "once a session")
         self.assertNotIn("fm which", ctx("add a --quiet flag via /foreman:intake", "sess-2"), "a skill named already")
         self.assertNotIn("fm which", ctx("why is the sky blue?", "sess-3"), "no task in it")
+
+
+class Shelves(ForemanTestCase):
+    """T-2371 (Mission 6, #5): one find across every shelf: past fixes, then what this machine holds (project tools, MCP
+    servers, installed skills, binaries), Foreman's own, stack cards, then marketplace plugins; each row says where it
+    came from and whether it needs a grant; each search leaves a tool_search receipt. Local files only."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.cc = os.path.join(self.tmp, "cc")
+        self.hm = os.path.join(self.tmp, "home")
+        self.bin = os.path.join(self.tmp, "bin")
+        for d in (self.cc, os.path.join(self.hm, ".local", "bin"), self.bin):
+            os.makedirs(d, exist_ok=True)
+
+    def env(self):
+        return {"CLAUDE_CONFIG_DIR": self.cc, "HOME": self.hm, "PATH": self.bin + os.pathsep + os.environ["PATH"]}
+
+    def write(self, path, text="", mode=None):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(text)
+        if mode:
+            os.chmod(path, mode)
+
+    def find(self, need):
+        return json.loads(self.fm("which", need, "--json", env=self.env(), check=False).stdout)
+
+    def rows(self, need, shelf):
+        return self.find(need).get(shelf) or []
+
+    def test_a_binary_on_path_or_in_a_bin_folder_is_found_without_a_grant(self):
+        self.write(os.path.join(self.bin, "zorblat"), "#!/bin/sh\n", 0o755)
+        self.write(os.path.join(self.hm, ".local", "bin", "frobnix"), "#!/bin/sh\n", 0o755)
+        self.write(os.path.join(self.repo, "node_modules", ".bin", "quuxer"), "#!/bin/sh\n", 0o755)
+        self.write(os.path.join(self.bin, "plainfile"), "not executable\n", 0o644)
+        for name in ("zorblat", "frobnix", "quuxer"):
+            (row,) = self.rows(name, "binaries")
+            self.assertEqual((row["source"], row["grant"]), ("binary", ""), name)
+            self.assertIn(name, row["load"])
+        self.assertEqual(self.rows("plainfile", "binaries"), [], "a file that doesn't run isn't a tool")
+
+    def test_a_project_tool_from_fm_new_tool_is_found_by_its_header_and_one_line(self):
+        self.write(os.path.join(self.repo, "tools", "sheetsplit.py"),
+                   '#!/usr/bin/env python3\n# fm new tool\n"""sheetsplit: split a spreadsheet into one file per tab."""\n')
+        self.write(os.path.join(self.repo, "tools", "other.py"), '"""split spreadsheet tabs: no header."""\n')
+        (row,) = self.rows("split a spreadsheet by tab", "tools")
+        self.assertEqual(row["grant"], "")
+        self.assertTrue(row["source"].startswith("project tool"), row["source"])
+        self.assertIn("this repo's, unreviewed: read it first", row["source"])  # the repo wrote it, not this machine
+        self.assertIn("tools/sheetsplit.py", row["load"])
+
+    def test_an_installed_plugins_skill_is_found(self):
+        tree = os.path.join(self.tmp, "plug")
+        self.write(os.path.join(tree, "skills", "pdfsplit", "SKILL.md"),
+                   "---\nname: pdfsplit\ndescription: Split a PDF into one file per page.\n---\n\n# body\n")
+        self.write(os.path.join(self.cc, "plugins", "installed_plugins.json"),
+                   json.dumps({"plugins": {"docs@mk": [{"installPath": tree}]}}))
+        self.write(os.path.join(self.cc, "settings.json"), json.dumps({"enabledPlugins": {"docs@mk": True}}))
+        (row,) = self.rows("split a pdf per page", "installed")
+        self.assertEqual((row["source"], row["grant"]), ("installed skill", ""))
+        self.assertIn("docs:pdfsplit", row["name"])
+
+    def test_an_mcp_server_in_the_project_or_the_users_config_is_found(self):
+        self.write(os.path.join(self.repo, ".mcp.json"), json.dumps({"mcpServers": {"gizmo-db": {"command": "gizmod"}}}))
+        self.write(os.path.join(self.hm, ".claude.json"), json.dumps(
+            {"mcpServers": {"wombat-search": {"command": "w"}},
+             "projects": {self.repo: {"mcpServers": {"yak-cache": {"command": "g"}}}}}))
+        (row,) = self.rows("gizmo-db", "mcp")
+        self.assertTrue(row["source"].startswith(".mcp.json"), row["source"])
+        self.assertIn("this repo's, unreviewed: read it first", row["source"])
+        self.assertEqual([r["source"] for r in self.rows("wombat-search", "mcp")], ["~/.claude.json"])
+        self.assertEqual([r["name"] for r in self.rows("yak-cache", "mcp")], ["yak-cache"])
+        self.assertEqual(self.rows("gizmo-db", "mcp")[0]["grant"], "")
+
+    def test_a_pipe_or_a_huge_file_where_a_config_belongs_is_skipped_not_read(self):
+        os.mkfifo(os.path.join(self.repo, ".mcp.json"))  # a read would block forever
+        self.write(os.path.join(self.hm, ".claude.json"), '{"mcpServers": {"gizmo": {}}, "pad": "' + "x" * 9_000_000 + '"}')
+        p = self.fm("which", "gizmo", env=self.env(), check=False, timeout=15)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+
+    def test_a_shelf_that_fails_is_named_in_the_output_and_the_receipt(self):
+        from unittest import mock
+
+        import fmwhich
+        p = c.find_project(self.repo)
+        failed = []
+        with mock.patch.dict(os.environ, self.env()), mock.patch.object(fmwhich, "tools", side_effect=OSError("x")):
+            got = fmwhich.search("record evidence for a step", p, failed)
+        self.assertEqual((failed, got["tools"]), (["tools"], []))
+        self.assertIn("fm task evidence", [r["load"] for r in got["commands"]], "the other shelves still answer")
+        self.assertIn("skipped: tools", fmwhich.skipped_note(failed))
+        self.assertEqual(fmwhich.skipped_note([]), "")
+
+    def test_a_malformed_config_is_skipped_not_fatal(self):
+        self.write(os.path.join(self.repo, ".mcp.json"), "{not json")
+        self.write(os.path.join(self.hm, ".claude.json"), json.dumps({"mcpServers": ["a"], "projects": 3}))
+        p = self.fm("which", "gizmo", env=self.env(), check=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("Nothing matches", p.stdout)
+
+    def test_a_past_fix_is_found_and_leads_the_list(self):
+        self.fm("fix", "add", "zorblat: command not found", "--do", "install zorblat with pip install zorblat-cli")
+        self.write(os.path.join(self.bin, "zorblat"), "#!/bin/sh\n", 0o755)
+        self.write(os.path.join(self.repo, ".mcp.json"), json.dumps({"mcpServers": {"zorblat-mcp": {"command": "z"}}}))
+        out = self.fm("which", "zorblat", env=self.env()).stdout
+        self.assertIn("pip install zorblat-cli", out)
+        self.assertIn("learned here", out)
+        self.assertLess(out.index("Solved before"), out.index("On this machine"), out)
+        self.assertEqual(self.rows("zorblat", "fixes")[0]["grant"], "")
+
+    def test_a_marketplace_plugin_is_last_and_says_an_install_needs_a_grant(self):
+        self.write(os.path.join(self.cc, "plugins", "marketplaces", "mk", ".claude-plugin", "marketplace.json"),
+                   json.dumps({"name": "mk", "plugins": [{"name": "zorblat-tools", "description": "zorblat helpers",
+                                                          "source": "./zt"}]}))
+        self.write(os.path.join(self.bin, "zorblat"), "#!/bin/sh\n", 0o755)
+        out = self.fm("which", "zorblat", env=self.env()).stdout
+        self.assertLess(out.index("On this machine"), out.index("Marketplace plugins"), out)
+        (row,) = self.rows("zorblat", "plugins")
+        self.assertEqual((row["source"], row["grant"]), ("marketplace mk", "fm ask ID plugin"))
+        self.assertIn("fm ask ID plugin", out)
+
+    def test_foremans_own_verbs_still_answer_and_a_stack_card_is_a_shelf(self):
+        got = self.find("record evidence for a step")
+        self.assertIn("fm task evidence", [r["load"] for r in got["commands"]])
+        cards = self.find("fastapi")
+        self.assertTrue(cards["library"], "stack cards are searched")
+        self.assertEqual(cards["library"][0]["grant"], "")
+
+    def test_each_search_leaves_a_receipt_of_what_it_searched_and_found(self):
+        self.write(os.path.join(self.bin, "zorblat"), "#!/bin/sh\n", 0o755)
+        self.fm("which", "zorblat", env=self.env())
+        self.fm("which", "xyzzy frobnicate quux", env=self.env(), check=False)
+        evs = c.ledger_events(c.find_project(self.repo), ["tool_search"])
+        self.assertEqual([e["data"]["need"] for e in evs], ["zorblat", "xyzzy frobnicate quux"])
+        first, second = evs[0]["data"], evs[1]["data"]
+        self.assertEqual(first["hits"]["binaries"], 1)
+        self.assertEqual(sum(second["hits"].values()), 0, "a search that found nothing is a receipt too")
+        for shelf in ("fixes", "tools", "mcp", "installed", "binaries", "skills", "playbooks", "commands", "library",
+                      "plugins"):
+            self.assertIn(shelf, first["sources"])
+
+    def test_a_search_makes_no_network_call_and_starts_no_process(self):
+        import socket
+        import subprocess
+        from unittest import mock
+
+        import fmwhich
+        with mock.patch.dict(os.environ, self.env()), mock.patch("os.getcwd", return_value=self.repo), \
+                mock.patch.object(socket.socket, "connect", side_effect=AssertionError("network")), \
+                mock.patch.object(socket, "getaddrinfo", side_effect=AssertionError("network")), \
+                mock.patch.object(subprocess, "run", side_effect=AssertionError("process")), \
+                mock.patch.object(subprocess, "Popen", side_effect=AssertionError("process")):
+            got = fmwhich.search("record evidence for a step", c.find_project(self.repo))
+        self.assertIn("fm task evidence", [r["load"] for r in got["commands"]])
+
+    def test_the_cheap_local_hit_the_hook_reads_needs_no_plugin_index(self):
+        import fmwhich
+        self.write(os.path.join(self.hm, ".cargo", "bin", "rg2"), "#!/bin/sh\n", 0o755)
+        self.write(os.path.join(self.repo, "tools", "sheetsplit.py"), '# fm new tool\n"""sheetsplit: split sheets."""\n')
+        self.fm("fix", "add", "jq: command not found", "--do", "apt install jq")
+        p = c.find_project(self.repo)
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"HOME": self.hm}), mock.patch("fmplugins.index", side_effect=AssertionError):
+            self.assertIn("rg2", fmwhich.local_hit(p, "rg2"))
+            self.assertEqual(fmwhich.local_hit(p, "sheetsplit"), "", "a repo's own tool is never put in the hook's note")
+            self.assertIn("apt install jq", fmwhich.local_hit(p, "jq"))
+            self.assertEqual(fmwhich.local_hit(p, "nothing-here"), "")
 
 
 if __name__ == "__main__":

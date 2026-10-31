@@ -14,6 +14,7 @@ import glob
 import math
 import os
 import re
+import shutil
 
 import fmcore as c
 
@@ -90,6 +91,180 @@ def commands():
             for n, (h, t) in sorted(fmrecall.verb_docs().items()) if n.split()[0] not in SELF | FOREMAN_ONLY]
 
 
+# ---- T-2371: the other shelves. Local files only: no network, no process; a shelf that fails is skipped and said.
+HERE = ("fixes", "tools", "mcp", "installed", "binaries")  # solved before, then what this machine holds
+SHELVES = HERE + ("skills", "playbooks", "commands", "library", "plugins")
+TITLES = {"fixes": "Solved before", "tools": "On this machine: project tools", "mcp": "On this machine: MCP servers",
+          "installed": "On this machine: installed skills", "binaries": "On this machine: binaries",
+          "skills": "Skills", "playbooks": "Playbooks", "commands": "fm commands",
+          "library": "Stack cards and skill sources", "plugins": "Marketplace plugins"}
+_NAME = re.compile(r"[A-Za-z0-9_.+-]{1,64}")  # the capability-miss hook's rule for a tool name
+GRANT = "fm ask ID plugin"
+UNREVIEWED = "this repo's, unreviewed: read it first"  # a file the repo carries: its word, not this machine's
+HIT_MAX = 140  # characters of the hook note's local hit
+JSON_MAX = 8_000_000  # bytes of a config read (a real ~/.claude.json is a few MB at most)
+
+
+def _row(name, load, summary, source, grant="", text=None):
+    return {"name": c.fit(c.plain(str(name)), 80), "load": c.fit(c.plain(str(load)), 160),
+            "summary": c.fit(c.plain(str(summary)), 160), "source": source, "grant": grant,
+            "text": c.plain(text if text is not None else f"{name} {summary}")}
+
+
+def binary(name, root):
+    """The path of an executable called name: PATH, then the bin folders a session's PATH may lack, or ''."""
+    if not _NAME.fullmatch(name):
+        return ""
+    home = os.path.expanduser("~")
+    for d in (os.path.join(home, ".local", "bin"), os.path.join(home, ".cargo", "bin"), os.path.join(root, "node_modules", ".bin")):
+        path = os.path.join(d, name)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return shutil.which(name) or path
+    return shutil.which(name) or ""
+
+
+def binaries(task, root):
+    """Only a need that is a name (one word): a sentence's stray word (login in "login page oauth") is no tool."""
+    names = re.findall(r"[a-z0-9_.+-]{2,64}", task.lower())
+    names = names if len(names) == 1 and len(task.split()) == 1 else []
+    paths = {n: binary(n, root) for n in names}
+    return [_row(n, path, "an executable here", "binary", text=n) for n, path in paths.items() if path]
+
+
+def _tool_file(root, name):
+    """tools/NAME.py when it is a script `fm new tool` made (its header), else ''. ponytail: only the folder fm new
+    tool writes to by default; a tool made with a DIR elsewhere isn't found."""
+    import fmnew
+    path = os.path.join(root, "tools", f"{name}.py")
+    return path if _NAME.fullmatch(name) and fmnew._is_tool(path) else ""
+
+
+def tools(root):
+    out = []
+    for path in sorted(glob.glob(os.path.join(root, "tools", "*.py")))[:300]:
+        name = os.path.basename(path)[:-3]
+        if _tool_file(root, name):
+            doc = re.search(r'"""([^\n]*)', _head(path)[:1500])
+            out.append(_row(name, f"python3 tools/{name}.py", doc.group(1) if doc else "",
+                        f"project tool ({UNREVIEWED})"))
+    return out
+
+
+def _json_file(path):
+    """A config's parsed JSON, or {}: a regular file under JSON_MAX bytes only (a FIFO would block, a huge one cost)."""
+    import fmplugins
+    try:
+        if not os.path.isfile(path) or os.path.getsize(path) > JSON_MAX:
+            return {}
+    except OSError:
+        return {}
+    return fmplugins._json(path, {}) or {}
+
+
+def mcp(root):
+    out = []
+
+    def take(servers, source):
+        for name in servers if isinstance(servers, dict) else ():
+            out.append(_row(name, f"MCP server {name}", "a configured MCP server", source, text=str(name)))
+    mine = _json_file(os.path.join(root, ".mcp.json"))
+    take(mine.get("mcpServers") if isinstance(mine, dict) else None, f".mcp.json ({UNREVIEWED})")
+    conf = _json_file(os.path.join(os.path.expanduser("~"), ".claude.json"))
+    if isinstance(conf, dict):
+        take(conf.get("mcpServers"), "~/.claude.json")
+        proj = conf.get("projects")
+        mine = proj.get(root) if isinstance(proj, dict) else None
+        take(mine.get("mcpServers") if isinstance(mine, dict) else None, "~/.claude.json (this project)")
+    return out
+
+
+def installed(p):
+    import fmplugins
+    return [_row(x["name"], f"Skill {x['name'].lstrip('/')}", x["text"], "installed skill")
+            for x in (fmplugins._skill_index(p).get("skills") or []) if isinstance(x, dict) and x.get("name")]
+
+
+def fixes(p):
+    import fmfixes
+    out = []
+    for f in fmfixes.known(p)[:300]:
+        mine = f["trusted"]
+        out.append(_row(f["sig"], f["do"], f["sig"], "learned here" if mine else
+                        "this repo's fixes, not learned here: check it before running anything it names",
+                        text=f"{f['sig']} {f['do']}"))
+    return out
+
+
+def library(task):
+    """Stack cards and indexed skill sources; an enabled plugin's skill is the installed shelf's, a disabled one's
+    enabling needs a grant."""
+    import fmlib
+    plug = {s["name"]: s for s in fmlib.plugin_skills()}
+    out = []
+    for r in fmlib.search(task, 30):
+        s = plug.get(r["name"])
+        if s and s.get("enabled"):
+            continue
+        source, grant = (("stack card", "") if r["kind"] == "card" else
+                         ("installed plugin, not enabled", GRANT) if s else ("skill source", ""))
+        out.append(_row(r["name"], f"fm lib show {r['name']}", r["summary"], source, grant))
+    return out
+
+
+def plugins(task):
+    import fmplugins
+    out = []
+    for h in fmplugins.find(task, 10):
+        on = h["installed"] and h["enabled"]
+        out.append(_row(h["id"], h["id"], h["description"], "installed plugin" if on else
+                        "installed plugin, not enabled" if h["installed"] else f"marketplace {h['marketplace']}",
+                        "" if on else GRANT, text=f"{h['name']} {h['description']} {h['category']}"))
+    return out
+
+
+def search(task, p=None, failed=None):
+    """{shelf: [row with its score]} over every shelf, each shelf's best first; a shelf that raises is empty and its
+    name appended to failed."""
+    root = p.root if p else os.getcwd()
+    makers = {"fixes": lambda: fixes(p), "tools": lambda: tools(root), "mcp": lambda: mcp(root),
+              "installed": lambda: installed(p) if p else [], "binaries": lambda: binaries(task, root),
+              "skills": skills, "playbooks": lambda: playbooks(task), "commands": commands,
+              "library": lambda: library(task), "plugins": lambda: plugins(task)}
+    found = {}
+    for shelf in SHELVES:
+        try:
+            found[shelf] = makers[shelf]()
+        except Exception:
+            found[shelf] = []
+            if failed is not None:
+                failed.append(shelf)
+    return rank(task, found)
+
+
+def skipped_note(failed):
+    """The line that says a shelf could not be read, so a quiet answer is not mistaken for a complete search."""
+    return f"skipped: {', '.join(failed)} (could not be read)" if failed else ""
+
+
+def local_hit(p, name):
+    """What the capability-miss hook adds to its note, from the cheap sources only (a past fix this machine learned, a
+    binary in a bin folder): one short phrase, or ''. No plugin index, no skill index. Only what this machine holds or
+    learned: a repo's own tools/NAME.py is its word, so a repo can't plant one and have the note send a session to run
+    it. A phrase that would not fit whole is left out: a command cut mid-string is worse than none."""
+    import fmfixes
+    if not _NAME.fullmatch(name):
+        return ""
+    low = name.lower()
+    for f in fmfixes.known(p)[:300]:  # a fix that came with the repo is data to weigh: not put in a note
+        first = re.findall(r"[a-z0-9_.+-]+", f["sig"].lower())[:1]  # the command word the failure names
+        if f["trusted"] and first == [low]:
+            hit = c.plain(f"a known fix: {f['do']}")
+            return hit if len(hit) <= HIT_MAX else ""
+    path = binary(name, p.root)
+    hit = c.plain(f"it is already at {path}") if path else ""
+    return hit if len(hit) <= HIT_MAX else ""
+
+
 def rank(task, found=None):
     """{kind: [row with its score]} for the task's words, best first; every kind empty when no fit holds half of
     them."""
@@ -120,19 +295,28 @@ def cmd(args):
     if not words(task):
         raise fmcli.UsageError(f"nothing to look up in {task!r}, only words like the, with and need: name the work, "
                                "e.g. fm which add a 3D hero with motion")
-    got = rank(task)
-    data = {"task": task, **{k: [{x: r[x] for x in ("name", "load", "summary", "score")} for r in v]
-                             for k, v in got.items()}}
+    p, failed = c.find_project(os.getcwd(), create=False), []
+    got = search(task, p, failed)
+    data = {"task": task, **{k: [{x: r.get(x, "") for x in ("name", "load", "summary", "score", "source", "grant")}
+                                 for r in v] for k, v in got.items()}, "skipped": failed}
+    if p:  # the receipt: what was searched and how much each shelf held, a search that found nothing included
+        c.log_event(p, "tool_search", data={"need": task[:200], "sources": list(got),
+                                            "hits": {k: len(v) for k, v in got.items()}, "failed": failed})
     if not any(got.values()):
-        fmcli.out(args, data, f"Nothing matches {c.fit(c.plain(task), 60)!r}: no skill, playbook or fm command holds "
-                  "enough of its words.\nfm help --all lists every command; say what the work is in other words.")
+        fmcli.out(args, data, f"Nothing matches {c.fit(c.plain(task), 60)!r}: no past fix, project tool, MCP server, "
+                  "binary, skill, playbook, fm command, stack card or plugin holds enough of its words.\n"
+                  "fm help --all lists every command; say what the work is in other words, or build it: fm new tool NAME."
+                  + ("\n" + skipped_note(failed) if failed else ""))
         return 1
     lines = []
-    kinds = (("skills", "Skills"), ("playbooks", "Playbooks"), ("commands", "fm commands"))
-    for kind, title in sorted(kinds, key=lambda k: -max((r["score"] for r in got[k[0]]), default=0)):  # T-1908
+    ours = ("skills", "playbooks", "commands")  # T-1908: Foreman's own, the strongest kind first
+    order = list(HERE) + sorted(ours, key=lambda k: -max((r["score"] for r in got[k]), default=0)) + ["library", "plugins"]
+    for kind in order:
         if got[kind]:
             w = max(len(r["load"]) for r in got[kind]) + 2
-            lines += [f"{title}:"] + [f"  {r['load']:<{w}}{fmrecall.gist(r['summary'], task, max(30, 98 - w))}"
-                                      for r in got[kind]]
-    fmcli.out(args, data, "\n".join(lines))
+            lines += [f"{TITLES[kind]}:"] + [
+                f"  {r['load']:<{w}}{fmrecall.gist(r['summary'], task, max(30, 98 - w))}"
+                + (f"  [{r['source']}{'; needs ' + r['grant'] if r['grant'] else ''}]" if r.get("source") else "")
+                for r in got[kind]]
+    fmcli.out(args, data, "\n".join(lines + ([skipped_note(failed)] if failed else [])))
     return 0
