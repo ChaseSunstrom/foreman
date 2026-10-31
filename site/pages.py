@@ -573,7 +573,7 @@ PAGES = [
          ("chart", lambda s: _totals(s, ["commits", "evidence", "gate_runs"]))]},
     {"slug": "code", "nav": "Foreman Code", "title": "Foreman Code: the loop, on any model",
      "desc": "fm code runs Foreman's stations itself, so small and local models only fill small checked slots.",
-     "lede": "In progress. <code>fm code</code> is Foreman's own harness: it runs plan, edit, verify and close itself, "
+     "lede": "<code>fm code</code> is Foreman's own harness: it runs plan, edit, verify and close itself, "
              "and the model only fills one small checked slot at a time. That is what lets a small local model do "
              "real work, and a big one go faster.",
      "blocks": [
@@ -589,7 +589,7 @@ PAGES = [
           "model's own words are one key away (<code>t</code>). <code>d</code> shows the diff, <code>h</code> past "
           "runs, <code>m</code> picks the model or worker for the next request. It moves: the working station pulses, "
           "counters and bars ease to their values, a refusal flashes (<code>motion = reduced</code> or <code>off</code> stills it). "
-          "Themes (night, paper, signal for colour-blind eyes, mono), layout "
+          "Themes (night, paper, signal for colour-blind eyes, riso, mono), layout "
           "and keys come from <code>tui.toml</code>, and a Python file in Foreman's home folder can add a panel, a "
           "command or an event handler.</p>"),
          ("raw", '<picture><source media="(prefers-reduced-motion: reduce)" srcset="../assets/code-tui.svg">'
@@ -612,7 +612,35 @@ PAGES = [
           "Keep a frame.</strong> <code>F</code> saves the screen as SVG and PNG; <code>fm code tui --chaos SECONDS"
           "</code> throws hostile events, keys and resizes at a headless app and exits 1 on a crash, with the seed to "
           "replay it.</li></ul>"),
-         ("text", "Every key", "<p>Read from the key map fm code tui ships, so a new key shows here at the next build. "
+         ("text", "Every verb and flag", "<p>Checked against <code>fm code --help</code> by a site test, so a new "
+          "flag can't ship unwritten here.</p><ul><li><strong>Verbs.</strong> <code>fm code models</code> lists the "
+          "model profiles; <code>fm code runners</code> every coding CLI and model it can use; <code>fm code config"
+          "</code> its settings; <code>fm code why</code> how a run ended; <code>fm code bench</code> grades a "
+          "model or worker; <code>fm code tui</code> opens the app.</li><li><strong>Shape a run.</strong> "
+          "<code>--model</code> picks the profile and <code>--escalate</code> gives three more fix rounds on a "
+          "stronger model after three fail; <code>--max-steps</code> and <code>--max-usd</code> cap the turns and the dollars; "
+          "<code>--dry-plan</code> prints the plan and changes nothing; <code>--verify CMD</code> makes the plan "
+          "one task done when CMD passes; <code>--no-commit</code> closes without committing.</li><li><strong>"
+          "Resume or hand over.</strong> <code>--resume [ID]</code> carries on a crashed run from its journal "
+          "(<code>-c</code>/<code>--continue</code> takes the newest); <code>--worker-timeout</code> limits each "
+          "worker turn.</li><li><strong>Claude's spellings.</strong> <code>-p</code>/<code>--print</code> is "
+          "<code>--plain</code>: one line per event, no screen; <code>--json</code> (or <code>--output-format "
+          "json</code>) prints the run's events as JSON lines.</li><li><strong>Runners.</strong> <code>fm code "
+          "runners --check</code> runs each CLI's <code>--version</code> and flags a model the provider is retiring; "
+          "<code>--ping [NAME]</code> asks a runner one tiny question and says how it answered, how fast; "
+          "<code>--probe MODEL</code> scores a profile 0 to 10 on ten small graded prompts; <code>--use NAME"
+          "</code> makes a runner the default, <code>--here</code> for this project only.</li><li><strong>Config."
+          "</strong> <code>fm code config --explain KEY</code> says what a setting does, its value and where it came "
+          "from; <code>fm code tui --print-config</code> prints <code>tui.toml</code> with your changes over the "
+          "defaults; <code>--themes</code> shows every theme side by side.</li><li><strong>Bench.</strong> "
+          "<code>fm code bench --seeds A,B</code> runs some seeds; <code>--variants base,evidence</code> runs them "
+          "once per prompt variant; <code>--seed-timeout</code> limits each seed.</li><li><strong>Record it."
+          "</strong> <code>fm code tui --events FILE --snapshot SVG --size WxH</code> draws a recorded run, "
+          "<code>--record VIDEO</code> plays it into an mp4 or gif, <code>--tour</code> is the 30-second guided "
+          "run, and <code>--chaos SECONDS --seed SEED</code> replays a crash.</li><li><strong>Unattended.</strong> "
+          "<code>--stale-ok REASON</code> runs on even when the guard replay is red or over a week old, and logs the "
+          "waiver.</li></ul>"),
+         ("text", "Every key","<p>Read from the key map fm code tui ships, so a new key shows here at the next build. "
           "<code>?</code> shows the same list in the app, and <code>tui.toml</code> rebinds any of them.</p>"),
          ("chart", _keys),
          ("examples", "Examples: real runs of every kind",
@@ -630,7 +658,7 @@ PAGES = [
           "Foreman worker on five seeded tasks in throwaway repos, counting a task only when its own check passes "
           "afterwards.</li></ul>"),
          ("chart", lambda s: tiles([("Model client tests", (s.get("code") or {}).get("model_tests", "?")),
-                                    ("Endpoints it finds", (s.get("code") or {}).get("endpoints", "?")), ("Status", "Building")]))]},
+                                    ("Endpoints it finds", (s.get("code") or {}).get("endpoints", "?")), ("Status", "Shipped, still growing")]))]},
     {"slug": "benchmarks", "nav": "Benchmarks", "title": "Measured against Claude Code",
      "desc": "Real runs, published whichever way they fall: dangerous commands, and real tasks graded blind.",
      "lede": "Benchmarks run for real on this machine and published as they came out: a set of commands that destroy "
