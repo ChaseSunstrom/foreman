@@ -1,7 +1,7 @@
 <!-- Foreman's own playbook (written for Foreman, not ported). -->
 # Release and changelog
 
-Use when cutting a version, tagging, or publishing.
+Use when cutting a version, tagging, publishing or shipping a release.
 
 1. **Gate first:** the full gate on the exact commit you'll tag (`fm check`), from a clean tree; no "fix after tagging".
 2. **Version:** follow the project's scheme (semver: breaking → major, feature → minor, fix → patch). Bump every place that carries it (manifests, lockfiles, plugin.json, marketplace entries) in one commit.

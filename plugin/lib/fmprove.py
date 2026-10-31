@@ -452,12 +452,23 @@ def cmd_prove(args):
             print(f"fm prove: ran on your yes, but couldn't keep it for {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
     try:
         found = fmfind.scan(root, fmfind.precision(p) if p else {})[1]
-        for key, f in fmfind.keyed(found, os.path.realpath(root), os.path.realpath(p.root if p else root)):
+        for key, f in fmfind.keyed(
+                sorted(found, key=lambda f: (f["file"], f["line"], f["finder"])),  # fm find's order: twin numbers match
+                os.path.realpath(root), os.path.realpath(p.root if p else root)):
             f["key"] = key  # fm find --capture's key, so a task filed from either is never filed twice
         if args.only:  # T-2123: one finding, as a task's criterion names it; gone from fm find means fixed
             found = [dict(f, held=None) for f in found if proof_id(f["key"]) == args.only]
         # ponytail: each --only re-check scans and runs the suite up to three times; cache per tree id if it drags
         res = prove(root, found, args.limit, run=args.yes_run or trusted(root) or _lane_trusted(p, root))
+        won = [t for t in res["tickets"] if t["verdict"] == "proven" and t.get("key")]
+        if p and won:  # T-2132: fm find --rank lifts these until their function changes
+            try:
+                texts = dict(fmfind._files(root)[0])
+                hashes = {t["key"]: fmfind.proof_hash(texts, t) for t in won}
+                fmfind.record(p, {k: h for k, h in hashes.items() if h})
+            except (OSError, c.LockTimeout) as e:
+                print(f"fm prove: proved, but couldn't keep the proof for fm find --rank: {c.plain(str(e))[:300]}",
+                      file=sys.stderr)
     except (OSError, shutil.Error) as e:
         print(f"fm prove: couldn't copy {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
         return 2

@@ -779,3 +779,85 @@ class FindProveKinds(ForemanTestCase):
         self.assertEqual((t["verdict"], t["evidence"]), ("lead", "sensitive project: no model-written test"))
         flips = self.prove(self.proj({"tests/test_flip.py": FLIP.format(mod=2)}))["flaky"]
         self.assertEqual(flips["verdict"], "proven", flips)  # reruns run no model code
+
+
+class FindRankValue(ForemanTestCase):
+    """T-2132: a proven lead ranks 1.25x until its function changes; a small function's lead outranks a big one's."""
+
+    def lead(self, kind="slow", file="app.py", line=1):
+        return {"finder": kind, "kind": kind, "file": file, "line": line, "symbol": "x", "says": kind}
+
+    def score(self, f, text, proven=None):
+        return fmfind.rank([f], {f["file"]: text}, {}, proven)[0]["score"]
+
+    def proof(self, f, text):
+        (key, _), = fmfind.keyed([f], ".", ".")
+        return {key: fmfind.proof_hash({f["file"]: text}, f)}
+
+    def test_proof_lifts_until_the_leads_own_function_changes(self):
+        v1 = "def a(x):\n    return 1\n\n\ndef b():\n    return 2\n"
+        f, proven = self.lead(), self.proof(self.lead(), v1)
+        base = self.score(f, v1)
+        self.assertAlmostEqual(self.score(f, v1, proven), base * 1.25, delta=0.002)
+        elsewhere = v1.replace("return 2", "return 3\n\n\nz = 1")
+        self.assertAlmostEqual(self.score(f, elsewhere, proven), base * 1.25, delta=0.002)
+        self.assertAlmostEqual(self.score(f, v1.replace("return 1", "return 9"), proven), base, delta=0.002)
+
+    def test_blank_lines_between_functions_keep_the_proof_and_a_generated_file_gets_none(self):
+        v1 = "def a(x):\n    return 1\n\n\ndef b():\n    return 2\n"
+        f = self.lead()
+        self.assertAlmostEqual(self.score(f, v1.replace("\n\n\ndef b", "\n\n\n\n\n\ndef b"), self.proof(f, v1)),
+                               self.score(f, v1) * 1.25, delta=0.002)
+        gen = self.lead(file="gen.py")  # in no text: nothing to hash, so nothing to keep or lift
+        self.assertIsNone(fmfind.proof_hash({}, gen))
+        (key, _), = fmfind.keyed([gen], ".", ".")
+        self.assertEqual(fmfind.rank([gen], {}, {}, {key: ""})[0]["score"], fmfind.rank([gen], {}, {})[0]["score"])
+
+    def test_many_leads_in_one_function_rank_fast(self):
+        import time
+        text = "def a(x):\n" + "    y = 1\n" * 5000
+        leads = [self.lead(line=i) for i in range(2, 5002)]
+        t0 = time.time()
+        self.assertEqual(len(fmfind.rank(leads, {"app.py": text}, {})), 5000)
+        self.assertLess(time.time() - t0, 2)
+
+    def test_unequal_reach_cannot_lift_a_proven_lead_past_an_unproven_higher_kind(self):
+        text = "def a(x):\n    return 1\n"
+        dep, bug = self.lead("dep", "lo.py"), self.lead("bug", "hi.py")
+        bug["symbol"] = "y"  # nothing else names y; six other files name x, so the dep's reach is 1.3 to the bug's 1
+        texts = {"lo.py": text, "hi.py": text} | {f"m{i}.py": "x\n" for i in range(6)}
+        got = fmfind.rank([dep, bug], texts, {}, self.proof(dep, text))
+        self.assertEqual([f["kind"] for f in got], ["bug", "dep"])
+        self.assertGreaterEqual(got[1]["score"], fmfind.rank([dep], texts, {})[0]["score"])
+
+    def test_a_small_functions_lead_outranks_an_equal_one_in_a_200_line_function(self):
+        big = "def big(x):\n" + "    y = 1\n" * 200
+        got = fmfind.rank([self.lead(file="s.py"), self.lead(file="b.py")],
+                          {"s.py": "def s(x):\n    y = 1\n", "b.py": big}, {})
+        self.assertEqual([f["file"] for f in got], ["s.py", "b.py"])
+        self.assertAlmostEqual(got[1]["score"], got[0]["score"] / 2, delta=0.003)
+
+    def test_a_proven_lead_never_passes_an_unproven_one_of_a_higher_severity_kind(self):
+        text = "def a(x):\n    return 1\n"
+        for lo, a in fmfind.SEVERITY.items():
+            for hi, b in fmfind.SEVERITY.items():
+                if b > a:
+                    f = self.lead(lo, "lo.py")
+                    got = fmfind.rank([f, self.lead(hi, "hi.py")], {"lo.py": text, "hi.py": text}, {},
+                                      self.proof(f, text))
+                    self.assertEqual(got[0]["kind"], hi, (lo, hi))
+
+    def test_fm_prove_records_the_proof_in_state_and_fm_find_ranks_it_higher(self):
+        import fmcore as c
+        self.fm("init")
+        write(os.path.join(self.repo, "app"), {"app.py": APP, "tests/test_app.py": SUITE})
+
+        def unused():
+            got = json.loads(self.fm("find", "app", "--rank", "--json", check=False).stdout)["findings"]
+            return next(f["score"] for f in got if f["symbol"] == "unused")
+        before = unused()
+        self.fm("prove", "app", "--yes-run", "--json", check=False)
+        self.assertAlmostEqual(unused(), before * 1.25, delta=0.003)
+        p =c.find_project(self.repo)
+        self.assertTrue(os.path.isfile(os.path.join(p.dir, "find-proofs.json")))
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "find-proofs.json")))
