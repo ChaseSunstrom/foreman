@@ -920,6 +920,12 @@ def cmd_digest(args):
     lines += [f"Decided without you: {len(decided)} ({len(review)} to review below)"] + [f"- {c.fit(x, 160)}" for x in plain[-6:]] \
         if decided else []
     lines += ["Decisions to review (costly/outward):"] + [f"- {c.fit(x, 160)}" for x in review[-6:]] if review else []
+    doors = collections.Counter((e["event"], (e.get("data") or {}).get("door")) for e in
+                                c.ledger_events(p, ("door_ask", "door_park"), since=since))  # T-2342
+    part = lambda ev, name: [f"{name}: " + ", ".join(f"{doors[ev, d]} {d}" for d in ("two-way", "one-way") if doors[ev, d])] \
+        if any(doors[ev, d] for d in ("two-way", "one-way")) else []
+    lines += ["Doors: " + " · ".join(part("door_ask", "asks") + part("door_park", "parks"))] \
+        if part("door_ask", "asks") or part("door_park", "parks") else []
     import fmtrials
     lines += fmtrials.lines(p, act=True)  # T-1059; T-2351: the digest files and settles self-fix verdicts
     lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []

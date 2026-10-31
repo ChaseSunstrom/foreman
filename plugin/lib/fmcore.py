@@ -2601,13 +2601,68 @@ def pending_tasks(meta):
     return [a.get("task") for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")]
 
 
+def door_marked(b, key="doors"):
+    """T-2342: the step (key doors) or criterion (door_acs) numbers fm focus marked as local one-way doors (frontmatter
+    lists read back as strings)."""
+    return sorted({int(n) for n in b.meta.get(key) or [] if str(n).isdigit()})
+
+
+def door_hash(text):
+    """What door_seen and door_undone store for a step or verify text (a hash: frontmatter lists split on commas)."""
+    return hashlib.sha1(text.encode("utf-8", "surrogateescape")).hexdigest()[:12]
+
+
+def undo_ok(text):
+    """T-2342 review: whether a step's 'Undo:' line is a real way back: a restore command (cp, mv, rsync, tar, unzip) that
+    names a source that exists. 'none', 'n/a' and an empty line are not one; fm's own line (cp -a SNAPSHOT/. REPO/) is."""
+    if "Undo:" not in text:
+        return False
+    try:
+        words = shlex.split(text.split("Undo:", 1)[1].strip())
+    except ValueError:
+        return False
+    if not words or os.path.basename(words[0]) not in ("cp", "mv", "rsync", "tar", "unzip", "gunzip"):
+        return False
+    args = [w for w in words[1:] if not w.startswith("-")]
+    srcs = args[:-1] if len(args) > 1 and words[0] in ("cp", "mv", "rsync") else args
+    return any(os.path.lexists(os.path.expandvars(os.path.expanduser(s))) for s in srcs)
+
+
+def _door_open(b):
+    """[(label, text)] for each marked one-way step with no real Undo line, and each marked verify command with no snapshot."""
+    marked, acs, undone = door_marked(b), door_marked(b, "door_acs"), [str(x) for x in b.meta.get("door_undone") or []]
+    out = [(f"step {s.n}", s.text) for s in b.steps() if s.n in marked and not s.done and not undo_ok(s.text)]
+    for a in b.acceptance():
+        cmd = verify_of(a.text)
+        if a.n in acs and cmd and not a.checked and door_hash(cmd) not in undone:
+            out.append((f"verify {a.n}", cmd))
+    return out
+
+
+def door_park(b):
+    """T-2342: 'one-way and ambiguous: <step>' while a step fm focus marked as a local one-way door has no real Undo line,
+    or a marked verify command has no snapshot (the drive and fm run skip it; the final report carries its costly
+    decision), else None. A real Undo line, a done step or a checked criterion lifts it."""
+    for label, text in _door_open(b):
+        return f"one-way and ambiguous: {label}: {text.strip()}"
+    return None
+
+
+def door_gaps(b):
+    """T-2342: the Undo line each marked one-way step still needs before fm focus lets the task start."""
+    return [f"an Undo: line on {label} (one-way, untracked data: 'Undo: cp -a SNAPSHOT/. .' with a SNAPSHOT that exists; "
+            f"'none' and 'n/a' don't count)" if label.startswith("step") else
+            f"a {label} that doesn't delete untracked data (or name the path in the request, plainly)"
+            for label, _ in _door_open(b)]
+
+
 def waits_on_user(b, pending, autonomy="standard"):
     """Why a task can't be worked without the user (drive and fm run both skip it), else None."""
     if b.id in pending:
         return "pending approval"
     if b.meta.get("cost_cap") and str(b.meta.get("cap_hit")) == str(b.meta["cost_cap"]):  # T-1127: fmcost.check_cap
         return "cost cap hit"
-    return "plan approval" if needs_approval(b, autonomy) else None
+    return door_park(b) or ("plan approval" if needs_approval(b, autonomy) else None)
 
 
 # followed by text (a word, a flag, `code`, a quote; T-2285); "1) …" is hollow
@@ -2825,7 +2880,7 @@ def rival_gap(b):
     if os.environ.get("FOREMAN_NO_RIVAL", "0") not in ("", "0"):
         return []
     conf = _CONF_RE.search(b.section("Approach (options → choice → why)"))
-    hard = _one_way(b)
+    hard = _one_way(b) or ("untracked data, T-2342" if b.meta.get("doors") or b.meta.get("door_acs") else "")  # fm focus marks local one-way steps
     why = ("an L plan" if b.tier == "L" else
            f"a one-way step ({hard})" if hard else
            f"the choice is {conf.group(1)}% sure, under {RACE_BAR}%" if b.tier == "M" and conf and int(conf.group(1)) < RACE_BAR else
@@ -2857,6 +2912,7 @@ def plan_gaps(b, autonomy="standard"):
         gaps += [f"verify command on criterion {a.n}" for a in acs if "verify with" not in a.text]
     if not b.steps():
         gaps.append("step")
+    gaps += door_gaps(b)
     if needs_approval(b, autonomy):
         why = plain(str(b.meta.get("confirm_why") or ""))[:160] or "a child found this request in an old session"
         gaps.append(f"the user's yes (fm ask {b.id} confirm: {why})"  # T-1750: why this one waits

@@ -303,6 +303,7 @@ def check_project(p, apply, actions):
     out += _roll_ledger(p, apply, actions)
     out += _prune_snapshots(p, apply, actions)
     out += _prune_reverted(p, apply, actions)
+    out += _prune_door_snapshots(p, apply, actions)
     out += _backup_state(p, apply, actions)
     out += _check_memory(p, apply, actions)
     out += _hygiene(p, apply, actions)
@@ -442,6 +443,38 @@ def _prune_reverted(p, apply, actions):
         actions.append(("reverted", len(old)))
     return [finding(p.slug, "old_reverted", "action", f"{len(old)} fm code reverted cop(ies) older than {REVERTED_DAYS}d",
                     "deleted (the worker's discarded file versions)", auto=True)]
+
+
+def _prune_door_snapshots(p, apply, actions):
+    """T-2342: the copies fm focus takes before a one-way step (<state>/door-snapshots/<task>-step<N>[.json]) go once their
+    task has been closed for WORK_SNAPSHOT_DAYS; a task still open (or one this can't find) keeps them. A link is never followed."""
+    d, old = os.path.join(p.dir, "door-snapshots"), {}
+    try:
+        if not stat.S_ISDIR(os.lstat(d).st_mode):
+            return []
+        briefs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
+        for n in os.listdir(d):
+            m = re.match(r"(T-\d+)-(?:step|verify)\d+(?:\.json)?$", n)
+            b = briefs.get(m.group(1)) if m else None
+            if b and b.status in c.CLOSED and (c.age_days(b.meta.get("updated")) or 0) > WORK_SNAPSHOT_DAYS:
+                old[n] = os.path.join(d, n)
+    except OSError:
+        return []
+    if not old:
+        return []
+    if apply:
+        for f in old.values():
+            try:
+                if os.path.isdir(f) and not os.path.islink(f):
+                    shutil.rmtree(f, ignore_errors=True)
+                else:
+                    os.unlink(f)
+            except OSError:
+                pass
+        actions.append(("door_snapshots", len(old)))
+    return [finding(p.slug, "old_door_snapshots", "action",
+                    f"{len(old)} one-way-step snapshot(s) of tasks closed over {WORK_SNAPSHOT_DAYS}d ago",
+                    "deleted (their Undo lines no longer restore anything)", auto=True)]
 
 
 def _roll_ledger(p, apply, actions):
