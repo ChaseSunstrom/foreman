@@ -829,7 +829,9 @@ def cmd_task(args):
             import fmmiss  # T-2369: fm task done is no way round finish's refusal
             import fmtoolproof  # T-2372: nor round a tool's proof
             import fmincident  # T-2388: nor round an incident's two greens and follow-up
-            reasons += fmtoolproof.safe_gaps(p, b) + fmmiss.safe_gaps(p, b) + fmincident.safe_gaps(p, b)
+            import fmgrants  # T-2383: nor round a secret pasted into the session
+            reasons += fmtoolproof.safe_gaps(p, b) + fmmiss.safe_gaps(p, b) + fmincident.safe_gaps(p, b) \
+                + fmgrants.safe_secret_gaps(p, b)
             if reasons:
                 lead = "" if hasattr(args, "audit") else (  # T-0849: fm task done, not finish's own close
                     f" — one call settles most of it: fm task finish {b.id} --run \"<test cmd>\" --audit \"<how>\""
@@ -1213,7 +1215,9 @@ def task_finish(p, args):
     import fmmiss  # T-2369: an open capability miss refuses every try; only a later passing run closes it
     import fmtoolproof  # T-2372: first, so a proved tool resolves its miss in the same try
     import fmincident  # T-2388: its criterion's own run is the close's second green
-    gaps += fmtoolproof.safe_gaps(p, b) + fmmiss.safe_gaps(p, b) + fmincident.safe_gaps(p, b, closing=True)
+    import fmgrants  # T-2383: a secret the task's grant names must not be in this session's transcript
+    gaps += fmtoolproof.safe_gaps(p, b) + fmmiss.safe_gaps(p, b) + fmincident.safe_gaps(p, b, closing=True) \
+        + fmgrants.safe_secret_gaps(p, b)
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always
@@ -3882,6 +3886,8 @@ def cmd_ask(args):
         if "plugin" not in cats or fmplugins.content_hash(args.pin) is None:
             raise UsageError(f"--pin names a plugin to install or enable with the plugin category; {args.pin!r} "
                              f"isn't in the known marketplaces or installed (fm plugins find <need>)")
+    if args.needs_env and not args.later:
+        raise UsageError("--needs-env names a secret on a queued request: add --later")
     if args.later:  # T-2374: a request only the user can answer, on the task; nothing here can grant it
         import fmgrants
         if args.standing:
@@ -3889,7 +3895,12 @@ def cmd_ask(args):
         b = need_brief(p, args.id)
         if b.status in c.CLOSED:
             raise UsageError(f"{b.id} is closed ({b.status}): queue the request on an open task")
-        state, d = fmgrants.queue(p, b.id, cats, why, pin=args.pin, fallback=args.fallback, session=session())
+        bad = [i + 1 for i, n in enumerate(args.needs_env) if not fmgrants.ENV_NAME.fullmatch(n)]
+        if bad:  # never echo the argument: it may be the value itself
+            raise UsageError(f"--needs-env takes a variable's name only (like GITHUB_TOKEN), never its value: argument "
+                             f"{', '.join(map(str, bad))} isn't one; the user sets the value outside the session")
+        state, d = fmgrants.queue(p, b.id, cats, why, pin=args.pin, fallback=args.fallback, session=session(),
+                                  env=args.needs_env)
         what = f"{', '.join(cats)}{' ' + args.pin if args.pin else ''}"
         msg = {"queued": f"Queued for the user: {what} on {b.id}. It grants nothing and never expires; fm todo lists it. "
                          f"Carry on with the steps that don't need it.",
@@ -6143,6 +6154,9 @@ def _build_parser(only=None):
                    help="queue the request on the task for the user (never expires, grants nothing; fm todo lists it): "
                         "no dialog, so it works headless and in full autonomy")
     s.add_argument("--fallback", default="", help="with --later: what the work does meanwhile")
+    s.add_argument("--needs-env", action="append", default=[], metavar="VAR",
+                   help="with --later: a secret the tool needs, by variable name only; the user sets the value outside "
+                        "the session, and fm task finish refuses while this session's transcript holds it (T-2383)")
 
     s = add("trust", cmd_trust, tier=("Project and settings", 740), help="whether Claude may edit the guard and Claude Code settings (on: /fm-trust, typed)")
     s.add_argument("state", nargs="?", choices=["off"])

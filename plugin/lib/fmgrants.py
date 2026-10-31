@@ -7,12 +7,15 @@ A queued request never expires (APPROVAL_TTL doesn't apply: nothing is waiting o
 the row turns refused and the ledger has `grant_refused`, which `queue` checks before it queues the same thing again.
 The ledger also has `grant_queued` (data name: the open miss it answers, else the pin or what; fmmiss reads it)."""
 import json
+import os
 import re
 
 import fmcore as c
 
 SECTION = "Grant requests"
 _ROW = re.compile(r"^- \[(queued|granted|refused)\] (\{.*\})$")
+ENV_NAME = re.compile(r"[A-Z_][A-Z0-9_]{1,63}")  # T-2383: what --needs-env takes: a variable's name, never a value
+_TAIL = re.compile(rb"""\\?["']?\s*[=:]\s*\\?["']?([^\s"'\\,;]{8,200})""")  # T-2383: NAME's =value, quoted or not
 
 
 def _clean(x, n):
@@ -63,7 +66,7 @@ def _evidence(p, b):
     return ({"name": _clean(miss["name"], 60), "cmd": _clean(miss["cmd"], 120)} if miss else None), alts
 
 
-def queue(p, tid, cats, why, pin=None, what="", fallback="", session=None):
+def queue(p, tid, cats, why, pin=None, what="", fallback="", session=None, env=()):
     """Record the request on task tid. Returns (state, row dict): queued, dedupe (an identical one is still queued) or
     refused (the user said no before). Grants nothing and writes no file but the brief and the ledger."""
     cats = sorted(set(cats))
@@ -79,7 +82,8 @@ def queue(p, tid, cats, why, pin=None, what="", fallback="", session=None):
             return "refused", {"cats": cats, "pin": pin or "", "what": what}
         miss, alts = _evidence(p, b)
         d = {"cats": cats, "pin": pin or "", "what": _clean(what, 80), "why": _clean(why, 200) or "no reason given",
-             "miss": miss, "alts": alts, "fallback": _clean(fallback, 200), "at": c.now()}
+             "miss": miss, "alts": alts, "fallback": _clean(fallback, 200), "at": c.now(),
+             **({"env": sorted(set(env))} if env else {})}
         _write(b, items + [("queued", d)])
         c.save_brief(p, b)
         c.log_event(p, "grant_queued", task=b.id, session=session,
@@ -140,6 +144,8 @@ def text(d):
         parts.append(f"miss: {d['miss'].get('name')}" + (f" ({d['miss']['cmd']})" if d["miss"].get("cmd") else ""))
     parts.append("already searched: " + ", ".join(d["alts"]) if d.get("alts") else "no alternatives searched")
     parts.append(f"meanwhile: {d['fallback']}" if d.get("fallback") else "no fallback named")
+    if d.get("env"):
+        parts.append(f"needs {', '.join(d['env'])} set outside the session (never pasted here)")
     return "; ".join(parts)
 
 
@@ -156,3 +162,63 @@ def line(p, briefs=None):
     return (f"{len(q)} grant request{'s' if len(q) != 1 else ''} queued for the user (fm todo): "
             + ", ".join(dict.fromkeys(f"{b.id} {d.get('pin') or d.get('what') or d['cats'][0]}" for b, d in q[:5]))
             + (" …" if len(q) > 5 else "")) if q else ""
+
+
+def env_names(b):
+    """The secret variables the task's grant rows name (T-2383); a row's other fields never count."""
+    return sorted({n for _, d in rows(b) for n in (d.get("env") if isinstance(d.get("env"), list) else [])
+                   if isinstance(n, str) and ENV_NAME.fullmatch(n)})
+
+
+def secret_gaps(p, b, path=None):
+    """T-2383: a refusal per secret variable whose value is in this session's transcript. Set here, the scan looks for
+    its live value (so a rotated secret clears it); unset, for NAME=<value> that c.redact would redact (a $NAME or
+    <placeholder> is a reference). mmap.find per name: a transcript runs to hundreds of MB (0.14 s on 600 MB).
+    ponytail: this session's transcript only; a value pasted in an earlier session of the task isn't seen."""
+    names = env_names(b)
+    if not names:
+        return []
+    if path is None:
+        import fmclaude
+        try:
+            path = fmclaude._transcript(c.session_id())
+        except ValueError:
+            return []
+    import mmap
+    out = []
+    with open(path, "rb") as f:
+        if not os.fstat(f.fileno()).st_size:
+            return []
+        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
+            for n in names:
+                live = os.environ.get(n) or ""
+                if len(live) >= 8:
+                    hit = m.find(live.encode()) >= 0
+                else:  # find the name, then match its =value tail: a leading lookbehind made re scan 600 MB in 9 s
+                    key, i, hit = n.encode(), m.find(n.encode()), False
+                    while i >= 0 and not hit:
+                        x = None if i and (m[i - 1] == 95 or bytes([m[i - 1]]).isalnum()) else _TAIL.match(m, i + len(key))
+                        if x and x.group(1)[:1] not in b"$<{%":
+                            s = (key + x.group(0)).decode("utf-8", "replace")
+                            hit = c.redact(s) != s
+                        i = m.find(key, i + 1)
+                if hit:
+                    out.append(f"this session's transcript holds {'the live value' if len(live) >= 8 else 'a value'} "
+                               f"of {n}, which {b.id}'s grant asks the user to set outside the session: the user rotates "
+                               f"it and sets the new value outside the session (with {n} set, only its live value counts)")
+    return out
+
+
+def safe_secret_gaps(p, b):
+    """secret_gaps for the close gates: an unreadable transcript fails open, logged where hooks' errors go."""
+    try:
+        return secret_gaps(p, b)
+    except Exception:
+        import traceback
+        try:
+            path = os.path.join(c.state_dir(), "logs", "hooks.log")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            c.append_line(path, f"{c.now()} fmgrants.secret_gaps {c.redact(traceback.format_exc()).rstrip()}\n")
+        except OSError:
+            pass
+        return []

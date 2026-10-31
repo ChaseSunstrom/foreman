@@ -230,3 +230,52 @@ class GrantQueue(HookCase):
         self.assertEqual(len(self.events("grant_queued")), 1)
         self.assertFalse(self.brief().meta.get("allow"))
         self.assertNotIn("queued", self.fm("mcp", "register", "codex").stdout)
+
+    # T-2383: a grant for a tool that needs a secret names the variable; the user sets the value outside the session,
+    # and fm task finish refuses while this session's transcript holds that value
+    SID = "0f0e0d0c-0b0a-4908-8706-050403020100"
+    TOKEN = "ghp_" + "a" * 30  # pragma: allowlist secret
+    LIVE = "Zq8-live-value-77"  # pragma: allowlist secret
+
+    def scan(self, text, live=None):
+        from unittest import mock
+        t = os.path.join(self.tmp, "t.jsonl")
+        with open(t, "w") as f:
+            f.write(text)
+        with mock.patch.dict(os.environ, {"SVC_TOKEN": live} if live else {}):
+            if not live:
+                os.environ.pop("SVC_TOKEN", None)
+            return fmgrants.secret_gaps(self.p, self.brief(), path=t)
+
+    def test_secret_env_a_grant_names_the_variable_never_its_value(self):
+        self.later("a@m", "needs a", "--needs-env", "SVC_TOKEN")
+        _, d = self.rows()[0]
+        self.assertEqual(d["env"], ["SVC_TOKEN"])
+        self.assertIn("SVC_TOKEN", self.fm("todo").stdout)
+        r = self.later("b@m", "needs b", "--needs-env", "SVC_TOKEN=s3cr3tvalue99", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("s3cr3tvalue99", r.stdout + r.stderr)  # a refusal never echoes a value back
+        self.assertEqual(len(self.rows()), 1)
+
+    def test_secret_env_the_scan_finds_a_live_value_or_a_secret_shaped_one(self):
+        self.later("a@m", "needs a", "--needs-env", "SVC_TOKEN")
+        clean = '{"m":"set SVC_TOKEN outside the session, then fm ask T-1 plugin --later --needs-env SVC_TOKEN"}\n'
+        self.assertEqual(self.scan(clean), [])
+        self.assertTrue(self.scan(clean + '{"m":"export SVC_TOKEN=\\"' + self.TOKEN + '\\""}\n'))
+        self.assertEqual(self.scan(clean + '{"m":"SVC_TOKEN=$SVC_TOKEN tool run"}\n'), [])  # a reference, not a value
+        self.assertEqual(self.scan(clean + '{"m":"OTHER_SVC_TOKEN=' + self.TOKEN + '"}\n'), [])  # another variable
+        self.assertTrue(self.scan(clean + '{"m":"the value is ' + self.LIVE + '"}\n', live=self.LIVE))
+        rotated = clean + '{"m":"SVC_TOKEN=' + self.TOKEN + '"}\n'  # set here: only the live value counts
+        self.assertEqual(self.scan(rotated, live=self.LIVE), [])
+
+    def test_secret_env_finish_refuses_while_the_session_transcript_holds_it(self):
+        self.later("a@m", "needs a", "--needs-env", "SVC_TOKEN")
+        t = os.path.join(self.cc, "projects", "x", f"{self.SID}.jsonl")
+        os.makedirs(os.path.dirname(t))
+        with open(t, "w") as f:
+            f.write('{"m":"SVC_TOKEN=' + self.TOKEN + '"}\n')
+        env = {"CLAUDE_CODE_SESSION_ID": self.SID, "SVC_TOKEN": ""}
+        r = self.fm("task", "finish", self.tid, "--audit", "x", env=env, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("SVC_TOKEN", r.stderr)
+        self.assertNotIn(self.TOKEN, r.stdout + r.stderr)
