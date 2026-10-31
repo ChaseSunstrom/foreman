@@ -2391,13 +2391,13 @@ def _named(reply, tag, lines):
 
 def _grounded(reply, charter):
     """T-2246: per FAIL in the reply (same order as _named), whether its BREAKS: line quotes, whitespace- and
-    markdown-normalized, 8+ characters of one line of the charter the reader was given. Checked here, never by the model."""
-    have = [_norm(x) for x in charter.splitlines()]
+    markdown-normalized, 8+ characters (20+ or half the line) of one non-tag line of the charter the reader was given. Checked here, never by the model."""
+    have = [x for x in map(_norm, charter.splitlines()) if not re.fullmatch(r"</?[\w-]+>", x)]  # a fence tag is no clause
     out = []
     for part in re.split(r"^[\s>*-]*FAIL:", re.sub(r"\*\*(FAIL|BREAKS):\*\*", r"\1:", reply), flags=re.M)[1:]:
         m = re.search(r"^[\s>*-]*BREAKS:(.*)$", part, re.M)
         q = _norm(c.plain(m[1])).strip(" \"'.…") if m else ""
-        out.append(len(q) >= 8 and any(q in x for x in have))
+        out.append(len(q) >= 8 and any(q in x and (len(q) >= 20 or 2 * len(q) >= len(x)) for x in have))  # no stray fragment
     return out
 
 
@@ -2599,8 +2599,8 @@ def _read1(p, name, text, outline="", label="", legacy=()):
     else:
         named = _named(reply, "FAIL", lines)
         grounded = _grounded(reply, charter)
-        if len(grounded) != len(named):  # can't line them up: none counts as grounded
-            grounded = [False] * len(named)
+        if len(grounded) != len(named):  # can't line them up: all block, as before T-2246 (fail closed)
+            grounded = [True] * len(named)
         # T-2246: a FAIL with no verbatim charter clause is advisory; its line stays as if unflagged
         loose = [(h[0], w) for (h, w, *_), g in zip(named, grounded) if h and not g]
         named = [x for x, g in zip(named, grounded) if g or not x[0]]
@@ -2617,14 +2617,14 @@ def _read1(p, name, text, outline="", label="", legacy=()):
     again = {q for q, _ in held}
     after = [] if verdict == "pass" else ([x for x in before if x[0] not in again] + [list(x) for x in held])[-READ_KEEP:]
     if verdict != "unread":  # flagged now, carried included, or failed earlier and still unmet: not accepted
-        flagged = set().union(set(), *(k for _, _, k in hits)) | keys([q for q, _ in after])
+        flagged = set().union(set(), *(k for _, _, k in hits)) | keys([q for q, _ in after]) | keys([h for h, _ in loose])
         clear = set().union(set(), *occ.values()) - flagged
         c.write_atomic(os.path.join(p.dir, ACCEPTED), json.dumps(dict(_reads(p, ACCEPTED), **{
             name: {"charter": ck, "lines": sorted(clear & (seen | ok)), "seen": sorted(clear)}})))
     if after != stored:  # reloaded: another put may have filed its own findings during this read
         reads = dict(_reads(p), **{name: after})
         c.write_atomic(os.path.join(p.dir, READS), json.dumps({k: v for k, v in reads.items() if v}))
-    c.log_event(p, "genesis_read", data={"name": name, "verdict": verdict, "lines": len(held), "carried": len(carried),
+    c.log_event(p, "genesis_read", data={"name": name, "verdict": verdict, "lines": len(held), "carried": len(carried), "loose": len(loose),
                                          "carried_lines": [c.fit(c.plain(h), 60) for h, _ in carried][:10]})
     note = "".join(f"\n  ~ {h} — reader: {w} (advisory: two earlier reads left it unflagged; a second fail blocks)"
                    for h, w in carried)

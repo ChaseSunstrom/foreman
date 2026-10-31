@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Genesis cold reads: an objection blocks a tower file only when its BREAKS line quotes, verbatim, the gen-0 line, steer or standing-intent clause it breaks; the rest print as advisory, so narrative files converge (T-2246).
 - Guard: `fm mandate set` and `fm mandate off` are the user's to run, so a session can no longer end, overwrite or renew the standing mandate (T-2252).
 - The website stays current: genesis publish refreshes the homepage's own-record stats once a day, and the Genesis page's long-horizon card shows hidden checks passed per arm, breaking a true-done tie on them (T-2326).
 - `fm exam long` keeps each session goal's activity summary (tool calls, fm verbs, turns, Foreman event counts, the fitted done claim), and grade shows it with a "where the time went" line, so a slow or false-done arm says why (T-2325).

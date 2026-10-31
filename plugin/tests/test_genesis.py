@@ -2005,7 +2005,8 @@ class GenesisRead(ForemanTestCase):
         r, path = self.put(self.COV, fail + "BREAKS: **NEVER:**  lower the\n", grounded=False)
         self.assertEqual(r.returncode, 1, r.stderr)  # markdown and spacing don't matter
         self.assertFalse(os.path.exists(path))
-        for breaks in ("BREAKS: NEVER: raise the guard.", "BREAKS:", "BREAKS: MUST", "", "BREAKS: Goal"):
+        for breaks in ("BREAKS: NEVER: raise the guard.", "BREAKS:", "BREAKS: MUST", "", "BREAKS: Goal",
+                       "BREAKS: </gen-0>", "BREAKS: <standing-intent>"):  # review: a fence tag is no clause
             with self.subTest(breaks=breaks):  # an invented clause, none, or a fragment too short to be one
                 r, path = self.put(self.COV, fail + breaks, grounded=False)
                 self.assertEqual(r.returncode, 0, r.stderr)
@@ -2020,6 +2021,15 @@ class GenesisRead(ForemanTestCase):
         self.assertEqual(r.returncode, 1, r.stderr)  # a steer counts too
         r, _ = self.put(self.COV, fail + "BREAKS: " + steer.upper(), grounded=False)
         self.assertEqual(r.returncode, 0, r.stderr)  # verbatim: no case folding
+
+    def test_an_advisory_fail_keeps_its_line_unaccepted_so_a_grounded_one_still_blocks(self):
+        # T-2246 review: advisory lines counted as clear, so two of them accepted the line and a real break only carried
+        fail = "FAIL: - find × CLI: F: a shim to help the user with things\nWHY: names no file\n"
+        for _ in range(3):
+            r, _ = self.put(self.COV, fail, grounded=False)
+            self.assertEqual(r.returncode, 0, r.stderr)
+        r, path = self.put(self.COV, fail + "BREAKS: NEVER: lower the guard.", grounded=False)
+        self.assertEqual(r.returncode, 1, r.stderr)
 
     def test_only_a_whole_line_clean_passes_the_cold_read(self):
         # T-2180: CLEANUP, 'Not CLEAN', CLEAN-ish and 'CLEAN but ...' are not verdicts
