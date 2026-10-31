@@ -76,6 +76,38 @@ class Long(ForemanTestCase):
         long = [x for x in self.lines() if x.get("tier") == "long"]
         self.assertEqual([(x["agent"], x["true_done"], x["model"]) for x in long], [("oracle", 2, None), ("empty", 0, None)])  # zero-token arms: no model
 
+    def add(self, app_extra, test_extra, msg):
+        for rel, extra in (("app.py", app_extra), ("tests/test_app.py", test_extra)):
+            with open(os.path.join(self.src, rel), "a") as f:
+                f.write(extra)
+        self.commit(msg)
+
+    def test_a_goal_names_what_its_checks_reach_and_never_holds_an_interleaved_tasks_test(self):
+        # T-2304: l001's checks called fmwatch._shown and read fmlong.KILL_T, names no goal stated, and T-2225's held
+        # T-2181's tests (another task's commit inside its window), so no honest answer could pass
+        self.add("\n\nMODES = ['--json']\n", "", "prep, no task")  # a flag the base's code already names
+        self.add("\n\ndef _twice(x):\n    return x * 2\n",
+                 "\n    def test_g_doubles_its_input(self):\n        self.assertEqual(app._twice(2), 4)\n"
+                 "        self.assertEqual(app.old(), 0)\n        self.assertIn('--json', app.MODES)\n", "Start g (T-1010)")
+        self.add("\n\ndef h():\n    return 5\n",
+                 "\n    def test_h_is_five(self):\n        self.assertEqual(app.h(), 5)\n", "Add h (T-1011)")
+        self.add("\n\nFLAGS = ['--deep']\n\n\ndef g_total():\n    return 3\n",
+                 "\n    def test_g_takes_the_deep_flag(self):\n        from app import g_total\n"
+                 "        self.assertIn('--deep', app.FLAGS)\n        self.assertEqual(g_total(), 3)\n", "Finish g (T-1010)")
+        r = json.loads(self.gen().stdout)
+        g = [s for s in r["scenarios"] if s["id"] == "T-1010"][0]
+        key = json.load(open(os.path.join(os.path.dirname(g["repo"]), "key.json")))
+        self.assertEqual(sorted(i.rsplit(".", 1)[1] for i in key["checks"]),
+                         ["test_g_doubles_its_input", "test_g_takes_the_deep_flag"])  # never T-1011's test_h_is_five
+        for goal in (key["goal"], g["goal"]):
+            # new names only: app.old, app.MODES and --json were in the base; g_total comes in by `from app import`
+            self.assertIn("The checks use these new names: app.FLAGS, app._twice, app.g_total, --deep\n", goal)
+            self.assertIn("Done when:", goal)
+            self.assertIn("g doubles its input", goal)
+            self.assertIn("g takes the deep flag", goal)
+            self.assertNotIn("assert", goal.lower())  # names and done-when only, never the tests' bodies
+            self.assertNotIn("h is five", goal)
+
     def lines(self):
         import fmcore as c
         import fmgenesis

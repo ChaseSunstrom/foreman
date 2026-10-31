@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Long-tier goals are passable from their text: checks come only from the task's own commits, and the goal names the new module attributes and flags its checks reach and lists the checks as "Done when", never the test bodies (T-2304).
+- Hooks import no `glob` again: the leads-record prune lists its folder (T-2305).
 - The Stop hook holds a session once for fm find leads it was shown at session start that are still present and unnamed in its reply (fix test-first, report, or refute); a suspicion with no failing test is reported as a lead, not a finding. Only turns that ran tools are held (T-2297).
 - `fm doctor`: the usage burn and unloaded skills checks reuse their last result from `state/doctor-cache.json` (JSON, bounded read, keyed on their input files' paths and hour-floored mtimes plus the day and the forecast hours shown), so a repeat doctor skips their rescans; `fmcore.global_event_files` names the event files `global_events` reads, so the cache key can't drift from it (T-2298, T-2300).
 - foreman-ui plugin tests: the four tests that ran near the engine's 5 s default cap now take `{ timeoutMs: 60000 }`, so a loaded host no longer fails a lane's affected run by chance (T-2293).
