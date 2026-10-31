@@ -72,7 +72,10 @@ class ConflictBrief(ForemanTestCase):
         self.assertIn("x = 2", text)
         self.assertIn("x = 3", text)
         self.assertIn("Change x", text)
-        self.assertIn(f"git -C {lane['path']} merge", r.stderr + text)
+        # T-2208: steps that work from the main checkout: cd into the lane first (or message its builder), then merge
+        self.assertIn(f"cd {lane['path']}", r.stderr + text)
+        self.assertIn("git merge", r.stderr + text)
+        self.assertNotIn("git -C", text)
         self.assertEqual(git(self.repo, "status", "--porcelain").strip(), "", "the main checkout is left clean")
 
 
