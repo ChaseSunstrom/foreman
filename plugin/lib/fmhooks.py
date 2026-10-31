@@ -3349,7 +3349,8 @@ def _stop(pl):
         oneoff = _oneoff()  # T-0775: only its own background work holds a one-off headless session
         closed = {b.id for b in briefs if b.status in c.CLOSED}
         nudge = None if reload_due else _headless_wait(pl) if oneoff else (
-            _evidence_gate(p, act, pl, g, closed) or _clauses_gate(p, pl, g, closed) or _claims_gate(pl, g)
+            _evidence_gate(p, act, pl, g, closed) or _clauses_gate(p, pl, g, closed) or _safe_goal_gate(p, pl, g, sid, closed)
+            or _claims_gate(pl, g)
             or _question_nudge(pl)
             or _headless_wait(pl))
         reason = nudge or (None if oneoff or "drive" in c.ablated() else _drive(p, sd, briefs, pl, g))  # T-1375
@@ -3627,6 +3628,39 @@ def _clauses_gate(p, pl, g, closed=()):
     return (f"Foreman: the reply says it's done, but {len(loose)} clause(s) of the last request are unaccounted: "
             + "; ".join(f"{i}. {c.fit(c.plain(x), 80)}" for i, x in enumerate(loose[:5], 1))
             + ". Capture each, answer it, or fm clauses --note N \"<why>\".")
+
+
+def _safe_goal_gate(*a):
+    try:
+        return _goal_gate(*a)
+    except Exception:  # a bad gate file or an OSError never breaks Stop
+        log_error("Stop", _tb())
+
+
+def _goal_gate(p, pl, g, sid, closed=()):
+    """T-2137: a done claim while the stored fm goal verdict (this checkout, under a day old) says stopped, held once
+    per cause set and counted toward DRIVE_MAX. Reads meta only: no checks, no git."""
+    if pl.get("stop_hook_active") or not claims_done(pl.get("last_assistant_message"), closed=closed):
+        return None
+    v = c.read_meta(p).get("goal_verdict")
+    age = c.age_days(v.get("at")) if isinstance(v, dict) else None
+    d = g["drive"].setdefault(sid, {"count": 0})
+    if age is None or age > 1 or v.get("verdict") != "stopped" or v.get("root") != p.root \
+            or not isinstance(v.get("causes"), list) or d.get("count", 0) >= DRIVE_MAX:
+        return None
+    import fmmandate
+    m = fmmandate.get(p)
+    if not m or m["expired"] or m.get("set_at") != v.get("set_at"):
+        return None  # the goal it judged is gone, replaced or ended
+    key = hashlib.sha1(json.dumps([v["causes"], v.get("set_at"), sid]).encode()).hexdigest()[:12]
+    if key in g.setdefault("goal", []):
+        return None
+    g["goal"] = (g["goal"] + [key])[-50:]
+    d["count"] = d.get("count", 0) + 1
+    c.log_event(p, "stop_gate", data={"goal": len(v["causes"])}, session=sid)
+    return ("Foreman: the reply says it's done, but the goal's verdict is stopped: "
+            + "; ".join(c.fit(c.plain(str(x)), 100) for x in v["causes"][:5])
+            + ". Finish or capture each, then fm goal verdict.")
 
 
 def _evidence_gate(p, act, pl, g, closed=()):
