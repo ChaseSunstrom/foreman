@@ -97,6 +97,25 @@ class ExamGen(ForemanTestCase):
         self.assertEqual(sorted(g["closed"]["train"] + g["closed"]["holdout"]), ids[2:])
         self.assertEqual(g["errors"], 2)
 
+    def test_one_scenario_that_raises_is_ungraded_and_named_while_the_rest_grade(self):
+        # T-2209: a damaged key.json aborted the whole grade; now the others grade and the exit is non-zero
+        res = self.gen("--seed", "4", "--per-kind", "3", "--lang", "python", "--kind", "clean")
+        run, s0 = res["run"], res["scenarios"][0]
+        self.fm_json("exam", "run", run, "--agent", "empty")
+        bad = os.path.join(os.path.dirname(s0["repo"]), "key.json")
+        with open(bad, "w") as f:
+            f.write("{")
+        r = self.fm("exam", "grade", run, "--agent", "empty", "--json", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        g = json.loads(r.stdout)
+        self.assertEqual(g["scenarios"], 2)
+        self.assertEqual(len(g["closed"]["train"] + g["closed"]["holdout"]), 2)
+        self.assertEqual(len(g["ungraded"]), 1)
+        self.assertIn(s0["id"], g["ungraded"][0])
+        self.assertIn("JSONDecodeError", g["ungraded"][0])
+        r = self.fm("exam", "grade", run, "--agent", "empty", check=False)
+        self.assertIn(f"ungraded {s0['id']}", r.stdout)
+
     def test_key_and_hidden_checks_sit_outside_a_one_commit_repo(self):
         res = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug,docs")
         for s in res["scenarios"]:
