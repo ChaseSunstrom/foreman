@@ -5151,14 +5151,14 @@ HOOK_BUDGET = (("plugin/lib/fmhooks.py", "plugin/lib/fmcore.py"), "plugin/tests/
 HUB_PAIRS = 10  # T-1467: more co-changed tests than this and a file's pairs are noise
 
 
-def affected(p, b=None, skipped=None):
+def affected(p, b=None, skipped=None, since=None):
     """(command, tests, changed files) for the tests linked (fm map) to files changed since the task started, with the
     project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705).
     Another open task's red-first test files are left out (T-1718); a dict passed as skipped gets them {module: task}."""
     import fmmap
     import shlex
-    act = b or c.active_brief(c.load_briefs(p), p.lane)  # T-1117 review: the closing task's base, active or not
-    base = (c.task_base(p.root, act) if act else None) or "HEAD"
+    act = b or (None if since else c.active_brief(c.load_briefs(p), p.lane))  # T-1117 review: the closing task's base, active or not
+    base = since or (c.task_base(p.root, act) if act else None) or "HEAD"  # T-2323: fm ship's range, from a commit
     changed = set(fmmap.changed(p.root, base))
     if b:  # T-1968: a close answers for its own changes; another task's files are left out, as its commit leaves them
         changed -= set(_theirs(p, b, sorted(changed)))

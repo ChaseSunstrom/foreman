@@ -143,6 +143,32 @@ class Ship(ForemanTestCase):
         self.assertTrue(self.granted())
         self.assertEqual(sh(self.repo, "worktree", "list").count("\n"), 1)
 
+    def affected_ship(self, template):
+        # T-2323: a changed test file in the range, and a stubbed affected runner; the full suite writes a marker
+        self.grant()
+        with open(os.path.join(self.repo, "test_new.py"), "w") as f:
+            f.write("x = 1\n")
+        sh(self.repo, "add", "test_new.py")
+        sh(self.repo, "commit", "-qm", "add test_new")
+        self.fm("check", "affected", template)
+        self.marker = os.path.join(self.tmp, "full-ran")
+        return self.ship("--test", f"touch {self.marker}")
+
+    def test_a_red_affected_run_stops_the_ship_before_the_full_suite_naming_the_class(self):
+        r = self.affected_ship("echo {tests}; echo 'FAIL: test_x (test_new.Cls.test_x)'; exit 1")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("affected tests failed", r.stdout + r.stderr)
+        self.assertIn("test_new.Cls", r.stdout + r.stderr)
+        self.assertFalse(os.path.exists(self.marker), "the full suite never started")
+        self.assertNotIn("add test_new", self.main_log())
+        self.assertTrue(self.granted())
+
+    def test_a_green_affected_run_goes_on_to_the_full_suite(self):
+        r = self.affected_ship("echo {tests}")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(os.path.exists(self.marker))
+        self.assertIn("add test_new", self.main_log())
+
     def test_a_red_test_captures_one_baseline_task_naming_the_failing_test(self):
         # T-2255: the ship's red run files what fm check would, once per failing set, and still pushes nothing
         self.grant()
