@@ -122,6 +122,11 @@ def cmd_state(args):
     if args.cmd == "status" and not (args.line or args.json) and not c.load_briefs(p):  # T-0847: nothing yet
         return print(f"{p.slug}: no tasks yet. Start with fm capture \"<request>\" or fm task new \"<title>\" --type FIX "
                      f"--tier S --focus (or just give Claude a request).")
+    if not args.line:  # T-2273: reads closed briefs and the ledger, so never on a status bar's poll
+        try:
+            sd["unproven"] = c.unproven_cached(p)
+        except Exception:  # a rollup must never cost the status
+            pass
     if args.line:
         run = c.code_line(p)  # T-1351: the newest fm code run, for tmux and prompt segments
         print(c.state_line(sd) + (f" · {run}" if run else ""))
@@ -132,6 +137,17 @@ def cmd_state(args):
         if args.brief:
             text = "\n".join(text.splitlines()[:15])
         print(text.rstrip("\n"))
+
+
+def cmd_proof(args):
+    """T-2273: the done tasks with a claim no run here proved, by kind."""
+    if args.days < 0:
+        raise UsageError("--days is 0 or more")
+    rows = c.unproven(resolve(args), args.days)
+    text = [f"unproven: {len(rows)} (done in the last {args.days} days; fm task evidence --run closes a typed one)"]
+    text += [f"- {r['id']} {c.fit(r['title'], 50)}: {', '.join(r['kinds'])}" + (f" ({r['why']})" if r["why"] else "")
+             for r in rows]
+    out(args, {"count": len(rows), "days": args.days, "tasks": rows}, "\n".join(text))
 
 
 def _block(item, r, key):
@@ -6156,6 +6172,9 @@ def _build_parser(only=None):
     s.add_argument("--days", type=float, default=7)
     s.add_argument("--say", action="store_true", help="read it aloud too, with the first of say, spd-say, espeak-ng or "
                                                       "espeak installed (T-1549)")
+    s = add("proof", cmd_proof, tier=("Reports", 972), help="done tasks no run here proved: typed, red or inconclusive "
+            "evidence, UI edits with no shot/smoke/stories run (T-2273)")
+    s.add_argument("--days", type=int, default=30, help="how far back closed tasks are read (default 30)")
     s = add("away", lazy("fmaway", "cmd_away"), tier=("Reports", 975), help="what closed, blocked, was asked or was reverted since you last spoke (T-1155)")
     s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), tier=("Reports", 980), help="what became of finished tasks: reverted, fixed later "
                                                                  "by a task naming them, or held; track record (T-0616)")

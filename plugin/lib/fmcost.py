@@ -932,6 +932,11 @@ def cmd_digest(args):
         if any(n > 1 for n in fails.values()) else []
     lines += [f"Tokens: ≈ {_human(tokens)} input-equivalent (fm cost for the breakdown)"] if tokens else []
     lines += [unex] if unex else []
+    try:  # T-2273: what closed without a green run here
+        unproven = c.unproven(p, args.days)
+    except Exception:  # the rollup never costs the digest
+        unproven = []
+    lines += [f"Done without a green run here: unproven: {len(unproven)} (fm proof)"] if unproven else []
     nights = [e for e in c.ledger_tail(p, 3000) if e.get("event") == "night" and str(e.get("ts", ""))[:19] >= since]
     lines += ["Night shift (fm night):"] + [  # T-0236
         f"- {str(e.get('ts', ''))[:10]}: " + (", ".join(f"{'✓' if r.get('exit') == 0 else '✗'} {r.get('name')}"
@@ -944,7 +949,7 @@ def cmd_digest(args):
     burn = burn_findings()  # T-1800: why usage burns, named with its fix
     lines += ["Usage burn:"] + [f"- {a} → {b}" for a, b in burn] if burn else []
     fmcli.out(args, {"learned": learn, "done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review, "decided": decided,
-                     "blocked": [b.id for b in blocked], "stale_plans": stale, "deferred_triage": triage, "failures": dict(fails.most_common(5)), "tokens": tokens,
+                     "blocked": [b.id for b in blocked], "unproven": [r["id"] for r in unproven], "stale_plans": stale, "deferred_triage": triage, "failures": dict(fails.most_common(5)), "tokens": tokens,
                      "burn": burn},
               "\n".join(lines))
     if getattr(args, "say", False):  # T-1549: the digest read aloud, when a speech program is installed

@@ -3802,6 +3802,8 @@ def render_state(sd, ts=None):
         out.append("Dangling deps: " + ", ".join(f"{a}→{b}" for a, b in sd["dangling"])[:200])
     out += ["", "## Notes", f"Sensitive: {'yes' if sd['sensitive'] else 'no'} · Drive: {'on' if sd['drive'] else 'off'}"
             + (" · PAUSED" if sd["paused"] else "")]
+    if sd.get("unproven"):  # T-2273
+        out.append(f"Done on typed or unrun proof, 30 days: unproven: {sd['unproven']} (fm proof)")
     g = sd.get("genesis")
     if g:  # T-2118
         out.append(f"Genesis: {genesis_line(g)}")
@@ -4020,13 +4022,79 @@ TASK_WINDOW = 50000  # ledger events read for a task's edits at done (a fm comma
 def task_touches(p, tid, window=None):
     """{relative path: timestamp of its last edit} for the project files the hooks saw this task edit, in first-edit
     order: Edit/Write targets, and files a Bash call changed (T-0086)."""
-    files = {}
+    return all_touches(p, window, tid).get(tid, {})
+
+
+def all_touches(p, window=None, only=None):
+    """{task id: task_touches' files} in one ledger pass (T-2273: a rollup over many tasks reads the ledger once)."""
+    out = {}
     for e in ledger_tail(p, window or TASK_WINDOW):
-        f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") == tid else None
+        t = e.get("task")
+        f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and t and only in (None, t) else None
         if f and f.startswith(p.root.rstrip("/") + "/"):
             rel = _WORKTREE_PREFIX.sub("", os.path.relpath(f, p.root))  # T-0807: a lane's edit is the repo file
-            files[rel] = (e.get("data") or {}).get("at") or e.get("ts", "")  # "at": a Bash edit
-    return files
+            out.setdefault(t, {})[rel] = (e.get("data") or {}).get("at") or e.get("ts", "")  # "at": a Bash edit
+    return out
+
+
+_UI_FILE = lazy(r"(?i)\.(css|scss|html|tsx|jsx|svelte|vue)$")
+_UI_PROOF = lazy(r"(?i)\b(shot|smoke|stories|flow)\b")  # a run of fm shot, fm smoke, fm stories or a flow check
+
+
+def unproven_cached(p, days=30):
+    """T-2273: len(unproven(p, days)) kept in unproven.json, recomputed only when its key moves: today, and each brief
+    folder's mtime and file count (a brief is written by rename, so a save or a close moves its folder's mtime). The
+    ledger is not in the key: a done task's touches no longer grow. ponytail: an edit logged to a task after its close
+    shows at the next brief change; key on the ledger size if that matters."""
+    def stat(d):
+        try:
+            return [os.stat(d).st_mtime_ns, len(os.listdir(d))]
+        except OSError:
+            return [0, 0]
+    key = [days, now()[:10], stat(os.path.join(p.dir, "tasks"))]
+    arch = os.path.join(p.dir, "archive")
+    key += [[dp] + stat(dp) for dp, _, _ in os.walk(arch)]
+    path = os.path.join(p.dir, "unproven.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            got = json.load(f)
+        if got.get("key") == key and isinstance(got.get("n"), int):
+            return got["n"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    n = len(unproven(p, days))
+    with contextlib.suppress(OSError):
+        write_atomic(path, json.dumps({"key": key, "n": n}))
+    return n
+
+
+def unproven(p, days=30):
+    """T-2273: [{id, title, kinds, why}] for done tasks closed in the last `days` with a claim no run here proved: per
+    step/criterion whose evidence has no green run (typed: only typed lines; red: only failing runs; inconclusive: only
+    inconclusive runs) and a UI file edit (css, html, tsx, jsx, svelte, vue) with no green run naming shot, smoke, stories
+    or flow. A task whose every checked criterion ran green is never listed."""
+    since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    done = [b for b in load_briefs(p, include_archive=True) if b.status == "done" and not b.meta.get("done_in")
+            and str(b.meta.get("updated", ""))[:19] >= since]
+    touches = all_touches(p) if done else {}
+    out = []
+    for b in done:
+        keys, shot = {}, False
+        for line in b.section("Verification evidence").splitlines():
+            m = _EV_RE.match(line)
+            if not m or _REWOUND in line:
+                continue
+            green = _RAN_MARK in line and _INCONCLUSIVE not in line and "` → exit 0" in line
+            shot = shot or (green and bool(_UI_PROOF.search(line.split("` → ", 1)[0])))
+            k = keys.setdefault((m.group(1), int(m.group(2))), set())
+            k.add("green" if green else "inconclusive" if _INCONCLUSIVE in line else "red" if _RAN_MARK in line else "typed")
+        kinds = sorted({next(x for x in ("typed", "red", "inconclusive") if x in v) for v in keys.values() if "green" not in v})
+        ui = [f for f in touches.get(b.id, {}) if _UI_FILE.search(f)]
+        if ui and not shot:
+            kinds.append("ui-unshot")
+        if kinds:
+            out.append({"id": b.id, "title": b.title, "kinds": kinds, "why": ", ".join(ui[:3]) if "ui-unshot" in kinds else ""})
+    return out
 
 
 _WORKTREE_PREFIX = lazy(r"^\.claude/worktrees/[^/]+/")  # Claude Code's lane worktrees inside the checkout
