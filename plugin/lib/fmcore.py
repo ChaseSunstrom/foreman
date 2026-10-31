@@ -3585,7 +3585,7 @@ def race_line(b):
     An L task isn't raced as code: its design is, by another model reading the plan."""
     if b.tier == "L":
         return (f"design race: fm second plan {b.id} (another model reads the plan and argues the runner-up design before "
-                "any edit)")
+                f"any edit); or fm lane race {b.id} (one throwaway spike per option, T-2340)")
     return (f"fm lane race {b.id} (a builder takes the runner-up; both are scored on this task's checks and the better "
             f"one merges)")
 

@@ -1342,5 +1342,109 @@ class RaceEvidence(RaceBase):
         self.assertIn("lost", self.brief(other).section("Approach (options → choice → why)"))
 
 
+class DesignRace(RaceBase):
+    """T-2340: an L task can't race as code; its design races as throwaway S spikes, one per option, and the L stays here."""
+    GOOD = RaceEvidence.GOOD
+
+    def ltask(self, **kw):
+        tid = self.task(tier="L", **kw)
+        self.fm("task", "set", tid, "--section", "Risks and rollback", "--text", "fails: x; undo: revert")
+        return tid
+
+    def spikes(self, sides=2):
+        tid = self.ltask()
+        self.fm("lane", "max", "3")
+        d = self.race(tid, "--sides", str(sides))
+        return tid, d["sides"]
+
+    def test_an_l_race_makes_one_s_spike_per_option_and_the_l_stays_here(self):
+        tid, spikes = self.spikes(3)
+        self.assertEqual(len(spikes), 3)
+        self.assertNotIn(tid, spikes)
+        p = c.find_project(self.repo)
+        for k, s in enumerate(spikes, 1):
+            b = self.brief(s)
+            self.assertEqual((b.tier, str(b.meta["lane_spike"]).lower(), b.meta["race_of"], str(b.meta["race_option"])),
+                             ("S", "true", tid, str(k)))
+            self.assertTrue(b.meta.get("builder"), "each spike has a builder brief")
+            text = read_text(os.path.join(p.dir, "audits", f"{s}.builder.md"))
+            self.assertIn("riskiest", text)
+            self.assertIn("never merged", text)
+        self.assertIn("builders converge", read_text(os.path.join(p.dir, "audits", f"{spikes[0]}.builder.md")),
+                      "the target is the option's own `fails if:`")
+        l = self.brief(tid)
+        self.assertFalse(l.meta.get("builder"))
+        self.assertEqual(l.meta["race_sides"], spikes)
+        r = self.fm("lane", "brief", tid, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("L task stays in the main thread", r.stderr + r.stdout)
+
+    def test_a_spike_is_refused_at_merge(self):
+        tid, spikes = self.spikes()
+        self.side(spikes[0], "a", {"win.txt": "good\n"})
+        r = self.fm("lane", "merge", spikes[0], check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("spike", r.stderr + r.stdout)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "win.txt")))
+
+    def test_checks_that_pass_on_the_base_refuse_an_l_race_and_write_nothing(self):
+        tid = self.ltask(check="true")
+        r = self.fm("lane", "race", tid, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("the checks can't tell the sides apart", r.stderr + r.stdout)
+        self.assertEqual([b.id for b in c.load_briefs(c.find_project(self.repo)) if b.meta.get("race_of")], [])
+
+    def test_score_writes_the_design_race_into_the_approach_once(self):
+        tid, (a, b) = self.spikes()
+        self.fm("task", "note", a, "fact", "the lock is the hard part")
+        self.side(a, "a", {"win.txt": "good\n", "test_a.py": self.GOOD})
+        self.side(b, "b", {"win.txt": "bad\n"})
+        d = json.loads(self.fm("lane", "race", tid, "--score", "--json").stdout)
+        self.assertEqual({r["id"] for r in d["sides"]}, {a, b}, "the L itself is no side")
+        self.assertEqual(d["leader"], a)
+        self.fm("lane", "race", tid, "--score")  # again: the section is replaced, not stacked
+        ap = self.brief(tid).section("Approach (options → choice → why)")
+        self.assertEqual(ap.count("Design race"), 1, ap)
+        tail = ap.split("Design race", 1)[1]
+        for word in (a, b, "caught 1", "option 1", "the lock is the hard part"):
+            self.assertIn(word, tail)
+        self.assertIn("widen the race", ap.split("Design race", 1)[0], "the options stay")
+        self.assertNotIn("not started", tail)
+
+    def test_pick_records_a_decision_and_a_ledger_row_drops_every_spike_and_keeps_the_branches(self):
+        tid, (a, b) = self.spikes()
+        self.side(a, "a", {"win.txt": "bad\n"})
+        self.side(b, "b", {"win.txt": "good\n", "test_b.py": self.GOOD})
+        r = self.fm("lane", "pick", tid, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("spike", r.stderr + r.stdout, "the L is no winner: a spike is")
+        self.fm("lane", "pick", b)
+        p = c.find_project(self.repo)
+        row = [l for l in read_text(os.path.join(p.dir, "decisions.md")).splitlines() if f"{tid}'s design race" in l]
+        self.assertEqual(len(row), 1)
+        self.assertIn(a, row[0], "the loser is the rejected column")
+        ev = c.ledger_events(p, ["race_pick"])[-1]["data"]
+        self.assertEqual((ev["winner"], ev["losers"], ev["first_won"], ev["winner_option"], ev["design"]),
+                         (b, [a], False, 2, True))
+        for s in (a, b):
+            x = self.brief(s)
+            self.assertEqual(x.status, "dropped")
+            self.assertIn("design", "\n".join(x.section("Log").splitlines()[-2:]))
+        self.assertIn("lost the design race", self.brief(a).section("Log"))
+        ap = self.brief(tid).section("Approach (options → choice → why)")
+        self.assertIn("Picked", ap.split("Design race", 1)[1])
+        self.assertIn("option 2", ap.split("Picked", 1)[1])
+        self.assertEqual(self.brief(tid).status, "planned", "the L task itself is untouched")
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "win.txt")), "a spike never merges")
+        branches = self.git(self.repo, "branch", "--list", "race-a", "race-b")
+        self.assertIn("race-a", branches)
+        self.assertIn("race-b", branches)
+        again = self.fm("lane", "pick", b, check=False)
+        self.assertNotEqual(again.returncode, 0, "one pick per race")
+
+    def test_the_ask_line_for_an_l_names_the_spike_race_too(self):
+        self.assertIn("fm lane race T-1", c.race_line(c.Brief.parse("---\nid: T-1\ntier: L\n---\n# x\n")))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -665,6 +665,19 @@ def _sides(p, b):
 
 
 APPROACH = "Approach (options → choice → why)"
+DESIGN = "\n\nDesign race:"  # T-2340: where the L's Approach keeps its spikes' scores; replaced on each --score
+
+
+def _racers(orig, others):
+    """The sides a race scores: an L's design race scores its spikes, the L itself has no code (T-2340)."""
+    return others if orig.tier == "L" else [orig, *others]
+
+
+def _flat(s, n=120):
+    """T-2340: a spike builder's note as one plain clause for the L's Approach: no digit marker, bracket or percent, no
+    option word, so it can't read as an option or a stated choice to the plan gate (the last '(NN%)' wins there)."""
+    s = re.sub(r"\b(?:option|approach|reading)\b", "opt", re.sub(r"[^\w ,:;'/-]", " ", s), flags=re.I)
+    return c.fit(" ".join(s.split()), n)
 # the words are fmcore's (CHOICE_WORDS, what the plan gate reads); a letter counts when uppercase or marked "a)" "a." "a:",
 # so "chose a simple cache" names no option
 _CHOSEN_RE = re.compile(r"\b(?i:" + c.CHOICE_WORDS + r")\b\W{0,6}(?i:option|approach)?\s*(?:(\d{1,2})\b|([A-Z])\b|([a-z])(?=[).:]))")
@@ -672,7 +685,7 @@ _CHOSEN_RE = re.compile(r"\b(?i:" + c.CHOICE_WORDS + r")\b\W{0,6}(?i:option|appr
 
 def _options(b):
     """([the Approach's option texts], the stated choice, 1-based; 1 when none reads or it is out of range)."""
-    ap = b.section(APPROACH)
+    ap = b.section(APPROACH).split(DESIGN, 1)[0]  # T-2340: a design race's note below the options is no part of the last one
     opts = [c.fit(" ".join(x.split()), 200) for x in c._split_options(ap)]
     m = _CHOSEN_RE.search(ap)  # the first hit: a later "we chose …" in the why isn't the choice
     n = (int(m[1]) if m[1] else ord((m[2] or m[3]).lower()) - 96) if m else 1
@@ -715,7 +728,13 @@ def race(p, b, main, args):
     if b.meta.get("race") or b.meta.get("race_of"):  # said first: a second race is not a slot problem
         raise c.PolicyError(f"{b.id} is already racing (fm lane race {b.id} --score)")
     _ready(p, b, n)
+    design = b.tier == "L"  # T-2340: an L's design races as S spikes, one per option; the L itself stays in the main thread
     plan = _plan_sides(b, n)
+    stated = plan[0][0]
+    if design:
+        if stated is None:
+            raise fmcli.UsageError(f"a design race needs 2+ options in the Approach of {b.id} (fm task set {b.id} --section Approach)")
+        plan = sorted(plan, key=lambda x: x[0])  # the options in order; the stated one is among them
     checks = [v for _, v in b.verify_cmds() if v]
     _say(f"running {len(checks)} check(s) on the base tree")
     if not _fails_on_base(p, b, main, checks):  # T-2339: a check that passes on the base can't tell the sides apart
@@ -729,13 +748,13 @@ def race(p, b, main, args):
         if b.meta.get("race") or b.meta.get("race_of"):
             raise c.PolicyError(f"{b.id} is already racing (fm lane race {b.id} --score)")
         _ready(p, b, n)
-        released = b.status == "active"
+        released = b.status == "active" and not design
         if released:  # T-2338: fm next names the race while the task is focused and untouched: release it, after every refusal above
             b.meta["status"] = "planned"
             b.append_log("released to race: focused, no work on it yet")
             c.save_brief(p, b)
         nids = []
-        for i, (opt, text) in enumerate(plan[1:], 1):
+        for i, (opt, text) in enumerate(plan if design else plan[1:], 0 if design else 1):
             nid = c.next_id(p)
             nids.append(nid)
             nb = c.Brief.parse(b.render())
@@ -745,28 +764,41 @@ def race(p, b, main, args):
                 nb.meta.pop(k, None)
             if opt:
                 nb.meta["race_option"] = opt
-            nb.preamble = nb.preamble.replace(f"# {b.title}", f"# {b.title} (race {letters[i].lower()} of {b.id})", 1)
+            nb.preamble = nb.preamble.replace(f"# {b.title}", f"# {b.title} ({'spike' if design else 'race'} "
+                                                              f"{letters[i].lower()} of {b.id})", 1)
             nb.set_section("Verification evidence", "")
-            nb.set_section("Race", f"Side {letters[i]} of a race with {b.id}: "
-                                   + (f"build option {opt} of the Approach: {text} " if opt else "")
-                                   + "Take a different approach from the obvious one (the Approach section's "
-                                     "alternatives); the main thread scores the sides and merges one.")
-            nb.set_section("Log", f"- {c.now()} race {letters[i].lower()} of {b.id}")
+            if design:  # a throwaway S task aimed at the option's riskiest step; fm lane merge refuses a lane_spike
+                risk = re.search(r"(?:fails if|likely outcome):?\s*(.+)", text, re.I)
+                nb.meta["tier"], nb.meta["lane_spike"] = "S", True
+                nb.set_section("Steps", "1. [ ] Spike the riskiest step of your option, commit it, and note what it shows "
+                                        f"(fm task note {nid} fact \"…\")")
+                nb.set_section("Race", f"Design spike {letters[i]} of {b.id}'s race: option {opt} of the Approach: {text} "
+                                       f"Build the riskiest step first: {risk[1] if risk else 'the part this option leans on most'}. "
+                                       f"Your code is thrown away and never merged (its branch is kept): commit what you "
+                                       f"built and note what it showed. The main thread scores the spikes and picks "
+                                       f"the design; {b.id} itself stays with the main thread.")
+            else:
+                nb.set_section("Race", f"Side {letters[i]} of a race with {b.id}: "
+                                       + (f"build option {opt} of the Approach: {text} " if opt else "")
+                                       + "Take a different approach from the obvious one (the Approach section's "
+                                         "alternatives); the main thread scores the sides and merges one.")
+            nb.set_section("Log", f"- {c.now()} {'design spike' if design else 'race'} {letters[i].lower()} of {b.id}")
             c.save_brief(p, nb)
         # review: every side is scored on the original's checks, fixed now (a builder can edit its own criteria)
         b.meta["race"], b.meta["race_checks"] = nids[0], checks
         b.meta["race_sides"] = nids
-        if plan[0][0]:
+        if plan[0][0] and not design:
             b.meta["race_option"] = plan[0][0]
             b.set_section("Race", f"Side A of a race with {b.id}: build option {plan[0][0]} of the Approach (the stated "
                                   f"choice): {plan[0][1]} The other sides build the other options; the main thread "
                                   f"scores the sides and merges one.")
         b.append_log(f"racing {', '.join(nids)}")
         c.save_brief(p, b)
-    c.log_event(p, "race_start", task=b.id, data={"other": nids[0], "others": nids})
-    if conf is not None:  # the bet: side A (the original) wins; scored by fm lane pick
+    c.log_event(p, "race_start", task=b.id, data={"other": nids[0], "others": nids, **({"design": True} if design else {})})
+    if conf is not None:  # the bet: side A (the original) wins, in a design race the spike of the stated option; scored by fm lane pick
+        won = nids[[k for k, _ in plan].index(stated)] if design else b.id
         try:  # a ledger doesn't stop a race that has already started
-            fmoutcomes.bet(p, "race", conf, task=b.id, key=f"{b.id}>{nids[0]}", files=b.meta.get("scope") or [],
+            fmoutcomes.bet(p, "race", conf, task=b.id, key=f"{won}>{b.id if design else nids[0]}", files=b.meta.get("scope") or [],
                            base=fmoutcomes.base_rate(fmoutcomes.outcomes(p), fmoutcomes._first_finish(p), b.type,
                                                      b.tier))
         except Exception as e:
@@ -774,7 +806,7 @@ def race(p, b, main, args):
     quiet = argparse.Namespace(**{**vars(args), "json": True})
     try:
         with contextlib.redirect_stdout(io.StringIO()):  # the briefs' own output; the launch lines follow
-            for t in (b.id, *nids):
+            for t in (nids if design else (b.id, *nids)):
                 builder_brief(p, c.find_brief(p, t), quiet)
     except Exception:  # review: no half-started race (orphan clones, a race mark nobody can clear)
         for nid in nids:
@@ -784,22 +816,25 @@ def race(p, b, main, args):
                                          released and y.meta.__setitem__("status", "active")), "race_abort", {})  # T-2338: focused again
         raise
     agent = 'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"'
-    paths = {t: os.path.join(p.dir, "audits", f"{t}.builder.md") for t in (b.id, *nids)}
-    return fmcli.out(args, {"id": b.id, "race": nids[0], "sides": [b.id, *nids], "briefs": paths},
-                     f"{b.id} races {', '.join(nids)}:\n" + "\n".join(
+    racers = nids if design else [b.id, *nids]
+    paths = {t: os.path.join(p.dir, "audits", f"{t}.builder.md") for t in racers}
+    return fmcli.out(args, {"id": b.id, "race": nids[0], "sides": racers, "briefs": paths},
+                     f"{b.id} {'design race, spikes' if design else 'races'} {', '.join(nids)}:\n" + "\n".join(
         f"  launch: {agent}, prompt: \"Read {path} and work the task it describes.\"" for path in paths.values())
-        + f"\n  then: fm lane race {b.id} --score, and fm lane pick <the winner>")
+        + f"\n  then: fm lane race {b.id} --score, and fm lane pick <the winner>"
+        + (f" (a spike's code is never merged; {b.id} stays here)" if design else ""))
 
 
 def _ready(p, b, n=2):
     """T-1069 review: what builder_brief checks, for every side, before a race writes anything."""
     import fmcli
-    if b.tier not in ("S", "M"):
-        raise c.PolicyError(f"{b.id} is {b.tier}: a race takes an S or M task")
+    if b.tier not in ("S", "M", "L"):
+        raise c.PolicyError(f"{b.id} is {b.tier}: a race takes an S, M or L task")
     idle = b.status == "active" and not b.has_evidence() and not any(s.done for s in b.steps())  # T-2338: no work yet
     if b.status in c.CLOSED or b.status == "verifying" or (b.status == "active" and not idle) or c.held_elsewhere(b):
         raise c.PolicyError(f"{b.id} is {b.status}: a race takes a task nobody is working on")
-    gaps = c.plan_gaps(b, c.effective_autonomy(p))
+    # T-2340: an L's design races before its approval (the race informs the yes), so the approval gap doesn't count
+    gaps = c.plan_gaps(b, "full" if b.tier == "L" else c.effective_autonomy(p))
     if gaps:
         raise c.PolicyError(f"{b.id} isn't planned enough for a builder: missing {', '.join(gaps)} (fm task set/ac/step)")
     if not [v for _, v in b.verify_cmds() if v]:
@@ -959,7 +994,7 @@ def _rank(p, b, main):
     cross-examination (caught less broken), then lines changed, then files outside scope; a tie keeps the stated
     choice (the original, first). A side with uncommitted work (an error row) is not scored and never leads."""
     orig, others = _sides(p, b)
-    xs = [orig, *others]
+    xs = _racers(orig, others)
     _say(f"running the frozen checks in {len(xs)} sides")
     rows = [_side(p, x, main) for x in xs]
     _cross(p, xs, rows, main)
@@ -994,11 +1029,30 @@ def _scored(p, orig, xs, main):
     return None
 
 
+def _design_note(p, orig, xs, rows, lead=None, picked=""):
+    """T-2340: each spike's checks passed, cross-examination and findings (its brief's Notes), written into the L's
+    Approach under "Design race", replacing the last one; `picked` (after a pick) ends it. No digit marker or
+    percent, and no 'option N' followed by a word: the plan gate reads this text too."""
+    import fmcli
+    got = []
+    for x, r in zip(xs, rows):
+        found = [_flat(ln.lstrip("- ")) for ln in x.section("Notes").splitlines() if ln.strip()][:3]
+        had = (f"{r['passed']} of {r['tests']} checks, {r['lines']} lines changed, its tests caught {r['caught']} and "
+               f"failed {r['broken']} of the others" if r["lines"] is not None else _flat(r.get("error") or "no commit yet"))
+        got.append(f"{x.id} built option {x.meta.get('race_option')}, {had}" + (f"; found: {'; '.join(found)}" if found else ""))
+    text = (f"{DESIGN} throwaway spikes, one per option, scored on the frozen checks\n" + "\n".join(got)
+            + (f"\n{picked}" if picked else f"\nLeading: {lead or 'none yet'}"))
+    fmcli.mutate(p, orig.id, lambda y: y.set_section(APPROACH, y.section(APPROACH).split(DESIGN, 1)[0].rstrip() + text),
+                 "race_note", {"design": True})
+
+
 def score(p, b, main, args):
     import fmcli
     orig, others, rows, lead, same = _rank(p, b, main)
     started = [r for r in rows if r["lines"] is not None]
-    xs = [orig, *others]
+    xs = _racers(orig, others)
+    if orig.tier == "L":
+        _design_note(p, orig, xs, rows, lead)
     if not any(r.get("error") for r in rows):  # pick reuses this while no side has moved (T-2339)
         try:
             os.makedirs(os.path.dirname(_scored_path(p, orig)), exist_ok=True)
@@ -1045,12 +1099,72 @@ def _lost(r, w):
     return "; ".join(why) or "tied on the evidence; the winner was picked by hand"
 
 
+def _pick_design(p, win, orig, spikes, main, args):
+    """T-2340: the pick of an L's design race: nothing merges (a spike's code is thrown away). The pick is a decision row
+    and a race_pick ledger row, the Approach gets the scores and the pick, every spike is dropped with its reason and its
+    branch kept, and the L stays where it was, in the main thread."""
+    import fmcli
+    import fmbus
+    if win.id == orig.id:
+        raise c.PolicyError(f"{win.id} is an L task: pick one of its spikes ({', '.join(x.id for x in spikes)}); a spike's "
+                            f"code is never merged")
+    if win.status in c.CLOSED:
+        raise c.PolicyError(f"{win.id} is {win.status}: {orig.id}'s design race is already picked")
+    if not win.meta.get("lane_branch"):
+        raise fmcli.UsageError(f"{win.id} has no branch: its spike wasn't built (fm lane race {orig.id} --score)")
+    losers = [x for x in spikes if x.id != win.id]
+    try:  # the evidence is read before the cleanup removes the trees it comes from
+        rows = _scored(p, orig, spikes, main) or {r["id"]: r for r in _rank(p, win, main)[2]}
+    except Exception:  # a spike that can't be scored doesn't stop a pick
+        rows = {}
+    opts, stated = _options(orig)
+    opt_of = lambda x: int(x.meta["race_option"]) if str(x.meta.get("race_option")).isdigit() else None
+    scored = lambda x: rows.get(x.id) if rows.get(x.id) and rows[x.id]["lines"] is not None else None
+    why = {x.id: _lost(scored(x), scored(win)) for x in losers}
+    evidence = "; ".join(f"{x.id} {_why(scored(x))}" for x in spikes if scored(x))
+    picked = f"Picked: {win.id} (option {opt_of(win)}, the design to build); " + "; ".join(
+        f"{x.id} (option {opt_of(x)}, lost: {_flat(why[x.id])})" for x in losers)
+    _design_note(p, orig, spikes, [rows.get(x.id) or {"lines": None, "error": "not scored"} for x in spikes], picked=picked)
+    fmcli._write_decision(p, f"{orig.id}'s design race: option {opt_of(win)} ({win.id}) won over "
+                             f"{', '.join(x.id for x in losers)}", evidence or "the spikes were not scored",
+                          "; ".join(f"{x.id} (option {opt_of(x)}): {why[x.id]}" for x in losers), task=orig.id)
+    c.log_event(p, "race_pick", task=orig.id, data={"winner": win.id, "loser": losers[0].id, "losers": [x.id for x in losers],
+                                                   "stated": stated if len(opts) > 1 else None,
+                                                   "first_won": opt_of(win) == stated, "winner_option": opt_of(win),
+                                                   "design": True})
+    for x in spikes:
+        reason = (f"lost the design race to {win.id} ({orig.id} keeps the design; branch kept)" if x.id != win.id else
+                  f"won the design race: {orig.id} builds from it, a spike's code is never merged (branch kept)")
+        fmcli.mutate(p, x.id, lambda y, r=reason: (y.meta.__setitem__("status", "dropped"), y.append_log(f"dropped: {r}")),
+                     "task_drop", {"reason": reason})
+    pending = []  # a cleanup that can't finish now is reported, never fatal
+    for x in spikes:
+        x = c.find_brief(p, x.id)
+        lane = x.meta.get("lane")
+        if not lane or not os.path.isdir(lane):
+            continue
+        _git(main, "worktree", "unlock", lane)  # Claude Code locks a builder's worktree; remove() still refuses uncommitted work
+        try:
+            remove(p, x, main)
+        except (c.PolicyError, fmcli.UsageError) as e:
+            pending.append(f"{x.id}: {e}")
+        fmbus.release(p, x.id)
+    return fmcli.out(args, {"winner": win.id, "dropped": [x.id for x in spikes], "losers": [x.id for x in losers],
+                            "pending": pending},
+                     f"{orig.id}'s design race: option {opt_of(win)} ({win.id}) won, {', '.join(x.id for x in spikes)} dropped "
+                     f"(branches kept, nothing merged); {evidence or 'not scored'}; next: write the design into {orig.id}'s "
+                     f"Approach and plan from it ({orig.id} stays here)"
+                     + ("\ncleanup pending:\n  " + "\n  ".join(pending) if pending else ""))
+
+
 def pick(p, b, main, args):
     """Merge the winner (merge(), criteria and guard included), drop the other with the reason, remove both lanes;
     the loser's branch is kept, never deleted."""
     import fmcli
     import fmbus
     orig, others = _sides(p, b)
+    if orig.tier == "L":
+        return _pick_design(p, b, orig, others, main, args)
     sides = [orig, *others]
     win, losers = b, [x for x in sides if x.id != b.id]
     lose = orig if win.id != orig.id else others[0]  # the ledger's `loser` field: the original, else the first b side
