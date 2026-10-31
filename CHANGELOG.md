@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A queued grant for a tool that needs a secret names the variable, never its value (`fm ask ID plugin --pin P --later --needs-env GITHUB_TOKEN`; the user sets it outside the session), and `fm task finish` refuses while this session's transcript holds that variable's live value or a secret-shaped `NAME=value`.
 - The migration proof's schema read casts Postgres catalog columns to text before joining them, so newer Postgres (the Ubuntu 26 runners) no longer rejects it as an ambiguous operator.
 - One trigger table (Mission 8, #11): each trigger routes to inbox, queue, lane or mute with a tier cap, budget and burst; `fm triggers set NAME --route …` (yours to run) sets a row, the digest settles unset rows from outcomes (precision 0.7+ over 10: queue; under 0.1: muted, each move recorded as a decision), a muted or over-budget fire joins the open brief it repeats, a lane route's capture is worked only in a lane, and `fm doctor` names each muted trigger with its unmute command.
 - #2 and #8 exam kinds (Mission 5): race, fork, door and unsure (child-authored, 9 per kind, 3 held out, six languages); every session answer states a confidence and each run reports its Brier beside the closed share; the scorecard maps #2 and #8 to them; `fm exam long --faults door` plants an untracked data file the goal's literal wording would delete (never through a linked folder, and never over a file the repo holds), and each long goal states a confidence scored as Brier against true-done (T-2343).
