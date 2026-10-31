@@ -4,8 +4,8 @@ kept fm evolve candidate — each an existing fm command, kept while the night's
 remaining budget. Refused when usage is high, when usage is unknown the limit halves, a sensitive project runs
 nothing, and the night stops as soon as real spend passes the limit or usage climbs (T-0298 review). Never merges;
 the morning's fm digest says what ran. --tick (T-2356) is the model-free pass: orders, the cached CI result, and CI or issues only where
-the user said yes. It runs from the Stop hook's sweep now, and from the timer T-2357 stages. Scheduling (cron, a systemd timer) is the user's to set up;
---print-timer prints both, ready to paste."""
+the user said yes. It runs from the Stop hook's sweep, and from the timers T-2357 stages: --stage writes the nightly and
+hourly units into state and queues one plugin request; --install (the user's yes, through the guard) installs them."""
 import fcntl
 import glob
 import json
@@ -115,23 +115,120 @@ def _usage():
     return fmbudget.usage_high(), fresh
 
 
-def timer(p):
-    """T-0955: a systemd user service + timer and a crontab line that run fm night here nightly; printed, never
-    installed (scheduling stays the user's)."""
-    unit = f"foreman-night-{p.slug}"
-    cmd = f"{shlex.quote(sys.executable)} {shlex.quote(os.path.join(c.PLUGIN_ROOT, 'bin', 'fm'))} night"
+def units(p, max_usd=2.0):
+    """T-0955, T-2357: {file: text}: the nightly fm night and hourly fm night --tick systemd user units (Persistent=, so
+    a machine asleep at the hour runs it on waking), and crontab.txt, the same two lines for a machine without systemd."""
+    fm = f"{shlex.quote(sys.executable)} {shlex.quote(os.path.join(c.PLUGIN_ROOT, 'bin', 'fm'))}"
     # systemd and cron start with a bare environment: this state dir, and the tools on your PATH (claude, git)
     path = ":".join(d for d in os.environ.get("PATH", "").split(":") if d and not re.search(r"[\x00-\x1f\"%\s]", d))
-    home = c.foreman_home()
-    return "\n".join([
-        f"# ~/.config/systemd/user/{unit}.service", "[Unit]", f"Description=Foreman night ({p.slug})", "",
-        "[Service]", "Type=oneshot", f"WorkingDirectory={p.root}", f'Environment="FOREMAN_HOME={home}"',
-        f'Environment="PATH={path}"', f"ExecStart={cmd}", "",
-        f"# ~/.config/systemd/user/{unit}.timer", "[Unit]", f"Description=Foreman night ({p.slug}), nightly", "",
-        "[Timer]", "OnCalendar=*-*-* 02:30", "Persistent=true", "", "[Install]", "WantedBy=timers.target", "",
-        f"# then: systemctl --user daemon-reload && systemctl --user enable --now {unit}.timer",
-        "# or, without systemd, a crontab -e line:",
-        f"30 2 * * * cd {shlex.quote(p.root)} && FOREMAN_HOME={shlex.quote(home)} PATH={shlex.quote(path)} {cmd}"])
+    home, out, cron = c.foreman_home(), {}, []
+    if re.search(r"[\x00-\x1f\x7f]", p.root + home + fm):  # a newline would add a line to the unit
+        raise c.PolicyError("the project or Foreman home path holds a control character: no timer unit is written for it")
+    sd = lambda s: s.replace("%", "%%")  # noqa: E731 - systemd expands %-specifiers in these fields
+    for kind, every, when, args, minute in (("night", "nightly", "*-*-* 02:30", f"night --max-usd {max_usd:g}", "30 2"),
+                                            ("tick", "hourly", "hourly", "night --tick", "0 *")):
+        name = f"foreman-{kind}-{p.slug}"
+        out[name + ".service"] = "\n".join([
+            "[Unit]", f"Description=Foreman {kind} ({p.slug})", "", "[Service]", "Type=oneshot",
+            f"WorkingDirectory={sd(p.root)}", f'Environment="FOREMAN_HOME={sd(home)}"', f'Environment="PATH={path}"',
+            f"ExecStart={sd(fm)} {args}", ""])
+        out[name + ".timer"] = "\n".join([
+            "[Unit]", f"Description=Foreman {kind} ({p.slug}), {every}", "", "[Timer]", f"OnCalendar={when}",
+            "Persistent=true", "", "[Install]", "WantedBy=timers.target", ""])
+        cron.append(f"{minute} * * * cd {shlex.quote(p.root)} && FOREMAN_HOME={shlex.quote(home)} "
+                    f"PATH={shlex.quote(path)} {fm} {args}")
+    out["crontab.txt"] = "\n".join(cron) + "\n"
+    return out
+
+
+def _staged(p):
+    return os.path.join(p.dir, "night", "staged")
+
+
+def write_staged(p, issues=(), ci=False, max_usd=2.0):
+    """T-2357: the units and plan.json in state only (nothing outside it); returns (plan, the lines the ask names)."""
+    import hashlib
+    import shutil
+    files = units(p, max_usd)
+    plan = {"units": sorted(n for n in files if n.endswith((".service", ".timer"))), "max_usd": max_usd,
+            "watch": {"ci": bool(ci), "issues": sorted(set(issues))}}
+    plan["hash"] = hashlib.sha256(json.dumps([files, plan], sort_keys=True).encode()).hexdigest()[:8]
+    d = _staged(p)
+    shutil.rmtree(d, ignore_errors=True)
+    os.makedirs(d)
+    for name, text in dict(files, **{"plan.json": json.dumps(plan, indent=1) + "\n"}).items():
+        c.write_atomic(os.path.join(d, name), text)
+    lines = [f"nightly fm night at 02:30 (at most ${max_usd:.2f})", "hourly fm night --tick (no tokens)"] \
+        + [f"issue watch {r}" for r in plan["watch"]["issues"]] \
+        + (["CI check with no session open"] if ci else []) + ["undo: fm night --uninstall"]
+    return plan, lines
+
+
+def _plan(p):
+    try:
+        with open(os.path.join(_staged(p), "plan.json"), encoding="utf-8") as f:
+            plan = json.load(f)
+        return plan if isinstance(plan, dict) and isinstance(plan.get("units"), list) else None
+    except (OSError, ValueError):
+        return None
+
+
+def install(p):
+    """T-2357: the staged units (staged now when none are) go to the systemd user folder and their timers start; the
+    watch lines that were staged, and only those, are turned on. The guard lets an agent run this only after the user's
+    yes to the queued plugin request; a user typing it has said yes."""
+    import shutil
+    plan = _plan(p) or write_staged(p)[0]
+    if not shutil.which("systemctl"):
+        raise c.PolicyError(f"no systemd --user here: the staged crontab lines are in "
+                            f"{os.path.join(_staged(p), 'crontab.txt')} (crontab -e)")
+    udir = fmserve.unit_dir()
+    os.makedirs(udir, exist_ok=True)
+    names = [n for n in plan["units"] if re.fullmatch(rf"foreman-(night|tick)-{re.escape(p.slug)}\.(service|timer)", n)]
+    for n in names:
+        shutil.copyfile(os.path.join(_staged(p), n), os.path.join(udir, n))
+    fmserve._systemctl("daemon-reload")
+    for n in names:
+        if n.endswith(".timer"):
+            fmserve._systemctl("enable", "--now", n)
+    w = plan.get("watch") if isinstance(plan.get("watch"), dict) else {}
+    watch = {"ci": w.get("ci") is True, "issues": [r for r in w.get("issues") or [] if isinstance(r, str) and _REPO.fullmatch(r)]}
+    with c.lock(p.dir):
+        meta = c.read_meta(p)
+        meta["watch"] = watch
+        meta["night_units"] = {"units": names, "home": c.foreman_home(), "at": c.now()}
+        c.write_meta(p, meta)
+    c.log_event(p, "night_installed", data={"units": names, "watch": watch})
+    shutil.rmtree(_staged(p), ignore_errors=True)
+    return names, watch
+
+
+def uninstall(p):
+    """T-2357: the timers stopped and their units removed, the watch lines off."""
+    meta = c.read_meta(p)
+    names = (meta.get("night_units") or {}).get("units") or list(units(p))[:4]
+    names = [n for n in names if re.fullmatch(rf"foreman-(night|tick)-{re.escape(p.slug)}\.(service|timer)", str(n))]
+    for n in names:
+        if n.endswith(".timer"):
+            try:
+                fmserve._systemctl("disable", "--now", n, check=False)
+            except c.PolicyError:  # no systemd here: the files still go
+                pass
+        try:
+            os.remove(os.path.join(fmserve.unit_dir(), n))
+        except FileNotFoundError:
+            pass
+    try:
+        fmserve._systemctl("daemon-reload", check=False)
+    except c.PolicyError:
+        pass
+    with c.lock(p.dir):
+        meta = c.read_meta(p)
+        meta.pop("night_units", None)
+        meta.pop("watch", None)
+        c.write_meta(p, meta)
+    c.log_event(p, "night_uninstalled", data={"units": names})
+    return names
 
 
 ISSUES_EVERY = 1800  # a repo's issues are polled at most this often (the Stop sweep ticks every 10 min)
@@ -280,9 +377,33 @@ def tick(p, fetch_ci=None):
 def cmd_night(args):
     import fmcli
     p = fmcli.resolve(args)
-    if getattr(args, "print_timer", False):
-        print(timer(p))
-        return 0
+    if getattr(args, "stage", False):  # T-2357: staged in state, asked once (the install queue); nothing installed
+        import fmgrants
+        issues = getattr(args, "watch_issues", None) or []
+        bad = [r for r in issues if not _REPO.fullmatch(r)]
+        if bad:
+            raise fmcli.UsageError(f"--watch-issues takes OWNER/REPO, not {bad[0]!r}")
+        b = c.find_brief(p, args.task) if getattr(args, "task", None) else c.active_brief_fast(p)
+        if not b or b.status in c.CLOSED:
+            raise fmcli.UsageError("fm night --stage queues its request on an open task: focus one or pass --task ID")
+        plan, lines = write_staged(p, issues, getattr(args, "watch_ci", False), args.max_usd)
+        state, _ = fmgrants.queue(p, b.id, ["plugin"], "; ".join(lines), what=f"night timers {plan['hash']}",
+                                  fallback="fm night --tick runs from the Stop hook's sweep while a session is open",
+                                  session=fmcli.session())
+        said = {"queued": f"queued on {b.id} for the user's yes (fm todo)", "dedupe": f"already queued on {b.id}",
+                "refused": "the user said no to this before: not asked again", "missing": "no such task"}[state]
+        return fmcli.out(args, {"staged": _staged(p), "plan": plan, "lines": lines, "task": b.id, "state": state},
+                         "\n".join([f"night timers staged in {_staged(p)}; {said}:"] + [f"- {x}" for x in lines]
+                                   + ["After the yes: fm night --install."]))
+    if getattr(args, "install", False):
+        names, watch = install(p)
+        return fmcli.out(args, {"units": names, "watch": watch},
+                         f"installed and started: {', '.join(n for n in names if n.endswith('.timer'))}; CI check "
+                         f"{'on' if watch['ci'] else 'off'}; issue watch: {', '.join(watch['issues']) or 'none'}. "
+                         "Undo: fm night --uninstall")
+    if getattr(args, "uninstall", False):
+        names = uninstall(p)
+        return fmcli.out(args, {"removed": names}, f"removed: {', '.join(names) or 'nothing installed'}; watch lines off")
     if getattr(args, "tick", False):
         res = tick(p)
         return fmcli.out(args, res, "tick: " + ", ".join(

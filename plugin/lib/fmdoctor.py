@@ -575,6 +575,26 @@ def check_backup(home):
 NO_CC = "no Claude Code here (claude isn't on PATH): nothing to check"  # T-2174: CC is one surface, not a requirement
 
 
+def check_night_timers(p):
+    """T-2357: night timers staged and waiting for the user's yes, and installed ones that run another Foreman home."""
+    import glob
+    import fmserve
+    notes = ["night timers staged, waiting for your yes (fm todo)"] if p and os.path.isfile(
+        os.path.join(p.dir, "night", "staged", "plan.json")) else []
+    home = os.path.realpath(c.foreman_home())
+    for path in sorted(glob.glob(os.path.join(fmserve.unit_dir(), "foreman-night-*.service"))
+                       + glob.glob(os.path.join(fmserve.unit_dir(), "foreman-tick-*.service"))):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                m = re.search(r'(?m)^Environment="FOREMAN_HOME=([^"\n]*)"', f.read(65536))
+        except OSError:
+            continue
+        if m and os.path.realpath(m.group(1)) != home:
+            notes.append(f"{c.plain(os.path.basename(path))} runs another Foreman home ({c.plain(m.group(1))[:120]}): "
+                         "fm night --uninstall from there, or remove the unit")
+    return Result("night timers", "WARN" if notes else "PASS", "; ".join(notes[:4]) or "none staged; none of another home")
+
+
 def check_muted_triggers(p):
     """T-2355: a muted trigger files nothing, so each one is named here with the command that brings it back."""
     import fmtriggers
@@ -2411,6 +2431,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_enforce(here))
     results.append(check_steers(here, run=full))
     results.append(check_muted_triggers(here))
+    results.append(check_night_timers(here))
     results.append(check_idle_stops(here))
     results.append(check_usage_burn())
     results.append(check_version_skew(c.all_projects()))

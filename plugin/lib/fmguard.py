@@ -3651,6 +3651,9 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
+            if sub == "night" and any(_user_only_hit("--install", a) for a in rest):  # T-2357: plugin is the user's yes
+                found.append(("plugin", "fm night --install puts timers on this machine that run Foreman unattended "
+                                        "(fm night --stage queues the request for the user)"))
             if sub in USER_ONLY_FM and any(_user_only_hit(USER_ONLY_FM[sub][0], a) for a in rest):  # flag order is free
                 word, why, typed = USER_ONLY_FM[sub]
                 found.append(("self-authorize", f"{why} (they can type ! {typed})"))
