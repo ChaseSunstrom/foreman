@@ -90,8 +90,9 @@ class Migration(ForemanTestCase):
 
 
 DBMATE = "-- migrate:up\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n\n-- migrate:down\nDROP TABLE users;\n"
+NO_PG = "/nonexistent/fm-no-postgres/*/bin"  # T-2439: FOREMAN_PG_DIRS to a place no Postgres is
 PG_SQL = {M + "001_a.up.sql": "CREATE TYPE mood AS ENUM ('a');\nCREATE TABLE accounts (id uuid);",
-          M + "001_a.down.sql": "DROP TABLE accounts;"}
+          M + "001_a.down.sql": "DROP TABLE accounts;\nDROP TYPE mood;"}  # T-2439: a real Postgres keeps the type otherwise
 ALEMBIC_INI = ("[alembic]\nscript_location = %(here)s/alembic\nsqlalchemy.url = {url}\n\n[loggers]\nkeys = root\n")
 ENV_PY = "from alembic import context\nurl = context.config.get_main_option('sqlalchemy.url')\n"
 ALEMBIC = """
@@ -148,6 +149,9 @@ elif a[-1:] == ["zero"] and not os.path.exists(@LEAK@):
     db.execute("DROP TABLE IF EXISTS shop_item")
 db.commit()
 """
+REAL_PATH = os.environ.get("PATH", "")  # before any test pins it to stubs
+
+
 class ToolCase(ForemanTestCase):
     """T-2386: stubs on PATH stand in for the repo's own migration tools (alembic, Django, psql); DB variables are set."""
 
@@ -157,7 +161,7 @@ class ToolCase(ForemanTestCase):
         self.leak, self.brk = os.path.join(self.tmp, "leak"), os.path.join(self.tmp, "break")
         os.makedirs(self.bin)
         patch = mock.patch.dict(os.environ, {"PATH": self.bin, "DATABASE_URL": "postgres://real/prod", "PGHOST": "real",
-                                             "MYSQL_HOST": "real"})
+                                             "MYSQL_HOST": "real", "FOREMAN_PG_DIRS": NO_PG})  # T-2439: no runner's own
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -486,6 +490,27 @@ class MigrationDialect(ToolCase):
         r = fmprove.migration(self.proj_at("withpg", odd), True)
         self.assertEqual((r["verdict"], r["engine"]), ("pass", "postgres"), r)
 
+    def test_migration_dialect_foreman_pg_dirs_hides_the_postgres_folders(self):  # T-2439
+        import fmmigrate
+        deb = os.path.join(self.tmp, "pgd", "16", "bin")
+        os.makedirs(deb)
+        self.assertEqual(fmmigrate._pg_dirs(), [])  # ToolCase points it at nothing
+        with mock.patch.dict(os.environ, {"FOREMAN_PG_DIRS": os.path.join(self.tmp, "pgd", "*", "bin")}):
+            self.assertEqual(fmmigrate._pg_dirs(), [deb])
+        with mock.patch.dict(os.environ):
+            os.environ.pop("FOREMAN_PG_DIRS")
+            self.assertEqual(set(fmmigrate._pg_dirs()), set(__import__("glob").glob(fmmigrate.PG_DIRS)))
+
+    def test_migration_dialect_a_real_postgres_cycles_the_fixture_where_one_is_installed(self):  # T-2439: CI has one
+        import fmmigrate
+        with mock.patch.dict(os.environ, {"PATH": os.environ.get("FM_REAL_PATH") or REAL_PATH}):
+            os.environ.pop("FOREMAN_PG_DIRS", None)
+            bins, why = fmmigrate._pg_bins(dict(os.environ), self.tmp)
+            if not bins:
+                self.skipTest(f"no real Postgres here: {why}")
+            r = fmprove.migration(self.proj_at("pg", PG_SQL), True)
+        self.assertEqual((r["verdict"], r["engine"]), ("pass", "postgres"), r)
+
     def test_migration_dialect_postgres_binaries_under_usr_lib_postgresql_are_found(self):
         import shutil
         self.pg_stubs()
@@ -493,7 +518,7 @@ class MigrationDialect(ToolCase):
         os.makedirs(deb)
         for n in STUB_PG:
             shutil.move(os.path.join(self.bin, n), os.path.join(deb, n))
-        with mock.patch("fmmigrate.PG_DIRS", os.path.join(self.tmp, "pgd", "*", "bin")):
+        with mock.patch.dict(os.environ, {"FOREMAN_PG_DIRS": os.path.join(self.tmp, "pgd", "*", "bin")}):
             r = fmprove.migration(self.proj_at("pg", PG_SQL), True)
         self.assertEqual((r["verdict"], r["engine"]), ("pass", "postgres"), r)
 
@@ -618,7 +643,7 @@ class MigrationFinish(ForemanTestCase):
         import shutil
         for need in ("git", "bash"):
             os.symlink(shutil.which(need), os.path.join(tools, need))
-        self.env = {"PATH": tools}
+        self.env = {"PATH": tools, "FOREMAN_PG_DIRS": NO_PG}  # T-2439: the runner's own Postgres stays out of it
         self.fm("init", env=self.env)
         self.fm("task", "new", "schema change", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
                 "--focus", env=self.env)
