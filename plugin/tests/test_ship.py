@@ -233,7 +233,23 @@ class Ship(ForemanTestCase):
         self.grant()
         self.assertEqual(self.ship("--test", "true").returncode, 0)
         with open(rec) as f:
-            self.assertIn("rules chars", json.load(f)["metrics"])
+            got = json.load(f)["metrics"]
+        self.assertIn("rules chars", got)
+        self.assertNotIn("SessionStart chars", got)  # no bench in this tree: not measured
+        # T-2358: with the tree's own hook bench, the record carries injected chars and each hook's p95
+        os.makedirs(os.path.join(self.repo, "plugin", "tests"))
+        with open(os.path.join(self.repo, "plugin", "tests", "bench_hooks.py"), "w") as f:
+            f.write("import json, sys\nassert '--inject' in sys.argv and '--json' in sys.argv\n"
+                    "print(json.dumps({'bench': {'PreToolUse:Bash': {'p95': 40.0, 'cpu_p95': 30.0, 'load': 0.1}},"
+                    " 'injected': {'SessionStart': 1234, 'UserPromptSubmit': 56}}))\n")
+        sh(self.repo, "add", "plugin")
+        sh(self.repo, "commit", "-qm", "bench")
+        self.grant()
+        r = self.fm("ship", "--remote", "origin", "--test", "true", check=False, env={"FOREMAN_DOCTOR_BENCH": "1"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(rec) as f:
+            got = json.load(f)["metrics"]
+        self.assertEqual((got.get("SessionStart chars"), got.get("PreToolUse:Bash p95 ms")), (1234, 40.0))
 
     def test_a_green_ship_names_an_open_baseline_task_it_turned_green(self):
         self.grant()

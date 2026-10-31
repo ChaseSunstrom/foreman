@@ -214,28 +214,84 @@ def footprint(rules_path, plugin=PLUGIN):
     # ponytail: no hook p50: it is noisy (a 2% step is jitter); the SLO check already judges hook latency
 
 
-def record_footprint(p, rules_path, plugin=PLUGIN):
-    """fm ship's baseline: what shipped, when (T-2281)."""
-    c.write_atomic(os.path.join(p.dir, "footprint.json"),
-                   json.dumps({"at": c.now(), "metrics": footprint(rules_path, plugin)}))
-
-
-def _ratchet(p, now):
-    """Metrics that grew over 2% since the last ship's record, with no decision dated on or after that ship naming them."""
-    rec = _load_json(os.path.join(p.dir, "footprint.json"))
-    if not isinstance(rec, dict) or not isinstance(rec.get("metrics"), dict) or not rec["metrics"].get("rules chars"):
-        return []  # missing, or measured on a tree with no Foreman rules: no baseline
-    since = str(rec.get("at", ""))[:10]
-    named = " ".join(t.lower() for dt, _, t in c._decision_rows(p) if dt[:10] >= since)
-    out = []
-    for k, was in rec["metrics"].items():
-        cur = now.get(k)
-        if isinstance(was, int) and isinstance(cur, int) and was > 0 and cur > was * (1 + RATCHET) and k.lower() not in named:
-            out.append(f"{k} {was} -> {cur} (+{(cur - was) * 100 // was}%)")
+def measured(bench, sizes):
+    """T-2358: what gen-0 section 6 names beside the static footprint: the chars SessionStart and UserPromptSubmit
+    inject (over 0: a 0 is a hook that failed, not a cut) and each hook's wall-time p95 in ms from an unloaded run only
+    (a loaded run's CPU time is another basis, so a record and a check never compare across bases)."""
+    out = {f"{e} chars": n for e, n in (sizes or {}).items() if isinstance(n, int) and n > 0}
+    for k, v in (bench or {}).items():
+        if v.get("load", 0) <= 1 and _num(v.get("p95")):
+            out[f"{k} p95 ms"] = round(float(v["p95"]), 1)
     return out
 
 
-def check_footprint(rules_path, claude_md_path, plugin=PLUGIN, project=None):
+def ship_measure(plugin):
+    """T-2358: the shipped tree's own hook bench (--inject), so the record is what ships, not this install, at the
+    doctor's run count (one estimator on both sides); {} when the tree has none, FOREMAN_DOCTOR_BENCH=0 (tests) or it
+    fails."""
+    bench = os.path.join(plugin, "tests", "bench_hooks.py")
+    if os.environ.get("FOREMAN_DOCTOR_BENCH") == "0" or not os.path.isfile(bench):
+        return {}
+    try:  # exit 1 means a hook over its budget; the JSON still stands
+        out = subprocess.run([sys.executable, "-I", bench, "--runs", str(bench_runs(False)), "--json", "--inject"],
+                             cwd=plugin, capture_output=True, text=True, timeout=180).stdout
+        got = json.loads(out)
+        return measured(got.get("bench"), got.get("injected"))
+    except (OSError, ValueError, AttributeError, subprocess.SubprocessError):
+        return {}
+
+
+def record_footprint(p, rules_path, plugin=PLUGIN, extra=None):
+    """fm ship's baseline: what shipped, when (T-2281), with the injected chars and hook p95s when measured (T-2358).
+    A ratchet: a metric that grew with no cut to pay for it keeps its old value, so the next ship can't absorb it."""
+    path = os.path.join(p.dir, "footprint.json")
+    now = dict(footprint(rules_path, plugin), **(ship_measure(plugin) if extra is None else extra))
+    old = _metrics(_load_json(path))
+    if old:
+        now.update({k: was for k, was, _ in grown(old, now)})
+    c.write_atomic(path, json.dumps({"at": c.now(), "metrics": now}))
+
+
+LATENCY_BAND = 0.15  # T-2358: a hook's p95 moves ~10% run to run; growth past 15% is a step, not jitter
+POOLED = ("rules chars", "descriptions chars", "SessionStart chars", "UserPromptSubmit chars")  # always-on context
+
+
+def _num(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def _metrics(rec):
+    """A footprint record's metrics, or {} when missing or measured on a tree with no Foreman rules (no baseline)."""
+    ok = isinstance(rec, dict) and isinstance(rec.get("metrics"), dict) and rec["metrics"].get("rules chars")
+    return rec["metrics"] if ok else {}
+
+
+def grown(was, now):
+    """T-2358: [(metric, was, now)] past its band (2% for chars, 15% for a hook's ms) that no cut pays for. Growth in
+    always-on context (POOLED) is paid by cuts in the other always-on metrics since that record; a hook's ms and the
+    largest SKILL body (loaded on demand) are judged alone. A metric not measured now isn't judged; a decision naming
+    one never clears it."""
+    rows, cut = [], 0
+    for k, w in was.items():
+        cur = now.get(k)
+        if not (_num(w) and _num(cur)) or w <= 0:
+            continue
+        if cur > w * (1 + (LATENCY_BAND if k.endswith(" ms") else RATCHET)):
+            rows.append((k, w, cur))
+        elif cur < w and k in POOLED:
+            cut += w - cur
+    if sum(cur - w for k, w, cur in rows if k in POOLED) <= cut:
+        rows = [r for r in rows if r[0] not in POOLED]
+    return rows
+
+
+def _ratchet(p, now):
+    """The last ship's record against now, one line per metric that grew with no cut to pay for it."""
+    was = _metrics(_load_json(os.path.join(p.dir, "footprint.json")))
+    return [f"{k} {w} -> {cur} (+{int((cur - w) * 100 // w)}%)" for k, w, cur in grown(was, now)]
+
+
+def check_footprint(rules_path, claude_md_path, plugin=PLUGIN, project=None, extra=None):
     rules = (_read(rules_path) or "").splitlines()
     md = _read(claude_md_path) or ""
     m = re.search(r"<!-- foreman:begin -->.*?<!-- foreman:end -->", md, re.S)
@@ -258,10 +314,10 @@ def check_footprint(rules_path, claude_md_path, plugin=PLUGIN, project=None):
         bad.append(f"skill/agent/command descriptions {desc} chars > {DESCRIPTIONS_MAX}")
     bad += [f"{os.path.relpath(f, plugin)} {n} chars > {SKILL_MAX}" for f in glob.glob(os.path.join(plugin, "skills/*/SKILL.md"))
             if (n := len(_read(f) or "")) > SKILL_MAX]
-    grew = _ratchet(project, footprint(rules_path, plugin)) if project and not bad else []
+    grew = _ratchet(project, dict(footprint(rules_path, plugin), **(extra or {}))) if project and not bad else []
     if grew:
-        return Result("footprint", "WARN", "; ".join(grew) + " over the last ship by more than 2%: "
-                      "fm decide \"footprint: <metric> +N% for <why>\" names it")
+        return Result("footprint", "WARN", "; ".join(grew) + " over the last ship (past 2% for chars, 15% for a hook's "
+                      "ms): cut as much elsewhere in the same unit; only a cut pays for growth")
     return Result("footprint", "FAIL" if bad else "PASS",
                   "; ".join(bad) or f"rules {len(rules)} + CLAUDE.md block {len(block)} = {total} always-on lines "
                                     f"(≤ {ALWAYS_ON_MAX}), rules {chars} chars (≤ {RULES_CHARS_MAX}); descriptions {desc} chars (≤ {DESCRIPTIONS_MAX})")
@@ -1017,23 +1073,9 @@ class _NoBench(Exception):
 
 
 def _bench_and_injection(runs=5):
-    import tempfile
     sys.path.insert(0, os.path.join(PLUGIN, "tests"))
     import bench_hooks
-    bench = bench_hooks.run_bench(runs=runs)
-    sizes = {}
-    with tempfile.TemporaryDirectory() as tmp:
-        repo, env = bench_hooks._scratch_project(tmp)
-        env["CLAUDE_ENV_FILE"] = os.path.join(tmp, "envfile")
-        for event, extra in (("SessionStart", {"source": "startup"}),
-                             ("UserPromptSubmit", {"prompt": "FIX: a\nFEATURE!: b\nCLEAN?: c\nCONTEXT: d"})):
-            payload = json.dumps(dict({"session_id": "doctor", "cwd": repo, "hook_event_name": event}, **extra))
-            out = _run([os.path.join(PLUGIN, "hooks", "hook"), event], input=payload, env=env, cwd=repo).stdout
-            try:
-                sizes[event] = len(json.loads(out)["hookSpecificOutput"]["additionalContext"])
-            except (ValueError, KeyError, TypeError):
-                sizes[event] = 0
-    return bench, sizes
+    return bench_hooks.run_bench(runs=runs), bench_hooks.injection_sizes()
 
 
 def _fm_commands():
@@ -2309,12 +2351,15 @@ def run_all(full=False, accept_supply=False):
                check_supply(claude, accept_supply), check_worktree_base(settings), check_fm_link(),
                check_invisible_text(instruction_files()), check_rule_conflicts(rule_files(c.git_root(os.getcwd())))]
     t_bench = time.perf_counter()  # T-2279: the bench runs outside any check_*; its whole cost is charged to "hook latency"
+    meas = {}
     try:
         if os.environ.get("FOREMAN_DOCTOR_BENCH") == "0":  # T-1379: the tests' fm doctor runs, which read no timings
             raise _NoBench
         load = busy()
         bench, sizes = _bench_and_injection(bench_runs(load))
         load = load or busy()  # T-1219: a burst that began during the bench made its timings, not the hooks, slow
+        meas = measured(None if load else bench, sizes)  # T-2358: the ratchet's latency only from an unloaded bench
+        # ponytail: 5 runs here and at fm ship (one estimator, near a max of 5): noisy; more runs if the band trips
         results += [check_hook_latency(bench, load), check_hook_exit_codes(bench), check_injection_budgets(sizes)]
         for r in results[-3:]:
             r.ms = None  # the three share one bench: counted once, on the first
@@ -2326,7 +2371,7 @@ def run_all(full=False, accept_supply=False):
         results += [Result(n, "FAIL", f"bench failed: {e}") for n in ("hook latency", "hook exit codes", "injection budgets")]
     results += [check_hook_errors(), check_hook_slo(), check_hook_writers(settings, home), check_name_collisions(settings),
                 check_footprint(os.path.join(PLUGIN, "rules", "foreman.md"), os.path.join(claude, "CLAUDE.md"),
-                                project=c.find_project(os.getcwd())),
+                                project=c.find_project(os.getcwd()), extra=meas),
                 check_frontmatter(), check_unloaded_skills()]
     projects = [p for p, _ in c.all_projects()]
     results.append(check_heartbeats(projects))
