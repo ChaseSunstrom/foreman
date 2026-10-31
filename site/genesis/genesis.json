@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-31T00:05:13Z",
- "rev": "496c0c47",
+ "updated": "2026-10-31T03:44:24Z",
+ "rev": "6d8e5f64",
  "capabilities": [
   {
    "n": 1,
@@ -687,22 +687,22 @@
       {
        "id": "T-2135",
        "title": "fm goal: the mandate grows into the goal ledger — items → tasks → done-when, coverage, one standing goal; fm mandate an alias (Mission 4 brief 1)",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "L",
        "steps": 3,
-       "done": 0,
-       "current": "goal record: items {n,text,source,done_when,tasks} on the mandate, fm goal set/item/link/show, test-first"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2141",
        "title": "Goal surfaces: fm code, MCP goal tool, AGENTS.md block, site page, pane line, docs (Mission 4 brief 7)",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 2,
-       "done": 0,
-       "current": "MCP goal tool + fm code prompt line + AGENTS.md block, test-first"
+       "done": 2,
+       "current": ""
       },
       {
        "id": "T-2142",
@@ -4725,5 +4725,111 @@
    "Never trade safety for autonomy",
    ""
   ]
+ ],
+ "scorecard": [
+  {
+   "n": 1,
+   "name": "Initiative",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded bug, vuln, slow, docs, flaky, dep, none, rank scenarios yet"
+  },
+  {
+   "n": 2,
+   "name": "Exhaustive thinking",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded exists scenarios yet"
+  },
+  {
+   "n": 3,
+   "name": "Anticipation",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded bug scenarios yet"
+  },
+  {
+   "n": 4,
+   "name": "Goal to finish",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded vague, goal scenarios yet"
+  },
+  {
+   "n": 5,
+   "name": "Getting the tools it lacks",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded missing-tool scenarios yet"
+  },
+  {
+   "n": 6,
+   "name": "Verifying anything",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded slow, docs scenarios yet"
+  },
+  {
+   "n": 7,
+   "name": "Self-repair and self-improvement",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded bug scenarios yet"
+  },
+  {
+   "n": 8,
+   "name": "Calibrated judgment",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded ambiguous, clean scenarios yet"
+  },
+  {
+   "n": 9,
+   "name": "Orchestration",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded parts scenarios yet; a proxy: the outcome of a three-part request; delegation and model choice aren't visible to the grader, so the long-horizon tier decides #9"
+  },
+  {
+   "n": 10,
+   "name": "Beyond code",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded docs scenarios yet"
+  },
+  {
+   "n": 11,
+   "name": "Self-triggering",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded trigger scenarios yet"
+  },
+  {
+   "n": 12,
+   "name": "Staying lean and safe",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded slow scenarios yet"
+  },
+  {
+   "n": 13,
+   "name": "Genesis as a feature",
+   "state": "too few",
+   "closed": null,
+   "graded": null,
+   "why": "no graded line, none, sweep scenarios yet"
+  }
  ]
 }
