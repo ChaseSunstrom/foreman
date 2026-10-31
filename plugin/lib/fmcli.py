@@ -1501,15 +1501,16 @@ def _claimed(p, b, others=None):
     ok = lambda n: n and not n.startswith(("/", "..", ".foreman/")) and os.path.isfile(os.path.join(p.root, n))
     out = {n for n in named if ok(n)}
     b = c.find_brief(p, b.id) or b  # T-2251: the finish's --docs landed in the file after b was read
+    for line in b.section("Log").splitlines():  # a 'scope:' reason is a deliberate claim: it holds (T-1122)
+        head = line.partition(" scope: ")[2].split(" — ")[0] if " scope: " in line else ""
+        out |= {n for x in re.split(r",\s*|\s+and\s+", head) if (n := os.path.normpath(x.strip(" `'\"") or "."))
+                and ok(n)}
     docs = b.section("Docs impact").strip()
     soft = [] if docs.lower().startswith("none") else re.split(r"[\s,;()`*\[\]]+", docs)  # the docs it names
-    for line in b.section("Log").splitlines():
-        head = line.partition(" scope: ")[2].split(" — ")[0] if " scope: " in line else ""
-        soft += [x.strip(" `'\"") for x in re.split(r",\s*|\s+and\s+", head) if x.strip()]
     others = _others(p, b) if others is None else others
     for n in soft:
         n = os.path.normpath(n.strip("'\"").rstrip(".:") or ".")
-        # an open task still editing it keeps it: committing now would take its half-done hunks
+        # T-2251: a doc only named in passing waits for an open task still editing it (its half-done hunks)
         if ok(n) and all(_closed(p, t) for t in others.get(n, ())):
             out.add(n)
     return out
