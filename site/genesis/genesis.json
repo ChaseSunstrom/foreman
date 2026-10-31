@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-31T15:00:10Z",
+ "updated": "2026-10-31T15:06:20Z",
  "rev": "dc773f27",
  "capabilities": [
   {
@@ -8939,7 +8939,7 @@
  },
  "not_yet": 0,
  "not_yet_open": 0,
- "unproven": 348,
+ "unproven": 347,
  "next": {
   "stage": "critique",
   "gen": 1,
