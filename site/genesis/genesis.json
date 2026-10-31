@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-31T07:04:22Z",
- "rev": "180ef16f",
+ "updated": "2026-10-31T07:15:39Z",
+ "rev": "43934c33",
  "capabilities": [
   {
    "n": 1,
@@ -3173,6 +3173,7 @@
   "filled": 126,
   "empty": 1282,
   "templated": 0,
+  "duplicates": 0,
   "rows": [
    {
     "area": "1. Initiative",
