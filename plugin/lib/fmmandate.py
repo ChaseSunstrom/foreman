@@ -3,6 +3,7 @@ bound) that fm scout and fm night read. While it stands, what scout captures say
 scout captures one decision (renew it or let it lapse) and nothing more under it until the user renews or clears it."""
 import argparse
 import json
+import statistics
 import time
 
 import fmcore as c
@@ -215,6 +216,43 @@ def drift(p, m, run=True):
     return sorted(outside, key=lambda b: b.id), uncovered, unmet, unchecked
 
 
+def _span(mins):
+    return f"{mins // 60}h" + (f" {mins % 60}m" if mins % 60 else "") if mins >= 60 else f"{mins}m"
+
+
+def estimate(p, m, briefs):
+    """T-2145: time left from the goal's own history: each done item's minutes are its linked tasks' active minutes
+    (the task_done event's `minutes`, last close per task); the left time is the open items times the median, with the
+    25th-75th percentile as the range. left is None under MIN_DONE sampled items. None without items."""
+    items = m.get("items") or []
+    if not items:
+        return None
+    mine = {t for it in items for t in it.get("tasks") or []}
+    mins = {}
+    for e in c.ledger_events(p, ("task_done",)):
+        v = (e.get("data") or {}).get("minutes")
+        if e.get("task") in mine and isinstance(v, (int, float)) and not isinstance(v, bool):
+            mins[e["task"]] = v  # oldest first: the last close wins
+    sample = [sum(mins[t] for t in it["tasks"] if t in mins) for it in items
+              if item_state(it, briefs) == "done" and any(t in mins for t in it["tasks"])]
+    left = sum(item_state(it, briefs) != "done" for it in items)
+    out = {"n": len(sample), "remaining": left, "left": None}
+    if len(sample) >= 3:
+        q = statistics.quantiles(sample, n=4, method="inclusive")
+        out.update(median=round(statistics.median(sample)), p25=round(q[0]), p75=round(q[2]))
+        out.update(left=out["median"] * left, low=out["p25"] * left, high=out["p75"] * left)
+    return out
+
+
+def estimate_line(e):
+    if not e or not e["remaining"]:
+        return None
+    if e["left"] is None:
+        return f"Time left: no estimate yet (needs 3 done items with recorded minutes; {e['n']} so far)"
+    return (f"Time left: about {_span(e['left'])} left (median {_span(e['median'])} per item over {e['n']} done items, "
+            f"{_span(e['low'])}–{_span(e['high'])})")
+
+
 def show(p, args, key="goal", run=True):
     import fmcli
     m = get(p)
@@ -244,7 +282,12 @@ def show(p, args, key="goal", run=True):
         if unchecked:
             lines += [f"  closed, check not run ({len(unchecked)}; fm goal show runs them): "
                       + "; ".join(f"{i['n']}. {i['text']}" for i in unchecked)]
-    fmcli.out(args, {key: m, "drift": {"outside": [b.id for b in outside], "uncovered": [i["n"] for i in uncovered],
+        est = estimate(p, m, briefs)
+        if estimate_line(est):
+            lines.append(estimate_line(est))
+    else:
+        est = None
+    fmcli.out(args, {key: m, "estimate": est, "drift": {"outside": [b.id for b in outside], "uncovered": [i["n"] for i in uncovered],
                                        "unmet": [i["n"] for i, _ in unmet],
                                        "unchecked": [i["n"] for i in unchecked]}}, "\n".join(lines))
     return 1 if outside or uncovered or unmet else 0
