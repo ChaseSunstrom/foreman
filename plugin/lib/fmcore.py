@@ -2663,7 +2663,34 @@ def _content_gaps(b):
     if low:
         gaps.append(f"research or a spike for the low-confidence assumption {low[0][:60]!r} (fm research NAME, then name "
                     "research/NAME on the line; or a spike task: 'spike T-NNNN'; or verify it: fm task assume)")
-    return gaps
+    return gaps + rival_gap(b)
+
+
+HARD_RE = lazy(r"(?i)\b(deploy|release|publish|push|migrat(?:e|ion)|delete|drop|merge|send)(?:s|es|d|ed|ing)?\b")  # a step that's hard to undo
+RACE_BAR = 80  # T-2341: an M plan whose own choice is under this sure (the "(60%)" after Choice) gets a cold rival read
+_CONF_RE = lazy(r"\b(?:choice|choose|chose|chosen)\b[^\n(]{0,20}\((\d{1,3})\s*%\)", re.I)
+_ONE_READING_RE = lazy(r"\b(?:only|just|one|single|sole)\s+(?:\w+\s+)?reading\b", re.I)
+_RIVAL_OPEN = lazy(r"- \[ \] rival (?:reading|approach): ")
+
+
+def rival_gap(b):
+    """T-2341: ["a cold rival read…"] while the brief needs one it doesn't have, or has rival-only lines still open: an
+    L plan, an M plan under the race bar or claiming one honest reading, any plan with a one-way step. fm second rival
+    writes it; FOREMAN_NO_RIVAL=1 skips it (a headless run with no child to ask)."""
+    if os.environ.get("FOREMAN_NO_RIVAL"):
+        return []
+    conf = _CONF_RE.search(b.section("Approach (options → choice → why)"))
+    why = ("an L plan" if b.tier == "L" else
+           "a one-way step" if any(HARD_RE.search(s.text) for s in b.steps()) else
+           f"the choice is {conf.group(1)}% sure, under {RACE_BAR}%" if b.tier == "M" and conf and int(conf.group(1)) < RACE_BAR else
+           "the plan claims one reading" if b.tier == "M" and _ONE_READING_RE.search(b.section("Interpretation")) else "")
+    if not why:
+        return []
+    if not b.section("Rival plan").strip():
+        return [f"a cold rival read ({why}; fm second rival {b.id})"]
+    n = sum(1 for ln in b.section("Dissent").splitlines() if _RIVAL_OPEN.match(ln))
+    return [f"{n} open rival line{'s' * (n != 1)} answered (fm task dissent {b.id}: resolve N 'adopted: …' or "
+            f"'rejected: why')"] if n else []
 
 
 def plan_gaps(b, autonomy="standard"):

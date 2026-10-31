@@ -2822,7 +2822,7 @@ def step_contracts(p, b):
     return ("Step contracts: " + "; ".join(notes[:4])) if notes else ""
 
 
-_HARD = re.compile(r"(?i)\b(deploy|release|publish|push|migrat(?:e|ion)|delete|drop|merge|send)(?:s|es|d|ed|ing)?\b")
+_HARD = c.HARD_RE  # T-2341: one definition, the plan gate (fmcore.rival_gap) reads it too
 _UNKNOWN = re.compile(r"(?i)\b(spike|probe|prototype|investigate|measure|find out|unknown)\w*")
 
 
@@ -6468,11 +6468,12 @@ def _build_parser(only=None):
                                                        "publish grant, spent by the post (T-1167)")
     s.add_argument("--task", help="train: the task whose publish grant covers the merges (default: the active one)")
     s = add("second", lazy("fmsecond", "cmd_second"), tier=("Finding your way", 430),
-            help="an independent second read: plan (another model), debate (rebut a review), session (what was missed)")
-    s.add_argument("what", choices=["plan", "cheapest", "debate", "session"])
-    s.add_argument("id", nargs="?", help="plan, debate: the task")
+            help="an independent second read: plan (another model), rival (a cold read of the request alone), debate "
+                 "(rebut a review), session (what was missed)")
+    s.add_argument("what", choices=["plan", "cheapest", "rival", "debate", "session"])
+    s.add_argument("id", nargs="?", help="plan, rival, debate: the task")
     s.add_argument("--review", help="debate: the research note holding the earlier review")
-    s.add_argument("--model", help="plan, session: the child's model, another than the main one (default sonnet)")
+    s.add_argument("--model", help="plan, rival, session: the child's model, another than the main one (default sonnet)")
     s.add_argument("--if-due", action="store_true", help="session: only once a day")
     s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
     s.add_argument("--force", action="store_true", help="plan: run it on a tier protocols.json gives no panel")

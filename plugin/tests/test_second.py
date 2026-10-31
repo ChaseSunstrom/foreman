@@ -56,6 +56,154 @@ class Plan(_Stubbed):
         self.assertIn("--tools", call["args"])
 
 
+RIVAL_STUB = r'''#!/usr/bin/env python3
+import json, os, sys
+stdin = sys.stdin.read()
+with open(os.environ["STUB_LOG"], "a") as f:
+    f.write(json.dumps({"args": sys.argv[1:], "stdin": stdin}) + "\n")
+with open(os.environ["STUB_REPLY"]) as f:
+    print(json.dumps({"result": f.read(), "total_cost_usd": 0.01}))
+'''
+REPLY = """## Readings
+- expire every cached token on logout in session_cache.py, not only cache it
+- keep tokens in memory in a dict in token_cache.py
+- add tests for all the edge cases and error handling
+## Approaches
+- write tokens through to sqlite in store_db.py so they survive a restart
+## Failure modes
+- TokenCache.get hands back a token after logout
+"""
+
+
+class _RivalBase(_Stubbed):  # T-2341 (Mission 5, #2): a cold read of the request, before the plan is approved
+    def setUp(self):
+        super().setUp()
+        with open(os.path.join(self.tmp, "bin", "claude"), "w") as f:
+            f.write(RIVAL_STUB)
+        self.reply = os.path.join(self.tmp, "reply.md")
+        self.say(REPLY)
+        self.env.update(STUB_REPLY=self.reply, FOREMAN_NO_RIVAL="")  # the suite's default turns the gate off
+
+    def say(self, text):
+        with open(self.reply, "w") as f:
+            f.write(text)
+
+    def new(self, tier="L", approach="1) dict 2) redis 3) file Choice 1 (90%): dict", step="add the cache",
+            interp="Reading 1: keep tokens in memory in a dict in token_cache.py. Reading 2: share them through redis. "
+                   "Reading 1."):
+        args = ["task", "new", "Cache the session token", "--type", "FEATURE", "--tier", tier, "--ac",
+                "tokens are cached :: true", "--step", step, "--raw", "cache the session token so logins are fast",
+                "--json"]
+        if tier != "S":
+            args += ["--interpretation", interp, "--approach", approach]
+        tid = json.loads(self.fm(*args, env=self.env).stdout)["id"]
+        if tier == "L":
+            self.fm("task", "set", tid, "--section", "Risks and rollback", "--text", "stale tokens; drop the cache")
+            self.fm("task", "set", tid, "--section", "Build vs reuse", "--text", "nothing in the repo caches tokens")
+            self.fm("task", "set", tid, "approved=true")  # an L plan waits for approval at standard autonomy
+        return tid
+
+    def focus(self, tid, ok):
+        p = self.fm("focus", tid, env=self.env, check=False)
+        self.assertEqual(p.returncode == 0, ok, p.stdout + p.stderr)
+        return p.stdout + p.stderr
+
+
+class Rival(_RivalBase):
+    def test_the_child_sees_only_the_request_and_the_map(self):
+        tid = self.new()
+        out = self.fm("second", "rival", tid, env=self.env).stdout
+        call = self.calls()[0]
+        self.assertIn("cache the session token", call["stdin"])
+        self.assertIn("Project map", call["stdin"])
+        for plan_only in ("2) redis", "Reading 2", "dict in token_cache.py", "tokens are cached", "add the cache"):
+            self.assertNotIn(plan_only, call["stdin"])
+        self.assertIn("--tools", call["args"])
+        self.assertIn("Rival plan", out)
+        self.assertIn("## Rival plan", self.fm("task", "show", tid).stdout)
+
+    def test_a_rival_only_item_that_names_a_file_becomes_dissent_and_generic_ones_drop(self):
+        tid = self.new()
+        self.fm("second", "rival", tid, env=self.env)
+        brief = self.fm("task", "show", tid).stdout
+        self.assertIn("- [ ] rival reading: expire every cached token on logout in session_cache.py", brief)
+        self.assertIn("- [ ] rival approach: write tokens through to sqlite in store_db.py", brief)
+        self.assertNotIn("- [ ] rival reading: keep tokens in memory", brief)  # the plan has it
+        self.assertNotIn("- [ ] rival reading: add tests", brief)  # generic: dropped
+        self.assertIn("add tests for all the edge cases", brief.split("## Rival plan")[1].split("\n## ")[0])  # but kept in the section
+        self.assertNotIn("TokenCache.get hands back", brief.split("## Dissent")[1].split("\n## ")[0])
+
+    def test_focus_waits_for_an_unstarted_L_plan_until_the_rival_is_read_and_answered(self):
+        tid = self.new()
+        said = self.focus(tid, False)
+        self.assertIn(f"fm second rival {tid}", said)
+        self.assertIn(f"fm second rival {tid}", self.fm("next", env=self.env).stdout)
+        self.fm("second", "rival", tid, env=self.env)
+        self.assertIn("open", self.focus(tid, False).lower())  # the rival-only lines are still open
+        for n in (2, 1):
+            self.fm("task", "dissent", tid, "resolve", str(n), "adopted: noted in the plan", env=self.env)
+        self.focus(tid, True)
+
+    def test_M_under_the_race_bar_or_with_one_reading_waits_and_others_never_do(self):
+        low = self.new("M", approach="1) dict 2) redis 3) file Choice 1 (60%): dict")
+        self.assertIn(f"fm second rival {low}", self.focus(low, False))
+        self.fm("task", "drop", low, "not needed")
+        one = self.new("M", interp="There is one honest reading: keep tokens in memory.")
+        self.assertIn(f"fm second rival {one}", self.focus(one, False))
+        self.fm("task", "drop", one, "not needed")
+        sure = self.new("M")  # 90%, two readings
+        self.focus(sure, True)
+        self.assertFalse(os.path.exists(self.log))  # no child ran
+
+    def test_a_one_way_step_needs_it_even_on_an_S_brief(self):
+        tid = self.new("S", step="push the release branch")
+        self.assertIn(f"fm second rival {tid}", self.focus(tid, False))
+        self.fm("task", "drop", tid, "not needed")
+        self.focus(self.new("S", step="rename the cache key"), True)
+
+    def test_answering_every_rival_line_unlocks_focus(self):
+        tid = self.new("M", approach="1) dict 2) redis 3) file Choice 1 (60%): dict")
+        self.fm("second", "rival", tid, env=self.env)
+        self.fm("task", "dissent", tid, "resolve", "1", "rejected: out of scope", env=self.env)
+        self.fm("task", "dissent", tid, "resolve", "2", "rejected: out of scope", env=self.env)
+        self.focus(tid, True)
+
+    def test_a_failed_child_is_noted_and_does_not_block(self):
+        tid = self.new()
+        p = self.fm("second", "rival", tid, env=dict(self.env, PATH="/nonexistent", HOME=self.tmp), check=False)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("no rival read", self.fm("task", "show", tid).stdout)
+        self.focus(tid, True)
+
+    def test_a_sensitive_project_sends_nothing(self):
+        tid = self.new()
+        self.fm("sensitive", "on")
+        self.fm("second", "rival", tid, env=self.env)
+        self.assertFalse(os.path.exists(self.log))
+        self.focus(tid, True)
+
+
+class RivalSplit(_RivalBase):
+    def test_a_top_reading_the_plan_did_not_choose_marks_the_brief_split(self):
+        tid = self.new()
+        self.fm("second", "rival", tid, env=self.env)
+        self.assertIn("rival_split: true", self.fm("task", "show", tid).stdout)
+
+    def test_the_plans_own_reading_on_top_is_no_split(self):
+        self.say(REPLY.replace("- expire every cached token on logout in session_cache.py, not only cache it\n", "")
+                 .replace("- keep tokens in memory in a dict", "- keep the tokens in memory in a dict"))
+        tid = self.new()
+        self.fm("second", "rival", tid, env=self.env)
+        self.assertNotIn("rival_split: true", self.fm("task", "show", tid).stdout)
+
+    def test_the_M_panel_row_is_the_rival_trigger(self):
+        import fmcore as c
+        with open(os.path.join(c.PLUGIN_ROOT, "protocols.json")) as f:
+            rules = json.load(f)
+        self.assertNotEqual(rules["M"]["panel"], "optional")
+        self.assertIn("rival", rules["M"]["panel"])
+
+
 class Debate(_Stubbed):
     def test_a_rebuttal_brief_embeds_the_review(self):
         tid = json.loads(self.fm("capture", "x", "--json").stdout)["id"]

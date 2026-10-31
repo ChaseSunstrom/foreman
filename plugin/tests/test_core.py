@@ -6,6 +6,7 @@ import re
 import subprocess
 import time
 import unittest
+from unittest import mock
 
 from helpers import ForemanTestCase
 
@@ -510,6 +511,11 @@ class BriefLines(unittest.TestCase):
 
 class Stages(unittest.TestCase):
     """The harness derives stage and the one next required action from the brief itself (T-0012)."""
+
+    def setUp(self):  # T-2341: these read plan_gaps' own content; the cold rival read has its tests in test_second
+        env = mock.patch.dict(os.environ, {"FOREMAN_NO_RIVAL": "1"})
+        env.start()
+        self.addCleanup(env.stop)
 
     def brief(self, tier="S", type_="FIX", status="planned"):
         b = c.Brief.new("T-0001", "Fix login", type_, tier, now="2026-01-01T00:00:00Z", status=status)
