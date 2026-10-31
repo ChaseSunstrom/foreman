@@ -39,6 +39,7 @@ PAUSE = (" Mid-way, at a natural checkpoint, stop and say PAUSED: you will be as
 CONTINUE = "Continue where you left off and finish the change."
 # commits read; goals; checks a goal; new ids tried a goal; regression sample; s a run; s a gen
 SCAN, CAP_N, MAX_CHECKS, MAX_NEW, SAMPLE, RUN_T, GEN_T = 600, 20, 5, 50, 10, 120, 900
+MAX_PIN, PIN_LEN = 3, 60  # T-2322: unstated literals a goal may list, and the longest it will state whole
 RUNNER = """import importlib.util, json, os, sys, unittest
 spec = json.load(open(sys.argv[1]))
 os.chdir(spec["tree"])
@@ -256,7 +257,7 @@ def _interface(src, w, checks):
         except (OSError, subprocess.SubprocessError):
             return ""
     paths = [f for f in git("ls-tree", "-r", "--name-only", "-z", w["target"]).split("\0") if f.endswith(".py") and _safe(f)]
-    names, flags, done, parsed, tops = set(), set(), [], {}, {}
+    names, flags, done, parsed, tops, pinned = set(), set(), [], {}, {}, {}
     for i in checks:
         rel, name = i.split("::")
         cls, fn = name.split(".")[1:]
@@ -282,6 +283,18 @@ def _interface(src, w, checks):
                 names.add(froms[n.id])
             elif isinstance(n, ast.Constant) and isinstance(n.value, str) and re.fullmatch(r"--[a-z][\w-]{0,40}", n.value):
                 flags.add(n.value)
+            if isinstance(n, ast.Call):  # T-2322: a literal handed straight to an assert is a value the answer must produce
+                f = n.func
+                args = n.args if isinstance(f, ast.Attribute) and f.attr.startswith("assert") or \
+                    isinstance(f, ast.Name) and f.id.startswith("assert") else []
+            elif isinstance(n, ast.Assert) and isinstance(n.test, ast.Compare):
+                args = n.test.comparators
+            else:
+                continue
+            for a in args:
+                v = a.value if isinstance(a, ast.Constant) else None
+                if isinstance(v, (str, int, float)) and not isinstance(v, bool) and v not in (0, 1, ""):
+                    pinned[v if isinstance(v, str) else repr(v)] = isinstance(v, str)  # text -> is it a string
 
     def top(rev, f):
         if (rev, f) not in tops:
@@ -299,11 +312,22 @@ def _interface(src, w, checks):
         hits = git("grep", "-l", "-F", "-e", flag, w["base"], "--", "*.py")
         if not any(not _is_test(h.split(":", 1)[-1]) for h in hits.splitlines()):
             new.add(flag)
+    pins = []  # literals no code at the base holds and the goal never says; the caller drops the ones its text has
+    for text in sorted(pinned):
+        if text in w["goal"]:
+            continue
+        if "\n" not in text:  # ponytail: a multi-line literal can't be one grep pattern, so it counts as unstated
+            hits = git("grep", "-l", "-F", "-e", text, w["base"], "--", "*.py")
+            if any(not _is_test(h.split(":", 1)[-1]) for h in hits.splitlines()):
+                continue
+        pins.append(f"'{c.plain(text)}'" if pinned[text] else text)
+        if len(pins) > 20:  # the caller drops a goal past MAX_PIN: no more greps to learn that
+            break
     return sorted(c.plain(x) for x in new if not x.startswith("--")) + sorted(x for x in new if x.startswith("--")), \
-        [c.plain(d) for d in done]
+        [c.plain(d) for d in done], pins
 
 
-def _scenario(src, w, seed, d, end):
+def _scenario(src, w, seed, d, end, drops=None):
     """The key for one window, or None when it is no exam. The hidden checks are every test id the window added (any
     task's commit interleaved in it too) that goes green with the window's files laid over the base, and red on the
     base's code under the same tests; at least one is needed, five are kept. The regression sample is base tests that
@@ -338,8 +362,14 @@ def _scenario(src, w, seed, d, end):
     checks = [i for i in new if i in ok and i not in at_base][:MAX_CHECKS]
     if not checks:
         return None
-    names, done = _interface(src, w, checks)
-    goal = w["goal"] + (f"\n\nThe checks use these new names: {', '.join(names)}" if names else "") + \
+    names, done, pins = _interface(src, w, checks)
+    goal = w["goal"] + (f"\n\nThe checks use these new names: {', '.join(names)}" if names else "")
+    pins = [x for x in pins if x not in names and x.strip("'") not in goal]  # a flag or name the goal now says
+    if len(pins) > MAX_PIN or any(len(x) > PIN_LEN for x in pins):  # too many, or too long to state whole: no honest answer
+        if drops is not None:
+            drops.append(w["task"])
+        return None
+    goal += (f"\n\nThe checks expect these values: {', '.join(pins)}" if pins else "") + \
         ("\n\nDone when:\n" + "\n".join(f"- {d}" for d in done) if done else "")
     return {"checks": checks, "goal": goal, "sample": sorted(i for i in pool if i in ok and i in at_base), "pypath": pypath,
             "test_files": hidden, "command": "fm exam long grade (its runner loads each id by its path)"}
@@ -357,13 +387,13 @@ def gen(p, src=None, n=6, seed=0):
     os.makedirs(_root(p), exist_ok=True)
     nums = [int(x[1:]) for x in os.listdir(_root(p)) if RUN.fullmatch(x)]
     run = f"l{max(nums, default=0) + 1:03d}"
-    kept = []
+    kept, drops = [], []
     for w in wins[:3 * n]:  # ponytail: three tries a goal; a repo with few red-green windows yields fewer
         if len(kept) == n or time.time() >= end:
             break
         tmp = tempfile.mkdtemp(prefix="fm-long-")
         try:
-            k = _scenario(src, w, seed, tmp, end)
+            k = _scenario(src, w, seed, tmp, end, drops)
             if not k:
                 continue
             k["goal"] += _ticket(p, src, w["task"])
@@ -381,7 +411,7 @@ def gen(p, src=None, n=6, seed=0):
     if not kept:
         raise ValueError(f"no goal in {c.plain(src)}: no (T-NNNN) task change adds a test that fails at its base and passes "
                          "with the change")
-    meta = {"run": run, "src": src, "scenarios": kept}
+    meta = {"run": run, "src": src, "scenarios": kept, "dropped_pinned": len(drops)}
     c.write_atomic(os.path.join(_root(p), run, "run.json"), json.dumps(meta, indent=1))
     return meta
 
