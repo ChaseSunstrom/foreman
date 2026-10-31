@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `fm task evidence --bench` puts the start tree's own entry points first on PATH for the before side, so `fm` and any tool that resolves into the tree time the base code, not the current code; the result says when the start tree lacks an entry point or when no word of the command touches the tree (T-2303).
+- Guard speed tests time CPU, not the wall clock, so a loaded host can't fail them (T-2309).
 - `fm check --affected` adds test_core's import-budget tests when fmhooks.py or fmcore.py changes, so a new top-level import in a hook module fails in the lane, not at ship (T-2307).
 - Long-tier goals are passable from their text: checks come only from the task's own commits, and the goal names the new module attributes and flags its checks reach and lists the checks as "Done when", never the test bodies (T-2304).
 - Hooks import no `glob` again: the leads-record prune lists its folder (T-2305).
