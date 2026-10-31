@@ -1277,6 +1277,15 @@ class GenesisDraft(ForemanTestCase):
         (row,) = fmgenesis.scorecard(self.p)["rows"]
         self.assertIn("proxy", row["why"])  # #9's kind grades a three-part outcome, not delegation, and says so
 
+    def test_corrections_map_to_recur_and_correction_not_bug(self):
+        import fmgenesis  # T-2361: #7 matched bug only through 'corrections' containing 'correct'
+        seven = ("Its own failures, friction, misses and my corrections become fixes, gated by bench and trials, "
+                 "without being asked.")
+        kinds = fmgenesis._kinds("Self-repair and self-improvement", seven)
+        self.assertLessEqual({"recur", "correction"}, set(kinds))
+        self.assertNotIn("bug", kinds)
+        self.assertIn("bug", fmgenesis._kinds("Correctness", "Finds and fixes the planted bugs."))
+
     def test_self_triggering_maps_to_watch_with_trigger_kept_as_its_proxy(self):
         import fmgenesis  # T-2360: #11's own kind grades work starting from events; trigger stays, said as a proxy
         eleven = "Schedules, file and event triggers, CI and issue watchers, so work starts without me."

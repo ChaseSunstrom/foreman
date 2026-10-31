@@ -1412,7 +1412,8 @@ FALLBACK = (("Correctness", "Finds and fixes the planted bugs, each with a faili
              "vague, ambiguous, goal, resume"),
             ("Getting the tools it lacks", "Notices a missing tool, gets or builds it, and finishes with it.", "missing-tool"),
             ("Calibrated judgment", "Leaves a clean repo alone: no false alarms, no busywork.", "clean"))
-KIND_WORDS = (("bug", r"\bbugs?\b|correct|broken"), ("vuln", r"secur|vulnerab|exploit"), ("untested", r"untested|coverage"),
+# T-2361: bug's "correct" no longer matches "corrections", which are #7's (recur, correction)
+KIND_WORDS = (("bug", r"\bbugs?\b|correct(?!ions?\b)|broken"), ("vuln", r"secur|vulnerab|exploit"), ("untested", r"untested|coverage"),
               ("slow", r"\bslow|perform|latency|\bfast"), ("docs", r"\bdocs?\b|documentation"), ("flaky", r"flak"),
               ("dep", r"dependenc|\bdeps?\b"), ("vague", r"vague"), ("ambiguous", r"ambigu|readings of the request"), ("missing-tool", r"\btools?\b"),
               ("clean", r"false alarm|clean repo|calibrat"), ("none", r"initiative|unasked|unprompted"),
@@ -1421,6 +1422,7 @@ KIND_WORDS = (("bug", r"\bbugs?\b|correct|broken"), ("vuln", r"secur|vulnerab|ex
               ("exists", r"\bexhaustive|use what exists"), ("parts", r"\bsubagents?\b"),
               ("trigger", r"self-trigger|event triggers|\bwatchers?\b"),  # T-2216: #2, #9, #11, anchored (review)
               ("watch", r"self-trigger|event triggers|\bwatchers?\b|work starts without"),  # T-2360: #11's own kind
+              ("recur", r"self-repair|own failures|repeated failures"), ("correction", r"\bcorrections?\b"),  # T-2361: #7
               # T-2343: #2 (race: candidates tried side by side) and #8 (fork: decides and records, door: irreversible,
               # unsure: states confidence); phrases, not bare "race", "fork" or "door", which mean other things
               ("race", r"parallel lanes|candidate (?:fixes|designs|approaches)|choose by evidence"),
