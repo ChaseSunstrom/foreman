@@ -340,7 +340,9 @@ def verdict(p, m):
         item_state(i, briefs)))]
     causes += [f"item {i['n']} check fails ({how})" for i, how in unmet]
     causes += [f"item {i['n']} check not run" for i in unchecked]
-    unmet_n = {i["n"] for i, _ in unmet}
+    # T-2416 review: an item drift refused or didn't reach already has its cause; never run its check here instead,
+    # where the active task's grants would apply
+    unmet_n = {i["n"] for i, _ in unmet} | {i["n"] for i in unchecked}
     red = dict(c.read_meta(p).get("goal_red") or {})
     seen, deadline = len(red), time.monotonic() + CHECKS_S
     for i in items:
