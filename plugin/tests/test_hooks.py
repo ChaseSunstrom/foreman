@@ -2213,7 +2213,8 @@ class Stop(HookCase):
         self.assertIsNone(self.decision(self.stop("All done.")))  # no goal
         self.fm("goal", "set", "Cache the index", "--no-end")
         self.assertIsNone(self.decision(self.stop("All done.")))  # verdict never computed
-        v = {"verdict": "stopped", "causes": ["item 1 has no task"], "at": c.now(), "tree": "abc", "root": p.root}
+        v = {"verdict": "stopped", "causes": ["item 1 has no task"], "at": c.now(), "tree": "abc", "root": p.root,
+             "set_at": c.read_meta(p)["mandate"]["set_at"]}
         c.update_meta(p, goal_verdict=dict(v, root="/elsewhere"))
         self.assertIsNone(self.decision(self.stop("All done.")))  # another tree
         c.update_meta(p, goal_verdict=v)
@@ -2227,6 +2228,20 @@ class Stop(HookCase):
         self.assertEqual(self.decision(self.stop("Done.")), "block")  # new causes hold again
         c.update_meta(p, goal_verdict=dict(v, causes=["x"], verdict="finished"))
         self.assertIsNone(self.decision(self.stop("Done.")))
+        # the verdict belongs to its goal: replaced, ended or cleared, it holds nothing
+        c.update_meta(p, goal_verdict=dict(v, causes=["a"]))
+        c.update_meta(p, mandate=dict(c.read_meta(p)["mandate"], set_at="2020-01-01T00:00:00Z"))
+        self.assertIsNone(self.decision(self.stop("Done.")))  # replaced (another set_at)
+        c.update_meta(p, mandate=dict(c.read_meta(p)["mandate"], set_at=v["set_at"], until="2020-01-01T00:00:00Z"))
+        self.assertIsNone(self.decision(self.stop("Done.")))  # ended
+        self.fm("mandate", "off")
+        c.update_meta(p, goal_verdict=dict(v, causes=["b"]))
+        self.assertIsNone(self.decision(self.stop("Done.")))  # cleared
+        self.fm("goal", "set", "Cache the index", "--no-end")
+        c.update_meta(p, goal_verdict=dict(v, causes=["c"], set_at=c.read_meta(p)["mandate"]["set_at"]))
+        with open(os.path.join(p.dir, "gate.json"), "w") as f:
+            f.write('{"goal": 5}')  # `key in 5` raises inside the gate
+        self.assertIsNone(self.decision(self.stop("Done.")))  # a damaged gate file never breaks Stop
 
     def gate(self):
         import fmhooks

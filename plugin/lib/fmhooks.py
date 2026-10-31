@@ -3349,7 +3349,7 @@ def _stop(pl):
         oneoff = _oneoff()  # T-0775: only its own background work holds a one-off headless session
         closed = {b.id for b in briefs if b.status in c.CLOSED}
         nudge = None if reload_due else _headless_wait(pl) if oneoff else (
-            _evidence_gate(p, act, pl, g, closed) or _clauses_gate(p, pl, g, closed) or _goal_gate(p, pl, g, sid, closed)
+            _evidence_gate(p, act, pl, g, closed) or _clauses_gate(p, pl, g, closed) or _safe_goal_gate(p, pl, g, sid, closed)
             or _claims_gate(pl, g)
             or _question_nudge(pl)
             or _headless_wait(pl))
@@ -3630,6 +3630,13 @@ def _clauses_gate(p, pl, g, closed=()):
             + ". Capture each, answer it, or fm clauses --note N \"<why>\".")
 
 
+def _safe_goal_gate(*a):
+    try:
+        return _goal_gate(*a)
+    except Exception:  # a bad gate file or an OSError never breaks Stop
+        log_error("Stop", _tb())
+
+
 def _goal_gate(p, pl, g, sid, closed=()):
     """T-2137: a done claim while the stored fm goal verdict (this checkout, under a day old) says stopped, held once
     per cause set and counted toward DRIVE_MAX. Reads meta only: no checks, no git."""
@@ -3641,7 +3648,11 @@ def _goal_gate(p, pl, g, sid, closed=()):
     if age is None or age > 1 or v.get("verdict") != "stopped" or v.get("root") != p.root \
             or not isinstance(v.get("causes"), list) or d.get("count", 0) >= DRIVE_MAX:
         return None
-    key = hashlib.sha1(json.dumps(v["causes"]).encode()).hexdigest()[:12]
+    import fmmandate
+    m = fmmandate.get(p)
+    if not m or m["expired"] or m.get("set_at") != v.get("set_at"):
+        return None  # the goal it judged is gone, replaced or ended
+    key = hashlib.sha1(json.dumps([v["causes"], v.get("set_at"), sid]).encode()).hexdigest()[:12]
     if key in g.setdefault("goal", []):
         return None
     g["goal"] = (g["goal"] + [key])[-50:]

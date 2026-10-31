@@ -174,12 +174,18 @@ class GoalReview(GoalBase):
         r = self.fm("goal", "verdict", check=False)
         return r.returncode, r.stdout
 
-    def gates(self, exit_code):
-        c.log_event(self.p, "check_run", data={"tree": "t", "results": [{"cmd": "x", "exit": exit_code}]})
+    def gates(self, exit_code, tree=None):
+        c.log_event(self.p, "check_run", data={"tree": tree or c.worktree_id(self.p.root),
+                                               "results": [{"cmd": "x", "exit": exit_code}]})
+
+    def finish(self, tid):  # done, as opposed to dropped
+        b = c.find_brief(self.p, tid)
+        b.meta["status"] = "done"
+        c.save_brief(self.p, b)
 
     def test_verdict_names_each_cause_and_finishes_only_when_all_hold(self):
         # T-2137
-        self.assertEqual(self.verdict(), (0, "no goal\n"))
+        self.assertEqual(self.verdict(), (2, "no goal\n"))
         self.fm("goal", "set", "Cache the index. Also tune the ranker weights", "--no-end")
         self.fm("goal", "item", "cache the index", "--done-when", "true")
         code, out = self.verdict()
@@ -189,14 +195,20 @@ class GoalReview(GoalBase):
             self.assertIn(cause, out)
         t = self.new("cache it", "--goal", "1")
         self.assertIn("item 1 has open tasks", self.verdict()[1])
-        self.fm("task", "drop", t, "done")
+        self.fm("task", "drop", t, "superseded")  # dropped only: the item isn't done
+        self.assertIn("item 1 has no done task", self.verdict()[1])
+        t1b = self.new("cache it again", "--goal", "1")
+        self.finish(t1b)
+        self.assertNotIn("item 1", self.verdict()[1])  # a done task, the dropped one ignored
         self.gates(1)
         self.assertIn("gates red", self.verdict()[1])
+        self.gates(0, tree="another")
+        self.assertIn("gates not run on this tree", self.verdict()[1])
         self.gates(0)
         self.assertNotIn("gates", self.verdict()[1])
         self.fm("goal", "item", "tune the ranker weights", "--done-when", "false")
         t2 = self.new("tune", "--goal", "2")
-        self.fm("task", "drop", t2, "done")
+        self.finish(t2)
         out = self.verdict()[1]
         self.assertIn("item 2 check fails (exit 1)", out)
         self.assertNotIn("unaccounted", out)
@@ -207,6 +219,22 @@ class GoalReview(GoalBase):
         self.assertEqual((stored["verdict"], stored["causes"]), ("finished", []))
         self.assertTrue(stored["at"] and stored["tree"])
         self.assertEqual(json.loads(self.fm("goal", "verdict", "--json").stdout)["verdict"], "finished")
+        self.assertEqual(stored["set_at"], c.read_meta(self.p)["mandate"]["set_at"])
+        self.fm("goal", "set", "Another goal", "--no-end", "--replace")  # a verdict dies with its goal
+        self.assertNotIn("goal_verdict", c.read_meta(self.p))
+        self.fm("goal", "verdict", check=False)
+        self.fm("mandate", "off")
+        self.assertNotIn("goal_verdict", c.read_meta(self.p))
+
+    def test_a_clause_needs_two_shared_words_in_an_item_its_check_or_its_task_titles(self):
+        # T-2137
+        self.fm("goal", "set", "Speed up the search ranker. Fix caching", "--no-end")
+        self.fm("goal", "item", "search results caching", "--done-when", "true")
+        out = self.verdict()[1]
+        self.assertIn("clause unaccounted: Speed up the search ranker", out)  # one shared word is too few
+        self.assertNotIn("Fix caching", out)  # a clause with one significant word needs one
+        t = self.new("ranker speed", "--goal", "1")  # the task's title counts
+        self.assertNotIn("unaccounted", self.verdict()[1])
 
 
 if __name__ == "__main__":
