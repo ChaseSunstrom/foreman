@@ -371,6 +371,33 @@ class GenesisLive(ForemanTestCase):
         self.assertIn("site/genesis/gen-1/seed.md", self.git("diff", "--name-only", "main~1", "main", at=self.origin))
         self.assertIn("last push", self.fm("genesis").stdout)
 
+    def test_publish_refreshes_the_sites_stats_once_a_day(self):
+        # T-2326: the homepage read "to 2026-10-29" for two days: stats.json was only ever made by hand
+        import datetime
+        import fmprove
+        stub = ("import datetime, json, os\nroot = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n"
+                "with open(os.path.join(root, 'site', 'data', 'stats.json'), 'w') as f:\n"
+                "    json.dump({'generated': datetime.date.today().isoformat(), 'stub': True}, f)\n")
+        os.makedirs(os.path.join(self.repo, "site", "data"), exist_ok=True)
+        with open(os.path.join(self.repo, "site", "stats.py"), "w") as f:
+            f.write(stub)
+        with open(os.path.join(self.repo, "site", "data", "stats.json"), "w") as f:
+            f.write('{"generated": "2000-01-01"}\n')
+        self.git("add", "site")
+        self.git("commit", "-qm", "site with old stats")
+        self.git("push", "-q", "origin", "main")
+        fmprove.remember(self.repo)  # the stats script is the project's own code: an own or trusted tree only
+        self.granted()
+        self.fm("genesis", "live", "on")
+        self.assertEqual(self.fm_json("genesis", "publish")["result"], "pushed")
+        files = self.git("diff", "--name-only", "main~1", "main", at=self.origin).split()
+        self.assertIn("site/data/stats.json", files)
+        self.assertTrue(all(f.startswith("site/genesis/") or f == "site/data/stats.json" for f in files), files)
+        pushed = json.loads(self.git("show", "main:site/data/stats.json", at=self.origin))
+        self.assertEqual(pushed["generated"], datetime.date.today().isoformat())
+        self.git("pull", "-q", "origin", "main")
+        self.assertEqual(self.fm_json("genesis", "publish")["result"], "up to date")  # fresh today: nothing to push
+
     def test_kick_schedules_one_trailing_publish_per_window(self):
         import fmcore as c
         import fmgenesis
@@ -1081,6 +1108,22 @@ class GenesisDraft(ForemanTestCase):
         self.assertEqual(row()["state"], "behind")
         self.assertFalse(fmgenesis.scorecard(self.p)["ok"])  # behind plain on the same goals: the deciding row fails
         self.assertEqual(fmgenesis.card_long(self.p)["state"], "behind")
+
+    def test_the_long_row_counts_hidden_checks_and_breaks_a_tie_on_them(self):  # T-2326: l002 tied at 0/6 vs 1/6, 4/20 each
+        import fmgenesis
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n1. **Correctness.** Fixes. Exam: bug.\n\n## 3. The tower\n")
+
+        def line(agent, passed):
+            goals = [{"id": f"T-{i}", "answered": True, "true_done": False, "regressions": [], "checks": 4,
+                      "checks_passed": n} for i, n in enumerate(passed)]
+            fmgenesis.exam_line(self.p, {"tier": "long", "agent": agent, "run": "l9", "model": None, "goals": goals,
+                                         "scenarios": len(goals), "true_done": 0, "regressions": 0})
+        line("plain", [1, 0])
+        line("foreman", [2, 1])
+        r = fmgenesis.scorecard(self.p)["long"]
+        self.assertEqual((r["foreman"]["checks_same"], r["foreman"]["checks_total"], r["plain"]["checks_same"]), (3, 8, 1))
+        self.assertEqual(r["state"], "ahead")  # level on true done, ahead on the hidden checks passed
+        self.assertIn("foreman 0/2 done, checks 3/8", fmgenesis.long_text(r))
 
     def test_scorecard_grades_each_capability_on_its_newest_held_out_results(self):
         import fmgenesis  # T-2097: the §8 scorecard, read from graded exam.jsonl lines

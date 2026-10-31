@@ -1197,6 +1197,52 @@ def _record(p, result, digest=None, sha=None):
     return {"result": result, **({"sha": sha} if sha else {})}
 
 
+STATS = "site/data/stats.json"  # T-2326: the homepage's own-record numbers, refreshed once a day by publish
+
+
+def _stats_stale(root):
+    """Whether root's site stats were generated on a day other than today (a tree with no stats script never is)."""
+    import datetime
+    import json
+    if not os.path.isfile(os.path.join(root, "site", "stats.py")):
+        return False
+    try:
+        with open(os.path.join(root, STATS), encoding="utf-8") as f:
+            return json.load(f).get("generated") != datetime.date.today().isoformat()
+    except (OSError, ValueError, AttributeError):
+        return True
+
+
+def _stats_ok(p):
+    """T-2326: the stats script is the project's own code, so publish runs it only for Foreman's own repo or a tree
+    the user said yes to (fm prove --yes-run)."""
+    import fmprove
+    own = os.path.realpath(os.path.dirname(c.PLUGIN_ROOT)) == os.path.realpath(p.root)
+    return own or fmprove.trusted(p.root)
+
+
+def _refresh_stats(p, wt):
+    """Run the worktree's site/stats.py (--no-bench keeps the hook timings) against this project's state; True when it
+    changed the stats file. A failed or slow run leaves the old file and the tower push goes on."""
+    import subprocess
+    import sys
+    before = _file_text(os.path.join(wt, STATS))
+    try:
+        subprocess.run([sys.executable, os.path.join(wt, "site", "stats.py"), "--no-bench", "--state", p.dir], cwd=wt,
+                       capture_output=True, timeout=300, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return _file_text(os.path.join(wt, STATS)) != before
+
+
+def _file_text(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
 def publish(p, settle=False):
     """Push the tower's export to the remote's main as one data-only commit (site/genesis only), from a scratch
     worktree at the fetched main, when it differs from what main has (the per-export updated/rev fields aside).
@@ -1226,7 +1272,8 @@ def publish(p, settle=False):
             export(p, out)
             new = _body(os.path.join(out, "genesis.json"))
             digest = hashlib.sha256(json.dumps(new, sort_keys=True).encode()).hexdigest()
-            if digest == lv.get("hash"):
+            stats = _stats_ok(p) and _stats_stale(p.root)  # T-2326: a stale homepage is a reason to publish too
+            if digest == lv.get("hash") and not stats:
                 return _record(p, "up to date")
             open(os.path.join(p.dir, STAMP), "w").close()
             git(p.root, "fetch", "-q", remote, f"+refs/heads/main:{REF}")
@@ -1238,13 +1285,15 @@ def publish(p, settle=False):
                     old = _body(os.path.join(dest, "genesis.json"))
                 except (OSError, ValueError):
                     old = None
-                if old == new:
+                fresh = stats and _stats_stale(wt) and _refresh_stats(p, wt)
+                if old == new and not fresh:
                     return _record(p, "up to date", digest)
                 shutil.copytree(out, dest, dirs_exist_ok=True)
-                git(wt, "add", "--", "site/genesis")
+                git(wt, "add", "--", "site/genesis", *([STATS] if fresh else []))
                 git(wt, "commit", "-q", "-m", "Genesis: tower update (fm genesis live)")
                 sha = git(wt, "rev-parse", "HEAD").strip()
-                stray = [f for f in git(wt, "diff", "--name-only", base, sha).splitlines() if not f.startswith("site/genesis/")]
+                stray = [f for f in git(wt, "diff", "--name-only", base, sha).splitlines()
+                         if not f.startswith("site/genesis/") and f != STATS]
                 if stray:
                     raise ValueError(f"refusing to push: the commit touches {stray[:3]} outside site/genesis")
                 git(p.root, "push", "-q", remote, f"{sha}:refs/heads/main")
@@ -1838,11 +1887,16 @@ def long_row(p):
         return {**out, "state": "no common goals"}
 
     def side(x, d):  # the line's own totals, over its goals; the common-goal count is what decides
+        by = {g["id"]: g for g in x["goals"] if isinstance(g, dict) and g.get("id") in same}
+        num = lambda k: sum(v for v in (by[i].get(k) for i in same) if isinstance(v, int) and not isinstance(v, bool))
+        known = all(isinstance(by[i].get("checks_passed"), int) for i in same)  # T-2326: older lines had no partial credit
         return {**{k: x.get(k) for k in LONG_KEYS}, "run": c.plain(str(x.get("run"))), "goals": len(d),
-                "true_done_same": sum(d[i] for i in same)}
+                "true_done_same": sum(d[i] for i in same),
+                "checks_same": num("checks_passed") if known else None, "checks_total": num("checks") if known else None}
     a, b = side(newest["foreman"], f), side(newest["plain"], pl)
-    return {"state": "ahead" if a["true_done_same"] > b["true_done_same"] else "behind" if a["true_done_same"] < b["true_done_same"]
-            else "level", "goals": len(same), "foreman": a, "plain": b}
+    score = lambda s: (s["true_done_same"], s["checks_same"] or 0)  # a tie on true done is broken on hidden checks passed
+    return {"state": "ahead" if score(a) > score(b) else "behind" if score(a) < score(b) else "level",
+            "goals": len(same), "foreman": a, "plain": b}
 
 
 def card_long(p):
@@ -1859,7 +1913,9 @@ def long_text(r):
         return None
     if not r["foreman"]:
         return f"long-horizon (deciding): {r['state']}"
-    show = lambda s: (f"{s['true_done_same']}/{r['goals']} done, false-done {'?' if s['false_done'] is None else s['false_done']}, "
+    show = lambda s: (f"{s['true_done_same']}/{r['goals']} done, "
+                      + (f"checks {s['checks_same']}/{s['checks_total']}, " if s.get("checks_same") is not None else "")
+                      + f"false-done {'?' if s['false_done'] is None else s['false_done']}, "
                       f"regressions {s['regressions']}, resumes needed {'?' if s['resumes_needed'] is None else s['resumes_needed']}, "
                       f"unfinished {'?' if s['unfinished'] is None else s['unfinished']}, cost {'?' if s['cost'] is None else '$%.2f' % s['cost']}")
     return f"long-horizon (deciding): {r['state']} on {r['goals']} same goal(s): foreman {show(r['foreman'])} vs plain {show(r['plain'])}"
