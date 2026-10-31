@@ -7010,11 +7010,14 @@ def _build_parser(only=None):
             "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
     s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish", "check", "step",
                                                  "draft", "spec", "select", "seed", "drift", "sweep", "exam", "frontier",
-                                                 "novelty"))
+                                                 "novelty", "grow"))
     s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; live: on|off; export: the folder "
                                           "for genesis.json and the docs (site/genesis here); draft: the goal line (none: "
                                           "a whole gen-0 anyway); select/seed/drift/sweep: the generation N")
     s.add_argument("--agent", default="foreman", help="select/sweep: whose graded exam lines count (default foreman)")
+    s.add_argument("--name", help="grow: the new category's name (T-2188)")
+    s.add_argument("--evidence", help="grow: the ideas, failures or misses no existing category fits")
+    s.add_argument("--measure", help="grow: exam kinds (bug, flaky, …) or 'unmeasurable: why'")
     s.add_argument("--file", help="init/put/draft: read the text from this file (- is stdin)")
     s.add_argument("--per-kind", type=int, help="spec/exam: exam scenarios per kind (default 9); a third is held out")
     s.add_argument("--arm", choices=("genesis", "plain", "oracle", "empty"), default="genesis",

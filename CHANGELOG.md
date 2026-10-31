@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Genesis can add its own categories from gen 2 (`fm genesis grow`): a capability, area, surface, stage, lens, source or exam kind, each with evidence, a measure and a cold read. Added capabilities join the exam, the scorecard and the seed like gen-0's. The frame only grows: `fm genesis check` fails a lost or hand-edited entry, and the report must list every added category
 - A standing goal rides across days: SessionStart, the PreCompact checkpoint and `fm resume` print one goal line (its text, items done/total, the next item and its first open task), and `fm run` takes that item's planned task first
 - Genesis keeps one moonshot Mission each generation from gen 2: ideas outside every coverage cell, a far-domain lens, a frontier digest from your own research notes (`fm genesis frontier N`), and a cold novelty read (`fm genesis novelty N`) that marks the obvious ones. `fm genesis check` holds each idea to prior-art and better-by lines, keeps a failed spike in not-yet.md, and makes the report say which shipped moonshots you asked for
 - `fm goal verdict` says `finished` only when every item has a done task and none open, its check passes now, every goal clause is covered and `fm check` last ran green on this tree; otherwise `stopped` with each cause (exit 1, no goal 2); a done claim on a stopped goal blocks once at Stop, counted toward DRIVE_MAX (T-2137)
