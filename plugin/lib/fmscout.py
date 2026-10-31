@@ -101,17 +101,53 @@ def probe_brainstorm(p, ctx):
                     "probe first (two lenses), ground every idea, queue the ones worth building")]
 
 
+def _auto_start(p, m):
+    """T-2178: gen-0 from the user's standing goal text, no model (the template's fallback capabilities: a probe runs
+    from hooks), sealed locally, one decision row, the key spent. False when init refuses it (a secret-shaped line):
+    the offer stands."""
+    import fmcli
+    import fmgenesis
+    def no_model(*a):
+        raise ValueError("no model in a probe")
+    keep, fmgenesis._child_caps = fmgenesis._child_caps, no_model  # ponytail: a swap, not draft(model=False): T-2180 holds draft
+    try:
+        try:
+            text = fmgenesis.draft(p, m["text"])["text"]
+        finally:
+            fmgenesis._child_caps = keep
+        path = fmgenesis.init(p, text.encode("utf-8"))
+    except ValueError:
+        return False
+    c.log_event(p, "genesis_init", data={"path": path, "sha256": fmgenesis.seal(p)}, session=fmcli.session())
+    fmcli._write_decision(p, "Genesis started itself from the standing mandate", "gen-0 #13: it starts by itself when the "
+                          "queue runs dry; full autonomy, 10+ done tasks and the user's own goal text (fm mandate) "
+                          "hold the words gen-0 needs", "keep offering (T-2105): waits on a yes that never comes; "
+                          "inventing a goal under full autonomy", kind="costly")
+    c.update_meta(p, scout_keys=dict(c.read_meta(p).get("scout_keys") or {}, **{"genesis:start": "auto"}))
+    fmgenesis.kick(p)
+    return True
+
+
 def probe_genesis(p, ctx):
     """T-2105: a drained queue in a project with a track record (10+ done tasks) and no Genesis tower: offer one, once
-    ever (the key never repeats). It waits on the user's own yes (meta confirm) whatever the autonomy. Blocked and
-    deferred work doesn't hold it back: that waits on the user too, and so does the offer."""
+    ever (the key never repeats). It waits on the user's own yes (meta confirm). Blocked and deferred work doesn't hold
+    it back: that waits on the user too, and so does the offer. T-2178: under full autonomy with an unexpired standing
+    goal (the user's own text) in a non-sensitive project it starts itself instead (_auto_start), once."""
     import fmgenesis
+    import fmmandate
     if "genesis:start" in (c.read_meta(p).get("scout_keys") or {}):  # spent: skip loading the archive
         return []
     briefs = c.load_briefs(p, include_archive=True)
     if any(b.status in c.RUNNABLE or b.status == "captured" for b in briefs) or \
             os.path.isfile(os.path.join(fmgenesis.home(p), "gen-0.md")) or sum(b.status == "done" for b in briefs) < 10:
         return []
+    m = fmmandate.get(p)
+    if c.effective_autonomy(p) == "full" and m and not m["expired"] and not c.read_meta(p).get("sensitive"):
+        if ctx.get("dry"):  # a dry run changes nothing
+            return [Finding("genesis:start", "Genesis would start itself from the standing goal", "FEATURE", "L",
+                            "dry run: full autonomy, a drained queue and a standing goal hold the user's own words")]
+        if _auto_start(p, m):
+            return []
     return [Finding("genesis:start", "Start Genesis here? Generations toward one goal you write, to a final report",
                     "FEATURE", "L", "the queue is drained and this project has a track record: Genesis runs generations "
                     "toward one goal the user writes (gen-0). Ask for their goal and MUST/NEVER lines; with only a line, "
