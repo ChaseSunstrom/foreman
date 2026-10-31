@@ -386,8 +386,8 @@ class Extras(ForemanTestCase):
         self.assertEqual(fmcli.spike_note(c.Brief.new("T-0010", "Build the sync engine", "FEATURE", "M")), "")
         self.fm("task", "new", "Build the sync engine", "--type", "FEATURE", "--tier", "L", "--ac", "syncs :: true",
                 "--step", "build it")
-        for sec in ("Interpretation", "Approach (options → choice → why)", "Build vs reuse"):
-            self.fm("task", "set", "T-0001", "--section", sec, "--text", "x")
+        for sec in ("Interpretation", "Approach (options → choice → why)", "Build vs reuse", "Risks and rollback"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
         self.fm("task", "set", "T-0001", "approved=true")
         self.assertIn("Spike first", self.fm("focus", "T-0001").stdout)
 

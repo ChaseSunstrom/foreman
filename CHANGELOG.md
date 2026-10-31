@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The plan gate checks content by tier: `fm focus` and `fm lane brief` refuse an M/L Approach that lists fewer than 3 options or names no choice, an L brief with fewer than 2 readings in Interpretation or an empty Risks and rollback, and any brief with a `(low)` assumption that has no `research/NAME`, `spike T-NNNN` or verified tag; each gap names its fix, and a task already started isn't re-gated (T-2269).
 - A failure that hits three or more different tasks now captures one FIX to find and fix its cause, instead of each task working around it again (T-2272).
 - A missing command or module in a Bash failure now names the find-or-build path once per session (`fm plugins find X`, or a script with its test), and a tool missed in a second session becomes one FEATURE task (T-2270); subagent failures and names that are not plain tool names are ignored.
 - `fm genesis check` flags a put-able tower file whose current text has no cold-read pass on record (steer 2): `fm genesis put` records each filed file's sha256, so a hand edit is flagged; `grow` and `confirm` move the record only when the text before them was read; a file from before this counts as read with a whole-file pass, or a pass for every section, logged just before its mtime; OWNED files and gen-0 are exempt (T-2181).

@@ -51,7 +51,7 @@ class Children(ForemanTestCase):
         self.fm("ideas", "--pack", pack, "--lens", "delight", env=env)
         self.fm("research", "ask", "Is the sky blue?", "--no-verify", env=env)
         tid = json.loads(self.fm("task", "new", "Paint the sky", "--type", "FEATURE", "--tier", "M", "--ac", "x :: true",
-                                 "--step", "x", "--interpretation", "x", "--approach", "x", "--json").stdout)["id"]
+                                 "--step", "x", "--interpretation", "x", "--approach", "1) a 2) b 3) c Choice 1: a", "--json").stdout)["id"]
         self.fm("oracle", tid, env=env)
         self.fm("second", "plan", tid, env=env)
         calls = [json.loads(x) for x in read_text(log).splitlines()]

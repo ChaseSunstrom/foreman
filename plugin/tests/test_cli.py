@@ -569,9 +569,27 @@ class TaskLifecycle(ForemanTestCase):
         self.fm("focus", "T-0001")
         self.assertEqual(self.brief().status, "active")
 
+    def test_a_paused_started_task_is_not_regated(self):  # T-2269 review: pausing sets status back to planned
+        ap = "Approach (options → choice → why)"
+        self.fm("task", "new", "Old plan", "--type", "FEATURE", "--tier", "M")
+        for sec, text in (("Interpretation", "x"), (ap, "1) a 2) b 3) c Choice 1: a")):
+            self.fm("task", "set", "T-0002", "--section", sec, "--text", text)
+        self.fm("task", "ac", "T-0002", "add", "works", "--verify", "true")
+        self.fm("task", "step", "T-0002", "add", "build")
+        self.fm("focus", "T-0002")
+        self.fm("task", "set", "T-0002", "--section", ap, "--text", "just do it")  # the plan now fails the content gate
+        for tid in ("T-0001",):
+            self.fm("task", "ac", tid, "add", "works")
+            self.fm("task", "step", tid, "add", "do it")
+        self.fm("focus", "T-0001")
+        self.assertEqual(self.brief("T-0002").status, "planned")
+        self.fm("focus", "T-0002")  # started before, paused: not refused
+        self.assertEqual(self.brief("T-0002").status, "active")
+
     def test_unapproved_L_focus_depends_on_autonomy(self):
         self.fm("task", "new", "Big one", "--type", "FEATURE", "--tier", "L")
-        for sec, text in (("Interpretation", "x"), ("Approach (options → choice → why)", "y")):
+        for sec, text in (("Interpretation", "Reading 1: x. Reading 2: z"), ("Risks and rollback", "revert"),
+                          ("Approach (options → choice → why)", "1) y 2) w 3) v Choice 1: y")):
             self.fm("task", "set", "T-0002", "--section", sec, "--text", text)
         self.fm("task", "ac", "T-0002", "add", "works", "--verify", "pytest")
         self.fm("task", "step", "T-0002", "add", "build")
@@ -1016,8 +1034,8 @@ class NewTaskCriteria(ForemanTestCase):
         # T-0042: an M task made in one command must be focusable (every criterion needs a verify command)
         self.fm("task", "new", "Add export", "--type", "FEATURE", "--tier", "M", "--ac", "exports CSV :: pytest -k csv",
                 "--step", "build it")
-        for sec in ("Interpretation", "Approach (options → choice → why)"):
-            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        for sec in ("Interpretation", "Approach (options → choice → why)", "Risks and rollback"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
         self.fm("focus", "T-0001")
         ac = c.find_brief(c.find_project(self.repo), "T-0001").acceptance()[0]
         self.assertEqual(ac.text, "exports CSV — verify with `pytest -k csv`")
@@ -1056,8 +1074,8 @@ class AuditPrep(ForemanTestCase):
         self.fm("init")
         self.fm("task", "new", "Big change", "--type", "FEATURE", "--tier", "L", "--step", "do it")
         self.fm("task", "ac", "T-0001", "add", "works", "--verify", "true")
-        for sec in ("Interpretation", "Approach (options → choice → why)"):
-            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        for sec in ("Interpretation", "Approach (options → choice → why)", "Risks and rollback"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
         self.fm("task", "set", "T-0001", "approved=true", "--section", "Build vs reuse", "--text", "nothing fits")
         self.fm("focus", "T-0001")
         with open(os.path.join(self.repo, "big.py"), "w") as f:
@@ -1078,8 +1096,8 @@ class AuditPrep(ForemanTestCase):
         self.fm("init")
         self.fm("task", "new", "Add it", "--type", "FEATURE", "--tier", "M", "--step", "add it")
         self.fm("task", "ac", "T-0001", "add", "works", "--verify", "true")
-        for sec in ("Interpretation", "Approach (options → choice → why)"):
-            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        for sec in ("Interpretation", "Approach (options → choice → why)", "Risks and rollback"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
         self.fm("focus", "T-0001")
         with open(os.path.join(self.repo, "big.py"), "w") as f:
             f.write("".join(f"X{i} = {i}\n" for i in range(1600)))
@@ -1093,8 +1111,8 @@ class AuditPrep(ForemanTestCase):
         self.fm("init")
         self.fm("task", "new", "Add it", "--type", "FEATURE", "--tier", "M", "--step", "add it")
         self.fm("task", "ac", "T-0001", "add", "works", "--verify", "true")
-        for sec in ("Interpretation", "Approach (options → choice → why)"):
-            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        for sec in ("Interpretation", "Approach (options → choice → why)", "Risks and rollback"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
         self.fm("focus", "T-0001")
         with open(os.path.join(self.repo, "x.py"), "w") as f:
             f.write("X = 1\n")
@@ -1109,8 +1127,8 @@ class AuditPrep(ForemanTestCase):
         self.fm("init")
         self.fm("task", "new", "Add --verbose", "--type", "FEATURE", "--tier", "L", "--step", "add it")
         self.fm("task", "ac", "T-0001", "add", "prints more with --verbose", "--verify", "pytest")
-        for sec in ("Interpretation", "Approach (options → choice → why)"):
-            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        for sec in ("Interpretation", "Approach (options → choice → why)", "Risks and rollback"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
         self.fm("task", "set", "T-0001", "approved=true", "--section", "Build vs reuse", "--text", "nothing fits")
         self.fm("focus", "T-0001")
         with open(os.path.join(self.repo, "cli.py"), "w") as f:
@@ -1235,8 +1253,9 @@ class RoundFiveWorkflow(ForemanTestCase):
         self.fm("init")
         self.fm("task", "new", "Add sync", "--type", "FEATURE", "--tier", "L", "--step", "build it")
         self.fm("task", "ac", "T-0001", "add", "syncs", "--verify", "pytest")
-        for sec in ("Interpretation", "Approach (options → choice → why)"):
-            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        for sec in ("Interpretation", "Approach (options → choice → why)", "Risks and rollback"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
+        self.fm("task", "set", "T-0001", "--section", "Risks and rollback", "--text", "revert the commit")
         self.fm("task", "set", "T-0001", "approved=true", "--section", "Build vs reuse", "--text", "nothing fits")
         self.fm("focus", "T-0001")
         out = self.fm("audit", "prep", "--print", "T-0001", "--note", "threat: a pulled .foreman/ is untrusted",

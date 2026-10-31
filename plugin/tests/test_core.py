@@ -516,11 +516,107 @@ class Stages(unittest.TestCase):
         return b
 
     def plan(self, b):
-        b.set_section("Interpretation", "Login times out on slow networks.")
-        b.set_section("Approach (options → choice → why)", "Retry with backoff vs longer timeout → retry.")
+        b.set_section("Interpretation", "Reading 1: login times out on slow networks.\nReading 2: the server is slow.")
+        b.set_section("Approach (options → choice → why)",
+                      "1) retry with backoff 2) a longer timeout 3) a queue. Choice 1: cheapest.")
+        b.set_section("Risks and rollback", "Retries pile up; revert the commit.")
         b.add_ac("login works on 3G", verify="pytest -k slow")
         b.add_step("reproduce")
         return b
+
+    def test_plan_gaps_check_content_by_tier(self):  # T-2269
+        def gaps(b):
+            return " | ".join(c.plan_gaps(b, "full"))
+        AP = "Approach (options → choice → why)"
+        for tier in ("M", "L"):
+            b = self.plan(self.brief(tier))
+            self.assertEqual(c.plan_gaps(b, "full"), [])
+            b.set_section(AP, "Retry with backoff vs longer timeout → retry. Choice: retry. In 2 steps, 3 files.")
+            self.assertIn("3+ options", gaps(b))
+            self.assertIn("fm task set", gaps(b))  # the gap names its fix
+            for text in ("1. a\n2. b\n3. c\nChosen: a", "- a\n- b\n- c\nchose a", "Option A: a\nOption B: b\nOption C: c\nChoice: B"):
+                b.set_section(AP, text)
+                self.assertEqual(c.plan_gaps(b, "full"), [], text)
+            b.set_section(AP, "1) a 2) b 3) c")
+            self.assertIn("choice", gaps(b))
+        m = self.plan(self.brief("M"))
+        m.set_section("Interpretation", "One reading.")
+        m.set_section("Risks and rollback", "")
+        self.assertEqual(c.plan_gaps(m, "full"), [])  # M needs neither
+        big = self.plan(self.brief("L"))
+        big.set_section("Interpretation", "One reading.")
+        self.assertIn("2+ readings", gaps(big))
+        big.set_section("Interpretation", "1. this\n2. that")
+        self.assertEqual(c.plan_gaps(big, "full"), [])
+        big.set_section("Risks and rollback", "")
+        self.assertIn("Risks and rollback", gaps(big))
+
+    def test_a_low_confidence_assumption_waits_for_research_or_a_spike(self):  # T-2269
+        b = self.plan(self.brief("M"))
+        b.add_assumption("the API is paged (low)")
+        self.assertIn("research", " ".join(c.plan_gaps(b, "full")))
+        b.set_section(c.Brief.ASSUMPTIONS, "- [assumed] the API is paged (low)\n- [assumed] other (high)\n")
+        self.assertIn("research", " ".join(c.plan_gaps(b, "full")))
+        for line in ("- [assumed] the API is paged (low); see research/api-paging",
+                     "- [assumed] the API is paged (low); spike T-0042",
+                     "- [verified: ran it] the API is paged (low)"):
+            b.set_section(c.Brief.ASSUMPTIONS, line + "\n")
+            self.assertEqual(c.plan_gaps(b, "full"), [], line)
+        s = self.brief("S")
+        s.add_ac("works")
+        s.add_step("do it")
+        s.add_assumption("x (low)")
+        self.assertIn("research", " ".join(c.plan_gaps(s, "full")))  # any tier
+
+    def test_a_task_already_started_is_not_regated(self):  # T-2269
+        b = self.plan(self.brief("L"))
+        b.set_section("Approach (options → choice → why)", "just do it")
+        b.add_assumption("x (low)")
+        self.assertTrue(c.plan_gaps(b, "full"))
+        for st in ("active", "verifying", "done"):
+            b.meta["status"] = st
+            self.assertEqual(c.plan_gaps(b, "full"), [], st)
+        b.meta["status"] = "planned"  # a paused task is planned again: ever started is what exempts it
+        self.assertTrue(c.plan_gaps(b, "full"))
+        for key in ("plan0_at", "base", "base_tree"):
+            q = self.plan(self.brief("L"))
+            q.set_section("Approach (options → choice → why)", "just do it")
+            q.meta[key] = "x"
+            self.assertEqual(c.plan_gaps(q, "full"), [], key)
+        q = self.plan(self.brief("L"))
+        q.set_section("Approach (options → choice → why)", "just do it")
+        q.add_evidence("true", "ok", step=1)
+        q.mark_step(1)
+        self.assertEqual(c.plan_gaps(q, "full"), [], "a done step")
+        d = self.plan(self.brief("L"))
+        d.set_section("Approach (options → choice → why)", "just do it")
+        d.add_evidence("true", "ok", ac=1)
+        self.assertEqual(c.plan_gaps(d, "full"), [], "evidence")
+
+    def test_option_formats_and_hollow_markers(self):  # T-2269 review
+        AP = "Approach (options → choice → why)"
+        real = ("Options: (1) one (2) two (3) three Choice 2: two",
+                "Options: (A) a (B) b (C) c Choice: A",
+                "A) a\nB. b\nC) c\nDecision: A",
+                "Option A: a\nApproach B: b\nOption C: c\nGo with B",
+                "**Option 1** a\n**Option 2** b\n### Option 3\nc\nChoose 1",
+                "1. a 2. b 3. c Chosen: 1")
+        for text in real:
+            b = self.plan(self.brief("M"))
+            b.set_section(AP, text)
+            self.assertEqual(c.plan_gaps(b, "full"), [], text)
+        for text in ("1) … 2) … 3) … Choice 1: …", "- …\n- …\n- …\nChoice: …", "Option A:\nOption B:\nOption C:\nChoice"):
+            b = self.plan(self.brief("M"))
+            b.set_section(AP, text)
+            self.assertTrue(c.plan_gaps(b, "full"), text)
+        b.set_section(AP, "1) a 2) b Choice 1")
+        self.assertIn("names 2 options", " ".join(c.plan_gaps(b, "full")))
+        self.assertIn("T-0001", " ".join(c.plan_gaps(b, "full")))
+        big = self.plan(self.brief("L"))
+        big.set_section("Interpretation", "A reading of the request that reads it once; reading it again changes nothing, reading.")
+        self.assertIn("2+ readings", " ".join(c.plan_gaps(big, "full")))
+        big.set_section("Interpretation", "- first\n- second")
+        self.assertEqual(c.plan_gaps(big, "full"), [])
 
     def test_plan_gaps_by_tier(self):
         s = self.brief("S")

@@ -88,7 +88,7 @@ class WhyNotCaught(Base):
     def test_a_fix_says_why_it_was_not_caught_and_the_answer_becomes_a_followup(self):
         self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "M", "--ac", "ok :: true", "--step", "s")
         for sec in ("Interpretation", "Approach (options → choice → why)"):
-            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a 2) b 3) c Choice 1: a")
         self.fm("focus", "T-0001")
         self.fm("task", "set", "T-0001", "--section", "Regression test", "--text", "none: a typo")
         close = ["task", "finish", "T-0001", "--audit", "self", "--run", "true", "--lens", "intent: ok",
