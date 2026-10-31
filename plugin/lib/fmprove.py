@@ -638,22 +638,152 @@ def cmd_migration(args, root, allowed):
     return {"pass": 0, "fail": 1}.get(r["verdict"], 2)
 
 
+DOCS_RUN_T, DOCS_RUNS = 20, 30  # T-2381: seconds one documented command may take; commands one fm prove --docs runs
+PYRUN = ("import sys,importlib;t=sys.argv[1];sys.argv=sys.argv[2:];m,_,f=t.partition(':');"
+         "sys.exit(getattr(importlib.import_module(m),f)())")
+# what a CLI says when it doesn't have the subcommand or flag it was given
+NOT_THERE = re.compile(r"(?i)unrecogni[sz]ed (arguments|option|command)|invalid choice|unknown (command|option|flag|"
+                       r"subcommand|argument)|no such (command|option)|unexpected argument|invalid (option|subcommand)")
+
+
+def _prefix(spec, name, work):
+    """The argv that runs the repo's CLI `name` from the copy at work, or None when it needs a build."""
+    kind, target = spec
+    path = os.path.realpath(os.path.join(work, target)) if kind in ("bin", "node") else ""
+    if kind in ("bin", "node") and not path.startswith(os.path.realpath(work) + os.sep):
+        return None
+    return {"bin": [path], "node": ["node", path], "py": [sys.executable, "-c", PYRUN, target, name]}.get(kind)
+
+
+def docs_proof(root, files, allowed, limit=RUN_T):
+    """T-2381: {root, claims, ran} for what the docs say about the repo's own CLI. Static verdicts need no yes (they read
+    files only); in a trusted tree each fenced command of the CLI is checked against its --help and run in a throwaway
+    copy with fm prove's environment: a flag missing from --help or a usage error fails, exit 0 proves, any other
+    exit stays unproven (a command may fail for its own reasons)."""
+    import fmdocs
+    claims, cmds = fmdocs.claims(root, files)
+    res = {"root": root, "claims": claims, "ran": 0}
+    todo = [x for x in cmds if not x["shell"]]
+    if not allowed:
+        for x in todo:
+            x["claim"]["why"] = "not run: " + NO_RUN
+    if not allowed or not todo:
+        return res
+    by = {(x["file"], x["kind"], x["detail"]): x for x in claims}
+    tmp, work = _copy(root)
+    try:
+        home = os.path.join(tmp, "home")
+        os.makedirs(home)
+        env = _env(home) | {"PYTHONPATH": os.pathsep.join([work, os.path.join(work, "src")])}
+        end, helps = time.time() + limit, {}
+
+        def run(argv):
+            return c.run_command(work, shlex.join(argv), timeout=max(1, min(DOCS_RUN_T, int(end - time.time()))), env=env)
+
+        for x in todo[:DOCS_RUNS]:
+            claim, sub_path, flags = x["claim"], *fmdocs.words(x["rest"])
+            pre = _prefix(x["spec"], x["cli"], work)
+            if pre is None:
+                claim["why"] = "not run: it needs a build (or its entry point is outside the tree)"
+                continue
+            if time.time() >= end:
+                claim["why"] = "not run: fm prove's budget ran out"
+                continue
+            res["ran"] += 1
+            text, why = None, ""
+            for n in range(len(sub_path), -1, -1):  # a word that isn't a subcommand is an argument: back off
+                key = (x["cli"], tuple(sub_path[:n]))
+                if key not in helps:
+                    helps[key] = run(pre + sub_path[:n] + ["--help"])
+                rc, o = helps[key]
+                if rc == 0:
+                    text = o
+                    break
+                if NOT_THERE.search(o):
+                    why = f"`{' '.join([x['cli']] + sub_path[:n])} --help` says: {_last(o)}"
+                    break
+                why = f"`{x['cli']} --help` exited {rc}: {_last(o)}"
+            if text is None:
+                claim.update(verdict="failed" if NOT_THERE.search(helps[key][1]) else "unproven", why=why)
+                if claim["verdict"] == "failed" and sub_path:
+                    s = by.get((claim["file"], "subcommand", f"{x['cli']} {sub_path[0]}"))
+                    s and s.update(verdict="failed", why=why)
+                continue
+            gone = [f for f in flags if not re.search(rf"(?<![\w-]){re.escape(f)}(?![\w-])", text)]
+            for f in gone:
+                fc = by.get((claim["file"], "flag", f))
+                fc and fc.update(verdict="failed", why=f"not in `{' '.join([x['cli']] + sub_path[:n])} --help`")
+            if gone:
+                claim.update(verdict="failed", why=f"--help lacks {', '.join(gone)}")
+                continue
+            rc, o = run(pre + x["rest"])
+            claim.update(verdict="proven" if rc == 0 else "failed" if NOT_THERE.search(o) else "unproven",
+                         why="ran, exit 0" if rc == 0 else f"exit {rc}: {_last(o)}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return res
+
+
+def cmd_docs_proof(args):
+    """T-2381: fm prove --docs [FILE...]: exit 0 none failed, 1 a failure, 2 nothing checkable."""
+    import fmcli
+    import fmdocs
+    given = [a for a in [args.path if args.path != "." else None] + list(args.files) if a]
+    first = given[0] if given else None
+    start = os.path.abspath(first if first and os.path.isdir(first) else os.getcwd())
+    root = c.git_root(start) or start
+    files = None
+    if first and not os.path.isdir(first) or len(given) > 1:
+        real = os.path.realpath(root)
+        files = []
+        for g in given:
+            p = os.path.abspath(g)
+            if os.path.isdir(p):
+                print(f"fm prove --docs: {g} is a folder: name the docs files, or only the tree", file=sys.stderr)
+            elif not fmdocs._regular(p) or os.path.commonpath([os.path.realpath(p), real]) != real:
+                print(f"fm prove --docs: {g} is not a regular file in {root}", file=sys.stderr)
+            else:
+                files.append(p)
+        if not files:
+            return 2
+    allowed = _yes(args, root)
+    try:
+        res = docs_proof(root, files, allowed)
+    except (OSError, shutil.Error) as e:
+        print(f"fm prove: couldn't copy {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
+        return 2
+    n = {v: sum(1 for x in res["claims"] if x["verdict"] == v) for v in ("proven", "failed", "unproven")}
+    mark = {"proven": "✓ proven  ", "failed": "✗ failed  ", "unproven": "· unproven"}
+    fmcli.out(args, res | {"counts": n}, c.plain_lines(
+        f"{n['proven']} proven, {n['failed']} failed, {n['unproven']} unproven docs claim(s) under {root}"
+        f" ({res['ran']} command(s) run)\n" + "\n".join(
+            f"{mark[x['verdict']]} {x['file']}: {x['kind']} {x['detail']}" + (f": {x['why']}" if x["why"] else "")
+            for x in sorted(res["claims"], key=lambda x: x["verdict"] != "failed"))))
+    return 1 if n["failed"] else 0 if n["proven"] else 2
+
+
+def _yes(args, root):
+    """Whether fm prove may run this tree's code: --yes-run (kept for the tree), a kept yes, or the main checkout's."""
+    if args.yes_run:
+        try:
+            remember(root)
+        except OSError as e:
+            print(f"fm prove: ran on your yes, but couldn't keep it for {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
+    return args.yes_run or trusted(root) or _lane_trusted(c.find_project(os.getcwd()), root)
+
+
 def cmd_prove(args):
     import fmcli
     import fmfind
+    if args.docs:  # T-2381: the docs' claims about the repo's own CLI
+        return cmd_docs_proof(args)
     root = os.path.abspath(args.path)
     if not os.path.isdir(root):
         print(f"fm prove: not a directory: {args.path}", file=sys.stderr)
         return 2
     if args.migration:  # T-2288: the tree's own migration files, run on a copy
-        if args.yes_run:
-            try:
-                remember(root)
-            except OSError as e:
-                print(f"fm prove: ran on your yes, but couldn't keep it for {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
         try:
-            return cmd_migration(args, root, args.yes_run or trusted(root)
-                                 or _lane_trusted(c.find_project(os.getcwd()), root))
+            return cmd_migration(args, root, _yes(args, root))
         except (OSError, shutil.Error) as e:
             print(f"fm prove: couldn't copy {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
             return 2

@@ -7245,6 +7245,12 @@ def _build_parser(only=None):
             "re-found cold; runs the tree's tests, so only in a tree you commit to (T-2122); exit 1 when one is proven")
     s.add_argument("path", nargs="?", default=".", help="the tree to prove in (default: here)")
     s.add_argument("--limit", type=int, default=10, help="prove the best N candidates (default 10)")
+    s.add_argument("files", nargs="*", help="--docs: the docs files to check (default: all the repo's markdown)")
+    s.add_argument("--docs", action="store_true", help="instead: check what the docs say about the repo's own CLI "
+                   "(paths, make/npm targets, flags, subcommands, fenced commands) against its files, each claim proven, "
+                   "failed or unproven; a flag or subcommand no non-doc file has fails in any tree; in a trusted tree "
+                   "fenced commands are checked against --help and run on a throwaway copy; exit 0 none failed, 1 a "
+                   "failure, 2 nothing checkable (T-2381)")
     s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests, kept for this tree")
     s.add_argument("--migration", action="store_true", help="instead: run the tree's plain SQL NAME.up.sql/NAME.down.sql "
                    "migrations up, down, up on a throwaway sqlite file and compare the schema each time; trusted trees "
