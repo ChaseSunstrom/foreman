@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 A tower of generations toward one goal the user wrote (gen-0). Tower files change only through `fm genesis put`,
 every choice goes through `fm decide`, and anything that leaves the machine needs its grant.
-Under full autonomy with a standing goal or mandate, a drained queue with 10+ done tasks starts the tower by itself, once
+Under full autonomy with a standing goal or mandate the user's own words back (a user task or steer), a drained queue with 10+ done tasks starts the tower by itself, once
 (T-2178: gen-0 drafted from the user's own goal text, sealed, one `fm decide` row); with no goal, an ended goal, standard
 autonomy or a sensitive project, `fm scout` only offers it and waits on the user's yes.
 A user steer mid-run becomes a standing rule plus its check in the same task:

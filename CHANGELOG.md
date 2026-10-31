@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Genesis now starts itself, once, when the queue runs dry under full autonomy and a standing goal or mandate is backed by your own words (a user-sourced task or a user steer): gen-0 is drafted from that text with no model call, sealed, and recorded as a decision, and the next drive is told to run `fm genesis step`; with no goal, an ended or session-written one, quoted lines from other tasks, standard autonomy or a sensitive project it only offers, as before
+
 - `fm genesis drift` and the put-time cold read now share one whole-line CLEAN verdict pattern: `CLEANUP needed`, `Not CLEAN`, `CLEAN-ish` and `CLEAN but …` no longer pass
 - `fm task finish`'s Landed line adds "(+N held for T-…)" for files an open task holds, and says "files already in <sha> (not this task's commit)" when no commit made since the task began (its own, or one naming it, such as a lane's "Merge T-N") touches its files
 - A lane's merge-conflict brief now gives steps that work from the main checkout: message the lane's builder, or `cd` into the worktree as its own command, with a drop-and-redo fallback
