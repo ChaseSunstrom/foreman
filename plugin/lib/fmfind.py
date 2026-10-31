@@ -975,15 +975,81 @@ def _run_tool(argv, root, env):
         return texts[0], texts[1], proc.returncode, why
 
 
+# T-2240, the tree-sitter rung: .scm queries as data, only Foreman's own (ladder_rules next to this file; a repo's files
+# never add one), run through an optional tree_sitter binding plus tree_sitter_language_pack. Parsing executes nothing.
+RULES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ladder_rules")
+TS_LANG = {"python": (".py",), "javascript": (".js", ".mjs", ".cjs", ".jsx")}
+TS_MAX, TS_T = 512 << 10, 30  # a file's bytes (over it is skipped), and the rung's seconds in all
+
+
+def _ts_rules(lang):
+    """[{"name", "kind", "says", "query"}] from RULES/lang/*.scm: a header of `; kind:` and `; message:` lines, then the query."""
+    out, d = [], os.path.join(RULES, lang)
+    for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+        try:
+            with open(os.path.join(d, n), encoding="utf-8") as f:
+                text = f.read(1 << 16)
+        except OSError:
+            continue
+        head = dict(m.groups() for m in re.finditer(r"^; (kind|message): (.+)$", text, re.M))
+        if n.endswith(".scm") and head.get("message"):
+            out.append({"name": n[:-4], "kind": head.get("kind", "bug"), "says": head["message"], "query": text})
+    return out
+
+
+def _ts_rung(root, p=None):
+    """(findings, notes): ts:RULE leads. No binding (or pack) is one note and one capability-miss, filed only when the tree
+    holds a file of a rule language; a file over TS_MAX, or any link, is not parsed (_files leaves those out)."""
+    import time
+    files = None
+    todo = [(lang, exts, rules) for lang, exts in TS_LANG.items() if (rules := _ts_rules(lang))]
+    found, notes, end = [], [], time.monotonic() + TS_T
+    for lang, exts, rules in todo:
+        if files is None:
+            files = _files(root)[0]  # ponytail: a second read of the tree (scan reads it again); share it if that costs
+        mine = [(r, t) for r, t in files if r.lower().endswith(exts) and len(t.encode("utf-8", "replace")) <= TS_MAX]
+        if not mine:
+            continue
+        try:
+            import tree_sitter
+            import tree_sitter_language_pack as pack
+        except ImportError:
+            notes.append("ts: tree-sitter rung skipped: the tree_sitter binding or tree_sitter_language_pack is not installed")
+            if p:
+                import fmeco
+                fmeco.capture_once(p, "Missing tool tree-sitter: find it (fm plugins find tree-sitter) or build it (script + test)\n"
+                                   "capability-miss: tree-sitter", "FEATURE", "self", key="capability-miss: tree-sitter")
+            return found, notes
+        try:
+            language = pack.get_language(lang)
+            parser = tree_sitter.Parser(language)
+            queries = [(r, language.query(r["query"])) for r in rules]
+            for rel, text in mine:
+                if time.monotonic() > end:
+                    notes.append(f"ts: stopped after {TS_T}s")
+                    return found, notes
+                data = text.encode("utf-8", "replace")
+                root_node = parser.parse(data).root_node
+                for r, q in queries:
+                    caps = q.captures(root_node)
+                    nodes = caps.get("m", []) if isinstance(caps, dict) else [n for n, name in caps if name == "m"]
+                    found += [_found("ts:" + r["name"], r["kind"], rel, _int(n.start_point[0] + 1), "", r["says"]) for n in nodes[:50]]
+        except Exception as e:  # noqa: BLE001 — a binding, grammar or query that fails is a note, never a crash
+            notes.append(f"ts: {lang} rules failed ({type(e).__name__}: {c.fit(c.plain(str(e)), 100)})")
+    return found, notes
+
+
 def ladder(root, p=None, sandbox=False):
-    """(findings, notes): the tool rung over root. Runs nothing unless fmprove.trusted(root) or sandbox (a caller's
-    argument: an exam's throwaway render; no file in a tree and no environment variable can set it). Findings are
-    tool:NAME leads; a selected tool not on PATH is captured once under the capability-miss key (project p, if any)."""
+    """(findings, notes): the tool rung, then the tree-sitter rung, over root. Tools run nothing unless fmprove.trusted(root)
+    or sandbox (a caller's argument: an exam's throwaway render; no file in a tree and no environment variable can set it);
+    the tree-sitter rung only parses, so it needs no trust. Findings are tool:NAME and ts:RULE leads; a selected tool not
+    on PATH is captured once under the capability-miss key (project p, if any)."""
     import fmprove
     root = os.path.realpath(root)  # trust is judged on the resolved path, and the tools run there
+    ts, tnotes = _ts_rung(root, p)
     if not (sandbox or fmprove.trusted(root)):
-        return [], ["tool rung skipped: not a trusted tree (fm prove --yes-run PATH says yes to one)"]
-    env, found, notes = _tool_env(root), [], []
+        return ts, ["tool rung skipped: not a trusted tree (fm prove --yes-run PATH says yes to one)"] + tnotes
+    env, found, notes = _tool_env(root), [], tnotes
     for t in TOOLS:
         if not any(stat.S_ISREG(st.st_mode) for m in t["selects"] if (st := _lstat(os.path.join(root, m)))):
             continue
@@ -1018,7 +1084,7 @@ def ladder(root, p=None, sandbox=False):
             notes.append(f"tool:{t['name']}: exit {rc} with {len(rows)} finding(s); stderr: {first}")
         found += [_found("tool:" + t["name"], t["kind"], rel, line, "", c.fit(c.plain(says), 200))
                   for rel, line, says in rows[:500]]
-    return found, notes
+    return found + ts, notes
 
 
 def _lstat(path):
