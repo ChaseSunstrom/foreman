@@ -309,7 +309,7 @@ class ImportCards(_CardCase):
         # T-1036: a walrus in the checklist comprehension bound r in cmd_audit's scope and broke its L-tier path
         tid = self.task(title="Big one", type_="FEATURE", tier="L", focus=False)
         for sec in ("Interpretation", "Approach (options → choice → why)", "Build vs reuse", "Risks and rollback"):
-            self.fm("task", "set", tid, "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a")
+            self.fm("task", "set", tid, "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a")
         self.fm("task", "set", tid, "approved=true")
         self.fm("focus", tid)
         self.map([card("typescript", "lang", 5, "ext:.ts", "ext:.tsx"), card("react", "web", 3, "dep:react")])

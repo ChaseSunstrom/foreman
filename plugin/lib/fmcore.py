@@ -1291,6 +1291,7 @@ def _ledger(text, code=False):
 
 def _unmarked(text):
     """Typed text can't carry the marks fm appends ([tree …], [ran]): they would forge a worktree id or a run."""
+    text = re.sub(r"\(cold read\b", "(cold-read", text)  # T-2338: the cold-read mark is fm's alone
     return re.sub(r"\[(tree|ran|inconclusive|rewound)\b", r"(\1", text)
 _TS_TAIL = lazy(r"\((\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\)\s*$")
 DEFAULT_LENSES = ("intent", "adversary", "edge", "operator", "maintainer")  # what M/L reviews run by default
@@ -1618,13 +1619,14 @@ class Brief:
         self._append_line(self.ASSUMPTIONS, f"- [assumed] {_ledger(text)}")
         return len(self.assumptions())
 
-    def mark_assumption(self, n, status, how):
+    def mark_assumption(self, n, status, how, cold=False):
         lines, k = self.section(self.ASSUMPTIONS).splitlines(), 0
         for i, x in enumerate(lines):
             if x.startswith("- "):
                 k += 1
                 if k == n:
-                    lines[i] = f"- [{status}: {_ledger(how).replace(']', ')')}] {_ASSUME_RE.match(x).group(3)}"
+                    mark = f" ({COLD_MARK})" if cold and status == "verified" else ""  # T-2338
+                    lines[i] = f"- [{status}: {_ledger(how).replace(']', ')')}{mark}] {_ASSUME_RE.match(x).group(3)}"
                     self.set_section(self.ASSUMPTIONS, "\n".join(lines) + "\n")
                     return True
         return False
@@ -2614,7 +2616,38 @@ _LET_RE = lazy(r"(?:^|[\s(*#])([A-Za-z])[.)][ \t]*(?=[^\s…])")  # "A)" "(B)" "
 _WORD_RE = lazy(r"\b(?:option|approach|reading)\s+(\w)\b[\s:.)*\-]*(?!(?:option|approach|reading)\s+\w\b)(?=\w)", re.I)  # "Option A: x", "**Reading 1** x"
 _BULLET_RE = lazy(r"^\s*[-*]\s+(?=\w)", re.M)
 _CHOICE_RE = lazy(r"\b(?:choice|choose|chose|chosen|decision|decided)\b|\bgo(?:ing)? with\b", re.I)
-_SPIKE_RE = lazy(r"research/[\w.-]+|\bspike\s+T-\d+", re.I)
+_CHOICE_PCT_RE = lazy(r"(?:\b(?:choice|choose|chose|chosen|decision|decided)\b|\bgo(?:ing)? with\b)[^\n]*?\((\d{1,3})%\)", re.I)
+_ASSUME_PCT_RE = lazy(r"\((\d{1,3})%\)")
+_SPIKE_RE = lazy(r"research/[\w.-]+|\bspike\s+T-\d+", re.I)  # only S still reads these (M/L need a cold-read verify)
+LOW_CONFIDENCE = 30  # T-2338: what a "(low)" assumption stands for as a percent
+COLD_MARK = "cold read: holds"  # T-2338: written only by fm task assume, after a tool-less reader agreed (never typed)
+_BAR_FALLBACK = {"research": 70, "race": 55}
+
+
+def stated_confidence(approach):
+    """T-2338: the percent the Approach's choice states ('Choice 2 (70%): why', or a '(65%)' later on a choice line); the
+    last one wins (a changed mind). None when there is none, or it isn't 0-100. The one parser the plan gate, fm next
+    and the calibration ledger share."""
+    m = list(_CHOICE_PCT_RE.finditer(approach or ""))
+    return int(m[-1].group(1)) if m and int(m[-1].group(1)) <= 100 else None
+
+
+def assumption_confidence(text, low=True):
+    """T-2338: an assumption's percent ('(50%)'); with low, '(low)' stands for LOW_CONFIDENCE (the gate's reading; the
+    ledger passes low=False: an invented number isn't a stated one). None when it states none."""
+    m = _ASSUME_PCT_RE.search(text or "")
+    if m:
+        return int(m.group(1)) if int(m.group(1)) <= 100 else None
+    return LOW_CONFIDENCE if low and "(low)" in (text or "").lower() else None
+
+
+def confidence_bar(b, name):
+    """The research or race bar of the brief's project (the calibration ledger moves it), the default when unreadable."""
+    try:
+        import fmoutcomes
+        return fmoutcomes.bars(Project("", "", os.path.dirname(os.path.dirname(b.path))))[name]
+    except Exception:
+        return _BAR_FALLBACK[name]
 
 
 def _run(idx):
@@ -2716,9 +2749,12 @@ def _content_gaps(b):
         if ap.strip() and n < 3:
             dup = "; some share most of their words, so they count once" if len(parts) > _distinct(parts) else ""
             gaps.append(f"Approach names {n} option{'s' * (n != 1)}; 3+ options needed{dup} (fm task set {b.id} --section Approach "
-                        "--text '1) … 2) … 3) … Choice 1: why', each with words)")
+                        "--text '1) … 2) … 3) … Choice 1 (70%): why', each with words)")
         if ap.strip() and not _CHOICE_RE.search(ap):
-            gaps.append(f"a choice in Approach (fm task set {b.id} --section Approach: add 'Choice N: why')")
+            gaps.append(f"a choice in Approach (fm task set {b.id} --section Approach: add 'Choice N (NN%): why')")
+        elif ap.strip() and stated_confidence(ap) is None:  # T-2338: the number that routes the next step
+            gaps.append(f"a confidence on the choice in Approach: the percent you would bet it holds (fm task set {b.id} "
+                        "--section Approach: write 'Choice N (NN%): why', NN from 0 to 100)")
         bare = [str(i) for i, p in enumerate(parts, 1) if not _OUTCOME_RE.search(p)]
         if bare:
             gaps.append(f"option {', '.join(bare)} in Approach has no likely outcome or failure mode (fm task set {b.id} "
@@ -2738,11 +2774,24 @@ def _content_gaps(b):
     if b.tier == "L":
         if not b.section("Risks and rollback").strip():
             gaps.append(f"Risks and rollback (fm task set {b.id} --section 'Risks and rollback': what fails, what undoes it)")
-    low = [l for l in b.section(b.ASSUMPTIONS).splitlines()
-           if "(low)" in l.lower() and not re.match(r"- \[(?:verified|false)\b", l) and not _SPIKE_RE.search(l)]
-    if low:
-        gaps.append(f"research or a spike for the low-confidence assumption {low[0][:60]!r} (fm research NAME, then name "
-                    "research/NAME on the line; or a spike task: 'spike T-NNNN'; or verify it: fm task assume)")
+    if b.tier not in ("M", "L"):  # T-2338: S is untouched: a "(low)" assumption still waits for research, a spike or a verify
+        low = [l for l in b.section(b.ASSUMPTIONS).splitlines()
+               if "(low)" in l.lower() and not re.match(r"- \[(?:verified|false)\b", l) and not _SPIKE_RE.search(l)]
+        if low:
+            gaps.append(f"research or a spike for the low-confidence assumption {low[0][:60]!r} (fm research NAME, then name "
+                        "research/NAME on the line; or a spike task: 'spike T-NNNN'; or verify it: fm task assume)")
+    else:
+        bar = confidence_bar(b, "research")
+        for n, tag, how, text in b.assumptions():
+            pct = assumption_confidence(text)
+            if pct is None or not (pct < bar or "(low)" in text.lower()):
+                continue
+            if tag == "verified" and f"({COLD_MARK})" in (how or ""):
+                continue  # fm wrote the marker: a run or a note that passed, and a cold reader agreed
+            gaps.append(f"assumption {n} {text[:60]!r} is at {pct}%, under the {bar}% research bar: check it with a command "
+                        f"that can fail (fm task assume {b.id} verify {n} --run CMD), or write what you found (fm research "
+                        f"NAME, then fm task assume {b.id} verify {n} --from research/NAME), or close a spike (--from T-NNNN); "
+                        "a cold reader must agree it holds")
     return gaps
 
 
@@ -3483,6 +3532,36 @@ def expired_decisions(p):
     return out
 
 
+def race_open(b):
+    """T-2338, T-2271: the Approach names a runner-up and the task was never raced (neither side of a race)."""
+    return not (b.meta.get("race") or b.meta.get("race_of")) \
+        and _count_options(b.section("Approach (options → choice → why)")) >= 2
+
+
+def race_line(b):
+    """T-2338: the one sentence that sends a task to the evidence: the stuck rung and the confidence trigger both say it.
+    An L task isn't raced as code: its design is, by another model reading the plan."""
+    if b.tier == "L":
+        return (f"design race: fm second plan {b.id} (another model reads the plan and argues the runner-up design before "
+                "any edit)")
+    return (f"fm lane race {b.id} (a builder takes the runner-up; both are scored on this task's checks and the better "
+            f"one merges)")
+
+
+def race_ask(b):
+    """T-2338: why a task races before any edit, or None: its choice states a confidence under the race bar, a runner-up
+    is on file, it was never raced, and nothing has been done on it yet. An L task's ask ends once its plan was read."""
+    if b.status not in ("planned", "active") or not race_open(b) or b.has_evidence() or any(s.done for s in b.steps()):
+        return None
+    if b.tier == "L" and b.section("Plan review").strip():
+        return None
+    pct = stated_confidence(b.section("Approach (options → choice → why)"))
+    bar = confidence_bar(b, "race")
+    if pct is None or pct >= bar:
+        return None
+    return f"choice confidence {pct}% is under the race bar ({bar}%) and a runner-up is on file: {race_line(b)}"
+
+
 def stuck_rung(b):
     """T-0611: the next rung when the current step keeps failing: its failed fm runs since its last pass, and the
     task's open hypotheses. None while it isn't stuck."""
@@ -3503,10 +3582,8 @@ def stuck_rung(b):
     if fails >= 3 and hyps >= 2:
         return (f"stuck, rung 3{why}: a differential table — one probe per open hypothesis, run once each, and record "
                 f"what each rules out (fm task hypo {b.id} …) before another fix")
-    if fails >= 3 and b.tier in ("S", "M") and not (b.meta.get("race") or b.meta.get("race_of")) \
-            and _count_options(b.section("Approach (options → choice → why)")) >= 2:  # T-2271: evidence picks
-        return (f"stuck, rung 3{why}: the Approach names another way, so race it: fm lane race {b.id} (a builder takes "
-                f"the runner-up; both are scored on this task's checks and the better one merges)")
+    if fails >= 3 and b.tier in ("S", "M") and race_open(b):  # T-2271: evidence picks
+        return f"stuck, rung 3{why}: the Approach names another way, so race it: {race_line(b)}"
     if fails >= 3:
         return f"stuck, rung 3{why}: state two or more hypotheses, each with one probe (fm task hypo {b.id} add …)"
     if fails >= 2:
@@ -3592,13 +3669,16 @@ def next_for(p, briefs=None):
     T-0247: a decision whose revisit trigger fired rides along."""
     briefs = briefs if briefs is not None else load_briefs(p)  # T-2016: one load for every check below
     b, st, action = _next_for(p, briefs)
-    if b is not None and b.tier == "L" and b.status == "planned" and not b.meta.get("approved") \
+    rung = stuck_rung(b) if b is not None and b.status == "active" else None
+    ask = race_ask(b) if b is not None else None  # T-2338: a low-confidence choice goes to the evidence first (before any
+    if ask:  # work, so never beside a stuck rung: the two share race_open and race_line)
+        action += f" · {ask}"
+    elif b is not None and b.tier == "L" and b.status == "planned" and not b.meta.get("approved") \
             and not b.section("Plan review").strip():  # T-0662: L plans get a second read before approval
         action += f" · before approving it: fm second plan {b.id} (another model reads the plan; protocols.json)"
     if b is not None and b.meta.get("cost_cap") and str(b.meta.get("cap_hit")) == str(b.meta["cost_cap"]):  # T-1127
         action = (f"{b.id}: its cost cap was hit (fm cost --task {b.id}): fm checkpoint and tell the user; they raise "
                   f"it (fm task set {b.id} cost_cap=…) or close it · then: " + action)
-    rung = stuck_rung(b) if b is not None and b.status == "active" else None
     if rung:  # T-0611: the escalation ladder, from this step's failed runs and open hypotheses
         action += f" · {rung}"
     briefs = briefs if briefs is not None else load_briefs(p)

@@ -442,6 +442,10 @@ def race(p, b, args):
         if b.meta.get("race") or b.meta.get("race_of"):
             raise c.PolicyError(f"{b.id} is already racing (fm lane race {b.id} --score)")
         _ready(p, b)
+        if b.status == "active":  # T-2338: fm next names the race while the task is focused and untouched: release it
+            b.meta["status"] = "planned"
+            b.append_log("released to race: focused, no work on it yet")
+            c.save_brief(p, b)
         nid = c.next_id(p)
         nb = c.Brief.parse(b.render())
         nb.path, nb.meta["id"], nb.meta["race_of"], nb.meta["status"] = None, nid, b.id, "planned"
@@ -488,7 +492,8 @@ def _ready(p, b):
     import fmcli
     if b.tier not in ("S", "M"):
         raise c.PolicyError(f"{b.id} is {b.tier}: a race takes an S or M task")
-    if b.status in c.CLOSED or b.status in ("active", "verifying") or c.held_elsewhere(b):
+    idle = b.status == "active" and not b.has_evidence() and not any(s.done for s in b.steps())  # T-2338: no work yet
+    if b.status in c.CLOSED or b.status == "verifying" or (b.status == "active" and not idle) or c.held_elsewhere(b):
         raise c.PolicyError(f"{b.id} is {b.status}: a race takes a task nobody is working on")
     gaps = c.plan_gaps(b, c.effective_autonomy(p))
     if gaps:

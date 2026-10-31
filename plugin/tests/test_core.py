@@ -7,7 +7,7 @@ import subprocess
 import time
 import unittest
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, stub_claude
 
 import fmcore as c
 
@@ -519,7 +519,7 @@ class Stages(unittest.TestCase):
         b.set_section("Interpretation", "Reading 1: login times out on slow networks.\nReading 2: the server is slow.")
         b.set_section("Approach (options → choice → why)",
                       "1) retry with backoff; fails if: retries pile up 2) use what exists: a longer timeout; likely outcome: too slow "
-                      "3) do less: a queue; breaks ordering. Choice 1: cheapest.")
+                      "3) do less: a queue; breaks ordering. Choice 1 (80%): cheapest.")
         b.set_section("Risks and rollback", "Retries pile up; revert the commit.")
         b.add_ac("login works on 3G", verify="pytest -k slow")
         b.add_step("reproduce")
@@ -536,8 +536,8 @@ class Stages(unittest.TestCase):
             self.assertIn("3+ options", gaps(b))
             self.assertIn("fm task set", gaps(b))  # the gap names its fix
             a, b2, c3 = "reuse existing code; fails if: x", "do less, skip it; fails if: y", "a queue; breaks z"  # T-2335
-            for text in (f"1. {a}\n2. {b2}\n3. {c3}\nChosen: a", f"- {a}\n- {b2}\n- {c3}\nchose a",
-                         f"Option A: {a}\nOption B: {b2}\nOption C: {c3}\nChoice: B"):
+            for text in (f"1. {a}\n2. {b2}\n3. {c3}\nChosen: a (80%)", f"- {a}\n- {b2}\n- {c3}\nchose a (80%)",
+                         f"Option A: {a}\nOption B: {b2}\nOption C: {c3}\nChoice: B (80%)"):
                 b.set_section(AP, text)
                 self.assertEqual(c.plan_gaps(b, "full"), [], text)
             b.set_section(AP, "1) a 2) b 3) c")
@@ -562,11 +562,13 @@ class Stages(unittest.TestCase):
         self.assertIn("research", " ".join(c.plan_gaps(b, "full")))
         b.set_section(c.Brief.ASSUMPTIONS, "- [assumed] the API is paged (low)\n- [assumed] other (high)\n")
         self.assertIn("research", " ".join(c.plan_gaps(b, "full")))
-        for line in ("- [assumed] the API is paged (low); see research/api-paging",
+        for line in ("- [assumed] the API is paged (low); see research/api-paging",  # T-2338: a typed line is no evidence
                      "- [assumed] the API is paged (low); spike T-0042",
                      "- [verified: ran it] the API is paged (low)"):
             b.set_section(c.Brief.ASSUMPTIONS, line + "\n")
-            self.assertEqual(c.plan_gaps(b, "full"), [], line)
+            self.assertIn("cold reader", " ".join(c.plan_gaps(b, "full")), line)
+        b.mark_assumption(1, "verified", "ran it", cold=True)  # fm's own mark: a command passed and a cold reader agreed
+        self.assertEqual(c.plan_gaps(b, "full"), [])
         s = self.brief("S")
         s.add_ac("works")
         s.add_step("do it")
@@ -601,20 +603,20 @@ class Stages(unittest.TestCase):
     def test_option_formats_and_hollow_markers(self):  # T-2269 review
         AP = "Approach (options → choice → why)"
         e, l, o = "reuse existing code; fails if: p", "do less, skip it; fails if: q", "a queue; breaks r"  # T-2335
-        real = (f"Options: (1) {e} (2) {l} (3) {o} Choice 2: two",
+        real = (f"Options: (1) {e} (2) {l} (3) {o} Choice 2 (80%): two",
                 f"1) --bench on evidence; fails if: p 2) `fm bench` verb, reuse existing; breaks r 3) \"last commit\" compare, "
-                f"do less; fails if: q. Choice 1",  # T-2285: flags, code
-                f"1) {e} 2) {l} 3) {o} Choice 1",
-                f"Options: (A) {e} (B) {l} (C) {o} Choice: A",
-                f"A) {e}\nB. {l}\nC) {o}\nDecision: A",
-                f"Option A: {e}\nApproach B: {l}\nOption C: {o}\nGo with B",
-                f"**Option 1** {e}\n**Option 2** {l}\n### Option 3\n{o}\nChoose 1",
-                f"1. {e} 2. {l} 3. {o} Chosen: 1")
+                f"do less; fails if: q. Choice 1 (80%)",  # T-2285: flags, code
+                f"1) {e} 2) {l} 3) {o} Choice 1 (80%)",
+                f"Options: (A) {e} (B) {l} (C) {o} Choice: A (80%)",
+                f"A) {e}\nB. {l}\nC) {o}\nDecision: A (80%)",
+                f"Option A: {e}\nApproach B: {l}\nOption C: {o}\nGo with B (80%)",
+                f"**Option 1** {e}\n**Option 2** {l}\n### Option 3\n{o}\nChoose 1 (80%)",
+                f"1. {e} 2. {l} 3. {o} Chosen: 1 (80%)")
         for text in real:
             b = self.plan(self.brief("M"))
             b.set_section(AP, text)
             self.assertEqual(c.plan_gaps(b, "full"), [], text)
-        for text in ("1) … 2) … 3) … Choice 1: …", "- …\n- …\n- …\nChoice: …", "Option A:\nOption B:\nOption C:\nChoice"):
+        for text in ("1) … 2) … 3) … Choice 1 (80%): …", "- …\n- …\n- …\nChoice: …", "Option A:\nOption B:\nOption C:\nChoice"):
             b = self.plan(self.brief("M"))
             b.set_section(AP, text)
             self.assertTrue(c.plan_gaps(b, "full"), text)
@@ -720,7 +722,7 @@ class PlanContent(unittest.TestCase):
     AP = "Approach (options → choice → why)"
     GOOD = ("1) add `--strict` to the gate; fails if: callers pass old flags. "
             "2) use what exists: the audit table already has it; fails if: it lacks the column. "
-            "3) do less: only warn; likely outcome: the gap stays. Choice 2: no new code.")
+            "3) do less: only warn; likely outcome: the gap stays. Choice 2 (80%): no new code.")
 
     def brief(self, tier="M", interp="Reading 1: the gate counts. Reading 2: the gate reads the text.", ap=GOOD):
         b = c.Brief.new("T-0001", "Gate plans", "FEATURE", tier, now="2026-01-01T00:00:00Z")
@@ -755,7 +757,7 @@ class PlanContent(unittest.TestCase):
 
     def test_an_option_without_an_outcome_is_refused_with_its_number(self):
         ap = ("1) add `--strict` to the gate; fails if: callers pass old flags. 2) use what exists: the audit table. "
-              "3) do less: only warn; likely outcome: the gap stays. Choice 1: why")
+              "3) do less: only warn; likely outcome: the gap stays. Choice 1 (80%): why")
         g = self.gaps(self.brief(ap=ap))
         self.assertIn("option 2", g)
         self.assertNotIn("option 1", g)
@@ -763,31 +765,31 @@ class PlanContent(unittest.TestCase):
 
     def test_no_use_what_exists_or_do_less_option_is_refused(self):
         ap = ("1) add `--strict`; fails if: old flags. 2) a new `gate` verb; breaks the CLI surface. "
-              "3) a cold child judges the plan; breaks on a slow call. Choice 1: smallest.")
+              "3) a cold child judges the plan; breaks on a slow call. Choice 1 (80%): smallest.")
         g = self.gaps(self.brief(ap=ap))
         self.assertIn("use-what-exists", g)
         self.assertIn("do-less", g)
         one = "1) add `--strict`; fails if: old flags. "
         exists, less = "2) reuse the existing audit table; fails if: no column. ", "3) do nothing; likely outcome: the gap stays. "
-        self.assertEqual(c.plan_gaps(self.brief(ap=one + exists + less + "Choice 1: smallest."), "full"), [])
-        g = self.gaps(self.brief(ap=one + exists + "3) a queue; breaks on a slow call. Choice 1: smallest."))
+        self.assertEqual(c.plan_gaps(self.brief(ap=one + exists + less + "Choice 1 (80%): smallest."), "full"), [])
+        g = self.gaps(self.brief(ap=one + exists + "3) a queue; breaks on a slow call. Choice 1 (80%): smallest."))
         self.assertIn("do-less", g)
         self.assertNotIn("use-what-exists", g)
-        g = self.gaps(self.brief(ap=one + "2) a queue; breaks on a slow call. " + less + "Choice 1: smallest."))
+        g = self.gaps(self.brief(ap=one + "2) a queue; breaks on a slow call. " + less + "Choice 1 (80%): smallest."))
         self.assertIn("use-what-exists", g)
         self.assertNotIn("do-less", g)
 
     def test_near_copy_options_count_once(self):
         ap = ("1) use what exists: reuse the audit table for the gate checks; fails if: no column. "
               "2) use what exists: reuse the audit table for the gate checks now; fails if: no column. "
-              "3) use what exists: reuse the audit table for the gate checks here; fails if: no column. Choice 1: why")
+              "3) use what exists: reuse the audit table for the gate checks here; fails if: no column. Choice 1 (80%): why")
         g = self.gaps(self.brief(ap=ap))
         self.assertIn("names 1 option", g)
         self.assertIn("share most of their words", g)
 
     def test_flag_and_code_led_options_still_count(self):  # T-2285
         ap = ("1) --strict flag; fails if: old flags. 2) `fm gate` verb reusing the existing table; breaks the surface. "
-              "3) \"do less\" warn only; likely outcome: the gap stays. Choice 1: why")
+              "3) \"do less\" warn only; likely outcome: the gap stays. Choice 1 (80%): why")
         self.assertEqual(c.plan_gaps(self.brief(ap=ap), "full"), [])
 
     def test_numbered_options_with_indented_sub_bullets_split_by_the_numbers(self):
@@ -795,7 +797,7 @@ class PlanContent(unittest.TestCase):
               "   1. read the table\n   2. write the column\n   - a detail\n   - another detail\n"
               "2) use what exists: the audit table already has it; fails if: it lacks the column\n   - a detail\n   - more\n"
               "3) do less: only warn; likely outcome: the gap stays\n   - a detail\n   - more\n"
-              "Choice 2: no new code.")
+              "Choice 2 (80%): no new code.")
         parts = c._split_options(ap)
         self.assertEqual(len(parts), 3, parts)
         self.assertIn("fails if: callers", parts[0])
@@ -804,7 +806,7 @@ class PlanContent(unittest.TestCase):
         self.assertEqual(len(c._split_options(inline)), 3)
 
     def test_bullets_are_options_only_when_no_run_of_markers_reaches_three(self):
-        bullets = "- add it; fails if: x\n- use what exists: b; fails if: y\n- do less: c; fails if: z\nChoice 1: a"
+        bullets = "- add it; fails if: x\n- use what exists: b; fails if: y\n- do less: c; fails if: z\nChoice 1 (80%): a"
         self.assertEqual(c.plan_gaps(self.brief(ap=bullets), "full"), [])
         self.assertEqual(len(c._split_options("1) a b c\n- x y\n- z w\n- v u\n- t s")), 4)  # a run of 1 loses to bullets
 
@@ -815,7 +817,7 @@ class PlanContent(unittest.TestCase):
 
     def test_use_what_exists_and_do_less_come_from_different_options(self):
         ap = ("1) add `--strict`; fails if: old flags. 2) reuse the existing table and do less; fails if: no column. "
-              "3) a queue; breaks on a slow call. Choice 1: smallest.")
+              "3) a queue; breaks on a slow call. Choice 1 (80%): smallest.")
         g = self.gaps(self.brief(ap=ap))
         self.assertIn("different options", g)
         self.assertIn("fm task set T-0001", g)
@@ -828,14 +830,14 @@ class PlanContent(unittest.TestCase):
 
     def test_loose_words_are_no_outcome(self):
         for word in ("but slower", "only if time", "it stays", "gives a table", "cuts a step", "results come", "likely slow"):
-            ap = f"1) add it; fails if: x 2) use what exists: the table, {word} 3) do less: c; fails if: z Choice 1: a"
+            ap = f"1) add it; fails if: x 2) use what exists: the table, {word} 3) do less: c; fails if: z Choice 1 (80%): a"
             self.assertIn("option 2", self.gaps(self.brief(ap=ap)), word)
-        arrow = "1) add it; fails if: x 2) use what exists: the table → slower 3) do less: c; breaks y Choice 1: a"
+        arrow = "1) add it; fails if: x 2) use what exists: the table → slower 3) do less: c; breaks y Choice 1 (80%): a"
         self.assertEqual(c.plan_gaps(self.brief(ap=arrow), "full"), [])
 
     def test_short_options_with_the_same_few_words_stay_distinct(self):
         ap = ("1) add it; fails if: x 2) use what exists: skip it; fails if: it is slow "
-              "3) do less: skip it; fails if: it is slow Choice 1: a")
+              "3) do less: skip it; fails if: it is slow Choice 1 (80%): a")
         self.assertEqual(c.plan_gaps(self.brief(ap=ap), "full"), [])  # 2 content words: too few to call a copy
 
     def test_a_long_run_of_dots_and_spaces_is_not_quadratic(self):
@@ -1426,3 +1428,122 @@ class LaterImports(ForemanTestCase):
         self.assertEqual(env["PATH"], native + os.pathsep + "/nonexistent")
         on = native + os.pathsep + "/usr/bin"
         self.assertEqual(c.claude_path({"FOREMAN_NATIVE_BIN": native, "PATH": on})["PATH"], on)
+
+
+class ConfidenceRoutes(ForemanTestCase):  # T-2338 (Mission 5, #8): one stated number routes the next step
+    OPTS = "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z "
+    HOLDS = "HOLDS: the output shows it."
+    CHECK = "test -d .git"  # lint_verify-clean (ls, true and echo can't fail) and passes in the test repo
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+
+    def task(self, tier="M", choice="Choice 1 (80%): a", assume=None):
+        self.fm("task", "new", "Parser", "--type", "FEATURE", "--tier", tier, "--interpretation",
+                "Reading 1: a. Reading 2: b.", "--approach", self.OPTS + choice, "--ac", "ok :: ls", "--step", "s")
+        if tier == "L":
+            self.fm("task", "set", "T-0001", "--section", "Risks and rollback", "--text", "It breaks; revert.")
+        for a in assume or ():
+            self.fm("task", "assume", "T-0001", "add", a)
+        return "T-0001"
+
+    def focus(self, **kw):
+        return self.fm("focus", "T-0001", check=False, **kw)
+
+    def refused(self, r, *words):
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        for w in words:
+            self.assertIn(w, r.stderr + r.stdout)
+
+    def test_an_m_choice_without_a_confidence_is_refused(self):
+        self.task("M", choice="Choice 1: a")
+        self.refused(self.focus(), "confidence", "Choice N (NN%)")
+
+    def test_an_l_choice_without_a_confidence_is_refused(self):
+        self.task("L", choice="Choice 1: a")
+        self.refused(self.focus(), "confidence", "Choice N (NN%)")
+
+    def test_s_pays_nothing(self):
+        self.task("S", choice="Choice 1: a")
+        self.assertEqual(self.focus().returncode, 0)
+
+    def test_the_stated_number_is_one_parser_for_the_gate_and_the_ledger(self):
+        self.assertEqual(c.stated_confidence("1) a 2) b Choice 2 (70%): why"), 70)
+        self.assertEqual(c.stated_confidence("Choice 1: a (65%)"), 65)
+        self.assertEqual(c.stated_confidence("Choice 1 (40%): a. Choice 2 (90%): changed my mind"), 90)  # the last one
+        self.assertIsNone(c.stated_confidence("Choice 1: a, about 70% sure"))
+        self.assertIsNone(c.stated_confidence("an option (80%) and no choice"))
+        self.assertEqual(c.assumption_confidence("the API is paged (50%)"), 50)
+        self.assertEqual(c.assumption_confidence("the API is paged (low)"), c.LOW_CONFIDENCE)
+        self.assertIsNone(c.assumption_confidence("the API is paged"))
+
+    def test_a_number_over_100_is_not_a_confidence(self):
+        self.task(choice="Choice 1 (150%): a")
+        self.refused(self.focus(), "confidence")
+
+    def test_a_started_task_is_not_regated_for_its_confidence(self):  # T-2269's rule: only an unstarted brief
+        b = c.find_brief(self.p, self.task(choice="Choice 1: a"))
+        b.meta["plan0_at"] = "2026-01-01T00:00:00Z"
+        self.assertEqual([g for g in c.plan_gaps(b, "full") if "confidence" in g], [])
+
+    def test_an_assumption_under_the_bar_is_refused_until_a_verified_check_a_cold_reader_agrees_with(self):
+        tid = self.task(assume=["the API is paged (50%)", "the repo is small (85%)"])
+        self.refused(self.focus(), "assumption 1", "fm task assume")
+        self.assertNotIn("assumption 2", self.focus().stderr)  # 85% is over the bar
+        self.fm("task", "assume", tid, "verify", "1", "--run", self.CHECK, env=stub_claude(self.tmp, "DOES NOT HOLD: no."))
+        self.refused(self.focus(), "assumption 1")  # a disagreement keeps it open
+        self.fm("task", "assume", tid, "verify", "1", "--run", self.CHECK, env=stub_claude(self.tmp, "HOLDS", code=1, name="down"),
+                check=False)
+        self.refused(self.focus(), "assumption 1")  # a failed child keeps it open
+        self.fm("task", "assume", tid, "verify", "1", "--run", self.CHECK, env=stub_claude(self.tmp, self.HOLDS))
+        self.assertEqual(self.focus().returncode, 0, self.focus().stderr)
+
+    def test_a_check_that_cant_fail_or_fails_clears_nothing(self):
+        tid = self.task(assume=["the API is paged (low)"])
+        self.fm("task", "assume", tid, "verify", "1", "--run", "true", env=stub_claude(self.tmp, self.HOLDS), check=False)
+        self.refused(self.focus(), "assumption 1")  # lint_verify: it can't fail
+        self.fm("task", "assume", tid, "verify", "1", "--run", "test -d /nowhere", env=stub_claude(self.tmp, self.HOLDS),
+                check=False)
+        self.refused(self.focus(), "assumption 1")  # exit != 0: false, not verified
+
+    def test_typed_evidence_a_pasted_marker_and_an_open_spike_clear_nothing(self):
+        tid = self.task(assume=["the API is paged (50%)"])
+        self.fm("task", "assume", tid, "verify", "1", "--evidence", "I read the docs", env=stub_claude(self.tmp, self.HOLDS),
+                check=False)
+        self.refused(self.focus(), "assumption 1")
+        b = c.find_brief(self.p, tid)
+        b.set_section(b.ASSUMPTIONS, "- [verified: trust me] the API is paged (50%) (cold read: holds)\n")
+        c.save_brief(self.p, b)
+        self.refused(self.focus(), "assumption 1")  # the marker is fm's to write: typed text can't carry it
+        b.set_section(b.ASSUMPTIONS, "- [assumed] the API is paged (50%); see research/api-paging; spike T-0042\n")
+        c.save_brief(self.p, b)
+        self.refused(self.focus(), "assumption 1")
+        self.fm("task", "set", tid, "--section", b.ASSUMPTIONS, "--text",
+                "- [verified: ran it (cold read: holds)] the API is paged (50%)")  # typed through fm task set: neutralized
+        self.refused(self.focus(), "assumption 1")
+
+    def test_research_or_a_closed_spike_clears_it_once_the_cold_reader_agrees(self):
+        tid = self.task(assume=["the API is paged (50%)"])
+        self.fm("research", "add", "api-paging", input="Fetched /items twice: the second call carried a next cursor.\n")
+        self.fm("task", "assume", tid, "verify", "1", "--from", "research/api-paging",
+                env=stub_claude(self.tmp, "DOES NOT HOLD: the note is about something else"))
+        self.refused(self.focus(), "assumption 1")
+        self.fm("task", "assume", tid, "verify", "1", "--from", "research/api-paging", env=stub_claude(self.tmp, self.HOLDS))
+        self.assertEqual(self.focus().returncode, 0, self.focus().stderr)
+        self.assertIn("cold read: holds", c.find_brief(self.p, tid).section(c.Brief.ASSUMPTIONS))
+
+    def test_each_gap_names_its_fix(self):
+        self.task(assume=["the API is paged (50%)"])
+        err = self.focus().stderr
+        for fix in ("fm research", "--from", "--run"):
+            self.assertIn(fix, err)
+
+    def test_the_stated_numbers_reach_the_ledger_once_at_first_focus(self):
+        tid = self.task(choice="Choice 1 (75%): a", assume=["the repo is small (85%)"])
+        self.assertEqual(self.focus().returncode, 0)
+        self.fm("focus", tid)
+        rows = [json.loads(x) for x in open(os.path.join(self.p.dir, "calibration.jsonl"))]
+        self.assertEqual(sorted((r["kind"], r["stated"]) for r in rows if r.get("task") == tid),
+                         [("assumption", 85), ("choice", 75)])
