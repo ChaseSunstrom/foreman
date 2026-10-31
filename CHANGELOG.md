@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Each new genesis seed and each `fm mission` pack now carries the user's standing rules: every steer still in force, one line each. `fm genesis drift` fails a seed that drops one; an older seed, or a steer newer than the seed, only gets a note
+- `fm loop round` stops re-listing a lagging file once a decision names it, and lists it again when the file changes after that decision
+- `fm code --help` and the site's Foreman Code page can't drift apart: a site test names every verb and flag the page misses
 - 21 new playbooks fill stages that had none for their stack: mobile, embedded, game, data pipeline, Go, serial/bus and Claude Code plugin verification and release, each built on Foreman's stack cards with real commands, indexed and routed.
 - `fm prove` now proves more kinds, only in a tree you said yes to: a flaky test when six fresh reruns both pass and fail with a failure naming it, and a vuln or slow finding when a test a model writes is red three times out of three on an assertion and turns different both when the function is stubbed to raise and when it's stubbed to return a harmless value. A test that fails for its own reason stays a lead, and a sensitive project gets no model-written test.
 - `fm log NAME` now records a note as event `log` with the name inside it, so a session can no longer write an event that Foreman's own checks read (a check run, a genesis stage, a ledger-damage acknowledgement). Notes like `fm log final_verify` still record and show in `fm recall`.

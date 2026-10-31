@@ -1479,12 +1479,16 @@ class GenesisDrift(ForemanTestCase):
         self.fm("decide", "Provisional selection is final", "--cites", "user steer 2026-11-01",
                 "--reverses", "Provisional selection")  # the user's own reversal undoes the 2nd
 
-    def drift2(self, seed, days=0):
-        """put gen-2's seed, date its file days from now (a steer is dated by day), run drift."""
+    def drift2(self, seed, days=0, mtime=None):
+        """put gen-2's seed, date it (its 'as of' and its file) days from now (a steer is dated by day), run drift;
+        mtime=N dates the file alone N days from now."""
         import json
+        import re
         import fmgenesis
-        path = fmgenesis.put(self.p, "gen-2/seed.md", seed + "\nNo Missions this generation.\n")
-        os.utime(path, (time.time() + days * 86400,) * 2)
+        day = time.strftime("%Y-%m-%d", time.gmtime(time.time() + days * 86400))
+        path = fmgenesis.put(self.p, "gen-2/seed.md", re.sub(r"\bas of \d{4}-\d\d-\d\d", "as of " + day, seed)
+                             + "\nNo Missions this generation.\n")
+        os.utime(path, (time.time() + (days if mtime is None else mtime) * 86400,) * 2)
         env = {"PATH": self.bindir + os.pathsep + os.environ["PATH"], "STUB_LOG": self.log, "STUB_REPLY": "CLEAN"}
         r = self.fm("genesis", "drift", "2", "--json", check=False, env=env)
         return json.loads(r.stdout), read_text(os.path.join(self.tower, "gen-2", "drift.md"))
@@ -1527,6 +1531,26 @@ class GenesisDrift(ForemanTestCase):
             r, md = self.drift2(gone, days)
             self.assertEqual(r["verdict"], "clean", r)
             self.assertIn("new since this seed", md)
+
+    def test_review_fixes_restated_steer_once_full_row_and_the_seeds_own_date(self):
+        # T-2160 review: a steer restated with --revisited is carried once; drift prints the whole missed row; the
+        # 'as of' date seed() wrote wins over the file's mtime, which a put or a checkout moves
+        self.steers()
+        self.fm("decide", "Real coverage: every cell names a file and its test", "--cites", "user steer 2026-10-31",
+                "--revisited", "Real coverage")
+        long = "Long horizon decides: " + "each word counts here " * 9
+        self.fm("decide", long, "--cites", "user steer 2026-10-31")
+        self.fm("genesis", "seed", "2")
+        text = read_text(os.path.join(self.tower, "gen-2", "seed.md"))
+        rules = text.split(HEAD, 1)[1].split("\n## ", 1)[0]
+        self.assertIn("every cell names a file and its test", rules)
+        self.assertNotIn("every cell names a file\n", rules + "\n")  # the old wording is settled
+        self.assertIn("as of ", rules)
+        r, md = self.drift2(text.replace(long.strip(), "x"), 2)
+        self.assertEqual(r["verdict"], "drifted", r)
+        self.assertIn(long.strip(), md)  # whole, past 120 characters, so it can be added back as is
+        r, md = self.drift2(text.replace(long.strip(), "x"), 2, mtime=-5)  # an old mtime, a later 'as of'
+        self.assertEqual(r["verdict"], "drifted", r)
 
     def test_a_reworded_must_an_added_never_and_an_unpointed_file_drift(self):
         for seed, files, want in (("# Seed\nSee gen-0.\nMUST: some autonomy.\n", {}, "MUST: some autonomy."),

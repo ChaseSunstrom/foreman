@@ -3224,17 +3224,12 @@ def _settled(parsed, i):
 
 STEER = lazy(r"(?:^|\] )\[?cites: (?:the )?user(?:'s)? steer", re.I)  # T-2114, T-2167: a rule the user's steer asked for
 def steer_rules(p):
-    """T-2160: [(date, one plain line)] for each user steer in decision order, minus one a later decision --reverses
-    names (whole words, 4+ characters); a seed and a mission carry these so a fresh run can't miss them."""
-    rows = _decision_rows(p)
-    out = []
-    for i, (date, tags, text) in enumerate(rows):
-        undone = [w.strip().lower() for _, t, _ in rows[i + 1:] if STEER.search(t)  # only the user's own steer undoes one
-                  for w in re.findall(r"\[reverses: ([^\]]+)\]", t)]
-        if STEER.search(tags) and not any(len(w) >= 4 and re.search(r"(?<!\w)" + re.escape(w) + r"(?!\w)", text.lower())
-                                          for w in undone):
-            out.append((date, " ".join(plain(text).split())))
-    return out
+    """T-2160: [(date, one plain line)] for each user steer still in force, in decision order: one a later steer
+    --reverses or --revisited names is left out, as steer_checks settles it (only the user's own steer settles one);
+    a seed and a mission carry these so a fresh run can't miss them. A row whose date isn't a date is skipped."""
+    steers = [r for r in _decision_rows(p) if STEER.search(r[1])]
+    return [(d, fit(" ".join(plain(t).split()), 300)) for i, (d, _, t) in enumerate(steers)
+            if re.fullmatch(r"\d{4}-\d\d-\d\d", d) and not _settled(steers, i)]
 
 
 def standing_rules(p):

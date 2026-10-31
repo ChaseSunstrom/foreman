@@ -1579,8 +1579,9 @@ def _seed(p, n, agent):
            "verbatim (fm genesis drift checks).", "",
            "## Standing intent", "", "The user's, under gen-0 and over every later steer (T-2191; every cold read sees "
            "it too):", "", intent(), "",
-           "## " + STEERS, "", "The user's steers since gen-0, each still in force (T-2160; fm genesis drift "
-           "checks every row):", "", *c.standing_rules(p), "",
+           "## " + STEERS, "", f"The user's steers since gen-0 as of {time.strftime('%Y-%m-%d', time.gmtime())}, each "
+           "still in force, as sessions recorded them from the user's messages (T-2160; fm genesis drift checks every "
+           "row):", "", *c.standing_rules(p), "",
            "## What this generation is for", "",
            *[f"Top gap: {g}\n" for g in free_beats(p, agent, "train")],  # T-2184: before any cell or Mission
            "Close the open coverage cells, most first, retry every not-yet item, and act on what the critiques asked; "
@@ -1949,14 +1950,15 @@ def drift(p, n):
             notes.append(f"seed.md has no '## {STEERS}' section (written before T-2160): add it with fm genesis put")
         else:
             mine = {" ".join(x.split()) for x in rules.splitlines()}  # whole lines, not a substring of one
-            seeded = time.strftime("%Y-%m-%d", time.gmtime(os.path.getmtime(os.path.join(d, pre + "seed.md"))))
+            m = re.search(r"\bas of (\d{4}-\d\d-\d\d)\b", rules)  # the date seed() wrote; a put or a checkout moves mtime
+            seeded = m[1] if m else time.strftime("%Y-%m-%d", time.gmtime(os.path.getmtime(os.path.join(d, pre + "seed.md"))))
             for date, line in c.steer_rules(p):
                 if f"- {date}: {line}" in mine:
                     continue
                 if date >= seeded:  # a day's grain: a steer on the seed's own day can't be told from one before it
                     notes.append(f"new since this seed ({date}): {c.fit(line, 120)}")
                 else:
-                    found.append(f"seed.md: '## {STEERS}' misses the user's steer {date}: {c.fit(line, 120)}")
+                    found.append(f"seed.md: '## {STEERS}' misses the user's steer row (add it whole): - {date}: {line}")
     read = "skipped: fix the lines above first"  # one paid read per clean candidate, not per failed attempt
     if not found:
         import fmideas
