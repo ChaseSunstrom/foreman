@@ -2957,7 +2957,11 @@ def post_tool_use(pl, ok=True):
         try:  # a success after the session's last failure is its fix; an edit in between makes it a code fix instead
             import fmfixes
             if tool == "Bash":
-                fmfixes.on_success(p, pl.get("session_id"), ti.get("command"))
+                failed = fmfixes.on_success(p, pl.get("session_id"), ti.get("command"))
+                act = c.active_brief_fast(p, p.lane) if failed and p else None
+                if act:  # T-2369: the pair that gets past a capability miss closes it (fmmiss reads this)
+                    c.log_event(p, "fix_paired", task=act.id, session=pl.get("session_id"),
+                                data={"failed": failed, "cmd": c.redact(str(ti.get("command") or ""))[:200]})
             else:
                 fmfixes.on_edit(pl.get("session_id"))
         except Exception:
@@ -3279,18 +3283,25 @@ _MISSING = c.lazy(r"(?m)command not found: (\S+)|(\S+): command not found|No mod
                   r"Cannot find module '?([^\s']+)")  # keep in step with fmcli._ENV_FAILURES
 
 
-def _capability_miss(p, sid, err):
+def _capability_miss(p, sid, err, act=None, cmd=""):
     """T-2270: a missing tool names the find-or-build path once per session; a second session that misses it captures
-    one FEATURE task. Ledger only: no network, no plugin search. The name is untrusted: a plain tool name or nothing."""
+    one FEATURE task. Ledger only: no network, no plugin search. The name is untrusted: a plain tool name or nothing.
+    T-2369: with an active task, every miss is logged with the task, the kind and the command (fmmiss reads them: the
+    task can't finish until a run gets past it); the note and the capture stay once per session."""
     m = _MISSING.search(err[-4000:])
     name = next((x for x in m.groups() if x), "") if m else ""
     if not re.fullmatch(r"[A-Za-z0-9_.+-]{1,64}", name):
         return None
     seen = {e.get("session_id") for e in c.ledger_tail(p, 1500)
             if e.get("event") == "capability_miss" and (e.get("data") or {}).get("name") == name}
+    if sid in seen and not act:
+        return None
+    data = {"name": name}
+    if act:
+        data.update(kind="module" if m.lastindex in (3, 4) else "command", cmd=c.redact(str(cmd or ""))[:200])
+    c.log_event(p, "capability_miss", task=act.id if act else None, data=data, session=sid)
     if sid in seen:
         return None
-    c.log_event(p, "capability_miss", data={"name": name}, session=sid)
     if seen:  # a second session: one task, ever (the key line)
         import fmeco
         fmeco.capture_once(p, f"Missing tool {name}: find it (fm plugins find {name}) or build it (script + test)\n"
@@ -3321,7 +3332,8 @@ def post_tool_use_failure(pl):
         import fmrecall
         act = c.active_brief_fast(p, p.lane)
         note = " ".join(filter(None, [fix, fmrecall.note_failure(p, act.id if act else None, err),
-                                      _capability_miss(p, pl.get("session_id"), err)]))
+                                      _capability_miss(p, pl.get("session_id"), err, act,
+                                                       (pl.get("tool_input") or {}).get("command"))]))
         if re.search(r"(?m)^(Traceback|FAIL:|ERROR:|\s+at .+:\d+)", err):  # T-0706: a red run comes with suspects
             import fmdebug
             note = " ".join(filter(None, [note, fmdebug.line(p, err)]))

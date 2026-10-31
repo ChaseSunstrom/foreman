@@ -752,6 +752,8 @@ def cmd_task(args):
             if b.tier in ("M", "L") and not lesson and not b.section("Lessons").strip():
                 reasons.append(f"lesson missing: fm task done {b.id} --lesson \"<what the next similar task should "
                                f"know>\" (or \"none: <why>\"); recall shows it on related work")
+            import fmmiss  # T-2369: fm task done is no way round finish's refusal
+            reasons += fmmiss.gaps(p, b)
             if reasons:
                 lead = "" if hasattr(args, "audit") else (  # T-0849: fm task done, not finish's own close
                     f" — one call settles most of it: fm task finish {b.id} --run \"<test cmd>\" --audit \"<how>\""
@@ -1119,6 +1121,8 @@ def task_finish(p, args):
         + _file_map_gaps(p, b) + [g for g in [b.proof_gap(then=[cmd for _, _, cmd in todo] + [args.run])] if g] \
         + _proved_gaps(p, b, then=[cmd for _, _, cmd in todo] + [args.run]) \
         + _adversary_gaps(p, b, lenses)  # T-1906, T-1907: asked before anything runs
+    import fmmiss  # T-2369: an open capability miss refuses every try; only a later passing run closes it
+    gaps += fmmiss.gaps(p, b)
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always

@@ -1653,6 +1653,32 @@ class CapabilityMiss(HookCase):
         self.assertEqual(self.tasks(), [], "subagent misses did not count as a session")
 
 
+    def test_a_miss_during_a_task_is_logged_on_it_with_the_command_every_time_but_noted_once(self):
+        # T-2369: the task owns the miss (fm next names it, fm task finish refuses it: test_tool_loop)
+        self.fm("init")
+        tid = self.task()
+        self.assertIn("jq", self.miss("bash: jq: command not found", tool_input={"command": "jq . x.json"}))
+        self.assertEqual(self.miss("bash: jq: command not found", tool_input={"command": "jq .y x.json"}), "")
+        self.miss("ModuleNotFoundError: No module named 'yaml'", tool_input={"command": "python3 a.py"})
+        evs = c.ledger_events(self.project(), ["capability_miss"])
+        self.assertEqual([e["task"] for e in evs], [tid, tid, tid])
+        self.assertEqual([(e["data"]["name"], e["data"]["kind"], e["data"]["cmd"]) for e in evs],
+                         [("jq", "command", "jq . x.json"), ("jq", "command", "jq .y x.json"),
+                          ("yaml", "module", "python3 a.py")])
+
+    def test_a_miss_with_no_task_keeps_the_old_record(self):
+        self.fm("init")
+        self.miss("bash: jq: command not found")
+        (e,) = c.ledger_events(self.project(), ["capability_miss"])
+        self.assertEqual((e["task"], e["data"]), (None, {"name": "jq"}))
+
+    def test_a_subagent_miss_is_logged_on_no_task(self):
+        self.fm("init")
+        self.task()
+        self.miss("bash: sox: command not found", agent_id="a1")
+        self.assertEqual(c.ledger_events(self.project(), ["capability_miss"]), [])
+
+
 class PreToolUse(HookCase):
     def pre(self, tool, tool_input):
         return self.hook("PreToolUse", {"tool_name": tool, "tool_input": tool_input})
