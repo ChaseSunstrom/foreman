@@ -133,6 +133,17 @@ def cards():
                         if os.path.isdir(os.path.join(base, a))), key=lambda kv: -kv[1]))
 
 
+def calibration():
+    """T-2344: the Judgment page's figures, from fm calibration --json; {} when it can't run here."""
+    try:
+        p = subprocess.run([os.path.join(ROOT, "plugin", "bin", "fm"), "calibration", "--json"], cwd=ROOT,
+                           capture_output=True, text=True, timeout=120)
+        d = json.loads(p.stdout or "{}")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return {}
+    return {k: d[k] for k in ("scored", "pending", "brier", "bars", "races") if k in d}
+
+
 def bench():
     p = subprocess.run([sys.executable, os.path.join(ROOT, "plugin", "tests", "bench_hooks.py"), "--runs", "20", "--json"],
                        capture_output=True, text=True, timeout=600)
@@ -248,7 +259,7 @@ def main():
         with open(OUT, encoding="utf-8") as f:
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
-             "cards": cards(), "code": code_counts(), "bench": old.get("bench", {}) if a.no_bench else bench(),
+             "cards": cards(), "code": code_counts(), "calibration": calibration(), "bench": old.get("bench", {}) if a.no_bench else bench(),
              "duels": merge_duels(old.get("duels") or [], [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(
                  *x.partition("=")[2].split("@", 1), kind=next((k for k in ("long", "marathon") if x.startswith(k)), "")))
                                                      for x in (a.duel or [f"quality={state}"])) if d])}

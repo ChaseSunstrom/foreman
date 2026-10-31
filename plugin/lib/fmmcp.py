@@ -97,6 +97,9 @@ TOOLS = [
      lambda a, p: ["triggers"]),
     ("goal", "The standing goal (T-2141): its text, items with their state, the one progress line, and the verdict "
      "fm goal verdict last stored. Reads meta and briefs only; it runs no check.", _TEXT, None),
+    ("calibration", "Judgment's track record (T-2344): stated-confidence buckets per kind, the Brier beside the base rate's, "
+     "the research and race bars, races run and how often the first choice lost, tasks parked at a one-way door. "
+     "Read-only: it settles nothing and moves no bar (fm calibration does).", _TEXT, None),
 ]
 MAX_LINE = 1_000_000
 
@@ -200,6 +203,9 @@ def _call(p, name, args):
                 m["items"] = [dict(it, state=fmmandate.item_state(it, by)) for it in m.get("items") or []]
             return json.dumps({"goal": m, "line": fmmandate.goal_line(p), "verdict": fmmandate.fresh_verdict(p, m)},
                               ensure_ascii=False), False
+        if name == "calibration":  # T-2344: fm calibration's JSON without its writes
+            import fmoutcomes
+            return json.dumps(fmoutcomes.snapshot(p), ensure_ascii=False), False
         if name == "fail":
             text = args.get("text")
             if not isinstance(text, str) or not text.strip() or len(text) > TEXT_CAP:

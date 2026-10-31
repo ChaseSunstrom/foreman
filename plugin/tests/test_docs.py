@@ -55,6 +55,16 @@ def rel(path):
     return os.path.relpath(path, PLUGIN)
 
 
+class Judgment(unittest.TestCase):  # T-2344: #2 and #8 described where a reader looks
+    def test_judgment_master_readme_and_changelog_describe_the_plan_shape_races_doors_and_calibration(self):
+        root = os.path.dirname(PLUGIN)
+        for name in ("MASTER.md", "README.md", "CHANGELOG.md"):
+            text = read_text(os.path.join(root, name))
+            for word in ("Choice N (NN%)", "fm lane race", "one-way", "fm calibration"):
+                with self.subTest(doc=name, word=word):
+                    self.assertIn(word, text)
+
+
 class LiteRules(unittest.TestCase):  # T-1264
     def test_the_one_file_rules_fit_40_lines_need_no_fm_and_cover_the_loop(self):
         text = read_text(os.path.join(PLUGIN, "templates", "CLAUDE.lite.md"))

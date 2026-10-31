@@ -41,7 +41,7 @@ class RoundTrip(_Mcp):
         names = {t["name"] for t in by[2]["result"]["tools"]}
         self.assertEqual(names, {"state", "next", "recall", "research_list", "research_read", "task_show", "checks",
                                  "lib_suggest", "lib_search", "lib_show", "outline", "sym", "impact", "why", "fail",
-                                 "logs", "data", "trace", "find", "exam_scorecard", "genesis_status", "goal", "triggers"})
+                                 "logs", "data", "trace", "find", "exam_scorecard", "genesis_status", "goal", "triggers", "calibration"})
         for t in by[2]["result"]["tools"]:
             self.assertEqual(t["inputSchema"]["type"], "object")
         self.assertIn("Parse dates in the importer", by[3]["result"]["content"][0]["text"])
@@ -427,3 +427,21 @@ class GoalTool(_Mcp):
         self.assertIn("1/1 items done", data["line"])
         self.assertEqual(data["verdict"]["verdict"], "stopped")
         self.assertFalse(os.path.exists(os.path.join(self.repo, "ran-it")))
+
+
+class JudgmentTool(_Mcp):  # T-2344: #2 and #8 through MCP (Claude Desktop and other agents)
+    def test_judgment_calibration_tool_is_listed_and_writes_nothing(self):
+        self.fm("init")
+        p = c.find_project(self.repo)
+        c.log_event(p, "race_pick", task="T-0001", data={"winner": "T-0002", "stated": 1, "first_won": False})
+        c.log_event(p, "race_pick", task="T-0003", data={"winner": "T-0003", "stated": 2, "first_won": True})
+        before = c.read_meta(p)
+        ledger = os.path.getsize(os.path.join(p.dir, "ledger.jsonl"))
+        out, _ = self.talk({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, self.call(2, "calibration"))
+        self.assertIn("calibration", {t["name"] for t in out[0]["result"]["tools"]})
+        d = json.loads(_text(out[1]))
+        for k in ("kinds", "brier", "bars", "races", "doors_parked"):
+            self.assertIn(k, d)
+        self.assertEqual(d["races"], {"run": 2, "judged": 2, "first_lost": 1})
+        self.assertEqual(c.read_meta(p), before)  # no settle, no bar move
+        self.assertEqual(os.path.getsize(os.path.join(p.dir, "ledger.jsonl")), ledger)

@@ -628,6 +628,37 @@ def ledger_lines(p, outs=None):
             + f"; {_brier_line(d)}"]
 
 
+def extras(p, briefs=None):
+    """T-2344: races run and how often the first choice lost (race_pick rows with a stated choice), and the open tasks
+    parked at a one-way door now (the user's call)."""
+    picks = [e.get("data") or {} for e in c.ledger_events(p, ("race_pick",))]
+    judged = [d for d in picks if d.get("stated") is not None]
+    parked = [b.id for b in (briefs if briefs is not None else c.load_briefs(p))
+              if b.status not in c.CLOSED and c.door_park(b)]
+    return {"races": {"run": len(picks), "judged": len(judged), "first_lost": sum(1 for d in judged if not d.get("first_won"))},
+            "doors_parked": parked}
+
+
+def snapshot(p):
+    """T-2344: fm calibration's data with none of its writes (no settle, no bar move): the MCP tool and the band read it."""
+    d = ledger_data(p, outcomes(p))
+    d["bars"] = bars(p)
+    d.update(extras(p))
+    return d
+
+
+def band_line(p):
+    """T-2344: one pane line when judgment needs the user, else '': tasks parked at a one-way door, and the stated numbers
+    scoring a worse Brier than the base rate (the base rate routes in their place until they don't)."""
+    d = snapshot(p)
+    br = d.get("brier") or {}
+    parts = [f"{len(d['doors_parked'])} parked at a one-way door ({', '.join(d['doors_parked'][:3])})"] \
+        if d["doors_parked"] else []
+    if br.get("base") is not None and br.get("stated") is not None and br["stated"] > br["base"]:
+        parts.append(f"stated confidence scores Brier {br['stated']:.2f}, worse than the base rate's {br['base']:.2f}")
+    return ("judgment: " + "; ".join(parts) + " (fm calibration)") if parts else ""
+
+
 def cmd_calibration(args):
     """fm calibration: the ledger's buckets per kind, the Brier of the stated numbers beside the base rate's, the
     bars and where the base rate routes. Writes the outcome rows that are due and applies a bar raise."""
@@ -638,11 +669,15 @@ def cmd_calibration(args):
     d = ledger_data(p, outs)
     raised, under, warns = adjust_bars(p, bar_rows(scored(p, outs)))
     d["bars"], d["raised"], d["under"] = bars(p), raised, under
+    d.update(extras(p))  # T-2344: races and parked doors, so every surface reads one JSON
     lines = [_too_few(d) + ": no bar moves" if not d["brier"] else "Calibration ledger: " + _brier_line(d)]
     lines += [_bucket_line(k, b) for k, bs in d["kinds"].items() for b in bs]
     lines += [f"Raised the {bar} bar {old} → {new}." for bar, old, new in raised] + under + warns
     lines += [f"{pair}: the base rate's {v}% replaces the stated numbers (they scored a worse Brier)"
               for pair, v in d["routes"].items()]
+    r = d["races"]
+    lines += [f"Races: {r['run']} run; the stated first choice lost {r['first_lost']} of {r['judged']}"] if r["run"] else []
+    lines += [f"Parked at a one-way door: {', '.join(d['doors_parked'])}"] if d["doors_parked"] else []
     lines.append(f"Bars: research {d['bars']['research']} · race {d['bars']['race']}")
     return fmcli.out(args, d, "\n".join(lines))
 

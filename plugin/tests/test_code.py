@@ -13,6 +13,12 @@ from helpers import FM, PLUGIN, ForemanTestCase, busy_factor, read_json, read_te
 PLAN = {"type": "FIX", "tier": "S", "title": "Make calc.add add",
         "criteria": [{"text": "calc.add adds", "verify": "python3 test_calc.py"}], "steps": ["fix calc.add"]}
 HANG = object()
+M_PLAN = dict(PLAN, tier="M",  # T-2344: an M plan's readings, options with failure modes, and a choice confidence
+              readings=["calc.add subtracts by mistake, so it should add", "callers want a difference, so rename it"],
+              options=[{"kind": "build", "text": "change the operator in calc.add", "fails_if": "a caller relies on it"},
+                       {"kind": "exists", "text": "call the builtin sum over both numbers", "fails_if": "inputs aren't numbers"},
+                       {"kind": "less", "text": "document that add subtracts", "fails_if": "callers keep wrong totals"}],
+              choice=1, confidence=85, why="the failing test names the operator")
 
 
 class Fake:
@@ -301,7 +307,7 @@ class Repairs(CodeCase):
         self.assertIn("sensitive", r.stderr)
 
     def test_m_tier_asks_the_model_for_its_close_notes(self):
-        f = self.serve("anthropic", plan(dict(PLAN, tier="M")),
+        f = self.serve("anthropic", plan(M_PLAN),
                        call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"), CLOSE)
         r = self.code("fix add", "--model", "fake")
         self.assertEqual(self.task()["status"], "done", r.stdout)
@@ -309,14 +315,64 @@ class Repairs(CodeCase):
         self.assertEqual(len(f.seen), 4)
 
     def test_the_harness_written_plan_is_exempt_from_the_plan_gate_content_checks(self):
-        # T-2335: the plan is the harness's, not a reading/option plan the model wrote; it says so, no boilerplate labels
-        self.serve("anthropic", plan(dict(PLAN, tier="M")),
+        # T-2335: an S plan is the harness's, not a reading/option plan the model wrote; it says so, no boilerplate labels
+        # (T-2344: an M plan carries the model's readings and options and meets the gate: PlanReadings)
+        self.serve("anthropic", plan(PLAN),
                    call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"), CLOSE)
         self.code("fix add", "--model", "fake")
         import fmcore
         b = fmcore.find_brief(fmcore.find_project(self.repo), self.task()["id"])
         self.assertEqual(b.meta.get("harness_plan"), "code")
         self.assertNotIn("use what exists", b.section("Approach (options → choice → why)"))
+
+
+class PlanReadings(CodeCase):
+    """T-2344 (Mission 5, #2 and #8 in fm code): an M plan names its readings, 3+ options each with a failure mode (one
+    use-what-exists, one do-less) and 'Choice N (NN%)'; check_plan runs the plan gate's own content check on it, and the
+    task fm code files passes fm focus's gate unchanged (no harness exemption for M)."""
+
+    def test_check_plan_asks_an_m_plan_for_readings_options_and_a_choice_confidence(self):
+        import fmcode
+        self.assertIsNone(fmcode.check_plan(M_PLAN))
+        self.assertIsNone(fmcode.check_plan(PLAN))  # S is unchanged
+        for k in ("readings", "options", "confidence"):
+            with self.subTest(drop=k):
+                self.assertIn(k, fmcode.check_plan({x: v for x, v in M_PLAN.items() if x != k}) or "")
+        bare = dict(M_PLAN, options=[dict(o, fails_if="") for o in M_PLAN["options"]])
+        self.assertIn("fails_if", fmcode.check_plan(bare) or "")
+        no_less = dict(M_PLAN, options=[dict(o, kind="build") if o["kind"] == "less" else o for o in M_PLAN["options"]])
+        self.assertIn("do less", fmcode.check_plan(no_less) or "")
+        one = dict(M_PLAN, readings=M_PLAN["readings"][:1])
+        self.assertIn("ruled_out", fmcode.check_plan(one) or "")
+        self.assertIsNone(fmcode.check_plan(dict(one, ruled_out="renaming it: the request says the sum is wrong")))
+        same = dict(M_PLAN, options=[dict(o, text="change the operator in calc.add to a plus sign",
+                                          fails_if="a caller relies on the old result") for o in M_PLAN["options"]])
+        self.assertIn("options", fmcode.check_plan(same) or "")  # the gate's own distinctness check, quoted back
+        for word in ("readings", "fails_if", "Choice", "confidence"):
+            self.assertIn(word, fmcode.PLAN_PROMPT)
+
+    def test_the_m_task_fm_code_files_passes_the_plan_gate_unchanged(self):
+        self.serve("anthropic", plan(M_PLAN), call("edit", file="calc.py", old="a - b", new="a + b"),
+                   call("done", summary="x"), CLOSE)
+        self.code("fix add", "--model", "fake")
+        import fmcore
+        b = fmcore.find_brief(fmcore.find_project(self.repo), self.task()["id"])
+        self.assertIsNone(b.meta.get("harness_plan"))
+        self.assertEqual(fmcore._content_gaps(b), [])
+        self.assertIn("Reading 2:", b.section("Interpretation"))
+        ap = b.section("Approach (options → choice → why)")
+        self.assertIn("Choice 1 (85%)", ap)
+        self.assertIn("use what exists:", ap)
+
+    def test_an_m_plan_under_the_race_bar_gets_its_rival_read_before_focus(self):
+        os.environ["FOREMAN_NO_RIVAL"] = "0"  # the suite skips the read; here the stubbed child fails, which never blocks
+        self.serve("anthropic", plan(dict(M_PLAN, confidence=60)), call("edit", file="calc.py", old="a - b", new="a + b"),
+                   call("done", summary="x"), CLOSE)
+        r = self.code("fix add", "--model", "fake")
+        import fmcore
+        b = fmcore.find_brief(fmcore.find_project(self.repo), self.task()["id"])
+        self.assertTrue(b.meta.get("rival_at") or b.section("Rival plan").strip(), r.stdout)
+        self.assertEqual(self.task()["status"], "done", r.stdout)
 
 
 class AnyRequest(CodeCase):

@@ -108,5 +108,26 @@ class GoalPage(unittest.TestCase):
             self.assertIn(word, text)
 
 
+class JudgmentPage(unittest.TestCase):  # T-2344: #2 and #8 on the site, its figures from fm calibration --json
+    def test_judgment_page_describes_the_plan_shape_races_doors_and_scores_from_calibration_data(self):
+        sys.path.insert(0, SITE)
+        try:
+            import pages
+            import build
+        finally:
+            sys.path.pop(0)
+        page = next(x for x in pages.PAGES if x["slug"] == "judgment")
+        text = json.dumps(page["blocks"], default=str)
+        for word in ("Reading", "fails if", "Choice N (NN%)", "fm lane race", "one-way", "fm calibration", "Brier",
+                     "base rate", "MCP", "fm code"):
+            self.assertIn(word, text)
+        cal = {"scored": 30, "pending": 4, "brier": {"stated": 0.18, "base": 0.24}, "bars": {"research": 70, "race": 55},
+               "races": {"run": 5, "judged": 4, "first_lost": 1}, "doors_parked": ["T-1"]}
+        html = build.render_page(page, {"calibration": cal}, pages.PAGES)
+        for figure in ("0.18", "0.24", "1 of 4", "30"):
+            self.assertIn(figure, html)
+        self.assertIn("not scored yet", build.render_page(page, {}, pages.PAGES))  # no data: said, never a crash
+
+
 if __name__ == "__main__":
     unittest.main()

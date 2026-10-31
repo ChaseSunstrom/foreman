@@ -285,8 +285,8 @@ def _block(text, start, end, body):
 def rules_text():
     return (f"## Foreman\n"
             f"Foreman keeps the work here disciplined. Its CLI is `fm` ({FM}); the `fm` MCP server has the same state.\n"
-            f"- Before editing, give the request a brief: `fm task new \"<title>\" --type FIX|FEATURE|CLEAN --tier S "
-            f"--ac \"<done when> :: <verify cmd>\" --step \"<step>\" --focus`. Edits without one are refused.\n"
+            f"- Brief first or edits are refused: `fm task new \"<t>\" --type T --tier S|M --ac \"<done> :: <cmd>\" "
+            f"--step \"<s>\" --focus`; M: 2 readings, 3+ fails-if options, Choice N (NN%) (`fm calibration`).\n"  # T-2344
             f"- Follow `fm next`: the one next required action and how to do it.\n"
             f"- Nothing is done without fresh evidence: run each criterion's verify command, then "
             f"`fm task finish ID --audit \"<how>\"`.\n"

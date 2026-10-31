@@ -296,3 +296,14 @@ class Block(ForemanTestCase):
         self.assertEqual(a._block(put, "S", "E", None), "a\n")
         self.assertEqual(a._block(put + "b\n", "S", "E", None), "a\n\nb\n")
         self.assertEqual(a._block(a._block(put + "b\n", "S", "E", "y"), "S", "E", None), "a\n\nb\n")
+
+
+class Judgment(ForemanTestCase):
+    def test_judgment_the_plan_line_names_the_plan_shape_and_calibration_with_no_growth(self):  # T-2344
+        import fmagents as a
+        text = a.rules_text()
+        line = next(x for x in text.splitlines() if "fm task new" in x)
+        for word in ("readings", "fails-if", "Choice N (NN%)", "fm calibration", "--focus", "refused"):
+            self.assertIn(word, line)
+        self.assertLessEqual(len(line), 192)  # the plan line before T-2344: rewritten in place, not added to
+        self.assertEqual(len(text.splitlines()), 7)  # and no new line (the block's paths vary by install, so not chars)

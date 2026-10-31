@@ -100,6 +100,19 @@ def _sizes(s):
                  [("S  small", s["tiers"]["S"]), ("M  medium", s["tiers"]["M"]), ("L  large", s["tiers"]["L"])])
 
 
+def _judgment(s):
+    """T-2344: the scores from fm calibration --json (site/stats.py stores them), or why there are none yet."""
+    cal = s.get("calibration") or {}
+    br, r, bars = cal.get("brier") or {}, cal.get("races") or {}, cal.get("bars") or {}
+    two = lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else "n/a"  # noqa: E731
+    row = tiles([("confidences scored", cal.get("scored") or 0), ("waiting on outcomes", cal.get("pending") or 0),
+                 ("Brier, stated", two(br.get("stated"))), ("Brier, base rate", two(br.get("base"))),
+                 ("first choice lost a race", f"{r.get('first_lost', 0)} of {r.get('judged', 0)}"),
+                 ("race bar", f"{bars['race']}%" if "race" in bars else "n/a")])
+    return row if cal.get("scored") else row + ("<p>Its own numbers are not scored yet: stated confidences wait on "
+                                                "outcomes, and the ledger needs 20 before it moves a bar.</p>")
+
+
 def _types(s):
     return hbars("Closed tasks by type", None, sorted(s["types"].items(), key=lambda kv: -kv[1]))
 
@@ -417,6 +430,28 @@ PAGES = [
           "every session, survives compaction, and rides in <code>fm code</code>'s run prompt, so the plan outlives "
           "the conversation.</p>"),
          ("chart", _sizes), ("chart", _types)]},
+    {"slug": "judgment", "nav": "Judgment", "title": "It says how sure it is, and is scored on it",  # T-2344
+     "desc": "Every M plan names its readings, its options and how each fails, and a choice with a confidence that "
+             "outcomes score.",
+     "lede": "A plan that can't be wrong can't be checked. Foreman's plans say what else the request could mean, what "
+             "else could be built and how each would fail, and bet a number on the pick; the outcomes keep score.",
+     "blocks": [
+         ("text", "The plan shape", "<ul><li><strong>Readings.</strong> Two ways to read the request (Reading 1, "
+          "Reading 2), or the one it holds and the one it ruled out.</li><li><strong>Options.</strong> Three or more, "
+          "each with how it fails if it's wrong (<em>fails if: …</em>): one that uses what exists, one that does "
+          "less.</li><li><strong>A choice with a number.</strong> <code>Choice N (NN%)</code>: the percent it would "
+          "bet the pick holds. Under the race bar, a cold rival reads the request without the plan and its "
+          "dissent is answered before work starts.</li></ul><p><code>fm focus</code> refuses a plan without them, "
+          "and <code>fm code</code>'s planner on any model writes the same shape and meets the same gate.</p>"),
+         ("text", "Races and doors", "<p>When the bet is low, <code>fm lane race</code> builds two options side by "
+          "side and the evidence picks; the record keeps how often the first choice lost. A step that is one-way "
+          "(it deletes untracked data) and ambiguous parks for you instead of guessing; a two-way step just goes.</p>"),
+         ("text", "The score", "<p><code>fm calibration</code> buckets every stated number against what happened and "
+          "puts its Brier score beside the base rate's. If the stated numbers score worse, the base rate routes in "
+          "their place until they don't, and a bar the outcomes say is too low is raised. The MCP "
+          "<code>calibration</code> tool (Claude Desktop, other agents) reads the same record without changing it, "
+          "and the band shows one line only when a door is parked or the numbers lose to the base rate.</p>"),
+         ("chart", _judgment)]},
     {"slug": "proof", "nav": "Proof", "title": "Nothing is done until a command proves it",
      "desc": "Evidence is a command Foreman ran and recorded; a fix needs a test that failed first.",
      "lede": "Saying the tests pass is not evidence. Foreman records the real command, its exit code and its output, "
