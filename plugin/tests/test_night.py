@@ -264,7 +264,7 @@ class NightGuards(ForemanTestCase):
     def test_research_debt_and_evolve_candidates_are_jobs(self):
         rid = json.loads(self.fm("capture", "RESEARCH: which TOML parser handles comments", "--type", "RESEARCH",
                                  "--json").stdout)["id"]
-        self.fm("log", "evolve", json.dumps({"kept": True, "branch": "evolve/20261004-0100", "target": "x.md"}))
+        c.log_event(c.find_project(self.repo), "evolve", data={"kept": True, "branch": "evolve/20261004-0100", "target": "x.md"})  # T-2244
         jobs = {j["name"]: j for j in json.loads(self.fm("night", "--dry-run", "--max-usd", "50", "--json").stdout)["jobs"]
                 + json.loads(self.fm("night", "--dry-run", "--max-usd", "50", "--json").stdout)["skipped"]}
         self.assertIn(rid, " ".join(jobs["research debt"].get("argv") or [rid]))
