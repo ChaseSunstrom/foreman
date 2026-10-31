@@ -524,7 +524,8 @@ def scan(root, prec=None, proven=None, home=None, extra=()):
     files, rels, gen = _files(root)
     code = [Src(r, t) for r, t in files if os.path.splitext(r)[1].lower() in LANG]
     import fmsecrets
-    out = _untested(code) + _docs(files, code, root) + _deps(root, files, code, rels) + list(extra)
+    known = {r for r, _ in files + gen}  # regular, unlinked files this scan read: a tool's `//line` can name any path
+    out = _untested(code) + _docs(files, code, root) + _deps(root, files, code, rels) + [f for f in extra if f["file"] in known]
     for s in code:
         out += _flaky(s) if s.test else _sql(s) + _slow(s)
     for rel, text in files + gen:  # a generated file can still hold a pasted key
@@ -888,7 +889,7 @@ TOOLS = (
     {"name": "gosec", "argv": ("gosec", "-fmt", "sarif", "-quiet", "./..."), "selects": ("go.mod",), "parse": "sarif",
      "stream": 0, "kind": "vuln"},
 )
-TOOL_T, TOOL_MAX = 120, 8 << 20  # a run's seconds, and the bytes each of its streams may hold (a file-size limit in the child)
+TOOL_T, TOOL_MAX = 120, 8 << 20  # a run's seconds, and the bytes each stream may hold (the run is killed past it)
 
 
 def _rel(path, root):
@@ -942,29 +943,36 @@ def _tool_env(root):
 
 
 def _run_tool(argv, root, env):
-    """(stdout, stderr) text of one run, each capped, or (None, why): shell=False, a timeout (the group is killed), output
-    to files the child can't grow past TOOL_MAX."""
-    import resource
+    """(stdout, stderr, returncode, why): each stream's first TOOL_MAX bytes; why names a timeout or an overflow (the run
+    is killed). shell=False; output goes to temp files polled for size (no rlimit: it would reach the tool's own compiler
+    and caches); the whole process group is killed however the run ends, so no grandchild outlives it."""
     import signal
     import tempfile
-
-    def limit():
-        resource.setrlimit(resource.RLIMIT_FSIZE, (TOOL_MAX, TOOL_MAX))
-
+    import time
+    why = None
     with tempfile.TemporaryFile() as o, tempfile.TemporaryFile() as e:
-        proc = subprocess.Popen(argv, cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=o, stderr=e,  # shell=False
-                                start_new_session=True, preexec_fn=limit)
+        proc = subprocess.Popen(argv, cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=o, stderr=e,
+                                start_new_session=True)
         try:
-            proc.wait(timeout=TOOL_T)
-        except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
+            end = time.monotonic() + TOOL_T
+            while proc.poll() is None and not why:
+                if time.monotonic() > end:
+                    why = f"timed out after {TOOL_T}s"
+                elif max(os.fstat(o.fileno()).st_size, os.fstat(e.fileno()).st_size) > TOOL_MAX:
+                    why = f"output over {TOOL_MAX} bytes"
+                else:
+                    time.sleep(0.05)
+        finally:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
             proc.wait()
-            return None, f"timed out after {TOOL_T}s"
         texts = []
         for f in (o, e):
             f.seek(0)
             texts.append(f.read(TOOL_MAX).decode("utf-8", "replace"))
-        return texts[0], texts[1]
+        return texts[0], texts[1], proc.returncode, why
 
 
 def ladder(root, p=None, sandbox=False):
@@ -972,33 +980,42 @@ def ladder(root, p=None, sandbox=False):
     argument: an exam's throwaway render; no file in a tree and no environment variable can set it). Findings are
     tool:NAME leads; a selected tool not on PATH is captured once under the capability-miss key (project p, if any)."""
     import fmprove
+    root = os.path.realpath(root)  # trust is judged on the resolved path, and the tools run there
     if not (sandbox or fmprove.trusted(root)):
         return [], ["tool rung skipped: not a trusted tree (fm prove --yes-run PATH says yes to one)"]
-    root = os.path.realpath(root)
     env, found, notes = _tool_env(root), [], []
     for t in TOOLS:
         if not any(stat.S_ISREG(st.st_mode) for m in t["selects"] if (st := _lstat(os.path.join(root, m)))):
             continue
-        exe = shutil.which(t["argv"][0], path=env["PATH"])
+        name = t["argv"][0]
+        exe = shutil.which(name, path=env["PATH"])
+        if exe and os.path.commonpath([os.path.realpath(exe), root]) == root:  # a link into the tree is the tree's file
+            exe = None
         if not exe:
-            notes.append(f"tool:{t['name']}: {t['argv'][0]} is not on PATH")
+            notes.append(f"tool:{t['name']}: {name} is not on PATH")
             if p:
                 import fmeco
-                name = t["argv"][0]
                 fmeco.capture_once(p, f"Missing tool {name}: find it (fm plugins find {name}) or build it (script + test)\n"
                                    f"capability-miss: {name}", "FEATURE", "self", key=f"capability-miss: {name}")
             continue
+        argv = (exe,) + t["argv"][1:]
+        if name == "go" and (st := _lstat(os.path.join(root, "vendor", "modules.txt"))) and stat.S_ISREG(st.st_mode):
+            argv = argv[:2] + ("-mod=vendor",) + argv[2:]
+        out, err, rc, why = _run_tool(argv, root, env)
+        first = c.fit(c.plain(next((x for x in err.splitlines() if x.strip()), "")), 120)
+        rows = []
+        if why:
+            notes.append(f"tool:{t['name']}: {why}")
+            continue
         try:
-            streams = _run_tool((exe,) + t["argv"][1:], root, env)
-            if streams[0] is None:
-                notes.append(f"tool:{t['name']}: {streams[1]}")
-                continue
-            text = streams[t["stream"]]
+            text = (out, err)[t["stream"]]
             rows = (_parse_ruff(text, root) if t["parse"] == "ruff" else _parse_sarif(text, root) if t["parse"] == "sarif"
                     else _parse_lines(text, t["parse"], root))
-        except (ValueError, AttributeError, TypeError, OSError, subprocess.SubprocessError) as ex:
-            notes.append(f"tool:{t['name']}: output not understood ({type(ex).__name__})")
+        except (ValueError, AttributeError, TypeError, RecursionError) as ex:
+            notes.append(f"tool:{t['name']}: output not understood ({type(ex).__name__}); exit {rc}; stderr: {first}")
             continue
+        if rc < 0 or (rc and not rows):
+            notes.append(f"tool:{t['name']}: exit {rc} with {len(rows)} finding(s); stderr: {first}")
         found += [_found("tool:" + t["name"], t["kind"], rel, line, "", c.fit(c.plain(says), 200))
                   for rel, line, says in rows[:500]]
     return found, notes

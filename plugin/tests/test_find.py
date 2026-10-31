@@ -1380,6 +1380,103 @@ class FindToolRung(ForemanTestCase):
         self.assertEqual(fmfind._parse_lines("# pkg\n./main.go:9:2: unreachable code\n", r"^(?P<file>[^:\s]+):(?P<line>\d+):(?:\d+:)? (?P<msg>.+)$", "/r"),
                          [("main.go", 9, "unreachable code")])
 
+    def alive(self, pid):
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+
+    def test_a_timeout_kills_the_whole_group_and_says_so(self):
+        import time
+        from unittest import mock
+        fmprove.remember(self.tree)
+        pidfile = os.path.join(self.tmp, "child.pid")
+        self.stub("ruff", f"sleep 60 &\necho $! > {pidfile}\nsleep 60")
+        with mock.patch.object(fmfind, "TOOL_T", 1):
+            found, notes = fmfind.ladder(self.tree, self.p)
+        self.assertEqual(found, [])
+        self.assertTrue(any("ruff" in n and "timed out" in n for n in notes), notes)
+        with open(pidfile) as f:
+            pid = int(f.read())
+        for _ in range(30):
+            if not self.alive(pid):
+                break
+            time.sleep(0.1)
+        self.assertFalse(self.alive(pid))
+
+    def test_overflow_kills_the_run_and_says_so(self):
+        from unittest import mock
+        fmprove.remember(self.tree)
+        self.stub("ruff", "yes '{' | head -c 20000000")
+        with mock.patch.object(fmfind, "TOOL_MAX", 100000):
+            found, notes = fmfind.ladder(self.tree, self.p)
+        self.assertEqual(found, [])
+        self.assertTrue(any("ruff" in n and "output" in n for n in notes), notes)
+
+    def test_a_signal_death_or_unparsed_failure_names_the_tool_and_stderr(self):
+        fmprove.remember(self.tree)
+        self.stub("ruff", "echo boom >&2\nkill -9 $$")
+        self.assertTrue(any("ruff" in n and "boom" in n for n in fmfind.ladder(self.tree, self.p)[1]))
+        self.stub("ruff", "echo oops >&2\nexit 2")
+        self.assertTrue(any("ruff" in n and "oops" in n for n in fmfind.ladder(self.tree, self.p)[1]))
+
+    def test_a_deeply_nested_reply_is_a_note_not_a_crash(self):
+        fmprove.remember(self.tree)
+        self.stub("ruff", "head -c 200000 /dev/zero | tr '\\0' '['")
+        found, notes = fmfind.ladder(self.tree, self.p)
+        self.assertEqual(found, [])
+        self.assertTrue(any("ruff" in n for n in notes), notes)
+
+    def test_findings_outside_the_scanned_file_set_are_dropped(self):
+        fmprove.remember(self.tree)
+        write(self.tree, {"real.py": "x = 1\n"})
+        os.symlink("real.py", os.path.join(self.tree, "link.py"))
+        row = '{"filename": "%s/%s", "location": {"row": 1}, "code": "E", "message": "m"}'
+        body = ",".join(row % (os.path.realpath(self.tree), n) for n in ("real.py", "ghost.py", "link.py", "app.py"))
+        self.stub("ruff", f"printf '%s' '[{body}]'")
+        found, _ = fmfind.ladder(self.tree, self.p)
+        got = [f["file"] for f in fmfind.scan(self.tree, extra=found)[1] if f["finder"] == "tool:ruff"]
+        self.assertEqual(sorted(got), ["app.py", "real.py"])
+
+    def test_a_symlinked_root_is_judged_by_its_real_path(self):
+        link = os.path.join(self.tmp, "link")
+        os.symlink(self.tree, link)
+        fmfind.ladder(link, self.p)
+        self.assertEqual(self.calls(), [])
+        fmprove.remember(self.tree)
+        self.assertEqual(len(fmfind.ladder(link, self.p)[0]), 1)
+
+    def test_a_subfolder_of_a_trusted_tree_stays_untrusted(self):
+        fmprove.remember(self.tree)
+        write(self.tree, {"sub/pyproject.toml": "x = 1\n"})
+        fmfind.ladder(os.path.join(self.tree, "sub"), self.p)
+        self.assertEqual(self.calls(), [])
+
+    def test_a_symlinked_path_dir_or_exe_into_the_tree_is_not_a_tool(self):
+        from unittest import mock
+        fmprove.remember(self.tree)
+        os.remove(os.path.join(self.bin, "ruff"))
+        write(self.tree, {"bin/ruff": "#!/bin/sh\necho owned >> owned\n"})
+        os.chmod(os.path.join(self.tree, "bin/ruff"), 0o755)
+        lnk = os.path.join(self.tmp, "lnk")
+        os.symlink(os.path.join(self.tree, "bin"), lnk)
+        exes = os.path.join(self.tmp, "exes")
+        os.makedirs(exes)
+        os.symlink(os.path.join(self.tree, "bin/ruff"), os.path.join(exes, "ruff"))
+        for path in (lnk, exes):
+            with mock.patch.dict(os.environ, {"PATH": path + os.pathsep + "/usr/bin:/bin"}):
+                fmfind.ladder(self.tree, self.p)
+        self.assertFalse(os.path.exists(os.path.join(self.tree, "owned")))
+
+    def test_go_vet_uses_the_vendor_dir_when_there_is_one(self):
+        fmprove.remember(self.tree)
+        os.remove(os.path.join(self.tree, "pyproject.toml"))
+        write(self.tree, {"go.mod": "module x\n", "vendor/modules.txt": "# x\n"})
+        self.stub("go", "exit 0")
+        fmfind.ladder(self.tree, self.p)
+        self.assertIn("vet -mod=vendor ./...", self.calls()[0])
+
     def test_cli_flag_prints_the_skip(self):
         r = self.fm("find", self.tree, "--ladder", check=False)
         self.assertIn("tool rung skipped: not a trusted tree", r.stdout + r.stderr)
