@@ -87,7 +87,7 @@ class Review(_Mcp):
         with open(outside, "w") as f:
             f.write("outside the project")
         os.symlink(outside, os.path.join(p.dir, "research", "linked.md"))
-        self.fm("log", "check_run", json.dumps({"results": [{"cmd": "python3 -m pytest -q", "exit": 1, "s": 2.5}]}))
+        c.log_event(p, "check_run", data={"results": [{"cmd": "python3 -m pytest -q", "exit": 1, "s": 2.5}]})  # T-2244
         out, _ = self.talk(self.call(1, "recall", query="--corrections"),
                            self.call(2, "recall", query="-n 5"),
                            self.call(3, "research_read", name="linked"),
