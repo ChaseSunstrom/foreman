@@ -2633,7 +2633,8 @@ def _count_options(text, bullets=True):
     return max(_run(idx), _run(letters), _run(words), len(_BULLET_RE.findall(text)) if bullets else 0)
 
 
-_CHOICE_AT_RE = lazy(r"(?:^|[.\n])\W{0,8}(?:choice|choose|chose|chosen|decision|decided|go(?:ing)? with)\b", re.I)  # {0,8}: a run of ". . ." stays linear
+CHOICE_WORDS = r"choice|choose|chose|chosen|decision|decided|go(?:ing)? with"  # T-2339: fmlanes reads the stated choice with the same words
+_CHOICE_AT_RE = lazy(r"(?:^|[.\n])\W{0,8}(?:" + CHOICE_WORDS + r")\b", re.I)  # {0,8}: a run of ". . ." stays linear
 _OUTCOME_RE = lazy(r"\bfails\b|\bfailure mode\b|\blikely outcome\b|\bbreaks\b|→|->", re.I)  # loose words (but, stays, gives, likely) name no outcome
 _STOP = frozenset("a an the of to in on at by for from and or is are be it its this that these those with as if then than "
                   "so do does did use what exists existing fails likely outcome choice less reading option approach".split())

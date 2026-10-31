@@ -12,8 +12,9 @@ import unittest
 from helpers import ForemanTestCase, read_text, valid_m_plan
 
 import fmcore as c
+import fmlanes
 
-first = lambda text: json.JSONDecoder().raw_decode(text)[0]  # --focus prints its own lines after the JSON
+first =lambda text: json.JSONDecoder().raw_decode(text)[0]  # --focus prints its own lines after the JSON
 
 
 class Lanes(ForemanTestCase):
@@ -1082,9 +1083,9 @@ class RaceBase(ForemanTestCase):
         return subprocess.run(["git", "-C", cwd, "-c", "user.email=t@t", "-c", "user.name=t", *args],
                               capture_output=True, text=True, check=True).stdout
 
-    def task(self, check="test -f win.txt", approach=None):
+    def task(self, check="test -f win.txt", approach=None, tier="M"):
         reading, plan = valid_m_plan()
-        return json.loads(self.fm("task", "new", "Make it win", "--type", "FEATURE", "--tier", "M", "--interpretation",
+        return json.loads(self.fm("task", "new", "Make it win", "--type", "FEATURE", "--tier", tier, "--interpretation",
                                   reading, "--approach", approach or self.OPTIONS, "--ac", f"it wins :: {check}",
                                   "--step", "s", "--scope", "win.txt", "--json").stdout)["id"]
 
@@ -1097,6 +1098,7 @@ class RaceBase(ForemanTestCase):
         self.git(self.repo, "worktree", "add", "-q", "-b", f"race-{name}", path, "HEAD")
         self.fm("focus", tid, cwd=path)
         for rel, text in files.items():
+            os.makedirs(os.path.dirname(os.path.join(path, rel)), exist_ok=True)
             with open(os.path.join(path, rel), "w") as f:
                 f.write(text)
         self.git(path, "add", "-A")
@@ -1164,8 +1166,39 @@ class PlanRace(RaceBase):
         self.assertEqual([b.id for b in c.load_briefs(c.find_project(self.repo)) if b.meta.get("race_of") == other], [])
 
 
+    def test_one_named_option_with_the_default_two_sides_is_an_open_race(self):
+        one = "1) the obvious way; fails if: it is slow. Choice 1: the obvious way"
+        tid = self.task(approach=one, tier="S")  # an M plan needs 3 options; an S one may name fewer
+        d = self.race(tid)
+        self.assertEqual(len(d["sides"]), 2)
+        r = self.fm("lane", "race", self.task(approach=one, tier="S"), "--sides", "3", check=False)
+        self.assertNotEqual(r.returncode, 0, "three sides still need three options")
+
+    def test_a_choice_word_in_prose_is_not_a_choice_and_the_first_stated_one_counts(self):
+        tid = self.task(approach=self.OPTIONS.replace("Choice 1: widen", "Choice 2 (70%) the sure one. Later we chose a "
+                                                      "simple cache"))
+        self.race(tid)
+        self.assertIn("option 2", self.brief(tid).section("Race"))
+        self.assertEqual(fmlanes._options(self.brief(tid))[1], 2)
+
+    def test_the_base_check_ignores_a_missing_program_and_a_linted_command(self):
+        tid = self.task(check="nosuchprog_t2339")
+        self.fm("task", "ac", tid, "add", "fine", "--verify", "true")
+        r = self.fm("lane", "race", tid, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("a timeout, a missing program or a linted command doesn't count", r.stderr + r.stdout)
+        self.assertIn("main checkout", r.stderr + r.stdout)
+        self.assertEqual([b.id for b in c.load_briefs(c.find_project(self.repo)) if b.meta.get("race_of")], [])
+
+    def test_a_test_file_name_with_a_trailing_newline_is_not_a_test_file(self):
+        self.assertTrue(fmlanes._TEST_RE.fullmatch("pkg/test_a.py"))
+        self.assertTrue(fmlanes._TEST_RE.fullmatch("a_test.py"))
+        self.assertFalse(fmlanes._TEST_RE.fullmatch("test_a.py\n"))
+        self.assertFalse(fmlanes._TEST_RE.fullmatch("test_é.py"))
+
+
 class RaceEvidence(RaceBase):
-    GOOD = "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_good(self):\n" \
+    GOOD ="import unittest\n\n\nclass T(unittest.TestCase):\n    def test_good(self):\n" \
            "        self.assertEqual(open('win.txt').read().strip(), 'good')\n"
 
     def started(self):
@@ -1238,6 +1271,59 @@ class RaceEvidence(RaceBase):
         self.assertIn("use what exists", approach.split("Race:")[1], "the loser's option")
         self.assertIn("lost", approach.split("Race:")[1], "and why")
         self.assertIn("race", out)
+
+    def test_a_builders_test_sees_none_of_this_shells_secrets(self):
+        tid, other = self.started()
+        test = ("import os, unittest\n\n\nclass T(unittest.TestCase):\n    def test_env(self):\n"
+                "        self.assertIsNone(os.environ.get('FM_RACE_SECRET_T2339'))\n"
+                "        self.assertEqual(open('win.txt').read().strip(), 'good')\n")
+        self.side(tid, "a", {"win.txt": "good\n", "test_a.py": test})
+        self.side(other, "b", {"win.txt": "bad\n"})
+        d = json.loads(self.fm("lane", "race", tid, "--score", "--json", env={"FM_RACE_SECRET_T2339": "s3cret"}).stdout)
+        rows = {r["id"]: r for r in d["sides"]}
+        self.assertEqual(rows[tid]["caught"], 1, "A's test passes at home only if it can't see the variable")
+
+    def test_a_side_with_uncommitted_work_is_an_error_row_and_ranks_last(self):
+        tid, other = self.started()
+        a = self.side(tid, "a", {"win.txt": "x\n"})  # the smallest diff, which would win a tie
+        with open(os.path.join(a, "late.txt"), "w") as f:
+            f.write("not committed\n")
+        self.side(other, "b", {"win.txt": "z\n" * 20})
+        d = self.score(tid)
+        rows = {r["id"]: r for r in d["sides"]}
+        self.assertIn("uncommitted work", rows[tid]["error"])
+        self.assertEqual(d["leader"], other)
+        self.assertIn(f"{tid}: error: uncommitted work", self.fm("lane", "race", tid, "--score").stdout)
+
+    def test_a_file_another_side_has_in_the_way_does_not_crash_the_score(self):
+        tid, other = self.started()
+        quiet = "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n"
+        self.side(tid, "a", {"win.txt": "good\n", "sub/test_a.py": quiet})
+        self.side(other, "b", {"win.txt": "good\n", "sub": "a file where A wants a folder\n"})
+        d = self.score(tid)
+        self.assertEqual({r["caught"] for r in d["sides"]}, {0}, "no word either way is not a catch")
+
+    def test_a_test_that_errors_on_the_other_side_is_coupled_not_caught(self):
+        tid, other = self.started()
+        test = "import unittest\nimport helper_t2339\n\n\nclass T(unittest.TestCase):\n    def test_x(self):\n" \
+               "        self.assertEqual(helper_t2339.V, 1)\n"
+        self.side(tid, "a", {"win.txt": "good\n", "helper_t2339.py": "V = 1\n", "test_a.py": test})
+        self.side(other, "b", {"win.txt": "good\n"})
+        d = self.score(tid)
+        rows = {r["id"]: r for r in d["sides"]}
+        self.assertEqual((rows[tid]["caught"], rows[tid]["coupled"], rows[other]["broken"]), (0, 1, 0))
+        self.assertIn("coupled to 1", self.fm("lane", "race", tid, "--score").stdout)
+
+    def test_pick_reuses_a_score_while_no_side_moved_and_scores_again_after(self):
+        tid, other = self.started()
+        a = self.side(tid, "a", {"win.txt": "good\n", "test_a.py": self.GOOD})
+        self.side(other, "b", {"win.txt": "bad\n"})
+        self.assertIn("running the frozen checks", self.fm("lane", "race", tid, "--score").stderr)
+        self.git(a, "commit", "-q", "--allow-empty", "-m", "moved")  # a side moved: the stored score is stale
+        self.assertIn("running the frozen checks", self.fm("lane", "race", tid, "--score").stderr)
+        again = self.fm("lane", "pick", tid)
+        self.assertNotIn("running the frozen checks", again.stderr, "same heads: the stored rows are used")
+        self.assertIn("caught", again.stdout)
 
     def test_the_first_choice_losing_is_a_ledger_row_too(self):
         tid, other = self.started()

@@ -665,16 +665,17 @@ def _sides(p, b):
 
 
 APPROACH = "Approach (options → choice → why)"
-_CHOSEN_RE = re.compile(r"(?i)\b(?:choice|choose|chose|chosen|decision|decided|go(?:ing)? with)\b\W{0,6}"
-                        r"(?:option|approach)?\s*(\d{1,2}|[a-z])\b")
+# the words are fmcore's (CHOICE_WORDS, what the plan gate reads); a letter counts when uppercase or marked "a)" "a." "a:",
+# so "chose a simple cache" names no option
+_CHOSEN_RE = re.compile(r"\b(?i:" + c.CHOICE_WORDS + r")\b\W{0,6}(?i:option|approach)?\s*(?:(\d{1,2})\b|([A-Z])\b|([a-z])(?=[).:]))")
 
 
 def _options(b):
     """([the Approach's option texts], the stated choice, 1-based; 1 when none reads or it is out of range)."""
     ap = b.section(APPROACH)
     opts = [c.fit(" ".join(x.split()), 200) for x in c._split_options(ap)]
-    m = _CHOSEN_RE.findall(ap)
-    n = (int(m[-1]) if m[-1].isdigit() else ord(m[-1].lower()) - 96) if m else 1
+    m = _CHOSEN_RE.search(ap)  # the first hit: a later "we chose …" in the why isn't the choice
+    n = (int(m[1]) if m[1] else ord((m[2] or m[3]).lower()) - 96) if m else 1
     return opts, n if 1 <= n <= len(opts) else 1
 
 
@@ -683,7 +684,7 @@ def _plan_sides(b, n):
     option. With under 2 options a 2-side race keeps T-1069's open one (the b side picks its own alternative)."""
     import fmcli
     opts, ch = _options(b)
-    if len(opts) < n and (n > 2 or opts):
+    if len(opts) < n and n > 2:  # 2 sides on under 2 options: the open race, as before (the b side picks its own way)
         raise fmcli.UsageError(f"--sides {n} needs {n} options in the Approach: it names {len(opts)} options (fm task "
                                f"set {b.id} --section Approach)")
     if len(opts) < 2:
@@ -716,9 +717,12 @@ def race(p, b, main, args):
     _ready(p, b, n)
     plan = _plan_sides(b, n)
     checks = [v for _, v in b.verify_cmds() if v]
-    if not _failing(p, b, main, checks):  # T-2339: a check that passes on the base can't tell the sides apart
-        raise c.PolicyError("the checks can't tell the sides apart: add one that fails now (every criterion's verify "
-                            f"command already passes on the base tree; fm task ac {b.id} add …)")
+    _say(f"running {len(checks)} check(s) on the base tree")
+    if not _fails_on_base(p, b, main, checks):  # T-2339: a check that passes on the base can't tell the sides apart
+        raise c.PolicyError("the checks can't tell the sides apart: add one that fails now (none of the criteria's verify "
+                            f"commands fails on the base tree, run in the main checkout as it stands, uncommitted work "
+                            f"included; a timeout, a missing program or a linted command doesn't count; fm task ac {b.id} "
+                            f"add …)")
     letters = "ABC"
     with c.lock(p.dir):  # review: checked and written under one lock, so two races at once can't both start
         b = c.find_brief(p, b.id)
@@ -805,6 +809,24 @@ def _checks(p, x):
     return (orig.meta.get("race_checks") if orig else None) or [v for _, v in x.verify_cmds() if v]
 
 
+def _say(msg):
+    """T-2339: a race's phases take minutes; one stderr line each (stdout stays the verb's answer)."""
+    print(f"fm: race: {msg}", file=sys.stderr, flush=True)
+
+
+def _fails_on_base(p, x, main, checks):
+    """The checks that really fail on the base tree: exit 124 (timeout) and 127 (no such program) and a command the
+    lint flags say nothing about the sides, so they count as passing."""
+    import fmcli
+    real = []
+    for cmd in checks:
+        fmcli.guard_stored(p, x, cmd)
+        code = c.run_command(main, cmd, 600)[0]
+        if code not in (0, 124, 127) and not c.lint_verify(cmd, main):
+            real.append(cmd)
+    return real
+
+
 def _failing(p, x, path, checks):
     import fmcli
     bad = []
@@ -820,8 +842,11 @@ def _side(p, x, main):
     outside is the changed files no scope glob covers, diff a hash of its patch (equal hashes: the same change)."""
     branch, path = x.meta.get("lane_branch"), x.meta.get("lane")
     row = {"id": x.id, "branch": branch, "tests": 0, "passed": 0, "lines": None, "outside": 0, "diff": None,
-           "caught": 0, "broken": 0}
+           "caught": 0, "broken": 0, "coupled": 0}
     if not branch or not path or not os.path.isdir(path):
+        return row
+    if _git(path, "status", "--porcelain").stdout.strip():  # the diff below reads commits: this side's work isn't in it
+        row["error"] = "uncommitted work: commit it in the lane, then score again"
         return row
     stat = _git(main, "diff", "--shortstat", f"HEAD...{branch}")  # review: a tree base can't make a symmetric diff
     if stat.returncode:
@@ -838,23 +863,32 @@ def _side(p, x, main):
     return row
 
 
-_TEST_RE = re.compile(r"(?:^|/)(?:test_\w+|\w+_test)\.py$")  # \w only: the name goes into a shell command
-CROSS_FILES, CROSS_SECS = 5, 120  # per side: test files it may bring, and one run's timeout
+_TEST_RE = re.compile(r"(?:.*/)?(?:test_\w+|\w+_test)\.py", re.ASCII)  # fullmatch; \w only: the name goes into a shell command
+CROSS_FILES, CROSS_SECS, CROSS_TOTAL = 5, 120, 300  # per side: test files it may bring; one run's timeout; all runs'
 
 
-def _cross(xs, rows, main):
+def _cross(p, xs, rows, main):
     """T-2339: each started side's added python test files (test_*.py, *_test.py; at most CROSS_FILES) run on every
     started side's committed tree, unpacked to a temp dir so no builder's lane is touched. A pair counts when the
-    tests pass on their own side and fail on the other: the first's row gains `caught`, the other's `broken`.
+    tests pass on their own side and fail an assertion on the other: the first's row gains `caught`, the other's
+    `broken`. A run that errors (an import or a name only the owner adds) is `coupled` on the owner's row and ranks
+    nothing; a write that can't be made or a timeout says nothing. All runs share CROSS_TOTAL seconds: past it the
+    rest are skipped and each row says how far it got.
+    The tests are the builders' own code and run unsandboxed: each command passes fm's guard like any stored one, and
+    the environment is cut to PATH, a temp HOME, LANG and PYTHONPATH (the tree), so no token or key of this shell is
+    visible to them. Nothing stops a test that reaches for the network or the disk by path.
     ponytail: python unittest files only; other languages' tests are not run, add a runner per extension if it matters."""
+    import fmcli
     live = [(x, r) for x, r in zip(xs, rows) if r["lines"] is not None]
     tests = {x.id: [f for f in _git(main, "diff", "--name-only", "--diff-filter=A", "--no-renames", "-z",
-                                    f"HEAD...{r['branch']}").stdout.split("\0") if _TEST_RE.search(f)][:CROSS_FILES]
+                                    f"HEAD...{r['branch']}").stdout.split("\0") if _TEST_RE.fullmatch(f)][:CROSS_FILES]
              for x, r in live}
     if len(live) < 2 or not any(tests.values()):
         return
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     tmp = tempfile.mkdtemp(prefix="fm-race-")
+    deadline, total, done = time.monotonic() + CROSS_TOTAL, sum(len(live) for x, _ in live if tests[x.id]), [0]
+    _say(f"cross-examining {len(live)} sides ({total} test runs, {CROSS_TOTAL} s at most)")
     try:
         trees = {}
         for x, r in live:
@@ -862,32 +896,54 @@ def _cross(xs, rows, main):
             os.makedirs(dest)
             try:
                 with subprocess.Popen(["git", "-C", main, "archive", "--format=tar", r["branch"]], stdout=subprocess.PIPE,
-                                      stderr=subprocess.DEVNULL, env=env) as pr, \
+                                      stderr=subprocess.DEVNULL, env=git_env) as pr, \
                         tarfile.open(fileobj=pr.stdout, mode="r|") as t:
                     t.extractall(dest, filter="data")  # the data filter: no link or path leaves dest
                 trees[x.id] = dest
             except (OSError, tarfile.TarError):
                 pass  # that side has no tree to examine; it neither catches nor is caught
 
-        def passes(owner, r, tid):
+        def run(owner, r, tid):
+            """'pass'; 'fail' (an assertion failed); 'error' (it couldn't run there); None (no word: budget spent, a
+            file that can't be written, a timeout or no bash)."""
+            if deadline - time.monotonic() <= 0:
+                return None
+            done[0] += 1
             for f in tests[owner.id]:
-                dst = os.path.join(trees[tid], f)
                 blob = _git(main, "show", f"{r['branch']}:{f}")
-                if blob.returncode:
-                    return False
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                with open(dst, "w", encoding="utf-8") as h:
-                    h.write(blob.stdout)
-                if c.run_command(os.path.dirname(dst), f"python3 -m unittest -q {os.path.basename(f)[:-3]}",
-                                 CROSS_SECS)[0]:
-                    return False
-            return True
+                dst = os.path.join(trees[tid], f)
+                try:
+                    if blob.returncode:
+                        return None
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    with open(dst, "w", encoding="utf-8") as h:
+                        h.write(blob.stdout)
+                except (OSError, ValueError):  # another side's file in the way, a name the disk refuses (UnicodeError too)
+                    return None
+                cmd = f"python3 -m unittest -q {os.path.basename(f)[:-3]}"
+                fmcli.guard_stored(p, owner, cmd)
+                env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": tmp, "PYTHONPATH": trees[tid],
+                       "LANG": os.environ.get("LANG", "C.UTF-8"), "PYTHONDONTWRITEBYTECODE": "1"}
+                code, out = c.run_command(os.path.dirname(dst), cmd, max(1, min(CROSS_SECS, deadline - time.monotonic())),
+                                          env=env)
+                if code in (124, 127):
+                    return None
+                if code:
+                    return "fail" if "failures=" in out else "error"
+            return "pass"
         for x, r in live:
-            if x.id in trees and tests[x.id] and passes(x, r, x.id):  # a test red at home proves nothing
+            if x.id in trees and tests[x.id] and run(x, r, x.id) == "pass":  # a test red at home proves nothing
                 for y, ry in live:
-                    if y.id != x.id and y.id in trees and not passes(x, r, y.id):
-                        r["caught"] += 1
-                        ry["broken"] += 1
+                    if y.id != x.id and y.id in trees:
+                        got = run(x, r, y.id)
+                        if got == "fail":
+                            r["caught"] += 1
+                            ry["broken"] += 1
+                        elif got == "error":
+                            r["coupled"] += 1
+        if done[0] < total:
+            for _, r in live:
+                r["cross_stopped"] = f"cross-examination stopped at {CROSS_TOTAL} s: {done[0]} of {total} runs"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -895,11 +951,12 @@ def _cross(xs, rows, main):
 def _rank(p, b, main):
     """(original, [b sides], rows, leader id, [groups of ids with identical diffs]): frozen checks passed, then
     cross-examination (caught less broken), then lines changed, then files outside scope; a tie keeps the stated
-    choice (the original, first)."""
+    choice (the original, first). A side with uncommitted work (an error row) is not scored and never leads."""
     orig, others = _sides(p, b)
     xs = [orig, *others]
+    _say(f"running the frozen checks in {len(xs)} sides")
     rows = [_side(p, x, main) for x in xs]
-    _cross(xs, rows, main)
+    _cross(p, xs, rows, main)
     started = [r for r in rows if r["lines"] is not None]
     lead = min(started, key=lambda r: (-r["passed"] / (r["tests"] or 1), r["broken"] - r["caught"], r["lines"],
                                        r["outside"]))["id"] if started else None
@@ -909,13 +966,46 @@ def _rank(p, b, main):
     return orig, others, rows, lead, [g for g in groups.values() if len(g) > 1]
 
 
+def _heads(xs, main):
+    """{side id: its branch's head sha}: what a stored score was made from."""
+    return {x.id: _git(main, "rev-parse", x.meta.get("lane_branch") or "-").stdout.strip() for x in xs}
+
+
+def _scored_path(p, orig):
+    return os.path.join(p.dir, "audits", f"{orig.id}.race-score.json")
+
+
+def _scored(p, orig, xs, main):
+    """The rows `fm lane race --score` stored, when every side's branch is still at the commit they were made from."""
+    try:
+        with open(_scored_path(p, orig), encoding="utf-8") as h:
+            got = json.load(h)
+        heads = _heads(xs, main)
+        if got["heads"] == heads and all(heads.values()):
+            return {r["id"]: r for r in got["rows"]}
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
 def score(p, b, main, args):
     import fmcli
     orig, others, rows, lead, same = _rank(p, b, main)
     started = [r for r in rows if r["lines"] is not None]
+    xs = [orig, *others]
+    if not any(r.get("error") for r in rows):  # pick reuses this while no side has moved (T-2339)
+        try:
+            os.makedirs(os.path.dirname(_scored_path(p, orig)), exist_ok=True)
+            with open(_scored_path(p, orig), "w", encoding="utf-8") as h:
+                json.dump({"heads": _heads(xs, main), "rows": rows}, h)
+        except OSError:
+            pass  # a pick then scores again
     lines = [f"{r['id']}: " + (f"tests {r['passed']}/{r['tests']} passing, {r['lines']} lines changed, {r['outside']} "
                                f"files outside scope, its tests caught {r['caught']} of the others (broken by "
-                               f"{r['broken']})" if r["lines"] is not None else "not started (no worktree yet)")
+                               f"{r['broken']}), coupled to {r['coupled']}"
+                               + (f"; {r['cross_stopped']}" if r.get("cross_stopped") else "")
+                               if r["lines"] is not None else f"error: {r['error']}" if r.get("error")
+                               else "not started (no worktree yet)")
              for r in rows]
     lines += [f"{' and '.join(g)}: identical diffs, no real alternative" for g in same]
     alt = len(started) < 2 or len(same) != 1 or len(same[0]) != len(started)
@@ -965,7 +1055,7 @@ def pick(p, b, main, args):
     if bad:
         raise c.PolicyError(f"{win.id} fails the race's criteria ({c.fit(bad[0], 80)}): pick the other, or fix it first")
     try:  # T-2339: the evidence is read before the merge and the cleanup remove the trees it comes from
-        rows = {r["id"]: r for r in _rank(p, b, main)[2]}
+        rows = _scored(p, orig, sides, main) or {r["id"]: r for r in _rank(p, b, main)[2]}  # --score's, if no side moved
     except Exception:  # a side that can't be scored doesn't stop a pick
         rows = {}
     opts, stated = _options(orig)
