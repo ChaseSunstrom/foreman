@@ -53,6 +53,11 @@ class Incident(ForemanTestCase):
         # red only when the token is gone: a signal that could read it would pass and open nothing
         r = self.open('test -n "${GITHUB_TOKEN-}"', env={"GITHUB_TOKEN": "ghp_secret"}, check=False)
         self.assertEqual(r.returncode, 0, r.stderr)
+        for var, val in (("ANTHROPIC_API_KEY", "sk-ant-x"), ("CLAUDE_CODE_OAUTH_TOKEN", "oat-x")):  # T-2388 review
+            with self.subTest(var=var):  # the model's own credentials are credentials too
+                self.setUp()
+                r = self.open(f'test -n "${{{var}-}}"', env={var: val}, check=False)  # pragma: allowlist secret
+                self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_a_red_signal_opens_an_urgent_fix_with_the_red_run_as_evidence(self):
         r = self.open()
