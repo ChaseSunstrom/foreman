@@ -56,9 +56,14 @@ USER_ONLY_FM = {
                        "a file", "fm home import FILE"),  # T-1665
     "prove": ("--yes-run", "fm prove --yes-run is the user's to run: it says yes to running this tree's tests, as "
                            "them, with the network, now and from then on", "fm prove PATH --yes-run"),  # T-2122, T-2202
+    "mandate": (("set", "off"), "fm mandate set and fm mandate off are the user's to run: they end, overwrite or renew "
+                                "the standing mandate they gave", "fm mandate set \"<text>\""),  # T-2252
 }
 def _user_only_hit(word, arg):
-    """A word matches itself; a --flag also matches argparse's abbreviations (--y, --ye) and --flag=value."""
+    """A word matches itself; a --flag also matches argparse's abbreviations (--y, --ye) and --flag=value.
+    A tuple of words matches any one of them."""
+    if isinstance(word, tuple):
+        return any(_user_only_hit(w, arg) for w in word)
     a = arg.split("=")[0] if word.startswith("--") else arg
     return a == word or (word.startswith("--") and len(a) >= 3 and a.startswith("--") and word.startswith(a))
 
