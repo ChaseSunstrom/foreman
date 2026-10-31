@@ -65,7 +65,7 @@ class Genesis(ForemanTestCase):
                     "gen-1/mission-.md", "random.md"):
             p = self.fm("genesis", "put", bad, "--file", src, check=False)
             self.assertNotEqual(p.returncode, 0, bad)
-        for owned in ("exam.jsonl", "gen-1/drift.md", "gen-3/sweep.md"):  # T-2155: a stage gate's record, never put
+        for owned in ("exam.jsonl", "gen-1/drift.md", "gen-3/sweep.md", "gen-2/select.md"):  # T-2155: a stage gate's record, never put
             refused = self.fm("genesis", "put", owned, "--file", "-", input="Verdict: clean\n", check=False)
             self.assertNotEqual(refused.returncode, 0, owned)
             self.assertIn("written only by its own command", refused.stderr)
@@ -713,6 +713,10 @@ class GenesisStep(ForemanTestCase):
         self.put("gen-1/seed.md", SEED.split("| 1 |")[0] + "No Missions this generation.\n")
         self.put("lineage.md", "# Lineage\n\n## gen-1\n- kept: written by hand\n")
         self.at("select", "fm genesis select 1")
+        self.fm("log", "genesis_select", '{"gen":1}')  # a ledger line is no record either
+        self.at("select", "fm genesis select 1")
+        with self.assertRaises(ValueError):
+            fmgenesis.put(self.p, "gen-1/select.md", "# Select\n\nGen: 1\n")
         tower_file(fmgenesis.home(self.p), "exam.jsonl", line("r1", 1, ["a"]))
         self.assertEqual(self.fm_json("genesis", "select", "1")["verdict"], "baseline")
         self.assertNotEqual(self.step()["stage"], "select")
@@ -1162,9 +1166,9 @@ def line(run, gen, train, holdout=(), agent="foreman", cost=1.0):
 
 def selected(p, *gens):
     """T-2163: what fm genesis select leaves in the ledger, for tests that put their own lineage text."""
-    import fmcore as c
+    import fmgenesis
     for n in gens:
-        c.log_event(p, "genesis_select", data={"gen": n, "verdict": "keep", "base": f"gen-{n}"})
+        tower_file(fmgenesis.home(p), f"gen-{n}/select.md", f"# Select\n\nGen: {n}\nVerdict: keep\n")
 
 
 NY = ("# Not yet\n\n## Self-hosted model router\n- blocker: no local model\n- tried: ollama probe; llama.cpp spike\n"
