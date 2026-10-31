@@ -51,6 +51,128 @@ class Blast(Base):
         self.assertNotIn("co-change: app/session.py", before)
 
 
+class BlastInPlan(Base):
+    """T-2277: fm focus writes the blast line into an M/L task's Risks once."""
+    AP = "Approach (options → choice → why)"
+
+    def plan(self, tid_title, scope, tier="M"):
+        self.fm("task", "new", tid_title, "--type", "FEATURE", "--tier", tier, *(["--scope", scope] if scope else []))
+        tid = "T-0003"
+        self.fm("task", "set", tid, "--section", self.AP, "--text", "1) a 2) b 3) c Choice 1: a")
+        self.fm("task", "set", tid, "--section", "Interpretation", "--text", "x")
+        self.fm("task", "ac", tid, "add", "works", "--verify", "true")
+        self.fm("task", "step", tid, "add", "build")
+        return tid
+
+    def risks(self):
+        import fmcore as c
+        return c.find_brief(c.find_project(self.repo), "T-0003").section("Risks and rollback")
+
+    def test_names_neighbours_and_past_fixes_once(self):
+        tid = self.plan("Touch the session", "app/session.py")
+        self.fm("graph", "build")
+        import time
+        import fmcore as c
+        import fmgraph
+        t0 = time.monotonic()
+        line = fmgraph.blast_line(c.find_project(self.repo), ["app/session.py"])
+        self.assertLess(time.monotonic() - t0, fmgraph.BLAST_BUDGET)  # the seeded graph answers well inside the cap
+        self.assertIn("app/auth.py", line)
+        self.fm("focus", tid)
+        r = self.risks()
+        self.assertIn("Blast radius (fm graph blast):", r)
+        self.assertIn("app/auth.py", r)
+        self.assertIn("T-0001", r)
+        self.fm("focus", tid)
+        self.assertEqual(self.risks().count("Blast radius"), 1)
+
+    def test_empty_scope_glob_or_unbuilt_graph_skips(self):
+        tid = self.plan("Touch the session", "app/*.py")
+        self.fm("graph", "build")
+        self.fm("focus", tid)
+        self.assertNotIn("Blast radius", self.risks())
+
+    def test_no_graph_skips_and_focus_does_not_build_one(self):
+        tid = self.plan("Touch the session", "app/session.py")
+        self.fm("focus", tid)
+        self.assertNotIn("Blast radius", self.risks())
+
+
+class BlastBuild(Base):
+    """T-2277: a missing or stale graph at focus starts one detached fm graph build and writes no line."""
+
+    def run_line(self, background):
+        from unittest import mock
+        import fmcore as c
+        import fmgraph
+        p = c.find_project(self.repo)
+        env = {} if background else {"FOREMAN_NO_BACKGROUND": "1"}
+        real = subprocess.Popen
+        pop = mock.MagicMock()
+
+        def fake(argv, *a, **k):  # git runs through Popen too: only the build is stubbed
+            return pop(argv, *a, **k) if argv[-2:] == ["graph", "build"] else real(argv, *a, **k)
+        with mock.patch.dict(os.environ, env), mock.patch("subprocess.Popen", fake):
+            if background:
+                os.environ.pop("FOREMAN_NO_BACKGROUND", None)
+            line = [fmgraph.blast_line(p, ["app/session.py"]) for _ in range(2)]
+        return line, pop
+
+    def test_a_missing_graph_starts_one_build_and_no_line(self):
+        line, pop = self.run_line(True)
+        self.assertEqual(line, ["", ""])
+        self.assertEqual(pop.call_count, 1)  # the second call sees the build in flight
+        args, kw = pop.call_args
+        self.assertEqual(args[0][-2:], ["graph", "build"])
+        self.assertTrue(kw["start_new_session"])
+
+    def test_a_stale_graph_starts_a_build(self):
+        self.fm("graph", "build")
+        self.write("app/new.py", "x = 1\n")
+        self.commit("move head", "2026-04-01T10:00:00Z")
+        line, pop = self.run_line(True)
+        self.assertEqual((line, pop.call_count), (["", ""], 1))
+
+    def test_a_ledger_append_alone_does_not_make_it_stale(self):  # review: hooks append events all the time
+        import fmcore as c
+        import fmgraph
+        self.fm("graph", "build")
+        p = c.find_project(self.repo)
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            f.write('{"event": "noise"}\n')
+        line, pop = self.run_line(True)
+        self.assertEqual(pop.call_count, 0)
+        self.assertIn("app/auth.py", fmgraph.blast_line(p, ["app/session.py"]))
+
+    def test_the_build_removes_its_lock_and_a_future_lock_is_expired(self):
+        import fmcore as c
+        import fmgraph
+        p = c.find_project(self.repo)
+        lock = os.path.join(p.dir, "graph.building")
+        with open(lock, "w") as f:
+            f.write("1")
+        self.fm("graph", "build")
+        self.assertFalse(os.path.exists(lock))
+        with open(lock, "w") as f:
+            f.write("1")
+        future = __import__("time").time() + 86400
+        os.utime(lock, (future, future))
+        self.write("app/new.py", "x = 1\n")
+        self.commit("move head", "2026-04-01T10:00:00Z")  # the graph is stale again
+        line, pop = self.run_line(True)
+        self.assertEqual(pop.call_count, 1)
+
+    def test_the_line_is_computed_before_the_project_lock(self):
+        import fmcore as c  # source order: git and sqlite waits must not sit inside the lock every verb queues on
+        src = open(os.path.join(c.PLUGIN_ROOT, "lib", "fmcli.py")).read()
+        body = src.split("def cmd_focus")[1].split("\ndef ")[0]
+        self.assertLess(body.index("blast_line"), body.index("with c.lock(p.dir)"))
+
+    def test_no_background_starts_none(self):
+        line, pop = self.run_line(False)
+        self.assertEqual((line, pop.call_count), (["", ""], 0))
+
+
 class Pack(Base):
     def test_a_tasks_words_reach_files_through_past_tasks(self):
         data = json.loads(self.fm("graph", "pack", "login token refresh is broken", "--json").stdout)

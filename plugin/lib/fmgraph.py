@@ -9,6 +9,8 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
+import time
 
 import fmcore as c
 
@@ -136,8 +138,73 @@ def _edges(con, as_of, where="", args=()):
     return con.execute(q, (as_of or "9999", *args)).fetchall()
 
 
-def blast(p, paths, as_of=None):
-    con = db(p)
+BLAST_BUDGET = 1.0  # seconds fm focus gives the graph query (T-2277)
+
+
+BUILD_LOCK_S = 600  # a build in flight this young is left alone; an older lock file is a dead build's
+
+
+def _build_in_background(p):
+    """A detached `fm graph build` like fmmap.compact's `fm map`, never two at once (the lock file's age)."""
+    if os.environ.get("FOREMAN_NO_BACKGROUND"):
+        return
+    lock = os.path.join(p.dir, "graph.building")
+    try:
+        if 0 <= time.time() - os.path.getmtime(lock) < BUILD_LOCK_S:  # a future mtime (clock jump) is expired
+            return
+    except OSError:
+        pass
+    try:
+        with open(lock, "w") as f:
+            f.write(str(os.getpid()))
+        subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "graph", "build"], cwd=p.root,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except OSError:
+        pass
+
+
+def blast_line(p, scope, budget=BLAST_BUDGET):
+    """T-2277: the plan's one-line blast radius for a task's literal scope files, or "" when there is nothing to say.
+    Reads the graph only if it is built and fresh (focus never rebuilds it: a build runs git log over 3000 commits) and
+    stops a slow query after `budget` seconds; any failure is silence."""
+    root = os.path.realpath(p.root)
+    paths = []
+    for s in scope or []:
+        f = os.path.normpath(s)
+        real = os.path.realpath(os.path.join(root, f))
+        if not re.search(r"[*?\[\]{}]", s) and real.startswith(root + os.sep) and os.path.isfile(real) \
+                and f not in paths:
+            paths.append(f)
+    db_path = os.path.join(p.dir, "graph.sqlite")
+    if not paths:
+        return ""
+    try:
+        con = sqlite3.connect(db_path, timeout=0.5) if os.path.exists(db_path) else None
+        # HEAD alone: ledger events and graphify's file don't change co-change history (the stamp starts with HEAD)
+        built = con and (con.execute("SELECT v FROM meta WHERE k='stamp'").fetchone() or [""])[0].split(":")[0]
+        fresh = bool(built) and built == c._git(p.root, "rev-parse", "HEAD", timeout=2).strip()
+    except Exception:
+        fresh = False
+    if not fresh:
+        _build_in_background(p)  # the next focus has the line
+        return ""
+    try:
+        end = time.monotonic() + budget
+        con.set_progress_handler(lambda: int(time.monotonic() > end), 10000)
+        r = blast(p, paths[:20], con=con)
+    except Exception:  # a hint: it never stops a focus
+        return ""
+    bits = []
+    if r["cochange"]:
+        bits.append("co-changes " + ", ".join(r["cochange"][:5]))
+    if r["fixes"]:
+        bits.append("past FIXes " + ", ".join(f["id"] for f in r["fixes"][:5]))
+    return "Blast radius (fm graph blast): " + "; ".join(bits) + "." if bits else ""
+
+
+def blast(p, paths, as_of=None, con=None):
+    con = con or db(p)
     marks = ",".join("?" * len(paths))
     ins = _edges(con, as_of, f" AND dst IN ({marks})", paths)
     outs = _edges(con, as_of, f" AND src IN ({marks})", paths)
@@ -192,7 +259,13 @@ def cmd_graph(args):
     import fmcli
     p = fmcli.resolve(args)
     if args.action == "build":
-        con = db(p)
+        try:
+            con = db(p)
+        finally:  # the lock only guards a build in flight (T-2277)
+            try:
+                os.remove(os.path.join(p.dir, "graph.building"))
+            except OSError:
+                pass
         n = con.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
         return fmcli.out(args, {"edges": n}, f"Graph: {n} edges (code, tests, tasks, co-change).")
     if not args.words:
