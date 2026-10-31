@@ -801,6 +801,12 @@ class LaneRecovery(ForemanTestCase):
         self.assertIn("12:00", fmlanes.recovery_text("usage_limit", "T-1", detail="12:00"))
         self.assertTrue(all(len(v) == 2 for v in fmlanes.STOP_CAUSES.values()), "label and recovery per cause")
 
+    def test_a_stopped_builder_whose_fresh_commit_left_the_tree_clean_ended_without_a_report(self):
+        import fmlanes  # T-2362: the exam's lanes drill found it read as uncommitted while under 30 minutes old
+        tid, _ = self.finished_builder(when=time.strftime("%Y-%m-%dT%H:%M:%S"))
+        p = c.find_project(self.repo)
+        self.assertEqual(fmlanes.stop_causes(p, c.load_briefs(p), fresh=True)[tid][0], "no_report")
+
     def test_a_merged_lane_and_a_lane_with_no_process_record_have_no_stop_cause(self):
         import fmlanes
         p = c.find_project(self.repo)
@@ -1015,8 +1021,10 @@ class LaneRecovery(ForemanTestCase):
         seen = []
         real = c.finished_lanes
         with unittest.mock.patch.object(c, "finished_lanes", side_effect=lambda pp, bs: seen.append(sorted(x.id for x in bs)) or real(pp, bs)):
-            fmlanes.stop_causes(p, c.load_briefs(p), fresh=True)
-        self.assertEqual(seen, [sorted([a, b])], "the whole list goes in, the answer is filtered after")
+            got = fmlanes.stop_causes(p, c.load_briefs(p), fresh=True)
+        # T-2362: an ended builder's lane is judged directly (ahead and clean), so finished_lanes' cache is never split
+        self.assertEqual(seen, [])
+        self.assertEqual((got[a][0], got[b][0]), ("no_report", "uncommitted"))
 
     def test_a_stalled_claim_is_checked_again_when_the_lane_shows_new_work(self):
         tid, path = self.live_stalled_builder()

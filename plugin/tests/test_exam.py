@@ -1615,3 +1615,80 @@ class RecurCorrection(JudgmentStub, ForemanTestCase):  # T-2361: #7, repeated fa
             d = self.gen("--kind", kind, "--author", "child", env=dict(self.env, STUB_MODE=mode))
             self.assertEqual(d["scenarios"], [], mode)
             self.assertIn(why, d["dropped"][0]["why"], mode)
+
+
+class LanesKind(JudgmentStub, ForemanTestCase):  # T-2362: #9, stopped builder lanes recovered by their cause
+    def test_kind_lanes_renders_three_requests_each_with_a_planted_stop_kept_out_of_the_repo(self):
+        import fmexam
+        r = self.gen("--kind", "lanes")
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        s = r["scenarios"][0]
+        key = self.key(s)
+        self.assertEqual([d["kind"] for d in key["defects"]], ["bug", "vuln", "slow"])
+        self.assertEqual(len(key["requests"]), 3)
+        self.assertEqual(len(set(key["stops"])), 3)
+        self.assertLessEqual(set(key["stops"]), set(fmexam.STOPS))
+        repo_text = "".join(read_text(os.path.join(d, f)) for d, _, fs in os.walk(s["repo"]) if ".git" not in d
+                            for f in fs)
+        for stop in fmexam.STOPS:
+            self.assertNotIn(stop, repo_text)
+        res = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "9", "--kind", "lanes")
+        self.assertEqual((len(res["scenarios"]), sum(x["split"] == "holdout" for x in res["scenarios"])), (9, 3))
+        seen = {x for sc in res["scenarios"] for x in self.key(sc)["stops"]}
+        self.assertEqual(seen, set(fmexam.STOPS))  # every stop drawn somewhere in a run
+
+    def test_kind_lanes_oracle_scores_all_empty_none(self):
+        r = self.gen("--kind", "lanes")
+        sid = r["scenarios"][0]["id"]
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual(self.closed(o), [sid])
+        self.assertEqual((o["lanes_keyed"], o["lanes_recovered"], o["lanes_kept"]), (3, 3, 3))
+        e = self.fm_json("exam", "run", r["run"], "--agent", "empty")
+        self.assertEqual((self.closed(e), e["lanes_recovered"]), ([], 0))
+
+    def test_kind_lanes_the_drill_recovers_every_stop_by_its_cause_with_the_stub_s_work_kept(self):
+        import fmexam
+        r = self.gen("--kind", "lanes")
+        s = r["scenarios"][0]
+        path = os.path.join(os.path.dirname(s["repo"]), "key.json")
+        for stops in (list(fmexam.STOPS)[:3], list(fmexam.STOPS)[2:]):  # all five across two drills
+            with self.subTest(stops=stops):
+                key = json.loads(read_text(path))
+                key["stops"] = stops
+                with open(path, "w") as f:
+                    json.dump(key, f)
+                d = self.fm_json("exam", "run", r["run"], "--agent", "lanes", timeout=600)
+                lanes = json.loads(read_text(os.path.join(c.find_project(self.repo).dir, "exam", r["run"], "work",
+                                                          "lanes", s["id"], fmexam.LANES_LOG)))["lanes"]
+                self.assertEqual([x["stop"] for x in lanes], stops)
+                for x in lanes:
+                    self.assertEqual(x["cause"], fmexam.STOPS[x["stop"]], x)  # recovered by the cause it stopped for
+                    self.assertFalse(x["human"], x)
+                    self.assertLessEqual(x["recoveries"], 2, x)
+                self.assertEqual((d["lanes_recovered"], d["lanes_kept"], d["lanes_dup"]), (3, 3, 0), lanes)
+                self.assertEqual(self.closed(d), [s["id"]])
+
+    def test_kind_lanes_a_recovery_that_loses_the_stub_s_work_is_graded_down(self):
+        import fmexam
+        r = self.gen("--kind", "lanes")
+        s = r["scenarios"][0]
+        base = os.path.dirname(s["repo"])
+        work = os.path.join(self.tmp, "lost")
+        shutil.copytree(os.path.join(base, "hidden", "clean"), work)
+        log = json.loads(read_text(os.path.join(work, fmexam.LANES_LOG)))
+        log["lanes"][0]["kept"] = False  # the WIP the stub wrote before its stop is gone from the branch
+        with open(os.path.join(work, fmexam.LANES_LOG), "w") as f:
+            json.dump(log, f)
+        self.assertEqual(fmexam._lanes_score(base, work)[2], 2)
+
+    def test_kind_lanes_children_write_the_three_plants_and_each_gets_its_lane_s_fix(self):
+        r = self.gen("--kind", "lanes", "--author", "child", env=self.env)
+        self.assertEqual(r["dropped"], [])
+        s = r["scenarios"][0]
+        key = self.key(s)
+        self.assertEqual(s["author"], "child")
+        self.assertEqual(len(key["defects"]), 3)
+        self.assertTrue(all(d["edit"]["old"] != d["edit"]["new"] and not d["tf"] for d in key["defects"]))
+        self.assertEqual(len(key["requests"]), 3)
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "oracle")), [s["id"]])
