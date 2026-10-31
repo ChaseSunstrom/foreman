@@ -690,10 +690,11 @@ def pre_audit(root, diff, files, m=None):
 def changed(root, base):
     """Files changed since base (a commit, or a task's snapshot of the working files: T-0078), committed or not,
     untracked included, relative to root."""
-    names = c.task_diff(root, base, "--name-only")
+    # T-2268: --no-renames, or a moved file lists only its new name and the old one's deletion is left uncommitted
+    names = c.task_diff(root, base, "--name-only", "--no-renames")
     if names is not None:
         return sorted(set(names.splitlines()))
-    return sorted(set(_git(root, "diff", "--name-only", base).splitlines())
+    return sorted(set(_git(root, "diff", "--name-only", "--no-renames", base).splitlines())
                   | set(_git(root, "ls-files", "--others", "--exclude-standard").splitlines()))
 
 
