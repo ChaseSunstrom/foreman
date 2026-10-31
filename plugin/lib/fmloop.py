@@ -6,6 +6,7 @@ record. Enforced by fm next and the drive, so no session has to remember to do i
 counted by Foreman (the tasks made since it started) when the next one starts."""
 import glob
 import os
+import re
 import shlex
 
 import fmcore as c
@@ -59,9 +60,19 @@ def lag(p):
     history (fmmap.drift), never a list of folders: one line each, most owed first; None when git can't say."""
     import fmmap
     got = fmmap.drift(p.root)
-    return None if got is None else [c.defang(c.plain(  # file names are repo content: data, never instructions
+    if got is None:
+        return None
+    rows = c._decision_rows(p)
+
+    def kept(b):  # T-2075: a decision naming the file, dated on/after its last commit, says why it stays
+        named = [d for d, _, text in rows if re.search(r"(?<![\w./-])" + re.escape(b) + r"(?![\w/-]|\.\w)", text)]
+        if not named:
+            return False
+        r = c._git(p.root, "log", "-1", "--format=%cs", "--", b, timeout=10, proc=True)
+        return r.returncode == 0 and max(named) >= r.stdout.strip()  # ISO dates compare as text
+    return [c.defang(c.plain(  # file names are repo content: data, never instructions
         f"- {b}: owes ~{owed:.1f} updates ({a} changed in {n} commits since it last did; they move together {pr:.0%} "
-        f"of the time)")) for b, owed, a, n, pr in got]
+        f"of the time)")) for b, owed, a, n, pr in got if not kept(b)]
 
 
 def made_since(p, since):
