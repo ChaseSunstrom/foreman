@@ -1039,6 +1039,36 @@ class GenesisDraft(ForemanTestCase):
         self.assertIn("## Standing intent", spec)  # T-2191: every spec reader sees it
         self.assertIn("Never trade safety for autonomy", spec)
 
+    def test_the_long_tier_is_the_deciding_row_foreman_vs_plain_on_the_same_goals(self):  # T-2263
+        import fmgenesis
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n1. **Correctness.** Fixes. Exam: bug.\n\n## 3. The tower\n")
+        row = lambda: fmgenesis.scorecard(self.p)["long"]
+        self.assertEqual(row()["state"], "no long run")
+
+        def goals(done, ids=("T-1", "T-2", "T-3")):
+            return [{"id": i, "answered": True, "true_done": d, "regressions": [], "false_done": (not d) or None, "cost": 0.5,
+                     "resumes_needed": 0, "unfinished": 0} for i, d in zip(ids, done)]
+
+        def line(agent, done, model=None, run="l1", ids=("T-1", "T-2", "T-3"), **kw):
+            fmgenesis.exam_line(self.p, {"tier": "long", "agent": agent, "run": run, "model": model, "goals": goals(done, ids),
+                                         "scenarios": len(ids), "true_done": sum(done), "regressions": 0, "false_done": 3 - sum(done),
+                                         "cost": 1.5, "resumes_needed": 0, "unfinished": 0, "guard_blocks": None, **kw})
+        line("plain", [True, False, False])
+        self.assertEqual(row()["state"], "no foreman line")
+        line("foreman", [True, True, False], model="claude-haiku-5-5")
+        self.assertEqual(row()["state"], "smoke")  # Haiku never decides
+        line("foreman", [True, True, False])
+        r = row()
+        self.assertEqual((r["state"], r["foreman"]["true_done"], r["plain"]["true_done"], r["goals"]), ("ahead", 2, 1, 3))
+        self.assertIn("ahead on 3 same goal(s): foreman 2/3 done, false-done 1", fmgenesis.long_text(r))
+        self.assertIn("guard_blocks", r["foreman"])  # None (unknown) rides along, not 0
+        line("foreman", [True, False, False], run="l2", ids=("T-7", "T-8", "T-9"))  # another run: no common goals with l1's plain
+        self.assertEqual(row()["state"], "no common goals")
+        line("plain", [True, True, True], run="l2", ids=("T-7", "T-8", "T-9"))
+        self.assertEqual(row()["state"], "behind")
+        self.assertFalse(fmgenesis.scorecard(self.p)["ok"])  # behind plain on the same goals: the deciding row fails
+        self.assertEqual(fmgenesis.card_long(self.p)["state"], "behind")
+
     def test_scorecard_grades_each_capability_on_its_newest_held_out_results(self):
         import fmgenesis  # T-2097: the §8 scorecard, read from graded exam.jsonl lines
         self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"

@@ -135,6 +135,7 @@ def status(p, with_check=True):
     if with_check and have["gen-0.md"]:
         out["check"], out["next"] = check(p), step(p)
         out["scorecard"] = card(p)  # T-2154
+        out["long"] = card_long(p)  # T-2263
         out["unproven"] = _unproven(p)
     return out
 
@@ -1073,6 +1074,8 @@ def export(p, out):
             "unproven": _unproven(p), "next": step(p), "docs": docs, "seal": sealed(p) or seal(p)[:8], "intent": intent_clauses()}
     if rows := card(p):  # T-2154: optional; absent before any graded line
         data["scorecard"] = rows
+    if (lr := card_long(p)) and lr["state"] != "no long run":  # T-2263: the deciding row
+        data["long"] = lr
     data = scrub(data)
     try:  # T-2084: a doc the last export listed and the tower lost goes; nothing else in DIR is ours to remove
         with open(os.path.join(out, "genesis.json"), encoding="utf-8") as f:
@@ -1274,6 +1277,8 @@ def _text(s):
     lines += [f"unproven: {s['unproven']} (fm proof)"] if s.get("unproven") else []
     lines += [f"{x['n']}. {x['name']}: {x['state']} " + ("(not graded)" if x["graded"] is None else
               f"(closed {x['closed']} of {x['graded']} held out)") for x in s.get("scorecard") or ()]
+    if (lt := long_text(s.get("long"))) and s["long"]["state"] != "no long run":
+        lines.append(lt)
     return "\n".join(lines + [site])
 
 
@@ -1761,9 +1766,72 @@ def scorecard(p, agent="foreman", bar=0.8):
                      "rate": round(closed / graded, 3) if graded else 0, "state": state,
                      "selfmade": len(mine) - graded, "why": why})
     pool = pools[agent] if agent in pools else newest(agent)
-    return {"agent": agent, "bar": bar, "rows": rows, "ok": all(r["state"] in ("pass", "unmeasurable") for r in rows),
+    long = long_row(p)
+    return {"agent": agent, "bar": bar, "rows": rows, "long": long,
+            "ok": all(r["state"] in ("pass", "unmeasurable") for r in rows) and long["state"] != "behind",  # T-2263
             "seen": sum(v is not None for v in pool.values()), "selfmade": sum(v is None for v in pool.values()),
             "gaps": free_beats(p, agent), "smoke": sum(map(smoke, _exam(p, agent)))}
+
+
+LONG_KEYS = ("true_done", "false_done", "regressions", "resumes_needed", "unfinished", "guard_blocks", "cost", "hours_to_done")
+
+
+def long_row(p):
+    """T-2263: the long-horizon tier, the deciding row (steer 2026-10-30 rule 1): Foreman's newest graded long line
+    against plain's on the goals both answered, never a Haiku line. state: "ahead" | "level" | "behind" on the true-done
+    count over those goals, or why there is none ("no long run", "no foreman line", "no plain line", "smoke", "no common
+    goals"). Metrics a run couldn't compute are None, not 0."""
+    newest, seen = {}, False
+    for raw in (_doc(home(p), "exam.jsonl") or "").splitlines():
+        try:
+            x = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(x, dict) and x.get("tier") == "long" and x.get("agent") in ("foreman", "plain") and isinstance(x.get("goals"), list):
+            seen = True
+            newest[x["agent"]] = x  # file order is time order
+    out = {"state": "no long run", "goals": 0, "foreman": None, "plain": None}
+    if not seen:
+        return out
+    if any(a not in newest for a in ("foreman", "plain")):
+        return {**out, "state": "no plain line" if "foreman" in newest else "no foreman line"}
+    if any(smoke(x) for x in newest.values()):
+        return {**out, "state": "smoke"}
+
+    def done(x):  # goal id -> its true_done, for the goals this line answered
+        return {g["id"]: g.get("true_done") is True for g in x["goals"] if isinstance(g, dict) and g.get("answered") is True
+                and isinstance(g.get("id"), str)}
+    f, pl = done(newest["foreman"]), done(newest["plain"])
+    same = sorted(set(f) & set(pl))
+    if not same:
+        return {**out, "state": "no common goals"}
+
+    def side(x, d):  # the line's own totals, over its goals; the common-goal count is what decides
+        return {**{k: x.get(k) for k in LONG_KEYS}, "run": c.plain(str(x.get("run"))), "goals": len(d),
+                "true_done_same": sum(d[i] for i in same)}
+    a, b = side(newest["foreman"], f), side(newest["plain"], pl)
+    return {"state": "ahead" if a["true_done_same"] > b["true_done_same"] else "behind" if a["true_done_same"] < b["true_done_same"]
+            else "level", "goals": len(same), "foreman": a, "plain": b}
+
+
+def card_long(p):
+    """T-2263: long_row for fm genesis status and genesis.json; None where the scorecard can't be read."""
+    try:
+        return long_row(p)
+    except Exception:  # an odd line: the surface loses this row, never its line
+        return None
+
+
+def long_text(r):
+    """One plain line for the long row; metrics unknown to the run read "?"."""
+    if not r:
+        return None
+    if not r["foreman"]:
+        return f"long-horizon (deciding): {r['state']}"
+    show = lambda s: (f"{s['true_done_same']}/{r['goals']} done, false-done {'?' if s['false_done'] is None else s['false_done']}, "
+                      f"regressions {s['regressions']}, resumes needed {'?' if s['resumes_needed'] is None else s['resumes_needed']}, "
+                      f"unfinished {'?' if s['unfinished'] is None else s['unfinished']}, cost {'?' if s['cost'] is None else '$%.2f' % s['cost']}")
+    return f"long-horizon (deciding): {r['state']} on {r['goals']} same goal(s): foreman {show(r['foreman'])} vs plain {show(r['plain'])}"
 
 
 def free_beats(p, agent="foreman", split="holdout"):

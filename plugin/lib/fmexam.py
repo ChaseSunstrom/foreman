@@ -1583,7 +1583,8 @@ def cmd_exam(args):
                                  + (f" · {res['selfmade']} self-authored held-out result{'s' * (res['selfmade'] != 1)} "
                                     "not counted (only an outside author's scenarios decide: fm exam gen --author child)"
                                     if res["selfmade"] else "") + "\n"
-                                 + "".join(f"  top gap: {g}\n" for g in res["gaps"]) + "\n".join(
+                                 + "".join(f"  top gap: {g}\n" for g in res["gaps"])
+                                 + (f"  {fmgenesis.long_text(res['long'])}\n" if res["long"]["state"] != "no long run" else "") + "\n".join(
                 f"  {r['n']:>2}. {r['name']}: {r['state']}" + (f" {r['closed']}/{r['graded']}" if r["graded"] else "")
                 + (f" ({', '.join(r['kinds'])})" if r["kinds"] else "") + (f": {r['why']}" if r.get("why") else "")
                 for r in rows)
