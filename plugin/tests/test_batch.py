@@ -30,6 +30,18 @@ class Batch(ForemanTestCase):
         self.assertIn(host, [x["id"] for x in self.state()["queue"]] + inbox)
         self.assertEqual(res["tier"], "M", "three small ones are one medium task")
 
+    def test_a_host_held_by_a_lane_keeps_its_members_out_of_the_inbox(self):
+        # T-2317: once a builder lane held the host, lane_view hid it and its members came back as inbox items
+        import fmcore as c
+        host = json.loads(self.fm("batch", *self.ids, "--json").stdout)["id"]
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, host)
+        b.meta["lane"] = "/elsewhere/a-builder-worktree"
+        c.save_brief(p, b)
+        inbox = [x["id"] for x in self.state()["inbox"]]
+        self.assertFalse(set(self.ids) & set(inbox), inbox)
+        self.assertNotIn(self.ids[0], self.fm("next").stdout)
+
     def test_a_done_when_verify_command_survives_the_batch(self):
         # T-1976: the DONE-WHEN fallback kept "x :: cmd" as text with no verify, so fm focus refused the batch
         ids = [self.capture(f"FEATURE: other thing {i}\nDONE-WHEN: other {i} works :: true") for i in range(2)]

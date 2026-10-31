@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A batch host held by a builder lane keeps its members out of the main inbox, so the drive no longer offers them as new work (T-2317).
 - Tests: in-process speed and complexity bars (design lint and tokens, find rank, library suggest, brief regex, cost bisect, scene render, lint_verify) time CPU with `time.process_time`; deadline, timeout and child-process bars keep the wall clock and name their deadline in a comment (T-2310).
 - `fm task evidence --repeat` works again after T-2303's rename reached `_repeat_runs` (T-2311).
 - `fm task evidence --bench` puts the start tree's own entry points first on PATH for the before side, so `fm` and any tool that resolves into the tree time the base code, not the current code; the result says when the start tree lacks an entry point or when no word of the command touches the tree (T-2303).
