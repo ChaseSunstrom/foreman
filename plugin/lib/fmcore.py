@@ -3756,6 +3756,12 @@ def _next_for(p, briefs=None):
             if g["kind"] != "done":
                 return None, "genesis", (f"Genesis gen {g['gen']}: {g['action']} → {g['command']} (fm genesis step)"
                                          + waits)
+        try:  # T-2391: idle time upgrades the newest proof that can run here (a row waiting on an install is never named)
+            nxt = proof_next(p)
+        except Exception:  # the rollup never costs the next action
+            nxt = ""
+        if nxt:
+            return None, "idle", f"queue is empty; {nxt}" + waits
         import fmloop  # T-1057: with the forever loop on, an empty queue starts the next round
         import fmcontract  # T-1158: no next round past an ended contract (read-only: callers may hold the lock)
         if fmloop.on(p) and not fmcontract.over(p, freeze=False):
@@ -3962,7 +3968,7 @@ def render_state(sd, ts=None):
     out += ["", "## Notes", f"Sensitive: {'yes' if sd['sensitive'] else 'no'} · Drive: {'on' if sd['drive'] else 'off'}"
             + (" · PAUSED" if sd["paused"] else "")]
     if sd.get("unproven"):  # T-2273
-        out.append(f"Done on typed or unrun proof, 30 days: unproven: {sd['unproven']} (fm proof)")
+        out.append(unproven_line(sd["unproven"], sd.get("unproven_kinds"), "Done on typed or unrun proof, 30 days: "))
     g = sd.get("genesis")
     if g:  # T-2118
         out.append(f"Genesis: {genesis_line(g)}")
@@ -4201,13 +4207,156 @@ def all_touches(p, window=None, only=None):
 
 _UI_FILE = lazy(r"(?i)\.(css|scss|html|tsx|jsx|svelte|vue)$")
 _UI_PROOF = lazy(r"(?i)\b(shot|smoke|stories|flow)\b")  # a run of fm shot, fm smoke, fm stories or a flow check
+PERF_NOISE = 0.15  # T-2391: a bench whose median moved by less than this share is noise (the bench gate's default tolerance, T-1439)
+DOCS_DIFF_MAX = 40  # git diffs one cold rollup spends on docs claims; the verdicts are kept, so the rest come on later calls
+_BENCH = lazy(r"([\d.]+)s → ([\d.]+)s \((\d+) runs each\)")  # what fm task evidence --bench records
+_DOC_FILE = lazy(r"(?i)\.(md|mdx|rst|adoc)$")
+# a line a run can check: a --flag, a backticked path, `make X` or npm run X; prose alone never counts
+_DOC_CLAIM = lazy(r"--[A-Za-z][\w-]*|`[^`\s]*[/.][\w-]+[^`\s]*`|`make\s+[\w.-]+|\b(?:npm|pnpm|yarn|bun) run\s+[\w:.-]+")
+_MIGRATION = lazy(r"(?i)(^|/)(migrations?|alembic/versions|db/migrate|prisma/migrations)/")
+_DATA_FILE = lazy(r"(?i)\.(csv|tsv|parquet|jsonl|ndjson|avro|feather)$|(^|/)dbt_project\.yml$|(^|/)models/[^/]+\.sql$")
+_DATA_PROOF = lazy(r"(?i)\b(dbt|great_expectations|pandera|frictionless|validate|schema|csvlint)\b")
+_VACUOUS_RUN = lazy(r"vacuous checks: (.*)")
 
 
-def unproven_cached(p, days=30):
-    """T-2273: len(unproven(p, days)) kept in unproven.json, recomputed only when its key moves: today, and each brief
-    folder's mtime and file count (a brief is written by rename, so a save or a close moves its folder's mtime). The
-    ledger is not in the key: a done task's touches no longer grow. ponytail: an edit logged to a task after its close
-    shows at the next brief change; key on the ledger size if that matters."""
+def _q(s):
+    return shlex.quote(str(s))
+
+
+def _need_evidence(status):
+    def need(x):
+        got = [k for k, v in x["bad"].items() if v == status]
+        return {"why": ", ".join(f"{k} {n}" for k, n in got[:4]), "fmt": {"cmd": _q(x["cmds"].get(got[0]) or "true")}} \
+            if got else None
+    return need
+
+
+def _need_ui(x):
+    ui = [f for f in x["files"] if _UI_FILE.search(f)]
+    return {"why": ", ".join(ui[:3]), "fmt": {"file": ui[0]}} if ui else None
+
+
+def _need_docs(x):
+    """A checkable claim in the doc lines this task added (git diff from its start; ponytail: a doc a later task also
+    edited counts that task's lines too, and a task with no start commit can't tell prose from a claim)."""
+    mds = [f for f in x["files"] if _DOC_FILE.search(f)]
+    b, sh = x["b"], x["shared"]
+    if not mds:
+        return None
+    key = f"{b.id}@{b.meta.get('updated', '')}"
+    if key not in sh["old"]:
+        base = task_base(x["p"].root, b) if sh["left"] > 0 else None
+        if not base:
+            return None
+        sh["left"] -= 1
+        diff = _git(x["p"].root, "diff", "-U0", "--no-color", base, *([] if x["live"] else ["HEAD"]), "--", *mds[:20],
+                    timeout=20)
+        hits = [l for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++") and _DOC_CLAIM.search(l)]
+        sh["old"][key] = f"{len(hits)} checkable claim(s) in {mds[0]}" if hits else ""
+    sh["kept"][key] = sh["old"][key]
+    return {"why": sh["old"][key]} if sh["old"][key] else None
+
+
+def _need_infra(x):
+    if not x["files"]:
+        return None
+    import fminfra
+    got = fminfra.classify(x["p"].root, files=sorted(x["files"]))
+    if not got:
+        return None
+    tools = sorted({fminfra.CLASSES[k]["argv"][0] for _, k in got})
+    return {"why": ", ".join(f"{f} ({k})" for f, k in got[:3]), "tools": tools}
+
+
+def _need_migration(x):
+    mig = [f for f in x["files"] if _MIGRATION.search(f)]
+    return {"why": ", ".join(mig[:3])} if mig else None
+
+
+def _need_data(x):
+    data = [f for f in x["files"] if _DATA_FILE.search(f) and not _MIGRATION.search(f)]
+    if not data:
+        return None
+    dbt = os.path.isfile(os.path.join(x["p"].root, "dbt_project.yml"))
+    return {"why": ", ".join(data[:3]), "tools": ["dbt" if dbt else "frictionless"],
+            "fmt": {"cmd": _q("dbt test" if dbt else f"frictionless validate {data[0]}")}}
+
+
+def _need_perf_typed(x):
+    if x["b"].type != "PERFORMANCE" or x["bench"]:
+        return None
+    cmd = x["lastcmd"]
+    return {"why": "its Measurements were typed, not timed by fm task evidence --bench",
+            "fmt": {"cmd": _q(cmd or "<the command to time>")}, "blocked": "" if cmd else "no command to time"}
+
+
+def _need_perf_noise(x):
+    if x["b"].type != "PERFORMANCE" or not x["bench"]:
+        return None
+    cmd, before, after = x["bench"][-1]
+    if before <= 0 or abs(after - before) / before >= PERF_NOISE:
+        return None
+    return {"why": f"{before:g}s → {after:g}s is inside the {PERF_NOISE:.0%} noise band", "fmt": {"cmd": _q(cmd)}}
+
+
+def _need_research(x):
+    b, p, sh = x["b"], x["p"], x["shared"]
+    if b.type != "RESEARCH":
+        return None
+    if sh["notes"] is None:  # the saved notes with a verified claim, once per rollup
+        sh["notes"], d = [], os.path.join(p.dir, "research")
+        for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            if f.endswith(".md"):
+                with contextlib.suppress(OSError), open(os.path.join(d, f), encoding="utf-8") as fh:
+                    if any(l.startswith("- ✓ ") for l in fh):
+                        sh["notes"].append(f[:-3].lower())
+    decision = b.section("Decision").lower()
+    if any(re.search(r"(?<![\w-])" + re.escape(n) + r"(?![\w-])", decision) for n in sh["notes"]):
+        return None
+    return {"why": "its Decision names no saved note with a verified claim", "fmt": {"q": _q(b.title)},
+            "tools": ["claude"]}
+
+
+def _need_hollow(x):
+    runs = [m.group(1) for l in x["b"].section("Log").splitlines() if (m := _VACUOUS_RUN.search(l))]
+    if not runs or runs[-1].strip() in ("", "none"):
+        return None
+    return {"why": f"{runs[-1].strip()} passed on the start tree", "tries": sum(1 for r in runs if r.strip() != "none")}
+
+
+def _kind(need, upgrade, clear=None, trust=False):
+    """need(ctx) → None, or {why, fmt?, tools?, blocked?, tries?} when a done task needs this proof; clear: the green
+    command that supplies it (None: the need reads the evidence itself); upgrade: the command that does (placeholders
+    {id} {cmd} {file} {q}); trust: it runs the tree's own code, so it waits for the user's yes."""
+    return {"need": need, "clear": clear, "upgrade": upgrade, "trust": trust}
+
+
+_EVID = "fm task evidence {id} --run {cmd}"
+# T-2391: what makes a done task need a kind of proof, and the green run that clears it. A new kind is one row.
+PROOF_KINDS = {
+    "typed": _kind(_need_evidence("typed"), _EVID),
+    "red": _kind(_need_evidence("red"), _EVID),
+    "inconclusive": _kind(_need_evidence("inconclusive"), _EVID),
+    "ui-unshot": _kind(_need_ui, 'fm task evidence {id} --run "fm shot {file}"', clear=_UI_PROOF),
+    "docs": _kind(_need_docs, 'fm task evidence {id} --run "fm prove --docs"', clear=lazy(r"prove\s+--docs")),
+    "infra": _kind(_need_infra, 'fm task evidence {id} --run "fm prove --infra"', clear=lazy(r"prove\s+--infra"),
+                   trust=True),
+    "migration": _kind(_need_migration, 'fm task evidence {id} --run "fm prove --migration"',
+                       clear=lazy(r"prove\s+--migration|\b(alembic|flyway|migrate)\b"), trust=True),
+    "data": _kind(_need_data, _EVID, clear=_DATA_PROOF, trust=True),
+    "perf-typed": _kind(_need_perf_typed, "fm task evidence {id} --bench {cmd}", trust=True),
+    "perf-noise": _kind(_need_perf_noise, "fm task evidence {id} --bench {cmd} --repeat 15", trust=True),
+    "research-uncited": _kind(_need_research, "fm ask {q} --task {id}"),
+    "hollow": _kind(_need_hollow, "fm task prove {id} --vacuous", trust=True),
+}
+
+
+def unproven_summary(p, days=30, budget=DOCS_DIFF_MAX):
+    """T-2273: {n, counts, rows} of unproven(p, days) kept in unproven.json, recomputed only when its key moves: today,
+    and each brief folder's mtime and file count (a brief is written by rename, so a save or a close moves its folder's
+    mtime). The ledger is not in the key: a done task's touches no longer grow. ponytail: an edit logged to a task after
+    its close shows at the next brief change; key on the ledger size if that matters. The memo (docs verdicts, one git
+    diff each) survives a recompute, so a cold one costs at most `budget` new diffs."""
     def stat(d):
         try:
             return [os.stat(d).st_mtime_ns, len(os.listdir(d))]
@@ -4217,45 +4366,130 @@ def unproven_cached(p, days=30):
     arch = os.path.join(p.dir, "archive")
     key += [[dp] + stat(dp) for dp, _, _ in os.walk(arch)]
     path = os.path.join(p.dir, "unproven.json")
+    memo = {}
     try:
         with open(path, encoding="utf-8") as f:
             got = json.load(f)
-        if got.get("key") == key and isinstance(got.get("n"), int):
-            return got["n"]
+        if got.get("key") == key and isinstance(got.get("n"), int) and isinstance(got.get("rows"), list):
+            return got
+        memo = got.get("memo") if isinstance(got.get("memo"), dict) else {}
     except (OSError, ValueError, AttributeError):
         pass
-    n = len(unproven(p, days))
+    rows = unproven(p, days, memo, budget)
+    got = {"key": key, "n": len(rows), "counts": proof_counts(rows), "rows": rows, "memo": memo}
     with contextlib.suppress(OSError):
-        write_atomic(path, json.dumps({"key": key, "n": n}))
-    return n
+        write_atomic(path, json.dumps(got))
+    return got
 
 
-def unproven(p, days=30):
-    """T-2273: [{id, title, kinds, why}] for done tasks closed in the last `days` with a claim no run here proved: per
-    step/criterion whose evidence has no green run (typed: only typed lines; red: only failing runs; inconclusive: only
-    inconclusive runs) and a UI file edit (css, html, tsx, jsx, svelte, vue) with no green run naming shot, smoke, stories
-    or flow. A task whose every checked criterion ran green is never listed."""
+def unproven_cached(p, days=30):
+    """T-2273: how many done tasks are unproven (the rollup's n)."""
+    return unproven_summary(p, days)["n"]
+
+
+def proof_counts(rows):
+    """{kind: tasks needing it}: one task counts once in each kind it needs."""
+    return dict(Counter(k for r in rows for k in r["kinds"]))
+
+
+def unproven_line(n, counts=None, lead=""):
+    """T-2391: the one line fm status, digest, genesis status and the exam scorecard print for the count, with the
+    per-kind counts in table order when given; "" when nothing is unproven."""
+    if not n:
+        return ""
+    order = list(PROOF_KINDS)
+    kinds = ", ".join(f"{k} {v}" for k, v in sorted((counts or {}).items(),
+                                                    key=lambda kv: (order.index(kv[0]) if kv[0] in order else 99, kv[0])))
+    return f"{lead}unproven: {n} (fm proof)" + (f" · {kinds}" if kinds else "")
+
+
+def proof_needs(p, b, files, shared=None, live=False):
+    """T-2391: [{kind, why, upgrade, trust, tools, blocked, tries}] for one done task: each PROOF_KINDS row it needs and
+    no green run of its clear pattern supplied. files: what the task touched. A step or criterion with only red runs is
+    proven when the same command ran green later in the task (a red-first run); a bench line counts as a green run.
+    live: the task's own diff includes uncommitted edits (its close), else it ends at HEAD."""
+    shared = shared or {"old": {}, "kept": {}, "left": DOCS_DIFF_MAX, "notes": None}
+    seq = []  # ((step|ac, n), command, status, bench match)
+    for line in b.section("Verification evidence").splitlines():
+        m = _EV_RE.match(line)
+        if not m or _REWOUND in line:
+            continue
+        ran, inc = _RAN_MARK in line, _INCONCLUSIVE in line
+        bench = _BENCH.search(line) if ran and not inc and "failed on" not in line else None
+        green = ran and not inc and ("` → exit 0" in line or bool(bench))
+        seq.append(((m.group(1), int(m.group(2))), line.split("`")[1] if line.count("`") >= 2 else "",
+                    "green" if green else "inconclusive" if inc else "red" if ran else "typed", bench))
+    keys, cmds = {}, {}
+    for i, (k, cmd, st, _) in enumerate(seq):
+        if st == "red" and any(c2 == cmd and s2 == "green" for _, c2, s2, _ in seq[i + 1:]):
+            st = "green"  # a red-first run: the same command passed later
+        keys.setdefault(k, set()).add(st)
+        cmds[k] = cmd
+    green = [cmd for _, cmd, st, _ in seq if st == "green"]
+    reds = [cmd for _, cmd, st, _ in seq if st == "red"]
+    ran = [cmd for _, cmd, st, _ in seq if st != "typed"]
+    x = {"p": p, "b": b, "files": list(files), "shared": shared, "live": live, "cmds": cmds,
+         "bad": {k: next(s for s in ("typed", "red", "inconclusive") if s in v) for k, v in keys.items()
+                 if "green" not in v},
+         "bench": [(cmd, float(m[1]), float(m[2])) for _, cmd, _, m in seq if m], "lastcmd": ran[-1] if ran else ""}
+    out = []
+    for kind, row in PROOF_KINDS.items():
+        got = row["need"](x)
+        if not got or (row["clear"] and any(row["clear"].search(g) for g in green)):
+            continue
+        fmt = {"id": b.id, "cmd": "", "file": "", "q": "", **got.get("fmt", {})}
+        out.append({"kind": kind, "why": got["why"], "upgrade": row["upgrade"].format_map(fmt), "trust": row["trust"],
+                    "tools": got.get("tools", []), "blocked": got.get("blocked", ""),
+                    "tries": got.get("tries", sum(1 for r in reds if row["clear"] and row["clear"].search(r)))})
+    return out
+
+
+def proof_waiting(p, need):
+    """Why a need's upgrade can't run here now, or "" when it can: a tool not on PATH (an install), a tree the user
+    hasn't trusted (a grant), a command to name, or two runs that already failed to clear it. Read live: never cached."""
+    if need["blocked"]:
+        return need["blocked"]
+    miss = [t for t in need["tools"] if not shutil.which(t)]
+    if miss:
+        return f"{miss[0]} is not installed (fm plugins find {miss[0]})"
+    if need["tries"] >= 2:
+        return f"its last {need['tries']} runs didn't clear it: fix what they found first"
+    if need["trust"]:
+        import fmprove
+        if not (fmprove.trusted(p.root) or fmprove._lane_trusted(p, p.root)):
+            return "this tree isn't trusted yet (fm prove --yes-run)"
+    return ""
+
+
+def proof_next(p):
+    """fm next's line for an empty queue: the newest unproven task with an upgrade that can run here now, or ""."""
+    for r in sorted(unproven_summary(p)["rows"], key=lambda r: (r.get("at", ""), r["id"]), reverse=True):
+        for n in r["needs"]:
+            if not proof_waiting(p, n):
+                return f"{r['id']} is done without a green run for its {n['kind']} proof ({fit(n['why'], 80)}): {n['upgrade']}"
+    return ""
+
+
+def unproven(p, days=30, memo=None, budget=DOCS_DIFF_MAX):
+    """T-2273: [{id, title, kinds, why, at, needs}] for done tasks closed in the last `days` that PROOF_KINDS says still
+    need a proof: a step or criterion no green run proved, a UI, docs, infra, migration or data edit, a PERFORMANCE close
+    not timed by --bench, a RESEARCH close citing no note, a hollow criterion. A task whose every check ran green is
+    never listed. memo: {task@updated: docs verdict} kept between calls (a git diff each); budget caps the new ones."""
     since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
     done = [b for b in load_briefs(p, include_archive=True) if b.status == "done" and not b.meta.get("done_in")
             and str(b.meta.get("updated", ""))[:19] >= since]
     touches = all_touches(p) if done else {}
+    shared = {"old": {} if memo is None else memo, "kept": {}, "left": budget, "notes": None}
     out = []
     for b in done:
-        keys, shot = {}, False
-        for line in b.section("Verification evidence").splitlines():
-            m = _EV_RE.match(line)
-            if not m or _REWOUND in line:
-                continue
-            green = _RAN_MARK in line and _INCONCLUSIVE not in line and "` → exit 0" in line
-            shot = shot or (green and bool(_UI_PROOF.search(line.split("` → ", 1)[0])))
-            k = keys.setdefault((m.group(1), int(m.group(2))), set())
-            k.add("green" if green else "inconclusive" if _INCONCLUSIVE in line else "red" if _RAN_MARK in line else "typed")
-        kinds = sorted({next(x for x in ("typed", "red", "inconclusive") if x in v) for v in keys.values() if "green" not in v})
-        ui = [f for f in touches.get(b.id, {}) if _UI_FILE.search(f)]
-        if ui and not shot:
-            kinds.append("ui-unshot")
-        if kinds:
-            out.append({"id": b.id, "title": b.title, "kinds": kinds, "why": ", ".join(ui[:3]) if "ui-unshot" in kinds else ""})
+        needs = proof_needs(p, b, touches.get(b.id, {}), shared)
+        if needs:
+            out.append({"id": b.id, "title": b.title, "kinds": [n["kind"] for n in needs],
+                        "why": "; ".join(f"{n['kind']}: {n['why']}" for n in needs if n["why"]),
+                        "at": str(b.meta.get("updated", "")), "needs": needs})
+    if memo is not None:
+        memo.clear()
+        memo.update(shared["kept"])
     return out
 
 
