@@ -12,3 +12,4 @@ mods/*/.claude-plugin/types/
 mods/*/tsconfig.json
 /skill-index.json
 _site/
+.fm-scratch/
