@@ -384,6 +384,7 @@ def coverage(p, text, gen0=""):
         return {"areas": 0, "cells": 0, "filled": 0, "empty": 0, "templated": 0, "rows": [],
                 "problems": ["coverage.md doesn't exist (every generation fills the grid: fm genesis put coverage.md)"]}
     root, probs, filled, empty, rows, loose, empties = os.path.realpath(p.root), [], 0, 0, [], [], []
+    fdesc, dups = {}, 0
     secs = [(a, b) for a, b in _sections(text) if a]
     if not secs:
         probs.append("coverage.md has no '## <area>' rows")
@@ -414,6 +415,7 @@ def coverage(p, text, gen0=""):
             else:
                 filled += 1
                 ideas += kind == "I"
+                fdesc[len(loose)] = rest.strip()
                 loose.append((len(rows), area, stage, surface, kind, words))
         gone = [f"{s} × {f}" for s in STAGES for f in SURFACES if (s, f) not in seen]
         rows.append({"area": area, "ideas": ideas, "empty": gone, "bad": len(probs) - before})
@@ -427,11 +429,27 @@ def coverage(p, text, gen0=""):
         rows[r]["bad"] += 1
         probs.append(f"{area}: {stage} × {surface}: templated: reads the same as {loose[j][1]}: {loose[j][2]} × "
                      f"{loose[j][3]} with the area, stage or surface swapped; name something concrete")
+    byfile = {}  # one F path described by two cells in nearly the same words is one feature filed twice (T-2175)
+    for i, (r, area, stage, surface, kind, _) in enumerate(loose):
+        if kind == "F" and i not in twins:
+            path, _, desc = fdesc[i].partition(" ")
+            path = re.sub(r":\d+$", "", path.strip("`").rstrip(",;."))
+            ws = set(WORD.findall(desc.lower()))
+            for k, w2 in byfile.setdefault(path, []):
+                if ws and w2 and len(ws & w2) / len(ws | w2) >= .6:
+                    filled -= 1
+                    rows[r]["bad"] += 1
+                    dups += 1
+                    probs.append(f"{area}: {stage} × {surface}: duplicate of {loose[k][2]} × {loose[k][3]}: the "
+                                 f"same {c.plain(path)} in the same words; one feature counts once")
+                    break
+            else:
+                byfile[path].append((i, ws))
     heads = " | ".join(a.lower() for a, _ in secs)
     probs += [f"no row for capability {n}. {name}" for n, name, _ in _caps(gen0) if name.lower() not in heads]
     probs += empties  # last, so a short listing shows the bad and templated cells first
     return {"areas": len(secs), "cells": len(secs) * len(STAGES) * len(SURFACES), "filled": filled, "empty": empty,
-            "templated": len(twins), "rows": rows, "problems": probs}
+            "templated": len(twins), "duplicates": dups, "rows": rows, "problems": probs}
 
 
 def not_yet(text, gen):
