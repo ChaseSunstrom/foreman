@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm ci-watch` no longer files a FIX for a cancelled run (a deploy a newer push superseded): it says so and keeps watching, and a commit whose other run succeeded reads green (T-2287).
 - Goal distance on the glance surfaces: the statusline, the terminal title and the badge end with `goal 3/7` while a goal with items stands, counted when the views regenerate, so the polled statusline reads no briefs (T-2144).
 - `fm goal show` estimates a goal's time to finish: open items times the median active minutes of its done items' tasks, with the 25th–75th percentile range, "no estimate yet" under 3 sampled items, and an estimate block in `--json` (T-2145).
 - `fm task evidence ID --bench "<cmd>" [--repeat K]` times the command on the task's start tree (a throwaway worktree) and on the current tree, and records "cmd: before → after (K runs each)" as run evidence and in Measurements, which a PERFORMANCE close accepts in place of typed `--numbers` (T-2284).

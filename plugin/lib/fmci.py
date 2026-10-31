@@ -84,9 +84,11 @@ def _latest(p, branch, sha, via=None):
             names.add(r.get("workflowName"))
             runs.append(r)
     done = [r for r in runs if r.get("status") == "completed"]
-    return (next((r for r in done if r.get("conclusion") != "success"), None)
+    # T-2287: a cancelled run (a newer push superseded it, or someone stopped it) says nothing, as in fmforesight
+    return (next((r for r in done if r.get("conclusion") not in ("success", "cancelled")), None)
             or next((r for r in runs if r.get("status") != "completed"), None)
-            or next((r for r in runs if len(runs) > 1 and _failed_jobs(p, r)), None) or (runs or [None])[0])
+            or next((r for r in runs if len(runs) > 1 and _failed_jobs(p, r)), None)
+            or next((r for r in done if r.get("conclusion") == "success"), None) or (runs or [None])[0])
 
 
 def _jobs(p, run):
@@ -157,8 +159,10 @@ def watch(p, branch, retries, interval, max_polls=120, say=print, commit=None):
                 n = len(failed)
                 return 0, (f"CI green, but {n} non-blocking job{'s' if n > 1 else ''} failed "
                            f"({c.fit(c.plain(', '.join(failed)), 120)}): FIX brief {b.id}.")
-            idle = _no_runner(p, run)
-            if idle:
+            idle = [] if run.get("conclusion") == "cancelled" else _no_runner(p, run)
+            if run.get("conclusion") == "cancelled":
+                say(f"run {run['databaseId']} cancelled (superseded or stopped): not a failure; still watching")
+            elif idle:
                 what = (f"run {run['databaseId']}: {len(idle)} job{'s' if len(idle) > 1 else ''} never got a runner "
                         f"({c.fit(c.plain(', '.join(idle)), 120)}; GitHub capacity), not a code failure")
                 from fmcli import UsageError
