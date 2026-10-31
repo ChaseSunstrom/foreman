@@ -114,6 +114,24 @@ class Ideas(Stubbed):
         manifest = json.loads(read_text(os.path.join(res["dir"], "manifest.json")))
         self.assertEqual(manifest["cache"], {"read": 200, "written": 100})
 
+    def test_a_pack_that_already_carries_the_users_words_gets_them_once(self):  # T-2249
+        import fmcore as c
+        import fmideas
+        self.fm("task", "new", "make the totals add up", "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
+                "--step", "s")
+        voice = fmideas.user_voice(c.find_project(self.repo))
+        self.assertIn("make the totals add up", voice)
+        with open(self.pack, "a") as f:  # what fm mission writes
+            f.write(voice)
+        self.fm("ideas", "--pack", self.pack, "--lens", "delight", env=self.env)
+        head = "## The user's own words"
+        self.assertEqual(self.calls()[0]["system"].count(head), 1)
+        os.remove(self.log)
+        with open(self.pack, "w") as f:  # a plain pack still gets them
+            f.write("Project: a tiny calculator app.\n")
+        self.fm("ideas", "--pack", self.pack, "--lens", "delight", env=self.env)
+        self.assertEqual(self.calls()[0]["system"].count(head), 1)
+
     def test_missing_claude_is_a_clear_error(self):
         empty = os.path.join(self.tmp, "empty-bin")
         os.makedirs(empty)
