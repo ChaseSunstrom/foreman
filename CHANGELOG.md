@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm prove --docs` checks the repo's own CLI flags, subcommands, paths and fenced examples in its docs against the code: a flag or subcommand no file has fails, one a file only mentions stays unproven, only a trusted run of a documented command that exits 0 (with the output the docs show) proves it; a renamed flag left in a doc the task updated blocks the close (T-2381).
 - A capability miss during a task is now the task's to resolve: fm next leads with it, and fm task finish and done refuse until a later passing run of the same whole command (a miss_resolved ledger event from the task's own sessions, or a [ran] line) or a proved tool or queued grant; no file, typed line or flag resolves one (T-2369).
 - Failures that matter get fixed: a fix that didn't hold re-opens as 'Fix did not hold: T-X'; Foreman's own `fm doctor` FAILs, hook tracebacks and slow hooks recurring across 3+ runs capture a FIX; old failures replay into the loop from `fm doctor`, five a run (T-2349).
 - A user-steer rule whose check fails becomes a fix: `fm genesis sweep` and the new `fm genesis steer` file one FIX per rule and commit naming the check and its output; `fm night` runs the steer checks free and its report names any rule that failed (T-2350).
