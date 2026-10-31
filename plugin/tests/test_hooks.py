@@ -1639,17 +1639,36 @@ class CapabilityMiss(HookCase):
     def test_a_miss_notes_once_per_session_and_a_second_session_captures_one_task(self):
         self.fm("init")
         note = self.miss("Exit code 127\nbash: jq: command not found")
-        self.assertIn("fm plugins find jq", note)
+        self.assertIn('fm which "jq"', note)  # T-2371: one find across every shelf, plugins last
         self.assertIn("fm ask", note)
         self.assertIn("or build it: fm new tool jq", note)  # T-2278
         self.assertLessEqual(len(note), 300)
-        self.assertNotIn("fm plugins find jq", self.miss("Exit code 127\nbash: jq: command not found"))
+        self.assertNotIn('fm which "jq"', self.miss("Exit code 127\nbash: jq: command not found"))
         self.assertEqual(self.tasks(), [])
         self.miss("zsh: command not found: jq", sid="s2")
         self.miss("zsh: command not found: jq", sid="s3")
         found = self.tasks()
         self.assertEqual(len(found), 1)
         self.assertEqual((found[0].type, found[0].meta.get("source")), ("FEATURE", "self"))
+
+    def test_the_note_carries_the_best_local_hit_from_the_cheap_sources(self):
+        # T-2371: a past fix, a project tool or a binary off PATH, read without the plugin index; fm which names the rest
+        self.fm("init")
+        self.fm("fix", "add", "jq: command not found", "--do", "apt install jq")
+        note = self.miss("bash: jq: command not found")
+        self.assertIn("apt install jq", note)
+        self.assertIn('fm which "jq"', note)
+        self.assertLessEqual(len(note), 400)
+        os.makedirs(os.path.join(self.repo, "tools"))
+        with open(os.path.join(self.repo, "tools", "sheetsplit.py"), "w") as f:
+            f.write('# fm new tool\n"""sheetsplit: split sheets."""\n')
+        # a tool the repo ships is the repo's word, not ours: the note never nudges a session toward running it
+        self.assertNotIn("sheetsplit.py", self.miss("bash: sheetsplit: command not found"))
+        # a miss is matched to a fix's own command word, not any word of its signature
+        self.assertNotIn("apt install jq", self.miss("bash: found: command not found"))
+        # a fix too long for the note is left out, not cut mid-command
+        self.fm("fix", "add", "zq: command not found", "--do", "apt install " + "zq-extra-package " * 20)
+        self.assertNotIn("Already here", self.miss("bash: zq: command not found"))
 
     def test_module_errors_count_and_odd_names_or_subagents_are_ignored(self):
         self.fm("init")
