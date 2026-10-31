@@ -172,7 +172,9 @@ class Long(ForemanTestCase):
         write(bindir, "claude", STUB)
         os.chmod(os.path.join(bindir, "claude"), 0o755)
         self.log = os.path.join(self.tmp, "stub.log")
-        patch = mock.patch.dict(os.environ, {"PATH": bindir + os.pathsep + os.environ["PATH"], "STUB_LOG": self.log})
+        self.cfg = os.path.join(self.tmp, "cfg")  # claude's config dir: a test never touches the real ~/.claude
+        patch = mock.patch.dict(os.environ, {"PATH": bindir + os.pathsep + os.environ["PATH"], "STUB_LOG": self.log,
+                                             "CLAUDE_CONFIG_DIR": self.cfg})
         patch.start()
         self.addCleanup(patch.stop)
         for k, v in (("KILL_T", 0.02), ("PAUSE_GAP", 0)):
@@ -266,6 +268,78 @@ class Long(ForemanTestCase):
         self.go("plain", ("pause",))
         self.assertEqual([k["kind"] for k in self.faults("plain")], ["pause"])
 
+    def test_a_tampered_run_json_id_is_refused_and_nothing_outside_the_run_is_touched(self):
+        self.stub()
+        outside = os.path.join(self.tmp, "x")
+        write(outside, "keep", "1")
+        path = os.path.join(self.fmlong._root(self.p), self.run_id, "run.json")
+        meta = json.load(open(path))
+        meta["scenarios"][0]["id"] = "../../x"
+        write(os.path.dirname(path), "run.json", json.dumps(meta))
+        for agent in ("plain", "empty"):
+            with self.assertRaises(ValueError):
+                self.go(agent)
+        self.assertEqual(os.listdir(outside), ["keep"])
+        self.assertFalse(os.path.exists(self.log))
+
+    def test_session_arms_default_to_three_goals_and_limit_raises_it(self):
+        self.stub()
+        self.assertEqual(len(self.go("plain", limit=1)["answered"]), 1)
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_spend_is_checked_before_each_goal_and_doubles_for_a_resuming_fault(self):
+        import fmbudget
+        self.stub()
+        seen = []
+        from unittest import mock
+        flat = lambda f, n, fb=0.5: n * fb  # no measured spend: the first run records some
+        with mock.patch.object(fmbudget, "check", lambda f, est, hint="": seen.append(est)), \
+                mock.patch.object(fmbudget, "estimate", flat):
+            self.go("plain")
+            plain = list(seen)
+            del seen[:]
+            self.go("plain", ("pause",))
+        self.assertEqual(len(plain), 3)  # up front, then a goal each
+        self.assertEqual(seen[0], 2 * plain[0])
+
+    def test_a_pause_whose_reply_has_no_marker_is_unfired_and_not_resumed(self):
+        self.stub()
+        os.environ["STUB_NOPAUSE"] = "1"
+        self.addCleanup(os.environ.pop, "STUB_NOPAUSE", None)
+        self.go("plain", ("pause",))
+        self.assertEqual(len(self.calls()), 2)
+        (k,) = self.faults("plain")
+        self.assertEqual((k["fired"], k["resumed"]), (False, False))
+
+    def test_the_first_turn_cap_never_exceeds_the_session_timeout(self):
+        import time
+        self.stub()
+        self.fmlong.KILL_T = 60
+        os.environ["STUB_HANG"] = "1"
+        self.addCleanup(os.environ.pop, "STUB_HANG", None)
+        t = time.time()
+        self.go("plain", ("kill",), timeout=0.02, limit=1)
+        self.assertLess(time.time() - t, 20)
+
+    def test_a_resume_that_fails_after_a_kill_gets_one_fresh_turn_and_the_kill_cost_is_unknown(self):
+        self.stub()
+        for k in ("STUB_HANG", "STUB_NORESUME"):
+            os.environ[k] = "1"
+            self.addCleanup(os.environ.pop, k, None)
+        (gid,) = self.go("plain", ("kill",), limit=1)["answered"]
+        a, b, c3 = self.calls()
+        self.assertEqual((b["resume"], c3["resume"]), (a["sid"], None))
+        self.assertIn("Add f", c3["prompt"])
+        self.assertNotEqual(c3["sid"], a["sid"])
+        (k,) = self.faults("plain", gid)
+        self.assertEqual((k["resume_ok"], k["fresh"], k["cost_unknown"]), (False, True, True))
+
+    def test_the_sessions_transcripts_are_removed_with_or_without_the_compaction_fault(self):
+        self.stub()
+        self.go("plain")
+        left = [n for r, _, fs in os.walk(self.cfg) for n in fs]
+        self.assertEqual(left, [])
+
     def test_unknown_faults_and_faults_on_a_zero_token_arm_are_refused_before_any_session(self):
         self.stub()
         for agent, faults in (("plain", ("nope",)), ("oracle", ("kill",))):
@@ -286,7 +360,17 @@ with open(os.environ["STUB_LOG"], "a") as f:
     f.write(json.dumps({"plugin": "--plugin-dir" in argv, "model": arg("--model"), "prompt": arg("-p"), "resume": arg("--resume"),
                         "sid": sid, "window": os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW"), "planted": planted,
                         "quiet": os.environ.get("FOREMAN_QUIET")}) + "\n")
-if os.environ.get("STUB_HANG") and not arg("--resume"):
+hung = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "hung" + os.getcwd().replace("/", "_"))
+if os.environ.get("STUB_HANG") and not arg("--resume") and not os.path.exists(hung):
+    os.makedirs(os.path.dirname(hung), exist_ok=True)
+    open(hung, "w").close()  # hang once per goal: a fresh turn after the failed resume must not hang too
     time.sleep(30)
-print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.1, "result": "done", "session_id": sid}))
+if os.environ.get("STUB_NORESUME") and arg("--resume"):  # the killed turn never wrote its session
+    print("No conversation found", file=sys.stderr)
+    sys.exit(1)
+d = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", "p")
+os.makedirs(d, exist_ok=True)
+open(os.path.join(d, sid + ".jsonl"), "w").write("{}\n")
+said = "PAUSED" if "say PAUSED" in arg("-p") and not os.environ.get("STUB_NOPAUSE") else "done"
+print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.1, "result": said, "session_id": sid}))
 '''
