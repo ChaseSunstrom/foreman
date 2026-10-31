@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A capability miss during a task is now the task's to resolve: fm next leads with it, and fm task finish and done refuse until a later passing run of the same whole command (a miss_resolved ledger event from the task's own sessions, or a [ran] line) or a proved tool or queued grant; no file, typed line or flag resolves one (T-2369).
 - Failures that matter get fixed: a fix that didn't hold re-opens as 'Fix did not hold: T-X'; Foreman's own `fm doctor` FAILs, hook tracebacks and slow hooks recurring across 3+ runs capture a FIX; old failures replay into the loop from `fm doctor`, five a run (T-2349).
 - A user-steer rule whose check fails becomes a fix: `fm genesis sweep` and the new `fm genesis steer` file one FIX per rule and commit naming the check and its output; `fm night` runs the steer checks free and its report names any rule that failed (T-2350).
 - Blast radius reaches real plans: an M/L focus with no scope takes the repo files its Interpretation, Approach or Steps name, reads a graph built within 50 commits of HEAD, and writes `unknown, no co-change history for …` instead of nothing (T-2336).
