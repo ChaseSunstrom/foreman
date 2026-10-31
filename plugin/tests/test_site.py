@@ -76,9 +76,11 @@ class CodePageCoversFmCode(unittest.TestCase):
         flags = {o for a in code._actions for o in a.option_strings
                  if o.startswith("--") and o != "--help" and a.help != argparse.SUPPRESS}  # --tui is internal
         request = next(a for a in code._actions if a.dest == "request").help
-        verbs = set(re.split(r"[ ,]+", re.search(r"\(or: ([^)]*)\)", request).group(1)))
+        m = re.search(r"\(or: ([^)]*)\)", request)
+        self.assertIsNotNone(m, "fm code request help lost its '(or: …)' verb list")
+        verbs = set(re.split(r"[ ,]+", m.group(1)))
         self.assertGreaterEqual(len(flags), 30)
-        self.assertIn("tui", verbs)
+        self.assertLessEqual({"models", "runners", "config", "why", "bench", "tui"}, verbs)
         page = next(p for p in test_site_build.site("pages").PAGES if p["slug"] == "code")
         text = " ".join(x for b in page["blocks"] for x in b if isinstance(x, str)) + page["lede"]
         text = re.sub(r"<[^>]+>", "", text)

@@ -573,7 +573,7 @@ PAGES = [
          ("chart", lambda s: _totals(s, ["commits", "evidence", "gate_runs"]))]},
     {"slug": "code", "nav": "Foreman Code", "title": "Foreman Code: the loop, on any model",
      "desc": "fm code runs Foreman's stations itself, so small and local models only fill small checked slots.",
-     "lede": "In progress. <code>fm code</code> is Foreman's own harness: it runs plan, edit, verify and close itself, "
+     "lede": "<code>fm code</code> is Foreman's own harness: it runs plan, edit, verify and close itself, "
              "and the model only fills one small checked slot at a time. That is what lets a small local model do "
              "real work, and a big one go faster.",
      "blocks": [
@@ -589,7 +589,7 @@ PAGES = [
           "model's own words are one key away (<code>t</code>). <code>d</code> shows the diff, <code>h</code> past "
           "runs, <code>m</code> picks the model or worker for the next request. It moves: the working station pulses, "
           "counters and bars ease to their values, a refusal flashes (<code>motion = reduced</code> or <code>off</code> stills it). "
-          "Themes (night, paper, signal for colour-blind eyes, mono), layout "
+          "Themes (night, paper, signal for colour-blind eyes, riso, mono), layout "
           "and keys come from <code>tui.toml</code>, and a Python file in Foreman's home folder can add a panel, a "
           "command or an event handler.</p>"),
          ("raw", '<picture><source media="(prefers-reduced-motion: reduce)" srcset="../assets/code-tui.svg">'
@@ -617,8 +617,8 @@ PAGES = [
           "model profiles; <code>fm code runners</code> every coding CLI and model it can use; <code>fm code config"
           "</code> its settings; <code>fm code why</code> how a run ended; <code>fm code bench</code> grades a "
           "model or worker; <code>fm code tui</code> opens the app.</li><li><strong>Shape a run.</strong> "
-          "<code>--model</code> picks the profile and <code>--escalate</code> hands the last three fix rounds to a "
-          "stronger one; <code>--max-steps</code> and <code>--max-usd</code> cap the turns and the dollars; "
+          "<code>--model</code> picks the profile and <code>--escalate</code> gives three more fix rounds on a "
+          "stronger model after three fail; <code>--max-steps</code> and <code>--max-usd</code> cap the turns and the dollars; "
           "<code>--dry-plan</code> prints the plan and changes nothing; <code>--verify CMD</code> makes the plan "
           "one task done when CMD passes; <code>--no-commit</code> closes without committing.</li><li><strong>"
           "Resume or hand over.</strong> <code>--resume [ID]</code> carries on a crashed run from its journal "
@@ -658,7 +658,7 @@ PAGES = [
           "Foreman worker on five seeded tasks in throwaway repos, counting a task only when its own check passes "
           "afterwards.</li></ul>"),
          ("chart", lambda s: tiles([("Model client tests", (s.get("code") or {}).get("model_tests", "?")),
-                                    ("Endpoints it finds", (s.get("code") or {}).get("endpoints", "?")), ("Status", "Building")]))]},
+                                    ("Endpoints it finds", (s.get("code") or {}).get("endpoints", "?")), ("Status", "Shipped, still growing")]))]},
     {"slug": "benchmarks", "nav": "Benchmarks", "title": "Measured against Claude Code",
      "desc": "Real runs, published whichever way they fall: dangerous commands, and real tasks graded blind.",
      "lede": "Benchmarks run for real on this machine and published as they came out: a set of commands that destroy "
