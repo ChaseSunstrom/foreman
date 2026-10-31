@@ -300,7 +300,8 @@ def cmd(args):
     data = {"task": task, **{k: [{x: r.get(x, "") for x in ("name", "load", "summary", "score", "source", "grant")}
                                  for r in v] for k, v in got.items()}, "skipped": failed}
     if p:  # the receipt: what was searched and how much each shelf held, a search that found nothing included
-        c.log_event(p, "tool_search", data={"need": task[:200], "sources": list(got),
+        b = c.active_brief_fast(p, p.lane)  # T-2372: a build is held to a receipt made on its own task
+        c.log_event(p, "tool_search", task=b and b.id, data={"need": task[:200], "sources": list(got),
                                             "hits": {k: len(v) for k, v in got.items()}, "failed": failed})
     if not any(got.values()):
         fmcli.out(args, data, f"Nothing matches {c.fit(c.plain(task), 60)!r}: no past fix, project tool, MCP server, "
