@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm genesis put`'s cold reader can quote across lines (it writes the line break as a literal \n): each piece of the quote must name a line, and the finding lands on the last one, so a quote spanning a heading and a bullet is no longer refused as a line the file doesn't hold.
 - `fm find` now reads tracked files in hidden folders such as `.github/workflows` (untracked hidden folders are still skipped) and never reads a file through a symlinked folder. `fm find --capture` and `fm prove --capture` keep at most 5 of their tasks open at once, quoted repo text that reads like instructions is marked as data, and a rejected `fm prove --yes-run` call no longer remembers your yes.
 - `fm exam` now reports how many planted defects each arm found per language and per defect kind (overall and held out), not just one total, so a finder that's blind in one language or to one kind of bug shows up.
 - `fm genesis put`'s cold reader can now quote a sentence that wraps onto the next line of a paragraph: a wrapped paragraph counts as one line, so the quote names it instead of being refused as a line the file doesn't hold.
