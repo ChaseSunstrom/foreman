@@ -3410,6 +3410,10 @@ def stuck_rung(b):
     if fails >= 3 and hyps >= 2:
         return (f"stuck, rung 3{why}: a differential table — one probe per open hypothesis, run once each, and record "
                 f"what each rules out (fm task hypo {b.id} …) before another fix")
+    if fails >= 3 and b.tier in ("S", "M") and not (b.meta.get("race") or b.meta.get("race_of")) \
+            and _count_options(b.section("Approach (options → choice → why)")) >= 2:  # T-2271: evidence picks
+        return (f"stuck, rung 3{why}: the Approach names another way, so race it: fm lane race {b.id} (a builder takes "
+                f"the runner-up; both are scored on this task's checks and the better one merges)")
     if fails >= 3:
         return f"stuck, rung 3{why}: state two or more hypotheses, each with one probe (fm task hypo {b.id} add …)"
     if fails >= 2:
