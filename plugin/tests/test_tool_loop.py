@@ -51,6 +51,16 @@ class MissLoop(ForemanTestCase):
         self.assertIn("open miss `gizmo`", nxt)
         self.assertIn("fm which", nxt)
 
+    def test_a_command_not_found_in_an_fm_task_evidence_run_is_a_miss_with_no_hook(self):
+        # T-2370: fm ran it, so every host feeds the miss path; the same command run green later resolves it
+        self.fm("task", "evidence", self.tid, "--step", "1", "--run", "gizmo_zz --go", check=False)
+        (e,) = c.ledger_events(self.p, ["capability_miss"])
+        self.assertEqual((e["task"], e["data"]["name"], e["data"]["kind"], e["data"]["cmd"]),
+                         (self.tid, "gizmo_zz", "command", "gizmo_zz --go"))
+        self.refused()
+        self.fm("task", "evidence", self.tid, "--step", "1", "--run", "echo ok", check=False)
+        self.assertEqual(len(c.ledger_events(self.p, ["capability_miss"])), 1, "a red run with no miss logs none")
+
     def test_a_task_with_no_miss_pays_nothing_and_finishes(self):
         self.assertNotIn("open miss", self.fm("next").stdout)
         self.closes()
