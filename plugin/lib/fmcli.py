@@ -652,12 +652,23 @@ def cmd_task(args):
                       {"kind": args.kind, "text": c.redact(text)[:200]})
         return out(args, c.brief_summary(b), f"{b.id}: {args.kind} noted.")
     if sub == "evidence":
-        code, shown = 0, ""
-        if args.repeat != 1 and (args.run is None or getattr(args, "expect_fail", False)
+        code, shown, tried, median = 0, "", None, ""
+        bench =getattr(args, "bench", None)
+        if args.repeat is None:  # T-2284: --bench times 5 runs a side unless told
+            args.repeat = 5 if bench is not None else 1
+        if bench is not None and (args.run is not None or args.cmd is not None or args.inconclusive
+                                  or getattr(args, "expect_fail", False) or not 1 <= args.repeat <= REPEAT_MAX):
+            raise UsageError(f"--bench CMD stands alone (--repeat N, 1–{REPEAT_MAX}): no --run, typed result, "
+                             f"--inconclusive or --expect-fail")
+        if args.repeat != 1 and (args.run is None and bench is None or getattr(args, "expect_fail", False)
                                  or not 1 <= args.repeat <= REPEAT_MAX):
             raise UsageError(f"--repeat N (1–{REPEAT_MAX}) times a passing --run; a typed result or an --expect-fail "
                              f"red run is one run")
-        if args.run is not None:  # run it: the real exit code and output, never a typed summary
+        if bench is not None:  # T-2284: timed on the start tree and on this one, by Foreman
+            pre = need_brief(p, args.id)
+            cmd = bench
+            code, shown, result, median = _bench(p, pre, bench, args.repeat, args.timeout if args.timeout > 0 else None)
+        elif args.run is not None:  # run it: the real exit code and output, never a typed summary
             if args.cmd is not None:
                 raise UsageError("give the command either as --run CMD or as CMD RESULT, not both")
             if getattr(args, "expect_fail", False) and args.step is None:
@@ -679,12 +690,15 @@ def cmd_task(args):
         else:
             cmd, result = args.cmd, args.result
         tree = c.worktree_id(p.root)
-        if args.run is None:
+        ran = args.run is not None or bench is not None
+        if not ran:
             tried = None
 
         def record(b):
-            b.add_evidence(cmd, result, step=args.step, ac=args.ac, tree=tree, ran=args.run is not None,
+            b.add_evidence(cmd, result, step=args.step, ac=args.ac, tree=tree, ran=ran,
                            inconclusive=args.inconclusive)
+            if bench is not None and median:  # the finish gate reads Measurements, so the measured line is the numbers
+                b.set_section("Measurements", "\n".join(x for x in (b.section("Measurements").strip(), median) if x))
             if tried:  # T-0632: what was tried, for whoever picks the step up
                 b.append_log(f"tried: `{cmd}` ×{tried} on step {args.step}, failing the same way")
         b, _ = mutate(p, args.id, record,
@@ -693,7 +707,7 @@ def cmd_task(args):
         for w in _evidence_notes(b, args.step, result, tried):
             print(f"fm: warning: {w}", file=sys.stderr)
         out(args, dict(c.brief_summary(b), exit=code), (shown + "\n" if shown else "") + f"{b.id}: evidence recorded"
-            + (f" ({result})" if args.run is not None else "")
+            + (f" ({result})" if ran else "")
             + (" as inconclusive: it never counts as passing; a sharper check is next." if args.inconclusive else "."))
         return code
     if sub == "audit":
@@ -2536,6 +2550,48 @@ def _repeat_runs(root, cmd, n, timeout):
     spread = (f"±{(d := statistics.median(abs(x - med) for x in times)):.3f}s ({d / med if med else 0:.0%})"
               if len(times) > 1 else "n/a")
     return code, output, f"{head}: median {med:.3f}s, spread {spread}, min {min(times):.3f}s, max {max(times):.3f}s"
+
+
+def _bench(p, b, cmd, n, timeout):
+    """T-2284: (exit code, output tail, result, Measurements line) of cmd timed n times in a throwaway worktree at the
+    task's base and n times in the current tree, one deadline over all 2n runs. A side that fails or times out stops
+    there and is recorded as the failure: no Measurements line then."""
+    import statistics
+    import tempfile
+    base = b.meta.get("base")
+    if not base:
+        raise UsageError(f"{b.id} has no start commit on record: --bench needs the tree the task started from (fm focus it first)")
+    start = time.monotonic()
+
+    def side(root):
+        times = []
+        for _ in range(n):
+            left = None if timeout is None else timeout - (time.monotonic() - start)
+            if left is not None and left <= 0:
+                return times, (124, f"--timeout {timeout:g}s reached after {len(times)} of {n} runs")
+            t = time.monotonic()
+            code, output = c.run_command(root, cmd, left)
+            if code:
+                return times, (code, output)
+            times.append(time.monotonic() - t)
+        return times, None
+    with tempfile.TemporaryDirectory(prefix="fm-bench-") as t:
+        wt = os.path.join(t, "base")
+        c._git(p.root, "worktree", "add", "--detach", "-q", wt, base, timeout=120)
+        if not os.path.isdir(wt):
+            raise UsageError(f"git worktree add at {base[:12]} failed")
+        try:
+            before, bad_before = side(wt)
+        finally:
+            c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
+            c._git(p.root, "worktree", "prune", timeout=30)
+    after, bad_after = ([], None) if bad_before else side(p.root)
+    for where, bad in (("the start tree", bad_before), ("the current tree", bad_after)):
+        if bad:
+            tail = "\n".join(bad[1].rstrip().splitlines()[-20:])
+            return bad[0], tail, f"{cmd}: failed on {where} (exit {bad[0]}) after {n} runs asked", ""
+    line = (f"{cmd}: {statistics.median(before):.3f}s → {statistics.median(after):.3f}s ({n} runs each)")
+    return 0, "", line, line
 
 
 def _step_checks(b, step, cmd, code, output, result):
@@ -6014,7 +6070,10 @@ def _build_parser(only=None):
     t.add_argument("result", nargs="?")
     t.add_argument("--run", metavar="CMD", help="run CMD (bash, repo root) and record its real exit code and output")
     t.add_argument("--timeout", type=float, default=600, help="--run limit in seconds (with --repeat: all runs together)")
-    t.add_argument("--repeat", type=int, default=1, metavar="N",
+    t.add_argument("--bench", metavar="CMD",
+                   help="time CMD --repeat N times (default 5) on the task's start tree (a throwaway worktree) and on "
+                        "this one; records 'CMD: before median → after median' as run evidence and in Measurements (T-2284)")
+    t.add_argument("--repeat", type=int, default=None, metavar="N",
                    help=f"with --run: run it N times (at most {REPEAT_MAX}) and record the median time, the spread "
                         "(median absolute deviation), min and max; any failing run fails it, with its count (T-1518)")
     t.add_argument("--inconclusive", action="store_true",
