@@ -534,7 +534,7 @@ class Stages(unittest.TestCase):
             b.set_section(AP, "Retry with backoff vs longer timeout → retry. Choice: retry. In 2 steps, 3 files.")
             self.assertIn("3+ options", gaps(b))
             self.assertIn("fm task set", gaps(b))  # the gap names its fix
-            for text in ("1. a\n2. b\n3. c\nChosen: a", "- a\n- b\n- c\nchose a", "Option A\nOption B\nOption C\nChoice: B"):
+            for text in ("1. a\n2. b\n3. c\nChosen: a", "- a\n- b\n- c\nchose a", "Option A: a\nOption B: b\nOption C: c\nChoice: B"):
                 b.set_section(AP, text)
                 self.assertEqual(c.plan_gaps(b, "full"), [], text)
             b.set_section(AP, "1) a 2) b 3) c")
@@ -576,6 +576,47 @@ class Stages(unittest.TestCase):
         for st in ("active", "verifying", "done"):
             b.meta["status"] = st
             self.assertEqual(c.plan_gaps(b, "full"), [], st)
+        b.meta["status"] = "planned"  # a paused task is planned again: ever started is what exempts it
+        self.assertTrue(c.plan_gaps(b, "full"))
+        for key in ("plan0_at", "base", "base_tree"):
+            q = self.plan(self.brief("L"))
+            q.set_section("Approach (options → choice → why)", "just do it")
+            q.meta[key] = "x"
+            self.assertEqual(c.plan_gaps(q, "full"), [], key)
+        q = self.plan(self.brief("L"))
+        q.set_section("Approach (options → choice → why)", "just do it")
+        q.add_evidence("true", "ok", step=1)
+        q.mark_step(1)
+        self.assertEqual(c.plan_gaps(q, "full"), [], "a done step")
+        d = self.plan(self.brief("L"))
+        d.set_section("Approach (options → choice → why)", "just do it")
+        d.add_evidence("true", "ok", ac=1)
+        self.assertEqual(c.plan_gaps(d, "full"), [], "evidence")
+
+    def test_option_formats_and_hollow_markers(self):  # T-2269 review
+        AP = "Approach (options → choice → why)"
+        real = ("Options: (1) one (2) two (3) three Choice 2: two",
+                "Options: (A) a (B) b (C) c Choice: A",
+                "A) a\nB. b\nC) c\nDecision: A",
+                "Option A: a\nApproach B: b\nOption C: c\nGo with B",
+                "**Option 1** a\n**Option 2** b\n### Option 3\nc\nChoose 1",
+                "1. a 2. b 3. c Chosen: 1")
+        for text in real:
+            b = self.plan(self.brief("M"))
+            b.set_section(AP, text)
+            self.assertEqual(c.plan_gaps(b, "full"), [], text)
+        for text in ("1) … 2) … 3) … Choice 1: …", "- …\n- …\n- …\nChoice: …", "Option A:\nOption B:\nOption C:\nChoice"):
+            b = self.plan(self.brief("M"))
+            b.set_section(AP, text)
+            self.assertTrue(c.plan_gaps(b, "full"), text)
+        b.set_section(AP, "1) a 2) b Choice 1")
+        self.assertIn("names 2 options", " ".join(c.plan_gaps(b, "full")))
+        self.assertIn("T-0001", " ".join(c.plan_gaps(b, "full")))
+        big = self.plan(self.brief("L"))
+        big.set_section("Interpretation", "A reading of the request that reads it once; reading it again changes nothing, reading.")
+        self.assertIn("2+ readings", " ".join(c.plan_gaps(big, "full")))
+        big.set_section("Interpretation", "- first\n- second")
+        self.assertEqual(c.plan_gaps(big, "full"), [])
 
     def test_plan_gaps_by_tier(self):
         s = self.brief("S")

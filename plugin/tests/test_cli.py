@@ -569,6 +569,23 @@ class TaskLifecycle(ForemanTestCase):
         self.fm("focus", "T-0001")
         self.assertEqual(self.brief().status, "active")
 
+    def test_a_paused_started_task_is_not_regated(self):  # T-2269 review: pausing sets status back to planned
+        ap = "Approach (options → choice → why)"
+        self.fm("task", "new", "Old plan", "--type", "FEATURE", "--tier", "M")
+        for sec, text in (("Interpretation", "x"), (ap, "1) a 2) b 3) c Choice 1: a")):
+            self.fm("task", "set", "T-0002", "--section", sec, "--text", text)
+        self.fm("task", "ac", "T-0002", "add", "works", "--verify", "true")
+        self.fm("task", "step", "T-0002", "add", "build")
+        self.fm("focus", "T-0002")
+        self.fm("task", "set", "T-0002", "--section", ap, "--text", "just do it")  # the plan now fails the content gate
+        for tid in ("T-0001",):
+            self.fm("task", "ac", tid, "add", "works")
+            self.fm("task", "step", tid, "add", "do it")
+        self.fm("focus", "T-0001")
+        self.assertEqual(self.brief("T-0002").status, "planned")
+        self.fm("focus", "T-0002")  # started before, paused: not refused
+        self.assertEqual(self.brief("T-0002").status, "active")
+
     def test_unapproved_L_focus_depends_on_autonomy(self):
         self.fm("task", "new", "Big one", "--type", "FEATURE", "--tier", "L")
         for sec, text in (("Interpretation", "Reading 1: x. Reading 2: z"), ("Risks and rollback", "revert"),
