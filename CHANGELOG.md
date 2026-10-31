@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `fm genesis put`'s section reads now size sections by characters: a file of 3000+ characters splits, and only a section under 300 characters shares a read with the one before it, so a critique written in paragraphs gets one read per section instead of one read for nearly all of it.
+- `fm genesis put` reads a long tower file one section at a time: each `##` section gets its own cold read with an outline of the others, a section that passed and hasn't changed isn't read again, and the file is filed when every section passes. Short sections share a read, and a put reads at most 12.
 - `fm genesis step` moves past the select stage only on `gen-N/select.md`, a record only `fm genesis select N` writes and `fm genesis put` refuses, so a hand-written lineage heading or an `fm log` line can no longer skip selection. A tower whose select ran before this re-runs `fm genesis select N`.
 - `fm find` gives the same dependency findings on every machine (a fixed import-to-package table instead of the host's installed packages), a quote mark inside a Python string, comment or multi-line f-string no longer hides later functions from the untested finder, `fm prove` cuts each test run at its deadline, and a cold re-find says it is a re-find by the same check, not an outside proof.
 - `fm genesis put`'s cold reader can quote across lines (it writes the line break as a literal \n): each piece of the quote must name a line, and the finding lands on the last one, so a quote spanning a heading and a bullet is no longer refused as a line the file doesn't hold.
