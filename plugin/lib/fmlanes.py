@@ -191,9 +191,6 @@ def cmd_lane(args):
             raise fmcli.UsageError(f"{b.id} has no builder to recover (fm lane brief {b.id})")
         return recover(p, b, main, args)
     if args.action == "merge":
-        if b.meta.get("lane_spike"):  # T-0732: a spike answers a question; its code is thrown away
-            raise c.PolicyError(f"{b.id}'s lane is a spike: it is never merged. Note what it found (fm task note "
-                                f"{b.id} fact \"…\"), then fm lane rm {b.id}")
         why = getattr(args, "unverified", None)
         if why is not None and not why.strip():
             raise c.PolicyError("--unverified needs a reason (what makes the criteria's re-run wrong)")
@@ -665,19 +662,31 @@ def _sides(p, b):
 
 
 APPROACH = "Approach (options → choice → why)"
-DESIGN = "\n\nDesign race:"  # T-2340: where the L's Approach keeps its spikes' scores; replaced on each --score
+DESIGN = c.DESIGN  # the L's Approach keeps its spikes' scores below it; replaced on each --score
+
+
+def _design(orig):
+    """T-2340: is this race a design race (race() marked its L)? An L whose tier was edited since is refused, never read
+    as a plain race: its spikes' code must not reach main through pick."""
+    if not orig.meta.get("race_design"):
+        return False
+    if orig.tier != "L":
+        raise c.PolicyError(f"{orig.id} is {orig.tier} but its race is a design race (it was an L when the race started): "
+                            f"fm task set {orig.id} tier=L, then fm lane race {orig.id} --score or fm lane pick again")
+    return True
 
 
 def _racers(orig, others):
-    """The sides a race scores: an L's design race scores its spikes, the L itself has no code (T-2340)."""
-    return others if orig.tier == "L" else [orig, *others]
+    """The sides a race scores: a design race scores its spikes, the L itself has no code (T-2340)."""
+    return others if _design(orig) else [orig, *others]
 
 
 def _flat(s, n=120):
     """T-2340: a spike builder's note as one plain clause for the L's Approach: no digit marker, bracket or percent, no
-    option word, so it can't read as an option or a stated choice to the plan gate (the last '(NN%)' wins there)."""
+    option word, so it can't read as an option or a stated choice to the plan gate (the last '(NN%)' wins there).
+    Text that reads as instructions to the model keeps its marker (T-0058): the note reaches the plan and its readers."""
     s = re.sub(r"\b(?:option|approach|reading)\b", "opt", re.sub(r"[^\w ,:;'/-]", " ", s), flags=re.I)
-    return c.fit(" ".join(s.split()), n)
+    return c.defang(c.fit(" ".join(s.split()), n))
 # the words are fmcore's (CHOICE_WORDS, what the plan gate reads); a letter counts when uppercase or marked "a)" "a." "a:",
 # so "chose a simple cache" names no option
 _CHOSEN_RE = re.compile(r"\b(?i:" + c.CHOICE_WORDS + r")\b\W{0,6}(?i:option|approach)?\s*(?:(\d{1,2})\b|([A-Z])\b|([a-z])(?=[).:]))")
@@ -787,6 +796,8 @@ def race(p, b, main, args):
         # review: every side is scored on the original's checks, fixed now (a builder can edit its own criteria)
         b.meta["race"], b.meta["race_checks"] = nids[0], checks
         b.meta["race_sides"] = nids
+        if design:  # the mark pick and score go by: the tier is editable, the race's kind is not
+            b.meta["race_design"] = True
         if plan[0][0] and not design:
             b.meta["race_option"] = plan[0][0]
             b.set_section("Race", f"Side A of a race with {b.id}: build option {plan[0][0]} of the Approach (the stated "
@@ -812,7 +823,7 @@ def race(p, b, main, args):
         for nid in nids:
             fmcli.mutate(p, nid, lambda y: (y.meta.__setitem__("status", "dropped"),
                                             y.append_log("dropped: the race couldn't start")), "task_drop", {})
-        fmcli.mutate(p, b.id, lambda y: ([y.meta.pop(k, None) for k in ("race", "race_checks", "race_sides", "race_option")],
+        fmcli.mutate(p, b.id, lambda y: ([y.meta.pop(k, None) for k in ("race", "race_checks", "race_sides", "race_option", "race_design")],
                                          released and y.meta.__setitem__("status", "active")), "race_abort", {})  # T-2338: focused again
         raise
     agent = 'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"'
@@ -833,8 +844,12 @@ def _ready(p, b, n=2):
     idle = b.status == "active" and not b.has_evidence() and not any(s.done for s in b.steps())  # T-2338: no work yet
     if b.status in c.CLOSED or b.status == "verifying" or (b.status == "active" and not idle) or c.held_elsewhere(b):
         raise c.PolicyError(f"{b.id} is {b.status}: a race takes a task nobody is working on")
-    # T-2340: an L's design races before its approval (the race informs the yes), so the approval gap doesn't count
-    gaps = c.plan_gaps(b, "full" if b.tier == "L" else c.effective_autonomy(p))
+    # T-2340: an L's design races before its approval (the race informs the yes), so the approval gap doesn't count;
+    # an explore item's own wait for the user's yes does (its spikes clone it, and a builder brief refuses them)
+    if b.tier == "L" and b.meta.get("explore") and c.needs_approval(b, c.effective_autonomy(p)):
+        raise c.PolicyError(f"{b.id} is an explore item that isn't approved: the user's yes comes before any spike "
+                            f"(fm task set {b.id} approved=true after it)")
+    gaps =c.plan_gaps(b, "full" if b.tier == "L" else c.effective_autonomy(p))
     if gaps:
         raise c.PolicyError(f"{b.id} isn't planned enough for a builder: missing {', '.join(gaps)} (fm task set/ac/step)")
     if not [v for _, v in b.verify_cmds() if v]:
@@ -992,15 +1007,18 @@ def _cross(p, xs, rows, main):
 def _rank(p, b, main):
     """(original, [b sides], rows, leader id, [groups of ids with identical diffs]): frozen checks passed, then
     cross-examination (caught less broken), then lines changed, then files outside scope; a tie keeps the stated
-    choice (the original, first). A side with uncommitted work (an error row) is not scored and never leads."""
+    choice (the original; in a design race, the spike of the stated option). A side with uncommitted work (an error row)
+    is not scored and never leads."""
     orig, others = _sides(p, b)
     xs = _racers(orig, others)
+    stated = str(_options(orig)[1])
+    first = next((x.id for x in xs if str(x.meta.get("race_option")) == stated), xs[0].id)  # T-2340
     _say(f"running the frozen checks in {len(xs)} sides")
     rows = [_side(p, x, main) for x in xs]
     _cross(p, xs, rows, main)
     started = [r for r in rows if r["lines"] is not None]
     lead = min(started, key=lambda r: (-r["passed"] / (r["tests"] or 1), r["broken"] - r["caught"], r["lines"],
-                                       r["outside"]))["id"] if started else None
+                                       r["outside"], r["id"] != first))["id"] if started else None
     groups = {}
     for r in started:
         groups.setdefault(r["diff"] or f"empty-{r['id']}", []).append(r["id"])
@@ -1048,10 +1066,14 @@ def _design_note(p, orig, xs, rows, lead=None, picked=""):
 
 def score(p, b, main, args):
     import fmcli
+    orig, others = _sides(p, b)
+    design = _design(orig)
+    if design and all(x.status in c.CLOSED for x in others):  # T-2340: after the pick the spikes are gone; a re-score would
+        raise c.PolicyError(f"{orig.id}'s design race is already picked (see Design race in its Approach)")  # erase the pick
     orig, others, rows, lead, same = _rank(p, b, main)
     started = [r for r in rows if r["lines"] is not None]
     xs = _racers(orig, others)
-    if orig.tier == "L":
+    if design:
         _design_note(p, orig, xs, rows, lead)
     if not any(r.get("error") for r in rows):  # pick reuses this while no side has moved (T-2339)
         try:
@@ -1145,7 +1167,7 @@ def _pick_design(p, win, orig, spikes, main, args):
             continue
         _git(main, "worktree", "unlock", lane)  # Claude Code locks a builder's worktree; remove() still refuses uncommitted work
         try:
-            remove(p, x, main)
+            remove(p, x, main, keep=True)
         except (c.PolicyError, fmcli.UsageError) as e:
             pending.append(f"{x.id}: {e}")
         fmbus.release(p, x.id)
@@ -1163,7 +1185,7 @@ def pick(p, b, main, args):
     import fmcli
     import fmbus
     orig, others = _sides(p, b)
-    if orig.tier == "L":
+    if _design(orig):
         return _pick_design(p, b, orig, others, main, args)
     sides = [orig, *others]
     win, losers = b, [x for x in sides if x.id != b.id]
@@ -1536,6 +1558,9 @@ def merge(p, b, main, unverified=None):
     changes or uncommitted edits to a file the branch changes (T-0403); a merge that conflicts is aborted."""
     import fmcli
     import fmguard
+    if b.meta.get("lane_spike"):  # T-0732, T-2340: a spike answers a question; its code is thrown away, by every caller
+        raise c.PolicyError(f"{b.id}'s lane is a spike: it is never merged. Note what it found (fm task note "
+                            f"{b.id} fact \"…\"), then fm lane rm {b.id}")
     branch = b.meta.get("lane_branch") or f"foreman/{b.id}"
     if not _ref_ok(main, branch):
         raise fmcli.UsageError(f"{b.id}: there is no branch {branch} to merge")
@@ -1674,7 +1699,7 @@ def _save_drop(p, tid, drop):
         c.write_atomic(_drop_path(p, tid), json.dumps(drop))
 
 
-def remove(p, b, main, drop=None):
+def remove(p, b, main, drop=None, keep=False):
     """fm lane rm (and fm tidy --apply, T-0186): the lane's folder, its registration and its branch if merged; never
     uncommitted or ignored files (PolicyError). (path, the branches kept because they aren't merged). drop (T-1823,
     fm lane rm --why): the main thread drops the work, so a locked unmerged worktree goes too (its branch stays) and
@@ -1727,7 +1752,8 @@ def remove(p, b, main, drop=None):
     fmbus.release(p, b.id)  # T-1068: its file claims end with the lane
     _git(main, "worktree", "prune")  # a folder deleted by hand leaves a registration that holds the branch (review)
     have = [x for x in branches if _ref_state(main, x) == "ok"]
-    kept = [x for x in have if _git(main, "branch", "-d", x).returncode]  # -d refuses an unmerged one: commits stay
+    # -d refuses an unmerged one: commits stay; keep (T-2340: a dropped spike) keeps even an empty one, which -d would delete
+    kept = list(have) if keep else [x for x in have if _git(main, "branch", "-d", x).returncode]
 
     def take_back(x):
         for k in ("lane", "lane_branch", "builder", "builder_proc"):  # the builder slot comes back too (review)

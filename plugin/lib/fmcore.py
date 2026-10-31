@@ -2666,6 +2666,7 @@ def _count_options(text, bullets=True):
     return max(_run(idx), _run(letters), _run(words), len(_BULLET_RE.findall(text)) if bullets else 0)
 
 
+DESIGN = "\n\nDesign race:"  # T-2340: where an L's Approach keeps its spikes' scores; no part of any option
 CHOICE_WORDS = r"choice|choose|chose|chosen|decision|decided|go(?:ing)? with"  # T-2339: fmlanes reads the stated choice with the same words
 _CHOICE_AT_RE = lazy(r"(?:^|[.\n])\W{0,8}(?:" + CHOICE_WORDS + r")\b", re.I)  # {0,8}: a run of ". . ." stays linear
 _OUTCOME_RE = lazy(r"\bfails\b|\bfailure mode\b|\blikely outcome\b|\bbreaks\b|→|->", re.I)  # loose words (but, stays, gives, likely) name no outcome
@@ -2700,7 +2701,8 @@ def _marks(text, rx, conv):
 def _split_options(text, bullets=True):
     """The option texts _count_options counts, in order (the last cut at a 'Choice …' sentence); [] for no markers.
     A numbered, lettered or word run of 3+ wins; bullets only when no run reaches 3 (sub-bullets under numbered options
-    are not options)."""
+    are not options). A design race's note (DESIGN) is cut off first, so it joins no option whatever precedes it."""
+    text = text.split(DESIGN, 1)[0]
     best = max((_marks(text, rx, conv) for rx, conv in ((_NUM_RE, int), (_LET_RE, lambda m: ord(m.lower()) - 96),
                 (_WORD_RE, lambda m: int(m) if m.isdigit() else ord(m.lower()) - 96))), key=len)
     if bullets and len(best) < 3:
@@ -3671,6 +3673,7 @@ def finished_lanes(p, briefs, quiet_min=30):
     Cached FM_STALL_CACHE_S seconds (60) per lane set and main commit: the pane asks every 2 s, a merge clears it."""
     import fmbus
     lanes = [b for b in briefs if b.meta.get("lane") and b.status not in CLOSED and os.path.isdir(b.meta["lane"])
+             and not b.meta.get("lane_spike")  # T-2340: a spike's code is never merged
              and fmbus.proc_state(b.meta.get("builder_proc")) != "alive"]
     if not lanes or p.lane:  # only the main checkout merges; no lane costs no git call
         return []
