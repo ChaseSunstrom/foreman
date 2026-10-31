@@ -3956,7 +3956,23 @@ def _drive(p, sd, briefs, pl, g):
                  if w["id"] not in waiting and w["id"] not in held and (not scope or w["id"] == scope)), None)
     if not work and full and not scope:  # T-0097: in full autonomy the user's captured requests are work too
         work = next((w for w in sd["inbox"] if w["id"] not in waiting and w["id"] not in held), None)
-    done = [] if work else c.finished_lanes(p, briefs)  # T-2038: a finished lane waits on a merge, not a notification
+    import fmlanes
+    recovery, key = "", []
+    if not work and full and not scope:  # T-2354: a lane that stopped before its merge has one recovery: do it
+        try:
+            recovery = fmlanes.recovery_line(p, briefs, True)
+            key = sorted(f"{t}:{v[0]}" for t, v in fmlanes.stop_causes(p, briefs).items() if v[0] != "no_report")
+        except Exception:  # a lane that can't be read never traps or ends the drive
+            recovery = ""
+    if not recovery:
+        d.pop("recover", None)  # nothing pending: the same stop later is a new one, so the cap block is reached
+    elif d.get("recover") != key:  # said once per set of stopped lanes (the cause keys)
+        d["recover"] = key
+        return "Foreman drive: " + recovery
+    try:
+        done = [] if work else fmlanes.awaiting_merge(p, briefs)  # T-2038: a finished lane waits on a merge
+    except Exception:
+        done = [] if work else c.finished_lanes(p, briefs)
     if not work and (held or done):  # said once per set of lanes; each builder's notification wakes the session
         if d.get("lanes") == held + ["done"] + done:
             return None
