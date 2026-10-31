@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Wider capability-miss detection: a Read of an unsupported file type, an unknown tool or MCP server, a guard refusal of a plugin target, and a failed `fm task evidence --run` with 'command not found' all feed the same miss path; only evidence-run misses block a finish (T-2370).
 - Calibration ledger: every stated confidence (a brief's task, choice and assumption percentages, `fm decide --confidence`, `fm lane race --confidence`) is a write-once bet scored by outside signals; `fm calibration` shows buckets, Brier beside the base rate, and the research bar, which only rises, only on survival, checked at each `fm task finish` (T-2337).
 - Plan gate: `fm focus` refuses an unstarted M/L brief with fewer than 2 distinct readings (bullets don't count; a ruled-out reading needs a reason), fewer than 3 distinct options, an option with no `fails if:`/`likely outcome:`/`breaks`/`→`, or no use-what-exists and do-less option from different options; each gap names its fix; fm code's and the hook's own plans are exempt (`--harness-plan`), `fm batch` writes two readings, and a started task isn't re-gated (T-2335).
 - Each generation's sweep fails on net growth: `fm genesis put` of a seed records the always-on footprint, fm verbs and hook p95 (median of three bench runs), and `fm genesis sweep` fails the generation when any ends above its start, listing what it removed against what it added (T-2359).
