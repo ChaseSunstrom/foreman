@@ -277,6 +277,7 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 - `fm why FILE:LINE` traces a line back to the task and the words you asked in.
 - `fm at T-0042 -- pytest` runs any command as of a task's start.
 - `fm show X` takes a task id, a FILE:LINE or plain words and shows the task, the line's history or related past work.
+- `fm proof [--days N] [--json]` lists done tasks no run here proved (T-2273): a step or criterion with only typed, failing or inconclusive evidence, or a UI file (css, html, tsx, jsx, svelte, vue) changed with no `fm shot`, smoke, stories or flow run; the count shows as `unproven: N (fm proof)` in `fm status`, `fm digest` and `fm exam scorecard`. A task whose every check ran green is never listed.
 - `fm digest` sums up the week; `fm outcomes --readme` gives the track record in one sentence.
 - `fm outcomes` grades every close by whether it survived 30 days (nothing reverted it, fixed it or corrected it), and `--claims`, `--regret`, `--graveyard` and `--seen` read those grades. `fm round close` tags a round and lists what it closed.
 
