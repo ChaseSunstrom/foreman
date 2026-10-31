@@ -3419,7 +3419,9 @@ def cmd_log(args):
         raise UsageError(f"data must be JSON: {e}")
     if not isinstance(data, dict):
         data = {"value": data}
-    rec = c.log_event(p, args.event, task=args.task, data=data, session=session())
+    # T-2244: a session's note is always event "log"; its name rides in data.event, so no gate's event can be forged
+    rec = c.log_event(p, "log", task=args.task, session=session(),
+                      data={"event": args.event, **{k: v for k, v in data.items() if k != "event"}})
     out(args, rec, None)
 
 
@@ -6495,7 +6497,7 @@ def _build_parser(only=None):
     s.add_argument("--cost", action="store_true", help="a token quote before the queue starts: the median of finished "
                                                         "tasks of each type and tier, summed (T-1878)")
 
-    s = add("log", cmd_log, tier=("Every task", 170), help="append a ledger event")
+    s = add("log", cmd_log, tier=("Every task", 170), help="add a note to the ledger (recorded as event 'log' with data.event NAME)")
     s.add_argument("event")
     s.add_argument("data", nargs="?")
     s.add_argument("--task")
