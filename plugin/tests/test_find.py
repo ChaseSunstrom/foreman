@@ -604,3 +604,61 @@ class FindProve(ForemanTestCase):
         finally:
             import shutil
             shutil.rmtree(tmp)
+
+
+class FindReview(ForemanTestCase):
+    """T-2237: the cold review of #1: a dep finding is the tree's alone, prove stops at its deadline, a quote mark in a
+    string or comment hides no def."""
+
+    def deps(self, files):
+        root = os.path.join(self.tmp, "r")
+        write(root, files)
+        return [(f["kind"], f["symbol"]) for f in fmfind.find(root) if f["kind"] == "dep"]
+
+    def test_dep_findings_do_not_depend_on_the_hosts_installed_packages(self):
+        from unittest import mock
+        files = {"requirements.txt": "PyYAML\npython-dateutil\n", "a.py": "import yaml\nimport dateutil\n\n"
+                 "def go():\n    return yaml.safe_load('a') and dateutil\n"}
+        with mock.patch("importlib.metadata.packages_distributions", return_value={}):
+            empty = self.deps(files)
+        with mock.patch("importlib.metadata.packages_distributions",
+                        return_value={"yaml": ["PyYAML"], "dateutil": ["python-dateutil"], "nothere": ["x"]}):
+            full = self.deps(files)
+        self.assertEqual(empty, full)
+        self.assertEqual(empty, [])  # PyYAML declared, yaml imported: no finding
+        self.assertFalse(hasattr(fmfind, "_dists"))
+        with mock.patch("importlib.metadata.packages_distributions", return_value={"nothere": ["x"]}):
+            got = self.deps({"requirements.txt": "x\n", "a.py": "import nothere\n\ndef go():\n    return nothere\n"})
+        self.assertEqual(len(got), 1)  # only the host's mapping would have hidden it
+        self.assertEqual(self.deps({"requirements.txt": "beautifulsoup4\n", "a.py": "import bs4\n\ndef go():\n    return bs4\n"}), [])
+        for mod, dist in {"jwt": "PyJWT", "magic": "python-magic", "serial": "pyserial", "Crypto": "pycryptodome",
+                          "attr": "attrs", "google": "protobuf"}.items():
+            files = {"requirements.txt": dist + "\n", "a.py": f"import {mod}\n\ndef go():\n    return {mod}\n"}
+            self.assertEqual(self.deps(files), [], mod)
+
+    def test_prove_cuts_a_suite_at_its_deadline(self):
+        import time
+        from unittest import mock
+        import fmprove
+        root = os.path.join(self.tmp, "p")
+        write(root, {"app.py": APP, "tests/test_app.py": SUITE})
+        found = fmfind.find(root)
+        with mock.patch.object(fmprove, "_suites", return_value=["sleep 60"]):
+            t0 = time.time()
+            res = fmprove.prove(root, found, deadline=2)
+        self.assertLess(time.time() - t0, 2 + 6)
+        self.assertFalse([t for t in res["tickets"] if t["verdict"] == "proven" and t["kind"] == "untested"])
+
+    def test_a_quote_mark_in_a_string_or_comment_leaves_later_defs_visible(self):
+        for head in ("x = '\"\"\"'\n", "# \"\"\"\n", "y = 1  # '''\n"):
+            s = fmfind.Src("m.py", head + "\n\ndef helper():\n    return 1\n")
+            self.assertEqual([d[2] for d in s.defs], ["helper"], head)
+        s = fmfind.Src("m.py", 'def a():\n    """\n    def inner():\n    """\n\n\ndef b():\n    return 1\n')
+        self.assertEqual([d[2] for d in s.defs], ["a", "b"])  # a real docstring still hides its text
+        fs = 'def a():\n    return f"""\n    {1 + 1}\n    def fake(x):\n    import evilpkg\n    """\n\n\ndef b():\n    return 1\n'
+        self.assertEqual([d[2] for d in fmfind.Src("m.py", fs).defs], ["a", "b"])  # a multi-line f-string is data too
+        self.assertEqual(self.deps({"requirements.txt": "x\n", "a.py": fs}), [])
+        big = "x = 1" + " + 1" * 600 + '\n"""\ndef fake():\n"""\n\ndef b():\n    return 1\n'
+        self.assertEqual([d[2] for d in fmfind.Src("m.py", big).defs], ["b"])  # a long line: the old counter, same answer
+        s = fmfind.Src("m.py", '"""unterminated\n\ndef x():\n    pass\n')  # a TokenError falls back to the old tracker
+        self.assertEqual(s.defs, [])
