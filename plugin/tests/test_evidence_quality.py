@@ -125,6 +125,76 @@ class Bench(_Base):
         self.assertEqual(r.returncode, 3)
         self.assertIn("failed on the current tree", r.stdout)
 
+    def _tool_on_path(self, text):
+        """A bin/tool in the repo, reached through a symlink in a PATH folder outside it (like ~/.local/bin/fm)."""
+        import os
+        import stat
+        import subprocess
+        os.makedirs(os.path.join(self.repo, "bin"), exist_ok=True)
+        tool = os.path.join(self.repo, "bin", "tool")
+        with open(tool, "w") as f:
+            f.write(text)
+        os.chmod(tool, os.stat(tool).st_mode | stat.S_IXUSR)
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "t"], check=True)
+        linkdir = os.path.join(self.home, "linkbin")
+        os.makedirs(linkdir, exist_ok=True)
+        if not os.path.islink(os.path.join(linkdir, "tool")):
+            os.symlink(tool, os.path.join(linkdir, "tool"))
+        return {"PATH": linkdir + os.pathsep + os.environ["PATH"]}
+
+    def test_a_command_resolving_into_the_tree_runs_the_start_trees_copy_before(self):
+        env = self._tool_on_path("#!/bin/sh\nexit 0\n")  # base copy: fine
+        tid = self._perf()
+        self.fm("focus", tid)
+        self._tool_on_path("#!/bin/sh\necho CURRENT-COPY\nexit 3\n")
+        for cmd in ("tool --x", "FOO=1 tool", "time tool", '"tool"', "tool | tool", "true && tool"):
+            r = self.fm("task", "evidence", tid, "--bench", cmd, "--repeat", "1", check=False, env=env)
+            self.assertEqual(r.returncode, 3, cmd + r.stdout + r.stderr)  # the before side passed: it ran the base copy
+            self.assertIn("failed on the current tree", r.stdout, cmd)
+            self.assertIn("CURRENT-COPY", r.stdout, cmd)
+
+    def test_a_command_with_no_word_in_the_tree_says_it_may_time_the_same_code(self):
+        import os
+        import stat
+        self._commit("pass\n")
+        tid = self._perf()
+        self.fm("focus", tid)
+        other = self.repo + "-other"  # shares the repo's path as a string prefix, but is not inside it
+        os.makedirs(other, exist_ok=True)
+        with open(os.path.join(other, "tool"), "w") as f:
+            f.write("#!/bin/sh\nexit 0\n")
+        os.chmod(os.path.join(other, "tool"), 0o755 | stat.S_IXUSR)
+        env = {"PATH": other + os.pathsep + os.environ["PATH"]}
+        for cmd in ("tool", "python3 'unclosed"):
+            r = self.fm("task", "evidence", tid, "--bench", cmd, "--repeat", "1", check=False, env=env)
+            self.assertNotIn("Traceback", r.stderr)
+        r = self.fm("task", "evidence", tid, "--bench", "tool", "--repeat", "1", env=env)
+        self.assertIn("neither side's entry point is in the tree", r.stdout)
+
+    def test_a_path_into_the_tree_as_an_argument_is_no_warning(self):
+        self._commit("pass\n")
+        tid = self._perf()
+        self.fm("focus", tid)
+        r = self.fm("task", "evidence", tid, "--bench", "python3 work.py", "--repeat", "1")
+        self.assertIn("(1 runs each)", r.stdout)
+        self.assertNotIn("neither side", r.stdout)
+
+    def test_an_entry_point_new_in_the_task_says_the_before_side_ran_the_current_copy(self):
+        self._commit("pass\n")
+        tid = self._perf()
+        self.fm("focus", tid)
+        env = self._tool_on_path("#!/bin/sh\nexit 0\n")  # bin/tool is added after the start commit
+        r = self.fm("task", "evidence", tid, "--bench", "tool", "--repeat", "1", env=env)
+        self.assertIn("the start tree has no bin/tool: the before side ran the current copy", r.stdout)
+
+    def test_a_command_in_the_tree_has_no_same_code_warning(self):
+        env = self._tool_on_path("#!/bin/sh\nexit 0\n")
+        tid = self._perf()
+        self.fm("focus", tid)
+        r = self.fm("task", "evidence", tid, "--bench", "tool", "--repeat", "1", env=env)
+        self.assertNotIn("neither side", r.stdout)
+
     def test_no_base_commit_is_refused(self):
         tid = self._perf()  # never focused: no start commit
         r = self.fm("task", "evidence", tid, "--bench", "true", check=False)

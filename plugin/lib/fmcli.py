@@ -2525,7 +2525,7 @@ def _repeat_runs(root, cmd, n, timeout):
         if left is not None and left <= 0:
             break
         t = time.monotonic()
-        code, output = c.run_command(root, cmd, left)
+        code, output = c.run_command(root_dir, cmd, left, env)
         ran, cut = ran + 1, f"timed out after {left:g}s"
         if code == 124 and left is not None and output.endswith(cut):
             output = output[:-len(cut)] + f"timed out after {timeout:g}s (--timeout, all {n} runs together)"
@@ -2558,14 +2558,47 @@ def _bench(p, b, cmd, n, timeout):
         raise UsageError(f"{b.id} has no start commit on record: --bench needs the tree the task started from (fm focus it first)")
     start = time.monotonic()
 
-    def side(root):
+    import shlex
+    try:
+        words = shlex.split(cmd)
+    except ValueError:
+        words = cmd.split()
+    root = os.path.realpath(p.root)
+
+    def shim(wt, shimdir):
+        """T-2303: for each executable on PATH whose real file lies in this tree, a link in shimdir to the same file in the
+        start tree (first match per name wins, as PATH does). Returns (names resolving into the tree, notes for the
+        command's own names whose twin the start tree lacks)."""
+        seen, mine, notes = set(), set(), []
+        for d in os.environ.get("PATH", "").split(os.pathsep):
+            try:
+                names = sorted(os.listdir(d)) if d else []
+            except OSError:
+                continue
+            for name in names:
+                full = os.path.join(d, name)
+                if name in seen or not os.access(full, os.X_OK) or os.path.isdir(full):
+                    continue
+                seen.add(name)
+                real = os.path.realpath(full)
+                if not real.startswith(root + os.sep):
+                    continue
+                mine.add(name)
+                rel = os.path.relpath(real, root)
+                if os.path.isfile(os.path.join(wt, rel)):
+                    os.symlink(os.path.join(wt, rel), os.path.join(shimdir, name))
+                elif name in words:
+                    notes.append(f" · the start tree has no {rel}: the before side ran the current copy")
+        return mine, notes
+
+    def side(root_dir, env=None):
         times = []
         for _ in range(n):
             left = None if timeout is None else timeout - (time.monotonic() - start)
             if left is not None and left <= 0:
                 return times, (124, f"--timeout {timeout:g}s reached after {len(times)} of {n} runs")
             t = time.monotonic()
-            code, output = c.run_command(root, cmd, left)
+            code, output = c.run_command(root_dir, cmd, left, env)
             if code:
                 return times, (code, output)
             times.append(time.monotonic() - t)
@@ -2576,7 +2609,12 @@ def _bench(p, b, cmd, n, timeout):
         if not os.path.isdir(wt):
             raise UsageError(f"git worktree add at {base[:12]} failed")
         try:
-            before, bad_before = side(wt)
+            shimdir = os.path.join(t, "shim")
+            os.mkdir(shimdir)
+            mine, notes = shim(wt, shimdir)
+            env = {k: v for k, v in os.environ.items() if k != "FOREMAN_SKIP_TESTS"}
+            env["PATH"] = shimdir + os.pathsep + env.get("PATH", "")
+            before, bad_before = side(wt, env)
         finally:
             c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
             c._git(p.root, "worktree", "prune", timeout=30)
@@ -2585,7 +2623,11 @@ def _bench(p, b, cmd, n, timeout):
         if bad:
             tail = "\n".join(bad[1].rstrip().splitlines()[-20:])
             return bad[0], tail, f"{cmd}: failed on {where} (exit {bad[0]}) after {n} runs asked", ""
-    line = (f"{cmd}: {statistics.median(before):.3f}s → {statistics.median(after):.3f}s ({n} runs each)")
+    in_tree = bool(mine) and any(w in mine for w in words) or any(
+        os.path.realpath(os.path.join(p.root, w)).startswith(root + os.sep) and os.path.exists(os.path.join(p.root, w))
+        for w in words)
+    line = (f"{cmd}: {statistics.median(before):.3f}s → {statistics.median(after):.3f}s ({n} runs each)"
+            + ("" if in_tree else " · neither side's entry point is in the tree: both may time the same code") + "".join(notes))
     return 0, "", line, line
 
 
