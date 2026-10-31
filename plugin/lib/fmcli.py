@@ -3876,6 +3876,20 @@ def cmd_ask(args):
         if "plugin" not in cats or fmplugins.content_hash(args.pin) is None:
             raise UsageError(f"--pin names a plugin to install or enable with the plugin category; {args.pin!r} "
                              f"isn't in the known marketplaces or installed (fm plugins find <need>)")
+    if args.later:  # T-2374: a request only the user can answer, on the task; nothing here can grant it
+        import fmgrants
+        if args.standing:
+            raise UsageError("--later queues a request on one task; --standing is a yes for every task: ask without --later")
+        b = need_brief(p, args.id)
+        if b.status in c.CLOSED:
+            raise UsageError(f"{b.id} is closed ({b.status}): queue the request on an open task")
+        state, d = fmgrants.queue(p, b.id, cats, why, pin=args.pin, fallback=args.fallback, session=session())
+        what = f"{', '.join(cats)}{' ' + args.pin if args.pin else ''}"
+        msg = {"queued": f"Queued for the user: {what} on {b.id}. It grants nothing and never expires; fm todo lists it. "
+                         f"Carry on with the steps that don't need it.",
+               "dedupe": f"{what} is already queued on {b.id}: nothing added.",
+               "refused": f"The user said no to {what} earlier: it is not requested again. Use the fallback."}[state]
+        return out(args, {"task": b.id, "state": state, "allow": cats, "pin": args.pin or "", "later": True}, msg)
     with c.lock(p.dir):
         b = need_brief(p, args.id)
         if b.status in c.CLOSED and not args.standing:  # T-0302: a yes on a closed task would grant nothing
@@ -3926,6 +3940,11 @@ def cmd_todo(args):
     p = resolve(args)
     todo = []
     import time
+    import fmgrants
+    briefs = c.load_briefs(p)
+    for b, d in fmgrants.queued(p, briefs):  # T-2374: queued grants first, with what a yes unblocks; they never expire
+        todo.append({"kind": "grant", "task": b.id, "text": fmgrants.text(d), "unblocks": fmgrants.unblocks(p, b, briefs),
+                     "command": fmgrants.command(b, d)})
     for a in c.read_meta(p).get("pending_approvals") or []:
         if isinstance(a, dict):
             cats = ", ".join(a.get("allow") or [])
@@ -3937,7 +3956,7 @@ def cmd_todo(args):
     for tid in unanswered_asks(p):  # T-0622: requests the last session missed
         todo.append({"kind": "unanswered", "task": tid, "text": "a request the last session didn't answer",
                      "command": f"fm task show {tid}; answer it or fm task drop {tid} \"reason\""})
-    for b in c.load_briefs(p):
+    for b in briefs:
         if b.status == "blocked":
             why = next((l.split("blocked:", 1)[1].strip() for l in reversed(b.section("Log").splitlines())
                         if "blocked:" in l), "")
@@ -3955,7 +3974,8 @@ def cmd_todo(args):
                 todo.append({"kind": "decision", "task": None, "text": f"[{kind.group(1)}] {text}",
                              "command": "fm decide --review; fm decide \"<new>\" --reverses \"<words of it>\" to undo"})
     shown = todo[:20]
-    lines = [f"- {e['task'] + ' ' if e['task'] else ''}{e['kind']}: {e['text']}\n    → {e['command']}" for e in shown]
+    lines = [f"- {e['task'] + ' ' if e['task'] else ''}{e['kind']}: {e['text']}"
+             + (f"\n    unblocks: {e['unblocks']}" if e.get("unblocks") else "") + f"\n    → {e['command']}" for e in shown]
     if len(todo) > len(shown):
         lines.append(f"{len(todo) - len(shown)} more (fm todo --json)")
     if older:
@@ -6113,6 +6133,10 @@ def _build_parser(only=None):
     s.add_argument("--pin", help="plugin id: the plugin yes holds only for installing or enabling it, as it is now")
     s.add_argument("--standing", action="store_true",
                    help="core only: the yes covers every later task in this project until fm standing off")
+    s.add_argument("--later", action="store_true",
+                   help="queue the request on the task for the user (never expires, grants nothing; fm todo lists it): "
+                        "no dialog, so it works headless and in full autonomy")
+    s.add_argument("--fallback", default="", help="with --later: what the work does meanwhile")
 
     s = add("trust", cmd_trust, tier=("Project and settings", 740), help="whether Claude may edit the guard and Claude Code settings (on: /fm-trust, typed)")
     s.add_argument("state", nargs="?", choices=["off"])

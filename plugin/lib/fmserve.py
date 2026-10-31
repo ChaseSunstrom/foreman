@@ -1025,3 +1025,9 @@ def cmd_run(args):
     print(f"fm run: {finished} task{'s' if finished != 1 else ''} done"
           + ("; spend cap reached" if capped else "; the queue has nothing else runnable" if finished < args.max
              else f"; stopped at --max {args.max}"))
+    try:  # T-2374: what waits on the user ends the run's report
+        import fmgrants
+        if fmgrants.line(p):
+            print(fmgrants.line(p))
+    except Exception:
+        pass
