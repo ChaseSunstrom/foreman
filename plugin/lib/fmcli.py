@@ -4067,8 +4067,13 @@ def cmd_decide(args):
                                                           if "[reverses:" not in rows[n - 1]) else "") for n in nums]
         if getattr(args, "export_adr", None):  # numbered as in the full list, so a --review export never collides
             return _export_adr(p, args, list(zip(nums, pick)))
-        return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick]},
-                   "\n".join(pick[-args.n:]) or "No decisions recorded.")
+        fetched = []  # T-2356: what the model-free tick sent off the machine (a ledger event each, no pending row)
+        if args.review:
+            import fmnight
+            fetched = [{"date": d, "kind": k, "repo": r, "requests": n} for d, k, r, n in fmnight.fetches(p)]
+        sent = [f"{f['date']} night tick sent {f['requests']} request(s): {f['kind']} of {f['repo']}" for f in fetched]
+        return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick], "night_fetches": fetched},
+                   "\n".join(pick[-args.n:] + sent) or "No decisions recorded.")
     try:
         revisit = c.revisit_tag(p.root, args.revisit) + " " if getattr(args, "revisit", None) else ""  # callers build
     except ValueError as e:                                                                          # their own args
@@ -6695,6 +6700,9 @@ def _build_parser(only=None):
     s.add_argument("--dry-run", action="store_true", help="list tonight's jobs and estimates; run nothing")
     s.add_argument("--print-timer", action="store_true",
                    help="print a systemd user timer + service and a crontab line for fm night here; install nothing")
+    s.add_argument("--tick", action="store_true",
+                   help="the model-free pass (T-2356): standing orders, the cached CI result, and CI or issues only where "
+                        "you said yes; spends no tokens")
     s.add_argument("--max-usd", type=float, default=2.0, help="the night's spend at most (and today's budget left)")
     s.add_argument("--only", action="append", metavar="JOB", help="only this job (repeatable): landscape, "
                                                                   "second session, court")
