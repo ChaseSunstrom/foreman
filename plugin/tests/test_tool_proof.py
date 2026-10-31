@@ -1,8 +1,8 @@
 """T-2372 (Mission 6, #5): a task that built a tool (fm new tool, fm mcp new) closes only after four proofs, each
 refused on its own and named in the refusal: a tool_search receipt for its need before the build, the tool's test run
-by fm red and then green, that test failing on a stubbed copy of the tool, and the tool used (a Bash call in the
-session's transcript, not through its own test) after the green run. A task that built nothing pays nothing."""
-import json
+by fm red and then green, that test failing on a stubbed copy of the tool, and the tool run by fm for real (a [ran]
+evidence line: the tool's path in executable position, exit 0, after the green run). Review fixes: a tool that can't be
+checked is refused, not skipped; naming the file (cat, git add, py_compile) is no use; no transcript is read."""
 import os
 import time
 
@@ -23,7 +23,9 @@ TEST = ("import os, sys, unittest\nsys.path.insert(0, os.path.join(os.path.dirna
 WEAK = TEST.replace("self.assertEqual(shout.run('abc'), 'ABC')", "pass").replace("self.assertEqual(shout.main(['']), 1)",
                                                                                    "pass")
 RUN = "python3 tests/test_shout.py"
-PHRASE = {"search": "no search receipt", "red": "no red then green", "stub": "stub check", "use": "never used"}
+USE = "python3 tools/shout.py hello"
+PHRASE = {"search": "no search receipt", "red": "no red then green", "stub": "stub check", "use": "never run",
+          "check": "could not be checked"}
 
 
 class ToolProof(ForemanTestCase):
@@ -34,8 +36,7 @@ class ToolProof(ForemanTestCase):
                 "--focus")
         self.p = c.find_project(self.repo)
         self.tid = c.load_briefs(self.p)[-1].id
-        self.cc = os.path.join(self.tmp, "cc")
-        self.env = {"CLAUDE_CODE_SESSION_ID": SID, "CLAUDE_CONFIG_DIR": self.cc}
+        self.env = {"CLAUDE_CODE_SESSION_ID": SID, "CLAUDE_CONFIG_DIR": os.path.join(self.tmp, "cc")}
         self.tool, self.test = (os.path.join(self.repo, d) for d in ("tools/shout.py", "tests/test_shout.py"))
 
     def f(self, *a, **kw):
@@ -53,8 +54,11 @@ class ToolProof(ForemanTestCase):
             self.search()
         self.f("new", "tool", "shout")
 
+    def ran(self, cmd):
+        return self.f("task", "evidence", self.tid, "--step", "1", "--run", cmd, check=False)
+
     def run_test(self):
-        return self.f("task", "evidence", self.tid, "--step", "1", "--run", RUN, check=False)
+        return self.ran(RUN)
 
     def red_green(self, body=TEST):
         self.run_test()  # the scaffold's own test fails until the tool works
@@ -62,16 +66,17 @@ class ToolProof(ForemanTestCase):
         self.write(self.test, body)
         self.run_test()
 
-    def transcript(self, *commands, when="2999-01-01T00:00:00.000Z"):
-        d = os.path.join(self.cc, "projects", "x")
-        os.makedirs(d, exist_ok=True)
-        rows = []
-        for i, cmd in enumerate(commands):
-            rows.append({"type": "assistant", "timestamp": when, "message": {"content": [
-                {"type": "tool_use", "id": f"t{i}", "name": "Bash", "input": {"command": cmd}}]}})
-            rows.append({"type": "user", "timestamp": when, "message": {"content": [
-                {"type": "tool_result", "tool_use_id": f"t{i}", "is_error": False, "content": "ok"}]}})
-        self.write(os.path.join(d, SID + ".jsonl"), "".join(json.dumps(r) + "\n" for r in rows))
+    def use(self, cmd=USE):
+        time.sleep(1.05)  # timestamps are whole seconds and "after" is strict
+        r = self.ran(cmd)
+        self.assertIn("exit 0", r.stdout + r.stderr, "the use fixture must itself exit 0: " + r.stdout + r.stderr)
+
+    def lock_tool(self):
+        """chmod 000 the tool after the green run (skip where root ignores it)."""
+        os.chmod(self.tool, 0)
+        if os.access(self.tool, os.R_OK):
+            os.chmod(self.tool, 0o644)
+            self.skipTest("this user reads a chmod 000 file")
 
     def finish(self):
         return self.f("task", "finish", self.tid, "--audit", "self", "--run", "true", check=False)
@@ -91,7 +96,7 @@ class ToolProof(ForemanTestCase):
     def test_all_four_close_it_and_log_tool_proved(self):
         self.build()
         self.red_green()
-        self.transcript("python3 tools/shout.py hello")
+        self.use()
         r = self.finish()
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         (e,) = self.proved()
@@ -111,7 +116,7 @@ class ToolProof(ForemanTestCase):
     def test_no_search_receipt_before_the_build_is_refused_alone(self):
         self.build(searched=False)
         self.red_green()
-        self.transcript("python3 tools/shout.py hello")
+        self.use()
         out = self.refused("search")
         for other in ("stub", "red", "use"):
             self.assertNotIn(PHRASE[other], out)
@@ -123,7 +128,7 @@ class ToolProof(ForemanTestCase):
         self.f("which", "zorblat frobnicate", check=False)
         self.build(searched=False)
         self.red_green()
-        self.transcript("python3 tools/shout.py hello")
+        self.use()
         self.refused("search")
 
     def test_a_test_never_seen_red_is_refused_alone(self):
@@ -131,7 +136,7 @@ class ToolProof(ForemanTestCase):
         self.write(self.tool, TOOL)
         self.write(self.test, TEST)
         self.run_test()  # green the first time: nothing says it could fail
-        self.transcript("python3 tools/shout.py hello")
+        self.use()
         out = self.refused("red")
         for other in ("search", "stub", "use"):
             self.assertNotIn(PHRASE[other], out)
@@ -139,29 +144,71 @@ class ToolProof(ForemanTestCase):
     def test_a_test_left_red_is_refused(self):
         self.build()
         self.run_test()
-        self.transcript("python3 tools/shout.py hello")
+        self.refused("red")
+
+    def test_a_command_that_only_mentions_the_test_is_no_run_of_it(self):  # T-2372 review, low
+        self.build()
+        self.run_test()
+        self.write(self.tool, TOOL)
+        self.write(self.test, TEST)
+        self.ran("test -f /tmp/none # tests/test_shout.py")  # red, naming the test
+        self.ran("true # tests/test_shout.py")  # "green", naming it
+        self.use()
         self.refused("red")
 
     def test_a_test_that_cannot_fail_on_a_stub_is_refused_alone(self):
         self.build()
         self.red_green(WEAK)
-        self.transcript("python3 tools/shout.py hello")
+        self.use()
         out = self.refused("stub")
         for other in ("search", "red", "use"):
             self.assertNotIn(PHRASE[other], out)
 
-    def test_no_use_is_refused_alone_and_a_run_of_its_own_test_or_before_green_or_help_is_no_use(self):
+    def test_no_run_of_the_tool_is_refused_alone_and_names_the_command_to_run(self):
         self.build()
         self.red_green()
-        self.transcript()  # the session has a transcript and nothing in it ran the tool
         out = self.refused("use")
-        self.transcript("python3 tests/test_shout.py", "python3 tools/shout.py --help", "echo shout.pyx")
-        self.refused("use")
-        self.transcript("python3 tools/shout.py hello", when="2000-01-01T00:00:00.000Z")
-        self.refused("use")
+        self.assertIn("fm task evidence", out)
+        self.assertIn("tools/shout.py", out)
         for other in ("search", "red", "stub"):
             self.assertNotIn(PHRASE[other], out)
         self.assertEqual(self.proved(), [])
+
+    def test_naming_the_file_is_no_use_but_a_run_after_green_is(self):  # T-2372 review, high
+        self.build()
+        self.red_green()
+        time.sleep(1.05)  # all of these come after the green run: only what they are keeps them from counting
+        for cmd in ("cat tools/shout.py", "python3 -m py_compile tools/shout.py", "python3 tools/shout.py --help",
+                    "python3 tools/shout.py hello || true", "python3 tools/shout.py hello; true", RUN,
+                    "echo tools/shout.py", "git add tools/shout.py"):
+            self.ran(cmd)
+        self.refused("use")
+        self.use()
+        r = self.finish()
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+
+    def test_a_run_before_the_green_run_is_no_use(self):
+        self.build()
+        self.run_test()  # red
+        self.write(self.tool, TOOL)
+        self.write(self.test, TEST)
+        self.ran(USE)
+        time.sleep(1.05)
+        self.run_test()  # green, later than the use
+        self.refused("use")
+
+    def test_a_failing_run_of_the_tool_is_no_use(self):
+        self.build()
+        self.red_green()
+        time.sleep(1.05)
+        self.ran("python3 tools/shout.py ''")  # the tool exits 1 on empty input
+        self.refused("use")
+
+    def test_without_a_transcript_the_use_is_still_refused(self):  # T-2372 review: no transcript path, no tool_unproven
+        self.build()
+        self.red_green()
+        self.refused("use")
+        self.assertEqual(c.ledger_events(self.p, ["tool_unproven"]), [])
 
     def test_every_missing_piece_is_named_in_one_refusal_and_no_typed_reason_replaces_one(self):
         self.build(searched=False)
@@ -171,24 +218,43 @@ class ToolProof(ForemanTestCase):
         self.refused("search", "red")
         self.assertIn("shout", out)
 
-    def test_without_any_transcript_the_use_is_unproven_not_refused_and_not_marked_proved(self):
-        self.build()
-        self.red_green()
-        r = self.finish()
-        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
-        self.assertEqual(self.proved(), [])
-        (e,) = c.ledger_events(self.p, ["tool_unproven"])
-        self.assertEqual(e["data"]["path"], self.tool)
-
     def test_proving_resolves_a_miss_of_the_same_name(self):
         c.log_event(self.p, "capability_miss", task=self.tid, data={"name": "shout", "kind": "command",
                                                                     "cmd": "shout hi"})
         time.sleep(1.05)
         self.build()
         self.red_green()
-        self.transcript("python3 tools/shout.py hello")
+        self.use()
         r = self.finish()
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+
+    def test_a_tool_that_cannot_be_read_is_refused_not_skipped(self):  # T-2372 review, high: chmod 000 after green
+        self.build()
+        self.red_green()
+        self.use()
+        self.lock_tool()
+        out = self.refused("check")
+        self.assertIn("PermissionError", out)
+        self.assertEqual(self.proved(), [])
+
+    def test_one_tool_that_errors_does_not_hide_another_tools_gaps(self):
+        self.build()
+        self.red_green()
+        self.use()
+        self.f("new", "tool", "other")  # built, never searched for, never run
+        self.lock_tool()
+        out = self.refused("check", "search")
+        self.assertIn("tool other", out)
+
+    def test_a_broken_ledger_read_still_fails_open(self):
+        import fmcore
+        real = fmcore.ledger_events
+        self.addCleanup(setattr, fmcore, "ledger_events", real)
+
+        def boom(*a, **k):
+            raise OSError("ledger gone")
+        fmcore.ledger_events = boom
+        self.assertEqual(fmtoolproof.safe_gaps(self.p, c.find_brief(self.p, self.tid)), [])
 
     def test_the_scaffolds_tests_fail_on_a_stub_and_pass_on_the_real_tool(self):
         self.build()
@@ -198,7 +264,24 @@ class ToolProof(ForemanTestCase):
         self.write(self.test, WEAK)
         self.assertIn("stub", fmtoolproof.stub_problem(self.tool, self.test))
         self.write(self.test, "import sys\nsys.exit(3)\n")  # fails on the real one too: nothing to tell
-        self.assertIn("real", fmtoolproof.stub_problem(self.tool, self.test))
+        why = fmtoolproof.stub_problem(self.tool, self.test)
+        self.assertIn("real", why)
+        self.assertIn("environment", why)  # an environment cause is named, not just the exit code
+
+    def test_the_real_tool_runs_in_the_users_environment_minus_credentials(self):  # T-2372 review, medium
+        self.build()
+        self.write(self.tool, TOOL)
+        self.write(self.test, "import os, sys\nsys.exit(0 if os.environ.get('FM_TP_PROBE') == '1' and "
+                              "os.environ.get('HOME') and 'FM_TP_API_TOKEN' not in os.environ and "
+                              "'GITHUB_TOKEN' not in os.environ else 7)\n")
+        old = {k: os.environ.get(k) for k in ("FM_TP_PROBE", "FM_TP_API_TOKEN", "GITHUB_TOKEN")}
+        os.environ.update(FM_TP_PROBE="1", FM_TP_API_TOKEN="x", GITHUB_TOKEN="y")
+        try:
+            self.assertIsNone(fmtoolproof._run(self.tool, self.test, TOOL, 20))
+            self.assertIsNone(fmtoolproof._run(self.tool, self.test, "# stub\n", 20))  # the stub run is the same
+        finally:
+            for k, v in old.items():
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
 
     def test_a_generated_mcp_server_is_logged_and_its_test_fails_on_a_stub(self):
         d = os.path.join(self.tmp, "srv")
@@ -216,3 +299,35 @@ class ToolProof(ForemanTestCase):
         why = fmtoolproof.stub_problem(self.tool, self.test, seconds=1)
         self.assertLess(time.monotonic() - t0, 20)
         self.assertIn("timed out", why)
+
+
+class Runs(ForemanTestCase):
+    """The executable-position reading of a command, as a pure function: `runs(cmd, path, root)` is true when the last
+    command of `cmd` runs `path` (directly, or as the script of an interpreter), with no || or backgrounding to
+    hide a failure, and not --help."""
+    ROOT = "/r"
+    TOOL = "/r/tools/x.py"
+
+    def test_real_runs(self):
+        for cmd in ("python3 tools/x.py a", "./tools/x.py a", "/r/tools/x.py", "python3 /r/tools/x.py", "FOO=1 python3 tools/x.py",
+                    "env FOO=1 python3 tools/x.py", "echo hi | python3 tools/x.py", "make && python3 tools/x.py a 2>&1",
+                    "python3 -u tools/x.py", "bash tools/x.py"):
+            self.assertTrue(fmtoolproof.runs(cmd, self.TOOL, self.ROOT), cmd)
+
+    def test_mentions_are_not_runs(self):
+        for cmd in ("cat tools/x.py", "git add tools/x.py", "python3 -m py_compile tools/x.py", "echo tools/x.py",
+                    "python3 tools/x.py --help", "python3 tools/x.py -h", "python3 tools/x.py || true",
+                    "python3 tools/x.py; true", "python3 tools/x.py &", "python3 tools/x.py\ntrue", "grep x tools/x.py",
+                    "python3 tools/xy.py", "python3 tools/x.pyc", "python3 -c 'tools/x.py'", "ls tools/x.py && true",
+                    "python3 \"unterminated tools/x.py", ""):
+            self.assertFalse(fmtoolproof.runs(cmd, self.TOOL, self.ROOT), cmd)
+
+    def test_the_test_is_run_by_path_after_an_interpreter_unittest_or_pytest(self):
+        t = "/r/tests/test_x.py"
+        for cmd in ("python3 tests/test_x.py", "./tests/test_x.py", "python3 -m unittest tests/test_x.py",
+                    "pytest tests/test_x.py", "python3 -m pytest -q tests/test_x.py::T::test_it",
+                    "cd /r && python3 tests/test_x.py"):
+            self.assertTrue(fmtoolproof.runs_test(cmd, t, self.ROOT), cmd)
+        for cmd in ("test -f /tmp/f # tests/test_x.py", "true # test_x.py", "cat tests/test_x.py", "echo tests/test_x.py",
+                    "python3 tests/test_x.py || true", "python3 tests/test_xy.py", "python3 -m unittest other"):
+            self.assertFalse(fmtoolproof.runs_test(cmd, t, self.ROOT), cmd)
