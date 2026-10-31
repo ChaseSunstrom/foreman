@@ -919,6 +919,12 @@ class ScanCache(ForemanTestCase):
             d.check_usage_burn()
         self.assertEqual(self.calls["burn"], 6)
 
+    def test_load_json_survives_a_deep_nested_file(self):  # T-1605 class
+        path = os.path.join(self.tmp, "deep.json")
+        with open(path, "w") as f:
+            f.write("[" * 100_000)
+        self.assertIsNone(d._load_json(path))
+
     def test_a_cached_detail_is_plain_and_short(self):
         d.check_usage_burn()
         path = os.path.join(c.state_dir(), "doctor-cache.json")
