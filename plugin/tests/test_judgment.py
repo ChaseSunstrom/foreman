@@ -159,7 +159,9 @@ class DoorGate(DoorBase):
         b = c.find_brief(self.p, tid)
         b.meta["doors"] = [1]  # what fm focus records for a local one-way step
         self.assertTrue([g for g in c.door_gaps(b) if "Undo" in g and "step 1" in g])
-        b.edit_step(1, "delete data/old.csv. Undo: cp -a /snap/. /repo/")
+        snap = os.path.join(self.tmp, "snap")  # T-2438: the undo source must exist; /snap is a snapd dir, not on every host
+        os.makedirs(snap)
+        b.edit_step(1, f"delete data/old.csv. Undo: cp -a {snap}/. /repo/")
         self.assertEqual(c.door_gaps(b), [])
 
     def test_a_local_one_way_step_needs_the_rival_read(self):
