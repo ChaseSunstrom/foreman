@@ -435,5 +435,33 @@ class GoalPlan(GoalBase):  # T-2136
         self.assertNotEqual(r.returncode, 0)
 
 
+class GoalDistance(GoalBase):
+    """T-2144: 'goal D/N' ends state.line (and so the terminal title) and the badge while a goal with items stands."""
+
+    def sd(self):
+        return c.state_dict(self.p)
+
+    def test_distance_on_state_line_title_and_badge(self):
+        import fmhooks
+        self.fm("focus", self.new("work"))
+        self.assertNotIn("goal", c.state_line(self.sd()))  # no goal: as today
+        self.fm("goal", "set", "Ship it", "--until", "2099-01-01")
+        self.assertNotIn("goal", c.state_line(self.sd()))  # no items
+        self.fm("goal", "item", "one", "--done-when", "true")
+        self.fm("goal", "item", "two", "--done-when", "true")
+        sd = self.sd()
+        self.assertTrue(c.state_line(sd).endswith(" · goal 0/2"), c.state_line(sd))
+        self.assertIn("goal 0/2", fmhooks._title_seq(sd))
+        self.assertTrue(c.badge_text(sd).endswith(" · goal 0/2"))
+        c.regen_views(self.p)
+        with open(f"{self.p.dir}/state.line") as f:
+            self.assertTrue(f.read().strip().endswith("goal 0/2"))
+
+    def test_a_broken_goal_leaves_the_line_as_today(self):
+        self.new("work")
+        c.update_meta(self.p, mandate="garbage")
+        self.assertNotIn("goal", c.state_line(self.sd()))
+
+
 if __name__ == "__main__":
     unittest.main()
