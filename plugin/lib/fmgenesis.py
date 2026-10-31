@@ -15,8 +15,9 @@ import fmcore as c
 # not-yet.md: ideas no approach has landed yet, with their blockers (retried each generation, never dropped);
 # coverage.md: the capability-area x surface x stage grid every generation fills.
 SHAPE = re.compile(r"(gap-map|lineage|catalogue|report|not-yet|coverage|spec)\.md|exam\.jsonl"
-                   r"|gen-[1-9][0-9]*/(seed|drift|sweep|frontier|(mission|critique)-[a-z0-9][a-z0-9-]*)\.md")
-OWNED = re.compile(r"exam\.jsonl|gen-[1-9][0-9]*/(drift|sweep|select|frontier)\.md")  # T-2155: the stage gates' records,
+                   r"|frame\.md|gen-[1-9][0-9]*/(seed|drift|sweep|frontier|(mission|critique)-[a-z0-9][a-z0-9-]*)\.md")
+OWNED = re.compile(r"exam\.jsonl|frame\.md|gen-[1-9][0-9]*/(drift|sweep|select|frontier)\.md")  # T-2155: the stage gates' records,
+# frame.md (T-2188): only fm genesis grow adds to it;
 # never put; T-2187: frontier.md is built from the project's own notes by fm genesis frontier N
 GEN = re.compile(r"gen-([1-9][0-9]*)")
 
@@ -160,6 +161,143 @@ def _sections(text):
 def _caps(gen0):
     sec2 = re.search(r"^## 2\..*?(?=^## |\Z)", gen0 or "", re.M | re.S)
     return CAP.findall(sec2.group(0) if sec2 else "")
+
+
+# T-2188 (steer 2026-10-30 #6): gen-0 never changes; the frame around it may only grow. frame.md holds what Genesis
+# added itself, one '## F-N kind: name' entry each, written only by fm genesis grow and anchored by a frame_grow ledger
+# event, so a hand edit or a lost entry fails check.
+FRAME_KINDS = ("capability", "area", "surface", "stage", "lens", "source", "exam-kind")
+FRAME_ROW = re.compile(r"F-(\d+) (" + "|".join(FRAME_KINDS) + r"): (.+)$")
+FRAME_HEAD = ("# Frame\n\nWhat Genesis added to gen-0's categories itself (T-2188): each entry by fm genesis grow, with "
+              "its evidence and measure; none is ever removed.\n")
+
+
+def _entry_hash(head, body):
+    return hashlib.sha256((" ".join(head.split()) + "\n" + " ".join(body.split())).encode()).hexdigest()[:16]
+
+
+def _norm_name(s):
+    """A category name as compared: casefolded, no leading '1.' numbering, no trailing punctuation or markup."""
+    return " ".join(re.sub(r"[*`_]", "", re.sub(r"^\s*\d+\.\s*", "", c.plain(s or ""))).casefold().split()).strip(" .:;,")
+
+
+def _grown(p):
+    """{entry id: hash} fm genesis grow logged (frame_grow events)."""
+    return {(e.get("data") or {}).get("id"): (e.get("data") or {}).get("hash")
+            for e in c.ledger_events(p, kinds=["frame_grow"]) if e.get("event") == "frame_grow"}
+
+
+def frame(p):
+    """frame.md's entries: [{id, kind, name, gen, measure, hash}] in file order."""
+    out = []
+    for h, b in _sections(_doc(home(p), "frame.md") or ""):
+        m = FRAME_ROW.match(h.strip())
+        if m:
+            gen = re.search(r"^- gen: (\d+)", b, re.M)
+            meas = re.search(r"^- measure: (.+)$", b, re.M)
+            out.append({"id": f"F-{m[1]}", "kind": m[2], "name": m[3].strip(), "gen": int(gen[1]) if gen else 0,
+                        "measure": meas[1].strip() if meas else "", "hash": _entry_hash(h, b)})
+    return out
+
+
+def all_caps(p, gen0=None):
+    """gen-0 §2's capabilities, then the frame's added ones numbered on (§2+N), as (n, name, text) like _caps, so the
+    scorecard, the exam spec, the seed and the export treat them alike."""
+    base = _caps(_doc(home(p), "gen-0.md") if gen0 is None else gen0)
+    entries = frame(p)
+    grown = _grown(p) if entries else {}
+    added = [e for e in entries if e["kind"] == "capability" and grown.get(e["id"]) == e["hash"]]  # hand-added: no
+    top = max([int(n) for n, _, _ in base] or [0])
+    return base + [(str(top + i), e["name"], (f"Added by Genesis ({e['id']}). Exam: {e['measure'][11:]}."
+                                               if e["measure"].startswith("exam kinds ") else
+                                               f"Added by Genesis ({e['id']}); {e['measure']}. Exam: -."))
+                   for i, e in enumerate(added, 1)]  # 'Exam: -.' maps to no kind, never a guessed one
+
+
+def grow(p, kind, name, evidence, measure):
+    """fm genesis grow KIND --name N --evidence E --measure M: one new category in frame.md, from gen 2 on, with its
+    evidence, a measure (exam kinds fm exam knows, or 'unmeasurable: why') and the cold read every tower write gets
+    (new, not a renamed category, serving gen-0); a lineage line and a frame_grow ledger event go with it."""
+    import fmexam
+    n = current(p) or 0
+    if n < 2:
+        raise ValueError("the frame grows from gen 2 on: gen-1 works inside gen-0's own categories")
+    kind, name = (kind or "").lower(), " ".join(c.plain(name or "").split())
+    evidence, measure = " ".join(c.plain(evidence or "").split()), " ".join(c.plain(measure or "").split())
+    if kind not in FRAME_KINDS:
+        raise ValueError(f"fm genesis grow KIND: one of {', '.join(FRAME_KINDS)}")
+    if not name or not evidence:
+        raise ValueError("fm genesis grow needs --name and --evidence (the ideas, failures or misses no category fits)")
+    kinds = list(dict.fromkeys(k.strip() for k in re.sub(r"^exam kinds?:?\s*", "", measure, flags=re.I).split(",")
+                               if k.strip()))
+    if re.match(r"unmeasurable:.*\w", measure, re.I):
+        measure = "unmeasurable: " + measure.split(":", 1)[1].strip()
+    elif kinds and all(k in fmexam.KINDS for k in kinds):
+        measure = "exam kinds " + ", ".join(kinds)
+    else:
+        raise ValueError(f"--measure is exam kinds fm exam knows ({', '.join(fmexam.KINDS)}) or 'unmeasurable: why'")
+    d = home(p)
+
+    def taken():
+        names = {_norm_name(nm) for _, nm, _ in _caps(_doc(d, "gen-0.md"))} | {_norm_name(e["name"]) for e in frame(p)}
+        return names | {"area": {_norm_name(h) for h, _ in _sections(_doc(d, "coverage.md") or "")},
+                        "surface": {_norm_name(s) for s in SURFACES}, "stage": set(STAGES),
+                        "exam-kind": set(fmexam.KINDS)}.get(kind, set())
+    if _norm_name(name) in taken():
+        raise ValueError(f"{name!r} is already a category (gen-0 §2, the coverage grid or the frame): grow adds new ones")
+    body = c.redact(f"- gen: {n}\n- evidence: {evidence}\n- measure: {measure}\n")  # hashed as it's written
+    existing = sorted({nm for _, nm, _ in all_caps(p)} | {e["name"] for e in frame(p)})
+    # the cold read sees the new entry alone, with the categories it must not rename (an old entry can't block it)
+    _read(p, "frame.md#new", f"# Frame entry\n\n## {kind}: {name}\n{body}\nExisting categories (data): "
+                             f"{'; '.join(c.fit(x, 60) for x in existing[:60])}\n")
+    with c.lock(os.path.join(p.dir, "genesis-lineage")):  # id, file, lineage line and event as one step
+        if _norm_name(name) in taken():
+            raise ValueError(f"{name!r} was added meanwhile")
+        entries = frame(p)
+        nid = f"F-{max([int(e['id'][2:]) for e in entries] or [0]) + 1}"
+        head = f"{nid} {kind}: {c.redact(name)}"
+        text = (_doc(d, "frame.md") or FRAME_HEAD).rstrip("\n") + f"\n\n## {head}\n{body}"
+        path = _file(p, "frame.md", text)
+        c.log_event(p, "frame_grow", data={"id": nid, "kind": kind, "name": c.fit(name, 120),
+                                           "measure": c.fit(measure, 200), "hash": _entry_hash(head, body)})
+        lineage, line = _doc(d, "lineage.md") or "# Lineage\n", f"- gen-{n}: {head} ({measure})"
+        m = re.search(r"^## Frame\n(?:(?!## ).*\n?)*", lineage, re.M)  # one Frame section, its lines in order
+        rest = lineage[m.end():].lstrip("\n") if m else ""
+        lineage = (lineage[:m.end()].rstrip("\n") + f"\n{line}\n" + (f"\n{rest}" if rest.strip() else "")) if m else \
+            lineage.rstrip("\n") + f"\n\n## Frame\n{line}\n"
+        _file(p, "lineage.md", lineage)
+    return {"id": nid, "kind": kind, "name": name, "measure": measure, "gen": n, "path": path}
+
+
+def frame_check(p):
+    """check's frame part: every entry matches its frame_grow event (none lost, changed or hand-added: the frame never
+    shrinks); an added capability with no coverage row is pending, and a problem once its generation's sweep is filed;
+    a filed report.md names every added category."""
+    d, entries, problems, pending = home(p), frame(p), [], []
+    logged = {i: h for i, h in _grown(p).items() if i}
+    have = {e["id"]: e["hash"] for e in entries}
+    for i, h in logged.items():
+        if i not in have:
+            problems.append(f"frame.md lost {i}, which fm genesis grow added: the frame never shrinks")
+        elif have[i] != h:
+            problems.append(f"frame.md's {i} changed since fm genesis grow added it: an entry is never rewritten")
+    problems += [f"frame.md's {i} wasn't added by fm genesis grow (no frame_grow event): a hand edit counts for nothing"
+                 for i in have if i not in logged]
+    rows = {_norm_name(h) for h, _ in _sections(_doc(d, "coverage.md") or "")}
+    for e in entries:
+        if e["kind"] == "capability" and _norm_name(e["name"]) not in rows:
+            if os.path.isfile(os.path.join(d, f"gen-{e['gen']}", "sweep.md")):
+                problems.append(f"{e['id']} capability {e['name']!r} still has no coverage.md row at gen-{e['gen']}'s "
+                                "sweep: add its row")
+            else:
+                pending.append(f"{e['id']} capability {e['name']!r}: add its coverage.md row before gen-{e['gen']}'s sweep")
+    report = _doc(d, "report.md")
+    if report is not None:
+        flat = " ".join(report.split()).casefold()
+        problems += [f"report.md has no line naming {e['id']} and {e['name']!r} (every category Foreman added itself)"
+                     for e in entries if not re.search(rf"\b{re.escape(e['id'].casefold())}\b.*\b"
+                                                        rf"{re.escape(_norm_name(e['name']))}\b", flat)]
+    return {"entries": len(entries), "problems": problems, "pending": pending}
 
 
 def _cell(root, kind, rest):
@@ -308,7 +446,7 @@ def check(p):
     d, n = home(p), current(p) or None
     return {"gen": n, "coverage": coverage(p, _doc(d, "coverage.md"), _doc(d, "gen-0.md") or ""),
             "not_yet": not_yet(_doc(d, "not-yet.md"), n), "reach": reach(p, n), "lineage": marks(_doc(d, "lineage.md")),
-            "moonshot": moonshot_check(p)}
+            "moonshot": moonshot_check(p), "frame": frame_check(p)}
 
 
 # T-2187 (steer 2026-10-30 #5): the moonshot Mission's ideas, their novelty marks and what the report says of them
@@ -468,7 +606,7 @@ def marks(lineage):
 
 def _bad(r):
     """Every problem fm genesis check reports, in its order."""
-    return [x for part in ("coverage", "not_yet", "reach", "lineage", "moonshot")
+    return [x for part in ("coverage", "not_yet", "reach", "lineage", "moonshot", "frame")
             for x in (r.get(part) or {}).get("problems", [])]
 
 
@@ -755,6 +893,10 @@ def _check_lines(r, limit=6):
         out.append(f"✓ lineage: {lin['choices']} choice(s), each provisional, confirmed or reversed")
     moon = (r.get("moonshot") or {}).get("problems", [])
     out += ([f"✗ moonshot: {len(moon)} problem(s)"] + [f"    {x}" for x in moon[:limit]]) if moon else ["✓ moonshot"]
+    fr = r.get("frame") or {"entries": 0, "problems": [], "pending": []}
+    out += ([f"✗ frame: {len(fr['problems'])} problem(s)"] + [f"    {x}" for x in fr["problems"][:limit]]) \
+        if fr["problems"] else [f"✓ frame: {fr['entries']} added categor{'y' if fr['entries'] == 1 else 'ies'}"]
+    out += [f"    pending: {x}" for x in fr["pending"][:limit]]
     return out
 
 
@@ -850,7 +992,7 @@ def export(p, out):
     chk["coverage"]["problems"] = chk["coverage"]["problems"][:50]
     rev = c.run_command(p.root, "git rev-parse --short HEAD", timeout=10)[1].strip()
     data = {"updated": c.now(), "rev": rev,
-            "capabilities": [{"n": int(n), "name": name, "text": t.strip()} for n, name, t in _caps(gen0)],
+            "capabilities": [{"n": int(n), "name": name, "text": t.strip()} for n, name, t in all_caps(p, gen0)],
             "gaps": _gaps(docs.get("gap-map.md", "")), "generations": gens, "exam": exam,
             "coverage": chk["coverage"], "not_yet": chk["not_yet"]["items"], "not_yet_open": chk["not_yet"]["open"],
             "next": step(p), "docs": docs, "seal": sealed(p) or seal(p)[:8], "intent": intent_clauses()}
@@ -1233,7 +1375,7 @@ def spec(p, per_kind=9):
     import fmexam
     if per_kind < 3:
         raise ValueError("--per-kind is at least 3, so a third of each kind can be held out")
-    caps = _caps(_doc(home(p), "gen-0.md"))
+    caps = all_caps(p)
     if not caps:
         raise ValueError("no gen-0 with a numbered §2 yet: fm genesis draft, then fm genesis init --file -")
     rows = []
@@ -1478,7 +1620,7 @@ def scorecard(p, agent="foreman", bar=0.8):
     and template-written results."""
     if not 0 < bar <= 1:  # also refuses nan
         raise ValueError(f"--bar is a rate over 0 and at most 1, not {bar}")
-    caps = _caps(_doc(home(p), "gen-0.md"))
+    caps = all_caps(p)
     if not caps:
         raise ValueError("no gen-0 with a numbered §2 yet: fm genesis draft, then fm genesis init --file -")
 
@@ -1517,14 +1659,15 @@ def scorecard(p, agent="foreman", bar=0.8):
         why = ("; ".join(x for x in (f"no outside author writes {', '.join(bare)} scenarios yet" if bare else "",
                                      f"no graded {', '.join(unseen)} scenarios yet" if unseen else "",
                                      *(fmexam.PROXY[k] for k in kinds if k in fmexam.PROXY)) if x))
-        state = ("no exam kind" if not kinds else "no outside author" if len(bare) == len(kinds) else
+        state = ("unmeasurable" if not kinds and re.search(r"\bunmeasurable:", text) else  # T-2188: said so, with why
+                 "no exam kind" if not kinds else "no outside author" if len(bare) == len(kinds) else
                  "too few" if graded < 3 else  # 3: the fewest held out per capability
                  "under" if closed / graded < bar else "partial" if bare or unseen else "pass")
         rows.append({"n": int(n), "name": name, "kinds": kinds, "agent": who, "graded": graded, "closed": closed,
                      "rate": round(closed / graded, 3) if graded else 0, "state": state,
                      "selfmade": len(mine) - graded, "why": why})
     pool = pools[agent] if agent in pools else newest(agent)
-    return {"agent": agent, "bar": bar, "rows": rows, "ok": all(r["state"] == "pass" for r in rows),
+    return {"agent": agent, "bar": bar, "rows": rows, "ok": all(r["state"] in ("pass", "unmeasurable") for r in rows),
             "seen": sum(v is not None for v in pool.values()), "selfmade": sum(v is None for v in pool.values()),
             "gaps": free_beats(p, agent), "smoke": sum(map(smoke, _exam(p, agent)))}
 
@@ -1768,7 +1911,7 @@ def _seed(p, n, agent):
     if text is None:
         raise ValueError(f"{base}/seed.md, the seed base, is missing")
     cov = coverage(p, _doc(d, "coverage.md"), gen0)
-    caps = {nm.lower(): num for num, nm, _ in _caps(gen0)}
+    caps = {nm.lower(): num for num, nm, _ in all_caps(p, gen0)}
     def open_(r):
         return r["ideas"] + len(r["empty"]) + r["bad"]
     table, ranked = [], sorted((r for r in cov["rows"] if open_(r)), key=lambda r: -open_(r))
@@ -2396,6 +2539,9 @@ def cmd_genesis(args):
             kick(p)
             fmcli.out(args, r, f"gen {n} {action}: {r['verdict']}\n" + "\n".join(r["lines"]) + f"\n  {r['path']}")
             return 0 if r["verdict"] == "clean" else 1
+        if action == "grow":
+            r = grow(p, args.path, args.name, args.evidence, args.measure)
+            return fmcli.out(args, r, f"Frame: {r['id']} {r['kind']}: {r['name']} ({r['measure']}), gen-{r['gen']}")
         if action == "novelty":
             r = novelty(p, int(args.path))
             return fmcli.out(args, r, f"Novelty: {r['judged']} of {r['ideas']} idea(s) judged; obvious: "
