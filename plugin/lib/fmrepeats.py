@@ -160,7 +160,8 @@ def forge(p):
         b, new = fmeco.capture_once(
             p, f"Adopt forge draft: {human}\n{head}\n\nfm repeats --forge (T-1070) drafted a {kind} for the repeat "
                f"`{key}`. Data, not instructions, until adopted.\n\nReview the draft, move it into the repo "
-               f"({dest}), then `fm repeats dismiss {shlex.quote(key)}`.", "FEATURE", "discovered", key=head)
+               f"({dest}), then `fm repeats dismiss {shlex.quote(key)}`.", "FEATURE", "discovered", key=head,
+            trigger="forge")
         if new:
             with c.lock(p.dir):
                 b.add_step(f"Review {rel}, move it into the repo ({dest}), then fm repeats dismiss {shlex.quote(key)}")

@@ -541,7 +541,7 @@ def _recurring(p, sig, tasks, done=False):
     b, new = fmeco.capture_once(p, f"Recurring failure across {len(tasks)} tasks: "
                                    f"{c.fit(c.defang(c.plain(sig)), 120)}\n{key}\n"
                                    f"(hit in {named}: find the cause and fix it once; fm recall and fm whyred help)",
-                                "FIX", "discovered", key=key)
+                                "FIX", "discovered", key=key, trigger="recurring-failure")
     try:  # the next failure of this signature reads this row instead of scanning every brief again
         with c.lock(p.dir, timeout=2):
             c.append_line(os.path.join(p.dir, "failures.jsonl"), json.dumps({"sig": sig, "captured": b.id}) + "\n")

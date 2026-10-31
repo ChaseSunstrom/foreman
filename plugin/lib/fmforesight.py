@@ -154,7 +154,7 @@ def _ci(p):
         b, _ = fmeco.capture_once(p, f"FIX: CI on {r['branch']} is red at {r['sha'][:7]} ({', '.join(r['failed'])})"
                                      f"\nCONTEXT: found by the session-start sweep (T-1810): "
                                      f"https://github.com/{repo}/commit/{r['sha']}\nCI-red: {r['sha']}",
-                                  "FIX", "discovered", key=f"CI-red: {r['sha']}")
+                                  "FIX", "discovered", key=f"CI-red: {r['sha']}", trigger="ci-red")
         _save(_mine(p), {k: r[k] for k in ("branch", "sha", "failed")} | {"task": b.id})
     elif r.get("sha") and not r.get("failed") and mine:
         _save(_mine(p), {})  # green again

@@ -137,6 +137,12 @@ def cmd_state(args):
         if args.brief:
             text = "\n".join(text.splitlines()[:15])
         print(text.rstrip("\n"))
+        if not args.brief:  # T-2276: the trigger whose tasks mostly get dropped
+            import fmtriggers
+            n = fmtriggers.noisiest(p)
+            if n:
+                print(f"Noisiest trigger: {n['trigger']} ({n['dropped']} of {n['done'] + n['dropped']} closed dropped); "
+                      f"it files at low priority (fm triggers)")
 
 
 def cmd_proof(args):
@@ -6675,6 +6681,11 @@ def _build_parser(only=None):
     g.add_argument("--reject", metavar="TEXT", help="a dead end: later digests skip lines with TEXT (T-0471)")
     g.add_argument("--minutes", action="store_true", help="minutes lost in the last week, by kind (T-0959)")
     s.add_argument("--why", help="--reject: why it's a dead end")
+
+    s = add("triggers", lazy("fmtriggers", "cmd_triggers"), tier=("Reports", 1031),
+            help="each trigger that files tasks: fired, done, dropped, open and precision; a mostly-dropped one files "
+                 "at low priority (T-2276)")
+    s.add_argument("--days", type=int, default=30, help="count captures from the last N days (default 30)")
 
     s = add("repeats", lazy("fmrepeats", "cmd_repeats"), tier=("Reports", 1030),
             help="commands and procedures this project keeps repeating, and what project tool each could become")
