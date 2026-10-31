@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm exam long` keeps each session goal's activity summary (tool calls, fm verbs, turns, Foreman event counts, the fitted done claim), and grade shows it with a "where the time went" line, so a slow or false-done arm says why (T-2325).
 - A closed brief written in the last 2 seconds is indexed at once, so a second `fm checkpoint` no longer rewrites briefs-index.json and briefs-closed.json (T-2324).
 - `fm ship` runs fm check's affected tests over its range in the scratch tree before the full suite; a red one stops the ship in minutes with the failing classes named (T-2323).
 - Long goals state every string or number their hidden checks assert that the goal, its ticket and the base code never mention, and gen drops (and counts) a goal that pins more than three or a value over 60 characters (T-2322).
