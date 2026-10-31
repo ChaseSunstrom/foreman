@@ -11,7 +11,7 @@ class _Base(ForemanTestCase):
         self.fm("init")
         self.tid = json.loads(self.fm("task", "new", "Cache the session token", "--type", "FEATURE", "--tier", "M",
                                       "--ac", "it caches :: true", "--step", "do it",
-                                      "--interpretation", "cache it", "--approach", "a vs b → a", "--json").stdout)["id"]
+                                      "--interpretation", "cache it", "--approach", "1) a 2) b 3) c Choice 1: a", "--json").stdout)["id"]
 
 
 class Inconclusive(_Base):

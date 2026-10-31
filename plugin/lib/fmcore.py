@@ -2601,12 +2601,71 @@ def waits_on_user(b, pending, autonomy="standard"):
     return "plan approval" if needs_approval(b, autonomy) else None
 
 
+_NUM_RE = lazy(r"(?:^|[\s(*#])(\d+)[.)][ \t]*(?=\w)")  # "1)" "(1)" "2." followed by words; "1) …" is hollow
+_LET_RE = lazy(r"(?:^|[\s(*#])([A-Za-z])[.)][ \t]*(?=\w)")  # "A)" "(B)" "C."
+_WORD_RE = lazy(r"\b(?:option|approach|reading)\s+(\w)\b[\s:.)*\-]*(?!(?:option|approach|reading)\s+\w\b)(?=\w)", re.I)  # "Option A: x", "**Reading 1** x"
+_BULLET_RE = lazy(r"^\s*[-*]\s+(?=\w)", re.M)
+_CHOICE_RE = lazy(r"\b(?:choice|choose|chose|chosen|decision|decided)\b|\bgo(?:ing)? with\b", re.I)
+_SPIKE_RE = lazy(r"research/[\w.-]+|\bspike\s+T-\d+", re.I)
+
+
+def _run(idx):
+    n = 0
+    while n + 1 in idx:
+        n += 1
+    return n
+
+
+def _count_options(text, bullets=True):
+    """How many options a text lists: the longest 1,2,3… run of numbered, lettered or 'Option X' markers (each followed
+    by a word, so '1) …' doesn't count), or its bullet lines."""
+    idx = {int(m) for m in _NUM_RE.findall(text)}
+    letters = {ord(m.lower()) - 96 for m in _LET_RE.findall(text)}
+    words = {int(m) if m.isdigit() else ord(m.lower()) - 96 for m in _WORD_RE.findall(text) if m.isalnum()}
+    return max(_run(idx), _run(letters), _run(words), len(_BULLET_RE.findall(text)) if bullets else 0)
+
+
+def _started(b):
+    """A brief that was ever started: pausing sets status back to planned, so look at what starting leaves behind."""
+    return bool(b.status in CLOSED or b.status in ("active", "verifying") or b.meta.get("plan0_at") or b.meta.get("base")
+                or b.meta.get("base_tree") or b.has_evidence() or any(s.done for s in b.steps()))
+
+
+def _content_gaps(b):
+    """T-2269: the plan's content by tier: M/L name 3+ options and a choice, L adds 2+ readings and risks."""
+    gaps, n = [], 0
+    if b.tier in ("M", "L"):
+        ap = b.section("Approach (options → choice → why)")
+        n = _count_options(ap)
+        if ap.strip() and n < 3:
+            gaps.append(f"Approach names {n} option{'s' * (n != 1)}; 3+ options needed (fm task set {b.id} --section Approach "
+                        "--text '1) … 2) … 3) … Choice 1: why', each with words)")
+        if ap.strip() and not _CHOICE_RE.search(ap):
+            gaps.append(f"a choice in Approach (fm task set {b.id} --section Approach: add 'Choice N: why')")
+    if b.tier == "L":
+        it = b.section("Interpretation")
+        n = _count_options(it)
+        if it.strip() and n < 2:
+            gaps.append(f"Interpretation names {n} reading{'s' * (n != 1)}; 2+ readings needed (fm task set {b.id} --section "
+                        "Interpretation: 'Reading 1: … Reading 2: …')")
+        if not b.section("Risks and rollback").strip():
+            gaps.append(f"Risks and rollback (fm task set {b.id} --section 'Risks and rollback': what fails, what undoes it)")
+    low = [l for l in b.section(b.ASSUMPTIONS).splitlines()
+           if "(low)" in l.lower() and not re.match(r"- \[(?:verified|false)\b", l) and not _SPIKE_RE.search(l)]
+    if low:
+        gaps.append(f"research or a spike for the low-confidence assumption {low[0][:60]!r} (fm research NAME, then name "
+                    "research/NAME on the line; or a spike task: 'spike T-NNNN'; or verify it: fm task assume)")
+    return gaps
+
+
 def plan_gaps(b, autonomy="standard"):
     """What a brief still needs before work may start (fm focus refuses until this is empty)."""
     gaps = []
     if b.tier in ("M", "L"):
         gaps += [name for name, sec in (("Interpretation", "Interpretation"),
                                          ("Approach", "Approach (options → choice → why)")) if not b.section(sec).strip()]
+    if not _started(b):  # a task already started (even if paused back to planned) isn't re-gated
+        gaps += _content_gaps(b)
     acs = b.acceptance()
     if not acs:
         gaps.append("acceptance criterion")

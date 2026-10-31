@@ -20,7 +20,7 @@ class DefectClasses(ForemanTestCase):
 
     def brief(self):
         tid = json.loads(self.fm("task", "new", "X", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true",
-                                 "--step", "s", "--interpretation", "x", "--approach", "x", "--json").stdout)["id"]
+                                 "--step", "s", "--interpretation", "x", "--approach", "1) a 2) b 3) c Choice 1: a", "--json").stdout)["id"]
         path = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["path"]
         with open(path) as f:
             return f.read()

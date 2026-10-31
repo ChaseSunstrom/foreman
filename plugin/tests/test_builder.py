@@ -18,7 +18,7 @@ class _Tasks(ForemanTestCase):
         self.fm("init")
 
     def task(self, title, tier="S"):
-        extra = ["--interpretation", "x", "--approach", "x"] if tier != "S" else []
+        extra = ["--interpretation", "x", "--approach", "1) a 2) b 3) c Choice 1: a"] if tier != "S" else []
         return json.loads(self.fm("task", "new", title, "--type", "FEATURE", "--tier", tier, "--ac",
                                   f"{title} works :: python3 -c 'print(1)'", "--step", "build it", *extra,
                                   "--json").stdout)["id"]

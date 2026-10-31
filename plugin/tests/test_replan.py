@@ -29,7 +29,7 @@ class Base(ForemanTestCase):
 
     def mid(self, title="Sync", *steps, tier="M", focus=True):
         self.fm("task", "new", title, "--type", "FEATURE", "--tier", tier, "--interpretation", "x", "--approach",
-                "a vs b: a", "--ac", "syncs :: grep -q ok p.txt", *[a for s in steps or ["s"] for a in ("--step", s)],
+                "1) a 2) b 3) c Choice 1: a", "--ac", "syncs :: grep -q ok p.txt", *[a for s in steps or ["s"] for a in ("--step", s)],
                 *(["--focus"] if focus else []))
         return c.load_briefs(self.p)[-1].id
 
