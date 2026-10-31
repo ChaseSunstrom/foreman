@@ -7491,6 +7491,8 @@ def _build_parser(only=None):
                    "failure, 2 nothing checkable or provable (T-2381)")
     s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests (--docs: its "
                    "documented commands), kept for this tree")
+    s.add_argument("--release", action="store_true", help="instead: build the manifest's artifact offline in a copy, "
+                   "install it into a throwaway prefix and run each entry point from there (T-2389; nothing is published)")
     s.add_argument("--data", action="store_true", help="instead: run --run CMD on a throwaway copy of the tree and its "
                    "sqlite or CSV data, each --check SQL (a query returning the violating rows) before and after (T-2387)")
     s.add_argument("--run", metavar="CMD", help="--data: the data command (a backfill, an import, a cleanup)")

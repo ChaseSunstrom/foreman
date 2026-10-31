@@ -1296,6 +1296,87 @@ class DataProof(ForemanTestCase):
         self.assertIn("fm prove --data", brief)
 
 
+PYPROJECT = """[build-system]
+requires = ["setuptools"]
+build-backend = "{backend}"
+
+[project]
+name = "relpkg"
+version = "1.2.3"
+
+[project.scripts]
+relpkg = "relpkg.{mod}:main"
+
+[tool.setuptools]
+packages = ["relpkg"]
+"""
+
+
+class ReleaseProof(ForemanTestCase):
+    """T-2389 (Mission 7, #10): fm prove --release builds the manifest's artifact offline in a copy, installs it into a
+    throwaway prefix and runs each entry point from there, so a file left out of the artifact fails."""
+
+    def pkg(self, name, mod="cli", backend="setuptools.build_meta", says="relpkg 1.2.3"):
+        root = os.path.join(self.tmp, name)
+        body = f"def main():\n    print({says!r})\n    return 0\n"
+        files = {"pyproject.toml": PYPROJECT.format(backend=backend, mod=mod), "relpkg/__init__.py": ""}
+        files["relpkg/tools/cli.py" if mod == "tools.cli" else "relpkg/cli.py"] = body
+        if mod == "tools.cli":
+            files["relpkg/tools/__init__.py"] = ""
+        write(root, files)
+        return root
+
+    def prove(self, root, yes=True):
+        import json as j
+        r = self.fm("prove", root, "--release", "--json", *(["--yes-run"] if yes else []), check=False, timeout=300)
+        return r.returncode, (j.loads(r.stdout) if r.stdout.strip().startswith("{") else {"raw": r.stdout + r.stderr})
+
+    def test_release_proof_a_wheel_that_works_from_its_prefix_passes(self):
+        code, d = self.prove(self.pkg("good"))
+        self.assertEqual((code, d.get("verdict")), (0, "pass"), d)
+        self.assertEqual((d["kind"], d["version"]), ("python", "1.2.3"))
+        self.assertEqual([e["name"] for e in d["entries"]], ["relpkg"])
+
+    def test_release_proof_an_entry_module_left_out_of_the_wheel_fails(self):
+        code, d = self.prove(self.pkg("lost", mod="tools.cli"))  # packages = ["relpkg"] leaves relpkg.tools out
+        self.assertEqual((code, d.get("verdict")), (1, "fail"), d)
+        self.assertIn("relpkg.tools", d["why"])
+
+    def test_release_proof_a_version_that_disagrees_with_the_manifest_fails(self):
+        code, d = self.prove(self.pkg("old", says="relpkg 1.2.2"))
+        self.assertEqual((code, d.get("verdict")), (1, "fail"), d)
+        self.assertIn("1.2.3", d["why"])
+
+    def test_release_proof_a_build_that_needs_a_download_is_unproven_naming_it_and_untrusted_is_refused(self):
+        code, d = self.prove(self.pkg("dl", backend="fmnope_backend.build"))
+        self.assertEqual((code, d.get("verdict")), (2, "unproven"), d)
+        self.assertIn("fmnope_backend", d["why"])
+        code, d = self.prove(self.pkg("untrusted"), yes=False)
+        self.assertEqual((code, d.get("verdict")), (2, "refused"), d)
+        write(os.path.join(self.tmp, "none"), {"a.txt": "x"})
+        self.assertEqual(self.prove(os.path.join(self.tmp, "none"))[0], 2)  # no manifest: nothing to build
+
+    def test_release_proof_npm_gem_and_cargo_artifacts_run_from_their_prefix(self):
+        import shutil as sh
+        cases = {
+            "npm": {"package.json": '{"name": "relnpm", "version": "2.0.1", "bin": {"relnpm": "cli.js"}}',
+                    "cli.js": "#!/usr/bin/env node\nconsole.log('relnpm 2.0.1');\n"},
+            "gem": {"relgem.gemspec": 'Gem::Specification.new do |s|\n  s.name = "relgem"\n  s.version = "0.4.0"\n'
+                                      '  s.summary = "x"\n  s.authors = ["x"]\n  s.files = ["bin/relgem"]\n'
+                                      '  s.executables = ["relgem"]\nend\n',
+                    "bin/relgem": "#!/usr/bin/env ruby\nputs 'relgem 0.4.0'\n"},
+            "cargo": {"Cargo.toml": '[package]\nname = "relcrate"\nversion = "0.3.0"\nedition = "2021"\n',
+                      "src/main.rs": 'fn main() { println!("relcrate 0.3.0"); }\n'}}
+        for tool, files in cases.items():
+            with self.subTest(tool=tool):
+                if not sh.which(tool):
+                    self.skipTest(f"no {tool} here")
+                root = os.path.join(self.tmp, tool)
+                write(root, files)
+                code, d = self.prove(root)
+                self.assertEqual((code, d.get("verdict")), (0, "pass"), d)
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
