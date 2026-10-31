@@ -311,7 +311,7 @@ class Lanes(ForemanTestCase):
     def test_the_brief_agent_line_names_effort_by_tier(self):
         # T-0779: S builders run at medium effort, M at high, beside the model
         for tier, effort in (("S", "medium"), ("M", "high")):
-            extra = ["--interpretation", "x", "--approach", "x"] if tier != "S" else []
+            extra = ["--interpretation", "x", "--approach", "1) a 2) b 3) c Choice 1: a"] if tier != "S" else []
             tid = first(self.fm("task", "new", f"T{tier}", "--type", "FEATURE", "--tier", tier, "--ac", "ok :: true",
                                 "--step", "s", *extra, "--json").stdout)["id"]
             agent = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"]
@@ -357,7 +357,7 @@ class Lanes(ForemanTestCase):
         """T-1028: a builder whose launching claude process is gone, with work left in its lane."""
         import fmbus
         tid = first(self.fm("task", "new", "Built", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true", "--step", "s",
-                            "--interpretation", "x", "--approach", "x", "--json").stdout)["id"]
+                            "--interpretation", "x", "--approach", "1) a 2) b 3) c Choice 1: a", "--json").stdout)["id"]
         path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
         p = c.find_project(self.repo)
         b = c.find_brief(p, tid)
@@ -471,7 +471,7 @@ class Lanes(ForemanTestCase):
     def test_a_briefed_never_launched_task_is_not_flagged(self):
         import fmbus
         tid = first(self.fm("task", "new", "Idle", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true", "--step", "s",
-                            "--interpretation", "x", "--approach", "x", "--json").stdout)["id"]
+                            "--interpretation", "x", "--approach", "1) a 2) b 3) c Choice 1: a", "--json").stdout)["id"]
         p = c.find_project(self.repo)
         b = c.find_brief(p, tid)
         b.meta["builder"] = c.now()

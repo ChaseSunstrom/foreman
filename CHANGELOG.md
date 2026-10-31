@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The plan gate checks content by tier: `fm focus` and `fm lane brief` refuse an M/L Approach that lists fewer than 3 options or names no choice, an L brief with fewer than 2 readings in Interpretation or an empty Risks and rollback, and any brief with a `(low)` assumption that has no `research/NAME`, `spike T-NNNN` or verified tag; each gap names its fix, and a task already started isn't re-gated (T-2269).
 - The project map links a test to a mostly non-code folder beside its own that it names (`plugin/rules`, `plugin/skills` beside `plugin/tests`), so `fm impact` and the close's linked tests run the always-on budget tests when rules or skills change; a code folder like `plugin/lib` still links by file name only (T-2267).
 - Four job skills (T-2072), picked from this project's ledger: `foreman:security-audit`, `foreman:performance`, `foreman:refactor` and `foreman:write-docs`. Each wraps its playbook and fm verbs; the SECURITY, PERFORMANCE and CLEAN stage routes load them first, and older descriptions were tightened so the listing stays under 2,200 characters.
 - `fm lane rm ID --why` repairs a worktree whose creation was cut off (0-byte branch ref, every file empty): the folder, the ref, the admin dir and the reflog move aside into the project's state (`lane-wreck/<id>/`), the stale lock goes and the entry is pruned. `fm doctor` fails on such a lane and on any 0-byte ref under refs/heads

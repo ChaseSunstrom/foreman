@@ -2601,12 +2601,51 @@ def waits_on_user(b, pending, autonomy="standard"):
     return "plan approval" if needs_approval(b, autonomy) else None
 
 
+_MARK_RE = lazy(r"(?:^|\s)(\d+)[.)](?=\s)")  # "1)" / "2." list markers; a number in a sentence has none
+_BULLET_RE = lazy(r"^\s*(?:[-*]\s|option\b)", re.I | re.M)
+_CHOICE_RE = lazy(r"\b(?:choice|chose|chosen)\b", re.I)
+_SPIKE_RE = lazy(r"research/[\w.-]+|\bspike\s+T-\d+", re.I)
+
+
+def _count_options(text, bullets=True):
+    """How many options a text lists: the run 1, 2, 3… of numbered markers, or its bullet / 'Option' lines."""
+    nums, n = {int(m) for m in _MARK_RE.findall(text)}, 0
+    while n + 1 in nums:
+        n += 1
+    return max(n, len(_BULLET_RE.findall(text)) if bullets else 0)
+
+
+def _content_gaps(b):
+    """T-2269: the plan's content by tier: M/L name 3+ options and a choice, L adds 2+ readings and risks."""
+    gaps = []
+    if b.tier in ("M", "L"):
+        ap = b.section("Approach (options → choice → why)")
+        if ap.strip() and _count_options(ap) < 3:
+            gaps.append("3+ options in Approach (fm task set ID --section Approach --text '1) … 2) … 3) … Choice 1: why')")
+        if ap.strip() and not _CHOICE_RE.search(ap):
+            gaps.append("a choice in Approach (fm task set ID --section Approach: add 'Choice N: why')")
+    if b.tier == "L":
+        it = b.section("Interpretation")
+        if it.strip() and max(_count_options(it, bullets=False), len(re.findall(r"\breading\b", it, re.I))) < 2:
+            gaps.append("2+ readings in Interpretation (fm task set ID --section Interpretation: 'Reading 1: … Reading 2: …')")
+        if not b.section("Risks and rollback").strip():
+            gaps.append("Risks and rollback (fm task set ID --section 'Risks and rollback': what fails, what undoes it)")
+    low = [l for l in b.section(b.ASSUMPTIONS).splitlines()
+           if "(low)" in l.lower() and not re.match(r"- \[(?:verified|false)\b", l) and not _SPIKE_RE.search(l)]
+    if low:
+        gaps.append(f"research or a spike for the low-confidence assumption {low[0][:60]!r} (fm research NAME, then name "
+                    "research/NAME on the line; or a spike task: 'spike T-NNNN'; or verify it: fm task assume)")
+    return gaps
+
+
 def plan_gaps(b, autonomy="standard"):
     """What a brief still needs before work may start (fm focus refuses until this is empty)."""
     gaps = []
     if b.tier in ("M", "L"):
         gaps += [name for name, sec in (("Interpretation", "Interpretation"),
                                          ("Approach", "Approach (options → choice → why)")) if not b.section(sec).strip()]
+    if b.status not in CLOSED and b.status not in ("active", "verifying"):  # a task already started isn't re-gated
+        gaps += _content_gaps(b)
     acs = b.acceptance()
     if not acs:
         gaps.append("acceptance criterion")
