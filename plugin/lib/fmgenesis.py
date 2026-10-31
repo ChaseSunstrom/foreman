@@ -768,6 +768,10 @@ def step(p):
     def gaps(rs):  # T-2187: the moonshot row closes no coverage gap, so a seed with only it is dry
         return [r for r in rs if r[1] != "mission-moonshot"]
     if not gaps(rows) and prev is not None and not gaps(ROW.findall(prev)):
+        for h, b in _sections(_doc(d, "lineage.md") or ""):  # T-2197: the report waits for the production exam's verdict
+            if (g := re.fullmatch(r"gen-(\d+)", h)) and re.search(r"^- provisional:", b, re.M):
+                return act("report", n, f"{h} is still provisional (only the cheap exam has judged it): the report waits "
+                                        f"for the production-model exam", f"fm genesis confirm {g.group(1)}", "blocked")
         return act("report", n, "two generations in a row found no tier 3-4 gap: write the final report (§8)",
                    "fm genesis put report.md --file -")
     if _stopped(_doc(d, "lineage.md") or "", n):
@@ -1775,15 +1779,48 @@ def select(p, n, agent="foreman"):
         return r
 
 
-def _select(p, n, agent):
-    """gen-0 §3.6: gen n's rewrite stays only if its generation closed more train scenarios than its parent's on the
-    same exam run; otherwise the parent's text comes back (a tie loses whatever the cost). Held-out scenarios never
-    count. A scenario the parent closed and the child reopens fails it; a one-scenario margin on a single graded line
-    asks for a rerun and writes nothing. Every other verdict is a '## gen-n' lineage section naming the seed base,
-    plus an fm decide."""
+def confirm(p, n, agent="foreman"):
+    """T-2197: settle gen n's provisional lineage choice from the production-model exam lines (never smoke, never Haiku)
+    by select's own comparison: '- confirmed:' when the kept or reverted choice still wins, '- reversed:' when not. No
+    production line, or a one-scenario rerun ask, leaves it provisional; an existing mark is never rewritten."""
+    with c.lock(os.path.join(p.dir, "genesis-lineage")):  # the same lock select's read and write hold
+        old = _doc(home(p), "lineage.md") or ""
+        pat = re.compile(rf"^## gen-{n}\b.*?(?=^## |\Z)", re.M | re.S)
+        sec = pat.search(old)
+        out = lambda mark, why: {"gen": n, "mark": mark, "reason": why}
+        if not sec:
+            raise ValueError(f"lineage.md has no '## gen-{n}' section: fm genesis select {n} first")
+        if m := re.search(r"^- (confirmed|reversed):", sec.group(0), re.M):
+            return out(m.group(1), f"gen-{n} is already {m.group(1)}: left as filed")
+        if not re.search(r"^- provisional:", sec.group(0), re.M):
+            raise ValueError(f"gen-{n} has no '- provisional:' line to settle")
+        rows = [x for x in _exam(p, agent) if not smoke(x)]
+        res, verdict, why = None, "none", ""
+        if any(x.get("gen") == n for x in rows):
+            try:
+                res, verdict, why, _, _ = _compare(rows, n, agent)
+            except ValueError as e:  # gen n and its parent were graded on no common run
+                why = str(e)
+        if verdict in ("none", "rerun"):
+            return out("provisional", f"gen-{n} stays provisional: no usable production-model exam line from {agent} "
+                                      f"(not smoke, not Haiku): fm exam run RUN --agent {agent} --model <production>, "
+                                      f"then fm exam grade RUN --agent {agent}, then fm genesis confirm {n}"
+                                      + (f" ({why})" if why else ""))
+        kept = re.search(r"^- (kept|baseline):", sec.group(0), re.M)
+        mark = "confirmed" if (verdict in ("keep", "baseline")) == bool(kept) else "reversed"
+        line = (f"- {mark}: production-model exam run {res['shown']} (agent {agent}): train closed {res['closed']}"
+                + (f" vs parent {res['parent']}" if res["parent"] is not None else "") + f", select's comparison says "
+                f"{verdict}: {why}")
+        new = re.sub(r"^- provisional:.*$", lambda _: line, sec.group(0), count=1, flags=re.M)
+        _file(p, "lineage.md", old[:sec.start()] + new + old[sec.end():])
+        return out(mark, line[2:])
+
+
+def _compare(rows, n, agent):
+    """gen-0 §3.6, over the given exam lines: (res, verdict, why, k, m) where verdict is baseline, revert, keep or
+    rerun (why is then the rerun ask); k and m are gen n's and its parent's lines on the chosen run."""
     if n < 1:
         raise ValueError("gen-0 is the user's own text: fm genesis select starts at 1")
-    d, rows = home(p), _exam(p, agent)
     kid = [x for x in rows if x.get("gen") == n]
     if not kid:
         raise ValueError(f"no graded exam line for gen {n} from {agent}: fm exam run RUN --agent {agent}, then "
@@ -1807,16 +1844,30 @@ def _select(p, n, agent):
     elif diff >= 2 or (diff == 1 and len(k) > 1):
         verdict, why = "keep", f"closed {diff} more train scenario{'s' * (diff != 1)} than gen {n - 1}"
     elif diff == 1:
-        return dict(res, verdict="rerun", base=None,
-                    reason=f"one scenario more on a single graded line: grade {shown} once more (fm exam run {shown} "
-                           f"--agent {agent}, then fm exam grade {shown} --agent {agent}) and select again")
+        verdict, why = "rerun", (f"one scenario more on a single graded line: grade {shown} once more (fm exam run "
+                                 f"{shown} --agent {agent}, then fm exam grade {shown} --agent {agent}) and select again")
     else:
         verdict, why = "revert", (f"closed {len(a)} train scenarios to gen {n - 1}'s {len(b)}: a rewrite stays only if "
                                   "it closed more")
+    res.update(a=len(a), b=len(b), mom=bool(mom), shown=shown)
+    return res, verdict, why, k, m
+
+
+def _select(p, n, agent):
+    """gen-0 §3.6: gen n's rewrite stays only if its generation closed more train scenarios than its parent's on the
+    same exam run; otherwise the parent's text comes back (a tie loses whatever the cost). Held-out scenarios never
+    count. A scenario the parent closed and the child reopens fails it; a one-scenario margin on a single graded line
+    asks for a rerun and writes nothing. Every other verdict is a '## gen-n' lineage section naming the seed base,
+    plus an fm decide."""
+    d, rows = home(p), _exam(p, agent)
+    res, verdict, why, k, m = _compare(rows, n, agent)
+    if verdict == "rerun":
+        return dict(res, verdict="rerun", base=None, reason=why)
+    a, b, mom, shown, reopened = res.pop("a"), res.pop("b"), res.pop("mom"), res.pop("shown"), res["reopened"]
     lineage = _doc(d, "lineage.md")
     base = f"gen-{n}" if verdict != "revert" else (_base(lineage, n - 1) or f"gen-{n - 1}")
     sec = (f"## gen-{n}\n- {dict(keep='kept', revert='reverted', baseline='baseline')[verdict]}: {why}\n"
-           f"- run {shown} (agent {agent}): train closed {len(a)}" + (f" vs parent {len(b)}" if mom else "")
+           f"- run {shown} (agent {agent}): train closed {a}" + (f" vs parent {b}" if mom else "")
            + f"; reopened: {', '.join(map(str, reopened)) or 'none'}; held out never used; cost {res['cost']['gen']}"
            + (f" vs {res['cost']['parent']}" if mom else "")
            + f"\n- provisional: until the end-of-run exam on the production model confirms or reverses it; rests on exam "
@@ -2530,7 +2581,7 @@ def cmd_genesis(args):
             return fmcli.out(args, r, fmexam.summary(r) + (f"\n  {r['child']} of {r['scenarios']} written by a child "
                                                            f"({args.model or 'sonnet'})" if args.author == "child" else "")
                              + f"\n  {os.path.join(fmexam.root(p), r['run'], r['arm'])}")
-        if action in ("select", "seed", "drift", "sweep", "frontier", "novelty") and not (args.path or "").isdigit():
+        if action in ("select", "confirm", "seed", "drift", "sweep", "frontier", "novelty") and not (args.path or "").isdigit():
             raise fmcli.UsageError(f"fm genesis {action} N (the generation number)")
         if action in ("drift", "sweep"):
             n = int(args.path)
@@ -2549,6 +2600,9 @@ def cmd_genesis(args):
         if action == "frontier":
             r = frontier(p, int(args.path))
             return fmcli.out(args, r, f"Frontier: {r['path']}" + ("" if r["fresh"] else f" (points at {r['carried']})"))
+        if action == "confirm":
+            r = confirm(p, int(args.path), args.agent)
+            return fmcli.out(args, r, f"gen {r['gen']}: {r['mark']}: {r['reason']}")
         if action in ("select", "seed"):
             n = int(args.path)
             r = (select if action == "select" else seed)(p, n, args.agent)
@@ -2579,7 +2633,7 @@ def cmd_genesis(args):
     except (OSError, ValueError) as e:
         raise fmcli.UsageError(str(e))
     finally:  # T-2118 review: a tower edit reaches status.json, so the statusline's ⌂ segment follows it
-        if action in ("init", "put", "spec", "drift", "sweep", "select", "seed"):
+        if action in ("init", "put", "spec", "drift", "sweep", "select", "confirm", "seed"):
             c.regen_views(p)
     s = status(p)
     return fmcli.out(args, s, _text(s))

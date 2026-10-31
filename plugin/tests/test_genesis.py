@@ -784,6 +784,20 @@ class GenesisStep(ForemanTestCase):
         self.put("report.md", "# Report\n")
         self.assertEqual(self.at("done")["kind"], "done")
 
+    def test_the_report_waits_for_a_provisional_choice_to_be_confirmed(self):
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        for n in (1, 2):
+            self.put(f"gen-{n}/seed.md", DRY if n > 1 else SEED.split("| 1 |")[0] + "No Missions this generation.\n")
+            self.put(f"gen-{n}/drift.md", "Verdict: clean\n")
+            self.put(f"gen-{n}/sweep.md", "Verdict: clean\n")
+            selected(self.p, n)
+        self.put("lineage.md", "# Lineage\n\n## gen-1\n- kept: x\n- confirmed: ok\n\n## gen-2\n- kept: x\n- provisional: cheap\n")
+        s = self.at("report", "fm genesis confirm 2")
+        self.assertEqual(s["kind"], "blocked")
+        self.put("lineage.md", "# Lineage\n\n## gen-1\n- kept: x\n- confirmed: ok\n\n## gen-2\n- kept: x\n- confirmed: ok\n")
+        self.assertEqual(self.at("report", "report.md")["kind"], "ok")
+
     def test_every_third_generation_names_fm_evolve(self):
         import fmgenesis
         fmgenesis.init(self.p, GEN0_CAPS.encode())
@@ -1259,6 +1273,53 @@ class GenesisSelect(ForemanTestCase):
                                    r"from foreman, train only; no other signal recorded\)")  # T-2171: steer 1 rule 4
             self.assertEqual(fmgenesis.check(self.p)["lineage"]["problems"], [])
         self.assertIn("genesis select gen-2: keep", self.decisions())
+
+    def graded(self, gen, train, model, run="r1"):
+        import json
+        return json.dumps({"run": run, "agent": "foreman", "gen": gen, "cost": 1.0, "model": model,
+                           "closed": {"train": train, "holdout": []}}) + "\n"
+
+    def cheap(self, kid):  # gen 2 judged on Haiku smoke lines: select keeps or reverts, provisionally
+        tower_file(self.tower, "exam.jsonl", self.graded(1, ["a"], "haiku") + self.graded(2, kid, "haiku"))
+        return __import__("fmgenesis").select(self.p, 2)
+
+    def prod(self, kid, mom=("a",)):
+        with open(os.path.join(self.tower, "exam.jsonl"), "a") as f:
+            f.write(self.graded(1, list(mom), "sonnet") + self.graded(2, kid, "sonnet"))
+        return __import__("fmgenesis").confirm(self.p, 2)
+
+    def test_confirm_marks_a_kept_choice_confirmed_with_the_counts(self):
+        self.assertEqual(self.cheap(["a", "b", "c"])["verdict"], "keep")
+        r = self.prod(["a", "b", "c"])
+        self.assertEqual(r["mark"], "confirmed")
+        text = self.read("lineage.md")
+        self.assertRegex(text, r"(?m)^- confirmed: .*3.*1")
+        self.assertNotIn("- provisional:", text)
+        self.assertEqual(text.count("## gen-2"), 1)
+        self.assertEqual(__import__("fmgenesis").check(self.p)["lineage"]["problems"], [])
+
+    def test_confirm_reverses_a_choice_the_production_model_doesnt_back(self):
+        self.assertEqual(self.cheap(["a", "b", "c"])["verdict"], "keep")
+        self.assertEqual(self.prod(["a"])["mark"], "reversed")
+        self.assertRegex(self.read("lineage.md"), r"(?m)^- reversed: ")
+        self.assertNotIn("- provisional:", self.read("lineage.md"))
+
+    def test_confirm_ignores_smoke_lines_and_no_production_line_stays_provisional(self):
+        import fmgenesis
+        self.cheap(["a", "b", "c"])
+        before = self.read("lineage.md")
+        r = fmgenesis.confirm(self.p, 2)  # only the Haiku lines exist
+        self.assertEqual(r["mark"], "provisional")
+        self.assertIn("gen-2", r["reason"])
+        self.assertEqual(self.read("lineage.md"), before)
+
+    def test_confirm_never_rewrites_a_confirmed_or_reversed_line(self):
+        self.cheap(["a", "b", "c"])
+        self.assertEqual(self.prod(["a", "b", "c"])["mark"], "confirmed")
+        done = self.read("lineage.md")
+        r = self.prod(["a"], mom=("a", "b"))  # later lines now say the opposite
+        self.assertEqual(r["mark"], "confirmed")
+        self.assertEqual(self.read("lineage.md"), done)
 
     def test_a_haiku_line_is_named_on_the_provisional_choice(self):
         # T-2158 (steer 2026-10-30 rule 1): selection may rest on the Haiku smoke run, but it says so
