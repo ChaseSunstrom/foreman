@@ -784,6 +784,33 @@ class GenesisStep(ForemanTestCase):
         self.put("report.md", "# Report\n")
         self.assertEqual(self.at("done")["kind"], "done")
 
+    def test_the_report_waits_for_a_provisional_choice_to_be_confirmed(self):
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        for n in (1, 2):
+            self.put(f"gen-{n}/seed.md", DRY if n > 1 else SEED.split("| 1 |")[0] + "No Missions this generation.\n")
+            self.put(f"gen-{n}/drift.md", "Verdict: clean\n")
+            self.put(f"gen-{n}/sweep.md", "Verdict: clean\n")
+            selected(self.p, n)
+        rec = lambda n, v: self.put(f"gen-{n}/confirm.md", f"# Confirm\n\nGen: {n}\nVerdict: {v}\n")
+        rec(1, "confirmed")
+        self.put("lineage.md", "# Lineage\n\n## gen-1\n- kept: x\n- confirmed: ok\n\n## gen-2\n- kept: x\n- provisional: cheap\n")
+        s = self.at("confirm", "gen-2", "fm exam run")  # no production line: the command is the exam, not a no-op confirm
+        self.assertEqual(s["kind"], "blocked")
+        self.assertNotIn("--model", s["command"])  # the configured production model, never a hardcoded one
+        # T-2197 review: a hand-typed mark with no confirm.md record stays blocking
+        self.put("lineage.md", "# Lineage\n\n## gen-1\n- kept: x\n- confirmed: ok\n\n## gen-2\n- kept: x\n- confirmed: ok\n")
+        self.assertEqual(self.at("confirm", "gen-2")["kind"], "blocked")
+        rec(2, "reversed")  # a record that disagrees with the mark blocks too
+        self.assertEqual(self.at("confirm", "gen-2")["kind"], "blocked")
+        rec(2, "confirmed")
+        self.assertEqual(self.at("report", "report.md")["kind"], "ok")
+
+    def test_put_refuses_confirm_md(self):
+        import fmgenesis
+        with self.assertRaises(ValueError):
+            fmgenesis.put(self.p, "gen-1/confirm.md", "# Confirm\n\nVerdict: confirmed\n")
+
     def test_every_third_generation_names_fm_evolve(self):
         import fmgenesis
         fmgenesis.init(self.p, GEN0_CAPS.encode())
@@ -1259,6 +1286,114 @@ class GenesisSelect(ForemanTestCase):
                                    r"from foreman, train only; no other signal recorded\)")  # T-2171: steer 1 rule 4
             self.assertEqual(fmgenesis.check(self.p)["lineage"]["problems"], [])
         self.assertIn("genesis select gen-2: keep", self.decisions())
+
+    def graded(self, gen, train, model, run="r1"):
+        import json
+        return json.dumps({"run": run, "agent": "foreman", "gen": gen, "cost": 1.0, "model": model,
+                           "closed": {"train": train, "holdout": []}}) + "\n"
+
+    def cheap(self, kid):  # gen 2 judged on Haiku smoke lines: select keeps or reverts, provisionally
+        tower_file(self.tower, "exam.jsonl", self.graded(1, ["a"], "haiku") + self.graded(2, kid, "haiku"))
+        return __import__("fmgenesis").select(self.p, 2)
+
+    def prod(self, kid, mom=("a",)):
+        with open(os.path.join(self.tower, "exam.jsonl"), "a") as f:
+            f.write(self.graded(1, list(mom), "sonnet") + self.graded(2, kid, "sonnet"))
+        return __import__("fmgenesis").confirm(self.p, 2)
+
+    def test_confirm_marks_a_kept_choice_confirmed_with_the_counts(self):
+        self.assertEqual(self.cheap(["a", "b", "c"])["verdict"], "keep")
+        r = self.prod(["a", "b", "c"])
+        self.assertEqual(r["mark"], "confirmed")
+        text = self.read("lineage.md")
+        self.assertRegex(text, r"(?m)^- confirmed: .*3.*1")
+        self.assertNotIn("- provisional:", text)
+        self.assertEqual(text.count("## gen-2"), 1)
+        self.assertEqual(__import__("fmgenesis").check(self.p)["lineage"]["problems"], [])
+
+    def test_confirm_reverses_a_choice_the_production_model_doesnt_back(self):
+        self.assertEqual(self.cheap(["a", "b", "c"])["verdict"], "keep")
+        self.assertEqual(self.prod(["a"])["mark"], "reversed")
+        self.assertRegex(self.read("lineage.md"), r"(?m)^- reversed: ")
+        self.assertNotIn("- provisional:", self.read("lineage.md"))
+
+    def test_confirm_ignores_smoke_lines_and_no_production_line_stays_provisional(self):
+        import fmgenesis
+        self.cheap(["a", "b", "c"])
+        before = self.read("lineage.md")
+        r = fmgenesis.confirm(self.p, 2)  # only the Haiku lines exist
+        self.assertEqual(r["mark"], "provisional")
+        self.assertIn("gen-2", r["reason"])
+        self.assertEqual(self.read("lineage.md"), before)
+
+    def add(self, *lines):
+        with open(os.path.join(self.tower, "exam.jsonl"), "a") as f:
+            f.write("".join(lines))
+
+    def test_confirm_needs_the_parents_production_line_too(self):
+        import fmgenesis
+        self.cheap(["a", "b", "c"])
+        self.add(self.graded(2, ["a", "b", "c"], "sonnet"))  # production exam only on the final gen
+        r = fmgenesis.confirm(self.p, 2)
+        self.assertEqual(r["mark"], "provisional")
+        self.assertIn("gen 1", r["reason"])
+        self.assertIn("- provisional:", self.read("lineage.md"))
+        self.assertIsNone(self.read("gen-2/confirm.md"))
+
+    def test_a_gen_1_baseline_confirms_from_its_own_production_line(self):
+        import fmgenesis
+        self.put("lineage.md", "# Lineage\n\n## gen-1\n- baseline: first\n- provisional: cheap\n- seed base: gen-1\n")
+        self.assertEqual(fmgenesis.confirm(self.p, 1)["mark"], "provisional")  # no production line yet
+        self.add(self.graded(1, ["a", "b"], "sonnet"))
+        self.assertEqual(fmgenesis.confirm(self.p, 1)["mark"], "confirmed")
+        self.assertRegex(self.read("gen-1/confirm.md"), r"(?m)^Verdict: confirmed$")
+
+    def test_unstamped_lines_are_not_production_but_default_is(self):
+        import fmgenesis
+        self.cheap(["a", "b", "c"])
+        self.add(self.graded(1, ["a"], "", run="r9"), self.graded(2, ["a", "b", "c"], "", run="r9"))
+        r = fmgenesis.confirm(self.p, 2)
+        self.assertEqual(r["mark"], "provisional")
+        self.assertIn("unstamped", r["reason"])
+        self.add(self.graded(1, ["a"], "default"), self.graded(2, ["a", "b", "c"], "default"))  # the configured model
+        self.assertEqual(fmgenesis.confirm(self.p, 2)["mark"], "confirmed")
+        self.assertIn("Model: default", self.read("gen-2/confirm.md"))
+
+    def test_confirm_files_an_owned_record_and_a_reversal_moves_the_seed_base(self):
+        import fmgenesis
+        self.cheap(["a", "b", "c"])
+        self.assertIn("seed base: gen-2", self.read("lineage.md"))
+        self.assertEqual(self.prod(["a"])["mark"], "reversed")
+        rec = self.read("gen-2/confirm.md")
+        for bit in ("Verdict: reversed", "Run: r1", "Model: sonnet", "Train closed: 1 vs 1"):
+            self.assertIn(bit, rec)
+        self.assertIn("seed base: gen-1", self.read("lineage.md"))  # the next seed builds on what production kept
+        with self.assertRaises(ValueError):
+            fmgenesis.put(self.p, "gen-2/confirm.md", rec)
+
+    def test_a_handtyped_mark_gets_its_record_only_if_production_agrees(self):
+        import fmgenesis
+        self.cheap(["a", "b", "c"])
+        text = self.read("lineage.md").replace("- provisional:", "- confirmed: typed by hand; was:")
+        self.put("lineage.md", text)
+        self.add(self.graded(1, ["a"], "sonnet"), self.graded(2, ["a"], "sonnet"))  # production says it loses
+        self.assertEqual(fmgenesis.confirm(self.p, 2)["mark"], "confirmed")
+        self.assertIsNone(self.read("gen-2/confirm.md"))  # disagrees: left as filed, still blocking
+        self.assertEqual(self.read("lineage.md"), text)
+
+    def test_select_rerun_dict_is_unchanged(self):
+        tower_file(self.tower, "exam.jsonl", line("r1", 1, ["a"]) + line("r1", 2, ["a", "b"]))
+        r = __import__("fmgenesis").select(self.p, 2)
+        self.assertEqual(r["verdict"], "rerun")
+        self.assertEqual(sorted(r), ["agent", "base", "closed", "cost", "gen", "parent", "reason", "reopened", "run", "verdict"])
+
+    def test_confirm_never_rewrites_a_confirmed_or_reversed_line(self):
+        self.cheap(["a", "b", "c"])
+        self.assertEqual(self.prod(["a", "b", "c"])["mark"], "confirmed")
+        done = self.read("lineage.md")
+        r = self.prod(["a"], mom=("a", "b"))  # later lines now say the opposite
+        self.assertEqual(r["mark"], "confirmed")
+        self.assertEqual(self.read("lineage.md"), done)
 
     def test_a_haiku_line_is_named_on_the_provisional_choice(self):
         # T-2158 (steer 2026-10-30 rule 1): selection may rest on the Haiku smoke run, but it says so
@@ -2195,6 +2330,11 @@ class GenesisPropose(ForemanTestCase):
         s = fmgenesis.step(self.p)
         self.assertEqual((s["stage"], s["kind"], s["gen"]), ("stopped", "stopped", 3), s)
         self.assertIn("reverted", s["action"])
+        fmgenesis.put(self.p, "lineage.md", "# Lineage\n\n" + "".join(  # T-2197: a provisional choice holds the stop too
+            sec.format(n=n, v="reverted") + ("- provisional: cheap\n\n" if n == 3 else "") for n in (1, 2, 3)))
+        s = fmgenesis.step(self.p)
+        self.assertEqual((s["stage"], s["kind"]), ("confirm", "blocked"), s)
+        fmgenesis.put(self.p, "lineage.md", "# Lineage\n\n" + "".join(sec.format(n=n, v="reverted") for n in (1, 2, 3)))
         nxt = self.fm("next").stdout
         self.assertIn("queue is empty", nxt)
         self.assertIn("Genesis stopped at gen 3", nxt)
