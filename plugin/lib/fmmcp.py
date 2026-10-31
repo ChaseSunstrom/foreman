@@ -92,6 +92,8 @@ TOOLS = [
      lambda a, p: ["exam", "scorecard"]),
     ("genesis_status", "The Genesis tower's status (fm genesis status): which generation it's on, its files, coverage, "
      "the one next action and its command, the last exam result.", _TEXT, lambda a, p: ["genesis", "status"]),  # T-2201
+    ("goal", "The standing goal (T-2141): its text, items with their state, the one progress line, and the verdict "
+     "fm goal verdict last stored. Reads meta and briefs only; it runs no check.", _TEXT, None),
 ]
 MAX_LINE = 1_000_000
 
@@ -187,6 +189,14 @@ def _call(p, name, args):
             return "\n".join([f"fm check at {run.get('ts')}:"] + [
                 f"{'✓' if r.get('exit') == 0 else '✗'} {r.get('cmd')} (exit {r.get('exit')}, {r.get('s')} s)"
                 for r in rows if isinstance(r, dict)]), False
+        if name == "goal":  # T-2141: the stored verdict as it stands; fm goal verdict is what refreshes it
+            import fmmandate
+            m = fmmandate.get(p)
+            if m:
+                by = {b.id: b for b in c.load_briefs(p, include_archive=True)}
+                m["items"] = [dict(it, state=fmmandate.item_state(it, by)) for it in m.get("items") or []]
+            return json.dumps({"goal": m, "line": fmmandate.goal_line(p), "verdict": fmmandate.fresh_verdict(p, m)},
+                              ensure_ascii=False), False
         if name == "fail":
             text = args.get("text")
             if not isinstance(text, str) or not text.strip() or len(text) > TEXT_CAP:
