@@ -60,5 +60,38 @@ class Header(unittest.TestCase):
                     self.assertLessEqual(right, width, f"{name!r} ends off screen at {width} px")
 
 
+class CodePageCoversFmCode(unittest.TestCase):
+    """T-2071: every fm code verb and long flag, read from its own argparse, is on the Foreman Code page, or here with
+    a reason; the page drifted 131 commits behind once."""
+    SKIP = {  # flag or verb -> why the page leaves it out
+        "--project": "fm's own project selector, the same on every verb",    }
+
+    def test_every_verb_and_flag_is_on_the_page(self):
+        import argparse
+        import re
+        import fmcli
+        import test_site_build
+        sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+        code = sub.choices["code"]
+        flags = {o for a in code._actions for o in a.option_strings
+                 if o.startswith("--") and o != "--help" and a.help != argparse.SUPPRESS}  # --tui is internal
+        request = next(a for a in code._actions if a.dest == "request").help
+        m = re.search(r"\(or: ([^)]*)\)", request)
+        self.assertIsNotNone(m, "fm code request help lost its '(or: …)' verb list")
+        verbs = set(re.split(r"[ ,]+", m.group(1)))
+        self.assertGreaterEqual(len(flags), 30)
+        self.assertLessEqual({"models", "runners", "config", "why", "bench", "tui"}, verbs)
+        page = next(p for p in test_site_build.site("pages").PAGES if p["slug"] == "code")
+        text = " ".join(x for b in page["blocks"] for x in b if isinstance(x, str)) + page["lede"]
+        text = re.sub(r"<[^>]+>", "", text)
+        missing = sorted(f for f in flags if f not in self.SKIP and not re.search(re.escape(f) + r"(?![\w-])", text))
+        missing += sorted("fm code " + v for v in verbs if v not in self.SKIP and not re.search(
+            r"fm code (?:\w+ )?" + re.escape(v) + r"\b", text))
+        self.assertEqual(missing, [], "on fm code's --help but not on the Foreman Code page (site/pages.py): add a "
+                                      "sentence, or an entry with a reason in SKIP")
+        for k in self.SKIP:  # a stale entry hides nothing
+            self.assertTrue(k in flags or k in verbs, k + " is no longer an fm code flag or verb")
+
+
 if __name__ == "__main__":
     unittest.main()

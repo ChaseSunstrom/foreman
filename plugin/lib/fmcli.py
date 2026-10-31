@@ -7242,7 +7242,7 @@ def _build_parser(only=None):
                  "closes. fm code models lists the profiles (T-1212); on a terminal a request runs in the app, as fm code tui [REQUEST] does (--plain, --json or piped: lines; T-1283, T-1343); fm code bench grades a model or worker on seeded tasks (T-1215); fm code runners lists every coding CLI and model it can use (T-1328); claude's -p, -c and "
                  "--output-format json work too (T-1399)",
             conflict_handler="resolve")  # T-1399: -p after the verb is claude's --print; the project is --project
-    s.add_argument("request", nargs="*", help="what to do (or: models, runners, bench, tui)")
+    s.add_argument("request", nargs="*", help="what to do (or: models, runners, config, why, bench, tui)")
     s.add_argument("-p", "--print", dest="plain", action="store_true", help="claude's -p: the same as --plain (fm's "
                    "own -p PROJECT goes before the verb, fm -p SLUG code …, or --project after it)")
     s.add_argument("-c", "--continue", dest="resume", action="store_const", const="", help="claude's -c: the same "
