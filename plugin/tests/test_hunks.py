@@ -180,4 +180,4 @@ class Ablate(_Case):
         p = self.finish(env={"FM_ABLATE_BUDGET": "1"})
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertRegex(p.stdout, r"not run|timed out")
-        self.assertLess(time.time() - t, 5)  # uncapped, the 5 s sleep alone would exceed this
+        self.assertLess(time.time() - t, 5)  # wall clock: FM_ABLATE_BUDGET deadline; uncapped, the 5 s sleep alone would exceed this

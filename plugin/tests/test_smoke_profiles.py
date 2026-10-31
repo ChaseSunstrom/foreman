@@ -331,7 +331,7 @@ class ProfilesFromFm(ForemanTestCase):
             res = fmsmoke.crawl(None, "http://127.0.0.1:9/", os.path.join(self.tmp, "out"), timeout=2)
         finally:
             os.environ.pop("FOREMAN_SMOKE_RUNNER")
-        self.assertLess(time.time() - t0, 15)
+        self.assertLess(time.time() - t0, 15)  # wall clock: the crawl timeout=2 deadline
         self.assertIn("the crawl did not finish", res["defects"][0]["what"])
         self.assertTrue(os.path.exists(term), "SIGTERM first: node's exit then kills the browser's own group")
         with open(pids) as f:

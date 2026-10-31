@@ -93,7 +93,7 @@ class Contract(HookCase):
         c.update_meta(p, contract={**c.read_meta(p)["contract"], "until": time.time() - 5})
         t0 = time.time()
         r = self.stop()
-        self.assertLess(time.time() - t0, 4, "over() relocked the project inside the Stop hook's own lock")
+        self.assertLess(time.time() - t0, 4, "over() relocked the project inside the Stop hook's own lock")  # wall clock: a lock-wait deadline, hook in a child
         self.assertNotEqual((parse(r) or {}).get("decision"), "block")
         self.assertEqual(c.read_meta(p)["contract"]["ended"], "time")
 

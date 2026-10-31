@@ -145,7 +145,7 @@ class Panic(ServeCase):
         self.stub("claude", f"{fm} pause --now\nexec sleep 60\n")
         t0 = time.monotonic()
         r = self.fm("run", check=False, env=self.env())
-        self.assertLess(time.monotonic() - t0, 30, "the session's group was stopped, not waited out")
+        self.assertLess(time.monotonic() - t0, 30, "the session's group was stopped, not waited out")  # wall clock: a stop-the-group deadline of children
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("fm pause --now", r.stderr)
         self.assertEqual(self.claude_runs(), 1)

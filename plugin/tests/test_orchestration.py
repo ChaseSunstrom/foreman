@@ -86,7 +86,7 @@ class Stall(ServeCase):
                             'echo "{}" > "$d/s.jsonl"\nsleep 30\n')
         t0 = time.monotonic()
         p = self.fm("run", "--max", "1", "--stall", "0.05", check=False, env=self.env())  # 3 s
-        self.assertLess(time.monotonic() - t0, 25, "stopped well before the 30 s sleep and the 60 min limit")
+        self.assertLess(time.monotonic() - t0, 25, "stopped well before the 30 s sleep and the 60 min limit")  # wall clock: kill deadline of child sessions
         self.assertIn("stalled", p.stdout + p.stderr)
         events = [e for e in c.ledger_tail(c.find_project(self.repo), 50) if e.get("event") == "run_stalled"]
         self.assertTrue(events)

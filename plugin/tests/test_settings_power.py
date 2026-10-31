@@ -453,12 +453,12 @@ class Rules(_Tui):
             self.extension(body)
             t0 = time.monotonic()
             got = self.fm("settings", "list", "look", env=self.env, check=False)
-            self.assertLess(time.monotonic() - t0, 20, body)
+            self.assertLess(time.monotonic() - t0, 20, body)  # wall clock: an extension's load deadline, in a child fm
             self.assertEqual(got.returncode, 0, got.stderr)
             self.assertIn(word, got.stdout, body)
             t0 = time.monotonic()
             self.fm("settings", "get", "motion", env=self.env)  # not an extension's key: none is run
-            self.assertLess(time.monotonic() - t0, 10, "get of an app key never loads them")
+            self.assertLess(time.monotonic() - t0, 10, "get of an app key never loads them")  # wall clock: a child fm call
         out = self.fm("settings", "list", "ext.demo", env=self.env).stdout
         self.assertIn("ext.demo.refresh", out, "the good one still loads beside the bad one")
 

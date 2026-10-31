@@ -158,7 +158,7 @@ class VerifyStrength(ForemanTestCase):
         start = time.time()
         code, out = c.run_command(self.repo, f"(sleep 3; touch {marker}) & sleep 30", timeout=1)
         self.assertEqual(code, 124)
-        self.assertLess(time.time() - start, 8)
+        self.assertLess(time.time() - start, 8)  # wall clock: the timeout=1 group-kill deadline
         time.sleep(3.5)
         self.assertFalse(os.path.exists(marker), "the background child was killed with the group")
 

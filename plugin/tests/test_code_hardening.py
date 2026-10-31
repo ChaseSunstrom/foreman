@@ -89,7 +89,7 @@ class MetadataEndpoints(unittest.TestCase):
             import time
             t0 = time.monotonic()
             fmmodels._check_url({"name": "x"}, "https://slow.example.com/v1", None)
-            self.assertLess(time.monotonic() - t0, 5)
+            self.assertLess(time.monotonic() - t0, 5)  # wall clock: RESOLVE_TIMEOUT deadline (a thread blocks on the gate)
         gate.set()
 
 
@@ -126,7 +126,7 @@ class LeanPlanner(CodeCase):
         t0 = time.monotonic()
         r = self.code("make calc.add add", "--worker", "claude", check=False,
                       env={"PATH": bin_ + os.pathsep + os.environ["PATH"]})
-        self.assertLess(time.monotonic() - t0, 15, "stopped at its init line, not after the sleep")
+        self.assertLess(time.monotonic() - t0, 15, "stopped at its init line, not after the sleep")  # wall clock: kill deadline of a child worker
         self.assertNotEqual(r.returncode, 0, r.stdout)
         self.assertIn("MCP server evil", r.stderr)
         self.assertIn("a - b", self.calc())

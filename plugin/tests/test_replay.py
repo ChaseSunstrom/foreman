@@ -147,7 +147,7 @@ class Replay(ForemanTestCase):
         res = fmmutate.run(os.path.join(d, "m.py"), "h/m.py", d, "h", [__import__("sys").executable, "h/t.py"], ["a"],
                            timeout=2)
         self.assertEqual((res["killed"], res["survived"]), (1, []))
-        self.assertLess(__import__("time").monotonic() - t0, 30)
+        self.assertLess(__import__("time").monotonic() - t0, 30)  # wall clock: the timeout=2 kill deadline
         with self.assertRaisesRegex(ValueError, "boom"):
             fmmutate.run(os.path.join(d, "m.py"), "h/m.py", d, "h", ["sh", "-c", "echo boom; exit 1"], ["a"])
 

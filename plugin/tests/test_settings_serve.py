@@ -160,7 +160,7 @@ class Serve(ForemanTestCase):
         try:
             start = time.monotonic()
             self.assertEqual(self.req()[0], 200)
-            self.assertLess(time.monotonic() - start, 3)
+            self.assertLess(time.monotonic() - start, 3)  # wall clock: a server request deadline (threads)
         finally:
             slow.close()
 
@@ -213,7 +213,7 @@ class Serve(ForemanTestCase):
         t.start()
         t.join(5)
         self.assertFalse(t.is_alive())
-        self.assertLess(time.monotonic() - start, 5)
+        self.assertLess(time.monotonic() - start, 5)  # wall clock: a server shutdown deadline (threads)
         self.assertEqual(server.socket.fileno(), -1, "the socket closed")
 
     def test_the_command_prints_the_url_once_and_stops_on_sigterm(self):

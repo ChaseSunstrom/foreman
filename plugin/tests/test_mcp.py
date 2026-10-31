@@ -369,7 +369,7 @@ class McpReview(_Mcp):
         server, d = self._server("yeser", "yes")
         t0 = time.monotonic()
         out, _ = self.talk(self.call(1, "yeser", args=["y"]), argv=(server,), cwd=d)
-        self.assertLess(time.monotonic() - t0, 15)
+        self.assertLess(time.monotonic() - t0, 15)  # wall clock: the cap-vs-timeout deadline of a child server
         self.assertIn("cut at", _text(out[0]))
 
     def test_bytes_that_arent_utf8_still_answer(self):

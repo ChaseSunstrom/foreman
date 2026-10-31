@@ -206,7 +206,7 @@ class WritesAndLocks(ForemanTestCase):
             with self.assertRaises(c.LockTimeout):
                 with c.lock(d, timeout=0.3):
                     pass
-            self.assertLess(time.monotonic() - t0, 1.2)
+            self.assertLess(time.monotonic() - t0, 1.2)  # wall clock: the lock timeout=0.3 deadline (waits on a child)
         finally:
             proc.join()
         with c.lock(d, timeout=0.3):
@@ -497,9 +497,9 @@ class BriefLines(unittest.TestCase):
     def test_a_long_run_of_spaces_parses_fast_with_the_same_groups(self):
         import time
         for rx, line in ((c._STEP_RE, "1. [ ] a" + " " * 50000 + "b  <- CURRENT"), (c._AC_RE, "- [ ] a" + " " * 50000 + "b")):
-            t = time.perf_counter()
+            t = time.process_time()
             m = rx.match(line)
-            self.assertLess(time.perf_counter() - t, 0.5)
+            self.assertLess(time.process_time() - t, 0.5)  # CPU: in-process regex
             self.assertTrue(m.groups()[-2 if rx is c._STEP_RE else -1].endswith("b"))
         self.assertEqual(c._STEP_RE.match("1. [x] build it  <- CURRENT").groups(), ("1", "x", "build it", "  <- CURRENT"))
         self.assertEqual(c._STEP_RE.match("3. [X]  <- CURRENT").groups(), ("3", "X", "<- CURRENT", None))  # as before
@@ -1040,7 +1040,7 @@ class WaitWhile(unittest.TestCase):
         out = io.StringIO()
         t0 = time.time()
         self.assertTrue(c.wait_while(lambda: True, "the ambient test run", "fm t", limit=1, out=out, step=0.05))
-        self.assertLess(time.time() - t0, 3)
+        self.assertLess(time.time() - t0, 3)  # wall clock: wait_while's limit=1 deadline (it sleeps)
         self.assertIn("the ambient test run is still running after 1 seconds; going ahead beside it", out.getvalue())
 
 

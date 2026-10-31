@@ -168,11 +168,11 @@ class DiffGates(ForemanTestCase):
         self.assertTrue(any("test_gadget" in x and "no test module" in x for x in got), got)
         self.assertFalse(any("test_widget" in x for x in got), got)
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        t = time.time()
+        t = time.process_time()
         self.assertEqual(c.lint_verify("python3 plugin/tests/run.py test_diff_gates -k test_lint_names", root), [])
         self.assertEqual(c.lint_verify("python3 plugin/tests/run.py test_tail_rows_with_keep 2>&1", root), [],
                          "a test's name, found across every module; 2>&1 isn't a name")
-        self.assertLess(time.time() - t, 1.0)
+        self.assertLess(time.process_time() - t, 1.0)  # CPU: lint_verify reads files in this process
 
     def test_run_py_repeats_p(self):
         # T-0389: `run.py -p a.py -p b.py` kept only the last -p and ran b.py alone, silently

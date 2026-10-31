@@ -3360,7 +3360,7 @@ class Editors(unittest.TestCase):
         self.runner("sleep 30")
         t0 = time.monotonic()
         got = fmcode.test_runner("fake", timeout=0.5)
-        self.assertLess(time.monotonic() - t0, 10)
+        self.assertLess(time.monotonic() - t0, 10)  # wall clock: test_runner's timeout=0.5 kill deadline
         self.assertFalse(got["ok"])
         self.assertIn("0.5 s", got["said"])
 
@@ -3662,7 +3662,7 @@ class MotionVisuals(unittest.TestCase):
             self.assertIn("\x1b[6n", os.read(master, 4096).decode())
             t0 = time.monotonic()
             self.assertEqual(fmcodeterm.probe(slave, slave, "▀◉", timeout=0.2), ({}, ""), "no answer: no width")
-            self.assertLess(time.monotonic() - t0, 1, "a terminal that never answers costs the timeout, once")
+            self.assertLess(time.monotonic() - t0, 1, "a terminal that never answers costs the timeout, once")  # wall clock: probe's timeout=0.2 deadline
         finally:
             os.close(master)
             os.close(slave)

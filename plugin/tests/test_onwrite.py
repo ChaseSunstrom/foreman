@@ -107,7 +107,7 @@ class OnWrite(HookCase):
         t0 = time.monotonic()
         proc = self.hook("PostToolUseValidate", {"tool_name": "Write", "session_id": "s1", "tool_response": {},
                                          "tool_input": {"file_path": self.write("x.slow", "x")}}, timeout=20)
-        self.assertLess(time.monotonic() - t0, 12)
+        self.assertLess(time.monotonic() - t0, 12)  # wall clock: a hook's timeout deadline, in a child
         self.assertEqual(self.blocked(proc), "", "a timeout says nothing about the file: it doesn't block")
         self.assertIn("timed out", self.ctx_of(proc))
 

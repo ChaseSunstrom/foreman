@@ -144,7 +144,7 @@ class SmokeInABrowser(unittest.TestCase):
         import time
         t0 = time.time()
         res = self.crawl("hang.html")
-        self.assertLess(time.time() - t0, 150)
+        self.assertLess(time.time() - t0, 150)  # wall clock: the crawl's page-timeout deadline
         self.assertIn("desktop start", res["views"])
         self.assertIn("stopped responding", json.dumps(res["defects"]))
 

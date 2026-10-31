@@ -158,7 +158,7 @@ class Timeout(_Stubbed):
         t0 = time.time()
         with mock.patch.dict(os.environ, {"STUB_MODE": "escape"}), self.assertRaises(ValueError):
             self.fmideas.run_child("ideas", "sys", "a prompt", "haiku", 1)
-        self.assertLess(time.time() - t0, 15, "the reap waited on the escaped grandchild's pipes")  # tearDown kills it
+        self.assertLess(time.time() - t0, 15, "the reap waited on the escaped grandchild's pipes")  # tearDown kills it; wall clock: a reap deadline over children
         self.assertEqual(self.entries(), [])
 
 

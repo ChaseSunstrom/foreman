@@ -17,7 +17,7 @@ class Fakes(CodeCase):
         t0 = time.monotonic()
         r = self.code("FIX: make calc.add add", "--worker", "fake {prompt}", "--verify", VERIFY, "--worker-timeout", "2",
                       check=False, env={"PATH": bin_ + os.pathsep + os.environ["PATH"], "FM_STALL": "0.5", "FM_HEARTBEAT": "0.3"})
-        self.assertLess(time.monotonic() - t0, BOUND, f"{mode} hung fm code")
+        self.assertLess(time.monotonic() - t0, BOUND, f"{mode} hung fm code")  # wall clock: --worker-timeout 2 deadline of a child fm code
         self.assertNotEqual(r.returncode, 0, r.stdout)
         self.assertIn("a - b", self.calc(), "no fake fixed anything")
         return r.stdout + r.stderr

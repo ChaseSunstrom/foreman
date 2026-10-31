@@ -949,10 +949,10 @@ class Gallery(ForemanTestCase):
         import time
         self.assertEqual(set(fmscene.SAMPLES) | {"metaballs"}, set(fmscene.GALLERY))  # every tile has a fallback
         for action in fmscene.GALLERY:
-            t = time.monotonic()
+            t = time.process_time()
             scene = fmscene.SAMPLES[action]() if action in fmscene.SAMPLES else fmscene.metaballs(5, 16, 0)
             rgb = fmscene._frame(fmscene.validate(scene), 0, 160, 100)
-            self.assertLess(time.monotonic() - t, 3.0, action)  # ponytail: a hang guard, not a bench
+            self.assertLess(time.process_time() - t, 3.0, action)  # CPU, ponytail: a hang guard, not a bench
             self.assertGreater(len({rgb[i:i + 3] for i in range(0, len(rgb), 3)}), 2, action)  # drew something
         full = {"terrain": fmscene.terrain([[(r * 7 + t * 3) % 11 for t in range(40)] for r in range(10)],
                                            [f"p{r}" for r in range(10)]),  # the largest churn draws: 10 by 40
@@ -961,9 +961,9 @@ class Gallery(ForemanTestCase):
                 "bench": fmscene.bench([{"results": [{"seed": s, "closed": k % 2 == 0, "seconds": 10 + k}
                                                      for s in "abcd"]} for k in range(12)])}
         for action, scene in full.items():  # review: the gallery draws real data, larger than the samples
-            t = time.monotonic()
+            t = time.process_time()
             fmscene._frame(fmscene.validate(scene), 0, 160, 100)
-            self.assertLess(time.monotonic() - t, 3.0, action)
+            self.assertLess(time.process_time() - t, 3.0, action)  # CPU: in-process render
 
     def test_a_tile_falls_back_to_its_sample_when_its_data_is_empty_or_unreadable(self):
         import types

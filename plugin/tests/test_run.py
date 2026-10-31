@@ -207,7 +207,7 @@ class Hang(unittest.TestCase):
             t0 = time.time()
             with mock.patch.object(run, "HERE", d):
                 cid, code, err, _, _ = run.run_one("test_stuck.S", [], timeout=2)
-        self.assertLess(time.time() - t0, 30)
+        self.assertLess(time.time() - t0, 30)  # wall clock: the timeout=2 kill deadline
         self.assertNotEqual(code, 0)
         self.assertIn("still running after 2s", err)
         self.assertIn("test_s", err)  # where it hung
@@ -269,7 +269,7 @@ class Hang(unittest.TestCase):
             t0 = time.time()
             with mock.patch.object(run, "HERE", d):
                 _, code, err, _, _ = run.run_one("test_slow.S", [], timeout=480, deadline=time.time() + 2)
-                self.assertLess(time.time() - t0, 30)
+                self.assertLess(time.time() - t0, 30)  # wall clock: a kill deadline of a child
                 self.assertNotEqual(code, 0)
                 self.assertRegex(err, r"still running at the run's deadline \([12]s in\)")  # review: not the 480 s cap
                 self.assertIn("test_s", err)  # the stack

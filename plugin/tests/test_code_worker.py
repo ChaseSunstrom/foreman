@@ -598,7 +598,7 @@ class Worker(CodeCase):
         r = self.work("make calc.add add", "--worker", "hang", "--worker-timeout", "2", "--verify", VERIFY,
                       check=False)
         self.assertEqual(r.returncode, 1)
-        self.assertLess(time.time() - t0, 45)
+        self.assertLess(time.time() - t0, 45)  # wall clock: the --worker-timeout 2 kill deadline
         self.assertIn("timed out after 2 s", r.stdout)
         self.assertEqual(self.task()["status"], "blocked")
         with self.assertRaises(ProcessLookupError):  # the background child died with the group

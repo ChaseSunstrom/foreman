@@ -249,7 +249,7 @@ class Long(ForemanTestCase):
         self.addCleanup(os.environ.pop, "STUB_HANG", None)
         t = time.time()
         self.go("plain", ("kill",))
-        self.assertLess(time.time() - t, 20)  # the hung first turn was killed, not waited out
+        self.assertLess(time.time() - t, 20)  # wall clock, a kill deadline: the hung first turn was killed, not waited out
         a, b = self.calls()[:2]
         self.assertEqual((a["resume"], b["resume"]), (None, a["sid"]))
         (k,) = self.faults("plain")
@@ -429,7 +429,7 @@ class Long(ForemanTestCase):
         self.addCleanup(os.environ.pop, "STUB_HANG", None)
         t = time.time()
         self.go("plain", ("kill",), timeout=0.02, limit=1)
-        self.assertLess(time.time() - t, 20)
+        self.assertLess(time.time() - t, 20)  # wall clock: the timeout=0.02 deadline of a child turn
 
     def test_a_resume_that_fails_after_a_kill_gets_one_fresh_turn_and_the_kill_cost_is_unknown(self):
         self.stub()
