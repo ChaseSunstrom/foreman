@@ -327,7 +327,7 @@ def _interface(src, w, checks):
         [c.plain(d) for d in done], pins
 
 
-def _scenario(src, w, seed, d, end, drops=None):
+def _scenario(src, w, seed, d, end, drops=None, ticket=""):
     """The key for one window, or None when it is no exam. The hidden checks are every test id the window added (any
     task's commit interleaved in it too) that goes green with the window's files laid over the base, and red on the
     base's code under the same tests; at least one is needed, five are kept. The regression sample is base tests that
@@ -364,7 +364,7 @@ def _scenario(src, w, seed, d, end, drops=None):
         return None
     names, done, pins = _interface(src, w, checks)
     goal = w["goal"] + (f"\n\nThe checks use these new names: {', '.join(names)}" if names else "")
-    pins = [x for x in pins if x not in names and x.strip("'") not in goal]  # a flag or name the goal now says
+    pins = [x for x in pins if x not in names and x.strip("'") not in goal + ticket]  # a flag, name or value the goal or its ticket says
     if len(pins) > MAX_PIN or any(len(x) > PIN_LEN for x in pins):  # too many, or too long to state whole: no honest answer
         if drops is not None:
             drops.append(w["task"])
@@ -393,10 +393,11 @@ def gen(p, src=None, n=6, seed=0):
             break
         tmp = tempfile.mkdtemp(prefix="fm-long-")
         try:
-            k = _scenario(src, w, seed, tmp, end, drops)
+            ticket = _ticket(p, src, w["task"])
+            k = _scenario(src, w, seed, tmp, end, drops, ticket)
             if not k:
                 continue
-            k["goal"] += _ticket(p, src, w["task"])
+            k["goal"] += ticket
             base = os.path.join(_root(p), run, w["task"])
             _archive(src, w["base"], os.path.join(base, "repo"))
             for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.name=exam", "-c", "user.email=exam@example.com",
@@ -411,7 +412,7 @@ def gen(p, src=None, n=6, seed=0):
     if not kept:
         raise ValueError(f"no goal in {c.plain(src)}: no (T-NNNN) task change adds a test that fails at its base and passes "
                          "with the change")
-    meta = {"run": run, "src": src, "scenarios": kept, "dropped_pinned": len(drops)}
+    meta = {"run": run, "src": src, "scenarios": kept, "dropped_pinned": len(drops), "dropped_ids": drops}
     c.write_atomic(os.path.join(_root(p), run, "run.json"), json.dumps(meta, indent=1))
     return meta
 
@@ -659,7 +660,9 @@ def cmd(p, args):
     if verb == "gen":
         meta = gen(p, args.from_, 6 if args.n is None else args.n, args.seed)
         return fmcli.out(args, meta, f"{meta['run']}: {len(meta['scenarios'])} goal(s) from {c.plain(meta['src'])}\n"
-                         + "\n".join(f"  {s['id']}: {s['goal'].splitlines()[0]}" for s in meta["scenarios"]))
+                         + "\n".join(f"  {s['id']}: {s['goal'].splitlines()[0]}" for s in meta["scenarios"])
+                         + (f"\ndropped {meta['dropped_pinned']} goal(s) whose checks pin values the goal can't state "
+                            f"({', '.join(meta['dropped_ids'])})" if meta["dropped_pinned"] else ""))
     if verb in ("run", "grade") and rest:
         agent = args.agent or "oracle"
         faults = [f for f in (args.faults or "").split(",") if f]

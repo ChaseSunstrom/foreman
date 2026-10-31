@@ -124,6 +124,8 @@ class Long(ForemanTestCase):
         goal = [s for s in r["scenarios"] if s["id"] == "T-1020"][0]["goal"]
         self.assertIn("The checks expect these values: '0 0 64 64', 77\n", goal)
         self.assertNotIn("880", goal)
+        text = self.fm("exam", "long", "gen", "--from", self.src).stdout  # the text output names the drop
+        self.assertIn("dropped 1 goal(s) whose checks pin values the goal can't state (T-1021)", text)
 
     def test_a_goal_from_the_projects_own_history_carries_its_briefs_ticket(self):
         # T-2321: a subject alone left the checks' contract unsaid; the brief is the ticket a session had
