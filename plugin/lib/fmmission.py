@@ -103,7 +103,8 @@ def compose(p, request=""):
         [f"# Context pack — {os.path.basename(p.root)}", "", "## The request", request or "(none given: improve the "
          "project in every way that matters to its user)", "", "## The project", _readme(p.root) or "(no README)", "",
          f"Surfaces: {', '.join(found) or 'library or CLI'}", mapped, "", "## Recent commits", log.strip(), "",
-         "## Open work", *[f"- {b.id} {b.type} {b.tier} {b.status}: {c.fit(b.title, 110)}" for b in open_work[:40]]]
+         "## Open work", *[f"- {b.id} {b.type} {b.tier} {b.status}: {c.fit(b.title, 110)}" for b in open_work[:40]],
+         "", "## The user's standing rules (steers)", "", "The user's steers, each still in force (T-2160):", "", *c.standing_rules(p)]
     ) + fmideas.user_voice(p)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     folder = os.path.join(p.dir, "research")

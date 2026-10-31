@@ -3222,7 +3222,26 @@ def _settled(parsed, i):
     return any(len(w) >= 4 and re.search(r"(?<!\w)" + re.escape(w) + r"(?!\w)", decision) for w in words)
 
 
-STEER = lazy(r"cites: (?:the )?user(?:'s)? steer", re.I)  # T-2114, T-2167: a rule the user's steer asked for
+STEER = lazy(r"(?:^|\] )\[?cites: (?:the )?user(?:'s)? steer", re.I)  # T-2114, T-2167: a rule the user's steer asked for
+def steer_rules(p):
+    """T-2160: [(date, one plain line)] for each user steer in decision order, minus one a later decision --reverses
+    names (whole words, 4+ characters); a seed and a mission carry these so a fresh run can't miss them."""
+    rows = _decision_rows(p)
+    out = []
+    for i, (date, tags, text) in enumerate(rows):
+        undone = [w.strip().lower() for _, t, _ in rows[i + 1:] if STEER.search(t)  # only the user's own steer undoes one
+                  for w in re.findall(r"\[reverses: ([^\]]+)\]", t)]
+        if STEER.search(tags) and not any(len(w) >= 4 and re.search(r"(?<!\w)" + re.escape(w) + r"(?!\w)", text.lower())
+                                          for w in undone):
+            out.append((date, " ".join(plain(text).split())))
+    return out
+
+
+def standing_rules(p):
+    """The "## The user's standing rules (steers)" section's lines for a seed or mission."""
+    return [f"- {d}: {t}" for d, t in steer_rules(p)] or ["None recorded."]
+
+
 CHECK_TAG = lazy(r"\[check: ([^\]]+)\]")
 CHECK_PENDING = lazy(r"pending (T-\d{4,})")  # a rule whose check waits on a named task: the sweep stays red
 CHECK_FM = (["fm", "genesis", "check"], ["fm", "exam", "scorecard"])
