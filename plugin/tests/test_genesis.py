@@ -1589,6 +1589,16 @@ class GenesisDrift(ForemanTestCase):
         import fmgenesis
         return fmgenesis.step(self.p)
 
+    def test_only_a_whole_line_clean_passes_drifts_cold_read(self):
+        # T-2180: the same verdict line as the put read; anything else is "unread", never clean
+        seed = "# Seed\nParent: gen-0.md\n\n"
+        for reply in ("CLEANUP needed", "Not CLEAN", "CLEAN-ish", "CLEAN but line 3 is wrong"):
+            code, r, _ = self.drift(seed, reply)
+            self.assertEqual(r["verdict"], "unread", (reply, r))
+        for reply in ("CLEAN", "**CLEAN**", "CLEAN.", "  CLEAN  "):
+            code, r, _ = self.drift(seed, reply)
+            self.assertEqual((code, r["verdict"]), (0, "clean"), (reply, r))
+
     def test_the_cold_read_sees_the_users_later_steers_as_tightening_only(self):
         # T-2114: a seed quoting a standing rule the user gave after gen-0 isn't drift; the reader gets those steers
         self.fm("decide", "Genesis standing rule: every capability gets 9 exam scenarios",
@@ -1851,6 +1861,15 @@ class GenesisRead(ForemanTestCase):
         env = {"PATH": (self.bindir + os.pathsep if stub else "") + bare, "STUB_LOG": self.log, "STUB_REPLY": reply}
         r = self.fm("genesis", "put", "coverage.md", "--file", src, check=False, env=env)
         return r, os.path.join(self.tower, "coverage.md")
+
+    def test_only_a_whole_line_clean_passes_the_cold_read(self):
+        # T-2180: CLEANUP, 'Not CLEAN', CLEAN-ish and 'CLEAN but ...' are not verdicts
+        for reply in ("CLEANUP needed", "Not CLEAN", "CLEAN-ish", "CLEAN but line 3 is wrong"):
+            r, _ = self.put(self.COV, reply)
+            self.assertEqual(r.returncode, 1, (reply, r.stderr))
+        for reply in ("CLEAN", "**CLEAN**", "CLEAN.", "  CLEAN  "):
+            r, _ = self.put(self.COV, reply)
+            self.assertEqual(r.returncode, 0, (reply, r.stderr))
 
     def test_a_failed_reads_findings_reach_the_next_read_fenced_and_clear_on_a_pass(self):
         # T-2205: each read started from nothing, so long files never converged (13 rounds; some reversed an earlier ask)
