@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Four job skills (T-2072), picked from this project's ledger: `foreman:security-review`, `foreman:performance`, `foreman:refactor` and `foreman:docs`. Each wraps its playbook and fm verbs; the SECURITY, PERFORMANCE and CLEAN stage routes load them first, the rules map routes "security review", "slow", "refactor" and "write docs" to them, and older descriptions were tightened so the listing stays under 2,200 characters.
 - `fm lane rm ID --why` repairs a worktree whose creation was cut off (0-byte branch ref, every file empty): the folder, the ref, the admin dir and the reflog move aside into the project's state (`lane-wreck/<id>/`), the stale lock goes and the entry is pruned. `fm doctor` fails on such a lane and on any 0-byte ref under refs/heads
 - `fm exam long gen|run|grade` (T-2258): replays real past task changes from their base commit with hidden checks from the tests each change added, in an isolated runner, scored by zero-token oracle and empty arms (true done out of all scenarios, plus regressions) as `tier: long` exam lines
 
