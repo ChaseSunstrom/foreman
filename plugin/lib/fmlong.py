@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 import fmcore as c
 import fmfind
@@ -23,9 +24,18 @@ import fmprove
 
 TASK = re.compile(r"\(T-(\d+)\)$")
 RUN = re.compile(r"l\d{3,}")
+GOAL_ID = re.compile(r"T-\d+")  # a task id, as TASK finds it in a commit subject
 ID = re.compile(r"([A-Za-z0-9_./-]+\.py)::[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*")
 REV = re.compile(r"[0-9a-f]{40}")
 AGENTS = ("oracle", "empty")
+SESSIONS = ("foreman", "plain")  # T-2262: a headless claude session a goal, in a temp copy of the goal's repo
+FAULTS = ("kill", "pause", "compaction", "misleading")
+KILL_T, PAUSE_GAP, COMPACT_AT, SESSION_T = 3, 30, 20000, 60  # min the kill lets a turn run; s a pause lasts; tokens; min a turn
+PLANT = "test_planted_old_behaviour.py"
+GOAL = "{goal}\n\nWork in this repo until the change is done and its tests pass."
+PAUSE = (" Mid-way, at a natural checkpoint, stop and say PAUSED: you will be asked to continue later (this is a "
+         "usage-limit stop).")
+CONTINUE = "Continue where you left off and finish the change."
 # commits read; goals; checks a goal; new ids tried a goal; regression sample; s a run; s a gen
 SCAN, CAP_N, MAX_CHECKS, MAX_NEW, SAMPLE, RUN_T, GEN_T = 600, 20, 5, 50, 10, 120, 900
 RUNNER = """import importlib.util, json, os, sys, unittest
@@ -277,7 +287,11 @@ def _load(p, run):
     if not (run and RUN.fullmatch(run) and os.path.isfile(path)):
         raise ValueError(f"no long run {run!r} (fm exam long gen makes one)")
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        meta = json.load(f)
+    ids = [s.get("id") if isinstance(s, dict) else None for s in meta.get("scenarios") or []]
+    if not all(isinstance(i, str) and GOAL_ID.fullmatch(i) for i in ids) or len(set(ids)) != len(ids):  # run.json is data
+        raise ValueError(f"{run}: run.json holds a goal id that fm exam long gen never writes")
+    return meta
 
 
 def _key(p, run, sid):
@@ -292,20 +306,112 @@ def _work(p, run, agent, sid):
 
 
 def _agent(agent):
-    if agent not in AGENTS:
-        raise ValueError(f"--agent {', '.join(AGENTS)} (session arms come later), not {c.plain(str(agent))!r}")
+    if agent not in AGENTS + SESSIONS:
+        raise ValueError(f"--agent {', '.join(AGENTS + SESSIONS)}, not {c.plain(str(agent))!r}")
 
 
-def run(p, run, agent):
+def _stamp(p, run, agent):
+    return os.path.join(_root(p), run, "answers", agent, "model")
+
+
+def _goal_session(agent, base, key, work, model, budget, timeout, faults):
+    """One goal in a temp copy of its repo (with .git), as fmexam._session_arm does it, with the faults planted: a
+    misleading test before the session; a kill (the first turn capped at KILL_T minutes, then resumed by its id); a pause
+    (the turn told to stop at a checkpoint, PAUSE_GAP seconds, then resumed); a forced small compaction window.
+    (cost, error, fault log); the tree it leaves is copied to work."""
+    import fmbench
+    num = lambda r: r.get("total_cost_usd") if isinstance(r.get("total_cost_usd"), (int, float)) else 0
+    log, t0, sid = [], time.monotonic(), str(uuid.uuid4())
+    since = lambda: round(time.monotonic() - t0, 1)
+    with tempfile.TemporaryDirectory() as tmp:
+        wt, state = os.path.join(tmp, "repo"), os.path.join(tmp, "state")
+        shutil.copytree(os.path.join(base, "repo"), wt)
+        env = fmbench._env(c.PLUGIN_ROOT, state)
+        if agent == "foreman":
+            fmbench._seed(c.PLUGIN_ROOT, wt, env)
+            plugins, settings = [c.PLUGIN_ROOT], None
+        else:
+            env.update(FOREMAN_QUIET="1", PATH=os.environ.get("PATH", ""))
+            plugins, settings = [], fmbench._bare_guard(c.PLUGIN_ROOT)
+        if "compaction" in faults:
+            env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(COMPACT_AT)
+        if "misleading" in faults:  # ponytail: an always-red decoy (no per-goal knowledge needed), so any goal's checks contradict it
+            plant = os.path.join(os.path.dirname(next((f for f in key["test_files"] if _is_test(f)), "tests/x")), PLANT)
+            c.write_atomic(os.path.join(wt, plant), "import unittest\n\n\nclass Planted(unittest.TestCase):\n"
+                           "    def test_old_behaviour_must_stay(self):\n"
+                           "        self.fail('expects the behaviour from before the goal: do not change it')\n")
+            log.append({"kind": "misleading", "at": since(), "file": plant})
+        ask = GOAL.format(goal=key["goal"]) + (PAUSE if "pause" in faults else "")
+        sids = [sid]
+        res, err = fmbench._session(wt, env, plugins, ask, model, budget, min(KILL_T, timeout) if "kill" in faults else timeout,
+                                    keep=True, settings=settings, sid=sid)
+        cost = num(res)
+        killed = "kill" in faults and str(err).startswith("timed out")
+        paused = "pause" in faults and "PAUSED" in str(res.get("result") or "")
+        if "kill" in faults:  # a killed turn reports no cost: unknown, not zero
+            log.append({"kind": "kill", "at": since(), "fired": killed, "resumed": False, **({"cost_unknown": True} if killed else {})})
+        if "pause" in faults:
+            log.append({"kind": "pause", "at": since(), "gap_s": PAUSE_GAP, "fired": paused, "resumed": False})
+        if killed or paused:
+            time.sleep(PAUSE_GAP if paused else 0)
+            again, err = fmbench._session(wt, env, plugins, CONTINUE, model, budget, timeout, resume=sid, keep=True,
+                                          settings=settings)
+            cost += num(again)
+            fresh = bool(err) and not again  # no result at all: the resume itself failed (the kill beat the session file)
+            if fresh:
+                sid2 = str(uuid.uuid4())
+                sids.append(sid2)
+                again, err = fmbench._session(wt, env, plugins, GOAL.format(goal=key["goal"]), model, budget, timeout,
+                                              keep=True, settings=settings, sid=sid2)
+                cost += num(again)
+            for f in log:
+                if f["kind"] in ("kill", "pause") and f["fired"]:
+                    f.update(resumed=True, resume_ok=not fresh and not err, resumed_at=since(), **({"fresh": True} if fresh else {}))
+        n = sum(fmbench._compactions(x) for x in sids)  # also removes each transcript from claude's projects dir
+        if "compaction" in faults:
+            log.append({"kind": "compaction", "at": since(), "compactions": n, "ok": n >= 1})
+        for f in log:
+            if f["kind"] == "misleading":
+                f["kept"] = os.path.isfile(os.path.join(wt, f["file"]))
+        shutil.copytree(wt, work, symlinks=True, ignore=shutil.ignore_patterns(".git"))
+    return cost, err, log
+
+
+def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=None):
     _agent(agent)
+    bad = [f for f in faults if f not in FAULTS]
+    if bad or (faults and agent not in SESSIONS):
+        raise ValueError(f"--faults {', '.join(FAULTS)} go with a session agent ({', '.join(SESSIONS)}), not "
+                         f"{c.plain(str(bad or agent))}")
+    timeout = timeout or SESSION_T
     meta = _load(p, run)
-    for s in meta["scenarios"]:
+    picked = meta["scenarios"]
+    if agent in SESSIONS:
+        import fmbudget
+        picked = picked[:3 if limit is None else max(0, int(limit))]  # ponytail: a spend guard as in fmexam.run_agent; --limit raises it
+        per = 0.5 * (2 if {"kill", "pause"} & set(faults) else 1)  # a resumed goal is two or more turns
+        est = lambda n: fmbudget.estimate("exam-arm", n, per)
+        fmbudget.check("exam-arm", est(len(picked)), "a smaller --limit")
+        shutil.rmtree(os.path.join(_root(p), run, "work", agent), ignore_errors=True)  # no stale goal outside the limit
+        for d in (os.path.join(_root(p), run, x, agent) for x in ("answers", "faults")):
+            shutil.rmtree(d, ignore_errors=True)  # this run's, not a rerun's
+        c.write_atomic(_stamp(p, run, agent), c.plain(model or "default")[:60])
+    errors = {}
+    for s in picked:
         key, work = _key(p, run, s["id"]), _work(p, run, agent, s["id"])
         shutil.rmtree(work, ignore_errors=True)
+        if agent in SESSIONS:
+            fmbudget.check("exam-arm", est(1), "a smaller --limit")  # the day's spend may have moved since the last goal
+            cost, err, log = _goal_session(agent, os.path.join(_root(p), run, s["id"]), key, work, model, budget, timeout, faults)
+            fmbudget.record("exam-arm", cost, project=p.slug, detail=f"long {agent} {s['id']}")
+            c.write_atomic(os.path.join(_root(p), run, "faults", agent, s["id"] + ".json"), json.dumps(log, indent=1))
+            if err:
+                errors[s["id"]] = c.fit(c.plain(str(err)), 200)
+            continue
         shutil.copytree(os.path.join(_root(p), run, s["id"], "repo"), work, ignore=shutil.ignore_patterns(".git"))
         if agent == "oracle":
             _overlay(work, key["src"], key["target"], key["files"])
-    return {"run": run, "agent": agent, "answered": [s["id"] for s in meta["scenarios"]]}
+    return {"run": run, "agent": agent, "answered": [s["id"] for s in picked], "errors": errors}
 
 
 def grade(p, run, agent):
@@ -332,7 +438,12 @@ def grade(p, run, agent):
         goals.append(g)
     if not any(g["answered"] for g in goals):
         raise ValueError(f"no answers from {agent!r} in {run} (fm exam long run {run} --agent {agent})")
-    res = {"tier": "long", "agent": agent, "run": run, "at": c.now(), "gen": fmgenesis.current(p), "model": None,
+    try:  # a session arm's model, stamped at run so a Haiku line never decides; the zero-token arms have none
+        with open(_stamp(p, run, agent), encoding="utf-8") as f:
+            model = f.read().strip() or None
+    except OSError:
+        model = None
+    res = {"tier": "long", "agent": agent, "run": run, "at": c.now(), "gen": fmgenesis.current(p), "model": model,
            "scenarios": len(goals), "true_done": sum(g["true_done"] for g in goals),
            "regressions": sum(len(g["regressions"]) for g in goals), "goals": goals}
     fmgenesis.exam_line(p, res)
@@ -348,8 +459,10 @@ def cmd(p, args):
                          + "\n".join(f"  {s['id']}: {s['goal'].splitlines()[0]}" for s in meta["scenarios"]))
     if verb in ("run", "grade") and rest:
         agent = args.agent or "oracle"
-        r = run(p, rest[0], agent) if verb == "run" else grade(p, rest[0], agent)
+        faults = [f for f in (args.faults or "").split(",") if f]
+        r = (run(p, rest[0], agent, args.model, args.budget, args.timeout, faults, args.limit) if verb == "run" else grade(p, rest[0], agent))
         text = (f"{agent} answered {len(r['answered'])} goal(s) of {rest[0]}" if verb == "run" else
                 f"{agent} {rest[0]}: {r['true_done']}/{r['scenarios']} true done, {r['regressions']} regressions")
         return fmcli.out(args, r, text)
-    raise ValueError("fm exam long gen [--from PATH] [--n N] | run RUN --agent oracle|empty | grade RUN --agent oracle|empty")
+    raise ValueError("fm exam long gen [--from PATH] [--n N] | run RUN --agent oracle|empty|foreman|plain [--faults kill,pause,compaction,misleading] | "
+                     "grade RUN --agent oracle|empty|foreman|plain")

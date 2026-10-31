@@ -42,6 +42,21 @@ class DirtyAtFocus(ForemanTestCase):
         self.assertIn("--with", r.stdout)
         self.assertIn("mine.py", self.git("status", "--porcelain"))
 
+    def test_a_tracked_file_deleted_after_the_focus_is_committed_as_a_deletion(self):
+        # T-2268: an rm after the focus is the task's change; one made before it is not
+        os.remove(os.path.join(self.repo, "clean.py"))
+        self.finish()
+        self.assertIn("clean.py", self.committed())
+        self.assertNotIn("clean.py", self.git("ls-files"))
+
+    def test_a_rename_by_rm_commits_the_old_name_too(self):
+        # T-2268: git's rename detection listed only the new name, so the rm of the old one was left out
+        self.write("clean.py", "b = 0\n")  # as at the focus: the move reads as a pure rename
+        os.rename(os.path.join(self.repo, "clean.py"), os.path.join(self.repo, "renamed.py"))
+        self.finish()
+        self.assertEqual(sorted(self.git("show", "--no-renames", "--name-only", "--format=").splitlines()), ["clean.py", "renamed.py"])
+        self.assertEqual(self.git("status", "--porcelain").count("clean.py"), 0)
+
     def test_with_commits_it(self):
         self.finish("--with", "mine.py")
         self.assertEqual(sorted(self.committed()), ["clean.py", "mine.py"])
