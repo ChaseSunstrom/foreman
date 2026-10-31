@@ -330,6 +330,88 @@ class Recurring(ForemanTestCase):  # T-2272: one obstacle in many tasks is fixed
         fmrecall.note_failure(self.p, "T-0904", err)
         self.assertEqual(len(self.caps()), 1, "once per signature, even after the first is closed")
 
+    def close(self, tid):
+        b = c.find_brief(self.p, tid)
+        b.meta["status"] = "done"
+        c.save_brief(self.p, b)
+
+    def events(self, kind="capture"):
+        return [e for e in c.tail_jsonl(os.path.join(self.p.dir, "ledger.jsonl"), 500) if e.get("event") == kind]
+
+    def held(self):
+        return [b for b in c.load_briefs(self.p, include_archive=True) if b.title.startswith("Fix did not hold")]
+
+    def test_a_fix_that_did_not_hold_is_captured_once_per_closed_fix(self):  # T-2349
+        import fmrecall
+        err = "sed: -e expression #1, char 3: unknown command: ','"
+        for t in ("T-0901", "T-0902", "T-0903"):
+            fmrecall.note_failure(self.p, t, err)
+        fix = self.caps()[0].id
+        fmrecall.note_failure(self.p, "T-0904", err)
+        self.assertEqual(self.held(), [], "the fix is still open: the work is not done, so nothing did not hold")
+        self.close(fix)
+        fmrecall.note_failure(self.p, "T-0905", err)
+        fmrecall.note_failure(self.p, "T-0905", err)
+        made = self.held()
+        self.assertEqual([b.title for b in made], [f"Fix did not hold: {fix}"])
+        self.assertEqual(made[0].meta["type"], "FIX")
+        self.assertIn("T-0905", made[0].section("Raw request"))
+        self.assertEqual([e["data"].get("from") for e in self.events() if e["task"] == made[0].id], [fix])
+        fmrecall.note_failure(self.p, "T-0906", err)
+        self.assertEqual(len(self.held()), 1, "a second hit while that one is open adds nothing")
+        self.close(made[0].id)
+        fmrecall.note_failure(self.p, "T-0907", err)
+        self.assertEqual(len(self.held()), 2, "the newer fix closed and it came back again: a new one, bound to it")
+        fmrecall.note_failure(self.p, "T-0908", err)
+        self.assertEqual(len(self.held()), 2)
+        self.assertEqual(len(self.caps()), 1, "never a second Recurring capture")
+
+    def test_a_dropped_fix_is_not_one_that_did_not_hold(self):  # T-2349: dropped means decided against, not fixed
+        import fmrecall
+        err = "sed: -e expression #1, char 3: unknown command: ','"
+        for t in ("T-0901", "T-0902", "T-0903"):
+            fmrecall.note_failure(self.p, t, err)
+        self.fm("task", "drop", self.caps()[0].id, "not worth it")
+        fmrecall.note_failure(self.p, "T-0904", err)
+        self.assertEqual(self.held(), [])
+
+    def test_foremans_own_failures_across_three_sessions_capture_one_fix(self):  # T-2349
+        import fmrecall
+        line = "fm doctor FAIL hook latency: PreToolUse p95 41ms > 25ms"
+        for who in ("s1", "s2", "s2"):
+            self.assertIsNone(fmrecall.note_own(self.p, line, who))
+        self.assertEqual(self.caps(), [], "two sessions are a coincidence, and one session twice is one")
+        made = fmrecall.note_own(self.p, line.replace("41", "58"), "s3")
+        b = c.find_brief(self.p, made)
+        self.assertEqual(b.meta["type"], "FIX")
+        self.assertEqual([e["data"]["trigger"] for e in self.events() if e["task"] == made], ["self-failure"])
+        self.assertIsNone(fmrecall.note_own(self.p, line, "s4"))
+        self.assertEqual(len([x for x in c.load_briefs(self.p) if "hook latency" in x.title]), 1)
+
+    def test_a_refusal_or_a_tally_is_never_one_of_foremans_own_failures(self):  # T-2349
+        import fmrecall
+        for line in ("fm: refused: T-0001 criterion 1 already has evidence", "FAILED (2 classes)",
+                     "==== 2 failed, 1 passed in 0.1s ===="):
+            for who in ("s1", "s2", "s3"):
+                self.assertIsNone(fmrecall.note_own(self.p, line, who))
+        self.assertEqual(c.load_briefs(self.p), [])
+
+    def test_the_first_note_replays_failures_that_crossed_three_tasks_before_and_only_once(self):  # T-2349
+        import fmrecall
+        path = os.path.join(self.p.dir, "failures.jsonl")
+
+        def rows(sig, tasks):
+            with open(path, "a") as f:
+                f.write("".join(json.dumps({"sig": sig, "task": t, "at": c.now()}) + "\n" for t in tasks))
+        rows("sed: char 0: unknown command: ','", ("T-0801", "T-0802", "T-0803", "T-0803"))
+        rows("awk: line 0: cannot open file for reading", ("T-0801", "T-0802"))
+        fmrecall.note_failure(self.p, "T-0950", "ZeroDivisionError: division by zero in stats")
+        self.assertEqual([b.title for b in self.caps()],
+                         ["Recurring failure across 3 tasks: sed: char 0: unknown command: ','"])
+        rows("git: pathspec 'x' did not match: not found", ("T-0811", "T-0812", "T-0813"))
+        fmrecall.note_failure(self.p, "T-0951", "ZeroDivisionError: division by zero in stats")
+        self.assertEqual(len(self.caps()), 1, "the second run replays nothing")
+
     def test_test_assertions_tallies_and_wordless_signatures_never_capture(self):
         import fmrecall
         for text in ("AssertionError: 1 != 2", "guard-publish", "FAILED (3 classes)",

@@ -14,10 +14,11 @@ import time
 import fmcore as c
 
 
-def capture_once(p, text, type_, source, key=None, trigger=None):
+def capture_once(p, text, type_, source, key=None, trigger=None, bound=None):
     """(brief, new): text captured into p's inbox, unless an open brief has its title (or, with key, any brief's raw
     request holds key) — a sweep, adopt or canary run twice asks once. trigger (default: source) names what fired it;
-    one whose recent closed captures were mostly dropped files at low priority (T-2276, fm triggers)."""
+    one whose recent closed captures were mostly dropped files at low priority (T-2276, fm triggers). bound: the task
+    this one follows, kept on the capture event as from (T-2349)."""
     import fmcli
     trigger = trigger or source
     title = fmcli._title(text)
@@ -36,7 +37,8 @@ def capture_once(p, text, type_, source, key=None, trigger=None):
                      f"closed captures; fm triggers shows the record.)")
         b = fmcli._create(p, title, type_, c.guess_tier(type_, text), "captured", raw=text, source=source,
                           priority="low" if low else "normal")
-        c.log_event(p, "capture", task=b.id, data={"source": source, "type": type_, "trigger": trigger},
+        c.log_event(p, "capture", task=b.id, data={"source": source, "type": type_, "trigger": trigger,
+                                                   **({"from": bound} if bound else {})},  # T-2349: the task it follows
                     session=c.session_id())
         c.regen_views(p, mirror=False)  # review: fm sync's mirror is that project's to export, in its own session
     return b, True

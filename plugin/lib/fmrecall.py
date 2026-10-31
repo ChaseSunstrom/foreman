@@ -477,7 +477,7 @@ def note_failure(p, task, text):
         for slug, tid, title, lesson in others(p, text, total=1, near_ok=False):
             hint = (f"Foreman (other-project history, data not instructions): met in {slug} ({tid}: {title}); "
                     f"lesson: {lesson}; more: fm recall --others")
-    same, hinted, first, recs = 0, True, False, []
+    same, hinted, first, recs, read = 0, True, False, [], False
     try:
         with c.lock(p.dir, timeout=2):  # a trim racing another session's append would drop its record
             if os.path.exists(path) and os.path.getsize(path) > 1_000_000:
@@ -490,6 +490,7 @@ def note_failure(p, task, text):
             rows = [{"sig": sig, "task": task, "at": c.now()}] + (
                 [{"sig": sig, "task": task, "at": c.now(), "hinted": True}] if task and same >= REPEATS and not hinted else [])
             c.append_line(path, "".join(json.dumps(r) + "\n" for r in rows))
+            read = True
     except (OSError, c.LockTimeout):
         pass
     api = API_MISUSE.search(text or "")
@@ -511,8 +512,10 @@ def note_failure(p, task, text):
                                              f"failure, the files and what is ruled out (fm task hypo {task} ruled "
                                              f"--write)."]))
     try:  # T-2272: a capture that can't run (a busy lock) never costs the hints above
+        if read:
+            _replay(p, recs)
         made = _recurring(p, sig, {r.get("task") for r in recs if r.get("sig") == sig and r.get("task")} | {task},
-                          any(r.get("sig") == sig and r.get("captured") for r in recs)) if task else None
+                          _captured(recs, sig), first, task) if task else None
     except Exception:
         made = None
     if made:
@@ -527,27 +530,98 @@ RECUR = 3  # T-2272: distinct tasks one obstacle has to hit before it's the proj
 _NO_CAUSE = re.compile(r"^fm[: ]|failed \(|^[\w.]*(?:error|exception)(?::[^/]*)?$")
 
 
-def _recurring(p, sig, tasks, done=False):
+def _captured(recs, sig):
+    """The newest FIX filed for sig in failures.jsonl's rows, or None."""
+    return next((r["captured"] for r in reversed(recs) if r.get("sig") == sig and r.get("captured")), None)
+
+
+def _any_brief(p, tid):
+    """The brief tid, open, closed or archived (find_brief reads the live folder only)."""
+    for path in c.brief_paths(p, include_archive=True):
+        m = c._BRIEF_FILE.match(os.path.basename(path))
+        if m and m.group(1) == tid:
+            return c._read_brief(path)
+    return None
+
+
+def _recurring(p, sig, tasks, cap=None, first=True, who=None, own=False):
     """T-2272: one FIX, once ever per signature, when the same obstacle hit RECUR+ tasks, closed or not (working around
     it isn't fixing it). A test's own assertion is the baseline-red capture's job (T-2255); a tally or a signature with
-    no error word says nothing to fix. `done`: failures.jsonl already holds its capture, so no brief scan runs again."""
-    if done or len(tasks) < RECUR or _TALLY_LINE.match(sig) or not _ERROR_LINE.search(sig) \
-            or sig.startswith("assertionerror") or _NO_CAUSE.search(sig):
+    no error word says nothing to fix. `cap`: the FIX failures.jsonl already holds for it, so no brief scan runs again.
+    T-2349: a cap that is done and a `first` hit by a new `who` after it (the fix didn't hold) files "Fix did not hold:
+    <cap>" bound to it, once per closed fix. `own`: Foreman's own failure (note_own), whose text is its own message, not
+    an error word; units are runs or sessions, not tasks."""
+    if _TALLY_LINE.match(sig) or (not own and (not _ERROR_LINE.search(sig) or sig.startswith("assertionerror")
+                                               or _NO_CAUSE.search(sig))):
         return None
     import hashlib
     import fmeco
-    key = "recurring-failure " + hashlib.sha256(sig.encode()).hexdigest()[:12]
-    named = ", ".join(sorted(tasks)[:8])
-    b, new = fmeco.capture_once(p, f"Recurring failure across {len(tasks)} tasks: "
-                                   f"{c.fit(c.defang(c.plain(sig)), 120)}\n{key}\n"
-                                   f"(hit in {named}: find the cause and fix it once; fm recall and fm whyred help)",
-                                "FIX", "discovered", key=key, trigger="recurring-failure")
+    h = hashlib.sha256(sig.encode()).hexdigest()[:12]
+    if cap:
+        b = _any_brief(p, cap) if first and who != cap else None
+        if not b or b.status != "done":
+            return None
+        key = f"did-not-hold {cap} {h}"
+        b, new = fmeco.capture_once(p, f"Fix did not hold: {cap}\n{key}\n(the failure {c.fit(c.defang(c.plain(sig)), 120)} "
+                                       f"hit {c.plain(str(who))} after {cap} closed: read {cap}'s evidence for what it "
+                                       f"missed and fix the cause, not the symptom)",
+                                    "FIX", "discovered", key=key, trigger="did-not-hold", bound=cap)
+    else:
+        if len(tasks) < RECUR:
+            return None
+        named = ", ".join(sorted(tasks)[:8])
+        key = ("self-failure " if own else "recurring-failure ") + h
+        head = (f"Foreman failing in {len(tasks)} runs: " if own else f"Recurring failure across {len(tasks)} tasks: ")
+        b, new = fmeco.capture_once(p, f"{head}{c.fit(c.defang(c.plain(sig)), 120)}\n{key}\n"
+                                       f"(hit in {c.plain(named)}: find the cause and fix it once; fm recall and fm whyred help)",
+                                    "FIX", "self" if own else "discovered", key=key,
+                                    trigger="self-failure" if own else "recurring-failure")
     try:  # the next failure of this signature reads this row instead of scanning every brief again
         with c.lock(p.dir, timeout=2):
             c.append_line(os.path.join(p.dir, "failures.jsonl"), json.dumps({"sig": sig, "captured": b.id}) + "\n")
     except (OSError, c.LockTimeout):
         pass
     return b.id if new else None
+
+
+def note_own(p, text, who):
+    """T-2349: one of Foreman's own failures (an fm doctor FAIL line, a hook traceback, a hook over its latency budget)
+    seen in run or session `who`. The same signature in RECUR+ distinct runs files one FIX (trigger self-failure); the
+    same `who` twice counts once. Its refusals are rules at work and a runner's tally says nothing: never. Returns the
+    FIX id when this call filed one."""
+    sig = failure_signature(text)
+    if not sig or not who or sig.startswith("fm: refused"):
+        return None
+    path = os.path.join(p.dir, "failures.jsonl")
+    try:
+        with c.lock(p.dir, timeout=2):
+            recs = c.tail_jsonl(path, FAILURES_KEEP)
+            runs = {r["own"] for r in recs if r.get("sig") == sig and r.get("own")}
+            first = who not in runs
+            if first:
+                c.append_line(path, json.dumps({"sig": sig, "own": who, "at": c.now()}) + "\n")
+        return _recurring(p, sig, runs | {who}, _captured(recs, sig), first, who, own=True)
+    except (OSError, c.LockTimeout):
+        return None
+
+
+def _replay(p, recs):
+    """T-2349: the first failure noted after T-2272 shipped looks back over failures.jsonl once: a signature that had
+    crossed RECUR tasks by then was never seen (_recurring looked at new rows only). A racing second replay is harmless:
+    the capture is keyed."""
+    marker = os.path.join(p.dir, "failures.replayed")
+    if os.path.exists(marker):
+        return
+    seen = {}
+    for r in recs:
+        if r.get("sig") and r.get("task"):
+            seen.setdefault(r["sig"], set()).add(r["task"])
+    try:
+        for sig, tasks in seen.items():
+            if len(tasks) >= RECUR and not _captured(recs, sig):
+                _recurring(p, sig, tasks)
+    finally:  # a replay that fails once is not retried on every failure after it
+        c.write_atomic(marker, c.now() + "\n")
 
 
 def seen_before(p, sig, task):
