@@ -435,6 +435,51 @@ class GoalPlan(GoalBase):  # T-2136
         self.assertNotEqual(r.returncode, 0)
 
 
+class GoalEstimate(GoalBase):  # T-2145
+    def setUp(self):
+        super().setUp()
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+
+    def item_done(self, text, minutes):
+        """An item with one linked task closed done with `minutes` active (the task_done event's minutes)."""
+        self.fm("goal", "item", text, "--done-when", "true")
+        n = len(json.loads(self.fm("goal", "show", "--json", check=False).stdout)["goal"]["items"])
+        t = self.new(text, "--goal", str(n))
+        b = c.find_brief(self.p, t)
+        b.meta["status"] = "done"
+        c.save_brief(self.p, b, touch=False)
+        if minutes is not None:
+            c.log_event(self.p, "task_done", task=t, data={"minutes": minutes})
+        return t
+
+    def est(self):
+        return json.loads(self.fm("goal", "show", "--json", check=False).stdout)["estimate"]
+
+    def test_under_three_done_items_is_no_estimate_yet(self):
+        self.item_done("a", 10)
+        self.item_done("b", 20)
+        self.fm("goal", "item", "c", "--done-when", "true")
+        self.assertEqual(self.est()["n"], 2)
+        self.assertIsNone(self.est()["left"])
+        self.assertIn("no estimate yet", self.show()[1])
+
+    def test_median_range_and_text_from_the_done_items_minutes(self):
+        for i, m in enumerate((10, 20, 30, 40, 100)):
+            self.item_done(f"d{i}", m)
+        self.fm("goal", "item", "x", "--done-when", "true")
+        self.fm("goal", "item", "y", "--done-when", "true")
+        e = self.est()
+        self.assertEqual((e["n"], e["remaining"], e["median"], e["p25"], e["p75"]), (5, 2, 30, 20, 40))
+        self.assertEqual((e["left"], e["low"], e["high"]), (60, 40, 80))
+        self.assertIn("about 1h left (median 30m per item over 5 done items, 40m–1h 20m)", self.show()[1])
+
+    def test_an_item_with_no_recorded_minutes_is_not_a_sample_and_nothing_left_prints_no_estimate(self):
+        for m in (10, 20, 30, None):
+            self.item_done(f"d{m}", m)
+        self.assertEqual(self.est()["n"], 3)
+        self.assertNotIn("left (", self.show()[1])  # no open item: nothing to estimate
+
+
 class GoalDistance(GoalBase):
     """T-2144: 'goal D/N' ends state.line (and so the terminal title) and the badge while a goal with items stands."""
 
