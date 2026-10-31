@@ -84,7 +84,7 @@ class LaneStall(ForemanTestCase):
         time.sleep(4)
         out = self.fm("lane", "list", env=self.ENV).stdout
         self.assertNotIn("STALLED", out)
-        self.assertIn(f"fm lane resume {tid}", self.fm("next", env=self.ENV).stdout)
+        self.assertIn(f"fm lane recover {tid}", self.fm("next", env=self.ENV).stdout)
 
 
 if __name__ == "__main__":

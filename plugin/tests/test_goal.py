@@ -244,6 +244,20 @@ class GoalReview(GoalBase):
                 code, out = self.verdict()
                 self.assertEqual(code, 1, out)
                 self.assertIn("item 1 check can't fail", out)
+        for check in ("ls .", "cat README.md", "cd . && ls ."):  # T-2333: with a path these fail when it's missing
+            with self.subTest(check=check):
+                c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
+                    dict(i, done_when=check) for i in c.read_meta(self.p)["mandate"]["items"]]))
+                self.assertNotIn("can't fail", self.verdict()[1])
+        c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
+            dict(i, done_when="ls") for i in c.read_meta(self.p)["mandate"]["items"]]))
+        self.assertIn("item 1 check can't fail", self.verdict()[1])  # a bare ls checks nothing
+        hollow = lambda cmd: any("can't fail" in x for x in c.lint_verify(cmd, self.repo))  # noqa: E731
+        for cmd, can_fail in (("ls -l", False), ("cat", False), ("cd", False), ("ls >/dev/null", False),
+                              ("ls 2>/dev/null", False), ("ls dist", True), ("exit 1", True), ("exit 0", False),
+                              ("python3 -c 1 || ls dist", False), ("python3 -c 1; cat x", False)):
+            with self.subTest(cmd=cmd):  # T-2333 review: options and redirects aren't paths; a path fallback still masks
+                self.assertEqual(hollow(cmd), not can_fail)
         c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
             dict(i, done_when="test -d .") for i in c.read_meta(self.p)["mandate"]["items"]]))
         c.log_event(self.p, "check_run", data={"tree": c.worktree_id(self.p.root), "skip_tests": ["test_x.T.test_red"],

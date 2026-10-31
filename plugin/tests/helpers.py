@@ -288,7 +288,8 @@ class ForemanTestCase(unittest.TestCase):
         self._env = {k: os.environ.get(k) for k in ("FOREMAN_HOME", "FOREMAN_SESSION_ID", "FOREMAN_PROJECT",
                                                      "FOREMAN_STATE", "XDG_STATE_HOME", "FOREMAN_NO_BACKGROUND",
                                                      "FOREMAN_ONEOFF", "CLAUDE_CODE_ENTRYPOINT", "FOREMAN_DRIVE_TASK",
-                                                     "FOREMAN_GUARD_CASES", "FOREMAN_NO_LINK")}
+                                                     "FOREMAN_GUARD_CASES", "FOREMAN_NO_LINK", "FOREMAN_NO_RIVAL")}
+        os.environ["FOREMAN_NO_RIVAL"] = "1"  # T-2341: no plan waits on a cold rival read (the Rival tests turn it on)
         os.environ["FOREMAN_HOME"] = self.home
         os.environ["FOREMAN_NO_BACKGROUND"] = "1"  # a detached child writing into a test's folder races its cleanup
         os.environ["FOREMAN_NO_LINK"] = "1"  # T-1333: a test's session start never makes ~/.local/bin/fm
@@ -320,6 +321,8 @@ class ForemanTestCase(unittest.TestCase):
         # fm run never takes a real inhibitor lock; T-1379: fm doctor skips its hook bench (no test reads its timings)
         e = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_INHIBITED="1", FOREMAN_DOCTOR_BENCH="0")
         e.pop("CLAUDE_CODE_SESSION_ID", None)  # tests may run inside a live Claude Code session
+        if args[:1] == ("which",):  # T-2371: fm which reads ~/.claude.json and bin folders: never this machine's
+            e.update(HOME=os.path.join(self.tmp, "nohome"), CLAUDE_CONFIG_DIR=os.path.join(self.tmp, "nocc"))
         e.update(env or {})
         p = subprocess.run([sys.executable, FM, *args], cwd=cwd or self.repo, env=e,
                            capture_output=True, text=True, input=input, timeout=timeout * busy_factor())
