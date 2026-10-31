@@ -964,10 +964,25 @@ class Failover(CodeCase):  # T-1356 (not a Worker subclass: its tests would run 
         self.assertEqual(k(1, "Claude AI usage limit reached|1792745600"), ("limit", 1792745600))
         kind, at = k(1, "You've hit your limit · resets 3pm (Europe/London)")
         self.assertEqual((kind, time.localtime(at)[3:5]), ("limit", (15, 0)))
-        self.assertTrue(0 < at - time.time() <= 86400, "the next 3 pm, not a past one")
+        self.assertTrue(0 < at - time.time() <= 86400 + 3600, "the next 3 pm, not a past one")  # + a DST hour
         self.assertEqual(k(1, "Invalid API key · Please run /login"), ("auth", None))
         self.assertEqual(k(2, "Traceback (most recent call last):"), ("crash", None))
         self.assertEqual(k(1, "5-hour limit reached"), ("limit", None), "no reset said")
+
+    def test_the_next_reset_keeps_its_clock_time_across_a_dst_change(self):  # T-2378: found failing on 2026-10-31
+        import fmcode
+        old = os.environ.get("TZ")
+        os.environ["TZ"] = "America/Chicago"
+        time.tzset()
+        try:  # 15:15 CDT on 2026-10-31; clocks fall back at 02:00 on 11-01, so "+ 86400 s" lands on 14:00
+            at = fmcode._reset_at("You've hit your limit · resets 3pm", 1793477700)
+            self.assertEqual(time.localtime(at)[1:5], (11, 1, 15, 0))
+        finally:
+            if old is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = old
+            time.tzset()
 
     def test_a_limit_resetting_soon_is_waited_out_and_the_turn_done_again(self):
         mark = os.path.join(self.tmp, "limited")

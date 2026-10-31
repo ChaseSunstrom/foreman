@@ -41,7 +41,7 @@ class RoundTrip(_Mcp):
         names = {t["name"] for t in by[2]["result"]["tools"]}
         self.assertEqual(names, {"state", "next", "recall", "research_list", "research_read", "task_show", "checks",
                                  "lib_suggest", "lib_search", "lib_show", "outline", "sym", "impact", "why", "fail",
-                                 "logs", "data", "trace", "find", "exam_scorecard", "genesis_status", "goal", "triggers", "calibration"})
+                                 "logs", "data", "trace", "find", "exam_scorecard", "genesis_status", "goal", "triggers", "calibration", "which", "grants"})
         for t in by[2]["result"]["tools"]:
             self.assertEqual(t["inputSchema"]["type"], "object")
         self.assertIn("Parse dates in the importer", by[3]["result"]["content"][0]["text"])
@@ -445,3 +445,27 @@ class JudgmentTool(_Mcp):  # T-2344: #2 and #8 through MCP (Claude Desktop and o
         self.assertEqual(d["races"], {"run": 2, "judged": 2, "first_lost": 1})
         self.assertEqual(c.read_meta(p), before)  # no settle, no bar move
         self.assertEqual(os.path.getsize(os.path.join(p.dir, "ledger.jsonl")), ledger)
+
+
+class ToolsTools(_Mcp):  # T-2378: #5 through MCP (Claude Desktop and other agents), read-only
+    def test_which_and_grants_are_listed_and_write_nothing(self):
+        import fmgrants
+        self.fm("init")
+        p = c.find_project(self.repo)
+        r = self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        tid = re.search(r"T-\d+", r.stdout)[0]
+        fmgrants.queue(p, tid, ["plugin"], "needs a table printer", what="tabulate", fallback="plain columns")
+        ledger = os.path.getsize(os.path.join(p.dir, "ledger.jsonl"))
+        out, _ = self.talk({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, self.call(2, "which", task="parse json files"),
+                           self.call(3, "grants"), self.call(4, "which", task=""))
+        names = {t["name"] for t in out[0]["result"]["tools"]}
+        self.assertTrue({"which", "grants"} <= names)
+        found = json.loads(_text(out[1]))
+        self.assertEqual(found["task"], "parse json files")
+        self.assertIn("commands", found)
+        rows = json.loads(_text(out[2]))
+        self.assertEqual([x["task"] for x in rows], [tid])
+        self.assertIn("tabulate", rows[0]["text"])
+        self.assertIn("plain columns", rows[0]["text"])
+        self.assertTrue(out[3]["result"]["isError"])  # nothing to look up
+        self.assertEqual(os.path.getsize(os.path.join(p.dir, "ledger.jsonl")), ledger)  # no search receipt logged

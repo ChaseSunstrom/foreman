@@ -375,6 +375,24 @@ class PlanReadings(CodeCase):
         self.assertEqual(self.task()["status"], "done", r.stdout)
 
 
+class MissNote(CodeCase):
+    """T-2378 (#5 in fm code): a shell run that fails on a missing tool goes through Claude Code's own failure hook, so
+    the model reads the same miss note and the task can't finish past the miss."""
+
+    def test_a_missing_tool_in_a_run_gets_the_miss_note_and_the_finish_check(self):
+        f = self.serve("openai", plan(), call("run", cmd="nosuchtool-q7 --version"),
+                       call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
+        r = self.code("fix add", "--model", "fake", check=False)
+        self.assertIn("`nosuchtool-q7` is missing", f.said(2))
+        self.assertIn('Find it: fm which', f.said(2))
+        import fmcore
+        p = fmcore.find_project(self.repo)
+        misses = [e for e in fmcore.ledger_events(p, ("capability_miss",))
+                  if (e.get("data") or {}).get("name") == "nosuchtool-q7"]
+        self.assertEqual([e["task"] for e in misses], [self.task()["id"]])
+        self.assertNotEqual(self.task()["status"], "done", r.stdout)  # fm task finish refuses past an open miss
+
+
 class AnyRequest(CodeCase):
     """T-1320: fm code takes any request: a question gets an answer (no task, nothing changed), and a plan whose check
     can't run here goes back to the planner instead of ending the run."""

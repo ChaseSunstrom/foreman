@@ -108,6 +108,31 @@ class GoalPage(unittest.TestCase):
             self.assertIn(word, text)
 
 
+class LacksPage(unittest.TestCase):  # T-2378: #5 on the site, its figures from the ledger (site/stats.py)
+    def test_the_tools_it_lacks_page_names_every_surface_and_renders_from_state(self):
+        sys.path.insert(0, SITE)
+        try:
+            import pages
+            import build
+        finally:
+            sys.path.pop(0)
+        page = next(x for x in pages.PAGES if x["slug"] == "lacks")
+        text = json.dumps(page["blocks"], default=str)
+        for word in ("fm which", "fm new tool", "fm ask", "--later", "never", "fm code", "Codex", "MCP", "band"):
+            self.assertIn(word, text)
+        tools = {"misses": 41, "resolved": 30, "proved": 7, "searches": 55, "queued": 3, "refused": 1}
+        html = build.render_page(page, {"tools": tools}, pages.PAGES)
+        for figure in ("41", "30", "55"):
+            self.assertIn(figure, html)
+        self.assertIn('class="tiles"', build.render_page(page, {}, pages.PAGES))  # no data yet: zeros, still a figure
+        root = os.path.dirname(SITE)
+        for name in ("README.md", "MASTER.md", "CHANGELOG.md"):  # each surface named where a reader looks
+            with open(os.path.join(root, name), encoding="utf-8") as f:
+                doc = f.read()
+            for word in ("`grants`", "fm which", "PostToolUseFailure"):
+                self.assertIn(word, doc, f"{name}: {word}")
+
+
 class JudgmentPage(unittest.TestCase):  # T-2344: #2 and #8 on the site, its figures from fm calibration --json
     def test_judgment_page_describes_the_plan_shape_races_doors_and_scores_from_calibration_data(self):
         sys.path.insert(0, SITE)

@@ -582,11 +582,13 @@ class Run:
         """T-1607: the writable set for this run's commands, None when they run unconfined."""
         return worker_confinement(self.root)[0]
 
-    def hook(self, event, tool, tool_input, response=None):
+    def hook(self, event, tool, tool_input, response=None, error=None):
         pl = {"session_id": f"fm-code-{self.tid or 'plan'}", "cwd": self.root, "hook_event_name": event, "tool_name": tool,
               "tool_input": tool_input}
         if response is not None:
             pl["tool_response"] = response
+        if error is not None:  # T-2378: PostToolUseFailure's payload carries the failure as error
+            pl["error"] = error
         return subprocess.run([sys.executable, HOOK, event], input=json.dumps(pl), capture_output=True, text=True,
                               timeout=120, cwd=self.root, env=self.env())
 
@@ -603,6 +605,17 @@ class Run:
             return None
         why = str(hs.get("permissionDecisionReason") or r.stderr.strip() or f"the guard exited {r.returncode}")
         return ("it needs the user's yes, which fm code can't ask for: " + why) if decision == "ask" else why
+
+    def failed(self, tool, tool_input, error):
+        """T-2378: a failed tool call goes through Claude Code's own PostToolUseFailure hook (it also records what
+        PostToolUse would), so fm code's task gets the same capability-miss record and finish check; its note, or ''."""
+        try:
+            r = self.hook("PostToolUseFailure", tool, tool_input, error=error)
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        hs = (m.extract_json(r.stdout) or {}).get("hookSpecificOutput")
+        note = hs.get("additionalContext") if isinstance(hs, dict) else None
+        return fmcore.fit(fmcore.plain(note), 600) if isinstance(note, str) else ""
 
     def after(self, tool, tool_input, response):
         try:  # what Claude Code's PostToolUse records (touched files, runs); never stops the run
@@ -796,8 +809,13 @@ class Run:
         if why:
             return f"refused by Foreman's guard: {why}"
         code, out = run_bounded(cmd, self.root, RUN_TIMEOUT, self.env(), self.cap, confine=self.confine())
-        self.after("Bash", {"command": cmd}, {"stdout": out, "stderr": "", "interrupted": code is None})
-        return (f"timed out after {RUN_TIMEOUT} s" if code is None else f"exit {code}") + (f"\n{out}" if out else "")
+        note = ""
+        if code == 0:
+            self.after("Bash", {"command": cmd}, {"stdout": out, "stderr": "", "interrupted": False})
+        else:  # T-2378: a failure is Claude Code's failure event, as it would be in a session
+            note = self.failed("Bash", {"command": cmd}, out if code is not None else f"timed out after {RUN_TIMEOUT} s\n{out}")
+        return (f"timed out after {RUN_TIMEOUT} s" if code is None else f"exit {code}") + (f"\n{out}" if out else "") \
+            + (f"\n{note}" if note else "")
 
     # -- the stations
     def phase(self, name, profile, prompt):
@@ -1561,7 +1579,9 @@ def _reset_at(text, now=None):
     now = time.time() if now is None else now
     t = time.localtime(now)
     at = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, h, mi, 0, 0, 0, -1))
-    return int(at + 86400 if at <= now else at)
+    if at <= now:  # tomorrow's clock time, not 24 hours on: mktime rolls the day and finds tomorrow's DST (T-2378)
+        at = time.mktime((t.tm_year, t.tm_mon, t.tm_mday + 1, h, mi, 0, 0, 0, -1))
+    return int(at)
 
 
 def _subreaper(on):

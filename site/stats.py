@@ -111,6 +111,9 @@ def ledger(state, kinds):
         "findings": {"lenses": dict(lenses.most_common(6)), "severity": dict(severities.most_common(4))},
         "subagents": dict(agents.most_common(6)),
         "gate_seconds": {"runs": len(gate_secs), "median": sorted(gate_secs)[len(gate_secs) // 2] if gate_secs else 0},
+        "tools": {"misses": totals["capability_miss"], "resolved": totals["miss_resolved"],  # T-2378: #5's page
+                  "proved": totals["tool_proved"], "searches": totals["tool_search"], "queued": totals["grant_queued"],
+                  "refused": totals["grant_refused"]},
     }
 
 

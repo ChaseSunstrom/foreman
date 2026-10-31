@@ -125,8 +125,14 @@ def _hook(agent, event, raw):
     base = {k: pl[k] for k in ("session_id", "prompt", "source", "tool_response") if k in pl}
     if agent == "opencode" and "output" in pl:
         base["tool_response"] = {"stdout": str(pl["output"] or "")}
+    if ev == "PostToolUse":  # T-2378: no host has a failure event, so an after-tool event whose output shows a missing
+        said = _said(base.get("tool_response"))  # tool is Claude Code's PostToolUseFailure: the same miss and note
+        if _MISS_HINT.search(said):
+            import fmhooks  # only past the cheap check: most after-tool events never load it
+            if fmhooks._MISSING.search(said[-4000:]):
+                ev, base["error"] = "PostToolUseFailure", said[-4000:]
     base.update(hook_event_name=ev, cwd=cwd)
-    calls = _calls(agent, pl, cwd) if ev in ("PreToolUse", "PostToolUse") else [None]
+    calls = _calls(agent, pl, cwd) if ev in ("PreToolUse", "PostToolUse", "PostToolUseFailure") else [None]
     for call in calls:
         payload = dict(base)
         if call:
@@ -143,6 +149,17 @@ def _hook(agent, event, raw):
     ctx = hs.get("additionalContext") or text
     stop = o.get("reason") if o.get("decision") == "block" else (err.strip() if code == 2 and ev == "Stop" else None)
     return _answer(agent, event, ev, ctx, stop, code, err)
+
+
+_MISS_HINT = re.compile(r"not found|No module named|Cannot find module")
+
+
+def _said(r):
+    """A host's tool response as text: a string, or a dict's stdout, stderr, output and error."""
+    if isinstance(r, str):
+        return r
+    return "\n".join(str(r[k]) for k in ("stdout", "stderr", "output", "error") if isinstance(r.get(k), str)) \
+        if isinstance(r, dict) else ""
 
 
 def _deny(agent, reason):
@@ -290,7 +307,8 @@ def rules_text():
             f"- Follow `fm next`: the one next required action and how to do it.\n"
             f"- Nothing is done without fresh evidence: run each criterion's verify command, then "
             f"`fm task finish ID --audit \"<how>\"`.\n"
-            f"- A refused command says why and how it is granted; never work around the guard.\n"
+            f"- A refused command says why and how it is granted; never work around the guard. A missing tool: "
+            f"`fm which X`; an install waits for the user: `fm ask ID plugin --later`.\n"  # T-2378: #5 on every host
             f"- The full rules: {os.path.join(PLUGIN, 'rules', 'foreman.md')}")
 
 

@@ -100,6 +100,11 @@ TOOLS = [
     ("calibration", "Judgment's track record (T-2344): stated-confidence buckets per kind, the Brier beside the base rate's, "
      "the research and race bars, races run and how often the first choice lost, tasks parked at a one-way door. "
      "Read-only: it settles nothing and moves no bar (fm calibration does).", _TEXT, None),
+    ("which", "What already does a piece of work (fm which, T-2378): past fixes, project tools, MCP servers, binaries, "
+     "skills, playbooks, fm commands, stack cards and plugins that hold its words, each shelf's best first. Read-only: "
+     "it logs no search receipt.", _obj(["task"], task=_str("the work, in words", cap=300)), None),
+    ("grants", "Install grants queued for the user (T-2374): per open task, what is asked and why, the miss behind it, "
+     "what was searched, the fallback, and what a yes unblocks. Read-only: a grant is the user's to answer.", _TEXT, None),
 ]
 MAX_LINE = 1_000_000
 
@@ -203,6 +208,21 @@ def _call(p, name, args):
                 m["items"] = [dict(it, state=fmmandate.item_state(it, by)) for it in m.get("items") or []]
             return json.dumps({"goal": m, "line": fmmandate.goal_line(p), "verdict": fmmandate.fresh_verdict(p, m)},
                               ensure_ascii=False), False
+        if name == "which":  # T-2378: the shelves searched in-process, so no tool_search receipt lands on a task
+            import fmwhich
+            task = args.get("task")
+            if not isinstance(task, str) or not fmwhich.words(task):
+                return "task: the work in words, e.g. render a chart from a CSV", True
+            failed = []
+            got = fmwhich.search(task, p, failed)
+            return json.dumps({"task": task, **{k: [{x: r.get(x, "") for x in ("name", "load", "summary", "source", "grant")}
+                                                    for r in v[:5]] for k, v in got.items()}, "skipped": failed},
+                              ensure_ascii=False, default=str), False
+        if name == "grants":  # T-2378: the queue as fm todo shows it, without the command (the user's to run)
+            import fmgrants
+            briefs = c.load_briefs(p)
+            return json.dumps([{"task": b.id, "text": fmgrants.text(d), "unblocks": fmgrants.unblocks(p, b, briefs)}
+                               for b, d in fmgrants.queued(p, briefs)], ensure_ascii=False), False
         if name == "calibration":  # T-2344: fm calibration's JSON without its writes
             import fmoutcomes
             return json.dumps(fmoutcomes.snapshot(p), ensure_ascii=False), False
