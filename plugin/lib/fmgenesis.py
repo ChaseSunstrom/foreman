@@ -491,10 +491,11 @@ def read_check(p):
                     passes.setdefault(str(x.get("name")), []).append(ts.timestamp())
         text = raw.decode("utf-8", "replace")
         secs = _parts(text) if len(_logical(text)) >= SECTION_FLOOR or len(text) >= SECTION_CHARS else []
-        # as _read splits it: a sectioned file needs a pass for every section (one in the window), else a whole-file pass
-        names = [f"{name}#{k}" for _, _, k in _groups(secs)] if len(secs) >= 2 else [name]
-        near = any(mtime - PASS_WINDOW <= t <= mtime + 2 for n in names for t in passes.get(n, ()))
-        if name not in rec and near and all(n in passes for n in names):
+        # a whole-file pass in the window (every file read before T-2243's section reads), or, as _read splits it, a pass
+        # for every section with one in the window: a put that failed on one section still logged the others' passes
+        near = lambda ns: any(mtime - PASS_WINDOW <= t <= mtime + 2 for n in ns for t in passes.get(n, ()))  # noqa: E731
+        names = [f"{name}#{k}" for _, _, k in _groups(secs)] if len(secs) >= 2 else []
+        if name not in rec and (near([name]) or names and near(names) and all(n in passes for n in names)):
             continue
         problems.append(f"{name}: no cold-read pass for its current text: fm genesis put it again")
     return {"files": len(files), "problems": problems}
