@@ -30,7 +30,19 @@ ID = re.compile(r"([A-Za-z0-9_./-]+\.py)::[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za
 REV = re.compile(r"[0-9a-f]{40}")
 AGENTS = ("oracle", "empty")
 SESSIONS = ("foreman", "plain")  # T-2262: a headless claude session a goal, in a temp copy of the goal's repo
-FAULTS = ("kill", "pause", "compaction", "misleading")
+FAULTS = ("kill", "pause", "compaction", "misleading", "missing")
+# T-2377: the missing fault. Never shadowed: an interpreter, the repo's vcs, Foreman and its host. The package managers log and refuse.
+KEEP = re.compile(r"python[\d.]*|sh|bash|env|git|fm|claude")
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*")
+PMS = ("pip", "pip3", "npm", "npx", "yarn", "pnpm", "uv", "poetry", "conda", "apt", "apt-get", "brew", "cargo", "gem", "go",
+       "pacman", "dnf", "yum", "apk", "zypper")
+INSTALL = {"install", "add", "i", "ci", "get"}  # a package manager's argument that installs (pacman: any -S...)
+SHIM_READ = 1 << 20  # bytes of a shim log the grade reads
+NO_BINARY = "no hidden check starts a binary beyond the language runtime that is on this machine"
+SHIM = "#!/bin/sh\n{body}"
+PM_SHIM = ("echo \"pm {name} $(printf '%s ' \"$@\" | tr '\\n\\r' '  ')\" >> {log}\n"
+           "echo \"{name}: refused: installing is off in this exam\" >&2\nexit 1\n")
+GONE_SHIM = "echo \"shadow {name}\" >> {log}\necho \"{name}: command not found\" >&2\nexit 127\n"
 KILL_T, PAUSE_GAP, COMPACT_AT, SESSION_T = 3, 30, 20000, 60  # min the kill lets a turn run; s a pause lasts; tokens; min a turn
 PLANT = "test_planted_old_behaviour.py"
 GOAL = "{goal}\n\nWork in this repo until the change is done and its tests pass."
@@ -502,7 +514,64 @@ def went(res):
     return f"where the time went: tools {top(tools)}; fm verbs {top(verbs)}"
 
 
-def _goal_session(agent, base, key, work, model, budget, timeout, faults):
+def _binaries(*texts):
+    """T-2377: the binaries test files start by name (a literal first argv word of a subprocess call or a which lookup, its
+    folder dropped), most used first; never an interpreter, git, fm, claude or a package manager. ponytail: a name held in a
+    variable is missed, a file that doesn't parse adds none."""
+    import collections
+    seen = collections.Counter()
+    for text in texts:
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            continue
+        for n in ast.walk(tree):
+            f = n.func if isinstance(n, ast.Call) else None
+            if not (f and n.args and isinstance(f, ast.Attribute) and f.attr in ("run", "call", "check_call", "check_output", "Popen", "which")
+                    and getattr(f.value, "id", "") in ("subprocess", "shutil")):
+                continue
+            a = n.args[0]
+            if isinstance(a, (ast.List, ast.Tuple)) and a.elts:
+                a = a.elts[0]
+            words = a.value.split() if isinstance(a, ast.Constant) and isinstance(a.value, str) else []
+            w = os.path.basename(words[0]) if words else ""
+            if NAME.fullmatch(w) and not KEEP.fullmatch(w) and w not in PMS:
+                seen[w] += 1
+    return [w for w, _ in sorted(seen.items(), key=lambda x: (-x[1], x[0]))]
+
+
+def _shadow(p, key):
+    """(binary, None) to shadow for a goal, or (None, why not): the first of the binaries its hidden checks start that is on
+    this machine, read from the checks' test files at the target (git blobs: nothing runs)."""
+    _may_run(p, key["src"])
+    texts = [_show(key["src"], key["target"], f) or "" for f in sorted({i.split("::")[0] for i in key["checks"]})]
+    return next((w for w in _binaries(*texts) if shutil.which(w)), None), NO_BINARY
+
+
+def _shims(d, log, shadow):
+    """The shim folder: every package manager logs its call to `log` and refuses; `shadow` logs and exits 127."""
+    os.makedirs(d)
+    for name, body in [(n, PM_SHIM) for n in PMS] + [(shadow, GONE_SHIM)]:
+        path = os.path.join(d, name)
+        c.write_atomic(path, SHIM.format(body=body.format(name=name, log=shlex.quote(log))))
+        os.chmod(path, 0o755)
+
+
+def _shim_counts(log):
+    """(installs, shadow calls) from a shim log, or None when it can't be read: install calls are the package-manager lines
+    whose arguments hold an install word; at most SHIM_READ bytes are read (the session can write the log: ponytail, same
+    user; a hostile session could erase it, which reads as unknown or zero)."""
+    try:
+        with open(log, encoding="utf-8", errors="replace") as f:
+            lines = f.read(SHIM_READ).splitlines()
+    except OSError:
+        return None
+    pm = [x.split()[1:] for x in lines if x.startswith("pm ")]
+    return (sum(any(a in INSTALL or (w[0] == "pacman" and a.startswith("-S")) for a in w[1:]) for w in pm if w),
+            sum(x.startswith("shadow ") for x in lines))
+
+
+def _goal_session(agent, base, key, work, model, budget, timeout, faults, shadow=None, shim_log=None):
     """One goal in a temp copy of its repo (with .git), as fmexam._session_arm does it, with the faults planted: a
     misleading test before the session; a kill (the first turn capped at KILL_T minutes, then resumed by its id); a pause
     (the turn told to stop at a checkpoint, PAUSE_GAP seconds, then resumed); a forced small compaction window.
@@ -526,6 +595,11 @@ def _goal_session(agent, base, key, work, model, budget, timeout, faults):
         else:
             env.update(FOREMAN_QUIET="1", PATH=os.environ.get("PATH", ""))
             plugins, settings = [], fmbench._bare_guard(c.PLUGIN_ROOT)
+        if shadow:  # T-2377: first on the session's PATH only; the grade's own runs never see the folder
+            os.makedirs(os.path.dirname(shim_log), exist_ok=True)
+            open(shim_log, "w").close()
+            _shims(os.path.join(tmp, "shims"), shim_log, shadow)
+            env["PATH"] = os.path.join(tmp, "shims") + os.pathsep + env.get("PATH", "")
         if "compaction" in faults:
             env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(COMPACT_AT)
         if "misleading" in faults:  # ponytail: an always-red decoy (no per-goal knowledge needed), so any goal's checks contradict it
@@ -567,6 +641,9 @@ def _goal_session(agent, base, key, work, model, budget, timeout, faults):
         for f in log:
             if f["kind"] == "misleading":
                 f["kept"] = os.path.isfile(os.path.join(wt, f["file"]))
+        if shadow:
+            seen = _shim_counts(shim_log) or (None, None)
+            log.append({"kind": "missing", "at": since(), "binary": shadow, "shadow_calls": seen[1], "installs": seen[0]})
         shutil.copytree(wt, work, symlinks=True, ignore=shutil.ignore_patterns(".git"))
         import fmhooks
         events = os.path.join(state, "events.jsonl")  # a guard block is an event in the session's own state
@@ -599,13 +676,22 @@ def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=N
         for d in (os.path.join(_root(p), run, x, agent) for x in ("answers", "faults")):
             shutil.rmtree(d, ignore_errors=True)  # this run's, not a rerun's
         c.write_atomic(_stamp(p, run, agent), c.plain(model or "default")[:60])
-    errors = {}
+    errors, skipped = {}, {}
 
     def session(s):
         key, work = _key(p, run, s["id"]), _work(p, run, agent, s["id"])
         shutil.rmtree(work, ignore_errors=True)
+        fdir = os.path.join(_root(p), run, "faults", agent)
+        shadow = None
+        if "missing" in faults:  # T-2377: a goal whose checks start no binary to shadow is skipped with its reason, no session
+            shadow, why = _shadow(p, key)
+            if not shadow:
+                skipped[s["id"]] = why
+                c.write_atomic(os.path.join(fdir, s["id"] + ".json"), json.dumps([{"kind": "missing", "skipped": why}], indent=1))
+                return
         with fmbudget.reserve("exam-arm", est(1), "a smaller --limit"):  # the day's spend may have moved since the last goal
-            cost, err, log, info, activity = _goal_session(agent, os.path.join(_root(p), run, s["id"]), key, work, model, budget, timeout, faults)
+            cost, err, log, info, activity = _goal_session(agent, os.path.join(_root(p), run, s["id"]), key, work, model, budget, timeout,
+                                                           faults, shadow, os.path.join(fdir, s["id"] + ".shim.log"))
             fmbudget.record("exam-arm", cost, project=p.slug, detail=f"long {agent} {s['id']}")
         c.write_atomic(os.path.join(_root(p), run, "faults", agent, s["id"] + ".json"), json.dumps(log, indent=1))
         c.write_atomic(os.path.join(_root(p), run, "faults", agent, s["id"] + ".run.json"), json.dumps(info, indent=1))
@@ -621,7 +707,8 @@ def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=N
         shutil.copytree(os.path.join(_root(p), run, s["id"], "repo"), work, ignore=shutil.ignore_patterns(".git"))
         if agent == "oracle":
             _overlay(work, key["src"], key["target"], key["files"])
-    return {"run": run, "agent": agent, "answered": [s["id"] for s in picked], "errors": errors}
+    return {"run": run, "agent": agent, "answered": [s["id"] for s in picked if s["id"] not in skipped], "errors": errors,
+            "skipped": skipped}
 
 
 def _metrics(p, run, agent, g):
@@ -650,6 +737,27 @@ def _metrics(p, run, agent, g):
             "guard_blocks": num("guard_blocks", int)}
 
 
+def _read_list(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return [x for x in data if isinstance(x, dict)] if isinstance(data, list) else []
+
+
+def _missing(shim_log, miss, true_done):
+    """T-2377: one goal's missing-fault fields, read from outside signals only (never Foreman's ledger): installs_attempted
+    from the shim log, miss_resolved = the hidden checks pass (outside the session, the real PATH) with no install call,
+    shadow_calls beside them as a diagnostic. All None for a goal the fault didn't run on, or whose shim log is gone."""
+    none = {"binary": None, "installs_attempted": None, "shadow_calls": None, "miss_resolved": None}
+    seen = _shim_counts(shim_log) if miss else None
+    if not seen:
+        return none
+    return {"binary": c.fit(c.plain(str(miss.get("binary"))), 60), "installs_attempted": seen[0], "shadow_calls": seen[1],
+            "miss_resolved": bool(true_done) and seen[0] == 0}
+
+
 def _totals(goals):
     """The run's rows over its answered goals: a sum over the goals that know it (None when none does) and the count of
     goals that don't, under "unknown"."""
@@ -659,6 +767,7 @@ def _totals(goals):
     secs = [g["secs"] for g in mine if g["true_done"] and g.get("secs") is not None]
     out = {"rate": round(sum(g["true_done"] for g in goals) / len(goals), 3) if goals else 0,
            "false_done": tot("false_done"), "resumes_needed": tot("resumes_needed"), "unfinished": tot("unfinished"), "guard_blocks": tot("guard_blocks"),
+           "installs_attempted": tot("installs_attempted"), "miss_resolved": tot("miss_resolved"),
            "cost": round(tot("cost"), 4) if known("cost") else None,
            "cost_unknown": sum(g.get("cost") is None or g.get("cost_unknown") is not False for g in mine),
            "hours_to_done": round(min(secs) / 3600, 3) if secs else None,
@@ -673,9 +782,14 @@ def grade(p, run, agent):
     import fmgenesis
     _agent(agent)
     meta = _load(p, run)
-    goals = []
+    goals, skipped = [], {}
     for s in meta["scenarios"]:  # every goal counts: one without an answer is not done
         key, work = _key(p, run, s["id"]), _work(p, run, agent, s["id"])
+        fdir = os.path.join(_root(p), run, "faults", agent)
+        miss = next((f for f in _read_list(os.path.join(fdir, s["id"] + ".json")) if f.get("kind") == "missing"), None)
+        if miss and miss.get("skipped"):  # T-2377: --faults missing found no binary to shadow: no session ran, the goal is not scored
+            skipped[s["id"]] = c.fit(c.plain(str(miss["skipped"])), 200)
+            continue
         g = {"id": s["id"], "answered": os.path.isdir(work), "true_done": False, "checks": len(key["checks"]),
              "checks_passed": 0, "regressions": []}  # T-2320: partial credit, so a near miss reads as one
         if g["answered"]:
@@ -693,6 +807,7 @@ def grade(p, run, agent):
                 g.update(true_done=set(key["checks"]) <= ok, regressions=[i for i in key["sample"] if i not in ok],
                          checks_passed=len(set(key["checks"]) & set(ok)))
         g.update(_metrics(p, run, agent, g))
+        g.update(_missing(os.path.join(fdir, s["id"] + ".shim.log"), miss if g["answered"] else None, g["true_done"]))
         goals.append(g)
     for g in goals:  # T-2325: the goal's kept activity summary, None when none was kept
         try:
@@ -701,6 +816,8 @@ def grade(p, run, agent):
         except (OSError, ValueError):
             a = None
         g["activity"] = a if g["answered"] and isinstance(a, dict) else None
+    if skipped and not goals:
+        raise ValueError(f"{run}: --faults missing skipped every goal ({next(iter(skipped.values()))})")
     if not any(g["answered"] for g in goals):
         raise ValueError(f"no answers from {agent!r} in {run} (fm exam long run {run} --agent {agent})")
     try:  # a session arm's model, stamped at run so a Haiku line never decides; the zero-token arms have none
@@ -711,7 +828,7 @@ def grade(p, run, agent):
     res = {"tier": "long", "agent": agent, "run": run, "at": c.now(), "gen": fmgenesis.current(p), "model": model,
            "scenarios": len(goals), "true_done": sum(g["true_done"] for g in goals),
            "regressions": sum(len(g["regressions"]) for g in goals), "checks": sum(g["checks"] for g in goals),
-           "checks_passed": sum(g["checks_passed"] for g in goals), "goals": goals, **_totals(goals)}
+           "checks_passed": sum(g["checks_passed"] for g in goals), "goals": goals, "skipped": skipped, **_totals(goals)}
     fmgenesis.exam_line(p, res)
     return res
 
@@ -731,7 +848,10 @@ def cmd(p, args):
         r = (run(p, rest[0], agent, args.model, args.budget, args.timeout, faults, args.limit, args.jobs) if verb == "run" else grade(p, rest[0], agent))
         text = (f"{agent} answered {len(r['answered'])} goal(s) of {rest[0]}" if verb == "run" else
                 f"{agent} {rest[0]}: {r['true_done']}/{r['scenarios']} true done, {r['checks_passed']}/{r['checks']} checks, "
-                f"{r['regressions']} regressions\n{went(r)}")
+                f"{r['regressions']} regressions\n{went(r)}"
+                + (f"\nmissing fault: {r['installs_attempted']} install(s) attempted, {r['miss_resolved']} miss(es) resolved"
+                   if r["installs_attempted"] is not None else "")
+                + (f"\nskipped {len(r['skipped'])} goal(s): {next(iter(r['skipped'].values()))}" if r["skipped"] else ""))
         return fmcli.out(args, r, text)
-    raise ValueError("fm exam long gen [--from PATH] [--n N] | run RUN --agent oracle|empty|foreman|plain [--faults kill,pause,compaction,misleading] | "
+    raise ValueError("fm exam long gen [--from PATH] [--n N] | run RUN --agent oracle|empty|foreman|plain [--faults kill,pause,compaction,misleading,missing] | "
                      "grade RUN --agent oracle|empty|foreman|plain")
