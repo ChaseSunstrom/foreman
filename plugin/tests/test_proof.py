@@ -18,15 +18,15 @@ class Proof(ForemanTestCase):
         (step, cmd, result) evidence lines written as fm's own runs (ran); base: the commit its change starts at."""
         tid = self.fm_json("task", "new", "Do a thing", "--type", type, "--tier", "S", "--ac", "ok :: true",
                            "--step", "s")["id"]
-        for ev in evidence:
-            self.fm("task", "evidence", tid, *ev)
-        for f in files:
+        for f in files:  # the edits come first: a green run only clears a kind when it came after the last edit
             path = os.path.join(self.repo, f)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             if not os.path.exists(path):  # the classifiers read the file itself
                 with open(path, "w", encoding="utf-8") as fh:
                     fh.write("FROM scratch\n" if f.endswith("Dockerfile") else "x\n")
             c.log_event(self.p, "touched", task=tid, data={"file": path})
+        for ev in evidence:
+            self.fm("task", "evidence", tid, *ev)
         with c.lock(self.p.dir):
             b = c.find_brief(self.p, tid)
             for step, cmd, result in lines:
@@ -58,8 +58,8 @@ class Proof(ForemanTestCase):
 
     def test_a_task_whose_every_check_ran_green_is_never_listed(self):
         ok = self.task("calc.py", evidence=[("--step", "1", "--run", "true")])
-        shot = self.task("web/app.css", evidence=[("--step", "1", "--run", "true"),
-                                                  ("--step", "1", "--run", "echo fm shot app.css")])
+        shot = self.task("web/app.css", evidence=[("--step", "1", "--run", "true")],
+                         lines=[(1, "fm shot app.css", self.GREEN)])
         self.assertNotIn(ok, self.listed())
         self.assertNotIn(shot, self.listed(), "a shot named in the evidence covers the UI change")
 
@@ -224,10 +224,32 @@ class Proof(ForemanTestCase):
         self.task(evidence=[("--step", "1", "pytest", "ok")])
         for verb in ("status", "digest"):  # one function's text, with the kind counts
             self.assertIn(c.unproven_line(1, {"typed": 1}), self.fm(verb).stdout, verb)
+        self._renderers_call_unproven_line()
+
+    def _renderers_call_unproven_line(self):
+        """The genesis status text and the exam scorecard, run with the line function stubbed: each prints its return."""
+        import argparse
+        import io
+        from contextlib import redirect_stdout
+        from unittest import mock
+
         import fmexam
         import fmgenesis
-        for mod in (fmexam, fmgenesis):  # their renderers need a whole tower or exam run; the call is what's checked
-            self.assertIn("c.unproven_line(", open(mod.__file__, encoding="utf-8").read(), mod.__name__)
+        s = {"dir": "x", "gen0": False, "gap_map": False, "lineage": False, "coverage": False, "not_yet": False,
+             "generations": [], "live": None, "exam_lines": 0, "unproven": 2, "unproven_kinds": {"typed": 2}}
+        with mock.patch.object(c, "unproven_line", return_value="STUB-LINE") as line:
+            self.assertIn("STUB-LINE", fmgenesis._text(s))
+            line.assert_called_with(2, {"typed": 2})
+        card = {"rows": [], "agent": "foreman", "bar": 0.8, "smoke": 0, "selfmade": 0, "gaps": [], "seen": True,
+                "ok": True, "long": {"state": "no long run"}}
+        args = argparse.Namespace(action="scorecard", agent="foreman", bar=0.8, json=False, project=self.p.slug)
+        with mock.patch.object(c, "unproven_line", return_value="STUB-LINE") as line, \
+                mock.patch.object(fmgenesis, "scorecard", return_value=dict(card)), \
+                mock.patch.object(c, "unproven_summary", return_value={"n": 3, "counts": {"docs": 3}}), \
+                redirect_stdout(io.StringIO()) as buf:
+            fmexam.cmd_exam(args)
+        self.assertIn("STUB-LINE", buf.getvalue())
+        line.assert_called_with(3, {"docs": 3})
 
     def test_unproven_line_fm_proof_json_carries_per_kind_counts(self):
         self.task(evidence=[("--step", "1", "pytest", "ok")])
@@ -248,7 +270,7 @@ class Proof(ForemanTestCase):
 
     def test_proof_kind_next_names_the_newest_unproven_row_that_can_run_here(self):
         from unittest import mock
-        old = self.task(evidence=[("--step", "1", "pytest", "ok")])
+        old = self.task(evidence=[("--step", "1", "python3 -m unittest", "ok")])
         wait = self.task("Dockerfile", evidence=[("--step", "1", "--run", "true")])
         with mock.patch.object(c.shutil, "which", return_value=None):
             rows = {r["id"]: r for r in self.fm_json("proof")["tasks"]}
@@ -267,3 +289,101 @@ class Proof(ForemanTestCase):
         self.fm("task", "new", "Queued", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s")
         with mock.patch.object(c.shutil, "which", return_value="/bin/true"):
             self.assertNotIn("fm prove", c.next_for(self.p)[2], "a queued task comes first")
+
+    # --- T-2391 review: honest upgrades, unspoofable clears, no stuck cache
+    def test_review_an_upgrade_never_falls_back_to_a_run_that_cannot_fail(self):
+        empty = self.task(lines=[(1, "", self.RED)])
+        prose = self.task(evidence=[("--step", "1", "echo ok", "fine")])
+        gone = self.task(evidence=[("--step", "1", "no-such-tool-xyz --go", "fine")])
+        real = self.task(evidence=[("--step", "1", "python3 -m unittest", "ok")])
+        for tid, kind in ((empty, "red"), (prose, "typed"), (gone, "typed")):
+            need = self.needs(tid)[kind]
+            self.assertIn("needs a check that can fail", c.proof_waiting(self.p, need), tid)
+            self.assertNotIn("--run true", need["upgrade"], tid)
+        ok = self.needs(real)["typed"]
+        self.assertEqual(c.proof_waiting(self.p, ok), "")
+        self.assertIn("python3 -m unittest", ok["upgrade"])
+        self.assertIn("needs a check that can fail", self.fm("proof").stdout)
+
+    def test_review_a_command_that_only_mentions_the_proof_does_not_clear_its_kind(self):
+        t = self._doc_task("Run `fm proof --days 7` to see it.\n")
+        data = self.task("data/a.csv", lines=[(1, "pytest test_schema.py", self.GREEN)])
+        ui = self.task("web/app.css", lines=[(1, "echo fm shot app.css", self.GREEN)])
+        with c.lock(self.p.dir):
+            b = c.find_brief(self.p, t)
+            b.add_evidence("echo prove --docs", self.GREEN, step=1, ran=True)
+            c.save_brief(self.p, b)
+        got = self.listed()
+        self.assertEqual(got[t], ["docs"], "echo prove --docs is not a run of fm prove --docs")
+        self.assertEqual(got[data], ["data"], "a test file named schema is not a data check")
+        self.assertEqual(got[ui], ["ui-unshot"])
+        masked = self.task("Dockerfile", lines=[(1, "fm prove --infra || true", self.GREEN)])
+        self.assertEqual(self.listed()[masked], ["infra"], "a fallback hides the run's own exit status")
+        env = self.task("data/b.csv", lines=[(1, "CI=1 dbt test && echo done", self.GREEN)])
+        self.assertNotIn(env, self.listed(), "env assignments and a following && step are still the real run")
+
+    def test_review_a_green_run_must_come_after_the_last_edit_of_the_files_it_covers(self):
+        stale = self.task("Dockerfile")
+        fresh = self.task("Dockerfile")
+        for tid, ts in ((stale, "2020-01-01T00:00:00Z"), (fresh, "2999-01-01T00:00:00Z")):
+            with c.lock(self.p.dir):
+                b = c.find_brief(self.p, tid)
+                b.add_evidence("fm prove --infra", self.GREEN, step=1, ran=True, ts=ts)
+                c.save_brief(self.p, b)
+        got = self.listed()
+        self.assertEqual(got[stale], ["infra"], "the Dockerfile was edited after that run")
+        self.assertNotIn(fresh, got)
+
+    def test_review_vacuous_runs_are_read_from_the_start_of_a_log_line(self):
+        run = [("--step", "1", "--run", "true")]
+        quoted = self.task(evidence=run, log=["steer: the report said vacuous checks: ac 1"])
+        self.assertNotIn(quoted, self.listed())
+
+    def test_review_a_git_timeout_is_not_remembered_as_no_claims(self):
+        import subprocess
+        from unittest import mock
+        t = self._doc_task("Run `fm proof --days 7` to see it.\n")
+        real = c._git
+
+        def flaky(root, *a, **k):
+            if "diff" in a:
+                return subprocess.CompletedProcess(a, 124, "", "timed out")
+            return real(root, *a, **k)
+        memo = {}
+        with mock.patch.object(c, "_git", side_effect=flaky):
+            self.assertEqual(c.unproven(self.p, memo=memo), [])
+            self.assertEqual(c.unproven_summary(self.p)["n"], 0)
+        self.assertEqual(memo, {}, "a timed out diff is no verdict")
+        self.assertEqual([r["id"] for r in c.unproven(self.p, memo=memo)], [t])
+        self.assertTrue(memo)
+        self.assertEqual(c.unproven_summary(self.p)["n"], 1, "the timed out rollup was not kept as the answer")
+
+    def test_review_a_docs_edit_with_no_start_commit_is_reported_unknown(self):
+        t = self.task("docs/guide.md", evidence=[("--step", "1", "--run", "true")])
+        need = self.needs(t)["docs"]
+        self.assertIn("unknown", need["why"])
+        self.assertIn("fm prove --docs", need["upgrade"])
+
+    def test_review_perf_noise_reads_a_zero_median(self):
+        zero = self.task(type="PERFORMANCE", lines=[(1, "fast", "fast: 0.000s → 0.000s (5 runs each)")])
+        worse = self.task(type="PERFORMANCE", lines=[(1, "fast", "fast: 0.000s → 0.100s (5 runs each)")])
+        got = self.listed()
+        self.assertEqual(got[zero], ["perf-noise"])
+        self.assertNotIn(worse, got)
+
+    def test_review_the_cache_ignores_open_briefs_and_other_windows(self):
+        from unittest import mock
+        self.task(evidence=[("--step", "1", "pytest", "ok")])
+        cold = self.fm_json("proof")
+        self.assertIsInstance(cold["cold_s"], float, "the cold rollup's own time is printed")
+        path = os.path.join(self.p.dir, "unproven.json")
+        before = open(path, encoding="utf-8").read()
+        open_id = self.fm_json("task", "new", "Open", "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
+                               "--step", "s")["id"]
+        self.fm("task", "evidence", open_id, "--step", "1", "pytest", "ok")  # an active task saves its brief
+        with mock.patch.object(c, "unproven", side_effect=AssertionError("recomputed")):
+            self.assertEqual(c.unproven_summary(self.p)["n"], 1, "saving an open brief keeps the cache")
+        self.assertEqual(self.fm_json("proof", "--days", "7")["count"], 1)
+        self.assertEqual(open(path, encoding="utf-8").read(), before, "another window never overwrites the cache")
+        self.task(evidence=[("--step", "1", "pytest", "ok")])  # a done brief does
+        self.assertEqual(c.unproven_summary(self.p)["n"], 2)

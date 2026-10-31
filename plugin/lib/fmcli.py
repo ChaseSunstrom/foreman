@@ -160,7 +160,7 @@ def cmd_proof(args):
     for r in rows:
         text.append(f"- {r['id']} {c.fit(r['title'], 50)}: {', '.join(r['kinds'])}" + (f" ({r['why']})" if r["why"] else ""))
         text += [f"    {n['kind']}: {n['upgrade']}" + (f"  (waiting: {n['waiting']})" if n["waiting"] else "") for n in r["needs"]]
-    out(args, {"count": len(rows), "counts": got["counts"], "days": args.days, "tasks": rows}, "\n".join(text))
+    out(args, {"count": len(rows), "counts": got["counts"], "days": args.days, "cold_s": got.get("cold_s"), "tasks": rows}, "\n".join(text))
 
 
 def _block(item, r, key):
