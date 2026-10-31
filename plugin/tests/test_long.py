@@ -74,7 +74,7 @@ class Long(ForemanTestCase):
             self.assertEqual(g["true_done"], done, g)
             self.assertEqual(g["regressions"], 0, g)
         long = [x for x in self.lines() if x.get("tier") == "long"]
-        self.assertEqual([(x["agent"], x["true_done"], x["model"]) for x in long], [("oracle", 2, "default"), ("empty", 0, "default")])
+        self.assertEqual([(x["agent"], x["true_done"], x["model"]) for x in long], [("oracle", 2, None), ("empty", 0, None)])  # zero-token arms: no model
 
     def lines(self):
         import fmcore as c
@@ -91,3 +91,73 @@ class Long(ForemanTestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("fm prove", r.stderr)
         self.assertFalse(os.path.exists(ran))
+
+    def work(self, run, agent, sid="T-1001"):
+        import fmcore as c
+        import fmlong
+        return os.path.join(fmlong._root(c.find_project(self.repo)), run, "work", agent, sid)
+
+    def grade(self, run, agent):
+        return json.loads(self.fm("exam", "long", "grade", run, "--agent", agent, "--json").stdout)
+
+    def test_an_answer_cannot_shadow_the_stdlib_or_stand_in_for_a_hidden_test(self):
+        run = json.loads(self.gen().stdout)["run"]
+        self.fm("exam", "long", "run", run, "--agent", "empty")
+        w = self.work(run, "empty")
+        write(w, "unittest.py", "raise SystemExit(0)\n")  # would end any run that imports it first
+        write(w, "test_app.py", "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_f1(self):\n        pass\n")
+        self.assertEqual(self.grade(run, "empty")["true_done"], 0)
+
+    def test_a_break_is_a_regression_and_every_goal_counts_in_the_total(self):
+        run = json.loads(self.gen().stdout)["run"]
+        self.fm("exam", "long", "run", run, "--agent", "oracle")
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(self.work(run, "oracle")))), "T-1003", "key.json")) as f:
+            self.assertTrue(json.load(f)["sample"])
+        self.assertEqual(self.grade(run, "oracle")["regressions"], 0)  # by construction
+        f = os.path.join(self.work(run, "oracle"), "app.py")
+        text = open(f).read()
+        with open(f, "w") as fh:
+            fh.write(text.replace("return 0", "return 9"))
+        g = self.grade(run, "oracle")
+        self.assertTrue(g["regressions"] >= 1 and g["true_done"] == 2, g)
+        os.rename(self.work(run, "oracle", "T-1003"),os.path.join(self.tmp, "gone"))  # one unanswered
+        g = self.grade(run, "oracle")
+        self.assertEqual((g["scenarios"], g["true_done"]), (2, 1), g)  # the unanswered goal is in the 2, not in the 1
+
+    def test_grade_rechecks_trust(self):
+        import fmcore as c
+        run = json.loads(self.gen().stdout)["run"]
+        self.fm("exam", "long", "run", run, "--agent", "oracle")
+        os.remove(os.path.join(c.state_dir(), "prove-trusted.json"))
+        r = self.fm("exam", "long", "grade", run, "--agent", "oracle", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("fm prove", r.stderr)
+
+    def test_a_runner_timeout_is_none_not_all_red_and_a_forged_key_is_refused(self):
+        import fmlong
+        t = os.path.join(self.tmp, "slow")
+        write(t, "tests/test_s.py", "import time, unittest\n\n\nclass T(unittest.TestCase):\n    def test_a(self):\n        time.sleep(30)\n")
+        old, fmlong.RUN_T = fmlong.RUN_T, 1
+        try:
+            self.assertIsNone(fmlong._passed(t, ["tests/test_s.py::test_s.T.test_a"], ["tests"]))
+        finally:
+            fmlong.RUN_T = old
+        key = {"id": "x", "checks": ["../x.py::a.B.c"], "sample": [], "files": [], "test_files": [], "pypath": [],
+               "base": "0" * 40, "target": "0" * 40}
+        with self.assertRaises(ValueError):
+            fmlong._check_key(key)
+        with self.assertRaises(ValueError):
+            fmlong._check_key(dict(key, checks=[], target="--output=x"))
+
+    def test_n_zero_and_a_gen_that_keeps_nothing_fail_without_a_run(self):
+        fmprove.remember(self.src)
+        self.assertNotEqual(self.fm("exam", "long", "gen", "--from", self.src, "--n", "0", check=False).returncode, 0)
+        empty = os.path.join(self.tmp, "empty")
+        subprocess.run(["git", "init", "-q", "-b", "main", empty], check=True)
+        fmprove.remember(empty)
+        r = self.fm("exam", "long", "gen", "--from", empty, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.gen().returncode, 0)
+        import fmcore as c
+        import fmlong
+        self.assertEqual(os.listdir(fmlong._root(c.find_project(self.repo))), ["l001"])

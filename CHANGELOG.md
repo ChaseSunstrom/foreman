@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `fm exam long gen|run|grade` (T-2258): replays real past task changes from their base commit with hidden checks from the tests each change added, in an isolated runner, scored by zero-token oracle and empty arms (true done out of all scenarios, plus regressions) as `tier: long` exam lines
+
 - `fm genesis drift` and the put-time cold read now share one whole-line CLEAN verdict pattern: `CLEANUP needed`, `Not CLEAN`, `CLEAN-ish` and `CLEAN but …` no longer pass
 - A lane's merge-conflict brief now gives steps that work from the main checkout: message the lane's builder, or `cd` into the worktree as its own command, with a drop-and-redo fallback
 - `fm exam grade` no longer loses a whole run to one scenario's error: the rest still grade, the broken one is listed as ungraded with its error, and the exit is non-zero

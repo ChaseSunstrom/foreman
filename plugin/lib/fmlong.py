@@ -2,16 +2,20 @@
 base commit as a fresh one-commit repo with no future history; the hidden checks are the tests the change added, kept
 only when they fail at the base and pass with the change's files laid over it. Answers are work trees; two zero-token
 arms (oracle lays the shipped files over, empty changes nothing). Scores go to the tower's exam.jsonl as tier long.
-Local history only: nothing is cloned or fetched, and a repo's tests run only in a tree the user trusts."""
+Local history only: nothing is cloned or fetched, and a repo's tests run only in a tree the user trusts, in a throwaway
+copy, by a runner outside the tree that loads each hidden test by its path (an answer can't shadow the stdlib or a
+test module)."""
 import ast
 import json
 import os
 import random
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 import fmcore as c
 import fmfind
@@ -19,16 +23,32 @@ import fmprove
 
 TASK = re.compile(r"\(T-(\d+)\)$")
 RUN = re.compile(r"l\d{3,}")
+ID = re.compile(r"([A-Za-z0-9_./-]+\.py)::[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*")
+REV = re.compile(r"[0-9a-f]{40}")
 AGENTS = ("oracle", "empty")
-SCAN, CAP_N, MAX_CHECKS, SAMPLE, RUN_T = 600, 20, 5, 10, 120  # commits read; goals; checks a goal; regression sample; s a run
-RUNNER = ("import io, json, sys, unittest\n"
-          "class R(unittest.TestResult):\n"
-          "    ok = []\n"
-          "    def addSuccess(self, t):\n        self.ok.append(t.id())\n"
-          "out, ids = sys.argv[1], sys.argv[2:]\n"
-          "s = unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromName(i) for i in ids)\n"
-          "s.run(R())\n"
-          "json.dump(R.ok, open(out, 'w'))\n")
+# commits read; goals; checks a goal; new ids tried a goal; regression sample; s a run; s a gen
+SCAN, CAP_N, MAX_CHECKS, MAX_NEW, SAMPLE, RUN_T, GEN_T = 600, 20, 5, 50, 10, 120, 900
+RUNNER = """import importlib.util, json, os, sys, unittest
+spec = json.load(open(sys.argv[1]))
+os.chdir(spec["tree"])
+sys.path.extend(spec["paths"])
+ok = []
+for i in spec["ids"]:
+    try:
+        f, name = i.split("::")
+        mod, rest = name.split(".", 1)
+        s = importlib.util.spec_from_file_location(mod, os.path.join(spec["tree"], f))
+        m = importlib.util.module_from_spec(s)
+        sys.modules[mod] = m
+        s.loader.exec_module(m)
+        r = unittest.TestResult()
+        unittest.defaultTestLoader.loadTestsFromName(rest, m).run(r)
+        if r.testsRun == 1 and r.wasSuccessful() and not r.skipped:
+            ok.append(i)
+    except BaseException:
+        pass
+json.dump(ok, open(spec["out"], "w"))
+"""
 
 
 def _root(p):
@@ -36,9 +56,10 @@ def _root(p):
 
 
 def _own():
-    """Foreman's own repo: the one holding this plugin, else None."""
+    """Foreman's own repo: the toplevel holding this plugin (never an enclosing repo that merely contains it), else None."""
     top = fmfind._git(c.PLUGIN_ROOT, "rev-parse", "--show-toplevel")
-    return os.path.realpath(top.decode().strip()) if top else None
+    top = os.path.realpath(top.decode().strip()) if top else None
+    return top if top and os.path.isfile(os.path.join(top, "plugin", "lib", "fmlong.py")) else None
 
 
 def _top(path):
@@ -54,13 +75,16 @@ def _may_run(p, src):
                          "--yes-run says yes to it (only Foreman's own repo runs without)")
 
 
-def _ids(text, mod):
-    """unittest ids of the test methods in a source text (none when it doesn't parse)."""
+def _ids(text, rel):
+    """Ids 'dir/test_x.py::test_x.Class.test_y' of the test methods of a source text's module-level TestCase subclasses
+    (none when it doesn't parse)."""
     try:
         tree = ast.parse(text)
     except (SyntaxError, ValueError):
         return set()
-    return {f"{mod}.{k.name}.{f.name}" for k in ast.walk(tree) if isinstance(k, ast.ClassDef)
+    mod = os.path.basename(rel)[:-3]
+    return {f"{rel}::{mod}.{k.name}.{f.name}" for k in tree.body if isinstance(k, ast.ClassDef)
+            and any((b.attr if isinstance(b, ast.Attribute) else getattr(b, "id", "")).endswith("TestCase") for b in k.bases)
             for f in k.body if isinstance(f, ast.FunctionDef) and f.name.startswith("test_")}
 
 
@@ -70,6 +94,15 @@ def _is_test(rel):
 
 def _safe(rel):
     return bool(rel) and not os.path.isabs(rel) and ".." not in rel.split("/") and not rel.startswith(".git/")
+
+
+def _check_key(key):
+    """A key.json is data: forged ids, paths or revisions are refused before they reach git or an import."""
+    bad = (not all(isinstance(i, str) and ID.fullmatch(i) and _safe(i.split("::")[0]) for i in key["checks"] + key["sample"])
+           or not all(isinstance(f, str) and _safe(f) for f in key["files"] + key["test_files"] + key["pypath"])
+           or not all(isinstance(key.get(k), str) and REV.fullmatch(key[k]) for k in ("base", "target")))
+    if bad:
+        raise ValueError(f"{key.get('id')}: key.json holds an id, path or revision that isn't one")
 
 
 def _show(src, rev, rel):
@@ -99,24 +132,31 @@ def _overlay(dst, src, target, files):
                 f.write(data)
 
 
-def _passed(tree, ids, pypath):
-    """The ids that pass in tree: a throwaway home, no credentials, no Foreman state; a timeout passes none."""
+def _passed(tree, ids, pypath, end=None):
+    """The ids that pass in tree, or None when the runner failed or timed out (distinct from all red): run by a script
+    outside the tree under -I (the stdlib first, the tree appended), in its own process group (c.run_command kills it
+    whole), a throwaway home, no credentials, no Foreman state."""
     import fmbench
     if not ids:
         return set()
     home = tempfile.mkdtemp(prefix="fm-long-")
     try:
         env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDE")) and not fmbench.CREDENTIALS.match(k)}
-        env.update(HOME=home, PYTHONDONTWRITEBYTECODE="1",
-                   PYTHONPATH=os.pathsep.join([tree] + [os.path.join(tree, d) for d in pypath]))
-        out = os.path.join(home, "ok.json")
+        env["HOME"] = home
+        out, script = os.path.join(home, "ok.json"), os.path.join(home, "runner.py")
+        c.write_atomic(script, RUNNER)
+        c.write_atomic(os.path.join(home, "spec.json"), json.dumps(
+            {"tree": tree, "out": out, "ids": ids, "paths": [tree] + [os.path.join(tree, d) for d in pypath]}))
+        t = max(1, min(RUN_T, int(end - time.time()))) if end else RUN_T
+        code, _ = c.run_command(tree, shlex.join([sys.executable, "-I", "-B", script, os.path.join(home, "spec.json")]),
+                                timeout=t, env=env)
+        if code == 124:
+            return None
         try:
-            subprocess.run([sys.executable, "-c", RUNNER, out, *ids], cwd=tree, env=env, timeout=RUN_T,
-                           stdin=subprocess.DEVNULL, capture_output=True)
             with open(out) as f:
-                return set(json.load(f))
-        except (subprocess.TimeoutExpired, OSError, ValueError):
-            return set()
+                return {i for i in json.load(f) if i in ids}
+        except (OSError, ValueError):
+            return None
     finally:
         shutil.rmtree(home, ignore_errors=True)
 
@@ -128,14 +168,15 @@ def _tests_in(tree):
         names[:] = [n for n in names if n not in (".git", "node_modules", "__pycache__")]
         for n in files:
             if _is_test(n) and os.path.getsize(os.path.join(d, n)) < 2 ** 20:
+                rel = os.path.relpath(os.path.join(d, n), tree)
                 with open(os.path.join(d, n), encoding="utf-8", errors="replace") as f:
-                    for i in _ids(f.read(), n[:-3]):
-                        found[i] = os.path.relpath(d, tree)
+                    for i in _ids(f.read(), rel):
+                        found[i] = os.path.dirname(rel) or "."
     return found
 
 
 def _windows(src):
-    """[{task, base, target, goal, files}] newest task first: one per task id."""
+    """[{task, base, target, goal, files}] one per task id."""
     raw = fmfind._git(src, "log", "--no-merges", "-n", str(SCAN), "--format=%H%x1f%P%x1f%s")
     groups = {}
     for line in (raw or b"").decode("utf-8", "replace").splitlines():
@@ -154,41 +195,50 @@ def _windows(src):
     return out
 
 
-def _scenario(p, src, w, seed, d):
-    """The key (checks, sample) for one window, or None when it is no exam: no new test, or one that isn't red at the
-    base and green with the change's files laid over it."""
+def _scenario(src, w, seed, d, end):
+    """The key for one window, or None when it is no exam. The hidden checks are every test id the window added (any
+    task's commit interleaved in it too) that goes green with the window's files laid over the base, and red on the
+    base's code under the same tests; at least one is needed, five are kept. The regression sample is base tests that
+    pass at the base and stay green with the change. A runner failure or timeout drops the window.
+    Hidden test files, and the support files the window changed beside them (helpers, conftest, fixtures), are what
+    grade lays over an answer (ponytail: the same folder as a changed test file; a nested fixture folder isn't)."""
     tests = [f for f in w["files"] if _is_test(f)]
-    checks = []
+    dirs = {os.path.dirname(f) for f in tests}
+    hidden = [f for f in w["files"] if os.path.dirname(f) in dirs]  # tests and their support files
+    new = set()
     for f in tests:
-        new, old = _show(src, w["target"], f), _show(src, w["base"], f)
-        checks += sorted(_ids(new or "", os.path.basename(f)[:-3]) - _ids(old or "", os.path.basename(f)[:-3]))
-    if not checks:
+        new |= _ids(_show(src, w["target"], f) or "", f) - _ids(_show(src, w["base"], f) or "", f)
+    new = sorted(new)[:MAX_NEW]
+    if not new:
         return None
-    checks = checks[:MAX_CHECKS]
-    base, work = os.path.join(d, "base"), os.path.join(d, "work")
+    base, red, green = (os.path.join(d, x) for x in ("base", "red", "green"))
     _archive(src, w["base"], base)
     have = _tests_in(base)
     pypath = sorted({os.path.dirname(f) or "." for f in tests} | set(have.values()))
-    others = sorted(set(have) - set(checks))
+    others = sorted(set(have) - set(new))
     pool = random.Random(f"{seed}{w['task']}").sample(others, min(len(others), SAMPLE))
-    shutil.copytree(base, work)
-    _overlay(work, src, w["target"], tests)  # the hidden tests laid over the base's code: they must fail there
-    at_base = _passed(work, checks + pool, pypath)
-    if at_base & set(checks):
+    shutil.copytree(base, red)
+    _overlay(red, src, w["target"], hidden)  # the hidden tests over the base's code: the checks must fail there
+    at_base = _passed(red, new + pool, pypath, end)
+    shutil.copytree(base, green)
+    _overlay(green, src, w["target"], w["files"])
+    ok = _passed(green, new + pool, pypath, end)
+    if at_base is None or ok is None:
         return None
-    shutil.rmtree(work)
-    shutil.copytree(base, work)
-    _overlay(work, src, w["target"], w["files"])
-    if _passed(work, checks, pypath) != set(checks):
+    checks = [i for i in new if i in ok and i not in at_base][:MAX_CHECKS]
+    if not checks:
         return None
-    return {"checks": checks, "sample": sorted(at_base & set(pool)), "pypath": pypath, "test_files": tests,
-            "command": "python3 -m unittest " + " ".join(checks)}
+    return {"checks": checks, "sample": sorted(i for i in pool if i in ok and i in at_base), "pypath": pypath,
+            "test_files": hidden, "command": "fm exam long grade (its runner loads each id by its path)"}
 
 
 def gen(p, src=None, n=6, seed=0):
+    n = int(n)
+    if not 1 <= n <= CAP_N:
+        raise ValueError(f"--n is how many goals to make: 1 to {CAP_N}")
     src = _top(src or _own() or p.root)
     _may_run(p, src)
-    n = max(1, min(int(n), CAP_N))
+    end = time.time() + GEN_T
     wins = [w for w in _windows(src) if any(_is_test(f) for f in w["files"])]
     random.Random(seed).shuffle(wins)
     os.makedirs(_root(p), exist_ok=True)
@@ -196,17 +246,17 @@ def gen(p, src=None, n=6, seed=0):
     run = f"l{max(nums, default=0) + 1:03d}"
     kept = []
     for w in wins[:3 * n]:  # ponytail: three tries a goal; a repo with few red-green windows yields fewer
-        if len(kept) == n:
+        if len(kept) == n or time.time() >= end:
             break
         tmp = tempfile.mkdtemp(prefix="fm-long-")
         try:
-            k = _scenario(p, src, w, seed, tmp)
+            k = _scenario(src, w, seed, tmp, end)
             if not k:
                 continue
             base = os.path.join(_root(p), run, w["task"])
             _archive(src, w["base"], os.path.join(base, "repo"))
             for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.name=exam", "-c", "user.email=exam@example.com",
-                                                      "commit", "-qm", "base"]):
+                                                      "-c", "commit.gpgsign=false", "commit", "-qm", "base"]):
                 subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", os.path.join(base, "repo"), *cmd],
                                check=True, capture_output=True)
             key = dict(k, id=w["task"], base=w["base"], target=w["target"], goal=w["goal"], files=w["files"], src=src)
@@ -214,6 +264,9 @@ def gen(p, src=None, n=6, seed=0):
             kept.append({"id": w["task"], "goal": w["goal"], "repo": os.path.join(base, "repo")})
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+    if not kept:
+        raise ValueError(f"no goal in {c.plain(src)}: no (T-NNNN) task change adds a test that fails at its base and passes "
+                         "with the change")
     meta = {"run": run, "src": src, "scenarios": kept}
     c.write_atomic(os.path.join(_root(p), run, "run.json"), json.dumps(meta, indent=1))
     return meta
@@ -229,7 +282,9 @@ def _load(p, run):
 
 def _key(p, run, sid):
     with open(os.path.join(_root(p), run, sid, "key.json"), encoding="utf-8") as f:
-        return json.load(f)
+        key = json.load(f)
+    _check_key(key)
+    return key
 
 
 def _work(p, run, agent, sid):
@@ -249,7 +304,7 @@ def run(p, run, agent):
         shutil.rmtree(work, ignore_errors=True)
         shutil.copytree(os.path.join(_root(p), run, s["id"], "repo"), work, ignore=shutil.ignore_patterns(".git"))
         if agent == "oracle":
-            _overlay(work, key["src"], key["target"], [f for f in key["files"] if _safe(f)])
+            _overlay(work, key["src"], key["target"], key["files"])
     return {"run": run, "agent": agent, "answered": [s["id"] for s in meta["scenarios"]]}
 
 
@@ -258,23 +313,26 @@ def grade(p, run, agent):
     _agent(agent)
     meta = _load(p, run)
     goals = []
-    for s in meta["scenarios"]:
+    for s in meta["scenarios"]:  # every goal counts: one without an answer is not done
         key, work = _key(p, run, s["id"]), _work(p, run, agent, s["id"])
-        if not os.path.isdir(work):
-            continue
-        _may_run(p, key["src"])
-        tmp = tempfile.mkdtemp(prefix="fm-long-")
-        try:  # the answer's copy with the hidden tests laid over it: an answer can't edit the checks away
-            shutil.copytree(work, os.path.join(tmp, "w"))
-            _overlay(os.path.join(tmp, "w"), key["src"], key["target"], [f for f in key["test_files"] if _safe(f)])
-            ok = _passed(os.path.join(tmp, "w"), key["checks"] + key["sample"], key["pypath"])
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
-        goals.append({"id": s["id"], "true_done": set(key["checks"]) <= ok, "checks": len(key["checks"]),
-                      "regressions": [i for i in key["sample"] if i not in ok]})
-    if not goals:
+        g = {"id": s["id"], "answered": os.path.isdir(work), "true_done": False, "checks": len(key["checks"]), "regressions": []}
+        if g["answered"]:
+            _may_run(p, key["src"])
+            tmp = tempfile.mkdtemp(prefix="fm-long-")
+            try:  # the answer's copy with the hidden tests and their support files laid over it
+                shutil.copytree(work, os.path.join(tmp, "w"))
+                _overlay(os.path.join(tmp, "w"), key["src"], key["target"], key["test_files"])
+                ok = _passed(os.path.join(tmp, "w"), key["checks"] + key["sample"], key["pypath"])
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+            if ok is None:
+                g["error"] = "the runner failed or timed out"
+            else:
+                g.update(true_done=set(key["checks"]) <= ok, regressions=[i for i in key["sample"] if i not in ok])
+        goals.append(g)
+    if not any(g["answered"] for g in goals):
         raise ValueError(f"no answers from {agent!r} in {run} (fm exam long run {run} --agent {agent})")
-    res = {"tier": "long", "agent": agent, "run": run, "at": c.now(), "gen": fmgenesis.current(p), "model": "default",
+    res = {"tier": "long", "agent": agent, "run": run, "at": c.now(), "gen": fmgenesis.current(p), "model": None,
            "scenarios": len(goals), "true_done": sum(g["true_done"] for g in goals),
            "regressions": sum(len(g["regressions"]) for g in goals), "goals": goals}
     fmgenesis.exam_line(p, res)
@@ -285,7 +343,7 @@ def cmd(p, args):
     import fmcli
     verb, rest = args.run, getattr(args, "rest", None) or []
     if verb == "gen":
-        meta = gen(p, args.from_, args.n or 6, args.seed)
+        meta = gen(p, args.from_, 6 if args.n is None else args.n, args.seed)
         return fmcli.out(args, meta, f"{meta['run']}: {len(meta['scenarios'])} goal(s) from {c.plain(meta['src'])}\n"
                          + "\n".join(f"  {s['id']}: {s['goal'].splitlines()[0]}" for s in meta["scenarios"]))
     if verb in ("run", "grade") and rest:
