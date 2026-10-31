@@ -357,9 +357,10 @@ def _seed(plugin, wt, env):
         subprocess.run([fm, *args], cwd=wt, env=env, capture_output=True, timeout=60)
 
 
-def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep=False, settings=None):
+def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep=False, settings=None, sid=None):
     """(claude's JSON result, error) for one headless turn with the plugin dirs given; `keep` keeps the session so a
-    later turn can --resume it (T-0243); `settings`: a --settings JSON (T-0963's bare arm)."""
+    later turn can --resume it (T-0243); `settings`: a --settings JSON (T-0963's bare arm); `sid`: the session's id,
+    chosen by the caller so a turn killed by the timeout (no result) can still be resumed (T-2262)."""
     c.refuse_if_paused()  # T-0591
     if not plugins and not settings:
         raise ValueError("a bypass-mode session needs the guard: a plugin with it, or its hook as --settings")
@@ -368,7 +369,8 @@ def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep
            "project,local", "--output-format", "json", "--permission-mode", "bypassPermissions"] \
         + ([] if budget is None else ["--max-budget-usd", f"{budget:g}"]) \
         + ([] if keep else ["--no-session-persistence"]) \
-        + (["--resume", resume] if resume else []) + (["--model", model] if model else [])
+        + (["--resume", resume] if resume else []) + (["--session-id", sid] if sid and not resume else []) \
+        + (["--model", model] if model else [])
     error, res = None, {}
     try:  # its own process group: a timeout takes the session's tools down with it
         pr = subprocess.Popen(cmd, cwd=wt, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
