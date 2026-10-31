@@ -84,3 +84,31 @@ class GoalSignal(Base):
             self.assertEqual(goal(), [], bad)
         c.update_meta(self.p, goal_verdict=v, mandate=dict(c.read_meta(self.p)["mandate"], until=c.iso(time.time() - 60)))
         self.assertEqual(goal(), [])
+
+
+class JudgmentSignal(Base):  # T-2344: one band line only when judgment needs the user
+    def judged(self):
+        return [x for x in self.ui()["signals"] if x["text"].startswith("judgment:")]
+
+    def test_judgment_a_task_parked_at_a_one_way_door_shows_one_line(self):
+        r = self.fm_json("task", "new", "Tidy data", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                         "--step", "delete data/old.csv")
+        b = c.find_brief(self.p, r["id"])
+        b.meta["doors"] = [1]  # what fm focus records for a local one-way step with no Undo line
+        c.save_brief(self.p, b, touch=False)
+        sig = self.judged()
+        self.assertEqual(len(sig), 1, sig)
+        self.assertIn(f"1 parked at a one-way door ({r['id']})", sig[0]["text"])
+        self.assertIn("fm calibration", sig[0]["text"])
+
+    def test_judgment_nothing_to_act_on_shows_nothing(self):
+        self.assertEqual(self.judged(), [])
+
+    def test_judgment_a_stated_brier_worse_than_the_base_rate_is_named(self):
+        import fmoutcomes
+        from unittest import mock
+        snap = {"brier": {"stated": 0.31, "base": 0.22}, "doors_parked": []}
+        with mock.patch.object(fmoutcomes, "snapshot", lambda p: snap):
+            self.assertIn("Brier 0.31, worse than the base rate's 0.22", fmoutcomes.band_line(self.p))
+            snap["brier"] = {"stated": 0.18, "base": 0.22}
+            self.assertEqual(fmoutcomes.band_line(self.p), "")
