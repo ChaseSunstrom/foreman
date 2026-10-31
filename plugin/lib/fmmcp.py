@@ -370,6 +370,8 @@ def cmd_new(args):
             text = text.replace(k, v, 1)
         c.write_atomic(os.path.join(d, f), text)
     os.chmod(os.path.join(d, "server.py"), 0o755)
+    import fmtoolproof  # T-2372: the active task must prove this server before it closes
+    fmtoolproof.built(name, os.path.join(d, "server.py"), os.path.join(d, "test_server.py"), kind="mcp")
     print(f"Wrote a stdlib MCP server for `{shlex.join(wrap)}`" + (f" (subcommands: {', '.join(subs)})" if subs else "")
           + ":\n" + "\n".join(f"  {os.path.join(d, f)}" for f in files)
           + f"\nTest it: python3 {shlex.quote(os.path.join(d, 'test_server.py'))}"

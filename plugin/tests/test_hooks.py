@@ -92,7 +92,7 @@ class HookCase(ForemanTestCase):
         self.fm("task", "ac", tid, "add", "works", "--verify", "pytest")
         if tier in ("M", "L"):
             for sec in ("Interpretation", "Approach (options → choice → why)", "Risks and rollback"):
-                self.fm("task", "set", tid, "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a")
+                self.fm("task", "set", tid, "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a")
         if focus:
             self.fm("focus", tid)
         return tid

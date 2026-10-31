@@ -50,7 +50,7 @@ class Fit(Base):
                     f'{fm} task done $t >/dev/null\n')
         os.chmod(os.path.join(bindir, "claude"), 0o755)
         big = json.loads(self.fm("task", "new", "Big", "--type", "FEATURE", "--tier", "M", "--interpretation", "Reading 1: a. Reading 2: b.",
-                                 "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--ac", "works", "--step", "s", "--json").stdout)["id"]
+                                 "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a", "--ac", "works", "--step", "s", "--json").stdout)["id"]
         small = json.loads(self.fm("task", "new", "Small", "--type", "FEATURE", "--tier", "S", "--ac", "works",
                                    "--step", "s", "--json").stdout)["id"]
         self.fm("run", "--fit", "--max", "1", env={"PATH": bindir + os.pathsep + os.environ["PATH"]}, check=False)
