@@ -170,6 +170,148 @@ class GoalReview(GoalBase):
         self.assertNotEqual(self.fm("goal", "link", "²", t, check=False).returncode, 0)
         self.assertNotIn("Traceback", self.fm("goal", "link", "²", t, check=False).stderr)
 
+    def verdict(self):
+        r = self.fm("goal", "verdict", check=False)
+        return r.returncode, r.stdout
+
+    def gates(self, exit_code, tree=None):
+        c.log_event(self.p, "check_run", data={"tree": tree or c.worktree_id(self.p.root),
+                                               "results": [{"cmd": "x", "exit": exit_code}]})
+
+    def finish(self, tid):  # done, as opposed to dropped
+        b = c.find_brief(self.p, tid)
+        b.meta["status"] = "done"
+        c.save_brief(self.p, b)
+
+    def test_verdict_names_each_cause_and_finishes_only_when_all_hold(self):
+        # T-2137
+        self.assertEqual(self.verdict(), (2, "no goal\n"))
+        self.fm("goal", "set", "Cache the index. Also tune the ranker weights", "--no-end")
+        self.fm("goal", "item", "cache the index", "--done-when", "true")
+        code, out = self.verdict()
+        self.assertEqual(code, 1)
+        for cause in ("item 1 has no task", "clause unaccounted: Also tune the ranker weights",
+                      "gates never run"):
+            self.assertIn(cause, out)
+        t = self.new("cache it", "--goal", "1")
+        self.assertIn("item 1 has open tasks", self.verdict()[1])
+        self.fm("task", "drop", t, "superseded")  # dropped only: the item isn't done
+        self.assertIn("item 1 has no done task", self.verdict()[1])
+        t1b = self.new("cache it again", "--goal", "1")
+        self.finish(t1b)
+        self.assertNotIn("item 1", self.verdict()[1])  # a done task, the dropped one ignored
+        self.gates(1)
+        self.assertIn("gates red", self.verdict()[1])
+        self.gates(0, tree="another")
+        self.assertIn("gates not run on this tree", self.verdict()[1])
+        self.gates(0)
+        self.assertNotIn("gates", self.verdict()[1])
+        self.fm("goal", "item", "tune the ranker weights", "--done-when", "false")
+        t2 = self.new("tune", "--goal", "2")
+        self.finish(t2)
+        out = self.verdict()[1]
+        self.assertIn("item 2 check fails (exit 1)", out)
+        self.assertNotIn("unaccounted", out)
+        c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
+            dict(i, done_when="true") for i in c.read_meta(self.p)["mandate"]["items"]]))
+        self.assertEqual(self.verdict(), (0, "finished\n"))
+        stored = c.read_meta(self.p)["goal_verdict"]
+        self.assertEqual((stored["verdict"], stored["causes"]), ("finished", []))
+        self.assertTrue(stored["at"] and stored["tree"])
+        self.assertEqual(json.loads(self.fm("goal", "verdict", "--json").stdout)["verdict"], "finished")
+        self.assertEqual(stored["set_at"], c.read_meta(self.p)["mandate"]["set_at"])
+        self.fm("goal", "set", "Another goal", "--no-end", "--replace")  # a verdict dies with its goal
+        self.assertNotIn("goal_verdict", c.read_meta(self.p))
+        self.fm("goal", "verdict", check=False)
+        self.fm("mandate", "off")
+        self.assertNotIn("goal_verdict", c.read_meta(self.p))
+
+    def test_a_clause_needs_two_shared_words_in_an_item_its_check_or_its_task_titles(self):
+        # T-2137
+        self.fm("goal", "set", "Speed up the search ranker. Fix caching", "--no-end")
+        self.fm("goal", "item", "search results caching", "--done-when", "true")
+        out = self.verdict()[1]
+        self.assertIn("clause unaccounted: Speed up the search ranker", out)  # one shared word is too few
+        self.assertNotIn("Fix caching", out)  # a clause with one significant word needs one
+        t = self.new("ranker speed", "--goal", "1")  # the task's title counts
+        self.assertNotIn("unaccounted", self.verdict()[1])
+
+
+class GoalAcrossDays(GoalBase):
+    """T-2139: one line, from fmmandate.goal_line, that SessionStart, the PreCompact checkpoint and fm resume print."""
+
+    def line(self):
+        import fmmandate
+        return fmmandate.goal_line(self.p)
+
+    def test_none_without_a_goal_without_items_or_once_ended(self):
+        self.assertIsNone(self.line())
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.assertIsNone(self.line())  # no items
+        self.fm("goal", "item", "one", "--done-when", "true")
+        self.assertIsNotNone(self.line())
+        c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], until=c.iso(time.time() - 60)))
+        self.assertIsNone(self.line())  # ended
+
+    def finish(self, tid, status="done"):
+        b = c.find_brief(self.p, tid)
+        b.meta["status"] = status
+        c.save_brief(self.p, b, touch=False)
+
+    def test_format_counts_done_items_and_names_the_next_open_task(self):
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        for t in ("verbs", "coverage in show", "docs"):
+            self.fm("goal", "item", t, "--done-when", "true")
+        t1 = self.new("verbs", "--goal", "1")
+        self.finish(t1)
+        self.assertEqual(self.line(), 'Goal: "Ship the ledger" · 1/3 items done · next: 2. coverage in show (no task yet)')
+        t2 = self.new("show", "--goal", "2")
+        self.assertEqual(self.line(), f'Goal: "Ship the ledger" · 1/3 items done · next: 2. coverage in show ({t2})')
+        self.finish(t2)
+        t3 = self.new("docs", "--goal", "3")
+        self.assertIn(f"2/3 items done · next: 3. docs ({t3})", self.line())
+
+    def test_an_item_with_only_dropped_tasks_is_not_done_and_a_dropped_one_beside_a_done_one_is_ignored(self):
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "one", "--done-when", "true")
+        t1 = self.new("a", "--goal", "1")
+        self.finish(t1, "dropped")
+        self.assertIn("0/1 items done · next: 1. one (no task yet)", self.line())
+        t2 = self.new("b")
+        self.fm("goal", "link", "1", t2)  # a link moves a task, it never adds beside: link t1 back too
+        c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
+            dict(c.read_meta(self.p)["mandate"]["items"][0], tasks=[t1, t2])]))
+        self.finish(t2)
+        self.assertIn("1/1 items done", self.line())
+
+    def test_fm_resume_prints_one_fresh_goal_line(self):
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "one", "--done-when", "true")
+        self.fm("goal", "item", "two", "--done-when", "true")
+        self.assertIn('Goal: "Ship the ledger" · 0/2 items done · next: 1. one (no task yet)', self.fm("resume").stdout)
+        t = self.new("one", "--goal", "1", "--focus")
+        t2 = self.new("two", "--goal", "2")
+        self.fm("checkpoint")  # stores the 0/2 line in Resume here
+        self.assertIn("0/2 items done", c.find_brief(self.p, t).section("Resume here"))
+        self.finish(t2)
+        out = self.fm("resume", "--no-check").stdout
+        self.assertEqual(out.count("Goal: "), 1, out)
+        self.assertIn(f"1/2 items done · next: 1. one ({t})", out)
+
+    def test_fm_run_prefers_the_next_items_planned_task_and_never_takes_a_captured_one(self):
+        import fmserve
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "one", "--done-when", "true")
+        self.assertIsNone(fmserve._next_runnable(self.p, set(), set()))
+        cap = re.search(r"T-\d+", self.fm("capture", "build one").stdout)[0]
+        self.fm("goal", "link", "1", cap)
+        self.assertIsNone(fmserve._next_runnable(self.p, set(), set()))  # unplanned: not work fm run starts
+        act = self.new("active one")  # the first task is the active one, and an active task always goes first
+        other = self.new("earlier work")
+        t = self.new("one", "--goal", "1")  # moves the item's link off the capture
+        self.assertEqual(fmserve._next_runnable(self.p, {act}, set()).id, t)
+        self.assertEqual(fmserve._next_runnable(self.p, {act, t}, set()).id, other)
+
 
 if __name__ == "__main__":
     unittest.main()

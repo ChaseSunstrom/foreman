@@ -215,6 +215,17 @@ class SessionStart(HookCase):
         self.fm("mandate", "off")
         self.assertNotIn("fm mandate", self.ctx_of(self.run_ss()))
 
+    def test_session_start_carries_the_goal_line_instead_of_the_mandate_text(self):
+        # T-2139: a goal with items stands across days: one line, not the line plus the mandate text again
+        self.fm("init")
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.assertIn("Standing mandate", self.ctx_of(self.run_ss()))  # no items yet: the mandate text
+        self.fm("goal", "item", "coverage", "--done-when", "true")
+        ctx = self.ctx_of(self.run_ss())
+        self.assertIn('Goal: "Ship the ledger" · 0/1 items done · next: 1. coverage (no task yet)', ctx)
+        self.assertNotIn("Standing mandate", ctx)
+        self.assertLess(len(ctx), 10000)
+
     def test_an_unattended_run_is_told_to_end_with_its_checks(self):
         # T-1228: the duel's judge read only the final reply; Foreman's evidence sat in its ledger, not in the reply
         self.fm("init")
@@ -2077,6 +2088,14 @@ class PreCompact(HookCase):
         self.assertEqual((p.returncode, p.stdout.strip()), (0, ""))
         self.assertIn("<!-- auto -->", c.find_brief(self.project(), tid).section("Resume here"))
 
+    def test_the_checkpoint_carries_the_goal_line(self):
+        self.fm("init")
+        self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
+        self.fm("goal", "item", "coverage", "--done-when", "true")
+        tid = self.task()
+        self.hook("PreCompact", {"trigger": "auto", "custom_instructions": None})
+        self.assertIn('Goal: "Ship the ledger" · 0/1 items done', c.find_brief(self.project(), tid).section("Resume here"))
+
     def test_corrupt_state_still_exits_zero(self):
         self.fm("init")
         self.task()
@@ -2204,6 +2223,48 @@ class Stop(HookCase):
         self.assertEqual(self.decision(self.stop("Done.")), "block")  # a new set holds again
         self.fm("clauses", "--note", "1", "answered in chat")
         self.assertIsNone(self.decision(self.stop("Done.", session="sess-2")))  # all accounted
+
+    def test_a_done_claim_on_a_stopped_goal_blocks_once_and_counts_toward_drive_max(self):
+        # T-2137: reads the stored verdict only; an unknown or other-tree verdict never blocks
+        self.fm("init")
+        self.fm("drive", "off")
+        p = self.project()
+        self.assertIsNone(self.decision(self.stop("All done.")))  # no goal
+        self.fm("goal", "set", "Cache the index", "--no-end")
+        self.assertIsNone(self.decision(self.stop("All done.")))  # verdict never computed
+        v = {"verdict": "stopped", "causes": ["item 1 has no task"], "at": c.now(), "tree": "abc", "root": p.root,
+             "set_at": c.read_meta(p)["mandate"]["set_at"]}
+        c.update_meta(p, goal_verdict=dict(v, root="/elsewhere"))
+        self.assertIsNone(self.decision(self.stop("All done.")))  # another tree
+        c.update_meta(p, goal_verdict=v)
+        self.assertIsNone(self.decision(self.stop("Still working on it.")))  # no claim
+        r = self.stop("All done.")
+        self.assertEqual(self.decision(r), "block")
+        self.assertIn("item 1 has no task", parse(r)["reason"])
+        self.assertEqual(self.gate()["drive"]["sess-1"]["count"], 1)
+        self.assertIsNone(self.decision(self.stop("Done.")))  # the same causes hold once
+        c.update_meta(p, goal_verdict=dict(v, causes=["gates red"]))
+        self.assertEqual(self.decision(self.stop("Done.")), "block")  # new causes hold again
+        c.update_meta(p, goal_verdict=dict(v, causes=["x"], verdict="finished"))
+        self.assertIsNone(self.decision(self.stop("Done.")))
+        # the verdict belongs to its goal: replaced, ended or cleared, it holds nothing
+        c.update_meta(p, goal_verdict=dict(v, causes=["a"]))
+        c.update_meta(p, mandate=dict(c.read_meta(p)["mandate"], set_at="2020-01-01T00:00:00Z"))
+        self.assertIsNone(self.decision(self.stop("Done.")))  # replaced (another set_at)
+        c.update_meta(p, mandate=dict(c.read_meta(p)["mandate"], set_at=v["set_at"], until="2020-01-01T00:00:00Z"))
+        self.assertIsNone(self.decision(self.stop("Done.")))  # ended
+        self.fm("mandate", "off")
+        c.update_meta(p, goal_verdict=dict(v, causes=["b"]))
+        self.assertIsNone(self.decision(self.stop("Done.")))  # cleared
+        self.fm("goal", "set", "Cache the index", "--no-end")
+        c.update_meta(p, goal_verdict=dict(v, causes=["c"], set_at=c.read_meta(p)["mandate"]["set_at"]))
+        with open(os.path.join(p.dir, "gate.json"), "w") as f:
+            f.write('{"goal": 5}')  # `key in 5` raises inside the gate
+        self.assertIsNone(self.decision(self.stop("Done.")))  # a damaged gate file never breaks Stop
+
+    def gate(self):
+        import fmhooks
+        return fmhooks._read_gate(self.project())
 
     def test_a_multi_part_prompt_records_its_clauses_and_a_task_made_later_covers_one(self):
         # T-2146: the gate works without the agent running fm clauses

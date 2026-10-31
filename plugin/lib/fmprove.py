@@ -564,6 +564,8 @@ def cmd_prove(args):
                 found, os.path.realpath(root), os.path.realpath(p.root if p else root)):
             f["key"] = key  # fm find --capture's key, so a task filed from either is never filed twice
         allowed = args.yes_run or trusted(root) or _lane_trusted(p, root)
+        if cap and not args.only:
+            fmfind.save_flags(p, found, root)  # T-2241: what the finders flagged, for a closed FIX's blind spots
         if args.only:  # T-2123: one finding, as a task's criterion names it; gone from fm find means fixed
             found = [dict(f, held=None) for f in found if proof_id(f["key"]) == args.only]
         t0, bugs = time.time(), []

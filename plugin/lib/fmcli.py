@@ -1169,6 +1169,13 @@ def task_finish(p, args):
         print(f"Slowest: {c.fit(c.plain(cmd), 80)} {secs:.0f} s (of {total:.0f} s)")
     started = None
     if not rc:
+        try:  # T-2241: a closed FIX no finder flagged is a blind spot; best effort, never the close's failure
+            done = c.find_brief(p, b.id)
+            if done and done.status == "done" and done.type == "FIX":
+                import fmfind
+                fmfind.blindspots(p, done)
+        except Exception:  # noqa: BLE001
+            pass
         try:
             started = _sentinel(p)
         except (OSError, subprocess.SubprocessError):
@@ -3352,9 +3359,15 @@ def cmd_checkpoint(args):
 def cmd_resume(args):
     p = resolve(args)
     r = c.resume_info(p)
+    import fmmandate
+    try:
+        goal = fmmandate.goal_line(p)  # T-2139
+    except Exception:
+        goal = None  # a goal that can't be read never stops a resume
+    r["resume"] = "\n".join(l for l in (r.get("resume") or "").splitlines() if not l.startswith("- Goal: "))  # stale
     if not r["id"]:
         nxt = ", ".join(q["id"] for q in c.state_dict(p)["queue"][:3]) or "none"
-        return out(args, r, f"No active task. Next in queue: {nxt}")
+        return out(args, r, f"No active task. Next in queue: {nxt}" + (f"\n{goal}" if goal else ""))
     step = f"step {r['step']['n']}/{r['step']['of']}: {r['step']['text']}" if r["step"] else f"{r['steps_done']}/{r['steps_total']} steps done"
     stale = (f"\nStale since it started (gone from the repo now): {', '.join(r['stale'])} — re-check the brief before "
              f"relying on it." if r.get("stale") else "")
@@ -3370,7 +3383,7 @@ def cmd_resume(args):
                   f"\nLast green check `{green}` now fails ({c.run_result(code, output)}): something drifted since it "
                   f"passed — look before going on.")
     out(args, r, f"Resume {r['id']} [{r['type']} {r['tier']}] {r['title']} — {step}\n{r['resume']}{stale}"
-        + (f"\nNotes:\n{notes}" if notes else "") + extra + f"\nBrief: {r['path']}")
+        + (f"\n{goal}" if goal else "") + (f"\nNotes:\n{notes}" if notes else "") + extra + f"\nBrief: {r['path']}")
 
 
 def _queue_preview(p, args, order, briefs):
@@ -6914,7 +6927,8 @@ def _build_parser(only=None):
             help="the standing goal: the mandate with a contents list, each item a done-when check and the tasks that "
                  "build it; show lists open work outside it, items with no task and items claimed but not met, "
                  "exit 1 when any (T-2135)")
-    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "item", "link"])
+    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "item", "link", "verdict"],
+                   help="verdict: finished (exit 0) or stopped with its causes (1); no goal exits 2")
     s.add_argument("text", nargs="*", help="set: the request, in the user's words; item: what it covers; link: ITEM TASK")
     s.add_argument("--until", metavar="YYYY-MM-DD", help="set: the last day it stands")
     s.add_argument("--no-end", action="store_true", help="set: it stands until replaced or cleared (instead of --until)")
@@ -6995,7 +7009,8 @@ def _build_parser(only=None):
     s = add("genesis", lazy("fmgenesis", "cmd_genesis"), tier=("Finding your way", 455), help="the Genesis tower's "
             "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
     s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish", "check", "step",
-                                                 "draft", "spec", "select", "seed", "drift", "sweep", "exam"))
+                                                 "draft", "spec", "select", "seed", "drift", "sweep", "exam", "frontier",
+                                                 "novelty"))
     s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; live: on|off; export: the folder "
                                           "for genesis.json and the docs (site/genesis here); draft: the goal line (none: "
                                           "a whole gen-0 anyway); select/seed/drift/sweep: the generation N")
@@ -7023,6 +7038,8 @@ def _build_parser(only=None):
                    "under the floor is muted (T-2125)")
     s.add_argument("--capture", type=int, metavar="N", help="file up to N new leads, best first (none held back), as "
                    "discovered tasks tagged finder=; what becomes of them is that finder's precision")
+    s.add_argument("--blindspots", action="store_true", help="instead: closed FIXes whose changed lines no finder flagged "
+                   "(with --capture 1: file one 'add a rule, tool or check' task a day; T-2241)")
     s.add_argument("--hotspots", action="store_true", help="instead: tracked files by how many fix commits touched them "
                    "in the last 500 non-merge commits, counting those whose subject has a fix word (git only, no repo code; not with "
                    "--rank or --capture; T-2238)")
