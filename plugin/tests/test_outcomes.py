@@ -265,17 +265,35 @@ class Predictions(Base):
         self.assertRegex(out, r"S: median actual/predicted 2\.0x over 3")
 
     def test_next_notes_a_task_past_three_times_its_prediction(self):
-        import fmoutcomes
         t = self.new(predict_minutes=5)
         self.fm("focus", t)
         self.assertNotIn("3x", self.fm("next").stdout)
-        real = time.time
-        fmoutcomes.time.time = lambda: real() + 1500  # 25 active minutes
-        try:
-            note = c.next_for(self.p)
-        finally:
-            fmoutcomes.time.time = real
-        self.assertEqual(str(note).count("3x its prediction"), 1)
+        live = os.path.join(self.p.dir, "ledger.jsonl")  # the focus happened 25 minutes ago
+        with open(live) as f:
+            evs = [json.loads(ln) for ln in f]
+        for e in evs:
+            if e.get("event") == "focus" and e.get("task") == t:
+                e["ts"] = c.iso(time.time() - 1500)
+        with open(live, "w") as f:
+            f.writelines(json.dumps(e) + "\n" for e in evs)
+        self.assertEqual(self.fm("next").stdout.count("3x its prediction"), 1)
+        self.assertTrue(c.find_brief(self.p, t).meta.get("predict_noted"))
+        self.assertNotIn("3x its prediction", self.fm("next").stdout, "said once")
+
+    def test_first_use_backfills_the_history_from_task_done_events(self):
+        import fmoutcomes
+        ids = [self.new(f"Old {i}") for i in range(5)]
+        for i, tid in enumerate(ids):  # closes logged before closes.jsonl existed: no type or tier in the event
+            c.log_event(self.p, "task_done", task=tid, data={"minutes": 10 + i, "attempts": 2})
+        c.log_event(self.p, "task_done", task=ids[0], data={"attempts": 2})  # no minutes: skipped
+        path = os.path.join(self.p.dir, "closes.jsonl")
+        self.assertFalse(os.path.exists(path))
+        t = self.new("Fresh")
+        self.fm("focus", t)
+        m = c.find_brief(self.p, t).meta
+        self.assertEqual((int(m["predict_minutes"]), int(m["predict_attempts"])), (12, 2))
+        self.assertEqual(len(fmoutcomes.history(self.p, "FEATURE", "S")), 5)
+        self.assertTrue(os.path.exists(path), "written once")
 
 
 class Hygiene(Base):

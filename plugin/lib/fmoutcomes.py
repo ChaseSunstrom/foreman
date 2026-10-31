@@ -305,7 +305,32 @@ def _closes_path(p):
     return os.path.join(p.dir, "closes.jsonl")
 
 
+def _backfill(p):
+    """Once, when closes.jsonl doesn't exist: the task_done events that logged minutes, joined to their brief's type and
+    tier when the event lacks them. Writes the newest CLOSES_KEEP // 2 rows (an empty file too, so it runs once)."""
+    kinds, rows = None, []
+    for e in c.ledger_events(p, ("task_done",)):
+        d = e.get("data") or {}
+        if not isinstance(d.get("minutes"), int):
+            continue
+        if kinds is None and not (d.get("type") and d.get("tier")):
+            kinds = {b.id: (b.type, b.tier) for b in c.load_briefs(p, include_archive=True)}  # once, only if needed
+        typ, tier = (d.get("type"), d.get("tier")) if d.get("type") and d.get("tier") else (kinds or {}).get(e.get("task"), (None, None))
+        if typ and tier:
+            rows.append({"type": typ, "tier": tier, **{k: d[k] for k in ("minutes", "attempts", "predict_minutes",
+                                                                         "predict_attempts") if k in d}})
+    rows = rows[-CLOSES_KEEP // 2:]
+    try:
+        with open(_closes_path(p), "w", encoding="utf-8") as f:
+            f.writelines(json.dumps(r) + "\n" for r in rows)
+    except OSError:
+        pass
+    return rows
+
+
 def _closes(p):
+    if not os.path.exists(_closes_path(p)):
+        return _backfill(p)
     rows = []
     try:
         with open(_closes_path(p), encoding="utf-8") as f:

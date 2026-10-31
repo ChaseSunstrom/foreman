@@ -3509,10 +3509,6 @@ def next_for(p, briefs=None):
     rung = stuck_rung(b) if b is not None and b.status == "active" else None
     if rung:  # T-0611: the escalation ladder, from this step's failed runs and open hypotheses
         action += f" · {rung}"
-    if b is not None and b.status == "active" and b.meta.get("predict_minutes"):  # T-2290: one note past 3x
-        import fmoutcomes
-        if note := fmoutcomes.overrun_note(p, b):
-            action += f" · {note}"
     briefs = briefs if briefs is not None else load_briefs(p)
     if b is None or b.status not in ("active", "verifying"):  # T-1841: its lane folder went; it's still active there
         action = "".join(stranded_note(s) + " · " for s in stranded(briefs, p.lane)) + action

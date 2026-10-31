@@ -5540,6 +5540,15 @@ def cmd_next(args):
         if median and took > 2 * median:
             over = (f" · on it {took:.0f} min, over twice the usual {median:g} min for a {b.type} {b.tier}: re-frame — "
                     f"is the plan still the right size, or should it split?")
+    if b and b.status == "active" and b.meta.get("predict_minutes") and not b.meta.get("predict_noted"):
+        import fmoutcomes  # T-2290: past 3x its prediction, said once (fm next only: the hooks and the watcher don't spend it)
+        if note := fmoutcomes.overrun_note(p, b):
+            over += f" · {note}"
+            with c.lock(p.dir):
+                fresh = c.find_brief(p, b.id)
+                if fresh:
+                    fresh.meta["predict_noted"] = c.now()
+                    c.save_brief(p, fresh, touch=False)
     meta = c.read_meta(p)
     loose = (meta.get("clauses") or {}).get("open") or []
     over += (f" · {len(loose)} clause(s) of the last request unaccounted: capture, answer, or fm clauses --note N "
