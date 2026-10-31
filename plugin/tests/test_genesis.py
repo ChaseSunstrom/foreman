@@ -2606,6 +2606,28 @@ class GenesisExam(ForemanTestCase):
             self.assertIn("standing intent: no clause 'Anticipate'",  # a head word alone isn't the clause
                           fmgenesis._misses(chk, text.replace(whole, "1. Anticipate, generally."), s["kind"], defect))
 
+    def test_a_sweep_plants_three_defects_and_a_draft_covers_all_three(self):
+        # T-2177: 'super improve this' is graded on finding every gap unasked, not on one gap plus a shape check
+        import fmexam
+        import fmgenesis
+        ref = read_text(SEED_PROMPT)
+        for s in fmexam.draw(0, fmgenesis.GEN_KINDS, fmexam.LANGS, 3)[::3]:
+            one = fmgenesis._ask(s)[2]
+            want = fmgenesis._defects(s, one)
+            self.assertEqual(len(want) == 3 and len(set(want)) == 3, s["kind"] == "sweep")
+            self.assertEqual(want if s["kind"] == "sweep" else [one], want)
+            if s["kind"] != "sweep":
+                continue
+            text = fmgenesis._oracle(ref, want)
+            self.assertEqual(fmgenesis._misses(ref, text, "sweep", want), [])
+            for d in want:  # the oracle's capability for each defect is the only one that closes it
+                part = "\n".join(x for x in text.splitlines() if f"Exam: {d}." not in x)
+                self.assertIn(f"no §2 capability for the planted {d}", fmgenesis._misses(ref, part, "sweep", want))
+            two = text.replace(f"Exam: {want[0]}.", "Exam: none.").replace(f"Exam: {want[1]}.", "Exam: none.")
+            miss = [x for x in fmgenesis._misses(ref, two, "sweep", want) if x.startswith("no §2 capability")]
+            self.assertEqual(miss, [f"no §2 capability for the planted {d}" for d in want[:2]])
+            self.assertEqual([x for x in fmgenesis._misses(ref, text, "sweep", want[0]) if "planted" in x], [])  # a str is one
+
     def test_g_scenario_defects_stay_put_when_exam_kinds_grow(self):
         """T-2126 grew fmexam.KINDS; each G-scenario id keeps the defect it had, so earlier draft-* scores still compare."""
         import fmexam
