@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-31T09:45:03Z",
- "rev": "322b5ec9",
+ "updated": "2026-10-31T11:18:24Z",
+ "rev": "3339f087",
  "capabilities": [
   {
    "n": 1,
@@ -5569,6 +5569,119 @@
     "resumes_needed": 6,
     "unfinished": 6,
     "guard_blocks": 6,
+    "hours_to_done": 0
+   }
+  },
+  {
+   "tier": "long",
+   "agent": "foreman",
+   "run": "l002",
+   "at": "2026-10-31T11:18:23Z",
+   "gen": 1,
+   "model": "default",
+   "scenarios": 6,
+   "true_done": 0,
+   "regressions": 0,
+   "goals": [
+    {
+     "id": "T-2093",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "regressions": [],
+     "false_done": true,
+     "cost": 2.6054288000000003,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2436.1,
+     "guard_blocks": 0
+    },
+    {
+     "id": "T-2020",
+     "answered": true,
+     "true_done": false,
+     "checks": 3,
+     "regressions": [],
+     "false_done": true,
+     "cost": 1.9743049999999998,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2680.4,
+     "guard_blocks": 2
+    },
+    {
+     "id": "T-2240",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "regressions": [],
+     "false_done": true,
+     "cost": 2.4886084,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 3260.8,
+     "guard_blocks": 0
+    },
+    {
+     "id": "T-2211",
+     "answered": true,
+     "true_done": false,
+     "checks": 2,
+     "regressions": [],
+     "false_done": true,
+     "cost": 2.5821842000000004,
+     "cost_unknown": true,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2857.4,
+     "guard_blocks": 0
+    },
+    {
+     "id": "T-2041",
+     "answered": true,
+     "true_done": false,
+     "checks": 1,
+     "regressions": [],
+     "false_done": true,
+     "cost": 1.4602114000000006,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2190.9,
+     "guard_blocks": 0
+    },
+    {
+     "id": "T-2279",
+     "answered": true,
+     "true_done": false,
+     "checks": 4,
+     "regressions": [],
+     "false_done": true,
+     "cost": 1.9685927999999995,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2084.3,
+     "guard_blocks": 0
+    }
+   ],
+   "rate": 0.0,
+   "false_done": 6,
+   "resumes_needed": 0,
+   "unfinished": 0,
+   "guard_blocks": 2,
+   "cost": 13.0793,
+   "cost_unknown": 1,
+   "hours_to_done": null,
+   "reverts": null,
+   "unknown": {
+    "false_done": 0,
+    "resumes_needed": 0,
+    "unfinished": 0,
+    "guard_blocks": 0,
     "hours_to_done": 0
    }
   }
