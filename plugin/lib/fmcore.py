@@ -2601,13 +2601,35 @@ def pending_tasks(meta):
     return [a.get("task") for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")]
 
 
+def door_marked(b):
+    """T-2342: the step numbers fm focus marked as local one-way doors (frontmatter lists read back as strings)."""
+    return sorted({int(n) for n in b.meta.get("doors") or [] if str(n).isdigit()})
+
+
+def door_park(b):
+    """T-2342: 'one-way and ambiguous: <step>' while a step fm focus marked as a local one-way door has no Undo line (the
+    drive and fm run skip it; the final report carries its costly decision), else None. An Undo line or a done step lifts it."""
+    marked = door_marked(b)
+    for s in b.steps():
+        if s.n in marked and not s.done and "Undo:" not in s.text:
+            return f"one-way and ambiguous: {s.text.strip()}"
+    return None
+
+
+def door_gaps(b):
+    """T-2342: the Undo line each marked one-way step still needs before fm focus lets the task start."""
+    marked = door_marked(b)
+    return [f"an Undo: line on step {s.n} (one-way, untracked data: write how to take it back, e.g. 'Undo: cp -a SNAPSHOT/. .')"
+            for s in b.steps() if s.n in marked and not s.done and "Undo:" not in s.text]
+
+
 def waits_on_user(b, pending, autonomy="standard"):
     """Why a task can't be worked without the user (drive and fm run both skip it), else None."""
     if b.id in pending:
         return "pending approval"
     if b.meta.get("cost_cap") and str(b.meta.get("cap_hit")) == str(b.meta["cost_cap"]):  # T-1127: fmcost.check_cap
         return "cost cap hit"
-    return "plan approval" if needs_approval(b, autonomy) else None
+    return door_park(b) or ("plan approval" if needs_approval(b, autonomy) else None)
 
 
 # followed by text (a word, a flag, `code`, a quote; T-2285); "1) …" is hollow
@@ -2823,7 +2845,7 @@ def rival_gap(b):
     if os.environ.get("FOREMAN_NO_RIVAL", "0") not in ("", "0"):
         return []
     conf = _CONF_RE.search(b.section("Approach (options → choice → why)"))
-    hard = _one_way(b)
+    hard = _one_way(b) or ("untracked data, T-2342" if b.meta.get("doors") else "")  # fm focus marks local one-way steps
     why = ("an L plan" if b.tier == "L" else
            f"a one-way step ({hard})" if hard else
            f"the choice is {conf.group(1)}% sure, under {RACE_BAR}%" if b.tier == "M" and conf and int(conf.group(1)) < RACE_BAR else
@@ -2855,6 +2877,7 @@ def plan_gaps(b, autonomy="standard"):
         gaps += [f"verify command on criterion {a.n}" for a in acs if "verify with" not in a.text]
     if not b.steps():
         gaps.append("step")
+    gaps += door_gaps(b)
     if needs_approval(b, autonomy):
         why = plain(str(b.meta.get("confirm_why") or ""))[:160] or "a child found this request in an old session"
         gaps.append(f"the user's yes (fm ask {b.id} confirm: {why})"  # T-1750: why this one waits

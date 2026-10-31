@@ -3383,6 +3383,7 @@ def cmd_focus(args):
     p = resolve(args)
     warn = None
     blast = ""  # T-2277: git and sqlite waits happen before the project lock every verb queues on
+    peek = None
     try:
         peek = need_brief(p, args.id)
         if peek.tier in ("M", "L") and "Blast radius (fm graph blast)" not in peek.section("Risks and rollback"):
@@ -3391,6 +3392,9 @@ def cmd_focus(args):
                 peek.section(s) for s in ("Interpretation", "Approach (options → choice → why)", "Steps")))  # T-2336
     except Exception:  # a hint; the locked read below reports a missing task
         pass
+    if peek and peek.status not in c.CLOSED:  # T-2342: doors read, snapshots taken and parks recorded under their own locks
+        import fmdoors
+        fmdoors.gate(p, peek.id)
     with c.lock(p.dir):
         target = need_brief(p, args.id)
         if target.status in c.CLOSED:

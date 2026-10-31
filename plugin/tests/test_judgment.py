@@ -4,7 +4,7 @@ import json
 import os
 import subprocess
 
-from helpers import ForemanTestCase, read_text
+from helpers import ForemanTestCase, read_text, valid_m_plan
 
 import fmcore as c
 
@@ -23,11 +23,163 @@ class Base(ForemanTestCase):
         self.p = c.find_project(self.repo)
 
 
-class Doors(Base):
-    def test_execution_classifies_forks_as_one_or_two_way_doors(self):
-        text = read_text(os.path.join(REFS, "execute.md")).lower()
-        self.assertIn("one-way door", text)
-        self.assertIn("two-way door", text)
+class DoorBase(Base):  # T-2342: doors come from the guard's parser and git; a verb only gates which untracked paths count
+    def brief(self, *steps, raw="Tidy the repo", tier="S", verify="true", interp=None):
+        a = ["task", "new", "Tidy data", "--type", "FEATURE", "--tier", tier, "--raw", raw, "--ac", f"ok :: {verify}"]
+        for s in steps:
+            a += ["--step", s]
+        if tier == "M":
+            a += ["--interpretation", interp or valid_m_plan()[0], "--approach", valid_m_plan()[1]]
+        return self.fm_json(*a)["id"]
+
+    def data(self, rel="data/old.csv", text="a,b\n1,2\n"):
+        path = os.path.join(self.repo, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(text)
+        return path
+
+    def doors(self, tid):
+        import fmdoors
+        return {d["where"]: d for d in fmdoors.classify(self.p, c.find_brief(self.p, tid))}
+
+
+class DoorGate(DoorBase):
+    def test_push_publish_and_rm_outside_steps_are_the_guards(self):
+        tid = self.brief("run `git push --force origin main`", "run `npm publish`", "run `rm -rf /var/lib/appdata`",
+                         "run `sed -i s/a/b/ README.md`")
+        d = self.doors(tid)
+        self.assertEqual([d[f"step {n}"]["door"] for n in (1, 2, 3, 4)], ["guard", "guard", "guard", "two-way"])
+        self.assertTrue(d["step 3"]["cats"], "the guard's own category names it")
+
+    def test_a_verify_command_the_guard_stops_is_the_guards_too(self):
+        tid = self.brief("edit it", verify="git push --force origin main")
+        self.assertEqual(self.doors(tid)["verify 1"]["door"], "guard")
+
+    def test_a_command_the_guard_cannot_classify_fails_closed(self):
+        from unittest import mock
+        tid = self.brief("run `make deploy`")
+        with mock.patch("fmguard.check_bash", side_effect=RuntimeError("no parse")):
+            self.assertEqual(self.doors(tid)["step 1"]["door"], "guard")
+
+    def test_an_untracked_data_path_is_a_local_one_way_step(self):
+        self.data()
+        tid = self.brief("delete data/old.csv")
+        d = self.doors(tid)["step 1"]
+        self.assertEqual((d["door"], d["paths"]), ("local", ["data/old.csv"]))
+
+    def test_tracked_ignored_and_missing_paths_are_two_way(self):
+        with open(os.path.join(self.repo, ".gitignore"), "w") as f:
+            f.write("build/\n")
+        self.data("build/out.bin")
+        tid = self.brief("delete README.md", "delete build/out.bin", "delete data/none.csv")
+        self.assertEqual([self.doors(tid)[f"step {n}"]["door"] for n in (1, 2, 3)], ["two-way"] * 3)
+
+    def test_a_local_one_way_step_needs_an_undo_line(self):
+        tid = self.brief("delete data/old.csv")
+        b = c.find_brief(self.p, tid)
+        b.meta["doors"] = [1]  # what fm focus records for a local one-way step
+        self.assertTrue([g for g in c.door_gaps(b) if "Undo" in g and "step 1" in g])
+        b.edit_step(1, "delete data/old.csv. Undo: cp -a /snap/. /repo/")
+        self.assertEqual(c.door_gaps(b), [])
+
+    def test_a_local_one_way_step_needs_the_rival_read(self):
+        os.environ["FOREMAN_NO_RIVAL"] = "0"
+        self.data()
+        tid = self.brief("overwrite data/old.csv")  # no HARD_RE verb: only the door marks it
+        b = c.find_brief(self.p, tid)
+        self.assertEqual(c.rival_gap(b), [])
+        b.meta["doors"] = [1]
+        self.assertTrue(c.rival_gap(b), "a one-way door the request didn't name asks for a cold rival")
+
+    def test_a_reply_about_a_guard_command_is_one_way_and_a_plain_fork_two_way(self):
+        import fmdoors
+        self.assertEqual(fmdoors.reply_door("Should I run `git push --force origin main`?", self.p), "one-way")
+        self.assertEqual(fmdoors.reply_door("Which parser should I keep, the old or the new one?", self.p), "two-way")
+
+
+class DoorPark(DoorBase):
+    def waits(self, tid):
+        return c.waits_on_user(c.find_brief(self.p, tid), [])
+
+    def test_a_small_untracked_step_is_snapshotted_and_its_undo_restores_it(self):
+        path = self.data(text="keep,me\n")
+        tid = self.brief("delete data/old.csv")
+        self.fm("focus", tid)
+        step = c.find_brief(self.p, tid).steps()[0].text
+        self.assertIn("Undo: cp -a", step)
+        os.remove(path)
+        undo = step.split("Undo: ", 1)[1]
+        subprocess.run(undo, shell=True, check=True)
+        self.assertEqual(read_text(path), "keep,me\n")
+        rows = read_text(os.path.join(self.p.dir, "decisions.md"))
+        self.assertRegex(rows, r"\[confidence: \d+%\].*data/old\.csv")
+        self.assertIsNone(self.waits(tid))
+
+    def test_a_snapshot_that_does_not_verify_is_not_an_undo(self):
+        from unittest import mock
+        import fmdoors
+        self.data()
+        tid = self.brief("delete data/old.csv")
+        with mock.patch.object(fmdoors, "_same", return_value=False):
+            parked = fmdoors.gate(self.p, tid)
+        self.assertEqual(parked, "one-way and ambiguous: delete data/old.csv")
+        self.assertNotIn("Undo:", c.find_brief(self.p, tid).steps()[0].text)
+
+    def test_over_the_cap_and_unasked_parks_the_task_for_the_final_report(self):
+        self.data(text="x" * 400)
+        tid = self.brief("delete data/old.csv", raw="Tidy the repo")
+        r = self.fm("focus", tid, check=False, env={"FM_DOOR_CAP": "100"})
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.waits(tid), "one-way and ambiguous: delete data/old.csv")
+        review = self.fm("decide", "--review").stdout
+        self.assertIn("delete data/old.csv", review)
+        self.assertIn("[costly]", review)
+        self.assertNotEqual(self.fm("focus", tid, check=False, env={"FM_DOOR_CAP": "100"}).returncode, 0, "still parked")
+
+    def test_an_ambiguous_brief_parks_even_when_the_request_names_the_path(self):
+        self.data(text="x" * 400)
+        tid = self.brief("delete data/old.csv", raw="Delete data/old.csv", tier="M")
+        self.fm("focus", tid, check=False, env={"FM_DOOR_CAP": "100"})
+        self.assertEqual(self.waits(tid), "one-way and ambiguous: delete data/old.csv")
+        self.assertIn("Reading 1", self.fm("decide", "--review").stdout, "both readings go to the final report")
+
+    def test_the_requests_own_words_let_an_unambiguous_step_run_as_a_costly_decision(self):
+        self.data(text="x" * 400)
+        tid = self.brief("delete data/old.csv", raw="Delete data/old.csv, it is stale")
+        self.fm("focus", tid, env={"FM_DOOR_CAP": "100"})
+        self.assertIsNone(self.waits(tid))
+        self.assertEqual(c.find_brief(self.p, tid).status, "active")
+        self.assertIn("[costly]", self.fm("decide", "--review").stdout)
+
+    def test_a_path_outside_the_repo_cannot_be_snapshotted(self):
+        outside = os.path.join(self.tmp, "elsewhere.dat")
+        with open(outside, "w") as f:
+            f.write("x")
+        tid = self.brief(f"delete {outside}")
+        self.fm("focus", tid, check=False)
+        self.assertEqual(self.waits(tid), f"one-way and ambiguous: delete {outside}")
+
+    def test_an_undo_line_the_user_adds_lifts_the_park(self):
+        self.data(text="x" * 400)
+        tid = self.brief("delete data/old.csv")
+        self.fm("focus", tid, check=False, env={"FM_DOOR_CAP": "100"})
+        self.fm("task", "step", tid, "edit", "1", "delete data/old.csv. Undo: none, the user said go")
+        self.assertIsNone(self.waits(tid))
+
+    def test_a_second_focus_does_not_snapshot_again(self):
+        self.data()
+        tid = self.brief("delete data/old.csv")
+        self.fm("focus", tid)
+        n = len(read_text(os.path.join(self.p.dir, "decisions.md")).splitlines())
+        self.fm("focus", tid)
+        self.assertEqual(len(read_text(os.path.join(self.p.dir, "decisions.md")).splitlines()), n)
+
+    def test_the_digest_counts_parks_and_asks_by_door(self):
+        self.data(text="x" * 400)
+        tid = self.brief("delete data/old.csv")
+        self.fm("focus", tid, check=False, env={"FM_DOOR_CAP": "100"})
+        self.assertRegex(self.fm("digest").stdout, r"Doors: .*parks: 1 one-way")
 
 
 class Implicit(Base):

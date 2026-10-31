@@ -3549,7 +3549,7 @@ def _stop(pl):
         nudge = None if reload_due else _headless_wait(pl) if oneoff else (
             _evidence_gate(p, act, pl, g, closed) or _clauses_gate(p, pl, g, closed) or _safe_goal_gate(p, pl, g, sid, closed)
             or _claims_gate(pl, g)
-            or _question_nudge(pl)
+            or _question_nudge(pl, p)
             or _headless_wait(pl))
         reason = nudge or (None if oneoff or "drive" in c.ablated() else _drive(p, sd, briefs, pl, g))  # T-1375
         d = g["drive"].setdefault(sid, {"count": 0})
@@ -3628,13 +3628,18 @@ def _push_nudge(sid, sd, drained):
             f"the turn.")
 
 
-def _question_nudge(pl):
+def _question_nudge(pl, p):
     """A question for the user left in the reply text gets lost when they type something else; the user asked for
-    such blockers as Claude Code prompts. Sent back once per stop chain."""
+    such blockers as Claude Code prompts. Sent back once per stop chain. T-2342: a fork the guard's parser doesn't stop
+    on is two-way: decide it and record it, never ask; each ask is counted by door for fm digest."""
     if pl.get("stop_hook_active") or os.environ.get("FOREMAN_DRIVE_TASK") or \
             not needs_user(pl.get("last_assistant_message")):
         return None  # (fm run's headless sessions have nobody to ask)
-    return ("Foreman: the reply asks the user something in text. If it's yours to decide, decide it and record it "
+    import fmdoors
+    door = fmdoors.reply_door(pl.get("last_assistant_message"), p)
+    c.log_event(p, "door_ask", data={"door": door})
+    two = ("two-way: decide it and record it (fm decide … --confidence N). " if door == "two-way" else "")
+    return (f"Foreman: the reply asks the user something in text. {two}If it's yours to decide, decide it and record it "
             "(fm decide); otherwise ask it with the AskUserQuestion tool (one prompt, your default first), or "
             "fm ask for a guard category, so the answer can't be lost in chat. Where that tool isn't available "
             "(claude -p), decide with your default and record it. Either way, repeat what the user needs from the "
