@@ -3,6 +3,7 @@
 ## Unreleased
 
 - `fm genesis drift` and the put-time cold read now share one whole-line CLEAN verdict pattern: `CLEANUP needed`, `Not CLEAN`, `CLEAN-ish` and `CLEAN but …` no longer pass
+- `fm task finish`'s Landed line adds "(+N held for T-…)" for files an open task holds, and says "files already in <sha> (not this task's commit)" when no commit made since the task began (its own, or one naming it, such as a lane's "Merge T-N") touches its files
 - A lane's merge-conflict brief now gives steps that work from the main checkout: message the lane's builder, or `cd` into the worktree as its own command, with a drop-and-redo fallback
 - `fm exam grade` no longer loses a whole run to one scenario's error: the rest still grade, the broken one is listed as ungraded with its error, and the exit is non-zero
 - `fm genesis confirm N` settles a provisional lineage choice from stamped production-model exam lines (`default` counts as the configured model; unstamped and Haiku lines don't) for gen N and its parent on a common run, by select's own comparison: `- confirmed:` or `- reversed:` (the seed base follows what production kept), with the verdict filed in `gen-N/confirm.md`; `fm genesis step` blocks the report and the stop while any choice lacks a matching confirm.md (T-2197)

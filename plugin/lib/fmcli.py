@@ -1536,17 +1536,33 @@ def _landed(p, b):
     if not base:
         return "Landed: unknown (no git start point on record)"
     files = [f for f in fmmap.changed(p.root, base) if not f.startswith(".foreman/")]
-    files = [f for f in files if f not in set(_theirs(p, b, files))][:500]
+    others = _others(p, b)
+    theirs = set(_theirs(p, b, files, others))
+    files = [f for f in files if f not in theirs][:500]
+    held = sorted({t for f in theirs for t in others[f] if not _closed(p, t)})  # T-2260: left out for an open task
+    note = f" (+{len([f for f in theirs if any(not _closed(p, t) for t in others[f])])} held for " \
+           f"{', '.join(held[:3])}{', …' if len(held) > 3 else ''})" if held else ""
     if not files:
-        return "Landed: no file changes in git"
+        return "Landed: no file changes in git" + note
     dirty = c._git(p.root, "--literal-pathspecs", "status", "--porcelain", "--", *files, timeout=30).splitlines()
     if dirty:
-        return f"Landed: not committed ({len(dirty)} file{'' if len(dirty) == 1 else 's'} uncommitted)"
+        return f"Landed: not committed ({len(dirty)} file{'' if len(dirty) == 1 else 's'} uncommitted)" + note
     sha = c._git(p.root, "--literal-pathspecs", "log", "-1", "--format=%h", "--", *files, timeout=30).strip()
     if not sha:
-        return "Landed: unknown (git could not say)"
+        return "Landed: unknown (git could not say)" + note
+    # T-2260: is it a commit made on this branch since the task began? (a merge or another task's pull isn't)
+    start = b.meta.get("base")
+    if start and c._git(p.root, "cat-file", "-t", start, timeout=10).strip() == "commit":
+        mine = c._git(p.root, "--literal-pathspecs", "log", "-1", "--first-parent", "--no-merges", "--format=%h",
+                      f"{start}..HEAD", "--", *files, timeout=30).strip()
+        if not mine:  # or a commit (side-branch or its "Merge T-N") that names the task: how fm lane merge lands it
+            named = c._git(p.root, "--literal-pathspecs", "log", "--full-history", "-m", "--format=%x00%s %b",
+                           f"{start}..HEAD", "--", *files, timeout=30).split("\0")
+            mine = any(re.search(rf"\b{re.escape(b.id)}\b", m) for m in named)
+        if not mine:
+            return f"Landed: files already in {sha} (not this task's commit)" + note
     pushed = c._git(p.root, "branch", "-r", "--contains", sha, timeout=30).strip()
-    return f"Landed: committed {sha} · {'pushed' if pushed else 'not pushed'}"
+    return f"Landed: committed {sha} · {'pushed' if pushed else 'not pushed'}" + note
 
 
 def _warning_kind(w):

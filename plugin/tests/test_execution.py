@@ -185,6 +185,46 @@ class BoardClose(Base):
         self.assertEqual(out.strip().splitlines()[-1], f"Landed: committed {sha} · not pushed")
         self.assertIn("Landed: committed", self.fm("task", "finish", "T-0001", "--commit", "again").stdout)
 
+    def test_landed_lists_files_an_open_task_holds(self):  # T-2260
+        self.committed("x.py", "A = 1\n")
+        self.committed("y.py", "B = 1\n")
+        self.task()
+        self.fm("task", "new", "Other", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        self.write("x.py", "A = 2\n")
+        self.write("y.py", "B = 2\n")
+        c.log_event(self.p, "touched", task="T-0002", data={"file": os.path.join(self.repo, "y.py")})
+        last = self.finish("--commit", "x").stdout.strip().splitlines()[-1]
+        sha = subprocess.run(["git", "-C", self.repo, "rev-parse", "--short", "HEAD"], capture_output=True,
+                             text=True).stdout.strip()
+        self.assertEqual(last, f"Landed: committed {sha} · not pushed (+1 held for T-0002)")
+
+    def test_landed_does_not_claim_a_merge_s_commit_as_its_own(self):  # T-2260
+        git = lambda *a: subprocess.run(["git", "-C", self.repo, *a], check=True, capture_output=True)
+        self.committed("x.py", "A = 1\n")
+        self.task()
+        git("checkout", "-qb", "side")
+        self.write("x.py", "A = 2\n")
+        git("commit", "-qam", "side")
+        git("checkout", "-q", "-")
+        git("merge", "-q", "--no-ff", "-m", "merge side", "side")
+        import fmcli
+        last = fmcli._landed(self.p, c.find_brief(self.p, "T-0001"))
+        sha = subprocess.run(["git", "-C", self.repo, "log", "-1", "--format=%h", "--", "x.py"], capture_output=True,
+                             text=True).stdout.strip()  # the commit git says last changed it (the side's)
+        self.assertEqual(last, f"Landed: files already in {sha} (not this task's commit)")
+
+    def test_landed_claims_a_lane_merge_that_names_the_task(self):  # T-2260
+        git = lambda *a: subprocess.run(["git", "-C", self.repo, *a], check=True, capture_output=True)
+        self.committed("x.py", "A = 1\n")
+        self.task()
+        git("checkout", "-qb", "side")
+        self.write("x.py", "A = 2\n")
+        git("commit", "-qam", "the work (T-0001)")
+        git("checkout", "-q", "-")
+        git("merge", "-q", "--no-ff", "-m", "Merge T-0001: the work", "side")
+        import fmcli
+        self.assertRegex(fmcli._landed(self.p, c.find_brief(self.p, "T-0001")), r"^Landed: committed [0-9a-f]+ · ")
+
     def test_a_doc_the_finish_names_is_committed_though_another_task_touched_it(self):  # T-2251
         self.committed("CHANGELOG.md", "# Log\n")
         self.task()
