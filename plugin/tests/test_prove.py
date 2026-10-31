@@ -246,6 +246,82 @@ class InfraProof(ForemanTestCase):
         self.assertEqual(got["Dockerfile"]["verdict"], "unproven")
         self.assertIn("timed out", got["Dockerfile"]["why"])
 
+    def script(self, name, body):
+        path = os.path.join(self.bin, name)
+        with open(path, "w") as f:
+            f.write(body)
+        os.chmod(path, 0o755)
+
+    def test_infra_proof_a_silent_non_zero_exit_fails_the_file_and_a_tool_that_cannot_start_is_unproven(self):
+        self.script("hadolint", "#!/bin/sh\nexit 3\n")
+        got = self.by_file(fmprove_infra.infra(self.tree, allowed=False))
+        self.assertEqual(got["Dockerfile"]["verdict"], "fail")
+        self.assertIn("exit 3", got["Dockerfile"]["why"])
+        self.script("hadolint", "#!/nonexistent/interpreter\n")
+        got = self.by_file(fmprove_infra.infra(self.tree, allowed=False))
+        self.assertEqual(got["Dockerfile"]["verdict"], "unproven")
+        self.assertIn("start", got["Dockerfile"]["why"])
+        write(self.tree, {"app.service": "[Unit]\n"})  # systemd: only a missing ExecStart binary is benign
+        self.script("systemd-analyze", "#!/bin/sh\necho \"/x is not executable: No such file or directory\" >&2\nexit 1\n")
+        self.assertEqual(self.by_file(fmprove_infra.infra(self.tree, allowed=False))["app.service"]["verdict"], "pass")
+        self.script("systemd-analyze", "#!/bin/sh\nexit 1\n")
+        self.assertEqual(self.by_file(fmprove_infra.infra(self.tree, allowed=False))["app.service"]["verdict"], "fail")
+
+    def test_infra_proof_terraform_with_missing_providers_is_unproven_not_failed(self):
+        write(self.tree, {"main.tf": "x\n", ".terraform/p": "x"})
+        self.script("terraform", "#!/bin/sh\necho 'Error: Missing required provider' >&2\nexit 1\n")
+        got = self.by_file(fmprove_infra.infra(self.tree, allowed=True))
+        self.assertEqual(got["main.tf"]["verdict"], "unproven")
+        self.script("terraform", "#!/bin/sh\necho 'Error: Unsupported argument' >&2\nexit 1\n")
+        self.assertEqual(self.by_file(fmprove_infra.infra(self.tree, allowed=True))["main.tf"]["verdict"], "fail")
+
+    def test_infra_proof_a_compose_include_of_a_remote_source_is_unproven_and_not_run(self):
+        self.stub("docker")
+        write(self.tree, {"compose.yaml": "include:\n  - oci://example.com/stack:1\nservices: {}\n"})
+        got = self.by_file(fmprove_infra.infra(self.tree, allowed=False))
+        self.assertEqual(got["compose.yaml"]["verdict"], "unproven")
+        self.assertFalse([x for x in self.calls() if x.startswith("docker")])
+        write(self.tree, {"compose.yaml": "include:\n  - ./other.yaml\nservices: {}\n"})
+        self.assertEqual(self.by_file(fmprove_infra.infra(self.tree, allowed=False))["compose.yaml"]["verdict"], "pass")
+
+    def test_infra_proof_style_notes_do_not_fail_a_file(self):
+        self.stub("shellcheck")
+        write(self.tree, {"run.sh": "echo\n"})
+        fmprove_infra.infra(self.tree, allowed=False)
+        (hado,) = [x for x in self.calls() if x.startswith("hadolint") and "Dockerfile " in x]
+        self.assertIn("--failure-threshold warning", hado)
+        (shell,) = [x for x in self.calls() if x.startswith("shellcheck")]
+        self.assertIn("-S warning", shell)
+        self.assertIn("SC1091", shell)
+
+    def test_infra_proof_the_tool_runs_without_a_network_where_unshare_works_and_plain_where_it_does_not(self):
+        self.script("unshare", f'#!/bin/sh\necho "unshare $*" >> {self.log}\nshift 2\nexec "$@"\n')
+        fmprove_infra.infra(self.tree, allowed=False)
+        self.assertTrue([x for x in self.calls() if x.startswith("unshare -r -n")], self.calls())
+        self.assertTrue([x for x in self.calls() if x.startswith("hadolint")], self.calls())
+        os.remove(self.log)
+        self.script("unshare", "#!/bin/sh\nexit 1\n")  # no user namespaces here
+        got = self.by_file(fmprove_infra.infra(self.tree, allowed=False))
+        self.assertEqual(got["Dockerfile"]["verdict"], "pass")
+        self.assertTrue([x for x in self.calls() if x.startswith("hadolint")])
+
+    def test_infra_proof_a_folder_named_like_an_option_and_a_tree_over_the_copy_cap(self):
+        from unittest import mock
+        self.stub("terraform")
+        write(self.tree, {"--x/main.tf": "x\n", "--x/.terraform/p": "x"})
+        fmprove_infra.infra(self.tree, allowed=True)
+        (call,) = [x for x in self.calls() if x.startswith("terraform")]
+        self.assertIn("-chdir=./--x", call)
+        with mock.patch.object(fmprove_infra, "STAGE_MAX", 1):
+            got = self.by_file(fmprove_infra.infra(self.tree, allowed=False))
+        self.assertEqual(got["Dockerfile"]["verdict"], "unproven")
+        self.assertIn("copy", got["Dockerfile"]["why"])
+
+    def test_infra_proof_a_claude_worktree_folder_is_not_looked_at(self):
+        write(self.tree, {".claude/worktrees/w/Dockerfile": "FROM BAD\n"})
+        got = self.by_file(fmprove_infra.infra(self.tree, allowed=False))
+        self.assertEqual(set(got), {"Dockerfile", "Dockerfile.bad", ".github/workflows/ci.yml"})
+
 
 class InfraFinish(ForemanTestCase):
     """T-2385: fm task finish runs the infra proof on the infra files the task touched."""
@@ -308,6 +384,16 @@ class InfraFinish(ForemanTestCase):
                 if "capability-miss: hadolint" in b.section("Raw request")]
         self.assertEqual(len(mine), 1)
         self.assertEqual(self.calls(), [])
+
+    def test_infra_finish_the_refusal_names_every_failing_file(self):
+        self.hadolint()
+        write(self.repo, {"Dockerfile": "FROM BAD\n", "Dockerfile.two": "FROM BAD\n", "Dockerfile.three": "FROM scratch\n"})
+        r = self.finish()
+        self.assertNotEqual(r.returncode, 0)
+        out = r.stdout + r.stderr
+        self.assertIn("Dockerfile ", out)
+        self.assertIn("Dockerfile.two", out)
+        self.assertNotIn("Dockerfile.three", out.split("failing (recorded)")[-1])
 
     def test_infra_finish_a_task_that_touched_no_infra_file_runs_nothing(self):
         self.hadolint()

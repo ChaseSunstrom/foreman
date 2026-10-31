@@ -10,16 +10,24 @@ import fnmatch
 import glob
 import os
 import re
+import shutil
 import stat
+import sys
+import tempfile
 import time
 
 import fmcore as c
 
-INFRA_T, INFRA_MAX = 300, 200  # seconds for the whole run (a tool gets fmfind.TOOL_T of them), and files run (the rest: unproven)
+INFRA_T, FINISH_T, INFRA_MAX = 300, 90, 200  # seconds for a whole run, for the one fm task finish makes, and files run (the rest: unproven)
+STAGE_MAX = 200 << 20  # bytes one run copies; over it every file is unproven
 SCHEMAS_ENV = "KUBECONFORM_SCHEMAS"  # kubeconform fetches schemas over the network unless it has a local folder
 SCHEMA_PATH = "{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json"
 NOT_INSTALLED = re.compile(r"is not a docker command|unknown command|unknown docker command")  # a plugin docker lacks
 BENIGN = re.compile(r"is not executable|No such file or directory")  # systemd: a unit's ExecStart binary lives elsewhere
+TF_UNINIT = re.compile(r"Missing required provider|Inconsistent dependency lock file|Failed to query available provider"
+                       r"|Module not installed|Module source has changed|Required plugins are not installed")
+REMOTE = re.compile(r"(?i)\b(?:oci|git|https?|ssh)(?:\+\w+)?://|\bgit@")  # a compose include compose would fetch
+INCLUDE = re.compile(r"(?ms)^include:(.*?)(?=^[^\s#-]|\Z)")
 HELM_PARTS = {"Chart.yaml", "values.yaml", "values.schema.json", "templates", "crds"}
 GONE = {".git", "node_modules", "target", "__pycache__", ".venv", "venv", ".terraform"}
 BAD = {"fail": 1, "pass": 0, "unchecked": 2}
@@ -28,8 +36,10 @@ BAD = {"fail": 1, "pass": 0, "unchecked": 2}
 # globs of that card's that aren't the validator's, e.g. .dockerignore); globs: its own where no card has them.
 # unit: dir (one run per folder) or chart (one run per Chart.yaml's folder). {f}: the file, {d}: its folder, both
 # relative to the copy's root; every argv is a check that reads files: no apply, plan, init, install, push or pull.
+# Thresholds: a style or info note (and SC1091 on a sourced library, SC2148 on a file without a shebang) doesn't refuse a close.
 CLASSES = {
-    "dockerfile": {"card": "docker", "skip": (".dockerignore",), "tool": "hadolint", "argv": ["hadolint", "{f}"]},
+    "dockerfile": {"card": "docker", "skip": (".dockerignore",), "tool": "hadolint",
+                   "argv": ["hadolint", "--failure-threshold", "warning", "{f}"]},
     "compose": {"globs": ("docker-compose*.yml", "docker-compose*.yaml", "compose.yml", "compose.yaml", "compose.*.yml",
                           "compose.*.yaml"), "tool": "docker compose",
                 "argv": ["docker", "compose", "-f", "{f}", "config", "-q"]},
@@ -40,7 +50,8 @@ CLASSES = {
                    "argv": ["kubeconform", "-strict", "-ignore-missing-schemas", "-schema-location", "{schemas}", "{f}"]},
     "workflow": {"card": "github-actions", "skip": (".github/actions/*/action.yml",), "tool": "actionlint",
                  "argv": ["actionlint", "{f}"]},
-    "shell": {"card": "bash", "skip": (".shellcheckrc", "*.bats"), "tool": "shellcheck", "argv": ["shellcheck", "{f}"]},
+    "shell": {"card": "bash", "skip": (".shellcheckrc", "*.bats"), "tool": "shellcheck",
+              "argv": ["shellcheck", "-S", "warning", "-e", "SC1091,SC2148", "{f}"]},
     "systemd": {"card": "systemd", "tool": "systemd-analyze verify", "argv": ["systemd-analyze", "verify", "--man=no", "{f}"]},
 }
 
@@ -73,14 +84,25 @@ def _regular(root, rel):
         return False
 
 
-def classify(root, only=None):
-    """[(rel, class)] sorted: the tree's infra files, each in the first class that takes it. only (a list of repo-relative
-    paths, e.g. what a task touched) narrows to those files, a Helm chart to the one a touched part of it belongs to.
-    Symlinks and files inside .git, node_modules, .terraform and the like are left out."""
+def _listing(root):
+    """The tree's files, root-relative and sorted: tracked and not-ignored, none inside .git, node_modules, .terraform
+    and the like or a Claude worktree."""
     import fmlib
-    sel = {x.replace(os.sep, "/") for x in only} if only is not None else None
     files = sorted({f.replace(os.sep, "/") for f in fmlib._files(root)})
-    files = [f for f in files if not GONE & set(f.split("/")[:-1])]
+    return [f for f in files if not GONE & set(f.split("/")[:-1]) and not f.startswith(".claude/worktrees/")]
+
+
+def classify(root, only=None, files=None):
+    """[(rel, class)] sorted: the tree's infra files, each in the first class that takes it. only (a list of repo-relative
+    paths, e.g. what a task touched) narrows to those files, a Helm chart to the one a touched part of it belongs to;
+    only those (and the Chart.yaml above them) are matched against the globs. Symlinks are left out."""
+    files = _listing(root) if files is None else files
+    sel = None
+    if only is not None:
+        sel = {x.replace(os.sep, "/") for x in only}
+        charts = {(d + "/" if d else "") + "Chart.yaml" for x in sel for d in _above(x)}
+        keep = sel | charts
+        files = [f for f in files if f in keep]
     sigs = {n: (_signals(k), _signals({"globs": k.get("skip", ())})) for n, k in CLASSES.items()}
     out = []
     for rel in files:
@@ -89,8 +111,8 @@ def classify(root, only=None):
             continue
         if sel is not None:
             if name == "helm":
-                d = os.path.dirname(rel) or "."
-                under = [f[len(d) + 1:] if d != "." else f for f in sel if d == "." or f.startswith(d + "/")]
+                d = os.path.dirname(rel)
+                under = [f[len(d) + 1:] if d else f for f in sel if not d or f.startswith(d + "/")]
                 if not any(u.split("/")[0] in HELM_PARTS or u.startswith("values") for u in under):
                     continue
             elif rel not in sel:
@@ -99,10 +121,14 @@ def classify(root, only=None):
     return out
 
 
+def _above(rel):
+    """The folders above a file, deepest first, '' the root."""
+    parts = rel.split("/")[:-1]
+    return ["/".join(parts[:i]) for i in range(len(parts), -1, -1)]
+
+
 def _which(name, env, root):
-    """The tool's path on the user's PATH (env's: absolute entries outside the tree), or None: a link into the tree is
-    the tree's own file, not the user's tool."""
-    import shutil
+    """The tool's path on the user's PATH (env's), or None: a link into the tree is the tree's own file, not the user's tool."""
     exe = shutil.which(name, path=env["PATH"])
     if exe and os.path.commonpath([os.path.realpath(exe), root]) == root:
         return None
@@ -111,24 +137,82 @@ def _which(name, env, root):
 
 def _first(text, n=3):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
-    return c.fit(c.plain(" | ".join(lines[:n])), 240)
+    return c.fit(c.redact(c.plain(" | ".join(lines[:n]))), 240)
 
 
-def infra(root, allowed=False, p=None, only=None):
+def _stage(root, rels, extra=()):
+    """(tmp, dst): copies of the regular files in rels, and of those under each folder in extra (a Terraform folder's own
+    .terraform). Never a symlink, a socket or .git; ValueError past STAGE_MAX bytes; a failed copy leaves nothing."""
+    tmp = tempfile.mkdtemp(prefix="fm-prove-")
+    dst, size = os.path.join(tmp, "w"), 0
+
+    def put(rel):
+        nonlocal size
+        src = os.path.join(root, rel)
+        st = os.lstat(src)
+        if not stat.S_ISREG(st.st_mode):
+            return
+        size += st.st_size
+        if size > STAGE_MAX:
+            raise ValueError(f"the tree is over the {STAGE_MAX >> 20} MB copy cap")
+        os.makedirs(os.path.dirname(os.path.join(dst, rel)), exist_ok=True)
+        shutil.copy2(src, os.path.join(dst, rel))
+    try:
+        os.makedirs(dst)
+        for rel in rels:
+            put(rel)
+        for d in extra:
+            for top, dirs, names in os.walk(os.path.join(root, d)):
+                dirs[:] = [x for x in dirs if not os.path.islink(os.path.join(top, x))]
+                for n in names:
+                    put(os.path.relpath(os.path.join(top, n), root))
+    except (OSError, ValueError):
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    return tmp, dst
+
+
+def _run(argv, cwd, env, end):
+    """fmfind._run_tool with its timeout clamped to the time left; (out, err, rc, why), why also when it couldn't start."""
+    import fmfind
+    old = fmfind.TOOL_T
+    fmfind.TOOL_T = max(1, min(old, int(end - time.monotonic())))  # ponytail: a module global, so one run at a time
+    try:
+        return fmfind._run_tool(argv, cwd, env)
+    except OSError as e:  # a bad shebang or a missing interpreter: Popen raises
+        return "", "", None, f"couldn't start ({c.fit(c.plain(str(e)), 100)})"
+    finally:
+        fmfind.TOOL_T = old
+
+
+def infra(root, allowed=False, p=None, only=None, budget=None):
     """{"root", "files": [{"file", "class", "tool", "verdict": pass|fail|unproven, "why"}], "verdict": fail|pass|unchecked}.
     allowed: the tree is trusted (terraform validate loads the folder's own provider plugins, the tree's code, so it
     runs only then). p: a Foreman project that gets one capability-miss task per missing tool. Nothing runs outside a
-    throwaway copy of root; the environment is Foreman's minimal one (no credentials), HOME the copy's folder."""
+    throwaway copy of root; the environment is Foreman's minimal one (no credentials), HOME the copy's folder; the
+    tool runs under `unshare -r -n` (no network) when that works unprivileged here, plain when it doesn't."""
     import fmfind
-    import fmprove
     root = os.path.realpath(root)
-    env, end = fmfind._tool_env(root), time.monotonic() + INFRA_T
-    units, rows, held = {}, [], []
+    env, end = fmfind._tool_env(root), time.monotonic() + (INFRA_T if budget is None else budget)
+    units, rows, held, net = {}, [], [], []
+    files = _listing(root)
+    found = classify(root, only, files)
 
-    def copy():
+    def stage():
         if not held:
-            held.append(fmprove._copy(root))  # ponytail: the whole tree, .terraform and all; a path list when copies hurt
+            tf = sorted({os.path.dirname(rel) for rel, n in found if n == "terraform"})
+            extra = [(d + "/" if d else "") + ".terraform" for d in tf if allowed
+                     and os.path.isdir(os.path.join(root, d, ".terraform"))
+                     and not os.path.islink(os.path.join(root, d, ".terraform"))]
+            held.append(_stage(root, files, extra))  # ponytail: every listed file; a path list when copies hurt
         return held[0]
+
+    def sandbox(dst):
+        if not net:
+            exe = _which("unshare", env, root)
+            ok = exe and _run([exe, "-r", "-n", sys.executable, "-c", "pass"], dst, env, end)[2:] == (0, None)
+            net.append([exe, "-r", "-n"] if ok else [])  # silently plain when it can't
+        return net[0]
 
     def miss(name):
         if p:
@@ -149,30 +233,32 @@ def infra(root, allowed=False, p=None, only=None):
             if not allowed:
                 return "unproven", ("terraform validate loads the folder's own provider plugins, the tree's code: "
                                     "fm prove --yes-run PATH says yes to the tree")
-        if name == "helm":
+        if name in ("helm", "compose"):
             try:
                 with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as f:
-                    deps = re.search(r"(?m)^dependencies:", f.read(1 << 16))
+                    text = f.read(1 << 20)
             except OSError:
-                deps = None
-            if deps and not os.path.isdir(os.path.join(root, d, "charts")):
+                text = ""
+            if name == "helm" and re.search(r"(?m)^dependencies:", text) and not os.path.isdir(os.path.join(root, d, "charts")):
                 return "unproven", "the chart's dependencies aren't vendored (helm dependency build needs the network)"
+            inc = INCLUDE.search(text) if name == "compose" else None
+            if inc and REMOTE.search(inc.group(1)):
+                return "unproven", "an include: names a remote source (oci, git, http); compose would fetch it"
         if name == "kubernetes" and not (os.path.isabs(schemas) and os.path.isdir(schemas)):
             return "unproven", (f"kubeconform fetches schemas over the network unless it has a local folder: set "
                                 f"{SCHEMAS_ENV}=DIR to an absolute path (yannh/kubernetes-json-schema layout)")
         if n >= INFRA_MAX:
             return "unproven", f"over the {INFRA_MAX}-file cap of one run"
         if time.monotonic() >= end:
-            return "unproven", f"time budget ({INFRA_T}s) spent"
+            return "unproven", "time budget spent"
         try:
-            tmp, dst = copy()
-        except (OSError, __import__("shutil").Error) as e:
+            tmp, dst = stage()
+        except (OSError, ValueError) as e:
             return "unproven", f"couldn't copy the tree: {c.fit(c.plain(str(e)), 120)}"
-        safe = lambda x: "./" + x if x.startswith("-") else x  # noqa: E731  a file named -x is not an option
-        argv = [exe] + [a.replace("{f}", safe(rel)).replace("{d}", d).replace("{schemas}", os.path.join(schemas, SCHEMA_PATH))
-                        for a in k["argv"][1:]]
-        out, err, rc, why = fmfind._run_tool(argv, dst, dict(env, HOME=tmp, NO_COLOR="1", CHECKPOINT_DISABLE="1",
-                                                             TF_IN_AUTOMATION="1"))
+        safe = lambda x: "./" + x if x.startswith("-") else x  # noqa: E731  a file or folder named -x is not an option
+        argv = sandbox(dst) + [exe] + [a.replace("{f}", safe(rel)).replace("{d}", safe(d))
+                                       .replace("{schemas}", os.path.join(schemas, SCHEMA_PATH)) for a in k["argv"][1:]]
+        out, err, rc, why = _run(argv, dst, dict(env, HOME=tmp, NO_COLOR="1", CHECKPOINT_DISABLE="1", TF_IN_AUTOMATION="1"), end)
         if why:
             return "unproven", f"{k['tool']} {why}"
         if rc == 0:
@@ -180,11 +266,17 @@ def infra(root, allowed=False, p=None, only=None):
         if NOT_INSTALLED.search(err):
             miss(k["tool"])
             return "unproven", f"{k['tool']} isn't installed ({_first(err, 1)})"
-        bad = [l for l in (out + "\n" + err).splitlines() if l.strip() and not (name == "systemd" and BENIGN.search(l))]
-        return ("fail", _first("\n".join(bad))) if bad else ("pass", "")
+        text = (out + "\n" + err).replace(dst + os.sep, "").replace(tmp, "")
+        if name == "terraform" and TF_UNINIT.search(text):
+            return "unproven", "the folder's providers or modules aren't installed here (terraform init is yours to run)"
+        lines = [l for l in text.splitlines() if l.strip()]
+        bad = "\n".join(l for l in lines if not (name == "systemd" and BENIGN.search(l)))
+        if name == "systemd" and lines and not bad:
+            return "pass", ""  # only an ExecStart binary that lives elsewhere; a silent exit 1 is still a failure
+        return "fail", f"exit {rc}" + (f": {_first(bad)}" if bad else " with no output")
 
     try:
-        for rel, name in classify(root, only):
+        for rel, name in found:
             k = CLASSES[name]
             key = (name, os.path.dirname(rel)) if k.get("unit") else (name, rel)
             if key not in units:
@@ -192,7 +284,6 @@ def infra(root, allowed=False, p=None, only=None):
             rows.append({"file": rel, "class": name, "tool": k["tool"], "verdict": units[key][0], "why": units[key][1]})
     finally:
         if held:
-            import shutil
             shutil.rmtree(held[0][0], ignore_errors=True)
     got = {x["verdict"] for x in rows}
     return {"root": root, "files": rows, "verdict": "fail" if "fail" in got else "pass" if "pass" in got else "unchecked"}
@@ -214,7 +305,6 @@ def cmd_infra(args, root):
         try:
             fmprove.remember(root)
         except OSError as e:
-            import sys
             print(f"fm prove: ran on your yes, but couldn't keep it for {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
     p = c.find_project(os.getcwd())
     r = infra(root, args.yes_run or fmprove.trusted(root) or fmprove._lane_trusted(p, root), p=p)
@@ -225,12 +315,18 @@ def cmd_infra(args, root):
 
 def for_task(p, b, say=print):
     """(code, text) for fm task finish, or None: the infra files the task touched, proved. A missing validator is said
-    (and filed once as a capability-miss), never installed; all-unproven records no run. A failing file refuses the close."""
+    (and filed once as a capability-miss), never installed; all-unproven records no run. A failing file refuses the close
+    (text: every file's line, the failing ones first-class in the refusal)."""
     import fmmap
     import fmprove
-    base = c.task_base(p.root, b) if c.git_root(p.root) else None
-    touched = fmmap.changed(p.root, base) if base else []
-    r = infra(p.root, fmprove.trusted(p.root) or fmprove._lane_trusted(p, p.root), p=p, only=touched) if touched else None
+    top = c.git_root(p.root)
+    base = c.task_base(p.root, b) if top else None
+    prefix = os.path.relpath(p.root, top).replace(os.sep, "/") if top else "."
+    # git names a change from the repo's top; the project may be a folder in it
+    touched = [f[len(prefix) + 1:] if prefix != "." and f.startswith(prefix + "/") else f
+               for f in (fmmap.changed(p.root, base) if base else [])]
+    r = infra(p.root, fmprove.trusted(p.root) or fmprove._lane_trusted(p, p.root), p=p, only=touched, budget=FINISH_T) \
+        if touched else None
     if not r or not r["files"]:
         return None
     lines = render(r)

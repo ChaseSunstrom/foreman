@@ -1161,8 +1161,9 @@ def task_finish(p, args):
                 x.set_section("Would do differently", c.redact(c.plain(args.differently).strip()))
     mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3]),
                                        "ran": [[r[2][:200], r[3]] for r in results][:20]})  # T-0749: catch rates
-    failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → {c.run_result(code, output)}"
-              for kind, n, cmd, code, output in results if code]
+    failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → " + (  # T-2385: every failing infra file, not only the last output lines
+        " / ".join(l for l in output.splitlines() if l.startswith("fail"))[:600] if cmd == "fm prove --infra" else
+        c.run_result(code, output)) for kind, n, cmd, code, output in results if code]
     if failed:
         raise c.PolicyError(f"{b.id} not finished; failing (recorded):\n  - " + "\n  - ".join(failed))
     _close_affected(p, need_brief(p, b.id), runs, args)  # T-1117: what it changed must not break what's linked to it
