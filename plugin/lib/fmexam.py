@@ -1446,6 +1446,9 @@ def grade(p, run, agent):
 
 def summary(r):
     """One line for a score row (fm exam, fm genesis)."""
+    if r.get("tier") == "long":  # T-2258: replayed task changes
+        return (f"long {r.get('agent', '?')} {r.get('run', '?')}: {r.get('true_done', 0)}/{r.get('scenarios', 0)} true done, "
+                f"{r.get('regressions', 0)} regressions")
     if str(r.get("agent", "")).startswith("draft-"):  # fm genesis exam: drafts graded by cover
         cl = r.get("closed") or {}
         return (f"{r['agent']} {r.get('run', '?')}: {len(cl.get('holdout', []))} held out + {len(cl.get('train', []))} "
@@ -1526,6 +1529,9 @@ def cmd_exam(args):
     p = fmcli.resolve(args)
     action = args.action or "status"
     try:
+        if action == "long":  # T-2258: the long-horizon tier
+            import fmlong
+            return fmlong.cmd(p, args)
         if action == "gen":
             meta = gen(p, args.seed, args.per_kind, _list(args.lang, LANGS), _list(args.kind, KINDS), args.split,
                        args.author, args.model or "sonnet")

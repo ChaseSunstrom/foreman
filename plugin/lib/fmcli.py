@@ -7081,10 +7081,14 @@ def _build_parser(only=None):
                    "(exit 1), green is fixed (exit 0), a missing saved test can't be re-checked (exit 1)")
     s = add("exam", lazy("fmexam", "cmd_exam"), tier=("Finding your way", 456), help="a seeded exam of throwaway repos in six "
             "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
-    s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard"),
+    s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard", "long"),
                    help="scorecard: each gen-0 §2 capability's held-out pass rate from graded runs; exit 1 unless all "
-                        "pass (T-2097)")
-    s.add_argument("run", nargs="?", help="run/grade/check: the run id fm exam gen printed")
+                        "pass (T-2097); long: replayed past changes, fm exam long gen [--from PATH] [--n N] | run RUN | "
+                        "grade RUN (--agent oracle|empty; T-2258)")
+    s.add_argument("run", nargs="?", help="run/grade/check: the run id fm exam gen printed; long: gen|run|grade")
+    s.add_argument("rest", nargs="*", help="long run|grade: the run id")
+    s.add_argument("--from", dest="from_", metavar="PATH", help="long gen: the local git repo to replay (default Foreman's own)")
+    s.add_argument("--n", type=int, help="long gen: goals to make (default 6, at most 20)")
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--per-kind", type=int, default=9, help="scenarios per kind; a third (rounded) is held out")
     s.add_argument("--lang", help="comma list (default all: python,js,ts,ruby,rust,c)")
