@@ -387,3 +387,49 @@ class Proof(ForemanTestCase):
         self.assertEqual(open(path, encoding="utf-8").read(), before, "another window never overwrites the cache")
         self.task(evidence=[("--step", "1", "pytest", "ok")])  # a done brief does
         self.assertEqual(c.unproven_summary(self.p)["n"], 2)
+
+
+class Meaning(ForemanTestCase):  # T-2393 (Mission 7, #6): each clause of the request bound to a criterion that ran green
+    RAW = ("Add a CSV export button to the report page.\nAlso email the weekly digest to every admin on Mondays.\n"
+           "DONE-WHEN: the report page offers a CSV export")
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+
+    def new(self, ac="the report page offers a CSV export button :: true"):
+        out = self.fm("task", "new", "CSV export", "--type", "FEATURE", "--tier", "S", "--raw", self.RAW,
+                      "--ac", ac, "--step", "s", "--focus", "--json").stdout
+        return json.JSONDecoder().raw_decode(out)[0]["id"]
+
+    def test_meaning_unproven_a_clause_no_criterion_checks_is_listed_at_the_close(self):
+        tid = self.new()
+        r = self.fm("task", "finish", tid, "--audit", "self", "--run", "true")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)  # a label, never a block
+        self.assertIn("meaning unproven", r.stdout)
+        self.assertIn("email the weekly digest", r.stdout)
+        self.assertNotIn("meaning unproven: Add a CSV export", r.stdout)  # bound to the criterion that ran green
+        import fmrecall
+        got = {cl[:20]: (n, why) for cl, n, why in fmrecall.bind(c.find_brief(self.p, tid))}
+        self.assertEqual(got["Add a CSV export but"], (1, ""))
+        self.assertEqual(got["DONE-WHEN: the repor"][0], 1)  # the user's own done-when line, checked by the same criterion
+
+    def test_meaning_kind_lists_the_unbound_clause_in_fm_proof(self):
+        tid = self.new()
+        self.fm("task", "finish", tid, "--audit", "self", "--run", "true")
+        rows = {x["id"]: x for x in self.fm_json("proof")["tasks"]}
+        self.assertIn("meaning", rows[tid]["kinds"])
+        need = next(n for r in c.unproven(self.p) if r["id"] == tid for n in r["needs"] if n["kind"] == "meaning")
+        self.assertIn("email the weekly digest", need["why"])
+
+    def test_meaning_hollow_a_clause_bound_only_to_a_vacuous_check_counts_as_unbound(self):
+        import fmrecall
+        tid = self.new()
+        self.fm("task", "finish", tid, "--audit", "self", "--run", "true")
+        with c.lock(self.p.dir):
+            b = c.find_brief(self.p, tid)
+            b.append_log("vacuous checks: ac 1")  # what fm task prove --vacuous writes when ac 1 passed on the start tree
+            c.save_brief(self.p, b)
+        why = dict((cl[:20], w) for cl, n, w in fmrecall.bind(c.find_brief(self.p, tid)))
+        self.assertIn("start tree", why["Add a CSV export but"])
