@@ -56,7 +56,8 @@ DB_VAR = re.compile(r"(?i)^(DATABASE|DB_|PG|MYSQL|MARIADB|POSTGRES|SQLALCHEMY|DJ
 DB_URL = re.compile(r"(?i)\b(postgres(ql)?|mysql|mariadb|mssql|oracle|cockroachdb|redshift)(\+\w+)?://")
 BOOKKEEPING = {"alembic_version", "django_migrations"}  # the tool's own tables are not the schema
 MARKER = re.compile(r"(?mi)^--\s*migrate:(up|down)\b[^\n]*$")
-PG_SCHEMA = ("SELECT c.relkind || ' ' || c.relname || ': ' || coalesce((SELECT string_agg(a.attname || ' ' || "
+# T-2438: every concatenated catalog column is cast to text: newer Postgres finds "char" || unknown ambiguous
+PG_SCHEMA = ("SELECT c.relkind::text || ' ' || c.relname::text || ': ' || coalesce((SELECT string_agg(a.attname::text || ' ' || "
              "format_type(a.atttypid, a.atttypmod) || CASE WHEN a.attnotnull THEN ' not null' ELSE '' END, ', ' ORDER BY "
              "a.attnum) FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped), '') FROM "
              "pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN "

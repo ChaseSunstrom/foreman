@@ -368,6 +368,13 @@ STUB_PG = {
 class MigrationDialect(ToolCase):
     """T-2386: SQL for Postgres runs on a throwaway Postgres cluster when initdb is installed, else it's unproven."""
 
+    def test_the_schema_query_casts_char_and_name_columns_before_concatenating(self):  # T-2438
+        # newer Postgres (Ubuntu 26 runners) rejects "char" || unknown as ambiguous; text || text is never ambiguous
+        import fmmigrate
+        for col in ("c.relkind", "c.relname", "a.attname"):
+            with self.subTest(col=col):
+                self.assertIn(f"{col}::text ||", fmmigrate.PG_SCHEMA)
+
     def pg_stubs(self):
         for name, body in STUB_PG.items():
             self.stub(name, "import json\n" + body)
