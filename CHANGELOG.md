@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm prove --bugs [N]`: a cheap tool-less child names up to 5 bug candidates in each of the N hottest files (else the largest), kept only when strictly shaped and inside a function; each is proven by a model-written red test with stub controls or stays a lead, `--capture` files the proven ones as bug tasks, and their `--only bug-ID` criterion reruns the kept test (red is open, green fixed, missing never fixed); trusted trees only, never a sensitive project (T-2242)
 - `fm find --capture`, `--rank` and `fm prove` give twin leads the same keys, so a capture's dedupe and a proof's lift name the same lead
 - `fm goal` turns the standing mandate into a goal ledger: items, each with a check command and the tasks that build it (`fm goal link`, or `fm task new --goal N`); `fm goal show` lists open work outside the goal, items with no task, and items whose tasks closed while the check still fails, exiting 1 when any. A plain mandate prints as before
 - `fm mandate` shows its end date as the day you typed; it printed the next day west of UTC
