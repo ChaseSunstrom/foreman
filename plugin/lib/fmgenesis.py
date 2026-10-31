@@ -16,7 +16,7 @@ import fmcore as c
 # coverage.md: the capability-area x surface x stage grid every generation fills.
 SHAPE = re.compile(r"(gap-map|lineage|catalogue|report|not-yet|coverage|spec)\.md|exam\.jsonl"
                    r"|gen-[1-9][0-9]*/(seed|drift|sweep|(mission|critique)-[a-z0-9][a-z0-9-]*)\.md")
-OWNED = re.compile(r"exam\.jsonl|gen-[1-9][0-9]*/(drift|sweep)\.md")  # T-2155: the stage gates' records, never put
+OWNED = re.compile(r"exam\.jsonl|gen-[1-9][0-9]*/(drift|sweep|select)\.md")  # T-2155: the stage gates' records, never put
 GEN = re.compile(r"gen-([1-9][0-9]*)")
 
 
@@ -72,7 +72,7 @@ def sealed(p):
 def put(p, name, text):
     if OWNED.fullmatch(name):
         raise ValueError(f"{name!r} is written only by its own command (exam.jsonl: fm exam grade and fm genesis exam; "
-                         "gen-N/drift.md and sweep.md: fm genesis drift N and fm genesis sweep N), so a hand-written "
+                         "gen-N/drift.md, sweep.md and select.md: fm genesis drift N, sweep N and select N), so a hand-written "
                          "line can't pass a stage")
     if not SHAPE.fullmatch(name):
         raise ValueError(f"{name!r} isn't a tower doc: gap-map.md, lineage.md, catalogue.md, report.md, "
@@ -459,7 +459,9 @@ def step(p):
         if not os.path.isfile(os.path.join(d, f"{pre}critique-{name}.md")):
             return act("critique", n, f"{where}: write its critique (closed vs planned, outside signals, what failed)",
                        f"fm genesis put {pre}critique-{name}.md --file -")
-    if not re.search(rf"^## gen-{n}\b", _doc(d, "lineage.md") or "", re.M):
+    # T-2163: only gen-N/select.md, which fm genesis select alone writes (put refuses it), passes this stage; a lineage.md
+    # heading is a file anyone can put and a ledger event is one fm log can append
+    if not re.search(rf"^Gen: {n}$", _doc(d, f"{pre}select.md") or "", re.M):
         return act("select", n, f"select: gen-{n}'s rewrite stays only if it closed more train exam scenarios than "
                                 f"its parent on the same run; the verdict goes to fm decide and a '## gen-{n}' section "
                                 "in lineage.md", f"fm genesis select {n}")
@@ -1443,7 +1445,14 @@ def _base(lineage, n):
 
 def select(p, n, agent="foreman"):
     with c.lock(os.path.join(p.dir, "genesis-lineage")):  # two selects can't interleave a read and its write
-        return _select(p, n, agent)
+        r = _select(p, n, agent)
+        if r["verdict"] != "rerun":  # T-2163: the record step() gates on; only a select that wrote its section leaves it
+            import fmcli
+            _file(p, f"gen-{n}/select.md", f"# Select\n\nGen: {n}\nVerdict: {r['verdict']}\nSeed base: {r['base']}\n"
+                                           f"Reason: {r['reason']}\n")
+            c.log_event(p, "genesis_select", data={"gen": n, "verdict": r["verdict"], "base": r["base"]},
+                        session=fmcli.session())
+        return r
 
 
 def _select(p, n, agent):
@@ -2038,8 +2047,9 @@ def cmd_genesis(args):
         if action in ("select", "seed"):
             n = int(args.path)
             r = (select if action == "select" else seed)(p, n, args.agent)
+            if action == "seed":
+                c.log_event(p, "genesis_seed", data={"gen": n, "base": r["base"]}, session=fmcli.session())
             if action == "seed" or r["verdict"] != "rerun":
-                c.log_event(p, f"genesis_{action}", data={"gen": n, "base": r["base"]}, session=fmcli.session())
                 kick(p)
             if action == "seed":
                 return fmcli.out(args, r, f"Seed: {r['path']} ({r['missions']} Missions, from {r['base']}'s seed)")
