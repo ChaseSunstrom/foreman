@@ -43,7 +43,7 @@ def _load_json(path):
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return None
 
 
@@ -348,6 +348,44 @@ def check_frontmatter(plugin=PLUGIN):
     return Result("frontmatter", "FAIL" if bad else "PASS", "; ".join(bad) or "skills and read-only agents valid")
 
 
+def _stats(paths, exact=False):
+    """[path, mtime floored to the hour] per path, [path] for one that can't be stat'd. The inputs are aggregates over
+    days that grow every turn, so up to an hour stale is fine; `exact` adds size and the ns mtime (SKILL.md files)."""
+    out = []
+    for p in sorted(paths):
+        try:
+            st = os.stat(p)
+            out.append([p, st.st_size, st.st_mtime_ns] if exact else [p, int(st.st_mtime // 3600)])
+        except OSError:
+            out.append([p])
+    return out
+
+
+def _cached(name, key, compute):
+    """T-2298: the Result `compute` makes, reused from state/doctor-cache.json (JSON, never pickle) while `key` (the
+    inputs' coarse stats plus the day) is unchanged. A missing, oversized, corrupt or odd cache recomputes; a hit takes
+    only status and detail, cleaned; a failed write is ignored."""
+    path = os.path.join(c.state_dir(), "doctor-cache.json")
+    key = json.loads(json.dumps([time.strftime("%Y-%m-%d"), key]))  # as JSON round-trips it, for the comparison
+    try:
+        with open(path, encoding="utf-8") as f:
+            cache = json.loads(f.read(65537))  # past 64 KB the cut text fails to parse: recompute
+    except (OSError, ValueError, RecursionError):
+        cache = None
+    cache = cache if isinstance(cache, dict) else {}
+    hit = cache.get(name)
+    res = hit.get("result") if isinstance(hit, dict) and hit.get("key") == key else None
+    if isinstance(res, list) and len(res) == 3 and res[1] in ("PASS", "WARN", "FAIL") and isinstance(res[2], str):
+        return Result(name, res[1], c.fit(c.plain(res[2]), 2000))
+    r = compute()
+    cache[name] = {"key": key, "result": [r.name, r.status, r.detail]}
+    try:
+        c.write_atomic(path, json.dumps(cache))
+    except OSError:
+        pass
+    return r
+
+
 UNLOADED_SESSIONS = 5  # T-1703: sessions that named a skill, none loading it, before doctor says so
 IDLE_NAMED = {"next"}  # the idle Next line names /foreman:next every turn, so every session names it
 
@@ -360,8 +398,10 @@ def check_unloaded_skills(events=None, plugin=PLUGIN, n=UNLOADED_SESSIONS):
     skills = os.path.join(plugin, "skills")
     names = sorted(s for s in os.listdir(skills) if os.path.isfile(os.path.join(skills, s, "SKILL.md"))) \
         if os.path.isdir(skills) else []
-    if events is None:
-        events = c.global_events(fmcost._since(30))
+    if events is None:  # T-2298: the files c.global_events reads (rotated logs, events.jsonl) and each SKILL.md
+        return _cached("unloaded skills", [plugin, n, _stats(c.global_event_files()),
+                                           _stats([os.path.join(skills, s, "SKILL.md") for s in names], exact=True)],
+                       lambda: check_unloaded_skills(list(c.global_events(fmcost._since(30))), plugin, n))
     named, loaded = collections.defaultdict(set), collections.defaultdict(set)
     for e in events:
         if e.get("kind") in ("skill_named", "slash"):
@@ -1823,9 +1863,32 @@ def check_enforce(p, days=7):
 def check_usage_burn(found=None):
     """T-1800: why usage burns, named with its fix (fmcost.burn_findings), so nobody has to notice it first."""
     if found is None:
+        import fmbudget
         import fmcost
-        found = fmcost.burn_findings()
-        fmcost.write_burn(found)
+        # T-2298: the transcripts burn_findings reads (_entries skips a file older than the window) and the usage
+        # reading's weekly line; burn.json is written only when the scan ran (the key holds the day, so it is
+        # never older than the cache's day)
+        folder = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "projects")
+        cut = time.time() - 2 * 86400 - 3600  # an hour of slack: a file just inside the window is keyed, not missed
+        files = []
+        for dirpath, _, names in os.walk(folder):
+            for n in names:
+                p = os.path.join(dirpath, n)
+                try:
+                    if n.endswith(".jsonl") and os.path.getmtime(p) >= cut:
+                        files.append(p)
+                except OSError:
+                    pass
+        week = fmbudget.forecast().get("seven_day") or {}
+        def compute():
+            found = fmcost.burn_findings(forecast={"seven_day": week})
+            fmcost.write_burn(found)
+            return check_usage_burn(found)
+        try:  # the hours before the reset the finding shows, not full_at (it moves with the clock)
+            shown = round((week["resets_at"] - week["full_at"]) / 3600) if week.get("full_at") and week.get("resets_at") else None
+        except (TypeError, KeyError):
+            shown = None
+        return _cached("usage burn", [_stats(files), shown], compute)
     return Result("usage burn", "WARN" if found else "PASS",
                   "; ".join(f"{a} → {b}" for a, b in found) + "; /usage names Claude Code's own causes, f applies them"
                   if found else "no sign of usage burn in the last 2 days")
