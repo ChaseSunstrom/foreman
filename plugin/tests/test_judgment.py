@@ -62,6 +62,22 @@ class DoorGate(DoorBase):
         with mock.patch("fmguard.check_bash", side_effect=RuntimeError("no parse")):
             self.assertEqual(self.doors(tid)["step 1"]["door"], "guard")
 
+    def test_a_verify_that_only_creates_a_new_file_outside_the_repo_is_two_way(self):  # T-2435
+        marker = os.path.join(self.tmp, "ran")
+        tid = self.brief("edit it", verify=f"touch {marker}; echo x > {marker}.2; true")
+        self.assertEqual(self.doors(tid)["verify 1"]["door"], "two-way")
+        self.data("test_calc.py", "print('ok')\n")
+        import subprocess
+        subprocess.run(["git", "-C", self.repo, "add", "."], check=True, capture_output=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "t"], check=True, capture_output=True)
+        tid = self.brief("fix calc.add", verify=f"touch {marker}; python3 test_calc.py")  # test_code's TaskRun fixture
+        self.assertEqual(self.doors(tid)["verify 1"]["door"], "two-way", self.doors(tid)["verify 1"])
+        open(marker, "w").close()  # once it exists, overwriting it outside the repo is one-way again
+        tid = self.brief("edit it", verify=f"echo x > {marker}")
+        self.assertEqual(self.doors(tid)["verify 1"]["door"], "local")
+        tid = self.brief("edit it", verify=f"touch {marker}; mkdir -p {marker}.d; python3 test_calc.py")
+        self.assertEqual(self.doors(tid)["verify 1"]["door"], "two-way")  # T-2435: a touch of an existing file loses nothing
+
     def test_an_untracked_data_path_is_a_local_one_way_step(self):
         self.data()
         tid = self.brief("delete data/old.csv")

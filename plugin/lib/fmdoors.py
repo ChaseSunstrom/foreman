@@ -124,14 +124,19 @@ def _bare(text):
 def _cmd_targets(cmd):
     """Words a shell command changes: the guard's own write targets, plus every file word of the destroying commands."""
     import fmguard
-    out = list(fmguard.write_targets(cmd))
+    out = []
     for seg in re.split(r"&&|\|\||[;|\n]", cmd):
         try:
             words = shlex.split(seg)
         except ValueError:
+            out += list(fmguard.write_targets(seg))
             continue
-        while words and re.fullmatch(r"\w+=\S*", words[0]):
-            words = words[1:]
+        while words and (re.fullmatch(r"\w+=\S*", words[0]) or words[0] in ("then", "do", "else", "elif", "if", "!", "{",
+                                                                             "(", "time", "while", "until")):
+            words = words[1:]  # assignments and shell keywords: the program is the next word
+        # T-2435: touch and mkdir write a path but destroy nothing in it (a redirect on the same segment still counts)
+        if not (words and os.path.basename(words[0]) in ("touch", "mkdir") and not re.search(r"[<>]", seg)):
+            out += list(fmguard.write_targets(seg))
         if words and os.path.basename(words[0]) in _ALLARGS:
             out += [w[3:] if w.startswith("of=") else w for w in words[1:] if not w.startswith("-") and not re.fullmatch(r"s/.*/.*/\w*|\d+", w)]
     return out
