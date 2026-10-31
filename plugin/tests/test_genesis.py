@@ -2392,6 +2392,83 @@ class GenesisSweep(ForemanTestCase):
                 mock.patch.object(fmgenesis, "check", return_value=ok) if clean_check else mock.MagicMock():
             return fmgenesis.sweep(self.p, 1)
 
+    def foreman_tree(self, rules="rule one\n", verbs=("help", "dev")):
+        import subprocess
+        for rel, text in (("plugin/rules/foreman.md", rules),
+                          ("plugin/lib/fmcli.py", "".join(f'    s = add("{v}", cmd_{v}, tier=("x", 1))\n' for v in verbs)),
+                          ("plugin/skills/x/SKILL.md", "---\ndescription: a skill\n---\nbody\n")):
+            os.makedirs(os.path.dirname(os.path.join(self.repo, rel)), exist_ok=True)
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write(text)
+        subprocess.run(["git", "-C", self.repo, "add", "plugin"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "tree"], check=True)
+
+    def lean(self, p95=None, plugin=None):
+        import fmdoctor
+        from unittest import mock
+        with mock.patch.object(fmdoctor, "hook_p95", return_value=p95), \
+                mock.patch.object(fmdoctor, "PLUGIN", plugin or os.path.join(self.repo, "plugin")):
+            return next(x for x in self.sweep()["rows"] if x["check"] == "lean")
+
+    def test_a_generation_that_ends_heavier_than_it_started_turns_the_sweep_red(self):
+        # T-2359: gen-0 §6, each generation removes at least as much as it adds; hook p95, rules and context may not grow
+        import fmdoctor
+        import fmgenesis
+        from unittest import mock
+        self.assertTrue(self.lean()["ok"])  # not Foreman's own tree: no ratchet
+        self.foreman_tree()
+        with mock.patch.object(fmdoctor, "hook_p95", return_value=40.0), \
+                mock.patch.object(fmdoctor, "PLUGIN", os.path.join(self.repo, "plugin")), \
+                mock.patch.object(fmgenesis, "_read"):  # the cold read is the genesis read tests' business
+            fmgenesis.put(self.p, "gen-1/seed.md", "# Seed\ngen-0\nNo Missions this generation.\n")
+        start = fmgenesis._lean_record(self.p, 1)
+        self.assertEqual((start["metrics"]["verbs"], start["hook_p95"]), (2, 40.0))  # put recorded the start
+        self.assertTrue(self.lean(p95=40.0)["ok"])  # equal passes
+        self.assertFalse(self.lean(p95=40.1)["ok"])  # no band: hook p95 is already the median of three bench runs
+        self.assertIn("not judged (the running fm isn't this tree's)", self.lean(p95=99.0, plugin="/elsewhere")["detail"])
+        self.foreman_tree(rules="rule one\nrule two, added\n", verbs=("help", "dev", "extra"))
+        row = self.lean(p95=60.0)
+        self.assertFalse(row["ok"])
+        for part in ("rules chars", "verbs 2 -> 3", "added: extra", "hook p95 40.0 -> 60.0 ms"):
+            self.assertIn(part, row["detail"])
+        self.foreman_tree(rules="one\n", verbs=("help",))
+        row = self.lean(p95=40.0)
+        self.assertTrue(row["ok"], row)
+        self.assertIn("removed: dev", row["detail"])  # the list of what it removed against what it added
+        with mock.patch.object(fmgenesis, "_lean_row", side_effect=OSError("no tar")):
+            r = self.sweep()  # a measuring failure is one red row, never a lost sweep
+        self.assertIn("could not measure: no tar", next(x for x in r["rows"] if x["check"] == "lean")["detail"])
+
+    def test_hook_p95_is_the_median_of_three_bench_runs_of_the_guards_fixtures(self):
+        # T-2359 review: only PreToolUse fixtures, scripts aside; CPU time on a loaded machine
+        import fmdoctor
+        from unittest import mock
+        import bench_hooks
+        runs = iter([{"PreToolUse:Bash": {"p95": 50.0, "cpu_p95": 9.0, "load": 0.5}},
+                     {"PreToolUse:Bash": {"p95": 70.0, "cpu_p95": 30.0, "load": 2.0}},
+                     {"PreToolUse:Bash": {"p95": 40.0, "cpu_p95": 9.0, "load": 0.5}}])
+        seen = []
+        def fake(n, only=None):
+            seen.append((only("PreToolUse:Bash"), only("PreToolUse:Bash:script"), only("Stop")))
+            return next(runs)
+        with mock.patch.object(bench_hooks, "run_bench", side_effect=fake):
+            self.assertEqual(fmdoctor.hook_p95(), 40.0)  # 50, 30 (CPU, loaded), 40: the median is 40
+        self.assertEqual(seen[0], (True, False, False))
+
+    def test_a_generation_with_no_start_record_is_measured_from_its_seeds_commit(self):
+        # T-2359: gen 1's seed was filed before the record existed
+        import time
+        self.foreman_tree()
+        time.sleep(1.1)
+        now = time.time()
+        os.utime(os.path.join(self.tower, "gen-1", "seed.md"), (now, now))  # filed after the first commit
+        time.sleep(1.1)
+        self.foreman_tree(rules="rule one\nmore rules\n")
+        row = self.lean()
+        self.assertFalse(row["ok"], row)
+        self.assertIn("rules chars", row["detail"])
+        self.assertIn("measured from the seed's commit", row["detail"])
+
     def test_each_red_line_keeps_step_on_sweep_and_a_clean_one_moves_on(self):
         import fmgenesis
         open_id = self.fm_json("task", "new", "left open", "--type", "FIX", "--tier", "S", "--step", "x")["id"]

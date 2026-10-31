@@ -139,6 +139,24 @@ def _p95(xs):
     return xs[min(len(xs) - 1, int(len(xs) * 0.95))]  # as bench_hooks takes it
 
 
+def hook_p95(runs=60):
+    """T-2359: the guard's PreToolUse p95 in ms (the worst PreToolUse fixture, scripts aside; CPU time on a loaded
+    machine, as bench_hooks' own budget check does), the median of three bench_hooks runs of only those fixtures, to
+    one decimal; None where the bench isn't installed."""
+    try:
+        if os.path.join(PLUGIN, "tests") not in sys.path:
+            sys.path.insert(0, os.path.join(PLUGIN, "tests"))
+        import bench_hooks
+    except Exception:
+        return None
+    pre = lambda k: k.split(":")[0] == "PreToolUse" and not k.endswith(":script")  # noqa: E731
+    vals = []
+    for _ in range(3):
+        got = [v["cpu_p95"] if v.get("load", 0) > 1 else v["p95"] for v in bench_hooks.run_bench(runs, only=pre).values()]
+        vals += [max(got)] if got else []
+    return round(sorted(vals)[len(vals) // 2], 1) if vals else None
+
+
 def check_hook_slo():
     """T-0486: the guard's real latency, from the hooks' own timings, against bench_hooks' budget; over it, the Foreman
     revision where it rose (the first whose own p95 is over, after one under). In-process time: import time isn't in it."""
