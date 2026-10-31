@@ -47,7 +47,7 @@ Repeat until the kind is done or stopped (on blocked, work the rest of the queue
    added capability joins the exam spec, scorecard, seed and export; the other kinds are recorded and checked.
    Each seed carries "## The user's standing rules (steers)": every steer still in force (`c.steer_rules`, minus
    one a later steer `--reverses` or `--revisited`). Drift fails a seed missing one and only notes a steer newer than the seed.
-3. After a tower edit, `fm genesis check` (exit 1 names every empty cell and not-yet gap).
+3. After a tower edit, `fm genesis check` (exit 1 names every empty cell and not-yet gap, and any tower file hand-edited since its cold read: `fm genesis put` it again).
 
 Kinds:
 - blocked: a brief waits on the user or a grant; work the rest of the queue.

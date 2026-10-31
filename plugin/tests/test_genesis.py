@@ -2894,6 +2894,18 @@ class GenesisFrame(ForemanTestCase):
         fmgenesis.put(self.p, "coverage.md", grid("1. Initiative") + grid("2. Exhaustive thinking") + grid("Offline sync"))
         self.assertEqual(self.problems(), [])
 
+    def test_a_grow_keeps_a_put_lineage_read_and_never_blesses_a_hand_edit(self):
+        # T-2181 review: grow rewrites lineage.md itself; that must not turn a read file into an unread one, or bless one
+        import fmgenesis
+        fmgenesis.put(self.p, "gen-2/seed.md", SEED)
+        fmgenesis.put(self.p, "lineage.md", "# Lineage\n\n## gen-1\n- provisional: x\n")
+        self.grow("lens", "--name", "immune systems", "--evidence", "the moonshot used it", "--measure", "unmeasurable: a lens")
+        self.assertEqual(fmgenesis.check(self.p)["read"]["problems"], [])
+        with open(os.path.join(self.tower, "lineage.md"), "a") as f:
+            f.write("- hand written\n")
+        self.grow("lens", "--name", "tidal flows", "--evidence", "the moonshot used it", "--measure", "unmeasurable: a lens")
+        self.assertTrue(any("lineage.md" in x for x in fmgenesis.check(self.p)["read"]["problems"]))
+
     def test_the_frame_never_shrinks_and_a_hand_edit_counts_for_nothing(self):
         import fmgenesis
         fmgenesis.put(self.p, "gen-2/seed.md", SEED)
@@ -2944,3 +2956,62 @@ class GenesisFrame(ForemanTestCase):
         self.assertTrue(any("F-1" in x for x in self.problems()), self.problems())  # 'syncing' isn't 'sync'
         fmgenesis.put(self.p, "report.md", "# Report\n\n- F-1 capability: Offline sync\n")
         self.assertEqual(self.problems(), [])
+
+
+class GenesisReadRecord(ForemanTestCase):
+    """T-2181: fm genesis check flags a put-able tower file whose current text has no cold-read pass on record."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        import fmcore as c
+        import fmgenesis
+        self.c, self.g = c, fmgenesis
+        self.p = c.find_project(self.repo)
+        fmgenesis.init(self.p, GEN0.encode())
+        self.cov = os.path.join(fmgenesis.home(self.p), "coverage.md")
+
+    def unread(self):
+        return self.fm_json("genesis", "check", check=False)["read"]["problems"]
+
+    def test_put_file_is_clean_a_hand_edit_after_it_is_flagged(self):
+        self.fm("genesis", "put", "coverage.md", "--file", "-", input="# Coverage\n")
+        self.assertEqual(self.unread(), [])
+        with open(self.cov, "a") as f:
+            f.write("- hand written\n")
+        self.assertTrue(any("coverage.md" in x and "fm genesis put" in x for x in self.unread()), self.unread())
+        self.assertIn("✗ read:", self.fm("genesis", "check", check=False).stdout)
+
+    def test_legacy_file_is_clean_only_with_a_ledger_pass_just_before_its_mtime(self):
+        tower_file(self.g.home(self.p), "coverage.md", "# Coverage\n")
+        self.assertEqual(len(self.unread()), 1)  # no pass on record
+        self.c.log_event(self.p, "genesis_read", data={"name": "coverage.md", "verdict": "fail"})
+        self.assertEqual(len(self.unread()), 1)  # a fail isn't a pass
+        self.c.log_event(self.p, "genesis_read", data={"name": "coverage.md", "verdict": "pass"})
+        tower_file(self.g.home(self.p), "coverage.md", "# Coverage\n")  # written right after the pass
+        self.assertEqual(self.unread(), [])
+        later = time.time() + 600
+        os.utime(self.cov, (later, later))  # written long after the pass
+        self.assertEqual(len(self.unread()), 1)
+
+    def test_a_sectioned_legacy_file_needs_a_pass_for_every_section(self):
+        # T-2181 review: a put that failed on one section still logged the others' passes
+        text = "".join(f"## Part {n}\n" + "".join(f"- row {n}.{i} of real work\n" for i in range(30)) for n in (1, 2))
+        keys = [f"coverage.md#{k}" for _, _, k in self.g._groups(self.g._parts(text))]
+        self.assertEqual(len(keys), 2)
+        tower_file(self.g.home(self.p), "coverage.md", text)
+        log = lambda name, v: self.c.log_event(self.p, "genesis_read", data={"name": name, "verdict": v})
+        log(keys[0], "pass")
+        log(keys[1], "fail")
+        tower_file(self.g.home(self.p), "coverage.md", text)
+        self.assertEqual(len(self.unread()), 1)
+        log("coverage.md", "pass")  # a whole-file pass isn't how a sectioned file is read
+        tower_file(self.g.home(self.p), "coverage.md", text)
+        self.assertEqual(len(self.unread()), 1)
+        log(keys[1], "pass")
+        tower_file(self.g.home(self.p), "coverage.md", text)
+        self.assertEqual(self.unread(), [])
+
+    def test_owned_files_and_gen0_are_exempt(self):
+        tower_file(self.g.home(self.p), "exam.jsonl", "{}\n")
+        tower_file(self.g.home(self.p), "gen-1/drift.md", "x\n")
+        self.assertEqual(self.unread(), [])  # gen-0.md exists and was never put
