@@ -6,6 +6,7 @@ Report-only. Reuses tidy's detectors; paths may be relative to the file or to th
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 
@@ -237,21 +238,60 @@ def _flag_in(name, text, rust, py):
                 or py and re.search(rf"(?m)^(?:[ \t]*def\s.*?|[ \t]+)(?<![\w]){w}\s*[:=,)]", py))
 
 
-def invocations(text, names):
-    """(fenced, line, cli, rest, shell) for each place the text runs one of names: a line of a fenced block or an inline
-    code span that starts with the command (after a `$ ` prompt and VAR=x words). rest: its words up to a pipe, `&&`,
-    `;` or a redirect; shell: the line has such syntax, a placeholder or a continuation, so it can't be run as written."""
+_PROMPT = re.compile(r"^\s*[$>]\s+")
+_ELIDED = re.compile(r"\.\.\.|…|<[^>\n]+>")  # a line the docs abbreviate can't be matched
+_AFTER = re.compile(r"\s*(?:[^\n`]{0,80}:[ \t]*\n\s*)?```[^\n]*\n(.*?)```", re.S)  # "prints:" and a block
+
+
+def _toks(line):
     import shlex
+    line = _PROMPT.sub("", line).strip()
+    try:
+        toks = shlex.split(line, comments=True)
+    except ValueError:
+        toks = line.split()
+    while toks and re.fullmatch(r"\w+=\S*", toks[0]):
+        toks.pop(0)
+    return line, toks
+
+
+def _is_command(line, names):
+    """Whether a block line reads as a command (not output): a prompt, one of names, a shell builtin, a program on PATH
+    or a path to one (ponytail: a heuristic, so a program-named first word of real output is read as a command)."""
+    line, toks = _toks(line)
+    first = toks[0] if toks else ""
+    return bool(_PROMPT.match(line) or os.path.basename(first) in names or first in _BUILTINS
+                or first.startswith(("./", "/", "~")) or shutil.which(first))
+
+
+_BUILTINS = {"cd", "export", "source", "echo", "set", "unset", "alias", "sudo", "exit"}
+
+
+def _shown(lines, i, names, prompted):
+    """The output the docs show under the command on lines[i]: the lines after it up to the next command (a block with
+    `$ ` prompts: up to the next prompt), blank and abbreviated lines left out."""
+    out = []
+    for line in lines[i + 1:]:
+        if _PROMPT.match(line) if prompted else _is_command(line, names):
+            break
+        if line.strip() and not _ELIDED.search(line):
+            out.append(line.strip())
+    return out
+
+
+def invocations(text, names):
+    """(fenced, line, cli, rest, shell, shown) for each place the text runs one of names: a line of a fenced block or an
+    inline code span that starts with the command (after a `$ ` prompt and VAR=x words). rest: its words up to a pipe,
+    `&&`, `;` or a redirect; shell: the line has such syntax, a placeholder or a continuation, so it can't be run as
+    written; shown: the output lines the docs print for it (after it in its block, or for a block's last command in a
+    block right after that has no commands), at most 20."""
     for m in _SPAN.finditer(text):
         fenced = m.group(1) is not None
-        for line in (m.group(1).splitlines() if fenced else [m.group(2)]):
-            line = re.sub(r"^\s*[$>]\s+", "", line).strip()
-            try:
-                toks = shlex.split(line, comments=True)
-            except ValueError:
-                toks = line.split()
-            while toks and re.fullmatch(r"\w+=\S*", toks[0]):
-                toks.pop(0)
+        lines = m.group(1).splitlines() if fenced else [m.group(2)]
+        prompted = any(_PROMPT.match(x) and x.lstrip().startswith("$") for x in lines)
+        found = []
+        for i, raw in enumerate(lines):
+            line, toks = _toks(raw)
             if not toks or os.path.basename(toks[0]) not in names:
                 continue
             rest = []
@@ -259,8 +299,14 @@ def invocations(text, names):
                 if t in _STOP or t.startswith((">", "2>")):
                     break
                 rest.append(t)
-            yield fenced, line, os.path.basename(toks[0]), rest, (
-                len(rest) != len(toks) - 1 or any(_SHELLY.search(t) for t in rest) or line.endswith("\\"))
+            found.append([fenced, line, os.path.basename(toks[0]), rest, (
+                len(rest) != len(toks) - 1 or any(_SHELLY.search(t) for t in rest) or line.endswith("\\")),
+                _shown(lines, i, names, prompted) if fenced else []])
+        nxt = _AFTER.match(text, m.end()) if fenced and found else None
+        if nxt and not found[-1][5] and not any(_is_command(x, names) for x in nxt.group(1).splitlines()):
+            found[-1][5] = [x.strip() for x in nxt.group(1).splitlines() if x.strip() and not _ELIDED.search(x)]
+        for f in found:
+            yield (*f[:5], f[5][:20])
 
 
 def words(rest):
@@ -283,7 +329,8 @@ def claims(root, files=None):
     verdict, why}: kind path, target (a make or npm command), flag or subcommand of the repo's own CLI, or command (a
     fenced line of it). verdict, from the files alone: a path or target is proven or failed; a flag or subcommand
     the files lack fails and one they have is unproven (text in a file is not a working flag); command claims start
-    unproven (fmprove.docs_proof runs them and proves what they use). cmds: the fenced commands, each {claim, cli, spec, rest, shell}."""
+    unproven (fmprove.docs_proof runs them and proves what they use). cmds: the fenced commands, each {claim, cli, spec,
+    rest, shell, shown} (shown: the output lines the docs print under it)."""
     rels = _tree_files(root)
     names = cli_names(root, rels)
     tops, out, cmds, seen = _top_level(root), [], [], {}
@@ -324,7 +371,7 @@ def claims(root, files=None):
         bad = set(stale_commands(text, root))
         for cmd in [m.group(0) for m in _NPM.finditer(text)] + [f"make {m.group(1)}" for m in _MAKE.finditer(text)]:
             add(rel, "target", cmd, "failed" if cmd in bad else "proven", "not defined here" if cmd in bad else "")
-        for fenced, line, cli, rest, shell in invocations(full, names):
+        for fenced, line, cli, rest, shell, shown in invocations(full, names):
             if not corpus:
                 corpus = _corpus(root, rels)
             sub, flags = words(rest)
@@ -338,7 +385,7 @@ def claims(root, files=None):
                 if (rel, "command", detail) not in seen:
                     cmds.append({"claim": add(rel, "command", detail, "unproven",
                                               "pipes, placeholders and continuations are not run" if shell else "not run"),
-                                 "cli": cli, "spec": names[cli], "rest": rest, "shell": shell})
+                                 "cli": cli, "spec": names[cli], "rest": rest, "shell": shell, "shown": shown})
     for cli, found in subs.items():
         # a lone lowercase word after the CLI's name may be an argument (a file), so only a CLI the docs show more than
         # one subcommand of can fail on a word it doesn't have (ponytail: the docs read stand in for the CLI's own list)

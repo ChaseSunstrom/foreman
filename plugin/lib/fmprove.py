@@ -657,6 +657,17 @@ def _prefix(spec, name, work):
     return {"bin": [path], "node": ["node", path], "py": [sys.executable, "-c", PYRUN, target, name]}.get(kind)
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\[[0-9;]*m")  # c.plain drops the ESC byte and leaves "[32m"
+
+
+def _lacks(shown, out):
+    """The first line the docs show that the run's output doesn't have (whitespace collapsed, colour codes dropped; a
+    shown line may be part of an output line, in any order), or "" when it has them all."""
+    norm = lambda s: " ".join(_ANSI.sub("", s).split())
+    have = [norm(x) for x in out.splitlines()]
+    return next((s for s in map(norm, shown) if s and not any(s in h for h in have)), "")
+
+
 def docs_proof(root, files, allowed, limit=RUN_T):
     """T-2381: {root, claims, ran} for what the docs say about the repo's own CLI. Static verdicts need no yes (they read
     files only); in a trusted tree each fenced command of the CLI is checked against its --help and run in a throwaway
@@ -728,7 +739,10 @@ def docs_proof(root, files, allowed, limit=RUN_T):
             rc, o = run(pre + x["rest"])
             claim.update(verdict="proven" if rc == 0 else "failed" if NOT_THERE.search(o) else "unproven",
                          why="ran, exit 0" if rc == 0 else f"exit {rc}: {_last(o)}")
-            if rc == 0:  # a run that exits 0 with the flags in --help is the proof of the flags and subcommand it used
+            lacks = rc == 0 and _lacks(x["shown"], o)
+            if lacks:  # exit 0, but not what the docs show it printing
+                claim.update(verdict="failed", why=f"exit 0, but its output lacks the line the docs show: {lacks[:200]}")
+            elif rc == 0:  # a run that exits 0 with the flags in --help is the proof of the flags and subcommand it used
                 used = [by.get((claim["file"], "flag", f)) for f in flags]
                 used.append(n and by.get((claim["file"], "subcommand", f"{x['cli']} {sub_path[0]}")))
                 for u in used:

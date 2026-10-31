@@ -84,21 +84,22 @@ class Migration(ForemanTestCase):
         self.assertEqual(json.loads(r.stdout)["verdict"], "pass")
 
 
-def cli(mark):
+def cli(mark, say=""):
     """A stub CLI whose --help lists --out and build; --ghost appears only in this comment (a grep finds it, --help
-    doesn't). Running it leaves the marker file."""
+    doesn't). Running it leaves the marker file, and prints say after a successful parse."""
     return ("#!/usr/bin/env python3\nimport argparse\n# --ghost\n"
             f"open({mark!r}, 'w').close()\n"
             "p = argparse.ArgumentParser(prog='mycli')\ns = p.add_subparsers(dest='cmd', required=True)\n"
-            "s.add_parser('build').add_argument('--out')\ns.add_parser('clean')\np.parse_args()\n")
+            "s.add_parser('build').add_argument('--out')\ns.add_parser('clean')\np.parse_args()\n"
+            + (f"print({say!r})\n" if say else ""))
 
 
 class DocsProof(ForemanTestCase):
     """T-2381: fm prove --docs: the docs' flags, subcommands, paths and fenced commands against the code."""
 
-    def tree(self, readme, mark=None):
+    def tree(self, readme, mark=None, say=""):
         self.mark = mark or os.path.join(self.tmp, "ran")
-        write(self.repo, {"bin/mycli": cli(self.mark), "README.md": readme})
+        write(self.repo, {"bin/mycli": cli(self.mark, say), "README.md": readme})
         os.chmod(os.path.join(self.repo, "bin", "mycli"), 0o755)
         return self.repo
 
@@ -219,6 +220,44 @@ class DocsProof(ForemanTestCase):
         self.fm("prove", "--docs", "--yes-run", check=False, cwd=sub)
         self.assertTrue(fmprove.trusted(sub))
         self.assertFalse(fmprove.trusted(self.repo))
+
+    def test_docs_proof_output_shown_in_the_block_must_be_in_the_run(self):
+        self.tree("```\n$ mycli build --out dist\nbuilt dist\n```\n", say="built dist")
+        code, out = self.prove("--yes-run")
+        got = self.by(out)
+        self.assertEqual((code, got[("command", "mycli build --out dist")], got[("flag", "--out")]), (0, "proven", "proven"), out)
+
+    def test_docs_proof_output_that_differs_fails_the_command_and_proves_nothing_it_used(self):
+        self.tree("```\n$ mycli build --out dist\nbuilt dist\n```\n", say="removed everything")
+        code, out = self.prove("--yes-run")
+        got = self.by(out)
+        self.assertEqual(code, 1, out)  # exits 0, but does something other than the docs show
+        self.assertEqual(got[("command", "mycli build --out dist")], "failed")
+        self.assertIn("built dist", next(c for c in out["claims"] if c["kind"] == "command")["why"])
+        self.assertEqual((got[("flag", "--out")], got[("subcommand", "mycli build")]), ("unproven", "unproven"))
+
+    def test_docs_proof_output_compares_whitespace_normalised_lines_and_ignores_ansi_codes(self):
+        self.tree("```\n$ mycli build\n  built    dist  \n```\n", say="\x1b[32mbuilt\x1b[0m\tdist\nextra line")
+        self.assertEqual(self.by(self.prove("--yes-run")[1])[("command", "mycli build")], "proven")
+
+    def test_docs_proof_output_ignores_elisions_and_a_command_without_shown_output_is_unchanged(self):
+        self.tree("```\n$ mycli build\nbuilt dist\n...\n```\n\n```\nmycli clean\nmycli build --out x\n```\n", say="built dist")
+        got = self.by(self.prove("--yes-run")[1])
+        self.assertEqual(got[("command", "mycli build")], "proven")
+        self.assertEqual(got[("command", "mycli clean")], "proven")  # the next command is not its output
+        self.assertEqual(got[("command", "mycli build --out x")], "proven")
+
+    def test_docs_proof_output_block_right_after_the_command_block_is_matched(self):
+        self.tree("```\nmycli build\n```\n\nprints:\n\n```\nbuilt dist\n```\n", say="built dist")
+        self.assertEqual(self.by(self.prove("--yes-run")[1])[("command", "mycli build")], "proven")
+        self.tree("```\nmycli build\n```\n\nprints:\n\n```\nbuilt dist\n```\n", say="gone")
+        self.assertEqual(self.by(self.prove("--yes-run")[1])[("command", "mycli build")], "failed")
+
+    def test_docs_proof_output_is_never_compared_in_an_untrusted_tree(self):
+        self.tree("```\n$ mycli build\nbuilt dist\n```\n", say="gone")
+        code, out = self.prove()
+        self.assertEqual((code, self.by(out)[("command", "mycli build")]), (2, "unproven"))
+        self.assertFalse(os.path.exists(self.mark))
 
 
 if __name__ == "__main__":
