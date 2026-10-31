@@ -86,9 +86,18 @@ class Src:
         self.lines = [x if len(x) <= 2000 else "" for x in text.split("\n")]  # minified or hostile: data, not code
         self.lang, self.test = LANG[os.path.splitext(rel)[1].lower()], bool(TEST.search(rel))
         self.instr, quote = set(), None  # Python lines inside a triple-quoted string: code there is data
-        try:  # a STRING token over several lines: its later lines are data (tokenize parses, never runs, the text)
+        opens = [getattr(tokenize, n, None) for n in ("FSTRING_START", "TSTRING_START")]  # 3.12+ / 3.14+
+        closes = [getattr(tokenize, n, None) for n in ("FSTRING_END", "TSTRING_END")]
+        try:  # a string token over several lines: its later lines are data (tokenize parses, never runs, the text)
+            if self.lang == "py" and any(len(x) > 2000 for x in text.split("\n")):
+                raise ValueError("a minified line: tokenizing it costs a token per character")
+            starts = []  # rows where the open f/t-strings began, nesting-aware
             for t in tokenize.generate_tokens(io.StringIO(text).readline) if self.lang == "py" else ():
-                if t.type == tokenize.STRING and t.end[0] > t.start[0]:
+                if t.type in opens:
+                    starts.append(t.start[0])
+                elif t.type in closes and starts:
+                    self.instr.update(range(starts.pop(), t.end[0]))
+                elif t.type == tokenize.STRING and t.end[0] > t.start[0]:
                     self.instr.update(range(t.start[0], t.end[0]))  # 1-based rows: start..end-1 are 0-based 2nd..last
         except (tokenize.TokenError, SyntaxError, ValueError):  # unparseable: count the marks instead
             self.instr.clear()

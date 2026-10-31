@@ -627,6 +627,10 @@ class FindReview(ForemanTestCase):
         self.assertEqual(empty, full)
         self.assertEqual(empty, [])  # PyYAML declared, yaml imported: no finding
         self.assertFalse(hasattr(fmfind, "_dists"))
+        with mock.patch("importlib.metadata.packages_distributions", return_value={"nothere": ["x"]}):
+            got = self.deps({"requirements.txt": "x\n", "a.py": "import nothere\n\ndef go():\n    return nothere\n"})
+        self.assertEqual(len(got), 1)  # only the host's mapping would have hidden it
+        self.assertEqual(self.deps({"requirements.txt": "beautifulsoup4\n", "a.py": "import bs4\n\ndef go():\n    return bs4\n"}), [])
         for mod, dist in {"jwt": "PyJWT", "magic": "python-magic", "serial": "pyserial", "Crypto": "pycryptodome",
                           "attr": "attrs", "google": "protobuf"}.items():
             files = {"requirements.txt": dist + "\n", "a.py": f"import {mod}\n\ndef go():\n    return {mod}\n"}
@@ -651,5 +655,10 @@ class FindReview(ForemanTestCase):
             self.assertEqual([d[2] for d in s.defs], ["helper"], head)
         s = fmfind.Src("m.py", 'def a():\n    """\n    def inner():\n    """\n\n\ndef b():\n    return 1\n')
         self.assertEqual([d[2] for d in s.defs], ["a", "b"])  # a real docstring still hides its text
+        fs = 'def a():\n    return f"""\n    {1 + 1}\n    def fake(x):\n    import evilpkg\n    """\n\n\ndef b():\n    return 1\n'
+        self.assertEqual([d[2] for d in fmfind.Src("m.py", fs).defs], ["a", "b"])  # a multi-line f-string is data too
+        self.assertEqual(self.deps({"requirements.txt": "x\n", "a.py": fs}), [])
+        big = "x = 1" + " + 1" * 600 + '\n"""\ndef fake():\n"""\n\ndef b():\n    return 1\n'
+        self.assertEqual([d[2] for d in fmfind.Src("m.py", big).defs], ["b"])  # a long line: the old counter, same answer
         s = fmfind.Src("m.py", '"""unterminated\n\ndef x():\n    pass\n')  # a TokenError falls back to the old tracker
         self.assertEqual(s.defs, [])

@@ -180,8 +180,9 @@ def remember(root):
 
 
 def _t(end):
-    """A suite run's timeout: RUN_T, or the seconds left before end (a clock time), at least 1."""
-    return max(1, min(RUN_T, int(end - time.time()) + 1)) if end else RUN_T
+    """A suite run's timeout: RUN_T, or the whole seconds left before end (a clock time), at least 1. A run can still
+    outlast end by the 10 s run_command waits to collect a killed run's output."""
+    return max(1, min(RUN_T, int(end - time.time()))) if end else RUN_T
 
 
 def _pick(root, code, flagged, end=None):
