@@ -1116,8 +1116,9 @@ def guard_stored(p, b, cmd):
     it's refused. What never passed the hook (a brief stored before the guard read these, one fm sync brought in) is
     caught here."""
     import fmguard
-    home, meta = os.path.expanduser("~"), c.read_meta(p)
-    ctx = fmguard.Ctx(cwd=p.root, project_root=fmguard.project_root_for(p.root, home), home=home,
+    home, meta = os.path.expanduser("~"), c.read_meta(p) if p else {}  # T-2387: outside a project, no grants or yeses
+    root = p.root if p else os.getcwd()
+    ctx = fmguard.Ctx(cwd=root, project_root=fmguard.project_root_for(root, home), home=home,
                       foreman_home=c.foreman_home(), state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(),
                       scratch=[x for x in ("/tmp", "/var/tmp", os.environ.get("TMPDIR")) if x],
                       allow=set(b.meta.get("allow") or []) if b else set(), task_id=b.id if b else None,
@@ -1233,6 +1234,10 @@ def task_finish(p, args):
     mig = fmmigrate.for_task(p, b)
     if mig:
         results.append(("final", None, "fm prove --migration", *mig))
+    import fmdataproof  # T-2387: the brief's invariants, before and after its data command on a copy, in a trusted tree
+    dat = fmdataproof.for_task(p, b)
+    if dat:
+        results.append(("final", None, "fm prove --data", *dat))
     tree = c.worktree_id(p.root)
 
     def record(x):
@@ -7486,6 +7491,12 @@ def _build_parser(only=None):
                    "failure, 2 nothing checkable or provable (T-2381)")
     s.add_argument("--yes-run", action="store_true", help="the user's yes to run this tree's tests (--docs: its "
                    "documented commands), kept for this tree")
+    s.add_argument("--data", action="store_true", help="instead: run --run CMD on a throwaway copy of the tree and its "
+                   "sqlite or CSV data, each --check SQL (a query returning the violating rows) before and after (T-2387)")
+    s.add_argument("--run", metavar="CMD", help="--data: the data command (a backfill, an import, a cleanup)")
+    s.add_argument("--check", action="append", metavar="SQL", help="--data: an invariant, as a query returning the rows "
+                   "that break it (repeatable)")
+    s.add_argument("--db", metavar="FILE", help="--data: the sqlite or CSV file in the tree (default: the only one)")
     s.add_argument("--migration", action="store_true", help="instead: run the tree's migrations (SQL pairs, dbmate files, "
                    "alembic, Django) up, down, up on a throwaway database with the right dialect and compare the schema "
                    "each time; trusted trees only; exit 0 pass, 1 fail, 2 refused, unproven (dialect or environment) or "

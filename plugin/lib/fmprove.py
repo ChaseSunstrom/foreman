@@ -737,6 +737,13 @@ def cmd_prove(args):
     if args.infra:  # T-2385: each infra file's own validator, on a copy, offline
         import fminfra
         return fminfra.cmd_infra(args, root)
+    if getattr(args, "data", False):  # T-2387: a data command on a copy, its invariants checked before and after
+        import fmdataproof
+        try:
+            return fmdataproof.cmd_data(args, root, _yes(args, root))
+        except (OSError, shutil.Error) as e:
+            print(f"fm prove: couldn't copy {root}: {c.plain(str(e))[:300]}", file=sys.stderr)
+            return 2
     if args.migration:  # T-2288: the tree's own migration files, run on a copy
         try:
             return cmd_migration(args, root, _yes(args, root))
