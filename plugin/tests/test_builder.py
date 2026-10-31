@@ -18,7 +18,7 @@ class _Tasks(ForemanTestCase):
         self.fm("init")
 
     def task(self, title, tier="S"):
-        extra = ["--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a"] if tier != "S" else []
+        extra = ["--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a"] if tier != "S" else []
         return json.loads(self.fm("task", "new", title, "--type", "FEATURE", "--tier", tier, "--ac",
                                   f"{title} works :: python3 -c 'print(1)'", "--step", "build it", *extra,
                                   "--json").stdout)["id"]

@@ -49,7 +49,19 @@ def valid_m_plan():
     """T-2335: (interpretation, approach) texts the M/L plan gate accepts: two readings, three options each with an
     outcome (one use-what-exists, one do-less) and a choice. Use it where a test only needs a plannable M brief."""
     return ("Reading 1: a. Reading 2: b.",
-            "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a")
+            "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a")
+
+
+def stub_claude(tmp, reply, code=0, name="claude-stub"):
+    """T-2338: a `claude` that prints `reply` and exits `code`, in its own folder under `tmp`: the env a test passes to
+    fm (env=) so a cold child answers without reaching the real one."""
+    d = os.path.join(tmp, name)
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, "claude")
+    with open(path, "w") as f:
+        f.write(f"#!/usr/bin/env python3\nimport sys\nsys.stdin.read()\nprint({reply!r})\nsys.exit({code})\n")
+    os.chmod(path, 0o755)
+    return {"PATH": d + os.pathsep + os.environ["PATH"]}
 
 
 def busy_factor(cap=8.0):
