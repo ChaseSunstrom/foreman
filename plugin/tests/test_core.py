@@ -724,6 +724,12 @@ class PlanContent(unittest.TestCase):
     """T-2335: an M or L plan names 2+ readings (or the one it ruled out), an outcome or failure mode per option, a
     use-what-exists or do-less option, and near-copy options count once."""
     AP = "Approach (options → choice → why)"
+
+    def setUp(self):  # T-2341: these read the plan's own content; the cold rival read has its tests in test_second
+        env = mock.patch.dict(os.environ, {"FOREMAN_NO_RIVAL": "1"})
+        env.start()
+        self.addCleanup(env.stop)
+
     GOOD = ("1) add `--strict` to the gate; fails if: callers pass old flags. "
             "2) use what exists: the audit table already has it; fails if: it lacks the column. "
             "3) do less: only warn; likely outcome: the gap stays. Choice 2: no new code.")

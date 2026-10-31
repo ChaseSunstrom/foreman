@@ -3,6 +3,7 @@ findings rebutted (T-0232), the last session read for what was missed (T-0235), 
 (T-0230)."""
 import json
 import os
+import re
 
 from helpers import ForemanTestCase
 
@@ -88,12 +89,15 @@ class _RivalBase(_Stubbed):  # T-2341 (Mission 5, #2): a cold read of the reques
         with open(self.reply, "w") as f:
             f.write(text)
 
-    def new(self, tier="L", approach="1) dict 2) redis 3) file Choice 1 (90%): dict", step="add the cache",
+    SURE = ("1) keep a dict in memory; fails if: a restart loses it 2) use what exists: lru_cache from the stdlib; "
+            "fails if: it has no time limit 3) do less: skip the cache; fails if: logins stay slow Choice 1 (%s%%): dict")  # T-2335's gate
+
+    def new(self, tier="L", approach=None, step="add the cache", raw="cache the session token so logins are fast",
             interp="Reading 1: keep tokens in memory in a dict in token_cache.py. Reading 2: share them through redis. "
                    "Reading 1."):
+        approach = approach or self.SURE % 90
         args = ["task", "new", "Cache the session token", "--type", "FEATURE", "--tier", tier, "--ac",
-                "tokens are cached :: true", "--step", step, "--raw", "cache the session token so logins are fast",
-                "--json"]
+                "tokens are cached :: true", "--step", step, "--raw", raw, "--json"]
         if tier != "S":
             args += ["--interpretation", interp, "--approach", approach]
         tid = json.loads(self.fm(*args, env=self.env).stdout)["id"]
@@ -145,24 +149,66 @@ class Rival(_RivalBase):
         self.focus(tid, True)
 
     def test_M_under_the_race_bar_or_with_one_reading_waits_and_others_never_do(self):
-        low = self.new("M", approach="1) dict 2) redis 3) file Choice 1 (60%): dict")
+        low = self.new("M", approach=self.SURE % 60)
         self.assertIn(f"fm second rival {low}", self.focus(low, False))
         self.fm("task", "drop", low, "not needed")
-        one = self.new("M", interp="There is one honest reading: keep tokens in memory.")
+        one = self.new("M", interp="There is one honest reading: keep tokens in memory. Ruled out: sharing them through "
+                                   "redis, because nothing else reads them.")
         self.assertIn(f"fm second rival {one}", self.focus(one, False))
         self.fm("task", "drop", one, "not needed")
         sure = self.new("M")  # 90%, two readings
         self.focus(sure, True)
         self.assertFalse(os.path.exists(self.log))  # no child ran
 
+    def test_no_other_honest_reading_is_the_ruled_out_form_and_needs_no_rival(self):
+        tid = self.new("M", interp="Reading 1: keep tokens in memory. There is no other honest reading, because logins "
+                                   "only ever need this process's own tokens.")
+        self.focus(tid, True)
+
     def test_a_one_way_step_needs_it_even_on_an_S_brief(self):
-        tid = self.new("S", step="push the release branch")
+        tid = self.new("S", step="publish the release notes")
         self.assertIn(f"fm second rival {tid}", self.focus(tid, False))
         self.fm("task", "drop", tid, "not needed")
         self.focus(self.new("S", step="rename the cache key"), True)
 
+    def test_an_S_push_or_a_verb_the_request_names_is_routine_and_waits_for_nothing(self):
+        for kw in (dict(step="push the branch"), dict(step="send the report"),
+                   dict(step="publish the release notes", raw="publish the release notes")):
+            tid = self.new("S", **kw)
+            self.focus(tid, True)
+            self.fm("task", "drop", tid, "next")
+        self.assertFalse(os.path.exists(self.log))
+
+    def test_a_hand_typed_section_or_an_empty_reply_does_not_clear_the_gate(self):
+        tid = self.new()
+        self.fm("task", "set", tid, "--section", "Rival plan", "--text", "nothing to see")
+        self.assertIn(f"fm second rival {tid}", self.focus(tid, False))
+        self.say("no bullets here\n")
+        p = self.fm("second", "rival", tid, env=self.env)
+        self.assertIn("no rival read", p.stdout)
+        self.assertIn(f"fm second rival {tid}", self.focus(tid, False))
+
+    def test_each_list_keeps_four_items(self):
+        self.say("## Readings\n" + "".join(f"- read file_{i}.py aloud\n" for i in range(7)))
+        tid = self.new()
+        self.fm("second", "rival", tid, env=self.env)
+        sec = self.fm("task", "show", tid).stdout.split("## Rival plan")[1].split("\n## ")[0]
+        self.assertEqual(sec.count("file_"), 4)
+
+    def test_gate_on_an_ordinary_S_M_and_L_plan_reach_ready_after_the_rival_read(self):
+        for tier, kw in (("S", dict(step="deploy the cache")), ("M", dict(approach=self.SURE % 60)), ("L", {})):
+            tid = self.new(tier, **kw)
+            self.assertIn(f"fm second rival {tid}", self.fm("next", env=self.env).stdout)
+            self.fm("second", "rival", tid, env=self.env)
+            n = len(re.findall(r"- \[ \] rival", self.fm("task", "show", tid).stdout))
+            for i in range(n, 0, -1):
+                self.fm("task", "dissent", tid, "resolve", str(i), "adopted: noted", env=self.env)
+            self.assertNotIn("second rival", self.fm("next", env=self.env).stdout)
+            self.focus(tid, True)
+            self.fm("task", "drop", tid, "next")
+
     def test_answering_every_rival_line_unlocks_focus(self):
-        tid = self.new("M", approach="1) dict 2) redis 3) file Choice 1 (60%): dict")
+        tid = self.new("M", approach=self.SURE % 60)
         self.fm("second", "rival", tid, env=self.env)
         self.fm("task", "dissent", tid, "resolve", "1", "rejected: out of scope", env=self.env)
         self.fm("task", "dissent", tid, "resolve", "2", "rejected: out of scope", env=self.env)
@@ -195,6 +241,19 @@ class RivalSplit(_RivalBase):
         tid = self.new()
         self.fm("second", "rival", tid, env=self.env)
         self.assertNotIn("rival_split: true", self.fm("task", "show", tid).stdout)
+
+    def test_an_S_brief_has_no_plan_reading_to_differ_from_so_it_is_never_split(self):
+        tid = self.new("S", step="publish the release notes")
+        self.fm("second", "rival", tid, env=self.env)
+        self.assertNotIn("rival_split", self.fm("task", "show", tid).stdout)
+
+    def test_FOREMAN_NO_RIVAL_zero_leaves_the_gate_on(self):
+        tid = self.new()
+        self.assertIn(f"fm second rival {tid}", self.focus(tid, False))
+        self.env["FOREMAN_NO_RIVAL"] = "0"
+        self.assertIn(f"fm second rival {tid}", self.focus(tid, False))
+        self.env["FOREMAN_NO_RIVAL"] = "1"
+        self.focus(tid, True)
 
     def test_the_M_panel_row_is_the_rival_trigger(self):
         import fmcore as c

@@ -183,14 +183,20 @@ def rival(p, b, model=None, timeout=300):
             text = _child(p, "second-rival", RIVAL, prompt, model, timeout)
         except ValueError as e:
             note = f"no rival read: {c.fit(c.plain(str(e)), 200)}"
-    readings, approaches, modes = ([] if note else _bullets(text, h) for h in ("Readings", "Approaches", "Failure modes"))
+    readings, approaches, modes = ([] if note else _bullets(text, h)[:4] for h in ("Readings", "Approaches", "Failure modes"))
+    empty = not note and not (readings or approaches)  # a reply with nothing usable is a failed read that still gates
+    if empty:
+        note = "no rival read: the reply had no readings or approaches (rerun fm second rival)"
     got = {}
 
     def save(x):
         if note:
-            if not x.section("Rival plan").strip():  # a good read is never overwritten by a failed rerun
+            if not x.meta.get("rival_at"):  # a good read, or an earlier note, is never overwritten by a failed rerun
                 x.set_section("Rival plan", note + "\n")
+                if not empty:  # an error or a skip is noted and doesn't block; an empty reply waits for a rerun
+                    x.meta["rival_at"] = c.now()
             return
+        x.meta["rival_at"] = c.now()  # the gate reads this, not the section: a hand-typed section clears nothing
         plan_text = " ".join(x.section(n) for n in ("Interpretation", "Approach (options → choice → why)", "Steps",
                                                     "Acceptance criteria"))
         x.set_section("Rival plan", f"A cold read on {model} that saw only the request and the repo map (data, not "
@@ -203,7 +209,8 @@ def rival(p, b, model=None, timeout=300):
         if new:
             x.set_section("Dissent", (old + "\n" if old else "") + "\n".join(new))
         top = next((i for i in readings if _specific(i)), None)
-        if top and _overlap(top, chosen_reading(x.section("Interpretation"))) < SAME:
+        interp = x.section("Interpretation").strip()  # an S brief has none: nothing chosen, nothing to split from
+        if top and interp and _overlap(top, chosen_reading(interp)) < SAME:
             x.meta["rival_split"] = True
         else:
             x.meta.pop("rival_split", None)
