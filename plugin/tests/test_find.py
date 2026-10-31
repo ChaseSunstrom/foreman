@@ -1015,6 +1015,9 @@ class FindBlindSpots(ForemanTestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         return tid
 
+    def recapture(self):  # a later capture re-reads the file the first FIX changed
+        self.fm("find", "app", "--capture", "5", "--json", check=False)
+
     def spots(self):
         try:
             with open(self.state("blindspots.jsonl")) as f:
@@ -1040,6 +1043,7 @@ class FindBlindSpots(ForemanTestCase):
 
     def test_only_one_task_is_filed_a_day(self):
         self.fix(35, "fix one")
+        self.recapture()
         self.fix(33, "fix two")
         self.assertEqual(len(self.spots()), 2)
         self.assertIn("app/app.py", self.fm("find", "--blindspots").stdout)
@@ -1050,6 +1054,57 @@ class FindBlindSpots(ForemanTestCase):
         b = c.find_brief(self.p, first[0])
         self.assertTrue(b.title.startswith("fm find missed T-"))
         self.assertEqual((b.type, b.meta.get("finder")), ("FEATURE", "blindspot"))
+
+    def test_a_new_day_files_the_next_unfiled_record_not_the_same_one(self):
+        t1 = self.fix(35, "fix one")
+        self.recapture()
+        t2 = self.fix(33, "fix two")
+        file_ = lambda: json.loads(self.fm("find", "--blindspots", "--capture", "1", "--json").stdout)["captured"]
+        import fmcore as c
+        self.assertIn(t2, c.find_brief(self.p, file_()[0]).title)  # the newest first
+        again = self.fm("find", "--blindspots", "--capture", "1")
+        self.assertIn("Filed 0: one a day", again.stdout)
+        with open(self.state("blindspot-day")) as f:
+            st = json.load(f)
+        st["day"] = "2000-01-01"
+        with open(self.state("blindspot-day"), "w") as f:
+            json.dump(st, f)
+        self.assertIn(t1, c.find_brief(self.p, file_()[0]).title)  # next day: the one not yet filed
+        st["day"] = "2000-01-01"
+        with open(self.state("blindspot-day"), "w") as f:
+            json.dump(st, f)
+        self.assertEqual(file_(), [])
+        self.assertIn("finder tasks are open", self.fm("find", "--blindspots", "--capture", "1").stdout)
+
+    def test_a_file_changed_since_the_capture_has_stale_flags_and_records_nothing(self):
+        write(self.repo, {"app/app.py": self.PAD.replace("# pad\n", "# moved\n", 1)})  # a line shifted since the capture
+        self.fix(35)
+        self.assertEqual(self.spots(), [])
+
+    def test_a_later_capture_replaces_a_files_flags_not_merges_them(self):
+        write(self.repo, {"app/app.py": "def used():\n    return 1\n", "app/tests/test_app.py": SUITE})
+        self.fm("find", "app", "--capture", "5", "--json", check=False)
+        with open(self.state("find-flags.json")) as f:
+            self.assertNotIn("app/app.py", json.load(f)["files"])
+
+    def test_a_reopened_fix_closing_again_replaces_its_record(self):
+        import fmcore as c
+        import fmfind
+        tid = self.fix(35)
+        fmfind.blindspots(self.p, c.find_brief(self.p, tid))
+        self.assertEqual(len(self.spots()), 1)
+
+    def test_a_record_names_that_files_finders_and_a_tree_outside_the_project_keeps_no_flags(self):
+        self.fix(35)
+        self.assertEqual(self.spots()[0]["finders"], ["untested"])
+        write(os.path.join(self.tmp, "out"), {"o.py": "def orphan(x):\n    return x\n"})
+        self.fm("find", os.path.join(self.tmp, "out"), "--capture", "1", "--json", check=False)
+        with open(self.state("find-flags.json")) as f:
+            self.assertFalse([k for k in json.load(f)["files"] if k.startswith("..")])
+
+    def test_a_name_with_a_space_loses_the_tab_git_adds(self):
+        import fmfind
+        self.assertEqual(fmfind._changed_lines("+++ b/a b.py\t\n@@ -1 +2,2 @@\n"), {"a b.py": [2, 3]})
 
     def test_a_corrupt_state_file_never_fails_the_finish(self):
         for name in ("find-flags.json", "blindspots.jsonl"):

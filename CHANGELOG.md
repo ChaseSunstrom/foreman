@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `fm find --blindspots` lists closed FIXes whose changed lines no finder flagged (flags are saved at `--capture` with each file's blob hash, recorded when the FIX closes), and `--capture 1` files at most one "add a rule, tool or check" task a day, the newest record not yet filed
+
 - `fm find --capture`, `--rank` and `fm prove` give twin leads the same keys, so a capture's dedupe and a proof's lift name the same lead
 - `fm goal` turns the standing mandate into a goal ledger: items, each with a check command and the tasks that build it (`fm goal link`, or `fm task new --goal N`); `fm goal show` lists open work outside the goal, items with no task, and items whose tasks closed while the check still fails, exiting 1 when any. A plain mandate prints as before
 - `fm mandate` shows its end date as the day you typed; it printed the next day west of UTC
