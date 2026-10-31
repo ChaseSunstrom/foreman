@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A verify check that names a path can fail: `ls dist`, `cat README.md` and `cd build && …` no longer read "can't fail" (options and redirects aren't paths); `exit 1` can fail too, while `x || ls dist` and `x; cat y` still count as masking x's exit (T-2333).
 - Stopped and stalled lanes recover by cause: `fm lane recover` maps seven stop causes to one recovery each and never resumes over a builder that may be alive (a conflict or red merge on a live lane counts only once old and quiet); a guard refusal names its grant; the stop marker and recovery count live on the task brief, a third stop blocks the task, `fm task unblock` resets them; fm next and the full-autonomy drive lead with it (T-2354).
 - Exam putback anchors every region in the arm's file as it is, then splices last to first: slow C's planted loop no longer voids test-first credit, so the oracle can close the held-out slow-c scenarios (T-2419).
 - `fm prove --infra` runs each infra file's own validator (hadolint, docker compose config, terraform validate, helm lint, kubeconform, actionlint, shellcheck, systemd-analyze) on a throwaway copy, offline (no network where unshare works); a missing tool is unproven and filed once as a capability miss; fm task finish runs it on touched infra files and names every failing one (T-2385).
