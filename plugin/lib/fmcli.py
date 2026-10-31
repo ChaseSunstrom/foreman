@@ -2860,6 +2860,9 @@ def task_new(p, args):
         if same:
             args.from_id, reused = same.id, f" (from inbox capture {same.id}: same title)"
     _refuse_unrunnable(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
+    if getattr(args, "goal", None):  # T-2135: refused before anything is made
+        import fmmandate
+        fmmandate.item(p, args.goal)
     redo = need_brief(p, args.redo) if getattr(args, "redo", None) else None
     if redo and redo.status != "dropped":
         raise UsageError(f"--redo takes a dropped task; {redo.id} is {redo.status}")
@@ -2889,6 +2892,10 @@ def task_new(p, args):
         c.log_event(p, "task_new", task=b.id, data={"type": type_, "tier": args.tier, "from": args.from_id},
                     session=session())
         c.regen_views(p)
+    if getattr(args, "goal", None):
+        import fmmandate
+        fmmandate.link(p, args.goal, b.id)
+        b = c.find_brief(p, b.id)
     if args.ac or args.step or args.interpretation or args.approach:
         def plan(b):
             for name, text in (("Interpretation", args.interpretation), ("Approach", args.approach)):
@@ -5881,6 +5888,7 @@ def _build_parser(only=None):
     t.add_argument("--interpretation", help="what the request means (M/L plan gate)")
     t.add_argument("--approach", help="options → choice → why (M/L plan gate)")
     t.add_argument("--focus", action="store_true", help="focus it right away (the plan gate still applies)")
+    t.add_argument("--goal", metavar="ITEM", help="it builds item ITEM of the standing goal (fm goal show)")
     t = tadd("show")
     t.add_argument("id")
     t.add_argument("--story", action="store_true", help="the ledger as chapters (plan, steps, evidence, reviews, "
@@ -6884,6 +6892,19 @@ def _build_parser(only=None):
     s.add_argument("text", nargs="*", help="set: the request, in the user's words")
     s.add_argument("--until", metavar="YYYY-MM-DD", help="set: the last day it stands")
     s.add_argument("--usd", type=float, help="set: a spend bound recorded with it (fm contract enforces spend)")
+
+    s = add("goal", lazy("fmmandate", "cmd_goal"), tier=("Project and settings", 773),
+            help="the standing goal: the mandate with a contents list, each item a done-when check and the tasks that "
+                 "build it; show lists open work outside it, items with no task and items claimed but not met, "
+                 "exit 1 when any (T-2135)")
+    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "item", "link"])
+    s.add_argument("text", nargs="*", help="set: the request, in the user's words; item: what it covers; link: ITEM TASK")
+    s.add_argument("--until", metavar="YYYY-MM-DD", help="set: the last day it stands")
+    s.add_argument("--no-end", action="store_true", help="set: it stands until replaced or cleared (instead of --until)")
+    s.add_argument("--usd", type=float, help="set: a spend bound recorded with it")
+    s.add_argument("--replace", action="store_true", help="set: archive the standing goal (goal_history) and set this one")
+    s.add_argument("--done-when", help="item: the check command that passes once the item is met")
+    s.add_argument("--source", help="item: where it came from (the user's words, a surface, the finish standard)")
 
     s = add("budget", lazy("fmbudget", "cmd_budget"), tier=("Project and settings", 770), help="spend on child runs and subagents today, and the caps that "
                                                             "bound it (T-0227)")
