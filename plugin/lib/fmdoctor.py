@@ -2033,6 +2033,29 @@ def check_fsck(projects=None):
         if found else Result("fsck", "PASS", "no broken lanes, stale locks, torn journals or corrupt state")
 
 
+def check_cut_off_lanes(projects, here=None):
+    """T-2257: a lane whose worktree creation was cut off (corrupt or missing branch ref, every file empty) and any 0-byte
+    ref under refs/heads: git fetch fails 'bad object' on it. Only looks."""
+    import fmlanes
+    bad = []
+    for p in projects:
+        try:
+            tasks = {b.id: b for b in c.load_briefs(p) if b.status not in c.CLOSED and isinstance(b.meta.get("lane"), str)}
+            covered = set()
+            for tid, b in tasks.items():
+                names = [x for x in dict.fromkeys([f"foreman/{tid}", b.meta.get("lane_branch")]) if isinstance(x, str) and x]
+                if fmlanes.cut_off(p.root, b.meta["lane"], names):
+                    covered.update(names)
+                    bad.append(f"{tid}: its worktree creation was cut off (fm lane rm {tid} --why \"cut off\" moves it "
+                               f"aside)" if p.slug == here else f"{p.slug} {tid}: cut-off worktree creation")
+            bad += [f"{p.slug}: ref {ref} is 0 bytes (git fetch fails 'bad object'): move the file away" for ref in
+                    fmlanes.corrupt_refs(p.root) if ref not in covered]
+        except (OSError, c.PolicyError):  # no repo or no git here: nothing to report
+            continue
+    return Result("cut-off lanes", "FAIL", "; ".join(bad)) if bad else Result("cut-off lanes", "PASS",
+                                                                              "no cut-off lanes or 0-byte refs")
+
+
 def check_landlock():
     """T-1607: whether fm code workers can be confined (Landlock); unavailable is a note, never a failure."""
     import fmlandlock
@@ -2115,6 +2138,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_heartbeats(projects))
     results.append(check_state_size(projects))
     results.append(check_fsck(projects))
+    results.append(check_cut_off_lanes(projects, getattr(c.find_project(os.getcwd()), "slug", None)))
     results.append(check_landlock())
     results.append(check_headless())
     brief_results = [check_briefs(p) for p in projects]
