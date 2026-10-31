@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Builders write scratch files (an fm edit batch, notes, drafts) in `.fm-scratch/` inside their worktree, which git ignores, instead of /tmp, which worktree isolation refuses (T-2259).
 - The stuck ladder races the runner-up: after three failed runs on a step of an S or M task whose Approach names another way and that hasn't raced yet, `fm next` says `fm lane race ID`, so evidence picks between the two approaches before more hypotheses (T-2271).
 - The plan gate checks content by tier: `fm focus` and `fm lane brief` refuse an M/L Approach that lists fewer than 3 options or names no choice, an L brief with fewer than 2 readings in Interpretation or an empty Risks and rollback, and any brief with a `(low)` assumption that has no `research/NAME`, `spike T-NNNN` or verified tag; each gap names its fix, and a task already started isn't re-gated (T-2269).
 - The exam scorecard passes a capability only when each language the newest spec drew (all of `fmexam.LANGS` when none is recorded) has a graded held-out result; a `--lang`-narrowed run reads `partial`, its row's `langs` lists what is covered and its `why` names the rest and the run that closes it (`fm exam gen --lang ruby,rust`); a python-only spec passes on python, and an odd scenario id never crashes the card (T-2225)
