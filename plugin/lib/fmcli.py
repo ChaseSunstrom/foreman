@@ -774,16 +774,11 @@ def cmd_task(args):
                 logged["outside"] = len(c.scope_drift(types.SimpleNamespace(meta={"scope": b.meta["plan0_scope"]}), files))
             pm, pa = int(b.meta.get("predict_minutes") or 0), int(b.meta.get("predict_attempts") or 0)
             if pm or pa:
-                evs = [e for e in c.ledger_tail(p, 5000) if e.get("task") == b.id]
-                start = [i for i, e in enumerate(evs) if e.get("event") == "focus" and c.parse_ts(e.get("ts"))]
                 logged.update(predict_minutes=pm, predict_attempts=pa)
-                if start:  # the latest focus (a block or reopen means a re-focus); unknown start: no minutes, never a clean 0
-                    # active time only: gaps of 30+ minutes between the task's events (overnight, away) don't count
-                    import fmoutcomes
-                    logged["minutes"] = fmoutcomes.active_minutes(
-                        [c.parse_ts(e.get("ts")).timestamp() for e in evs[start[-1]:] if c.parse_ts(e.get("ts"))] + [time.time()])
-                    logged["attempts"] = 1 + sum(1 for e in evs[start[-1]:]
-                                                 if e.get("event") == "finish" and (e.get("data") or {}).get("failed"))
+            import fmoutcomes
+            st = fmoutcomes.run_stats(p, b.id)  # T-2290: every close keeps its stats, the next prediction's history
+            if st:  # the latest focus (a block or reopen means a re-focus); unknown start: no minutes, never a clean 0
+                logged.update(minutes=st[0], attempts=st[1])
         first_edit = c.first_touch(p, pre.id)
         gaps = _plan_gaps(p, pre)
         logged = {"lesson": lesson[:300]} if lesson else {}
@@ -3333,6 +3328,12 @@ def cmd_focus(args):
             old = target.section("Risks and rollback").strip()  # T-2277: written once into the plan
             target.set_section("Risks and rollback", (old + "\n" if old else "") + blast)
         if not target.meta.get("plan0_at"):  # T-1061: the plan at first focus, which the close is scored against
+            import fmoutcomes  # T-2290: Foreman's own guess, from its closes; a typed prediction stays
+            guess = None if target.meta.get("predict_minutes") or target.meta.get("predict_attempts") else \
+                fmoutcomes.predict(p, target.type, target.tier)
+            if guess:
+                target.meta.update(predict_minutes=guess[0], predict_attempts=guess[1])
+                target.append_log(f"predicted from its closes: {guess[0]} min, {guess[1]} attempt(s)")
             target.meta.update(plan0_at=c.now(), plan0_scope=list(target.meta.get("scope") or []))
         c.save_brief(p, target)
         other = c.read_meta(p).get("session") or {}
@@ -5539,6 +5540,15 @@ def cmd_next(args):
         if median and took > 2 * median:
             over = (f" · on it {took:.0f} min, over twice the usual {median:g} min for a {b.type} {b.tier}: re-frame — "
                     f"is the plan still the right size, or should it split?")
+    if b and b.status == "active" and b.meta.get("predict_minutes") and not b.meta.get("predict_noted"):
+        import fmoutcomes  # T-2290: past 3x its prediction, said once (fm next only: the hooks and the watcher don't spend it)
+        if note := fmoutcomes.overrun_note(p, b):
+            over += f" · {note}"
+            with c.lock(p.dir):
+                fresh = c.find_brief(p, b.id)
+                if fresh:
+                    fresh.meta["predict_noted"] = c.now()
+                    c.save_brief(p, fresh, touch=False)
     meta = c.read_meta(p)
     loose = (meta.get("clauses") or {}).get("open") or []
     over += (f" · {len(loose)} clause(s) of the last request unaccounted: capture, answer, or fm clauses --note N "
@@ -6255,6 +6265,7 @@ def _build_parser(only=None):
     s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), tier=("Reports", 980), help="what became of finished tasks: reverted, fixed later "
                                                                  "by a task naming them, or held; track record (T-0616)")
     s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
+    s.add_argument("--calibration", action="store_true", help="per tier: median actual/predicted minutes (T-2290)")
     s.add_argument("--readme", action="store_true", help="one sentence for a README: held, closed and ungraded "
                                                          "counts (T-0960)")
     for flag, why in (("settle", "log one outcome event per task whose 30-day window closed (survived or lost)"),

@@ -2,9 +2,12 @@
 track record that follows (T-0641): per type and tier, how many closed on their first fm task finish and how many held.
 Everything is derived on demand from git, the briefs and the ledger, so there is nothing extra to keep in sync."""
 import collections
+import json
 import os
 import re
+import statistics
 import subprocess
+import time
 
 import fmcore as c
 
@@ -171,6 +174,9 @@ def cmd_outcomes(args):
     lines += [f"- {t} {o['fate']}: {c.fit(', '.join(o['by'][:3]), 140)}" for t, o in sorted(bad.items())[-20:]]
     if getattr(args, "atlas", False):  # T-0620
         return fmcli.out(args, atlas(p, outs), "\n".join(atlas_lines(p, outs)))
+    if getattr(args, "calibration", False):  # T-2290
+        return fmcli.out(args, {t: {"ratio": r, "n": n} for t, (r, n) in calibration_rows(p).items()},
+                         "\n".join(calibration_report(p)))
     for flag in ("settle", "claims", "regret", "graveyard", "seen"):  # T-1060: reports that read the 30-day grades
         if getattr(args, flag, False):
             res = globals()["_" + flag](p, outs)
@@ -291,8 +297,125 @@ def active_minutes(stamps, idle=1800):
     return round(sum(b - a for a, b in zip(stamps, stamps[1:]) if b - a < idle) / 60)
 
 
+CLOSES_KEEP = 2000  # T-2290: rows kept in closes.jsonl; the predictor reads the last 30 per tier and type
+PREDICT_N, PREDICT_MIN = 30, 5
+
+
+def _closes_path(p):
+    return os.path.join(p.dir, "closes.jsonl")
+
+
+def _backfill(p):
+    """Once, when closes.jsonl doesn't exist: the task_done events that logged minutes, joined to their brief's type and
+    tier when the event lacks them. Writes the newest CLOSES_KEEP // 2 rows (an empty file too, so it runs once)."""
+    kinds, rows = None, []
+    for e in c.ledger_events(p, ("task_done",)):
+        d = e.get("data") or {}
+        if not isinstance(d.get("minutes"), int):
+            continue
+        if kinds is None and not (d.get("type") and d.get("tier")):
+            kinds = {b.id: (b.type, b.tier) for b in c.load_briefs(p, include_archive=True)}  # once, only if needed
+        typ, tier = (d.get("type"), d.get("tier")) if d.get("type") and d.get("tier") else (kinds or {}).get(e.get("task"), (None, None))
+        if typ and tier:
+            rows.append({"type": typ, "tier": tier, **{k: d[k] for k in ("minutes", "attempts", "predict_minutes",
+                                                                         "predict_attempts") if k in d}})
+    rows = rows[-CLOSES_KEEP // 2:]
+    try:
+        with open(_closes_path(p), "w", encoding="utf-8") as f:
+            f.writelines(json.dumps(r) + "\n" for r in rows)
+    except OSError:
+        pass
+    return rows
+
+
+def _closes(p):
+    if not os.path.exists(_closes_path(p)):
+        return _backfill(p)
+    rows = []
+    try:
+        with open(_closes_path(p), encoding="utf-8") as f:
+            for ln in f:
+                try:
+                    r = json.loads(ln)
+                except ValueError:
+                    continue
+                if isinstance(r, dict):
+                    rows.append(r)
+    except OSError:
+        pass
+    return rows
+
+
+def history(p, typ, tier):
+    """Rows of the last PREDICT_N closes of this type and tier that logged their minutes, oldest first."""
+    return [r for r in _closes(p) if r.get("type") == typ and r.get("tier") == tier
+            and isinstance(r.get("minutes"), int)][-PREDICT_N:]
+
+
+def predict(p, typ, tier):
+    """T-2290: (minutes, attempts) as the median of the last PREDICT_N same-tier, same-type closes; None under
+    PREDICT_MIN samples (a median of three is noise)."""
+    rows = history(p, typ, tier)
+    if len(rows) < PREDICT_MIN:
+        return None
+    att = [r["attempts"] for r in rows if isinstance(r.get("attempts"), int)]
+    return max(1, round(statistics.median(r["minutes"] for r in rows))), \
+        max(1, round(statistics.median(att))) if att else 1
+
+
+def run_stats(p, tid):
+    """(active minutes, attempts) of the task since its latest focus, or None when that focus isn't in the ledger tail.
+    Gaps of 30+ minutes between the task's events (overnight, away) don't count."""
+    evs = [e for e in c.ledger_tail(p, 5000) if e.get("task") == tid]
+    start = [i for i, e in enumerate(evs) if e.get("event") == "focus" and c.parse_ts(e.get("ts"))]
+    if not start:
+        return None
+    since = evs[start[-1]:]
+    return (active_minutes([c.parse_ts(e["ts"]).timestamp() for e in since if c.parse_ts(e.get("ts"))] + [time.time()]),
+            1 + sum(1 for e in since if e.get("event") == "finish" and (e.get("data") or {}).get("failed")))
+
+
+def overrun_note(p, b):
+    """One note when an active task's minutes pass 3x its prediction; "" otherwise (and without a prediction)."""
+    try:
+        pm = int(b.meta.get("predict_minutes") or 0)
+    except (TypeError, ValueError):
+        return ""
+    st = run_stats(p, b.id) if pm else None
+    if st and st[0] > 3 * pm:
+        return (f"{b.id} is at {st[0]} active min, past 3x its prediction ({pm}): re-plan, split it (fm split), or "
+                f"ask for fresh eyes")
+    return ""
+
+
+def calibration_rows(p):
+    """{tier: (median actual/predicted minutes, n)} over closes that carried both."""
+    by = collections.defaultdict(list)
+    for r in _closes(p):
+        pm, m = r.get("predict_minutes"), r.get("minutes")
+        if isinstance(pm, int) and pm > 0 and isinstance(m, int) and r.get("tier"):
+            by[r["tier"]].append(m / pm)
+    return {t: (statistics.median(v), len(v)) for t, v in sorted(by.items())}
+
+
+def calibration_report(p):
+    rows = calibration_rows(p)
+    return [f"Prediction calibration (minutes): {t}: median actual/predicted {r:.1f}x over {n} close(s)"
+            for t, (r, n) in rows.items()] or ["Prediction calibration: no close carried a prediction yet"]
+
+
 def record_close(p, d):
     """Keep this close's verdict in project meta (the last PLAN_WINDOW), so reading it costs nothing per turn."""
+    if isinstance(d.get("minutes"), int):  # T-2290: the history the next prediction reads; one small append
+        row = {k: d[k] for k in ("type", "tier", "minutes", "attempts", "predict_minutes", "predict_attempts") if k in d}
+        with c.lock(p.dir):
+            rows = _closes(p)
+            path = _closes_path(p)
+            if len(rows) >= CLOSES_KEEP:  # bounded: rewrite the newest half
+                with open(path, "w", encoding="utf-8") as f:
+                    f.writelines(json.dumps(r) + "\n" for r in rows[-CLOSES_KEEP // 2:])
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(row) + "\n")
     m = missed(d)
     if m is not None:
         with c.lock(p.dir):  # read and append under one lock: two closes can't lose a verdict
