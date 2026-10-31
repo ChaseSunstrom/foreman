@@ -3,6 +3,8 @@
 ## Unreleased
 
 - `fm lane rm ID --why` repairs a worktree whose creation was cut off (0-byte branch ref, every file empty): the folder, the ref, the admin dir and the reflog move aside into the project's state (`lane-wreck/<id>/`), the stale lock goes and the entry is pruned. `fm doctor` fails on such a lane and on any 0-byte ref under refs/heads
+- `fm exam long gen|run|grade` (T-2258): replays real past task changes from their base commit with hidden checks from the tests each change added, in an isolated runner, scored by zero-token oracle and empty arms (true done out of all scenarios, plus regressions) as `tier: long` exam lines
+
 - `fm genesis drift` and the put-time cold read now share one whole-line CLEAN verdict pattern: `CLEANUP needed`, `Not CLEAN`, `CLEAN-ish` and `CLEAN but …` no longer pass
 - `fm task finish`'s Landed line adds "(+N held for T-…)" for files an open task holds, and says "files already in <sha> (not this task's commit)" when no commit made since the task began (its own, or one naming it, such as a lane's "Merge T-N") touches its files
 - A lane's merge-conflict brief now gives steps that work from the main checkout: message the lane's builder, or `cd` into the worktree as its own command, with a drop-and-redo fallback
