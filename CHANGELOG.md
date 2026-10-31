@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm exam`: the static test-kind grading reads only test files by Foreman's one test-file pattern (latest.py, contest.js no longer count), and `fm exam check` runs each scenario's clean side 3 times and names one that fails any run (T-2218).
 - `fm genesis exam`: G-sweep scenarios plant three defects (a vulnerability, an untested helper, a doc gap) and a draft closes one only when its §2 has a capability with a matching exam kind for each, each miss named; G-line and G-none still plant one (T-2177).
 - `fm prove --migration [PATH]` runs a repo's plain SQL up/down migrations up, down and up again on a throwaway sqlite copy, compares the schema each time and refuses untrusted trees; alembic, django and prisma are recognized by name, not yet run (T-2288).
 - Foreman predicts each task's active minutes and attempts at focus from the median of its last 30 same-type, same-tier closes, scores them at close, shows per-tier calibration in `fm outcomes --calibration`, and `fm next` notes once when a task passes 3x its prediction (T-2290).
