@@ -77,6 +77,31 @@ class Triggers(ForemanTestCase):
             self.assertEqual(m.call_count, 0)
         self.assertIn("Noisiest trigger: noisy", self.fm("state").stdout)
 
+    def test_noisiest_uses_the_rule_that_demotes_the_last_20_closed(self):
+        import fmtriggers
+        for _ in range(40):
+            self.fire("healed", "dropped")
+        for _ in range(10):
+            self.fire("healed", "done")
+        for _ in range(10):
+            self.fire("healed", "dropped")  # last 20: 0.5, though over all 60 it is 0.17
+        self.assertIsNone(fmtriggers.noisiest(self.p))
+        self.assertEqual(self.fire("healed").priority, "normal")
+
+    def test_a_failing_precision_read_never_loses_the_capture(self):
+        import unittest.mock as mock
+        with mock.patch("fmtriggers.noisy", side_effect=RuntimeError("boom")):
+            b = self.fire("any")
+        self.assertEqual(b.priority, "normal")
+
+    def test_fm_triggers_is_read_only_and_days_is_clamped(self):
+        import os
+        self.fire("scout", "done")
+        r = self.fm_json("triggers", "--days", "0")
+        self.assertEqual(r["days"], 1)
+        self.assertEqual(self.fm_json("triggers", "--days", "999999")["days"], 3650)
+        self.assertFalse(os.path.exists(os.path.join(self.p.dir, "triggers.json")))
+
     def test_ad_hoc_sources_count_as_triggers(self):
         c.log_event(self.p, "capture", task="T-0099", data={"source": "sentinel"})  # as fm sentinel logs it
         self.fm("capture", "a follow-up", "--source", "followup")

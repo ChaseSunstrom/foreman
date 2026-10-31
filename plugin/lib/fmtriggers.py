@@ -30,9 +30,13 @@ def _captures(p, days, only=None):
     return out
 
 
-def stats(p, days=LOOKBACK_DAYS):
+def _status(p):
+    return {b.id: b.status for b in c.load_briefs(p, include_archive=True)}
+
+
+def stats(p, days=LOOKBACK_DAYS, status=None):
     """{trigger: {fired, done, dropped, open, precision}}: precision is done/(done+dropped), None with none closed."""
-    status = {b.id: b.status for b in c.load_briefs(p, include_archive=True)}
+    status = _status(p) if status is None else status
     rows = {}
     for t, tid in _captures(p, days):
         r = rows.setdefault(t, {"trigger": t, "fired": 0, "done": 0, "dropped": 0, "open": 0})
@@ -44,14 +48,15 @@ def stats(p, days=LOOKBACK_DAYS):
     return rows
 
 
-def noisy(p, trigger):
-    """(precision, closed) over the trigger's last WINDOW closed captures when that's a demotion, else None."""
+def noisy(p, trigger, caps=None, status=None):
+    """(precision, closed) over the trigger's last WINDOW closed captures when that's a demotion, else None. caps
+    (all of _captures) and status (_status) may be passed in when a caller asks about many triggers."""
     if trigger in URGENT:
         return None
-    caps = _captures(p, LOOKBACK_DAYS, only=trigger)
+    caps = _captures(p, LOOKBACK_DAYS, only=trigger) if caps is None else [x for x in caps if x[0] == trigger]
     if len(caps) < MIN_CLOSED:  # too few firings to have enough closes: skip loading every brief
         return None
-    status = {b.id: b.status for b in c.load_briefs(p, include_archive=True)}
+    status = _status(p) if status is None else status
     closed = [status[tid] for _, tid in caps if status.get(tid) in c.CLOSED][-WINDOW:]
     if len(closed) < MIN_CLOSED:
         return None
@@ -75,8 +80,8 @@ def noisiest(p):
             return hit.get("noisiest")
     except (OSError, ValueError, AttributeError):
         pass
-    bad = [r for r in stats(p).values() if r["trigger"] not in URGENT and r["precision"] is not None
-           and r["done"] + r["dropped"] >= MIN_CLOSED and r["precision"] < LOW_PRECISION]
+    status, caps = _status(p), _captures(p, LOOKBACK_DAYS)
+    bad = [r for r in stats(p, LOOKBACK_DAYS, status).values() if noisy(p, r["trigger"], caps, status)]
     n = max(bad, key=lambda r: r["dropped"], default=None)
     try:
         c.write_atomic(path, json.dumps({"size": size, "noisiest": n}))
@@ -88,13 +93,13 @@ def noisiest(p):
 def cmd_triggers(args):
     import fmcli
     p = fmcli.resolve(args)
-    rows = sorted(stats(p, args.days).values(), key=lambda r: (-r["fired"], r["trigger"]))
+    args.days = min(max(args.days, 1), 3650)
+    status, caps = _status(p), _captures(p, LOOKBACK_DAYS)
+    rows = sorted(stats(p, args.days, status).values(), key=lambda r: (-r["fired"], r["trigger"]))
     lines = [f"{'trigger':<22}{'fired':>6}{'done':>6}{'dropped':>8}{'open':>6}{'precision':>10}"]
     for r in rows:
         prec = "-" if r["precision"] is None else f"{r['precision']:.2f}"
-        flag = "  (files at low priority)" if noisy(p, r["trigger"]) else ""
+        flag = "  (files at low priority)" if noisy(p, r["trigger"], caps, status) else ""
         lines.append(f"{r['trigger']:<22}{r['fired']:>6}{r['done']:>6}{r['dropped']:>8}{r['open']:>6}{prec:>10}{flag}")
-    if args.days == 30:
-        noisiest(p)  # refresh the cache fm state reads
     fmcli.out(args, {"days": args.days, "triggers": rows},
               "\n".join(lines) if rows else f"No trigger has filed a task in the last {args.days} days.")
