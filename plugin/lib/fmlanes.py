@@ -745,7 +745,8 @@ _CACHE = re.compile(r"(^|/)(__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache
                     # T-0833: build output; a lane starts with no ignored files, so these are its own builds
                     r"target|build|dist|zig-out|\.zig-cache|zig-cache|cmake-build-[\w-]+)(/|$)|\.py[co]$|"
                     r"(^|/)\.coverage(\.[\w.-]+)?$")
-_LANE_CACHE = re.compile(r"(^|/)state/guard-scripts\.json$")  # T-1685: the guard's script verdicts, rebuilt on use
+# T-1685: the guard's script verdicts, rebuilt on use; T-2289: a builder's scratch folder, throwaway by contract (T-2259)
+_LANE_CACHE = re.compile(r"(^|/)state/guard-scripts\.json$|^\.fm-scratch/")
 _BUILD = re.compile(r"(^|/)(target|build|dist|zig-out|\.zig-cache|zig-cache|cmake-build-[\w-]+)/?$")
 _SECRETISH = re.compile(r"(?i)\.(pem|key|p12|pfx|jks|keystore)$|^\.env($|\.)|\.env$|^id_(rsa|ed25519|ecdsa)|"
                         r"^credentials?(\.\w+)?$")  # narrow: target/ holds env_logger-*.d and libsecret-*.rlib
