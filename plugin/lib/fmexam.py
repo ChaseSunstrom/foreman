@@ -1526,6 +1526,9 @@ def cmd_exam(args):
     p = fmcli.resolve(args)
     action = args.action or "status"
     try:
+        if action == "long":  # T-2258: the long-horizon tier
+            import fmlong
+            return fmlong.cmd(p, args)
         if action == "gen":
             meta = gen(p, args.seed, args.per_kind, _list(args.lang, LANGS), _list(args.kind, KINDS), args.split,
                        args.author, args.model or "sonnet")
