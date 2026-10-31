@@ -7507,7 +7507,7 @@ def _build_parser(only=None):
                                                 "the timeout stops a runaway)")
     s.add_argument("--request", help="run: session arms get these words instead of each scenario's request")
     s.add_argument("--timeout", type=float, help="long run: minutes a session turn may take (default 60)")
-    s.add_argument("--faults", help="long run --agent foreman|plain: comma list of kill, pause, compaction, misleading (T-2262)")
+    s.add_argument("--faults", help="long run --agent foreman|plain: comma list of kill, pause, compaction, misleading (T-2262), missing (T-2377), door (T-2343)")
     s = add("demo", lazy("fmdemo", "cmd_demo"), tier=("Finding your way", 210), help="see Foreman work on a seeded bug in a throwaway repo, with no "
                                                       "model calls and nothing left behind (T-0870)")
     s.add_argument("--pace", type=float, default=0, metavar="SECONDS",
