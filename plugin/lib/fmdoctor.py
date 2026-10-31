@@ -1,4 +1,5 @@
 """fm doctor: Foreman self-check (BUILD_PROMPT §12). Each check returns a Result; FAIL makes the command exit 1."""
+import functools
 import glob
 import hashlib
 import json
@@ -35,6 +36,7 @@ class Result:
     name: str
     status: str  # PASS | WARN | FAIL
     detail: str = ""
+    ms: int | None = None  # T-2279: the check's wall time; None when it wasn't measured
 
 
 def _load_json(path):
@@ -2143,6 +2145,37 @@ def cmd_fsck(args):
     return 1 if left else 0
 
 
+def slowest(results, n=3):
+    """T-2279: the n slowest checks, for -v and --json."""
+    return [{"name": r.name, "ms": r.ms} for r in sorted((r for r in results if r.ms is not None), key=lambda r: -r.ms)[:n]]
+
+
+def _timing(run):
+    """T-2279: runs `run` with each check_* timed: its wall ms lands on the Result(s) it returns."""
+    def timed(fn):
+        def go(*a, **kw):
+            t0 = time.perf_counter()
+            out = fn(*a, **kw)
+            ms = int((time.perf_counter() - t0) * 1000)
+            if isinstance(out, Result):
+                out.ms = ms
+            return out
+        return go
+
+    @functools.wraps(run)  # inspect.getsource(run_all) still reads the body
+    def wrapper(*a, **kw):
+        # run_all calls check_* by global name: swap the timed versions in and restore them after (not thread-safe)
+        g = run.__globals__
+        orig = {k: v for k, v in g.items() if k.startswith("check_") and callable(v)}
+        g.update({k: timed(v) for k, v in orig.items()})
+        try:
+            return run(*a, **kw)
+        finally:
+            g.update(orig)
+    return wrapper
+
+
+@_timing
 def run_all(full=False, accept_supply=False):
     home = c.foreman_home()
     claude = os.path.join(os.path.expanduser("~"), ".claude")
@@ -2157,6 +2190,7 @@ def run_all(full=False, accept_supply=False):
                check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
                check_supply(claude, accept_supply), check_worktree_base(settings), check_fm_link(),
                check_invisible_text(instruction_files()), check_rule_conflicts(rule_files(c.git_root(os.getcwd())))]
+    t_bench = time.perf_counter()  # T-2279: the bench runs outside any check_*; its whole cost is charged to "hook latency"
     try:
         if os.environ.get("FOREMAN_DOCTOR_BENCH") == "0":  # T-1379: the tests' fm doctor runs, which read no timings
             raise _NoBench
@@ -2164,6 +2198,9 @@ def run_all(full=False, accept_supply=False):
         bench, sizes = _bench_and_injection(bench_runs(load))
         load = load or busy()  # T-1219: a burst that began during the bench made its timings, not the hooks, slow
         results += [check_hook_latency(bench, load), check_hook_exit_codes(bench), check_injection_budgets(sizes)]
+        for r in results[-3:]:
+            r.ms = None  # the three share one bench: counted once, on the first
+        results[-3].ms = int((time.perf_counter() - t_bench) * 1000)
     except _NoBench:
         results += [Result(n, "WARN", "not measured (FOREMAN_DOCTOR_BENCH=0)")
                     for n in ("hook latency", "hook exit codes", "injection budgets")]
@@ -2180,14 +2217,16 @@ def run_all(full=False, accept_supply=False):
     results.append(check_cut_off_lanes(projects, getattr(c.find_project(os.getcwd()), "slug", None)))
     results.append(check_landlock())
     results.append(check_headless())
+    t0 = time.perf_counter()  # T-2279: these two rows are built here, so each is timed over its own section
     brief_results = [check_briefs(p) for p in projects]
     worst = next((s for s in ("FAIL", "WARN") if any(r.status == s for r in brief_results)), "PASS")
     results.append(Result("briefs", worst, "; ".join(r.detail for r in brief_results if r.status != "PASS")
-                          or f"{len(projects)} project(s) OK"))
+                          or f"{len(projects)} project(s) OK", int((time.perf_counter() - t0) * 1000)))
+    t0 = time.perf_counter()
     stale = [p.slug for p in projects if not views_match(p)]  # T-0494
     results.append(Result("views", "WARN" if stale else "PASS",
                           f"views don't match the briefs in {', '.join(stale[:5])}: fm doctor --fix regenerates them"
-                          if stale else "status views match the briefs"))
+                          if stale else "status views match the briefs", int((time.perf_counter() - t0) * 1000)))
     here = c.find_project(os.getcwd())
     results.append(check_dual_install())
     results.append(check_running_code(os.path.join(here.dir, "ledger.jsonl") if here else "",
@@ -2335,11 +2374,14 @@ def cmd_doctor(args):
         return None
     ok = not any(r.status == "FAIL" for r in results)
     if args.json:
-        print(json.dumps({"ok": ok, "results": [asdict(r) for r in results]}, indent=2, ensure_ascii=False))
+        print(json.dumps({"ok": ok, "results": [asdict(r) for r in results], "slowest": slowest(results)},
+                         indent=2, ensure_ascii=False))
     else:
         for r in results:  # T-0844: only what needs a look, unless -v
             if r.status != "PASS" or getattr(args, "verbose", False):
                 print(f"{r.status:4}  {r.name:<20} {r.detail}")
+        if getattr(args, "verbose", False):
+            print("\nslowest: " + ", ".join(f"{s['name']} {s['ms']} ms" for s in slowest(results)))
         print(f"\nfm doctor: {'OK' if ok else 'FAILED'} ({sum(r.status == 'PASS' for r in results)} pass, "
               f"{sum(r.status == 'WARN' for r in results)} warn, {sum(r.status == 'FAIL' for r in results)} fail)")
     if not ok:

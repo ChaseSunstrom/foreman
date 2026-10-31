@@ -567,6 +567,64 @@ class Command(ForemanTestCase):
             self.assertIn("FOREMAN_DOCTOR_BENCH=0", rs[n]["detail"])
 
 
+class Timing(ForemanTestCase):
+    def test_a_slow_check_tops_the_slowest_list(self):  # T-2279
+        import unittest.mock as mock
+
+        def slow():
+            time.sleep(0.3)
+            return d.Result("disk", "PASS", "stub")
+        # every other check is stubbed fast: the real ones read this machine's state and take seconds
+        fast = {k: (lambda *a, **kw: d.Result("fast", "PASS")) for k in dir(d) if k.startswith("check_")}
+        fast["check_disk"] = slow
+        with mock.patch.multiple(d, **fast), mock.patch.dict(os.environ, {"FOREMAN_DOCTOR_BENCH": "0"}):
+            rs = d.run_all()
+        top = d.slowest(rs)
+        self.assertEqual(len(top), 3)
+        self.assertEqual(top[0]["name"], "disk")
+        self.assertGreaterEqual(top[0]["ms"], 300)
+        self.assertEqual(next(r for r in rs if r.name == "disk").ms, top[0]["ms"])
+        self.assertEqual([t["ms"] for t in top], sorted((t["ms"] for t in top), reverse=True))
+
+    def _run_stubbed(self, env, **extra):
+        import unittest.mock as mock
+        fast = {k: (lambda *a, **kw: d.Result("fast", "PASS")) for k in dir(d) if k.startswith("check_")}
+        for k, name in (("check_hook_latency", "hook latency"), ("check_hook_exit_codes", "hook exit codes"),
+                        ("check_injection_budgets", "injection budgets")):
+            fast[k] = lambda *a, _n=name, **kw: d.Result(_n, "PASS")
+        fast.update(extra)
+        with mock.patch.multiple(d, **fast), mock.patch.dict(os.environ, env):
+            return d.run_all()
+
+    def test_a_slow_bench_is_charged_to_hook_latency(self):  # T-2279
+        def slow_bench(load):
+            time.sleep(0.3)
+            return {}
+        rs = self._run_stubbed({"FOREMAN_DOCTOR_BENCH": "1"}, bench_runs=slow_bench, busy=lambda: False,
+                               _bench_and_injection=lambda b: ({}, {}))
+        by = {r.name: r for r in rs}
+        self.assertEqual(d.slowest(rs)[0]["name"], "hook latency")
+        self.assertGreaterEqual(by["hook latency"].ms, 300)
+        self.assertIsNone(by["hook exit codes"].ms)
+        self.assertIsNone(by["injection budgets"].ms)
+
+    def test_unmeasured_rows_are_none_and_briefs_and_views_are_timed(self):  # T-2279
+        rs = {r.name: r for r in self._run_stubbed({"FOREMAN_DOCTOR_BENCH": "0"})}
+        self.assertIsNone(rs["hook latency"].ms)
+        self.assertIsNotNone(rs["briefs"].ms)
+        self.assertIsNotNone(rs["views"].ms)
+        self.assertNotIn("hook latency", [s["name"] for s in d.slowest(list(rs.values()))])
+
+    def test_json_and_verbose_carry_the_timings(self):
+        self.fm("init")
+        out = json.loads(self.fm("doctor", "--json", check=False, env={"HOME": self.tmp}).stdout)
+        self.assertEqual(len(out["slowest"]), 3)
+        self.assertTrue(all("ms" in r for r in out["results"]))
+        self.assertRegex(self.fm("doctor", "-v", check=False, env={"HOME": self.tmp}).stdout,
+                         r"slowest: .+ \d+ ms, .+ \d+ ms, .+ \d+ ms")
+        self.assertNotIn("slowest:", self.fm("doctor", check=False, env={"HOME": self.tmp}).stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
 
