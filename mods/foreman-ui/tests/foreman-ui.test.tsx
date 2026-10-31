@@ -1706,7 +1706,8 @@ test('a palette changed before the first poll applies on it, not only recorded (
   await ui.unmount()
 })
 
-test('motion turned down mid-work stops the 30 fps blit on the next poll (T-1574 review)', async ($, on) => {
+// T-2293: these three run on real CPU near the engine's 5 s default cap; a loaded host timed them out
+test('motion turned down mid-work stops the 30 fps blit on the next poll (T-1574 review)', { timeoutMs: 60000 }, async ($, on) => {
   const { clock, answer, blits } = world(on, [VIEW])
   const opts: Record<string, string> = { motion: 'full' }
   configRows(on, opts)
@@ -2046,7 +2047,7 @@ test('while work runs the rail moves between redraws (30 fps blit), and settles 
   await ui.unmount()
 })
 
-test('a question waiting on you shows as waiting, not as running work, and is not charted (T-0909)', async ($, on) => {
+test('a question waiting on you shows as waiting, not as running work, and is not charted (T-0909)', { timeoutMs: 60000 }, async ($, on) => {
   const { answer, clock } = world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   answer.hold = 5000
@@ -2231,7 +2232,7 @@ test('Agents: a stopped builder\'s worktree says how to resume it (T-1119)', asy
   await ui.unmount()
 })
 
-test('review (T-1023): finished agents age out at render, rank above lone worktrees; unknown merge state says so', async ($, on) => {
+test('review (T-1023): finished agents age out at render, rank above lone worktrees; unknown merge state says so', { timeoutMs: 60000 }, async ($, on) => {
   const worktrees = [{ path: '/repo/.claude/worktrees/d', branch: '', task: null, agent: null, age_s: 30, ahead: null }]
   const { clock } = world(on, [{ ...CALM, worktrees }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
