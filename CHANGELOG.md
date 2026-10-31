@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm task finish --commit` now commits the docs its `--docs` (or Docs impact) names, even when another task touched them first and with no touched record of its own, so CHANGELOG.md is no longer left dirty under a "Landed: committed" line; a doc an open task is still editing, a `none:` note, `..` or absolute paths, and `.foreman/` stay unclaimed (T-2251)
 - `fm genesis status`, genesis.json and the site's Genesis page show `fm exam scorecard`'s per-capability held-out rows (state, closed of graded, why), text only (T-2154).
 - `fm find --rank` weighs proof and effort: a lead `fm prove` proved ranks up to 1.25x until its own function changes (never past an unproven lead of a more severe kind), and a lead in a small function ranks above an equal one in a long function
 - Each new genesis seed and each `fm mission` pack now carries the user's standing rules: every steer still in force, one line each. `fm genesis drift` fails a seed that drops one; an older seed, or a steer newer than the seed, only gets a note
