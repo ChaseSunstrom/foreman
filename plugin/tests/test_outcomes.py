@@ -407,8 +407,11 @@ class CalBase(Base):
 
     def planned(self, title="Cache", tier="M", conf=None, assume=(), choice="Choice 1: a (80%)"):
         """A planned task: a stated choice, assumptions and an optional task confidence, not yet focused."""
-        self.fm("task", "new", title, "--type", "FEATURE", "--tier", tier, "--interpretation", "x", "--approach",
-                f"1) a 2) b 3) c {choice}", "--ac", "ok :: true", "--step", "s", "--scope", "lib/a.py")
+        from helpers import valid_m_plan
+        reading, _ = valid_m_plan()  # T-2335's plan gate: two readings, outcomes, use-what-exists and do-less
+        self.fm("task", "new", title, "--type", "FEATURE", "--tier", tier, "--interpretation", reading, "--approach",
+                f"1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z {choice}",
+                "--ac", "ok :: true", "--step", "s", "--scope", "lib/a.py")
         tid = c.load_briefs(self.p)[-1].id
         for text in assume:
             self.fm("task", "assume", tid, "add", text)
