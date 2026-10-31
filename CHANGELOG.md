@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm log NAME` now records a note as event `log` with the name inside it, so a session can no longer write an event that Foreman's own checks read (a check run, a genesis stage, a ledger-damage acknowledgement). Notes like `fm log final_verify` still record and show in `fm recall`.
 - `fm genesis put`'s section reads now size sections by characters: a file of 3000+ characters splits, and only a section under 300 characters shares a read with the one before it, so a critique written in paragraphs gets one read per section instead of one read for nearly all of it.
 - `fm genesis put` reads a long tower file one section at a time: each `##` section gets its own cold read with an outline of the others, a section that passed and hasn't changed isn't read again, and the file is filed when every section passes. Short sections share a read, and a put reads at most 12.
 - `fm genesis step` moves past the select stage only on `gen-N/select.md`, a record only `fm genesis select N` writes and `fm genesis put` refuses, so a hand-written lineage heading or an `fm log` line can no longer skip selection. A tower whose select ran before this re-runs `fm genesis select N`.
