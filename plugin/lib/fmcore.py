@@ -4393,6 +4393,12 @@ def checkpoint(p, note=None, auto=False, session=None):
             lines.append("- touched since last checkpoint: " + ", ".join(os.path.relpath(f, p.root) if f.startswith(p.root) else f
                                                                          for f in touched[:15]))
         lines += ruled_out(p, b)
+        try:  # T-2139: the goal outlives the compaction: its line goes where the next session reads
+            import fmmandate
+            g = fmmandate.goal_line(p)
+            lines += [f"- {g}"] if g else []
+        except Exception:
+            pass  # a goal that can't be read never stops a checkpoint
         b.set_resume_auto("\n".join(lines))
         if note:
             b.set_resume_note(note)
