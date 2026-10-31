@@ -1,6 +1,6 @@
 {
- "updated": "2026-10-31T18:01:49Z",
- "rev": "c9b0eebf",
+ "updated": "2026-10-31T21:26:48Z",
+ "rev": "5e5022a7",
  "capabilities": [
   {
    "n": 1,
@@ -11883,13 +11883,14 @@
  },
  "not_yet": 0,
  "not_yet_open": 0,
- "unproven": 308,
+ "unproven": 1018,
  "unproven_kinds": {
+  "meaning": 571,
   "research-uncited": 30,
   "typed": 46,
   "red": 38,
   "perf-typed": 52,
-  "docs": 158,
+  "docs": 565,
   "ui-unshot": 57,
   "data": 6,
   "infra": 7,
@@ -11970,7 +11971,7 @@
    "state": "too few",
    "closed": null,
    "graded": null,
-   "why": "no graded exists scenarios yet"
+   "why": "no graded ambiguous, exists, race scenarios yet"
   },
   {
    "n": 3,
@@ -11994,7 +11995,7 @@
    "state": "too few",
    "closed": null,
    "graded": null,
-   "why": "no graded missing-tool scenarios yet"
+   "why": "no outside author writes tool-build, tool-find, tool-grant scenarios yet; no graded missing-tool scenarios yet"
   },
   {
    "n": 6,
@@ -12018,7 +12019,7 @@
    "state": "too few",
    "closed": null,
    "graded": null,
-   "why": "no graded ambiguous, clean scenarios yet"
+   "why": "no graded ambiguous, clean, fork, door, unsure scenarios yet"
   },
   {
    "n": 9,
