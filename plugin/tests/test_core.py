@@ -596,6 +596,8 @@ class Stages(unittest.TestCase):
     def test_option_formats_and_hollow_markers(self):  # T-2269 review
         AP = "Approach (options → choice → why)"
         real = ("Options: (1) one (2) two (3) three Choice 2: two",
+                "1) --bench on evidence 2) `fm bench` verb 3) \"last commit\" compare. Choice 1",  # T-2285: flags, code
+                "1) one 2) two 3) three Choice 1",
                 "Options: (A) a (B) b (C) c Choice: A",
                 "A) a\nB. b\nC) c\nDecision: A",
                 "Option A: a\nApproach B: b\nOption C: c\nGo with B",
