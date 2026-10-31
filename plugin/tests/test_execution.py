@@ -185,6 +185,44 @@ class BoardClose(Base):
         self.assertEqual(out.strip().splitlines()[-1], f"Landed: committed {sha} · not pushed")
         self.assertIn("Landed: committed", self.fm("task", "finish", "T-0001", "--commit", "again").stdout)
 
+    def test_a_doc_the_finish_names_is_committed_though_another_task_touched_it(self):  # T-2251
+        self.committed("CHANGELOG.md", "# Log\n")
+        self.task()
+        self.write("CHANGELOG.md", "# Log\n- shell edit\n")  # no touched record for this task
+        c.log_event(self.p, "touched", task="T-0009", data={"file": os.path.join(self.repo, "CHANGELOG.md")})
+        out = self.finish("--docs", "CHANGELOG.md", "--commit", "x").stdout
+        shown = subprocess.run(["git", "-C", self.repo, "show", "--name-only", "--format=", "HEAD"],
+                               capture_output=True, text=True).stdout
+        self.assertIn("CHANGELOG.md", shown)
+        self.assertRegex(out.strip().splitlines()[-1], r"^Landed: committed ")
+        self.assertEqual(subprocess.run(["git", "-C", self.repo, "status", "--porcelain", "--", "CHANGELOG.md"],
+                                        capture_output=True, text=True).stdout, "")
+
+    def named(self, docs, other_open=False, rel="CHANGELOG.md"):  # T-2251: what _claimed takes from a Docs impact
+        import fmcli
+        self.committed(rel, "a\n")
+        self.task()
+        self.write(rel, "b\n")
+        if other_open:
+            self.fm("task", "new", "Other", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        c.log_event(self.p, "touched", task="T-0002" if other_open else "T-0009",
+                    data={"file": os.path.join(self.repo, rel)})
+        fmcli.mutate(self.p, "T-0001", lambda x: x.set_section("Docs impact", docs), "test")
+        b = c.find_brief(self.p, "T-0001")
+        return fmcli._claimed(self.p, b, fmcli._others(self.p, b))
+
+    def test_a_doc_another_open_task_is_editing_is_not_claimed(self):
+        self.assertNotIn("CHANGELOG.md", self.named("CHANGELOG.md", other_open=True))
+
+    def test_docs_paths_keep_their_leading_dot(self):
+        self.assertIn(".github/x.yml", self.named("./.github/x.yml updated.", rel=".github/x.yml"))
+
+    def test_a_none_docs_impact_claims_nothing(self):
+        self.assertEqual(self.named("none: CHANGELOG.md untouched"), set())
+
+    def test_docs_paths_outside_the_repo_or_in_foreman_state_claim_nothing(self):
+        self.assertEqual(self.named("../CHANGELOG.md /etc/passwd .foreman/x"), set())
+
     def test_tier_drift_has_a_short_kind_in_the_verdict(self):
         import fmcli
         self.assertEqual(fmcli._warning_kind("T-0956 was planned S, but its diff is M-sized (3 files, 90 lines): x"),
