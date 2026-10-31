@@ -2812,6 +2812,32 @@ def privileges(p, n):
     return new, (", ".join(f"{k} {x}×" for k, x in sorted(used.items())) + "; no new kind") if used else "no grant used"
 
 
+def steer(p):
+    """T-2350: run the steer checks; a rule whose check fails becomes one FIX, named for the rule and the commit it
+    failed at (open or closed, the same failure at the same commit is one task). -> (lines, [(rule, why)], [new ids])."""
+    import fmcli
+    fails = []
+    lines = c.steer_checks(p, fails=fails)
+    head, made = (c.git_head(p.root) or "nohead")[:12], []
+    if fails:
+        with c.lock(p.dir):
+            have = "".join(b.section("Raw request") for b in c.load_briefs(p, include_archive=True))
+            for decision, name, cmd, why in fails:
+                key = f"{hashlib.sha1(decision.encode()).hexdigest()[:8]}@{head}"
+                if f"[steer-check {key}]" in have:
+                    continue
+                name, cmd, why = (c.defang(c.redact(x)) for x in (name, cmd, why))
+                b = fmcli._create(p, f"The user's rule no longer holds: {name}", "FIX", "S", "captured",
+                                  raw=f"[steer-check {key}] fm genesis steer (T-2350): the user's rule `{name}` has the "
+                                      f"check `{cmd}`, and at commit {head} it fails: {why}. Fix what broke the rule; the "
+                                      "rule stands until the user's own steer reverses it.", source="discovered")
+                c.log_event(p, "capture", task=b.id, data={"source": "discovered", "type": "FIX"})
+                made.append(b.id)
+        if made:
+            c.regen_views(p)
+    return lines, [(n, w) for _, n, _, w in fails], made
+
+
 def sweep(p, n, agent="foreman"):
     """gen-0 §7 in one command (T-2104): each line ✓ or ✗ into gen-N/sweep.md; verdict clean or red."""
     import fmdocs
@@ -2824,7 +2850,7 @@ def sweep(p, n, agent="foreman"):
                                                                                     if len(bad) > 8 else "") or good})
     r = check(p)
     row("genesis check", _bad(r), "coverage, not-yet, reach and lineage are whole")
-    row("steer checks", c.steer_checks(p), "every rule from a user steer has a check, and each passes")  # T-2167
+    row("steer checks", steer(p)[0], "every rule from a user steer has a check, and each passes")  # T-2167
     briefs = c.load_briefs(p)
     by_id = {b.id: b for b in c.load_briefs(p, include_archive=True)}  # fm tidy archives closed briefs after 14 days
     ids = [t for f in sorted(os.listdir(os.path.join(d, f"gen-{n}")) if os.path.isdir(os.path.join(d, f"gen-{n}")) else [])
@@ -2964,6 +2990,12 @@ def cmd_genesis(args):
             r = check(p)
             fmcli.out(args, r, "\n".join(_check_lines(r)))
             return 1 if _bad(r) else 0
+        if action == "steer":  # T-2350: fm night's job; the last line names each rule that failed
+            lines, failed, made = steer(p)
+            summary = (f"steer checks: {len(failed)} rule(s) failed: " + "; ".join(n for n, _ in failed) if failed else
+                       f"steer checks: none failed ({len(lines)} line(s) to read)" if lines else "steer checks: all hold")
+            fmcli.out(args, {"lines": lines, "failed": failed, "captured": made}, "\n".join(lines + [summary]))
+            return 1 if failed else 0
         if action == "step":
             r = step(p)
             fmcli.out(args, r, f"gen {r['gen']} · {r['stage']}: {r['action']}\n  → {r['command']}")
