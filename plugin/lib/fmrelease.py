@@ -434,6 +434,11 @@ def ship(p, args):
                      + "; nothing was pushed")
             for ln in got:
                 print(ln)
+            try:  # T-2281: the shipped footprint, the lean ratchet's baseline; before the push, so a failed push keeps it
+                import fmdoctor
+                fmdoctor.record_footprint(p, os.path.join(wt, "plugin", "rules", "foreman.md"), os.path.join(wt, "plugin"))
+            except Exception as e:  # the ship stands; the record is a convenience
+                print(f"footprint record failed: {e}")
             tip = _git(wt, "rev-parse", "HEAD").strip()
             _git(root, "fetch", "-q", remote, "main")
             if c._git(root, "merge-base", "--is-ancestor", "FETCH_HEAD", tip, timeout=60, proc=True).returncode:

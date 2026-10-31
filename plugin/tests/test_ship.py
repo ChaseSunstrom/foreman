@@ -192,6 +192,15 @@ class Ship(ForemanTestCase):
         self.assertIn("the test failed in the scratch tree", r.stderr + r.stdout)
         self.assertFalse(self.base())
 
+    def test_a_green_ship_records_the_footprint_and_a_red_one_does_not(self):  # T-2281
+        self.grant()
+        rec = os.path.join(c.find_project(self.repo).dir, "footprint.json")
+        self.ship("--test", "false")
+        self.assertFalse(os.path.exists(rec))
+        self.assertEqual(self.ship("--test", "true").returncode, 0)
+        with open(rec) as f:
+            self.assertIn("rules chars", json.load(f)["metrics"])
+
     def test_a_green_ship_names_an_open_baseline_task_it_turned_green(self):
         self.grant()
         flag = os.path.join(self.tmp, "ok")
