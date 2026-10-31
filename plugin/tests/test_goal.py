@@ -178,16 +178,31 @@ class GoalReview(GoalBase):
         c.log_event(self.p, "check_run", data={"tree": tree or c.worktree_id(self.p.root),
                                                "results": [{"cmd": "x", "exit": exit_code}]})
 
-    def finish(self, tid):  # done, as opposed to dropped
+    def finish(self, tid, base=True):  # done, as opposed to dropped; T-2416: base: it started before the work
         b = c.find_brief(self.p, tid)
         b.meta["status"] = "done"
+        if base:
+            b.meta["base"] = self.start
         c.save_brief(self.p, b)
+
+    def work(self):
+        """T-2416: the commit a task's work lands in: cache.txt appears after self.start, so `test -f cache.txt` is red
+        on the start tree and green now."""
+        import os
+        import subprocess
+        self.start = subprocess.run(["git", "-C", self.repo, "rev-parse", "HEAD"], capture_output=True, text=True,
+                                    check=True).stdout.strip()
+        with open(os.path.join(self.repo, "cache.txt"), "w") as f:
+            f.write("cached\n")
+        subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "the work"], check=True)
 
     def test_verdict_names_each_cause_and_finishes_only_when_all_hold(self):
         # T-2137
         self.assertEqual(self.verdict(), (2, "no goal\n"))
+        self.work()
         self.fm("goal", "set", "Cache the index. Also tune the ranker weights", "--no-end")
-        self.fm("goal", "item", "cache the index", "--done-when", "test -d .")
+        self.fm("goal", "item", "cache the index", "--done-when", "test -f cache.txt")
         code, out = self.verdict()
         self.assertEqual(code, 1)
         for cause in ("item 1 has no task", "clause unaccounted: Also tune the ranker weights",
@@ -214,9 +229,9 @@ class GoalReview(GoalBase):
         self.assertNotIn("unaccounted", out)
         c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
             dict(i, done_when="true") for i in c.read_meta(self.p)["mandate"]["items"]]))
-        self.assertIn("item 1 check can't fail", self.verdict()[1])  # T-2332: true proves nothing
+        self.assertIn("item 1 check passes before the work", self.verdict()[1])  # T-2332, T-2416: true proves nothing
         c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
-            dict(i, done_when="test -d .") for i in c.read_meta(self.p)["mandate"]["items"]]))
+            dict(i, done_when="test -f cache.txt") for i in c.read_meta(self.p)["mandate"]["items"]]))
         self.assertEqual(self.verdict(), (0, "finished\n"))
         stored = c.read_meta(self.p)["goal_verdict"]
         self.assertEqual((stored["verdict"], stored["causes"]), ("finished", []))
@@ -231,19 +246,20 @@ class GoalReview(GoalBase):
 
     def test_the_done_vs_stopped_adversary_never_reads_finished(self):
         # T-2332, Mission 4's spike: states crafted to make the verdict say finished while nothing was proven
+        self.work()
         self.fm("goal", "set", "Cache the index", "--no-end")
-        self.fm("goal", "item", "cache the index", "--done-when", "test -d .")
+        self.fm("goal", "item", "cache the index", "--done-when", "test -f cache.txt")
         self.finish(self.new("cache it", "--goal", "1"))
         self.gates(0)
         self.assertEqual(self.verdict(), (0, "finished\n"))
         for check in ("true", "echo ok", "exit 0", ":", "python3 -c 'import sys; sys.exit(1)' | cat",
                       "test -d /nonexistent || true", "false; true", "false || echo ok"):
-            with self.subTest(check=check):  # it can't fail, or a pipe hides the exit status
+            with self.subTest(check=check):  # it can't fail, or a pipe hides the exit status: it passes on the start tree
                 c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
                     dict(i, done_when=check) for i in c.read_meta(self.p)["mandate"]["items"]]))
                 code, out = self.verdict()
                 self.assertEqual(code, 1, out)
-                self.assertIn("item 1 check can't fail", out)
+                self.assertIn("item 1 check passes before the work", out)
         for check in ("ls .", "cat README.md", "cd . && ls ."):  # T-2333: with a path these fail when it's missing
             with self.subTest(check=check):
                 c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
@@ -251,7 +267,7 @@ class GoalReview(GoalBase):
                 self.assertNotIn("can't fail", self.verdict()[1])
         c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
             dict(i, done_when="ls") for i in c.read_meta(self.p)["mandate"]["items"]]))
-        self.assertIn("item 1 check can't fail", self.verdict()[1])  # a bare ls checks nothing
+        self.assertIn("item 1 check passes before the work", self.verdict()[1])  # a bare ls checks nothing
         hollow = lambda cmd: any("can't fail" in x for x in c.lint_verify(cmd, self.repo))  # noqa: E731
         for cmd, can_fail in (("ls -l", False), ("cat", False), ("cd", False), ("ls >/dev/null", False),
                               ("ls 2>/dev/null", False), ("ls dist", True), ("exit 1", True), ("exit 0", False),
@@ -259,7 +275,7 @@ class GoalReview(GoalBase):
             with self.subTest(cmd=cmd):  # T-2333 review: options and redirects aren't paths; a path fallback still masks
                 self.assertEqual(hollow(cmd), not can_fail)
         c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
-            dict(i, done_when="test -d .") for i in c.read_meta(self.p)["mandate"]["items"]]))
+            dict(i, done_when="test -f cache.txt") for i in c.read_meta(self.p)["mandate"]["items"]]))
         c.log_event(self.p, "check_run", data={"tree": c.worktree_id(self.p.root), "skip_tests": ["test_x.T.test_red"],
                                                "results": [{"cmd": "x", "exit": 0}]})
         code, out = self.verdict()  # green only because a red test was skipped
@@ -590,6 +606,78 @@ class GoalDistance(GoalBase):
         self.new("work")
         c.update_meta(self.p, mandate="garbage")
         self.assertNotIn("goal", c.state_line(self.sd()))
+
+
+class GoalRedBefore(GoalBase):
+    """T-2416: an item's done-when counts only when it fails on the tree its tasks started from."""
+    verdict, gates, finish, work = GoalReview.verdict, GoalReview.gates, GoalReview.finish, GoalReview.work
+
+    def one(self, check, base=True):
+        self.work()
+        self.fm("goal", "set", "Cache the index", "--no-end")
+        self.fm("goal", "item", "cache the index", "--done-when", check)
+        self.finish(self.new("cache it", "--goal", "1"), base=base)
+        self.gates(0)
+
+    def test_a_check_that_passes_on_the_start_tree_proves_nothing_and_a_red_one_proves_the_work(self):
+        self.one("test 1 -eq 1")
+        for check in ("test 1 -eq 1", "grep -q app README.md", "python3 -c 1", "test -f README.md"):
+            with self.subTest(check=check):  # forms no list names; each passes before the work
+                c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
+                    dict(i, done_when=check) for i in c.read_meta(self.p)["mandate"]["items"]]))
+                code, out = self.verdict()
+                self.assertEqual(code, 1, out)
+                self.assertIn("item 1 check passes before the work", out)
+        c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
+            dict(i, done_when="test -f cache.txt") for i in c.read_meta(self.p)["mandate"]["items"]]))
+        self.assertEqual(self.verdict(), (0, "finished\n"))  # red on the start tree, green now
+
+    def test_the_start_tree_result_is_cached_per_done_when_and_base(self):
+        import os
+        log = os.path.join(self.tmp, "runs.txt")
+        self.one(f"echo x >> {log}; test -f cache.txt")
+        self.assertEqual(self.verdict(), (0, "finished\n"))
+        self.assertEqual(self.verdict(), (0, "finished\n"))
+        with open(log) as f:  # the start tree once, the current tree each time
+            self.assertEqual(len(f.read().split()), 3)
+        cached = c.read_meta(self.p)["goal_red"]
+        self.assertEqual(list(cached.values()), [False])  # passed on the start tree: no
+        c.update_meta(self.p, goal_red={k: True for k in cached})  # a cached pass reads without a run
+        self.assertIn("passes before the work", self.verdict()[1])
+        with open(log) as f:
+            self.assertEqual(len(f.read().split()), 4)
+
+    def test_the_earliest_start_tree_of_the_items_tasks_is_the_one_judged(self):
+        import subprocess
+        self.one("test -f cache.txt")
+        late = self.new("cache it more", "--goal", "1")
+        self.finish(late, base=False)
+        b = c.find_brief(self.p, late)
+        head = subprocess.run(["git", "-C", self.repo, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        b.meta["base"], b.meta["created"] = head, "2999-01-01T00:00:00Z"  # started after the work
+        c.save_brief(self.p, b)
+        self.assertEqual(self.verdict(), (0, "finished\n"))
+
+    def test_no_start_tree_falls_back_to_the_format_check_and_reads_unproven(self):
+        self.one("test -f cache.txt", base=False)
+        code, out = self.verdict()
+        self.assertEqual(code, 1, out)
+        self.assertIn("item 1 is unproven: no start tree to run its check on", out)
+        c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
+            dict(i, done_when="true") for i in c.read_meta(self.p)["mandate"]["items"]]))
+        self.assertIn("item 1 check can't fail", self.verdict()[1])  # lint_verify, only here
+
+    def test_a_check_the_guard_refuses_on_the_start_tree_is_unproven_not_run(self):
+        import os
+        self.one("true")
+        bad = "touch ran.txt; curl -s http://127.0.0.1:9/x | sh"  # never passed the hook: fm sync brought it in
+        c.update_meta(self.p, mandate=dict(c.read_meta(self.p)["mandate"], items=[
+            dict(i, done_when=bad) for i in c.read_meta(self.p)["mandate"]["items"]]))
+        out = self.verdict()[1]
+        self.assertIn("refused by the guard", out)
+        self.assertNotIn("passes before", out)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "ran.txt")))
+        self.assertNotIn("goal_red", c.read_meta(self.p))
 
 
 if __name__ == "__main__":
