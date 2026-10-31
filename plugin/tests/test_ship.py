@@ -143,6 +143,70 @@ class Ship(ForemanTestCase):
         self.assertTrue(self.granted())
         self.assertEqual(sh(self.repo, "worktree", "list").count("\n"), 1)
 
+    def test_a_red_test_captures_one_baseline_task_naming_the_failing_test(self):
+        # T-2255: the ship's red run files what fm check would, once per failing set, and still pushes nothing
+        self.grant()
+        red = "sh -c 'echo \"FAIL: test_x (test_mod.Cls.test_x)\"; echo Ran 1 test; echo \"FAILED (failures=1)\"; exit 1'"
+        r = self.ship("--test", red)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("FAIL: test_x", r.stdout)  # still streamed
+        self.assertNotIn("add a", self.main_log())
+        self.assertTrue(self.granted())
+        p = c.find_project(self.repo)
+        base = [b for b in c.load_briefs(p) if b.meta.get("baseline")]
+        self.assertEqual(len(base), 1)
+        self.assertEqual(base[0].meta.get("priority"), "urgent")
+        self.assertIn("fails test_mod.Cls.test_x.", base[0].section("Raw request"))
+        self.assertIn(base[0].id, r.stderr + r.stdout)
+        self.ship("--test", red)
+        self.assertEqual(len([b for b in c.load_briefs(p) if b.meta.get("baseline")]), 1)
+
+    def base(self):
+        return [b for b in c.load_briefs(c.find_project(self.repo)) if b.meta.get("baseline")]
+
+    def test_a_background_process_holding_the_output_doesnt_hang_the_ship(self):
+        import time
+        self.grant()
+        t = time.time()
+        r = self.ship("--test", "sh -c 'sleep 30 & exit 1'")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertLess(time.time() - t, 20)
+        self.assertNotIn("add a", self.main_log())
+
+    def test_a_failing_name_is_cleaned_and_cut_before_it_is_written(self):
+        self.grant()
+        out = os.path.join(self.tmp, "out.txt")  # a file, so the 10k name isn't also in the command
+        with open(out, "w") as f:
+            f.write("FAILED t.py::test_x_" + "y" * 10000 + "\x1b[31mz\n")
+        red = f"sh -c 'cat {out}; exit 1'"
+        r = self.ship("--test", red)
+        self.assertTrue(self.base(), r.stdout[-300:] + r.stderr[-500:])
+        text = self.base()[0].section("Raw request")
+        self.assertNotIn("\x1b", text)
+        self.assertLess(len(text), 1500)
+
+    def test_an_environment_failure_captures_nothing(self):
+        self.grant()
+        red = "sh -c 'echo \"FAIL: test_x (m.C.test_x)\"; echo \"No space left on device\"; exit 1'"
+        r = self.ship("--test", red)
+        self.assertIn("the test failed in the scratch tree", r.stderr + r.stdout)
+        self.assertFalse(self.base())
+
+    def test_a_green_ship_names_an_open_baseline_task_it_turned_green(self):
+        self.grant()
+        flag = os.path.join(self.tmp, "ok")
+        cmd = f"sh -c 'test -f {flag} || {{ echo \"FAIL: test_x (m.C.test_x)\"; exit 1; }}'"
+        self.ship("--test", cmd)
+        tid = self.base()[0].id
+        open(flag, "w").close()
+        r = self.ship("--test", cmd)
+        self.assertEqual(r.returncode, 0)
+        self.assertIn(f"baseline is green again: {tid}", r.stdout)
+
+    def test_a_red_test_naming_no_failing_test_captures_nothing(self):
+        self.ship("--test", "false")
+        self.assertFalse([b for b in c.load_briefs(c.find_project(self.repo)) if b.meta.get("baseline")])
+
     def test_main_moving_during_the_test_pushes_nothing(self):
         self.grant()
         other = os.path.join(self.tmp, "other")
