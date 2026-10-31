@@ -1519,6 +1519,7 @@ def _kinds(name, text):
 GEN_KINDS = ("line", "none", "sweep")
 # frozen: a kind added to fmexam.KINDS must not move any G-scenario to a new defect (T-2126)
 GEN_DEFECTS = ("bug", "vuln", "untested", "slow", "docs", "flaky", "dep", "vague", "ambiguous", "missing-tool", "none")
+SWEEP_DEFECTS = ("vuln", "untested", "docs")  # what fmexam's 'rank' kind plants (T-2177)
 REQUEST = {"line": "make this great", "none": "", "sweep": "super improve this"}
 PLANT = (("MUST: keep the public API stable across releases", "MUST: ship each change with a changelog entry",
           "MUST: work offline without a network"),
@@ -1592,6 +1593,12 @@ def _ask(s):
     return "\n".join([REQUEST[s["kind"]]] + planted), planted, GEN_DEFECTS[h % len(GEN_DEFECTS)]
 
 
+def _defects(s, defect):
+    """T-2177: the defects a G-scenario plants, in its repo: one (line, none), three for a sweep, whose point is finding
+    every gap unasked. fmexam's 'rank' kind plants these three, each in its own file."""
+    return list(SWEEP_DEFECTS) if s["kind"] == "sweep" else [defect]
+
+
 def _oracle(chk, defect):
     """The answer key: every line the checks read, so the scoring is proven before any arm is trusted."""
     out = ["CONTEXT: No goal was given, so this assumes: the request as given.", "STANDING INTENT:", intent()]
@@ -1600,17 +1607,20 @@ def _oracle(chk, defect):
         if h.split(".")[0].isdigit():
             out.append("## " + h)
             if h.startswith("2."):
-                out.append(f"1. **Planted.** Handles the planted defect. Exam: {defect}.")
+                out += [f"1. **Planted.** Handles the planted defect. Exam: {d}." for d in
+                        ([defect] if isinstance(defect, str) else defect)]
     return "\n".join(out) + "\n"
 
 
 def _misses(chk, text, kind, defect):
-    """What a draft misses: cover against gen-0 plus the planted lines, a §2 capability for the planted defect, an
-    assumed line when nothing was given (none), and no §2 capability without an exam kind (sweep)."""
+    """What a draft misses: cover against gen-0 plus the planted lines, a §2 capability for each planted defect (defect
+    is one kind or a list: a sweep's three, each named when missed), an assumed line when nothing was given (none),
+    and no §2 capability without an exam kind (sweep)."""
     caps = [(name, _kinds(name, t)) for _, name, t in _caps(text)]
     miss = cover(chk, text)
-    if not any(defect in ks for _, ks in caps):
-        miss.append(f"no §2 capability for the planted {defect}")
+    for d in ([defect] if isinstance(defect, str) else defect):
+        if not any(d in ks for _, ks in caps):
+            miss.append(f"no §2 capability for the planted {d}")
     if kind == "none" and not re.search(r"^CONTEXT:.*\b(?:no (?:goal|request)|nothing)\b.*assum", text, re.I | re.M):
         miss.append("no CONTEXT line says what it assumed")
     if kind == "sweep":
@@ -1652,8 +1662,11 @@ def exam(p, arm="genesis", split="holdout", per_kind=9, seed=0, author="self", m
     picked = [s for s in fmexam.draw(seed, GEN_KINDS, langs, per_kind) if split in ("all", s["split"])]
     for i, s in enumerate(picked, 1):
         line, planted, defect = _ask(s)
+        kind, defects = defect, _defects(s, defect)
+        if len(defects) > 1:  # a sweep: three defects, graded one by one; its repo is fmexam's 'rank' one
+            kind, defect = "rank", defects
         with tempfile.TemporaryDirectory() as tmp:
-            fmexam.render(tmp, dict(s, kind=defect))
+            fmexam.render(tmp, dict(s, kind=kind))
             if author == "child":  # T-2215: what the drafts read, from outside Foreman
                 readme = os.path.join(tmp, "repo", "README.md")
                 try:
