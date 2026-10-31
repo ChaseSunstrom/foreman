@@ -771,7 +771,8 @@ def _first_brief(p, sid, transcript=None):
         if c.active_brief_fast(p, getattr(p, "lane", None)):
             return ""  # a parallel edit's hook made it a moment ago: its own note said so
         cmd = [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "task", "new", title, "--type", type_, "--tier", tier,
-               "--step", "do what the request asks", "--focus", "--json"] + [x for d in done for x in ("--ac", d)]
+               "--step", "do what the request asks", "--harness-plan=hook",  # T-2335: no readings/options to gate
+               "--focus", "--json"] + [x for d in done for x in ("--ac", d)]
         r = subprocess.run(cmd, cwd=p.root, capture_output=True, text=True, timeout=3,  # the hook's limit is 5 s
                            env=dict(os.environ, FOREMAN_SESSION_ID=sid))
     act = c.active_brief_fast(p, getattr(p, "lane", None))
@@ -843,7 +844,8 @@ def _queue_requests(p, sid, reqs):
             done = (r.done_when or ["the request is done as asked"])[:6]
             code, out, err = _fm_inline(p.root, sid, "task", "new", c.fit(f"Request {k}: {first}", 90), "--type", type_,
                                         "--tier", "M" if type_ == "SECURITY" else "S", f"--raw={text}",
-                                        "--step=do what the request asks", "--json", *[f"--ac={d}" for d in done],
+                                        "--step=do what the request asks", "--harness-plan=hook", "--json",
+                                        *[f"--ac={d}" for d in done],
                                         *([f"--depends={made[-1]}"] if made else []))
             tid = re.search(r'"id": "(T-\d+)"', out)
             if code or not tid:

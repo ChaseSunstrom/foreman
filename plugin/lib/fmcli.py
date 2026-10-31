@@ -787,6 +787,7 @@ def cmd_task(args):
         b, _ = mutate(p, args.id, done, "task_done", logged)
         import fmoutcomes
         fmoutcomes.record_close(p, logged)  # T-1061
+        fmoutcomes.maintain(p)  # T-2337: the calibration ledger's due outcomes and bar check, each close
         if b.meta.get("batch"):
             _settle_batch(p, b, done=True)
         chose = " ".join(b.section("Decision").split()) if b.type == "RESEARCH" else ""
@@ -2963,11 +2964,12 @@ def _make_batch(p, ids, title):
                     priority="urgent" if any(b.priority == "urgent" for b in members) else "normal",
                     scope=sorted({s for b in members for s in b.meta.get("scope") or []}),
                     depends=sorted({d for b in members for d in b.meta.get("depends_on") or []} - set(ids)))
-        h.set_section("Interpretation", f"Do {', '.join(ids)} as one batch: one plan read, one gate run, one review and "
-                                        f"one commit; each keeps its own criteria and is closed done in {h.id}. Write "
-                                        "the failing tests for every member first, together. Per step, run only that "
+        h.set_section("Interpretation", f"Reading 1: do {', '.join(ids)} as one batch: one plan read, one gate run, one "
+                                        f"review and one commit; each keeps its own criteria and is closed done in {h.id}. "
+                                        "Write the failing tests for every member first, together. Per step, run only that "
                                         "step's own new tests (fast, -k); the full gates, replays and the review run "
-                                        "once, at close (T-0670).")
+                                        "once, at close (T-0670). Reading 2: each one alone; ruled out because one plan "
+                                        "read and one gate run serve them all cheaper.")  # T-2335: the plan gate wants 2 readings
         for b in members:
             crit = [(c._VERIFY_OF.sub("", a.text).strip(), c.verify_of(a.text)) for a in b.acceptance()] or \
                 [(t.strip(), v.strip() or None) for t, _, v in (x.partition(" :: ") for x in _DONE_WHEN.findall(  # T-1976
@@ -3055,8 +3057,11 @@ def task_new(p, args):
         import fmmandate
         fmmandate.link(p, args.goal, b.id)
         b = c.find_brief(p, b.id)
-    if args.ac or args.step or args.interpretation or args.approach:
+    harness = getattr(args, "harness_plan", None)
+    if args.ac or args.step or args.interpretation or args.approach or harness:
         def plan(b):
+            if harness:  # T-2335: Foreman's own harness wrote this plan; the plan gate's content checks skip it
+                b.meta["harness_plan"] = harness
             for name, text in (("Interpretation", args.interpretation), ("Approach", args.approach)):
                 if text:  # an M/L brief plans in one call (T-0083)
                     b.set_section(name, c.redact(text))
@@ -3115,6 +3120,9 @@ def task_set(p, args):
         if v == "" and k in CLEARABLE:  # T-1126: an empty value clears an optional field
             if k.startswith("predict_") and need_brief(p, args.id).meta.get("plan0_at"):
                 raise UsageError(f"{k} is fixed once work has started (fm focus); the close scores it as planned")
+            if k == "confidence" and need_brief(p, args.id).meta.get("plan0_at") and \
+                    need_brief(p, args.id).meta.get("confidence"):  # T-2337: a stated number is a write-once bet
+                raise UsageError("confidence is a bet in the calibration ledger once stated after fm focus: it can't be cleared")
             changes[k] = None
             continue
         if k == "status" and v not in SETTABLE_STATUS:
@@ -3134,6 +3142,11 @@ def task_set(p, args):
                                  f"reuses, or why nothing fits (fm recall, fm map)>\"")
         if k == "confidence" and not (v.isdecimal() and 0 <= int(v) <= 100):  # T-0619
             raise UsageError("confidence is a whole percent, 0-100: how likely the task holds on its first finish")
+        if k == "confidence":  # T-2337: once stated after work began, it's a bet in the calibration ledger: write-once
+            cb = need_brief(p, args.id)
+            if cb.meta.get("plan0_at") and cb.meta.get("confidence") and str(cb.meta["confidence"]) != v:
+                raise UsageError(f"confidence {cb.meta['confidence']} is a bet in the calibration ledger: a stated value "
+                                 f"can't be edited after fm focus")
         if k == "cost_cap":  # T-1083: tokens, like fm cost; stored as the count
             import fmcost
             if (n := fmcost.parse_tokens(v)) is None:
@@ -3188,6 +3201,9 @@ def task_set(p, args):
             b.append_log("set " + ", ".join(f"{k}={v}" for k, v in changes.items()))
     b, _ = mutate(p, args.id, apply, "task_set", {"changes": changes, "allow": args.allow or [],
                                                   "section": [sec for sec, _ in pairs] or None})
+    if b.meta.get("plan0_at"):  # T-2337: a number stated after work began is still a bet
+        import fmoutcomes
+        fmoutcomes.record_stated(p, b)
     out(args, c.brief_summary(b), f"{b.id} updated.")
 
 
@@ -3397,6 +3413,8 @@ def cmd_focus(args):
         print(warn, file=sys.stderr)
     stale = c.stale_refs(p, target) if resumed and target.meta.get("base") else []  # T-0113: picked up again
     import fmoutcomes
+    if first_focus:  # T-2337: the confidences the brief states are bets from here on
+        fmoutcomes.record_stated(p, target)
     try:
         record = "\n".join(filter(None, [fmoutcomes.track_line(p, target.type, target.tier),  # T-0641
                                           fmoutcomes.caution(p, target.meta.get("scope") or []),  # T-0620
@@ -3951,11 +3969,27 @@ def cmd_decide(args):
     if re.search(r"steer|user", cites, re.I) and not c.STEER.search("cites: " + cites):
         print(f"fm: warning: --cites {c.plain(cites)[:60]!r} doesn't read as a user steer ('user steer …' or "
               "\"the user's steer …\"), so no check is asked of this rule", file=sys.stderr)
+    conf = getattr(args, "confidence", None)
+    if conf is not None and not (str(conf).isdecimal() and 0 <= int(conf) <= 100):  # T-2337
+        raise UsageError("--confidence is a whole percent, 0-100: how likely this decision is not reversed")
     _write_decision(p, args.decision, args.why, args.rejected, args.kind, args.reverses, args.task,
                     getattr(args, "revisited", None), revisit, cites=getattr(args, "cites", None),
                     check=getattr(args, "check", None))
+    note = ""
+    if conf is not None:  # a stated confidence is a bet in the calibration ledger, scored when it's reversed or holds
+        try:
+            import fmoutcomes
+            tb = c.find_brief(p, args.task) if args.task else None
+            made = fmoutcomes.bet(p, "decision", conf, task=args.task or None, key=args.decision.lower(),
+                                  base=fmoutcomes.base_rate(fmoutcomes.outcomes(p), fmoutcomes._first_finish(p),
+                                                            tb.type if tb else None, tb.tier if tb else None))
+            if made is None:
+                note = " Its confidence was ignored: this decision already has a bet, and a bet is never rewritten."
+        except Exception as e:  # a ledger doesn't lose the decision just written
+            note = f" Its confidence was not recorded ({c.fit(str(e), 80)})."
     out(args, {"decision": args.decision},
-        f"Decision recorded in {path}." + (" Its sunset is already expired." if sunset and sunset <= c.now()[:10] else ""))
+        f"Decision recorded in {path}." + (" Its sunset is already expired." if sunset and sunset <= c.now()[:10] else "")
+        + note)
 
 
 def _write_decision(p, decision, why="", rejected="", kind="reversible", reverses=None, task=None, settles=None,
@@ -5976,6 +6010,8 @@ def _build_parser(only=None):
     s.add_argument("--kind", choices=["reversible", "costly", "outward"], default="reversible",
                    help="costly/outward: listed for the user's review (fm decide --review)")
     s.add_argument("--reverses", help="words from the earlier decision this one undoes")
+    s.add_argument("--confidence", metavar="N", help="whole percent, 0-100: how likely the decision isn't reversed; "
+                                                     "a bet in the calibration ledger (T-2337)")
     s.add_argument("--cites", metavar="REF", help="what it rests on: the user's message, a veto or a decision (T-0654)")
     s.add_argument("--check", metavar="CMD", help="what proves a standing rule holds: fm genesis check, fm exam "
                                                   "scorecard or python3 plugin/tests/run.py test_…; fm genesis sweep "
@@ -6098,8 +6134,12 @@ def _build_parser(only=None):
     t.add_argument("--ac", action="append", help="acceptance criterion (repeatable): name its observable, what the "
                                                  "user will see, and give its check as 'TEXT :: CMD'")
     t.add_argument("--step", action="append", help="step (repeatable)")
-    t.add_argument("--interpretation", help="what the request means (M/L plan gate)")
-    t.add_argument("--approach", help="options → choice → why (M/L plan gate)")
+    t.add_argument("--interpretation", help="what the request means (M/L plan gate: 'Reading 1: … Reading 2: …', or the "
+                                            "one reading and the one you ruled out and why)")
+    t.add_argument("--approach", help="options → choice → why (M/L plan gate: '1) … fails if: … 2) use what exists: … "
+                                      "3) do less: … Choice N: why'; each option with its likely outcome or failure mode)")
+    t.add_argument("--harness-plan", metavar="WHO", help="Foreman's own harness (code, hook) wrote this plan: the M/L plan "
+                                                         "gate skips its readings and options (not for hand-written plans)")
     t.add_argument("--focus", action="store_true", help="focus it right away (the plan gate still applies)")
     t.add_argument("--goal", metavar="ITEM", help="it builds item ITEM of the standing goal (fm goal show)")
     t = tadd("show")
@@ -6329,6 +6369,8 @@ def _build_parser(only=None):
             "evidence, UI edits with no shot/smoke/stories run (T-2273)")
     s.add_argument("--days", type=int, default=30, help="how far back closed tasks are read (default 30)")
     s = add("away", lazy("fmaway", "cmd_away"), tier=("Reports", 975), help="what closed, blocked, was asked or was reverted since you last spoke (T-1155)")
+    s = add("calibration", lazy("fmoutcomes", "cmd_calibration"), tier=("Reports", 981),
+            help="the confidence ledger: stated bets scored by outcomes, Brier beside the base rate, the bars (T-2337)")
     s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), tier=("Reports", 980), help="what became of finished tasks: reverted, fixed later "
                                                                  "by a task naming them, or held; track record (T-0616)")
     s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
@@ -7636,6 +7678,8 @@ def _build_parser(only=None):
     s.add_argument("--score", action="store_true", help="race: run both sides' criteria in their worktrees, count "
                                                         "lines changed, name a leader (T-1069)")
     s.add_argument("id", nargs="?", help="the task id; max: how many builders may be out at once (1-6)")
+    s.add_argument("--confidence", metavar="N", help="race: whole percent, 0-100, that the original side wins; a bet in "
+                                                     "the calibration ledger (T-2337)")
     s.add_argument("--spike", action="store_true", help="new: a throwaway lane fm lane merge refuses (T-0732)")
     s.add_argument("--force", metavar="REASON", help="resume: although the builder isn't known to be stopped or ignored "
                                                      "files would go (T-1028); the reason is logged")

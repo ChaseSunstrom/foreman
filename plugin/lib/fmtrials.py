@@ -43,8 +43,17 @@ def grade(p, t, now=None):
     due = at + datetime.timedelta(days=n)
     if now < due:
         return "pending", f"pending, {math.ceil((due - now).total_seconds() / 86400)} days left"
-    kind = t["moves"][:-1] if t["moves"].endswith("s") else t["moves"]
     fmt = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")
+    if t["moves"] == "brier":  # T-2337: a calibration bar moved; the metric is the Brier of bets stated before vs after
+        import fmoutcomes
+        rows = fmoutcomes.bar_rows(fmoutcomes.scored(p))  # the survival-scored rows, the only ones that moved the bar
+        b = fmoutcomes.brier([r for r in rows if str(r["ts"]) < fmt(at)])
+        a = fmoutcomes.brier([r for r in rows if fmt(at) <= str(r["ts"]) < fmt(due)])
+        if b is not None and a is not None and a < b:
+            return "moved", f"moved (Brier {b:.2f} -> {a:.2f})"
+        return "revert", "no movement: propose revert (Brier " + (f"{b:.2f} -> {a:.2f})" if None not in (a, b)
+                                                                   else "no scored bets after the move)")
+    kind = t["moves"][:-1] if t["moves"].endswith("s") else t["moves"]
     ts = [str(e.get("ts") or "") for e in c.ledger_events(p, (kind,), since=fmt(at - datetime.timedelta(days=n)))]
     before = sum(x < fmt(at) for x in ts) / n
     after = sum(fmt(at) <= x < fmt(due) for x in ts) / n

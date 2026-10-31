@@ -34,7 +34,9 @@ class Calibrate(Base):
         self.fix_of(a)
         self.assertNotEqual(self.fm("task", "set", "T-0002", "confidence=150", check=False).returncode, 0)
         out = self.fm("digest").stdout
-        self.assertRegex(out, r"Calibration.*80–94%: 2 task\(s\), 1 held on the first finish \(50%\)")
+        # T-2337: the ledger scores them (a stated number is a write-once row); two rows is too few to print buckets
+        self.assertRegex(out, r"Calibration ledger: too few \(1 of 20 scored, 1 pending\)")
+        self.assertNotEqual(self.fm("task", "set", a, "confidence=10", check=False).returncode, 0)
 
 
 class Atlas(Base):
@@ -54,8 +56,8 @@ class Honest(Base):
     def test_finish_flags_criteria_edited_after_focus_and_smooth_runs(self):
         with open(os.path.join(self.repo, "p.txt"), "w") as f:
             f.write("ok\n")
-        self.fm("task", "new", "Parser", "--type", "FEATURE", "--tier", "M", "--interpretation", "x", "--approach",
-                "1) a 2) b 3) c Choice 1: a", "--ac", "parses every input :: grep -q ok p.txt",
+        self.fm("task", "new", "Parser", "--type", "FEATURE", "--tier", "M", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach",
+                "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1: a", "--ac", "parses every input :: grep -q ok p.txt",
                 "--step", "s", "--focus")
         self.fm("task", "ac", "T-0001", "edit", "1", "--text", "parses the common inputs")
         r = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "grep -q ok p.txt", "--lens", "intent: ok",
