@@ -247,6 +247,20 @@ def _jaccard(a, b):
     return None if not b else round(len(a & b) / len(a | b), 3)
 
 
+def predict(reqs):
+    """(type, paths) of the request after reqs ((brief, type, paths), oldest first): the type from this user's own
+    type transitions out of the last one (a tie goes to the most recent), the paths from their latest earlier request
+    of that type (else the last's). The tick's predictor and fm exam's replay of it (T-2409)."""
+    lt, lpaths = reqs[-1][1], reqs[-1][2]
+    types = [t for _, t, _ in reqs]
+    nxt = {}
+    for a, b in zip(types, types[1:]):
+        if a == lt:
+            nxt[b] = nxt.get(b, 0) + 1
+    ptype = max(nxt, key=lambda k: (nxt[k], -types[::-1].index(k))) if nxt else lt
+    return ptype, next((ps for _, t, ps in reversed(reqs[:-1]) if t == ptype), lpaths)[:5]
+
+
 def prediction_tick(p):
     """T-2406, on the tick (fmnight.tick): the pending next-request prediction is scored against the first user request
     after the one it followed, once (an appended score row, never rewritten); then, once per request, the next one is
@@ -277,13 +291,7 @@ def prediction_tick(p):
     last, lt, lpaths = reqs[-1]
     if any(r.get("kind") == "next-request" and r.get("after") == last.id for r in rows):
         return None
-    types = [t for _, t, _ in reqs]
-    nxt = {}
-    for a, b in zip(types, types[1:]):
-        if a == lt:
-            nxt[b] = nxt.get(b, 0) + 1
-    ptype = max(nxt, key=lambda k: (nxt[k], -types[::-1].index(k))) if nxt else lt  # a tie goes to the most recent
-    ppaths = next((ps for _, t, ps in reversed(reqs[:-1]) if t == ptype), lpaths)[:5]
+    ptype, ppaths = predict(reqs)
     row = {"kind": "next-request", "id": f"P-{len(rows) + 1}-{int(time.time())}", "at": c.now(), "after": last.id,
            "pred": {"type": ptype, "paths": ppaths}, "base": {"type": lt, "paths": lpaths}}
     c.append_line(path, json.dumps(row) + "\n")
@@ -480,7 +488,8 @@ def breakage_tick(p, today=None, budget=None):
     its budget (fmdoctor.STATE_BUDGET) within STATE_DAYS. Each warning is a book row with its window. The new rows."""
     import fmdoctor
     import fmeco
-    today, budget = today or datetime.date.today(), budget or fmdoctor.STATE_BUDGET
+    import fmmodels  # $FOREMAN_TODAY pins the clock (fm exam's breakage replay, T-2409)
+    today, budget = today or fmmodels._today(None), budget or fmdoctor.STATE_BUDGET
     path = os.path.join(p.dir, WARN_STATE)
     try:
         with open(path, encoding="utf-8") as f:

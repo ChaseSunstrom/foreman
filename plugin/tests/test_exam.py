@@ -1,6 +1,7 @@
 """fm exam (T-2079): a generated exam of throwaway repos in six languages with planted defects and request shapes,
 answer keys kept outside each repo, a held-out third per kind, agents graded against the keys, scores to the Genesis
 tower's exam.jsonl."""
+import datetime
 import difflib
 import hashlib
 import json
@@ -577,6 +578,20 @@ elif any("corrections a reviewer gave" in a for a in argv):  # T-2361: correctio
                        "The README was reflowed for no reason: leave README.md alone unless the change is to the docs."]}
     if mode == "fewnotes":
         plant["notes"] = plant["notes"][:2]
+elif any("one user gave a coding agent" in a for a in argv):  # T-2409: forecast, a user's request stream and the next
+    cycle = [("Add a {} export to the report", "FEATURE", ["report.py"]), ("Fix the {} totals", "FIX", ["totals.py"]),
+             ("Tidy the {} helpers", "CLEAN", ["helpers.py"])]
+    words = ["CSV", "PDF", "Excel", "JSON", "XML", "YAML", "HTML"]
+    plant = {"requests": [{"title": cycle[i % 3][0].format(words[i]), "type": cycle[i % 3][1], "paths": cycle[i % 3][2]}
+                          for i in range(7)],
+             "next": {"title": "Fix the Markdown totals", "type": "FIX", "paths": ["totals.py"]}}
+    if mode == "unlearnable":
+        plant["next"]["type"] = "SECURITY"
+elif any("stops working on a date" in a for a in argv):  # T-2409: breakage, an expiring value and a harmless twin
+    plant = {"file": "service.toml", "planted": 'cert_expires = "@DATE@"  # API calls fail after this day',
+             "twin_file": "archive.toml", "twin": 'keep_logs_until = "@DATE@"  # old logs may go after this'}
+    if mode == "dated":
+        plant["planted"] = 'cert_expires = "2031-05-01"  # API calls fail after this day'
 elif any("tracker gets in one afternoon" in a for a in argv):  # T-2360: watch, the issues an outside author writes
     plant = {"bug": {"title": "Totals come out wrong for one item", "body": "Summing a single amount gives 0."},
              "feature": {"title": "Allow a custom page size", "body": "Twenty rows a page is too few for us."},
@@ -1755,3 +1770,122 @@ class LeanKind(JudgmentStub, ForemanTestCase):  # T-2363: #12, Foreman's own ove
                     self.assertFalse(x["dropped_refused"], x)  # the metric's own check is what refused it
                 else:
                     self.assertFalse(x["refused"], x)  # a control passes
+
+
+class ForecastKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): the next request predicted from the stream before it
+    def hidden(self, s, name):
+        return json.loads(read_text(os.path.join(os.path.dirname(s["repo"]), "hidden", name)))
+
+    def test_kind_forecast_renders_a_stream_and_keeps_the_next_request_out_of_the_repo(self):
+        import fmexam
+        r = self.gen("--kind", "forecast")
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        s = r["scenarios"][0]
+        text = read_text(os.path.join(s["repo"], fmexam.REQUEST_LOG))
+        stream = [json.loads(x) for x in text.splitlines()]
+        self.assertGreaterEqual(len(stream), 6)
+        self.assertTrue(all(x["type"] in fmexam.FORECAST_TYPES and x["paths"] for x in stream))
+        # Foreman's own brief types: fm task new turns PERF into PERFORMANCE, so a replay of PERF never matched
+        self.assertLessEqual({t for t, _, _ in fmexam.FORECAST_POOL}, set(c.TYPES))
+        f = self.hidden(s, "forecast.json")
+        self.assertEqual(f["base"], {"type": stream[-1]["type"], "paths": stream[-1]["paths"]})  # the last one again
+        self.assertNotEqual(f["next"]["type"], f["base"]["type"])  # the template's stream: the naive baseline misses
+        self.assertNotIn(f["next"]["title"], text)
+        self.assertFalse(os.path.exists(os.path.join(s["repo"], fmexam.FORECAST)))
+        res = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "9", "--kind", "forecast")
+        self.assertEqual((len(res["scenarios"]), sum(x["split"] == "holdout" for x in res["scenarios"])), (9, 3))
+        for lang in fmexam.LANGS:
+            self.assertEqual(len(self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", lang, "--kind",
+                                              "forecast")["scenarios"]), 1, lang)
+
+    def test_kind_forecast_oracle_closes_empty_does_not_and_the_foresight_arm_beats_the_baseline(self):
+        r = self.gen("--kind", "forecast")
+        sid = r["scenarios"][0]["id"]
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual(self.closed(o), [sid])
+        self.assertEqual((o["forecast_keyed"], o["forecast_type"], o["forecast_base_type"]), (1, 1, 0))
+        self.assertEqual(o["forecast_overlap"], 100)
+        e = self.fm_json("exam", "run", r["run"], "--agent", "empty")
+        self.assertEqual((self.closed(e), e["forecast_type"], e["forecast_overlap"]), ([], 0, 0))
+        f = self.fm_json("exam", "run", r["run"], "--agent", "foresight", timeout=300)
+        self.assertEqual((f["forecast_type"], f["forecast_base_type"]), (1, 0))  # Foreman's own predictor, no tokens
+        self.assertEqual(self.closed(f), [sid])
+
+    def test_kind_forecast_children_write_the_stream_and_one_whose_next_has_no_way_in_is_dropped(self):
+        r = self.gen("--kind", "forecast", "--author", "child", env=self.env)
+        self.assertEqual(r["dropped"], [])
+        s = r["scenarios"][0]
+        self.assertEqual(s["author"], "child")
+        self.assertIn("Add a CSV export", read_text(os.path.join(s["repo"], "requests.jsonl")))
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "oracle")), [s["id"]])
+        d = self.gen("--kind", "forecast", "--author", "child", env=dict(self.env, STUB_MODE="unlearnable"))
+        self.assertEqual(d["scenarios"], [])
+        self.assertIn("transition", d["dropped"][0]["why"])
+
+    def test_the_replay_holds_out_the_last_third_of_the_users_own_requests(self):
+        import fmexam
+        for i in range(6):
+            t, ty, sc = (f"Add export {i} to the report", "FEATURE", "report.py") if i % 2 == 0 else \
+                        (f"Fix the totals case {i}", "FIX", "totals.py")
+            self.fm("task", "new", t, "--type", ty, "--tier", "S", "--ac", "ok :: true", "--step", "s", "--scope", sc)
+        r = fmexam.replay_forecast(c.find_project(self.repo))
+        self.assertEqual((r["held"], r["type_hit"], r["base_type_hit"]), (2, 2, 0))
+        self.assertEqual(r["overlap"], 1.0)
+
+
+class BreakageKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): a future failure flagged before the clock reaches it
+    def hidden(self, s):
+        return json.loads(read_text(os.path.join(os.path.dirname(s["repo"]), "hidden", "breakage.json")))
+
+    def test_kind_breakage_renders_an_expiry_and_a_twin_and_keeps_the_day_out_of_the_request(self):
+        import fmexam
+        r = self.gen("--kind", "breakage")
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        s = r["scenarios"][0]
+        b = self.hidden(s)
+        clock, fails = (datetime.date.fromisoformat(b[k]) for k in ("clock", "fails"))
+        self.assertTrue(0 < (fails - clock).days <= 12)
+        planted = read_text(os.path.join(s["repo"], b["planted"][0])).splitlines()[b["planted"][1] - 1]
+        twin = read_text(os.path.join(s["repo"], b["twin"][0])).splitlines()[b["twin"][1] - 1]
+        self.assertIn(b["fails"], planted)
+        far = datetime.date.fromisoformat(re.search(r"\d{4}-\d\d-\d\d", twin).group())
+        self.assertGreater((far - clock).days, 30)
+        request = self.key(s)["request"]
+        self.assertIn(b["clock"], request)  # the arm is told today, never the day it breaks
+        self.assertNotIn(b["fails"], request)
+        self.assertFalse(os.path.exists(os.path.join(s["repo"], fmexam.WARNINGS)))
+        res = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "9", "--kind", "breakage")
+        self.assertEqual((len(res["scenarios"]), sum(x["split"] == "holdout" for x in res["scenarios"])), (9, 3))
+        for lang in fmexam.LANGS:
+            self.assertEqual(len(self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", lang, "--kind",
+                                              "breakage")["scenarios"]), 1, lang)
+
+    def test_kind_breakage_oracle_flags_it_empty_does_not_and_the_foresight_arm_flags_it_early_with_no_false_alarm(self):
+        r = self.gen("--kind", "breakage")
+        s = r["scenarios"][0]
+        o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
+        self.assertEqual(self.closed(o), [s["id"]])
+        self.assertEqual((o["breakage_keyed"], o["breakage_flagged"], o["breakage_false"]), (1, 1, 0))
+        e = self.fm_json("exam", "run", r["run"], "--agent", "empty")
+        self.assertEqual((self.closed(e), e["breakage_flagged"]), ([], 0))
+        f = self.fm_json("exam", "run", r["run"], "--agent", "foresight", timeout=300)
+        self.assertEqual((f["breakage_flagged"], f["breakage_false"]), (1, 0))
+        self.assertEqual(self.closed(f), [s["id"]])
+        import fmexam
+        work = os.path.join(c.find_project(self.repo).dir, "exam", r["run"], "work", "foresight", s["id"], fmexam.WARNINGS)
+        days = [w["day"] for w in json.loads(read_text(work))["warnings"]]
+        self.assertTrue(days and all(d < self.hidden(s)["fails"] for d in days), days)  # before the fake clock got there
+
+    def test_kind_breakage_children_write_the_dated_lines_and_one_with_its_own_date_is_dropped(self):
+        r = self.gen("--kind", "breakage", "--author", "child", env=self.env)
+        self.assertEqual(r["dropped"], [])
+        s = r["scenarios"][0]
+        self.assertEqual(s["author"], "child")
+        b = self.hidden(s)
+        self.assertIn("cert_expires", read_text(os.path.join(s["repo"], b["planted"][0])))
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "oracle")), [s["id"]])
+        d = self.gen("--kind", "breakage", "--author", "child", env=dict(self.env, STUB_MODE="dated"))
+        self.assertEqual(d["scenarios"], [])
+        self.assertIn("date", d["dropped"][0]["why"])
