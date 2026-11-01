@@ -130,6 +130,25 @@ def _no_runner(p, run):
         j.get("conclusion") == "cancelled" and not j.get("steps") for j in bad) else []
 
 
+def _jobs_key(branch, failed):
+    return f"{branch or ''}|" + ",".join(sorted(str(j) for j in failed))
+
+
+def _same_jobs(p, run, branch, failed):
+    """T-2468: the open or blocked brief already filed for these same failing non-blocking jobs, with this run logged on
+    it, or None (a closed one files anew: the failure came back)."""
+    key = _jobs_key(branch, failed)
+    b = next((x for x in c.load_briefs(p) if x.status not in c.CLOSED and x.meta.get("ci_jobs") == key), None)
+    if b is not None:
+        url = str(run.get("url") or "")
+        where = url if re.fullmatch(r"https://[\w.-]+/[\w./-]+", url) else f"run {run.get('databaseId')}"
+        with c.lock(p.dir):
+            b = c.find_brief(p, b.id)
+            b.append_log(f"the same jobs failed again: {where}")
+            c.save_brief(p, b)
+    return b
+
+
 def _brief(p, run, branch):
     from fmeco import capture_once
     url = str(run.get("url") or "")
@@ -237,7 +256,13 @@ def _poll(p, branch, retries, interval, max_polls, say, commit, hold):
                 failed = _failed_jobs(p, run)
                 if not failed:
                     return 0, "CI green."
-                b, _new = _brief(p, run, branch)
+                b = _same_jobs(p, run, branch, failed)  # T-2468: the next ship failing the same jobs joins its brief
+                if b is None:
+                    b, _new = _brief(p, run, branch)
+                    with c.lock(p.dir):
+                        b = c.find_brief(p, b.id)
+                        b.meta["ci_jobs"] = _jobs_key(branch, failed)
+                        c.save_brief(p, b)
                 n = len(failed)
                 return 0, (f"CI green, but {n} non-blocking job{'s' if n > 1 else ''} failed "
                            f"({c.fit(c.plain(', '.join(failed)), 120)}): FIX brief {b.id}.")

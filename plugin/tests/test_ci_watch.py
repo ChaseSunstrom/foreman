@@ -124,6 +124,27 @@ class CiWatch(ForemanTestCase):
             fixes = [b for b in self.briefs() if b.type == "FIX"]
             self.assertEqual(len(fixes), 1, "the same run is briefed once")
             self.assertIn("test_y - AssertionError", fixes[0].section("Raw request"))
+            # T-2468: the next ship's run fails the same jobs: it joins the open (or blocked) brief, no new one
+            self.fm("task", "block", fixes[0].id, "non-blocking, held for later")
+            run_id = [6]
+
+            def gh2(p, *argv):
+                if argv[:2] == ("run", "list"):
+                    return json.dumps([{"databaseId": run_id[0], "status": "completed", "conclusion": "success",
+                                        "headSha": head, "url": f"https://github.com/o/r/actions/runs/{run_id[0]}"}])
+                return gh(p, *argv)
+            with mock.patch.object(fmci, "_gh", side_effect=gh2):
+                code, msg = fmci.watch(p, "main", 3, 0, **quiet)
+            self.assertIn(f"FIX brief {fixes[0].id}", msg)
+            again = [b for b in self.briefs() if b.type == "FIX"]
+            self.assertEqual(len(again), 1, "the same failing jobs on a new run join the brief")
+            self.assertIn("runs/6", c.find_brief(p, fixes[0].id).section("Log"))
+            self.fm("task", "drop", fixes[0].id, "fixed")
+            run_id[0] = 7
+            with mock.patch.object(fmci, "_gh", side_effect=gh2):
+                fmci.watch(p, "main", 3, 0, **quiet)
+            self.assertEqual(len([b for b in self.briefs() if b.type == "FIX" and b.status != "dropped"]), 1,
+                             "once the brief is closed, a new failure files anew")
             jobs[1]["conclusion"] = "success"
             self.assertEqual(fmci.watch(p, "main", 3, 0, **quiet), (0, "CI green."))
 
