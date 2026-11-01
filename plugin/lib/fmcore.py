@@ -3860,13 +3860,20 @@ def worked_in(p, briefs=None):
 FOREMAN_SOURCES = ("discovered", "self", "followup", "baseline", "ci", "scout", "cross-project")
 
 
+def _round_first(p):
+    """T-2327: the Genesis generation fm drive --round-first holds for, while its next seed isn't filed; else None."""
+    n = read_meta(p).get("round_first")
+    if not isinstance(n, int) or isinstance(n, bool) or n < 1 or os.path.isfile(
+            os.path.join(p.dir, "research", "genesis", f"gen-{n + 1}", "seed.md")):
+        return None
+    return n
+
+
 def _round_held(p, briefs):
     """T-2327 (user steer 2026-10-31): with fm drive --round-first on, the inbox items Foreman filed itself (FOREMAN_SOURCES)
     wait until gen-(N+1)'s seed is filed, N the generation it was turned on in; an urgent one, or one an open task
     depends on (it blocks a mission), still comes. Two small reads when on, one meta read when off."""
-    n = read_meta(p).get("round_first")
-    if not isinstance(n, int) or isinstance(n, bool) or n < 1 or os.path.isfile(
-            os.path.join(p.dir, "research", "genesis", f"gen-{n + 1}", "seed.md")):
+    if not _round_first(p):
         return set()
     wanted = {d for x in briefs if x.status not in CLOSED for d in _deps(x)}
     return {x.id for x in briefs if x.status == "captured" and x.meta.get("source") in FOREMAN_SOURCES
@@ -3883,7 +3890,10 @@ def _next_for(p, briefs=None):
         waits = f" · {risky}" if risky else ""  # T-1080: fm next says why the autonomy slowed
     if not active_brief(briefs, p.lane):
         import fmfriction  # T-0125: at a task boundary, every N closed tasks, Foreman reviews its own friction
-        if fmfriction.due(p):
+        rnd = _round_first(p)  # T-2460: the user's steer bars friction work until the round is done
+        if rnd and fmfriction.due(p):
+            waits += f" · the self-improvement pass waits for Genesis round {rnd} (fm drive --round-first)"
+        elif fmfriction.due(p):
             try:  # T-0449: optional work waits while usage runs ahead of pace
                 import fmbudget
                 pace = fmbudget.degrade(p)
