@@ -4156,7 +4156,7 @@ def _drive(p, sd, briefs, pl, g):
         offer = _side_work(sd, briefs, work, full, offered, p) if len(offered) < OFFERS_MAX and not pace else None
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
             d.update(offered=offered + [offer["id"]], count=d.get("count", 0) + 1, marks=_marks(p))
-            how = _start_how(offer, lanes_free(briefs, p))
+            how = _start_how(offer, lanes_free(briefs, p), _economy())
             _event({"kind": "drive_offer", "session_id": sid, "project": p.slug, "task": work["id"],
                     "offer": offer["id"], "how": how})
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); don't idle on it. "
@@ -4304,11 +4304,25 @@ def lanes_free(briefs, p=None):
         not c.host_strain()  # T-0465: a strained host takes no builder lane
 
 
-def _start_how(x, lanes=True):
-    """How to start a side task: a builder lane for planned S/M work while a slot is free, planning for the rest."""
+def _economy():
+    """T-2495: fmbudget.usage_high() (weekly usage past 80%, economy mode's threshold), which forbids subagents; unread
+    usage is not economy."""
+    try:
+        import fmbudget
+        return bool(fmbudget.usage_high())
+    except Exception:
+        return False
+
+
+def _start_how(x, lanes=True, economy=False):
+    """How to start a side task: a builder lane for planned S/M work while a slot is free, planning for the rest;
+    under economy mode (T-2495) no lane: main-thread prep that leaves the tree alone while the gate runs."""
     if x.get("status") == "captured":
         return (f"plan it (fm task new \"<title>\" --from {x['id']} with its criteria and steps; /foreman:intake §2 "
                 f"for M/L), so it's ready to run")
+    if economy:
+        return (f"read its code and draft its red test and fix in the scratchpad (economy mode: no builder lane), then "
+                f"land them after the gate, as {x['id']}'s own task")
     # T-1176: a brainstorm runs fm ideas here and a release pushes: neither is a builder's work
     if x.get("tier") in ("S", "M") and lanes and x.get("type") != "RESEARCH" and not x.get("title", "").startswith("Release"):
         return f"fm lane brief {x['id']}, then launch the builder it prints (Agent, isolation worktree)"
