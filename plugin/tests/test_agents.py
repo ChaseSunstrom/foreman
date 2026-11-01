@@ -324,7 +324,7 @@ class Judgment(ForemanTestCase):
         import fmagents as a
         text = a.rules_text()
         line = next(x for x in text.splitlines() if "fm task new" in x)
-        for word in ("readings", "fails-if", "Choice N (NN%)", "fm calibration", "--focus", "refused"):
+        for word in ("readings", "fails-if", "Choice N (NN%)", "fm outcomes --judgment", "--focus", "refused"):
             self.assertIn(word, line)
         self.assertLessEqual(len(line), 192)  # the plan line before T-2344: rewritten in place, not added to
         self.assertEqual(len(text.splitlines()), 7)  # and no new line (the block's paths vary by install, so not chars)
@@ -345,5 +345,5 @@ class ProofLine(ForemanTestCase):  # T-2395
     def test_proof_line_tells_other_agents_to_run_fm_proof_before_calling_work_verified(self):
         import fmagents as a
         text = a.rules_text()
-        self.assertIn("fm proof", text)
+        self.assertIn("fm prove --rollup", text)
         self.assertEqual(len(text.splitlines()), 7)  # in an existing line, no new one

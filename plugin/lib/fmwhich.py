@@ -291,6 +291,9 @@ def rank(task, found=None):
 def cmd(args):
     import fmcli
     import fmrecall
+    if getattr(args, "instruments", False):  # T-2461: fm instruments folded in here
+        import fminstr
+        return fminstr.cmd_instruments(args)
     task = " ".join(args.task)
     if not words(task):
         raise fmcli.UsageError(f"nothing to look up in {task!r}, only words like the, with and need: name the work, "

@@ -1,4 +1,4 @@
-"""T-0673: multi-machine, multi-project and ecosystem first slices — fm sweep (T-0443), fm adopt (T-0444), version skew
+"""T-0673: multi-machine, multi-project and ecosystem first slices — fm projects --sweep (T-0443), fm adopt (T-0444), version skew
 in fm projects and fm doctor (T-0463), fm inbox gh (T-0481), the Claude Code canary (T-0482) and the machine identity
 with a backup restore rehearsal (T-0574)."""
 import io
@@ -36,7 +36,7 @@ class Sweep(ForemanTestCase):
             self.fm("init", cwd=r)
         self.fm("sensitive", "on", cwd=secret)
         fix = "Add a timeout to every requests.get call"
-        rows = {r["project"]: r for r in self.fm_json("sweep", fix, "--grep", "requests.get(")["projects"]}
+        rows = {r["project"]: r for r in self.fm_json("projects", "--sweep", fix, "--grep", "requests.get(")["projects"]}
         slug = lambda r: c.find_project(r).slug  # noqa: E731
         self.assertNotIn(slug(self.repo), rows, "the origin isn't swept")
         self.assertEqual(rows[slug(hit)]["hits"], ["src/net.py:1"])
@@ -51,14 +51,14 @@ class Sweep(ForemanTestCase):
         for r in (hit, secret):  # no auto-edit of other repos
             self.assertEqual(subprocess.run(["git", "-C", r, "status", "--porcelain"], capture_output=True,
                                             text=True).stdout, "")
-        again = {r["project"]: r for r in self.fm_json("sweep", fix, "--grep", "requests.get(")["projects"]}
+        again = {r["project"]: r for r in self.fm_json("projects", "--sweep", fix, "--grep", "requests.get(")["projects"]}
         self.assertEqual(again[slug(hit)].get("existing"), b.id)
         self.assertEqual(len(briefs(hit)), 1, "a second sweep doesn't ask twice")
-        dry = {r["project"]: r for r in self.fm_json("sweep", "Pin the TLS version", "--grep", "requests.get(",
+        dry = {r["project"]: r for r in self.fm_json("projects", "--sweep", "Pin the TLS version", "--grep", "requests.get(",
                                                      "--dry-run")["projects"]}
         self.assertTrue(dry[slug(hit)]["would_capture"])
         self.assertEqual(len(briefs(hit)), 1, "a dry run captures nothing")
-        self.assertIn(fix, self.fm("sweep", fix, "--grep", "requests.get(").stdout)
+        self.assertIn(fix, self.fm("projects", "--sweep", fix, "--grep", "requests.get(").stdout)
 
     def test_a_sweep_never_writes_a_synced_siblings_mirror(self):
         # its review: capture ran regen_views, which exports fm sync's .foreman/ mirror into the sibling's tree
@@ -68,7 +68,7 @@ class Sweep(ForemanTestCase):
         self.fm("init", cwd=hit)
         self.fm("sync", "on", cwd=hit)
         before = subprocess.run(["git", "-C", hit, "status", "--porcelain"], capture_output=True, text=True).stdout
-        self.fm("sweep", "Add a timeout", "--grep", "requests.get(")
+        self.fm("projects", "--sweep", "Add a timeout", "--grep", "requests.get(")
         after = subprocess.run(["git", "-C", hit, "status", "--porcelain"], capture_output=True, text=True).stdout
         self.assertEqual(after, before, "nothing new appears in the sibling's tree")
 

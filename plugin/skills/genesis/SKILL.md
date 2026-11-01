@@ -1,6 +1,6 @@
 ---
 name: genesis
-description: Use whenever the user wants Genesis: a self-seeding run of generations toward one goal they wrote, from gen-0 to a final report, driven by fm genesis step.
+description: Use whenever the user wants Genesis: self-seeding generations toward one goal they wrote, gen-0 to a final report, driven by fm genesis step.
 disable-model-invocation: true
 ---
 

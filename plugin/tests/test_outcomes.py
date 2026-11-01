@@ -435,7 +435,7 @@ class CalBase(Base):
                                     "by": "seeded", "src": src}) + "\n")
 
     def cal(self, *args):
-        return json.loads(self.fm("calibration", "--json", *args).stdout)
+        return json.loads(self.fm("outcomes", "--judgment", "--json", *args).stdout)
 
     def race(self, tid):
         return json.loads(self.fm("lane", "race", tid, "--confidence", "70", "--json").stdout)["race"]
@@ -511,7 +511,7 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
         (b,) = [x for x in data["kinds"]["task"] if x["lo"] == 80]
         self.assertEqual((b["n"], b["held"], b["gap"]), (2, 1, 40))  # stated 90, held 50%
         self.assertEqual(sorted(r["outcome"] for r in self.rows() if "outcome" in r), ["held", "missed"])
-        self.fm("calibration")
+        self.fm("outcomes", "--judgment")
         self.assertEqual(len([r for r in self.rows() if "outcome" in r]), 2, "settling twice adds no second grade")
 
     def test_a_first_finish_that_failed_is_a_miss_at_once(self):
@@ -616,14 +616,14 @@ class CalibrationBars(CalBase):
 
     def test_under_twenty_scored_rows_says_too_few_and_moves_nothing(self):
         self.seed("race", 90, 5, 19)
-        out = self.fm("calibration").stdout
+        out = self.fm("outcomes", "--judgment").stdout
         self.assertIn("too few", out)
         self.assertNotIn("Brier", out)
         self.assertEqual(self.cal()["bars"], {"research": 70, "race": 55})
 
     def test_buckets_and_both_briers_print_from_twenty_rows(self):
         self.seed("task", 90, 14, 20, base=70)
-        out = self.fm("calibration").stdout
+        out = self.fm("outcomes", "--judgment").stdout
         self.assertRegex(out, r"task 80–94%: n 20, held 14 \(70%\), gap \+20")
         self.assertRegex(out, r"Brier: stated 0\.25, base rate 0\.21")
         self.assertRegex(out, r"Bars: research 80 · race 55", "a task bet 20 points over raises the research bar")
@@ -637,7 +637,7 @@ class CalibrationBars(CalBase):
         trials = fmtrials.load(self.p)
         self.assertEqual([t["moves"] for t in trials], ["brier"])
         self.assertIn("research bar", trials[0]["what"])
-        self.fm("calibration")  # the same rows raise nothing twice
+        self.fm("outcomes", "--judgment")  # the same rows raise nothing twice
         self.assertEqual((self.meta_bars()["research"], len(fmtrials.load(self.p))), (80, 1))
         self.seed("choice", 90, 10, 20, prefix="more")  # twenty fresh rows, still over: one more step
         self.assertEqual(self.cal()["bars"]["research"], 90)
@@ -661,7 +661,7 @@ class CalibrationBars(CalBase):
         self.assertEqual(self.meta_bars(), {})
         self.assertEqual(fmtrials.load(self.p), [])
         self.assertEqual(data["scored"], 80, "they still score in the report")
-        self.assertRegex(self.fm("calibration").stdout, r"race 80–94%: n 20")
+        self.assertRegex(self.fm("outcomes", "--judgment").stdout, r"race 80–94%: n 20")
         self.seed("task", 90, 10, 20, src="survival", prefix="surv")
         self.assertEqual(self.cal()["bars"]["research"], 80, "a survival-scored task bet does")
 
@@ -700,19 +700,19 @@ class CalibrationBars(CalBase):
 
     def test_an_underconfident_bucket_is_reported_once_for_the_final_report_and_the_bar_stays(self):
         self.seed("choice", 70, 20, 20)  # stated 70, held 100%
-        self.assertIn("underconfident", self.fm("calibration").stdout)
+        self.assertIn("underconfident", self.fm("outcomes", "--judgment").stdout)
         self.assertEqual(self.cal()["bars"], {"research": 70, "race": 55}, "Foreman never lowers a bar")
         review = self.fm("decide", "--review").stdout
         self.assertIn("underconfident", review)
         self.assertIn("lower a bar", review)
-        self.fm("calibration")
+        self.fm("outcomes", "--judgment")
         self.assertEqual(self.fm("decide", "--review").stdout.count("underconfident"), 1, "said once")
 
     def test_the_base_rate_routes_where_the_stated_numbers_score_worse(self):
         self.seed("task", 90, 14, 20, base=70)  # stated Brier .25, base .21
         self.seed("task", 70, 14, 20, base=50, tier="M", prefix="m")  # stated .21, base .25: stated stays
         self.assertEqual(self.cal()["routes"], {"FEATURE S": 70})
-        self.assertIn("FEATURE S: the base rate's 70% replaces the stated numbers", self.fm("calibration").stdout)
+        self.assertIn("FEATURE S: the base rate's 70% replaces the stated numbers", self.fm("outcomes", "--judgment").stdout)
         self.assertFalse(hasattr(fmoutcomes, "routed"), "routes() in the report is the only reader; no dead twin")
 
     def test_digest_reads_the_ledger_and_cost_still_runs(self):

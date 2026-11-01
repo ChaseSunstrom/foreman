@@ -1,6 +1,6 @@
 ---
 name: fm-debugger
-description: Fresh-eyes, read-only debugger for a failure that keeps coming back: given the failure, what was ruled out and the suspect files, returns ranked root-cause hypotheses, each with one cheap probe. Never edits or runs anything.
+description: Fresh-eyes, read-only debugger for a failure that keeps coming back: given it, what was ruled out and the suspects, returns ranked root causes, each with one cheap probe. Never edits or runs.
 tools: Read, Grep, Glob
 model: sonnet
 autoCompactWindow: 150000

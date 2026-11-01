@@ -3687,7 +3687,7 @@ def stuck_rung(b):
     if fails >= 3:
         return f"stuck, rung 3{why}: state two or more hypotheses, each with one probe (fm task hypo {b.id} add …)"
     if fails >= 2:
-        return (f"stuck, rung 2{why}: fresh eyes — fm suspects and fm whyred on the failure, then foreman:fm-debugger "
+        return (f"stuck, rung 2{why}: fresh eyes — fm whyred --suspects and fm whyred on the failure, then foreman:fm-debugger "
                 f"with what's been ruled out (fm task hypo {b.id} ruled --write, and name the file it writes)")
     return None
 
@@ -4216,7 +4216,7 @@ def main_view(p):
 
 def regen_views(p, briefs=None, mirror=True):
     """STATE/INBOX and the status files; with mirror (and fm sync on), the repo's .foreman/ mirror too. T-0673 review:
-    a capture into another project (fm sweep) passes mirror=False, so nothing lands in that repo's tree."""
+    a capture into another project (fm projects --sweep) passes mirror=False, so nothing lands in that repo's tree."""
     p = main_view(p)
     sd = state_dict(p, briefs)
     ts = now()
@@ -4686,7 +4686,7 @@ def unproven_line(n, counts=None, lead=""):
     order = list(PROOF_KINDS)
     kinds = ", ".join(f"{k} {v}" for k, v in sorted((counts or {}).items(),
                                                     key=lambda kv: (order.index(kv[0]) if kv[0] in order else 99, kv[0])))
-    return f"{lead}unproven: {n} (fm proof)" + (f" · {kinds}" if kinds else "")
+    return f"{lead}unproven: {n} (fm prove --rollup)" + (f" · {kinds}" if kinds else "")
 
 
 _EV_AT = lazy(r"\((\d{4}-\d\d-\d\dT[\d:]+Z)\)\s*$")  # the time add_evidence ends a line with

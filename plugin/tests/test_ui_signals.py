@@ -112,7 +112,7 @@ class JudgmentSignal(Base):  # T-2344: one band line only when judgment needs th
         sig = self.judged()
         self.assertEqual(len(sig), 1, sig)
         self.assertIn(f"1 parked at a one-way door ({r['id']})", sig[0]["text"])
-        self.assertIn("fm calibration", sig[0]["text"])
+        self.assertIn("fm outcomes --judgment", sig[0]["text"])
 
     def test_judgment_nothing_to_act_on_shows_nothing(self):
         self.assertEqual(self.judged(), [])

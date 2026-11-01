@@ -1,5 +1,5 @@
 """T-0706 (Frontier 06, first slice): a red run comes with what a debugger would gather first, before any guessing.
-fm suspects: files ranked from signals already on hand (repo frames on the stack, what the task changed, the sources
+fm whyred --suspects: files ranked from signals already on hand (repo frames on the stack, what the task changed, the sources
 linked to the failing tests, edit recency); the failure hook adds its top 3. fm whyred: the minimal set of hunks that
 turns a green command red (delta debugging against the task's start tree, in a scratch copy). fm record: the locals of
 each repo frame the failure unwound through (sys.monitoring, Python 3.12+)."""
@@ -63,7 +63,7 @@ def board(p, text):
 def line(p, text, top=3):
     """The failure hook's one line, or None when nothing points anywhere."""
     ranked = board(p, text)[:top]
-    return ("Suspects: " + "; ".join(f"{f} ({', '.join(r[:2])})" for f, _, r in ranked) + " (fm suspects, fm whyred)"
+    return ("Suspects: " + "; ".join(f"{f} ({', '.join(r[:2])})" for f, _, r in ranked) + " (fm whyred --suspects, fm whyred)"
             if ranked else None)
 
 
@@ -107,6 +107,11 @@ def _patch(units):
 
 def cmd_whyred(args):
     import fmcli
+    if getattr(args, "suspects", None) is not None:  # T-2461: fm suspects folded in here
+        args.file = args.suspects or None
+        return cmd_suspects(args)
+    if not args.cmd:
+        raise fmcli.UsageError("fm whyred CMD (the minimal hunks that turn CMD red), or fm whyred --suspects [FILE]")
     p = fmcli.resolve(args)
     base, _ = _base(p)
     diff = c.task_diff(p.root, base)

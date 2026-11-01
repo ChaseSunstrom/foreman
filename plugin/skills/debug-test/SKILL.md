@@ -10,7 +10,7 @@ Root cause before any fix: the iron law of `../intake/references/debugging.md`. 
 1. **Read the failure, not the whole log.** Pipe the run into `fm fail` (the test, the error, the repo frames, the failing source), a stack trace into `fm trace`, a long log into `fm logs` (`--since-good` shows what's new against a good run).
 2. **Reproduce** with one command that fails the same way every time. It passes and fails with no code change → `../playbooks/references/fix/flaky-tests.md` first. Hard to pin down → one `foreman:fm-reproducer` (brief from `fm lane brief ID`) commits the smallest failing test.
 3. **Narrow it down**, cheapest first:
-   - where: `fm suspects` ranks files from the failing run's output;
+   - where: `fm whyred --suspects` ranks files from the failing run's output;
    - when: it passed at an older commit → `fm bisect --run "<cmd>" --good REF` names the first bad commit and its files;
    - which part of this task's change: `fm whyred "<cmd>"` finds the smallest hunks that turn it red;
    - which values: `fm record "<python cmd>"` shows the locals where the exception unwound;

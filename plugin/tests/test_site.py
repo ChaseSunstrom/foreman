@@ -146,7 +146,7 @@ class ProofPage(unittest.TestCase):  # T-2395: #6/#10 on the site, built from Fo
         text = json.dumps(page["blocks"], default=str)
         for kind in fmcore.PROOF_KINDS:
             self.assertIn(kind, text)
-        for word in ("fm proof", "proof", "beyond", "unproven"):
+        for word in ("fm prove --rollup", "proof", "beyond", "unproven"):
             self.assertIn(word, text)
         proof = {"n": 12, "counts": {"typed": 5, "meaning": 4}, "history": [{"day": "2026-10-30", "n": 15},
                                                                              {"day": "2026-10-31", "n": 12}]}
@@ -214,7 +214,7 @@ class SelfRunningPage(unittest.TestCase):  # T-2364: Mission 8 on the site, its 
                 self.assertIn("Self-running", f.read(), name)
 
 
-class JudgmentPage(unittest.TestCase):  # T-2344: #2 and #8 on the site, its figures from fm calibration --json
+class JudgmentPage(unittest.TestCase):  # T-2344: #2 and #8 on the site, its figures from fm outcomes --judgment --json
     def test_judgment_page_describes_the_plan_shape_races_doors_and_scores_from_calibration_data(self):
         sys.path.insert(0, SITE)
         try:
@@ -224,7 +224,7 @@ class JudgmentPage(unittest.TestCase):  # T-2344: #2 and #8 on the site, its fig
             sys.path.pop(0)
         page = next(x for x in pages.PAGES if x["slug"] == "judgment")
         text = json.dumps(page["blocks"], default=str)
-        for word in ("Reading", "fails if", "Choice N (NN%)", "fm lane race", "one-way", "fm calibration", "Brier",
+        for word in ("Reading", "fails if", "Choice N (NN%)", "fm lane race", "one-way", "fm outcomes --judgment", "Brier",
                      "base rate", "MCP", "fm code"):
             self.assertIn(word, text)
         cal = {"scored": 30, "pending": 4, "brier": {"stated": 0.18, "base": 0.24}, "bars": {"research": 70, "race": 55},

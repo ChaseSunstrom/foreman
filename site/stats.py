@@ -137,9 +137,9 @@ def cards():
 
 
 def calibration():
-    """T-2344: the Judgment page's figures, from fm calibration --json; {} when it can't run here."""
+    """T-2344: the Judgment page's figures, from fm outcomes --judgment --json; {} when it can't run here."""
     try:
-        p = subprocess.run([os.path.join(ROOT, "plugin", "bin", "fm"), "calibration", "--json"], cwd=ROOT,
+        p = subprocess.run([os.path.join(ROOT, "plugin", "bin", "fm"), "outcomes", "--judgment", "--json"], cwd=ROOT,
                            capture_output=True, text=True, timeout=120)
         d = json.loads(p.stdout or "{}")
     except (OSError, ValueError, subprocess.SubprocessError):
@@ -201,9 +201,9 @@ def self_running(state):
 
 
 def proof(old):
-    """T-2395: the verifying page's figures from fm proof --json, today's count added to the kept history (60 days)."""
+    """T-2395: the verifying page's figures from fm prove --rollup --json, today's count added to the kept history (60 days)."""
     try:
-        p = subprocess.run([os.path.join(ROOT, "plugin", "bin", "fm"), "proof", "--json"], cwd=ROOT,
+        p = subprocess.run([os.path.join(ROOT, "plugin", "bin", "fm"), "prove", "--rollup", "--json"], cwd=ROOT,
                            capture_output=True, text=True, timeout=300)
         d = json.loads(p.stdout or "{}")
     except (OSError, ValueError, subprocess.SubprocessError):

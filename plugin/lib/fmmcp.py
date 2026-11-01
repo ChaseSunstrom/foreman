@@ -100,13 +100,13 @@ TOOLS = [
      "fm goal verdict last stored. Reads meta and briefs only; it runs no check.", _TEXT, None),
     ("calibration", "Judgment's track record (T-2344): stated-confidence buckets per kind, the Brier beside the base rate's, "
      "the research and race bars, races run and how often the first choice lost, tasks parked at a one-way door. "
-     "Read-only: it settles nothing and moves no bar (fm calibration does).", _TEXT, None),
+     "Read-only: it settles nothing and moves no bar (fm outcomes --judgment does).", _TEXT, None),
     ("which", "What already does a piece of work (fm which, T-2378): past fixes, project tools, MCP servers, binaries, "
      "skills, playbooks, fm commands, stack cards and plugins that hold its words, each shelf's best first. Read-only: "
      "it logs no search receipt.", _obj(["task"], task=_str("the work, in words", cap=300)), None),
-    ("proof", "Done tasks no run here proved, by kind (fm proof, T-2395): typed, red, ui, docs, perf, claimed, meaning "
+    ("proof", "Done tasks no run here proved, by kind (fm prove --rollup, T-2395): typed, red, ui, docs, perf, claimed, meaning "
      "and the rest, each row's needs with the command that closes it. Read before calling work verified.", _TEXT,
-     lambda a, p: ["proof", "--json"]),
+     lambda a, p: ["prove", "--rollup", "--json"]),
     ("grants", "Install grants queued for the user (T-2374): per open task, what is asked and why, the miss behind it, "
      "what was searched, the fallback, and what a yes unblocks. Read-only: a grant is the user's to answer.", _TEXT, None),
 ]
@@ -227,7 +227,7 @@ def _call(p, name, args):
             briefs = c.load_briefs(p)
             return json.dumps([{"task": b.id, "text": fmgrants.text(d), "unblocks": fmgrants.unblocks(p, b, briefs)}
                                for b, d in fmgrants.queued(p, briefs)], ensure_ascii=False), False
-        if name == "calibration":  # T-2344: fm calibration's JSON without its writes
+        if name == "calibration":  # T-2344: fm outcomes --judgment's JSON without its writes
             import fmoutcomes
             return json.dumps(fmoutcomes.snapshot(p), ensure_ascii=False), False
         if name == "fail":

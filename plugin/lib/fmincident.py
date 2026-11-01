@@ -1,9 +1,9 @@
-"""T-2388 (Mission 7, #10): the incident ritual. `fm incident '<impact>' --signal CMD` runs the harm signal and opens an
+"""T-2388 (Mission 7, #10): the incident ritual. `fm capture --incident '<impact>' --signal CMD` runs the harm signal and opens an
 urgent FIX only when it is red (exit 1..125; a 126/127, a timeout or a run that never reached its check is a broken
 signal, not harm). The red run is the first evidence of criterion 1 ("the signal is green again"), the Timeline section
-starts at the UTC time, and `fm incident log '<action>' --expect '<effect>'` adds a row. The close needs the same signal
+starts at the UTC time, and `fm capture --incident log '<action>' --expect '<effect>'` adds a row. The close needs the same signal
 green twice after the fix's last edit (both fm-run: the close's own run counts as one) and one captured follow-up
-(`fm incident follow-up '<text>'`). The signal stays behind as criterion 1's passing run, and fm sentinel's re-verify queue
+(`fm capture --incident follow-up '<text>'`). The signal stays behind as criterion 1's passing run, and fm sentinel's re-verify queue
 reads the incident's touched files as its scope, so a later commit touching them reruns it. The signal is stored on the
 brief and runs through the guard like any verify, with credentials stripped from its environment; criterion 1 must still be
 that command at the close (re-open the incident to change it)."""
@@ -33,7 +33,7 @@ def _open_incident(p, tid=None):
     bs = [b for b in c.load_briefs(p) if b.meta.get("incident_signal") and b.status not in c.CLOSED
           and (tid is None or b.id == tid)]
     if not bs:
-        raise _fmcli().UsageError(f"no open incident{f' {tid}' if tid else ''}: fm incident '<impact>' --signal CMD opens one")
+        raise _fmcli().UsageError(f"no open incident{f' {tid}' if tid else ''}: fm capture --incident '<impact>' --signal CMD opens one")
     return next((b for b in bs if b.status == "active"), bs[-1])
 
 
@@ -46,15 +46,15 @@ def cmd_incident(args):
             return _log(p, args, rest)
         if verb == "follow-up" and rest:
             return _followup(p, args, rest)
-        raise f.UsageError("fm incident '<impact>' --signal CMD opens one; then fm incident log '<action>' --expect "
-                           "'<effect>', and fm incident follow-up '<what stops this recurring>'")
+        raise f.UsageError("fm capture --incident '<impact>' --signal CMD opens one; then fm capture --incident log '<action>' --expect "
+                           "'<effect>', and fm capture --incident follow-up '<what stops this recurring>'")
     return _open(p, args, c.plain(c.redact(" ".join(args.words))).strip(), args.signal.strip())
 
 
 def _open(p, args, impact, signal):
     f = _fmcli()
     if not impact or not signal or re.search(r"[`\n\r]", signal):
-        raise f.UsageError("fm incident '<impact>' --signal CMD: the impact in words, the signal one command on one line "
+        raise f.UsageError("fm capture --incident '<impact>' --signal CMD: the impact in words, the signal one command on one line "
                            "(no backticks: the evidence line can't hold them)")
     f.guard_stored(p, None, signal)
     code, output = c.run_command(p.root, signal, 120, env=_env())
@@ -72,14 +72,14 @@ def _open(p, args, impact, signal):
         b.append_log("incident opened on a red signal")
         b.add_ac(f"the signal is green again: `{c.fit(signal, 80)}` exits 0 twice after the fix", signal)
         b.add_step("Fix it: record the signal green (fm task evidence %s --ac 1 --run '<signal>'), capture one follow-up "
-                   "(fm incident follow-up '<what stops this recurring>'), then fm task finish" % b.id)
+                   "(fm capture --incident follow-up '<what stops this recurring>'), then fm task finish" % b.id)
         b.set_section(SECTION, f"- {now} opened: {impact}\n")
         b.add_evidence(signal, c.run_result(code, output, signal), ac=1, tree=tree, ran=True, ts=now)
         c.save_brief(p, b)
         c.log_event(p, "incident", task=b.id, data={"signal": signal[:200], "exit": code}, session=f.session())
         c.regen_views(p)
     f.out(args, {"id": b.id, "signal": signal, "exit": code},
-          f"{b.id}: incident opened (urgent FIX, signal red: exit {code}). Timeline: fm incident log '<action>' --expect "
+          f"{b.id}: incident opened (urgent FIX, signal red: exit {code}). Timeline: fm capture --incident log '<action>' --expect "
           f"'<effect>'; close needs the signal green twice, then one follow-up.")
     f.cmd_focus(argparse.Namespace(id=b.id, project=getattr(args, "project", None), json=False))
 
@@ -87,7 +87,7 @@ def _open(p, args, impact, signal):
 def _log(p, args, action):
     f = _fmcli()
     if not args.expect or not args.expect.strip():
-        raise f.UsageError("fm incident log '<action>' --expect '<effect>': a row says what was done and what should change")
+        raise f.UsageError("fm capture --incident log '<action>' --expect '<effect>': a row says what was done and what should change")
     row = f"- {c.now()} {c.plain(c.redact(action))} (expect: {c.plain(c.redact(args.expect)).strip()})"
     b = _open_incident(p, getattr(args, "id", None))
     f.mutate(p, b.id, lambda x: x._append_line(SECTION, row), "incident_log", {"action": action[:200]})
@@ -131,7 +131,7 @@ def gaps(p, b, closing=False):
     out = []
     if dict(b.verify_cmds()).get(1) != sig:
         return [f"the incident's signal changed (criterion 1 is no longer `{c.fit(sig, 60)}`): re-open the incident "
-                f"(fm incident '<impact>' --signal CMD) rather than edit its check"]
+                f"(fm capture --incident '<impact>' --signal CMD) rather than edit its check"]
     sig_e = c.redact(sig).replace("`", "'")
     if not any(l.startswith("- (ac 1) ") and c._RAN_MARK in l and f"`{sig_e}` → ✗ exit" in l for l in b.evidence()):
         out.append("the signal's red run is missing from the evidence: re-open the incident")
@@ -141,7 +141,7 @@ def gaps(p, b, closing=False):
         out.append(f"the signal must be green twice after the fix's last edit ({n} so far; both fm runs): "
                    f"fm task evidence {b.id} --ac 1 --run '{c.fit(sig, 80)}'")
     if not followups(p, b):
-        out.append(f"one captured follow-up is the close's price: fm incident follow-up '<what stops this recurring>' ({b.id})")
+        out.append(f"one captured follow-up is the close's price: fm capture --incident follow-up '<what stops this recurring>' ({b.id})")
     return out
 
 

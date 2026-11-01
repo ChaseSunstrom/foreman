@@ -1,4 +1,4 @@
-"""T-2388: fm incident. A harm signal recorded red opens an urgent FIX with a timeline; the close needs the same signal
+"""T-2388: fm capture --incident. A harm signal recorded red opens an urgent FIX with a timeline; the close needs the same signal
 green twice after the fix's last edit and one captured follow-up; the signal is left behind for fm sentinel."""
 import os
 import re
@@ -19,7 +19,7 @@ class Incident(ForemanTestCase):
         self.p = c.find_project(self.repo)
 
     def open(self, signal=SIG, impact="checkout is down", **kw):
-        return self.fm("incident", impact, "--signal", signal, **kw)
+        return self.fm("capture", "--incident", impact, "--signal", signal, **kw)
 
     def brief(self):
         return next(b for b in c.load_briefs(self.p) if b.meta.get("incident_signal"))
@@ -74,16 +74,16 @@ class Incident(ForemanTestCase):
 
     def test_log_adds_a_timeline_row_with_the_expected_effect(self):
         self.open()
-        self.fm("incident", "log", "rolled back deploy 812", "--expect", "5xx under 1% in 5 min")
+        self.fm("capture", "--incident", "log", "rolled back deploy 812", "--expect", "5xx under 1% in 5 min")
         rows = self.brief().section("Timeline").strip().splitlines()
         self.assertEqual(len(rows), 2)
         self.assertIn("rolled back deploy 812", rows[1])
         self.assertIn("expect: 5xx under 1% in 5 min", rows[1])
-        r = self.fm("incident", "log", "no expectation", check=False)
+        r = self.fm("capture", "--incident", "log", "no expectation", check=False)
         self.assertNotEqual(r.returncode, 0, "an action without its expected effect is not a timeline row")
 
     def test_log_with_no_open_incident_says_so(self):
-        r = self.fm("incident", "log", "x", "--expect", "y", check=False)
+        r = self.fm("capture", "--incident", "log", "x", "--expect", "y", check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("no open incident", r.stderr + r.stdout)
 
@@ -101,7 +101,7 @@ class IncidentSentinel(Incident):
         fmreverify.scan(self.p)  # the watermark: later commits are the ones that count
         self.open()
         tid = self.brief().id
-        self.fm("incident", "log", "restore the flag", "--expect", "signal green")
+        self.fm("capture", "--incident", "log", "restore the flag", "--expect", "signal green")
         r = self.finish()
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("green", r.stderr + r.stdout)  # no fix yet: the signal is still red
@@ -111,8 +111,8 @@ class IncidentSentinel(Incident):
         self.assertNotEqual(r.returncode, 0, r.stdout)
         self.assertIn("follow-up", r.stderr + r.stdout)
         self.assertNotIn("twice", r.stderr + r.stdout)
-        self.fm("incident", "follow-up", "alert on the flag file going missing")
-        again = self.fm("incident", "follow-up", "a second one", check=False)
+        self.fm("capture", "--incident", "follow-up", "alert on the flag file going missing")
+        again = self.fm("capture", "--incident", "follow-up", "a second one", check=False)
         self.assertNotEqual(again.returncode, 0, "exactly one follow-up")
         followups = [b for b in c.load_briefs(self.p) if b.meta.get("source") == "followup"]
         self.assertEqual(len(followups), 1)
@@ -133,7 +133,7 @@ class IncidentSentinel(Incident):
     def test_sentinel_close_needs_two_greens_after_the_last_edit(self):
         self.open()
         self.fix()
-        self.fm("incident", "follow-up", "alert on it")
+        self.fm("capture", "--incident", "follow-up", "alert on it")
         r = self.finish()  # the close's own run is the only green: a flake check needs a second
         self.assertNotEqual(r.returncode, 0)
         self.assertRegex(r.stderr + r.stdout, r"green twice|second green")
@@ -146,7 +146,7 @@ class IncidentSentinel(Incident):
         self.fix()
         tid = self.brief().id
         self.fm("task", "ac", tid, "edit", "1", "--verify", "true", check=False)
-        self.fm("incident", "follow-up", "alert on it")
+        self.fm("capture", "--incident", "follow-up", "alert on it")
         self.green()
         self.green()
         r = self.finish()
@@ -162,13 +162,13 @@ class IncidentSkill(unittest.TestCase):
 
     def test_the_intake_skill_and_the_playbook_start_fm_incident(self):
         for text in (self.read("intake", "SKILL.md"), self.read("playbooks", "references", "ops", "incident.md")):
-            self.assertRegex(text, r"fm incident '<impact>' --signal")
+            self.assertRegex(text, r"fm capture --incident '<impact>' --signal")
         self.assertIn("live harm", self.read("intake", "SKILL.md"))
 
     def test_every_fm_incident_line_in_the_skill_docs_names_a_real_form(self):
         forms = set()
         for text in (self.read("intake", "SKILL.md"), self.read("playbooks", "references", "ops", "incident.md")):
-            forms |= set(re.findall(r"fm incident (log|follow-up|status)\b", text))
+            forms |= set(re.findall(r"fm capture --incident (log|follow-up|status)\b", text))
         self.assertTrue({"log", "follow-up"} <= forms, forms)
 
 

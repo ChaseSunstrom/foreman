@@ -1,6 +1,6 @@
 ---
 name: fm-builder
-description: Foreman implementation subagent for one S/M task, launched only with isolation "worktree" from the brief `fm lane brief ID` writes: works test-first and returns a commit on its branch. Never pushes, merges or closes tasks.
+description: Foreman builder for one S/M task, launched with isolation "worktree" from `fm lane brief ID`: works test-first, returns a commit on its branch. Never pushes, merges or closes tasks.
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 autoCompactWindow: 150000

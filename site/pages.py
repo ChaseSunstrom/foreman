@@ -101,7 +101,7 @@ def _sizes(s):
 
 
 def _judgment(s):
-    """T-2344: the scores from fm calibration --json (site/stats.py stores them), or why there are none yet."""
+    """T-2344: the scores from fm outcomes --judgment --json (site/stats.py stores them), or why there are none yet."""
     cal = s.get("calibration") or {}
     br, r, bars = cal.get("brier") or {}, cal.get("races") or {}, cal.get("bars") or {}
     two = lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else "n/a"  # noqa: E731
@@ -122,12 +122,12 @@ def _lacks(s):
 
 
 def _proof(s):
-    """T-2395: fm proof's rollup (site/stats.py's proof block): the count, the kinds most need, the count per day."""
+    """T-2395: fm prove --rollup's rollup (site/stats.py's proof block): the count, the kinds most need, the count per day."""
     pr = s.get("proof") or {}
     top = sorted((pr.get("counts") or {}).items(), key=lambda kv: -kv[1])[:5]
     row = tiles([("done tasks unproven", pr.get("n", 0))] + [(f"need {k}", v) for k, v in top])
     hist = pr.get("history") or []
-    return row + (columns("Unproven done tasks per day", "fm proof's count, last 30 days of closes, each time the site "
+    return row + (columns("Unproven done tasks per day", "fm prove --rollup's count, last 30 days of closes, each time the site "
                           "was built.", hist, ["n"]) if len(hist) > 1 else "")
 
 
@@ -500,7 +500,7 @@ PAGES = [
          ("text", "Races and doors", "<p>When the bet is low, <code>fm lane race</code> builds two options side by "
           "side and the evidence picks; the record keeps how often the first choice lost. A step that is one-way "
           "(it deletes untracked data) and ambiguous parks for you instead of guessing; a two-way step just goes.</p>"),
-         ("text", "The score", "<p><code>fm calibration</code> buckets every stated number against what happened and "
+         ("text", "The score", "<p><code>fm outcomes --judgment</code> buckets every stated number against what happened and "
           "puts its Brier score beside the base rate's. If the stated numbers score worse, the base rate routes in "
           "their place until they don't, and a bar the outcomes say is too low is raised. The MCP "
           "<code>calibration</code> tool (Claude Desktop, other agents) reads the same record without changing it, "
@@ -554,7 +554,7 @@ PAGES = [
           "<code>research-uncited</code>, <code>hollow</code> (a test that can't fail), <code>claimed</code> (a proof "
           "word said with no run behind it) and <code>meaning</code> (a clause of the request no criterion checks)."
           "</p>"),
-         ("text", "Where it shows", "<p><code>fm proof</code> lists each unproven task with the command that closes "
+         ("text", "Where it shows", "<p><code>fm prove --rollup</code> lists each unproven task with the command that closes "
           "it. The close itself prints the Not verified lines, in <code>fm task finish</code> and in "
           "<code>fm code</code> on any model; commits and pull requests carry an Unproven trailer; the pane's band "
           "shows the count and the kind most need; the MCP <code>proof</code> tool gives Claude Desktop and other "

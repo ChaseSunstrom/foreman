@@ -1,4 +1,4 @@
-"""fm instruments (T-0701): zero-token typed tools. Each answers a read, failure, log, data or trace question from a
+"""fm which --instruments (T-0701): zero-token typed tools. Each answers a read, failure, log, data or trace question from a
 small fixed fixture (real unittest, python and node runs; seeded logs and data) in a few capped lines that keep the
 root cause, so the model reads that instead of the raw bytes."""
 import argparse
@@ -30,7 +30,7 @@ class Case(ForemanTestCase):
 
 class Registry(Case):
     def test_lists_the_five_tools_with_schemas_and_caps(self):
-        reg = self.fm_json("instruments")["instruments"]
+        reg = self.fm_json("which", "--instruments")["instruments"]
         self.assertEqual([t["name"] for t in reg], list(CAPS))
         for t in reg:
             with self.subTest(tool=t["name"]):
@@ -42,14 +42,14 @@ class Registry(Case):
                 for prop in s["properties"].values():
                     self.assertIn(prop["type"], ("string", "integer", "boolean"))
                     self.assertTrue(prop["description"])
-        text = self.fm("instruments").stdout
+        text = self.fm("which", "--instruments").stdout
         for name, cap in CAPS.items():
             self.assertRegex(text, rf"(?m)^  {name} .*≤{cap} lines")
 
     def test_each_schema_is_its_commands_arguments(self):
         import fmcli
         sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
-        for t in self.fm_json("instruments")["instruments"]:
+        for t in self.fm_json("which", "--instruments")["instruments"]:
             dests = {a.dest for a in sub.choices[t["name"]]._actions} - {"help", "json", "project"}
             self.assertEqual(dests, set(t["input_schema"]["properties"]), t["name"])
 
