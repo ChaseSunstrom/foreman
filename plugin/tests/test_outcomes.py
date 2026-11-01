@@ -610,6 +610,27 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
         self.assertEqual(len(self.bets("task")), 1)
 
 
+class CalibrationInterim(CalBase):  # T-2498: a week-old close reads "held so far", labeled, never scored
+    def test_a_pending_bet_closed_a_week_ago_reads_held_so_far_and_scores_nothing(self):
+        rows = [{"kind": "choice", "stated": 75, "outcome": None, "task": "T-1"},
+                {"kind": "choice", "stated": 70, "outcome": None, "task": "T-2"},
+                {"kind": "task", "stated": 90, "outcome": None, "task": "T-3"},   # closed 3 days ago: not yet
+                {"kind": "choice", "stated": 75, "outcome": "held", "task": "T-4"},  # scored: the bins, not interim
+                {"kind": "decision", "stated": 80, "outcome": None, "task": "T-1"}]  # not a task bet
+        outs = {"T-1": {"survival": "settling", "days_left": 22, "fate": "held"},
+                "T-2": {"survival": "settling", "days_left": 20, "fate": "corrected"},
+                "T-3": {"survival": "settling", "days_left": 27, "fate": "held"},
+                "T-4": {"survival": "survived", "fate": "held"}}
+        got = fmoutcomes.interim(rows, outs)
+        self.assertEqual(got, {"choice": [{"lo": 60, "hi": 79, "n": 2, "held": 1, "pct": 50}]})
+        self.assertEqual(fmoutcomes._interim_line({"interim": got}),
+                         "Interim (closed 7+ days ago, not scored): choice 60–79%: 1 of 2 held so far")
+
+    def test_the_judgment_json_carries_interim(self):
+        d = json.loads(self.fm("outcomes", "--judgment", "--json").stdout)
+        self.assertEqual(d["interim"], {})
+
+
 class CalibrationBars(CalBase):
     def meta_bars(self):
         return c.read_meta(self.p).get("calibration_bars") or {}

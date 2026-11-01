@@ -109,8 +109,14 @@ def _judgment(s):
                  ("Brier, stated", two(br.get("stated"))), ("Brier, base rate", two(br.get("base"))),
                  ("first choice lost a race", f"{r.get('first_lost', 0)} of {r.get('judged', 0)}"),
                  ("race bar", f"{bars['race']}%" if "race" in bars else "n/a")])
-    return row if cal.get("scored") else row + ("<p>Its own numbers are not scored yet: stated confidences wait on "
-                                                "outcomes, and the ledger needs 20 before it moves a bar.</p>")
+    rel = [(f"{k} {b['lo']}–{b['hi']}% · n {b['n']}", b["pct"]) for k, bs in (cal.get("kinds") or {}).items() for b in bs]
+    rel += [(f"{k} {b['lo']}–{b['hi']}% · n {b['n']}, so far", b["pct"])  # T-2498: a week-old read, never a score
+            for k, bs in (cal.get("interim") or {}).items() for b in bs]
+    chart = hbars("Held, by stated confidence", "Each bucket's share held. Rows marked so far closed 7 or more days ago "
+                  "and are not scored yet.", rel, unit="%") if rel else (
+        "<p>No stated confidence has an outcome or a 7-day read yet, so there is no reliability chart.</p>")
+    return (row if cal.get("scored") else row + ("<p>Its own numbers are not scored yet: stated confidences wait on "
+                                                 "outcomes, and the ledger needs 20 before it moves a bar.</p>")) + chart
 
 
 def _lacks(s):

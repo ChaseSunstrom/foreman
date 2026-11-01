@@ -144,7 +144,7 @@ def calibration():
         d = json.loads(p.stdout or "{}")
     except (OSError, ValueError, subprocess.SubprocessError):
         return {}
-    return {k: d[k] for k in ("scored", "pending", "brier", "bars", "races") if k in d}
+    return {k: d[k] for k in ("scored", "pending", "brier", "bars", "races", "kinds", "interim") if k in d}  # T-2498
 
 
 def decisions(state, limit=200):

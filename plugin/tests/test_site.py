@@ -228,11 +228,15 @@ class JudgmentPage(unittest.TestCase):  # T-2344: #2 and #8 on the site, its fig
                      "base rate", "MCP", "fm code"):
             self.assertIn(word, text)
         cal = {"scored": 30, "pending": 4, "brier": {"stated": 0.18, "base": 0.24}, "bars": {"research": 70, "race": 55},
-               "races": {"run": 5, "judged": 4, "first_lost": 1}, "doors_parked": ["T-1"]}
+               "races": {"run": 5, "judged": 4, "first_lost": 1}, "doors_parked": ["T-1"],
+               "kinds": {"choice": [{"lo": 60, "hi": 79, "n": 3, "held": 2, "pct": 67, "stated": 72, "gap": 5}]},
+               "interim": {"task": [{"lo": 80, "hi": 94, "n": 9, "held": 9, "pct": 100}]}}  # T-2498
         html = build.render_page(page, {"calibration": cal}, pages.PAGES)
-        for figure in ("0.18", "0.24", "1 of 4", "30"):
+        for figure in ("0.18", "0.24", "1 of 4", "30", "Held, by stated confidence", "choice 60–79% · n 3", "so far"):
             self.assertIn(figure, html)
-        self.assertIn("not scored yet", build.render_page(page, {}, pages.PAGES))  # no data: said, never a crash
+        empty = build.render_page(page, {}, pages.PAGES)
+        self.assertIn("not scored yet", empty)  # no data: said, never a crash
+        self.assertIn("no reliability chart", empty)
 
 
 if __name__ == "__main__":

@@ -278,6 +278,7 @@ LEDGER_MIN = 20  # scored rows before a Brier, a bar move or a route is believed
 BAR_DEFAULTS = {"research": 70, "race": 55}  # the confidence a plan or a race side needs before it skips research/the race
 BAR_MAX, BAR_STEP, BAR_GAP = 90, 10, 15  # a bar rises at most BAR_STEP, never past BAR_MAX, on a gap of BAR_GAP points
 KINDS = ("task", "choice", "assumption", "decision", "race")
+INTERIM_DAYS = 7  # T-2498: a task bet closed this long ago reads "held so far" (never scored) while survival settles
 
 
 def _ledger_path(p):
@@ -536,6 +537,28 @@ def tables(rows):
     return out
 
 
+def interim(rows, outs):
+    """T-2498: per kind and bucket, the pending task and choice bets whose task closed INTERIM_DAYS+ ago, and how many
+    held so far (nothing undid or corrected it yet). A read, never a score: it moves no bar and no Brier."""
+    out = {}
+    for r in rows:
+        o = outs.get(r.get("task")) or {}
+        if r["outcome"] or r["kind"] not in ("task", "choice") or o.get("survival") != "settling" \
+                or o.get("days_left", SURVIVE_DAYS) > SURVIVE_DAYS - INTERIM_DAYS:
+            continue
+        lo, hi = BUCKETS[_bucket(r["stated"])]
+        b = out.setdefault(r["kind"], {}).setdefault(lo, {"lo": lo, "hi": hi, "n": 0, "held": 0})
+        b["n"] += 1
+        b["held"] += o.get("fate") == "held"
+    return {k: [dict(b, pct=round(100 * b["held"] / b["n"])) for _, b in sorted(v.items())] for k, v in out.items()}
+
+
+def _interim_line(d):
+    return (f"Interim (closed {INTERIM_DAYS}+ days ago, not scored): " + "; ".join(
+        f"{k} {b['lo']}–{b['hi']}%: {b['held']} of {b['n']} held so far" for k, bs in d["interim"].items() for b in bs)
+        if d.get("interim") else "")
+
+
 def brier(rows, key="stated"):
     """The mean squared miss of a forecast against what happened (0 is perfect); None without rows that have it."""
     pairs = [(r[key] / 100, r["outcome"] == "held") for r in rows if r["outcome"] and r.get(key) is not None]
@@ -650,13 +673,14 @@ def maintain(p):
 
 
 def ledger_data(p, outs=None):
+    outs = outcomes(p) if outs is None else outs
     rows = scored(p, outs)
     done = [r for r in rows if r["outcome"]]
     table = tables(rows)
     based = [r for r in done if r.get("base") is not None]
     return {"total": len(rows), "scored": len(done), "pending": len(rows) - len(done), "kinds": table,
             "brier": {"stated": brier(done), "base": brier(based, "base")} if len(done) >= LEDGER_MIN else None,
-            "bars": bars(p), "routes": routes(p, rows) if len(done) >= LEDGER_MIN else {}}
+            "bars": bars(p), "routes": routes(p, rows) if len(done) >= LEDGER_MIN else {}, "interim": interim(rows, outs)}
 
 
 def _bucket_line(kind, b):
@@ -745,6 +769,7 @@ def cmd_calibration(args):
     d.update(extras(p))  # T-2344: races and parked doors, so every surface reads one JSON
     lines = [_too_few(d) + ": no bar moves" if not d["brier"] else "Calibration ledger: " + _brier_line(d)]
     lines += [_bucket_line(k, b) for k, bs in d["kinds"].items() for b in bs]
+    lines += [_interim_line(d)] if d["interim"] else []
     lines += [f"Raised the {bar} bar {old} → {new}." for bar, old, new in raised] + under + warns
     lines += [f"{pair}: the base rate's {v}% replaces the stated numbers (they scored a worse Brier)"
               for pair, v in d["routes"].items()]
