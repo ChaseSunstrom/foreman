@@ -4160,8 +4160,16 @@ def cmd_decide(args):
             import fmnight
             fetched = [{"date": d, "kind": k, "repo": r, "requests": n} for d, k, r, n in fmnight.fetches(p)]
         sent = [f"{f['date']} night tick sent {f['requests']} request(s): {f['kind']} of {f['repo']}" for f in fetched]
-        return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick], "night_fetches": fetched},
-                   "\n".join(pick[-args.n:] + sent) or "No decisions recorded.")
+        doors = []
+        if args.review:  # T-2347: each parked one-way door, priced by its wait and what waits behind it
+            import fmoutcomes
+            doors = fmoutcomes.priced_doors(p)
+        priced = [f"Parked at a one-way door: {d['id']} ({d['step']}), "
+                  f"{'?' if d['days'] is None else d['days']} days, "
+                  + (f"blocks {', '.join(d['blocks'])}" if d["blocks"] else "blocks nothing") for d in doors]
+        return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick], "night_fetches": fetched,
+                          "doors_parked": doors},
+                   "\n".join(pick[-args.n:] + sent + priced) or "No decisions recorded.")
     try:
         revisit = c.revisit_tag(p.root, args.revisit) + " " if getattr(args, "revisit", None) else ""  # callers build
     except ValueError as e:                                                                          # their own args
