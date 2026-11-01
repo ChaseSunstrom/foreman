@@ -134,6 +134,18 @@ class Friction(ForemanTestCase):
         self.fm("friction", "--mark")
         self.assertNotIn("self-improvement pass", nxt())
 
+    def test_unknown_fm_words_rank_by_the_sessions_that_reached_for_them(self):  # T-2382
+        env = lambda s: {"CLAUDE_CODE_SESSION_ID": s}  # noqa: E731
+        for s in ("s1", "s1", "s2"):
+            self.assertEqual(self.fm("next", "--last", env=env(s), check=False).returncode, 2)
+        self.fm("bogus", env=env("s3"), check=False)
+        self.fm("T-0007", env=env("s3"), check=False)  # a task id typed as a verb: a typo, not a vote
+        out = self.fm("friction").stdout
+        self.assertIn("2 sessions: fm next --last", out)
+        self.assertIn("1 session: fm bogus", out)
+        self.assertNotIn("T-0007", out.split("unknown fm verbs")[1])
+        self.assertLess(out.index("fm next --last"), out.index("fm bogus"))
+
     def test_a_bare_keep_going_prompt_is_a_stall(self):
         # T-0887: "continue" after Claude stopped says it stopped too early; what the Stop hook did just before says why
         import fmcore as c

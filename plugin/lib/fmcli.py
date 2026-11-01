@@ -6013,6 +6013,15 @@ class _Parser(argparse.ArgumentParser):
         choices = re.findall(r"'?([\w-]+)'?", bad.group(2)) if bad else []
         if bad and not near:
             near = [FOLDED[bad.group(1)]] if bad.group(1) in FOLDED else difflib.get_close_matches(bad.group(1), choices, n=1)
+        word = unknown[0] if unknown else bad.group(1) if bad else ""
+        if word and not re.fullmatch(r"T-\d+", word):  # T-2382: a vote for a verb or flag that isn't there (fm friction)
+            try:
+                c.append_line(os.path.join(c.state_dir(), "events.jsonl"), json.dumps(c.redact_obj(
+                    {"ts": c.now(), "kind": "unknown_word", "cmd": c.fit(" ".join(
+                        words[:2] if unknown else words[:words.index(word)] if word in words else []), 60),
+                     "word": c.fit(word, 40), "session_id": c.session_id() or ""}), ensure_ascii=False) + "\n")
+            except OSError:
+                pass
         if len(choices) > 12:  # T-1170: every command's name is 2 KB of output for one typo
             message = message.replace(bad.group(0), f"unknown '{bad.group(1)}' (fm help lists them)")
         super().error(message + (f" — did you mean {near[0]}?" if near else ""))
