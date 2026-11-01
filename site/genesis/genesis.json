@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-01T18:05:12Z",
+ "updated": "2026-11-01T18:10:13Z",
  "rev": "71d9a8ab",
  "capabilities": [
   {
@@ -1889,8 +1889,8 @@
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 2,
-       "current": "red tests"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2489",
@@ -2086,7 +2086,7 @@
     {
      "id": "T-2441",
      "title": "CI failed on this branch: run 41240310496",
-     "status": "deferred",
+     "status": "dropped",
      "type": "FIX",
      "tier": "M",
      "steps": 0,
