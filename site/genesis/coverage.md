@@ -4,20 +4,20 @@ Status: `fm genesis check` counts this file's cells (each `- stage × surface:` 
 
 ## 1. Initiative
 - find × MCP: F: plugin/lib/fmmcp.py — the `find` tool hands any MCP client fm find's ranked candidates, so other agents and Desktop read the same leads
-- find × CLI: F: plugin/lib/fmfind.py — `fm find --rank` runs deterministic finders over a repo with no request and ranks their candidates; the MCP find tool runs it
+- find × CLI: F: plugin/lib/fmfind.py — `fm find --rank` runs the ordered ladder over a repo with no request: its free finders, each stack's standard analyzer (the tool rung, T-2239), Foreman's tree-sitter rules (T-2240) and the git hotspots where fixes landed (--hotspots, T-2238), then ranks the candidates; the MCP find tool runs it
 - verify × CLI: F: plugin/lib/fmprove.py — `fm prove` re-checks fm find leads on a throwaway copy (an untested function only in a tree you said yes to; docs, dep and secret findings found again cold); the other kinds stay leads
-- build × Claude Code: F: plugin/lib/fmfind.py — `fm prove --capture` files each proven lead as a planned S task whose criterion is red until fixed, so the session's own fm next loop fixes it
+- build × Claude Code: F: plugin/lib/fmprove.py — `fm prove --capture` files each proven lead as a planned S task whose criterion is red until fixed, so the session's own fm next loop fixes it
 - operate × Claude Code: F: plugin/lib/fmscout.py — when a full-autonomy queue drains and the quick probes find nothing, the Stop hook asks the session to run `fm scout --slow`, whose find probe files at most 3 proven leads a day on the user's own project
-- plan × Claude Code: F: plugin/skills/brainstorm/SKILL.md — grounded, scored ideas turned into queued tasks
+- plan × Claude Code: F: plugin/skills/initiative/SKILL.md — /foreman:initiative plans an unattended run: map the repo, find candidates, prove them, fix the proven ones test-first on lanes, stop at a receipt
 - build × CLI: F: plugin/lib/fmdraft.py — a headless claude drafts the top queued S task in a throwaway worktree
 - operate × CLI: F: plugin/lib/fmorders.py — standing orders capture a task on a schedule or when a file changes
 
 ## 2. Exhaustive thinking
-- find × CLI: F: plugin/lib/fmideas.py — `fm ideas` runs tool-less lens children whose ideas come back deduplicated, each naming the finished task it may repeat
+- find × CLI: F: plugin/lib/fmideas.py — the brainstorm skill runs `fm ideas`, whose tool-less lens children return deduplicated ideas, each naming the finished task it may repeat
 - understand × CLI: F: plugin/lib/fmmission.py — mission lenses and surfaces enumerate every reading of an open request
 - plan × CLI: F: plugin/lib/fmsecond.py — cold second opinion, debate and dissent kept open in the brief
 - verify × Claude Code: F: plugin/agents/fm-reviewer.md — one read-only reviewer per audit lens (intent, adversary, edge, operator, maintainer)
-- verify × CLI: F: plugin/lib/fmauditrun.py — fm audit run runs the audit lenses as headless read-only reviewers
+- verify × CLI: F: plugin/lib/fmauditrun.py — fm audit run starts one headless claude per lens with only Read, Grep and Glob allowed and merges what they return
 - learn × CLI: F: plugin/lib/fmtaste.py — lens keep rates feed which lenses get more weight next brainstorm
 
 ## 3. Anticipation
@@ -43,7 +43,7 @@ Status: `fm genesis check` counts this file's cells (each `- stage × surface:` 
 - understand × MCP: F: plugin/lib/fmmcp.py — lib_suggest, lib_search and lib_show serve stack cards read-only
 - plan × CLI: F: plugin/lib/fmwhich.py — fm which names the skill, playbook or command that fits a task
 - build × CLI: F: plugin/lib/fmplugins.py — fm plugins install adds a pinned plugin only after the user's yes to fm ask ID plugin
-- learn × CLI: F: plugin/lib/fmrepeats.py — fm repeats drafts a playbook from repeated manual step sequences
+- learn × CLI: F: plugin/lib/fmrepeats.py — fm tidy's repeats finding points a session at fm repeats, which drafts a playbook, script or check from repeated manual step sequences
 
 ## 6. Verifying anything
 - understand × CLI: F: plugin/lib/fmdebug.py — fm whyred ranks suspects and minimal failing hunks for a red run
@@ -64,17 +64,17 @@ Status: `fm genesis check` counts this file's cells (each `- stage × surface:` 
 - learn × CLI: F: plugin/lib/fmtrials.py — a self-change is a pre-registered trial graded on ledger event rates
 
 ## 8. Calibrated judgment
-- understand × CLI: F: plugin/lib/fmexam.py — the generated exam grades agents on held-out tasks
+- understand × CLI: F: plugin/lib/fmexam.py — the exam grades agents on held-out scenarios that outside (child) authors write, kept apart from any Foreman wrote itself (T-2204)
 - learn × Claude Code: F: plugin/lib/fmhooks.py — the track record by type and tier is injected at focus
 
 ## 9. Orchestration
 - find × Claude Code: F: plugin/agents/fm-debugger.md — fresh-eyes debugger returns ranked hypotheses with a probe each
 - understand × Claude Code: F: plugin/agents/fm-recon.md — read-only recon subagent with a bounded, cited summary
-- plan × CLI: F: plugin/lib/fmsplit.py — fm task split partitions a task's files into child tasks
+- plan × CLI: I: fm next offers fm task split when an L task's files fall into independent groups, so lanes can take the children (plugin/lib/fmsplit.py)
 - build × Claude Code: F: plugin/agents/fm-builder.md — one S/M task built test-first in a worktree on its own branch
 - build × other agents: F: plugin/lib/fmsession.py — fm session runs detached claude, codex, gemini and opencode sessions
 - build × CLI: F: plugin/lib/fmlanes.py — fm lane runs git worktrees as lanes with their own active task
-- ship × CLI: F: plugin/lib/fmpr.py — fm pr train merges approved green PRs in order
+- ship × CLI: F: plugin/lib/fmpr.py — fm pr train merges approved green PRs in order, each spending its task's publish grant (fm ask ID publish, the user's yes) before it posts
 - operate × CLI: F: plugin/lib/fmbus.py — fm bus passes messages and leases between sessions on a machine
 
 ## 10. Beyond code
@@ -89,10 +89,10 @@ Status: `fm genesis check` counts this file's cells (each `- stage × surface:` 
 
 ## 11. Self-triggering
 - find × Claude Code: F: plugin/lib/fmscout.py — the idle-turn hook runs scouts and captures findings
-- build × CLI: F: plugin/lib/fmloop.py — fm loop on starts an improvement round when the queue empties
+- build × CLI: F: plugin/lib/fmloop.py — with fm loop on, the Stop hook's drive starts the next improvement round each time the queue drains (T-1057)
 - build × headless/server: F: plugin/lib/fmserve.py — fm run works the queue in fresh headless sessions, one task each
 - verify × Claude Code: F: plugin/lib/fmambient.py — tests run detached after each edit with no prompt
-- learn × CLI: F: plugin/lib/fmfriction.py — fm friction --every N triggers a self-improvement digest
+- learn × CLI: F: plugin/lib/fmfriction.py — once fm friction --every N is set, fm next offers the self-improvement pass every N closes
 
 ## 12. Staying lean and safe
 - plan × CLI: F: plugin/lib/fmbudget.py — subagents wait at 90% of the 5-hour window, or when weekly usage reaches 90% or, past 75%, runs 10+ points ahead of the week's pace
@@ -171,3 +171,69 @@ Status: `fm genesis check` counts this file's cells (each `- stage × surface:` 
 - build × fm code: F: plugin/lib/fmmodels.py — fm code runs on any OpenAI-compatible or Anthropic profile
 - build × other agents: F: plugin/lib/fmagents.py — one hook dispatcher maps each harness's tool events onto Foreman's hooks
 - build × CLI: F: plugin/lib/fmpy.py — re-exec under a supported interpreter
+
+## Model layer
+- find × Claude Code: I: a decision call ranks fm find's leads by how likely each is a real bug before the session proves any (plugin/lib/fmfind.py)
+- find × fm code: I: fm code's planner asks a local model which hotspots to read first, shadow-logged beside its current order (plugin/lib/fmcode.py)
+- find × other agents: I: AGENTS.md tells other harnesses to call fm find --rank, whose order comes from the decision interface once its exam beats the plain sort (plugin/lib/fmagents.py)
+- find × MCP: I: the MCP find tool returns each lead's model score and calibrated confidence beside the deterministic rank (plugin/lib/fmmcp.py)
+- find × Desktop: N/A: the desktop list shows projects and their next action, not leads; lead triage happens in sessions
+- find × site: I: the leads page shows model-scored against rule-ranked precision from the exam, so a reader sees whether the model earns its place (site/pages.py)
+- find × CLI: I: fm find --rank scores leads with selfjev-4b behind the Jev-compatible API when TYPESAFE_BASE_URL is set, and with rules alone otherwise (plugin/lib/fmmodels.py)
+- find × headless/server: I: the hourly tick dedupes open leads by embedding similarity, so one defect found twice files once (plugin/lib/fmnight.py)
+- understand × Claude Code: I: recall answers a session's question by embedding search over lessons and briefs, kept only if its hit rate beats keyword overlap (plugin/lib/fmrecall.py)
+- understand × fm code: I: the worker gets a reranked file list from a local reranker and spends its context on the top files (plugin/lib/fmcode.py)
+- understand × other agents: N/A: other harnesses read the repo themselves; Foreman's recall reaches them through MCP, counted on that row
+- understand × MCP: I: an MCP recall tool backed by the embedding index names the backend in each answer, so a client sees which model spoke (plugin/lib/fmmcp.py)
+- understand × Desktop: N/A: no code is read in the desktop app; it lists projects and starts sessions
+- understand × site: I: a Model layer page explains each backend, what it decides, its accuracy against the path it replaced and its cost (site/pages.py)
+- understand × CLI: I: fm which matches a need to shelves by embedding similarity, falling back to word overlap when no backend answers (plugin/lib/fmwhich.py)
+- understand × headless/server: I: fm serve offers the decision interface to a remote session and refuses sensitive projects at that boundary (plugin/lib/fmserve.py)
+- plan × Claude Code: I: intake asks the decision interface for type and tier with a probability; a low-confidence answer routes to research as fm next does today (plugin/lib/fmcli.py)
+- plan × fm code: I: Von routes short requests by intent to the planner slot, the cloud model takes the rest, and each choice is logged (plugin/lib/fmcode.py)
+- plan × other agents: I: the AGENTS.md block gives the tier suggestion as advice an agent may override, never as a gate (plugin/lib/fmagents.py)
+- plan × MCP: I: an MCP intake tool returns the suggested type, tier and confidence, so a client plans with the numbers a session sees (plugin/lib/fmmcp.py)
+- plan × Desktop: N/A: plans are made in sessions; the desktop app shows the next action a plan produced
+- plan × site: I: the judgment page plots stated against scored confidence for model-made tier guesses beside the session's own bets (site/pages.py)
+- plan × CLI: I: fm second rival asks a local model for the cold reading first and spends a cloud read only when the local one is unsure (plugin/lib/fmsecond.py)
+- plan × headless/server: I: fm run picks each task's model by the router's cheapest-that-holds rule, extended to the local backends in the registry (plugin/lib/fmlanes.py)
+- build × Claude Code: F: plugin/lib/fmmodels.py resolves a configured local or cloud profile: the base each backend in the cascade registers on
+- build × fm code: F: plugin/lib/fmcode.py runs Foreman's loop on any fmmodels profile, so a local code model behind vLLM or llama-swap can already work
+- build × other agents: I: one registry entry per backend with cost, latency and a sensitive_ok flag, so no caller hardcodes a model (plugin/lib/fmmodels.py)
+- build × MCP: I: an MCP decide tool takes a kind and an input and returns choice, score and probability from the cheapest backend that clears the bar (plugin/lib/fmmcp.py)
+- build × Desktop: N/A: nothing is built from the desktop app; it starts the sessions that build
+- build × site: I: the site build reads the registry and the exam lines to chart each backend's accuracy, cost and latency (site/pages.py)
+- build × CLI: I: fm models lists the registry, probes each backend once and queues missing ones as install requests, never downloading (plugin/lib/fmgrants.py)
+- build × headless/server: I: Jevlike trains a task-specific classifier from Foreman's closed tasks on the night run, staged as a candidate until its exam arm wins (plugin/lib/fmnight.py)
+- verify × Claude Code: I: a test fails if the guard or an evidence gate imports the model layer: models advise, proof decides (plugin/lib/fmguard.py)
+- verify × fm code: I: a vision model reads fm shot's screenshot as a second signal on a UI done claim, never in place of the run (plugin/lib/fmshot.py)
+- verify × other agents: N/A: other harnesses' claims face the same fm gates, and by the rule that proof decides no model is added there
+- verify × MCP: I: each MCP decide answer goes into the prediction book with its probability, so its calibration is scored against what happened (plugin/lib/fmforesight.py)
+- verify × Desktop: N/A: verification runs in the session and fm check; the desktop app only shows the result
+- verify × site: I: the exam page adds a model-against-path column per use; a use stays only while its column beats the path it replaced (site/pages.py)
+- verify × CLI: I: fm exam gains one model arm per use (intake tier, lead triage, dedupe) run on held-out scenarios against the path it would replace (plugin/lib/fmexam.py)
+- verify × headless/server: I: the night run replays the week's decisions through each candidate backend in shadow mode and scores them before any switch (plugin/lib/fmnight.py)
+- ship × Claude Code: I: a use moves from shadow to live only by an fm decide row citing its exam numbers, so the final report lists every switch (plugin/lib/fmoutcomes.py)
+- ship × fm code: N/A: fm code ships through fm ship like a session does; the model layer changes no step of it
+- ship × other agents: N/A: another harness ships through fm ship, and nothing a model makes touches the publish grant
+- ship × MCP: N/A: the MCP server ships with the plugin; no model decides a release or a push
+- ship × Desktop: N/A: the desktop app never ships code; releases go through fm release in a session
+- ship × site: I: CHANGELOG and the site name each model use when it goes live, with the accuracy and cost it beat (site/pages.py)
+- ship × CLI: I: fm release refuses a build whose registry names a backend the user never approved through the install queue (plugin/lib/fmgrants.py)
+- ship × headless/server: N/A: headless runs never publish; fm ship needs a per-task grant the night run doesn't take
+- operate × Claude Code: I: a sensitive repo's sessions resolve only local backends, and a cloud call from one is refused with its reason (plugin/lib/fmmodels.py)
+- operate × fm code: I: the worker falls back to the cloud model when the local server is down and logs the outage to the trigger table (plugin/lib/fmtriggers.py)
+- operate × other agents: I: decision calls are metered against fm budget, so an outside harness can't spend Foreman's cap through MCP (plugin/lib/fmbudget.py)
+- operate × MCP: I: the MCP server reports each backend's health and last latency, so a client sees which model will answer (plugin/lib/fmmcp.py)
+- operate × Desktop: I: the desktop list shows each project's active backend, local or cloud, beside its next action (plugin/lib/fmwatch.py)
+- operate × site: N/A: the site is static; it shows measured results, not live backend state
+- operate × CLI: I: fm doctor checks every registered backend answers within its latency budget and fails loud on a silent fallback (plugin/lib/fmdoctor.py)
+- operate × headless/server: I: the hourly tick probes the user's vLLM and llama-swap servers and marks a backend down before a run leans on it (plugin/lib/fmnight.py)
+- learn × Claude Code: I: each closed task's decisions (tier, lead, dedupe) become labelled rows Jevlike trains on, so the local model learns this repo (plugin/lib/fmoutcomes.py)
+- learn × fm code: I: fm code records which backend held on which task kind, feeding the router's cheapest-that-holds table (plugin/lib/fmcode.py)
+- learn × other agents: N/A: other harnesses' sessions aren't Foreman's to learn from; only work closed through fm counts
+- learn × MCP: I: decide answers the session overrode are kept as disagreement rows, the signal the next candidate model is scored on (plugin/lib/fmmcp.py)
+- learn × Desktop: N/A: the desktop app records nothing a model could learn from
+- learn × site: I: the site shows each backend's calibration curve over time, so drift in a local model shows before it is trusted more (site/pages.py)
+- learn × CLI: I: fm outcomes --judgment scores model-made probabilities beside the session's own bets in one Brier ledger (plugin/lib/fmoutcomes.py)
+- learn × headless/server: I: the night run retrains Jevlike's candidates from the week's labelled rows and stages the winner for its exam, never swapping it live (plugin/lib/fmnight.py)
