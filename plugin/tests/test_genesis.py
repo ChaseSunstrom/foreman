@@ -2659,14 +2659,27 @@ class GenesisSweep(ForemanTestCase):
         self.assertIn("Verdict: red", text)
         self.assertIn(open_id, text)
         self.assertIn(blocked + " blocked with no reason", text)
+        # T-2477 (user steer 2026-11-01, the tower advances itself): each red row is a fix task, filed once
+        import fmcore as c
+        fixes = r["fixes"]
+        self.assertEqual(sorted(c.find_brief(self.p, t).meta["genesis_sweep"] for t in fixes),
+                         sorted(f"1:{x}" for x in bad))
+        self.assertIn("Fix tasks: " + ", ".join(fixes), text)
+        self.assertEqual(self.sweep(doctor=["hook scripts"], gates=None, clean_check=False)["fixes"], fixes)  # not twice
         s = fmgenesis.step(self.p)
-        self.assertEqual((s["stage"], s["command"]), ("sweep", "fm genesis sweep 1"))
+        self.assertEqual((s["stage"], s["command"]), ("build", f"fm focus {fixes[0]}"))
+        for t in fixes:
+            self.fm("task", "drop", t, "fixed by the rerun's setup below")
+        s = fmgenesis.step(self.p)
+        self.assertEqual((s["stage"], s["command"]), ("sweep", "fm genesis sweep 1"))  # all closed: rerun the sweep
         self.fm("task", "drop", open_id, "done elsewhere")
         self.fm("task", "block", blocked, "waits on the user's core yes")
         tower_file(fmgenesis.home(self.p), "exam.jsonl", line("r1", 1, ["a"]))
+        tower_file(self.tower, "lineage.md", "# Lineage\n\n## gen-1\n- baseline\n- seed base: gen-1\n")  # what select writes
         r = self.sweep()
         self.assertEqual(r["verdict"], "clean", r["rows"])
-        self.assertEqual(fmgenesis.step(self.p)["stage"], "seed")
+        self.assertTrue(r["seed"] and os.path.isfile(os.path.join(self.tower, "gen-2", "seed.md")), r)  # written at once
+        self.assertNotEqual(fmgenesis.step(self.p)["stage"], "seed")
 
     def test_a_steer_rule_without_a_passing_check_turns_the_sweep_red(self):
         # T-2167: every user steer becomes a standing rule plus an automatic check, and the sweep holds it to that

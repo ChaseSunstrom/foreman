@@ -852,6 +852,15 @@ def step(p):
             return act(stage, n, "the seed or a Mission changed after drift.md: rerun the drift check",
                        f"fm genesis drift {n}")
         if not CLEAN.search(doc):
+            fx = re.search(r"^Fix tasks: (.*)$", doc, re.M) if stage == "sweep" else None
+            ids = re.findall(r"\bT-\d{4,}\b", fx.group(1)) if fx else []
+            if ids:  # T-2477: the red sweep's own fix tasks first, then a rerun once all are closed
+                bs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
+                left = [t for t in ids if t in bs and bs[t].status not in c.CLOSED]
+                if left:
+                    return act("build", n, f"{pre}sweep.md is red: finish its fix task {left[0]}", f"fm focus {left[0]}",
+                               "blocked" if bs[left[0]].status == "blocked" else "ok")
+                return act(stage, n, f"{pre}sweep.md's fix tasks are closed: rerun it", f"fm genesis {stage} {n}")
             return act(stage, n, f"{pre}{stage}.md isn't clean: {fix}", f"fm genesis {stage} {n}")
     prev = _doc(d, f"gen-{n - 1}/seed.md")
     def gaps(rs):  # T-2187: the moonshot row closes no coverage gap, so a seed with only it is dry
@@ -3092,10 +3101,43 @@ def sweep(p, n, agent="foreman"):
     verdict = "clean" if all(x["ok"] for x in rows) else "red"
     lines = [f"{'✓' if x['ok'] else '✗'} {x['check']}: {x['detail']}" for x in rows]
     out = [f"# Sweep — gen-{n} (gen-0 §7)", "", f"Verdict: {verdict}", "", *lines]
+    fixes = _sweep_fixes(p, n, [x for x in rows if not x["ok"]]) if verdict != "clean" else []
     if verdict != "clean":
-        out += ["", f"Fix the ✗ lines, then rerun fm genesis sweep {n}; the next generation waits on a clean sweep."]
-    path = _file(p, f"gen-{n}/sweep.md", "\n".join(out) + "\n")
-    return {"gen": n, "verdict": verdict, "rows": rows, "path": path, "lines": [f"  {x}" for x in lines]}
+        out += ["", f"Fix tasks: {', '.join(fixes)}", "",
+                f"Fix the ✗ lines (one task each), then rerun fm genesis sweep {n}; the next generation waits on a "
+                "clean sweep."]
+    path, seeded = _file(p, f"gen-{n}/sweep.md", "\n".join(out) + "\n"), None
+    if verdict == "clean":  # T-2477 (user steer 2026-11-01): a clean sweep writes the next Seed at once
+        try:
+            seeded = _seed(p, n + 1, agent)["path"]
+        except ValueError as e:  # it exists already, or the tower holds (stopped, no seed base): step says which
+            seeded, lines = None, lines + [f"next seed not written: {c.fit(c.plain(str(e)), 160)}"]
+    return {"gen": n, "verdict": verdict, "rows": rows, "path": path, "lines": [f"  {x}" for x in lines],
+            "fixes": fixes, "seed": seeded}
+
+
+SWEEP_FIX = "genesis_sweep"  # T-2477: a sweep fix task's meta key, "N:row"
+
+
+def _sweep_fixes(p, n, red):
+    """T-2477 (user steer 2026-11-01, the tower advances itself): one FIX task per red sweep row, filed once: a row
+    that already has an open task keeps it. Source genesis, so fm drive --round-first never holds the tower's own
+    work."""
+    import fmcli
+    have = {b.meta.get(SWEEP_FIX): b.id for b in c.load_briefs(p) if b.status not in c.CLOSED and b.meta.get(SWEEP_FIX)}
+    out = []
+    for x in red:
+        key = f"{n}:{x['check']}"
+        if key not in have:
+            b = fmcli._create(p, c.fit(f"Genesis gen-{n} sweep: {x['check']} is red — {c.plain(x['detail'])}", 120),
+                              "FIX", "M", "captured", raw=f"fm genesis sweep {n}: ✗ {x['check']}: "
+                              f"{c.fit(c.plain(x['detail']), 1500)}\nDone when the rerun's {x['check']} line is ✓.",
+                              source="genesis")
+            b.meta[SWEEP_FIX] = key
+            c.save_brief(p, b)
+            have[key] = b.id
+        out.append(have[key])
+    return out
 
 
 def cmd_genesis(args):
@@ -3167,7 +3209,10 @@ def cmd_genesis(args):
             r = drift(p, n) if action == "drift" else sweep(p, n, args.agent)
             c.log_event(p, f"genesis_{action}", data={"gen": n, "verdict": r["verdict"]}, session=fmcli.session())
             kick(p)
-            fmcli.out(args, r, f"gen {n} {action}: {r['verdict']}\n" + "\n".join(r["lines"]) + f"\n  {r['path']}")
+            fmcli.out(args, r, f"gen {n} {action}: {r['verdict']}\n" + "\n".join(r["lines"]) + f"\n  {r['path']}"
+                      + (f"\n  fix tasks: {', '.join(r['fixes'])}" if r.get("fixes") else "")  # T-2477
+                      + (f"\n  next seed written: {r['seed']}" if r.get("seed") else "")
+                      + (f"\n  next: {step(p)['action']}" if action == "sweep" else ""))
             return 0 if r["verdict"] == "clean" else 1
         if action == "grow":
             r = grow(p, args.path, args.name, args.evidence, args.measure)

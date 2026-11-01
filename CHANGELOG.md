@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The Genesis tower advances itself: a red sweep files one fix task per red line and runs again once they close, and a clean sweep writes the next generation's Seed right away.
 - A Genesis generation no longer fails on empty coverage cells: it fails only on templated, duplicated or ungrounded cells, and its empty cells go to the next Seed to fill first. The whole run ends only when no cell is empty.
 - Genesis's cold read of each tower file now settles: Haiku reads first and Sonnet decides any file Haiku doesn't pass. A FAIL counts only when it quotes the file's line and names the gen-0 MUST/NEVER or steer it breaks; anything else is a note and the file is filed. A text that was judged keeps its verdict and isn't read again, and Haiku is dropped once Sonnet overrules more than a third of its FAILs.
 - Six verbs moved into the verb that already does their job: `fm proof` is `fm prove --rollup`, `fm calibration` is `fm outcomes --judgment`, `fm incident` is `fm capture --incident`, `fm sweep` is `fm projects --sweep`, `fm instruments` is `fm which --instruments` and `fm suspects` is `fm whyred --suspects`. Typing an old name says where it went and runs nothing. The ten longest skill and agent descriptions got shorter, so gen 1 adds no verbs and no always-on text over the seed.
