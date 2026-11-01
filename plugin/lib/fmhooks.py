@@ -4265,9 +4265,10 @@ def _side_work(sd, briefs, work, full, offered, p):
     by_id = {b.id: b for b in briefs}
     lanes = lanes_free(briefs, p)
     gated = _gates_running(p)
+    held = c._round_held(p, briefs)  # T-2459: what fm next holds for an open Genesis round, the offer holds too
     for x in sd["queue"] + (sd["inbox"] if full else []):
         b = by_id.get(x["id"])
-        if (b is None or x["id"] == work["id"] or x["id"] in offered or x["id"] == gated
+        if (b is None or x["id"] == work["id"] or x["id"] in offered or x["id"] == gated or x["id"] in held
                 or any(d in by_id and by_id[d].status not in c.CLOSED for d in c._deps(b))
                 or b.meta.get("builder") or any(s.done for s in b.steps())  # T-0429: under way here already
                 or b.section("Verification evidence").strip()):

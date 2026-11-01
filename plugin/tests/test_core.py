@@ -1100,6 +1100,20 @@ class RoundFirst(ForemanTestCase):  # T-2327 (user steer 2026-10-31, 2): no new 
         out = self.fm("capture", text, "--json", *flags).stdout
         return json.loads(out)["id"]
 
+    def test_the_drives_side_work_offer_holds_them_too(self):
+        # T-2459: while background jobs ran, the Stop hook's side-work offer named a Foreman capture the round held
+        import fmhooks
+        mine = self.capture("FIX: a discovered nit in the parser", "--source", "discovered")
+        self.fm("task", "new", "Active work", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        p = c.find_project(self.repo)
+        briefs = c.load_briefs(p)
+        work = c.active_brief(briefs)
+        offer = lambda: fmhooks._side_work(c.state_dict(p, briefs), briefs, {"id": work.id}, True, [], p)  # noqa: E731
+        self.assertEqual((offer() or {}).get("id"), mine)  # the switch is off: offered as before
+        self.fm("drive", "on", "--round-first", "on")
+        self.assertIsNone(offer())
+
     def test_foremans_own_captures_wait_for_the_round_unless_urgent_or_depended_on(self):
         mine = self.capture("FIX: a discovered nit in the parser", "--source", "discovered")
         self.assertEqual(self.offered(), mine)  # the switch is off: offered as before
