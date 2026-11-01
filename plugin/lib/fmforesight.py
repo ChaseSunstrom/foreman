@@ -318,7 +318,8 @@ def prediction_kinds(p):
     kinds = []
 
     def kind(name, rows, extra=None):  # rows: (at, hit, base hit or None)
-        fresh = [(h, bh) for at, h, bh in rows if at >= since(name) and bh is not None]
+        # T-2455: strictly after the unmute; a row scored in its second is from before it (CI unmuted in the same second)
+        fresh = [(h, bh) for at, h, bh in rows if at > since(name) and bh is not None]
         hit, base = _rate([h for h, _ in fresh]), _rate([bh for _, bh in fresh])
         kinds.append(dict({"kind": name, "n": len(rows), "hit": _rate([h for _, h, _ in rows]),
                            "base_hit": _rate([bh for _, _, bh in rows if bh is not None]),

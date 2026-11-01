@@ -459,6 +459,18 @@ class PredictionBook(ForemanTestCase):  # T-2406 (#3): the next request predicte
         self.fm("outcomes", "--predictions", "--unmute", "next-request")
         self.assertFalse({k["kind"]: k for k in self.fm_json("outcomes", "--predictions")["kinds"]}["next-request"]["muted"])
 
+    def test_rows_scored_in_the_same_second_as_an_unmute_count_as_before_it(self):
+        # T-2455: CI on main went red when the unmute landed in the same second as the rows (at >= since kept them fresh)
+        at = c.now()
+        with open(os.path.join(self.p.dir, fs.PREDICTIONS), "w", encoding="utf-8") as f:
+            for i in range(fs.MUTE_MIN):
+                f.write(json.dumps({"kind": "score", "id": f"P{i}", "for": f"T-{i + 2:04d}", "at": at, "type_hit": False,
+                                    "base_type_hit": True, "overlap": None, "base_overlap": None}) + "\n")
+        meta = c.read_meta(self.p)
+        meta["predictions_unmuted"] = {"next-request": at}
+        c.write_meta(self.p, meta)
+        self.assertFalse({k["kind"]: k for k in fs.prediction_kinds(self.p)}["next-request"]["muted"])
+
     def test_a_sensitive_project_predicts_nothing(self):
         for t, s in (("FIX", "a.py"), ("FEATURE", "b.py"), ("FIX", "a.py")):
             self.ask(t, s)
