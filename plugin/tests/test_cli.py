@@ -1649,3 +1649,21 @@ class AffectedPairs(ForemanTestCase):
         r = self.fm("check", "--affected", check=False)
         self.assertIn("all 1 linked test module(s) skipped (other lanes' red-first tests)", r.stdout)
         self.assertNotIn("No tests linked", r.stdout)
+
+
+class SelfRunningLine(ForemanTestCase):  # T-2364: what ran by itself, in fm state and the pane's band
+    def test_fm_state_and_the_band_carry_one_self_running_line(self):
+        self.fm("init")
+        self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        p = c.find_project(self.repo)
+        c.log_event(p, "capture", task="T-0001", data={"source": "discovered", "type": "FIX", "trigger": "ci-red"})
+        self.fm("ask", "T-0001", "plugin", "--later", "--why", "needs a linter")
+        out = self.fm("state").stdout
+        line = next((x for x in out.splitlines() if x.startswith("Self-running:")), "")
+        self.assertIn("1 trigger fired today (ci-red → inbox)", line)
+        self.assertIn("1 install waiting", line)
+        sd = json.loads(self.fm("state", "--json").stdout)
+        self.assertEqual(sd["self_running"]["installs"], 1)
+        self.assertEqual(sd["self_running"]["fired"], {"ci-red": 1})
+        view = json.loads(self.fm("ui", "--json").stdout)
+        self.assertTrue(any(s["text"].startswith("Self-running:") for s in view["signals"]), view["signals"])

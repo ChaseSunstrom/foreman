@@ -93,8 +93,9 @@ TOOLS = [
      lambda a, p: ["exam", "scorecard"]),
     ("genesis_status", "The Genesis tower's status (fm genesis status): which generation it's on, its files, coverage, "
      "the one next action and its command, the last exam result.", _TEXT, lambda a, p: ["genesis", "status"]),  # T-2201
-    ("triggers", "Each trigger that files tasks (T-2276): fired, done, dropped, open, precision.", _TEXT,
-     lambda a, p: ["triggers"]),
+    ("triggers", "Each trigger that files tasks (T-2276): fired, done, dropped, open, precision, route; the builder "
+     "lanes recovering and the self-fix trials (T-2364), as JSON. Read-only.", _TEXT,
+     lambda a, p: ["triggers", "--json"]),
     ("goal", "The standing goal (T-2141): its text, items with their state, the one progress line, and the verdict "
      "fm goal verdict last stored. Reads meta and briefs only; it runs no check.", _TEXT, None),
     ("calibration", "Judgment's track record (T-2344): stated-confidence buckets per kind, the Brier beside the base rate's, "

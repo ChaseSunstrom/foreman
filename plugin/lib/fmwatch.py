@@ -715,6 +715,10 @@ def _signals(sd, d, p=None):
     proof = _guarded(lambda: c.unproven_summary(p, c.PROOF_DAYS)) if p else None  # T-2395: keyed cache, no TTL
     if proof and proof.get("n"):
         out.append({"level": "amber", "text": c.plain(c.unproven_line(proof["n"], proof.get("counts")))[:200]})
+    import fmtriggers  # T-2364: what ran or waits by itself (lanes and books read), kept like the others
+    sr = _kept(p, "self-running-line.json", lambda: fmtriggers.self_running(p)["line"]) if p else ""
+    if sr:
+        out.append({"level": "amber", "text": c.plain(sr)[:200]})
     import fmoutcomes  # T-2344: parked doors and a Brier worse than the base rate; outcomes() is slow, so kept
     judged = _kept(p, "judgment-line.json", lambda: fmoutcomes.band_line(p)) if p else ""
     if judged:

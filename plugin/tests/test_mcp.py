@@ -471,6 +471,14 @@ class ToolsTools(_Mcp):  # T-2378: #5 through MCP (Claude Desktop and other agen
         self.assertEqual(os.path.getsize(os.path.join(p.dir, "ledger.jsonl")), ledger)  # no search receipt logged
 
 
+class TriggersTool(_Mcp):  # T-2364: the trigger table with recoveries and trials, as JSON, read-only
+    def test_triggers_tool_returns_the_table_recoveries_and_trials(self):
+        self.fm("init")
+        out, _ = self.talk({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, self.call(2, "triggers"))
+        d = json.loads(_text(out[1]))
+        self.assertLessEqual({"triggers", "recoveries", "trials", "self_running"}, set(d))
+
+
 class ProofTool(_Mcp):  # T-2395: the unproven rollup through MCP (Claude Desktop, other agents)
     def test_proof_tool_is_listed_and_returns_the_rollup_rows(self):
         self.fm("init")

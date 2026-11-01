@@ -128,6 +128,11 @@ def cmd_state(args):
             sd["unproven"], sd["unproven_kinds"] = got["n"], got["counts"]
         except Exception:  # a rollup must never cost the status
             pass
+        try:  # T-2364: what ran or waits by itself
+            import fmtriggers
+            sd["self_running"] = fmtriggers.self_running(p)
+        except Exception:
+            pass
     if args.line:
         run = c.code_line(p)  # T-1351: the newest fm code run, for tmux and prompt segments
         print(c.state_line(sd) + (f" · {run}" if run else ""))

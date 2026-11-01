@@ -4116,6 +4116,8 @@ def render_state(sd, ts=None):
             + (" · PAUSED" if sd["paused"] else "")]
     if sd.get("unproven"):  # T-2273
         out.append(unproven_line(sd["unproven"], sd.get("unproven_kinds"), "Done on typed or unrun proof, 30 days: "))
+    if (sd.get("self_running") or {}).get("line"):  # T-2364
+        out.append(sd["self_running"]["line"])
     g = sd.get("genesis")
     if g:  # T-2118
         out.append(f"Genesis: {genesis_line(g)}")

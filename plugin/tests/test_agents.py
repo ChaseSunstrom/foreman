@@ -332,6 +332,15 @@ class Judgment(ForemanTestCase):
         self.assertIn("fm ask ID plugin --later", text)
 
 
+class SelfRunningAgentsLine(ForemanTestCase):  # T-2364
+    def test_the_agents_block_names_the_tick_and_the_trigger_table(self):
+        import fmagents as a
+        text = a.rules_text()
+        self.assertIn("fm night --tick", text)
+        self.assertIn("fm triggers", text)
+        self.assertEqual(len(text.splitlines()), 7)
+
+
 class ProofLine(ForemanTestCase):  # T-2395
     def test_proof_line_tells_other_agents_to_run_fm_proof_before_calling_work_verified(self):
         import fmagents as a

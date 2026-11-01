@@ -132,8 +132,17 @@ def cmd_triggers(args):
         flag = "  (files at low priority)" if noisy(p, r["trigger"], caps, status) else ""
         lines.append(f"{r['trigger']:<22}{r['fired']:>6}{r['done']:>6}{r['dropped']:>8}{r['open']:>6}{prec:>10}"
                      f"{r['fixes_held']:>12}  {r['route']}{flag}")
-    fmcli.out(args, {"days": args.days, "triggers": rows},
-              "\n".join(lines) if rows else f"No trigger has filed a task in the last {args.days} days.")
+    import fmlanes  # T-2364: the lanes recovering and the self-fix trials ride along (the MCP tool reads them)
+    briefs = c.load_briefs(p)
+    recoveries = [{"task": t, "cause": v[0], "recovery": fmlanes.recovery_text(v[0], t, v[1])}
+                  for t, v in sorted(fmlanes.stop_causes(p, briefs).items()) if v[0] != "no_report"]
+    trials = [{"task": t.get("task"), "what": c.plain(str(t.get("what") or ""))[:120], "verdict": t.get("verdict")}
+              for t in fmtrials.load(p) if isinstance(t, dict) and t.get("kind") == "self-fix"][-20:]
+    sr = self_running(p, briefs)
+    fmcli.out(args, {"days": args.days, "triggers": rows, "recoveries": recoveries, "trials": trials,
+                     "self_running": sr},
+              ("\n".join(lines) if rows else f"No trigger has filed a task in the last {args.days} days.")
+              + (f"\n{sr['line']}" if sr["line"] else ""))
 
 
 def _load(p, name):
@@ -253,3 +262,39 @@ def settle_routes(p):
         c.write_atomic(os.path.join(p.dir, "trigger-routes.json"),
                        json.dumps({k: v for k, v in cur.items() if v != "inbox"}, sort_keys=True))
     return moved
+
+
+def self_running(p, briefs=None):
+    """T-2364: what runs here by itself: triggers fired today (each with its route), installs waiting for the user's
+    yes, builder lanes recovering, self-fix trials not yet graded, the prediction book's next-request hit rate beside
+    its baseline (T-2406); with the one line fm state, the band and fm code print ("" when nothing ran or waits)."""
+    import fmforesight
+    import fmgrants
+    import fmlanes
+    import fmtrials
+    briefs = c.load_briefs(p) if briefs is None else briefs
+    day = datetime.datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    fired = {}
+    for e in c.ledger_events(p, ["capture"], since=day.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")):
+        t = (e.get("data") or {}).get("trigger")
+        if isinstance(t, str) and t:
+            fired[t] = fired.get(t, 0) + 1
+    installs = len(fmgrants.queued(p, briefs))
+    recovering = sum(1 for v in fmlanes.stop_causes(p, briefs).values() if v[0] != "no_report")
+    due = sum(1 for t in fmtrials.load(p) if isinstance(t, dict) and t.get("kind") == "self-fix" and not t.get("verdict"))
+    pk = next((k for k in fmforesight.prediction_kinds(p) if k["kind"] == "next-request"), None)
+    s = lambda n, w: f"{n} {w}{'' if n == 1 else 's'}"  # noqa: E731
+    parts = []
+    if fired:
+        parts.append(f"{s(sum(fired.values()), 'trigger')} fired today ("
+                     + ", ".join(f"{t} → {row(p, t)['route']}" for t in sorted(fired)) + ")")
+    if installs:
+        parts.append(f"{s(installs, 'install')} waiting")
+    if recovering:
+        parts.append(f"{s(recovering, 'lane')} recovering")
+    if due:
+        parts.append(f"{s(due, 'self-fix trial')} due")
+    if pk and pk["n"] and pk["hit"] is not None and pk["base_hit"] is not None:
+        parts.append(f"next-request predictions {pk['hit']:.0%} vs baseline {pk['base_hit']:.0%}")
+    return {"fired": fired, "installs": installs, "recovering": recovering, "trials_due": due, "predictions": pk,
+            "line": ("Self-running: " + " · ".join(parts)) if parts else ""}

@@ -131,6 +131,28 @@ def _proof(s):
                           "was built.", hist, ["n"]) if len(hist) > 1 else "")
 
 
+def _self_running(s):
+    """T-2364: Mission 8's figures (site/stats.py's self_running block): triggers with precision and route, installs
+    waiting, recoveries, trial verdicts, prediction hit rates beside their baselines, the lean start per generation."""
+    sr = s.get("self_running") or {}
+    pct = lambda x: f"{x:.0%}" if isinstance(x, (int, float)) else "n/a"  # noqa: E731
+    row = tiles([("installs waiting for you", sr.get("installs", 0)), ("lanes recovering", sr.get("recoveries", 0))]
+                + [(f"trials {k}", v) for k, v in sorted((sr.get("trials") or {}).items())]
+                + [(f"{k.get('kind')} predictions vs baseline", f"{pct(k.get('hit'))} vs {pct(k.get('base_hit'))}")
+                   for k in sr.get("predictions") or []])
+    trig = sr.get("triggers") or []
+    if trig:
+        row += hbars("Triggers by precision", "Each trigger that filed work, its share of tasks that got done, and "
+                     "where it routes.", [(f"{t['trigger']} → {t.get('route') or 'inbox'}", t.get("precision") or 0)
+                                         for t in trig[:12]])
+    lean = sr.get("lean") or []
+    if len(lean) > 1:
+        row += columns("Rules chars at each generation's start", "The lean ratchet: a generation may not end bigger "
+                       "than it began.", [{"day": f"gen-{x['gen']}", "n": x.get("rules chars", 0)} for x in lean], ["n"],
+                       short=lambda v: v)
+    return row
+
+
 def _types(s):
     return hbars("Closed tasks by type", None, sorted(s["types"].items(), key=lambda kv: -kv[1]))
 
@@ -524,6 +546,28 @@ PAGES = [
           "shows the count and the kind most need; the MCP <code>proof</code> tool gives Claude Desktop and other "
           "agents the same rows; the exam's proof and beyond kinds count a false proof against the run.</p>"),
          ("chart", _proof)]},
+    {"slug": "self-running", "nav": "Self-running", "title": "Work starts by itself, and it is scored",  # T-2364
+     "desc": "Triggers, installs waiting for your yes, lanes that recover, self-fixes on trial and predictions, each "
+             "measured against a baseline.",
+     "lede": "Foreman starts work nobody asked for: a red build, a new issue, a file that changed, its own repeated "
+             "failures. Each source is scored, each recovery logged, each guess held to a naive baseline.",
+     "blocks": [
+         ("text", "Triggers", "<p>Every source that files tasks is a row in <code>fm triggers</code>: how often it "
+          "fired, its precision (the share of its tasks that got done) and its route: the inbox, the queue, a builder "
+          "lane, or muted. <code>fm night --tick</code> is the model-free pass that runs them: standing orders, the "
+          "cached CI result, and the CI check or a repo's issues only where you said yes.</p>"),
+         ("text", "Installs and recoveries", "<p>An install the work needs waits for your yes, and the timers that "
+          "run the tick install only after it. A builder lane that stops (killed, at the usage wall, hung, clashing "
+          "with main, red at merge) is recovered by its cause with <code>fm lane recover</code>, at most twice before "
+          "a person looks.</p>"),
+         ("text", "Self-fixes and predictions", "<p>A fix Foreman makes to its own repeated failure is a trial, "
+          "graded on whether the failure stayed gone. Its guesses at your next request and at effort are scored in "
+          "<code>fm outcomes --predictions</code> against a naive baseline; one that trails the baseline over 20 tries "
+          "is muted.</p>"),
+         ("text", "Staying lean", "<p>Each generation records its footprint when it starts; the lean ratchet fails "
+          "a generation that ends bigger than it began, and the self-change gate refuses a merge that grows the hooks, "
+          "the context or the verbs with nothing cut to pay for it.</p>"),
+         ("chart", _self_running)]},
     {"slug": "guard", "nav": "The guard", "title": "A guard built for bypass mode",
      "desc": "Every command and edit is read before it runs; dangerous ones are refused and destructive git saves your work first.",
      "lede": "Foreman is meant to run without permission prompts, so the brake has to be real: it reads every Bash "
