@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-01T17:36:44Z",
+ "updated": "2026-11-01T17:41:46Z",
  "rev": "5e4f5355",
  "capabilities": [
   {
@@ -1869,8 +1869,8 @@
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 2,
-       "current": "red tests for the four rules"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2487",
@@ -2096,7 +2096,7 @@
     {
      "id": "T-2462",
      "title": "CI failed on this branch: run 41288508894",
-     "status": "blocked",
+     "status": "dropped",
      "type": "FIX",
      "tier": "M",
      "steps": 0,
