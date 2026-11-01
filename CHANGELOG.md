@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Genesis runs a cross-cutting review each generation, after the Mission critiques and before the sweep. A cold reader on a stronger model than the Missions used sees only the generation's diff, exam lines, outcomes and friction. It answers what got worse, what grew without earning it, what is measured wrong, what is presented ahead of its proof, and what a demanding user would complain about first. Findings with no file or number from those inputs are dropped. Each kept one becomes a task, a top gap in the next Seed, or a dismissal with its reason, and the sweep stays red until every one is handled.
 - Past 80% weekly usage, while a gate runs in the background, the Stop drive offers a side task as prep in the scratchpad instead of a builder lane, since economy mode allows no subagents.
 - `fm doctor` has a self-fixes line: how many of the self-fix trials that closed in the last 7 days held and how many did not, or none. It warns only when one did not hold.
 - Model layer surfaces: other agents can ask the model layer through a `decide` MCP tool (booked apart from Foreman's own uses), `fm doctor` lists the model backends it can reach and which uses are live, the AGENTS.md block says a model's answer advises and a run decides, and the site has a Model layer page with the newest exam replay.

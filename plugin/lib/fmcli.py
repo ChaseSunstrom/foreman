@@ -7532,7 +7532,7 @@ def _build_parser(only=None):
             "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
     s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish", "check", "step",
                                                  "draft", "spec", "select", "confirm", "seed", "drift", "sweep", "exam", "frontier",
-                                                 "novelty", "grow", "steer"))
+                                                 "novelty", "grow", "steer", "review"))
     s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; live: on|off; export: the folder "
                                           "for genesis.json and the docs (site/genesis here); draft: the goal line (none: "
                                           "a whole gen-0 anyway); select/seed/drift/sweep: the generation N")
@@ -7553,6 +7553,8 @@ def _build_parser(only=None):
     s.add_argument("--model", help="exam: the child author's model (default sonnet)")
     s.add_argument("--lang", help="exam: comma list of languages to draw projects in (default all six)")
     s.add_argument("--task", help="live on: the task whose publish grant switches it on (default: the active task)")
+    s.add_argument("--handle", metavar="K=HOW", help="review: mark finding K as gap (the next Seed's top gaps) or "
+                                                    "'dismissed: <reason>'; its filed task is dropped (T-2501)")
     s.add_argument("--settle", action="store_true", help="publish: wait out the rest of the window first (the detached "
                                                          "publish a tower change starts)")
     s = add("find", lazy("fmfind", "cmd_find"), tier=("Finding your way", 457), help="deterministic finders over a tree: "

@@ -1537,10 +1537,20 @@ def line(run, gen, train, holdout=(), agent="foreman", cost=1.0):
 
 
 def selected(p, *gens):
-    """T-2163: what fm genesis select leaves in the ledger, for tests that put their own lineage text."""
+    """T-2163: what fm genesis select leaves in the ledger, for tests that put their own lineage text; and (T-2501) a
+    review with no finding, the stage after it, so a fixture past selection is past the review too."""
     import fmgenesis
     for n in gens:
         tower_file(fmgenesis.home(p), f"gen-{n}/select.md", f"# Select\n\nGen: {n}\nVerdict: keep\n")
+    reviewed(p, *gens)
+
+
+def reviewed(p, *gens, rows=(), model="fable", missions="Opus 5.5"):
+    """T-2501: what fm genesis review leaves (rows: dicts with key, ground, claim, handled)."""
+    import fmgenesis
+    for n in gens:
+        tower_file(fmgenesis.home(p), f"gen-{n}/review.md",
+                   fmgenesis._review_text(n, model, missions, "0" * 64, list(rows), 0))
 
 
 NY = ("# Not yet\n\n## Self-hosted model router\n- blocker: no local model\n- tried: ollama probe; llama.cpp spike\n"
@@ -1795,9 +1805,12 @@ class GenesisSelect(ForemanTestCase):
                                      "doesn't use what Foreman built"])
         self.put("lineage.md", "# Lineage\n\n## gen-1\n- baseline: first\n- seed base: gen-1\n\n"
                                "## gen-2\n- kept: closed more\n- seed base: gen-2\n")
+        reviewed(self.p, 2, rows=[{"key": "complaint", "ground": "fm next", "claim": "says too much", "handled": "gap"}])
         fmgenesis.seed(self.p, 3)
         text = self.read("gen-3/seed.md")
         top = text.split("## What this generation is for", 1)[1].split("## Missions", 1)[0]
+        self.assertTrue(top.strip().startswith("Top gap (cross-cutting review): what a demanding user would complain "
+                                               "about first: says too much (fm next)"), top)  # T-2501: before all else
         self.assertIn("Top gap: finders found 5/6 train defects on r1 where foreman found 2/6", top)
         self.assertNotIn("held-out", top)  # held-out results never reach a Mission
         self.assertNotIn("r2", top)
@@ -3673,3 +3686,118 @@ class JudgmentScore(ForemanTestCase):
         self.assertTrue({"exists", "ambiguous", "race"} <= set(rows[2]["kinds"]), rows[2]["kinds"])
         self.assertTrue({"fork", "door", "unsure", "clean"} <= set(rows[8]["kinds"]), rows[8]["kinds"])
         self.assertNotEqual(rows[8]["state"], "no exam kind")
+
+
+class GenerationReview(ForemanTestCase):
+    """T-2501 (the user's standing rule of 2026-11-01, part 1): after the critiques and before the seed, one cold reviewer
+    on a stronger model than the Missions', blind to them, reads only the generation's diff, exam lines, outcomes and
+    friction; each grounded finding becomes a task, a top gap or a dismissal with a reason, and the sweep checks it."""
+    REPLY = ("FINDING: worse | slow.py | the new loop is quadratic\n"
+             "FINDING: complaint | 4242 | invented number, not in the inputs\n"
+             "FINDING: unearned | no ground at all | vague\n"
+             "FINDING: praise | slow.py | not one of the five questions\n"
+             "FINDING: unproven | README.md | the README claims a pass no exam line shows\n")
+
+    def setUp(self):
+        super().setUp()
+        import subprocess
+        import time
+        import fmcore as c
+        import fmgenesis
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        self.tower = fmgenesis.home(self.p)
+        fmgenesis.init(self.p, GEN0.encode())
+        now = time.time()
+        tower_file(self.tower, "gen-1/seed.md", "# Seed\ngen-0\nNo Missions this generation.\n")
+        os.utime(os.path.join(self.tower, "gen-1", "seed.md"), (now + 30, now + 30))  # after the first commit
+        tower_file(self.tower, "gen-1/mission-x.md", "# Mission\nTask: T-0001\nSECRETMISSIONWORD\n")
+        tower_file(self.tower, "gen-1/critique-x.md", "# Critique\nSECRETCRITIQUEWORD\n")
+        for name, text in (("slow.py", "def f(xs):\n    return [x for x in xs for y in xs]\n"), ("README.md", "It passes.\n")):
+            with open(os.path.join(self.repo, name), "w") as f:
+                f.write(text)
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        later = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now + 60))
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "T-0009: add slow.py"], check=True,
+                       env=dict(os.environ, GIT_COMMITTER_DATE=later, GIT_AUTHOR_DATE=later))
+
+    def run_with(self, reply):
+        seen = {}
+
+        def run(feature, system, prompt, model, timeout, **kw):
+            seen.update(feature=feature, system=system, prompt=prompt, model=model)
+            return reply
+        return seen, run
+
+    def test_the_inputs_are_the_diff_exam_outcomes_and_friction_and_nothing_the_missions_wrote(self):
+        import fmgenesis
+        got = fmgenesis._review_inputs(self.p, 1)
+        self.assertEqual(set(got), {"diff", "exam", "outcomes", "friction"})
+        self.assertIn("slow.py", got["diff"])
+        self.assertIn("T-0009: add slow.py", got["diff"])
+        text = json.dumps(got)
+        for word in ("SECRETMISSIONWORD", "SECRETCRITIQUEWORD"):
+            self.assertNotIn(word, text)
+
+    def test_review_keeps_grounded_findings_on_a_stronger_model_and_files_each_once(self):
+        import fmcore as c
+        import fmgenesis
+        c.log_event(self.p, "task_done", task="T-0001", data={"model": "Opus 5.5"})
+        seen, run = self.run_with(self.REPLY)
+        r = fmgenesis.review(self.p, 1, run=run)
+        self.assertEqual((seen["model"], r["model"], r["missions"]), ("fable", "fable", "Opus 5.5"))  # one rank above
+        self.assertIn("slow.py", seen["prompt"])
+        self.assertNotIn("SECRETMISSIONWORD", seen["prompt"] + seen["system"])
+        for key in fmgenesis.REVIEW_KEYS:
+            self.assertIn(key, seen["system"])
+        self.assertEqual([(x["key"], x["ground"]) for x in r["findings"]], [("worse", "slow.py"), ("unproven", "README.md")])
+        self.assertEqual(r["dropped"], "3")  # an invented number, no ground, and a key that isn't a question
+        self.assertEqual(len(r["tasks"]), 2)
+        self.assertEqual([x["handled"] for x in r["findings"]], r["tasks"])
+        self.assertIn("quadratic", c.find_brief(self.p, r["tasks"][0]).section("Raw request"))
+        self.assertEqual(fmgenesis.review(self.p, 1, run=lambda *a, **k: self.fail("no second model call"))["tasks"], [])
+        with self.assertRaises(ValueError):  # only its own command writes it
+            fmgenesis.put(self.p, "gen-1/review.md", "# forged\n")
+
+    def test_handle_marks_a_gap_or_a_dismissal_with_a_reason_and_drops_the_filed_task(self):
+        import fmcore as c
+        import fmgenesis
+        r = fmgenesis.review(self.p, 1, run=self.run_with(self.REPLY)[1])
+        first, second = r["tasks"]
+        with self.assertRaises(ValueError):
+            fmgenesis.review_handle(self.p, 1, "2=dismissed:")  # no reason
+        fmgenesis.review_handle(self.p, 1, "1=gap")
+        fmgenesis.review_handle(self.p, 1, "2=dismissed: the README line names the exam run that shows it")
+        self.assertEqual({c.find_brief(self.p, t).status for t in (first, second)}, {"dropped"})
+        self.assertEqual(fmgenesis._review_gaps(self.p, 1), ["what got worse: the new loop is quadratic (slow.py)"])
+        bad, good = fmgenesis._review_row(self.p, 1)
+        self.assertEqual(bad, [])
+
+    def test_the_sweep_row_is_red_without_a_review_with_a_weaker_reviewer_or_a_bare_finding(self):
+        import fmgenesis
+        self.assertIn("no gen-1/review.md", fmgenesis._review_row(self.p, 1)[0][0])
+        reviewed(self.p, 1, model="sonnet", missions="Opus 5.5")
+        self.assertIn("isn't stronger", fmgenesis._review_row(self.p, 1)[0][0])
+        reviewed(self.p, 1, model="fable", missions="Fable 5.1")  # the strongest family reviews its own kind
+        self.assertEqual(fmgenesis._review_row(self.p, 1)[0], [])
+        reviewed(self.p, 1, rows=[{"key": "worse", "ground": "slow.py", "claim": "x", "handled": ""},
+                                  {"key": "worse", "ground": "slow.py", "claim": "y", "handled": "T-9999"},
+                                  {"key": "worse", "ground": "slow.py", "claim": "z", "handled": "later"}])
+        bad = fmgenesis._review_row(self.p, 1)[0]
+        self.assertEqual(len(bad), 3, bad)
+        rows = {x["check"]: x for x in fmgenesis.sweep(self.p, 1)["rows"]}
+        self.assertFalse(rows["cross-cutting review"]["ok"])
+
+    def test_step_runs_the_review_after_selection_and_before_the_sweep(self):
+        import fmgenesis
+        tower_file(self.tower, "lineage.md", "# Lineage\n\n## gen-1\n- baseline\n")
+        tower_file(self.tower, "gen-1/critique-x.md", "# Critique\nok\n")
+        tower_file(self.tower, "gen-1/mission-x.md", "# Mission\n")
+        tower_file(self.tower, "gen-1/drift.md", "# Drift\n\nVerdict: clean\n")
+        later = os.path.getmtime(os.path.join(self.tower, "gen-1", "seed.md")) + 60  # drift ran after the seed
+        os.utime(os.path.join(self.tower, "gen-1", "drift.md"), (later, later))
+        tower_file(self.tower, "gen-1/select.md", "# Select\n\nGen: 1\nVerdict: keep\n")
+        s = fmgenesis.step(self.p)
+        self.assertEqual((s["stage"], s["command"]), ("review", "fm genesis review 1"), s)
+        reviewed(self.p, 1)
+        self.assertEqual(fmgenesis.step(self.p)["stage"], "sweep")
