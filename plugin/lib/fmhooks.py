@@ -4153,10 +4153,14 @@ def _drive(p, sd, briefs, pl, g):
         if _headless() or d.get("count", 0) >= DRIVE_MAX:
             return None
         offered = d.get("offered") or []
+        made, st = set(d.get("made") or []), {b.id: b.status for b in briefs}  # T-2513: "id:status" offered this
+        # session: each stage of a task (a captured one's plan, a planned one's draft) is offered once per session
+        skip = offered + [i for i, s in st.items() if f"{i}:{s}" in made]
         pace = _pace(p)  # T-0449: while usage runs ahead of pace, no side work (each would be a builder or a plan)
-        offer = _side_work(sd, briefs, work, full, offered, p) if len(offered) < OFFERS_MAX and not pace else None
+        offer = _side_work(sd, briefs, work, full, skip, p) if len(offered) < OFFERS_MAX and not pace else None
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
-            d.update(offered=offered + [offer["id"]], count=d.get("count", 0) + 1, marks=_marks(p))
+            d.update(offered=offered + [offer["id"]], made=sorted(made | {f"{offer['id']}:{st.get(offer['id'])}"}),
+                     count=d.get("count", 0) + 1, marks=_marks(p))
             how = _start_how(offer, lanes_free(briefs, p), _economy())
             _event({"kind": "drive_offer", "session_id": sid, "project": p.slug, "task": work["id"],
                     "offer": offer["id"], "how": how})
