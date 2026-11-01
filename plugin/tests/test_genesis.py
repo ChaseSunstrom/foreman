@@ -708,6 +708,20 @@ class GenesisCheck(ForemanTestCase):
         code, res = self.check()
         self.assertIn("C: not retried in gen-2", "\n".join(res["not_yet"]["problems"]))
 
+    def test_an_unevaluated_candidate_needs_no_tries_until_it_is_evaluated(self):
+        # T-2437 (user steer 2026-10-31): candidates to evaluate go in the ledger, not as assumptions; they have no tries
+        self.put("coverage.md", grid("1. Initiative") + grid("2. Exhaustive thinking"))
+        self.put("not-yet.md", "# Not yet\n\n## selfjev-4b\n- blocker: unevaluated: no exam arm has run it yet\n"
+                               "- unblocks-with: an exam arm that beats the path it replaces\n- added: gen-1\n\n"
+                               "## Von\n- blocker: unevaluated\n- added: gen-1\n")
+        code, res = self.check()
+        probs = "\n".join(res["not_yet"]["problems"])
+        self.assertNotIn("selfjev-4b", probs)  # a candidate: no tries owed until it is evaluated
+        self.assertIn("Von: no unblocks-with", probs)  # it still says what would unblock it
+        self.assertNotIn("Von: tried", probs)
+        self.put("not-yet.md", "# Not yet\n\n## jeff\n- blocker: slow on this box\n- unblocks-with: a GPU\n- added: gen-1\n")
+        self.assertIn("jeff: tried 0 approaches", "\n".join(self.check()[1]["not_yet"]["problems"]))  # evaluated: tries owed
+
     def test_an_empty_field_never_borrows_the_next_line_and_tries_must_differ(self):
         self.put("coverage.md", grid("1. Initiative") + grid("2. Exhaustive thinking"))
         self.put("not-yet.md", "# Not yet\n\n## F\n- blocker:\n- notes: x\n- tried: a; b\n- unblocks-with: y\n- added: gen-1\n\n"

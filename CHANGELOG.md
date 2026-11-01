@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Genesis's not-yet ledger can hold candidates to evaluate: an item whose blocker says unevaluated owes no tries until an exam runs it. Gen 2 opens with a Model layer Mission, the layer has its own coverage area, and selfjev-4b, jeff, Jevlike and Von wait in the ledger as candidates.
 - A Genesis seed now ranks the §2 capabilities ahead of other areas and writes its own order of work, with independent Missions in parallel lanes. When its read fails it keeps the draft so it can be revised.
 - The Genesis tower advances itself: a red sweep files one fix task per red line and runs again once they close, and a clean sweep writes the next generation's Seed right away.
 - A Genesis generation no longer fails on empty coverage cells: it fails only on templated, duplicated or ungrounded cells, and its empty cells go to the next Seed to fill first. The whole run ends only when no cell is empty.
