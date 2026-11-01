@@ -1637,6 +1637,14 @@ class SelfChangeGate(ForemanTestCase):
         rows = self.gate(bench=self.bench_pair(140.0, 152.0))  # +8.6%, but past its 150 ms budget
         self.assertTrue(any("budget" in r for r in rows), rows)
 
+    def test_a_hook_that_blocks_without_burning_cpu_refuses_on_a_loaded_bench_too(self):
+        import fmselfgate as g  # T-2363: the lean mutation set's sleep in a hook passed a loaded bench (CPU basis only)
+        base = {"Stop": {"p95": 40.0, "cpu_p95": 30.0, "load": 2.0, "budget": 150}}
+        rows = g._slower(base, {"Stop": {"p95": 290.0, "cpu_p95": 31.0, "load": 2.0, "budget": 150}})
+        self.assertIn("Stop", rows)
+        self.assertIn("40.0 -> 290.0", rows["Stop"])
+        self.assertEqual(g._slower(base, {"Stop": {"p95": 70.0, "cpu_p95": 31.0, "load": 2.0, "budget": 150}}), {})
+
     def test_a_rise_that_doesnt_hold_on_a_second_bench_is_noise(self):
         self.branch({"plugin/hooks/hook": "#!/bin/sh\n"})
         self.assertEqual(self.gate(bench=self.bench_pair(100.0, 130.0, again=(100.0, 101.0))), [])
