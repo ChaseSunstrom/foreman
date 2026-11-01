@@ -213,6 +213,18 @@ class GrantQueue(HookCase):
         stop = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "done"})
         self.assertIn("grant request", json.dumps(parse(stop) or {}) + stop.stderr + stop.stdout)
 
+    def test_the_waiting_yeses_rank_by_the_open_work_each_unblocks(self):  # T-2367
+        self.later("a@m", "needs a")  # older, frees only its own task
+        other = self.task("Other", focus=False)
+        self.fm("ask", other, "plugin", "--pin", "b@m", "--why", "needs b", "--later")
+        first = self.task("Waits on other", focus=False)
+        self.fm("task", "set", first, f"depends_on=[{other}]")
+        self.fm("task", "set", self.task("Waits on that", focus=False), f"depends_on=[{first}]")  # transitively
+        self.assertEqual([b.id for b, _ in fmgrants.ranked(self.p)], [other, self.tid])
+        self.assertTrue(fmgrants.line(self.p).split(": ", 1)[1].startswith(other), fmgrants.line(self.p))
+        todo = json.loads(self.fm("todo", "--json").stdout)
+        self.assertEqual([x["task"] for x in todo["todo"] if x["kind"] == "grant"], [other, self.tid])
+
     def test_ask_later_refuses_what_the_normal_ask_refuses(self):
         self.assertNotEqual(self.fm("ask", self.tid, "plugin", "--pin", "nope@nowhere", "--why", "w", "--later",
                                     check=False).returncode, 0)

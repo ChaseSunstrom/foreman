@@ -4035,7 +4035,7 @@ def cmd_todo(args):
     import time
     import fmgrants
     briefs = c.load_briefs(p)
-    for b, d in fmgrants.queued(p, briefs):  # T-2374: queued grants first, with what a yes unblocks; they never expire
+    for b, d in fmgrants.ranked(p, briefs):  # T-2374: queued grants first, with what a yes unblocks; they never expire
         todo.append({"kind": "grant", "task": b.id, "text": fmgrants.text(d), "unblocks": fmgrants.unblocks(p, b, briefs),
                      "command": fmgrants.command(b, d)})
     for a in c.read_meta(p).get("pending_approvals") or []:

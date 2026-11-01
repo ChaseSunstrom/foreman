@@ -245,7 +245,7 @@ def _call(p, name, args):
             import fmgrants
             briefs = c.load_briefs(p)
             return json.dumps([{"task": b.id, "text": fmgrants.text(d), "unblocks": fmgrants.unblocks(p, b, briefs)}
-                               for b, d in fmgrants.queued(p, briefs)], ensure_ascii=False), False
+                               for b, d in fmgrants.ranked(p, briefs)], ensure_ascii=False), False
         if name == "calibration":  # T-2344: fm outcomes --judgment's JSON without its writes
             import fmoutcomes
             return json.dumps(fmoutcomes.snapshot(p), ensure_ascii=False), False

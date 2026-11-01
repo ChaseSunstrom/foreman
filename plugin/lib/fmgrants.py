@@ -156,9 +156,31 @@ def unblocks(p, b, briefs=None):
     return f"{b.id} {c.fit(b.title, 60)}" + (f" and {', '.join(waiting[:5])} waiting on it" if waiting else "")
 
 
+def _freed(b, briefs):
+    """T-2367: the open tasks a yes on b frees: b and every open task waiting on it, transitively."""
+    deps = {}
+    for x in briefs:
+        if x.status not in c.CLOSED:
+            for d in x.meta.get("depends_on") or []:
+                deps.setdefault(d, []).append(x.id)
+    seen, todo = {b.id}, [b.id]
+    while todo:
+        for t in deps.get(todo.pop(), []):
+            if t not in seen:
+                seen.add(t)
+                todo.append(t)
+    return seen
+
+
+def ranked(p, briefs=None):
+    """T-2367: queued(), the yes that frees the most open work first; oldest first on a tie (the sort is stable)."""
+    briefs = c.load_briefs(p) if briefs is None else briefs
+    return sorted(queued(p, briefs), key=lambda x: -len(_freed(x[0], briefs)))
+
+
 def line(p, briefs=None):
     """One line for fm next, the Stop hook and fm run's end: how many wait on the user, or ''."""
-    q = queued(p, briefs)
+    q = ranked(p, briefs)
     return (f"{len(q)} grant request{'s' if len(q) != 1 else ''} queued for the user (fm todo): "
             + ", ".join(dict.fromkeys(f"{b.id} {d.get('pin') or d.get('what') or d['cats'][0]}" for b, d in q[:5]))
             + (" …" if len(q) > 5 else "")) if q else ""
