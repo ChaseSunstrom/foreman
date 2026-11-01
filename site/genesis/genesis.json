@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T06:49:40Z",
- "rev": "2976bb13",
+ "updated": "2026-11-01T07:05:35Z",
+ "rev": "3be300c5",
  "capabilities": [
   {
    "n": 1,
@@ -15527,12 +15527,12 @@
  },
  "not_yet": 0,
  "not_yet_open": 0,
- "unproven": 1032,
+ "unproven": 1033,
  "unproven_kinds": {
-  "meaning": 573,
+  "meaning": 574,
   "research-uncited": 31,
   "typed": 46,
-  "red": 42,
+  "red": 43,
   "perf-typed": 52,
   "docs": 576,
   "ui-unshot": 57,
