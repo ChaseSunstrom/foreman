@@ -310,6 +310,10 @@ def tick(p, fetch_ci=None):
                 fmforesight.prediction_tick(p)
             except Exception as e:  # the book never costs the tick
                 res["notes"].append(f"predictions: {c.fit(c.plain(str(e)), 120)}")
+            try:  # T-2407: the top prediction planned ahead while it beats its baseline (a plan, never code)
+                fmdraft.ahead(p)
+            except Exception as e:
+                res["notes"].append(f"draft ahead: {c.fit(c.plain(str(e)), 120)}")
             try:
                 with open(path, encoding="utf-8") as f:
                     seen = json.load(f)

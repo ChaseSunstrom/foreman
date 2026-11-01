@@ -203,6 +203,13 @@ def _create(p, title, type, tier, status, raw=None, scope=(), depends=(), source
     return b
 
 
+def _adopt_draft(p, b, source):
+    """T-2407: a waiting draft-ahead plan this user request covers is attached as 'Drafted ahead' (one stat when none)."""
+    import fmdraft
+    plan = fmdraft.adopt(p, b, source)
+    return mutate(p, b.id, lambda x: x.set_section("Drafted ahead", plan), "draft_adopted")[0] if plan else b
+
+
 def _title(text):
     first = text.strip().splitlines()[0] if text.strip() else "untitled"
     # T-0334: a ref that leads or ends the line is a dependency marker; one inside the sentence is part of it
@@ -287,6 +294,7 @@ def cmd_capture(args):
                     priority="urgent" if args.urgent else "normal", explore=explore)
         c.log_event(p, "capture", task=b.id, data={"source": args.source, "type": type_}, session=session())
         c.regen_views(p)
+    b = _adopt_draft(p, b, args.source)
     _note_escapes(p, b, args.text)
     out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source})."
         + near[1](b.id) + _covered_note(p, b.id, text) + _reask_note(p, b.id, text))
@@ -3200,6 +3208,7 @@ def task_new(p, args):
                 b.add_step(text)
         b, _ = mutate(p, b.id, plan, "task_plan", {"ac": len(args.ac or []), "step": len(args.step or [])})
         _lint_verify(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
+    b = _adopt_draft(p, b, args.source)
     if not args.from_id:
         _note_escapes(p, b, " ".join(filter(None, [args.title, args.raw])))
     out(args, c.brief_summary(b), f"{b.id} [{b.type} {b.tier}] {b.title} — planned ({b.path}){reused}"
