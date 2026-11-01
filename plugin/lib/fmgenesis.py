@@ -3415,7 +3415,9 @@ def review(p, n, model=None, run=None):
         rows, dropped = [], 0
         for key, ground, claim in FINDING.findall(reply or ""):
             ground = ground.strip().strip("`'\"")
-            if key in REVIEW_KEYS and len(ground) >= 2 and re.search(r"[\d/.]", ground) and ground in blob:
+            # T-2506: a path (/ or .) or a number of 3+ digits; '10' occurs in almost any input, so it grounds nothing
+            path_or_number = re.search(r"[/.]", ground) or len(re.sub(r"\D", "", ground)) >= 3
+            if key in REVIEW_KEYS and len(ground) >= 2 and path_or_number and ground in blob:
                 rows.append({"key": key, "ground": ground, "claim": claim})
             else:
                 dropped += 1

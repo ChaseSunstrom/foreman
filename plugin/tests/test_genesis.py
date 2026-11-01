@@ -3795,6 +3795,14 @@ class GenerationReview(ForemanTestCase):
         with self.assertRaises(ValueError):  # only its own command writes it
             fmgenesis.put(self.p, "gen-1/review.md", "# forged\n")
 
+    def test_a_short_number_grounds_nothing_but_a_path_or_a_long_number_does(self):  # T-2506
+        import fmgenesis
+        reply = ("FINDING: worse | 10 | a two-digit number occurs in almost any input\n"
+                 "FINDING: worse | slow.py | a path the diff holds\n")
+        r = fmgenesis.review(self.p, 1, run=self.run_with(reply)[1])
+        self.assertEqual([x["ground"] for x in r["findings"]], ["slow.py"])
+        self.assertEqual(r["dropped"], "1")
+
     def test_handle_marks_a_gap_or_a_dismissal_with_a_reason_and_drops_the_filed_task(self):
         import fmcore as c
         import fmgenesis
