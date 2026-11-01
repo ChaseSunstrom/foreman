@@ -435,6 +435,48 @@ class Decide(Base):
         self.assertEqual([(b["name"], b["local"]) for b in reg][:2], [("near", True), ("far", False)])
 
 
+class ModelRules(unittest.TestCase):
+    """T-2486: the user's four model rules (T-2437), each a check that fails when it breaks."""
+    LIB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
+
+    def source(self, name):
+        with open(os.path.join(self.LIB, name), encoding="utf-8") as f:
+            return f.read()
+
+    def test_models_advise_and_proof_decides_no_gate_reaches_the_model_layer(self):
+        import ast
+        for mod in ("fmguard.py", "fmcore.py"):  # the guard and the evidence core never import it at all
+            tree = ast.parse(self.source(mod))
+            names = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+            names |= {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+            self.assertNotIn("fmmodels", names, mod)
+        tree = ast.parse(self.source("fmcli.py"))
+        gates = {"cmd_check", "cmd_gates", "task_finish", "task_done_in"}
+        for fn in (n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in gates):
+            seg = ast.get_source_segment(self.source("fmcli.py"), fn)
+            self.assertNotRegex(seg, r"fmmodels|\bdecide\(", fn.name)  # ponytail: direct calls only, not an import walk
+
+    def test_the_model_layer_downloads_and_installs_nothing_itself(self):
+        # installs and model downloads go through the install queue (fm ask --later) for the user's yes
+        self.assertNotRegex(self.source("fmmodels.py"),
+                            r"(?i)urlretrieve|/api/pull|\bollama pull\b|\bpip install\b|snapshot_download|hf_hub")
+
+    def test_a_use_goes_live_only_by_a_decision_row_citing_its_exam(self):
+        import types
+        d = tempfile.mkdtemp()
+        p = types.SimpleNamespace(dir=d, root=d, slug="t")
+        rows = lambda *xs: open(os.path.join(d, "decisions.md"), "w").write(  # noqa: E731
+            "| Date | Decision | Why | Revisit |\n|---|---|---|---|\n" + "".join(f"| 2026-11-01 | {x} | why |  |\n" for x in xs))
+        self.assertFalse(m.live(p, "intake-type"))  # no row: shadow
+        rows("model-live: intake-type, no numbers given")
+        self.assertFalse(m.live(p, "intake-type"))  # a switch must cite its exam run
+        rows("model-live: intake-type: exam s30-001 beat the rule path, 81% against 74% on held-out")
+        self.assertTrue(m.live(p, "intake-type"))
+        self.assertFalse(m.live(p, "lead-triage"))  # per use
+        rows("model-live: intake-type: exam s30-001, 81% against 74%", "model-shadow: intake-type: calibration drifted")
+        self.assertFalse(m.live(p, "intake-type"))  # the newest row for the use wins
+
+
 class ExtractJson(unittest.TestCase):
     def test_fenced(self):
         self.assertEqual(m.extract_json('Sure:\n```json\n{"a": 1}\n```\nthanks'), {"a": 1})
