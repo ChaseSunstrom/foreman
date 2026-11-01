@@ -373,3 +373,21 @@ class NoProcfs(HookCase):  # T-2492: macOS has no /proc, so a process's start ti
             self.assertEqual(fmbus._proc(424242), (1, "Sat Nov  1 12:00:00 2026"))
         self.assertEqual(len(run.call_args_list), 2)
         self.assertGreater(run.call_args_list[1].kwargs["timeout"], run.call_args_list[0].kwargs["timeout"])
+
+    def comm(self, *outs):  # T-2512: _comm on a host without procfs, ps answering outs in turn
+        import subprocess
+        from unittest import mock
+        import fmbus
+        real_isdir = os.path.isdir
+        done = [subprocess.CompletedProcess(["ps"], 0, stdout=o) for o in outs]
+        with mock.patch.object(fmbus.os.path, "isdir", side_effect=lambda x: False if x == "/proc" else real_isdir(x)), \
+                mock.patch("builtins.open", side_effect=OSError("no procfs")), \
+                mock.patch.object(fmbus.subprocess, "run", side_effect=done) as run:
+            return fmbus._comm(424242), len(run.call_args_list)
+
+    def test_a_shebang_script_named_claude_counts_as_claude(self):  # T-2512: macOS ps names it by its interpreter
+        self.assertEqual(self.comm("/bin/sh\n", "/bin/sh /var/folders/x/bin/claude /usr/bin/python3 fm lane brief T-1\n"),
+                         ("claude", 2))
+        self.assertEqual(self.comm("node\n", "node --no-warnings /usr/local/bin/claude --resume\n"), ("claude", 2))
+        self.assertEqual(self.comm("/bin/bash\n", "/bin/bash ./build.sh claude\n"), ("bash", 2))
+        self.assertEqual(self.comm("/Users/me/.local/bin/claude\n"), ("claude", 1))
