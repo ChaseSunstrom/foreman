@@ -7999,8 +7999,10 @@ def _build_parser(only=None):
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent; "
                                                        "merge <id>: bring a builder's finished commits in; "
                                                        "resume <id>: take back a stopped builder's work; "
-                                                       "recover <id>: the one recovery for why its lane stopped (T-2354)")
-    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "recover", "race", "pick"])
+                                                       "recover <id>: the one recovery for why its lane stopped (T-2354); "
+                                                       "stats: builder landing rate by brief size (T-2368)")
+    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "recover", "race", "pick",
+                                      "stats"])
     s.add_argument("--agent-stopped", action="store_true", help="recover: its agent was stopped (TaskStop), so a "
                                                                 "stalled lane is free to take back (T-2354)")
     s.add_argument("--score", action="store_true", help="race: run every side's criteria in its worktree, cross-examine "

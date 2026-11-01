@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm lane stats` shows how often builder lanes landed, by the size of the brief each builder got (up to 4k, 8k, 16k characters, or more). `fm lane brief` now records each brief's size; older briefs are sized from their file when it's still on disk. On this repo, briefs up to 8k characters landed 96–98% of the time and briefs of 8–16k landed 57%.
 - `fm outcomes --judgment` adds an interim read. Survival takes 30 days to score a task, so the read shows, per stated-confidence bucket, the bets on tasks closed 7 or more days ago and how many have held so far. It is labeled as never scored and moves no bar. The MCP `calibration` tool returns it, and the site's Judgment page plots the share held per bucket, with interim rows marked.
 - While background work runs, the Stop drive offers each stage of a side task once per session: planning a captured task, then drafting a planned one. Before, every change of active task started the offers over, so the same draft was asked for again.
 - On macOS, Foreman now recognizes Claude Code installed through npm. macOS names a script's process after its interpreter (`node`, `sh`), so Foreman used to miss it. The lanes drill's stand-in for Claude, a shell script, is found the same way, which fixes the macOS CI failure "builder process is not recorded".

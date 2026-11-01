@@ -128,6 +128,43 @@ def _wreck_aside(p, b, main, path, branches):
     return dest
 
 
+SIZES = ((4000, "up to 4k chars"), (8000, "up to 8k"), (16000, "up to 16k"), (None, "more"))  # T-2368
+
+
+def _brief_chars(p, path, tid, later):
+    """T-2368: an unsized brief's length from its file, only when it is this task's audits/ brief and no later brief
+    for the task overwrote it; else None."""
+    want = os.path.join(p.dir, "audits", f"{tid}.builder.md")
+    if path != want or any(x.get("event") == "lane_builder" and x.get("task") == tid for x in later):
+        return None
+    try:
+        with open(want, encoding="utf-8", errors="replace") as f:
+            return len(f.read())
+    except OSError:
+        return None
+
+
+def stats(p):
+    """T-2368: per builder-brief size, the briefs written and how many landed: a lane_merge for the task before its
+    next brief. A removed or stopped lane, or none yet, is not landed; briefs from before sizes were kept are unsized."""
+    evs = c.ledger_events(p, ("lane_builder", "lane_merge"))
+    order = [lab for _, lab in SIZES] + ["unsized"]
+    rows = {}
+    for i, e in enumerate(evs):
+        if e.get("event") != "lane_builder":
+            continue
+        nxt = next((x for x in evs[i + 1:] if x.get("task") == e.get("task")), None)
+        n = (e.get("data") or {}).get("chars")
+        if not isinstance(n, int):  # an older brief: its file, if it is still the one in audits/ (one brief per task)
+            n = _brief_chars(p, (e.get("data") or {}).get("path"), e.get("task"), evs[i + 1:])
+        size = next(lab for top, lab in SIZES if top is None or n <= top) if isinstance(n, int) else "unsized"
+        r = rows.setdefault(size, {"size": size, "briefs": 0, "landed": 0})
+        r["briefs"] += 1
+        r["landed"] += bool(nxt and nxt.get("event") == "lane_merge")
+    return [dict(r, pct=round(100 * r["landed"] / r["briefs"]))
+            for r in sorted(rows.values(), key=lambda r: order.index(r["size"]))]
+
+
 def cmd_lane(args):
     import fmcli
     p = fmcli.resolve(args)
@@ -139,6 +176,12 @@ def cmd_lane(args):
             c.update_meta(p, builders=int(args.id))
         return fmcli.out(args, {"builders": builders_cap(p)}, f"Builders at once: {builders_cap(p)} (fm lane max N, "
                          f"1 to {BUILDERS_MAX})")
+    if args.action == "stats":  # T-2368: does a long brief land worse than a short one
+        rows = stats(p)
+        return fmcli.out(args, {"stats": rows}, "\n".join(
+            f"{r['size']}: {r['landed']} of {r['briefs']} briefs landed ({r['pct']}%)" for r in rows)
+            + ("\n(unsized: a brief a later one overwrote, so that row leans toward lanes that were re-briefed)"
+               if any(r["size"] == "unsized" for r in rows) else "") or "No builder briefs on record yet.")
     if args.action == "list":
         briefs = c.load_briefs(p)
         rows, lines = [], []
@@ -1642,9 +1685,10 @@ def builder_brief(p, b, args, resume_branch=None, after=""):
                   "diff for each before you report:", *keeps, ""]
     parts.append(contract(b.id, base, p.root))
     path =os.path.join(p.dir, "audits", f"{b.id}.builder.md")
+    text = c.redact("\n".join(parts)) + "\n"
     with c.lock(p.dir):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        c.write_atomic(path, c.redact("\n".join(parts)) + "\n")
+        c.write_atomic(path, text)
 
     def mark(x):
         import fmbus
@@ -1663,7 +1707,7 @@ def builder_brief(p, b, args, resume_branch=None, after=""):
     chosen, route, probe = _route(p, b.tier, tid=b.id, racing=bool(racing))
     if getattr(args, "model", None):
         chosen, route, probe = args.model, f"--model {args.model}", False
-    fmcli.mutate(p, b.id, mark, "lane_builder", {"path": path})
+    fmcli.mutate(p, b.id, mark, "lane_builder", {"path": path, "chars": len(text)})  # T-2368: fm lane stats
     # T-1796: every builder runs on Sonnet (Opus M lanes were 22% of a week's usage); the main thread reviews either
     # T-0779: and its effort follows the tier: medium for small well-specified diffs, high for M
     model = f', model: "{chosen}", effort: "{"medium" if b.tier == "S" else "high"}"'
