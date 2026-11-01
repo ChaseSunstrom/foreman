@@ -212,6 +212,23 @@ class DoorPark(DoorBase):
         b.meta["doors"] = ["1"]  # a marked step with no way back: parked
         self.assertEqual(fmdoors.tally(b), "Doors: 1 one-way step: step 1 parked")
 
+    def test_the_final_report_prices_each_parked_door_by_days_and_what_waits_behind_it(self):
+        # T-2347 (Mission 5 inbox): fm decide --review names each parked task, how long it waited, what it blocks
+        tid = self.brief("write the summary")
+        later = self.fm_json("task", "new", "Ship the summary", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                             "--step", "s", "--depends", tid)["id"]
+
+        def park(b):
+            b.meta["doors"] = ["1"]  # a marked one-way step with no Undo line: parked
+        import fmcli
+        fmcli.mutate(self.p, tid, park, "door_gate")
+        c.log_event(self.p, "door_park", task=tid, data={"door": "one-way", "step": "write the summary"})
+        out = self.fm("decide", "--review").stdout
+        self.assertRegex(out, rf"Parked at a one-way door: {tid} \(step 1: write the summary\), 0 days, blocks {later}")
+        self.assertEqual([d["id"] for d in self.fm_json("decide", "--review")["doors_parked"]], [tid])
+        fmcli.mutate(self.p, tid, lambda b: b.meta.update(doors=[]), "door_gate")
+        self.assertNotIn("Parked at a one-way door", self.fm("decide", "--review").stdout)
+
     def test_a_snapshot_that_does_not_verify_is_not_an_undo(self):
         from unittest import mock
         import fmdoors

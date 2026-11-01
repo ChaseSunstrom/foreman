@@ -655,6 +655,24 @@ def extras(p, briefs=None):
             "doors_parked": parked}
 
 
+def priced_doors(p, briefs=None):
+    """T-2347: each open task parked at a one-way door, priced for the final report: {id, step, days, blocks}: the step,
+    days since its newest door_park event (None without one) and the open tasks that depend on it. Reads the ledger,
+    so only fm decide --review calls it (never the band)."""
+    briefs = c.load_briefs(p) if briefs is None else briefs
+    parked = [(b, c.door_park(b)) for b in briefs if b.status not in c.CLOSED]
+    parked = [(b, why) for b, why in parked if why]
+    if not parked:
+        return []
+    since = {e["task"]: e.get("ts") for e in c.ledger_events(p, ("door_park",)) if e.get("task")}
+    out = []
+    for b, why in parked:
+        days = c.age_days(since.get(b.id))
+        out.append({"id": b.id, "step": c.fit(why.split(": ", 1)[-1], 90), "days": None if days is None else int(days),
+                    "blocks": sorted(x.id for x in briefs if x.status not in c.CLOSED and b.id in c._deps(x))})
+    return out
+
+
 def snapshot(p):
     """T-2344: fm calibration's data with none of its writes (no settle, no bar move): the MCP tool and the band read it."""
     d = ledger_data(p, outcomes(p))
