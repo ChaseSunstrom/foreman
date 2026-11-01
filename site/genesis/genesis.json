@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T23:06:39Z",
- "rev": "543a8bb8",
+ "updated": "2026-11-01T23:19:18Z",
+ "rev": "353076c7",
  "capabilities": [
   {
    "n": 1,
@@ -1944,7 +1944,7 @@
       {
        "id": "T-2498",
        "title": "Interim calibration reads and reliability bins: fm outcomes --judgment adds a 7-day…",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
@@ -17995,11 +17995,11 @@
  },
  "not_yet": 4,
  "not_yet_open": 0,
- "unproven": 1049,
+ "unproven": 1047,
  "unproven_kinds": {
-  "meaning": 584,
+  "meaning": 582,
   "research-uncited": 29,
-  "typed": 43,
+  "typed": 42,
   "red": 61,
   "perf-typed": 51,
   "docs": 585,
@@ -18011,8 +18011,8 @@
  "next": {
   "stage": "build",
   "gen": 2,
-  "action": "Mission 2 (calibrated-judgment): finish T-2498",
-  "command": "fm focus T-2498",
+  "action": "Mission 2 (calibrated-judgment): finish T-2499",
+  "command": "fm focus T-2499",
   "kind": "ok"
  },
  "docs": {
