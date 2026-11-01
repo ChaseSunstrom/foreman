@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T19:08:53Z",
- "rev": "7ba4f75d",
+ "updated": "2026-11-01T19:14:29Z",
+ "rev": "f3c59a14",
  "capabilities": [
   {
    "n": 1,
@@ -1769,7 +1769,7 @@
       {
        "id": "T-2365",
        "title": "fm doctor shows one line for the last 7 days of self-fix trials: how many held and how many did not",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "S",
        "steps": 1,
@@ -17995,7 +17995,7 @@
  },
  "not_yet": 4,
  "not_yet_open": 0,
- "unproven": 1048,
+ "unproven": 1047,
  "unproven_kinds": {
   "meaning": 577,
   "research-uncited": 30,
