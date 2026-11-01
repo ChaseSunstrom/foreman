@@ -178,6 +178,12 @@ def digest(p, recheck=True):
     out["failed tool calls"] = [f"{n}× {k[0]}: {k[1]}" + (f" — e.g. {target[k]}" if target[k] else "")
                                 for k, n in fails.most_common(MAX_LINES)]
 
+    votes = collections.Counter((c.plain(str(e.get("cmd") or "")), c.plain(str(e.get("word") or "")))
+                                for e in {(e.get("cmd"), e.get("word"), e.get("session_id")): e
+                                          for e in events if e.get("kind") == "unknown_word"}.values())  # T-2382
+    out["unknown fm verbs and flags (each a session that reached for one that isn't there)"] = [
+        f"{n} session{'s' if n != 1 else ''}: fm {' '.join(x for x in k if x)}" for k, n in votes.most_common(MAX_LINES)]
+
     kinds = collections.Counter(e.get("event") for _, e in ledger)
     waits = collections.Counter(e.get("kind") for e in events if e.get("kind") == "drive_reload")  # T-0301: a wait on
     # background work is the drive working as meant (the notification resumes it), not a stop
