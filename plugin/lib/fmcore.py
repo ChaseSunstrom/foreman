@@ -3857,6 +3857,22 @@ def worked_in(p, briefs=None):
     return any(b.status in CLOSED for b in (load_briefs(p) if briefs is None else briefs))
 
 
+FOREMAN_SOURCES = ("discovered", "self", "followup", "baseline", "ci", "scout", "cross-project")
+
+
+def _round_held(p, briefs):
+    """T-2327 (user steer 2026-10-31): with fm drive --round-first on, the inbox items Foreman filed itself (FOREMAN_SOURCES)
+    wait until gen-(N+1)'s seed is filed, N the generation it was turned on in; an urgent one, or one an open task
+    depends on (it blocks a mission), still comes. Two small reads when on, one meta read when off."""
+    n = read_meta(p).get("round_first")
+    if not isinstance(n, int) or isinstance(n, bool) or n < 1 or os.path.isfile(
+            os.path.join(p.dir, "research", "genesis", f"gen-{n + 1}", "seed.md")):
+        return set()
+    wanted = {d for x in briefs if x.status not in CLOSED for d in _deps(x)}
+    return {x.id for x in briefs if x.status == "captured" and x.meta.get("source") in FOREMAN_SOURCES
+            and x.meta.get("priority") != "urgent" and x.id not in wanted}
+
+
 def _next_for(p, briefs=None):
     briefs = lane_view(load_briefs(p) if briefs is None else briefs, p.lane)  # T-0134: not another lane's work
     autonomy = "standard" if panicked() else effective_autonomy(p)
@@ -3883,8 +3899,9 @@ def _next_for(p, briefs=None):
     mine = lambda x: not (x.meta.get("confirm") and needs_approval(x)) and not (
         not p.lane and x.meta.get("builder") and x.status not in CLOSED) and not any(
         d in open_ids for d in _deps(x))
+    held = _round_held(p, briefs)  # T-2327: Foreman's own captures wait for an open Genesis round the user put first
     b = active_brief(briefs, p.lane) or next(filter(mine, order_queue(briefs)[0]), None) or \
-        next(filter(mine, rank_inbox(briefs)), None)
+        next((x for x in rank_inbox(briefs) if mine(x) and x.id not in held), None)
     if not b:
         import fmtidy  # T-0657: what a blocked task waited on may have changed since
         state = {x.id: x.status for x in briefs}

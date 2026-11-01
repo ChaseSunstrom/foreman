@@ -191,7 +191,7 @@ def degrade(p=None):
     """T-0449: why optional work (the drive's side tasks, the friction pass, brainstorm deepening) is dropped, or None:
     the pace subagents wait on, or (T-1080, given a project) its spent risk budget. Never a cap: check() still refuses
     what's over one, and required gates still run."""
-    pace = subagent_pause()
+    pace = None if p is not None and c.read_meta(p).get("pace_drops") is False else subagent_pause()  # T-2327
     if pace or p is None:
         return pace
     import fmrisk

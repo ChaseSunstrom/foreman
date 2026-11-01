@@ -109,6 +109,16 @@ class Budget(ForemanTestCase):
         self.assertEqual(out.returncode, 2)
         self.assertIn("weekly usage 78%", out.stderr)
 
+    def test_fm_drive_pace_off_drops_no_work_for_usage_pace(self):
+        import fmbudget as bud  # T-2327 (user steer 2026-10-31, 3): never skip work for budget or pace
+        self.usage(five_hour=(95, 3600))
+        p = c.find_project(self.repo)
+        self.assertIn("5-hour usage 95%", bud.degrade(p) or "")
+        self.fm("drive", "on", "--pace", "off")
+        self.assertIsNone(bud.degrade(c.find_project(self.repo)))
+        self.fm("drive", "on", "--pace", "on")
+        self.assertIn("5-hour usage 95%", bud.degrade(c.find_project(self.repo)) or "")
+
     def usage(self, **windows):
         """A statusline snapshot: window=(used %, seconds until it resets)."""
         folder = os.path.join(c.state_dir(), "sessions")
