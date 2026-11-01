@@ -63,16 +63,16 @@ Close the open coverage cells, most first, retry every not-yet item, and act on 
 
 | # | Mission file | Capabilities | Gaps closed (open cells) | Depends on |
 |---|---|---|---|---|
-| 1 | mission-calibrated-judgment.md | #8 Calibrated judgment | 62 open cells: 62 empty, 0 ideas, 0 ungrounded or templated | — |
-| 2 | mission-staying-lean-and-safe.md | #12 Staying lean and safe | 61 open cells: 61 empty, 0 ideas, 0 ungrounded or templated | — |
-| 3 | mission-self-triggering.md | #11 Self-triggering | 59 open cells: 59 empty, 0 ideas, 0 ungrounded or templated | — |
-| 4 | mission-exhaustive-thinking.md | #2 Exhaustive thinking | 58 open cells: 58 empty, 0 ideas, 0 ungrounded or templated | — |
-| 5 | mission-anticipation.md | #3 Anticipation | 58 open cells: 58 empty, 0 ideas, 0 ungrounded or templated | — |
-| 6 | mission-goal-to-finish.md | #4 Goal to finish | 58 open cells: 58 empty, 0 ideas, 0 ungrounded or templated | — |
-| 7 | mission-getting-the-tools-it-lacks.md | #5 Getting the tools it lacks | 57 open cells: 57 empty, 0 ideas, 0 ungrounded or templated | — |
+| 1 | mission-model-layer.md | Model layer (the user's gen-2 steer, T-2437) | 47 open idea cells: a decision interface on fmmodels, backends cheapest first, each use kept only if its exam beats the path it replaces | — |
+| 2 | mission-calibrated-judgment.md | #8 Calibrated judgment | 62 open cells: 62 empty, 0 ideas, 0 ungrounded or templated | — |
+| 3 | mission-staying-lean-and-safe.md | #12 Staying lean and safe | 61 open cells: 61 empty, 0 ideas, 0 ungrounded or templated | — |
+| 4 | mission-self-triggering.md | #11 Self-triggering | 59 open cells: 59 empty, 0 ideas, 0 ungrounded or templated | — |
+| 5 | mission-exhaustive-thinking.md | #2 Exhaustive thinking | 58 open cells: 58 empty, 0 ideas, 0 ungrounded or templated | — |
+| 6 | mission-anticipation.md | #3 Anticipation | 58 open cells: 58 empty, 0 ideas, 0 ungrounded or templated | — |
+| 7 | mission-goal-to-finish.md | #4 Goal to finish | 58 open cells: 58 empty, 0 ideas, 0 ungrounded or templated | — |
 | 8 | mission-moonshot.md | moonshot: no cell, no capability | judged on novelty and value only (see Moonshot below) | — |
 
-Past the 7 coverage Missions (the 8th row is the moonshot's), open cells wait in: 6. Verifying anything (57), 7. Self-repair and self-improvement (57), 1. Initiative (56), 9. Orchestration (56), 10. Beyond code (56), 13. Genesis as a feature (53), Observability (62), Performance (62), Multi-user (61), Portability (61), Onboarding (59), Docs (59), Security (59), Ecosystem (56), UX (55)
+Past the 7 coverage Missions (the 8th row is the moonshot's), open cells wait in: 5. Getting the tools it lacks (57, moved for the model layer the user asked gen 2 for), 6. Verifying anything (57), 7. Self-repair and self-improvement (57), 1. Initiative (56), 9. Orchestration (56), 10. Beyond code (56), 13. Genesis as a feature (53), Observability (62), Performance (62), Multi-user (61), Portability (61), Onboarding (59), Docs (59), Security (59), Ecosystem (56), UX (55)
 
 ## Order of work
 
