@@ -1425,6 +1425,8 @@ KIND_WORDS = (("bug", r"\bbugs?\b|correct(?!ions?\b)|broken"), ("vuln", r"secur|
               ("recur", r"self-repair|own failures|repeated failures"), ("correction", r"\bcorrections?\b"),  # T-2361: #7
               ("lanes", r"\bsubagents?\b|merges its own"),  # T-2362: #9's own kind, beside parts
               ("lean", r"staying lean|hooks fast|context small|guard intact"),  # T-2363: #12, no longer slow's
+              ("forecast", r"predicts? the next request|next request"),  # T-2409: #3's own kinds
+              ("breakage", r"before (?:they|it) happens?|what breaks"),
               # T-2343: #2 (race: candidates tried side by side) and #8 (fork: decides and records, door: irreversible,
               # unsure: states confidence); phrases, not bare "race", "fork" or "door", which mean other things
               ("race", r"parallel lanes|candidate (?:fixes|designs|approaches)|choose by evidence"),
