@@ -570,7 +570,7 @@ PAGES = [
      "blocks": [
          ("text", "The kinds", "<p>Each kind is a claim with its own proof: <code>typed</code> evidence (pasted, not "
           "run), <code>red</code> or <code>inconclusive</code> runs, <code>ui-unshot</code> (a UI edit with no "
-          "screenshot), <code>docs</code>, <code>infra</code>, <code>migration</code>, <code>data</code>, "
+          "screenshot), <code>tui-unshot</code> (a terminal UI edit no recorded run renders), <code>docs</code>, <code>infra</code>, <code>migration</code>, <code>data</code>, "
           "<code>perf-typed</code> and <code>perf-noise</code> (a speed claim with no bench, or one inside the noise), "
           "<code>research-uncited</code>, <code>hollow</code> (a test that can't fail), <code>claimed</code> (a proof "
           "word said with no run behind it) and <code>meaning</code> (a clause of the request no criterion checks)."
