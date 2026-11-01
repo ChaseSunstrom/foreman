@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T17:50:29Z",
- "rev": "d59dd455",
+ "updated": "2026-11-01T18:05:12Z",
+ "rev": "71d9a8ab",
  "capabilities": [
   {
    "n": 1,
@@ -1875,21 +1875,21 @@
       {
        "id": "T-2487",
        "title": "Model exam arms: per use (intake tier, lead triage, dedupe), the model path against the…",
-       "status": "captured",
-       "type": "FEATURE",
-       "tier": "L",
-       "steps": 0,
-       "done": 0,
-       "current": ""
-      },
-      {
-       "id": "T-2488",
-       "title": "The first uses in shadow mode: intake type and tier, fm find lead triage, embedding…",
        "status": "planned",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
        "done": 0,
+       "current": "red tests"
+      },
+      {
+       "id": "T-2488",
+       "title": "The first uses in shadow mode: intake type and tier, fm find lead triage, embedding…",
+       "status": "active",
+       "type": "FEATURE",
+       "tier": "M",
+       "steps": 3,
+       "done": 2,
        "current": "red tests"
       },
       {
@@ -18047,14 +18047,14 @@
  },
  "not_yet": 4,
  "not_yet_open": 0,
- "unproven": 1045,
+ "unproven": 1046,
  "unproven_kinds": {
   "meaning": 578,
   "research-uncited": 31,
   "typed": 46,
   "red": 57,
   "perf-typed": 52,
-  "docs": 582,
+  "docs": 583,
   "ui-unshot": 56,
   "data": 4,
   "infra": 7,
