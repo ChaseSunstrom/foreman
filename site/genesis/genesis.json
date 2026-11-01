@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T21:01:07Z",
- "rev": "ec8f2f2d",
+ "updated": "2026-11-01T21:17:14Z",
+ "rev": "56b90b65",
  "capabilities": [
   {
    "n": 1,
@@ -1984,12 +1984,12 @@
       {
        "id": "T-2492",
        "title": "CI failed on this branch: run 41330915735",
-       "status": "planned",
+       "status": "active",
        "type": "FIX",
        "tier": "M",
        "steps": 3,
-       "done": 0,
-       "current": "reproduce under load"
+       "done": 2,
+       "current": "watch the next macOS run"
       }
      ]
     },
@@ -17995,14 +17995,14 @@
  },
  "not_yet": 4,
  "not_yet_open": 0,
- "unproven": 1047,
+ "unproven": 1048,
  "unproven_kinds": {
-  "meaning": 576,
+  "meaning": 577,
   "research-uncited": 29,
   "typed": 43,
   "red": 61,
   "perf-typed": 52,
-  "docs": 587,
+  "docs": 588,
   "ui-unshot": 54,
   "data": 4,
   "infra": 7,
