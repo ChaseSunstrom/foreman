@@ -1100,6 +1100,16 @@ class RoundFirst(ForemanTestCase):  # T-2327 (user steer 2026-10-31, 2): no new 
         out = self.fm("capture", text, "--json", *flags).stdout
         return json.loads(out)["id"]
 
+    def test_the_friction_pass_waits_for_the_round_too(self):
+        # T-2460: with pace drops off, fm next offered the self-improvement pass during round 1, which the steer bars
+        import fmfriction
+        with mock.patch.object(fmfriction, "due", return_value=True), mock.patch("fmbudget.degrade", return_value=None):
+            self.assertEqual(c._next_for(c.find_project(self.repo))[1], "reflect")
+            self.fm("drive", "on", "--round-first", "on")
+            _, kind, text = c._next_for(c.find_project(self.repo))
+            self.assertNotEqual(kind, "reflect")
+            self.assertIn("self-improvement pass waits for Genesis round 1", text)
+
     def test_the_drives_side_work_offer_holds_them_too(self):
         # T-2459: while background jobs ran, the Stop hook's side-work offer named a Foreman capture the round held
         import fmhooks
