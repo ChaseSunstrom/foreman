@@ -1277,6 +1277,17 @@ class GenesisDraft(ForemanTestCase):
         (row,) = fmgenesis.scorecard(self.p)["rows"]
         self.assertIn("proxy", row["why"])  # #9's kind grades a three-part outcome, not delegation, and says so
 
+    def test_staying_lean_maps_to_lean_not_slow_and_anticipation_borrows_no_bug(self):
+        import fmgenesis  # T-2363: #12 read slow through "keeps the hooks fast"; #3 read bug through "corrections"
+        twelve = "Each of the above keeps the hooks fast, keeps context small and keeps the guard intact (see §6)."
+        kinds = fmgenesis._kinds("Staying lean and safe", twelve)
+        self.assertIn("lean", kinds)
+        self.assertNotIn("slow", kinds)
+        three = ("A model of me, my projects and my machines (requests, corrections, habits, what breaks). It predicts the "
+                 "next request and drafts it on spec in a lane, and flags problems before they happen.")
+        self.assertNotIn("bug", fmgenesis._kinds("Anticipation", three))
+        self.assertIn("slow", fmgenesis._kinds("Performance", "Finds the slow path and speeds it up."))
+
     def test_orchestration_maps_to_lanes_and_parts(self):
         import fmgenesis  # T-2362: #9's own kind drills stopped lanes; parts stays beside it
         nine = "It spawns, briefs, checks and merges its own subagents and lanes, picks the cheapest model"

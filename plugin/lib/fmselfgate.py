@@ -9,6 +9,7 @@ it: never the standing yes, never a decision, never a yes for an earlier commit.
 reason, and the same yes passes that too."""
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,7 @@ HARNESS = ("lib/fmreplay.py", "tests/bench_hooks.py", "tests/fixtures/hook_paylo
 RISE = 0.15  # a hook's p95 rise that refuses (T-2358's latency band)
 FLOOR_MS = 5.0  # under this, a rise is jitter whatever its share
 RUNS = 10  # bench runs per tree; a refusal is benched again and must hold twice
+WALL_RISE, WALL_FLOOR_MS = 1.0, 100.0  # T-2363: on a loaded bench, a wall-time rise this big is a hook that waits
 CORPUS = 2000  # recent real commands replayed, newest first (fmreplay.corpus)
 _RUNNER = ("import json, os, sys\nsys.path.insert(0, sys.argv[1])\nimport fmreplay as r\n"
            "cmds = [(x, r.resolve_cwd(y) if y else y) for x, y in json.load(sys.stdin)]\nv = r.verdicts(cmds)\n"
@@ -90,7 +92,9 @@ def _env(state):
 
 def _verdicts(plugin, cmds):
     """Each command's verdict from this tree's own guard, judged by the base's fmreplay."""
-    with tempfile.TemporaryDirectory(prefix="fm-gate-state-") as state:
+    # T-2363: a hook the bench started may still be writing its state as this returns; a leftover file is no reason
+    # for the gate to fail (a gate that can't run refuses)
+    with tempfile.TemporaryDirectory(prefix="fm-gate-state-", ignore_cleanup_errors=True) as state:
         r = subprocess.run([sys.executable, "-I", "-c", _RUNNER, os.path.join(plugin, "lib")], input=json.dumps(cmds),
                            capture_output=True, text=True, timeout=600, env=_env(state))
     got = json.loads(r.stdout or "null")
@@ -101,7 +105,9 @@ def _verdicts(plugin, cmds):
 
 def _bench(plugin):
     """({fixture: timings}, {event: injected chars}) from the base's bench over this tree's hooks."""
-    with tempfile.TemporaryDirectory(prefix="fm-gate-state-") as state:
+    # T-2363: a hook the bench started may still be writing its state as this returns; a leftover file is no reason
+    # for the gate to fail (a gate that can't run refuses)
+    with tempfile.TemporaryDirectory(prefix="fm-gate-state-", ignore_cleanup_errors=True) as state:
         r = subprocess.run([sys.executable, "-I", os.path.join(plugin, "tests", "bench_hooks.py"), "--runs", str(RUNS),
                             "--json", "--inject"], cwd=plugin, capture_output=True, text=True, timeout=600,
                            env=_env(state))
@@ -132,6 +138,10 @@ def _slower(base, branch):
         if over or rise:
             rows[k] = f"hook {k} p95 {b0} -> {b1} ms" + (f" (past its {budget} ms budget)" if over else
                                                           f" (+{(b1 - b0) * 100 / b0:.0f}%)")
+        elif loaded:  # CPU time misses a hook that sleeps or waits on I/O: a doubling past 100 ms of wall is no load noise
+            w1, w0 = _ms(v, False), _ms(base.get(k) or {}, False)
+            if w0 and w1 and w1 >= w0 * (1 + WALL_RISE) and w1 - w0 >= WALL_FLOOR_MS:
+                rows[k] = f"hook {k} p95 {w0} -> {w1} ms wall (+{(w1 - w0) * 100 / w0:.0f}%; its CPU time didn't rise: it waits)"
     return rows
 
 
@@ -139,6 +149,15 @@ def _footprint(plugin, sizes):
     import fmdoctor
     return dict(fmdoctor.footprint(os.path.join(plugin, "rules", "foreman.md"), plugin),
                 **fmdoctor.measured(None, sizes))
+
+
+def _verbs(plugin):
+    """T-2363: the fm verbs a tree's fmcli registers (its add("name", …) lines), as fmgenesis._lean counts them."""
+    try:
+        with open(os.path.join(plugin, "lib", "fmcli.py"), encoding="utf-8", errors="replace") as f:
+            return sorted(set(re.findall(r'(?<![.\w])add\("([a-z][\w-]*)"', f.read())))
+    except OSError:
+        return []
 
 
 def approved(p, b, sha):
@@ -206,6 +225,10 @@ def gate(p, b, main, ref, files):
             f0, f1 = _footprint(base, s0), _footprint(new, s1)
         out += [f"footprint {k} {w} -> {cur} (+{int((cur - w) * 100 // w)}%) with no always-on cut to pay for it"
                 for k, w, cur in fmdoctor.grown(f0, f1) if not k.endswith(" ms")]
+        v0, v1 = _verbs(base), _verbs(new)  # T-2363: a verb added with none removed is growth too (gen-0 §6)
+        added = [v for v in v1 if v not in v0]
+        if added and not [v for v in v0 if v not in v1]:
+            out.append(f"verbs {len(v0)} -> {len(v1)} (+{len(added)}: {', '.join(added[:5])}) with none removed")
     except (OSError, RuntimeError, ValueError, KeyError, TypeError, IndexError, ZeroDivisionError,
             subprocess.SubprocessError) as e:
         out.append(f"the self-change gate couldn't run ({type(e).__name__}: {c.fit(str(e), 160)})")

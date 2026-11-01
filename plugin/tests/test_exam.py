@@ -1692,3 +1692,66 @@ class LanesKind(JudgmentStub, ForemanTestCase):  # T-2362: #9, stopped builder l
         self.assertEqual(len(key["requests"]), 3)
         self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
         self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "oracle")), [s["id"]])
+
+
+class LeanKind(JudgmentStub, ForemanTestCase):  # T-2363: #12, Foreman's own overhead and the self-change gate
+    def test_overhead_counts_hook_ms_per_tool_call_inject_chars_per_turn_tokens_and_wall(self):
+        import fmexam
+        state = os.path.join(self.tmp, "state")
+        os.makedirs(state)
+        rows = [{"kind": "hook_ms", "event": "PreToolUse", "ms": 10}, {"kind": "hook_ms", "event": "PreToolUse", "ms": 20},
+                {"kind": "hook_ms", "event": "SessionStart", "ms": 30}, {"kind": "hook_ms", "event": "UserPromptSubmit", "ms": 5},
+                {"kind": "inject", "event": "SessionStart", "chars": 300}, {"kind": "inject", "event": "UserPromptSubmit",
+                                                                            "chars": 100}]
+        with open(os.path.join(state, "events.jsonl"), "w") as f:
+            f.write("".join(json.dumps(r) + "\n" for r in rows) + "not json\n")
+        got = fmexam._overhead(state, {"num_turns": 2, "duration_ms": 5000,
+                                       "usage": {"input_tokens": 1000, "output_tokens": 200}})
+        self.assertEqual(got, {"hook_ms_per_call": 32.5, "inject_chars_per_turn": 200.0, "tokens": 1200, "wall_s": 5.0})
+        self.assertEqual(fmexam._overhead(os.path.join(self.tmp, "none"), {})["hook_ms_per_call"], 0.0)
+
+    def answer(self, run, s, agent, overhead):
+        import fmexam
+        p = c.find_project(self.repo)
+        os.makedirs(fmexam._answers(p, run, agent), exist_ok=True)
+        base = os.path.dirname(s["repo"])
+        ans = fmexam._oracle(base, fmexam._key(p, run, s["id"]))[0]  # the work done right; only the overhead varies
+        with open(os.path.join(fmexam._answers(p, run, agent), f"{s['id']}.json"), "w") as f:
+            json.dump(dict(ans, overhead=overhead), f)
+        work = os.path.join(fmexam.root(p), run, "work", agent, s["id"])
+        shutil.rmtree(work, ignore_errors=True)
+        shutil.copytree(os.path.join(os.path.dirname(s["repo"]), "hidden", "clean"), work)
+
+    def test_kind_lean_grades_growth_against_the_generation_s_first_measure_and_shows_the_overhead_over_plain(self):
+        r = self.gen("--kind", "lean")
+        self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
+        s = r["scenarios"][0]
+        self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "oracle")), [s["id"]])
+        self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "empty")), [])
+        lean = {"hook_ms_per_call": 40.0, "inject_chars_per_turn": 900.0, "tokens": 5000, "wall_s": 30.0}
+        self.answer(r["run"], s, "plain", {"hook_ms_per_call": 4.0, "inject_chars_per_turn": 0.0, "tokens": 4000,
+                                           "wall_s": 25.0})
+        self.answer(r["run"], s, "foreman", lean)
+        g = self.fm_json("exam", "grade", r["run"], "--agent", "foreman")
+        self.assertEqual(self.closed(g), [s["id"]])  # the generation's first measure is its start
+        self.assertEqual(g["lean"]["over_plain"]["hook_ms_per_call"], 36.0)
+        self.assertEqual(g["lean"]["over_plain"]["tokens"], 1000)
+        self.answer(r["run"], s, "foreman", dict(lean, hook_ms_per_call=60.0))  # +50%: past the 15% band
+        g = self.fm_json("exam", "grade", r["run"], "--agent", "foreman")
+        self.assertEqual(self.closed(g), [])
+        self.assertIn("hook_ms_per_call", " ".join(g["lean"]["grown"]))
+        self.answer(r["run"], s, "foreman", dict(lean, inject_chars_per_turn=905.0))  # +0.6%: inside the 2% band
+        self.assertEqual(self.closed(self.fm_json("exam", "grade", r["run"], "--agent", "foreman")), [s["id"]])
+
+    def test_the_self_change_gate_refuses_each_planted_growth_by_its_metric_and_dropping_a_check_flips_it(self):
+        import fmexam
+        rows = {x["name"]: x for x in fmexam.gate_mutations(runs=2)}
+        self.assertEqual(set(rows), {m[0] for m in fmexam.GATE_MUTATIONS})
+        for name, x in rows.items():
+            with self.subTest(name=name):
+                if x["metric"]:
+                    self.assertTrue(x["refused"], x)
+                    self.assertTrue(any(x["metric"] in ln for ln in x["rows"]), x)
+                    self.assertFalse(x["dropped_refused"], x)  # the metric's own check is what refused it
+                else:
+                    self.assertFalse(x["refused"], x)  # a control passes

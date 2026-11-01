@@ -32,7 +32,8 @@ KINDS = ("bug", "vuln", "untested", "slow", "docs", "flaky", "dep", "vague", "am
          "proof", "beyond",  # T-2394: #6 claims proven or labelled, #10 non-code deliverables run; false proofs counted
          "watch",  # T-2360: #11 work started from replayed events with no one asking, against a hidden key
          "recur", "correction",  # T-2361: #7 a root cause from a failure logged three nights; past corrections kept
-         "lanes")  # T-2362: #9 three lanes stopped at planted points, recovered by their cause (a zero-token drill)
+         "lanes",  # T-2362: #9 three lanes stopped at planted points, recovered by their cause (a zero-token drill)
+         "lean")  # T-2363: #12 the foreman arm's overhead beside plain's, no growth past the generation's first measure
 GOALS = ("goal", "resume")  # #4 (T-2140): graded on what a finished version holds, never on findings
 TOOLS = ("tool-build", "tool-find")  # T-2375: graded on the work too: findings neither score nor alarm
 TOOL, REC, CSV = "tools/rec2csv", "data/orders.rec", "data/orders.csv"
@@ -99,6 +100,7 @@ REQUESTS = {"bug": "Something is off in the paging; find and fix it.", "vuln": "
             "watch": "",  # T-2360: no one asks; the events in events.jsonl are all there is
             "recur": "",  # T-2361: no one asks; three nights of logs say it
             "lanes": "",  # T-2362: one request per lane, in the key (LANE_REQUESTS)
+            "lean": "Something is off in the paging; find and fix it.",  # T-2363: real work, its overhead measured
             "correction": "A short last page comes back empty; fix it.",
             "unsure": "The listing loses its last rows now and then; sort it out."}
 # what a good answer says, for a kind whose readings no split of a regex can say (the oracle's notes)
@@ -420,7 +422,7 @@ VARIANT = {"bug": ("bug",), "vuln": ("vuln",), "slow": ("slow",), "vague": ("slo
            "rank": ("vuln",), "goal": ("bug", "vuln"), "resume": ("bug",), "parts": ("bug", "vuln", "slow"),
            "race": ("slow",), "fork": ("bug", "vuln"), "door": ("slow",), "unsure": ("bug",), "tool-grant": ("bug",),
            "proof": ("bug", "vuln"), "recur": ("bug",), "correction": ("bug",),
-           "lanes": ("bug", "vuln", "slow")}
+           "lanes": ("bug", "vuln", "slow"), "lean": ("bug",)}
 DEFECTS = {"bug": ("bug",), "vuln": ("vuln",), "slow": ("slow",), "vague": ("slow",), "dep": ("dep",),
            "parts": ("bug", "vuln", "slow"), "trigger": ("trigger",),
            "untested": ("untested",), "docs": ("docs",), "flaky": ("flaky",), "none": ("bug", "vuln", "untested", "docs"),
@@ -430,7 +432,7 @@ DEFECTS = {"bug": ("bug",), "vuln": ("vuln",), "slow": ("slow",), "vague": ("slo
            "tool-build": ("tool-build",), "tool-find": ("tool-find",), "tool-grant": ("bug",),
            "proof": ("bug", "vuln", "docs"), "beyond": ("beyond",), "watch": ("watch",),
            "recur": ("bug",), "correction": ("bug", "kept-tests", "kept-changelog", "kept-readme"),
-           "lanes": ("bug", "vuln", "slow")}  # rank: the first outranks the rest
+           "lanes": ("bug", "vuln", "slow"), "lean": ("bug",)}  # rank: the first outranks the rest
 DONE = {"resume": ("vuln", "docs"), "door": ("door",),  # met by the first session and ticked in PLAN.md: they must stay met
         "correction": ("kept-tests", "kept-readme")}  # T-2361: met before the arm, and a correction says keep them so
 RUN_CHECK = {"bug": "page_partial", "vuln": "query_quote", "slow": "dedupe_big", "dep": "label"}
@@ -1020,7 +1022,8 @@ CHILD_KINDS = {"bug": "a logic bug a user would hit", "vuln": "a security hole (
                **dict.fromkeys(FORKS + ("unsure",), ""),  # T-2343: the child writes the request (_author_shaped)
                "watch": "",  # T-2360: the child writes the issue texts; the stream and its key are ours
                "recur": "", "correction": "",  # T-2361: the log line, the notes' wording; the checks are ours
-               "lanes": ""}  # T-2362: three plants as parts has them; the stops are ours
+               "lanes": "",  # T-2362: three plants as parts has them; the stops are ours
+               "lean": "a logic bug a user would hit"}  # T-2363: an outside author's bug; the overhead is measured
 SHAPED = {
     "recur": "A small {lang} module's nightly export failed the same way three nights running: {page}() returns no "
              "rows for a short last page (page 3 of a 12-item list, 5 to a page). Write the one error line the export "
@@ -1922,7 +1925,8 @@ def _oracle(base, key):
               "notes": [key["example"]] if key.get("example") else  # T-2217: a child's example names every regex
                        [r.split("|")[0].replace("\\", "") for r in key["readings"] + key["missing"]],
               "done": key["done_ok"], "confidence": 100,  # T-2343: the oracle is sure, and right
-              **({"verified": [d["kind"] for d in key["defects"]]} if key.get("claims") else {})}  # T-2394: and proved
+              **({"verified": [d["kind"] for d in key["defects"]]} if key.get("claims") else {}),  # T-2394: and proved
+              **({"overhead": dict.fromkeys(LEAN_METRICS, 0)} if key["kind"] == "lean" else {})}  # T-2363: no overhead
     return answer, os.path.join(base, "hidden", "clean")
 
 
@@ -2307,6 +2311,188 @@ def _reply(text):
     return got
 
 
+LEAN_METRICS = ("hook_ms_per_call", "inject_chars_per_turn", "tokens", "wall_s")
+LEAN_BANDS = {"hook_ms_per_call": 0.15, "inject_chars_per_turn": 0.02}  # T-2358's bands; tokens and wall are shown only
+
+
+def _overhead(state, res):
+    """T-2363: one session's overhead: hook milliseconds per tool call (every timed hook over the PreToolUse count),
+    injected chars per turn (SessionStart and UserPromptSubmit notes over the turns), tokens in and out, wall seconds.
+    The hooks' own events.jsonl in the arm's state; a missing file is a session no hook ran in."""
+    ms, calls, chars = 0.0, 0, 0
+    try:
+        with open(os.path.join(state, "events.jsonl"), encoding="utf-8", errors="replace") as f:
+            for ln in f:
+                try:
+                    e = json.loads(ln)
+                except ValueError:
+                    continue
+                if not isinstance(e, dict):
+                    continue
+                if e.get("kind") == "hook_ms" and isinstance(e.get("ms"), (int, float)):
+                    ms += e["ms"]
+                    calls += e.get("event") == "PreToolUse"
+                elif e.get("kind") == "inject" and isinstance(e.get("chars"), int):
+                    chars += e["chars"]
+    except OSError:
+        pass
+    use = res.get("usage") if isinstance(res.get("usage"), dict) else {}
+    turns = res.get("num_turns") if isinstance(res.get("num_turns"), int) and res.get("num_turns") > 0 else 1
+    num = lambda v: v if isinstance(v, (int, float)) and not isinstance(v, bool) else 0  # noqa: E731
+    return {"hook_ms_per_call": round(ms / max(calls, 1), 1), "inject_chars_per_turn": round(chars / turns, 1),
+            "tokens": int(num(use.get("input_tokens")) + num(use.get("output_tokens"))),
+            "wall_s": round(num(res.get("duration_ms")) / 1000, 1)}
+
+
+def _lean_grew(p, run, agent, sid, ov):
+    """T-2363: the metrics of ov past their band against this arm's first measure of the scenario this generation
+    (exam/lean-start.json); the first measure is the start, so it never grows."""
+    import fmgenesis
+    path, gen = os.path.join(root(p), "lean-start.json"), str(fmgenesis.current(p))
+    with c.lock(p.dir):
+        try:
+            with open(path, encoding="utf-8") as f:
+                book = json.load(f)
+        except (OSError, ValueError):
+            book = {}
+        book = book if isinstance(book, dict) else {}
+        mine = book.setdefault(gen, {}).setdefault(agent, {})
+        start = mine.get(sid)
+        if not isinstance(start, dict):
+            mine[sid] = {k: ov.get(k) for k in LEAN_METRICS}
+            c.write_atomic(path, json.dumps(book, indent=1))
+            return []
+    return [f"{k} {start[k]} -> {ov.get(k)}" for k, band in LEAN_BANDS.items()
+            if isinstance(start.get(k), (int, float)) and isinstance(ov.get(k), (int, float))
+            and ov[k] > start[k] * (1 + band) and ov[k] - start[k] > 0.5]
+
+
+def _lean_summary(p, run, agent, rows):
+    """T-2363: the lean scenarios' mean overhead, what grew, and the mean over plain's on the same scenarios."""
+    if not rows:
+        return {}
+    have = [ov for _, ov, _ in rows if ov]
+    mean = {k: round(sum(ov.get(k) or 0 for ov in have) / len(have), 1) for k in LEAN_METRICS} if have else {}
+    over = {}
+    if agent != "plain":
+        pairs = []
+        for sid, ov, _ in rows:
+            try:
+                with open(os.path.join(_answers(p, run, "plain"), f"{sid}.json"), encoding="utf-8") as f:
+                    plain = json.load(f).get("overhead")
+            except (OSError, ValueError, AttributeError):
+                plain = None
+            if ov and isinstance(plain, dict):
+                pairs.append((ov, plain))
+        if pairs:
+            over = {k: round(sum((a.get(k) or 0) - (b.get(k) or 0) for a, b in pairs) / len(pairs), 1)
+                    for k in LEAN_METRICS}
+            over["tokens"] = int(over["tokens"])
+    return {"scenarios": len(rows), "mean": mean, "grown": [f"{sid}: {g}" for sid, _, gs in rows for g in gs],
+            "over_plain": over}
+
+
+# T-2363 (#12): planted growth the self-change gate must refuse, and controls it must pass, each on a temp copy of
+# plugin/: (name, the metric its refusal names (None: a control), the check whose removal must let it through, edits);
+# an edit is (path, old text, new text): old "" appends, None writes the file whole
+_POSTURE = ('    "posture": ("lite", "fm posture lite turns Foreman\'s hooks off but the guard\'s: the user decides that",\n'
+            '                "fm posture lite"),  # T-0963\n')
+_RUN_OUT = "            out = handler(payload) if handler else None\n"
+GATE_MUTATIONS = (
+    ("rules", "rules chars", "footprint", [("plugin/rules/foreman.md", "", "\n" + "- Keep each planted note short. " * 12)]),
+    ("session-line", "SessionStart chars", "footprint", [("plugin/lib/fmhooks.py", _RUN_OUT, _RUN_OUT + (
+        '            if event == "SessionStart" and isinstance(out, dict):\n'
+        '                h = out.get("hookSpecificOutput") or {}\n'
+        '                h["additionalContext"] = str(h.get("additionalContext") or "") + " A planted line." * 30\n'))]),
+    ("hook-delay", "p95", "hook", [("plugin/lib/fmhooks.py", "def run(event, raw):\n    t0 = time.monotonic()\n",
+                                    "def run(event, raw):\n    t0 = time.monotonic()\n    time.sleep(0.25)\n")]),
+    ("guard-allow", "guard: fm posture lite", "guard", [("plugin/lib/fmguard.py", _POSTURE, "")]),
+    ("verb", "verbs", "verbs", [("plugin/lib/fmcli.py", '    s = add("night", ',
+                                 '    add("zzlean", lazy("fmnight", "cmd_night"), tier=("Running elsewhere", 1191), '
+                                 'help="a planted verb")\n    s = add("night", ')]),
+    ("control-test", None, None, [("plugin/tests/test_zz_lean_control.py", None, "def test_x():\n    pass\n")]),
+    ("control-cut", None, None, [("plugin/rules/foreman.md", "\n## Precedence\n", "\n")]),
+)
+_GATE_RUNNER = """import json, sys, types
+sys.path.insert(0, sys.argv[1])
+import fmcore as c, fmdoctor, fmselfgate as g
+main, ref, runs, drop, files = sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5], json.loads(sys.argv[6])
+g.RUNS = runs
+if drop == "footprint":
+    fmdoctor.grown = lambda a, b: []
+if drop == "hook":
+    g._slower = lambda a, b: {}
+if drop == "guard":
+    g._verdicts = lambda plugin, cmds: ["same"] * len(cmds)
+if drop == "verbs":
+    g._verbs = lambda plugin: []
+p = c.find_project(main)
+print(json.dumps(g.gate(p, types.SimpleNamespace(id="T-0000", meta={"created": ""}), main, ref, files)))
+"""
+
+
+def gate_mutations(runs=2):
+    """T-2363: GATE_MUTATIONS through fmselfgate.gate, each as a branch of a throwaway repo holding a copy of plugin/
+    (a throwaway Foreman home, so no refusal reaches a real ledger), the refusals read, then each growth again with its
+    own check dropped: [{name, metric, refused, rows, dropped_refused}]. dropped_refused is whether a refusal still
+    names the metric, so it says the check refused it, whatever bench noise the run adds; a control must pass whole."""
+    tmp = tempfile.mkdtemp(prefix="fm-gatemut-")
+    try:
+        src, home = os.path.join(tmp, "src"), os.path.join(tmp, "home")
+        shutil.copytree(c.PLUGIN_ROOT, os.path.join(src, "plugin"), symlinks=True,
+                        ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "gen_evasions.py"))
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDE"))}
+        env.update(FOREMAN_HOME=home, FOREMAN_INHIBITED="1", FOREMAN_DOCTOR_BENCH="0", HOME=os.path.join(tmp, "uhome"))
+        g = ["git", "-c", "user.name=exam", "-c", "user.email=exam@localhost", "-c", "commit.gpgsign=false",
+             "-c", "core.hooksPath=/dev/null", "-c", "init.defaultBranch=main"]
+
+        def git(cwd, *a):
+            return subprocess.run(g + list(a), cwd=cwd, env=env, capture_output=True, text=True, timeout=300)
+        for a in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "base"]):
+            git(src, *a)
+        subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "init"], cwd=src, env=env,
+                       capture_output=True, timeout=300)
+        jobs = []
+        for name, metric, check, edits in GATE_MUTATIONS:
+            wt = os.path.join(tmp, name)
+            git(src, "worktree", "add", "-q", "-b", f"mut/{name}", wt, "main")
+            for rel, old, new in edits:
+                path = os.path.join(wt, rel)
+                text = "" if old is None else _text_of(path)
+                if old and old not in text:
+                    raise ValueError(f"gate mutation {name}: its anchor is gone from {rel}")
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(new if old is None else text + new if old == "" else text.replace(old, new, 1))
+            git(wt, "add", "-A")
+            git(wt, "commit", "-qm", name)
+            files = sorted({rel for rel, _, _ in edits})
+            jobs.append((name, metric, check, files, ""))
+            if check:
+                jobs.append((name, metric, check, files, check))
+
+        def run(job):
+            name, _, _, files, drop = job
+            r = subprocess.run([sys.executable, "-c", _GATE_RUNNER, os.path.join(c.PLUGIN_ROOT, "lib"), src, f"mut/{name}",
+                                str(runs), drop or "-", json.dumps(files)], cwd=src, env=env, capture_output=True,
+                               text=True, timeout=1200)
+            try:
+                return json.loads(r.stdout.strip().splitlines()[-1])
+            except (ValueError, IndexError):
+                return [f"the gate runner failed: {c.fit(c.plain(r.stderr.strip()[-300:]), 300)}"]
+        with concurrent.futures.ThreadPoolExecutor(4) as pool:
+            got = list(pool.map(run, jobs))
+        out = {}
+        for (name, metric, _, _, drop), rows in zip(jobs, got):
+            x = out.setdefault(name, {"name": name, "metric": metric, "refused": None, "rows": [], "dropped_refused": None})
+            if drop:
+                x["dropped_refused"] = any(metric in ln for ln in rows)
+            else:
+                x["rows"], x["refused"] = rows, bool(rows) if metric is None else any(metric in ln for ln in rows)
+        return list(out.values())
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _session_arm(agent, base, key, work, model, budget, timeout, request=None):
     """One session in a temp copy of the repo (with .git), outside Foreman's state where the guard blocks edits; the
     tree it leaves is copied back to work for grading. T-2192: a reply with no findings object (s31-006's Rust
@@ -2338,7 +2524,8 @@ def _session_arm(agent, base, key, work, model, budget, timeout, request=None):
         shutil.copytree(wt, work, symlinks=True, ignore=shutil.ignore_patterns(".git"))
         _carry_runs(wt, work)  # T-2375: the shelf tool's runs in the temp copy count for the tree it became
         installs = shims.stop() if shims else None
-    return dict(_reply(str(res.get("result") or "")), cost=cost, error=err, reasked=reasked,
+        overhead = _overhead(state, res)  # T-2363: what this arm's hooks cost, read before the temp state goes
+    return dict(_reply(str(res.get("result") or "")), cost=cost, error=err, reasked=reasked, overhead=overhead,
                 said=c.redact(said)[-400:],  # the tail: where the answer should have been
                 **({"installs": installs[0], "tampered": installs[1]} if installs else {}))  # the harness's, not the model's
 
@@ -2412,7 +2599,8 @@ COUNTS = ("keyed", "found", "false_alarms", "exam_defects", "fixable", "fixed", 
           "proved_by_arm", "brier_n", "conf_missing", "brier_sum",  # T-2343: confidence scored against the closed check
           "false_proofs",  # T-2394: claims said verified whose check fails (or no local run could prove)
           "watch_keyed", "watch_started", "watch_hit", "watch_ran",  # T-2360: precision hit/started, recall hit/keyed
-          "lanes_keyed", "lanes_recovered", "lanes_kept", "lanes_dup")  # T-2362: lanes recovered by cause, work kept
+          "lanes_keyed", "lanes_recovered", "lanes_kept", "lanes_dup",  # T-2362: lanes recovered by cause, work kept
+          "lean_keyed", "lean_ok")  # T-2363: an overhead measured and inside the generation's start bands
 
 
 def _in_order(found, key):
@@ -2437,6 +2625,7 @@ def _closed(n):
                 or n.get("lanes_dup")) and all(
         n.get(have, 0) == n.get(want, 0) for want, have in (("keyed", "found"), ("fixable", "fixed"), ("tf_keyed", "tf_first"),
                                               ("lanes_keyed", "lanes_recovered"), ("lanes_keyed", "lanes_kept"),
+                                              ("lean_keyed", "lean_ok"),
                                               ("readings_keyed", "readings_hit"), ("missing_keyed", "missing_hit"),
                                               ("rank_keyed", "rank_hit")))
 
@@ -2473,6 +2662,7 @@ def grade(p, run, agent):
     answered = [s for s in meta["scenarios"] if os.path.isfile(os.path.join(_answers(p, run, agent), f"{s['id']}.json"))]
     if not answered:
         raise ValueError(f"no answers from {agent!r} in {run} (fm exam run {run} --agent {agent})")
+    lean_rows = []  # T-2363: (sid, overhead, grown) per lean scenario
 
     def one(s):
         base, key = os.path.join(root(p), run, s["id"]), _key(p, run, s["id"])
@@ -2500,6 +2690,12 @@ def grade(p, run, agent):
             said = {v for v in ans.get("verified") or [] if isinstance(v, str) and v in key["claims"]}
             n["false_proofs"] = sum(1 for v in said if v not in by_kind
                                     or not (os.path.isdir(work) and passes(base, key, by_kind[v], work)))
+        if key["kind"] == "lean":  # T-2363: the overhead against this arm's first measure of it this generation
+            ov = ans.get("overhead") if isinstance(ans.get("overhead"), dict) else None
+            n["lean_keyed"] = 1
+            grew = _lean_grew(p, run, agent, s["id"], ov) if ov else ["no overhead measured"]
+            n["lean_ok"] = int(not grew)
+            lean_rows.append((s["id"], ov, grew))
         if key["kind"] == "lanes":  # T-2362: each lane recovered by its cause, the stub's work kept, no commit twice
             n["lanes_keyed"], n["lanes_recovered"], n["lanes_kept"], n["lanes_dup"] = _lanes_score(base, work)
         if key["kind"] == "watch":  # T-2360: what it started against the hidden key, and what ran
@@ -2586,6 +2782,8 @@ def grade(p, run, agent):
             res[k] += v
             res[split][k] += v
     res["cost"] = round(res["cost"], 4)
+    if lean_rows:
+        res["lean"] = _lean_summary(p, run, agent, sorted(lean_rows, key=lambda r: r[0]))
     for ids in res["closed"].values():
         ids.sort()
     for part, ids in ((res, res["closed"]["train"] + res["closed"]["holdout"]), (res["train"], res["closed"]["train"]),
