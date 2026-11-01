@@ -509,6 +509,19 @@ class GenesisCheck(ForemanTestCase):
         import json
         return p.returncode, json.loads(p.stdout)
 
+    def test_empty_cells_fail_no_generation_and_are_handed_to_the_next_seed(self):
+        # T-2474 (user steer 2026-11-01): per generation coverage passes with no templated or duplicated cell; empty
+        # cells go to the next Seed first; only the run's end needs none
+        import fmcore as c
+        import fmgenesis
+        self.put("coverage.md", "# Coverage\n\n" + grid("1. Initiative", skip={("verify", "MCP")})
+                 + "\n" + grid("2. Exhaustive thinking"))
+        code, res = self.check()
+        self.assertEqual((code, res["coverage"]["empty"]), (0, 1), res)
+        self.assertEqual(fmgenesis._bad(fmgenesis.check(c.find_project(self.repo))), [])  # the sweep's row passes
+        self.assertIn("handed to the next Seed", self.fm("genesis", "check").stdout)
+        # a templated or duplicated cell still fails: test_a_templated_cell_is_a_problem_naming_its_twin
+
     def test_a_full_grid_and_a_tried_ledger_pass(self):
         self.put("coverage.md", "# Coverage\n\n" + grid("1. Initiative") + "\n" + grid("2. Exhaustive thinking") + grid("UX"))
         self.put("not-yet.md", "# Not yet\n\n## Self-hosted model router\n- blocker: no local model\n"
@@ -541,7 +554,9 @@ class GenesisCheck(ForemanTestCase):
         code, res = self.check()
         self.assertEqual(code, 1)
         probs = "\n".join(res["coverage"]["problems"])
-        for part in ("verify × MCP: empty", "operate × site: empty", "find × MCP: nope.py doesn't exist",
+        self.assertNotIn(": empty", probs)  # T-2474: an empty cell fails no generation; it goes to the next Seed
+        self.assertIn("2. Exhaustive thinking: verify × MCP: empty", res["coverage"]["empties"])
+        for part in ("find × MCP: nope.py doesn't exist",
                      "plan × site: an I cell names the file it builds on", "ship × CLI: N/A needs its reason",
                      "learn × Desktop: ../outside.py", "build × fm code: gone.py doesn't exist", "verify × Slack isn't",
                      "just prose"):
@@ -851,6 +866,25 @@ class GenesisStep(ForemanTestCase):
         self.assertEqual(s["gen"], 2)
         self.put("report.md", "# Report\n")
         self.assertEqual(self.at("done")["kind"], "done")
+
+    def test_the_run_ends_only_with_no_empty_coverage_cell(self):
+        # T-2474 (user steer 2026-11-01): "no empty cells" ends the run, not a generation: dry with one left seeds gen 3
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        self.put("coverage.md", "# Coverage\n\n" + grid("1. Initiative", skip={("verify", "MCP")})
+                 + "\n" + grid("2. Exhaustive thinking"))
+        lineage = "# Lineage\n"
+        for n in (1, 2):
+            self.put(f"gen-{n}/seed.md", DRY if n > 1 else SEED.split("| 1 |")[0] + "No Missions this generation.\n")
+            lineage += f"\n## gen-{n}\n- dry\n"
+            self.put("lineage.md", lineage)
+            selected(self.p, n)
+            self.put(f"gen-{n}/drift.md", "Verdict: clean\n")
+            self.put(f"gen-{n}/sweep.md", "Verdict: clean\n")
+        s = self.at("seed", "1 empty coverage cell", "fm genesis seed 3")
+        self.assertEqual(s["gen"], 3)
+        self.put("coverage.md", "# Coverage\n\n" + grid("1. Initiative") + "\n" + grid("2. Exhaustive thinking"))
+        self.assertEqual(self.at("report", "report.md")["gen"], 2)
 
     def test_the_report_waits_for_a_provisional_choice_to_be_confirmed(self):
         import fmgenesis
@@ -1769,8 +1803,8 @@ class GenesisSelect(ForemanTestCase):
         text = self.read("gen-3/seed.md")
         self.assertIn("rule one", text)
         self.assertNotIn("child rule", text)  # gen 2 lost selection: its rewrite doesn't carry on
-        self.assertEqual([r[1] for r in fmgenesis.ROW.findall(text)],  # most open cells first, ties in file order, ≤ 7
-                         ["mission-exhaustive-thinking", "mission-initiative", "mission-docs"]
+        self.assertEqual([r[1] for r in fmgenesis.ROW.findall(text)],  # T-2474: most empty cells first, then most
+                         ["mission-exhaustive-thinking", "mission-docs", "mission-initiative"]  # open, ties in file order
                          + [f"mission-extra-{i}" for i in range(1, 5)] + ["mission-moonshot"])  # T-2187: the 8th row
         for want in ("find × MCP", "plan × site", "ship × CLI", "Self-hosted model router", "Voice intake",
                      "make it bolder", "#2 Exhaustive thinking"):
@@ -2735,6 +2769,14 @@ class GenesisSweep(ForemanTestCase):
         b.meta["lane"] = os.path.realpath(lane)
         c.save_brief(self.p, b)
         self.fm("task", "block", q, "core: queued for the user's merge")
+        rows = {x["check"]: x for x in self.sweep()["rows"]}
+        self.assertTrue(rows["lanes"]["ok"], rows["lanes"])
+        draft = os.path.join(self.tmp, "draft")  # T-2474: fm draft-ahead's speculative plan, never merged by design
+        subprocess.run(["git", "-C", self.repo, "worktree", "add", "-qb", "draft/ahead-P-4-1", draft], check=True)
+        with open(os.path.join(draft, "DRAFTED-AHEAD.md"), "w") as f:
+            f.write("plan\n")
+        subprocess.run(["git", "-C", draft, "add", "."], check=True)
+        subprocess.run(["git", "-C", draft, "commit", "-qm", "draft"], check=True)
         rows = {x["check"]: x for x in self.sweep()["rows"]}
         self.assertTrue(rows["lanes"]["ok"], rows["lanes"])
 
