@@ -237,6 +237,7 @@ def cmd_intake(args):
             if _block(item, r, "skip"):
                 b.set_section("Non-goals", "".join(f"- {s}\n" for s in _block(item, r, "skip")))
                 c.save_brief(p, b, touch=False)
+            _shadow_intake(p, item.text, b)
             created.append(b)
         c.log_event(p, "intake", data={"created": [b.id for b in created], "overrides": r.overrides,
                                        "untagged": bool(r.untagged)}, session=session())
@@ -297,6 +298,7 @@ def cmd_capture(args):
                     depends=list(dict.fromkeys(c._REF_RE.findall(args.text or ""))),  # T-0334: as fm intake does
                     priority="urgent" if args.urgent else "normal", explore=explore)
         c.log_event(p, "capture", task=b.id, data={"source": args.source, "type": type_}, session=session())
+        _shadow_intake(p, text, b)
         c.regen_views(p)
     b = _adopt_draft(p, b, args.source)
     _note_escapes(p, b, args.text)
@@ -307,12 +309,22 @@ def cmd_capture(args):
 REFUSED_NEAR = 5  # T-1662: its own exit code (see the module docstring: 3, asked for in review, is a lock timeout)
 
 
+def _shadow_intake(p, text, b):
+    """T-2488: the type and tier the rules gave a new request, for the model's shadow pass (no model call here)."""
+    import fmmodels
+    fmmodels.shadow(p, "intake-type", text, b.type)
+    fmmodels.shadow(p, "intake-tier", text, b.tier)
+
+
 def _near(p, args, text, type_):
     """T-1662: (exit code, None) when the request is a near-duplicate of an open task of its type and --anyway isn't
     given, said on stderr (and as JSON under --json); else (None, note(new id)): the similar open task of another
     type, and for a FEATURE the done task close to it."""
     import fmrecall
     same, other, done = fmrecall.near_tasks(p, _title(text), _scope_paths(args.scope or ()), type_)
+    if same:  # T-2488: the rule's dedupe call, for the model's shadow pass (refused: same; kept with --anyway: different)
+        import fmmodels
+        fmmodels.shadow(p, "dedupe", f"{_title(text)} || {same[1]}", "different" if args.anyway else "same")
     if same and not args.anyway:
         print(f"fm: near-duplicate of open {same[0]} ({c.fit(c.plain(same[1]), 80)}): add --anyway to keep both, or "
               f"fm task log {same[0]} '<note>' to add to it", file=sys.stderr)

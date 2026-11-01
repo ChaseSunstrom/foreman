@@ -1133,6 +1133,11 @@ def cmd_find(args):
     made = capture(p, found, cap, root) if cap else None
     if cap:
         save_flags(p, found, root)  # T-2241
+    if ranked and p:  # T-2488: the rank's keep-or-hold call per lead, for the model's shadow pass (top 20 a scan)
+        import fmmodels
+        for f in found[:20]:
+            fmmodels.shadow(p, "lead-triage", f"{f['kind']} {f['file']}:{f['line']} {f['symbol'] or '-'}: {f['says']}",
+                            "noise" if f.get("held") else "real")
     rows = [(f"{f['score']:.2f}  " if "score" in f else "") + f"{f['file']}:{f['line']}  {f['kind']}  "
             f"{f['symbol'] or '-'}: {f['says']}" + (f"  ({f['held']})" if f.get("held") else "") for f in found]
     live = [f for f in found if not f.get("held")]

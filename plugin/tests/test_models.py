@@ -435,6 +435,45 @@ class Decide(Base):
         self.assertEqual([(b["name"], b["local"]) for b in reg][:2], [("near", True), ("far", False)])
 
 
+class Shadow(Base):
+    """T-2488: each use records the path's own decision inline (no model call); the night's shadow pass runs decide()
+    on those rows with local backends only, and spends nothing without one."""
+    def project(self):
+        import types
+        d = tempfile.mkdtemp(dir=self._tmp.name)
+        with open(os.path.join(d, "meta.json"), "w") as f:
+            json.dump({}, f)
+        return types.SimpleNamespace(dir=d, root=d, slug="t")
+
+    def rows(self, p, name):
+        path = os.path.join(p.dir, name)
+        return [json.loads(x) for x in open(path)] if os.path.exists(path) else []
+
+    def test_a_shadow_row_records_the_paths_choice_redacted(self):
+        p = self.project()
+        tok = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"  # pragma: allowlist secret
+        m.shadow(p, "intake-type", "fix the parser; token " + tok, "FIX")
+        r = self.rows(p, m.SHADOW)
+        self.assertEqual([(x["use"], x["path"]) for x in r], [("intake-type", "FIX")])
+        self.assertNotIn(tok, r[0]["input"])
+
+    def test_the_night_pass_answers_rows_once_on_local_backends_only(self):
+        p = self.project()
+        for t in ("fix the parser", "add an export", "tidy the logs"):
+            m.shadow(p, "intake-type", t, "FIX")
+        f = self.fake((200, oa_reply(json.dumps({"choice": "FEATURE", "probability": 0.9})), None))
+        local = {"name": "near", "local": True, "profile": {"name": "near", "kind": "openai", "base_url": f.url,
+                                                           "model": "m", "key_env": None, "context": 8192}}
+        cloud = dict(local, name="far", local=False)
+        self.assertEqual(m.shadow_pass(p, backends=[cloud])["answered"], 0)  # no local backend: nothing spent
+        self.assertEqual(f.seen, [])
+        self.assertEqual(m.shadow_pass(p, cap=2, backends=[cloud, local])["answered"], 2)
+        self.assertEqual(m.shadow_pass(p, backends=[local])["answered"], 1)  # each row answered once
+        self.assertEqual(m.shadow_pass(p, backends=[local])["answered"], 0)
+        refs = [x.get("ref") for x in self.rows(p, "predictions.jsonl") if x["kind"] == "decide"]
+        self.assertEqual(sorted(refs), sorted(x["id"] for x in self.rows(p, m.SHADOW)))
+
+
 class ModelRules(unittest.TestCase):
     """T-2486: the user's four model rules (T-2437), each a check that fails when it breaks."""
     LIB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
