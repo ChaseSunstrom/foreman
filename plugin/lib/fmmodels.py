@@ -243,6 +243,10 @@ def _profile(name, d, where):
         bad("context must be a positive whole number")
     if not isinstance(p["tools"], bool):
         bad("tools must be true or false")
+    if not isinstance(d.get("own", False), bool):
+        bad("own must be true or false")
+    if d.get("own"):  # T-2494: a server the user owns (not loopback, so never a sensitive project's); absent when false
+        p["own"] = True
     price = d.get("price")  # T-1357: USD per million tokens, in and out, so fm code can say what a run cost
     if price is not None:
         if not (isinstance(price, dict) and set(price) <= {"in", "out"} and all(
@@ -336,9 +340,20 @@ def _local(name=None):
                 yield p
 
 
+def _env_profiles():
+    """T-2494 (the user's T-2437 steer): TYPESAFE_BASE_URL names a Jev-compatible server (model TYPESAFE_MODEL, default
+    selfjev-4b); its key is named only when TYPESAFE_API_KEY is set. complete()'s URL checks still apply."""
+    base = os.environ.get("TYPESAFE_BASE_URL", "").strip().rstrip("/")
+    if not base:
+        return []
+    return [{"name": "typesafe", "kind": "openai", "base_url": base, "model": os.environ.get("TYPESAFE_MODEL") or "selfjev-4b",
+             "key_env": "TYPESAFE_API_KEY" if os.environ.get("TYPESAFE_API_KEY") else None, "context": LOCAL_CONTEXT,
+             "tools": False}]
+
+
 def profiles():
     _, conf = _config()
-    return list(conf.values()) + list(_local()) + _cloud()
+    return list(conf.values()) + _env_profiles() + list(_local()) + _cloud()
 
 
 def resolve(name=None):
@@ -767,10 +782,10 @@ def registry():
     """T-2485: every usable backend as {name, profile, local}, local ones first (cheapest first): local is a loopback
     base_url; the claude CLI and every remote host count as cloud."""
     import urllib.parse
-    out = [{"name": prof.get("name"), "profile": prof, "local": prof.get("kind") != "cli"
+    out = [{"name": prof.get("name"), "profile": prof, "own": bool(prof.get("own")), "local": prof.get("kind") != "cli"
             and is_loopback(urllib.parse.urlsplit(str(prof.get("base_url") or "")).hostname or "")}
            for prof in profiles()]  # the same test fm code's sensitive-repo refusal uses (T-0784)
-    return sorted(out, key=lambda b: not b["local"])
+    return sorted(out, key=lambda b: (not b["local"], not b["own"]))  # T-2494: loopback, the user's own, then clouds
 
 
 def _answer(d, choices):
@@ -888,9 +903,11 @@ def shadow_pass(p, cap=20, backends=None):
     answer (or miss) carries the row's id as ref."""
     import fmcore
     import fmforesight
-    local = [b for b in (registry() if backends is None else backends) if b.get("local")]
+    sensitive = bool(fmcore.read_meta(p).get("sensitive"))
+    local = [b for b in (registry() if backends is None else backends)  # T-2494: or the user's own server, unless
+             if b.get("local") or (b.get("own") and not sensitive)]  # the project is sensitive
     if not local:
-        return {"answered": 0, "rows": 0, "note": "no local backend: nothing spent"}
+        return {"answered": 0, "rows": 0, "note": "no local or own backend: nothing spent"}
     done = {r.get("ref") for r in fmforesight._book(p) if r.get("kind") in ("decide", "decide-miss")}
     try:
         with open(os.path.join(p.dir, SHADOW), encoding="utf-8") as f:

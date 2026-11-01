@@ -1249,11 +1249,12 @@ class ModelBackends(ForemanTestCase):  # T-2489: the model layer's backends on o
         import fmmodels
         self.fm("init")
         p = c.find_project(self.repo, create=False)
-        reg = [{"name": "ollama", "local": True, "profile": {}}, {"name": "anthropic", "local": False, "profile": {}}]
+        reg = [{"name": "ollama", "local": True, "profile": {}}, {"name": "home", "local": False, "own": True, "profile": {}},
+               {"name": "anthropic", "local": False, "profile": {}}]
         with mock.patch.object(fmmodels, "registry", return_value=reg):
             r = d.check_model_backends(p)
         self.assertEqual(r.status, "PASS")
-        for word in ("local: ollama", "cloud: anthropic", "live: none"):
+        for word in ("local: ollama", "own: home", "cloud: anthropic", "live: none"):  # T-2494: the user's own server
             self.assertIn(word, r.detail)
         with mock.patch.object(fmmodels, "registry", return_value=reg), mock.patch.object(
                 fmmodels, "live", side_effect=lambda p, use: use == "intake-tier"):

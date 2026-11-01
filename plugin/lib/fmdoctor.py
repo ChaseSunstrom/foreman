@@ -602,9 +602,11 @@ def check_model_backends(p):
         return Result("model backends", "PASS", f"couldn't list them ({type(e).__name__})")
     if not reg:
         return Result("model backends", "PASS", "no backend: decide() answers by rule only ($FOREMAN_HOME/models.json or a local server adds one)")
-    names = lambda local: ", ".join(c.plain(str(b.get("name")))[:40] for b in reg if bool(b.get("local")) == local) or "none"  # noqa: E731
+    kind = lambda b: "local" if b.get("local") else "own" if b.get("own") else "cloud"  # noqa: E731  T-2494
+    names = lambda k: ", ".join(c.plain(str(b.get("name")))[:40] for b in reg if kind(b) == k) or "none"  # noqa: E731
     sens = "; sensitive: local only" if p and c.read_meta(p).get("sensitive") else ""
-    return Result("model backends", "PASS", f"local: {names(True)}; cloud: {names(False)}; live: {', '.join(live) or 'none'}{sens}")
+    return Result("model backends", "PASS", f"local: {names('local')}; own: {names('own')}; cloud: {names('cloud')}; "
+                                            f"live: {', '.join(live) or 'none'}{sens}")
 
 
 def check_self_fixes(p, now=None):

@@ -10,7 +10,8 @@ import unittest
 import helpers  # noqa: F401  (puts plugin/lib on sys.path)
 import fmmodels as m
 
-KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY", "FM_TEST_KEY")
+KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY", "FM_TEST_KEY",
+        "TYPESAFE_BASE_URL", "TYPESAFE_API_KEY", "TYPESAFE_MODEL", "LLM_API_KEY")  # T-2494: the user's env never leaks in
 SECRET = "sk-test-SECRET-123"
 
 
@@ -667,3 +668,48 @@ class Profiles(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OwnServer(Base):
+    """T-2494: a server the user owns (models.json "own": true) is asked after loopback and before clouds, and the
+    night shadow pass may use it for a plain project, never a sensitive one; TYPESAFE_BASE_URL adds a profile."""
+    def project(self, sensitive=False):
+        import types
+        d = tempfile.mkdtemp(dir=self._tmp.name)
+        with open(os.path.join(d, "meta.json"), "w") as f:
+            json.dump({"sensitive": sensitive}, f)
+        return types.SimpleNamespace(dir=d, root=d, slug="t")
+
+    def models(self, **profiles):
+        with open(os.path.join(self._tmp.name, "models.json"), "w") as f:
+            json.dump({"profiles": profiles}, f)
+
+    def test_own_is_validated_and_ordered_between_loopback_and_cloud(self):
+        self.models(home={"base_url": "https://home.example/llm/v1", "model": "q", "key_env": "LLM_API_KEY", "own": True})
+        os.environ["OPENAI_API_KEY"] = "k"  # pragma: allowlist secret
+        reg = m.registry()
+        self.assertEqual([(b["name"], b["local"], b["own"]) for b in reg][:2], [("home", False, True), ("openai", False, False)])
+        self.models(home={"base_url": "https://home.example/llm/v1", "model": "q", "own": "yes"})
+        with self.assertRaises(m.ModelError):
+            m.registry()
+
+    def test_the_night_pass_uses_an_own_server_for_a_plain_project_never_a_sensitive_one(self):
+        f = self.fake((200, oa_reply(json.dumps({"choice": "FIX", "probability": 0.9})), None))
+        own = {"name": "home", "local": False, "own": True,
+               "profile": {"name": "home", "kind": "openai", "base_url": f.url, "model": "q", "key_env": None, "context": 8192}}
+        secret = self.project(sensitive=True)
+        m.shadow(secret, "intake-type", "fix the parser", "FIX")
+        self.assertEqual(m.shadow_pass(secret, backends=[own])["answered"], 0)
+        self.assertEqual(f.seen, [])  # a sensitive project's text never leaves the machine
+        plain = self.project()
+        m.shadow(plain, "intake-type", "fix the parser", "FIX")
+        self.assertEqual(m.shadow_pass(plain, backends=[own])["answered"], 1)
+
+    def test_typesafe_base_url_adds_a_profile_and_names_its_key_only_when_set(self):
+        self.assertNotIn("typesafe", [x["name"] for x in m.profiles()])
+        os.environ["TYPESAFE_BASE_URL"] = "https://ts.example/v1/"
+        got = next(x for x in m.profiles() if x["name"] == "typesafe")
+        self.assertEqual((got["base_url"], got["model"], got["key_env"]), ("https://ts.example/v1", "selfjev-4b", None))
+        os.environ.update(TYPESAFE_API_KEY="k", TYPESAFE_MODEL="jeff")  # pragma: allowlist secret
+        got = next(x for x in m.profiles() if x["name"] == "typesafe")
+        self.assertEqual((got["model"], got["key_env"]), ("jeff", "TYPESAFE_API_KEY"))

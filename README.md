@@ -577,6 +577,7 @@ Some calls can go to a model: a request's type and size, whether two items are t
 
 - Each use starts in shadow mode: the rule decides and its call is logged; the hourly tick has a local model answer the same questions. The exam replays both against your closed tasks at zero tokens.
 - A use goes live only by a `model-live` decision citing the exam run that showed it beating the rule. No guard or evidence gate ever asks a model, and the layer downloads and installs nothing itself.
+- A server you own goes in `$FOREMAN_HOME/models.json` with `"own": true` and its key named by `key_env` (never the key itself): it is asked after loopback servers and before clouds, and the night's shadow pass may use it, but never for a sensitive project. `TYPESAFE_BASE_URL` (with `TYPESAFE_MODEL`, `TYPESAFE_API_KEY`) adds a Jev-compatible server the same way.
 - Other agents ask the same layer through the `decide` MCP tool; their answers are booked apart from Foreman's own. `fm doctor`'s model backends line lists what it can reach and which uses are live; the site's Model layer page shows the newest exam replay.
 
 </details>
