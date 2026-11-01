@@ -249,8 +249,9 @@ def _jaccard(a, b):
 
 def predict(reqs):
     """(type, paths) of the request after reqs ((brief, type, paths), oldest first): the type from this user's own
-    type transitions out of the last one (a tie goes to the most recent), the paths from their latest earlier request
-    of that type (else the last's). The tick's predictor and fm exam's replay of it (T-2409)."""
+    type transitions out of the last one (a tie goes to the most recent), the paths, all of them, from their newest
+    request of that type, the last one included (else the last's). The tick's predictor and fm exam's replay of it
+    (T-2409); T-2449: skipping the last request and cutting to 5 paths had the guess trail the naive baseline."""
     lt, lpaths = reqs[-1][1], reqs[-1][2]
     types = [t for _, t, _ in reqs]
     nxt = {}
@@ -258,7 +259,7 @@ def predict(reqs):
         if a == lt:
             nxt[b] = nxt.get(b, 0) + 1
     ptype = max(nxt, key=lambda k: (nxt[k], -types[::-1].index(k))) if nxt else lt
-    return ptype, next((ps for _, t, ps in reversed(reqs[:-1]) if t == ptype), lpaths)[:5]
+    return ptype, list(next((ps for _, t, ps in reversed(reqs) if t == ptype), lpaths))
 
 
 def prediction_tick(p):
