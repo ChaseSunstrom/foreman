@@ -1312,6 +1312,25 @@ packages = ["relpkg"]
 """
 
 
+class ReleaseProofWithoutSetuptools(ForemanTestCase):  # T-2446: CI's runners have no setuptools; the cases skip there
+    def test_release_proof_cases_skip_without_setuptools_where_python3_has_none(self):
+        import subprocess
+        bindir = os.path.join(self.tmp, "nost")
+        os.makedirs(bindir)
+        with open(os.path.join(bindir, "python3"), "w") as f:  # -S: no site-packages, so no setuptools, as on CI
+            f.write(f"#!/bin/sh\nexec {sys.executable} -S \"$@\"\n")
+        os.chmod(os.path.join(bindir, "python3"), 0o755)
+        run = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.py")
+        r = subprocess.run([sys.executable, run, "test_prove", "-k", "wheel_that_works", "-k", "left_out_of_the_wheel",
+                            "-k", "disagrees_with_the_manifest"], capture_output=True, text=True, timeout=600,
+                           env=dict(os.environ, PATH=bindir + os.pathsep + os.environ["PATH"]))
+        self.assertEqual(r.returncode, 0, r.stdout[-1500:] + r.stderr[-1500:])  # under -S a pass can only be a skip
+        self.assertIn("Ran 3 tests", r.stdout + r.stderr)
+
+
+NO_SETUPTOOLS = "the python3 on PATH has no setuptools, and fm prove --release builds offline (as on CI's runners)"
+
+
 class ReleaseProof(ForemanTestCase):
     """T-2389 (Mission 7, #10): fm prove --release builds the manifest's artifact offline in a copy, installs it into a
     throwaway prefix and runs each entry point from there, so a file left out of the artifact fails."""
@@ -1326,23 +1345,36 @@ class ReleaseProof(ForemanTestCase):
         write(root, files)
         return root
 
+    def need_setuptools(self):
+        """T-2446: the cases a setuptools wheel builds skip where the python3 fm prove runs has none."""
+        import subprocess
+        try:
+            ok = subprocess.run(["python3", "-c", "import setuptools"], capture_output=True, timeout=60).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            ok = False
+        if not ok:
+            self.skipTest(NO_SETUPTOOLS)
+
     def prove(self, root, yes=True):
         import json as j
         r = self.fm("prove", root, "--release", "--json", *(["--yes-run"] if yes else []), check=False, timeout=300)
         return r.returncode, (j.loads(r.stdout) if r.stdout.strip().startswith("{") else {"raw": r.stdout + r.stderr})
 
     def test_release_proof_a_wheel_that_works_from_its_prefix_passes(self):
+        self.need_setuptools()
         code, d = self.prove(self.pkg("good"))
         self.assertEqual((code, d.get("verdict")), (0, "pass"), d)
         self.assertEqual((d["kind"], d["version"]), ("python", "1.2.3"))
         self.assertEqual([e["name"] for e in d["entries"]], ["relpkg"])
 
     def test_release_proof_an_entry_module_left_out_of_the_wheel_fails(self):
+        self.need_setuptools()
         code, d = self.prove(self.pkg("lost", mod="tools.cli"))  # packages = ["relpkg"] leaves relpkg.tools out
         self.assertEqual((code, d.get("verdict")), (1, "fail"), d)
         self.assertIn("relpkg.tools", d["why"])
 
     def test_release_proof_a_version_that_disagrees_with_the_manifest_fails(self):
+        self.need_setuptools()
         code, d = self.prove(self.pkg("old", says="relpkg 1.2.2"))
         self.assertEqual((code, d.get("verdict")), (1, "fail"), d)
         self.assertIn("1.2.3", d["why"])
