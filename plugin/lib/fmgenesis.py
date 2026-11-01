@@ -389,7 +389,7 @@ def coverage(p, text, gen0=""):
     N/A cell that reads the same as another slot's, not filled), problems, and per area rows: its valid I cells
     (ideas), empty cells and bad lines, which rank fm genesis seed's Missions."""
     if text is None:
-        return {"areas": 0, "cells": 0, "filled": 0, "empty": 0, "templated": 0, "rows": [],
+        return {"areas": 0, "cells": 0, "filled": 0, "empty": 0, "templated": 0, "rows": [], "empties": [],
                 "problems": ["coverage.md doesn't exist (every generation fills the grid: fm genesis put coverage.md)"]}
     root, probs, filled, empty, rows, loose, empties = os.path.realpath(p.root), [], 0, 0, [], [], []
     fdesc, dups = {}, 0
@@ -455,9 +455,10 @@ def coverage(p, text, gen0=""):
                 byfile[path].append((i, ws))
     heads = " | ".join(a.lower() for a, _ in secs)
     probs += [f"no row for capability {n}. {name}" for n, name, _ in _caps(gen0) if name.lower() not in heads]
-    probs += empties  # last, so a short listing shows the bad and templated cells first
+    # T-2474 (user steer 2026-11-01): an empty cell fails no generation; the next Seed fills it first, and only the
+    # run's end (step's report stage) needs none. Templated, duplicate, ungrounded and malformed cells stay problems.
     return {"areas": len(secs), "cells": len(secs) * len(STAGES) * len(SURFACES), "filled": filled, "empty": empty,
-            "templated": len(twins), "duplicates": dups, "rows": rows, "problems": probs}
+            "templated": len(twins), "duplicates": dups, "rows": rows, "problems": probs, "empties": empties}
 
 
 def not_yet(text, gen):
@@ -867,6 +868,11 @@ def step(p):
                                          f"the {'report' if dry else 'next step'} waits",
                            f"fm genesis confirm {g.group(1)}" if ready else
                            f"fm exam run {c.plain(str(run))} --agent foreman", "blocked")
+    left = coverage(p, _doc(d, "coverage.md"), _doc(d, "gen-0.md") or "")["empty"]
+    if dry and left:  # T-2474 (user steer 2026-11-01): "no empty cells" ends the run, not a generation
+        return act("seed", n + 1, f"two generations found no tier 3-4 gap, but the run ends only with no empty "
+                                  f"coverage cell: {left} empty coverage cell(s) left; write gen-{n + 1}/seed.md, empty "
+                                  "cells first", f"fm genesis seed {n + 1}")
     if dry:
         return act("report", n, "two generations in a row found no tier 3-4 gap: write the final report (§8)",
                    "fm genesis put report.md --file -")
@@ -965,12 +971,14 @@ def _check_lines(r, limit=6):
     cov, ny, out = r["coverage"], r["not_yet"], []
     if cov["problems"]:
         more = len(cov["problems"]) - limit
-        out.append(f"✗ coverage: {cov['empty']} empty, {cov['templated']} templated, "
-                   f"{len(cov['problems']) - cov['empty'] - cov['templated']} other problem(s); "
-                   f"{cov['filled']} of {cov['cells']} cells filled")
+        out.append(f"✗ coverage: {cov['templated']} templated, {len(cov['problems']) - cov['templated']} other "
+                   f"problem(s); {cov['filled']} of {cov['cells']} cells filled")
         out += [f"    {x}" for x in cov["problems"][:limit]] + ([f"    … {more} more (--json lists all)"] if more > 0 else [])
     else:
         out.append(f"✓ coverage: {cov['areas']} areas, {cov['filled']} of {cov['cells']} cells filled")
+    if cov.get("empty"):  # T-2474
+        out.append(f"· coverage: {cov['empty']} empty cell(s), handed to the next Seed to fill first (the run ends only "
+                   "with none)")
     n, more = ny["items"], len(ny["problems"]) - limit
     if ny["problems"]:
         out.append(f"✗ not-yet: {ny['open']} of {n} item{'s' if n != 1 else ''} need work")
@@ -2296,7 +2304,8 @@ def _seed(p, n, agent):
     caps = {nm.lower(): num for num, nm, _ in all_caps(p, gen0)}
     def open_(r):
         return r["ideas"] + len(r["empty"]) + r["bad"]
-    table, ranked = [], sorted((r for r in cov["rows"] if open_(r)), key=lambda r: -open_(r))
+    # T-2474: the empty cells first (the run can't end with one), then the rest of the open cells
+    table, ranked = [], sorted((r for r in cov["rows"] if open_(r)), key=lambda r: (-len(r["empty"]), -open_(r)))
     wait = [f"{r['area']} ({open_(r)})" for r in ranked[COVER:]]  # past the cap, named so no area drops out unseen
     for i, r in enumerate(ranked[:COVER], 1):
         bare = re.sub(r"^\d+\.\s*", "", r["area"]).replace("|", "/")
@@ -3060,8 +3069,10 @@ def sweep(p, n, agent="foreman"):
         f = dict(x.partition(" ")[::2] for x in block.splitlines())
         path, b = os.path.realpath(f.get("worktree", "")), None
         b = held.get(path)
-        if f.get("branch") and fmlanes._git(main, "merge-base", "--is-ancestor", f["branch"], "HEAD").returncode \
-                and not (b and b.status == "blocked" and _block_reason(b)):  # queued for the user (core) is allowed
+        if f.get("branch") and not f["branch"].startswith("refs/heads/draft/ahead-") \
+                and fmlanes._git(main, "merge-base", "--is-ancestor", f["branch"], "HEAD").returncode \
+                and not (b and b.status == "blocked" and _block_reason(b)):  # queued for the user (core) is allowed;
+            # T-2474: fm draft-ahead's speculative plan (T-2407) is never merged by design, so it is no unmerged lane
             lanes.append(f"{path} ({f['branch'].replace('refs/heads/', '')}{', ' + b.id if b else ''}) isn't merged")
     row("lanes", lanes, "no unmerged lane")
     row("docs", [c.fit(c.plain(f"{x['file']}: {x['kind']} {x['detail']}"), 160) for x in fmdocs.scan(p.root)], "no docs drift")
